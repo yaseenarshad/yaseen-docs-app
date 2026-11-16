@@ -20,7 +20,7 @@ const round = (text: string) => formatCardLine(line(text))
 
 describe('property parts on the card line (YAZ-5379)', () => {
   it('reads the mockup line: tags as a list, level and source as text; the line writes back byte for byte', () => {
-    const text = '<!-- card: GEO-197, title "Capital of Spain", tags "europe" "capitals", level "A2", source "Atlas&#44; chapter 3", 2026-11-11T09:12Z good -->'
+    const text = '<!-- card: GEO-197, title "Capital of Spain", tags "europe" "capitals", level "A2", source "Atlas&#44; chapter 3", 2026-11-11T09:12:00.000Z good -->'
     expect(cardPropertiesOf(line(text))).toEqual({ tags: ['europe', 'capitals'], level: 'A2', source: 'Atlas, chapter 3' })
     expect(round(text)).toBe(text)
     // A raw comma in a value (a hand's, or a line from before the value escape) reads as itself; the write encodes it, as a title's (YAZ-5393).
@@ -67,7 +67,7 @@ describe('property parts on the card line (YAZ-5379)', () => {
   })
 
   it('the card line words are never a property: reviews, off, next, notitle, the ID and an unknown part keep their kind', () => {
-    const text = '<!-- card: GEO-1, off, next, notitle, 2026-11-12T14:05Z good 13s, someday 2027-01, odd -->'
+    const text = '<!-- card: GEO-1, off, next, notitle, 2026-11-12T14:05:00.000Z good 13s, someday 2027-01, odd -->'
     const l = line(text)
     expect(cardPropertiesOf(l)).toEqual({})
     expect(l.parts.map((p) => p.kind)).toEqual(['id', 'off', 'next', 'notitle', 'review', 'other', 'other'])
@@ -81,11 +81,11 @@ describe('property parts on the card line (YAZ-5379)', () => {
   })
 
   it('a property goes after the ID and title and after the other properties; `off` goes after them all', () => {
-    let l = line('<!-- card: GEO-1, title "T", 2026-11-12T14:05Z good -->')
+    let l = line('<!-- card: GEO-1, title "T", 2026-11-12T14:05:00.000Z good -->')
     l = withCardProperty(l, 'tags', ['x'])
     l = withCardProperty(l, 'level', 'A2')
     l = withCardOff(l, true)
-    expect(formatCardLine(l)).toBe('<!-- card: GEO-1, title "T", tags ["x"], level "A2", off, 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(l)).toBe('<!-- card: GEO-1, title "T", tags ["x"], level "A2", off, 2026-11-12T14:05:00.000Z good -->')
   })
 
   it('an edit changes the value in place, under the new spelling; other spellings of the key go; remove drops it', () => {
@@ -99,9 +99,9 @@ describe('property parts on the card line (YAZ-5379)', () => {
   })
 
   it('a rename keeps the value and the place; it refuses a card line word', () => {
-    const l = line('<!-- card: GEO-1, tags "a" "b", level "A1", 2026-11-12T14:05Z good -->')
-    expect(formatCardLine(renameCardProperty(l, 'TAGS', 'topics'))).toBe('<!-- card: GEO-1, topics "a" "b", level "A1", 2026-11-12T14:05Z good -->')
-    expect(formatCardLine(renameCardProperty(l, 'tags', 'Level'))).toBe('<!-- card: GEO-1, Level "a" "b", 2026-11-12T14:05Z good -->')
+    const l = line('<!-- card: GEO-1, tags "a" "b", level "A1", 2026-11-12T14:05:00.000Z good -->')
+    expect(formatCardLine(renameCardProperty(l, 'TAGS', 'topics'))).toBe('<!-- card: GEO-1, topics "a" "b", level "A1", 2026-11-12T14:05:00.000Z good -->')
+    expect(formatCardLine(renameCardProperty(l, 'tags', 'Level'))).toBe('<!-- card: GEO-1, Level "a" "b", 2026-11-12T14:05:00.000Z good -->')
     expect(renameCardProperty(l, 'missing', 'x')).toBe(l)
     expect(() => renameCardProperty(l, 'tags', 'next')).toThrow()
   })

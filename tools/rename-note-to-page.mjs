@@ -54,6 +54,15 @@ const SKIP = [
   // has no marker yet, and the run would change the choice "Note" to "page" there.
   /^client\/src\/vault\/unitWord(\.test)?\.tsx?$/,
   /^client\/src\/settings\/UnitWordControl(\.test)?\.tsx$/,
+  // The phone app (YAZ-5055) and friends: "note" there is the friends list's note gist (`notecards-friends.json`) and the
+  // app's name (Notecard), wire names a rename would break (YAZ-5465 practice merge).
+  /^mobile\//,
+  /^shared\/friend[^/]*$/,
+  /^desktop\/src\/main\/friends\//,
+  /^desktop\/src\/main\/(friend|phone)[^/]*$/,
+  /^desktop\/src\/main\/ipc\/phone[^/]*$/,
+  /^desktop\/src\/main\/git\/live5[^/]*$/,
+  /^client\/src\/settings\/(connectPhone|ConnectPhone|FriendsSend|friendsSend|GithubToken|githubToken)[^/]*$/,
   /(^|\/)package(-lock)?\.json$/,
   /(^|\/)LICENSE[^/]*$/,
   /(^|\/)CHANGELOG\.md$/,

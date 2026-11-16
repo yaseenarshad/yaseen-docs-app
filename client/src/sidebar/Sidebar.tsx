@@ -30,7 +30,7 @@ import { threadPath } from './threadPath'
 import { stickyFolders } from './stickyFolders'
 import { IconPicker } from './IconPicker'
 import type { VaultIconsHere } from './useVaultIcons'
-import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
+import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES, type IconRule } from '@shared/vaultIcons'
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { IconsContext } from './FileIcon'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
@@ -231,6 +231,8 @@ interface SidebarProps {
    * delete sheet's "Don't ask me again" (GRO-2272).
    */
   settings: SettingsState
+  /** Show folder page files of each vault (YAZ-5489: its folder-pages.json, else the app's); absent, the app's. */
+  pageFilesIn?: (root: string) => boolean
   onChangeSettings: (next: SettingsState) => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
@@ -689,6 +691,7 @@ const NO_DIRS: readonly string[] = []
 
 /** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
 export function Sidebar({
+  pageFilesIn,
   vaults,
   lists,
   icons,
@@ -814,10 +817,17 @@ export function Sidebar({
   // The two "Change icon" items (YAZ-3440 D8): the picker, right of the sidebar at the row, for the rows' picks or for one name rule.
   const [iconPicker, setIconPicker] = useState<IconPickerAt | null>(null)
   // What the "Change icon ▸" flyout reads as the menu opens (D8), through a ref so the menu's callback keeps its identity.
-  const iconLive = useRef({ rowIcons, rules: settings.sidebarIconRules })
-  iconLive.current = { rowIcons, rules: settings.sidebarIconRules }
+  /**
+   * YAZ-5488: the name rules a row reads, and where "Change icon ▸ All …" writes them: the row's vault's own (its
+   * icons.json `rules`), else the app's (the fallback; the first change writes the vault's file from them).
+   */
+  const rulesAt = (path: string): readonly IconRule[] => icons.lookOf(rootOf(path)).rules ?? settings.sidebarIconRules
+  const setRulesAt = (path: string, next: IconRule[]): void => icons.saveLook(rootOf(path), { rules: next })
+  const iconLive = useRef({ rowIcons, rulesAt })
+  iconLive.current = { rowIcons, rulesAt }
   const iconTargets = useCallback((paths: string[] | null, rule: { match: string; kind: 'file' | 'folder' } | null): { iconHasPick: boolean; iconRuleSet: boolean } => {
-    const { rowIcons: now, rules } = iconLive.current
+    const { rowIcons: now, rulesAt: rulesNow } = iconLive.current
+    const rules = paths?.[0] === undefined ? [] : rulesNow(paths[0])
     return { iconHasPick: paths?.some((path) => now.paths.has(path)) ?? false, iconRuleSet: rule !== null && rules.some((r) => r.kind === rule.kind && r.match.toLowerCase() === rule.match.toLowerCase()) }
   }, [])
   /**
@@ -959,7 +969,9 @@ export function Sidebar({
   // The folder page rows (YAZ-4587, D37): one pass over each vault's folder records when a vault's folder records or
   // the switch change; a snapshot that moved no folder record reads nothing, and a set that names the same folders
   // keeps its identity, so a save elsewhere re-renders no tree level.
-  const pagesOn = showFolderPageFiles(settings)
+  // YAZ-5489: each vault's own switch (its folder-pages.json), as one key, so the effect runs only when one changes.
+  const appPagesOn = showFolderPageFiles(settings)
+  const pagesOnKey = roots.map((vault) => (pageFilesIn?.(vault) ?? appPagesOn ? '1' : '0')).join('')
   const [pageRows, setPageRows] = useState<ReadonlySet<string>>(NO_PAGE_ROWS)
   useEffect(() => {
     let seen: (readonly IndexRecord[])[] | null = null
@@ -969,14 +981,14 @@ export function Sidebar({
       seen = folders
       const next = new Set<string>()
       roots.forEach((vault, i) => {
-        for (const dir of folderPageRows(vault, folders[i], pagesOn)) next.add(dir)
+        for (const dir of folderPageRows(vault, folders[i], pagesOnKey[i] === '1')) next.add(dir)
       })
       setPageRows((prev) => (sameSet(prev, next) ? prev : next))
     }
     read()
     const offs = indexes.map((index) => index.subscribe(read))
     return () => offs.forEach((off) => off())
-  }, [roots, indexes, pagesOn])
+  }, [roots, indexes, pagesOnKey])
   // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
   const titles = useAllPathTitles(indexes)
   // The rows' IDs (YAZ-4940 "In the files list"), off the indexes of the vaults that chose it alone: none chose it, no map and no read.
@@ -2450,7 +2462,10 @@ export function Sidebar({
               onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir', top: menu.top })),
               onChangeIcon: (paths) => setIconPicker({ ...pickerAt(paths[0], menu), path: paths[0], kind: menu.rowKind === 'dir' ? 'folder' : 'file', scope: { paths } }),
               onResetIcon: (paths) => pickIcons(paths, null),
-              onResetIconRule: (rule) => onChangeSettings({ ...settings, sidebarIconRules: withRule(settings.sidebarIconRules, rule.match, rule.kind, null) }),
+              onResetIconRule: (rule) => {
+                const path = menu.iconPaths?.[0]
+                if (path !== undefined) setRulesAt(path, withRule(rulesAt(path), rule.match, rule.kind, null))
+              },
               onChangeIconRule: (rule) => {
                 const path = menu.iconPaths?.[0] ?? ''
                 setIconPicker({ ...pickerAt(path, menu), path, kind: rule.kind, scope: { rule } })
@@ -2477,7 +2492,7 @@ export function Sidebar({
         const name = path.slice(path.lastIndexOf('/') + 1)
         // What the row shows now (its pick, the rule or Material's), first among the suggestions.
         const shown = rowIcon(rowIcons, path, name, kind).id
-        const rule = 'rule' in scope ? settings.sidebarIconRules.find((r) => r.kind === scope.rule.kind && r.match.toLowerCase() === scope.rule.match.toLowerCase()) : undefined
+        const rule = 'rule' in scope ? rulesAt(path).find((r) => r.kind === scope.rule.kind && r.match.toLowerCase() === scope.rule.match.toLowerCase()) : undefined
         return (
           <IconPicker
             x={iconPicker.x}
@@ -2490,8 +2505,8 @@ export function Sidebar({
               if ('paths' in scope) pickIcons(scope.paths, id)
               else {
                 // A list the settings check refuses (more than MAX_ICON_RULES, or a pattern too long) would refuse every setting with it: say so instead.
-                const next = withRule(settings.sidebarIconRules, scope.rule.match, scope.rule.kind, id)
-                if (isIconRules(next)) onChangeSettings({ ...settings, sidebarIconRules: next })
+                const next = withRule(rulesAt(path), scope.rule.match, scope.rule.kind, id)
+                if (isIconRules(next)) setRulesAt(path, next)
                 else onNotice(`Can't add the rule: the list holds ${MAX_ICON_RULES} rules at most, each up to ${MAX_ICON_MATCH} characters`, 'error')
               }
             }}

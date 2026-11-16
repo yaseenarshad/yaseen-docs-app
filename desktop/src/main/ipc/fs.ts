@@ -36,7 +36,8 @@ import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow,
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import { idsHome } from '../vaultIndex/scan'
-import { dailyPage } from '../pages/daily'
+import { dailyPage, vaultDailySettings } from '../pages/daily'
+import { vaultNewPlacesSettings } from '../vaultSettingsRead'
 import type { WindowManager } from '../windows'
 import { broadcastAll, loggedSave, rootsOf, senderRoots } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
@@ -85,8 +86,14 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     return root === null ? null : doorOf(await idsHome(root, p as string))
   }
   handleWithEvent(CONTRACT.createDir, async (e, req) => createDir(req, await doorFor(e, req)))
-  // YAZ-4615 D10: a page the app makes carries the comment hint while Settings › Comments says so.
-  handleWithEvent(CONTRACT.createFile, async (e, req) => createFile(req, await doorFor(e, req), { hint: store.get().settings.commentsHint }))
+  // YAZ-4615 D10: a page the app makes carries the comment hint while Settings › Comments says so; YAZ-5490: the
+  // setting of the page's vault (its new-places.json), else the app's.
+  handleWithEvent(CONTRACT.createFile, async (e, req) => {
+    const p = typeof req === 'string' ? req : typeof req === 'object' && req !== null ? (req as { path?: unknown }).path : null
+    const root = typeof p === 'string' ? rootOfPath(rootsOfSender(e), p) : null
+    const hint = root === null ? store.get().settings.commentsHint : (await vaultNewPlacesSettings(root, store.get().settings)).commentsHint
+    return createFile(req, await doorFor(e, req), { hint })
+  })
   // The door, for the front end (YAZ-2677 R17): the next ID of the vault that holds `path`, saved
   // before it is answered (R18). The caller needs it BEFORE its page exists — the page's file name
   // holds it, and so does a link the `[[` picker writes — and hands it back in `createFile`'s `id`.
@@ -97,7 +104,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handleWithEvent(CONTRACT.makeDailyPage, async (e, raw: unknown) => {
     const vault = requireAbsPath(raw, 'path')
     if (!rootsOfSender(e).includes(vault)) throw new BridgeFailure('BAD_REQUEST', 'not a vault of this window', { path: vault })
-    return (await dailyPage(vault, store.get().settings, new Date(), true))!
+    return (await dailyPage(vault, await vaultDailySettings(vault, await vaultNewPlacesSettings(vault, store.get().settings)), new Date(), true))!
   })
   handle(CONTRACT.index, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it

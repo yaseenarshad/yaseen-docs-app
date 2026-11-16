@@ -17,8 +17,8 @@ import { inFolder } from './types'
  * two Remembered in a row, and each Forgot starts them again (Anki's default shape). A known card that was Forgot has
  * one relearning step: one Remembered ends it. A card in its steps (`CardState.inSteps`) is due NOW, whatever its
  * minute: the Inbox puts it back at the end of the session, and an Inbox opened again shows it. The minute itself is
- * never what the person sees. After the last step FSRS gives days, as before. Reviews keep their minute on the line;
- * two in one minute replay in line order (a stable sort).
+ * never what the person sees. After the last step FSRS gives days, as before. Reviews keep their full time on the line
+ * (YAZ-5642: to the millisecond, so no two share one); they replay in time order.
  *
  * Why not days only (the old D5 `false`): a card shown again the same day under `false` gets a too-long interval —
  * the research (YAZ-5020) measured new → Forgot → Remembered with Yaseen's weights at 3 days, where 1 day is right.
@@ -145,7 +145,7 @@ export interface CardAnswer {
 }
 
 /**
- * Each answer button's outcome at `now`, in button order. The review time is `now` to the minute, as the line will
+ * Each answer button's outcome at `now`, in button order. The review time is `now` (`cardTime`), as the line will
  * hold it, so the wait shown is the wait the replay gives once the answer is written — fuzz included.
  */
 export function previewAnswers(reviews: readonly CardReview[], s: ReviewSettings, now: number): CardAnswer[] {
@@ -419,7 +419,7 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
   const picked: DueCard[] = []
   const picking = s.newFrom.length > 0
   let startedToday = 0
-  // Today on this computer's calendar, as minutes the line writes: a card line's time sorts as text.
+  // Today on this computer's calendar, as times the line writes (`cardTime`): a card line's time sorts as text.
   const today = cardTime(new Date(now).setHours(0, 0, 0, 0))
   const tomorrow = cardTime(new Date(now).setHours(24, 0, 0, 0))
   // Only the pages with cards: most pages have none, and the sort is the loop's one cost per page.
@@ -577,7 +577,7 @@ export interface ReviewedToday {
 
 /**
  * Today's reviews across `pages` (the index's records): the LOCAL day of `now`, midnight to midnight. A review's time
- * is a UTC minute that sorts as a string, so each one is two string compares with the day's bounds (`cardTime`): no
+ * is ISO 8601 UTC to the millisecond (YAZ-5642) and sorts as a string, so each one is two string compares with the day's bounds (`cardTime`): no
  * date parsed per review. Off cards count too: their reviews were made.
  */
 export function reviewedToday(pages: readonly { cards?: readonly CardRecord[] }[], now: number): ReviewedToday {

@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
 import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { cp, mkdir, rename, rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 // Relative, not `@shared`: this file runs in Node before any alias exists.
@@ -124,6 +125,13 @@ export function dropMonacoTsWorkerUrl(): Plugin {
 const { version } = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as { version: string }
 const mapsDir = resolve(here, '.maps', version)
 
+/**
+ * `yaml`'s ES-module build (YAZ-5509). Its `node` export is CommonJS, which Rollup cannot tree-shake, so the main
+ * build took all of it. The ES-module build (`browser/index.js`, the same code, checked against the CommonJS build
+ * in Node) lets the unused parts go. Main only: the renderer already resolves to this build.
+ */
+const yamlEsm = resolve(dirname(createRequire(import.meta.url).resolve('yaml/package.json')), 'browser/index.js')
+
 export default defineConfig({
   main: {
     // Every dependency is bundled into `out/main` (chokidar 4 is pure JS), so the packaged app ships
@@ -131,7 +139,7 @@ export default defineConfig({
     // `dependencies` by default, so chokidar is a devDependency and `externalizeDeps` is off;
     // `tools/mainBundle.test.mjs` fails if the bundle requires anything but Node built-ins and
     // electron (YAZ-2185).
-    resolve: { alias: { '@shared': shared } },
+    resolve: { alias: [{ find: '@shared', replacement: shared }, { find: /^yaml$/, replacement: yamlEsm }] },
     // Two entries (YAZ-1617): the app, and the `yaseendocs` command the packaged shim runs as plain Node.
     build: { externalizeDeps: false, rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
   },

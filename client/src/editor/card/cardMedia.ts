@@ -20,9 +20,6 @@
  */
 import { AUDIO_EXTENSIONS } from '@shared/types'
 import { isBoard } from '@shared/fileKind'
-import { api } from '../../api'
-import { storage } from '../../lib/storage'
-import { appliedTheme } from '../../lib/theme'
 
 /** On a sound's marker span (before the player is built): the source as written. */
 export const CARD_AUDIO_ATTR = 'data-card-audio'
@@ -205,8 +202,15 @@ export function audioPlayer(url: string, name: string): HTMLElement {
 
 // ── The board picture ────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Where a board embed's file is, or null when it does not resolve. */
-export type CardBoardLook = (inner: string) => { root: string; path: string } | null
+/**
+ * The still picture of a board (YAZ-5161: given by the host, so the card drawing reads no bridge and no settings):
+ * the picture's URL, `''` for an empty board, null for a picture that cannot be made. It REJECTS when the board is gone,
+ * and the card shows the unresolved pill. The desktop's is `desktopBoardPicture` (`boardPictureDesktop.ts`).
+ */
+export type BoardPictureLoad = (root: string, path: string) => Promise<string | null>
+
+/** Where a board embed's file is, and how its picture loads; null when it does not resolve. */
+export type CardBoardLook = (inner: string) => { root: string; path: string; picture: BoardPictureLoad } | null
 
 const waiting = new WeakMap<Element, () => void>()
 let observer: IntersectionObserver | null = null
@@ -242,8 +246,8 @@ export function missingBoard(inner: string): HTMLElement {
   return pill
 }
 
-/** The still picture of the board `inner` (at `root`, `path`): loaded when it comes near the screen. */
-export function boardPicture(inner: string, root: string, path: string): HTMLElement {
+/** The still picture of the board `inner` (at `root`, `path`): loaded by `picture` when it comes near the screen. */
+export function boardPicture(inner: string, root: string, path: string, picture: BoardPictureLoad): HTMLElement {
   const box = document.createElement('span')
   box.className = 'card__board'
   box.setAttribute(CARD_BOARD_ATTR, inner)
@@ -261,17 +265,12 @@ export function boardPicture(inner: string, root: string, path: string): HTMLEle
   box.append(img, name)
   whenNear(box, () => {
     const abs = path.startsWith('/') ? path : `${root.replace(/\/+$/, '')}/${path}`
-    const theme = appliedTheme()
-    const darkColors = storage.getSettings()?.diagramDarkColors === 'keep' ? 'keep' : 'adapt'
     void Promise.resolve()
-      .then(() => api.boardHead(abs))
+      .then(() => picture(root, abs))
       .then(
-        async (head) => {
-          // The picture code and the engines are the hover picture's lazy chunk: only a card on screen brings them.
-          const { boardPreviews, boardPreviewKey } = await import('../../sidebar/boardPreviewCache')
-          const picture = await boardPreviews.load(boardPreviewKey(root, { path: abs, mtime: head.mtime }, theme, darkColors))
-          if (picture) img.src = picture
-          else box.classList.add(picture === '' ? 'card__board--empty' : 'card__board--broken')
+        (url) => {
+          if (url) img.src = url
+          else box.classList.add(url === '' ? 'card__board--empty' : 'card__board--broken')
         },
         () => box.replaceWith(missingBoard(inner)),
       )

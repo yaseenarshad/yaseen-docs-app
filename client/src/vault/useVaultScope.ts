@@ -12,6 +12,7 @@ import { attentionCopy, type AttentionCopy } from '../lib/syncAttention'
 import { useVaultName } from '../lib/useVaultName'
 import { useExternalRenames, type ExternalRenames } from '../links/useExternalRenames'
 import { useCardReview, type CardReviewApi } from '../review/useCardReview'
+import { desktopReviewHost } from '../review/desktopReviewHost'
 import { useReviewSettings, type ReviewSettingsState } from '../review/useReviewSettings'
 import { useLinkClick, type LinkClickState } from '../explore/linkClick'
 import { useShowIds, type ShowIdsState } from '../search/showIds'
@@ -19,7 +20,11 @@ import { useLinkPills, type LinkPillsState } from '../settings/useLinkPills'
 import { useVaultUnitWord, type UnitWordState } from './unitWord'
 import { useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
+import { useCardLook, type CardLookState } from '../review/useCardLook'
 import { useTableLook, type TableLookState } from '../settings/useTableLook'
+import { useFolderPagesFile, type FolderPagesFileState } from '../settings/useFolderPagesFile'
+import { useDailyPages, type DailyPagesState } from '../settings/useDailyPages'
+import { useVaultNewPlaces, type VaultNewPlacesState } from '../settings/useVaultNewPlaces'
 import { useProperties } from '../views/useProperties'
 
 /**
@@ -55,10 +60,18 @@ export interface VaultScope {
   readOnlyVault: ReadOnlyVaultState
   /** How text looks in every page of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
   textFormatting: TextFormattingState
+  /** How this vault's cards look (YAZ-5484): `.yaseendocs/card-look.json`; no file draws the app's look. Every surface that shows one of its cards reads it. */
+  cardLook: CardLookState
   /** How this vault's tables look and how its new tables start (YAZ-5487): `.yaseendocs/table-look.json`; no file draws the app's look. */
   tableLook: TableLookState
+  /** This vault's folder page view and page defaults (YAZ-5489): `.yaseendocs/folder-pages.json`; no file reads the app's Settings › Folder pages. */
+  folderPages: FolderPagesFileState
   /** How every link pill of this vault looks (YAZ-4924): `.yaseendocs/link-pills.json`. Each page layer reads its CSS variables; `wikilinks` carries the pieces a pill gains. */
   linkPills: LinkPillsState
+  /** This vault's daily pages (YAZ-5491): `.yaseendocs/daily-pages.json`, the one source; App picks the window's (`windowDailyPages`). */
+  dailyPages: DailyPagesState
+  /** Where new pages and boards go in this vault (YAZ-5486): `.yaseendocs/new-places.json`'s `newPage` and `newBoard`. */
+  newPlaces: VaultNewPlacesState
   review: CardReviewApi
   renames: ExternalRenames
   /**
@@ -139,14 +152,18 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const unit = useVaultUnitWord(root)
   const readOnlyVault = useReadOnlyVault(root)
   const textFormatting = useTextFormatting(root, notify)
+  const cardLook = useCardLook(root, notify)
   const tableLook = useTableLook(root, notify)
+  const folderPages = useFolderPagesFile(root, notify)
   const linkPills = useLinkPills(root, notify)
+  const dailyPages = useDailyPages(root, notify)
+  const newPlaces = useVaultNewPlaces(root, notify)
   // The look's text pieces and the vault's name reach every editor of the vault through its resolve source (YAZ-4924):
   // one object the editors already subscribe to, so a change draws the pills again without a prop on each editor.
   useEffect(() => wikilinks.setLook(linkPills.pills, name), [wikilinks, linkPills.pills, name])
   // Card review (YAZ-4967): the Inbox count and the vault's review session, read off the SAME
   // index source the wikilinks use. The window shows one session at a time; `App` sees to that.
-  const review = useCardReview(root, wikilinks, reviewSettings.settings, notify, name, reviewSettings.save)
+  const review = useCardReview(root, wikilinks, reviewSettings.settings, notify, name, desktopReviewHost, reviewSettings.save)
 
   // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
   // automatic, never a dialog): ONE detector per vault, fed by the cold-start reconcile diff and
@@ -212,8 +229,12 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     unit,
     readOnlyVault,
     textFormatting,
+    cardLook,
     tableLook,
+    folderPages,
     linkPills,
+    dailyPages,
+    newPlaces,
     review,
     renames,
     ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, set: saveIds, check: checkIds, old: vaultIds.old, unfinished: vaultIds.unfinished, state: idsState, reletter, backfill },

@@ -269,6 +269,30 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-5097: a snapshot of version 16 held card records with no `fix` → version-mismatch, so a card marked Fix later is never served as unmarked', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(17)
+    const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [] }]
+    await writeFile(file, JSON.stringify({ version: 16, root: '/vault', records: [record('/vault/a.md', { cards } as never)] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
+  it('YAZ-5309: a snapshot of version 17 is one of two (the phone branch: `fix` with the first-line title; the base: the card-line title with no `fix`) → version-mismatch, so neither is served as the other', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(18)
+    for (const cards of [[{ id: 'DEMO-105', off: false, next: false, reviews: [], title: 'Old first line', fix: true }], [{ id: 'DEMO-105', off: false, next: false, reviews: [], title: 'Capital of France' }]]) {
+      await writeFile(file, JSON.stringify({ version: 17, root: '/vault', records: [record('/vault/a.md', { cards } as never)] }))
+      expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+    }
+  })
+
+  it('YAZ-5349: a snapshot of version 18 (the phone branch) holds no card `properties`, and one of 17 or 18 read `fix "x"` as a property → version-mismatch, so a card is never served with properties its card line does not hold', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(19)
+    for (const version of [17, 18]) {
+      const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [], title: 'Capital of Spain', fix: true }]
+      await writeFile(file, JSON.stringify({ version, root: '/vault', records: [record('/vault/a.md', { cards } as never)] }))
+      expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+    }
+  })
+
   it('YAZ-5308: a snapshot of version 16 read a card`s title off its first line or a card file`s `title` → version-mismatch, so a card is never served under a title its card line does not hold', async () => {
     expect(CACHE_VERSION).toBeGreaterThanOrEqual(17)
     const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [], title: 'Old first line' }]
@@ -280,6 +304,18 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(CACHE_VERSION).toBeGreaterThanOrEqual(18)
     const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [] }]
     await writeFile(file, JSON.stringify({ version: 17, root: '/vault', records: [record('/vault/a.md', { cards } as never)] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
+  it('YAZ-5512 S1: a snapshot of version 19 read an empty block followed later by a `---` line as one block (its cards gone) → version-mismatch, so the page is read again', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(20)
+    await writeFile(file, JSON.stringify({ version: 19, root: '/vault', records: [record('/vault/a.md')] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
+  it('YAZ-5512 C1: a snapshot of version 20 read a page that starts with a BOM as having no properties → version-mismatch, so the page is read again', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(21)
+    await writeFile(file, JSON.stringify({ version: 20, root: '/vault', records: [record('/vault/a.md')] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
@@ -329,12 +365,12 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     '```card',
     'A card links [[Card Link]] and #card-tag',
     '```',
-    '<!-- card: CAN-3, title "Card, links", off, next, notitle, fix, 2026-11-12T14:05Z good, 2026-11-13T09:00Z again 13s -->',
+    '<!-- card: CAN-3, title "Card, links", tags "x" "y", level 2, off, next, notitle, fix, 2026-11-12T14:05:00.000Z good, 2026-11-13T09:00:00.000Z again 13s -->',
     '',
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 18,
+    cacheVersion: 21,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
@@ -362,9 +398,10 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       links: ['Ref', 'Folder Ref', 'Page One', 'Page Two', 'Covid pages|COVID-19', 'chart.pdf', 'Card Link'],
       embeds: ['img.png', 'photo.png'],
       // A card's title (off its card line, YAZ-5308) and its `notitle` part ride on the record (YAZ-5030): a card link shows the title.
+      // Its own properties too (YAZ-5349, CACHE_VERSION 19), off its card line.
       // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
-      // Its `fix` (YAZ-5097, CACHE_VERSION 18) too: the Card fix status column reads no file.
-      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again', seconds: 13 }], title: 'Card, links', notitle: true, fix: true }],
+      // Its `fix` (YAZ-5097) too: the Card fix status column reads no file. CACHE_VERSION 19: the demo (YAZ-5430) and the phone (YAZ-5309) each took 18.
+      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05:00.000Z', rating: 'good' }, { at: '2026-11-13T09:00:00.000Z', rating: 'again', seconds: 13 }], title: 'Card, links', notitle: true, fix: true, properties: { tags: ['x', 'y'], level: 2 } }],
     },
     // A card file (YAZ-5037, CACHE_VERSION 15): `kind: card` in its properties, its title its card's (off its card line, YAZ-5308).
     cardFile: { kind: 'card', title: 'Capital of France?' },

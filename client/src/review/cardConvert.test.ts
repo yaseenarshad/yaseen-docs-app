@@ -65,7 +65,7 @@ vi.mock('../api', async (importOriginal) => {
 import { api } from '../api'
 import { ConvertStopped, convertFailure, makeCardFromText, moveCardToFile, moveIntoCard, putCardBackIntoPage, splitIntoCardFiles, turnIntoCardFile, turnIntoPage } from './cardConvert'
 
-const LINE = '<!-- card: GEO-140, title "What is the capital of France?", 2026-11-01T09:00Z good 12s, 2026-11-05T09:00Z again -->'
+const LINE = '<!-- card: GEO-140, title "What is the capital of France?", 2026-11-01T09:00:00.000Z good 12s, 2026-11-05T09:00:00.000Z again -->'
 const BLOCK = ['```card', 'What is the capital of **France**?', '---', 'The capital is {{Paris}}.', '```', LINE].join('\n')
 const PAGE = '/v/geo/europe-geo-1.md'
 const CARD = '/v/geo/what-is-the-capital-of-france-geo-140.md'

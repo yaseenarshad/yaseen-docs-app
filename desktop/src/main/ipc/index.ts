@@ -10,7 +10,13 @@ import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { copyLibrary, followLibraryMoves, type LibraryMoves } from '../library/copyLibrary'
 import { libraryFolderOf } from '../library/folder'
+import { DAILY_PAGES_MOVE } from '../dailyPagesVaultFile'
+import { PAGE_SPACING_MOVE } from '../textFormattingMove'
+import { ICON_LOOK_MOVE } from '../icons'
+import { CARD_LOOK_MOVE } from '../cardLookMove'
 import { tableLookMoves } from '../tableLookMove'
+import { FOLDER_PAGES_MOVE } from '../folderPagesMove'
+import { NEW_PLACES_MOVE } from '../newPlaces'
 import { moveSettingsIntoVaults, type VaultMove } from '../vaultSettingsMove'
 import { registerBoardIpc } from './board'
 import { registerCardSkillIpc } from './cardSkill'
@@ -117,8 +123,12 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
   // `libraryMoves.settled()`: the launch's copy and its marker write are done — what a caller waits on before it lets go of `userData`.
-  // YAZ-5487: the one-time move of the table look into each vault's table-look.json (with YAZ-5602's Time in slot). A vault that has none gets one
-  // only after its first pull (its pass ended `synced`), or when its sync is off.
+  // YAZ-5491: the one-time move of Settings › Daily pages into the vault that holds the daily folder
+  // (`.yaseendocs/daily-pages.json`, the one source since). A vault that has none gets one only after its first pull
+  // (its pass ended `synced`), or when its sync is off. YAZ-5485: the page spacing, into each vault's text-formatting.json.
+  // YAZ-5486: where new pages and boards go, into each vault's new-places.json (a folder only where the vault has it).
+  // YAZ-5488: the icon rules and colours into each vault's icons.json. YAZ-5484: the card look into each card-look.json.
+  // YAZ-5487: the table look into each table-look.json (YAZ-5602 round 2: with the Time in slot this Mac set before).
   const pulled = new Set<string>()
   let moves: VaultMove | null = null
   const sync = registerGithubIpc(store, (status) => {
@@ -126,7 +136,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
     pulled.add(status.root)
     moves?.pulled(status.root)
   })
-  moves = moveSettingsIntoVaults(store, tableLookMoves(store.slotTimeToMove()), async (root) => {
+  moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE, ...tableLookMoves(store.slotTimeToMove()), FOLDER_PAGES_MOVE], async (root) => {
     if (pulled.has(root)) return true
     const status = await sync.status(root)
     return status.enabled !== true || status.state === 'off' || status.state === 'synced'

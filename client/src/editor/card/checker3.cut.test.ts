@@ -14,8 +14,8 @@ afterEach(async () => {
     c.root.remove()
   }
 })
-const stale = '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'
-const full = '<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-07T09:00Z good -->'
+const stale = '<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good -->'
+const full = '<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good, 2026-11-07T09:00:00.000Z good -->'
 
 async function open(staleText: string) {
   const source = createWikilinkResolveSource()
@@ -45,7 +45,7 @@ for (const staleText of ['Q, reworded', 'Q']) {
     view.dispatch(view.state.tr.insert(view.state.doc.content.size, original).setMeta('uiEvent', 'paste'))
     await new Promise((r) => setTimeout(r, 0))
     const saved = getMarkdownForSave(crepe)
-    expect(saved).toContain('2026-11-07T09:00Z good')
+    expect(saved).toContain('2026-11-07T09:00:00.000Z good')
   })
 }
 
@@ -66,5 +66,5 @@ it('real path: NodeSelection of the original, serialize, delete (cut), pasteHTML
   view.pasteHTML(html)
   await new Promise((r) => setTimeout(r, 0))
   const saved = getMarkdownForSave(crepe)
-  expect(saved).toContain('2026-11-07T09:00Z good')
+  expect(saved).toContain('2026-11-07T09:00:00.000Z good')
 })

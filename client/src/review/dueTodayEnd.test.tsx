@@ -16,6 +16,7 @@ import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { useCardReview, type CardReviewApi } from './useCardReview'
+import { desktopReviewHost } from './desktopReviewHost'
 import { CardInbox } from './CardInbox'
 import { storage } from '../lib/storage'
 
@@ -76,9 +77,9 @@ const LATER = 'LATER-1'
 const NEW = ['NEW-1', 'NEW-2', 'NEW-3']
 function seed(): void {
   const block = (id: string, review: string) => cardBlock(`Card ${id} {{answer}}`, parseCardLine(`<!-- card: ${id}${review} -->`)!)
-  vault.set(`${ROOT}/Known.md`, `# Known\n\n${DUE.map((id) => block(id, ', 2026-09-01T09:00Z good, 2026-09-02T09:00Z good')).join('\n')}`)
+  vault.set(`${ROOT}/Known.md`, `# Known\n\n${DUE.map((id) => block(id, ', 2026-09-01T09:00:00.000Z good, 2026-09-02T09:00:00.000Z good')).join('\n')}`)
   vault.set(`${ROOT}/Fresh.md`, `# Fresh\n\n${NEW.map((id) => block(id, '')).join('\n')}`)
-  vault.set(`${ROOT}/Later.md`, `# Later\n\n${block(LATER, ', 2026-11-01T09:00Z good, 2026-11-11T09:00Z good')}`)
+  vault.set(`${ROOT}/Later.md`, `# Later\n\n${block(LATER, ', 2026-11-01T09:00:00.000Z good, 2026-11-11T09:00:00.000Z good')}`)
 }
 
 let root: Root | null = null
@@ -88,7 +89,7 @@ const wikilinks = createWikilinkResolveSource()
 
 let shown = true
 function Screen({ settings }: { settings: ReviewSettings }) {
-  review = useCardReview(ROOT, source, settings, () => undefined)
+  review = useCardReview(ROOT, source, settings, () => undefined, undefined, desktopReviewHost)
   if (review.session === null) return null
   return (
     <CardInbox
@@ -172,7 +173,7 @@ describe('YAZ-5043: the end of Due today', () => {
     expect(showing()).toBe('NEW-1')
   })
 
-  it('2. New cards alone (item 14): only the three new cards show; each comes back once, and no % screen ever stops them', async () => {
+  it('2. New cards alone (item 14): only the three new cards show, and no % screen ever stops them; each first Remembered moves the card into Due today (YAZ-5610)', async () => {
     await mount()
     await step(() => review.setFilter('new'))
     const seen: string[] = []
@@ -180,10 +181,12 @@ describe('YAZ-5043: the end of Due today', () => {
       expect(el.querySelector('.due-end')).toBeNull()
       seen.push(await answer('good'))
     }
-    expect(seen).toEqual([...NEW, ...NEW])
-    expect(review.session?.end).toBeNull()
+    // Yaseen's rule (from Mochi): a new card's first Remembered takes it out of New cards into Due today, where it comes
+    // back the same day: New one less, Due today one more, All cards the same cards.
+    expect(seen).toEqual(NEW)
+    expect(review.session).toMatchObject({ end: null, counts: { new: 0, due: 8, all: 8 } })
     expect(doneText()[0]).toBe('No new cards left.')
-    expect(doneText()).toContain('5 more in All cards')
+    expect(doneText()).toContain('8 more in All cards')
   })
 
   it('3a. Due today with two Forgot: the first pass stops at "You remembered 60% of 5 cards." with ONE button, "Review missed cards 2"', async () => {

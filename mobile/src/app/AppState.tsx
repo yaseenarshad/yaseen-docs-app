@@ -1,0 +1,370 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { loadAccount, type VaultAccount } from '../auth/account'
+import type { SignInInput } from '../auth/check'
+import { chooseFriendsVault, loadFriendsAccount, type FriendsAccount } from '../auth/friends'
+import { forgetVaultAndToken, signIn, signInAgain, signOutAndErase, startState, type SignInOutcome } from '../auth/signIn'
+import type { FetchLike } from '../github/client'
+import type { VaultMedia } from '../media/ui/vaultMedia'
+import { loadVaultList, openVault, openVaultOf, saveVaultList, vaultId, type KeepStorage, type PhoneVault, type TokenStore, type VaultList, type VaultStore } from '../store'
+import type { FriendsPort, FriendsSettings } from './friendsPort'
+import { browserBack, useBrowserHistory } from './browserHistory'
+import { PLAIN_VAULT, navigate, openingTab, tabIn, type NavAction, type NavState, type VaultTabs } from './nav'
+import { IDLE, type ShellSync, type ShellSyncState } from './syncPort'
+import { SAME_WORD, UNIT_WORD_PATH, readUnitWord, type UnitText } from './unitWord'
+import { readVaultTabs, sameTabs } from './vaultTabs'
+
+/**
+ * The app's state and its actions: the one layer the screens (4A–4E) plug into. Every service is passed in, so
+ * tests run the real sign-in logic (3E) and store (3A) with fakes for GitHub, the sync (3B) and Friends (4E);
+ * `main.tsx` passes the real ones.
+ */
+export interface AppServices {
+  store: VaultStore
+  tokens: TokenStore
+  /** 3B's engine (`lazySync`), or a fake in tests. */
+  sync: ShellSync
+  /** 4E's Friends: the friends list (`lazyFriends`, `main.tsx`), or a fake in tests. */
+  friends: FriendsPort
+  /**
+   * 4C: one file's bytes for the reader and Review (a picture, a sound, a PDF): 3D's `MediaAhead`, made when
+   * the engine loads (`lazyMedia`, `main.tsx`). Absent (tests): the screens read the store only (`storedMedia`).
+   */
+  media?: VaultMedia
+  /** The GitHub calls of the sign-in check. Default: the browser's `fetch`. Tests pass `fakeGithub(…).fetch`. */
+  fetch?: FetchLike
+  now?: () => number
+  keepStorage?: () => Promise<KeepStorage>
+  /**
+   * Which tabs a vault turns on. Default: its own files (`readVaultTabs`). The screen tests of other features
+   * pass one that keeps Review on (`screens/testing.ts`), as their made-up vaults have no IDs.
+   */
+  vaultTabs?: typeof readVaultTabs
+}
+
+/**
+ * - `loading`: reading the phone's storage. No network call.
+ * - `sign-in`: no vault on the phone (row F1).
+ * - `sign-in-again`: the open vault has no token (it was cleared, or an earlier sign-in stopped).
+ * - `ready`: a vault is open. The shell shows the first download, then the tabs.
+ */
+export type Phase = 'loading' | 'sign-in' | 'sign-in-again' | 'ready'
+
+export interface AppModel {
+  services: AppServices
+  phase: Phase
+  list: VaultList
+  /** The open vault, or null. */
+  vault: PhoneVault | null
+  /** Its `vaultId`, or null. */
+  vaultKey: string | null
+  /** What each vault's sign-in check learned, by `vaultId`. */
+  accounts: Record<string, VaultAccount | undefined>
+  friendsAccount: FriendsAccount
+  friendsSettings: FriendsSettings
+  /** The open vault's word for "page": `unit('Search pages')` → "Search docs" (round 15, item 5). */
+  unit: UnitText
+  /** What the open vault turns on (`vaultTabs.ts`): the Review and Friends tabs, the Today button. */
+  tabs: VaultTabs
+  sync: ShellSyncState
+  /** Its `tab` is always one the open vault has (`tabIn`): a tab that went away shows Search. */
+  nav: NavState
+  go(action: NavAction): void
+  /** The sign-in form (decision 13). On success, the new vault opens. */
+  addVault(input: SignInInput): Promise<SignInOutcome>
+  /** A new token for a vault on the phone (row N6, "Replace token"). Its files and waiting answers stay. */
+  replaceToken(vault: string, token: string): Promise<SignInOutcome>
+  /** Decision 7: a tap switches the open vault. Only the open vault polls. */
+  switchVault(vault: string): Promise<void>
+  /** The vault, its token and its stored files leave the phone. */
+  removeVault(vault: string): Promise<void>
+  /** "Reset local copy" (row P5): the files go, the token stays, the vault downloads again. */
+  resetCopy(vault: string): Promise<void>
+  /** "Sign out and erase this phone" (row N7): every token, then every stored file and state. */
+  eraseAll(): Promise<void>
+  chooseFriendsVault(vault: string): Promise<void>
+  saveFriendsSettings(settings: FriendsSettings): Promise<void>
+}
+
+const AppContext = createContext<AppModel | null>(null)
+
+/** The app's channel between its tabs (one Home Screen app has one window; Safari can have more). */
+const TABS_CHANNEL = 'notecards-tabs'
+type TabMessage = { type: 'erased' }
+const channelOf = (): BroadcastChannel | null => (typeof BroadcastChannel === 'function' ? new BroadcastChannel(TABS_CHANNEL) : null)
+function tellOtherTabs(message: TabMessage) {
+  const channel = channelOf()
+  channel?.postMessage(message)
+  channel?.close()
+}
+function hearOtherTabs(listener: (message: TabMessage) => void): () => void {
+  const channel = channelOf()
+  if (channel === null) return () => undefined
+  channel.onmessage = (event: MessageEvent<TabMessage>) => listener(event.data)
+  return () => channel.close()
+}
+
+/** How long a removal waits for a running pass to end. The store refuses that pass's later writes anyway,
+ *  so the wait only keeps the screen honest; a stuck download must not hold the erase. */
+export const STOP_WAIT_MS = 3_000
+
+/** Closes the vault in the sync, then waits (at most `STOP_WAIT_MS`) for its pass to end. */
+async function stopSync(sync: ShellSync): Promise<void> {
+  await sync.open(null)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([sync.idle(), new Promise<void>((r) => (timer = setTimeout(r, STOP_WAIT_MS)))])
+  clearTimeout(timer)
+}
+
+/** The app's state, for any screen under `AppProvider`. */
+export function useApp(): AppModel {
+  const app = useContext(AppContext)
+  if (app === null) throw new Error('useApp() needs <AppProvider>')
+  return app
+}
+
+interface Loaded {
+  phase: Phase
+  list: VaultList
+  accounts: Record<string, VaultAccount | undefined>
+  friendsAccount: FriendsAccount
+  friendsSettings: FriendsSettings
+  unit: UnitText
+  tabs: VaultTabs
+}
+
+const EMPTY: Loaded = {
+  phase: 'loading',
+  list: { vaults: [], open: null },
+  accounts: {},
+  friendsAccount: { kind: 'no-vaults' },
+  friendsSettings: { vaults: null, nickname: null },
+  unit: SAME_WORD,
+  tabs: PLAIN_VAULT,
+}
+
+export function AppProvider({ services, children }: { services: AppServices; children: ReactNode }) {
+  const { store, tokens, sync, friends } = services
+  const tabsOfVault = services.vaultTabs ?? readVaultTabs
+  const [loaded, setLoaded] = useState<Loaded>(EMPTY)
+  const [nav, setNav] = useState<NavState>({ tab: 'review', stack: [] })
+  // The browser's history follows the screens, so Safari's own back swipe (in a tab) goes back too.
+  const shownStack = useRef(nav.stack)
+  shownStack.current = nav.stack
+  const showStack = useCallback((stack: NavState['stack']) => setNav((n) => ({ ...n, stack })), [])
+  useBrowserHistory(nav.stack, showStack)
+  const [syncState, setSyncState] = useState<ShellSyncState>(() => sync.state() ?? IDLE)
+  const openKey = useRef<string | null>(null)
+  /** The vault's tabs changed (Review turned off, another vault): a tab it no longer has goes to Search, and stays there. */
+  const keepTab = useCallback((tabs: VaultTabs) => setNav((n) => (tabIn(n.tab, tabs) === n.tab ? n : { ...n, tab: tabIn(n.tab, tabs) })), [])
+
+  /** Reads everything the screens show from the phone. No network call. `opening`: open the vault in the sync too. */
+  const load = useCallback(
+    async (opening: boolean, beforeShow?: (next: Loaded) => Promise<void>): Promise<Loaded> => {
+      const start = await startState(store, tokens)
+      const list = await loadVaultList(store)
+      const accounts: Record<string, VaultAccount | undefined> = {}
+      for (const v of list.vaults) accounts[vaultId(v)] = await loadAccount(store, vaultId(v))
+      const open = openVaultOf(list)
+      const key = open === null ? null : vaultId(open)
+      const next: Loaded = {
+        phase: start.kind === 'ready' ? 'ready' : start.kind,
+        list,
+        accounts,
+        friendsAccount: await loadFriendsAccount(store),
+        friendsSettings: await friends.settings(),
+        unit: key === null ? SAME_WORD : await readUnitWord(store, key),
+        tabs: await tabsOfVault(store, key),
+      }
+      openKey.current = key
+      const syncing = opening ? (start.kind === 'ready' ? open : null) : undefined
+      // Closing waits (nothing may poll a vault that leaves). Opening does not hold the screen: the sync's state
+      // tells the shell when the vault is ready (3B's engine loads as a chunk of its own, `lazySync`).
+      if (syncing === null) await sync.open(null)
+      // The opening tab is set BEFORE the tabs show, so the first screen is the right one (no jump).
+      await beforeShow?.(next)
+      setLoaded(next)
+      keepTab(next.tabs)
+      if (syncing) void sync.open(syncing).catch(() => undefined)
+      return next
+    },
+    [store, tokens, sync, friends, tabsOfVault, keepTab],
+  )
+
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      // Decision 21: Friends with a friend, else Review. Asked while the phone loads; the tabs wait for the answer.
+      const asked = friends.hasFriends().catch(() => false)
+      await load(true, async (next) => {
+        if (next.phase !== 'ready') return
+        const hasFriends = await asked
+        if (live) setNav({ tab: openingTab(hasFriends, next.tabs), stack: [] })
+      })
+    })()
+    return () => {
+      live = false
+    }
+  }, [load, friends])
+
+  useEffect(
+    () =>
+      sync.subscribe((event) => {
+        if (event.type === 'state') return setSyncState(event.state)
+        if (event.vault !== openKey.current) return
+        const vault = event.vault
+        // Round 15, item 5: a new `.yaseendocs/unit-word.json` from the Mac changes the words at once.
+        if (event.settings.includes(UNIT_WORD_PATH)) void readUnitWord(store, vault).then((unit) => setLoaded((l) => ({ ...l, unit })))
+        // The vault's settings (or its first IDs) can bring a tab or take one away, at once.
+        void tabsOfVault(store, vault, event.index).then((tabs) => {
+          if (openKey.current !== vault) return
+          setLoaded((l) => (sameTabs(l.tabs, tabs) ? l : { ...l, tabs }))
+          keepTab(tabs)
+        })
+      }),
+    [sync, store, tabsOfVault, keepTab],
+  )
+
+  const go = useCallback(
+    (action: NavAction) => {
+      // A page or card opened (or swapped in by the arrows) goes to this phone's Recent (its own lazy chunk; it records only those two).
+      const vault = openKey.current
+      if ('route' in action) void import('../search/recent').then((m) => m.remember(store, vault, action.route))
+      // Back steps the browser back when the entry under is the screen under: its `popstate` shows it (one Back only).
+      if (action.type === 'back' && browserBack(shownStack.current)) return
+      setNav((n) => navigate(n, action))
+    },
+    [store],
+  )
+
+  const deps = useMemo(
+    () => ({ store, tokens, fetch: services.fetch, now: services.now, keepStorage: services.keepStorage }),
+    [store, tokens, services.fetch, services.now, services.keepStorage],
+  )
+
+  const addVault = useCallback(
+    async (input: SignInInput) => {
+      const outcome = await signIn(input, deps)
+      if (outcome.ok) {
+        const first = loaded.list.vaults.length === 0
+        await saveVaultList(store, openVault(await loadVaultList(store), outcome.vault))
+        const next = await load(true)
+        // The first vault: the app opens as at start (decision 21). One more vault: back to the tabs, on the new vault.
+        if (first) setNav({ tab: openingTab(await friends.hasFriends(), next.tabs), stack: [] })
+        else setNav((n) => navigate(n, { type: 'home' }))
+      }
+      return outcome
+    },
+    [deps, store, load, friends, loaded.list.vaults.length],
+  )
+
+  const replaceToken = useCallback(
+    async (vault: string, token: string) => {
+      const outcome = await signInAgain(vault, token, deps)
+      if (outcome.ok) {
+        const wasWaiting = loaded.phase === 'sign-in-again'
+        const next = await load(true)
+        if (wasWaiting) setNav({ tab: openingTab(await friends.hasFriends(), next.tabs), stack: [] })
+        else setNav((n) => navigate(n, { type: 'back' }))
+      }
+      return outcome
+    },
+    [deps, load, loaded.phase, friends],
+  )
+
+  const switchVault = useCallback(
+    async (vault: string) => {
+      await saveVaultList(store, openVault(await loadVaultList(store), vault))
+      await load(true)
+      setNav((n) => navigate(n, { type: 'home' }))
+    },
+    [store, load],
+  )
+
+  const removeVault = useCallback(
+    async (vault: string) => {
+      const wasOpen = openKey.current === vault
+      if (wasOpen) await stopSync(sync)
+      await forgetVaultAndToken(store, tokens, await loadVaultList(store), vault)
+      const next = await load(wasOpen)
+      if (next.phase !== 'ready') setNav({ tab: 'review', stack: [] })
+    },
+    [store, tokens, sync, load],
+  )
+
+  const resetCopy = useCallback(
+    async (vault: string) => {
+      const wasOpen = openKey.current === vault
+      if (wasOpen) await stopSync(sync)
+      await store.resetCopy(vault)
+      await load(wasOpen)
+      if (wasOpen) setNav((n) => navigate(n, { type: 'home' }))
+    },
+    [store, sync, load],
+  )
+
+  const eraseAll = useCallback(async () => {
+    // The friends sender, list and marks stop first; nothing of theirs is stored after the erase.
+    await friends.stop?.()
+    await stopSync(sync)
+    await signOutAndErase(store, tokens)
+    // The other tabs of the app stop too and show the first-run screen. The store already refuses their
+    // writes (the erase count is in the database); this makes their screens follow.
+    tellOtherTabs({ type: 'erased' })
+    await load(false)
+    setNav({ tab: 'review', stack: [] })
+  }, [store, tokens, sync, load, friends])
+
+  // Another tab erased the phone: stop the sync here and show the sign-in.
+  useEffect(
+    () =>
+      hearOtherTabs((message) => {
+        if (message.type !== 'erased') return
+        void stopSync(sync).then(async () => {
+          await load(false)
+          setNav({ tab: 'review', stack: [] })
+        })
+      }),
+    [sync, load],
+  )
+
+  const chooseFriends = useCallback(
+    async (vault: string) => {
+      await chooseFriendsVault(store, vault)
+      const friendsAccount = await loadFriendsAccount(store)
+      setLoaded((l) => ({ ...l, friendsAccount }))
+    },
+    [store],
+  )
+
+  const saveFriendsSettings = useCallback(
+    async (settings: FriendsSettings) => {
+      await friends.saveSettings(settings)
+      setLoaded((l) => ({ ...l, friendsSettings: settings }))
+    },
+    [friends],
+  )
+
+  // A tab the open vault does not have shows Search (`keepTab` makes it stay Search when the tabs change).
+  const tab = tabIn(nav.tab, loaded.tabs)
+  const shownNav = useMemo(() => (tab === nav.tab ? nav : { ...nav, tab }), [nav, tab])
+
+  const vault = openVaultOf(loaded.list)
+  const model: AppModel = {
+    services,
+    ...loaded,
+    vault,
+    vaultKey: vault === null ? null : vaultId(vault),
+    sync: syncState,
+    nav: shownNav,
+    go,
+    addVault,
+    replaceToken,
+    switchVault,
+    removeVault,
+    resetCopy,
+    eraseAll,
+    chooseFriendsVault: chooseFriends,
+    saveFriendsSettings,
+  }
+  return <AppContext.Provider value={model}>{children}</AppContext.Provider>
+}

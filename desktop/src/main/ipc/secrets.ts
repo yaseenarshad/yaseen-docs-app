@@ -26,6 +26,16 @@ const CLEAN: Readonly<Record<string, (value: string) => string | null>> = {
   [GITHUB_TOKEN_SECRET]: cleanToken,
 }
 
+const setListeners = new Set<(name: string) => void>()
+/**
+ * Hear each secret a renderer set or cleared, by name, never the value (YAZ-5086: a new GitHub token resets the Mac's
+ * send of the numbers). Returns its unsubscribe.
+ */
+export function onRendererSecretSet(listener: (name: string) => void): () => void {
+  setListeners.add(listener)
+  return () => setListeners.delete(listener)
+}
+
 /** `onSet` hears each name a renderer set or cleared: a new Pixabay key starts the favorites' backfill (YAZ-4363). */
 export function registerSecretsIpc(userData: string, onSet: (name: string) => void = () => undefined): Secrets {
   const secrets = createSecrets(join(userData, SECRETS_FILE))
@@ -39,6 +49,7 @@ export function registerSecretsIpc(userData: string, onSet: (name: string) => vo
     if (r.value !== null && clean === null) throw new BridgeFailure('BAD_REQUEST', 'That is not a GitHub token.')
     await secrets.set(name, clean)
     onSet(name)
+    for (const listener of setListeners) listener(name)
   })
   handle(CONTRACT.secrets.has, async (req: unknown) => {
     return secrets.has(str(requireRequest(req).name, 'name'))

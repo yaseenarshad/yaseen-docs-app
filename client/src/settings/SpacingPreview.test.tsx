@@ -51,11 +51,11 @@ it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every
     ['newPerDay', 'upNextPerDay', 'newOrder'],
     ['buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt'],
     ['retention', 'maxDays', 'fuzz', 'weights'],
-    ['shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
+    ['cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
     ['howCardsComeBack'],
-    ['githubToken'],
+    ['githubToken', 'friendsSend'],
   ])
   const spacing = SETTINGS_SECTIONS.find((s) => s.id === 'appearance')!.groups.find((g) => g.title === 'Spacing')!
-  expect(spacing.items.map((i) => i.id)).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview'])
-  for (const preview of [spacing.items[2], review.groups[6].items.at(-1)!]) expect(preview.bare).toBe(true)
+  expect(spacing.items.map((i) => i.id)).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview'])
+  for (const preview of [spacing.items[3], review.groups[6].items.at(-1)!]) expect(preview.bare).toBe(true)
 })

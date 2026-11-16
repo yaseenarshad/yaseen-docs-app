@@ -89,21 +89,31 @@ function draw(ctx: CanvasRenderingContext2D, p: Piece, alpha: number): void {
   ctx.restore()
 }
 
+/**
+ * How the phone plays it (YAZ-5495): over its Review screen (`within`), its canvas at most `maxDpr` (a phone's 3× costs
+ * nine times the pixels), and fewer pieces on a small screen.
+ */
+export interface ConfettiOptions {
+  within?: Element | null
+  maxDpr?: number
+  pieces?: number
+}
+
 /** Plays the burst from the middle of `from`, over the Inbox that holds it. Returns a stop (the canvas goes). */
-export function confettiBurst(from: Element): () => void {
-  const area = (from.closest('.card-inbox') ?? document.body).getBoundingClientRect()
+export function confettiBurst(from: Element, options: ConfettiOptions = {}): () => void {
+  const area = (options.within ?? from.closest('.card-inbox') ?? document.body).getBoundingClientRect()
   const ring = from.getBoundingClientRect()
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   if (ctx === null) return () => undefined
-  const dpr = window.devicePixelRatio || 1
+  const dpr = Math.min(window.devicePixelRatio || 1, options.maxDpr ?? Infinity)
   canvas.className = 'due-end-confetti'
   Object.assign(canvas.style, { left: `${area.left}px`, top: `${area.top}px`, width: `${area.width}px`, height: `${area.height}px` })
   canvas.width = Math.round(area.width * dpr)
   canvas.height = Math.round(area.height * dpr)
   ctx.scale(dpr, dpr)
   document.body.appendChild(canvas)
-  const pieces = confettiPieces(ring.left + ring.width / 2 - area.left, ring.top + ring.height / 2 - area.top)
+  const pieces = confettiPieces(ring.left + ring.width / 2 - area.left, ring.top + ring.height / 2 - area.top, options.pieces)
   let start: number | null = null
   let last = 0
   let frame = 0

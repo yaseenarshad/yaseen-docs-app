@@ -22,7 +22,7 @@
  * quotes only. A part the reader cannot read is `null`, and the comment keeps it as its text.
  */
 import { HIGHLIGHT_HEX } from '../../marks/highlightColours'
-import type { OperatorId } from '../../../views/view/filterRows'
+import type { OperatorId } from '../../../views/view/operatorId'
 
 /** The filter operators a view may hold, each with whether it takes a value (the folder pages' names, `filterRows.ts`). */
 export const VIEW_OPS = {

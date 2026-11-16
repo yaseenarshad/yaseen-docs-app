@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, type ReviewSettings } from '@shared/reviews'
+import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, REVIEW_SETTINGS_KEYS, type ReviewSettings } from '@shared/reviews'
 import type { VaultConfigChange } from '@shared/types'
 import { useReviewOnRoots, useReviewSettings, useVaultReviewSettings, type ReviewSettingsState } from './useReviewSettings'
 
@@ -100,10 +100,10 @@ describe('useReviewSettings', () => {
     const next = { ...state.settings, maxDays: 90 }
     await act(async () => state.save(next))
     expect(state.settings).toEqual(next)
-    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', newPerDay: 3, maxDays: 90 })
+    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', newPerDay: 3, maxDays: 90 }, REVIEW_SETTINGS_KEYS)
     // YAZ-4999 D1: an emptied "New cards a day" is written as null (no limit), and stays null once read back.
     await act(async () => state.save({ ...state.settings, newPerDay: null }))
-    expect(write).toHaveBeenLastCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', newPerDay: null, maxDays: 90 })
+    expect(write).toHaveBeenLastCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', newPerDay: null, maxDays: 90 }, REVIEW_SETTINGS_KEYS)
     expect(state.settings.newPerDay).toBeNull()
   })
 
@@ -155,7 +155,7 @@ describe('useReviewSettings', () => {
     read.mockResolvedValue({ buttons: 4 })
     await changed()
     await act(async () => state.save({ ...on, maxDays: 10 }))
-    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', REVIEW_SETTINGS_FILE, { buttons: 4, maxDays: 10 })
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', REVIEW_SETTINGS_FILE, { buttons: 4, maxDays: 10 }, REVIEW_SETTINGS_KEYS)
   })
 
   it('a save that fails falls back to what the file holds', async () => {

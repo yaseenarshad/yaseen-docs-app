@@ -6,7 +6,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileLink, isAppLink, parseFileLink } from '@shared/links'
-import { FILES_PREVIEW_FRAME, MEMORY_SAMPLE_MS, placeVaults, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
+import { FILES_PREVIEW_FRAME, GITHUB_TOKEN_SECRET, MEMORY_SAMPLE_MS, placeVaults, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createSpellWait } from '@shared/spelling'
@@ -19,6 +19,9 @@ import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
+import { registerFriendsIpc } from './ipc/friends'
+import { onRendererSecretSet } from './ipc/secrets'
+import { startFriendsSend } from './friends'
 import { registerSpellerIpc } from './ipc/speller'
 import { registerUpdateIpc } from './ipc/update'
 import { askHeap, askTabs, askViews, registerMemoryIpc } from './ipc/memory'
@@ -27,6 +30,7 @@ import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
+import { watchDailyPages } from './dailyPagesVaultFile'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
@@ -395,18 +399,31 @@ app.whenReady().then(() => {
   }
   const activeFileKind = (): FileKind | null => kindsInFront().activeKind
   const frontKind = (): FileKind | null => kindsInFront().frontKind
+  // File › Open Today's Daily Page (YAZ-5491): shown while Daily pages are on for the window a menu action targets, by
+  // its vaults' daily-pages.json (the one source), else the app value. A file that changes rebuilds the menu.
+  let dailyMoved: () => void = () => undefined
+  const dailyFiles = watchDailyPages(store, () => dailyMoved())
+  const dailyInFront = (): boolean => {
+    const wc = menuTarget()
+    const id = wc === undefined ? undefined : manager.idFor(wc)
+    const state = store.get()
+    const win = id === undefined ? undefined : state.windows.find((w) => w.id === id)
+    return win === undefined ? state.settings.dailyPages : dailyFiles.on(placeVaults(state.folders, win.roots), state.settings)
+  }
   const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(activeFileKind, () =>
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(
         buildMenuTemplate(
           // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
-          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyPages: store.get().settings.dailyPages },
+          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyPages: dailyInFront() },
           handlers,
         ),
       ),
     ),
     frontKind,
+    () => String(dailyInFront()),
   )
+  dailyMoved = applyMenu
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
   hotkeyRecording.onChange(applyMenu)
@@ -426,6 +443,13 @@ app.whenReady().then(() => {
     appPath: app.getAppPath(),
     macId: () => macId(),
   }, settingsFolder)
+  // The Mac sends the numbers too (YAZ-5086, decision 16): with the same token, when a file with cards changes, and once
+  // after the start. A new token (or a removed one) starts over.
+  const friendsSend = startFriendsSend(store, secrets, app.getPath('userData'))
+  registerFriendsIpc(() => friendsSend.look())
+  onRendererSecretSet((name) => {
+    if (name === GITHUB_TOKEN_SECRET) friendsSend.tokenChanged()
+  })
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'), store.get().settingsFolder)

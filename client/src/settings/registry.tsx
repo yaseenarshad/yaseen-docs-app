@@ -21,7 +21,8 @@
  * "Duplicate IDs" (YAZ-2677 🔒 D7) is beside it while the vault uses IDs, and calls `ids.check`.
  * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { spacingVars, type PageSpacing } from '@shared/textFormatting'
 import { COURSE_SETTINGS_GROUP } from '../course/courseSettings'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
@@ -29,8 +30,12 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, keyInWords, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
+import type { IconRule } from '@shared/vaultIcons'
+import { appCardLook, type CardLookSettings } from '@shared/cardLook'
 import { appTableLook, type TableLookSettings } from '@shared/tableLook'
+import type { FolderPagesVault } from '@shared/folderPages'
+import { cardLookVars } from '../review/cardLook'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -76,7 +81,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_SLOT_TIME_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_SLOT_TIME_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -392,10 +397,37 @@ export interface SettingsCtx {
   /** Daily pages › Open template (YAZ-3607): App opens the daily pages folder's `.template.md`, made empty first when missing. Absent with no vault. */
   openDailyTemplate?: () => void
   /**
+   * Page spacing (YAZ-5485): the vault's `spacing` in `text-formatting.json`, for the rows of Appearance › Spacing and
+   * Editor › Outline's bullets. `vaults` and `choose` are the Vault dropdown (the D15 control, as Text formatting has);
+   * `value` is what the vault draws (its spacing, else the app's values until it has one). Absent with no vault: the
+   * rows then edit the app's values.
+   */
+  pageSpacing?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: Required<PageSpacing>; save: (next: Required<PageSpacing>) => void }
+  /**
+   * The icon colours and name rules (YAZ-5488): the picked vault's icons.json `colors` and `rules` (each the app's
+   * until the vault has its own), with the Vault dropdown as Spacing's. Absent with no vault: the rows edit the app's.
+   */
+  /**
+   * The card look (YAZ-5484): the picked vault's card-look.json as the 13 settings (`value`: the app's until the vault
+   * has a file), with the Vault dropdown as Spacing's. Absent with no vault: the Card look rows edit the app's settings.
+   */
+  cardLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: CardLookSettings; save: (next: CardLookSettings) => void }
+  /**
    * The table look and new-table defaults (YAZ-5487): the picked vault's table-look.json as the 21 settings (`value`: the
    * app's until the vault has a file), with the Vault dropdown as Spacing's. Absent with no vault: the rows edit the app's.
    */
   tableLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: TableLookSettings; save: (next: TableLookSettings) => void }
+  /**
+   * The folder page view and page defaults (YAZ-5489, replaces YAZ-4585 D34): the picked vault's folder-pages.json as
+   * its 27 parts (`value`: the app's until the vault has a file), with the Vault dropdown. Absent with no vault: the rows
+   * edit the app's settings.
+   */
+  folderPages?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: FolderPagesVault; save: (next: Partial<FolderPagesSettings>) => void }
+  iconLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; rules: readonly IconRule[]; colors: SidebarIconColors; save: (look: { rules?: IconRule[]; colors?: SidebarIconColors }) => void }
+  /** Daily pages › Change… (YAZ-5491): App writes the folder to the file of the vault it was picked in. Absent with no vault. */
+  pickDailyFolder?: (folder: string, vault: string) => void
+  /** The vault whose `daily-pages.json` Settings › Daily pages shows (YAZ-5491); named only where the window has two or more. */
+  dailyPagesVault?: string
   /** Review › Card course › "Open the course" (YAZ-5120): App closes Settings and opens the course. */
   openCourse?: () => void
 }
@@ -430,6 +462,8 @@ export interface SettingsGroup {
   hint?: string
   /** Its rows are ONE vault's (YAZ-2602 R10): the group names that vault where the window has two or more. */
   vault?: true
+  /** The vault the group acts on, when it is not the active tab's (Daily pages, YAZ-5491); undefined names the active one. */
+  vaultOf?: (ctx: SettingsCtx) => string | undefined
   items: readonly SettingDef[]
   /** Drawn above the rows in place of the plain title (Settings › Hotkeys' key cards, YAZ-3564); the title still names the group in search. */
   header?: (ctx: SettingsCtx) => ReactNode
@@ -479,6 +513,23 @@ function iconColourShown(kind: SidebarIconKind, ctx: SettingsCtx): boolean {
   return settings.sidebarIconSet === 'line' || !(kind === 'text' || kind === 'pdf' || kind === 'image')
 }
 
+/** YAZ-5488: the icon colours and rules as the rows show them: the picked vault's, else the app's (no vault in the window). */
+const iconColorsOf = (ctx: SettingsCtx): SidebarIconColors => ctx.iconLook?.colors ?? ctx.settings.sidebarIconColors
+const iconRulesOf = (ctx: SettingsCtx): readonly IconRule[] => ctx.iconLook?.rules ?? ctx.settings.sidebarIconRules
+/** A colour or rules change: the picked vault's icons.json, or the app's settings with no vault. */
+function setIconLook(ctx: SettingsCtx, look: { rules?: IconRule[]; colors?: SidebarIconColors }): void {
+  if (ctx.iconLook !== undefined) return ctx.iconLook.save(look)
+  ctx.onChange({ ...ctx.settings, ...(look.rules !== undefined && { sidebarIconRules: look.rules }), ...(look.colors !== undefined && { sidebarIconColors: look.colors }) })
+}
+/** The Vault dropdown of the icon groups (YAZ-5488, the D15 control as Spacing has it): with two or more vaults. */
+const iconVaultRow = (id: string): SettingDef => ({
+  id,
+  label: 'Vault',
+  keywords: ['sidebar', 'tree', 'icon', 'icons', 'vault'],
+  available: (ctx) => (ctx.iconLook?.vaults.length ?? 0) > 1,
+  render: ({ iconLook }) => iconLook && <Select options={iconLook.vaults.map((v) => ({ label: v.name, value: v.root }))} value={iconLook.root} onChange={iconLook.choose} ariaLabel="Vault" />,
+})
+
 /** One kind's icon colour (YAZ-3440 D4, YAZ-5100 round 2): its picker and Reset (`IconColourControl`). */
 function iconColourRow(kind: SidebarIconKind): SettingDef {
   const name = (ctx: SettingsCtx) => sidebarIconKindLabel(kind, (text) => unit(ctx, text))
@@ -489,7 +540,7 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
     available: (ctx) => iconColourShown(kind, ctx),
     render: (ctx) => (
       <Suspense fallback={null}>
-        <IconColourControl kind={kind} name={name(ctx)} settings={ctx.settings} onChange={ctx.onChange} />
+        <IconColourControl kind={kind} name={name(ctx)} settings={ctx.settings} colors={iconColorsOf(ctx)} onColors={(colors) => setIconLook(ctx, { colors })} />
       </Suspense>
     ),
   }
@@ -500,6 +551,8 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 const REVIEW_KEYWORDS = ['cards', 'review', 'reviews', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
 /** "GitHub" (YAZ-5098, YAZ-5652): the token row loads only when Settings shows it, so the first load stays the same. */
 const GithubTokenControl = lazy(() => import('./GithubTokenControl').then((m) => ({ default: m.GithubTokenControl })))
+/** "Friends" (YAZ-5086): the Mac's send of the numbers, under the token; it loads only when Settings shows it. */
+const FriendsSendControl = lazy(() => import('./FriendsSendControl').then((m) => ({ default: m.FriendsSendControl })))
 /** "GitHub" (YAZ-5098, YAZ-5652): the Mac's GitHub token; the Cards words find this row too. */
 const GITHUB_KEYWORDS = [...REVIEW_KEYWORDS, 'github', 'token', 'friends', 'secret']
 /** Card spacing's rows (YAZ-5050). */
@@ -512,19 +565,67 @@ const reviewOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled 
 const CardSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.CardSpacingPreview })))
 const PageSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.PageSpacingPreview })))
 /** A preview row: bare (the preview is its own label), found by "preview" and the spacing words. */
-const previewRow = (id: string, label: string, keywords: readonly string[], Preview: typeof CardSpacingPreview, available?: (ctx: SettingsCtx) => boolean): SettingDef => ({
+const previewRow = (id: string, label: string, keywords: readonly string[], Preview: typeof CardSpacingPreview, available?: (ctx: SettingsCtx) => boolean, varsOf?: (ctx: SettingsCtx) => Record<string, string>): SettingDef => ({
   id,
   label,
   keywords: [...keywords, 'preview', 'sample'],
   bare: true,
   ...(available && { available }),
-  render: () => (
+  // `varsOf` (YAZ-5485): the picked vault's look over `.app`'s; `display: contents` adds no box.
+  render: (ctx) => (
     <Suspense fallback={null}>
-      <Preview />
+      {varsOf === undefined ? <Preview /> : (
+        <div style={{ display: 'contents', ...varsOf(ctx) } as CSSProperties}>
+          <Preview />
+        </div>
+      )}
     </Suspense>
   ),
 })
 
+/** Page spacing as the rows show it (YAZ-5485): the picked vault's, else the app's values (no vault in the window). */
+const pageSpacingOf = (ctx: SettingsCtx): Required<PageSpacing> =>
+  ctx.pageSpacing?.value ?? { line: ctx.settings.lineSpacing, blockGap: ctx.settings.blockGap, bulletIndent: ctx.settings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent, bulletGap: ctx.settings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap }
+/** A page spacing row's change: the vault's file, or the app's values with no vault. */
+function setPageSpacing(ctx: SettingsCtx, patch: Partial<PageSpacing>): void {
+  if (ctx.pageSpacing !== undefined) return ctx.pageSpacing.save({ ...ctx.pageSpacing.value, ...patch })
+  const next = { ...ctx.settings }
+  if (patch.line !== undefined) next.lineSpacing = patch.line
+  if (patch.blockGap !== undefined) next.blockGap = patch.blockGap
+  if (patch.bulletIndent !== undefined) next.pageBulletIndent = patch.bulletIndent
+  if (patch.bulletGap !== undefined) next.pageBulletGap = patch.bulletGap
+  ctx.onChange(next)
+}
+/**
+ * The Card look rows (YAZ-5484): each reads and writes the picked vault's look (`ctx.cardLook`, card-look.json; the
+ * app's values until the vault has a file) through a ctx whose `settings` carry that look and whose `onChange` saves
+ * the 13 keys into the vault. With no vault in the window, the app's settings, as before. A Vault dropdown first.
+ */
+function cardLookCtx(ctx: SettingsCtx): SettingsCtx {
+  const look = ctx.cardLook
+  if (look === undefined) return ctx
+  return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appCardLook(next)) }
+}
+function cardLookItems(items: readonly SettingDef[]): SettingDef[] {
+  const vaultRow: SettingDef = {
+    id: 'cardLookVault',
+    label: 'Vault',
+    keywords: [...REVIEW_KEYWORDS, 'card look', 'vault'],
+    available: (ctx) => reviewOn(ctx) && (ctx.cardLook?.vaults.length ?? 0) > 1,
+    render: ({ cardLook }) => cardLook && <Select options={cardLook.vaults.map((v) => ({ label: v.name, value: v.root }))} value={cardLook.root} onChange={cardLook.choose} ariaLabel="Vault" />,
+  }
+  const through = <T,>(f: T | ((ctx: SettingsCtx) => T)): T | ((ctx: SettingsCtx) => T) => (typeof f === 'function' ? (ctx: SettingsCtx) => (f as (ctx: SettingsCtx) => T)(cardLookCtx(ctx)) : f)
+  return [
+    vaultRow,
+    ...items.map((def): SettingDef => ({
+      ...def,
+      label: through(def.label),
+      ...(def.hint !== undefined && { hint: through(def.hint) }),
+      ...(def.available !== undefined && { available: (ctx: SettingsCtx) => def.available!(cardLookCtx(ctx)) }),
+      render: (ctx) => def.render(cardLookCtx(ctx)),
+    })),
+  ]
+}
 /**
  * The Tables rows of the 21 vault settings (YAZ-5487): each reads and writes the picked vault's table-look.json
  * (`ctx.tableLook`; the app's values until the vault has a file) through a ctx whose `settings` carry that look and whose
@@ -853,27 +954,37 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        // YAZ-5485: the vault's page spacing (`text-formatting.json` › `spacing`), with its own Vault dropdown where the
+        // window has two or more (the D15 control, as Text formatting); the phone's reader follows it.
         title: 'Spacing',
         items: [
+          {
+            id: 'spacingVault',
+            label: 'Vault',
+            keywords: ['spacing', 'vault'],
+            available: (ctx) => (ctx.pageSpacing?.vaults.length ?? 0) > 1,
+            render: ({ pageSpacing }) =>
+              pageSpacing && <Select options={pageSpacing.vaults.map((v) => ({ label: v.name, value: v.root }))} value={pageSpacing.root} onChange={pageSpacing.choose} ariaLabel="Vault" />,
+          },
           {
             id: 'lineSpacing',
             label: 'Line spacing',
             keywords: ['line height'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={LINE_SPACING_PRESETS} value={settings.lineSpacing} onChange={(lineSpacing) => onChange({ ...settings, lineSpacing })} ariaLabel="Line spacing" />
+            render: (ctx) => (
+              <Segmented options={LINE_SPACING_PRESETS} value={pageSpacingOf(ctx).line} onChange={(line) => setPageSpacing(ctx, { line })} ariaLabel="Line spacing" />
             ),
           },
           {
             id: 'blockGap',
             label: 'Space between blocks',
             keywords: ['gap', 'paragraph'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={BLOCK_GAP_PRESETS} value={settings.blockGap} onChange={(blockGap) => onChange({ ...settings, blockGap })} ariaLabel="Space between blocks" />
+            render: (ctx) => (
+              <Segmented options={BLOCK_GAP_PRESETS} value={pageSpacingOf(ctx).blockGap} onChange={(blockGap) => setPageSpacing(ctx, { blockGap })} ariaLabel="Space between blocks" />
             ),
           },
           // YAZ-5050 round 2 (Yaseen: "add that preview of what the spacing on the text would be like ... in appearance
           // spacing"): sample text in the page's own classes, redrawn as the two rows above change.
-          previewRow('pageSpacingPreview', 'Preview', ['spacing', 'line spacing', 'line height', 'space between blocks', 'gap', 'paragraph'], PageSpacingPreview),
+          previewRow('pageSpacingPreview', 'Preview', ['spacing', 'line spacing', 'line height', 'space between blocks', 'gap', 'paragraph'], PageSpacingPreview, undefined, (ctx) => (ctx.pageSpacing === undefined ? {} : spacingVars(ctx.pageSpacing.value))),
         ],
       },
       {
@@ -920,7 +1031,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-4615 D10: one line at the top of each new page, so an agent knows where comments go.
             id: 'commentsHint',
             label: (ctx) => unit(ctx, 'Add the comment hint to new pages'),
-            hint: 'Each new page gets one hidden line that tells an agent how to add a comment.',
+            // YAZ-5490: the active tab's vault's (`new-places.json`): it writes into the vault's pages.
+            hint: 'Each new page gets one hidden line that tells an agent how to add a comment. Saved in this vault.',
             keywords: ['comment hint', 'agent', 'ai', 'new page', 'yaml'],
             render: (ctx) => (
               <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.commentsHint} onChange={(commentsHint) => ctx.onChange({ ...ctx.settings, commentsHint })} ariaLabel={unit(ctx, 'Add the comment hint to new pages')} />
@@ -1060,21 +1172,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           // YAZ-3440 D4, YAZ-5100 round 2: a colour of its own for each kind, in both icon sets, while the icons have colour.
+          // YAZ-5488: the colours are the vault's (icons.json `colors`), with its Vault dropdown where the window has two or more.
+          iconVaultRow('iconColorsVault'),
           ...SIDEBAR_ICON_KINDS.map(iconColourRow),
         ],
       },
       {
-        // YAZ-3440 D9: the name rules, one list for every vault.
+        // YAZ-5488 (replaces YAZ-3440 D9's one list for every vault): the name rules are the vault's, in its icons.json.
         title: 'Icon rules',
         items: [
+          iconVaultRow('iconRulesVault'),
           {
-            // YAZ-3440 D9: the name rules are a setting, one list for every vault; a row's own pick wins over them.
+            // A row's own pick wins over them. The picked vault's rules (YAZ-5488); the phone's Search tree shows them too.
             id: 'sidebarIconRules',
             label: 'Icon rules',
-            hint: 'Give each file or folder whose name matches a pattern its own icon, in every vault and both icon sets. * stands for any characters. The first rule that matches wins; a row\'s own icon (right-click, Change icon ▸ This file…) wins over every rule.',
+            hint: 'Give each file or folder whose name matches a pattern its own icon, in both icon sets. * stands for any characters. The first rule that matches wins; a row\'s own icon (right-click, Change icon ▸ This file…) wins over every rule. Saved in the vault, so the phone shows them too.',
             keywords: ['sidebar', 'tree', 'icon', 'icons', 'rule', 'rules', 'pattern', 'glob', 'custom'],
             wide: true,
-            render: ({ settings, onChange }) => <IconRulesControl rules={settings.sidebarIconRules} onChange={(sidebarIconRules) => onChange({ ...settings, sidebarIconRules })} />,
+            render: (ctx) => <IconRulesControl rules={iconRulesOf(ctx)} onChange={(rules) => setIconLook(ctx, { rules })} />,
           },
         ],
       },
@@ -1164,21 +1279,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // The YAZ-3818 demo: the page's bullets, as the cells' have their own (Settings › Tables › All tables).
             id: 'pageBulletIndent',
             label: 'Bullet indent',
-            hint: 'How far each child level steps in.',
+            // YAZ-5485: the vault's, with Line spacing (the vault picked in Appearance › Spacing).
+            hint: 'How far each child level steps in. Saved in the vault, with its spacing.',
             keywords: ['bullet', 'indent', 'spacing', 'list', 'nested', 'child', 'outline'],
-            render: ({ settings, onChange }) => (
-              <PxSetting name="Bullet indent" value={settings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent} fallback={DEFAULT_SETTINGS.pageBulletIndent}
-                min={PAGE_BULLET_INDENT_MIN} max={PAGE_BULLET_INDENT_MAX} step={2} onSet={(pageBulletIndent) => onChange({ ...settings, pageBulletIndent })} />
+            render: (ctx) => (
+              <PxSetting name="Bullet indent" value={pageSpacingOf(ctx).bulletIndent} fallback={DEFAULT_SETTINGS.pageBulletIndent}
+                min={PAGE_BULLET_INDENT_MIN} max={PAGE_BULLET_INDENT_MAX} step={2} onSet={(bulletIndent) => setPageSpacing(ctx, { bulletIndent })} />
             ),
           },
           {
             id: 'pageBulletGap',
             label: 'Bullet gap',
-            hint: 'The space between a bullet and its text; a bigger gap moves the text, not the bullet.',
+            hint: 'The space between a bullet and its text; a bigger gap moves the text, not the bullet. Saved in the vault, with its spacing.',
             keywords: ['bullet', 'gap', 'spacing', 'list', 'text', 'outline'],
-            render: ({ settings, onChange }) => (
-              <PxSetting name="Bullet gap" value={settings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap} fallback={DEFAULT_SETTINGS.pageBulletGap}
-                min={PAGE_BULLET_GAP_MIN} max={PAGE_BULLET_GAP_MAX} step={1} onSet={(pageBulletGap) => onChange({ ...settings, pageBulletGap })} />
+            render: (ctx) => (
+              <PxSetting name="Bullet gap" value={pageSpacingOf(ctx).bulletGap} fallback={DEFAULT_SETTINGS.pageBulletGap}
+                min={PAGE_BULLET_GAP_MIN} max={PAGE_BULLET_GAP_MAX} step={1} onSet={(bulletGap) => setPageSpacing(ctx, { bulletGap })} />
             ),
           },
         ],
@@ -1760,7 +1876,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-3556 D3: the New… box uses it too, for pages, drawings and diagrams.
             hint: ({ settings }) => {
               const key = menuKey('newItem', settings)
-              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page.`
+              // YAZ-5486: the active tab's vault's (`new-places.json`).
+              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page. Saved in this vault.`
             },
             keywords: ['folder', 'wikilink', 'new', 'cmd n', 'drawing', 'diagram'],
             // A plain label-left / dropdown-right row, until the folder input needs the width.
@@ -1813,7 +1930,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-3943 demo 2: new boards only; a board's own cog still moves its pictures. Demo round 3: a folder you pick.
             id: 'newBoardPictures',
             label: 'New boards keep pictures',
-            hint: 'For drawings the app makes from now on. A board\'s cog moves its own pictures.',
+            // YAZ-5486: the active tab's vault's (`new-places.json`).
+            hint: 'For drawings the app makes from now on. A board\'s cog moves its own pictures. Saved in this vault.',
             keywords: ['pictures', 'images', 'assets', 'drawing', 'board', 'folder', 'pictures folder'],
             // A plain row, until the chosen folder and "Choose…" need the width (the new-page folder's rule).
             wide: ({ settings }) => settings.newBoardPictures === 'folder',
@@ -1834,7 +1952,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       {
         // YAZ-3607 D8: today's page, for the footer button, File › Open Today's Daily Page and ⌘D on "Today's daily page".
         // One switch (`dailyPages`); the other rows show while it is on.
+        // YAZ-5491: the vault's `.yaseendocs/daily-pages.json`, the one source (the phone reads it too). App writes the
+        // file of the vault that holds the daily pages (`saveDaily`); the line under the title names it.
         title: 'Daily pages',
+        vault: true,
+        vaultOf: (ctx) => ctx.dailyPagesVault,
         items: [
           {
             id: 'dailyPages',
@@ -1853,7 +1975,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['daily', 'folder', 'template', 'journal'],
             available: ({ settings }) => settings.dailyPages,
             wide: () => true,
-            render: ({ settings, onChange, places, openDailyTemplate }) => <DailyPageFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} />,
+            render: ({ settings, onChange, places, openDailyTemplate, pickDailyFolder }) => <DailyPageFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} onPickFolder={pickDailyFolder} />,
           },
           {
             id: 'dailyPageFormat',
@@ -2065,10 +2187,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'cards',
     title: 'Cards',
     available: (ctx) => ctx.review !== undefined,
-    vault: true,
-    page: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
+    // YAZ-5483: the section is not all the vault's. The groups saved in review.json are `vault: true` (they name the
+    // vault in a window with two or more); Card look and the Inbox O row are the app's settings and say so.
+    page: "These settings are saved in this vault's .yaseendocs folder and sync with it, except the ones marked For the whole app.",
     groups: [
       {
+        vault: true,
         items: [
           {
             id: 'enabled',
@@ -2132,6 +2256,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       // rows, in groups by what they are for. Only the grouping and the order changed.
       {
         title: 'Daily limits',
+        vault: true,
         items: [
           reviewField('newPerDay', NEW_PER_DAY_FIELD, 'New cards a day', 'How many new cards the Inbox shows each day. Empty means no limit.', 'cards'),
           // YAZ-5028: beside New cards a day, the same box.
@@ -2162,6 +2287,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'Answers',
+        vault: true,
         items: [
           {
             id: 'buttons',
@@ -2231,7 +2357,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // the page they can"): the app's settings, as Card look's rows: a habit of the person, not of the vault.
             id: 'inboxOpenAt',
             label: (ctx) => unit(ctx, 'Inbox: O opens the page at'),
-            hint: (ctx) => unit(ctx, 'Where O in the Inbox opens a card that is in a page: at the top of the page, or at the card, with one flash. A card file opens as before.'),
+            hint: (ctx) => unit(ctx, 'Where O in the Inbox opens a card that is in a page: at the top of the page, or at the card, with one flash. A card file opens as before. For the whole app.'),
             keywords: [...REVIEW_KEYWORDS, 'inbox', 'open', 'o', 'top', 'card', 'land', 'jump', 'scroll'],
             available: reviewOn,
             render: (ctx) => (
@@ -2250,6 +2376,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'Scheduling',
+        vault: true,
         items: [
           reviewField('retention', RETENTION_FIELD, 'Remember rate', 'How sure you want to be to remember a card when it comes back. Higher means shorter waits. 70 to 99.', '%'),
           reviewField('maxDays', wholeField('maxDays'), 'Longest wait', 'A card never waits longer than this.', 'days'),
@@ -2266,12 +2393,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'Card look',
-        items: [
+        // YAZ-5484 (replaces YAZ-5005's "one setting for the whole app"): every row here writes the picked vault's
+        // card-look.json (`cardLookItems`), with the Vault dropdown where the window has two or more; the phone draws
+        // its cards with it too.
+        hint: "Saved in the vault's card-look.json: each vault has its own look, on this Mac and on the phone.",
+        items: cardLookItems([
           {
-            // YAZ-5005: how the app looks, for every vault (the app's settings, not review.json): `data-shown-hidden-words` on `.app`.
+            // YAZ-5005, the vault's since YAZ-5484 (card-look.json): `--shown-hidden-words` on each surface of its cards.
             id: 'shownHiddenWords',
             label: 'Shown hidden words',
-            hint: 'How a hidden word looks once it shows: in the page, the Inbox and the card window. For the whole app.',
+            hint: 'How a hidden word looks once it shows: in the page, the Inbox and the card window.',
             keywords: [...REVIEW_KEYWORDS, 'cloze', 'highlight', 'underline'],
             available: reviewOn,
             render: ({ settings, onChange }) => (
@@ -2443,8 +2574,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           // YAZ-5050 round 2: a sample card in the card's own render and styles, redrawn as the rows above change.
-          previewRow('cardSpacingPreview', 'Card preview', [...CARD_SPACING_KEYWORDS, 'cloze', 'highlight', 'underline', 'box'], CardSpacingPreview, reviewOn),
-        ],
+          // YAZ-5484: in the picked vault's look (its whole variables over `.app`'s).
+          previewRow('cardSpacingPreview', 'Card preview', [...CARD_SPACING_KEYWORDS, 'cloze', 'highlight', 'underline', 'box'], CardSpacingPreview, reviewOn, (ctx) =>
+            ctx.cardLook === undefined ? {} : (cardLookVars({ ...ctx.settings, ...ctx.cardLook.value }, true) as Record<string, string>),
+          ),
+        ]),
       },
       {
         // YAZ-5020: the same-day rules in plain words, closed by default.
@@ -2477,6 +2611,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: () => (
               <Suspense fallback={null}>
                 <GithubTokenControl />
+              </Suspense>
+            ),
+          },
+          {
+            // YAZ-5086 (decision 16): the Mac sends the numbers too, with the token above. No switch (decision 22).
+            id: 'friendsSend',
+            label: 'Friends',
+            hint: 'This Mac sends your numbers to your friends too, when your cards change. Add friends in the phone app.',
+            keywords: GITHUB_KEYWORDS,
+            wide: true,
+            available: reviewOn,
+            render: () => (
+              <Suspense fallback={null}>
+                <FriendsSendControl />
               </Suspense>
             ),
           },

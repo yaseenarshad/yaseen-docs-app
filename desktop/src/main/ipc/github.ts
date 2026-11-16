@@ -50,7 +50,7 @@ export function registerGithubIpc(store: Store, onStatus?: (status: GithubSyncSt
     // Every live window hears about every vault; renderers filter by `status.root` (the `state:changed` posture).
     onStatus: (status) => {
       broadcastAll(CONTRACT.github.onStatus.channel, status)
-      // Main's own listener (YAZ-5487: a vault's first pull lets the table look be seeded).
+      // Main's own listener (YAZ-5476, YAZ-5487: a vault's first pull lets the daily pages file and the table look be seeded).
       onStatus?.(status)
     },
     syncPass,

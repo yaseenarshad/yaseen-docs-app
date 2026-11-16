@@ -58,3 +58,34 @@ describe('mergePageComments: the rest merges line by line (D9)', () => {
     expect(m?.text).toContain('Para one, edited by Sam.')
   })
 })
+
+describe('YAZ-5512 X1: the page merge never throws (sync must never stop on one page)', () => {
+  it('a merged rest whose block will not take the comments: null (resolve.ts keeps both), never a throw', () => {
+    const base = '# Words\n\nBody\n'
+    const theirs = `---\ncomments:\n${e('a', 1, '1', 'phone')}---\n# Words\n\nBody, theirs\n`
+    const mine = '# Words edited\n\nBody\n'
+    // A line merge that came out with a block that is not YAML (both sides wrote into it).
+    const broken: LineMerge = () => '---\na: [\n---\n# Words edited\n\nBody\n'
+    let out: ReturnType<typeof mergePageComments> | undefined
+    expect(() => (out = mergePageComments(base, theirs, mine, broken))).not.toThrow()
+    expect(out).toBeNull()
+  })
+
+  it('a block that held only `comments` is no block in the rest: a phone comment on a page with no properties leaves the rest unchanged', () => {
+    const before = '# Words\n\n```card\nHola\n---\nHello\n```\n<!-- card: NC-1 -->\n'
+    const theirs = `---\ncomments:\n${e('a', 1, '1', 'phone')}---\n${before}`
+    expect(pageRest(theirs)).toBe(before)
+    // A block of the page's own keeps its other keys, and an empty block the page already had stays.
+    expect(pageRest(`---\ntitle: P\ncomments:\n${e('a', 1, '1', 'x')}---\nBody\n`)).toBe('---\ntitle: P\n---\nBody\n')
+    expect(pageRest('---\n---\nBody\n---\n')).toBe('---\n---\nBody\n---\n')
+  })
+
+  it('a phone comment on a page with no properties and a card back merges with a Mac edit of the first line without throwing, and without a copy', () => {
+    const base = '# Words\n\n```card\nHola\n---\nHello\n```\n<!-- card: NC-1 -->\n'
+    const theirs = `---\ncomments:\n${e('a', 1, '1', 'phone')}---\n${base}`
+    const mine = base.replace('# Words', '# Words edited')
+    const out = mergePageComments(base, theirs, mine, byLine)
+    expect(out?.copy).toBeUndefined()
+    expect(out?.text).toBe(`---\ncomments:\n${e('a', 1, '1', 'phone')}---\n${mine}`)
+  })
+})

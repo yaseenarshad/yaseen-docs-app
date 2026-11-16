@@ -17,7 +17,9 @@ import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { ShowIdsSettings } from '../search/showIds'
 import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
+import { appCardLook } from '@shared/cardLook'
 import { appTableLook, type TableLookSettings } from '@shared/tableLook'
+import { folderPagesVault } from '@shared/folderPages'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { UNIT_WORDS, unitTextOf } from '../vault/unitWord'
 import { idsAskMessage, idsLettersAsk, KEEP_OTHER_ASK, keepIdsAskMessage, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
@@ -180,8 +182,8 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
 const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
-/** Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row. */
-const FRIENDS_ROWS = ['githubToken']
+/** Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row, and the Mac's send of the numbers (YAZ-5086). */
+const FRIENDS_ROWS = ['githubToken', 'friendsSend']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -469,7 +471,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Images', []],
       ['Files & Links', []],
       ['Folder pages', []],
-      ['Cards', [['settings-cards', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
+      ['Cards', [['settings-cards', "These settings are saved in this vault's .yaseendocs folder and sync with it, except the ones marked For the whole app."]]],
       ['Sync', [['settings-sync', "These settings are saved in this vault's .yaseendocs folder, not app-wide."]]],
       ['Memory', [['settings-memory', 'The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.']]],
       ['Hotkeys', []],
@@ -494,18 +496,51 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Code', []],
       ['Drawings and diagrams', []],
       ['Images', []],
-      ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
+      // YAZ-5491: Daily pages are the vault's daily-pages.json.
+      [
+        'Files & Links',
+        [
+          { text: 'Vault: Work', under: 'Daily pages', className: 'settings-group__hint' },
+          { text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' },
+        ],
+      ],
       ['Folder pages', []],
-      ['Cards', [{ text: 'Vault: Work', under: 'Cards', className: 'settings-section__note' }]],
+      // YAZ-5483: Cards names the vault on each group saved in review.json, not on the page (Card look is the app's).
+      [
+        'Cards',
+        [
+          { text: 'Vault: Work', under: undefined, className: 'settings-group__hint' },
+          { text: 'Vault: Work', under: 'Daily limits', className: 'settings-group__hint' },
+          { text: 'Vault: Work', under: 'Answers', className: 'settings-group__hint' },
+          { text: 'Vault: Work', under: 'Scheduling', className: 'settings-group__hint' },
+        ],
+      ],
       ['Sync', [{ text: 'Vault: Work', under: 'Sync', className: 'settings-section__note' }]],
       ['Memory', []],
       ['Hotkeys', []],
     ])
     clickNav(el, 'Cards')
-    expect([...el.querySelectorAll('.settings-section__note')].map((n) => n.textContent)).toEqual(['Vault: Work', "These settings are saved in this vault's .yaseendocs folder and sync with it."])
+    expect([...el.querySelectorAll('.settings-section__note')].map((n) => n.textContent)).toEqual(["These settings are saved in this vault's .yaseendocs folder and sync with it, except the ones marked For the whole app."])
     unmount()
     const one = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON, { enabled: true, held: false })
     expect(lines(one.el).flatMap(([, found]) => found)).toEqual([])
+  })
+
+  it("YAZ-5483: Cards says which rows are the vault's and which are for the whole app — Card look and the Inbox O row are the app's", () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON, { enabled: true, held: false }, 'Work')
+    clickNav(el, 'Cards')
+    const groups = [...el.querySelectorAll<HTMLElement>('#settings-cards .settings-group')].map((g) => ({
+      title: g.querySelector('.settings-group__title')?.textContent,
+      vault: [...g.querySelectorAll('.settings-group__hint')].some((h) => h.textContent === 'Vault: Work'),
+      wholeApp: [...g.querySelectorAll('.settings-group__hint')].some((h) => h.textContent?.startsWith('For the whole app') === true),
+    }))
+    // YAZ-5484: Card look is the vault's now (card-look.json), with its own Vault dropdown (as Spacing): no "For the whole app".
+    expect(groups.find((g) => g.title === 'Card look')).toEqual({ title: 'Card look', vault: false, wholeApp: false })
+    for (const title of [undefined, 'Daily limits', 'Answers', 'Scheduling']) expect(groups.find((g) => g.title === title), String(title)).toMatchObject({ vault: true, wholeApp: false })
+    expect(el.querySelector('#settings-cards [data-setting="inboxOpenAt"] .setting__hint')?.textContent).toMatch(/For the whole app\.$/)
+    // A Card look row's own hint does not repeat it: its group says it.
+    expect(el.querySelector('#settings-cards [data-setting="shownHiddenWords"] .setting__hint')?.textContent).not.toContain('whole app')
+    unmount()
   })
 
   it('Hotkeys is a page like the others, under the divider: clicking it swaps the pane for its groups, one row per key, and takes aria-current="page"', () => {
@@ -977,6 +1012,41 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     act(() => rowButtons(container!, 'tableNextShade')[0].click())
     expect(save).toHaveBeenLastCalledWith({ ...value, tableNextShade: true })
     expect(app).not.toHaveBeenCalled()
+  })
+
+  it('Calendar tables › Time in slot (YAZ-5602): the vault\'s (table-look.json, round 2): Off by default, under Mark the current time; Show seconds shows only while it counts; each writes the vault, the other look kept; no row with no vault', () => {
+    const mountLook = (value: TableLookSettings) => {
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      const save = vi.fn()
+      const onChange = vi.fn()
+      const tableLook = { vaults: [{ root: '/a', name: 'Alpha' }], root: '/a', choose: vi.fn(), value, save }
+      act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, tableLook }} onClose={vi.fn()} />))
+      clickNav(container, 'Tables')
+      return { el: container, save, onChange }
+    }
+    const base = { ...appTableLook(DEFAULT_SETTINGS), tableRowBand: 'calendar' as const }
+    const { el, save, onChange } = mountLook(base)
+    expect(row(el, 'tableSlotTime')?.querySelector('.setting__label')?.textContent).toBe('Time in slot')
+    expect(rowButtons(el, 'tableSlotTime').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'true'], ['Count down', 'false'], ['Count up', 'false']])
+    expect(row(el, 'tableSlotTime')?.previousElementSibling?.getAttribute('data-setting')).toBe('tableNowMark')
+    expect(row(el, 'tableSlotSeconds')).toBeNull()
+    act(() => rowButtons(el, 'tableSlotTime')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...base, tableSlotTime: 'down' })
+    expect(onChange).not.toHaveBeenCalled()
+    unmount()
+    const on = mountLook({ ...base, tableSlotTime: 'down' })
+    expect(rowButtons(on.el, 'tableSlotSeconds').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    act(() => rowButtons(on.el, 'tableSlotSeconds')[1].click())
+    expect(on.save).toHaveBeenLastCalledWith({ ...base, tableSlotTime: 'down', tableSlotSeconds: false })
+    // Another vault row keeps the vault's Time in slot.
+    act(() => rowButtons(on.el, 'tableRowBand').find((b) => b.textContent === 'Off')!.click())
+    expect(on.save).toHaveBeenLastCalledWith({ ...base, tableRowBand: 'off', tableSlotTime: 'down' })
+    unmount()
+    const none = mountOn('Tables')
+    expect(row(none.el, 'tableSlotTime')).toBeNull()
+    expect(row(none.el, 'tableSlotSeconds')).toBeNull()
   })
 
   it('Calendar tables › Now button (YAZ-4163 demo): On by default; Off writes only its own field', () => {
@@ -1457,6 +1527,64 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(on.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Journal', dailyPageOpens: 'page' })
   })
 
+  it('YAZ-5485: Spacing and the bullets write the picked vault\'s spacing; the Vault dropdown shows with two vaults; the app value with no vault', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const save = vi.fn()
+    const choose = vi.fn()
+    const onChange = vi.fn()
+    const value = { line: 1.5, blockGap: 4, bulletIndent: 34, bulletGap: 10 }
+    const pageSpacing = { vaults: [{ root: '/a', name: 'Alpha' }, { root: '/b', name: 'Beta' }], root: '/b', choose, value: { ...value, line: 2 }, save }
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, pageSpacing }} onClose={vi.fn()} />))
+    clickNav(container, 'Appearance')
+    const select = row(container, 'spacingVault')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Alpha', 'Beta'])
+    expect(rowButtons(container, 'lineSpacing').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('2.0')
+    act(() => rowButtons(container!, 'blockGap').find((b) => b.textContent === 'Relaxed')!.click())
+    expect(save).toHaveBeenLastCalledWith({ ...value, line: 2, blockGap: 8 })
+    expect(onChange).not.toHaveBeenCalled()
+    act(() => {
+      select.value = '/a'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(choose).toHaveBeenCalledWith('/a')
+    unmount()
+    const none = mountOn('Appearance')
+    expect(row(none.el, 'spacingVault')).toBeNull()
+    act(() => rowButtons(none.el, 'lineSpacing').find((b) => b.textContent === '2.0')!.click())
+    expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
+  })
+
+  it('YAZ-5489: the Folder pages view and page rows read and write the picked vault\'s folder-pages.json, with the Vault dropdown; the personal rows stay the app\'s; the app\'s settings with no vault', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const save = vi.fn()
+    const choose = vi.fn()
+    const onChange = vi.fn()
+    const value = folderPagesVault({ rowHeight: 'tall' })
+    const folderPages = { vaults: [{ root: '/a', name: 'Alpha' }, { root: '/b', name: 'Beta' }], root: '/a', choose, value, save }
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, folderPages }} onClose={vi.fn()} />))
+    clickNav(container, 'Folder pages')
+    expect([...(row(container, 'folderPagesVault')?.querySelector('select')?.options ?? [])].map((o) => o.textContent)).toEqual(['Alpha', 'Beta'])
+    expect(rowButtons(container, 'folderPages.rowHeight').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Tall')
+    act(() => rowButtons(container!, 'folderPages.rowHeight').find((b) => b.textContent === 'Medium')!.click())
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ rowHeight: 'medium' }))
+    act(() => rowButtons(container!, 'folderPages.showOtherFiles').find((b) => b.textContent === 'Off')!.click())
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ rowHeight: 'tall', showOtherFiles: false }))
+    expect(onChange).not.toHaveBeenCalled()
+    // A personal row (Week starts on) stays this Mac's.
+    act(() => rowButtons(container!, 'folderPages.weekStartsOn').find((b) => b.getAttribute('aria-pressed') !== 'true')!.click())
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledTimes(2)
+    unmount()
+    const none = mountOn('Folder pages')
+    expect(row(none.el, 'folderPagesVault')).toBeNull()
+    act(() => rowButtons(none.el, 'folderPages.rowHeight').find((b) => b.textContent === 'Tall')!.click())
+    expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, folderPages: { ...DEFAULT_SETTINGS.folderPages, rowHeight: 'tall' } })
+  })
+
   it('YAZ-5487: the Tables rows read and write the picked vault\'s table-look.json (the 21 settings), with the Vault dropdown with two vaults; the habits stay the app\'s; the app\'s settings with no vault', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -1493,6 +1621,90 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(row(none.el, 'tableLookVault')).toBeNull()
     act(() => rowButtons(none.el, 'tableRowBand').find((b) => b.textContent === 'Off')!.click())
     expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, tableRowBand: 'off' })
+  })
+
+  it('YAZ-5484: Card look reads and writes the picked vault\'s card-look.json (the 13 settings), with the Vault dropdown with two vaults; the preview wears that vault\'s look; the app\'s settings with no vault', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const save = vi.fn()
+    const choose = vi.fn()
+    const onChange = vi.fn()
+    const value = { ...appCardLook(DEFAULT_SETTINGS), shownHiddenWords: 'box' as const, cardSpacing: 'custom' as const, cardLineSpacing: 2 }
+    const cardLook = { vaults: [{ root: '/a', name: 'Alpha' }, { root: '/b', name: 'Beta' }], root: '/b', choose, value, save }
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, review: { settings: REVIEW_ON, save: vi.fn() }, cardLook }} onClose={vi.fn()} />))
+    clickNav(container, 'Cards')
+    const select = row(container, 'cardLookVault')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Alpha', 'Beta'])
+    expect(select.selectedIndex).toBe(1)
+    // The vault's value shows (Box, and Custom's own rows), not the app's (Highlight, Same as pages).
+    expect(rowButtons(container, 'shownHiddenWords').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Box')
+    expect(row(container, 'cardLineSpacing')).not.toBeNull()
+    act(() => rowButtons(container!, 'shownHiddenWords').find((b) => b.textContent === 'Underline')!.click())
+    expect(save).toHaveBeenLastCalledWith({ ...value, shownHiddenWords: 'underline' })
+    expect(onChange).not.toHaveBeenCalled()
+    // The preview wears the vault's whole look.
+    await act(async () => await import('./SpacingPreview'))
+    const wrap = container.querySelector<HTMLElement>('[data-preview="card"]')?.parentElement
+    expect(wrap?.style.getPropertyValue('--shown-hidden-words')).toBe('box')
+    expect(wrap?.style.getPropertyValue('--card-line-height')).toBe('2')
+    act(() => {
+      select.value = '/a'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(choose).toHaveBeenCalledWith('/a')
+    unmount()
+    const none = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, REVIEW_ON)
+    expect(row(none.el, 'cardLookVault')).toBeNull()
+    act(() => rowButtons(none.el, 'shownHiddenWords').find((b) => b.textContent === 'Underline')!.click())
+    expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, shownHiddenWords: 'underline' })
+  })
+
+  it('YAZ-5488: the icon colours and rules write the picked vault\'s icons.json; each group has the Vault dropdown with two vaults; the app values with no vault', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const save = vi.fn()
+    const choose = vi.fn()
+    const onChange = vi.fn()
+    const rules = [{ match: 'Spanish', kind: 'folder' as const, icon: 'folder-i18n' }]
+    const iconLook = { vaults: [{ root: '/a', name: 'Alpha' }, { root: '/b', name: 'Beta' }], root: '/b', choose, rules, colors: { folder: '#112233' }, save }
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, iconLook }} onClose={vi.fn()} />))
+    clickNav(container, 'Sidebar')
+    await act(async () => await import('./IconColourControl'))
+    for (const id of ['iconColorsVault', 'iconRulesVault']) {
+      const select = row(container, id)?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+      expect([...select.options].map((o) => o.textContent)).toEqual(['Alpha', 'Beta'])
+      expect(select.selectedIndex).toBe(1)
+    }
+    expect(row(container, 'sidebarIconColors.folder')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#112233')
+    act(() => rowButtons(container!, 'sidebarIconColors.folder').find((b) => b.textContent === 'Reset')!.click())
+    expect(save).toHaveBeenLastCalledWith({ colors: {} })
+    expect([...(row(container, 'sidebarIconRules')?.querySelectorAll('input') ?? [])].map((i) => i.value)).toContain('Spanish')
+    expect(onChange).not.toHaveBeenCalled()
+    const select = row(container, 'iconRulesVault')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+    act(() => {
+      select.value = '/a'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(choose).toHaveBeenCalledWith('/a')
+    unmount()
+    const none = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconColors: { folder: '#112233' } })
+    await act(async () => await import('./IconColourControl'))
+    expect(row(none.el, 'iconColorsVault')).toBeNull()
+    expect(row(none.el, 'iconRulesVault')).toBeNull()
+    act(() => rowButtons(none.el, 'sidebarIconColors.folder').find((b) => b.textContent === 'Reset')!.click())
+    expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarIconColors: {} })
+  })
+
+  it('YAZ-5491: Daily pages name the vault whose daily-pages.json they show, which can be another than the active tab\'s', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS, dailyPages: true }, onChange: vi.fn(), vaultName: 'Work', dailyPagesVault: 'Journal' }} onClose={vi.fn()} />))
+    clickNav(container, 'Files & Links')
+    const hints = [...container.querySelectorAll('.settings-group__hint')].filter((n) => n.textContent?.startsWith('Vault: ')).map((n) => [n.previousElementSibling?.textContent, n.textContent])
+    expect(hints).toEqual([['Daily pages', 'Vault: Journal']])
   })
 
   it('Daily pages › Name style › Custom… (D4): the field sits beside the dropdown; a style with no day keeps the stored one and says why; a good one is written', () => {
@@ -1925,7 +2137,7 @@ describe('SettingsDialog search (D6)', () => {
     // And a grouped folder table's Group line style (YAZ-4798), whose hint names the sidebar's thread.
     expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Folder pages › View defaults'])
     expect(groupTitles(el)).toEqual([])
-    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them.'])
+    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them. Saved in the vault\'s folder-pages.json, with the Page group and Confirm changes: each vault has its own, on this Mac and on the phone.'])
     expect(rowIds(el)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'folderPages.groupLineStyle'])
     // "guide lines" finds the three guide line rows of Outline (YAZ-4094), under the one breadcrumb.
     type(searchInput(el), 'guide lines')

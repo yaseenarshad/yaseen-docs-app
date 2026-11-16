@@ -411,6 +411,54 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     await stopsUntouched(a, b)
   })
 
+  describe('YAZ-5483: a settings file in .yaseendocs/ merges key by key and never stops sync', () => {
+    const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
+    const SF = '.yaseendocs/show-ids.json'
+
+    it('both sides change different keys: both changes are kept', async () => {
+      const { a, b } = await twoMachines({ [SF]: json({ search: 'always', title: true, files: 'off' }) })
+      await b.write(SF, json({ search: 'match', title: true, files: 'off' }))
+      await a.write(SF, json({ search: 'always', title: false, files: 'off' }))
+      expect((await meet(a, b)).state).toBe('synced')
+      expect(JSON.parse(a.read(SF))).toEqual({ search: 'match', title: false, files: 'off' })
+    })
+
+    it("both sides change the same key: the remote's value wins, and the other keys still merge", async () => {
+      const { a, b } = await twoMachines({ [SF]: json({ search: 'always', title: true, files: 'off' }) })
+      await b.write(SF, json({ search: 'always', title: true, files: 'full' }))
+      await a.write(SF, json({ search: 'match', title: true, files: 'number' }))
+      expect((await meet(a, b)).state).toBe('synced')
+      expect(JSON.parse(a.read(SF))).toEqual({ search: 'match', title: true, files: 'full' })
+    })
+
+    it('one side deletes a key (back to the default), the other changes another: the delete stays', async () => {
+      const F = '.yaseendocs/text-formatting.json'
+      const { a, b } = await twoMachines({ [F]: json({ version: 1, h1: { size: 30 }, h2: { bold: true } }) })
+      await b.write(F, json({ version: 1, h2: { bold: true } }))
+      await a.write(F, json({ version: 1, h1: { size: 30 }, h2: { bold: true, underline: true } }))
+      expect((await meet(a, b)).state).toBe('synced')
+      expect(JSON.parse(a.read(F))).toEqual({ version: 1, h2: { bold: true, underline: true } })
+    })
+
+    it('malformed JSON on one side does not stop sync, and the valid side is kept', async () => {
+      const F = '.yaseendocs/review.json'
+      const { a, b } = await twoMachines({ [F]: json({ enabled: true, buttons: 2 }) })
+      await b.write(F, '{"enabled": true, "buttons": 4,\n')
+      await a.write(F, json({ enabled: false, buttons: 2 }))
+      expect((await meet(a, b)).state).toBe('synced')
+      expect(JSON.parse(a.read(F))).toEqual({ enabled: false, buttons: 2 })
+    })
+
+    it('a file both Macs made at once (the first-run seed) merges, and a file of a later build is covered by the rule', async () => {
+      const F = '.yaseendocs/daily-pages.json'
+      const { a, b } = await twoMachines({ 'x.md': 'x\n' })
+      await b.write(F, json({ folder: 'Daily', format: 'YYYY-MM-DD' }))
+      await a.write(F, json({ folder: 'Journal', template: 'T.md' }))
+      expect((await meet(a, b)).state).toBe('synced')
+      expect(JSON.parse(a.read(F))).toEqual({ folder: 'Daily', format: 'YYYY-MM-DD', template: 'T.md' })
+    })
+  })
+
   it('lossless: a drawing merge that cannot be committed aborts to a byte-identical tree, and keeps a save made mid-rebase', async () => {
     const { a, b } = await twoMachines({ 'b.excalidraw': board([r1, r2]), 'other.md': 'x\n' })
     await b.write('b.excalidraw', board([{ ...r1, x: 7, version: 2, updated: 2000 }, r2]))

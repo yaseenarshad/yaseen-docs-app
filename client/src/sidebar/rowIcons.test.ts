@@ -22,6 +22,20 @@ describe('the matching order (YAZ-3440 D8, D9)', () => {
     expect(rowIcon(i, '/v/c.ts', 'c.ts', 'folder')).toEqual({ id: 'folder-src', custom: true })
   })
 
+  it("YAZ-5488: a vault with rules of its own (icons.json) reads them; a vault with none reads the app's; a change of a vault's rules is a change", () => {
+    const app: IconRule[] = [{ match: '*.ts', kind: 'file', icon: 'python' }]
+    const own: IconRule[] = [{ match: '*.ts', kind: 'file', icon: 'rust' }]
+    const i = buildRowIcons({ '/v': { paths: {}, rules: own }, '/w': { paths: {} } }, ['/v', '/w'], app, true)
+    expect(rowIcon(i, '/v/x/a.ts', 'a.ts', 'file')).toEqual({ id: 'rust', custom: true })
+    expect(rowIcon(i, '/w/a.ts', 'a.ts', 'file')).toEqual({ id: 'python', custom: true })
+    // An empty list of its own: no rule applies there, not the app's.
+    const none = buildRowIcons({ '/v': { paths: {}, rules: [] }, '/w': { paths: {} } }, ['/v', '/w'], app, true, i)
+    expect(rowIcon(none, '/v/a.ts', 'a.ts', 'file')).toEqual({ id: 'typescript', custom: false })
+    expect(iconsChangedBelow(i, none, () => false)).toBe(true)
+    // The same rules again: the same object, nothing renders.
+    expect(buildRowIcons({ '/v': { paths: {}, rules: [...own] }, '/w': { paths: {} } }, ['/v', '/w'], [...app], true, i)).toBe(i)
+  })
+
   it("(3) then Material's match, (4) then its default; a folder open shows the open twin, its pick's too", () => {
     const i = icons({ '/v/Mine': 'folder-docs' })
     expect(rowIcon(i, '/v/a.test.ts', 'a.test.ts', 'file')).toEqual({ id: 'test-ts', custom: false })

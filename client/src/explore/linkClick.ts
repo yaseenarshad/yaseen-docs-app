@@ -7,18 +7,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 
-export const LINK_CLICK_FILE = 'link-click.json'
-export type LinkClick = 'open' | 'explore'
-export interface LinkClickSettings {
-  click: LinkClick
-}
-export const DEFAULT_LINK_CLICK: LinkClickSettings = { click: 'open' }
-
-/** What the file holds, or the default for anything else. */
-export function sanitizeLinkClick(raw: unknown): LinkClickSettings {
-  const click = typeof raw === 'object' && raw !== null ? (raw as { click?: unknown }).click : undefined
-  return { click: click === 'explore' ? 'explore' : 'open' }
-}
+import { DEFAULT_LINK_CLICK, LINK_CLICK_FILE, LINK_CLICK_KEYS, sanitizeLinkClick, type LinkClickSettings } from '@shared/linkClick'
+// The file's rule is shared with the phone (YAZ-5455): `shared/linkClick.ts`.
+export { DEFAULT_LINK_CLICK, LINK_CLICK_FILE, sanitizeLinkClick, type LinkClick, type LinkClickSettings } from '@shared/linkClick'
 
 export interface LinkClickState {
   settings: LinkClickSettings
@@ -57,7 +48,7 @@ export function useLinkClick(root: string | null): LinkClickState {
       if (root === null) return
       const clean = sanitizeLinkClick(next)
       setSettings(clean)
-      api.vaultConfig.write(root, LINK_CLICK_FILE, clean).catch(() => api.vaultConfig.read(root, LINK_CLICK_FILE).then((raw) => setSettings(sanitizeLinkClick(raw)), () => undefined))
+      api.vaultConfig.write(root, LINK_CLICK_FILE, clean, LINK_CLICK_KEYS).catch(() => api.vaultConfig.read(root, LINK_CLICK_FILE).then((raw) => setSettings(sanitizeLinkClick(raw)), () => undefined))
     },
     [root],
   )

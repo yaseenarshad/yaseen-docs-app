@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { VaultConfigChange } from '@shared/types'
-import { DEFAULT_READ_ONLY_VAULT, READ_ONLY_VAULT_FILE, VAULT_UNLOCK_MS, sanitizeReadOnlyVault, useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
+import { DEFAULT_READ_ONLY_VAULT, READ_ONLY_VAULT_FILE, READ_ONLY_VAULT_KEYS, VAULT_UNLOCK_MS, sanitizeReadOnlyVault, useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
 
 let listeners: Array<(c: VaultConfigChange) => void> = []
 
@@ -83,7 +83,7 @@ describe('useReadOnlyVault', () => {
     await mount('/vault')
     await act(async () => state.save({ on: true }))
     expect(state.settings).toEqual({ on: true })
-    expect(write).toHaveBeenCalledWith('/vault', READ_ONLY_VAULT_FILE, { on: true })
+    expect(write).toHaveBeenCalledWith('/vault', READ_ONLY_VAULT_FILE, { on: true }, READ_ONLY_VAULT_KEYS)
     read.mockResolvedValue({ on: false })
     await act(async () => listeners.forEach((l) => l({ root: '/other', name: READ_ONLY_VAULT_FILE })))
     await act(async () => listeners.forEach((l) => l({ root: '/vault', name: 'link-click.json' })))

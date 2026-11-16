@@ -551,3 +551,14 @@ describe('YAZ-5037 cards inside pages in search (YAZ-5047 pick 3)', () => {
     expect(searchRows(rows, 'geo-9').map((c) => c.path)).toEqual(['/vault/geo/Geography.md#GEO-9'])
   })
 })
+
+describe('YAZ-5309: a card with no title (YAZ-5308) is named by its ID; a search by that ID shows it one time', () => {
+  const page: IndexRecord = { ...rec('/vault/geo.md', [], 'Geo'), id: 'GEO-9', cards: [{ id: 'GEO-2', off: false, next: false, reviews: [] }, { id: 'GEO-1', off: false, next: false, reviews: [], title: 'Longest river' }] }
+  it('`GEO-2` and `#2`: the row says "GEO-2", never "GEO-2 — GEO-2"; a titled card keeps "ID — title"', () => {
+    const rows = searchCandidates([page], ['GEO'], true)
+    expect(searchRows(rows, 'GEO-2')[0].label).toBe('GEO-2')
+    expect(searchRows(rows, '#2')[0].label).toBe('GEO-2')
+    expect(searchRows(rows, 'GEO-1')[0].label).toBe('GEO-1 — Longest river')
+    expect(searchRows(rows, '#1')[0].label).toBe('GEO-1 — Longest river')
+  })
+})

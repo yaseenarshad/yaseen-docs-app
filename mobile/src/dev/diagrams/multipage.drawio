@@ -1,0 +1,14 @@
+<mxfile host="Electron" version="31.5.2">
+<diagram id="p1" name="Overview"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="a" value="Page 1: Overview" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=16;" vertex="1" parent="1"><mxGeometry x="0" y="0" width="200" height="60" as="geometry"/></mxCell>
+<mxCell id="b" value="Phone" style="shape=mxgraph.android.phone2;html=1;strokeWidth=1;fillColor=#f5f5f5;" vertex="1" parent="1"><mxGeometry x="260" y="-20" width="60" height="110" as="geometry"/></mxCell>
+<mxCell id="c" value="" style="endArrow=classic;html=1;" edge="1" parent="1" source="a" target="b"><mxGeometry relative="1" as="geometry"/></mxCell>
+</root></mxGraphModel></diagram>
+<diagram id="p2" name="Details"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="t" value="&lt;table border=&quot;1&quot; style=&quot;border-collapse:collapse&quot;&gt;&lt;tr&gt;&lt;th&gt;Key&lt;/th&gt;&lt;th&gt;Value&lt;/th&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;pages&lt;/td&gt;&lt;td&gt;3&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;" style="text;html=1;whiteSpace=wrap;" vertex="1" parent="1"><mxGeometry x="0" y="0" width="160" height="60" as="geometry"/></mxCell>
+<mxCell id="h" value="Page 2: an HTML table and a hexagon" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="200" y="0" width="180" height="70" as="geometry"/></mxCell>
+</root></mxGraphModel></diagram>
+<diagram id="p3" name="Empty-ish"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="z" value="Page 3" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="0" y="0" width="120" height="80" as="geometry"/></mxCell>
+</root></mxGraphModel></diagram>
+</mxfile>

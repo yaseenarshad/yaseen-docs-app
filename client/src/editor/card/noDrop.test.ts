@@ -33,16 +33,16 @@ import { isCardNode, cardLineOf } from './cardBlockLine'
 process.env.YASEEN_DOCS_USER_DATA_DIR ??= mkdtempSync(path.join(tmpdir(), 'mdapp-userdata-'))
 
 const FRONT = '---\nid: WIKI-1\n---\n'
-const FULL = 'WIKI-9, 2026-11-01T09:00Z good, 2026-11-07T09:00Z good'
+const FULL = 'WIKI-9, 2026-11-01T09:00:00.000Z good, 2026-11-07T09:00:00.000Z good'
 const card = (text: string, line: string) => `\`\`\`card\n${text}\n---\nA\n\`\`\`\n<!-- card: ${line} -->\n`
 
 /** The agent's older copy of the card, written above the original (not swept yet). */
 const AGENTS = {
   none: null,
-  'agent copy, same text, older line': card('Q', 'WIKI-9, 2026-11-01T09:00Z good'),
-  'agent copy, another text, older line': card('Q, reworded', 'WIKI-9, 2026-11-01T09:00Z good'),
+  'agent copy, same text, older line': card('Q', 'WIKI-9, 2026-11-01T09:00:00.000Z good'),
+  'agent copy, another text, older line': card('Q, reworded', 'WIKI-9, 2026-11-01T09:00:00.000Z good'),
   // A git "keep both": the other Mac's line holds a review the original does not.
-  'agent copy, same text, a review the original lacks': card('Q', 'WIKI-9, 2026-11-01T09:00Z good, 2026-11-09T09:00Z hard'),
+  'agent copy, same text, a review the original lacks': card('Q', 'WIKI-9, 2026-11-01T09:00:00.000Z good, 2026-11-09T09:00:00.000Z hard'),
 } as const
 
 type Op = 'paste' | 'cutPaste' | 'drag' | 'duplicate' | 'sweep' | 'agent' | 'undoRedo'
@@ -164,7 +164,7 @@ describe('no review leaves the file: the editor and the sweep, in any order (YAZ
         const { crepe, view, file } = await open(agentCard)
         let before = getMarkdownForSave(crepe)
         for (const op of ops) {
-          const after = await run(op, crepe, view, file, agentCard ?? card('Q', 'WIKI-9, 2026-11-01T09:00Z good'))
+          const after = await run(op, crepe, view, file, agentCard ?? card('Q', 'WIKI-9, 2026-11-01T09:00:00.000Z good'))
           // 1. The set of reviews in the file holds every review it held before the step.
           const lost = [...reviewSet(before)].filter((r) => !reviewSet(after).has(r))
           expect(lost, `${op} dropped a review`).toEqual([])
@@ -188,8 +188,8 @@ describe('YAZ-4998 as filed: the user cuts the original and pastes it lower, bes
     const { crepe, view, file } = await open(AGENTS['agent copy, another text, older line'])
     const body = await run('cutPaste', crepe, view, file, '')
     expect(pageCards(body).map((c) => [c.text.split('\n')[0], cardIdOf(c.line), cardReviewsOf(c.line).map(reviewKey)])).toEqual([
-      ['Q, reworded', 'WIKI-9', ['2026-11-01T09:00Z good']],
-      ['Q', 'WIKI-100', ['2026-11-01T09:00Z good', '2026-11-07T09:00Z good']],
+      ['Q, reworded', 'WIKI-9', ['2026-11-01T09:00:00.000Z good']],
+      ['Q', 'WIKI-100', ['2026-11-01T09:00:00.000Z good', '2026-11-07T09:00:00.000Z good']],
     ])
   })
 
@@ -197,12 +197,12 @@ describe('YAZ-4998 as filed: the user cuts the original and pastes it lower, bes
     const { crepe, view, file } = await open(AGENTS['agent copy, same text, older line'])
     const body = await run('cutPaste', crepe, view, file, '')
     expect(pageCards(body).map((c) => [cardIdOf(c.line), cardReviewsOf(c.line).map(reviewKey)])).toEqual([
-      ['WIKI-9', ['2026-11-01T09:00Z good', '2026-11-07T09:00Z good']],
+      ['WIKI-9', ['2026-11-01T09:00:00.000Z good', '2026-11-07T09:00:00.000Z good']],
       ['WIKI-100', []],
     ])
     // ⌘Z undoes the paste and the union together (the ID from the door is out of the undo history): the cut is left.
     undo(view.state, view.dispatch)
-    expect(pageCards(getMarkdownForSave(crepe)).map((c) => [cardIdOf(c.line), cardReviewsOf(c.line).map(reviewKey)])).toEqual([['WIKI-9', ['2026-11-01T09:00Z good']]])
+    expect(pageCards(getMarkdownForSave(crepe)).map((c) => [cardIdOf(c.line), cardReviewsOf(c.line).map(reviewKey)])).toEqual([['WIKI-9', ['2026-11-01T09:00:00.000Z good']]])
   })
 })
 

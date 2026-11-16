@@ -4,21 +4,21 @@ import { addStep, anyUpNext, cardPlan, newCardFolders, previewAnswers, reviewedT
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
-import { folderTitle } from '../links/shortcuts'
-import { storage } from '../lib/storage'
-import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardReview, undoCardAnswer, writeCardAnswer, type CardOnPage } from './cardFile'
-import { setUpNextTaken, subscribeUpNextTaken, upNextTakenToday } from './upNextTaken'
-import { cardsAddedToday, setCardsAdded, subscribeCardsAdded } from './cardsAdded'
-import { dueFirsts, filterProgress, matchesFilter, type FilterProgress, type SessionAnswer } from './sessionProgress'
+import { folderTitle } from '../links/folderTitle'
+import { isCardGone, type CardOnPage } from './cardRead'
+import type { ReviewHost } from './reviewHost'
+import { dueFirsts, filterPlace, filterProgress, matchesFilter, type FilterProgress, type SessionAnswer } from './sessionProgress'
 import { tourEvent } from '../course/tourBus'
 
 /**
  * Card review as App sees it (YAZ-4967): how many cards are due, and the one review
- * session a vault can have open. The queue comes from the index (`cardQueue`) and is taken ONCE, at start; a card is
+ * session a vault can have open. The hook holds the review rules only; it reads and writes through its `host`
+ * (YAZ-5067, `reviewHost.ts`): the desktop passes `desktopReviewHost`, the phone its own store. No default (YAZ-5161).
+ * The queue comes from the index (`cardQueue`) and is taken ONCE, at start; a card is
  * checked against the live index only when its turn comes, and read from its page when it shows (the index holds no
  * text, D4). A card whose page or ID is gone is passed over.
  *
- * The hover is the truth (D13): `showAnswers` fixes each button's review — its time to the minute, so its fuzz — and
+ * The hover is the truth (D13): `showAnswers` fixes each button's review — its time (`cardTime`), so its fuzz — and
  * `answer` writes exactly that review, so "Remembered · 9 days" is what the file gets. `undo` (⌘Z, idea 5) removes
  * the last answer's review and shows that card again. The first answer to an up-next card removes its `next` in the
  * same write (YAZ-4999 D3), and its undo puts it back.
@@ -50,11 +50,13 @@ import { tourEvent } from '../course/tourBus'
  * (`marks`, the marks it last saw), so a snapshot that has not caught up with an answer yet never brings its card back.
  *
  * `answered` (YAZ-5020, the progress bar) is each answer of the session, in order, with its card's kind; ⌘Z takes the
- * last one back. The bar shows the filter on show only (YAZ-5432, `filterProgress`): that filter's answers out of those
- * and its cards left. A new session (or the Inbox tab closed) starts it empty.
+ * last one back. The bar shows the filter on show only (YAZ-5432, `filterProgress`): one step per card of that filter
+ * in this session (YAZ-5594), and "3 of 13" counts the same cards (`filterPlace`). A new session (or the Inbox tab
+ * closed) starts it empty.
  *
  * Same-day steps (YAZ-5020): an answer that leaves the card in its steps (`CardAnswer.inSteps`: a Forgot; a new card's
- * first Remembered) puts it back at the END of this session's queue, and the session grows by one ("3 of 13"). It
+ * first Remembered) puts it back at the END of this session's queue. It is the same card: the session does not grow
+ * ("3 of 13" and the bar's size stay, YAZ-5594 and YAZ-5610), and the card is done only when it is let go. It
  * comes back until the scheduler lets it go: a new card after two Remembered in a row, a known card after one. Closed
  * and opened again, the Inbox shows it at once: a card in its steps is due now (`cardQueue`). ⌘Z takes the repeat
  * out again and puts the card back at its place.
@@ -117,6 +119,10 @@ export interface CardReviewResume {
 export interface ShownCard extends DueCard {
   /** The card as its page holds it now; null while the page is read. */
   page: CardOnPage | null
+  /** Put back by an answer that left it in its steps (YAZ-5020): a Forgot, a new card's first Remembered. */
+  repeat?: boolean
+  /** Put back by a Forgot (✕, YAZ-5626): the one card that wears "Again"; a new card back for its second ✓ does not. */
+  forgot?: boolean
 }
 
 export interface CardReviewSession {
@@ -128,7 +134,7 @@ export interface CardReviewSession {
   cards?: CardReviewScope
   /** The card showing; null once nothing is left (the done screen). */
   card: ShownCard | null
-  /** The showing card's place among the `total` the session started with. */
+  /** The showing card's place among the filter's `total` cards of this session, each card once (YAZ-5594, YAZ-5610). */
   position: number
   total: number
   /** ← and → (YAZ-5004): a card before or after the one showing is still in the queue. */
@@ -147,7 +153,7 @@ export interface CardReviewSession {
   place: CardPlacePart[]
   /** Each answer of the session, in order (YAZ-5020): a Forgot ('again') or a Remembered (any other). */
   answered: CardRating[]
-  /** The progress bar (YAZ-5020) of the filter on show only (YAZ-5432, `filterProgress`): its parts, done and whole. */
+  /** The progress bar (YAZ-5020) of the filter on show only (YAZ-5432, `filterProgress`): one step per card (YAZ-5594). */
   progress: FilterProgress
   /** Today's review work across the vault, from the index (YAZ-5033): the top row's and the done screen's "Today: …". */
   today: ReviewedToday
@@ -166,6 +172,8 @@ export interface CardReviewSession {
   upNext: boolean
   /** The add or Reset, while it is the last thing done (YAZ-5042): the line under the buttons says it; null otherwise. */
   lastAdd: { kind: AddKind; count: number; reset: boolean } | null
+  /** The last thing done was Archive card, and Undo takes it back (YAZ-5078 on the phone, YAZ-5621 on the Mac: a host with `undoesArchive`). */
+  lastArchive?: { id: string } | null
   /** The saved folder pick for new cards (YAZ-5322), each with its name; empty for All folders. */
   newFrom: Pick<NewCardFolder, 'folder' | 'label'>[]
   /** A stop at the end of Due today (YAZ-5043): the screen in place of the card; null while cards show. */
@@ -212,7 +220,8 @@ export interface CardReviewApi {
    * `seconds` (YAZ-5033): how long the answer took, by the Inbox's timer; the review part ends with ` <n>s`. Absent:
    * none is written.
    */
-  answer: (rating: CardRating, seconds?: number) => Promise<void>
+  /** True when the answer was written (YAZ-5502: the caller learns it here, never from a later draw of the screen). */
+  answer: (rating: CardRating, seconds?: number) => Promise<boolean>
   /** Removes the last answer's review and shows that card again. */
   undo: () => Promise<void>
   close: () => void
@@ -273,15 +282,12 @@ interface Session {
   queue: QueueCard[]
   /** The place of the card showing in `queue` (YAZ-5004: ← → move it); 0 until then. */
   at: number
-  total: number
   /** Bumped each time the card at the head is put there: its page is read again, its answers fixed again. */
   turn: number
   /** Each answer and each add (YAZ-5042), in order: ⌘Z takes back the last. */
   undo: UndoStep[]
   /** YAZ-5017: which cards show; `at` is always a card that matches it, or past the end when none does. */
   filter: CardFilter
-  /** The cards with reviews and the new cards at start, plus the repeats (YAZ-5020): each filter's "of 12". */
-  totals: { due: number; new: number; next: number }
   /** YAZ-5020: each answer, in order, with its card's kind (the progress bar and the end's ring, `sessionProgress`); ⌘Z takes the last back. */
   answered: SessionAnswer[]
   /** YAZ-5031: the cards of the scope the index last marked `next` (`cardKey`): a change of them moves the session. */
@@ -334,10 +340,26 @@ interface ResetStep {
   count: number
 }
 
-type UndoStep = AnswerStep | AddStep | ResetStep
+/**
+ * An Archive card that Undo can take back (both apps: YAZ-5078 the phone, YAZ-5621 the Mac; a host with
+ * `undoesArchive`): the card, and its place in the queue, so the undo puts it back where it was.
+ */
+interface ArchiveStep {
+  kind: 'archive'
+  card: QueueCard
+  at: number
+}
 
-/** A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps. */
-type QueueCard = DueCard & { repeat?: boolean }
+type UndoStep = AnswerStep | AddStep | ResetStep | ArchiveStep
+
+/**
+ * A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps.
+ * `fromNew` (YAZ-5610, Yaseen's rule from Mochi): a new card past its first Remembered, back the same day as a Due today
+ * card; it is no missed card (the % screen's "Review missed cards" leaves it out) and waits at the end of the session.
+ * `forgot` (YAZ-5626): put back by a Forgot (✕), so it wears "Again"; the last answer decides, so a ✓ that leaves it in
+ * its steps takes it off.
+ */
+type QueueCard = DueCard & { repeat?: boolean; fromNew?: boolean; forgot?: boolean }
 
 interface IndexSource {
   readonly records: readonly IndexRecord[]
@@ -362,8 +384,8 @@ const fitted = (s: Session): Session => {
  * Where a Forgot's repeat goes (YAZ-5043): a new card's at the end; a due card's at the end of the DUE part of `rest`,
  * so the missed cards come before the new cards under All cards too.
  */
-const repeatPlace = (rest: readonly QueueCard[], from: number, card: DueCard): number => {
-  if (card.isNew) return rest.length
+const repeatPlace = (rest: readonly QueueCard[], from: number, card: QueueCard): number => {
+  if (card.isNew || card.fromNew === true) return rest.length
   for (let i = rest.length - 1; i >= from; i--) if (!rest[i].isNew) return i + 1
   return from
 }
@@ -372,10 +394,10 @@ const repeatPlace = (rest: readonly QueueCard[], from: number, card: DueCard): n
  * The stop after a due card's answer (YAZ-5043), or none: the first pass done (missed cards wait, or none: Due today
  * is done), or the missed cards done. Only under All cards and Due today, and each stop once (`stage`).
  */
-const dueStop = (s: Session, card: DueCard): Pick<Session, 'stage' | 'pause'> => {
+const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> => {
   const none = { stage: s.stage, pause: null }
-  if (card.isNew || s.stage === 'over' || (s.filter !== 'all' && s.filter !== 'due')) return none
-  const due = s.queue.filter((c) => !c.isNew)
+  if (card.isNew || card.fromNew === true || s.stage === 'over' || (s.filter !== 'all' && s.filter !== 'due')) return none
+  const due = s.queue.filter((c) => !c.isNew && c.fromNew !== true)
   const missed = due.filter((c) => c.repeat === true).length
   if (due.length > missed) return none
   if (s.stage === 'first' && missed > 0) return { stage: 'missed', pause: 'missed' }
@@ -422,24 +444,18 @@ const withMarks = (s: Session, live: readonly DueCard[]): Session => {
   const off = new Set(gone)
   const due = new Set(live.map(cardKey))
   const head = s.queue[s.at]
-  const totals = { ...s.totals }
-  let total = s.total
   let shown: QueueCard | undefined = head
   const rest: QueueCard[] = []
   const moved = new Map<string, QueueCard>()
   for (const card of s.queue) {
     const key = cardKey(card)
     if (on.has(key) && !card.next) {
-      totals.next++
       const marked = { ...card, next: true }
       if (card === head) rest.push((shown = marked))
       else moved.set(key, marked)
     } else if (off.has(key) && card.next) {
-      totals.next--
-      if (card !== head && card.repeat !== true && !due.has(key)) {
-        totals[card.isNew ? 'new' : 'due']--
-        total--
-      } else if (card === head) rest.push((shown = { ...card, next: false }))
+      if (card !== head && card.repeat !== true && !due.has(key)) continue
+      if (card === head) rest.push((shown = { ...card, next: false }))
       else rest.push({ ...card, next: false })
     } else rest.push(card)
   }
@@ -451,17 +467,12 @@ const withMarks = (s: Session, live: readonly DueCard[]): Session => {
     if (!on.has(key)) continue
     const mine = moved.get(key)
     if (mine !== undefined) joining.push(mine)
-    else if (!inSession.has(key)) {
-      joining.push(card)
-      totals.next++
-      totals[card.isNew ? 'new' : 'due']++
-      total++
-    }
+    else if (!inSession.has(key)) joining.push(card)
   }
   const place = shown === undefined ? rest.length : rest.indexOf(shown) + 1
   const queue = [...rest.slice(0, place), ...joining, ...rest.slice(place)]
   const at = shown === undefined ? place : place - 1
-  return fitted({ ...s, queue, at, total, totals, marks, turn: shown === head ? s.turn : s.turn + 1 })
+  return fitted({ ...s, queue, at, marks, turn: shown === head ? s.turn : s.turn + 1 })
 }
 
 /** The session with the card at `at` gone from its queue (answered elsewhere, its page gone, review off): the next one shows. */
@@ -481,9 +492,6 @@ const withAdded = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
   const promoted = what === 'next' ? live.filter((c) => c.next && inSession.get(cardKey(c))?.next === false && inSession.get(cardKey(c))?.repeat !== true).map(cardKey) : []
   if (joining.length + promoted.length === 0) return s
   const moved = new Set(promoted)
-  const totals = { ...s.totals }
-  for (const c of joining) totals[c.isNew ? 'new' : 'due']++
-  if (what === 'next') totals.next += joining.length + promoted.length
   const coming: QueueCard[] = [...s.queue.filter((c) => moved.has(cardKey(c)) && c !== head).map((c) => ({ ...c, next: true })), ...joining]
   const shownNow = head !== undefined && moved.has(cardKey(head)) ? { ...head, next: true } : head
   const rest = s.queue.filter((c) => c === head || !moved.has(cardKey(c))).map((c) => (c === head ? shownNow! : c))
@@ -506,7 +514,7 @@ const withAdded = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
   const undo = [...s.undo, step].slice(-UNDO_DEPTH)
   // YAZ-5043: an add from the "Due today is done." screen with nothing left shows its first card at once.
   const pause = shownNow === undefined ? null : s.pause
-  return fitted({ ...s, queue, at, filter, total: s.total + joining.length, totals, marks, undo, pause, turn: shownNow === head ? s.turn : s.turn + 1 })
+  return fitted({ ...s, queue, at, filter, marks, undo, pause, turn: shownNow === head ? s.turn : s.turn + 1 })
 }
 
 /** The session after an add's undo (YAZ-5042): its cards not answered yet leave; a card it made Up next is not any more. */
@@ -514,26 +522,18 @@ const withoutAdded = (s: Session, step: AddStep): Session => {
   const joined = new Set(step.joined)
   const promoted = new Set(step.promoted)
   const head = s.queue[s.at]
-  const totals = { ...s.totals }
-  let total = s.total
   const queue: QueueCard[] = []
   let at = -1
   for (const c of s.queue) {
     const key = cardKey(c)
-    if (joined.has(key) && c.repeat !== true) {
-      totals[c.isNew ? 'new' : 'due']--
-      if (step.what === 'next') totals.next--
-      total--
-      continue
-    }
+    if (joined.has(key) && c.repeat !== true) continue
     const back = promoted.has(key) && c.next && c.repeat !== true ? { ...c, next: false } : c
-    if (back !== c) totals.next--
     if (c === head) at = queue.length
     queue.push(back)
   }
   const marks = step.what === 'next' ? new Set([...s.marks].filter((k) => !joined.has(k) && !promoted.has(k))) : s.marks
   const kept = at !== -1
-  return fitted({ ...s, queue, at: kept ? at : Math.min(s.at, queue.length), total, totals, marks, undo: s.undo.slice(0, -1), turn: kept && queue[at] === head ? s.turn : s.turn + 1 })
+  return fitted({ ...s, queue, at: kept ? at : Math.min(s.at, queue.length), marks, undo: s.undo.slice(0, -1), turn: kept && queue[at] === head ? s.turn : s.turn + 1 })
 }
 
 /**
@@ -544,8 +544,6 @@ const withoutAdded = (s: Session, step: AddStep): Session => {
 const withReset = (s: Session, what: AddKind, live: readonly DueCard[], delta: number): Session => {
   const today = new Map(live.map((c) => [cardKey(c), c]))
   const head = s.queue[s.at]
-  const totals = { ...s.totals }
-  let total = s.total
   const dropped = new Set<string>()
   const queue: QueueCard[] = []
   let at = -1
@@ -554,12 +552,7 @@ const withReset = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
     const now = today.get(cardKey(c))
     if (ofKind && c !== head && (now === undefined || (what === 'next' && !now.next))) {
       dropped.add(cardKey(c))
-      if (what === 'next') totals.next--
-      if (now === undefined) {
-        totals[c.isNew ? 'new' : 'due']--
-        total--
-        continue
-      }
+      if (now === undefined) continue
       queue.push({ ...c, next: false })
       continue
     }
@@ -569,7 +562,7 @@ const withReset = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
   const marks = what === 'next' ? new Set([...s.marks].filter((k) => !dropped.has(k))) : s.marks
   const step: ResetStep = { kind: 'reset', what, delta, count: dropped.size }
   const undo = [...s.undo, step].slice(-UNDO_DEPTH)
-  return fitted({ ...s, queue, at: at === -1 ? Math.min(s.at, queue.length) : at, total, totals, marks, undo, turn: s.turn })
+  return fitted({ ...s, queue, at: at === -1 ? Math.min(s.at, queue.length) : at, marks, undo, turn: s.turn })
 }
 
 /**
@@ -582,24 +575,16 @@ const withNewCards = (s: Session, live: readonly DueCard[]): Session => {
   const today = new Set(live.filter(plain).map(cardKey))
   const inSession = new Set(s.queue.map(cardKey))
   const head = s.queue[s.at]
-  const totals = { ...s.totals }
-  let total = s.total
   const queue: QueueCard[] = []
   let at = -1
   for (const c of s.queue) {
-    if (plain(c) && c !== head && !today.has(cardKey(c))) {
-      totals.new--
-      total--
-      continue
-    }
+    if (plain(c) && c !== head && !today.has(cardKey(c))) continue
     if (c === head) at = queue.length
     queue.push(c)
   }
   const joining = live.filter((c) => plain(c) && !inSession.has(cardKey(c)))
   if (joining.length === 0 && queue.length === s.queue.length) return s
-  totals.new += joining.length
-  total += joining.length
-  return fitted({ ...s, queue: [...queue, ...joining], at: at === -1 ? queue.length : at, total, totals })
+  return fitted({ ...s, queue: [...queue, ...joining], at: at === -1 ? queue.length : at })
 }
 
 /** The stop's screen (YAZ-5043): the %, from first answers only, never 100 while one was missed. */
@@ -609,7 +594,7 @@ const endOf = (s: Session): DueTodayEnd | null => {
     kind: s.pause,
     id: `${s.id}:${s.answered.length}:${s.pause}`,
     ...dueFirsts(s.answered),
-    missed: s.queue.filter((c) => !c.isNew && c.repeat === true).length,
+    missed: s.queue.filter((c) => !c.isNew && c.repeat === true && c.fromNew !== true).length,
     fresh: s.queue.filter((c) => c.isNew).length,
   }
 }
@@ -643,7 +628,8 @@ export function useCardReview(
   source: IndexSource,
   settings: ReviewSettings,
   onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void,
-  vaultName?: string | null,
+  vaultName: string | null | undefined,
+  host: ReviewHost,
   /** The vault's settings save (`useReviewSettings`): the folder pick for new cards (YAZ-5322) is one of them. */
   saveSettings?: (next: ReviewSettings) => void,
 ): CardReviewApi {
@@ -665,9 +651,9 @@ export function useCardReview(
   // The replay of each card is cached by its log (`cardDueAt`), so a new snapshot costs a join per reviewed card.
   const letters = source.letters
   // YAZ-5028: today's taken Up next places, from the app state; one array while it holds still.
-  const taken = useSyncExternalStore(subscribeUpNextTaken, () => (root === null ? NO_TAKEN : upNextTakenToday(root)))
+  const taken = useSyncExternalStore(host.subscribeUpNextTaken, () => (root === null ? NO_TAKEN : host.upNextTakenToday(root)))
   // YAZ-5042: today's added numbers, from the app state; none on another day (`day` re-renders at midnight).
-  const added = useSyncExternalStore(subscribeCardsAdded, () => (root === null ? NO_ADDED : cardsAddedToday(root)))
+  const added = useSyncExternalStore(host.subscribeCardsAdded, () => (root === null ? NO_ADDED : host.cardsAddedToday(root)))
   const vaultPlan = useMemo(() => cardPlan(records, settings, Date.now(), '', undefined, letters, taken, added), [records, settings, day, letters, taken, added])
   const vaultQueue = vaultPlan.queue
   const dueCount = vaultQueue.length
@@ -728,7 +714,7 @@ export function useCardReview(
     async (card: DueCard): Promise<CardOnPage | null> => {
       const from = epoch.current.get(card.path) ?? 0
       const mtime = mtimeOf(card.path)
-      const page = await readCard(card.path, card.id)
+      const page = await host.readCard(card.path, card.id)
       const key = cardKey(card)
       if (page !== null && (epoch.current.get(card.path) ?? 0) === from) {
         cache.current.delete(key)
@@ -737,7 +723,7 @@ export function useCardReview(
       }
       return page
     },
-    [mtimeOf],
+    [mtimeOf, host],
   )
   /** A write of `path` here: its cached cards go, and reads of it already begun are not kept. */
   const forget = useCallback((path: string) => {
@@ -818,16 +804,15 @@ export function useCardReview(
     (scope: CardReviewScope = {}, resume: CardReviewResume = {}) => {
       const { records, settings } = live.current
       if (!settings.enabled) return
-      const queue = cardPlan(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : upNextTakenToday(root), root === null ? NO_ADDED : cardsAddedToday(root)).queue
+      const queue = cardPlan(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : host.upNextTakenToday(root), root === null ? NO_ADDED : host.cardsAddedToday(root)).queue
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
-      const { due, new: fresh, next } = countOf(queue)
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020); a moved Inbox on its filter, at its
       // card when that is still in the queue, else on the filter's first card (YAZ-5054).
       const filter = resume.filter ?? 'all'
       const at = resume.card === undefined ? -1 : queue.findIndex((c) => c.path === resume.card?.path && c.id === resume.card.id)
-      setSession((s) => fitted({ id: ++sessionCount, label, scope, queue, at: Math.max(at, 0), total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter, totals: { due, new: fresh, next }, answered: [], marks: markedIn(queue), stage: 'first', pause: null }))
+      setSession((s) => fitted({ id: ++sessionCount, label, scope, queue, at: Math.max(at, 0), turn: (s?.turn ?? 0) + 1, undo: [], filter, answered: [], marks: markedIn(queue), stage: 'first', pause: null }))
     },
-    [root, source],
+    [root, source, host],
   )
 
   /** The fixed answers of the card showing: fixed now when not yet (D13). */
@@ -852,12 +837,12 @@ export function useCardReview(
       const s0 = live.current.session
       const card = s0?.queue[s0.at]
       const fixedAnswer = fixAnswers()?.find((a) => a.review.rating === rating)
-      if (card === undefined || fixedAnswer === undefined || busy.current || s0?.pause !== null) return
+      if (card === undefined || fixedAnswer === undefined || busy.current || s0?.pause !== null) return false
       // The hover's review, with how long the answer took (YAZ-5033) when the Inbox timed it.
       const chosen = isCardSeconds(seconds) ? { ...fixedAnswer, review: { ...fixedAnswer.review, seconds } } : fixedAnswer
       busy.current = true
       forget(card.path)
-      const written = await writeCardAnswer(card.path, card.id, chosen.review).then(
+      const written = await host.writeCardAnswer(card.path, card.id, chosen.review).then(
         (next) => ({ next }),
         (err: unknown) => {
           if (isCardGone(err)) return 'gone' as const
@@ -867,11 +852,11 @@ export function useCardReview(
       )
       busy.current = false
       forget(card.path) // also a read begun while it wrote
-      if (written === 'failed') return
+      if (written === 'failed') return false
       tourEvent('inbox-answered', card.path)
       // YAZ-5028: the answer took the mark off a card of today's Up next: one of the day's places is used. A marked
       // card past the day's places (`card.next` false) loses its mark too, but it held no place.
-      if (written !== 'gone' && written.next >= 0 && card.next && root !== null) setUpNextTaken(root, card.id, true)
+      if (written !== 'gone' && written.next >= 0 && card.next && root !== null) host.setUpNextTaken(root, card.id, true)
       setSession((s) => {
         if (s === null || !showing(s, card)) return s
         // Still in its steps (YAZ-5020): back at the end of this session, no longer new or up next.
@@ -882,42 +867,46 @@ export function useCardReview(
         const undo = written !== 'gone' ? [...s.undo, { kind: 'answer' as const, card, review: chosen.review, next: written.next, at: s.at, repeat, stage: s.stage }].slice(-UNDO_DEPTH) : s.undo
         // The cards before (passed over with →) stay; the ones after are settled, as the head was before ← →.
         const after = settle(s.queue.slice(s.at + 1), s.scope)
-        // The repeat keeps the filter it showed under (YAZ-5017): a new card's second Remembered is still under New cards.
-        // A due card's waits at the end of the due cards (YAZ-5043), before the new cards.
+        // A due card's repeat waits at the end of the due cards (YAZ-5043), before the new cards. A new card's first
+        // Remembered moves it into Due today (YAZ-5610, Yaseen's rule from Mochi: New one less, Due today one more, the
+        // same cards in all); it comes back at the end, and its second Remembered lets it go. A new card's Forgot keeps
+        // it under New cards (YAZ-5017).
         const rest: QueueCard[] = [...s.queue.slice(0, s.at), ...after]
         const place = repeatPlace(rest, s.at, card)
-        const queue = repeat ? [...rest.slice(0, place), { ...card, due: chosen.due, next: false, repeat: true }, ...rest.slice(place)] : rest
+        const learned = card.isNew && rating !== 'again'
+        const back: QueueCard = { ...card, due: chosen.due, next: false, repeat: true, forgot: rating === 'again', ...(learned ? { isNew: false, fromNew: true } : {}) }
+        const queue = repeat ? [...rest.slice(0, place), back, ...rest.slice(place)] : rest
         // YAZ-5432: with what the card was, so each filter's bar reads its own answers.
         const answered = written !== 'gone' ? [...s.answered, { key, rating, isNew: card.isNew, next: card.next, first }] : s.answered
-        // A repeat adds one to the session ("3 of 13", the progress bar's size).
-        const totals = repeat ? { ...s.totals, [card.isNew ? 'new' : 'due']: s.totals[card.isNew ? 'new' : 'due'] + 1 } : s.totals
+        // A repeat is the same card (YAZ-5594, YAZ-5610): "3 / 13" and the bar's size stay; the card is not done yet.
         // The next card is the one after; past the last, the first (a card passed over with →, or the repeat).
-        const next = fitted({ ...s, queue, at: after.length > 0 ? s.at : 0, total: s.total + (repeat ? 1 : 0), totals, turn: s.turn + 1, undo, answered })
+        const next = fitted({ ...s, queue, at: after.length > 0 ? s.at : 0, turn: s.turn + 1, undo, answered })
         return written === 'gone' ? next : { ...next, ...dueStop(next, card) }
       })
+      return written !== 'gone'
     },
-    [fixAnswers, onNotice, settle, forget, root],
+    [fixAnswers, onNotice, settle, forget, root, host],
   )
 
   /** The add's undo (YAZ-5042): today's number goes down by what the add grew it; its cards not answered yet leave. */
   const undoAdd = useCallback(
     (step: AddStep) => {
       if (root !== null) {
-        const now = cardsAddedToday(root)
-        setCardsAdded(root, step.what === 'new' ? { ...now, newCards: now.newCards - step.delta } : { ...now, upNext: now.upNext - step.delta })
+        const now = host.cardsAddedToday(root)
+        host.setCardsAdded(root, step.what === 'new' ? { ...now, newCards: now.newCards - step.delta } : { ...now, upNext: now.upNext - step.delta })
       }
       setSession((s) => (s === null || s.undo.at(-1) !== step ? s : withoutAdded(s, step)))
     },
-    [root],
+    [root, host],
   )
 
   /** A Reset's undo (YAZ-5042 round 2): today's number goes back up; its cards join the session again, as an add's do. */
   const undoReset = useCallback(
     (step: ResetStep) => {
       if (root === null) return
-      const now = cardsAddedToday(root)
+      const now = host.cardsAddedToday(root)
       const next = step.what === 'new' ? { ...now, newCards: now.newCards + step.delta } : { ...now, upNext: now.upNext + step.delta }
-      setCardsAdded(root, next)
+      host.setCardsAdded(root, next)
       live.current.added = next
       const { records, settings, taken } = live.current
       setSession((s) => {
@@ -928,7 +917,34 @@ export function useCardReview(
         return back === before ? before : { ...back, undo: before.undo }
       })
     },
-    [root, source],
+    [root, source, host],
+  )
+
+  /** The undo of an Archive card (YAZ-5078, a host with `undoesArchive`): `off` off its line, the card back at its place. */
+  const undoArchive = useCallback(
+    async (step: ArchiveStep) => {
+      if (busy.current) return
+      busy.current = true
+      forget(step.card.path)
+      const undone = await host.changeCardLine(step.card.path, step.card.id, (l) => withCardOff(l, false)).then(
+        () => true,
+        (err: unknown) => {
+          onNotice(`Can't undo the archive: ${reason(err)}`, 'error')
+          return false
+        },
+      )
+      busy.current = false
+      forget(step.card.path)
+      if (!undone) return
+      setSession((s) => {
+        if (s === null || s.undo.at(-1) !== step) return s
+        const rest = s.queue.filter((c) => !sameCard(c, step.card))
+        const at = Math.min(step.at, rest.length)
+        const filter = matchesFilter(step.card, s.filter) ? s.filter : 'all'
+        return { ...s, queue: [...rest.slice(0, at), step.card, ...rest.slice(at)], at, filter, turn: s.turn + 1, undo: s.undo.slice(0, -1) }
+      })
+    },
+    [onNotice, forget, host],
   )
 
   const undo = useCallback(async () => {
@@ -936,9 +952,10 @@ export function useCardReview(
     if (last === undefined || busy.current) return
     if (last.kind === 'add') return undoAdd(last)
     if (last.kind === 'reset') return undoReset(last)
+    if (last.kind === 'archive') return undoArchive(last)
     busy.current = true
     forget(last.card.path)
-    const undone = await undoCardAnswer(last.card.path, last.card.id, last.review.at, last.next).then(
+    const undone = await host.undoCardAnswer(last.card.path, last.card.id, last.review.at, last.next).then(
       () => true,
       (err: unknown) => {
         onNotice(`Can't undo the answer: ${reason(err)}`, 'error')
@@ -947,7 +964,7 @@ export function useCardReview(
     )
     busy.current = false
     forget(last.card.path)
-    if (undone && last.next >= 0 && last.card.next && root !== null) setUpNextTaken(root, last.card.id, false)
+    if (undone && last.next >= 0 && last.card.next && root !== null) host.setUpNextTaken(root, last.card.id, false)
     // The card back at its place (YAZ-5020), its repeat out of the queue and the session one smaller again; it shows
     // also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
     if (undone)
@@ -955,16 +972,14 @@ export function useCardReview(
         if (s === null || s.undo.at(-1) !== last) return s
         const rest = s.queue.filter((c) => !sameCard(c, last.card))
         const at = Math.min(last.at, rest.length)
-        const side = last.card.isNew ? 'new' : 'due'
-        const totals = last.repeat ? { ...s.totals, [side]: s.totals[side] - 1 } : s.totals
         // As it was (YAZ-5028): Up next again when it was in today's Up next; a marked card past the day's places
         // gets its mark back in the file, and waits in its normal place again.
         const card = last.card
         const filter = matchesFilter(card, s.filter) ? s.filter : 'all'
         // YAZ-5043: a stop it made goes with it, and Due today's stage is as it was.
-        return { ...s, queue: [...rest.slice(0, at), card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1), stage: last.stage, pause: null }
+        return { ...s, queue: [...rest.slice(0, at), card, ...rest.slice(at)], at, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1), stage: last.stage, pause: null }
       })
-  }, [onNotice, forget, root, undoAdd, undoReset])
+  }, [onNotice, forget, root, undoAdd, undoReset, undoArchive, host])
 
   const close = useCallback(() => setSession(null), [])
 
@@ -978,7 +993,7 @@ export function useCardReview(
 
   const deleteReview = useCallback(
     async (path: string, id: string, review: CardReview) => {
-      const removed = await deleteCardReview(path, id, review.at).then(
+      const removed = await host.deleteCardReview(path, id, review.at).then(
         (index) => index,
         (err: unknown) => {
           onNotice(`Can't delete the review: ${reason(err)}`, 'error')
@@ -989,19 +1004,19 @@ export function useCardReview(
       readAgain(path, id)
       // Back in its own place, not after the last review: the file is the same bytes again (YAZ-4964).
       const restore = () =>
-        void restoreCardReview(path, id, review, removed).then(
+        void host.restoreCardReview(path, id, review, removed).then(
           () => readAgain(path, id),
           (err: unknown) => onNotice(`Can't put the review back: ${reason(err)}`, 'error'),
         )
       onNotice('Review deleted', 'info', 'undo', { label: 'Undo', run: restore, fades: true })
     },
-    [onNotice, readAgain],
+    [onNotice, readAgain, host],
   )
 
   /** One mark on or off (Up next, Fix later): one write of the file, then the card read again. */
   const setMark = useCallback(
     async (path: string, id: string, change: (line: CardLine) => CardLine) => {
-      const written = await changeCardLine(path, id, change).then(
+      const written = await host.changeCardLine(path, id, change).then(
         () => true,
         (err: unknown) => {
           onNotice(`Can't change the card: ${reason(err)}`, 'error')
@@ -1010,7 +1025,7 @@ export function useCardReview(
       )
       if (written) readAgain(path, id)
     },
-    [onNotice, readAgain],
+    [onNotice, readAgain, host],
   )
   const setNext = useCallback((path: string, id: string, on: boolean) => setMark(path, id, (l) => withCardNext(l, on)), [setMark])
 
@@ -1046,12 +1061,12 @@ export function useCardReview(
       const delta = plan.grow(kind, n)
       if (n === 0 || delta <= 0) return
       const next = kind === 'new' ? { ...added, newCards: added.newCards + delta } : { ...added, upNext: added.upNext + delta }
-      setCardsAdded(root, next)
+      host.setCardsAdded(root, next)
       live.current.added = next
       const queue = cardPlan(records, settings, now, s0.scope.folder, s0.scope.page, source.letters, taken, next).queue
       setSession((s) => (s === null || s.id !== s0.id ? s : withAdded(s, kind, queue, delta)))
     },
-    [root, source],
+    [root, source, host],
   )
 
   const resetCards = useCallback(
@@ -1064,12 +1079,12 @@ export function useCardReview(
       const delta = had - plan.floor[kind]
       if (delta <= 0) return
       const next = kind === 'new' ? { ...added, newCards: plan.floor.new } : { ...added, upNext: plan.floor.next }
-      setCardsAdded(root, next)
+      host.setCardsAdded(root, next)
       live.current.added = next
       const queue = cardPlan(records, settings, now, s0.scope.folder, s0.scope.page, source.letters, taken, next).queue
       setSession((s) => (s === null || s.id !== s0.id ? s : withReset(s, kind, queue, delta)))
     },
-    [root, source],
+    [root, source, host],
   )
 
   const setNewFrom = useCallback(
@@ -1086,7 +1101,7 @@ export function useCardReview(
     const card = s0?.queue[s0.at]
     if (card === undefined || s0?.pause !== null) return
     forget(card.path)
-    const written = await changeCardLine(card.path, card.id, (l) => withCardOff(l, true)).then(
+    const written = await host.changeCardLine(card.path, card.id, (l) => withCardOff(l, true)).then(
       () => true,
       (err: unknown) => {
         onNotice(`Can't change the card: ${reason(err)}`, 'error')
@@ -1094,8 +1109,15 @@ export function useCardReview(
       },
     )
     forget(card.path)
-    if (written) setSession((s) => (s === null || !showing(s, card) ? s : without(s, s.at)))
-  }, [onNotice, forget])
+    if (!written) return
+    setSession((s) => {
+      if (s === null || !showing(s, card)) return s
+      const next = without(s, s.at)
+      // Both apps take an archive back with Undo (YAZ-5078 the phone, YAZ-5621 the Mac: `undoesArchive`); a host
+      // without it keeps the stack as before.
+      return host.undoesArchive === true ? { ...next, undo: [...s.undo, { kind: 'archive' as const, card: s.queue[s.at], at: s.at }].slice(-UNDO_DEPTH) } : next
+    })
+  }, [onNotice, forget, host])
 
   const folders = source.folders
   /** A root-relative folder's name, as the breadcrumb says it (its title, else its last part). */
@@ -1117,20 +1139,19 @@ export function useCardReview(
     let shownCard: ShownCard | null = card === undefined ? null : { ...card, page }
     if (shownCard !== null && page === null && lastShown.current?.session === session.id) shownCard = lastShown.current.card
     else if (shownCard !== null && page !== null) lastShown.current = { session: session.id, card: shownCard }
-    const { filter, queue, totals, scope } = session
+    const { filter, queue, scope } = session
     const counts = countOf(queue)
     const lastStep = session.undo.at(-1)
-    // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
-    const total = filter === 'all' ? totals.due + totals.new : totals[filter]
-    const before = queue.slice(0, session.at).filter((c) => matchesFilter(c, filter)).length
-    const vault = vaultName ?? (root === null ? 'Inbox' : storage.vaultName(root))
+    // "3 of 12" under the filter (YAZ-5017): the place among its cards, each card once (YAZ-5594, YAZ-5610).
+    const { position, total } = filterPlace(session.answered, queue, session.at, filter)
+    const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
     return {
       label: session.label,
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
       cards: scope,
       card: shownCard,
-      position: Math.max(1, Math.min(total - counts[filter] + 1 + before, total)),
+      position,
       total,
       canBack: session.pause === null && stepFrom(session, -1) !== -1,
       canNext: session.pause === null && stepFrom(session, 1) !== -1,
@@ -1142,12 +1163,13 @@ export function useCardReview(
       from,
       place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered.map((a) => a.rating),
-      progress: filterProgress(session.answered, filter, counts[filter]),
+      progress: filterProgress(session.answered, queue, filter),
       today,
       more: scopePlan.more,
       adds: addsOf(scopePlan, settings),
       limited: { new: settings.newPerDay !== null, next: settings.upNextPerDay !== null },
       canReset: { new: (added.newCards > scopePlan.floor.new), next: (added.upNext > scopePlan.floor.next) },
+      lastArchive: lastStep?.kind === 'archive' ? { id: lastStep.card.id } : null,
       upNext,
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count, reset: false } : lastStep?.kind === 'reset' ? { kind: lastStep.what, count: lastStep.count, reset: true } : null,
       newFrom: settings.newFrom.map((folder) => ({ folder, label: folderLabelOf(folder) })),
@@ -1155,7 +1177,7 @@ export function useCardReview(
       end: endOf(session),
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders, today, scopePlan, settings, added, upNext, folderLabelOf])
+  }, [session, loaded, fixed, turnKey, root, vaultName, host, cached, records, folders, today, scopePlan, settings, added, upNext, folderLabelOf])
 
   // YAZ-5322: the picker's rows, worked out when it opens: each folder with new cards, and each picked one (0 when empty).
   const pickerFolders = useCallback(() => {

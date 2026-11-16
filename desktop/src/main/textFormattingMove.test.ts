@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
 import { defaultAppState, defaultRightPanelIdentity, type HeadingStyles, type WindowEntry } from '@shared/types'
-import { moveLegacyHeadingStyles } from './textFormattingMove'
+import { PAGE_SPACING_MOVE, moveLegacyHeadingStyles, pageSpacingPart } from './textFormattingMove'
 import { VAULT_CONFIG_DIR } from './vaultConfig'
 
 /** The styles Yaseen set in 1.0.15 (D11). */
@@ -47,7 +47,7 @@ describe('moveLegacyHeadingStyles (YAZ-3066 D11)', () => {
     const [a, b, c] = await Promise.all([vault('a'), vault('b'), vault('c')])
     const store = storeWith([win('w1', [a, b]), win('w2', [b, c]), win('w3', [])], LEGACY)
     await moveLegacyHeadingStyles(store)
-    for (const root of [a, b, c]) expect(await onDisk(root)).toEqual({ version: 1, ...LEGACY })
+    for (const root of [a, b, c]) expect(await onDisk(root)).toEqual({ version: 2, ...LEGACY })
     // Handed out once: a second run finds `{}` and writes nothing more.
     await rm(fileOf(a))
     await moveLegacyHeadingStyles(store)
@@ -63,7 +63,7 @@ describe('moveLegacyHeadingStyles (YAZ-3066 D11)', () => {
     await moveLegacyHeadingStyles(storeWith([win('w1', [mine, broken, empty])], LEGACY))
     expect(await onDisk(mine)).toEqual({ version: 1, text: { size: 18 } })
     expect(await readFile(fileOf(broken), 'utf8')).toBe('{ not json')
-    expect(await onDisk(empty)).toEqual({ version: 1, ...LEGACY })
+    expect(await onDisk(empty)).toEqual({ version: 2, ...LEGACY })
   })
 
   it('`{}` (nothing set in 1.0.15) writes nothing, and creates no `.yaseendocs` folder', async () => {
@@ -78,9 +78,56 @@ describe('moveLegacyHeadingStyles (YAZ-3066 D11)', () => {
     const gone = path.join(dir, 'gone')
     await chmod(locked, 0o555) // the write of `.yaseendocs` fails here
     await moveLegacyHeadingStyles(storeWith([win('w1', [gone, locked, good])], LEGACY))
-    expect(await onDisk(good)).toEqual({ version: 1, ...LEGACY })
+    expect(await onDisk(good)).toEqual({ version: 2, ...LEGACY })
     expect(existsSync(gone)).toBe(false)
     expect(existsSync(fileOf(locked))).toBe(false)
     expect(error.mock.calls.map(([line]) => String(line).includes(gone) || String(line).includes(locked))).toEqual([true, true])
+  })
+})
+
+describe('YAZ-5485: the page spacing moves once into each vault (text-formatting.json v2)', () => {
+  const marks = () => {
+    const seen = new Set<string>()
+    return { seededConfig: (r: string, n: string) => seen.has(`${r}|${n}`), markSeededConfig: (r: string, n: string) => void seen.add(`${r}|${n}`) }
+  }
+  const APP = { lineSpacing: 2, blockGap: 8, pageBulletIndent: 34, pageBulletGap: 12 }
+  const read = async (root: string) => JSON.parse(await readFile(path.join(root, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE), 'utf8')) as unknown
+  const vault = async (name: string, text?: string) => {
+    const root = path.join(dir, name)
+    await mkdir(path.join(root, VAULT_CONFIG_DIR), { recursive: true })
+    if (text !== undefined) await writeFile(path.join(root, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE), text)
+    return root
+  }
+  const run = (roots: string[], s = APP, m = marks()) => PAGE_SPACING_MOVE.run(roots, { ...defaultAppState().settings, ...s }, m, async () => true)
+
+  it('the part: only what differs from the defaults; the defaults move nothing', () => {
+    expect(pageSpacingPart(APP)).toEqual({ version: 2, spacing: { line: 2, blockGap: 8, bulletGap: 12 } })
+    expect(pageSpacingPart({ lineSpacing: 1.5, blockGap: 4, pageBulletIndent: 34, pageBulletGap: 10 })).toBeNull()
+  })
+
+  it('absent: a new file; present without spacing: added, the headings kept; present with it, or malformed: left', async () => {
+    const none = await vault('none')
+    const headings = await vault('headings', '{"version":1,"h2":{"size":21}}')
+    const own = await vault('own', '{"version":2,"spacing":{}}')
+    const bad = await vault('bad', '{ nope')
+    await run([none, headings, own, bad])
+    expect(await read(none)).toEqual({ version: 2, spacing: { line: 2, blockGap: 8, bulletGap: 12 } })
+    expect(await read(headings)).toEqual({ version: 2, h2: { size: 21 }, spacing: { line: 2, blockGap: 8, bulletGap: 12 } })
+    expect(await read(own)).toEqual({ version: 2, spacing: {} })
+    expect(await readFile(path.join(bad, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE), 'utf8')).toBe('{ nope')
+  })
+
+  it('a root that is not a folder now is skipped; the default writes nothing; once per vault', async () => {
+    const gone = path.join(dir, 'gone')
+    await run([gone])
+    expect(existsSync(gone)).toBe(false)
+    const plain = await vault('plain')
+    await run([plain], { lineSpacing: 1.5, blockGap: 4, pageBulletIndent: 34, pageBulletGap: 10 })
+    expect(existsSync(path.join(plain, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE))).toBe(false)
+    const m = marks()
+    await run([plain], APP, m)
+    await rm(path.join(plain, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE))
+    await run([plain], APP, m)
+    expect(existsSync(path.join(plain, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE))).toBe(false)
   })
 })

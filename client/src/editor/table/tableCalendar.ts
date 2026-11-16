@@ -50,7 +50,8 @@ import type { Node as ProseNode, NodeType, Schema } from '@milkdown/kit/prose/mo
 import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
+import { minutesOf, nowPlace as placeAmong, rowTimes as timesOfTexts, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
+import { detectTimeFormat, formatTime } from '@shared/timeFormat'
 import { cellTextAt, rowNoDim, tableHasMerge } from './cells'
 import { foldRuns, runOf, unfoldRun } from './tableFold'
 import { tablerIcon } from './tableIcons'
@@ -59,34 +60,11 @@ import { calendarDaySetting, onSlotTimeSetting, slotTimeSetting, timeFormatSetti
 import type { TableLookPlace } from './tableLook'
 import './tableCalendar.css'
 
-/** Minutes from midnight of `date`, local time. */
-export const minutesOf = (date: Date): number => date.getHours() * 60 + date.getMinutes()
+export { minutesOf, secondsOf, slotTimeLabel, type NowPlace }
 
-/** Where now is in a calendar table: its now row (an index of `table`'s rows) and how far down its slot, and the first row that is not past. */
-export interface NowPlace {
-  row: number | null
-  fraction: number
-  /** The now row's slot, in minutes from today's midnight (YAZ-5602): its time, and the next row's time (one slot length on for the last row). */
-  start: number
-  end: number
-  /** Body rows before this index are past. */
-  pastEnd: number
-}
-
-/** Now in `table` at `minutes` from midnight; `null` when it is no calendar table or holds no time. */
+/** Now in `table` at `minutes` from midnight (the one slot rule, `shared/tableSlots.ts`); `null` when it is no calendar table or holds no time. */
 export function nowPlace(table: ProseNode, minutes: number): NowPlace | null {
-  const slot = table.attrs.calendar as number
-  if (!(slot > 0)) return null
-  const starts = rowTimes(table).flatMap(({ time }, i) => (time === null ? [] : [{ row: i + 1, start: time }]))
-  if (starts.length === 0) return null
-  const slots = starts.map(({ row, start }, i) => ({ row, start, end: starts[i + 1]?.start ?? start + slot }))
-  // Today's minute first, then the same minute tomorrow (a row after midnight).
-  for (const at of [minutes, minutes + 1440]) {
-    const now = slots.find(({ start, end }) => start <= at && at < end)
-    if (now !== undefined) return { row: now.row, fraction: (at - now.start) / (now.end - now.start), pastEnd: now.row, start: now.start - (at - minutes), end: now.end - (at - minutes) }
-  }
-  const next = slots.find(({ start }) => start > minutes)
-  return { row: null, fraction: 0, pastEnd: next?.row ?? table.childCount, start: 0, end: 0 }
+  return placeAmong(columnATimes(table), table.attrs.calendar as number, minutes)
 }
 
 /** A body row and its time from the first day's midnight, or `null`. */
@@ -95,18 +73,19 @@ interface BodyRow {
   time: number | null
 }
 
+/** Each row's time (`shared/tableSlots.ts`), the header row's `null`: column A through the map (YAZ-4792), so a row a merged time cell covers has no time of its own. */
+function columnATimes(table: ProseNode): Array<number | null> {
+  const texts: Array<string | null> = []
+  table.forEach((_, __, r) => void texts.push(r === 0 ? null : cellTextAt(table, r, 0)))
+  return timesOfTexts(texts)
+}
+
 /** Each body row of `table` with its time from the first day's midnight (a time earlier than the one above is a day on), or `null`. */
 function rowTimes(table: ProseNode): BodyRow[] {
+  const times = columnATimes(table)
   const out: BodyRow[] = []
-  let day = 0
-  let last = -1
   table.forEach((row, _, r) => {
-    if (r === 0) return
-    // Column A through the map (YAZ-4792): a row a merged time cell covers has no time of its own.
-    const time = readTime(cellTextAt(table, r, 0))
-    if (time !== null && time < last) day += 1440
-    if (time !== null) last = time
-    out.push({ row, time: time === null ? null : time + day })
+    if (r > 0) out.push({ row, time: times[r] })
   })
   return out
 }
@@ -153,33 +132,7 @@ function drawChipArrow(chip: HTMLElement, dir: 'up' | 'down'): void {
   chip.appendChild(tablerIcon(dir === 'up' ? 'arrowUp' : 'arrowDown')())
 }
 
-/** Two digits. */
-const two = (n: number): string => String(n).padStart(2, '0')
-
-/**
- * What the Time in slot pill says (YAZ-5602) for the slot `start`–`end` (minutes from today's midnight) at `seconds`
- * from today's midnight: the time left (`down`) or since the slot started (`up`), with seconds (`19:14 left`,
- * `1:19:14 left` from an hour) or in minutes (`20 min left`, `1 h 20 min left`). The count down rounds up, so the last
- * minute reads `1 min left`, never `0 min left`; the count up rounds down. Kept inside the slot.
- */
-export function slotTimeLabel(mode: 'down' | 'up', withSeconds: boolean, start: number, end: number, seconds: number): string {
-  const total = Math.max(0, Math.min((end - start) * 60, mode === 'down' ? end * 60 - seconds : seconds - start * 60))
-  const word = mode === 'down' ? 'left' : 'in'
-  if (withSeconds) {
-    // A count down rounds up, as a timer does: 19:13.8 left reads 19:14; a count up rounds down.
-    const s = mode === 'down' ? Math.ceil(total) : Math.floor(total)
-    const h = Math.floor(s / 3600)
-    const m = Math.floor((s % 3600) / 60)
-    return `${h > 0 ? `${h}:${two(m)}` : m}:${two(s % 60)} ${word}`
-  }
-  const mins = mode === 'down' ? Math.ceil(total / 60) : Math.floor(total / 60)
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return `${h > 0 ? `${h} h${m > 0 ? ` ${m} min` : ''}` : `${m} min`} ${word}`
-}
-
-/** Seconds from today's midnight, local time. */
-export const secondsOf = (date: Date): number => date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds() + date.getMilliseconds() / 1000
+/* What the pill says, and its widest text: ONE copy for the Mac and the phone (`shared/tableSlots.ts`, YAZ-5606). */
 
 /** The text of the pill on the now line of a slot, at `date`, by the setting; `''` when it is Off. */
 function pillText(start: number, end: number, date = new Date(), at?: TableLookPlace): string {
@@ -214,8 +167,7 @@ function slotPill(start: number, end: number, at?: TableLookPlace): () => HTMLEl
 /** The widest text of the pill in a slot `start`–`end`, in characters: the right padding of a last cell with text. */
 function pillChars(start: number, end: number, at?: TableLookPlace): number {
   const { mode, seconds } = slotTimeSetting(at)
-  if (mode === 'off') return 0
-  return slotTimeLabel(mode, seconds, start, end, mode === 'down' ? start * 60 : end * 60).length
+  return slotPillChars(mode, seconds, start, end)
 }
 
 /**

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
@@ -93,7 +93,9 @@ describe('YAZ-3943 D5 end to end: a copied board keeps its pictures', () => {
 
 describe('YAZ-3943 demo 2 and round 3 through the bridge: the settings and the approved list reach the doors', () => {
   it('"New boards keep pictures" › "In a folder you pick": a new board names the folder, and its first picture lands there', async () => {
-    settings = { ...settings, newBoardPictures: 'folder', newBoardPicturesFolder: 'Board pictures' }
+    // YAZ-5486: a vault-relative folder is the vault's (its new-places.json); the app's own is no vault's.
+    await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
+    await writeFile(path.join(vault, '.yaseendocs', 'new-places.json'), JSON.stringify({ version: 1, places: [null, null, null], newBoard: { pictures: 'folder', picturesFolder: 'Board pictures' } }))
     const created = await call<{ path: string }>(CONTRACT.createBoard.channel, { root: vault, path: path.join(vault, 'New.excalidraw') })
     const opened = await call<DrawingLoadResponse>(CONTRACT.drawing.load.channel, { root: vault, path: created.path })
     await call(CONTRACT.drawing.save.channel, { root: vault, path: created.path, json: sent([imageEl('aaa')]), expectedMtime: opened.mtime, newFiles: [{ fileId: 'aaa', mimeType: 'image/png', dataURL: png('A') }] })

@@ -3,7 +3,8 @@
  * script reading the look of the vault that holds it (`tableLook.ts`), two vaults side by side. Made-up values.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import tableCss from './table.css?inline'
+import cardTableCss from './cardTable.css?inline'
+import editorTableCss from './table.css?inline'
 import { TABLE_LOOK_DEFAULTS, TABLE_LOOK_SETTINGS, appTableLook, sanitizeTableLook, tableLookFile, tableLookOf, tableLookSettings } from '@shared/tableLook'
 import {
   BLOCK_WIDTH_MAX,
@@ -23,6 +24,8 @@ import {
 } from '@shared/types'
 import { headerRowVars, onTableLookSlot, setAppTableLook, setVaultTableLook, tableLookAt, tableLookKey, tableLookOfRoot, tableLookVars } from './tableLook'
 import { calendarDaySetting, headerRowSetting, slotTimeSetting, stickyHeaderSetting, textInCellsSetting, timeFormatSetting } from './timeFormatSetting'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 afterEach(() => {
   setAppTableLook(TABLE_LOOK_DEFAULTS)
@@ -164,6 +167,13 @@ describe('Time in slot in table-look.json (YAZ-5602 round 2)', () => {
     expect(tableLookOf({ ...TABLE_LOOK_DEFAULTS, tableSlotTime: 'off', tableSlotSeconds: true })).toEqual({})
     // The app's settings have none: the app's look is off, with seconds.
     expect(appTableLook(DEFAULT_SETTINGS)).toMatchObject({ tableSlotTime: 'off', tableSlotSeconds: true })
+  })
+
+  it('a save keeps them: a file with slotTime and slotSeconds read, then saved again, holds them still, beside the rest of its look', () => {
+    const file = sanitizeTableLook({ version: 1, look: { slotTime: 'up', slotSeconds: false, nextShade: true, nowMark: 'both' } })
+    expect(tableLookFile(tableLookOf(tableLookSettings(file)))).toEqual({ version: 1, look: { slotTime: 'up', slotSeconds: false, nextShade: true, nowMark: 'both' } })
+    // Another setting changed and saved: the slot keys stay.
+    expect(tableLookOf({ ...tableLookSettings(file), tableRowBand: 'off' }).look).toMatchObject({ slotTime: 'up', slotSeconds: false, rowBand: 'off' })
   })
 
   it('sanitised like nextShade: one of off, down, up; a boolean; each wrong key dropped alone', () => {

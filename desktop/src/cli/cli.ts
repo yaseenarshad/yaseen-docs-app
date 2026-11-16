@@ -55,7 +55,8 @@ import { CARD_SKILL_DIR } from '../main/cardSkill'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { createFile } from '../main/fs/create'
 import { readFile, writeFile } from '../main/fs/file'
-import { dailyPage } from '../main/pages/daily'
+import { dailyPage, vaultDailySettings } from '../main/pages/daily'
+import { vaultNewPlacesSettings, vaultRootOf } from '../main/vaultSettingsRead'
 import { newPage } from '../main/pages/page'
 import { otherMacFiles } from '../main/settingsFiles'
 import { mergeFolderSettings, parseState } from '../main/store'
@@ -63,7 +64,8 @@ import { STATE_FILE, userDataDir } from '../main/userData'
 import { giveId, nextId, readPage } from '../main/vaultIndex/idSweep'
 import { idVault, macId, mintIds, vaultIds } from '../main/vaultIndex/mint'
 import { scanAll } from '../main/vaultIndex/reconcile'
-import { fileTitle, scanFile, walk } from '../main/vaultIndex/scan'
+import { fileTitle } from '@shared/indexRecord'
+import { scanFile, walk } from '../main/vaultIndex/scan'
 
 export interface Io {
   /** The whole of stdin, for `--body -`. */
@@ -587,8 +589,9 @@ async function daily(target: string | undefined, flags: Map<string, string | tru
   onlyFlags('daily', flags, ['--date', '--find', '--open', '--json'])
   if (target === undefined) throw new Usage('daily needs a vault')
   const day = dayOf(str(flags, '--date'))
-  const settings = await settingsNow()
   const root = resolve(target)
+  // YAZ-5491: the vault's daily-pages.json; the app's settings only for a vault with none.
+  const settings = await vaultDailySettings(root, await vaultNewPlacesSettings(root, await settingsNow()))
   const page = await dailyPage(root, settings, day, !flags.has('--find'))
   if (page === null) throw new Error(`no daily page "${dailyPageName(settings.dailyPageFormat, day).trim()}" in ${root}`)
   report(io, flags, page)
@@ -602,7 +605,10 @@ async function newCommand(target: string | undefined, flags: Map<string, string 
   const title = str(flags, '--title')?.trim()
   if (title === undefined || title === '') throw new Usage('new needs --title')
   const body = flags.has('--body') ? await bodyOf(flags, io) : undefined
-  const page = await newPage(resolve(target), title, body, (await settingsNow()).commentsHint)
+  // YAZ-5490: the comment hint of the folder's vault (its new-places.json), else the app's.
+  const vault = await vaultRootOf(resolve(target))
+  const app = await settingsNow()
+  const page = await newPage(resolve(target), title, body, (vault === null ? app : await vaultNewPlacesSettings(vault, app)).commentsHint)
   if (!page.created && body !== undefined) io.stderr(`warning: --body was not written: ${page.path} was already there\n`)
   report(io, flags, page)
 }

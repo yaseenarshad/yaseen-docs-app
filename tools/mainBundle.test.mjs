@@ -68,3 +68,22 @@ describe('the main-process bundle', () => {
     expect(Buffer.byteLength(code)).toBeLessThan(40_000)
   })
 })
+
+// YAZ-5086 / YAZ-5277: the Mac's card count runs on a worker thread. It is built and loaded as the Settings › Storage
+// worker is: a file of its own next to `index.js` in `out/main`, found by `__dirname` at run time, and packed into
+// `app.asar` by `files: ["out/**"]`. So the packaged app loads it from the same place as the storage worker.
+describe('the count worker of the friends send (YAZ-5086)', () => {
+  it('is built next to index.js, which loads it by __dirname; the packaged file list takes it', async () => {
+    const files = await readdir(path.join(out, 'main'))
+    const name = files.find((f) => /^countWorker-[\w-]+\.js$/.test(f))
+    expect(name).toBeDefined()
+    const index = await readFile(path.join(out, 'main', 'index.js'), 'utf8')
+    expect(index).toMatch(new RegExp(`\\.join\\(__dirname, "\\./${name.replace(/[.-]/g, '\\$&')}"\\)`))
+    const worker = await readFile(path.join(out, 'main', name), 'utf8')
+    expect(worker).toMatch(/worker_threads/)
+    expect(worker).not.toMatch(/require\("electron"\)/)
+    const pkg = JSON.parse(await readFile(path.join(DESKTOP, 'package.json'), 'utf8'))
+    expect(pkg.build.files).toContain('out/**')
+    expect(pkg.build.files.filter((f) => f.startsWith('!')).some((f) => /out\/main|countWorker/.test(f))).toBe(false)
+  })
+})

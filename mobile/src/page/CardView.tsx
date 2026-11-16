@@ -1,0 +1,188 @@
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { cardInContent, type CardAtPage } from '@client/review/cardRead'
+import { cardFileShape } from '@shared/cardFileFormat'
+import { splitFrontmatter } from '@shared/frontmatter'
+import { useApp } from '../app/AppState'
+import { Frame } from '../screens/Frame'
+import { useVaultData } from '../search/vaultData'
+import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
+import { guardLink } from '../media/ui/safeLinks'
+import { openFile } from '../media/ui/vaultMedia'
+import { cardHead, titleBand } from '../media/ui/cardHead'
+import { tapOf } from './pageDom'
+import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
+import { openLink, type LinkDoor } from './openLink'
+import { heldText, holdText } from './heldText'
+import { useVaultLook } from './vaultLook'
+import { UNTITLED_CARD, drawCard } from './pageLook'
+import { useTables } from './useTables'
+import { PageComments, PageCommentsCount } from './comments/PageComments'
+import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
+import { usePageCardMenu } from '../cardMenu/pageCardMenu'
+import { cardMoreButton } from '../cardMenu/moreButton'
+import { usePageTools } from './PageTools'
+
+/** The strip is its own lazy chunk (with the properties rows): the first load's list of chunks stays as it was. */
+const CardStrip = lazy(() => import('./cardStrip/CardStrip').then((m) => ({ default: m.CardStrip })))
+
+/** The words of a card file that is not valid (round 15, item 3). */
+export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
+
+/**
+ * A CARD ALONE, READ ONLY (4C; round 12 item 10): a tap on a card in Search opens it here. The card as Review
+ * draws it (`renderCard`), in the Mac's card box (the card window): its head (ID, "Archived", and "Title
+ * hidden in review" while Review is on) and its title band (none for a card with no title: the ID names it). The top
+ * bar says the title ("Untitled card" with none); the heading "Title · ID" is for VoiceOver only, which names a card
+ * with no title by its ID, its review history, and "Open
+ * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card.
+ *
+ * TWO ⋯: the CARD's own ⋯ sits at the right of its head (its ID row), the same ⋯ and menu as a card inside
+ * a page (`moreButton.ts`, `pageCardMenu.tsx`): Up next, Archive card, Fix later, Title on the front, two taps each.
+ * The top bar's ⋯ is the PAGE's: the full title when the top bar cuts it, and Find in card. A card with no
+ * ID has no card ⋯ (as in a page: the actions write its card line, found by its ID).
+ *
+ * A card file that is not valid (2 or more cards, text outside the card, or no card; from git or an agent): the first
+ * card and one line, "This card file needs a fix on the Mac." (round 15, item 3). The fix actions stay on the Mac.
+ *
+ * 4B (Review) opens this view for "Open card" (`{ kind: 'card', path, id }`), and the page view for "Open page"
+ * (`{ kind: 'page', path, at: id }`).
+ *
+ * Under the card, the Mac's strip (`cardStrip/CardStrip.tsx`), closed. YAZ-5528: no due line under it (the
+ * Mac's card file tab has none): when the card is due and the chance you remember it are the last line of the Reviews
+ * drawer, as the Mac's.
+ *
+ * A card file shows its comments under the card and its strip, with the page's Comment button and box
+ * (`comments/PageComments.tsx`, the same block, no copy). A card in a page shows none: they are the page's.
+ */
+export default function CardView({ path, id }: { path: string; id: string }) {
+  const app = useApp()
+  const { store, sync } = app.services
+  const vault = app.vaultKey!
+  const data = useVaultData()
+  // The vault's link pills (their CSS variables) and its "Clicking a link".
+  const look = useVaultLook(app.services.store, data)
+  const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, click: look?.click }
+  // YAZ-5589: the text read ahead (`heldText.ts`): the card draws in the tap's frame; the stored file is read again at once.
+  const [text, setText] = useState<string | null | undefined>(() => heldText(vault, path))
+  const [reads, setReads] = useState(0)
+  const [notice, setNotice] = useState<string | null>(null)
+  const host = useRef<HTMLDivElement>(null)
+  const media = useVaultMedia()
+  useMediaWatch(host, media)
+  // Its tables get their widths and frame; a wide one opens full screen (⤢).
+  useTables(host, look?.table ?? null)
+  const now = app.services.now?.() ?? Date.now()
+
+  // Read again when a pass brings a new version of the file.
+  useEffect(
+    () =>
+      sync.subscribe((event) => {
+        if (event.type === 'changed' && event.vault === vault && (event.diff == null || event.diff.changed.includes(path))) setReads((n) => n + 1)
+      }),
+    [sync, vault, path],
+  )
+  // The card as the phone shows it (with the waiting actions), so a change from its ⋯ shows at once.
+  const answers = useAnswers()
+  useAnswersChanged(answers, path, () => setReads((n) => n + 1))
+  useEffect(() => {
+    let live = true
+    void shownText(store, vault, path, answers).then((content) => {
+      if (!live) return
+      setText(content)
+      if (typeof content === 'string') holdText(vault, path, content)
+    })
+    return () => {
+      live = false
+    }
+  }, [store, vault, path, reads, answers])
+
+  const record = data?.byPath[path]
+  const isFile = record?.kind === 'card'
+  const shape = typeof text === 'string' && isFile ? cardFileShape(splitFrontmatter(text).body) : null
+  // The card by its ID; a card file shows its first card (also when that card's ID is not the one asked for).
+  const card: CardAtPage | null = typeof text !== 'string' ? null : (cardInContent(path, text, id, -1) ?? (isFile ? cardInContent(path, text, null, 0) : null))
+  // The title off the card line: the card's own, else the index's for it until the file is read.
+  const listed = record?.cards?.find((c) => c.id !== null && c.id.toLowerCase() === id.toLowerCase())
+  const name = card !== null ? card.title : (listed?.title ?? '')
+  const title = name === '' ? UNTITLED_CARD : name
+  const label = name === '' ? (card?.id ?? id) : name
+
+  // YAZ-5556: a card file's ID in the top bar, as a page's (YAZ-5450); a card in a page is no file, and has no chip.
+  const fileId = isFile ? pageIdOf(data, record) : null
+  const reviewOn = data?.review.enabled === true
+  // The top bar's ⋯ holds the page tools only (the full title, Find in card); the card's own ⋯ is on its head.
+  const tools = usePageTools(host, { title, path, label: 'Card tools', find: 'Find in card', headings: false })
+  const cardMenu = usePageCardMenu(host, { path, answers, upNext: reviewOn })
+  const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}`
+  useEffect(() => {
+    const el = host.current
+    if (el === null || data === null || card === null) return
+    const body = document.createElement('div')
+    body.className = 'card__body'
+    body.append(drawCard(data, path, card.text))
+    const top = cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: reviewOn && card.notitle === true })
+    // The card's own ⋯ at the right of its head, as a card in a page (only a card with its own ID: it is what the actions write by).
+    if (top !== null && card.id !== null) top.append(cardMoreButton(card.id, card.title))
+    if (card.id !== null) el.dataset.cardId = card.id
+    else delete el.dataset.cardId
+    const parts = [top, titleBand(card.title), body]
+    el.replaceChildren(...parts.filter((part): part is HTMLElement => part !== null))
+    el.classList.toggle('card--off', card.off)
+    // `card.text` and the head's words are what is drawn: a new read with the same ones draws nothing again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, path, card?.text, head])
+
+  const onTap = async (event: React.MouseEvent) => {
+    if (data === null) return
+    const tap = tapOf(event.target, data)
+    // Any other link: the web opens Safari, the app's window stays.
+    if (tap === null) return void guardLink(event)
+    event.preventDefault()
+    if (tap.kind === 'go') openLink({ go: app.go, vaultKey: app.vaultKey, click: look?.click }, tap.target)
+    // A missing page's link, or a heading of a page (a card has none), does nothing.
+    else if (tap.kind === 'none' || tap.kind === 'heading') return
+    else setNotice(await openFile(media, tap.path))
+  }
+
+  return (
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} chip={fileId !== null && <PageIdChip id={fileId} path={path} />} tools={tools.button} notice={tools.bar} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
+      <article className="reader card-view" aria-label={label} style={look?.style}>
+        {/* A card file's comment count, at the top right; a tap goes to its comments under the card. */}
+        {isFile && typeof text === 'string' && <PageCommentsCount text={text} />}
+        <h2 className="reader__title reader__title--same">
+          {title}
+          <span className="card-view__id"> · {card?.id ?? id}</span>
+        </h2>
+        {!isFile && record !== undefined && <p className="muted card-view__in">{`in ${record.title}`}</p>}
+        {shape !== null && shape.problem !== 'ok' && (
+          <p className="problem problem--quiet" role="status">
+            {NEEDS_A_FIX}
+          </p>
+        )}
+        {notice !== null && (
+          <p className="reader__notice" role="status">
+            {notice}
+          </p>
+        )}
+        {text === null && <p className="muted">This card is not on the phone.</p>}
+        {text !== undefined && text !== null && card === null && shape === null && <p className="muted">{`Missing card · ${id}`}</p>}
+        <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
+        {/* The Mac's strip, tucked under the card and closed: Reviews, Properties, Linked mentions (and a card
+            file's Embedded in), each opening its drawer. Review off: none, as the Mac. */}
+        {card !== null && data !== null && reviewOn && (
+          <Suspense fallback={null}>
+            <CardStrip key={`${path}\n${card.id ?? id}`} reviews={card.reviews} settings={data.review} properties={card.properties ?? {}} data={data} door={door} pages={card.id === null ? undefined : { id: card.id, embeds: isFile }} now={now} />
+          </Suspense>
+        )}
+        {!isFile && record !== undefined && (
+          <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'open', route: { kind: 'page', path, at: card?.id ?? id } })}>
+            {app.unit('Open page')}
+          </button>
+        )}
+        {/* A card FILE's comments (its front matter's), and its Comment button; a card in a page has none. */}
+        {isFile && typeof text === 'string' && <PageComments path={path} text={text} noun="card file" />}
+        {cardMenu}
+      </article>
+    </Frame>
+  )
+}

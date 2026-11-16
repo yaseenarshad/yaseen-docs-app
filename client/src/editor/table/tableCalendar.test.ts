@@ -15,7 +15,10 @@ import { formatTableComment, parseTableComment, plainTable } from './tableCommen
 import { readTime } from '@shared/timeFormat'
 import { calendarTick } from './tableCalendar'
 import { cellPos } from './tableTestKit'
-import tableCss from './table.css?inline'
+import cardTableCss from './cardTable.css?inline'
+import editorTableCss from './table.css?inline'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 afterEach(async () => {
   await unmountAll()
@@ -169,6 +172,21 @@ describe('the next time slot (YAZ-5541)', () => {
     expect(nextRows(last.view)).toEqual([])
     calendarTick(last.view, 23 * 60 + 30)
     expect(nextRows(last.view)).toEqual([])
+  })
+
+  it('YAZ-5557: after midnight the rows count on: 11:40 pm\'s next slot is the 12:00 am row, 12:20 am\'s the 1:00 am row', async () => {
+    const night = calendar(['10:00 pm', '11:00 pm', '12:00 am', '1:00 am'], 'calendar 60m')
+    const { view } = await mountAt(23, 40, night)
+    expect([nowRows(view).map(({ i }) => i), nextRows(view)]).toEqual([[2], [3]])
+    calendarTick(view, 20)
+    expect([nowRows(view).map(({ i }) => i), nextRows(view), pastRows(view)]).toEqual([[3], [4], [1, 2]])
+  })
+
+  it('YAZ-5557: the day ends after midnight: now in the last row has no next; after the last slot, the first slot is the next to come', async () => {
+    const { view } = await mountAt(1, 30, calendar(['10:00 pm', '11:00 pm', '12:00 am', '1:00 am'], 'calendar 60m'))
+    expect([nowRows(view).map(({ i }) => i), nextRows(view)]).toEqual([[4], []])
+    calendarTick(view, 2 * 60 + 30)
+    expect([nowRows(view), nextRows(view), pastRows(view)]).toEqual([[], [1], []])
   })
 
   it('a row with no time right after the now row is the next row (the row after, as the spec says); a plain table has none', async () => {

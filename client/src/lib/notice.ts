@@ -4,7 +4,8 @@
  */
 import type { NoticeLength, SettingsState } from '@shared/types'
 import { basename } from './paths'
-import { SAME_WORD, type UnitText } from '../vault/unitWord'
+// The pure half (YAZ-5077): the phone's review hook reads this file's types with no desktop bridge (YAZ-5078).
+import { SAME_WORD, type UnitText } from '../vault/unitWordText'
 
 /** A plain notice goes after this long at the default Show for, "4 s" (E1, GRO-2171; YAZ-3303 D5). */
 export const LINK_NOTICE_MS = 4000

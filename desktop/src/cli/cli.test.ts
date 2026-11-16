@@ -674,7 +674,7 @@ describe('label and find', () => {
 describe('cards: due and card add (YAZ-4963)', () => {
   const DAY = 86_400_000
   const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA')
-  const minute = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
+  const minute = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}:00.000Z`
   const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
   /** A card line with `title` on it, right after the ID (YAZ-5308). */
   const titled = (title: string, line: string) => line.replace(/^([^,]+)/, `$1, title "${title}"`)
@@ -1164,10 +1164,18 @@ describe('daily and new (YAZ-4269)', () => {
     expect(JSON.parse(json.out)).toEqual({ path: path.join(root, 'daily', 'a-yaz-1.md'), title: '11_03- Tue', id: 'YAZ-1', created: false, others: [path.join(root, 'daily', '11-03-tue', 'b-yaz-2.md')] })
   })
 
+  it("YAZ-5491: the vault's daily-pages.json wins over the app's settings", async () => {
+    await settings({ ...DAILY, dailyPages: false })
+    const root = await vault('v', { 'journal/.template.md': 'PLAN\n', '.yaseendocs/daily-pages.json': JSON.stringify({ version: 1, enabled: true, folder: 'journal', format: 'MM_DD- ddd', dayFolder: false }) })
+    const made = await run(['daily', root, '--date', '2026-11-03'])
+    expect(made.code).toBe(0)
+    expect(made.out).toMatch(new RegExp(`^made ${path.join(root, 'journal')}`.replaceAll('/', '\\/')))
+  })
+
   it('refused with the setting to change: Daily pages off, or no daily pages folder', async () => {
     const root = await vault('v', {})
     await settings({ ...DAILY, dailyPages: false })
-    expect(await run(['daily', root])).toMatchObject({ code: 1, err: 'Daily pages are off. Turn them on in Settings › Files & Links › Daily pages\n' })
+    expect(await run(['daily', root])).toMatchObject({ code: 1, err: 'Daily pages are off in this vault. Turn them on in Settings › Files & Links › Daily pages\n' })
     await settings()
     expect((await run(['daily', root])).err).toMatch(/has no folder "daily"/)
     expect((await run(['daily'])).code).toBe(2)
@@ -1221,6 +1229,12 @@ describe('daily and new (YAZ-4269)', () => {
     const plain = await vault('plain', { 'projects/.keep.md': '' }, false)
     await run(['new', path.join(plain, 'projects'), '--title', 'Gym plan', '--body', 'Hello'])
     expect(await readFile(path.join(plain, 'projects', 'Gym plan.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\n---\nHello')
+  })
+
+  it("YAZ-5490: the folder's vault's new-places.json turns the comment hint off over the app's setting", async () => {
+    const plain = await vault('plain', { 'projects/.keep.md': '', '.yaseendocs/new-places.json': JSON.stringify({ version: 1, places: [null, null, null], commentsHint: false }) }, false)
+    await run(['new', path.join(plain, 'projects'), '--title', 'Gym plan', '--body', 'Hello'])
+    expect(await readFile(path.join(plain, 'projects', 'Gym plan.md'), 'utf8')).toBe('Hello')
   })
 
   it('new again with the same title finds the page and makes nothing; --body is then not written, and says so (D7)', async () => {

@@ -18,7 +18,7 @@
  *
  * Opened from anywhere by `CARD_PREVIEW` (`editor/card/cardOpen.ts`); App draws it.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import type { CardPreviewRequest } from '../editor/card/cardOpen'
 import { toggleCardAudio } from '../editor/card/cardMedia'
@@ -45,9 +45,11 @@ export interface CardPreviewProps {
   onLeave?: () => void
   /** A Files window has no page area: the preview covers the window. */
   whole?: boolean
+  /** The card look of the card's vault (YAZ-5484, `review/cardLook.ts`): on the preview, so the card draws with ITS vault's look. */
+  style?: CSSProperties
 }
 
-export function CardPreview({ card, vault, settings, doors, onNotice, onClose, leaveOn, onLeave, whole = false }: CardPreviewProps) {
+export function CardPreview({ card, vault, settings, doors, onNotice, onClose, leaveOn, onLeave, whole = false, style }: CardPreviewProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -115,7 +117,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
     if (!steps.stepOn('mouse')) steps.restart()
   }
   return (
-    <div className={whole ? 'card-preview card-preview--window' : 'card-preview'} role="dialog" aria-modal="false" aria-label="Preview card">
+    <div className={whole ? 'card-preview card-preview--window' : 'card-preview'} role="dialog" aria-modal="false" aria-label="Preview card" style={style}>
       <div className="card-preview__bar">
         <EyeIcon />
         <span className="card-preview__label">Preview</span>

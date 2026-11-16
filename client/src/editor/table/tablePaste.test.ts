@@ -11,8 +11,11 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { TABLE, cellPos, mountTable, unmountAll } from './tableTestKit'
 import { pasteIntoCells } from './tablePaste'
 import { FILL_WASH } from './colours'
-import tableCss from './table.css?inline'
+import cardTableCss from './cardTable.css?inline'
+import editorTableCss from './table.css?inline'
 import appCss from '../../app.css?inline'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 afterEach(unmountAll)
 

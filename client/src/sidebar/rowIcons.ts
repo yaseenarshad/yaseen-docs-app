@@ -1,6 +1,7 @@
 /**
  * Which icon a tree row shows (YAZ-3440 D8, D9): (1) its own pick in its vault's `icons.json` `paths`, (2) the first of
- * the name rules (`settings.sidebarIconRules`, one list for every vault, D9) whose glob matches the
+ * the name rules (YAZ-5488: its vault's own, `icons.json` `rules`; a vault with none reads the app's
+ * `settings.sidebarIconRules`, the fallback; this replaces D9's one list for every vault) whose glob matches the
  * row's NAME and kind, (3) Material's match by name, extension or folder name (`materialIcons.ts`), (4) Material's
  * default. With Folder icons "Plain" (YAZ-3554 D1) a folder skips (3) and has Material's default folder. A pick or a
  * rule is a Material icon in BOTH icon sets (the row says so as `data-icon-custom`), and an id Material does not
@@ -10,6 +11,7 @@
  * render; it keeps the `rules` it had while they say the same, so a new pick re-renders only the tree levels that
  * draw that row (`sameLevel` in Tree.tsx, `iconsChangedBelow`).
  */
+import { rootOfPath } from '@shared/types'
 import { globRegExp, type IconRule, type IconRuleKind, type VaultIcons } from '@shared/vaultIcons'
 import { DEFAULT_FOLDER_ICON, isMaterialIcon, materialFileIcon, materialFolderIcon, materialIconsLoaded, openIcon } from './materialIcons'
 
@@ -23,8 +25,12 @@ interface CompiledRule {
 export interface RowIcons {
   /** Every vault's picks by absolute path, the ids Material ships only. */
   paths: ReadonlyMap<string, string>
-  /** The name rules, compiled, in their order; those naming an id Material does not ship are left out. */
+  /** The name rules, compiled, in their order; those naming an id Material does not ship are left out. The app's (the fallback). */
   rules: readonly CompiledRule[]
+  /** YAZ-5488: the rules of each vault that has its own (`icons.json` `rules`), compiled; a vault not here reads `rules`. */
+  vaultRules: ReadonlyMap<string, readonly CompiledRule[]>
+  /** The window's vaults, for the vault of a path. */
+  roots: readonly string[]
   /**
    * Material's tables were loaded when this was built (YAZ-3470, `loadMaterialIcons`). Before, every row has the
    * default icon and no pick or rule is known; the load gives a new `RowIcons`, so every level renders once.
@@ -34,7 +40,7 @@ export interface RowIcons {
   folderNames: boolean
 }
 
-export const NO_ROW_ICONS: RowIcons = { paths: new Map(), rules: [], material: false, folderNames: true }
+export const NO_ROW_ICONS: RowIcons = { paths: new Map(), rules: [], vaultRules: new Map(), roots: [], material: false, folderNames: true }
 
 /** The rules still say what `compiled` says: the same globs, kinds and icons, in the same order. */
 function sameRules(rules: readonly IconRule[], compiled: readonly CompiledRule[]): boolean {
@@ -52,11 +58,28 @@ export function buildRowIcons(byRoot: Readonly<Record<string, VaultIcons>>, root
   const material = materialIconsLoaded()
   const paths = new Map<string, string>()
   for (const root of roots) for (const [p, id] of Object.entries(byRoot[root]?.paths ?? {})) if (isMaterialIcon(id)) paths.set(p, id)
-  const rulesSame = material === prev.material && sameRules(rules, prev.rules)
-  const compiled = rulesSame ? prev.rules : rules.filter((rule) => isMaterialIcon(rule.icon)).map((rule) => ({ match: rule.match, test: globRegExp(rule.match), kind: rule.kind, icon: rule.icon }))
+  const compile = (list: readonly IconRule[], had: readonly CompiledRule[] | undefined): readonly CompiledRule[] =>
+    had !== undefined && material === prev.material && sameRules(list, had) ? had : list.filter((rule) => isMaterialIcon(rule.icon)).map((rule) => ({ match: rule.match, test: globRegExp(rule.match), kind: rule.kind, icon: rule.icon }))
+  const compiled = compile(rules, prev.rules)
+  const rulesSame = compiled === prev.rules
+  // YAZ-5488: each vault's own rules, where its icons.json has them.
+  const vaultRules = new Map<string, readonly CompiledRule[]>()
+  for (const root of roots) {
+    const own = byRoot[root]?.rules
+    if (own !== undefined) vaultRules.set(root, compile(own, prev.vaultRules.get(root)))
+  }
+  const vaultSame = vaultRules.size === prev.vaultRules.size && [...vaultRules].every(([root, list]) => prev.vaultRules.get(root) === list)
+  const rootsSame = roots.length === prev.roots.length && roots.every((root, i) => prev.roots[i] === root)
   const pathsSame = paths.size === prev.paths.size && [...paths].every(([p, id]) => prev.paths.get(p) === id)
-  if (rulesSame && pathsSame && folderNames === prev.folderNames) return prev
-  return { paths: pathsSame ? prev.paths : paths, rules: compiled, material, folderNames }
+  if (rulesSame && vaultSame && rootsSame && pathsSame && folderNames === prev.folderNames) return prev
+  return { paths: pathsSame ? prev.paths : paths, rules: compiled, vaultRules: vaultSame ? prev.vaultRules : vaultRules, roots: rootsSame ? prev.roots : [...roots], material, folderNames }
+}
+
+/** The rules a path's row reads (YAZ-5488): its vault's own, else the app's. */
+function rulesFor(icons: RowIcons, path: string): readonly CompiledRule[] {
+  if (icons.vaultRules.size === 0) return icons.rules
+  const root = rootOfPath(icons.roots, path)
+  return (root === null ? undefined : icons.vaultRules.get(root)) ?? icons.rules
 }
 
 /** The row's pick or first matching rule (1, 2), or null: Material's match then decides (3, 4). */
@@ -64,7 +87,7 @@ function customIcon(icons: RowIcons | undefined, path: string, name: string, kin
   if (icons === undefined) return null
   const pick = icons.paths.get(path)
   if (pick !== undefined) return pick
-  for (const rule of icons.rules) if (rule.kind === kind && rule.test.test(name)) return rule.icon
+  for (const rule of rulesFor(icons, path)) if (rule.kind === kind && rule.test.test(name)) return rule.icon
   return null
 }
 
@@ -85,7 +108,7 @@ export function rowIcon(icons: RowIcons | undefined, path: string, name: string,
  */
 export function iconsChangedBelow(prev: RowIcons | undefined, next: RowIcons | undefined, drawn: (path: string) => boolean): boolean {
   if (prev === next) return false
-  if (prev === undefined || next === undefined || prev.rules !== next.rules || prev.material !== next.material || prev.folderNames !== next.folderNames) return true
+  if (prev === undefined || next === undefined || prev.rules !== next.rules || prev.vaultRules !== next.vaultRules || prev.roots !== next.roots || prev.material !== next.material || prev.folderNames !== next.folderNames) return true
   if (prev.paths === next.paths) return false
   for (const [p, id] of next.paths) if (prev.paths.get(p) !== id && drawn(p)) return true
   for (const p of prev.paths.keys()) if (!next.paths.has(p) && drawn(p)) return true

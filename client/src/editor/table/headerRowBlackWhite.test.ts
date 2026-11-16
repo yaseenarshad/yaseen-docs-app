@@ -15,7 +15,10 @@ import { setHeaderRowSetting } from './timeFormatSetting'
 import { headerRowOfView, parseViews } from '../../views/viewSchema'
 import { setHeaderRowPart, shownHeaderRow } from '../../views/view/TableLookSettings'
 import type { ViewDef } from '../../views/viewSchema'
-import tableCss from './table.css?inline'
+import cardTableCss from './cardTable.css?inline'
+import editorTableCss from './table.css?inline'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 afterEach(async () => {
   setHeaderRowSetting(DEFAULT_HEADER_ROW)

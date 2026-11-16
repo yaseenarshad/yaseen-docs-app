@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { idNumber } from '@shared/pageId'
 import { DEFAULT_SHOW_IDS, sanitizeShowIds, shownId, useAllPathIds, usePageId, type PathIds } from './showIds'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { pathInfo } from '../editor/wikilink/linkPillLook'
 import type { IndexRecord } from '@shared/types'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -94,6 +95,30 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
     off.unmount()
   })
 
+  it('`usePageId` shows a card file\'s card ID after its title (YAZ-5546), display only: its record and `pathInfo` keep no `id`', () => {
+    const source = createWikilinkResolveSource()
+    const cardFile: IndexRecord = { ...record('/v/cards/demo-40.md'), kind: 'card', cards: [{ id: 'DEMO-40', off: false, next: false, reviews: [] }] }
+    const unswept: IndexRecord = { ...record('/v/cards/new.md'), kind: 'card', cards: [{ id: null, off: false, next: false, reviews: [] }] }
+    const pageWithCards: IndexRecord = { ...record('/v/page.md', 'DEMO-7'), cards: [{ id: 'DEMO-41', off: false, next: false, reviews: [] }] }
+    const plainWithCards: IndexRecord = { ...record('/v/plain.md'), cards: [{ id: 'DEMO-42', off: false, next: false, reviews: [] }] }
+    source.update(() => null, [cardFile, unswept, pageWithCards, plainWithCards], [], true)
+    const card = probe(() => usePageId(source, '/v/cards/demo-40.md'))
+    const fresh = probe(() => usePageId(source, '/v/cards/new.md'))
+    const page = probe(() => usePageId(source, '/v/page.md'))
+    const plain = probe(() => usePageId(source, '/v/plain.md'))
+    expect(card.seen.at(-1)).toBe('DEMO-40')
+    expect(fresh.seen.at(-1)).toBeUndefined()
+    expect(page.seen.at(-1)).toBe('DEMO-7')
+    expect(plain.seen.at(-1)).toBeUndefined()
+    // Display only: links, pills and comments read `pathInfo` and the record, which hold no ID for the card file.
+    expect(pathInfo(source.records, source.folders).get('/v/cards/demo-40.md')?.id).toBeUndefined()
+    expect(source.records.find((r) => r.path === '/v/cards/demo-40.md')?.id).toBeUndefined()
+    // A new card ID on the line follows.
+    act(() => source.update(() => null, [{ ...cardFile, cards: [{ id: 'DEMO-43', off: false, next: false, reviews: [] }] }], [], true))
+    expect(card.seen.at(-1)).toBe('DEMO-43')
+    for (const p of [card, fresh, page, plain]) p.unmount()
+  })
+
   it('`useAllPathIds` is undefined with no source, else one Map over the vaults that chose it, each in its form, kept while no ID changed', () => {
     const one = createWikilinkResolveSource()
     one.update(() => null, [record('/v/a.md', 'EMB-1'), record('/v/plain.md'), record('/v/old.md', 'a1b2c3d4e5f6')], [], true)
@@ -120,6 +145,30 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
     expect(both.seen.at(-1)?.get('/w/x.md')).toBe('WIKI-8')
     none.unmount()
     both.unmount()
+  })
+
+  it('`useAllPathIds` shows a card file\'s ID, off its card line (YAZ-5546): it holds no `id:`; a page with its own `id` is unchanged', () => {
+    const one = createWikilinkResolveSource()
+    const cardFile: IndexRecord = { ...record('/v/cards/demo-40.md'), kind: 'card', title: 'Made-up card', cards: [{ id: 'DEMO-40', off: false, next: false, reviews: [], title: 'Made-up card' }] }
+    const unswept: IndexRecord = { ...record('/v/cards/new.md'), kind: 'card', cards: [{ id: null, off: false, next: false, reviews: [] }] }
+    const pageWithCards: IndexRecord = { ...record('/v/page.md', 'DEMO-7'), cards: [{ id: 'DEMO-41', off: false, next: false, reviews: [] }] }
+    one.update(() => null, [cardFile, unswept, pageWithCards, record('/v/plain.md')], [], true)
+    const seen: (PathIds | undefined)[] = []
+    const Probe = ({ form }: { form: 'number' | 'full' }) => {
+      seen.push(useAllPathIds([{ index: one, form }]))
+      return null
+    }
+    const el = document.createElement('div')
+    const root = createRoot(el)
+    act(() => root.render(<Probe form="number" />))
+    expect(seen.at(-1)?.get('/v/cards/demo-40.md')).toBe('#40')
+    expect(seen.at(-1)?.get('/v/page.md')).toBe('#7')
+    expect(seen.at(-1)?.has('/v/cards/new.md')).toBe(false)
+    expect(seen.at(-1)?.has('/v/plain.md')).toBe(false)
+    act(() => root.render(<Probe form="full" />))
+    expect(seen.at(-1)?.get('/v/cards/demo-40.md')).toBe('DEMO-40')
+    expect(seen.at(-1)?.get('/v/page.md')).toBe('DEMO-7')
+    act(() => root.unmount())
   })
 
   it('`useAllPathIds` follows a change of form on the same index: Number to Full ID redraws the map', () => {

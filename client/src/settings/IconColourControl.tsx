@@ -2,7 +2,7 @@
  * One kind's icon colour row (YAZ-3440 D4, YAZ-5100 round 2): a colour picker and Reset, which drops the kind's colour.
  * Its own chunk, loaded when Settings shows a colour row: the registry keeps only the row's name, words and when it shows.
  */
-import type { SettingsState, SidebarIconKind } from '@shared/types'
+import type { SettingsState, SidebarIconColors, SidebarIconKind } from '@shared/types'
 import { SIDEBAR_ICON_SWATCHES } from './options'
 
 /** Material's own colour of the kinds whose icon it draws as an image: the swatch while none is picked. */
@@ -26,9 +26,13 @@ export function builtInIconColour(kind: SidebarIconKind, settings: SettingsState
   return rootColour(`--kind-${kind}`) ?? SIDEBAR_ICON_SWATCHES[kind]
 }
 
-export default function IconColourControl({ kind, name, settings, onChange }: { kind: SidebarIconKind; name: string; settings: SettingsState; onChange: (next: SettingsState) => void }) {
-  const own = settings.sidebarIconColors[kind]
-  const drop = (): SettingsState['sidebarIconColors'] => Object.fromEntries(Object.entries(settings.sidebarIconColors).filter(([k]) => k !== kind))
+/**
+ * YAZ-5488: `colors` are the picked vault's (its icons.json `colors`, else the app's until it has some) and `onColors`
+ * writes them there; with no vault, the app's settings. `settings` is for the built-in colour alone.
+ */
+export default function IconColourControl({ kind, name, settings, colors, onColors }: { kind: SidebarIconKind; name: string; settings: SettingsState; colors: SidebarIconColors; onColors: (next: SidebarIconColors) => void }) {
+  const own = colors[kind]
+  const drop = (): SidebarIconColors => Object.fromEntries(Object.entries(colors).filter(([k]) => k !== kind))
   return (
     <>
       <input
@@ -36,9 +40,9 @@ export default function IconColourControl({ kind, name, settings, onChange }: { 
         className="settings__color"
         aria-label={`${name} icon colour`}
         value={own ?? builtInIconColour(kind, settings)}
-        onChange={(e) => onChange({ ...settings, sidebarIconColors: { ...settings.sidebarIconColors, [kind]: e.target.value } })}
+        onChange={(e) => onColors({ ...colors, [kind]: e.target.value })}
       />
-      <button type="button" className={`settings__option${own === undefined ? ' settings__option--active' : ''}`} disabled={own === undefined} onClick={() => onChange({ ...settings, sidebarIconColors: drop() })}>
+      <button type="button" className={`settings__option${own === undefined ? ' settings__option--active' : ''}`} disabled={own === undefined} onClick={() => onColors(drop())}>
         Reset
       </button>
     </>

@@ -36,8 +36,10 @@ import { cardSides, hiddenCount, markHidden } from '@shared/cardText'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
-import { cardPillSpan } from '../wikilink/wikilinkPlugin'
+import { cardPillSpan } from '../wikilink/cardPill'
 import { linkClickAction } from '../linkGesture'
+import { cardSafety } from './cardSafety'
+import { cleanLocal, LOCAL_SRC, localMark, urlOf } from './localOnly'
 import { parseTableComment } from '../table/tableComment'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, CARD_AUDIO_ATTR, CARD_BOARD_ATTR, type CardBoardLook } from './cardMedia'
 
@@ -84,6 +86,12 @@ const OPEN = ''
 const CLOSE = ''
 const PLACEHOLDER_RE = /(\d+)/g
 
+/**
+ * The name a mark of this renderer is written under. The Mac: its own name. The phone (YAZ-5280): the secret name of the
+ * one allow list, which drops every `data-*` of the text and gives the renderer's marks their names back after the clean.
+ */
+const mark = (attr: string): string => (cardSafety.local ? localMark(attr) : attr)
+
 const escapeHtml = (text: string): string => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
 interface LinkToken extends Tokens.Generic {
@@ -106,9 +114,9 @@ const wikilinks: TokenizerAndRendererExtension = {
   renderer(token) {
     const { inner, embed, raw } = token as LinkToken
     // A sound or a board: a marker span DOMPurify keeps as text, built into its DOM after (`applyLook`).
-    if (embed && isAudioRef(inner)) return `<span ${CARD_AUDIO_ATTR}="${escapeHtml(inner.split('|')[0].trim())}">${escapeHtml(raw)}</span>`
-    if (embed && isBoardRef(inner)) return `<span ${CARD_BOARD_ATTR}="${escapeHtml(inner)}">${escapeHtml(raw)}</span>`
-    return embed ? escapeHtml(raw) : `<span class="wikilink" ${CARD_LINK_ATTR}="${escapeHtml(inner)}">${escapeHtml(inner)}</span>`
+    if (embed && isAudioRef(inner)) return `<span ${mark(CARD_AUDIO_ATTR)}="${escapeHtml(inner.split('|')[0].trim())}">${escapeHtml(raw)}</span>`
+    if (embed && isBoardRef(inner)) return `<span ${mark(CARD_BOARD_ATTR)}="${escapeHtml(inner)}">${escapeHtml(raw)}</span>`
+    return embed ? escapeHtml(raw) : `<span class="wikilink" ${mark(CARD_LINK_ATTR)}="${escapeHtml(inner)}">${escapeHtml(inner)}</span>`
   },
 }
 
@@ -121,6 +129,8 @@ const PURIFY = { USE_PROFILES: { html: true }, FORBID_TAGS: ['style', 'form', 'i
 let purifier: ReturnType<typeof DOMPurify> | null = null
 /** The card's own DOMPurify copy: hooks another part of the app adds to the shared one never reach it. */
 function sanitize(html: string): DocumentFragment {
+  // The phone (YAZ-5209): local media only, by the one allow list of `localOnly.ts`. The Mac never sets it.
+  if (cardSafety.local) return cleanLocal(html)
   purifier ??= DOMPurify(window)
   return purifier.sanitize(html, { ...PURIFY, RETURN_DOM_FRAGMENT: true })
 }
@@ -303,6 +313,12 @@ export function refreshCardLook(root: ParentNode, look: CardLook | undefined): v
   }
 }
 
+/** On the phone: a picture's address from `look.image` that is not the app's own bytes, never set as `src` (YAZ-5242). */
+export const CARD_SRC_ATTR = 'data-card-src'
+
+/** A picture's source as written: its `src`, or on the phone (local media only) its vault path, `data-local-src`. */
+const srcOf = (img: Element): string | null => img.getAttribute('src') ?? img.getAttribute(LOCAL_SRC)
+
 /** The sounds of `root` as players and its board embeds as pictures (YAZ-5014, YAZ-5015): made after the sanitiser. */
 function buildMedia(root: ParentNode, look: CardLook | undefined): void {
   const url = (src: string) => (look?.image === undefined ? src : look.image(src))
@@ -311,7 +327,7 @@ function buildMedia(root: ParentNode, look: CardLook | undefined): void {
     marker.replaceWith(audioPlayer(url(src), src.slice(src.lastIndexOf('/') + 1)))
   }
   for (const img of root.querySelectorAll('img')) {
-    const src = img.getAttribute('src')
+    const src = srcOf(img)
     if (src === null || !isAudioRef(src)) continue
     let name = src.split(/[?#]/)[0]
     name = name.slice(name.lastIndexOf('/') + 1)
@@ -326,7 +342,7 @@ function buildMedia(root: ParentNode, look: CardLook | undefined): void {
   for (const marker of root.querySelectorAll<HTMLElement>(`span[${CARD_BOARD_ATTR}]`)) {
     const inner = marker.getAttribute(CARD_BOARD_ATTR) ?? ''
     const file = look.board(inner)
-    marker.replaceWith(file === null ? missingBoard(inner) : boardPicture(inner, file.root, file.path))
+    marker.replaceWith(file === null ? missingBoard(inner) : boardPicture(inner, file.root, file.path, file.picture))
   }
 }
 
@@ -336,8 +352,17 @@ function applyLook(root: ParentNode, look: CardLook | undefined): void {
   refreshCardLook(root, look)
   for (const img of root.querySelectorAll('img')) {
     if (img.classList.contains('card__board-img')) continue
-    const src = img.getAttribute('src')
-    if (src !== null && look?.image !== undefined) img.setAttribute('src', look.image(src))
+    const src = srcOf(img)
+    img.removeAttribute(LOCAL_SRC)
+    if (src !== null && look?.image !== undefined) {
+      const url = look.image(src)
+      // The phone (YAZ-5242): an address is set only when it is the app's own bytes; any other stays a mark
+      // (`data-card-src`) that the phone's card turns into its bytes or a calm line. The Mac sets it as before.
+      if (cardSafety.local && urlOf(url).kind !== 'own') {
+        img.removeAttribute('src')
+        img.setAttribute(CARD_SRC_ATTR, url)
+      } else img.setAttribute('src', url)
+    }
     const { text, width } = parseAlt(img.getAttribute('alt') ?? '')
     img.setAttribute('alt', text)
     if (width !== null) img.setAttribute('width', String(width))

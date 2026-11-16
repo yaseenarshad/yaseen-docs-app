@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { VaultConfigChange } from '@shared/types'
-import { DEFAULT_UNIT_WORD, PAGE_WORD, SAME_WORD, UNIT_WORD_FILE, UNIT_WORDS, cleanOwnWord, sanitizeUnitWord, unitTextOf, unitWordOf, useVaultUnitWord, vaultUnit, type UnitWordState } from './unitWord'
+import { DEFAULT_UNIT_WORD, PAGE_WORD, SAME_WORD, UNIT_WORD_FILE, UNIT_WORD_KEYS, UNIT_WORDS, cleanOwnWord, sanitizeUnitWord, unitTextOf, unitWordOf, useVaultUnitWord, vaultUnit, type UnitWordState } from './unitWord'
 
 let listeners: Array<(c: VaultConfigChange) => void> = []
 
@@ -163,7 +163,7 @@ describe('useVaultUnitWord', () => {
   it('the round trip: save writes the clean file, the helper follows, and the store answers for the root', async () => {
     await mount('/vault')
     await act(async () => state.save({ unit: 'doc', own: { one: '', many: '' } }))
-    expect(write).toHaveBeenCalledWith('/vault', UNIT_WORD_FILE, { unit: 'doc', own: { one: '', many: '' } })
+    expect(write).toHaveBeenCalledWith('/vault', UNIT_WORD_FILE, { unit: 'doc', own: { one: '', many: '' } }, UNIT_WORD_KEYS)
     expect(state.unit('New page')).toBe('New doc')
     expect(vaultUnit('/vault')('12 pages')).toBe('12 docs')
     expect(vaultUnit('/other')).toBe(SAME_WORD)

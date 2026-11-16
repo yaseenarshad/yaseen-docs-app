@@ -283,7 +283,8 @@ export const CANVAS_SECTION: SettingsSection = {
         {
           id: 'newBoardFolder',
           label: 'New drawings and diagrams go to',
-          hint: "Where /drawing and /diagram put the new file. The file gets the page's name.",
+          // YAZ-5486: the active tab's vault's (`new-places.json`).
+          hint: "Where /drawing and /diagram put the new file. The file gets the page's name. Saved in this vault.",
           keywords: ['embed', 'new drawing', 'new diagram', 'folder', 'assets', 'slash', 'location'],
           render: (ctx) => (
             <Segmented options={newBoardFolderOptions((text) => unit(ctx, text))} value={ctx.settings.newBoardFolder} onChange={(newBoardFolder) => ctx.onChange({ ...ctx.settings, newBoardFolder })} ariaLabel="New drawings and diagrams go to" />

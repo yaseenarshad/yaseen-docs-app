@@ -12,13 +12,13 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 // Settings › Review (YAZ-4967, D14): the card settings.
-const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', 'githubToken']
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', 'githubToken', 'friendsSend']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and
 // their style (YAZ-4798) after Group indent.
-const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
+const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', 'folderPagesVault', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 const ids = (hits: readonly SettingHit[]) => hits.map((h) => h.item.id)
 /** The Hotkeys page's rows, in page order. */
 const hotkeyRows = () => ids(settingCandidates(ctx()).filter((h) => h.section.id === 'hotkeys'))
@@ -43,6 +43,7 @@ describe('settingCandidates', () => {
       'vaultOpensOn',
       'theme',
       'contentWidth',
+      'spacingVault',
       'lineSpacing',
       'blockGap',
       'pageSpacingPreview',
@@ -60,8 +61,11 @@ describe('settingCandidates', () => {
       'sidebarRevealActive',
       'sidebarIconSet',
       'sidebarFileIcons',
+      // YAZ-5488: the colours and the rules are the vault's, each group with its Vault dropdown.
+      'iconColorsVault',
       ...['page', 'card', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image'].map((k) => `sidebarIconColors.${k}`),
       // The icon rules (YAZ-3440 D9).
+      'iconRulesVault',
       'sidebarIconRules',
       // ⌘D's place (YAZ-3556 D8).
       'goTo',
@@ -328,7 +332,7 @@ describe('searchSettings', () => {
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'section indent'))).toEqual(['sectionStep', 'sectionLines'])
     // The page's bullet spacing (the YAZ-3818 demo) says "spacing" too.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'pageBulletIndent', 'pageBulletGap'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'pageBulletIndent', 'pageBulletGap'])
   })
 
   it('matches on the group hint too: "guide lines" finds the three guide line rows of Outline (YAZ-4094); "threading" finds the three threading rows and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {

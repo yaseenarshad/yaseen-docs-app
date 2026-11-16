@@ -1,8 +1,7 @@
-import { splitFrontmatter } from './frontmatter'
+import { keyFold, splitFrontmatter } from './frontmatterSplit'
 import { closesFence, fenceOf } from './fences'
 import { canonicalPageId, isNumberId } from './pageId'
 import { inLineEnds, withLf } from './lineEnds'
-import { keyFold } from './propertyKeys'
 
 /**
  * PAGE CARDS (YAZ-4946, YAZ-4959 D3): a card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
@@ -13,11 +12,15 @@ import { keyFold } from './propertyKeys'
  *   ---
  *   Paris
  *   ```
- *   <!-- card: WIKI-512, 2026-11-12T14:05Z good, 2026-11-20T09:00Z again -->
+ *   <!-- card: WIKI-512, 2026-11-12T14:05:31.204Z good, 2026-11-20T09:00:02.950Z again -->
  *
- * The line holds the card's ID (the vault's counter, D2), then each review: a UTC time to the minute and the FSRS
- * rating (`again | hard | good | easy`, D5), and how long the answer took when that is known (YAZ-5033: whole active
- * seconds, `2026-11-12T14:05Z good 13s`; an older review has none). `off` takes the card out of review. `next` puts it at the top of the Inbox
+ * The line holds the card's ID (the vault's counter, D2), then each review: its time and the FSRS rating (`again | hard
+ * | good | easy`, D5), and how long the answer took when that is known (YAZ-5033: whole active seconds,
+ * `2026-11-12T14:05:31.204Z good 13s`; a review made before it has none). THE TIME (YAZ-5642) is ISO 8601 in UTC to
+ * the millisecond, as `Date.prototype.toISOString` writes it (`cardTime`): two answers never share one, so a review is
+ * its time and rating, and no merge or Undo has to guess which of two "same" reviews is meant. It is the one form the
+ * line reads: a review time of any other form (the minute-only `2026-11-12T14:05Z` of the first builds) is an unknown
+ * part, kept as its text (a one-off conversion outside the app rewrites those once). `off` takes the card out of review. `next` puts it at the top of the Inbox
  * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. `notitle` hides the card's title on the
  * Inbox's front (YAZ-5030, "Title on the front: Hide"); absent, the title shows. `fix` marks the card "Fix later"
  * (YAZ-5097): it has a mistake to fix at the desk; it stays in review.
@@ -41,7 +44,7 @@ export type CardRating = 'again' | 'hard' | 'good' | 'easy'
 
 /** One review on a card line. */
 export interface CardReview {
-  /** UTC to the minute, `2026-11-12T14:05Z`: it sorts as a string. */
+  /** ISO 8601 UTC to the millisecond, `2026-11-12T14:05:31.204Z` (YAZ-5642, `cardTime`): it sorts as a string. */
   at: string
   rating: CardRating
   /**
@@ -62,8 +65,8 @@ export type CardPropertyValue = CardPropertyScalar | CardPropertyScalar[]
 /** One part of a card line, in the order the line holds them. */
 export type CardPart =
   | { kind: 'id'; id: string }
-  | { kind: 'title'; title: string }
-  | { kind: 'property'; name: string; value: CardPropertyValue }
+  | { kind: 'title'; title: string; raw?: string }
+  | { kind: 'property'; name: string; value: CardPropertyValue; raw?: string }
   | { kind: 'review'; review: CardReview }
   | { kind: 'off' }
   | { kind: 'next' }
@@ -71,7 +74,16 @@ export type CardPart =
   | { kind: 'fix' }
   | { kind: 'other'; text: string }
 
-/** What a card line holds. `parts` keeps every part in place; the getters below read it. */
+/**
+ * What a card line holds. `parts` keeps every part in place; the getters below read it. A title part read off a line
+ * in a form this app does not write (a bare `>`, extra spaces, a tab after `title`, an odd escape) keeps that part's
+ * text as `raw`, so a write that does not change the title writes its bytes back (YAZ-5309: an answer on the phone
+ * never changes a title); a new title (`withCardTitle`) is written in the app's own form. A title with a raw comma
+ * keeps no `raw`: a write encodes its commas (YAZ-5393), so an older build never splits it. A property part keeps its
+ * text as `raw` the same way (YAZ-5349: `tags  "a"`, `ratio 2.50`, `[ "a" ]`), until a write changes it; one with a
+ * raw comma in its quotes keeps none, as a title. The phone never writes the line with this writer alone: it splices
+ * its own part in and keeps every other part's bytes (`mobile/src/answers/splice.ts`, YAZ-5409).
+ */
 export interface CardLine {
   parts: CardPart[]
 }
@@ -102,14 +114,15 @@ export interface CardRecord {
 /** `<!-- card: … -->` on one line, any spaces inside the delimiters. */
 const LINE_RE = /^<!--[ \t]*card:[ \t]*(.*?)[ \t]*-->$/
 /**
- * A review part: a real UTC minute (month, day, hour and minute in range) and an FSRS rating, then the answer's
+ * A review part: a real UTC time to the millisecond (YAZ-5642: month, day, hour, minute and second in range, three
+ * digits of milliseconds, `Z`) and an FSRS rating, then the answer's
  * seconds when known (YAZ-5033): ` <n>s`, a whole number in its one written form (no leading zero, no sign), at most
  * `CARD_SECONDS_MAX`. Any other ending (`13.5s`, `013s`, `90000s`) makes the part unknown: kept as its text.
  */
-const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\dZ)[ \t]+(again|hard|good|easy)(?:[ \t]+(0|[1-9]\d{0,4})s)?$/
+const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z)[ \t]+(again|hard|good|easy)(?:[ \t]+(0|[1-9]\d{0,4})s)?$/
 
-/** A review time as the line writes it: UTC, to the minute (`2026-11-12T14:05Z`). */
-export const cardTime = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
+/** A review time as the line writes it (YAZ-5642): ISO 8601, UTC, to the millisecond (`2026-11-12T14:05:31.204Z`). */
+export const cardTime = (ms: number): string => new Date(ms).toISOString()
 
 /** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteText`). */
 const TITLE_RE = /^title[ \t]+("(?:[^"\\]|\\.)*")$/
@@ -174,6 +187,8 @@ const quoteText = (text: string): string =>
 /** A quoted text read back, quotes and all (`quoteText`'s escapes, in one pass); a raw comma (an older or a hand's line) reads as itself. */
 const unquoteText = (quoted: string): string =>
   quoted.slice(1, -1).replace(/\\(.)|&#(44|38);/g, (_, c: string | undefined, code: string | undefined) => (c === undefined ? (code === '44' ? ',' : '&') : c === 'n' ? '\n' : c))
+/** The title part as this app writes it. */
+const titlePart = (title: string): string => `title ${quoteText(title)}`
 
 // ---------- properties (YAZ-5379, YAZ-5349 option A) ----------
 //
@@ -252,7 +267,10 @@ export function parseCardLine(value: string): CardLine | null {
       parts.push({ kind: 'review', review: seconds === undefined ? { at: review[1], rating: review[2] as CardRating } : { at: review[1], rating: review[2] as CardRating, seconds } })
     else if (title !== null && cleanCardTitle(unquoteText(title[1])) !== '') {
       titled = true
-      parts.push({ kind: 'title', title: cleanCardTitle(unquoteText(title[1])) })
+      const clean = cleanCardTitle(unquoteText(title[1]))
+      // Its own bytes are kept (`raw`) unless they are the app's form, or hold a raw comma: an older build splits there,
+      // so a write puts the title in the app's form, its commas `&#44;` (YAZ-5393).
+      parts.push(text === titlePart(clean) || text.includes(',') ? { kind: 'title', title: clean } : { kind: 'title', title: clean, raw: text })
     } else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
@@ -262,7 +280,11 @@ export function parseCardLine(value: string): CardLine | null {
       parts.push({ kind: 'id', id: canonicalPageId(text) })
     } else {
       const property = parseProperty(text)
-      parts.push(property === null ? { kind: 'other', text } : { kind: 'property', ...property })
+      // A property in a form this app does not write (`tags  "a"`, `ratio 2.50`, `[ "a" ]`) keeps its bytes (`raw`), as a title
+      // does; one with a raw comma in its quotes keeps none: a write encodes it (`&#44;`), as a title's (YAZ-5393).
+      parts.push(
+        property === null ? { kind: 'other', text } : formatProperty(property.name, property.value) === text || text.includes(',') ? { kind: 'property', ...property } : { kind: 'property', ...property, raw: text },
+      )
     }
   }
   return { parts }
@@ -271,7 +293,7 @@ export function parseCardLine(value: string): CardLine | null {
 /** Is `n` seconds a review part can hold (YAZ-5033): a whole number, 0 to `CARD_SECONDS_MAX`? */
 export const isCardSeconds = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= CARD_SECONDS_MAX
 
-/** A review part as the line writes it: `2026-11-12T14:05Z good`, and ` 13s` only when its seconds are known (YAZ-5033). */
+/** A review part as the line writes it: `2026-11-12T14:05:31.204Z good`, and ` 13s` only when its seconds are known (YAZ-5033). */
 export const formatCardReview = (r: CardReview): string => (isCardSeconds(r.seconds) ? `${r.at} ${r.rating} ${r.seconds}s` : `${r.at} ${r.rating}`)
 
 /**
@@ -283,7 +305,17 @@ export const cardReviewKey = (r: CardReview): string => `${r.at} ${r.rating}`
 /** The card line for `line`, or null when it holds no part (a card with no ID and no review writes no line). */
 export function formatCardLine(line: CardLine): string | null {
   const parts = line.parts.map((p) =>
-    p.kind === 'id' ? p.id : p.kind === 'title' ? `title ${quoteText(p.title)}` : p.kind === 'property' ? formatProperty(p.name, p.value) : p.kind === 'review' ? formatCardReview(p.review) : p.kind === 'other' ? p.text : p.kind,
+    p.kind === 'id'
+      ? p.id
+      : p.kind === 'title'
+        ? (p.raw ?? titlePart(p.title))
+        : p.kind === 'property'
+          ? (p.raw ?? formatProperty(p.name, p.value))
+          : p.kind === 'review'
+            ? formatCardReview(p.review)
+            : p.kind === 'other'
+              ? p.text
+              : p.kind,
   )
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
 }
@@ -377,7 +409,7 @@ export function renameCardProperty(line: CardLine, from: string, to: string): Ca
   const held = line.parts[at]
   if (held?.kind !== 'property' || held.name === to) return line
   const fold = keyFold(to)
-  return { parts: line.parts.flatMap((p, i) => (i === at ? [{ ...held, name: to }] : p.kind === 'property' && keyFold(p.name) === fold ? [] : [p])) }
+  return { parts: line.parts.flatMap((p, i) => (i === at ? [{ kind: 'property', name: to, value: held.value }] : p.kind === 'property' && keyFold(p.name) === fold ? [] : [p])) }
 }
 
 /** The card without property `name`, in any spelling (YAZ-5379). A name it does not hold changes nothing. */
@@ -475,7 +507,7 @@ export function withCardReview(line: CardLine, review: CardReview): CardLine {
   return { parts: [...line.parts.slice(0, at), { kind: 'review', review }, ...line.parts.slice(at)] }
 }
 
-/** Without the review made at `at` (the last one, should two share a minute). An unknown `at` changes nothing. */
+/** Without the review made at `at` (its full time, YAZ-5642: one review). An unknown `at` changes nothing. */
 export function withoutCardReview(line: CardLine, at: string): CardLine {
   const i = line.parts.map((p) => p.kind === 'review' && p.review.at === at).lastIndexOf(true)
   return i === -1 ? line : { parts: line.parts.filter((_, j) => j !== i) }
@@ -640,28 +672,8 @@ export function findCards(text: string): CardBlock[] {
 /** What the index keeps of a page's cards (D4, YAZ-5308 its title off its line): one entry per card, in page order. */
 export const cardRecords = (text: string): CardRecord[] => findCards(text).map((c) => cardRecordOf(c.line))
 
-/** A card of a page that has an ID, with its place among the page's cards (`findCards` order, 0 first). */
-export interface CardWithId {
-  card: CardRecord
-  id: string
-  index: number
-}
-
-/**
- * The cards of a page that each list ONE row for (search's card rows, YAZ-5047; a folder table's card rows, YAZ-5319),
- * off the index's `cards`: each card with an ID, in page order. A copy whose ID a card before it on the page holds is
- * left out, as the review leaves it out (`cardPlan`): one row per ID, so each row's path stays its own.
- */
-export function cardsWithIds(cards: readonly CardRecord[] | undefined): CardWithId[] {
-  const out: CardWithId[] = []
-  const seen = new Set<string>()
-  cards?.forEach((card, index) => {
-    if (card.id === null || seen.has(card.id)) return
-    seen.add(card.id)
-    out.push({ card, id: card.id, index })
-  })
-  return out
-}
+// `cardsWithIds` has its own file (no YAML parser): the phone's Search reads it in its first load (YAZ-5377).
+export { cardsWithIds, type CardWithId } from './cardsWithIds'
 
 /**
  * `text` with the card line of each card `change` names rewritten: `change` gets each card in page order and returns

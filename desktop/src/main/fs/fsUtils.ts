@@ -3,6 +3,7 @@ import { link, mkdir, open, readdir, readFile, rename, stat, unlink } from 'node
 import path from 'node:path'
 import { folderSettingsPath, type BridgeError, type FileKind, type TreeNode } from '@shared/types'
 import { ASSETS_DIR } from '@shared/drawingAssets'
+import { nameOrderCi } from '@shared/assetLookup'
 import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSkipped, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
@@ -79,8 +80,9 @@ export async function* vaultFiles(root: string): AsyncGenerator<{ full: string; 
   }
 }
 
+/** Names in a folder, case-insensitive: `nameOrderCi`, the one order the phone's asset lookup uses too (YAZ-5068). */
 export function byNameCi<T extends { name: string }>(a: T, b: T): number {
-  return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+  return nameOrderCi(a.name, b.name)
 }
 
 function errnoCode(err: unknown): string | undefined {

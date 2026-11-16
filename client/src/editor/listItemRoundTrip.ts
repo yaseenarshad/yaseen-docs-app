@@ -45,6 +45,10 @@
 import { paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as MdNode } from '@milkdown/kit/transformer'
 import { $remark } from '@milkdown/kit/utils'
+import { ESCAPED_SAME_LINE_ORDERED_MARKER, FENCE_BOUNDARY, escapeSameLineOrderedMarkers, mapOutsideFences } from './outsideFences'
+
+// The walk and rule 6's load half live in `outsideFences.ts` (no Milkdown): the phone's reader parses with them too.
+export { escapeSameLineOrderedMarkers, mapOutsideFences }
 
 type MdParent = MdNode & { children?: MdParent[]; position?: { start: { line: number } } }
 
@@ -98,45 +102,6 @@ const LINE_END = String.raw`(?=\r?$)`
 const LEGACY_EMPTY_ITEM = new RegExp(String.raw`^(${MARKER}) <br />[ \t]*${LINE_END}`)
 const EMPTY_TASK_ITEM = new RegExp(String.raw`^(${MARKER} \[[ xX]\])[ \t]*${LINE_END}`)
 const EMPTY_TASK_ITEM_BREAK = new RegExp(String.raw`^(${MARKER} \[[ xX]\]) <br />$`)
-
-const SAME_LINE_ORDERED_MARKER = /^([ \t]*[-*+][ \t]+\d+)([.)])(?=[ \t\r]|$)/
-const ESCAPED_SAME_LINE_ORDERED_MARKER = /^([ \t]*[-*+][ \t]+\d+)\\([.)])(?=[ \t\r]|$)/
-const FENCE_BOUNDARY = /^[ \t]*(`{3,}|~{3,})/
-
-/**
- * Transform ordinary Markdown lines while leaving complete fenced code blocks byte-identical.
- * 🔒 EVERY text rule of the editor, on load and on save, goes through this ONE walk: a rule that
- * reads the text by itself reads code as Markdown. `next` is the line below, for a rule that looks ahead.
- */
-export const mapOutsideFences = (markdown: string, transform: (line: string, next: string | undefined) => string): string => {
-  let fence: { marker: '`' | '~'; length: number } | null = null
-  return markdown
-    .split('\n')
-    .map((line, index, lines) => {
-      const boundary = FENCE_BOUNDARY.exec(line)
-      if (fence !== null) {
-        if (
-          boundary !== null &&
-          boundary[1][0] === fence.marker &&
-          boundary[1].length >= fence.length &&
-          line.slice(boundary[0].length).trim() === ''
-        ) {
-          fence = null
-        }
-        return line
-      }
-      if (boundary !== null) {
-        fence = { marker: boundary[1][0] as '`' | '~', length: boundary[1].length }
-        return line
-      }
-      return transform(line, lines[index + 1])
-    })
-    .join('\n')
-}
-
-/** Before parsing: make an immediate inner `6)` / `6.` delimiter literal to CommonMark. */
-export const escapeSameLineOrderedMarkers = (markdown: string): string =>
-  mapOutsideFences(markdown, (line) => line.replace(SAME_LINE_ORDERED_MARKER, '$1\\$2'))
 
 /**
  * Before writing, ONE line outside code: `* [ ] <br />` (Milkdown's empty task) → `* [ ]`, and the

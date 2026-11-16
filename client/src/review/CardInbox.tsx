@@ -81,7 +81,8 @@
  *    hidden). Never on the front or an earlier side. It is no Space step, and the scroll never goes to it; the buttons' band
  *    stays at the bottom of the view over it.
  *  - Nothing left: "Inbox complete." for the vault; for one page or folder "This page is done." and, quiet, "21 more in
- *    the Inbox", which starts the vault's review.
+ *    the Inbox", which starts the vault's review. The vault done while cards are still due (a new day began during the
+ *    review; YAZ-5623, the phone's rule, `reviewMoreCount`): "Review 12 more", which starts it again.
  *  - ADD MORE FOR TODAY (YAZ-5042, Yaseen: "instead of having to go settings"): the done screen says what waits past
  *    today's number, "38 new cards and 3 Up next cards wait for another day.", with one button for each kind, "Add 10
  *    new cards" and "Add 2 Up next" (the first added card shows at once); a filter's done screen has its own kind's
@@ -118,7 +119,7 @@ import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CARD_FILTERS, CardInboxBar } from './CardInboxBar'
-import { CardStateChip, answerIcon, answerLine } from './cardInboxChip'
+import { CardAgainChip, CardStateChip, answerIcon, answerLine, showsAgain } from './cardInboxChip'
 import { FocusIcon } from './cardInboxIcons'
 import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
 import { CardInboxHints } from './CardInboxHints'
@@ -134,7 +135,11 @@ import { todayCards } from './reviewTime'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 import { tourEvent } from '../course/tourBus'
+import { addedLine, resetLine, reviewMoreCount, reviewMoreLabel, waitingLine } from './cardWords'
 import type { CardPlace } from '../editor/card/cardOpen'
+
+/** How long "Archived · Undo" stays under the buttons (YAZ-5621): the phone's `UNDO_SHOWN_MS`. */
+const ARCHIVED_SHOWN_MS = 4000
 
 /** Where the Inbox's zoom is kept (YAZ-5372): `savedZoom`, localStorage. */
 const INBOX_ZOOM_KEY = 'inbox:zoom'
@@ -145,6 +150,11 @@ export interface CardInboxProps {
   review: CardReviewApi
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
+  /**
+   * The card look of the vault that holds a card (YAZ-5484, `review/cardLook.ts`): its CSS variables, on the Inbox's
+   * root while its card shows, so the card draws with ITS vault's look. Absent: `.app`'s (the app's look).
+   */
+  cardVarsOf?: (path: string) => CSSProperties
   /**
    * O, the title and the page name (YAZ-5145): Explore's own page layer for the card's file, reading, at its TOP
    * (YAZ-5022); with `card` (YAZ-5307, Settings › Cards › Inbox: O opens the page at › The card), landed on that card.
@@ -214,23 +224,10 @@ interface AnswerLine {
   count: number
 }
 
-/**
- * What waits past today's number (YAZ-5042), as the done screen says it: "38 new cards and 3 Up next cards wait for
- * another day." `from` (YAZ-5322): the folders new cards come from, "14 new Spanish cards"; empty for All folders.
- */
-export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKind[], from = ''): string {
-  const parts = kinds.map((k) => `${more[k]} ${k === 'new' ? (from === '' ? 'new' : `new ${from}`) : 'Up next'} card${more[k] === 1 ? '' : 's'}`)
-  const one = kinds.length === 1 && more[kinds[0]] === 1
-  return `${parts.join(' and ')} ${one ? 'waits' : 'wait'} for another day.`
-}
+// The done screen's words moved to `cardWords.ts` (YAZ-5078), so the phone's Review screen says them too.
+export { addedLine, resetLine, waitingLine } from './cardWords'
 
-/** The add's line (YAZ-5042), after its "+": "Added 10 new cards for today". */
-export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kind === 'new' ? 'new' : 'Up next'} card${n === 1 ? '' : 's'} for today`
-
-/** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
-export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
-
-export function CardInbox({ shown = true, review, session, vaultOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -241,7 +238,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   const { text, title } = useCardFront(pageText, card?.page?.title ?? '', card?.page?.notitle === true)
   // A card FILE (YAZ-5037): "Open card" in the key row, and no "in <page>". One look in the index the vault already holds.
   const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
-  const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
+  // A card that comes back (YAZ-5594: same place, "3 of 3") is a new turn: the answers so far tell the two apart.
+  const cardKey = card === null ? null : `${session.answered.length}\n${card.path}\n${card.id}`
   /**
    * O (YAZ-5307): the card's file at its top, or a card in a page landed on it when Settings › Cards › Inbox: O opens the
    * page at says The card. The breadcrumb's page part and ⋯ › Open card open as O does; a card file opens as itself.
@@ -332,7 +330,19 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
     pendingLine.current = null
     setLastLine(pending)
   }, [answeredCount])
-  const line = lastLine !== null && answeredCount === lastLine.count && session.answered[answeredCount - 1] === lastLine.rating ? lastLine : null
+  // YAZ-5621: Archive card is on the Undo stack, as on the phone (YAZ-5078). While it is the last thing done, the
+  // answer's line goes (its Undo would take back the archive), and "Archived · Undo ⌘Z" shows for the phone's 4
+  // seconds; ⌘Z and ⋯'s Undo still take the archive back after that.
+  const [archivedAt, setArchivedAt] = useState<object | null>(null)
+  useEffect(() => {
+    if (archivedAt === null) return
+    const id = setTimeout(() => setArchivedAt((a) => (a === archivedAt ? null : a)), ARCHIVED_SHOWN_MS)
+    return () => clearTimeout(id)
+  }, [archivedAt])
+  const archived = session.lastArchive != null
+  const answerLineNow = lastLine !== null && answeredCount === lastLine.count && session.answered[answeredCount - 1] === lastLine.rating ? lastLine : null
+  const line = archived ? null : answerLineNow
+  const archivedLine = archived && archivedAt !== null && session.lastAdd === null
   useEffect(() => {
     if (!moreOpen) return
     const away = (event: PointerEvent) => {
@@ -441,6 +451,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   )
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
+  // YAZ-5623 (the phone's rule): the vault done while cards are still due (a new day began, a card came back): "Review 12 more".
+  const again = session.scope === 'vault' ? reviewMoreCount(addKinds, review.dueCount) : 0
   /** What the done screen says (YAZ-5017, YAZ-5042); `title` false under the Due today end (YAZ-5043), which has its own. */
   const doneRest = (withTitle: boolean) =>
                 session.filter !== 'all' && session.counts.all > 0 ? (
@@ -457,6 +469,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
                     {withTitle && <p className="card-inbox__done-title">Inbox complete.</p>}
                     {courseOffer !== undefined ? (
                       <CourseOffer {...courseOffer} />
+                    ) : again > 0 ? (
+                      <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
+                        {reviewMoreLabel(again)}
+                      </button>
                     ) : addButtons === null ? (
                       <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
                     ) : (
@@ -490,7 +506,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
       ? []
       : [
           { id: 'undo', label: 'Undo last review', keys: '⌘Z', icon: ICON_UNDO, disabled: !session.canUndo, run: () => void review.undo() },
-          { id: 'off', label: 'Archive card', tour: 'card-menu-archive', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
+          { id: 'off', label: 'Archive card', tour: 'card-menu-archive', icon: ICON_OFF, disabled: card.page === null, run: () => {
+            setArchivedAt({})
+            void review.turnOff()
+          } },
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
             : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
@@ -498,7 +517,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
         ]
 
   return (
-    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
+    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ ...(card !== null && cardVarsOf?.(card.path)), '--document-zoom': zoom / 100 } as CSSProperties}>
       <CardInboxBar
         session={session}
         setFilter={review.setFilter}
@@ -529,6 +548,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
           {card !== null && (
             <>
               <CardStateChip card={card} />
+              {/* YAZ-5626 (the phone's YAZ-5594): a card back after a Forgot says so, "Again", beside its state. */}
+              {showsAgain(card) && <CardAgainChip />}
               <span className="card-inbox__head">
                 <CardId id={card.id} onNotice={onNotice} />
                 {card.page?.next === true && <CardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
@@ -672,12 +693,20 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
           </div>
         )}
         {/* The last answer's line (YAZ-5025 round 2): centred under the buttons; the row keeps its height when empty. */}
-        <div className="card-inbox__last" role="status" aria-live="polite" data-rating={session.lastAdd === null ? line?.rating : undefined} data-kind={session.lastAdd === null ? undefined : 'add'}>
+        <div className="card-inbox__last" role="status" aria-live="polite" data-rating={session.lastAdd === null ? line?.rating : undefined} data-kind={session.lastAdd !== null ? 'add' : archivedLine ? 'archive' : undefined}>
           {session.lastAdd !== null ? (
             // YAZ-5042: the add (round 2: or the Reset), while it is the last thing done; its Undo is the hook's undo, as ⌘Z.
             <>
               <span className="card-inbox__last-mark">{session.lastAdd.reset ? '↺' : '+'}</span>
               <span className="card-inbox__last-text"> {session.lastAdd.reset ? resetLine(session.lastAdd.kind) : addedLine(session.lastAdd.kind, session.lastAdd.count)} · </span>
+              <button type="button" className="card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
+                <KeyLabel action="Undo" keys="⌘Z" />
+              </button>
+            </>
+          ) : archivedLine ? (
+            // YAZ-5621: the phone's words, "Archived · Undo"; its Undo is the hook's undo, as ⌘Z.
+            <>
+              <span className="card-inbox__last-text">Archived · </span>
               <button type="button" className="card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
                 <KeyLabel action="Undo" keys="⌘Z" />
               </button>

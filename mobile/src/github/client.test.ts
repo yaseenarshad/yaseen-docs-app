@@ -1,0 +1,220 @@
+import { describe, expect, it } from 'vitest'
+import { GITHUB_API, GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, githubClient, repoPath, type FetchLike } from './client'
+import { backoffMs, slowedUntil, staleUntil } from './backoff'
+
+const TOKEN = 'github_pat_11SECRETSECRET0000000000_secretsecretsecretsecretsecretsecretsecretsecretsecretsecretsecret'
+
+/** A fetch that answers every call with `answer`, and keeps what was asked. */
+function recorder(answer: (url: string, init: RequestInit) => Response | Promise<Response>) {
+  const calls: { url: string; init: RequestInit }[] = []
+  const fetch: FetchLike = async (url, init) => {
+    calls.push({ url, init })
+    return answer(url, init)
+  }
+  return { fetch, calls }
+}
+const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } })
+
+async function failure(promise: Promise<unknown>): Promise<GithubError> {
+  try {
+    await promise
+  } catch (error) {
+    if (error instanceof GithubError) return error
+    throw error
+  }
+  throw new Error('expected a GithubError')
+}
+
+describe('githubClient: the one way the phone talks to GitHub', () => {
+  it('sends the token only to api.github.com, in the Authorization header, with no cookies and no cache', async () => {
+    const { fetch, calls } = recorder(() => json(200, { login: 'yaseen' }))
+    const res = await githubClient(TOKEN, { fetch }).request('/user')
+    expect(res.status).toBe(200)
+    expect(res.data).toEqual({ login: 'yaseen' })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(`${GITHUB_API}/user`)
+    const headers = new Headers(calls[0].init.headers)
+    expect(headers.get('authorization')).toBe(`Bearer ${TOKEN}`)
+    expect(headers.get('accept')).toBe('application/vnd.github+json')
+    expect(headers.get('x-github-api-version')).toBe('2022-11-28')
+    expect(calls[0].init.credentials).toBe('omit')
+    expect(calls[0].init.cache).toBe('no-store')
+    expect(calls[0].init.referrerPolicy).toBe('no-referrer')
+    expect(calls[0].url).not.toContain(TOKEN)
+  })
+
+  it.each([
+    'https://evil.example/user',
+    '//evil.example/user',
+    'user',
+    '/\\evil.example',
+    '/user@evil.example',
+    '/repos/../../x',
+    `/user?access_token=${TOKEN}`,
+  ])('refuses a path that could leave api.github.com or carry the token: %s', async (path) => {
+    const { fetch, calls } = recorder(() => json(200, {}))
+    await expect(githubClient(TOKEN, { fetch }).request(path)).rejects.toThrow(/not a GitHub API path/)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('adds a query from `query`, encoded; a query cannot be written into the path', async () => {
+    const { fetch, calls } = recorder(() => json(200, []))
+    await githubClient(TOKEN, { fetch }).request('/repos/a/b/contents/.yaseendocs', { query: { ref: 'feat/phone #1' } })
+    expect(calls[0].url).toBe(`${GITHUB_API}/repos/a/b/contents/.yaseendocs?ref=feat%2Fphone+%231`)
+  })
+
+  it('gives the rate numbers of each answer, with the resource (gist updates have their own 100 an hour)', async () => {
+    const { fetch } = recorder(() =>
+      json(200, {}, { 'x-ratelimit-limit': '100', 'x-ratelimit-remaining': '97', 'x-ratelimit-used': '3', 'x-ratelimit-reset': '1794571200', 'x-ratelimit-resource': 'gist_update' }),
+    )
+    const res = await githubClient(TOKEN, { fetch }).request('/gists/g1', { method: 'PATCH', body: {} })
+    expect(res.rateLimit).toEqual({ resource: 'gist_update', limit: 100, remaining: 97, used: 3, resetAt: 1794571200_000 })
+    const none = await githubClient(TOKEN, { fetch: recorder(() => json(200, {})).fetch }).request('/user')
+    expect(none.rateLimit).toBeNull()
+  })
+
+  it("an error keeps GitHub's message and the rate numbers (3B: 422 \"Update is not a fast forward\" is STALE_HEAD)", async () => {
+    const { fetch } = recorder(() => json(422, { message: 'Update is not a fast forward', status: '422' }, { 'x-ratelimit-resource': 'core', 'x-ratelimit-remaining': '4000' }))
+    const error = await failure(githubClient(TOKEN, { fetch }).request('/repos/a/b/git/refs/heads/main', { method: 'PATCH', body: { sha: 'x', force: false } }))
+    expect(error).toMatchObject({ code: 'UNEXPECTED', status: 422, said: 'Update is not a fast forward' })
+    expect(error.rateLimit).toMatchObject({ resource: 'core', remaining: 4000 })
+  })
+
+  it('sends a JSON body with the method', async () => {
+    const { fetch, calls } = recorder(() => json(201, { sha: 'abc' }))
+    await githubClient(TOKEN, { fetch }).request('/repos/a/b/git/blobs', { method: 'POST', body: { content: 'x', encoding: 'utf-8' } })
+    expect(calls[0].init.method).toBe('POST')
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ content: 'x', encoding: 'utf-8' })
+    expect(new Headers(calls[0].init.headers).get('content-type')).toBe('application/json')
+  })
+
+  it('a poll with an ETag sends If-None-Match and returns a 304 as a normal answer (3B: the free poll)', async () => {
+    const { fetch, calls } = recorder(() => new Response(null, { status: 304, headers: { etag: '"e1"' } }))
+    const res = await githubClient(TOKEN, { fetch }).request('/repos/a/b/branches/main', { etag: '"e1"' })
+    expect(new Headers(calls[0].init.headers).get('if-none-match')).toBe('"e1"')
+    expect(res.status).toBe(304)
+    expect(res.etag).toBe('"e1"')
+    expect(res.data).toBeNull()
+  })
+
+  it('returns bytes when asked for raw content (3B: a blob)', async () => {
+    const { fetch, calls } = recorder(() => new Response(new Uint8Array([1, 2, 3]), { status: 200 }))
+    const res = await githubClient(TOKEN, { fetch }).request('/repos/a/b/git/blobs/s1', { accept: 'application/vnd.github.raw+json', raw: true })
+    expect(new Headers(calls[0].init.headers).get('accept')).toBe('application/vnd.github.raw+json')
+    expect(res.data).toEqual(new Uint8Array([1, 2, 3]))
+  })
+
+  it('returns a status from `allow` instead of throwing (the probes; 3B: the moved branch)', async () => {
+    const { fetch } = recorder(() => json(422, { message: 'Validation Failed' }))
+    const res = await githubClient(TOKEN, { fetch }).request('/gists', { method: 'POST', body: {}, allow: [422] })
+    expect(res.status).toBe(422)
+  })
+
+  describe('typed failures', () => {
+    const NOW = Date.UTC(2026, 10, 13, 12)
+    const cases: [string, () => Response | Promise<Response>, string, Partial<GithubError>?][] = [
+      ['401: a wrong, expired or cancelled token', () => json(401, { message: 'Bad credentials' }), 'UNAUTHORIZED'],
+      ['403 on a read', () => json(403, { message: 'Resource not accessible by personal access token' }), 'NO_ACCESS'],
+      ['404', () => json(404, { message: 'Not Found' }), 'NOT_FOUND'],
+      ['403 with no requests left this hour', () => json(403, { message: 'API rate limit exceeded' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(NOW / 1000 + 600) }), 'RATE_LIMITED', { resetAt: NOW + 600_000 }],
+      ['429 with Retry-After (the secondary limit)', () => json(429, { message: 'slow down' }, { 'retry-after': '60' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
+      ['403 with Retry-After (the secondary limit)', () => json(403, { message: 'You have exceeded a secondary rate limit' }, { 'retry-after': '30' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }], // YAZ-5174: never under 1 minute
+      // YAZ-5166: GitHub's docs: the secondary limit can come with no retry-after and with requests left. Wait 60 s.
+      ['403 "secondary rate limit" with no Retry-After and requests left (YAZ-5166)', () => json(403, { message: 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.' }, { 'x-ratelimit-remaining': '4990' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
+      ['429 "secondary rate limit" with no Retry-After (YAZ-5166)', () => json(429, { message: 'You have exceeded a secondary rate limit.' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
+      ['429 with no headers and no message: wait 60 s (YAZ-5166)', () => json(429, {}), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
+      ['500', () => json(500, {}), 'GITHUB_DOWN'],
+      ['503 with no body', () => new Response('<html>down</html>', { status: 503 }), 'GITHUB_DOWN'],
+      ['no network (fetch rejects)', () => Promise.reject(new TypeError('Load failed')), 'OFFLINE'],
+      ['418, a status nothing expects', () => json(418, {}), 'UNEXPECTED'],
+    ]
+    it.each(cases)('%s', async (_, answer, code, more) => {
+      const { fetch } = recorder(answer)
+      const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).request('/user'))
+      expect(error.code).toBe(code)
+      if (more) expect(error).toMatchObject(more)
+    })
+
+    // YAZ-5174 (3E3): the wait from GitHub's headers has a floor and a ceiling, so no caller retries at once in a loop,
+    // and no timer overflows (a browser's setTimeout over 2^31-1 ms fires at once).
+    const waits: [string, Record<string, string>][] = [
+      ['retry-after: 999999999 (31 years)', { 'retry-after': '999999999' }],
+      ['retry-after: -30', { 'retry-after': '-30' }],
+      ['retry-after: 0', { 'retry-after': '0' }],
+      ['an empty retry-after', { 'retry-after': '' }],
+      ['retry-after as an HTTP date', { 'retry-after': 'Wed, 21 Oct 2015 07:28:00 GMT' }],
+      ['no requests left, no reset time', { 'x-ratelimit-remaining': '0' }],
+      ['no requests left, the reset 120 s before the phone\'s clock (a fast clock)', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(NOW / 1000 - 120) }],
+      ['no requests left, the reset 3 days on', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(NOW / 1000 + 3 * 86_400) }],
+    ]
+    it.each(waits)('YAZ-5174: a "slow down" with %s waits between the floor and the ceiling', async (_, headers) => {
+      const { fetch } = recorder(() => json(403, { message: 'You have exceeded a secondary rate limit' }, headers))
+      const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).request('/user'))
+      expect(error.code).toBe('RATE_LIMITED')
+      expect(error.resetAt! - NOW).toBeGreaterThanOrEqual(MIN_RATE_WAIT_MS)
+      expect(error.resetAt! - NOW).toBeLessThanOrEqual(MAX_RATE_WAIT_MS)
+      expect(MIN_RATE_WAIT_MS).toBeGreaterThanOrEqual(60_000)
+      expect(MAX_RATE_WAIT_MS).toBeLessThan(2 ** 31 - 1)
+    })
+
+    it('a "slow down" answer on a write is RATE_LIMITED, never READ_ONLY (YAZ-5166: no red status on a send)', async () => {
+      const { fetch } = recorder(() => json(403, { message: 'You have exceeded a secondary rate limit' }, { 'x-ratelimit-remaining': '4990' }))
+      const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).request('/repos/a/b/git/blobs', { method: 'POST', body: {} }))
+      expect(error).toMatchObject({ code: 'RATE_LIMITED', resetAt: NOW + 60_000 })
+    })
+
+    it('a "slow down" answer is RATE_LIMITED even when the caller allows 403 (YAZ-5166: the sign-in probes)', async () => {
+      const { fetch } = recorder(() => json(403, { message: 'You have exceeded a secondary rate limit' }, { 'x-ratelimit-remaining': '4990' }))
+      const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).request('/repos/a/b/git/blobs', { method: 'POST', body: {}, allow: [403, 404] }))
+      expect(error).toMatchObject({ code: 'RATE_LIMITED', resetAt: NOW + 60_000 })
+    })
+
+    it('403 on a write is READ_ONLY: the token can read but not write (row "only read access")', async () => {
+      const { fetch } = recorder(() => json(403, { message: 'Resource not accessible by personal access token' }))
+      const error = await failure(githubClient(TOKEN, { fetch }).request('/repos/a/b/git/blobs', { method: 'POST', body: {} }))
+      expect(error.code).toBe('READ_ONLY')
+      expect(error.status).toBe(403)
+    })
+
+    it('an error never holds the token, even when the answer quotes it', async () => {
+      const { fetch } = recorder(() => json(401, { message: `Bad credentials for ${TOKEN}` }))
+      const error = await failure(githubClient(TOKEN, { fetch }).request('/user'))
+      expect(error.message).not.toContain(TOKEN)
+      expect(String(error.stack)).not.toContain(TOKEN)
+      expect(JSON.stringify(error)).not.toContain(TOKEN)
+      expect(JSON.stringify({ ...error })).not.toContain(TOKEN)
+    })
+
+    it('an offline error does not keep the fetch error object (it could hold the request)', async () => {
+      const { fetch } = recorder(() => Promise.reject(new TypeError(`Failed: Bearer ${TOKEN}`)))
+      const error = await failure(githubClient(TOKEN, { fetch }).request('/user'))
+      expect(error.code).toBe('OFFLINE')
+      expect(error.message).not.toContain(TOKEN)
+      expect(error.cause).toBeUndefined()
+    })
+  })
+
+  it('repoPath encodes each part, and keeps the slashes of a branch name', () => {
+    expect(repoPath('Yaseen/My.Vault', 'branches', 'feat/phone #1')).toBe('/repos/Yaseen/My.Vault/branches/feat/phone%20%231')
+    expect(() => repoPath('not a repo', 'x')).toThrow()
+  })
+})
+
+describe('the one backoff (YAZ-5092 A4): the sync engine, the answer list and the comment list use it', () => {
+  it('doubles from the floor each time in a row, up to the ceiling', () => {
+    expect([1, 2, 3, 4].map(backoffMs)).toEqual([1, 2, 4, 8].map((n) => n * MIN_RATE_WAIT_MS))
+    expect(backoffMs(7)).toBe(MAX_RATE_WAIT_MS)
+    expect(backoffMs(10_000)).toBe(MAX_RATE_WAIT_MS)
+  })
+  it('a "slow down": GitHub\'s time or the backoff, the later one; a reset in the past is the backoff', () => {
+    const now = 1_000_000
+    const at = (resetAt?: number) => Object.assign(new GithubError('RATE_LIMITED', 403, 'slow'), { resetAt })
+    expect(slowedUntil(at(now + 10 * MIN_RATE_WAIT_MS), 1, now)).toBe(now + 10 * MIN_RATE_WAIT_MS)
+    expect(slowedUntil(at(now - 5), 3, now)).toBe(now + 4 * MIN_RATE_WAIT_MS)
+    expect(slowedUntil(at(now + 9 * MAX_RATE_WAIT_MS), 1, now)).toBe(now + MAX_RATE_WAIT_MS)
+  })
+  it('a branch that kept moving: 1, 2, 4 … minutes, up to 1 hour', () => {
+    expect([1, 2, 3, 30].map((n) => staleUntil(n, 0))).toEqual([MIN_RATE_WAIT_MS, 2 * MIN_RATE_WAIT_MS, 4 * MIN_RATE_WAIT_MS, MAX_RATE_WAIT_MS])
+  })
+})

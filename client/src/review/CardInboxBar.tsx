@@ -9,8 +9,9 @@
  * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
  * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033; the time hidden behind a
  * clock's hover box by default, YAZ-5130, `TodayWork`), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
- * Mochi's): it fills as the filter's cards are answered, a Forgot in red, a Remembered in grey; only the tab on show
- * counts (YAZ-5432, `filterProgress`), so Due today done fills it.
+ * Mochi's): one step per card of the filter (YAZ-5594), in the order answered: red while its last answer was a Forgot,
+ * grey once the session lets it go, empty while it waits; a card back in its steps adds no step and no "of". Only the tab
+ * on show counts (YAZ-5432, `filterProgress`), so Due today done fills it.
  *
  * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
  * total is? like / 5"): the Up next row reads "today / total" — "2 / 5" (New cards' count stands alone, YAZ-5434); the total is every
@@ -40,7 +41,8 @@ import { todayCards } from './reviewTime'
 import { TodayWork } from './TodayWork'
 import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
-import { pickLabel, useNewCardsPicker } from './NewCardsPicker'
+import { useNewCardsPicker } from './NewCardsPicker'
+import { kindCount, kindCountText, pickLabel, showsFilter } from './inboxMenu'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
 const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
@@ -59,10 +61,9 @@ export const CARD_FILTERS: readonly {
 
 /**
  * The filters the cards menu offers (YAZ-5321, Yaseen: "Up next should only show if they have in the card base, in the
- * vault, up next selected"): Up next only while some card of the vault is marked Up next, or while it is the filter
- * on show (its last card answered just now). One mark brings the row back.
+ * vault, up next selected"): the rule is `showsFilter` (`inboxMenu.ts`, shared with the phone).
  */
-export const inboxFilters = (session: Pick<CardReviewSession, 'upNext' | 'filter'>): typeof CARD_FILTERS => CARD_FILTERS.filter((f) => f.id !== 'next' || session.upNext || session.filter === 'next')
+export const inboxFilters = (session: Pick<CardReviewSession, 'upNext' | 'filter'>): typeof CARD_FILTERS => CARD_FILTERS.filter((f) => showsFilter(f.id, session))
 
 interface CardInboxBarProps {
   session: CardReviewSession
@@ -172,8 +173,8 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
               const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
               const count = session.counts[f.id]
-              // YAZ-5434: New cards' count stands alone ("9", not "9 / 23"); only Up next keeps its total.
-              const total = kind === 'next' && session.limited.next ? count + session.more.next : null
+              // YAZ-5434: New cards' count stands alone ("9", not "9 / 23"); only Up next keeps its total. The phone's rule too (`kindCount`, YAZ-5624).
+              const counted = kind === null ? { count, total: null } : kindCount(session, kind)
               const reset = kind !== null && resetCards !== undefined && session.canReset[kind]
               if (kind !== null && adding === kind && add > 0)
                 return (
@@ -214,7 +215,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                       data-add={add > 0 || undefined}
                       title={kind !== null && add > 0 ? `${session.more[kind]} more wait. Click to add.` : undefined}
                     >
-                    {total === null ? count : `${count} / ${total}`}
+                    {kindCountText(counted)}
                   </span>
                 </button>
               )
@@ -261,6 +262,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             key={i}
             className="card-inbox__progress-part"
             data-missed={run.missed || undefined}
+            data-open={run.open || undefined}
             style={{
               width: `${(100 * run.count) / Math.max(1, session.progress.size)}%`,
             }}

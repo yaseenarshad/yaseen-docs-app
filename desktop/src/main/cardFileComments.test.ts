@@ -93,8 +93,8 @@ describe('every card writer keeps the `comments` block byte for byte (YAZ-5466)'
     ['Archive', (c) => changeCard(c, 'GEO-204', (l) => withCardOff(l, true))],
     ['Up next', (c) => changeCard(c, 'GEO-204', (l) => withCardNext(l, true, 1))],
     ['Fix later', (c) => changeCard(c, 'GEO-204', (l) => withCardFix(l, true))],
-    ['a review answer from the Inbox', (c) => changeCard(c, 'GEO-204', (l) => withCardReview(l, { at: '2026-11-14T11:00Z', rating: 'good' }))],
-    ['Reset history', (c) => changeCard(changeCard(c, 'GEO-204', (l) => withCardReview(l, { at: '2026-11-14T11:00Z', rating: 'good' })), 'GEO-204', withoutCardReviews)],
+    ['a review answer from the Inbox', (c) => changeCard(c, 'GEO-204', (l) => withCardReview(l, { at: '2026-11-14T11:00:00.000Z', rating: 'good' }))],
+    ['Reset history', (c) => changeCard(changeCard(c, 'GEO-204', (l) => withCardReview(l, { at: '2026-11-14T11:00:00.000Z', rating: 'good' })), 'GEO-204', withoutCardReviews)],
   ]
   for (const [name, write] of writers) {
     it(name, () => {

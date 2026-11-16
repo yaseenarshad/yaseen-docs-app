@@ -46,7 +46,7 @@ vi.mock('./cardFile', async (importOriginal) => ({
 
 const PATH = '/v/cards.md'
 const TWO_SIDES = 'Capital of {{France}}\n---\n{{Paris}} on the {{Seine}}'
-const AT = '2026-11-12T14:05Z'
+const AT = '2026-11-12T14:05:00.000Z'
 const answersOf = (s: ReviewSettings): CardAnswer[] =>
   (s.buttons === 4 ? (['again', 'hard', 'good', 'easy'] as const) : (['again', 'good'] as const)).map((rating, i) => ({ review: { at: AT, rating }, interval: [0, 3, 9, 20][i], due: 0, inSteps: rating === 'again' }))
 
@@ -85,7 +85,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
       queueMicrotask(render)
       return session.answers
     }),
-    answer: vi.fn(async () => {}),
+    answer: vi.fn(async () => true),
     undo: vi.fn(async () => {}),
     close: vi.fn(),
     deleteReview: vi.fn(async () => {}),
@@ -133,6 +133,27 @@ afterEach(() => {
   el.remove()
 })
 
+describe('YAZ-5484: the Inbox draws its card with the card\'s vault\'s look', () => {
+  it('the card\'s vault\'s variables on the Inbox\'s root (two vaults, two looks); its zoom stays; no card, none', () => {
+    const LOOKS: Record<string, Record<string, string>> = { '/v': { '--shown-hidden-words': 'box', '--card-clean': 'on' }, '/w': { '--shown-hidden-words': 'underline', '--card-clean': 'off' } }
+    mount(TWO_SIDES)
+    const cardVarsOf = vi.fn((path: string) => LOOKS[path.slice(0, 2)])
+    props = { ...props, cardVarsOf }
+    render()
+    const box = el.querySelector<HTMLElement>('.card-inbox')!
+    expect(cardVarsOf).toHaveBeenCalledWith(PATH)
+    expect([box.style.getPropertyValue('--shown-hidden-words'), box.style.getPropertyValue('--card-clean')]).toEqual(['box', 'on'])
+    expect(box.style.getPropertyValue('--document-zoom')).not.toBe('')
+    // The next card is in the other vault: its look.
+    session = { ...session, card: { ...session.card!, path: '/w/cards.md', page: { ...session.card!.page!, path: '/w/cards.md' } } }
+    render()
+    expect([box.style.getPropertyValue('--shown-hidden-words'), box.style.getPropertyValue('--card-clean')]).toEqual(['underline', 'off'])
+    session = { ...session, card: null }
+    render()
+    expect(box.style.getPropertyValue('--shown-hidden-words')).toBe('')
+  })
+})
+
 describe('the Inbox screen (YAZ-4962)', () => {
   it('YAZ-5308 A3: the head reads the ID; the title, off the card line, is in the band at the top of the card`s frame from the start, with no label, never a word of the front (YAZ-5132: the page is in the breadcrumb, not "in Cards"); the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)
@@ -153,6 +174,26 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(hints()).toEqual(['Open page (O)', 'Edit card (E)', 'New tab (Cmd+Enter)'])
     expect(head()).toEqual([['card__id', 'WIKI-9']])
     expect(band()).toBe('Capital of France')
+  })
+
+  it('YAZ-5626: a card back after a Forgot wears "Again" beside its state chip, as on the phone (YAZ-5594); others none', () => {
+    mount(TWO_SIDES)
+    const again = () => el.querySelector('.card-inbox__above .card-inbox__again')
+    expect(again()).toBeNull()
+    // A new card back for its second ✓ (YAZ-5610): in its steps, but not forgotten, so no label (YAZ-5626, Yaseen).
+    session = { ...session, card: { ...session.card!, isNew: false, repeat: true, forgot: false } }
+    render()
+    expect(again()).toBeNull()
+    session = { ...session, card: { ...session.card!, isNew: false, repeat: true, forgot: true } }
+    render()
+    expect(again()?.textContent).toBe('Again')
+    expect(again()?.getAttribute('title')).toBe('You forgot it: it comes back until you remember it')
+    // Right after the state chip, before the ID.
+    expect(again()?.previousElementSibling?.classList.contains('card-inbox__state')).toBe(true)
+    // Remembered: the card leaves; the next one has no label. The done screen has none.
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', repeat: undefined, forgot: undefined } }
+    render()
+    expect(again()).toBeNull()
   })
 
   it('YAZ-4999: an up-next card shows the chip "Up next" after the ID; its × removes the mark (setNext)', () => {
@@ -448,6 +489,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
 
   it('the done screen: "Inbox complete." and one quiet line; only ⌘Z (with an answer to undo) in the hint row', () => {
     mount(TWO_SIDES)
+    // Nothing due in the vault (YAZ-5623: cards still due get "Review K more").
+    review = { ...review, dueCount: 0 }
     session = { ...session, card: null, canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
@@ -472,7 +515,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
 
   it('YAZ-5105: a card with reviews shows its Reviews strip (the card window\'s own `CardReviews`) under the card, outside its frame, as soon as the last side shows (round 3: its hidden words shown or not); never on the front or an earlier side', async () => {
     mount(TWO_SIDES)
-    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again' }] } } }
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }, { at: '2026-11-13T09:00:00.000Z', rating: 'again' }] } } }
     render()
     await flush()
     const reviews = () => el.querySelector('.card-reviews')
@@ -1216,7 +1259,7 @@ describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
     press('p')
     expect(cardAudioPlaying()).toBe(true)
     // ← → or an answer: another card comes, and the sound stops.
-    session = { ...sessionOf('Next card'), position: 4 }
+    session = { ...sessionOf('Next card'), answered: ['good'] }
     render()
     expect(cardAudioPlaying()).toBe(false)
   })
@@ -1358,15 +1401,15 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     mount(TWO_SIDES)
     await flush()
     work(20)
-    // The next card (a new place in the session): from zero.
-    session = sessionOf(TWO_SIDES, { position: 4 })
+    // The next card (one more answer in the session: a new turn, YAZ-5594): from zero.
+    session = sessionOf(TWO_SIDES, { answered: ['good'] })
     render()
     await flush()
     work(3)
     press('2')
     expect(secondsOfAnswer()).toBe(3)
     // ⌘Z shows the first card again: from zero again, not its old 20 s.
-    session = sessionOf(TWO_SIDES, { position: 3 })
+    session = sessionOf(TWO_SIDES, { answered: [] })
     render()
     await flush()
     work(2)
@@ -1641,10 +1684,30 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     session = { ...session, more: { new: 1, next: 0 }, adds: { new: 1, next: 0 } }
     render()
     expect(doneText()).toEqual(['Inbox complete.', '1 new card waits for another day.', 'Add[1]new cardfrom All folders'])
-    // Nothing waits (also: no limit): as now.
+    // Nothing waits (also: no limit), and nothing is due (YAZ-5623): as now.
+    review = { ...review, dueCount: 0 }
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
     render()
     expect(doneText()).toEqual(['Inbox complete.', 'Nothing else is due today. Enjoy your day!'])
+  })
+
+  it('YAZ-5623: the vault done while cards are still due (a new day began): "Review 3 more", the phone\'s words and rule', () => {
+    mount(TWO_SIDES)
+    session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 } }
+    // Nothing due in the vault: as before.
+    review = { ...review, dueCount: 0 }
+    render()
+    expect(doneText()).toEqual(['Inbox complete.', 'Nothing else is due today. Enjoy your day!'])
+    // Midnight passed during the review: 3 cards are due now. The screen offers them, and the click starts the vault again.
+    review = { ...review, dueCount: 3 }
+    render()
+    expect(doneText()).toEqual(['Inbox complete.', 'Review 3 more'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-more')!.click())
+    expect(review.start).toHaveBeenCalledExactlyOnceWith({})
+    // Cards wait to be added: the adds, as on the phone (no "Review K more" beside them).
+    session = { ...session, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
+    render()
+    expect(doneText()).toEqual(['Inbox complete.', '5 new cards wait for another day.', 'Add[5]new cardsfrom All folders'])
   })
 
   it('a filter done: "No new cards left." then its add and, quiet, "12 more in All cards"; Due today has no add', () => {

@@ -20,7 +20,7 @@ it('a card copied and pasted above itself: the ORIGINAL keeps its ID and history
   source.update(() => null, [], [], true, ['WIKI'])
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const md = 'Intro\n\n```card\nOriginal question\n---\nAnswer\n```\n<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-05T09:00Z good -->\n'
+  const md = 'Intro\n\n```card\nOriginal question\n---\nAnswer\n```\n<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good, 2026-11-05T09:00:00.000Z good -->\n'
   const crepe = createCrepe({ root, defaultValue: md, wikilinks: source })
   await crepe.create()
   mounted.push({ crepe, root })
@@ -46,7 +46,7 @@ it('a card copied and pasted above itself: the ORIGINAL keeps its ID and history
   const lines = saved.split('\n').filter((l) => l.startsWith('<!-- card'))
   // Two cards now hold WIKI-9 and its history; the sweep keeps the FIRST in page order (the pasted copy) and
   // empties the second (the original). Expected: the pasted card carries no ID and no history.
-  expect(lines).toEqual(['<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-05T09:00Z good -->'])
+  expect(lines).toEqual(['<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good, 2026-11-05T09:00:00.000Z good -->'])
 })
 
 it('the copy rule: a paste below is the copy too and takes a new ID from the door; a move keeps the ID and the history', async () => {
@@ -54,7 +54,7 @@ it('the copy rule: a paste below is the copy too and takes a new ID from the doo
   source.update(() => null, [], [], true, ['WIKI'])
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const line = '<!-- card: WIKI-9, off, 2026-11-01T09:00Z good -->'
+  const line = '<!-- card: WIKI-9, off, 2026-11-01T09:00:00.000Z good -->'
   const md = `\`\`\`card\nQ\n---\nA\n\`\`\`\n${line}\n\nOutro\n`
   const crepe = createCrepe({ root, defaultValue: md, wikilinks: source, cards: { path: '/v/deck.md', mintId: () => Promise.resolve('WIKI-30') } })
   await crepe.create()
@@ -84,8 +84,8 @@ it('YAZ-4993 (the round 2 nit): a drag of the ORIGINAL while an agent`s changed,
   const root = document.createElement('div')
   document.body.appendChild(root)
   // The agent wrote its copy with a line it read BEFORE the Nov 7 answer, and changed the text. The sweep has not run.
-  const stale = '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'
-  const full = '<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-07T09:00Z good -->'
+  const stale = '<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good -->'
+  const full = '<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good, 2026-11-07T09:00:00.000Z good -->'
   const md = `\`\`\`card\nQ, reworded\n---\nA\n\`\`\`\n${stale}\n\n\`\`\`card\nQ\n---\nA\n\`\`\`\n${full}\n\nOutro\n`
   const crepe = createCrepe({ root, defaultValue: md, wikilinks: source, cards: { path: '/v/deck.md', mintId: () => Promise.resolve('WIKI-30') } })
   await crepe.create()
@@ -101,6 +101,6 @@ it('YAZ-4993 (the round 2 nit): a drag of the ORIGINAL while an agent`s changed,
   await new Promise((r) => setTimeout(r, 0))
   const saved = getMarkdownForSave(crepe)
   // The Nov 7 review is only on the original. It must still be in the file; the move keeps the ID and the history.
-  expect(saved).toContain('2026-11-07T09:00Z good')
+  expect(saved).toContain('2026-11-07T09:00:00.000Z good')
   expect(saved.split('\n').filter((l) => l.startsWith('<!-- card'))).toEqual([stale, full])
 })

@@ -216,7 +216,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
   })
 
   it('with the vault`s Review off nothing asks you to review it: no due state, no Inbox row, no Reviews', async () => {
-    const reviewed = FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->')
+    const reviewed = FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00:00.000Z good -->')
     await mount(reviewed, { review: false })
     // Give the settings their read: they stay off.
     await act(async () => undefined)
@@ -229,7 +229,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
   })
 
   it('with Review on, a reviewed card says when it is due, and its history shows', async () => {
-    await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->'))
+    await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00:00.000Z good -->'))
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toMatch(/^Due /))
     expect(el.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
   })
@@ -249,7 +249,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
   })
 
   it('YAZ-5105 round 2: Reviews is a strip right under the card (as Mochi), closed until clicked; YAZ-5382: Linked mentions and Embedded in are its parts, no sections under it', async () => {
-    await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->'))
+    await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00:00.000Z good -->'))
     await vi.waitFor(() => expect(el.querySelector('.card-reviews')).not.toBeNull())
     const strip = el.querySelector('.card-reviews')!
     expect(strip.classList.contains('card-reviews--strip')).toBe(true)
@@ -416,7 +416,7 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     key(el.querySelector('[data-card-file-body]')!, { key: 'e' })
     const dom = await cardEditor()
     // An agent writes the same card's text and a property, and reviews it.
-    const outside = `---\nkind: card\ntags: geo\n---\n${CARD.replace('Paris', 'Paris!').replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->')}`
+    const outside = `---\nkind: card\ntags: geo\n---\n${CARD.replace('Paris', 'Paris!').replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00:00.000Z good -->')}`
     disk.files.set(PATH, outside)
     indexSees(2)
     await act(async () => undefined)

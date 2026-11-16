@@ -1,0 +1,55 @@
+# The headers of Yaseen Docs on Cloudflare static assets (YAZ-5087). The Worker serves these files and nothing else:
+# no script, no logs of addresses. `publish/headers.test.ts` checks this file against the calls the code makes.
+#
+# The page may call GitHub's API only (decision 8). Pictures: this site, blob:, data: and GitHub's avatar host
+# (round 12, item 13). No inline script, no eval, no third-party script, font or analytics. No referrer ever: a friend
+# link and the token never leak. No camera (YAZ-5650: "Scan a code" is gone).
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; connect-src https://api.github.com; img-src 'self' blob: data: https://avatars.githubusercontent.com; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  # YAZ-5284: HTTPS only, for one year (no preload, no subdomains). Browsers obey it only on an HTTPS answer. Plain
+  # http:// is NOT sent to https:// yet: the site answers 200 there until the zone's "Always Use HTTPS" is on (Yaseen).
+  Strict-Transport-Security: max-age=31536000
+
+# YAZ-5283: no long cache rule for /assets/*. Cloudflare answers a MISSING chunk with the app page (the single-page
+# fallback, 200 text/html), and a one-year rule would keep that page in the browser under the chunk's name. Cloudflare's
+# default (`public, max-age=0, must-revalidate`, with an ETag) asks again each time; the service worker keeps every chunk.
+
+# Always asked again, so a new deploy is seen at once.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/friend
+  Cache-Control: no-cache
+/friend.html
+  Cache-Control: no-cache
+/group
+  Cache-Control: no-cache
+/group.html
+  Cache-Control: no-cache
+/join
+  Cache-Control: no-cache
+/join.html
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
+/version.txt
+  Cache-Control: no-cache
+
+# The service worker: its own policy. It fetches this site's files (the shell) and nothing else.
+/sw.js
+  Cache-Control: no-cache
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; connect-src 'self'
+
+# YAZ-5533: draw.io's read-only viewer, in ONE hidden frame of the app (`/drawio/<hash>/render` and its scripts). Its
+# own policy, stricter than the app's: scripts of this site only (no inline script, no eval), no call to any host (not
+# even this site), pictures from data: and blob: only, no font file, no frame, no form, no worker. The one exception
+# the app needs: the app's own page may frame it (`frame-ancestors 'self'`; every other path keeps `'none'`).
+/drawio/*
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'

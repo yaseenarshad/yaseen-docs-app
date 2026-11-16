@@ -2,8 +2,8 @@ import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
-import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { sanitizeSpacing, spacingOf, spacingVars, type PageSpacing, type TextFormatting } from '@shared/textFormatting'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -64,7 +64,8 @@ import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
 import { setCellNoteButtonSetting } from './editor/table/timeFormatSetting'
 import { setAppTableLook, setVaultTableLook, tableLookKey, tableLookVars } from './editor/table/tableLook'
-import { appTableLook, type TableLookSettings } from '@shared/tableLook'
+import { appTableLook, tableLookSettings, type TableLookSettings } from '@shared/tableLook'
+import { folderPagesFor as folderPagesOver, type FolderPagesVault } from '@shared/folderPages'
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart } from './editor/table/cellNoteCard'
 import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
@@ -82,11 +83,10 @@ import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/hi
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
-import { cardLookAttrs, cardSpacingVars } from './review/cardSpacing'
-import { cardTextVars } from './review/cardText'
+import { cardLookVars, vaultCardVars } from './review/cardLook'
+import { appCardLook, cardLookSettings } from '@shared/cardLook'
 import { useReviewOnRoots } from './review/useReviewSettings'
 import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
-import { nextHiddenAttrs, nextHiddenVars } from './review/nextHidden'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
@@ -95,6 +95,9 @@ import { DEFAULT_NEW_PAGE_TITLE, plainEntryName, renderTitleTemplate } from './s
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyPageName } from '@shared/dailyPage'
+import { dailyPagesOfSettings, sameDailyPages, windowDailyPages, withDailyPages, type DailyPagesSettings } from '@shared/dailyPagesFile'
+import { newPlacesOfSettings, vaultNewPlacesFields } from '@shared/newPlaces'
+import { setNewBoardFolderOf } from './drawings/createDrawing'
 import { hasLetters } from '@shared/pageId'
 import { dailyPageVault, todaysPage } from './sidebar/dailyPage'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
@@ -106,7 +109,7 @@ import { useSameList } from './sidebar/hooks/useVaultTree'
 import { VaultLinksContext } from './links/vaultLinks'
 import { CommentPrefsContext, useCardFollowsProfile } from './comments/usePeople'
 import type { LinkActions } from './editor/linkMenu'
-import { useVaultIcons } from './sidebar/useVaultIcons'
+import { useVaultIcons, type IconLook } from './sidebar/useVaultIcons'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import type { MoveTarget } from './tabs/TabMenu'
@@ -305,16 +308,24 @@ const RetainedEditor = memo(Editor)
  * the same formatting hands React the same style, and a change costs one style update on the
  * layers of that vault only.
  */
-const layerStyles = new WeakMap<TextFormatting, WeakMap<LinkPills, WeakMap<CSSProperties, CSSProperties>>>()
-/** The vault's link pills look rides the same style (YAZ-4924): the `--pill-*` variables; and (YAZ-5487) its table look (`tableVars`), cached by the three objects. */
-function layerStyleOf(formatting: TextFormatting, pills: LinkPills, tableVars: CSSProperties = NO_TABLE_VARS): CSSProperties {
+const layerStyles = new WeakMap<TextFormatting, WeakMap<LinkPills, WeakMap<CSSProperties, WeakMap<CSSProperties, CSSProperties>>>>()
+/**
+ * The vault's link pills look rides the same style (YAZ-4924): the `--pill-*` variables; and (YAZ-5484) its card look
+ * (`cardVars`, `review/cardLook.ts`; `NO_CARD_VARS` for a vault with no card-look.json, whose layers read `.app`'s),
+ * cached by the three objects.
+ */
+function layerStyleOf(formatting: TextFormatting, pills: LinkPills, cardVars: CSSProperties = NO_CARD_VARS, tableVars: CSSProperties = NO_TABLE_VARS): CSSProperties {
   let byPills = layerStyles.get(formatting)
   if (byPills === undefined) layerStyles.set(formatting, (byPills = new WeakMap()))
-  let byTable = byPills.get(pills)
-  if (byTable === undefined) byPills.set(pills, (byTable = new WeakMap()))
+  let byCard = byPills.get(pills)
+  if (byCard === undefined) byPills.set(pills, (byCard = new WeakMap()))
+  let byTable = byCard.get(cardVars)
+  if (byTable === undefined) byCard.set(cardVars, (byTable = new WeakMap()))
   let style = byTable.get(tableVars)
   if (style === undefined) {
-    style = { ...textVars(formatting), ...linkPillVars(pills), ...tableVars } as CSSProperties
+    // YAZ-5485: the vault's page spacing too; a vault with no `spacing` sets none, and its layers read `.app`'s app values.
+    // YAZ-5487: and its table look (`tableVars`).
+    style = { ...textVars(formatting), ...spacingVars(formatting.spacing), ...linkPillVars(pills), ...cardVars, ...tableVars } as CSSProperties
     byTable.set(tableVars, style)
   }
   return style
@@ -324,6 +335,19 @@ function layerStyleOf(formatting: TextFormatting, pills: LinkPills, tableVars: C
  * its look by it, `tableLookAt`), and with a table-look.json its whole look (`initial` where it sets none); with none,
  * only the name: its tables read `.app`'s, the app's look. Cached on the look object (one per file read).
  */
+/**
+ * A vault's folder page defaults (YAZ-5489): its folder-pages.json's 27 parts over the app's Settings › Folder pages (the
+ * personal parts always the app's), cached on both objects so a folder page's props keep their identity.
+ */
+const folderPagesCache = new WeakMap<FolderPagesSettings, WeakMap<FolderPagesVault, FolderPagesSettings>>()
+function folderPagesOfVault(app: FolderPagesSettings, vault: FolderPagesVault | null): FolderPagesSettings {
+  if (vault === null) return app
+  let byVault = folderPagesCache.get(app)
+  if (byVault === undefined) folderPagesCache.set(app, (byVault = new WeakMap()))
+  let out = byVault.get(vault)
+  if (out === undefined) byVault.set(vault, (out = folderPagesOver(app, vault)))
+  return out
+}
 const tableVarsCache = new WeakMap<TableLookSettings, CSSProperties>()
 const tableKeyVars = new Map<string, CSSProperties>()
 function tableVarsOf(root: string, look: TableLookSettings | null): CSSProperties {
@@ -339,6 +363,8 @@ function tableVarsOf(root: string, look: TableLookSettings | null): CSSPropertie
 }
 /** A surface with no vault (YAZ-5487): no table variable, it reads `.app`'s, the app's look. */
 const NO_TABLE_VARS: CSSProperties = Object.freeze({})
+/** A vault with no card-look.json (YAZ-5484): its surfaces set no card variable and read `.app`'s, the app's look. */
+const NO_CARD_VARS: CSSProperties = Object.freeze({})
 
 /**
  * Keeps the current-page navigation function stable for the lifetime of one retained right
@@ -482,10 +508,12 @@ export function App() {
   }, [previewPath])
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
-  const [settings, setSettings] = useState(storage.getSettings)
+  // The app's settings as stored. `settings` (below, once the vaults are known) is this with the window's daily pages
+  // over it (YAZ-5491): those four fields come from the vault's `daily-pages.json`, the one source.
+  const [appSettings, setSettings] = useState(storage.getSettings)
   /** The user's keys (YAZ-3397 D2) for the window listeners below, read at key time so a change needs no new listener. */
-  const hotkeysRef = useRef(settings.hotkeys)
-  hotkeysRef.current = settings.hotkeys
+  const hotkeysRef = useRef(appSettings.hotkeys)
+  hotkeysRef.current = appSettings.hotkeys
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the PREVIEW tab (YAZ-2648 D1);
   // a link that could not open shows a transient notice — unobtrusive, never a dialog.
@@ -499,7 +527,7 @@ export function App() {
   const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType, action?: Notice['action']) => showNotice({ text, icon, type, ...(action !== undefined && { action }) }), [showNotice])
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
-  const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
+  const lists = useVaultListsHere(roots, notify, appSettings.workspaceLists)
   // The new tab page's Favorites column (YAZ-4450): the tab's own list, kept by value so the page cuts its columns only on a change.
   // Its favorite folders too (YAZ-4470, 11): each folder's items that this window shows.
   const favoriteFolders = lists.favoritesTab.folders
@@ -509,7 +537,7 @@ export function App() {
   )
   // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
-  const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, settings.sidebarFolderIcons === 'named', notify)
+  const vaultIcons = useVaultIcons(roots, appSettings.sidebarIconRules, appSettings.sidebarFolderIcons === 'named', notify)
   // The toast's clock is the toast's own (`NoticeToast`, YAZ-3303 D9): App only says how long and closes it.
   const closeNotice = useCallback(() => setNotice(null), [])
   // The box after a drag out to Finder (YAZ-3254 D9B): its own slot, so the toast above never hides it.
@@ -545,7 +573,7 @@ export function App() {
    * and the app writes nothing into it. Settings never shows it as "this vault": `active` is a vault of the person.
    */
   const [cardSkill] = useState(storage.getCardSkill)
-  const skillLoads = cardSkill !== null && settings.cardSkillInSidebar && root !== null
+  const skillLoads = cardSkill !== null && appSettings.cardSkillInSidebar && root !== null
   const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify)
   const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true)
   const live = useRef({ roots, vaults, first, skill: skillLoads ? skillScope : null })
@@ -697,11 +725,37 @@ export function App() {
    * The window's vaults for the place picker (YAZ-3556 D6): the active tab's first, then the others in the window's order.
    * ⌘N and ⌘D read the vault, the page on show and the settings of the moment through `placeInputs`, at key time.
    */
+  // Settings › Appearance › Spacing's Vault dropdown (YAZ-5485): the vault it shows; null is the active tab's.
+  const [spacingRoot, setSpacingRoot] = useState<string | null>(null)
+  // Settings › Sidebar's icon colours and rules (YAZ-5488): the vault their Vault dropdown shows; null is the active tab's.
+  const [iconLookRoot, setIconLookRoot] = useState<string | null>(null)
+  // Settings › Cards › Card look (YAZ-5484): the vault its Vault dropdown shows; null is the active tab's.
+  const [cardLookRoot, setCardLookRoot] = useState<string | null>(null)
   // Settings › Tables (YAZ-5487): the vault its Vault dropdown shows; null is the active tab's.
   const [tableLookRoot, setTableLookRoot] = useState<string | null>(null)
+  // Settings › Folder pages (YAZ-5489): the vault its Vault dropdown shows; null is the active tab's.
+  const [folderPagesRoot, setFolderPagesRoot] = useState<string | null>(null)
   const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
-  const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings })
-  placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings }
+  /**
+   * The window's daily pages (YAZ-5491): the vault's `daily-pages.json` is the one source. The first vault, the active
+   * tab's first, whose file says on; else off when any vault has a file; else the app value (no file yet: the one-time
+   * move has not reached this window). Every reader below (the footer button, ⌘D, Go to, the hotkeys row, Settings)
+   * reads it through `settings`; `dailyRoot` is the vault of the file, null for the app value.
+   */
+  const dailyHere = windowDailyPages(placeVaults.map((v) => ({ root: v.root, file: vaults[roots.indexOf(v.root)]?.dailyPages.file ?? null })), dailyPagesOfSettings(appSettings), active.root)
+  const dailyKey = JSON.stringify(dailyHere.settings)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `dailyKey` is the value of `dailyHere.settings`
+  // YAZ-5486: where new pages and boards go are the ACTIVE tab's vault's (`new-places.json`) in `settings` (Settings, ⌘N);
+  // a new [[link]] page and a new board ask their own vault's (`newPlacesOf`).
+  const activeNewPlaces = active.newPlaces.value
+  const settings = useMemo(() => withDailyPages(vaultNewPlacesFields(appSettings, activeNewPlaces), dailyHere.settings), [appSettings, activeNewPlaces, dailyKey])
+  /** Where new things go in the vault that holds `path` (YAZ-5486): its file's keys over the app's values. */
+  const newPlacesOf = (path: string) => vaultNewPlacesFields(appSettings, scopeOf(path).newPlaces.value)
+  const newPlacesOfRef = useRef(newPlacesOf)
+  newPlacesOfRef.current = newPlacesOf
+  useEffect(() => setNewBoardFolderOf((root) => newPlacesOfRef.current(root).newBoardFolder), [])
+  const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings })
+  placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings }
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
   // frontmatter write (YAZ-2174): the page editor's autosave registers with the bridge itself.
   useEffect(() => api.window.onFlush(flushWindow), [])
@@ -808,9 +862,19 @@ export function App() {
     [sidebarWidth, toggleSidebar],
   )
 
+  // YAZ-5491: a change of the four daily pages fields goes to the vault's file (`saveDaily`), never to the app value,
+  // which stays as it was: the fallback. A window with no vault has no file to write, so there it is the app value.
+  const saveDailyRef = useRef<(next: DailyPagesSettings) => void>(() => undefined)
   const changeSettings = useCallback((next: SettingsState) => {
-    storage.setSettings(next)
-    setSettings(next)
+    const { vaults: here, settings: shown, appSettings: stored, vault: activeRoot } = placeInputs.current
+    const app = here.length === 0 ? next : withDailyPages(vaultNewPlacesFields(next, newPlacesOfSettings(stored)), dailyPagesOfSettings(stored))
+    const daily = dailyPagesOfSettings(next)
+    if (here.length > 0 && !sameDailyPages(daily, dailyPagesOfSettings(shown))) saveDailyRef.current(daily)
+    // YAZ-5486: where new things go are the active tab's vault's `new-places.json`; the app value stays (the fallback).
+    const places = newPlacesOfSettings(next)
+    if (activeRoot !== null && here.length > 0 && JSON.stringify(places) !== JSON.stringify(newPlacesOfSettings(shown))) live.current.vaults[live.current.roots.indexOf(activeRoot)]?.newPlaces.save(places)
+    storage.setSettings(app)
+    setSettings(app)
   }, [])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
@@ -886,7 +950,8 @@ export function App() {
   newPageFolderInputs.current = { settings }
   const newPageFolderFor = useCallback((sourcePath: string) => {
     const vault = scopeOf(sourcePath).root
-    return vault === null ? '' : newPageBase(newPageFolderInputs.current.settings, vault, sourcePath)
+    // YAZ-5486: the vault's own place (`new-places.json`), never another vault's folder.
+    return vault === null ? '' : newPageBase(newPlacesOfRef.current(sourcePath), vault, sourcePath)
   }, [scopeOf])
   // The comment stream's order toggle (YAZ-1515) writes the setting through the same ref-backed,
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
@@ -955,19 +1020,24 @@ export function App() {
   // restyles the rows and renders no tree level. A calendar table's marker look and its dim past rows (YAZ-4162 D6, D14,
   // `data-table-now`, `data-table-dim-past`) too, and the row band (YAZ-4167 D16, `data-table-row-band`): a change
   // restyles the rows and builds no decoration. So does the header row (YAZ-4774, `data-table-header-*`).
+  /**
+   * YAZ-5488: the icon colours the window draws are the ACTIVE tab's vault's (its icons.json `colors`), else the app's
+   * (the fallback: no file yet, or no vault). One set per window: they colour icons everywhere (tabs, links, the tree).
+   */
+  const iconColors = vaultIcons.lookOf(active.root).colors ?? settings.sidebarIconColors
   const settingsVars = {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
-    // Settings › Review › Card spacing (YAZ-5050): Custom only; Same as pages sets none, so a card reads the two above.
-    ...cardSpacingVars(settings),
-    // Card look › Card text size and Card title size (YAZ-5387): the card's own text, and its title band's step of it.
-    ...cardTextVars(settings),
+    // The card look (YAZ-5484, `review/cardLook.ts`): the APP's values here, the fallback for a vault with no
+    // card-look.json and for a place outside every surface; a vault's own look is on each surface of its cards. Card
+    // spacing's Custom values (YAZ-5050: Same as pages sets none, so a card reads the two above), Card text and title
+    // size (YAZ-5387), Shown hidden words, Mark the next hidden word and its colour, Clean's look (once attributes on
+    // `.app`: now variables, so two vaults never clash).
+    ...cardLookVars(settings),
     // Appearance › Content width and Settings › Review › Card width (YAZ-5144): the text's widest, pages and cards.
     ...contentWidthVars(settings),
     // Settings › Tables › Table position and Card look › Card tables (YAZ-5136 rounds 2 and 3).
     ...tablePositionVars(settings),
-    // Settings › Review › Mark the next hidden word (YAZ-5053 round 3): a picked colour only; the theme's default otherwise.
-    ...nextHiddenVars(settings),
     '--thread-width': `${settings.threadWidth}px`,
     // Bullets in pages (the YAZ-3818 demo, bullets.css): only a changed value, so the default stays the page's 2.15em.
     ...((settings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent) !== DEFAULT_SETTINGS.pageBulletIndent ? { '--page-bullet-indent': `${settings.pageBulletIndent}px` } : {}),
@@ -988,12 +1058,12 @@ export function App() {
     // Absent → app.css falls back to `--thread-color`, then the accent (YAZ-3309 D9).
     ...(settings.sidebarThreadColor !== null ? { '--sidebar-thread-color': settings.sidebarThreadColor } : {}),
     // Each icon colour of the sidebar tree that is set (YAZ-3440 D4) over app.css's own `--kind-<kind>`: a CSS var, so no tree level renders.
-    ...Object.fromEntries(Object.entries(settings.sidebarIconColors).map(([kind, colour]) => [`--kind-${kind}`, colour])),
+    ...Object.fromEntries(Object.entries(iconColors).map(([kind, colour]) => [`--kind-${kind}`, colour])),
   } as CSSProperties
   /** The kinds with a picked icon colour (YAZ-5100 round 2), `data-icon-colors` on `.app`: app.css draws Material's icons of those kinds in it. */
-  const iconColorKinds = Object.keys(settings.sidebarIconColors).join(' ') || undefined
+  const iconColorKinds = Object.keys(iconColors).join(' ') || undefined
   // A picked card colour reaches the hover preview's card icon too, which is portalled to the body, outside `.app`.
-  const cardColour = settings.sidebarIconColors.card
+  const cardColour = iconColors.card
   useEffect(() => {
     if (cardColour === undefined) return
     document.documentElement.style.setProperty('--kind-card', cardColour)
@@ -1001,6 +1071,15 @@ export function App() {
       document.documentElement.style.removeProperty('--kind-card')
     }
   }, [cardColour])
+  /**
+   * The card look of the vault that holds `path` (YAZ-5484), as variables for every surface that shows one of its cards
+   * (page layers through `textVarsFor`, Explore's card layer, the Inbox, Preview a card): the vault's whole look over the
+   * app's settings, or none for a vault with no card-look.json (it reads `.app`'s, the app's look).
+   */
+  const cardVarsFor = (path: string): CSSProperties => {
+    const look = scopeOf(path).cardLook.look
+    return look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
+  }
   /**
    * The text formatting of the vault that holds `path` (YAZ-3067 D12), as the style of the layer
    * that shows it: two vaults in one window look different. Each variable is there only for a
@@ -1011,19 +1090,63 @@ export function App() {
     const scope = scopeOf(path)
     return scope.root === null ? NO_TABLE_VARS : tableVarsOf(scope.root, scope.tableLook.settings)
   }
-  const textVarsFor = (path: string): CSSProperties => layerStyleOf(scopeOf(path).textFormatting.formatting, scopeOf(path).linkPills.pills, tableVarsFor(path))
+  const textVarsFor = (path: string): CSSProperties => layerStyleOf(scopeOf(path).textFormatting.formatting, scopeOf(path).linkPills.pills, cardVarsFor(path), tableVarsFor(path))
   /**
    * Settings › Text formatting (YAZ-3068 D15): every vault of the window, in its order, and the active
    * tab's vault, where the "Vault" dropdown starts. None in the Welcome window, so the group is not there.
    */
-  const settingsTextFormatting =
-    root === null ? undefined : { vaults: vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? storage.vaultName(roots[i]), state: vault.textFormatting })), activeRoot: active.root ?? roots[0] }
+  /**
+   * Settings' page spacing (YAZ-5485): the picked vault's `spacing` in text-formatting.json; until it has one, the app's
+   * values (what its pages draw, from `.app`), and the first change writes them all into the vault.
+   */
+  const spacingScope = (spacingRoot !== null && roots.includes(spacingRoot) ? vaults[roots.indexOf(spacingRoot)] : null) ?? active
+  const settingsPageSpacing =
+    root === null || spacingScope.root === null
+      ? undefined
+      : {
+          vaults: placeVaults,
+          root: spacingScope.root,
+          choose: setSpacingRoot,
+          value:
+            spacingScope.textFormatting.formatting.spacing !== undefined
+              ? spacingOf(spacingScope.textFormatting.formatting.spacing)
+              : { line: appSettings.lineSpacing, blockGap: appSettings.blockGap, bulletIndent: appSettings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent, bulletGap: appSettings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap },
+          save: (next: Required<PageSpacing>) => spacingScope.textFormatting.save({ ...spacingScope.textFormatting.formatting, spacing: sanitizeSpacing(next) ?? {} }),
+        }
+  /** Settings' Card look (YAZ-5484): the picked vault's card-look.json, the app's look until it has one (the first change writes it). */
+  const cardLookScope = (cardLookRoot !== null && roots.includes(cardLookRoot) ? vaults[roots.indexOf(cardLookRoot)] : null) ?? active
+  const settingsCardLook =
+    root === null || cardLookScope.root === null
+      ? undefined
+      : { vaults: placeVaults, root: cardLookScope.root, choose: setCardLookRoot, value: cardLookScope.cardLook.look === null ? appCardLook(appSettings) : cardLookSettings(cardLookScope.cardLook.look), save: cardLookScope.cardLook.save }
   /** Settings › Tables (YAZ-5487): the picked vault's table-look.json, the app's look until it has one (the first change writes it). */
   const tableLookScope = (tableLookRoot !== null && roots.includes(tableLookRoot) ? vaults[roots.indexOf(tableLookRoot)] : null) ?? active
   const settingsTableLook =
     root === null || tableLookScope.root === null
       ? undefined
       : { vaults: placeVaults, root: tableLookScope.root, choose: setTableLookRoot, value: tableLookScope.tableLook.settings ?? appTable, save: tableLookScope.tableLook.save }
+  /** Show folder page files of each vault (YAZ-5489): its folder-pages.json's, else the app's. */
+  // One function while no vault's switch changes (the Sidebar is memoised).
+  const pageFilesKey = roots.map((at, i) => `${at}\n${folderPagesOfVault(settings.folderPages, vaults[i]?.folderPages.vault ?? null).showFolderPageFiles ? 1 : 0}`).join('\n')
+  const pageFilesIn = useMemo(() => {
+    const on = new Map(pageFilesKey.split('\n').reduce<[string, boolean][]>((out, part, i, all) => (i % 2 === 0 ? [...out, [part, all[i + 1] === '1']] : out), []))
+    return (at: string): boolean => on.get(at) ?? false
+  }, [pageFilesKey])
+  /** Settings › Folder pages (YAZ-5489): the picked vault's folder-pages.json, the app's parts until it has one. */
+  const folderPagesScope = (folderPagesRoot !== null && roots.includes(folderPagesRoot) ? vaults[roots.indexOf(folderPagesRoot)] : null) ?? active
+  const settingsFolderPages =
+    root === null || folderPagesScope.root === null
+      ? undefined
+      : { vaults: placeVaults, root: folderPagesScope.root, choose: setFolderPagesRoot, value: folderPagesOfVault(appSettings.folderPages, folderPagesScope.folderPages.vault), save: folderPagesScope.folderPages.save }
+  /** Settings' icon colours and rules (YAZ-5488): the picked vault's icons.json `colors` / `rules`, each the app's until it has its own. */
+  const iconLookScope = iconLookRoot !== null && roots.includes(iconLookRoot) ? iconLookRoot : active.root
+  const iconLookOwn = vaultIcons.lookOf(iconLookScope)
+  const settingsIconLook =
+    root === null || iconLookScope === null
+      ? undefined
+      : { vaults: placeVaults, root: iconLookScope, choose: setIconLookRoot, rules: iconLookOwn.rules ?? appSettings.sidebarIconRules, colors: iconLookOwn.colors ?? appSettings.sidebarIconColors, save: (look: IconLook) => vaultIcons.saveLook(iconLookScope, look) }
+  const settingsTextFormatting =
+    root === null ? undefined : { vaults: vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? storage.vaultName(roots[i]), state: vault.textFormatting })), activeRoot: active.root ?? roots[0] }
 
   // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
   // the active tab in bootTabs, so this first run is a no-op re-write of the same hash).
@@ -1428,10 +1551,11 @@ export function App() {
     return { vault, tree: trees.find((t) => t.root === vault)!.tree }
   }, [])
   const openDailyPage = useCallback((background = false) => {
-    const { vaults, settings: now } = placeInputs.current
+    const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     const title = dailyPageName(now.dailyPageFormat, new Date()).trim()
-    void dailyVault(vaults, now.dailyPageFolder)
+    // YAZ-5491: the vault of the file that says on; with no file yet, the first that holds the folder (D2).
+    void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
       .then(async ({ vault, tree }): Promise<string | null> => {
         const index = scopeOf(vault).wikilinks
         // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
@@ -1474,6 +1598,36 @@ export function App() {
       )
   }, [scopeOf, dailyVault, toggleSidebar, revealInFiles, notify, allowFileAction])
 
+  /**
+   * Settings › Daily pages writes the vault's file (YAZ-5491). The vault: `picked` (a folder chosen in another vault moves
+   * the daily pages there, and the old vault's file says off); else the vault of the window's file; else, with no file
+   * yet, the vault that holds the app's folder (the one the button opened), else the active tab's.
+   */
+  const saveDaily = useCallback(
+    (next: DailyPagesSettings, picked?: string) => {
+      const { vaults: here, vault: activeRoot, dailyRoot, settings: now } = placeInputs.current
+      if (here.length === 0) return
+      const fallback = activeRoot ?? here[0]
+      const holderOf = (vault: string) => live.current.vaults[live.current.roots.indexOf(vault)]?.dailyPages
+      const target: Promise<string> =
+        picked !== undefined
+          ? Promise.resolve(picked)
+          : dailyRoot !== null
+            ? Promise.resolve(dailyRoot)
+            : now.dailyPages
+              ? dailyVault(here, now.dailyPageFolder).then(({ vault }) => vault, () => fallback)
+              : Promise.resolve(fallback)
+      void target.then((vault) => {
+        if (dailyRoot !== null && dailyRoot !== vault && now.dailyPages) holderOf(dailyRoot)?.save({ ...dailyPagesOfSettings(now), enabled: false })
+        holderOf(vault)?.save(next)
+      })
+    },
+    [dailyVault],
+  )
+  saveDailyRef.current = saveDaily
+  /** The folder row's picker (YAZ-5491): the folder is of the vault it was picked in, and Daily pages are on there. */
+  const pickDailyFolder = useCallback((folder: string, vault: string) => saveDaily({ ...dailyPagesOfSettings(placeInputs.current.settings), enabled: true, folder }, vault), [saveDaily])
+
   // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
   // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
   // first; a path the vault does not have says so. The Welcome window has no vault: the key does nothing there.
@@ -1508,12 +1662,18 @@ export function App() {
   // open the ONE dialog — and it can open with the sidebar collapsed. `open`/`close` are stable
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
-  // Settings › Tables' Vault dropdown starts on the active tab's vault at each open (YAZ-5487).
-  useEffect(() => {
-    if (!settingsOpen) setTableLookRoot(null)
-  }, [settingsOpen])
   // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
   const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | undefined>(undefined)
+  // Spacing's Vault dropdown starts on the active tab's vault at each open (YAZ-5485).
+  useEffect(() => {
+    if (!settingsOpen) {
+      setSpacingRoot(null)
+      setIconLookRoot(null)
+      setCardLookRoot(null)
+      setTableLookRoot(null)
+      setFolderPagesRoot(null)
+    }
+  }, [settingsOpen])
   const openSettings = useCallback(() => {
     setSettingsPage(undefined)
     setSettingsOpen(true)
@@ -1610,10 +1770,10 @@ export function App() {
   // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
   // The folder is the one the daily page uses: in the first vault of the window that holds it (`dailyPageVault`).
   const openDailyTemplate = useCallback(() => {
-    const { vaults, settings: now } = placeInputs.current
+    const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     let path = ''
-    void dailyVault(vaults, now.dailyPageFolder)
+    void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
       .then(({ vault }) => {
         path = `${placePath(vault, now.dailyPageFolder)}/.template.md`
         return api.readFile(path)
@@ -3772,7 +3932,8 @@ export function App() {
       hoverFolderViews: hoverOn(settings, 'folderViews'),
       hoverFolderLinks: hoverOn(settings, 'folderLinks'),
       // YAZ-4585: Settings › Folder pages, one object; each view reads its own key first, then these.
-      folderPages: settings.folderPages,
+      // YAZ-5489: the page's vault's folder-pages.json over the app's (the personal parts stay the app's).
+      folderPages: folderPagesOfVault(settings.folderPages, scope.folderPages.vault),
       previewScope: editorPreviewScope,
       // YAZ-3564: the keys the user changed; a drawing follows them at once (K4).
       hotkeys: settings.hotkeys,
@@ -3956,6 +4117,7 @@ export function App() {
           leaveOn=".tabbar-row, .sidebar"
           onLeave={leaveCardPreview}
           whole={place === 'window'}
+          style={cardVarsFor(cardPreview.path)}
         />
       </Suspense>
     )
@@ -3967,7 +4129,7 @@ export function App() {
     <PageActions.Provider value={linkActions}>
     <CommentPrefsContext.Provider value={commentPrefs}>
     <TitleIsName.Provider value={titleIsName}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-shown-hidden-words={settings.shownHiddenWords} {...nextHiddenAttrs(settings)} {...cardLookAttrs(settings)} data-toc-lines={settings.tocLines} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-icon-colors={iconColorKinds} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-icon-colors={iconColorKinds} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands
@@ -4001,7 +4163,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, tableLook: settingsTableLook, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
       {courseOpen !== null && (
         <Suspense fallback={null}>
           <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={courseOpen.vault} onClose={closeCourse} courseVault={courseVault} lost={courseLost} />
@@ -4015,7 +4177,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -4114,6 +4276,7 @@ export function App() {
           onCreateConsumed={consumeSidebarCreate}
           onLensChange={changeLens}
           settings={settings}
+          pageFilesIn={pageFilesIn}
           onChangeSettings={changeSettings}
           onOpenSettings={openSettings}
           onOpenDailyPage={settings.dailyPages ? openDailyPage : undefined}
@@ -4308,7 +4471,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} courseOffer={inboxCourseOffer} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} cardVarsOf={cardVarsFor} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} courseOffer={inboxCourseOffer} />
               </Suspense>
             )}
             {/* Preview a card (YAZ-5152 A): in the page area as the Inbox tab is, over it too; the sidebar and the tab row stay. */}

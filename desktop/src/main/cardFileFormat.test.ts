@@ -15,7 +15,7 @@ import {
 import { findCards, parseCardLine, pageCards } from '@shared/cardLine'
 import { splitFrontmatter } from '@shared/frontmatter'
 
-const CARD = ['```card', 'What is the capital of **France**?', '---', 'The capital is {{Paris}}.', '```', '<!-- card: GEO-140, 2026-11-10T09:12Z good 12s -->'].join('\n')
+const CARD = ['```card', 'What is the capital of **France**?', '---', 'The capital is {{Paris}}.', '```', '<!-- card: GEO-140, 2026-11-10T09:12:00.000Z good 12s -->'].join('\n')
 const file = (body: string, props = 'kind: card'): string => `---\n${props}\n---\n${body}`
 
 describe('YAZ-5037 the card file mark', () => {

@@ -146,7 +146,7 @@ export const GUIDE_LINE_DARKNESS_PRESETS: readonly Option<number>[] = [
   { label: 'Strong', value: 35 },
 ]
 
-/** A card's shown hidden word (YAZ-5005): the card CSS reads it as `data-shown-hidden-words` on `.app`. */
+/** A card's shown hidden word (YAZ-5005; the vault's since YAZ-5484): the card CSS reads it as `--shown-hidden-words`. */
 export const SHOWN_HIDDEN_WORDS_OPTIONS: readonly Option<ShownHiddenWords>[] = [
   { label: 'Highlight', value: 'highlight' },
   { label: 'Underline', value: 'underline' },

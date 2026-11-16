@@ -15,6 +15,8 @@
  */
 import path from 'node:path'
 import { CONTRACT } from '@shared/ipc'
+import { isRecord } from '@shared/guards'
+import { vaultNewPlacesSettings } from '../vaultSettingsRead'
 import { createThumbs, THUMBS_DIR, type Thumbs } from '../drawings/thumbs'
 import { boardHead } from '../fs/boardHead'
 import { setBoardFoldArrows } from '../fs/boardFoldArrows'
@@ -41,7 +43,12 @@ import { handle, handleWithEvent } from './envelope'
 export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit' | 'approvePictureFolder'>, windows: Pick<WindowManager, 'idFor'>, userData?: string, picked: ReadonlySet<string> = new Set()): void {
   const thumbs: Thumbs | null = userData === undefined ? null : createThumbs(path.join(userData, THUMBS_DIR))
   // A new drawing keeps its pictures where Settings › Files & Links says (YAZ-3943 demo 2; its own folder, demo round 3), read at each create.
-  handle(CONTRACT.createBoard, (req: unknown) => createBoard(req, store.get().settings.newBoardPictures, store.get().settings.newBoardPicturesFolder))
+  // YAZ-5486: the pictures place of the vault the board is made in (its new-places.json), else the app's.
+  handle(CONTRACT.createBoard, async (req: unknown) => {
+    const root = isRecord(req) && typeof req.root === 'string' && path.isAbsolute(req.root) ? req.root : null
+    const s = root === null ? store.get().settings : await vaultNewPlacesSettings(root, store.get().settings)
+    return createBoard(req, s.newBoardPictures, s.newBoardPicturesFolder)
+  })
   handle(CONTRACT.boardHead, boardHead)
   // Only a request with `imageMaxPx` — a picture of the scene, never an editor — reaches the cache.
   handle(CONTRACT.drawing.load, (req: unknown) => loadDrawing(req, thumbs === null ? undefined : (files, elements, px) => thumbs.fit(files, elements, px)))

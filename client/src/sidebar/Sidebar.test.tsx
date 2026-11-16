@@ -11683,7 +11683,7 @@ describe('Sidebar: the Files window chip (YAZ-3357 D13)', () => {
 /**
  * "Change icon ▸" from the tree (YAZ-3440 D8, D9): the menu opens the icon picker, a pick shows on the row at once
  * and goes to `api.icons.set` for the row's vault; a refused write toasts and shows what the file holds. "All .md
- * files…" writes the name rule into the settings, and a rule list the settings check would refuse is not written.
+ * files…" writes the name rule into the row's vault's icons.json (YAZ-5488), and a rule list the check would refuse is not written.
  */
 describe('Change icon from the tree (YAZ-3440 D8, D9)', () => {
   const rowA = (el: HTMLElement) => el.querySelector<HTMLElement>('.tree__row--file[data-path="/v/a.md"]') as HTMLElement
@@ -11721,13 +11721,17 @@ describe('Change icon from the tree (YAZ-3440 D8, D9)', () => {
     expect(rowA(el).hasAttribute('data-icon-custom')).toBe(false)
   })
 
-  it('"All .md files…" writes the rule into the settings; past the settings check it toasts and writes nothing', async () => {
+  it('YAZ-5488: "All .md files…" writes the rule into the ROW\'S VAULT\'s icons.json (the app\'s rules as its start), not the settings; past the check it toasts and writes nothing', async () => {
     await loadMaterialIcons()
-    const { el, props } = await mount()
+    const appRule = { match: '*.ts', kind: 'file' as const, icon: 'typescript' }
+    const { el, bridge, props } = await mount({ settings: { ...TEST_SETTINGS, sidebarIconRules: [appRule] } })
     openPicker(el, 'All .md files…')
     expect(document.querySelector('.icon-picker__head')?.textContent).toBe('Icon for all .md files')
     await pickIcon('python')
-    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...TEST_SETTINGS, sidebarIconRules: [{ match: '*.md', kind: 'file', icon: 'python' }] })
+    expect(bridge.icons.set).toHaveBeenLastCalledWith('/v', { paths: {}, rules: [appRule, { match: '*.md', kind: 'file', icon: 'python' }] })
+    expect(props.onChangeSettings).not.toHaveBeenCalled()
+    // The row reads its vault's rule at once.
+    expect(rowA(el).getAttribute('data-icon')).toBe('python')
 
     act(() => root?.unmount())
     container?.remove()
@@ -11736,6 +11740,7 @@ describe('Change icon from the tree (YAZ-3440 D8, D9)', () => {
     openPicker(again.el, 'All .md files…')
     await pickIcon('python')
     expect(again.props.onChangeSettings).not.toHaveBeenCalled()
+    expect(again.bridge.icons.set).not.toHaveBeenCalled()
     expect(again.props.onNotice).toHaveBeenCalledWith(`Can't add the rule: the list holds ${MAX_ICON_RULES} rules at most, each up to ${MAX_ICON_MATCH} characters`, 'error')
   })
 })

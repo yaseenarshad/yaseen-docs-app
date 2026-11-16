@@ -5,7 +5,8 @@
  * before); the sidebar and the tab menu reach the SAME lists, through the one writer (6C).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { MAX_FOCUS, MAX_FOLDER_ITEMS, rootOfPath, type FocusFolder, type ListScope, type WorkspaceLists } from '@shared/types'
+import { MAX_FOCUS, rootOfPath, type FocusFolder, type ListScope, type WorkspaceLists } from '@shared/types'
+import { MAX_FOLDER_ITEMS } from '@shared/vaultLists'
 import { api } from '../api'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { storage } from '../lib/storage'

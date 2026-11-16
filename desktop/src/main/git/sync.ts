@@ -5,6 +5,7 @@ import { GITHUB_FILE_LIMIT_BYTES, type GithubSyncMerge, type GithubSyncStatus } 
 import { detectRepo } from './detect'
 import { git, GIT_TIMEOUT_CODE, installGitHint, resolveGit, zList, type GitResult } from './exec'
 import { ensureBoardMergeRule, resolveRebase } from './resolve'
+import { FRIENDS_LIST, dropLocalListChange, followRemoteList } from './friendsListRule'
 
 /**
  * One sync pass (YAZ-1081, 2B): everything "make this vault and its GitHub remote agree" means,
@@ -206,6 +207,9 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
 
   // ---------- 1. local edits become one commit (minus anything GitHub would refuse — D3) ----------
   await ensureBoardMergeRule(bin, root) // YAZ-1897 D2: boards never reach git's line merge
+  // YAZ-5083 round 5: the friends list file has one writer (the phone, by GitHub's API): a local change is dropped, so
+  // it can never become a commit, a merge or a conflict that stops this vault's sync.
+  await dropLocalListChange(bin, root)
   let tooLarge: string[] = []
   if (facts.dirty) {
     const staging = await stageWithinLimit(bin, root)
@@ -216,7 +220,7 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
     const anything = (await git(bin, root, ['diff', '--cached', '--quiet'])).code !== 0
     // With a file held back, the subject is built from what IS staged: porcelain collapses an
     // untracked folder to `Folder/`, which would name the folder the held-back file sits in.
-    const named = tooLarge.length > 0 ? zList(await git(bin, root, ['diff', '--cached', '--name-only', '-z'])) : facts.dirtyFiles.filter((f) => !isAtomicTmp(f))
+    const named = tooLarge.length > 0 ? zList(await git(bin, root, ['diff', '--cached', '--name-only', '-z'])) : facts.dirtyFiles.filter((f) => !isAtomicTmp(f) && f !== FRIENDS_LIST)
     const committed = anything ? await git(bin, root, ['commit', '-m', commitMessage(named)]) : { code: 0, stdout: '', stderr: '' }
     if (committed.code !== 0 && !NOTHING_TO_COMMIT.test(`${committed.stdout}\n${committed.stderr}`)) {
       // A machine with no `user.name`/`user.email` cannot commit at all, and no amount of retrying
@@ -269,8 +273,14 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
   // Every answer from here on carries what the pass merged (and the held-back list), pushed or not.
   const done = (status: GithubSyncStatus): GithubSyncStatus => withTooLarge(merged.length > 0 ? { ...status, merged } : status, tooLarge)
 
+  // YAZ-5083 round 5: a local commit that changed the friends list (an older build, a commit by hand) never reaches
+  // GitHub: one commit on top puts GitHub's file back first. YAZ-5445: the quit flush too (it is local, no fetch): with
+  // HEAD on top of the last fetch its push is a fast forward, so it must not carry the list. Behind it (no rebase on a
+  // flush), the push is refused anyway, and the next open rebases and follows.
+  const followed = hasUpstream && (!flush || behind === 0) ? await followRemoteList(bin, root) : false
+
   // ---------- 4. publish ----------
-  if (ahead > 0) {
+  if (ahead > 0 || followed) {
     const pushed = await git(bin, root, hasUpstream ? ['push'] : ['push', '-u', 'origin', 'HEAD'], { timeoutMs: flush ? FLUSH_PUSH_TIMEOUT_MS : TRANSFER_TIMEOUT_MS })
     if (pushed.code !== 0) return done(fromFailure(root, repo, pushed))
   }

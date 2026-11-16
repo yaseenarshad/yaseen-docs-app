@@ -13,11 +13,11 @@ describe('YAZ-5032: the review history in words', () => {
     const box = document.createElement('div')
     const root = createRoot(box)
     const reviews = [
-      { at: '2026-11-01T09:00Z', rating: 'again' as const },
-      { at: '2026-11-01T09:05Z', rating: 'good' as const },
-      { at: '2026-11-02T09:00Z', rating: 'good' as const },
+      { at: '2026-11-01T09:00:00.000Z', rating: 'again' as const },
+      { at: '2026-11-01T09:05:00.000Z', rating: 'good' as const },
+      { at: '2026-11-02T09:00:00.000Z', rating: 'good' as const },
     ]
-    act(() => root.render(<CardReviewsTable reviews={reviews} settings={DEFAULT_REVIEW_SETTINGS} now={Date.parse('2026-11-02T10:00Z')} />))
+    act(() => root.render(<CardReviewsTable reviews={reviews} settings={DEFAULT_REVIEW_SETTINGS} now={Date.parse('2026-11-02T10:00:00.000Z')} />))
     expect([...box.querySelectorAll('th')].map((th) => th.textContent)).toEqual(['Reviewed on', 'Answer', 'Gap', 'Time', 'Next due', ''])
     const rows = [...box.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent))
     expect(rows.slice(0, 3).map((r) => r.slice(0, 2))).toEqual([
@@ -43,11 +43,11 @@ describe('YAZ-5032: the review history in words', () => {
 /** YAZ-5032 round 2 (Yaseen's 4 pages): no "Last", plainer words, an (i) that shows, and an ask before a review goes. */
 describe('YAZ-5032 round 2: the strip, the (i) and the ask before a remove', () => {
   // All the reviews are after `now`: each due date is ahead of it, so the words say "in N days".
-  const now = Date.parse('2026-01-01T12:00Z')
+  const now = Date.parse('2026-01-01T12:00:00.000Z')
   const three = [
-    { at: '2026-03-01T09:00Z', rating: 'good' as const },
-    { at: '2026-03-02T09:00Z', rating: 'good' as const },
-    { at: '2026-03-10T09:00Z', rating: 'good' as const },
+    { at: '2026-03-01T09:00:00.000Z', rating: 'good' as const },
+    { at: '2026-03-02T09:00:00.000Z', rating: 'good' as const },
+    { at: '2026-03-10T09:00:00.000Z', rating: 'good' as const },
   ]
   const s = DEFAULT_REVIEW_SETTINGS
   const mount = (node: ReactNode) => {

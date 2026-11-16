@@ -28,6 +28,8 @@ export interface ReadOnlyVaultSettings {
   on: boolean
 }
 export const DEFAULT_READ_ONLY_VAULT: ReadOnlyVaultSettings = { on: false }
+/** The keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. */
+export const READ_ONLY_VAULT_KEYS: readonly string[] = Object.keys(DEFAULT_READ_ONLY_VAULT)
 
 /** The unlock's choices (YAZ-5581): 10 minutes (the default, first), 1 hour, or until "Lock now" or the app quits. */
 export type VaultUnlockFor = 'ten' | 'hour' | 'until'
@@ -180,7 +182,7 @@ export function useReadOnlyVault(root: string | null): ReadOnlyVaultState {
       if (root === null) return
       const clean = sanitizeReadOnlyVault(next)
       show(clean)
-      api.vaultConfig.write(root, READ_ONLY_VAULT_FILE, clean).catch(() => api.vaultConfig.read(root, READ_ONLY_VAULT_FILE).then((raw) => show(sanitizeReadOnlyVault(raw)), () => undefined))
+      api.vaultConfig.write(root, READ_ONLY_VAULT_FILE, clean, READ_ONLY_VAULT_KEYS).catch(() => api.vaultConfig.read(root, READ_ONLY_VAULT_FILE).then((raw) => show(sanitizeReadOnlyVault(raw)), () => undefined))
     },
     [root, show],
   )

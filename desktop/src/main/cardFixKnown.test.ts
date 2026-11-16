@@ -4,10 +4,11 @@
 // `notitle`, before the reviews.
 import { describe, expect, it } from 'vitest'
 import { cardPropertiesOf, cardReviewsOf, formatCardLine, isCardFix, isCardPropertyName, parseCardLine, withCardFix, withCardNoTitle, withCardProperty } from '@shared/cardLine'
+import { uniteCardLines } from '@shared/cardMerge'
 import { cardFilePropertiesMoved } from '@shared/cardPropertySweep'
 import { cardTitlesMoved } from '@shared/cardTitleSweep'
 
-const R0 = '2026-11-01T09:00Z good'
+const R0 = '2026-11-01T09:00:00.000Z good'
 const line = (text: string) => parseCardLine(`<!-- card: ${text} -->`)!
 const write = (l: ReturnType<typeof line>) => formatCardLine(l)!.replace(/^<!-- card: | -->$/g, '')
 
@@ -48,5 +49,14 @@ describe('the Mac`s sweeps never treat `fix` as unknown nor move it', () => {
     const moved = cardTitlesMoved(page)
     expect(moved).not.toBeNull()
     expect(moved!).toContain(`<!-- card: NC-1, title "Capital of France", fix, ${R0} -->`)
+  })
+})
+
+describe('the merge keeps the app`s order of marks with `fix` (YAZ-5097 open point)', () => {
+  const card = (l: string) => `# P\n\n\`\`\`card\nQ\n\`\`\`\n<!-- card: ${l} -->\n`
+  it('a `fix` only mine has goes after `notitle`, as `withCardFix` puts it', () => {
+    const [t, m] = uniteCardLines(card(`NC-1, ${R0}`), card(`NC-1, notitle, ${R0}`), card(`NC-1, fix, ${R0}`))
+    expect(t).toBe(m)
+    expect(t).toContain(`<!-- card: NC-1, notitle, fix, ${R0} -->`)
   })
 })

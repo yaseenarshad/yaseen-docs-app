@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { LIST_SCOPES, MAX_FAVORITES, VAULT_CONFIG_DIR, type FavoritesConfig, type ListScope } from '@shared/types'
-import { isRecord, isStringArray } from '@shared/guards'
+import { FAVORITES_FILE, cleanRels, favoritesOf, isSafeRel } from '@shared/vaultLists'
 import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
 
@@ -22,19 +22,17 @@ import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
  * the same merge. No workspace file is an EMPTY workspace list (D3): never the vault's own list.
  */
 
-export const FAVORITES_FILE = 'favorites.json'
+export { FAVORITES_FILE, isSafeRel }
 /** The vault's Favorites in a workspace (YAZ-4450 D1): the shape, rules and merge of `favorites.json`. An old build never reads it. */
 export const FAVORITES_WORKSPACE_FILE = 'favorites-workspace.json'
 const fileOf = (scope: ListScope): string => (scope === 'vault' ? FAVORITES_FILE : FAVORITES_WORKSPACE_FILE)
 
 export const toRel = (root: string, abs: string): string => path.relative(root, abs).split(path.sep).join('/')
 export const toAbs = (root: string, rel: string): string => path.join(root, ...rel.split('/'))
-/** A stored entry: non-empty, relative, no `..` segment, no NUL. */
-export const isSafeRel = (p: unknown): p is string => typeof p === 'string' && p !== '' && !p.startsWith('/') && !p.includes('\0') && !p.split('/').includes('..')
 
 /** `p` is `root` or inside it. Exported for the focus list (`focus.ts`, YAZ-2702), which has the same rule. */
 export const under = (root: string, p: string): boolean => p === root || p.startsWith(`${root}/`)
-const clean = (rels: readonly string[]): string[] => [...new Set(rels.filter(isSafeRel))].slice(0, MAX_FAVORITES)
+const clean = (rels: readonly string[]): string[] => cleanRels(rels, MAX_FAVORITES)
 
 type Raw = { state: 'absent' } | { state: 'ok'; rels: string[] } | { state: 'bad'; file: string }
 
@@ -47,8 +45,8 @@ async function readRaw(root: string, scope: ListScope = 'vault'): Promise<Raw> {
   return rels === null ? { state: 'bad', file } : { state: 'ok', rels }
 }
 
-/** The cleaned list in a parsed `favorites.json`, or null when it is not `{ version: 1, favorites: string[] }`. */
-const relsOf = (v: unknown): string[] | null => (isRecord(v) && v.version === 1 && isStringArray(v.favorites) ? clean(v.favorites) : null)
+/** The cleaned list in a parsed `favorites.json`, or null when it is not `{ version: 1, favorites: string[] }` (shared with the phone, YAZ-5452). */
+const relsOf = favoritesOf
 
 /**
  * Two machines' `favorites.json` after both changed it (YAZ-1897 scope, ported by YAZ-3039 D4): a

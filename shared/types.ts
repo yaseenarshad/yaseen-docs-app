@@ -1,3 +1,4 @@
+import { DEFAULT_FOLDER_PAGES } from './folderPagesDefault'
 /**
  * Shared renderer/main contracts for Yaseen Docs (locked in GRO-1961, bridge in GRO-2153) —
  * see docs/CONTRACTS.md for the prose version.
@@ -9,10 +10,10 @@
 import type { IconRule } from './vaultIcons'
 import type { CardRecord } from './cardLine'
 import type { HotkeyOverrides } from './hotkeyBindings'
-import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPage'
 import { isAppVault } from './appVaults'
 import { defaultCourseState, type CourseState } from './courseState'
 export type { CoursePatch, CourseSpeed, CourseState } from './courseState'
+import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPageDefault'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 
@@ -1988,6 +1989,63 @@ export const PIXABAY_SECRET = 'pixabayApiKey'
  */
 export const GITHUB_TOKEN_SECRET = 'githubToken'
 
+/**
+ * The Mac's send of the numbers to friends (YAZ-5086, 4E5; decision 16), as Settings › Cards › "Friends" shows
+ * it. Numbers and words only: no token, no gist ID, no repo name.
+ * - `no-token`: no GitHub token saved. `no-friends`: no friend and no group (decision 22). `no-list`: no friends list
+ *   on the token's account (`login`): a person with no friends yet, or a token of another account (YAZ-5254).
+ * - `missing-vaults`: this Mac cannot count every vault that counts (`missing` of them): not on this Mac, older than
+ *   GitHub's copy (`behind`), or not readable (`unreadable`). YAZ-5252: "holds" means "on this Mac".
+ * - `phone-first`: the friends list waits for a change that the phone makes (a remove, a numbers gist to make again, two
+ *   lists to join). The Mac only sends, so it waits.
+ * - `waiting`: the 5-minute rule; `slowed`: near GitHub's limit or a rate limit; both say `retryAt`.
+ * - `no-gists`, `sign-in-again`, `offline`, `needs-repair`, `needs-newer-app`, `failed`: quiet failures, in plain words.
+ */
+export type FriendsSendStatus =
+  | 'idle'
+  | 'no-token'
+  | 'no-friends'
+  | 'no-list'
+  | 'missing-vaults'
+  | 'phone-first'
+  | 'waiting'
+  | 'slowed'
+  | 'sent'
+  | 'unchanged'
+  | 'no-gists'
+  | 'sign-in-again'
+  | 'offline'
+  | 'needs-repair'
+  | 'needs-newer-app'
+  /** YAZ-5083: the friends list is in a vault (`home`) that is not open on this Mac. */
+  | 'list-elsewhere'
+  /** YAZ-5083: the token cannot read the vault that holds the friends list. */
+  | 'no-list-access'
+  | 'failed'
+
+export interface FriendsSendView {
+  status: FriendsSendStatus
+  /** The last update of the numbers gist from THIS Mac (ms), or null. */
+  lastSentAt: number | null
+  retryAt: number | null
+  /** Friends and groups in the friends list, as last read. */
+  friends: number
+  groups: number
+  /** For `missing-vaults`: how many vaults that count this Mac cannot count now (all three kinds below together). */
+  missing: number
+  /**
+   * YAZ-5391: of `missing`, the closed vaults whose copy on this Mac is older than the newest the Mac knows (its HEAD is
+   * behind its remote-tracking branch, from the last fetch).
+   */
+  behind?: number
+  /** YAZ-5388, YAZ-5395, YAZ-5396: of `missing`, the closed vaults the count could not read (a link inside, a read error). */
+  unreadable?: number
+  /** For `no-list`: the GitHub login of the Mac's token, or null when GitHub did not say. */
+  login?: string | null
+  /** For `list-elsewhere` (YAZ-5083): the vault (`owner/name`) that holds the friends list. */
+  home?: string | null
+}
+
 /** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */
 export const FOLDER_PAGE_CHOICES = {
   weekStartsOn: ['sunday', 'monday'],
@@ -2008,6 +2066,9 @@ export const FOLDER_PAGE_CHOICES = {
 
 /**
  * Settings › Folder pages (YAZ-4585, D34 of YAZ-4501). Every default is the look before the page existed.
+ * YAZ-5489 REPLACES D34's "global side": the view and page defaults (27 parts, `FOLDER_PAGES_VAULT_PARTS`) are the
+ * vault's, in `.yaseendocs/folder-pages.json` (`shared/folderPages.ts`); these app values are the fallback for a vault
+ * with no file. The personal parts stay here.
  * - Personal, in Settings only: `weekStartsOn`, `rowBand`, `keepWindowPinned` (and "Preview rows on hover" and "Preview
  *   links on hover", which stay `hoverPreviewIn.folderViews` and `hoverPreviewIn.folderLinks`).
  * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`).
@@ -2081,44 +2142,9 @@ export interface FolderPagesSettings {
   cardClickOpens: (typeof FOLDER_PAGE_CHOICES.cardClickOpens)[number]
 }
 
-export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
-  // Sunday to Saturday (the demo of 2026-11-08); a stored `monday` stays Monday.
-  weekStartsOn: 'sunday',
-  rowBand: null,
-  keepWindowPinned: null,
-  rowHeight: 'short',
-  rowNumbers: true,
-  columnTypeIcons: true,
-  // YAZ-4848: the folder icon on, the "N inside" count off ("hide the num of pages by default").
-  folderIcons: true,
-  folderCounts: false,
-  textInCells: 'kind',
-  groupIndent: 'medium',
-  // YAZ-4798: on, on hover, plain lines (the approved defaults; a view with no key of its own reads them).
-  stickyGroups: true,
-  groupLines: 'hover',
-  groupLineStyle: 'plain',
-  showEmptyGroups: true,
-  showEmptyColumns: false,
-  subfolders: 'pages',
-  foldersFirst: true,
-  calendarScale: 'month',
-  cardTitles: 'clip',
-  hideWeekends: false,
-  // YAZ-4878: 1 px lines in the app's line colour (Gray, Medium), the look before the setting existed.
-  weekLine: 1,
-  dayLine: 1,
-  weekLineColor: 'gray',
-  dayLineColor: 'gray',
-  showFolderPageFiles: false,
-  askBeforeDelete: true,
-  confirmChanges: true,
-  showNewButtons: true,
-  showOtherFiles: true,
-  inheritColumns: true,
-  columnMarks: 'icon',
-  cardClickOpens: 'background',
-}
+// The Settings › Folder pages defaults live in their own module (YAZ-5460): the phone's folder page reads them from a
+// lazy chunk, and a value here would sit in the phone's first load, where `types.ts` is.
+export { DEFAULT_FOLDER_PAGES } from './folderPagesDefault'
 
 export interface SettingsState {
   /** Line height within a block (Google-Docs-style presets). */
@@ -2213,13 +2239,14 @@ export interface SettingsState {
   sectionLines: SectionLines
   /**
    * A card's shown hidden word (YAZ-5005): highlighted (the default) or underlined, in the page, the Inbox and
-   * the card window. How the app looks, for every vault: `data-shown-hidden-words` on `.app`. The blanks do not change.
+   * the card window. YAZ-5484 replaces YAZ-5005's "for every vault": the VAULT's (`card-look.json`, `shared/cardLook.ts`);
+   * this app value is the fallback for a vault with no file. `--shown-hidden-words`. The blanks do not change.
    */
   shownHiddenWords: ShownHiddenWords
   /**
    * Settings › Review › Mark the next hidden word (YAZ-5053 round 3, Yaseen: "can it have a color to it so we know that
    * that is where the eye should go?"): the one blank the next Space shows takes a colour, in the look of Shown hidden
-   * words. `data-mark-next-hidden` on `.app`; the render marks the blank (`data-next`).
+   * words. `--mark-next-hidden` (the vault's since YAZ-5484, as all of Card look); the render marks the blank (`data-next`).
    */
   markNextHidden: boolean
   /** Its colour: `null` is the theme's calm default (`--next-hidden` in `app.css`, light and dark); else a hex colour for both. */
@@ -2234,7 +2261,7 @@ export interface SettingsState {
    * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
    * uses the four `card*` values below, on `.app` as `--card-line-height`, `--card-block-gap`, `--card-bullet-indent`
    * and `--card-bullet-gap`. Round 3: Custom starts at Mochi's clean values (`CARD_SPACING_CLEAN`). Round 4: `clean`
-   * uses them, with Mochi's softer text, Inbox padding and line length (`data-card-clean` on `.app`); Custom keeps that look.
+   * uses them, with Mochi's softer text, Inbox padding and line length (`--card-clean`, the vault's since YAZ-5484); Custom keeps that look.
    */
   cardSpacing: CardSpacing
   /**
@@ -3548,9 +3575,9 @@ export interface AppState {
    */
   course: CourseState
   /**
-   * The vault settings move (YAZ-5487, the rule of YAZ-5491): for each vault root, the `.yaseendocs/` files (or
-   * `<file>#<part>`) this Mac has seeded from its app values, or found there. One in the list is never seeded again, so
-   * one a person deleted on purpose does not come back. Per machine. Absent is none; an old build drops the key.
+   * The vault settings move (YAZ-5491 and the rows after it; scoping section 6): for each vault root, the
+   * `.yaseendocs/` files (or `<file>#<part>`) this Mac has seeded from its app values, or found there. One that is in the
+   * list is never seeded again, so one a person deleted on purpose does not come back. Per machine. Absent is none; an old build drops the key.
    */
   seededVaultConfig?: Record<string, string[]>
 }
@@ -4177,10 +4204,7 @@ export interface FocusConfig {
   focus: string[]
 }
 
-/** A vault keeps this many focus folders of a scope at most, tombstones included (YAZ-4460). */
-export const MAX_FOCUS_FOLDERS = 100
-/** The items of one focus or favorite folder at most (YAZ-4479): as many as a vault's top level of Focus holds. */
-export const MAX_FOLDER_ITEMS = 500
+/* MAX_FOCUS_FOLDERS, MAX_FOLDER_ITEMS and isFocusFolder live in `vaultLists.ts` (YAZ-5453): the phone reads them from its lazy chunk, and this module is in its first load. */
 
 /**
  * One focus folder (YAZ-4460 F1, F2): a named group of focus items, in the user's order, that moves nothing on disk.
@@ -4199,11 +4223,6 @@ export interface FocusFolder {
   pos?: number
 }
 
-export const isFocusFolder = (v: unknown): v is FocusFolder => {
-  if (typeof v !== 'object' || v === null) return false
-  const f = v as Record<string, unknown>
-  return typeof f.id === 'string' && f.id !== '' && typeof f.name === 'string' && typeof f.created === 'number' && typeof f.at === 'number' && (f.deleted === undefined || f.deleted === true) && (f.pos === undefined || (typeof f.pos === 'number' && Number.isFinite(f.pos))) && Array.isArray(f.items) && f.items.every((i) => typeof i === 'object' && i !== null && typeof (i as Record<string, unknown>).vault === 'string' && typeof (i as Record<string, unknown>).path === 'string')
-}
 
 /** One Mac's focus folders file of a vault (YAZ-4460 F1), by `FocusConfig`'s rule: the latest `at` is the set. */
 export interface FocusFoldersConfig {

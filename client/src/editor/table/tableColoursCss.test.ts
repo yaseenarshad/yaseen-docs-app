@@ -5,10 +5,13 @@
  * that a copy to Docs uses (`FILL_WASH`).
  */
 import { describe, expect, it } from 'vitest'
-import tableCss from './table.css?inline'
+import cardTableCss from './cardTable.css?inline'
+import editorTableCss from './table.css?inline'
 import superCss from './super/superTable.css?inline'
 import { FILL_WASH } from './colours'
 import { TABLE_COLORS } from './tableStyle'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 const blocks = [...tableCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }))
 /** Every body of the rules with exactly `selector`, as one text. */

@@ -377,7 +377,7 @@ describe('the first card (chapter 2)', () => {
       // YAZ-5203: "The app saves it with the card." The answer is the card's first review, as the Inbox writes it.
       const reviews = cardReviewsOf(shape.cards[0].line)
       expect(reviews).toHaveLength(1)
-      expect(reviews[0]).toMatchObject({ rating: 'good', at: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\dZ$/) })
+      expect(reviews[0]).toMatchObject({ rating: 'good', at: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/) })
       expect(cardState(reviews, DEFAULT_REVIEW_SETTINGS).isNew).toBe(false)
       // The scene shows "saved" once the host's answer reaches React (a moment after the file is on disk).
       await vi.waitFor(async () => {
@@ -395,7 +395,10 @@ describe('the first card (chapter 2)', () => {
     const line = (path: string) => findCards(splitFrontmatter(readFileSync(path, 'utf8')).body)[0].line
     expect(cardReviewsOf(line(forgot.path)).map((r) => r.rating)).toEqual(['again'])
     const now = Date.now()
+    // The same instant for the course and the Inbox's preview (YAZ-5642: the review time is to the millisecond).
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
     const remembered = (await host.makeFirstCard({ ...input, answer: 'remembered' })) as MadeCard
+    clock.mockRestore()
     const reviews = cardReviewsOf(line(remembered.path))
     expect(reviews.map((r) => r.rating)).toEqual(['good'])
     const inbox = previewAnswers([], DEFAULT_REVIEW_SETTINGS, now).find((a) => a.review.rating === 'good')!
@@ -626,14 +629,14 @@ describe('the end screen', () => {
     const host = vaultCourseHost(vault.view, depsOf().deps)
     expect(host.summary()).toEqual({ folder: null, cards: [] })
     const folder = (await host.courseCards()) as { path: string }
-    const review = { at: '2026-11-01T10:00Z', rating: 'good' as const }
-    const line = withCardReview(withCardReview(withCardId(EMPTY_CARD_LINE, 'TST-90'), review), { at: '2026-11-01T10:05Z', rating: 'good' })
+    const review = { at: '2026-11-01T10:00:00.000Z', rating: 'good' as const }
+    const line = withCardReview(withCardReview(withCardId(EMPTY_CARD_LINE, 'TST-90'), review), { at: '2026-11-01T10:05:00.000Z', rating: 'good' })
     await writeFile(join(folder.path, 'reviewed-tst-90.md'), cardFileContent('Reviewed', 'A {{reviewed}} card', line))
     await writeFile(join(folder.path, 'new-tst-91.md'), cardFileContent('New', 'A {{new}} card', withCardId(EMPTY_CARD_LINE, 'TST-91')))
     await writeFile(join(root, 'other-tst-92.md'), cardFileContent('Other', 'Not a {{course}} card', withCardId(EMPTY_CARD_LINE, 'TST-92')))
     await vault.refresh()
-    const due = cardState([review, { at: '2026-11-01T10:05Z', rating: 'good' }], DEFAULT_REVIEW_SETTINGS).due
-    expect(due).toBeGreaterThan(Date.parse('2026-11-01T10:05Z'))
+    const due = cardState([review, { at: '2026-11-01T10:05:00.000Z', rating: 'good' }], DEFAULT_REVIEW_SETTINGS).due
+    expect(due).toBeGreaterThan(Date.parse('2026-11-01T10:05:00.000Z'))
     expect(host.summary()).toEqual({
       folder: folder.path,
       cards: [
