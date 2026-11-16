@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { cardBlock, cardRecords, cardReviewsOf, pageCards, parseCardLine } from '@shared/cardLine'
+import { cardBlock, cardRecords, cardReviewsOf, cardTime, pageCards, parseCardLine, type CardRating } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
@@ -183,5 +183,98 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
       ['page', 'Cells'],
     ])
     for (const door of doors) expect(door).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * YAZ-5622 (audit item 6): a card answered on the OTHER device (the phone's answer synced into the file, or the Mac's
+ * into the phone's) leaves the open session as soon as the index has it: its counts, "N / M", → never shows it, so it
+ * never gets a second review. A Forgot there leaves it due here: it stays. A session started later never takes it.
+ */
+describe('a card answered on the other device (YAZ-5622)', () => {
+  const KNOWN = '2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'
+  /** The other device's answer: the file changes on disk, then the index has it (AutoSync, the phone's pull). */
+  const elsewhere = async (path: string, id: string, rating: CardRating) => {
+    await host.writeCardAnswer(`${ROOT}/${path}`, id, { at: cardTime(Date.now()), rating })
+    await act(async () => reindex())
+  }
+  const ids = () => review.session?.counts
+  beforeEach(() => page('D.md', ['Due {{c}}?', `WIKI-7, ${KNOWN}`], ['Due {{d}}?', `WIKI-8, ${KNOWN}`]))
+
+  it('mid-session, a card further on: out of the counts and N / M at once, and → passes it by', async () => {
+    await mount()
+    await act(async () => review.start())
+    await shown('WIKI-7')
+    expect(ids()).toMatchObject({ all: 4, due: 3, new: 1 })
+    expect([review.session?.position, review.session?.total]).toEqual([1, 4])
+    await elsewhere('D.md', 'WIKI-8', 'good')
+    expect(ids()).toMatchObject({ all: 3, due: 2, new: 1 })
+    expect([review.session?.position, review.session?.total]).toEqual([1, 3])
+    expect(review.dueCount).toBe(3)
+    act(() => review.move(1))
+    await shown('WIKI-5')
+    // The rest of the session: never WIKI-8 again.
+    const seen: string[] = []
+    while (review.session?.card != null) {
+      const id = review.session.card.id
+      seen.push(id)
+      await answer(id, 'good')
+    }
+    expect(seen).not.toContain('WIKI-8')
+    expect(reviewsOn('D.md', 'WIKI-8').map((r) => r.rating)).toEqual(['good', 'good', 'good'])
+  })
+
+  it('mid-session, the card on show: the next card shows in its place, and its answer here is never written', async () => {
+    await mount()
+    await act(async () => review.start())
+    await shown('WIKI-7')
+    await elsewhere('D.md', 'WIKI-7', 'good')
+    await shown('WIKI-8')
+    expect(ids()).toMatchObject({ all: 3, due: 2 })
+    expect(reviewsOn('D.md', 'WIKI-7')).toHaveLength(3)
+  })
+
+  it('a card passed over with → and answered there: ← never finds it again', async () => {
+    await mount()
+    await act(async () => review.start())
+    await shown('WIKI-7')
+    act(() => review.move(1))
+    await shown('WIKI-8')
+    await elsewhere('D.md', 'WIKI-7', 'good')
+    expect(review.session?.canBack).toBe(false)
+    expect([review.session?.position, review.session?.total]).toEqual([1, 3])
+  })
+
+  it('a Forgot on the other device: the card is still due today, so it stays', async () => {
+    await mount()
+    await act(async () => review.start())
+    await shown('WIKI-7')
+    await elsewhere('D.md', 'WIKI-8', 'again')
+    expect(ids()).toMatchObject({ all: 4, due: 3 })
+  })
+
+  it('between sessions: the Inbox count and the next session leave it out', async () => {
+    await mount()
+    expect(review.dueCount).toBe(4)
+    await elsewhere('D.md', 'WIKI-8', 'good')
+    expect(review.dueCount).toBe(3)
+    await act(async () => review.start())
+    expect(ids()).toMatchObject({ all: 3, due: 2 })
+  })
+
+  it("this device's own answer, when the index has it before the write returns: the answer still counts (bar, Undo)", async () => {
+    const write = host.writeCardAnswer
+    host.writeCardAnswer = async (...args) => {
+      const next = await write(...args)
+      await act(async () => reindex())
+      return next
+    }
+    await mount()
+    await act(async () => review.start())
+    await answer('WIKI-7', 'good')
+    await shown('WIKI-8')
+    expect(review.session?.canUndo).toBe(true)
+    expect(review.session?.answered).toEqual(['good'])
+    expect([review.session?.position, review.session?.total]).toEqual([2, 4])
   })
 })

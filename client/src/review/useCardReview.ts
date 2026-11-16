@@ -16,7 +16,9 @@ import { tourEvent } from '../course/tourBus'
  * (YAZ-5067, `reviewHost.ts`): the desktop passes `desktopReviewHost`, the phone its own store. No default (YAZ-5161).
  * The queue comes from the index (`cardQueue`) and is taken ONCE, at start; a card is
  * checked against the live index only when its turn comes, and read from its page when it shows (the index holds no
- * text, D4). A card whose page or ID is gone is passed over.
+ * text, D4). A card whose page or ID is gone is passed over. A card that LEAVES the scope's due cards while the session
+ * is open (answered on the other device, YAZ-5622; archived elsewhere) leaves the whole session at once (`withLive`):
+ * the counts, "N / M", ← → and the card on show, so it never gets a second review.
  *
  * The hover is the truth (D13): `showAnswers` fixes each button's review — its time (`cardTime`), so its fuzz — and
  * `answer` writes exactly that review, so "Remembered · 9 days" is what the file gets. `undo` (⌘Z, idea 5) removes
@@ -292,6 +294,8 @@ interface Session {
   answered: SessionAnswer[]
   /** YAZ-5031: the cards of the scope the index last marked `next` (`cardKey`): a change of them moves the session. */
   marks: ReadonlySet<string>
+  /** YAZ-5622: the cards of the scope the index last had in today's queue (`cardKey`): one that leaves it goes (`withLive`). */
+  live: ReadonlySet<string>
   /** YAZ-5043: where Due today is: its first pass, its missed cards, or over (each stop shows once). */
   stage: DueStage
   /** YAZ-5043: the stop on show, or null. */
@@ -473,6 +477,30 @@ const withMarks = (s: Session, live: readonly DueCard[]): Session => {
   const queue = [...rest.slice(0, place), ...joining, ...rest.slice(place)]
   const at = shown === undefined ? place : place - 1
   return fitted({ ...s, queue, at, marks, turn: shown === head ? s.turn : s.turn + 1 })
+}
+
+/**
+ * The session after the index changed (YAZ-5622, audit item 6): a card that WAS in the scope's queue (`live`, `cardQueue`)
+ * and is not now was answered on the other device (or archived, or its page went): it leaves the whole session — the
+ * counts, "N / M", ← and →, the card on show too — so it never gets a second review. Only a CHANGE moves it, as with
+ * the marks (YAZ-5031): a snapshot that has not caught up with this session's own write (an Undo that brought a card
+ * back) drops nothing. Only the FILES move it (`files`: the index changed): this device's own Add more, Reset, Up next
+ * places or settings have their own rules (`withAdded`, `withReset`, …), so then it only takes the new list in. `keep`: the
+ * card this session is writing now, which its own write handles, and the cards whose mark changed (`withMarks` has them).
+ */
+const withLive = (s: Session, live: readonly DueCard[], files: boolean, keep: ReadonlySet<string>): Session => {
+  const now = new Set(live.map(cardKey))
+  const gone = new Set(files ? [...s.live].filter((k) => !now.has(k) && !keep.has(k)) : [])
+  const same = gone.size === 0 && now.size === s.live.size && [...now].every((k) => s.live.has(k))
+  if (same) return s
+  if (gone.size === 0 || !s.queue.some((c) => gone.has(cardKey(c)))) return { ...s, live: now }
+  const head = s.queue[s.at]
+  const queue = s.queue.filter((c) => !gone.has(cardKey(c)))
+  // The card on show stays on show; when it went, the next card left after it.
+  const at = s.queue.slice(0, s.at).filter((c) => !gone.has(cardKey(c))).length
+  const next = fitted({ ...s, queue, at: at < queue.length ? at : 0, live: now, turn: queue[at] === head ? s.turn : s.turn + 1 })
+  // The card on show went and it was the last due card left of the first pass: Due today's stop, as an answer here makes.
+  return head !== undefined && gone.has(cardKey(head)) && s.pause === null && dueFirsts(s.answered).count > 0 ? { ...next, ...dueStop(next, head) } : next
 }
 
 /** The session with the card at `at` gone from its queue (answered elsewhere, its page gone, review off): the next one shows. */
@@ -660,12 +688,24 @@ export function useCardReview(
   // YAZ-5033: today's reviews across the vault, from the index: the new answer counts once the index has its write.
   const today = useMemo(() => reviewedToday(records, Date.now()), [records, day])
 
+  // YAZ-5622: the card this session is writing (an answer, an archive): the index may have the write before the write returns.
+  const writing = useRef<string | null>(null)
   // YAZ-5031: the open session follows the index's `next` marks (`withMarks`); the vault's queue serves the vault's session.
+  const seenRecords = useRef(records)
   useEffect(() => {
+    // Read now, not when React runs the update: by then the write may have returned.
+    const writes = writing.current
+    const files = seenRecords.current !== records
+    seenRecords.current = records
     setSession((s) => {
       if (s === null || !settings.enabled) return s
       const vault = !s.scope.folder && s.scope.page === undefined
-      return withMarks(s, vault ? vaultQueue : cardPlan(records, settings, Date.now(), s.scope.folder, s.scope.page, letters, taken, added).queue)
+      const live = vault ? vaultQueue : cardPlan(records, settings, Date.now(), s.scope.folder, s.scope.page, letters, taken, added).queue
+      const marked = withMarks(s, live)
+      // YAZ-5622: and a card the other device answered leaves it.
+      const keep = new Set([...s.marks, ...marked.marks].filter((k) => s.marks.has(k) !== marked.marks.has(k)))
+      if (writes !== null) keep.add(writes)
+      return withLive(marked, live, files, keep)
     })
   }, [vaultQueue, records, settings, letters, taken, added])
 
@@ -810,7 +850,7 @@ export function useCardReview(
       // card when that is still in the queue, else on the filter's first card (YAZ-5054).
       const filter = resume.filter ?? 'all'
       const at = resume.card === undefined ? -1 : queue.findIndex((c) => c.path === resume.card?.path && c.id === resume.card.id)
-      setSession((s) => fitted({ id: ++sessionCount, label, scope, queue, at: Math.max(at, 0), turn: (s?.turn ?? 0) + 1, undo: [], filter, answered: [], marks: markedIn(queue), stage: 'first', pause: null }))
+      setSession((s) => fitted({ id: ++sessionCount, label, scope, queue, at: Math.max(at, 0), turn: (s?.turn ?? 0) + 1, undo: [], filter, answered: [], marks: markedIn(queue), live: new Set(queue.map(cardKey)), stage: 'first', pause: null }))
     },
     [root, source, host],
   )
@@ -841,6 +881,7 @@ export function useCardReview(
       // The hover's review, with how long the answer took (YAZ-5033) when the Inbox timed it.
       const chosen = isCardSeconds(seconds) ? { ...fixedAnswer, review: { ...fixedAnswer.review, seconds } } : fixedAnswer
       busy.current = true
+      writing.current = cardKey(card)
       forget(card.path)
       const written = await host.writeCardAnswer(card.path, card.id, chosen.review).then(
         (next) => ({ next }),
@@ -851,6 +892,7 @@ export function useCardReview(
         },
       )
       busy.current = false
+      writing.current = null
       forget(card.path) // also a read begun while it wrote
       if (written === 'failed') return false
       tourEvent('inbox-answered', card.path)
@@ -1100,6 +1142,7 @@ export function useCardReview(
     const s0 = live.current.session
     const card = s0?.queue[s0.at]
     if (card === undefined || s0?.pause !== null) return
+    writing.current = cardKey(card)
     forget(card.path)
     const written = await host.changeCardLine(card.path, card.id, (l) => withCardOff(l, true)).then(
       () => true,
@@ -1108,6 +1151,7 @@ export function useCardReview(
         return false
       },
     )
+    writing.current = null
     forget(card.path)
     if (!written) return
     setSession((s) => {
