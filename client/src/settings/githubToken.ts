@@ -1,6 +1,5 @@
 /**
- * Is a GitHub token saved on this Mac? (YAZ-5098, Settings › Cards › "Phone and friends"). The ONE answer the two rows
- * share: the token row writes, and "Connect your phone" waits for a token. It holds a yes or a no, never the token:
+ * Is a GitHub token saved on this Mac? (YAZ-5098, Settings › Cards › "Friends"). It holds a yes or a no, never the token:
  * the token goes to main through `secrets:set` and no channel answers it back (`main/ipc/secrets.ts`).
  */
 import { useEffect, useSyncExternalStore } from 'react'
@@ -60,7 +59,7 @@ export async function saveGithubToken(pasted: string): Promise<SaveTokenResult> 
   return 'saved'
 }
 
-/** "Remove token": the token leaves this Mac. A phone that has it keeps it. */
+/** "Remove token": the token leaves this Mac. */
 export async function removeGithubToken(): Promise<boolean> {
   try {
     await api.secrets.set({ name: GITHUB_TOKEN_SECRET, value: null })

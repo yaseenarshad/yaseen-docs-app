@@ -1981,25 +1981,12 @@ export interface SecretHasRequest {
 export const PIXABAY_SECRET = 'pixabayApiKey'
 
 /**
- * The name the GitHub token is stored under (YAZ-5098; round 12, item 8: Settings › Cards › "Phone and friends").
- * ONE token for "Connect your phone" and for the friends sender (4E5, YAZ-5086), which reads it in main with
+ * The name the GitHub token is stored under (YAZ-5098; Settings › Cards › "Friends").
+ * The friends sender (4E5, YAZ-5086) reads it in main with
  * `secrets.read(GITHUB_TOKEN_SECRET)`. A fine-grained token: Contents (read and write) and Gists (decisions 13, 17).
  * A renderer may write it (`secrets:set`, checked with `cleanToken`) and ask `secrets:has`; it never reads it back.
  */
 export const GITHUB_TOKEN_SECRET = 'githubToken'
-
-/** Why "Connect your phone" has no code for a vault (YAZ-5098). Each has plain words in `ConnectPhoneSheet`. */
-export type PhoneCodeProblem = 'no-token' | 'no-git' | 'not-a-repo' | 'no-remote' | 'not-github' | 'no-branch'
-  /** YAZ-5218: the person said Cancel in main's confirm. YAZ-5217: the window was not in front when the code was made. */
-  | 'cancelled'
-  | 'not-in-front'
-
-/**
- * `phone:code` (YAZ-5098): the vault's code as a QR grid (`true` = a dark square, rows top to bottom, no quiet zone),
- * with the repo and branch it names. NEVER the token or the code's text: main writes the text and encodes it, and
- * the renderer only paints the grid (`shared/qrPaint.ts`).
- */
-export type PhoneCodeAnswer = { ok: true; repo: string; branch: string; grid: boolean[][] } | { ok: false; problem: PhoneCodeProblem }
 
 /** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */
 export const FOLDER_PAGE_CHOICES = {

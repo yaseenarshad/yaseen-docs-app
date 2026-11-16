@@ -13,7 +13,6 @@ import { ipcMain, ipcRenderer } from 'electron'
 import { CONTRACT, leaves, SPECIAL } from '@shared/ipc'
 import { registerIpc } from './main/ipc'
 import { registerClipboardIpc } from './main/ipc/clipboard'
-import { registerPhoneIpc } from './main/ipc/phone'
 import { registerUpdateIpc } from './main/ipc/update'
 import { registerMemoryIpc } from './main/ipc/memory'
 import { registerSpellerIpc } from './main/ipc/speller'
@@ -60,8 +59,6 @@ it('main handles every invoke exactly once and listens on exactly the send chann
   registerSpellerIpc({ guesses: vi.fn() })
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', checks: true, releases: [] }), check: async () => ({ kind: 'idle' }), checks: true }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), write: vi.fn(), readText: vi.fn(), readHTML: vi.fn(), revealImage: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
-  // "Connect your phone" (YAZ-5098): registered on `ready` after `registerIpc`, with the one secrets store.
-  registerPhoneIpc({ idFor: () => undefined }, { rendererUrl: 'app://yaseen/index.html', isFocused: () => false, roots: () => [], build: vi.fn(), lastInputAt: () => null, confirm: vi.fn(), now: () => 0 })
   registered = registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true, macId: async () => 'contracttest' }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)
   expect(vi.mocked(ipcMain.on).mock.calls.map(([ch]) => ch).sort()).toEqual(SENDS)
@@ -73,8 +70,6 @@ it('YAZ-4463: the library mover\'s write into the data folder is done once `libr
 })
 
 it('the preload reaches every channel through exactly one exposure, of the right kind', async () => {
-  // Each door is called as during a click (YAZ-5218: `phone.code` refuses outside one).
-  Object.defineProperty(globalThis.navigator, 'userActivation', { value: { isActive: true }, configurable: true })
   const { bridge } = await import('./preload')
   /** channel → the kind of each preload use: `invoke`, `push` (subscribes) or `send`. */
   const uses = new Map<string, string[]>()
