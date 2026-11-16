@@ -25,7 +25,7 @@ afterEach(() => {
 const ops = () => h.answers.waiting().map((w) => `${w.op.kind}:${w.op.id}${'on' in w.op ? `:${w.op.on}` : ''}${w.op.kind === 'review' ? `:${w.op.review.rating}` : ''}`)
 
 describe('Review: a full session (decision 11)', () => {
-  it('tap, tap, Remembered, Forgot, Undo, Up next, Fix later, Archive card, Open page; one commit reaches GitHub', async () => {
+  it('tap, tap, Remembered, Forgot, Undo, Up next, Archive card, Open page; one commit reaches GitHub', async () => {
     h = await reviewSetup(FILES)
     // The first card: its state (the chip, YAZ-5415: "New" / "Due"), "1 / 3", the head "Title · ID" (round 15, item 4) and the crumb (the page).
     expect(h.text()).toContain('All cards ▾')
@@ -63,7 +63,7 @@ describe('Review: a full session (decision 11)', () => {
     expect(h.cardText()).toBe('Hola')
     expect(ops()).toEqual(['review:DEMO-12:good'])
 
-    // ⋯ › Up next, Fix later: actions on the list; the card stays.
+    // ⋯ › Up next: an action on the list; the card stays. No Fix later in Review (YAZ-5625, as the Mac's Inbox).
     await h.click('More card actions')
     expect(h.button('Archive card')).not.toBeNull()
     expect(h.button('Open page')).not.toBeNull()
@@ -71,14 +71,11 @@ describe('Review: a full session (decision 11)', () => {
     expect(ops()).toEqual(['review:DEMO-12:good', 'next:DEMO-13:true'])
     await h.click('More card actions')
     expect(h.button('Remove from Up next')).not.toBeNull()
-    await h.click('Fix later')
-    expect(ops()).toEqual(['review:DEMO-12:good', 'next:DEMO-13:true', 'fix:DEMO-13:true'])
-    await h.click('More card actions')
-    expect(h.button('Remove Fix later')).not.toBeNull()
+    expect(h.button(/Fix later/)).toBeNull()
 
     // ⋯ › Archive card: the card leaves the session.
     await h.click('Archive card')
-    expect(ops()).toEqual(['review:DEMO-12:good', 'next:DEMO-13:true', 'fix:DEMO-13:true', 'off:DEMO-13:true'])
+    expect(ops()).toEqual(['review:DEMO-12:good', 'next:DEMO-13:true', 'off:DEMO-13:true'])
     expect(h.head()).toBe('git pull · DEMO-38')
 
     // ⋯ › Open page: 4C's read-only page, by its path in the repo, at this card.
@@ -93,7 +90,7 @@ describe('Review: a full session (decision 11)', () => {
     expect(h.answers.waiting()).toEqual([])
     const lines = await h.remoteLines()
     expect(lines['DEMO-12']).toMatch(/^<!-- card: DEMO-12, title "la biblioteca", 2026-11-13T\d\d:00Z good 0s -->$/)
-    expect(lines['DEMO-13']).toBe('<!-- card: DEMO-13, title "Hola", off, next, fix -->')
+    expect(lines['DEMO-13']).toBe('<!-- card: DEMO-13, title "Hola", off, next -->')
     expect(lines['DEMO-38']).toBe('<!-- card: DEMO-38, title "git pull" -->')
   })
 })

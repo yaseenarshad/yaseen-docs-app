@@ -25,7 +25,7 @@ export interface CardMenuForProps {
 /**
  * THE CARD ACTIONS FOR ONE CARD OUTSIDE REVIEW: the ⋯ on a card's head, in a page or in the card view. It reads the card's
  * marks as the phone shows them (`answers.text`: with the waiting actions) and writes each action with the phone's
- * safe card-line write (`changeCardLine`, the same one as Review's Fix later and Up next): only that word changes,
+ * safe card-line write (`changeCardLine`, the same one as Review's Up next): only that word changes,
  * queued, sent later in one compare-and-swap commit. Lazy: its chunk comes with the first menu.
  */
 export default function CardMenuFor({ answers, path, id, upNext, onClose, onNotice, rowClassName }: CardMenuForProps) {

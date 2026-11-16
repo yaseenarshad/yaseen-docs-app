@@ -4,7 +4,7 @@ import { waitingCount } from '../status/dot'
 import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
- * Checker round 4 (YAZ-5078, pick B11): Undo of Archive card, Up next and Fix later, through the answer list and the
+ * Checker round 4 (YAZ-5078, pick B11): Undo of Archive card and Up next (Fix later left Review's ⋯, YAZ-5625), through the answer list and the
  * fake GitHub. 3 marks x [not sent | tried, reply lost | sent] x [Undo at once | Undo after the next answer].
  */
 let h: ReviewHarness | undefined
@@ -19,7 +19,7 @@ afterEach(() => {
 })
 const OLD = '2026-10-04T09:00Z good'
 const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2, 3].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `MK-${n}, ${OLD}`))) }
-type Mark = 'archive' | 'next' | 'fix'
+type Mark = 'archive' | 'next'
 type Sent = 'unsent' | 'lost-reply' | 'sent'
 const reviewsIn = (lines: Record<string, string>) => Object.values(lines).join(' ').match(/T\d\d:\d\dZ/g)?.length ?? 0
 
@@ -40,11 +40,12 @@ async function setup(sent: Sent) {
 
 async function doMark(hh: ReviewHarness, mark: Mark) {
   await hh.click('More card actions')
-  await hh.click(mark === 'archive' ? 'Archive card' : mark === 'next' ? 'Up next' : 'Fix later')
+  await hh.click(mark === 'archive' ? 'Archive card' : 'Up next')
 }
 
 const LINES: string[] = []
-for (const mark of ['archive', 'next', 'fix'] as Mark[])
+// No Fix later in Review's ⋯ (YAZ-5625, as the Mac's Inbox).
+for (const mark of ['archive', 'next'] as Mark[])
   for (const sent of ['unsent', 'lost-reply', 'sent'] as Sent[])
     for (const when of ['at once', 'after the next answer'] as const)
       describe(`${mark} / ${sent} / Undo ${when}`, () => {
@@ -69,7 +70,7 @@ for (const mark of ['archive', 'next', 'fix'] as Mark[])
             expect(waitingCount(h.answers.waiting())).toBe(0)
             expect(h.answers.state().lost).toEqual([])
           } else {
-            // The next answer: for Archive the next card; for Up next and Fix later the same card (it stays).
+            // The next answer: for Archive the next card; for Up next the same card (it stays).
             await h.click('Remembered')
             const ansLine = h.last()
             await h.click('Undo')
@@ -90,7 +91,7 @@ for (const mark of ['archive', 'next', 'fix'] as Mark[])
       })
 
 describe('race: Undo of a mark while its save still runs', () => {
-  for (const mark of ['next', 'fix'] as Mark[])
+  for (const mark of ['next'] as Mark[])
     it(`${mark}: a tap on Undo right after the mark (the write takes 300 ms) still ends with the line as before`, async () => {
       h = await setup('unsent')
       const before = await h.remoteLines()
@@ -100,7 +101,7 @@ describe('race: Undo of a mark while its save still runs', () => {
         return realAdd(...args)
       }
       await h.click('More card actions')
-      const b = h.button(mark === 'next' ? 'Up next' : 'Fix later')!
+      const b = h.button('Up next')!
       const { act } = await import('react')
       await act(async () => b.click())
       // Undo is on the screen at once; the person taps it.

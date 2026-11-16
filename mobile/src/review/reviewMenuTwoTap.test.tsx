@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
+import { cardActions } from '../cardMenu/cardActions'
 
 /**
- * YAZ-5503/5505: Review's ⋯ holds the shared card actions (Up next, Archive card, Fix later, Title on the front), each
+ * YAZ-5503/5505: Review's ⋯ holds the shared card actions (Up next, Archive card, Title on the front; no Fix later, YAZ-5625), each
  * with two taps. One tap on Archive card only arms it ("Tap again to archive"): the card stays, nothing waits to send.
  * The second tap archives it. "Undo last answer" stays first and "Open page" last.
  */
@@ -36,5 +37,15 @@ describe("Review's ⋯ card actions (YAZ-5505)", () => {
     expect(h.head()).toBe('TT-2')
     expect(h.last()).toBe('Archived↶ Undo')
     expect(h.answers.waiting().map((w) => w.op.kind)).toEqual(['off'])
+  })
+
+  it("YAZ-5625: no Fix later in Review's ⋯, as the Mac's Inbox (YAZ-5430); a card marked Fix later shows none either", async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Q1?\n---\n{{w1}}', `TT-1, fix, ${OLD}`)) })
+    await h.click('More card actions')
+    expect(rows(h)).toEqual(['Undo last answer', 'Up next', 'Archive card', 'Title on the frontShow', 'Open page'])
+    // The shared rows keep Fix later for a card's ⋯ in a page and the card view.
+    const kinds = (fix?: boolean) => cardActions({ off: false, next: false, fix: false, notitle: false }, { upNext: true, fix }).map((r) => r.kind)
+    expect(kinds()).toEqual(['next', 'off', 'fix', 'notitle'])
+    expect(kinds(false)).toEqual(['next', 'off', 'notitle'])
   })
 })

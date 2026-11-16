@@ -86,7 +86,7 @@ describe('Undo of Archive card on the phone', () => {
     expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${OLD} -->`)
   })
 
-  it('Up next and Fix later have an Undo too: unsent, the mark leaves the list; the card line is as before', async () => {
+  it('Up next has an Undo too: unsent, the mark leaves the list; the card line is as before (no Fix later in Review, YAZ-5625)', async () => {
     h = await reviewSetup(FILES)
     await h.click('More card actions')
     await h.click('Up next')
@@ -95,17 +95,12 @@ describe('Undo of Archive card on the phone', () => {
     expect(ops(h)).toEqual([])
     await h.click('More card actions')
     expect(h.button('Up next')).not.toBeNull()
-    await h.click('Fix later')
-    expect(h.last()).toBe('Marked: Fix later↶ Undo')
-    await h.click('Undo')
-    expect(ops(h)).toEqual([])
-    await h.click('More card actions')
-    expect(h.button('Fix later')).not.toBeNull()
+    expect(h.button(/Fix later/)).toBeNull()
     await h.wait(5_000)
     expect(h.commits()).toBe(0)
   })
 
-  for (const kind of ['Up next', 'Fix later'] as const)
+  for (const kind of ['Up next'] as const)
     for (const ms of [0, 100, 250])
       it(`YAZ-5334: ${kind}, Undo ${ms} ms into a 300 ms save: the line on GitHub ends as before`, async () => {
         h = await reviewSetup(FILES)
