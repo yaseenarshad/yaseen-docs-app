@@ -394,8 +394,6 @@ export interface SettingsCtx {
   hotkeyFilter?: HotkeyFilter
   /** The window's vaults for the place picker (YAZ-3556 D6), the active tab's first; absent in a window with no vault. */
   places?: readonly PlaceVault[]
-  /** The active tab's vault (YAZ-5098: "Connect your phone" shows its code); absent with no vault open. */
-  vaultRoot?: string
   /** Daily pages › Open template (YAZ-3607): App opens the daily pages folder's `.template.md`, made empty first when missing. Absent with no vault. */
   openDailyTemplate?: () => void
   /**
@@ -551,12 +549,11 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 /** What the section title does not say: the feature's name, and where its cards turn up. */
 // YAZ-5154: the section is Cards now; "review" still finds it, the word people know it by.
 const REVIEW_KEYWORDS = ['cards', 'review', 'reviews', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
-/** "Phone and friends" (YAZ-5098): its two rows load only when Settings shows them, so the first load stays the same. */
+/** "Friends" (YAZ-5098): its two rows load only when Settings shows them, so the first load stays the same. */
 const GithubTokenControl = lazy(() => import('./GithubTokenControl').then((m) => ({ default: m.GithubTokenControl })))
-const ConnectPhoneControl = lazy(() => import('./ConnectPhoneControl').then((m) => ({ default: m.ConnectPhoneControl })))
 const FriendsSendControl = lazy(() => import('./FriendsSendControl').then((m) => ({ default: m.FriendsSendControl })))
-/** "Phone and friends" (YAZ-5098): the phone app reviews the cards, so the Cards words find these rows too. */
-const PHONE_KEYWORDS = [...REVIEW_KEYWORDS, 'phone', 'iphone', 'mobile', 'notecard', 'notecards', 'connect', 'qr', 'code', 'scan', 'github', 'token', 'friends', 'secret']
+/** "Friends" (YAZ-5098): friends see your card numbers, so the Cards words find these rows too. */
+const FRIENDS_KEYWORDS = [...REVIEW_KEYWORDS, 'github', 'token', 'friends', 'secret']
 /** Card spacing's rows (YAZ-5050). */
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
@@ -2597,16 +2594,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-5098 (round 12, item 8: "8 - yes"): ONE GitHub token for "Connect your phone" and for friends (4E5,
-        // YAZ-5086, whose switch goes in this group too). The token is the Mac's, in main's secrets store, not this
-        // vault's: never a `SettingsState` field, never in review.json. The code is this vault's (its repo, its branch).
-        title: 'Phone and friends',
+        // YAZ-5098: the GitHub token for friends (4E5, YAZ-5086, whose switch goes in this group too). The token is
+        // the Mac's, in main's secrets store, not this vault's: never a `SettingsState` field, never in review.json.
+        // (The phone signs in with GitHub itself, YAZ-5645: the Mac shows it no code.)
+        title: 'Friends',
         items: [
           {
             id: 'githubToken',
             label: 'GitHub token',
-            hint: 'One token for the phone app and for friends, for all your vaults. It stays on this Mac, readable only by your user, and is never shown again.',
-            keywords: PHONE_KEYWORDS,
+            hint: 'This Mac sends your card numbers to friends with it. One token for all your vaults. It stays on this Mac, readable only by your user, and is never shown again.',
+            keywords: FRIENDS_KEYWORDS,
             wide: true,
             available: reviewOn,
             render: () => (
@@ -2616,24 +2613,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            id: 'connectPhone',
-            label: 'Connect your phone',
-            hint: "Shows a code with this vault's repo and your token. Scan it in the phone app, and type nothing on the phone.",
-            keywords: PHONE_KEYWORDS,
-            available: (ctx) => reviewOn(ctx) && ctx.vaultRoot !== undefined,
-            render: ({ vaultRoot }) =>
-              vaultRoot !== undefined && (
-                <Suspense fallback={null}>
-                  <ConnectPhoneControl root={vaultRoot} />
-                </Suspense>
-              ),
-          },
-          {
             // YAZ-5086 (decision 16): the Mac sends the numbers too, with the token above. No switch (decision 22).
             id: 'friendsSend',
             label: 'Friends',
             hint: 'This Mac sends your numbers to your friends too, when your cards change. Add friends in the phone app.',
-            keywords: PHONE_KEYWORDS,
+            keywords: FRIENDS_KEYWORDS,
             wide: true,
             available: reviewOn,
             render: () => (

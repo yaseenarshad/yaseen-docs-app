@@ -1,6 +1,6 @@
 /**
  * The Mac's send of the numbers (YAZ-5086, 4E5), wired to the app: the token from the ONE secrets store (YAZ-5098's
- * `githubToken`, Settings › Review › "Phone and friends"), the open vaults and their live index, the stored state in
+ * `githubToken`, Settings › Cards › "Friends"), the open vaults and their live index, the stored state in
  * `<userData>/friends-send.json`, the trigger (`cardTrigger.ts`) and one try at the app's start.
  */
 import { join } from 'node:path'
@@ -13,7 +13,7 @@ import { subscribe } from '../fs/watchers'
 import { detectRepo } from '../git/detect'
 import { resolveGit } from '../git/exec'
 import { rootsOf } from '../ipc/broadcast'
-import { repoOfRemote } from '../phoneCode'
+import { repoOfRemote } from '../git/repoOfRemote'
 import type { Secrets } from '../secrets'
 import type { Store } from '../store'
 import { readConfigDetailed } from '../vaultConfig'

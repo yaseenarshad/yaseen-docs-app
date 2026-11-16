@@ -1,6 +1,6 @@
 /**
- * A GitHub token's end date, read from the text GitHub gives (`github-authentication-token-expiration`) or from the
- * Mac's code (`scanCode.ts`, `expires`). Moved from `mobile/src/auth/expiry.ts` (YAZ-5098), unchanged.
+ * A GitHub token's end date, read from the text GitHub gives (`github-authentication-token-expiration`). Moved from
+ * `mobile/src/auth/expiry.ts` (YAZ-5098), unchanged.
  */
 
 /** Reads `2026-12-31 00:00:00 UTC` (GitHub), `… +0000`, an ISO time, or a day `2026-12-31`. Null when it is none of them. */

@@ -182,8 +182,8 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
 const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
-/** Settings › Review › Phone and friends (YAZ-5098): the token row; "Connect your phone" needs the vault's root, which these mounts do not give. */
-const PHONE_ROWS = ['githubToken', 'friendsSend']
+/** Settings › Cards › Friends (YAZ-5098): the token row, and the Mac's send of the numbers (YAZ-5086). */
+const FRIENDS_ROWS = ['githubToken', 'friendsSend']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -405,7 +405,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Images', 'settings-images', IMAGES_ROWS),
       page('Files & Links', 'settings-files', FILES_ROWS),
       page('Folder pages', 'settings-folderPages', FOLDER_PAGES_ROWS),
-      page('Cards', 'settings-cards', [...REVIEW_ROWS, ...PHONE_ROWS]),
+      page('Cards', 'settings-cards', [...REVIEW_ROWS, ...FRIENDS_ROWS]),
       page('Sync', 'settings-sync', ['githubSync']),
       page('Memory', 'settings-memory', ['memoryWindows', 'tabSleepAfter', 'embedPictures', 'memoryReload']),
       page('Hotkeys', 'settings-hotkeys', HOTKEY_ROWS),
@@ -1740,10 +1740,10 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Cards', { ...DEFAULT_SETTINGS }, status(), S)
-    expect(reviewRows(el)).toEqual([...ALL, ...PHONE_ROWS])
+    expect(reviewRows(el)).toEqual([...ALL, ...FRIENDS_ROWS])
     expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Card tables', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
-    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', 'Phone and friends'])
+    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', 'Friends'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!
     expect([how.open, how.querySelector('summary')?.textContent]).toEqual([false, 'How cards come back'])
@@ -1976,7 +1976,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('YAZ-5050: Custom card spacing: its rows under Card spacing, in the pages\' words; a change is an app setting; Reset goes to Custom\'s start; Same as pages goes back', () => {
     const custom = { ...DEFAULT_SETTINGS, ...CUSTOM }
     const { el, onChange } = mountOn('Cards', custom, undefined, S)
-    expect(reviewRows(el).slice(-(8 + PHONE_ROWS.length))).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'cardSpacingPreview', 'howCardsComeBack', ...PHONE_ROWS])
+    expect(reviewRows(el).slice(-(8 + FRIENDS_ROWS.length))).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'cardSpacingPreview', 'howCardsComeBack', ...FRIENDS_ROWS])
     expect(CUSTOM_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Line spacing', 'Space between blocks', 'Bullet indent', 'Bullet gap', 'Space between bullets'])
     act(() => rowButtons(el, 'cardBlockGap')[3].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBlockGap: 12 })

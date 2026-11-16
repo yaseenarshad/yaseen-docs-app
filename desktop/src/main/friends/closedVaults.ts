@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto'
 import { lstat, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { git } from '../git/exec'
-import { repoOfRemote } from '../phoneCode'
+import { repoOfRemote } from '../git/repoOfRemote'
 
 export interface ClosedVault {
   root: string

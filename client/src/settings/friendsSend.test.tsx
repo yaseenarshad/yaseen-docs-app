@@ -1,5 +1,5 @@
 /**
- * Settings › Cards › "Phone and friends" › Friends (YAZ-5086, decision 16): what the Mac sends and to whom, and why it
+ * Settings › Cards › "Friends" (YAZ-5086, decision 16): what the Mac sends and to whom, and why it
  * did not send, in plain words. No switch (decision 22). The bridge is mocked: no real main process, token or GitHub.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,7 +17,6 @@ vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: {
     secrets: { has: vi.fn(async () => true), set: vi.fn() },
-    phone: { code: vi.fn() },
     friends: { status: vi.fn() },
     state: { settingsFolder: vi.fn(async () => ({ folder: null, missing: false })), setSettingsFolder: vi.fn() },
   },
@@ -46,14 +45,14 @@ async function mount(v: FriendsSendView) {
   el = document.createElement('div')
   document.body.appendChild(el)
   root = createRoot(el)
-  act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange: vi.fn(), review: { settings: DEFAULT_REVIEW_SETTINGS, save: vi.fn() }, vaultRoot: '/v' }} onClose={vi.fn()} />))
+  act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange: vi.fn(), review: { settings: DEFAULT_REVIEW_SETTINGS, save: vi.fn() } }} onClose={vi.fn()} />))
   act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Cards')?.click()) // YAZ-5154: the Review section is Cards now
-  await act(async () => void (await Promise.all([import('./GithubTokenControl'), import('./ConnectPhoneControl'), import('./FriendsSendControl')])))
+  await act(async () => void (await Promise.all([import('./GithubTokenControl'), import('./FriendsSendControl')])))
   for (let i = 0; i < 4; i++) await act(async () => await Promise.resolve())
 }
 const row = () => el.querySelector<HTMLElement>('[data-setting="friendsSend"]')!
 
-describe('Settings › Phone and friends › Friends (YAZ-5086)', () => {
+describe('Settings › Cards › Friends (YAZ-5086)', () => {
   it('says what is sent and to whom, and when; no switch (decision 22)', async () => {
     await mount(view({}))
     expect(status).toHaveBeenCalledTimes(1)

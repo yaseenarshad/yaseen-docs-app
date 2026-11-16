@@ -1,5 +1,5 @@
 import { rendererUrlFor } from './rendererUrl'
-import { app, BrowserWindow, clipboard, dialog, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
+import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { hostname } from 'node:os'
@@ -17,14 +17,11 @@ import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
-import { broadcastAll, rootsOf, senderRoots } from './ipc/broadcast'
+import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
-import { phoneConfirmOptions, registerPhoneIpc } from './ipc/phone'
 import { registerFriendsIpc } from './ipc/friends'
 import { onRendererSecretSet } from './ipc/secrets'
 import { startFriendsSend } from './friends'
-import { lastInputAt, trackInput } from './inputSeen'
-import { buildPhoneCode, phoneCodeDeps } from './phoneCode'
 import { registerSpellerIpc } from './ipc/speller'
 import { registerUpdateIpc } from './ipc/update'
 import { askHeap, askTabs, askViews, registerMemoryIpc } from './ipc/memory'
@@ -303,8 +300,6 @@ let reloadWatch: ReloadWatch | undefined
 /** The menu's apply step, once `ready` made it: a focus change moves which window the board items ask about (YAZ-3037). */
 let rebuildMenuOnFocus: (() => void) | undefined
 
-// YAZ-5218: the last real click or key of each page, for the phone code's gate (`ipc/phone.ts`).
-app.on('web-contents-created', (_event, contents) => trackInput(contents))
 app.on('browser-window-focus', (_event, win) => {
   lastFocusedWcId = win.webContents.id
   rebuildMenuOnFocus?.()
@@ -448,23 +443,6 @@ app.whenReady().then(() => {
     appPath: app.getAppPath(),
     macId: () => macId(),
   }, settingsFolder)
-  // "Connect your phone" (YAZ-5098): the vault's code, made here from the GitHub token in `secrets`; a renderer gets
-  // the QR grid only, for a vault of its own window, while that window is in front.
-  registerPhoneIpc(manager, {
-    rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
-    isFocused: (sender) => BrowserWindow.fromWebContents(sender)?.isFocused() === true,
-    roots: (e) => senderRoots(store, manager, e),
-    build: (root) => buildPhoneCode(phoneCodeDeps(secrets), root),
-    // YAZ-5218: a real click or key that main saw, then main's own confirm, which page code cannot click.
-    lastInputAt,
-    confirm: async (sender, repo) => {
-      const win = BrowserWindow.fromWebContents(sender)
-      if (win === null) return false
-      const { response } = await dialog.showMessageBox(win, phoneConfirmOptions(repo))
-      return response === 0
-    },
-    now: () => Date.now(),
-  })
   // The Mac sends the numbers too (YAZ-5086, decision 16): with the same token, when a file with cards changes, and once
   // after the start. A new token (or a removed one) starts over.
   const friendsSend = startFriendsSend(store, secrets, app.getPath('userData'))

@@ -1,5 +1,5 @@
 /**
- * "Friends" (YAZ-5086, decision 16; Settings › Review › "Phone and friends"): the Mac sends the numbers too. The row
+ * "Friends" (YAZ-5086, decision 16; Settings › Cards › "Friends"): the Mac sends the numbers too. The row
  * says what is sent and to whom, and why it did not send, in plain words. No switch (decision 22): with at least one
  * friend or group the numbers go; with none, nothing goes. It asks main once (`friends:status`), with no network call.
  */
