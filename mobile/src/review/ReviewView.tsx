@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { useMenuToggle } from '../app/menuToggle'
 import { useAnswerTimer } from '@client/review/answerTimer'
@@ -840,7 +840,8 @@ const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role=
  * The progress bar in steps (round 4; the Mac's YAZ-5020): one step for each CARD of the session (YAZ-5594), in the
  * order answered — red while its last answer was a Forgot, grey once it is done, empty while it waits. A card that
  * comes back adds no step: the bar does not grow. A long session draws runs. It counts ONLY the list on show (the
- * Mac's YAZ-5432, `session.progress`): Due today done fills it.
+ * Mac's YAZ-5432, `session.progress`): Due today done fills it. Option B (YAZ-5660): a red stays where it was missed;
+ * the pass over, the reds slide to the right end (`progress.moved`), then each ✓ turns the leftmost red grey.
  */
 function Progress({ session }: { session: CardReviewSession }) {
   // The Mac's bar: the filter on show only, `session.progress` (one rule for both apps).
@@ -848,11 +849,15 @@ function Progress({ session }: { session: CardReviewSession }) {
   const size = Math.max(1, session.progress.size)
   const steps = size <= 80
   const marks = runs.flatMap((run) => Array.from({ length: run.count }, () => (run.open === true ? undefined : run.missed ? 'forgot' : 'remembered')))
+  // YAZ-5660: the pass over, the reds slide to the right end once: each red starts where it was missed.
+  const moved = session.progress.moved
+  let red = 0
+  const slide = (mark: string | undefined): CSSProperties | undefined => (moved !== undefined && mark === 'forgot' ? ({ '--moved': moved[red++] } as CSSProperties) : undefined)
   return (
     <div className="review__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.progress.size} aria-valuenow={done} data-steps={steps || undefined}>
       {steps
         ? Array.from({ length: size }, (_, i) => {
-            return <span key={i} className="review__step" data-answer={marks[i]} />
+            return <span key={i} className="review__step" data-answer={marks[i]} data-slide={(moved !== undefined && marks[i] === 'forgot') || undefined} style={slide(marks[i])} />
           })
         : runs.map((run, i) => <span key={i} className="review__step" data-answer={run.open === true ? undefined : run.missed ? 'forgot' : 'remembered'} style={{ flex: `0 0 ${(100 * run.count) / size}%` }} />)}
     </div>

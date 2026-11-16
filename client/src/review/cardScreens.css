@@ -654,7 +654,8 @@
   flex: none;
   height: 100%;
   background: color-mix(in srgb, var(--fg) 38%, transparent);
-  transition: width 160ms ease-out;
+  /* YAZ-5660: this is also the reds' slide to the right end once the pass is over (the grey part grows, the red moves). */
+  transition: width 200ms ease-out;
 }
 .card-inbox__progress-part[data-missed] {
   background: var(--danger);
