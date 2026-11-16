@@ -813,9 +813,9 @@ The phone app (`mobile/`) keeps a copy of each vault in the browser and talks on
 
 A reader takes a whole-number `v` above 1 as `newer` ("needs a newer app") and writes nothing to that file; a file that is not a JSON object with `v: 1` is unreadable, and the app does not write the friends list then (`LIST_NEEDS_REPAIR`). GitHub allows 100 gist updates an hour for the account (`GIST_UPDATES_PER_HOUR`, `shared/friendSend.ts`), shared by the phone, the Mac, cheers and nudges. A send keeps a reserve of one update for each pointer plus `MARK_HEADROOM` (5) (`reserveFor`), so a remove can always rewrite the pointers. The numbers go at most every `PUBLISH_EVERY_MS` (5 minutes) while the person reviews; the Friends tab reads friends every `FRIENDS_POLL_MS` (1 minute).
 
-**The QR code** (round 11, `shared/scanCode.ts`): the Mac's "Connect your phone" (`desktop/src/main/phoneCode.ts`) shows JSON, not an address, so the token never lands in Safari's history: `{"app":"notecards","v":1,"repo":"owner/name","branch":"main","token":"github_pat_…","expires":"…"}` (`expires` optional; the Mac writes none today; 2,000 characters at most). The phone refuses another `app` and a `v` above 1 ("from a newer Notecard"), then runs the same sign-in check as typed values.
+**No QR code** (YAZ-5098, YAZ-5650): the Mac shows the phone no code and the phone has no "Scan a code"; the phone signs in with its own GitHub token (Sign in, `mobile/src/screens/SignIn.tsx`).
 
-Files: `mobile/src/sync/` (`plan.ts`, `pass.ts`, `githubRemote.ts`, `cadence.ts`), `mobile/src/answers/` (`ops.ts`, `send.ts`, `answers.ts`, `reviewHost.ts`), `mobile/src/auth/check.ts`, `mobile/src/media/ahead.ts`, `shared/cardLine.ts`, `shared/friendStats.ts`, `shared/friendGists.ts`, `shared/friendGroups.ts`, `shared/friendSend.ts`, `shared/scanCode.ts`, `desktop/src/main/phoneCode.ts`.
+Files: `mobile/src/sync/` (`plan.ts`, `pass.ts`, `githubRemote.ts`, `cadence.ts`), `mobile/src/answers/` (`ops.ts`, `send.ts`, `answers.ts`, `reviewHost.ts`), `mobile/src/auth/check.ts`, `mobile/src/media/ahead.ts`, `shared/cardLine.ts`, `shared/friendStats.ts`, `shared/friendGists.ts`, `shared/friendGroups.ts`, `shared/friendSend.ts`.
 
 ## Text formatting (YAZ-3047 round 2 — decisions D10-D17 on YAZ-3048, LOCKED; YAZ-3066, YAZ-3067, YAZ-3068)
 

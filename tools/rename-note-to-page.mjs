@@ -63,6 +63,10 @@ const SKIP = [
   /^desktop\/src\/main\/ipc\/phone[^/]*$/,
   /^desktop\/src\/main\/git\/live5[^/]*$/,
   /^client\/src\/settings\/(connectPhone|ConnectPhone|FriendsSend|friendsSend|GithubToken|githubToken)[^/]*$/,
+  // Made-up "Notes" titles and folders in the phone branch's tests (YAZ-5651 merge): test data, not the old word.
+  /^client\/src\/editor\/phonePageKeys\.test\.ts$/,
+  /^desktop\/src\/main\/git\/(configMerge|repoOfRemote)\.test\.ts$/,
+  /^desktop\/src\/main\/icons\.test\.ts$/,
   /(^|\/)package(-lock)?\.json$/,
   /(^|\/)LICENSE[^/]*$/,
   /(^|\/)CHANGELOG\.md$/,
@@ -101,6 +105,8 @@ const PAGE_PHRASES = [
 // ---- What stays, wherever it is (each match is set aside before the rename and put back after) ----
 
 const KEEP = [
+  // The phone app's name (Notecard) and its gist file names (`notecards-*.json`, YAZ-5055): wire names.
+  /\bNotecards?\b|\bnotecards-[a-z]+\.json\b/g,
   // A remark about this rename itself names the old words (a comment line that says YAZ-5036).
   /^\s*(?:\/\/|\*|\/\*).*\bYAZ-5036\b.*$/gm,
   // The cell note settings' keywords (before "cell note" itself is set aside).
