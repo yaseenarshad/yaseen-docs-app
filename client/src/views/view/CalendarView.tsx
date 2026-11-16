@@ -2,10 +2,11 @@ import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type Ke
 import { useUnit } from '../../vault/unitWord'
 import { holdFrames } from '../../lib/colResize'
 import { edgeScroller } from '../../lib/edgeScroll'
-import { type CardClick, openByKey, openCardByClick } from '../../lib/openGesture'
+import { type CardClick, openByKey } from '../../lib/openGesture'
+import { clickCard } from './cardClick'
 import {
   type BarPlace, type CalendarScale, type DayKey, CALENDAR_SCALES, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthEdges, monthLineColorOf, monthLineOf, monthStart, monthWeeks, rollingEnds, shadedMonth, spanDays, spanOf, timeFirst, timeOf,
-  todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
+  firstShownOfMonth, todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
 import { type ColorStrengthValue, type IndexRecord, calLine, headerRowAttrs } from '@shared/types'
 import { type Row, propertyKeys, propertyLabel } from '../engine'
@@ -224,6 +225,33 @@ function gridLines(view: ViewDef): CSSProperties | undefined {
   } as unknown as CSSProperties
 }
 
+/**
+ * Each day of `weeks` with its cards, the timed cards first in time order (D22). While weekends hide (YAZ-4595 S33) a
+ * weekday also takes the cards of the weekend days that go to it (`weekendHomes` over `allWeeks`, YAZ-4635 P3).
+ */
+function cardsByDay(allWeeks: readonly DayKey[][], weeks: readonly DayKey[][], singles: ReadonlyMap<DayKey, readonly Row[]>, dateKey: string | null, hideWeekends: boolean): Map<DayKey, Row[]> {
+  const of = (day: DayKey) => (dateKey === null ? [] : timeFirst(singles.get(day) ?? [], dateKey))
+  const homes = hideWeekends ? weekendHomes(allWeeks) : null
+  return new Map(weeks.flat().map((day) => [day, homes === null ? of(day) : [...of(day), ...(homes.get(day) ?? []).flatMap(of)]]))
+}
+
+/** The mini window's order over `weeks` (YAZ-4547 D24): day by day, a day's bars first (a bar once, on its first day there), then its cards. Each card's day too. */
+function dayOrder(weeks: readonly DayKey[][], layouts: readonly { bars: readonly BarPlace[] }[], dayCards: ReadonlyMap<DayKey, readonly Row[]>): { order: Row[]; dayOfCard: Map<string, DayKey> } {
+  const order: Row[] = []
+  const dayOfCard = new Map<string, DayKey>()
+  const add = (row: Row, day: DayKey) => {
+    order.push(row)
+    dayOfCard.set(row.record.path, day)
+  }
+  weeks.forEach((week, w) =>
+    week.forEach((day, c) => {
+      for (const bar of layouts[w].bars) if (bar.col === c && !dayOfCard.has(bar.span.row.record.path)) add(bar.span.row, day)
+      for (const row of dayCards.get(day) ?? []) add(row, day)
+    }),
+  )
+  return { order, dayOfCard }
+}
+
 export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, clickOpens = 'background', windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, pageDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false, foldDays = true }: CalendarViewProps) {
   const unitText = useUnit()
   // Month's cards and bar lanes per day before "+N more" (D11); with "Fold long days" off (YAZ-5586), no limit, so nothing folds.
@@ -344,11 +372,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   // page window steps exactly as the days show. While weekends hide (YAZ-4595 S33) a weekday also takes the cards of
   // the weekend days that go to it (`weekendHomes`, YAZ-4635 P3: a Friday its Saturday's then its Sunday's; a Monday
   // the Sunday whose Friday is off the grid), each day in that order. Once per rows or page change, not on each dragover.
-  const dayCards = useMemo(() => {
-    const of = (day: DayKey) => (dateKey === null ? [] : timeFirst(singles.get(day) ?? [], dateKey))
-    const homes = hideWeekends ? weekendHomes(allWeeks) : null
-    return new Map(weeks.flat().map((day) => [day, homes === null ? of(day) : [...of(day), ...(homes.get(day) ?? []).flatMap(of)]]))
-  }, [allWeeks, weeks, singles, dateKey, hideWeekends])
+  const dayCards = useMemo(() => cardsByDay(allWeeks, weeks, singles, dateKey, hideWeekends), [allWeeks, weeks, singles, dateKey, hideWeekends])
   /**
    * Month's budget per day (D11, YAZ-4858): a week row shows at most `barCap` lanes of bars; a day then shows its
    * one-day cards in the room its shown bars leave, and "+N more" counts the rest, hidden bars too.
@@ -367,23 +391,21 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     return out
   }, [weeks, layouts, dayCap, barCap])
   // The page window (YAZ-4547 D24): day by day across the days on screen, a day's bars first (a bar once, on its first
-  // day there), then its timed cards (every card, also those behind "+N more"), then "No date". Once per rows or page change.
-  const windowOrder = useMemo(() => {
-    if (dateKey === null) return []
-    const seen = new Set<string>()
-    const order: Row[] = []
-    weeks.forEach((week, w) =>
-      week.forEach((day, c) => {
-        for (const bar of layouts[w].bars)
-          if (bar.col === c && !seen.has(bar.span.row.record.path)) {
-            seen.add(bar.span.row.record.path)
-            order.push(bar.span.row)
-          }
-        order.push(...(dayCards.get(day) ?? []))
-      }),
-    )
-    return [...order, ...undated]
-  }, [weeks, layouts, dayCards, undated, dateKey])
+  // day there), then its timed cards (every card, also those behind "+N more"), then "No date". Rolling steps through
+  // every week between its ends, not only the drawn ones (YAZ-5648 #2): a step to an undrawn week moves the window there.
+  // Once per rows or page change.
+  const spanWeeks = rolling ? totalWeeks : 0
+  const { windowOrder, dayOfCard } = useMemo(() => {
+    if (dateKey === null) return { windowOrder: [], dayOfCard: new Map<string, DayKey>() }
+    let walk = { order: [] as Row[], dayOfCard: new Map<string, DayKey>() }
+    if (spanWeeks === 0) walk = dayOrder(weeks, layouts, dayCards)
+    else {
+      const all = Array.from({ length: spanWeeks }, (_, w) => weekDays(addDays(ends.first, 7 * w), sundayFirst))
+      const shown = hideWeekends ? all.map(withoutWeekends) : all
+      walk = dayOrder(shown, shown.map((week) => layoutWeek(week, bars, sorted)), cardsByDay(all, shown, singles, dateKey, hideWeekends))
+    }
+    return { windowOrder: [...walk.order, ...undated], dayOfCard: walk.dayOfCard }
+  }, [weeks, layouts, dayCards, undated, dateKey, spanWeeks, ends.first, sundayFirst, hideWeekends, bars, sorted, singles])
   const rootRef = useRef<HTMLDivElement>(null)
   // The mini window's card under a "+N more" (YAZ-3746 13J): that day (or `NO_DATE`, the tray) shows every card while
   // the window is on one of its hidden ones, so ‹ › and the arrow keys show each page highlighted; it folds again when
@@ -405,10 +427,25 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     }
     return undated.findIndex((r) => r.record.path === current) >= TRAY_CARDS ? NO_DATE : null
   }
-  usePageWindowItems(windowLink, windowOrder, rootRef, (current) => setRevealed(hiddenHome(current)))
+  /** A ‹ › step to a card in a Rolling week not drawn now (YAZ-5648 #2): the window jumps to its week, then the step shows again. */
+  const showAfterRoll = useRef(false)
+  usePageWindowItems(windowLink, windowOrder, rootRef, (current) => {
+    const day = current === null || !rolling || live === null ? undefined : dayOfCard.get(current)
+    if (day !== undefined && (day < live!.first || day >= addDays(live!.first, 7 * live!.count))) {
+      showAfterRoll.current = true
+      rollTo(day)
+      return
+    }
+    setRevealed(hiddenHome(current))
+  })
   useEffect(() => {
     if (revealed !== null) windowLink?.show()
   }, [revealed, windowLink])
+  useEffect(() => {
+    if (!showAfterRoll.current) return
+    showAfterRoll.current = false
+    windowLink?.show()
+  }, [rollFirst, rollCount, windowLink])
 
   /**
    * Rolling's place rule (YAZ-5588), after each window change and before the paint: a jump scrolls the PAGE so its week
@@ -618,10 +655,10 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   }
   onScrollRef.current = onRollScroll
 
-  /** The click rule (YAZ-5582, the Board's too): plain → "Clicking a card opens", ⌘ → a background tab, ⌥ → the right panel, ⇧ / ⌃ → nothing. */
+  /** The click rule (YAZ-5582, the Board's too): plain → "Clicking a card opens", ⌘ → a background tab, ⌥ → the right panel, ⇧⌘ → a new window, ⇧ / ⌃ → nothing. */
   const open = (e: ReactMouseEvent, path: string) => {
     if (resized.current) return
-    openCardByClick(e, path, clickOpens, { onOpenFileRight, onOpenFileBackground, onOpenWindow })
+    clickCard(e, path, clickOpens, { onOpenFileRight, onOpenFileBackground, onOpenWindow })
   }
 
   /**
@@ -970,8 +1007,9 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
                 const more = all ? 0 : folded - (lanes > barCap ? budget.hiddenBars : 0)
                 // Rolling has no other month (YAZ-5588): every day is plain; it shades every other month instead (YAZ-5608).
                 const inMonth = isWeek || rolling || Number(day.slice(5, 7)) === month.m + 1
-                // A month's 1st says its month, the month in the accent colour, in every scale (YAZ-5608).
-                const first = day.endsWith('-01')
+                // A month's first shown day says its month, the month in the accent colour, in every scale (YAZ-5608):
+                // the 1st, or with Hide weekends the Monday after a weekend 1st (YAZ-5648 #3).
+                const first = firstShownOfMonth(day, hideWeekends)
                 // "Between months" (YAZ-5608) in Month and Rolling: a stepped line round each month; Month's first row
                 // has no week above it on the grid, so no top line there.
                 const edge = monthLine && !isWeek ? monthEdges(day, c > 0 ? week[c - 1] : null) : null
@@ -988,7 +1026,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
                     {...target(day)}
                   >
                     <div className="view-cal__day-head">
-                      <span className={`view-cal__date${first ? ' view-cal__date--first' : ''}`}>{first ? <><span className="view-cal__date-month">{MONTHS_SHORT[Number(day.slice(5, 7)) - 1]}</span> 1</> : Number(day.slice(8))}</span>
+                      <span className={`view-cal__date${first ? ' view-cal__date--first' : ''}`}>{first ? <><span className="view-cal__date-month">{MONTHS_SHORT[Number(day.slice(5, 7)) - 1]}</span> {Number(day.slice(8))}</> : Number(day.slice(8))}</span>
                       {onNewOnDay !== undefined && (
                         <button type="button" className="view-cal__add" aria-label={unitText(`New page on ${day}`)} title={unitText('New page on this day')} onClick={() => onNewOnDay(day)}>
                           +

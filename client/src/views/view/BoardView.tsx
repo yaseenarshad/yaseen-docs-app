@@ -2,9 +2,8 @@ import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type Ke
 import { useUnit } from '../../vault/unitWord'
 import { ViewFind } from './viewFind'
 import type { IndexRecord } from '@shared/types'
-import { type CardClick, type Modifiers, openByKey, openCardByClick } from '../../lib/openGesture'
-import { newWindowClick } from '../../lib/newWindowClick'
-import { rowPage } from '../../links/shortcuts'
+import { type CardClick, type Modifiers, openByKey } from '../../lib/openGesture'
+import { clickCard } from './cardClick'
 import { pageColumnKeys, type FolderSettings } from '../folderSettings'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import { type Group, type Row, propertyKeys } from '../engine'
@@ -231,10 +230,10 @@ export function BoardView({
   }
   /** Enter's rule (YAZ-1557, YAZ-4605 D56), the table's: plain → this tab, ⌘ → a background tab, ⌥ → the right panel, ⇧ → the mini window. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
-  /** A click's rule (YAZ-5582), the Calendar's: plain → "Clicking a card opens", ⌘ → a background tab, ⌥ → the right panel, ⇧ → nothing. */
+  /** A click's rule (YAZ-5582), the Calendar's: plain → "Clicking a card opens", ⌘ → a background tab, ⌥ → the right panel, ⇧⌘ → a new window, ⇧ → nothing. */
   const openCard = (row: Row, e: Modifiers): void => {
     if (suppressClick.current) return
-    openCardByClick(e, row.record.path, clickOpens, { onOpenFileRight, onOpenFileBackground, onOpenWindow })
+    clickCard(e, row.record.path, clickOpens, { onOpenFileRight, onOpenFileBackground, onOpenWindow })
   }
   /**
    * Arrow keys walk cards like table cells (YAZ-1557 D2): ↑↓ through the column's cards in DOM
@@ -289,10 +288,7 @@ export function BoardView({
           key={key}
           type="button"
           className="view-board__title"
-          onClick={(event) => {
-            event.stopPropagation()
-            if (!newWindowClick(event, rowPage(row.record.path))) openCard(row, event)
-          }}
+          // No click of its own: it reaches the card's, which selects the card and opens it (YAZ-5582 "body or title").
         >
           <ItemName mark={itemLock.mark(row.record.path)}>{rowTitle(row)}</ItemName>
         </button>
@@ -343,9 +339,7 @@ export function BoardView({
           // opens it as "Clicking a card opens" says (YAZ-5582), so a card without a title still has a name to read.
           tabIndex={0}
           aria-label={nameKey === undefined ? row.record.title : undefined}
-          // ⇧⌘-click opens the page in a new window (YAZ-4444 D32), asked before ⇧ vetoes the open.
           onClick={(event) => {
-            if (newWindowClick(event, rowPage(row.record.path))) return
             event.currentTarget.focus()
             openCard(row, event)
           }}
