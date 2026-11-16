@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HINT_KEY, hideHint, hintHidden } from '../store/hintPref'
-import { HOME_SCREEN, safariLine, whereAmI } from './homeScreen'
+import { HOME_SCREEN, hintKind, safariLine, whereAmI } from './homeScreen'
 
 /** The install hint (Yaseen: "How do I add it as an app? I can't find those instructions."). */
 const SAFARI_26 = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'
@@ -29,6 +29,20 @@ describe('whereAmI', () => {
   })
 })
 
+describe('hintKind (YAZ-5644): the install hint only in a phone or tablet browser tab', () => {
+  it('an iPhone, an iPad, Android: their kind', () => {
+    expect(hintKind({ displayStandalone: false, userAgent: SAFARI_26 })).toBe('ios-safari')
+    expect(hintKind({ displayStandalone: false, userAgent: IPAD, platform: 'MacIntel', maxTouchPoints: 5 })).toBe('ios-safari')
+    expect(hintKind({ displayStandalone: false, userAgent: CHROME_IOS })).toBe('ios-other')
+    expect(hintKind({ displayStandalone: false, userAgent: ANDROID })).toBe('android')
+  })
+  it('a computer, and any Home Screen app: none', () => {
+    expect(hintKind({ displayStandalone: false, userAgent: MAC_CHROME, platform: 'MacIntel', maxTouchPoints: 0 })).toBeNull()
+    expect(hintKind({ standalone: true, displayStandalone: false, userAgent: SAFARI_26 })).toBeNull()
+    expect(hintKind({ displayStandalone: true, userAgent: ANDROID })).toBeNull()
+  })
+})
+
 describe('the words: one source for the app and the /friend page', () => {
   it("Yaseen's real iOS 26 order: ☰ at the left of the address bar, Share, View More, Add to Home Screen", () => {
     expect(HOME_SCREEN.safari.map((s) => s.tap)).toEqual(['☰', 'Share', 'View More', 'Add to Home Screen'])
@@ -36,8 +50,9 @@ describe('the words: one source for the app and the /friend page', () => {
     expect(safariLine()).toBe('In Safari, tap ☰ at the left of the address bar, then Share, then View More, then Add to Home Screen.')
     expect(HOME_SCREEN.olderSafari).toContain('a square with an arrow up')
     expect(HOME_SCREEN.why).toBe('It opens like an app, works with no signal, and keeps your cards on this phone.')
-    expect(HOME_SCREEN.apart).toContain('Add it first, then sign in from the Home Screen app.')
-    expect(HOME_SCREEN.notIos).toBe('Open this page in Safari on your iPhone to add it to your Home Screen.')
+    // YAZ-5644: the Home Screen app is a choice; the tab keeps working.
+    expect(HOME_SCREEN.apart).toBe('The Home Screen app keeps its own copy of your vault, so you sign in there once more. This tab keeps working too.')
+    expect(HOME_SCREEN.android).toBe('In Chrome, open the ⋮ menu, then tap Add to Home screen.')
   })
 })
 

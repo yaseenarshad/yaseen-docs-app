@@ -7,7 +7,6 @@ import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, ty
 import { fakeGithub } from '../github/testing'
 import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
 import { isReaderFixture, mountReaderFixture } from './readerFixtures'
-import { InstallGate } from '../screens/InstallGate'
 import { setAppearance } from '../settings/appearance'
 import type { CheckResult, Updates } from '../pwa/updates'
 
@@ -83,12 +82,6 @@ const fill = (name: string, value: string) => {
 
 export async function mountFixture(root: Root, hash: string): Promise<void> {
   const name = /fixture=([\w-]+)/.exec(hash)?.[1] ?? 'sign-in'
-  // YAZ-5564: the screen of a browser tab, on a phone and on a computer.
-  if (name === 'install-gate' || name === 'install-gate-desktop') {
-    root.render(<InstallGate desktop={name === 'install-gate-desktop'} />)
-    await wait(50)
-    return void (document.documentElement.dataset.fixtureReady = name)
-  }
   // 4C (YAZ-5242): Review with a card of the 90 attack vectors, for a net log in headless Chrome.
   if (name === 'attack-review') return (await import('../page/attackFixtures')).mountAttackFixture(root)
   if (name.startsWith('c4erase')) return (await import('./check4Fixtures')).mountCheck4Erase(root, name)

@@ -7,9 +7,9 @@ import { Frame } from './Frame'
 const NEW_TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
 
 /**
- * "Set up your phone" (round 11, item 9): make the repo, make the token, add the app to the Home Screen. It says the
- * supported setup (round 13, item 4): one GitHub account and one token with Contents and Gists. The token steps are
- * 3E's (proofs 1B and 1C); the permissions are decision 17's.
+ * "Set up your phone" (round 11, item 9): make the repo, make the token, add the app to the Home Screen (YAZ-5644: a
+ * choice; a browser tab runs the whole app too). It says the supported setup (round 13, item 4): one GitHub account
+ * and one token with Contents and Gists. The token steps are 3E's (proofs 1B and 1C); the permissions are decision 17's.
  */
 export function SetupGuide() {
   const app = useApp()
@@ -39,13 +39,14 @@ export function SetupGuide() {
       </ol>
       <p className="muted">Or, on your Mac, open Settings › Cards › Connect your phone, and tap Scan a code here.</p>
 
-      <h2 className="section">3. The Home Screen</h2>
+      <h2 className="section">3. The Home Screen (if you want it)</h2>
+      <p className="muted">Yaseen Docs also works in a browser tab, on a phone or a computer.</p>
       <ol className="guide-steps">
         <li>
           <SpokenThreeLines text={safariLine()} />
         </li>
         <li>{HOME_SCREEN.olderSafari}</li>
-        <li>Open Yaseen Docs from the Home Screen, and connect your vault there. {HOME_SCREEN.apart.split('. ')[0]}.</li>
+        <li>Open Yaseen Docs from the Home Screen, and connect your vault there. {HOME_SCREEN.apart.split(', so ')[0]}.</li>
       </ol>
     </Frame>
   )

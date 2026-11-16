@@ -18,7 +18,8 @@ import { join } from 'node:path'
  *     (`?notecards-update=1`) runs it, and from then on every open does;
  *  5. a broken deploy (a chunk missing) never installs; the last good version keeps working, also offline;
  *  6. dark mode paints the dark background.
- * YAZ-5564: a browser tab shows only the install screen (1g); every other step runs as the Home Screen app.
+ * YAZ-5644: every step runs in a plain browser tab (a computer's tab): the whole app runs there (1g: the sign-in, the worker,
+ * the storage; no install wall, no install hint on a computer); 1h opens the same build as the Home Screen app.
  * Run after `npm run mobile:build`: `npx vite-node mobile/publish/proveOffline.ts`. Pictures go to $PROOF_DIR (or a temp folder).
  */
 
@@ -228,15 +229,17 @@ async function shot(name: string) {
   writeFileSync(join(out, `${name}.png`), Buffer.from(data, 'base64'))
 }
 const text = () => evaluate('document.body.innerText')
-/** YAZ-5564: each next document is the Home Screen app (iOS's `navigator.standalone`); a plain tab shows the install screen. */
-const asHomeScreenApp = () => send('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(Navigator.prototype, 'standalone', { configurable: true, get: () => true })` }, page)
+/** Each next document is the Home Screen app (iOS's `navigator.standalone`) until `asTab` with the returned id. */
+const asHomeScreenApp = async (): Promise<string> => (await send('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(Navigator.prototype, 'standalone', { configurable: true, get: () => true })` }, page)).identifier
+const asTab = (id: string) => send('Page.removeScriptToEvaluateOnNewDocument', { identifier: id }, page)
 const shellCaches = `caches.keys().then(ks => ks.filter(k => k.startsWith('notecards-shell-')).sort())`
 
 try {
   // 0. LIVE with PROOF_EXPECT_UPDATE: this browser profile had the previous build. The new one must install, take over,
   // and run at a later open.
   if (LIVE && process.env.PROOF_EXPECT_UPDATE) {
-    await asHomeScreenApp()
+    // The previous live build may be one that ran only as the Home Screen app.
+    const asApp0 = await asHomeScreenApp()
     const liveEntry = /src="(\/assets\/index-[^"]+\.js)"/.exec(await fetch(`${ORIGIN}/`).then((r) => r.text()))![1]
     await open(`${ORIGIN}/`)
     // Which build runs: is the live worker's version stored yet? (An icon-only change keeps the entry's name.)
@@ -257,23 +260,12 @@ try {
     await open(`${ORIGIN}/?notecards-update=1`)
     const after = await evaluate(`document.querySelector('script[src*="/assets/index-"]').getAttribute('src')`)
     record('0d the open after that runs the new build', after === liveEntry, after)
+    await asTab(asApp0)
   }
 
   // 1. Online, the first open.
   await host(v1)
-  // 1g. YAZ-5564: in a browser tab the app shows only the install screen: no sign-in, no worker, no storage. The real
-  // build ignores the dev override (`?as-installed`).
-  if (!LIVE || !process.env.PROOF_EXPECT_UPDATE) {
-    for (const path of ['/', '/?as-installed']) {
-      await open(`${ORIGIN}${path}`)
-      const gate = await until(`document.body.innerText.includes('Install the app first, so your vaults download once.')`)
-      const none = await evaluate(`Promise.all([!document.querySelector('input, button, form'), navigator.serviceWorker.getRegistration().then(r => !r), indexedDB.databases().then(d => d.length === 0)])`)
-      record(`1g a browser tab (${path}): only the install screen; no sign-in, no worker, no storage`, gate && none.every(Boolean), JSON.stringify(none))
-    }
-    await shot('1g-tab-gate')
-  }
-  // From here the page is the Home Screen app, as iOS reports it (`navigator.standalone`).
-  await asHomeScreenApp()
+  // YAZ-5644: a plain browser tab, as on a computer (no Home Screen app): the app runs here whole.
   await open(`${ORIGIN}/`)
   record('1a the app shows (sign-in)', (await until(`!!document.querySelector('input[name="token"]')`)), '')
   const h = docHeaders.at(-1) ?? {}
@@ -286,6 +278,16 @@ try {
   record('1c the service worker installs, takes the page, keeps the whole shell', active && controlled && kept === expected, `${kept} of ${expected} files`)
   record('1d zero CSP violations, zero errors (page and worker)', csp().length === 0 && errors().length === 0, `${csp().length} CSP, ${errors().length} errors`)
   await shot('1-online-light')
+  // 1g. YAZ-5644: that was a browser tab, and the whole app runs in it: the sign-in (1a), the worker (1c), and the
+  // storage (the app's database is open). No install wall; no install hint on a computer.
+  const tab = await evaluate(`Promise.all([navigator.standalone === undefined && !matchMedia('(display-mode: standalone)').matches, indexedDB.databases().then(d => d.map(x => x.name)), !document.body.innerText.includes('Install the app first'), !document.querySelector('section.install')])`)
+  record('1g a browser tab runs the whole app: sign-in, worker, storage; no wall, no hint on a computer', tab[0] === true && tab[1].includes('notecards') && tab[2] && tab[3], `databases ${JSON.stringify(tab[1])}`)
+  // 1h. The same build as the Home Screen app: the same start (the sign-in, under the worker), no hint.
+  const app = await asHomeScreenApp()
+  await open(`${ORIGIN}/`)
+  const asApp = (await until(`!!document.querySelector('input[name="token"]') && navigator.standalone === true`)) && (await evaluate(`navigator.serviceWorker.controller !== null && !document.querySelector('section.install')`)) === true
+  record('1h the Home Screen app opens the same app (sign-in, under the worker), with no hint', asApp)
+  await asTab(app)
 
   // 1e. The friend link, online: the page shows the code; the code is in the fragment only, in no request.
   const CODE = 'bb5a315d61ae9438b18e'

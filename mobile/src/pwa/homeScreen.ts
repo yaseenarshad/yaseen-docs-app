@@ -1,22 +1,24 @@
 /**
  * How to add Yaseen Docs to the Home Screen: ONE source for the words, for the app's install hint (`InstallHint.tsx`),
- * "Set up your phone" and the `/friend` landing page (`landing.ts`). Safari and the Home Screen app keep their data
- * apart (iOS), so the person adds the app first and signs in there.
+ * "Set up your phone" and the `/friend` landing page (`landing.ts`). YAZ-5644: the Home Screen app is a choice, not a
+ * must: a browser tab runs the whole app too. On iOS, Safari and the Home Screen app keep their data apart, so each is
+ * its own copy of the vault (both may write: every write is compare-and-swap).
  * The iOS 26 Safari steps are Yaseen's, from his iPhone (compact address bar at the bottom): "three lines on the left
  * side of the URL … share … view more … add to home screen". Chrome and Firefox on iOS (16.4 and later) add to the
  * Home Screen from their own Share menu.
  */
 export const HOME_SCREEN = {
   title: 'Add Yaseen Docs to your Home Screen',
+  /** The hint's one line, after the title. */
+  short: 'It opens like an app.',
   why: 'It opens like an app, works with no signal, and keeps your cards on this phone.',
   /** Safari on iOS 26: each tap in order. */
   safari: [{ tap: '☰', where: 'at the left of the address bar' }, { tap: 'Share' }, { tap: 'View More' }, { tap: 'Add to Home Screen' }] as { tap: string; where?: string }[],
   olderSafari: 'On an older iPhone: tap the Share button (a square with an arrow up), then Add to Home Screen.',
   otherIos: 'In Chrome or Firefox, open the Share menu, then tap Add to Home Screen.',
-  notIos: 'Open this page in Safari on your iPhone to add it to your Home Screen.',
-  apart: 'Safari and the Home Screen app keep their data apart. Add it first, then sign in from the Home Screen app.',
-  /** The sign-in form's one line. */
-  formLine: 'Sign in from the Home Screen app. Safari keeps its data apart.',
+  android: 'In Chrome, open the ⋮ menu, then tap Add to Home screen.',
+  /** iOS only: the Home Screen app is a second copy (an Android app shares the browser's data). */
+  apart: 'The Home Screen app keeps its own copy of your vault, so you sign in there once more. This tab keeps working too.',
 }
 
 /**
@@ -64,4 +66,14 @@ export function browserFacts(): BrowserFacts {
   }
   const nav = typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { standalone?: boolean })
   return { standalone: nav?.standalone, displayStandalone, userAgent: nav?.userAgent ?? '', platform: nav?.platform, maxTouchPoints: nav?.maxTouchPoints }
+}
+
+/** YAZ-5644: who gets the install hint: a browser tab on a phone or a tablet. A computer and the Home Screen app: none. */
+export type HintKind = 'ios-safari' | 'ios-other' | 'android'
+
+export function hintKind(f: BrowserFacts): HintKind | null {
+  const where = whereAmI(f)
+  if (where === 'standalone') return null
+  if (where !== 'not-ios') return where
+  return /Android/.test(f.userAgent) ? 'android' : null
 }
