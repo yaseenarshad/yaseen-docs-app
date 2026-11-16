@@ -50,6 +50,8 @@ describe('Friends off on the phone (YAZ-5652)', () => {
 
   it('"Set up your phone" asks for Contents only, not Gists', async () => {
     h = await mount()
+    // YAZ-5645: the first screen leads with Sign in with GitHub; the token path is behind "Use a token instead".
+    await h.click('Use a token instead')
     await h.click('How to make a token')
     await h.waitText('Set up your phone')
     expect(h.text()).toContain('Give the token one permission: Contents.')
