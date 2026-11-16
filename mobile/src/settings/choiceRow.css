@@ -1,0 +1,91 @@
+/* YAZ-5666: Settings' choice rows (ChoiceRow.tsx): name, value, ›; a tap opens the choices in place under it. */
+
+.choice-row {
+  border-bottom: 1px solid var(--border);
+}
+.choice-row:last-child {
+  border-bottom: 0;
+}
+
+.choice-row__button {
+  width: 100%;
+  color: var(--fg);
+}
+.choice-row__button:disabled {
+  opacity: 1;
+}
+
+.choice-row__value {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice-row__chevron {
+  display: inline-block;
+  width: 16px;
+  color: var(--fg-muted);
+  font-size: 20px;
+  text-align: center;
+  transition: transform 0.14s ease-out;
+}
+.choice-row__button[aria-expanded='true'] .choice-row__chevron {
+  transform: rotate(90deg);
+}
+.choice-row__button:disabled .choice-row__chevron {
+  visibility: hidden;
+}
+
+/* The choices, under their row, indented a step; the current one's ✓ at the right, where the value stands. */
+.choice-row__choices {
+  padding: 0 0 4px 16px;
+  overflow: hidden;
+  transform-origin: top;
+  animation: choice-row-open 0.14s ease-out;
+}
+.choice-row__choices[inert] {
+  animation: choice-row-close 0.14s ease-in forwards;
+}
+
+.choice-row__choice {
+  width: 100%;
+  color: var(--fg);
+}
+.choice-row__choice:last-child {
+  border-bottom: 0;
+}
+.choice-row__choice[aria-checked='true'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.choice-row__tick {
+  margin-left: auto;
+  padding-right: 2px;
+  color: var(--accent);
+}
+
+@keyframes choice-row-open {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes choice-row-close {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice-row__choices,
+  .choice-row__choices[inert] {
+    animation: none;
+  }
+  .choice-row__chevron {
+    transition: none;
+  }
+}

@@ -295,16 +295,19 @@ describe('YAZ-5658: Wide tables, the vault\'s (Settings) and the page\'s own (�
     await waitFor(h, () => mode(h!) === 'scroll')
   })
 
-  it('Settings › This vault on mobile › Wide tables: Same as Desktop chosen; Fit Screen goes the safe path', async () => {
+  it('Settings › This vault on mobile › Wide tables (YAZ-5666, a choice row): Same as Desktop shown; a tap opens it, Fit Screen goes the safe path', async () => {
     const port = fakePort()
     h = await open('Day one', port)
     await h.click('Settings')
-    await waitFor(h, () => h!.host.querySelector('[aria-label="Wide tables"] input:not([disabled])') !== null)
-    const radio = (label: string) => [...h!.host.querySelectorAll('[aria-label="Wide tables"] label.row')].find((l) => l.textContent === label)!.querySelector<HTMLInputElement>('input')!
-    expect([radio('Same as Desktop').checked, radio('Fit Screen').checked]).toEqual([true, false])
+    const row = () => h!.host.querySelector<HTMLButtonElement>('.settings-mobile button[aria-label^="Wide tables,"]')
+    await waitFor(h, () => row() !== null && !row()!.disabled)
+    expect(row()!.getAttribute('aria-label')).toBe('Wide tables, Same as Desktop')
+    await act(async () => row()!.click())
+    const radio = (label: string) => [...h!.host.querySelectorAll<HTMLButtonElement>('[role="radiogroup"][aria-label="Wide tables"] [role="radio"]')].find((b) => b.textContent!.startsWith(label))!
+    expect([radio('Same as Desktop').getAttribute('aria-checked'), radio('Fit Screen').getAttribute('aria-checked')]).toEqual(['true', 'false'])
     await act(async () => radio('Fit Screen').click())
     await h.settle()
-    expect(port.add).toHaveBeenCalledWith({ path: MOBILE_SETTINGS_PATH, body: '', setting: { file: 'mobile', key: 'fitTables', on: true } })
-    expect(radio('Fit Screen').checked).toBe(true)
+    expect(port.add).toHaveBeenCalledExactlyOnceWith({ path: MOBILE_SETTINGS_PATH, body: '', setting: { file: 'mobile', key: 'fitTables', on: true } })
+    expect(row()!.getAttribute('aria-label')).toBe('Wide tables, Fit Screen')
   })
 })

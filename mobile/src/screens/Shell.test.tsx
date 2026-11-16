@@ -328,7 +328,7 @@ describe('Settings: Friends (decision 22; round 13, item 4)', () => {
     expect(text).toContain('Vaults that count')
     expect(text).toContain('All vaults')
     expect(text).toMatch(/Name\s*Yaseen/)
-    // YAZ-5592: the only check boxes are "This vault on mobile"'s (Folding, Sticky headings), not a sharing switch.
+    // No sharing switch (YAZ-5666: "This vault on mobile" has none either, its rows are choice rows).
     expect([...h.host.querySelectorAll('input[type="checkbox"]')].filter((b) => b.closest('.settings-mobile') === null)).toEqual([])
     expect(text).not.toMatch(/share my numbers|sharing/i)
   })

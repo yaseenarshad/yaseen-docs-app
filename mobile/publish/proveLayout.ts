@@ -60,7 +60,8 @@ import { freePort } from './freePort'
  *    box to the tick; folded lines turned and their children gone; `folding: false` none; never sideways.
  *  - sticky headings (`#fixture=page-sticky`, `sheet-sticky`, `page-sticky-off`, YAZ-5591), light and dark, at 375 and
  *    320 px: under the top bar, each under its parent, as its heading, full width, at most 40%, each a tap; a tap lands it.
- *  - Settings › This vault on mobile (`#fixture=settings-mobile`, YAZ-5592), light and dark, at 375 and 320 px.
+ *  - Settings › This vault on mobile (`#fixture=settings-mobile`, YAZ-5592), light and dark, at 375 and 320 px. YAZ-5666:
+ *    its choice rows, closed and (`settings-mobile-open`) Folding open, at 390 px too.
  *  - numbered text in bullets (`#fixture=page-folds-numbered`, `-folded`, `-all`, YAZ-5568), light and dark, at 375 px:
  *    a bullet whose text starts `1) ` is bullet text (the Mac's rule), each line's words shown with its dot; folded: gone;
  *    Collapse all then the parent opened (the report): its four lines whole.
@@ -2351,33 +2352,48 @@ if (process.env.LAYOUT_STICKY_HEADINGS !== 'no') {
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 // YAZ-5592: Settings › "This vault on mobile" (`settings-mobile`: the vault's mobile.json says Folding off), light and
-// dark, at 375 and 320 px: its heading, Folding (off) and Sticky headings (on), YAZ-5658 Wide tables (Same as Desktop
-// chosen, Fit Screen not), each a 44 px row that can be changed, inside the screen; never sideways.
+// dark, at 320, 375 and 390 px. YAZ-5666, its choice rows: "Folding, Off", "Sticky headings, On", "Wide tables, Same as
+// Desktop", each a 44 px button, collapsed, inside the screen, its value on the row's one line; no check box or radio
+// left. `settings-mobile-open`: Folding tapped open, the others closed; its choices On and Off under it, a radio group,
+// ✓ on Off, each a 44 px tap inside the screen; never sideways.
 const MOBILE_PART = `(() => {
   const r = (el) => el.getBoundingClientRect()
   const part = document.querySelector('.settings-mobile')
   if (part === null) return { error: 'no section' }
-  const rows = [...part.querySelectorAll('label.row')]
+  const inside = (el) => r(el).left >= 0 && r(el).right <= innerWidth + 0.5
+  const rows = [...part.querySelectorAll('button[aria-expanded]')]
+  const group = part.querySelector('[role="radiogroup"]:not([inert])')
   return {
     title: part.querySelector('h2')?.textContent,
-    rows: rows.map((l) => ({ label: l.textContent, on: l.querySelector('input').checked, enabled: !l.querySelector('input').disabled, h: Math.round(r(l).height), inside: r(l).left >= 0 && r(l).right <= innerWidth + 0.5 })),
+    inputs: part.querySelectorAll('input').length,
+    rows: rows.map((b) => ({ label: b.getAttribute('aria-label'), expanded: b.getAttribute('aria-expanded'), enabled: !b.disabled, h: Math.round(r(b).height), inside: inside(b), oneLine: Math.abs(r(b.querySelector('.choice-row__value')).top - r(b.querySelector('.row__main')).top) < 4 })),
+    group: group && { label: group.getAttribute('aria-label'), under: r(group).top >= r(rows[0]).bottom - 0.5, choices: [...group.querySelectorAll('[role="radio"]')].map((c) => ({ text: c.textContent, checked: c.getAttribute('aria-checked'), h: Math.round(r(c).height), inside: inside(c) })) },
     wide: document.scrollingElement.scrollWidth > innerWidth + 1,
   }
 })()`
 if (process.env.LAYOUT_SETTINGS !== 'no') {
   for (const scheme of ['light', 'dark'] as const) {
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
-    for (const [w, hgt] of [[375, 667], [320, 568]] as const) {
-      const file = await open('settings-mobile', w, hgt)
-      const shot = file.replace('.png', `-${scheme}.png`)
-      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
-      const m = await evaluate(MOBILE_PART)
-      type Row = { label: string; on: boolean; enabled: boolean; h: number; inside: boolean }
-      const rows = (m.rows ?? []) as Row[]
-      const ok = m.title === 'This vault on mobile' && rows.length === 4 && rows[0]!.label === 'Folding' && rows[0]!.on === false && rows[1]!.label === 'Sticky headings' && rows[1]!.on === true && rows[2]!.label === 'Same as Desktop' && rows[2]!.on === true && rows[3]!.label === 'Fit Screen' && rows[3]!.on === false && rows.every((x) => x.enabled && x.h >= 44 && x.inside) && !m.wide
-      if (!ok) failed++
-      console.log(`${ok ? 'PASS' : 'FAIL'}  settings-mobile ${scheme} at ${w}x${hgt}: ${m.error ?? `"${m.title}": ${rows.map((x) => `${x.label} ${x.on ? 'on' : 'off'}${x.enabled ? '' : ' DISABLED'} ${x.h}px${x.inside ? '' : ' OUTSIDE'}`).join(', ')}; page ${m.wide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
-    }
+    for (const name of ['settings-mobile', 'settings-mobile-open'] as const)
+      for (const [w, hgt] of [[375, 667], [320, 568], [390, 844]] as const) {
+        const file = await open(name, w, hgt)
+        const shot = file.replace('.png', `-${scheme}.png`)
+        writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+        const m = await evaluate(MOBILE_PART)
+        type Row = { label: string; expanded: string; enabled: boolean; h: number; inside: boolean; oneLine: boolean }
+        type Pick = { text: string; checked: string; h: number; inside: boolean }
+        const rows = (m.rows ?? []) as Row[]
+        const g = m.group as { label: string; under: boolean; choices: Pick[] } | null
+        const isOpen = name === 'settings-mobile-open'
+        const labels = rows.map((x) => x.label).join(' | ') === 'Folding, Off | Sticky headings, On | Wide tables, Same as Desktop'
+        const expanded = rows.map((x) => x.expanded).join(' ') === (isOpen ? 'true false false' : 'false false false')
+        const groupOk = isOpen
+          ? g !== null && g.label === 'Folding' && g.under && g.choices.map((c) => `${c.text}:${c.checked}`).join(' ') === 'On:false Off✓:true' && g.choices.every((c) => c.h >= 44 && c.inside)
+          : g === null
+        const ok = m.title === 'This vault on mobile' && m.inputs === 0 && rows.length === 3 && labels && expanded && rows.every((x) => x.enabled && x.h >= 44 && x.inside && x.oneLine) && groupOk && !m.wide
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at ${w}x${hgt}: ${m.error ?? `"${m.title}": ${rows.map((x) => `${x.label}${x.expanded === 'true' ? ' OPEN' : ''}${x.enabled ? '' : ' DISABLED'} ${x.h}px${x.inside ? '' : ' OUTSIDE'}${x.oneLine ? '' : ' WRAPS'}`).join(', ')}; ${g === null ? 'no choices' : `choices of ${g.label}${g.under ? '' : ' NOT UNDER'}: ${g.choices.map((c) => `${c.text}${c.checked === 'true' ? ' (current)' : ''} ${c.h}px${c.inside ? '' : ' OUTSIDE'}`).join(', ')}`}; ${m.inputs} inputs; page ${m.wide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+      }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

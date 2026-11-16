@@ -99,7 +99,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-calendar-slot-down', 'page-calendar-slot-up', 'page-calendar-slot-chip', 'page-tasks', 'page-tasks-numbered', 'page-cell-tasks', 'page-cell-tasks-full', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile', 'page-wide-scroll', 'page-wide-fit', 'page-wide-own', 'page-wide-menu', 'page-wide-desk'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-calendar-slot-down', 'page-calendar-slot-up', 'page-calendar-slot-chip', 'page-tasks', 'page-tasks-numbered', 'page-cell-tasks', 'page-cell-tasks-full', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile', 'settings-mobile-open', 'page-wide-scroll', 'page-wide-fit', 'page-wide-own', 'page-wide-menu', 'page-wide-desk'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -271,7 +271,7 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
           ? FOLDS_FILES
         : name === 'page-sticky' || name === 'page-sticky-off' || name === 'sheet-sticky'
           ? STICKY_HEADINGS_FILES
-        : name === 'settings-mobile'
+        : name.startsWith('settings-mobile')
           ? MOBILE_SETTINGS_FILES
         : name === 'page-table-subheads'
           ? SUBHEADS_FILES
@@ -378,10 +378,10 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
   // YAZ-5591/5592: the sticky headings' ⋯ rows and Settings › This vault on mobile write through it too.
   // YAZ-5618: the cell tasks' ticks go to it too (they wait there: nothing is sent).
   const cellTasks = name === 'page-cell-tasks' || name === 'page-cell-tasks-full'
-  if (name === 'card-menu' || name === 'page-card-menu' || name === 'sheet-card-menu' || name === 'settings-mobile' || name === 'page-sticky' || name === 'page-wide-menu' || cellTasks) {
+  if (name === 'card-menu' || name === 'page-card-menu' || name === 'sheet-card-menu' || name.startsWith('settings-mobile') || name === 'page-sticky' || name === 'page-wide-menu' || cellTasks) {
     const answers = fixtureAnswers(store, READER_ID)
     // A comment list in memory (nothing is sent), so the rows that write show as they do with a sign-in.
-    if (name === 'settings-mobile' || name === 'page-sticky' || name === 'page-wide-menu' || cellTasks) {
+    if (name.startsWith('settings-mobile') || name === 'page-sticky' || name === 'page-wide-menu' || cellTasks) {
       const list: WaitingComment[] = []
       const heard = new Set<() => void>()
       ;(answers as { comments?: CommentsPort }).comments = {
@@ -960,10 +960,14 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       break
     }
     case 'settings-mobile':
-      // YAZ-5592: Settings › "This vault on mobile" (the vault's mobile.json says Folding off).
+    case 'settings-mobile-open':
+      // YAZ-5592: Settings › "This vault on mobile" (the vault's mobile.json says Folding off). YAZ-5666: its choice
+      // rows; `-open`: Folding tapped open (On / Off, ✓ on Off).
       press('Settings')
-      await until(() => document.querySelector('.settings-mobile') !== null)
+      await until(() => document.querySelector('.settings-mobile button[aria-expanded]:not([disabled])') !== null)
       await wait(200)
+      if (name === 'settings-mobile-open') document.querySelector<HTMLButtonElement>('.settings-mobile button[aria-expanded]')?.click()
+      await wait(250)
       document.querySelector('.settings-mobile')?.scrollIntoView({ block: 'start' })
       await wait(100)
       break
