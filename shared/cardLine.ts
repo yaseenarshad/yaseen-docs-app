@@ -509,48 +509,26 @@ export function withoutCardReview(line: CardLine, at: string): CardLine {
 }
 
 /**
- * The line with each review of `add` that it does not hold yet, and its reviews in time order (YAZ-4993: the card that
- * keeps an ID takes the union of its copies' histories). A review's name is its time and its rating (`cardReviewKey`);
- * one name can be held more than one time (YAZ-5620: two ✕ in one minute, a missed card that comes straight back, are
- * two reviews). So the union is one of COPIES: of each name, as many as the side that holds more of them (as the
- * phone's `nth` counts them, `mobile/src/answers/ops.ts`). A copy that both sides hold is the same review, seen from
- * both sides: it is there one time. The copies of a name pair up: the same bytes first, then a copy the line holds with
- * no seconds takes them from a timed copy of `add` (YAZ-5033: the timed copy is kept); a review with seconds keeps its
- * own. Of the copies of `add` the line lacks, the timed ones first. The reviews fill the line's review places in time
- * order (of one minute, the line's own first, in their order), the new ones after the last of them (else at the end);
- * the ID, `off` and unknown parts stay where they are. Nothing new to add and no seconds to take: the same line.
+ * The line with each review of `add` that it does not hold yet (a review is its time and its rating, `cardReviewKey`;
+ * each one ONE time), and its reviews in time order (YAZ-4993: the card that keeps an ID takes the union of its copies'
+ * histories). The reviews fill the line's review places in time order, the new ones after the last of them (else at the
+ * end); the ID, `off` and unknown parts stay where they are. A review the line holds with no seconds takes them from
+ * the same review in `add` (YAZ-5033: the timed copy is kept); a review with seconds keeps its own. Nothing new to add
+ * and no seconds to take: the same line.
  */
 export function withCardReviews(line: CardLine, add: readonly CardReview[]): CardLine {
-  const held = cardReviewsOf(line)
-  const heldBy = new Map<string, number[]>()
-  held.forEach((r, i) => heldBy.set(cardReviewKey(r), [...(heldBy.get(cardReviewKey(r)) ?? []), i]))
-  const addBy = new Map<string, CardReview[]>()
-  for (const r of add) addBy.set(cardReviewKey(r), [...(addBy.get(cardReviewKey(r)) ?? []), r])
+  const timed = new Map<string, CardReview>()
+  for (const r of add) if (isCardSeconds(r.seconds) && !timed.has(cardReviewKey(r))) timed.set(cardReviewKey(r), r)
   let upgraded = false
-  const fresh: CardReview[] = []
-  for (const [key, adds] of addBy) {
-    const own = heldBy.get(key) ?? []
-    const free = [...adds]
-    // The same review on both sides: the same bytes.
-    const open = own.filter((i) => {
-      const j = free.findIndex((r) => formatCardReview(r) === formatCardReview(held[i]))
-      if (j === -1) return true
-      free.splice(j, 1)
-      return false
-    })
-    // A copy with no seconds takes them from a timed copy (YAZ-5033).
-    for (const i of open) {
-      if (isCardSeconds(held[i].seconds)) continue
-      const j = free.findIndex((r) => isCardSeconds(r.seconds))
-      if (j === -1) continue
-      held[i] = { ...held[i], seconds: free[j].seconds }
-      upgraded = true
-      free.splice(j, 1)
-    }
-    // The copies the line lacks: as many as `add` holds more than the line, the timed ones first.
-    const lack = adds.length - own.length
-    if (lack > 0) fresh.push(...[...free.filter((r) => isCardSeconds(r.seconds)), ...free.filter((r) => !isCardSeconds(r.seconds))].slice(0, lack))
-  }
+  const held = cardReviewsOf(line).map((r) => {
+    const better = isCardSeconds(r.seconds) ? undefined : timed.get(cardReviewKey(r))
+    if (better === undefined) return r
+    upgraded = true
+    return { ...r, seconds: better.seconds }
+  })
+  const seen = new Set(held.map(cardReviewKey))
+  // Of two new copies of one review, the timed one (YAZ-5033).
+  const fresh = add.filter((r) => !seen.has(cardReviewKey(r)) && (seen.add(cardReviewKey(r)), true)).map((r) => timed.get(cardReviewKey(r)) ?? r)
   if (fresh.length === 0 && !upgraded) return line
   const all = [...held, ...fresh].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
   let n = 0
@@ -558,13 +536,6 @@ export function withCardReviews(line: CardLine, add: readonly CardReview[]): Car
   const last = parts.map((p) => p.kind === 'review').lastIndexOf(true)
   const at = last === -1 ? parts.length : last + 1
   return { parts: [...parts.slice(0, at), ...all.slice(n).map((review): CardPart => ({ kind: 'review', review })), ...parts.slice(at)] }
-}
-
-/** How many copies of each review name (`cardReviewKey`) `reviews` holds. */
-export function cardReviewCounts(reviews: readonly CardReview[]): Map<string, number> {
-  const out = new Map<string, number>()
-  for (const r of reviews) out.set(cardReviewKey(r), (out.get(cardReviewKey(r)) ?? 0) + 1)
-  return out
 }
 
 /** The place among the line's parts of the review `withoutCardReview(line, at)` removes, or -1 when no review is at `at`. */
@@ -607,7 +578,7 @@ export interface CardCopySettled {
  * - another text: the copy keeps its history and the keeper is unchanged — each card keeps its own reviews, as two cards
  *   of their own (the decision on YAZ-4993, kept by Yaseen on YAZ-4998);
  * - the same text: the keeper takes each review of the copy that it lacks (`withCardReviews`: each review one time, in
- *   time order; of the same review with and without seconds, the one with them, YAZ-5033; two of one minute stay two, YAZ-5620), and only then does the
+ *   time order; of the same review with and without seconds, the one with them, YAZ-5033), and only then does the
  *   copy's history empty. The emptied copy also loses its `next` (YAZ-4999 D3):
  *   it is a new card now, not the one put at the top of the Inbox. The keeper keeps its own `next`, and takes none.
  * Nothing to add: the keeper's line is the same object, so a caller writes nothing for it.
@@ -615,9 +586,9 @@ export interface CardCopySettled {
 export function settleCardCopy(keeper: CardSide | null, copy: CardSide): CardCopySettled {
   if (keeper === null || keeper.text !== copy.text) return { keeper: keeper?.line ?? null, copy: copy.line, emptied: false }
   const union = withCardReviews(keeper.line, cardReviewsOf(copy.line))
-  const has = cardReviewCounts(cardReviewsOf(union))
-  // The rule's own check: never empty a history whose reviews the keeper does not hold now (each copy, YAZ-5620).
-  if (![...cardReviewCounts(cardReviewsOf(copy.line))].every(([k, n]) => (has.get(k) ?? 0) >= n)) return { keeper: keeper.line, copy: copy.line, emptied: false }
+  const has = new Set(cardReviewsOf(union).map(cardReviewKey))
+  // The rule's own check: never empty a history whose reviews the keeper does not hold now.
+  if (!cardReviewsOf(copy.line).every((r) => has.has(cardReviewKey(r)))) return { keeper: keeper.line, copy: copy.line, emptied: false }
   return { keeper: union, copy: withCardNext(withoutCardReviews(copy.line), false), emptied: true }
 }
 
