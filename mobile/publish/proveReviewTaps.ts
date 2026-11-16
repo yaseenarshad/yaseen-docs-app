@@ -9,7 +9,8 @@ import { freePort } from './freePort'
  * touch (Playwright's `tap`: a real touch the browser hit-tests). The fixtures build, `#fixture=review-taps`: one card
  * marked Up next, four due cards, five new cards in two folders (three a day), one archived card; the real engine and
  * answer list on the fake GitHub. Each run opens the fixture fresh. It proves:
- *  1. THE LISTS: the sheet's counts at the start (All 8, Up next 1, Due today 5 (the Up next card is due too), New 3),
+ *  1. THE LISTS: the sheet's counts at the start (All 8, Up next 1, Due today 4, New 3: each card in one list, Review
+ *     rules v1 rule 7, so the Up next card, due too, is under Up next alone),
  *     the archived card in none; each list (Up next, Due today, New cards) shows "1 / M" with M its cards, and its
  *     done screen ("No Up next cards left." + "7 more in All cards"; Due today's end; "No new cards left.").
  *  2. A WHOLE DAY in All cards, one tap at a time: after each ✕ / ✓ the top's M and the bar's whole stay at 8 (a ✕ never
@@ -147,7 +148,7 @@ try {
     const s = await screen(page)
     same('start: All cards, 1 / 8, the Up next card first', [s.list, s.n, s.m, s.card], ['All cards', 1, 8, 'UP-1'])
     same('start: the bar has 8 empty steps', s.bar, { done: 0, size: 8, forgot: 0 })
-    same('start: the sheet counts (the archived card in none)', await sheet(page), { 'All cards': '8', 'Up next': '1', 'Due today': '5', 'New cards': '3' })
+    same('start: the sheet counts (the archived card in none)', await sheet(page), { 'All cards': '8', 'Up next': '1', 'Due today': '4', 'New cards': '3' })
     await page.screenshot({ path: join(out, 'start.png') })
 
     await pick(page, 'Up next')
@@ -168,11 +169,11 @@ try {
     const page = await open()
     await pick(page, 'Due today')
     const s = await screen(page)
-    same('Due today: 1 / 5 (the Up next card is due too)', [s.list, s.n, s.m, s.card], ['Due today', 1, 5, 'UP-1'])
-    for (let i = 0; i < 5; i++) await tap(page, 'Remembered')
+    same('Due today: 1 / 4 (the Up next card is under Up next alone, rule 7)', [s.list, s.n, s.m, s.card], ['Due today', 1, 4, 'DUE-1'])
+    for (let i = 0; i < 4; i++) await tap(page, 'Remembered')
     const end = await screen(page)
     check('Due today all remembered: "Due today is done." and "Learn new cards 3"', /Due today is done\./.test(end.done ?? '') && /Learn new cards\s*3/.test(end.done ?? ''), end.done ?? 'no done screen')
-    check('Due today all remembered: 100%', /You remembered 100% of 5 cards\./.test(end.done ?? ''), end.done ?? '')
+    check('Due today all remembered: 100%', /You remembered 100% of 4 cards\./.test(end.done ?? ''), end.done ?? '')
     await page.context().close()
   }
   {
@@ -191,7 +192,8 @@ try {
     same('New cards: the 3 cards once each in this list', seen, ['NEW-1 1/3', 'NEW-2 2/3', 'NEW-3 3/3'])
     const done = await screen(page)
     check('New cards done: "No new cards left.", "Add 2 new cards", "8 more in All cards" (the 3 begun ones are due now)', /No new cards left\./.test(done.done ?? '') && /Add 2 new cards/.test(done.done ?? '') && /8 more in All cards/.test(done.done ?? ''), done.done ?? 'no done screen')
-    same('New cards done: the sheet', await sheet(page), { 'All cards': '8', 'Up next': '1', 'Due today': '8', 'New cards': '0' })
+    // Due today 7: the 4 due cards and the 3 begun ones; UP-1 is under Up next alone (rule 7).
+    same('New cards done: the sheet', await sheet(page), { 'All cards': '8', 'Up next': '1', 'Due today': '7', 'New cards': '0' })
     await tap(page, '8 more in All cards')
     const rest: string[] = []
     for (let i = 0; i < 14; i++) {

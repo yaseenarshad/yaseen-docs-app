@@ -102,7 +102,7 @@ vi.mock('./createCrepe', () => {
 })
 
 // A start view's place in the text (YAZ-5164): the fake Crepe has no view to measure; the real pair is in pagePlace.test.ts.
-vi.mock('./pagePlace', () => ({ showPagePlace: vi.fn(() => false), readPagePlace: vi.fn(() => null), holdPagePlace: vi.fn((_view: unknown, change: () => unknown) => change()) }))
+vi.mock('./pagePlace', () => ({ showPagePlace: vi.fn(() => false), readPagePlace: vi.fn(() => null), holdPagePlace: vi.fn((_view: unknown, change: () => unknown) => change()), keepPlace: vi.fn((_scroller: unknown, put: () => void) => (put(), () => undefined)) }))
 
 // Line numbers (YAZ-2643): jsdom has no Worker and the fake Crepe has no view. The request answers
 // with the real block index, in line; what the host SENDS to the editor is the thing under test.
