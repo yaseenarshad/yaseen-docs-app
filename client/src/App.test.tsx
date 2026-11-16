@@ -5751,9 +5751,9 @@ describe('App: the card flow (YAZ-4962)', () => {
     expect(remembered.getAttribute('aria-description')).toBe('Remembered · later today')
     // Remembered (2): the review lands on the card line, written as the line holds reviews (the answer's seconds may
     // end it, YAZ-5033).
-    const review = /, \d{4}-\d\d-\d\dT\d\d:\d\dZ good(?: \d+s)?/g
+    const review = /, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)?/g
     await press(el, '2')
-    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good(?: \d+s)? -->$/m))
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m))
     expect(files[PAGE].content.replace(review, '')).toBe(page('<!-- card: WIKI-9 -->'))
     const once = files[PAGE].content
     // YAZ-5020: still in its steps, the card comes back in this session, from its first step; its second Remembered
@@ -6027,7 +6027,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
     await press('2')
     // The review part may end with the answer's seconds (YAZ-5033: ` <n>s`, written when known).
-    const reviewed = /^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good(?: \d+s)? -->$/m
+    const reviewed = /^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m
     await vi.waitFor(() => expect(files[PAGE].content).toMatch(reviewed), { timeout: SLOW_RUNNER_MS })
     // The open page took the review, and its next save writes the typing with it: both are in the file.
     await vi.waitFor(() => expect(files[PAGE].content).toContain('Intro, typed'), { timeout: SLOW_RUNNER_MS })
@@ -6116,7 +6116,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
     await press('2')
     // The review part may end with the answer's seconds (YAZ-5033: ` <n>s`, written when known).
-    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good(?: \d+s)? -->$/m), { timeout: SLOW_RUNNER_MS })
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m), { timeout: SLOW_RUNNER_MS })
     await vi.waitFor(() => expect(getMarkdownForSave(captured.crepes.at(-1)!)).toMatch(/<!-- card: WIKI-9, \S+ good(?: \d+s)? -->/))
     expect(el.querySelector('.outside-changes-bar')).toBeNull()
     // A review is no file change (YAZ-4948 with YAZ-4985): the read-only ask never comes for the card line.
