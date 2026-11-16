@@ -4,7 +4,8 @@
  * property (YAZ-5044). This module is the move, and nothing else reads a title the old way: the index's sweep runs it
  * one time for each vault (`desktop/src/main/vaultIndex/idSweep.ts`), and then no card's text is ever read as a title.
  *
- *  - A card file's `title` property goes onto its card's line, and leaves its properties.
+ *  - A card file's `title` property goes onto its card's line, and leaves its properties once that line holds it: a
+ *    card file with no card, or whose card line has another title, keeps it (YAZ-5647).
  *  - A card in a page with no `title` on its line: its first line goes onto its line as its title, with the blank lines
  *    after it, when that line is plain text and the front has more text below it. A first line that is not plain text
  *    (a hidden word, code, a link, a sound, a picture, a board) is the question, and so is a first line that is the whole front
@@ -79,7 +80,10 @@ export function cardTitlesMoved(content: string): string | null {
       lines.splice(card.open + 1, (card.lineAt ?? card.close) - card.open, ...text, lines[card.close], card.indent + line)
     }
     let next = frontmatter + lines.join('\n')
-    if (cardFile && own !== '') next = setFrontmatterProperty(next, TITLE_KEY, undefined)
+    // The property goes only once a card line holds that title (YAZ-5647): a file with no card, or a card line with
+    // another title, keeps it.
+    const held = cards.length > 0 && cardTitleOf(findCards(lines.join('\n'))[0].line) === own
+    if (cardFile && own !== '' && held) next = setFrontmatterProperty(next, TITLE_KEY, undefined)
     return next
   })
   return moved === content ? null : moved

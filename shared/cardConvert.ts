@@ -9,7 +9,9 @@
  *
  *  - Move to its own file (`moveCardOut`): the card file's bytes, and the page with `![[GEO-140]]` in the block's place,
  *    at its indent.
- *  - Put back into this page (`putCardBack`): the embed's line replaced by the block, at the embed's indent.
+ *  - Put back into this page (`putCardBack`): the embed's line replaced by the block, at the embed's indent. The card
+ *    file's `comments` move into the page's (YAZ-5647); its other properties are named first (`keysLostOnPutBack`), so
+ *    the caller asks before they go to the Trash with the card file.
  *  - Turn into a page (`cardFileAsPage`): `kind: card` off; the card's title is the page's `title:` too.
  *  - Turn into a card file (`pageAsCardFile`): a page that holds exactly one card with an ID and no other text takes
  *    `kind: card`, its `title:` goes to `aliases` (so `[[Old title]]` still resolves) and onto a card line with no
@@ -24,6 +26,7 @@ import { cardFileName, cardFileShape, cardFileTitle, cardFileWithBlock, CARD_KIN
 import { CardNotFoundError, EMPTY_CARD_LINE, cardBlock, cardIdOf, cardPlace, cardTitleOf, changeCardText, findCards, rewritePageCards, withCardTitle, type CardBlock } from './cardLine'
 import { lineKinds } from './fences'
 import { inLineEnds, lineEnds, withLf } from './lineEnds'
+import { COMMENTS_KEY, commentsShape, isIdComment, nextCommentNumber, textFingerprint, withComments, writableComments } from './comments'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 import { TITLE_KEY } from './pageName'
 
@@ -87,8 +90,58 @@ export function embedLine(body: string, inner: string, nth: number): number {
 }
 
 /**
+ * The card file's properties a Put back does not take into the page, in the file's order: all but `kind`, a `comments`
+ * list (it moves) and a `title` its card line holds. A properties block that does not parse is `['properties']`.
+ */
+export function keysLostOnPutBack(cardFile: string): string[] {
+  const file = withLf(cardFile)
+  const { properties, error } = parseFrontmatter(splitFrontmatter(file).frontmatter)
+  if (error !== undefined) return ['properties']
+  const title = cardFileTitle(file)
+  return Object.keys(properties).filter((key) => {
+    if (key === CARD_KIND_KEY) return false
+    if (key === COMMENTS_KEY) return commentsShape(file) === 'foreign'
+    if (key === TITLE_KEY) return String(properties[key] ?? '').trim() !== title
+    return true
+  })
+}
+
+/**
+ * The page `page` (`\n` alone) with the card file's comments after its own, threads kept: each top-level comment takes
+ * the page's next number (in the card file's order), a reply keeps its own, and an ID the page already has gets a new
+ * one (its replies follow). Throws `CommentsShapeError` when the page's `comments` is not a list: never overwritten.
+ */
+function withCardFileComments(page: string, cardFile: string): string {
+  if (commentsShape(cardFile) !== 'list') return page
+  const moving = writableComments(cardFile)
+  if (moving.length === 0) return page
+  const held = writableComments(page)
+  const taken = new Set(held.filter(isIdComment).map((c) => c.id))
+  const ids = new Map<string, string>()
+  for (const c of moving.filter(isIdComment)) {
+    if (!taken.has(c.id)) continue
+    let id = c.id
+    for (let k = 0; taken.has(id); k++) id = textFingerprint(`${c.id}\u0000${k}`)
+    ids.set(c.id, id)
+    taken.add(id)
+  }
+  const tops = moving.filter((e) => isIdComment(e) && e.reply_to == null && typeof e.n === 'number') as { n: number }[]
+  const first = nextCommentNumber(held, undefined)
+  const order = [...tops].sort((a, b) => a.n - b.n)
+  const out = moving.map((e) => {
+    if (!isIdComment(e)) return e
+    const next: Record<string, unknown> = { ...e, id: ids.get(e.id) ?? e.id }
+    if (typeof e.reply_to === 'string') next.reply_to = ids.get(e.reply_to) ?? e.reply_to
+    else if (typeof e.n === 'number') next.n = first + order.indexOf(e as { n: number })
+    return next
+  })
+  return withComments(page, [...held, ...out])
+}
+
+/**
  * PUT BACK INTO THIS PAGE: the page `page` with the `nth` lone embed `![[inner]]` replaced by card `id`'s block and card
- * line from the card file `cardFile`, at the embed's indent, byte for byte. Throws `CardNotFoundError` when the card file has no such card, an Error when the page holds no such embed (it changed since).
+ * line from the card file `cardFile`, at the embed's indent, byte for byte, and the card file's comments after the
+ * page's own (`withCardFileComments`). Throws `CardNotFoundError` when the card file has no such card, an Error when the page holds no such embed (it changed since).
  */
 export function putCardBack(page: string, inner: string, nth: number, cardFile: string, id: string): string {
   // The block takes the PAGE's line end: the card file's own does not come with it.
@@ -104,7 +157,7 @@ export function putCardBack(page: string, inner: string, nth: number, cardFile: 
     const lines = body.split('\n')
     const indent = /^[ \t]*/.exec(lines[at])![0]
     lines[at] = indentBlock(block, indent)
-    return frontmatter + lines.join('\n')
+    return withCardFileComments(frontmatter + lines.join('\n'), file)
   })
 }
 

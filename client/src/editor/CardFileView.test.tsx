@@ -382,7 +382,7 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
   })
 
-  it('YAZ-5097: Done on an edited card marked Fix later takes the mark off in the same write; Done with no change keeps it', async () => {
+  it('YAZ-5647 item 5: Done on an edited card marked Fix later keeps the mark (only a hand clears it); Done with no change writes nothing', async () => {
     const marked = FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, fix -->')
     await mount(marked)
     act(() => editButton()!.click())
@@ -395,7 +395,7 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
     act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
     key(dom, { key: 'Enter', metaKey: true })
-    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(marked.replace('Paris\n```', 'Paris (Seine)\n```')))
   })
 
   it('YAZ-5164: Edit card and Done keep the card where it is on screen: its box is put back at the spot it had, the editor\'s card on the way in, the read card on the way out', async () => {

@@ -230,6 +230,8 @@ describe('the embed and its head (Q4, locked)', () => {
 describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the Inbox and the page card', () => {
   const LINE = '<!-- card: GEO-140, 2026-11-01T09:00Z good, 2026-11-06T09:00Z again 12s -->'
   it('a card with reviews shows THE strip (`CardStrip`) under its text, its right side empty (YAZ-5381); a click opens the table; the delete writes the original; no door: no strip', async () => {
+    // The strip is a lazy chunk (React and `cardParts`): loaded first, so its first load is not timed by the wait below (YAZ-5647 item 6).
+    await import('../../review/cardParts')
     const deleteReview = vi.fn(async () => {})
     const settings = () => DEFAULT_REVIEW_SETTINGS
     const { root } = await mount('Plan\n\n![[GEO-140]]\n', { cardReviews: { settings, deleteReview }, wikilinks: vault(records({ cardFile: { mtime: 51 } })) }, cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', LINE))
@@ -316,9 +318,10 @@ describe('Edit card writes the original', () => {
     expect(getMarkdownForSave(crepe)).toBe(markdown)
   })
 
-  it('YAZ-5097: Done on an edited card marked Fix later takes the mark off in the same write', async () => {
+  it('YAZ-5647 item 5: Done on an edited card marked Fix later keeps the mark (only a hand clears it)', async () => {
     const { root, wikilinks } = await mount('Plan\n\n![[GEO-140]]\n')
-    disk.files.set(CARD_FILE, cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', '<!-- card: GEO-140, title "Capital of France", fix -->'))
+    const marked = cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', '<!-- card: GEO-140, title "Capital of France", fix -->')
+    disk.files.set(CARD_FILE, marked)
     update(wikilinks, records({ cardFile: { mtime: 2, cards: [card('GEO-140', 'Capital of France', { fix: true })] } }))
     const box = boxes(root)[0]!
     await vi.waitFor(() => expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(false))
@@ -328,8 +331,8 @@ describe('Edit card writes the original', () => {
     const inner = handle.cardEditor!.view()!
     inner.dispatch(inner.state.tr.insertText(' Since 508.', inner.state.doc.content.size - 1))
     press(box.querySelector('.card__edit'))
-    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toBe(cardFileText.replace('Paris', 'Paris Since 508.')))
-    expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(true)
+    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toBe(marked.replace('Paris', 'Paris Since 508.')))
+    expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(false)
   })
 
   it('Done with no change writes nothing; a read-only page asks first, then opens Edit card', async () => {
