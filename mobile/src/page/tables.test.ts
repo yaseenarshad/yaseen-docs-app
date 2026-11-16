@@ -85,8 +85,9 @@ describe('column widths from the text (YAZ-5471)', () => {
     expect(table.style.getPropertyValue('--table-fixed')).toBe(`${name.max}em`)
     // Two columns: nothing sticks.
     expect(table.hasAttribute('data-sticky')).toBe(false)
-    // The CSS shares the box's width by weight, between the min and the max.
-    expect(sheet('./tables.css')).toMatch(/col\.page-table__grow \{[^}]*width: clamp\(var\(--col-min\), calc\(\(100cqw - var\(--table-fixed, 0em\) - 2px\) \* var\(--col-weight, 1\)\), var\(--col-max\)\);/)
+    // The CSS shares the box's width by weight, between the min and the max; YAZ-5658 Scroll sideways: at least a
+    // readable line (13.5em) where the box has it (`tableWide.test.tsx`).
+    expect(sheet('./tables.css')).toContain('width: clamp(var(--col-min), max(min(13.5em, calc(100cqw - var(--table-fixed, 0em) - 2px)), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-weight, 1))), var(--col-max));')
   })
 
   it('wraps by words, never letter by letter: a long column is never narrower than its longest word (up to its min cap)', async () => {

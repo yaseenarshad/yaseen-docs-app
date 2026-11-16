@@ -25,10 +25,10 @@ import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, folderStops, neighbours, pageIdOf, vaultOrder } from './pageNav'
 import { renderPage, warmRenderer } from './pageRender'
-import { markSections, pageOwnSwitch, pageSwitchAttrs } from './pageSwitches'
+import { markSections, pageOwnSwitch, pageSwitchAttrs, wideTablesAttr } from './pageSwitches'
 import { effectiveSwitch, primeMobileSettings, useMobileSettings } from './mobileSettings'
 import { usePageSettingRow } from './pageSettingRow'
-import { STICKY_HEADINGS_KEY } from '../comments/settingWrite'
+import { FIT_TABLES_KEY, STICKY_HEADINGS_KEY } from '../comments/settingWrite'
 import { stickHeadings } from './stickyHeadings'
 import { attachFolds, revealFolds, type PageFolds } from './folds'
 import { moveFolds, readFolds, writeFolds } from '../store/foldPref'
@@ -138,12 +138,15 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const vaultMobile = useMobileSettings(data, commentsPort).settings
   // YAZ-5568: the Mac's folding: the page's own `folding: true | false`, else the vault's (on by default); the folds kept
   // on this phone, by vault and path. "Folding on this page" (⋯) writes the page's own key (`pageSettingRow.ts`).
-  const own = (key: 'folding' | 'sticky-headings') => (typeof text === 'string' ? pageOwnSwitch(text, key) : undefined)
+  const own = (key: 'folding' | 'sticky-headings' | 'fit-tables') => (typeof text === 'string' ? pageOwnSwitch(text, key) : undefined)
   const folding = usePageSettingRow(commentsPort, path, 'folding', effectiveSwitch(own('folding'), vaultMobile?.folding ?? true), 'Folding', setNotice)
   const foldingOn = folding.on
   // YAZ-5591: sticky headings, the page's own `sticky-headings: true | false` (the phone's own key), else the vault's.
   const sticky = usePageSettingRow(commentsPort, path, STICKY_HEADINGS_KEY, effectiveSwitch(own('sticky-headings'), vaultMobile?.stickyHeadings ?? true), 'Sticky headings', setNotice)
   const stickyOn = sticky.on
+  // YAZ-5658: Wide tables, the page's own `fit-tables: true | false` (none: Same as the vault), else the vault's.
+  const wide = usePageSettingRow(commentsPort, path, FIT_TABLES_KEY, own('fit-tables') ?? null, 'Wide tables', setNotice)
+  const fitTables = effectiveSwitch(wide.on ?? undefined, vaultMobile?.fitTables ?? false)
   const folds = useRef<PageFolds | null>(null)
   const [foldsNow, setFoldsNow] = useState<PageFolds | null>(null)
   useEffect(() => {
@@ -162,7 +165,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   }, [vault, path, title, foldingOn])
   // "⋯" → Find in page, Headings (each a lazy chunk), Collapse all; YAZ-5498: the full title when the top bar cuts it.
   const writable = typeof text === 'string' && commentsPort !== null
-  const tools = usePageTools(host, { title, path, folds: foldsNow, folding: writable ? folding : null, sticky: writable ? sticky : null })
+  const tools = usePageTools(host, { title, path, folds: foldsNow, folding: writable ? folding : null, sticky: writable ? sticky : null, wide: writable ? wide : null })
   // The Mac's properties chip at the right of the title; the rows open under it, in the page.
   const props = usePageProperties({ path, record, data, door, slot: sameTitle ? propsSlot : null })
 
@@ -398,7 +401,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
         {/* YAZ-5591: the layer of stuck headings (copies; the headings are in the body), zero height. */}
         <div ref={stuckLayer} className="reader__stuck" aria-hidden="true" />
-        <div className="reader__body" {...switches} data-folding={foldingOn ? undefined : 'off'} ref={host} onClick={(e) => void onTap(e)} />
+        <div className="reader__body" {...switches} data-folding={foldingOn ? undefined : 'off'} data-wide-tables={wideTablesAttr(fitTables)} ref={host} onClick={(e) => void onTap(e)} />
         {/* The page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}
         {tools.sheet}

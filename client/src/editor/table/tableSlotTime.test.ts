@@ -187,6 +187,26 @@ describe('the pill on the now line', () => {
     expect(empty.classList.contains('table-slot-pad')).toBe(false)
   })
 
+  it('YAZ-5658: the room only on the pill\'s lines: two floats at the start of the cell\'s first paragraph, no padding down the cell', async () => {
+    setSlotTimeSetting('down', true)
+    fakeClock(10, 10)
+    const { view } = await mount(calendar(DAY), { calendarClock: true })
+    const cell = nowRow(view)!.lastElementChild as HTMLElement
+    const floats = cell.querySelector(':scope > p > .table-slot-floats')
+    expect(floats?.parentElement?.firstChild).toBe(floats)
+    expect([...floats!.children].map((c) => c.className)).toEqual(['table-slot-gap', 'table-slot-room'])
+    // The paragraph's text is the cell's own: the floats hold none, and the doc does not change.
+    expect(floats!.textContent).toBe('')
+    expect(view.state.doc.textContent).not.toContain('table-slot')
+    // No padding down the whole cell; a clipped (one-line) cell keeps the padding, without the floats.
+    expect(calendarCss).not.toMatch(/\.table-slot-pad > p \{\s*padding-right/)
+    expect(calendarCss).toMatch(/@container style\(--table-text: clip\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-slot-pad:not\(\[data-cell-text='wrap'\]\) > p \{\s*padding-right: var\(--table-clip-pad\);/)
+    vi.setSystemTime(new Date(2026, 10, 2, 10, 40, 0))
+    await vi.advanceTimersByTimeAsync(61_000)
+    // An empty last cell: the pill, no room; the room left the cell it was in.
+    expect(view.dom.querySelectorAll('.table-slot-floats')).toHaveLength(0)
+  })
+
   it('a hidden window pauses the seconds; showing it reads the clock at once', async () => {
     setSlotTimeSetting('down', true)
     fakeClock(10, 40, 46)

@@ -45,12 +45,18 @@ function readFindFoldsHere(content: string): string | null {
  * the phone's own key): `true`, `false`, or undefined when the page has none (then the vault's mobile setting decides,
  * YAZ-5592: `mobileSettings.ts`). The Mac's rule: a boolean, else none; a block that names neither key is not parsed.
  */
-export function pageOwnSwitch(content: string, key: 'folding' | 'sticky-headings'): boolean | undefined {
+export function pageOwnSwitch(content: string, key: 'folding' | 'sticky-headings' | 'fit-tables'): boolean | undefined {
   const { frontmatter } = splitFrontmatter(content)
   if (!frontmatter.includes(key)) return undefined
   const value: unknown = parseFrontmatter(frontmatter).properties[key]
   return typeof value === 'boolean' ? value : undefined
 }
+
+/**
+ * YAZ-5658: the page body's `data-wide-tables` (`tables.css`): `fit` (Fit the screen) or `scroll` (Scroll sideways), from
+ * the page's own `fit-tables` (`pageOwnSwitch`), else the vault's `fitTables` (`mobile.json`).
+ */
+export const wideTablesAttr = (fit: boolean): 'fit' | 'scroll' => (fit ? 'fit' : 'scroll')
 
 /** A top-level heading's level (1-6), or null. Only a direct child of the page makes a section, as on the Mac. */
 const levelOf = (el: Element): number | null => {

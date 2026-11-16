@@ -11,7 +11,7 @@ import { FOLDER_FILES, calendarFiles } from './folderVault'
 import { todayKey } from '@client/views/calendar'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
-import { CALENDAR_NOW, CALENDAR_PAGE, CALENDAR_SLOT_NOW, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
+import { CALENDAR_NOW, CALENDAR_PAGE, CALENDAR_SLOT_NOW, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE, WIDE_NOW, WIDE_PAGE } from './tableFixtures'
 import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
 import { MOBILE_SETTINGS_FILES, STICKY_HEADINGS_FILES, CENTRE_FILES, FOLDS_FILES, NUMBERED_FOLDS_FILES, SECTIONS_FILES, SUBHEADS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
@@ -51,6 +51,9 @@ import { openSheet } from '../explore/sheets'
  * `page-calendar-slot-down` counts down with seconds (`19:14 left`), `page-calendar-slot-up` counts up (`10:46 in`),
  * `page-calendar-slot-chip` counts down in minutes (`20 min left`), scrolled past the now row by `proveLayout.ts` (the
  * Now pill says `Now · 20 min left`).
+ * YAZ-5658 Wide tables, the clock at 7:23 (`WIDE_NOW`), Time in slot counting down: `page-wide-scroll` the vault's
+ * default (Scroll sideways), `page-wide-fit` the vault's mobile.json says Fit the screen, `page-wide-own` the same vault
+ * with the page's own `fit-tables: false` (Scroll sideways wins), `page-wide-menu` its ⋯ open (Wide tables on this page).
  * YAZ-5494: `page-tasks` a made-up page of tasks in every shape (`taskFixtures.ts`): each box of the page a check box a
  * tap ticks (44 px around it), the card's box a glyph. YAZ-5510: `page-tasks-numbered` numbered tasks (`1.` to `11.`): only
  * the box, in the number's place (the Mac's rule), then the text.
@@ -95,7 +98,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-calendar-slot-down', 'page-calendar-slot-up', 'page-calendar-slot-chip', 'page-tasks', 'page-tasks-numbered', 'page-cell-tasks', 'page-cell-tasks-full', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-calendar-slot-down', 'page-calendar-slot-up', 'page-calendar-slot-chip', 'page-tasks', 'page-tasks-numbered', 'page-cell-tasks', 'page-cell-tasks-full', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile', 'page-wide-scroll', 'page-wide-fit', 'page-wide-own', 'page-wide-menu'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -249,6 +252,12 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
                 look: name === 'page-calendar-slot-up' ? { slotTime: 'up' } : name === 'page-calendar-slot-chip' ? { slotTime: 'down', slotSeconds: false } : { slotTime: 'down' },
               }),
             }
+        : name.startsWith('page-wide-')
+          ? {
+              'Day plan.md': `---\ntitle: Day plan\n${name === 'page-wide-own' || name === 'page-wide-menu' ? 'fit-tables: false\n' : ''}---\n\n${WIDE_PAGE}\n`,
+              '.yaseendocs/table-look.json': JSON.stringify({ version: 1, look: { slotTime: 'down', slotSeconds: false } }),
+              ...(name === 'page-wide-scroll' ? {} : { '.yaseendocs/mobile.json': JSON.stringify({ version: 1, fitTables: true }) }),
+            }
         : name === 'page-table-look'
           ? { 'Table look.md': `---\ntitle: Table look\n---\n\n${LOOK_PAGE}\n` }
         : name === 'page-text-size'
@@ -368,10 +377,10 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
   // YAZ-5591/5592: the sticky headings' ⋯ rows and Settings › This vault on mobile write through it too.
   // YAZ-5618: the cell tasks' ticks go to it too (they wait there: nothing is sent).
   const cellTasks = name === 'page-cell-tasks' || name === 'page-cell-tasks-full'
-  if (name === 'card-menu' || name === 'page-card-menu' || name === 'sheet-card-menu' || name === 'settings-mobile' || name === 'page-sticky' || cellTasks) {
+  if (name === 'card-menu' || name === 'page-card-menu' || name === 'sheet-card-menu' || name === 'settings-mobile' || name === 'page-sticky' || name === 'page-wide-menu' || cellTasks) {
     const answers = fixtureAnswers(store, READER_ID)
     // A comment list in memory (nothing is sent), so the rows that write show as they do with a sign-in.
-    if (name === 'settings-mobile' || name === 'page-sticky' || cellTasks) {
+    if (name === 'settings-mobile' || name === 'page-sticky' || name === 'page-wide-menu' || cellTasks) {
       const list: WaitingComment[] = []
       const heard = new Set<() => void>()
       ;(answers as { comments?: CommentsPort }).comments = {
@@ -833,6 +842,21 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
         await until(() => document.querySelector('.table-view') !== null)
       }
       await wait(300)
+      break
+    }
+    case 'page-wide-scroll':
+    case 'page-wide-fit':
+    case 'page-wide-own':
+    case 'page-wide-menu': {
+      setCalendarClock(() => WIDE_NOW)
+      await typed('day plan')
+      await open(/^Day plan/, '.reader__body .table-now-row .table-slot-pill')
+      await wait(300)
+      if (name === 'page-wide-menu') {
+        document.querySelector<HTMLElement>('.page-tools__btn')?.click()
+        await until(() => document.querySelector('.page-tools__menu') !== null)
+        await wait(100)
+      }
       break
     }
     case 'page-tasks':

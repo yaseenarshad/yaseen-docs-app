@@ -25,7 +25,8 @@ import { isMap, isScalar, parseDocument } from 'yaml'
  */
 export interface PageSetting {
   key: PageSettingKey
-  on: boolean
+  /** YAZ-5658: `null` takes the page's own key away (the row's "Same as the vault"). */
+  on: boolean | null
 }
 
 /**
@@ -34,7 +35,12 @@ export interface PageSetting {
  * back as it was read; `setFrontmatterIn` lays out only its own key: `client/src/hooks/useAutosave.test.tsx`).
  */
 export const STICKY_HEADINGS_KEY = 'sticky-headings'
-export type PageSettingKey = PageSwitchKey | typeof STICKY_HEADINGS_KEY
+/**
+ * YAZ-5658: the phone's own page key for Wide tables, `fit-tables: true | false` (Fit the screen | Scroll sideways); none:
+ * Same as the vault (`mobile.json`'s `fitTables`). The Mac keeps it byte for byte, as `sticky-headings`.
+ */
+export const FIT_TABLES_KEY = 'fit-tables'
+export type PageSettingKey = PageSwitchKey | typeof STICKY_HEADINGS_KEY | typeof FIT_TABLES_KEY
 
 export type SettingRefusedWhy = 'invalid' | 'layout'
 
@@ -81,6 +87,19 @@ function entryOf(interior: string, key: string): { start: number; end: number } 
   return null
 }
 
+/** `before` without its `key` entry (its whole line), every other byte as it was; null when it cannot be sure. */
+function spliceOut(before: string, key: string): string | null {
+  const b = splitFrontmatter(before)
+  if (b.frontmatter === '') return null
+  const { interior, open } = blockOf(b.frontmatter)
+  const at = entryOf(interior, key)
+  if (at === null || at === 'unsure' || (at.start > 0 && interior[at.start - 1] !== '\n')) return null
+  // To the end of its line (a YAML comment after the value goes with it).
+  const eol = interior.indexOf('\n', at.end)
+  const end = eol === -1 ? interior.length : eol + 1
+  return `${before.slice(0, open + at.start)}${before.slice(open + end)}`
+}
+
 /** `before` with only its `key` entry taken from `mac` (the Mac's writer's result of the same page), or null. */
 function splice(before: string, mac: string, key: string): string | null {
   const b = splitFrontmatter(before)
@@ -103,7 +122,7 @@ function splice(before: string, mac: string, key: string): string | null {
 /** The check: `out` reads `key` as `on` (the Mac's parser), with the page's own body and other properties. */
 function sameBut(before: string, out: string, setting: PageSetting): boolean {
   if (bodyOf(out) !== bodyOf(before)) return false
-  if (switchOf(out, setting.key) !== setting.on) return false
+  if (switchOf(out, setting.key) !== (setting.on ?? undefined)) return false
   const rest = (text: string) => {
     const { properties, error } = parseFrontmatter(splitFrontmatter(text).frontmatter)
     const { [setting.key]: _key, ...others } = properties
@@ -116,7 +135,11 @@ function sameBut(before: string, out: string, setting: PageSetting): boolean {
 /** `content` with the page's `setting.key` set to `setting.on`, or why not. */
 export function applySetting(content: string, setting: PageSetting): SettingResult {
   if (parseFrontmatter(splitFrontmatter(content).frontmatter).error !== undefined) return { kind: 'refused', why: 'invalid' }
-  if (switchOf(content, setting.key) === setting.on) return { kind: 'already' }
+  if (switchOf(content, setting.key) === (setting.on ?? undefined)) return { kind: 'already' }
+  if (setting.on === null) {
+    const out = spliceOut(content, setting.key)
+    return out !== null && sameBut(content, out, setting) ? { kind: 'set', content: out } : { kind: 'refused', why: 'layout' }
+  }
   let mac: string
   try {
     mac = setFrontmatterProperty(content, setting.key, setting.on)

@@ -123,9 +123,11 @@ import { freePort } from './freePort'
  *  - Settings (`#fixture=settings`, YAZ-5555), light and dark, at 320 and 375 px: the build's line at the top, one line.
  *    YAZ-5593 (`settings-check-*`): the address under it, Check for updates (44 px) and each answer, light and dark.
  *    YAZ-5559 (`settings-health`): Vault health's line a 44 px tap, its list open, inside the screen.
+ *  - YAZ-5658 Wide tables (`page-wide-scroll`, `page-wide-fit`, `page-wide-own`, `page-wide-menu`), light and dark at
+ *    390 px: the columns' widths in each mode, the now row's Lookback never one letter per line, the pill covers no text.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no, LAYOUT_WIDE=no skip a part).
  *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
  *    every bar and the full-screen table inside it, no install hint; a phone (upright and on its side) keeps the full
  *    width. The install hint of a phone's tab at 320 and 375 px: one block above the form, How and ✕ 44 px taps.
@@ -492,6 +494,71 @@ if (process.env.LAYOUT_PAGES !== 'no') {
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 375x667, ${scheme}: ${m.none ? 'NO CALENDAR' : `pill "${m.text ?? ''}" (${m.pills}), ${m.mid}px off the line, ${m.inRow ? 'in the row' : 'OUT OF THE ROW'}, ${m.right}px from the box's right, ${m.inside ? 'inside' : 'OUTSIDE'}, ${m.covered ? 'COVERS TEXT' : 'covers no text'}, ${m.colour}; Now pill ${m.chip === null ? 'hidden' : `"${m.chip}"`}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5658: Wide tables at the designer's 390 px phone (a made-up Time · Plan · Lookback day, the clock at 7:23, Time in
+// slot counting down), light and dark. Scroll sideways (the vault's default; `page-wide-own`: the page's own
+// `fit-tables: false` over the vault's Fit the screen): Plan and Lookback each at least 188 px, the table wider than its
+// box, Time in place; swiped to the end the pill stays at the box's right and covers no text (at rest it lies over
+// the cut Lookback: the issue's option B). Fit the screen (`page-wide-fit`): each at
+// least 125 px, the table inside its box. Both: the now row's Lookback never reads one letter per line (no line but its
+// last holds 2 letters or fewer), the pill on the line covers no text, the page never scrolls sideways.
+const WIDE_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const table = document.querySelector('.reader__body table[data-calendar]')
+  if (!table) return { none: true }
+  const box = table.closest('.page-table'), row = table.querySelector('.table-now-row'), pill = table.querySelector('.table-slot-pill')
+  const cols = [...table.rows[0].cells].map((c) => Math.round(r(c).width))
+  const cell = row && row.cells[row.cells.length - 1]
+  // The now row's last cell, its letters line by line.
+  const lines = new Map()
+  if (cell) for (const n of [...cell.childNodes].filter((n) => n.nodeType === 3)) for (let i = 0; i < n.length; i++) {
+    if (!n.nodeValue[i].trim()) continue
+    const range = document.createRange(); range.setStart(n, i); range.setEnd(n, i + 1)
+    const top = Math.round(range.getBoundingClientRect().top)
+    lines.set(top, (lines.get(top) || 0) + 1)
+  }
+  const perLine = [...lines.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1])
+  const covers = () => pill && [...row.cells].some((c) => [...c.childNodes].some((n) => {
+    if (n.nodeType !== 3 || !n.textContent.trim()) return false
+    const range = document.createRange(); range.selectNodeContents(n)
+    const p = r(pill)
+    return [...range.getClientRects()].some((t) => t.right > p.left && t.left < p.right && t.bottom > p.top && t.top < p.bottom)
+  }))
+  const at = () => ({ right: Math.round(r(box).right - r(pill).right), inside: r(pill).left >= r(box).left && r(pill).right <= r(box).right, covered: covers() })
+  const rest = pill ? at() : null
+  box.scrollLeft = box.scrollWidth
+  const end = pill ? at() : null
+  box.scrollLeft = 0
+  // Scroll sideways at rest: the pill at the visible edge lies over the cut Lookback (the issue's option B); swiped to
+  // its end, the pill is at its room. Fit the screen: at rest.
+  const covered = document.querySelector('.reader__body').dataset.wideTables === 'fit' ? rest && rest.covered : end && end.covered
+  return { mode: document.querySelector('.reader__body').dataset.wideTables, cols, table: Math.round(r(table).width), box: box.clientWidth, perLine, covered, rest, end, pinned: table.rows[1].cells[0].hasAttribute('data-pin-col'), pill: pill && pill.textContent, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_WIDE !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['page-wide-scroll', 'page-wide-fit', 'page-wide-own'] as const) {
+      const file = await open(name, 390, 844)
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(WIDE_CHECK)
+      const fit = name === 'page-wide-fit'
+      const lines = (m.perLine ?? []) as number[]
+      const towers = lines.slice(0, -1).filter((n) => n <= 2).length
+      const widths = fit ? m.cols.slice(1).every((w: number) => w >= 125) && m.table <= m.box + 1 : m.cols.slice(1).every((w: number) => w >= 188) && m.table > m.box && m.pinned
+      const ok = !m.none && m.mode === (fit ? 'fit' : 'scroll') && widths && lines.length > 1 && towers === 0 && !m.covered && m.rest?.inside && m.end?.inside && m.end.right <= 14 && !m.pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 390x844, ${scheme}: ${m.none ? 'NO CALENDAR' : `${m.mode}; columns ${m.cols.join(' · ')} in a ${m.box} px box (table ${m.table}); Time ${m.pinned ? 'in place' : 'scrolls'}; the now row's Lookback ${lines.join('/')} letters a line (${towers} short); pill "${m.pill}" ${m.covered ? 'COVERS TEXT' : 'covers no text'}${fit ? '' : ' swiped to the end'}, ${m.rest?.right}px from the right at rest, ${m.end?.right}px swiped; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+    }
+    const file = await open('page-wide-menu', 390, 844)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const menu = await evaluate(`[...document.querySelectorAll('.page-tools__menu [role=menuitemradio]')].map((b) => b.textContent.trim() + (b.getAttribute('aria-checked') === 'true' ? ' (chosen)' : ''))`)
+    const ok = JSON.stringify(menu) === JSON.stringify(['Same as the vault', '✓ Scroll sideways (chosen)', 'Fit the screen'])
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-wide-menu at 390x844, ${scheme}: ${menu.join(' | ')}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
@@ -2269,8 +2336,8 @@ if (process.env.LAYOUT_STICKY_HEADINGS !== 'no') {
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 // YAZ-5592: Settings › "This vault on mobile" (`settings-mobile`: the vault's mobile.json says Folding off), light and
-// dark, at 375 and 320 px: its heading, Folding (off) and Sticky headings (on), each a 44 px row that can be changed,
-// inside the screen; never sideways.
+// dark, at 375 and 320 px: its heading, Folding (off) and Sticky headings (on), YAZ-5658 Wide tables (Scroll sideways
+// chosen, Fit the screen not), each a 44 px row that can be changed, inside the screen; never sideways.
 const MOBILE_PART = `(() => {
   const r = (el) => el.getBoundingClientRect()
   const part = document.querySelector('.settings-mobile')
@@ -2292,7 +2359,7 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
       const m = await evaluate(MOBILE_PART)
       type Row = { label: string; on: boolean; enabled: boolean; h: number; inside: boolean }
       const rows = (m.rows ?? []) as Row[]
-      const ok = m.title === 'This vault on mobile' && rows.length === 2 && rows[0]!.label === 'Folding' && rows[0]!.on === false && rows[1]!.label === 'Sticky headings' && rows[1]!.on === true && rows.every((x) => x.enabled && x.h >= 44 && x.inside) && !m.wide
+      const ok = m.title === 'This vault on mobile' && rows.length === 4 && rows[0]!.label === 'Folding' && rows[0]!.on === false && rows[1]!.label === 'Sticky headings' && rows[1]!.on === true && rows[2]!.label === 'Scroll sideways' && rows[2]!.on === true && rows[3]!.label === 'Fit the screen' && rows[3]!.on === false && rows.every((x) => x.enabled && x.h >= 44 && x.inside) && !m.wide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  settings-mobile ${scheme} at ${w}x${hgt}: ${m.error ?? `"${m.title}": ${rows.map((x) => `${x.label} ${x.on ? 'on' : 'off'}${x.enabled ? '' : ' DISABLED'} ${x.h}px${x.inside ? '' : ' OUTSIDE'}`).join(', ')}; page ${m.wide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }

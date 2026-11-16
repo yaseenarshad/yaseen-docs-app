@@ -179,3 +179,26 @@ export const CALENDAR_NOW = new Date(2026, 10, 14, 9, 40, 0)
 export const CALENDAR_SLOT_NOW = new Date(2026, 10, 14, 9, 40, 46)
 /** A page with the calendar table, a line before and text after it. */
 export const CALENDAR_PAGE = ['# Day plan', 'Saturday, planned on the Mac:', CALENDAR, CALENDAR_COMMENT, 'Notes for the evening.', ...Array.from({ length: 20 }, (_, i) => `Line ${i + 1} after the table.`)].join('\n\n')
+
+/**
+ * YAZ-5658: a made-up daily page's Time · Plan · Lookback table, as the phone's picture in the issue (a long Lookback in
+ * the now row, short Plans, an empty Lookback lower down). The clock 7:23 (`WIDE_NOW`): the now row is "7:00 am", its
+ * Time in slot pill counts down (the vault's table-look.json).
+ */
+export const WIDE_NOW = new Date(2026, 10, 14, 7, 23, 0)
+export const WIDE_TABLE = [
+  '| Time | Plan | Lookback |',
+  '| --- | --- | --- |',
+  ...[
+    ['Sleep', 'Sleep', 'Slept 10:40 pm to 5:10 am'],
+    ['6:00 am', 'Morning walk + stretch', 'Walked the long loop, 25 min'],
+    ['6:30 am', 'Read 20 pages', 'Read 12 pages'],
+    ['7:00 am', 'Write', 'Wrote the outline for the garden post, then two sections on soil and watering (about 900 words) + a short walk'],
+    ['7:30 am', 'Gym', ''],
+    ['8:00 am', 'Gym', ''],
+    ['8:30 am', 'Shower + breakfast', ''],
+    ['9:00 am', 'Team call about the spring launch plan', ''],
+  ].map(([time, plan, back]) => `| ${time} | ${plan} | ${back} |`),
+  '<!-- table: freeze 1 row 1 col, calendar 30m -->',
+].join('\n')
+export const WIDE_PAGE = ['# Day plan', WIDE_TABLE, 'Notes after the table.'].join('\n\n')
