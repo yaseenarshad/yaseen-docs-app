@@ -11,6 +11,10 @@ import { readAppearance, saveAppearance, type Appearance } from '../store/appear
  * switcher, a page kept by the browser): iOS can give the strip behind the clock its own colour while the app is away,
  * and a turn of the iPhone while the app slept may send no change. The manifest has no bar colour (one colour for
  * light and dark: iOS showed its white in the dark app).
+ * YAZ-5661 round 2: iOS 26 does not take the strip's colour from `theme-color` or the manifest when it finds a fixed,
+ * opaque bar across the top of the page: it takes that bar's background. `index.html` has one (`.status-strip`, the
+ * safe area's height, `--bg`), so the strip is the theme's. Each paint nudges the bar tags for one frame (the colour
+ * with an `fe` alpha, then back): a tag change makes iOS read the strip again at once.
  */
 export type Scheme = 'light' | 'dark'
 
@@ -49,9 +53,25 @@ function paint(): void {
   for (const m of metas) m.content = chosen === 'system' || own === undefined ? m.dataset.own! : own
   const colorScheme = document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]')
   if (colorScheme) colorScheme.content = chosen === 'system' ? 'light dark' : scheme
+  nudge(metas)
   const was = shown
   shown = scheme
   if (was !== null && was !== scheme) for (const f of [...changes]) f()
+}
+
+let nudges = 0
+/** One frame with a near-same colour in each bar tag, then the real one: iOS reads the strip again. */
+function nudge(metas: HTMLMetaElement[]): void {
+  if (typeof requestAnimationFrame !== 'function') return
+  const id = ++nudges
+  const real = metas.map((m) => m.content)
+  requestAnimationFrame(() => {
+    if (id !== nudges) return
+    metas.forEach((m, i) => (m.content = `${real[i]}fe`))
+    requestAnimationFrame(() => {
+      if (id === nudges) metas.forEach((m, i) => (m.content = real[i]))
+    })
+  })
 }
 
 let started = false

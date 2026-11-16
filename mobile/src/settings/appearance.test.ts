@@ -120,6 +120,36 @@ describe('Settings › Appearance (YAZ-5565)', () => {
     expect(css).toMatch(/\nhtml \{[^}]*background: var\(--bg\);/)
   })
 
+  it('YAZ-5661 round 2: the strip behind the clock is a fixed bar across the top in the theme\'s background (iOS 26 colours the strip from it)', () => {
+    const css = readFileSync(`${import.meta.dirname}/../styles.css`, 'utf8')
+    const rule = /\n\.status-strip \{([^}]*)\}/.exec(css)?.[1] ?? ''
+    for (const decl of ['position: fixed;', 'top: 0;', 'left: 0;', 'right: 0;', 'height: env(safe-area-inset-top, 0px);', 'background: var(--bg);', 'pointer-events: none;']) expect(rule).toContain(decl)
+  })
+
+  it('YAZ-5661 round 2: a switch nudges the bar tags for one frame, so iOS reads the strip again at once', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => frames.push(f))
+    const system = fakeSystem(false)
+    const a = await load()
+    a.startAppearance()
+    frames.splice(0).forEach((f) => f(0))
+    a.setAppearance('dark')
+    expect(metas()).toEqual(['#1e1e1e', '#1e1e1e'])
+    frames.splice(0).forEach((f) => f(0))
+    expect(metas()).toEqual(['#1e1e1efe', '#1e1e1efe'])
+    frames.splice(0).forEach((f) => f(0))
+    expect(metas()).toEqual(['#1e1e1e', '#1e1e1e'])
+    // System, the iPhone turning: the same nudge.
+    a.setAppearance('system')
+    frames.splice(0).forEach((f) => f(0))
+    frames.splice(0).forEach((f) => f(0))
+    system.turn(true)
+    frames.splice(0).forEach((f) => f(0))
+    expect(metas()).toEqual(['#fffffffe', '#1e1e1efe'])
+    frames.splice(0).forEach((f) => f(0))
+    expect([scheme(), ...metas()]).toEqual(['dark', '#ffffff', '#1e1e1e'])
+  })
+
   it('the drawings draw in the chosen theme, and again when it changes', async () => {
     fakeSystem(false)
     const a = await load()
