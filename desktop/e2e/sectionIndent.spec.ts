@@ -3,8 +3,8 @@
  *  - THE SWITCH is "Section indent" in the page cog, beside "Line numbers", and it starts off.
  *  - THE INDENT: each block stands one step in for each section that holds it. The mark is `data-sd`
  *    on the block, and the indent is the block's own left border: 30px a step at the default.
- *  - THE PATH: the lines on the way to the caret are purple. The mark is `data-sp`, how many of the
- *    block's lines, and it stops at the caret's block.
+ *  - THE PATH: the lines on the way to the caret are purple, with bullet threading on (YAZ-4432; this person's
+ *    default is On). The mark is `data-sp`, how many of the block's lines, and it stops at the caret's block.
  *  - A CLICK ON A LINE folds the sections beside it, a second click opens them, and the caret stays.
  *  - IT IS A VIEW: the page's text on disk has the same bytes after all of it, proven after a real
  *    quit (the autosave flush point). Only the switch is added to its frontmatter.
@@ -81,7 +81,7 @@ let app: ElectronApplication
 let win: Page
 
 const cog = (w: Page) => layer(w).locator('.page-settings__trigger')
-const menu = (w: Page) => layer(w).locator('.page-settings__menu')
+const menu = (w: Page) => w.locator('.page-settings__menu')
 const indentSwitch = (w: Page) => menu(w).locator('button[aria-pressed]', { hasText: 'Section indent' })
 const host = (w: Page) => layer(w).locator('.editor-host')
 const paragraph = (w: Page, text: string) => editorOf(w).locator(`p:text-is("${text}")`)
@@ -140,7 +140,10 @@ test.afterAll(async () => {
 })
 
 test('step 1 — a page with H1, H2 and H3 sections opens with the switch off and nothing moved in', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
+  // The path takes bullet threading's colour only while threading is on (YAZ-4432), Off by default (D29): this person
+  // has Settings › Editor › "Bullet threading default" On.
+  const seed = seededState(vault, pagePath)
+  app = await launchApp({ userData, seedState: { ...seed, settings: { ...seed.settings, bulletThreading: true } } })
   win = await appWindow(app, 'w1')
   await expect(paragraph(win, OSAKA)).toBeVisible()
 
@@ -212,7 +215,7 @@ test('step 5 — a click on the line below the H1 folds the H2 sections, a secon
 
   // The same click again: nothing beside the line is open, so they all open.
   await win.mouse.click(x, y)
-  await expect(editorOf(win).locator('[data-heading-folded="true"]')).toHaveCount(0)
+  await expect(editorOf(win).locator('.heading-toggle[aria-expanded="false"]')).toHaveCount(0)
   await expect(expandToggle(win, 'Kyoto')).toHaveCount(0)
   await expect(expandToggle(win, 'Osaka')).toHaveCount(0)
   await expect(paragraph(win, KYOTO)).toBeVisible()

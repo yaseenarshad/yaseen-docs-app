@@ -67,12 +67,13 @@ test("two more presses, one from File › Open Today's Daily Page, open the same
 })
 
 test('day folders on: the page made before the switch still opens; with that page gone, the day folder and the page are made', async () => {
-  // The settings write a window makes (`state.setSettings`); every window hears it.
-  await win.evaluate(async () => {
-    const { state } = (window as unknown as { yaseenDocs: { state: { get(): Promise<{ settings: object }>; setSettings(s: object): Promise<void> } } }).yaseenDocs
-    const { settings } = await state.get()
-    await state.setSettings({ ...settings, dailyPageDayFolder: true })
-  })
+  // Settings › Files & Links › "Make a folder for each day": On. The vault's daily pages file is the one source
+  // (YAZ-5491), and Settings writes it.
+  await win.getByRole('button', { name: 'Settings', exact: true }).click()
+  await win.locator('.settings-dialog .settings-nav__item', { hasText: /^Files & Links$/ }).click()
+  await win.locator('.settings-dialog [data-setting="dailyPageDayFolder"]').getByRole('button', { name: 'On', exact: true }).click()
+  await win.keyboard.press('Escape')
+  await expect.poll(async () => JSON.parse(await readFile(path.join(second, '.yaseendocs', 'daily-pages.json'), 'utf8').catch(() => '{}')).dayFolder).toBe(true)
   await win.locator('.sidebar__daily').click()
   await expect(activeTab(win)).toHaveText(new RegExp(today))
   expect((await readdir(path.join(second, 'Daily'))).sort()).toEqual(['.template.md', `${today}.md`])

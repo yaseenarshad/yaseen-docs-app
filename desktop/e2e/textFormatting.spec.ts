@@ -4,7 +4,7 @@
  *  - THE SIZE OF A LEVEL (D6, D10, D12, D16): Settings › Appearance › Text formatting › "Heading 2
  *    larger", three clicks from the default 26 px, makes each H2 of the open page 29 px at once,
  *    and the vault's `.yaseendocs/text-formatting.json` holds only that change,
- *    `{ version: 1, h2: { size: 29 } }`. The app state file has no `headingStyles` key.
+ *    `{ version: 2, h2: { size: 29 } }` (version 2 since YAZ-5485). The app state file has no `headingStyles` key.
  *  - THE TEXT SIZE (D14, D17): "Text larger" twice makes the paragraphs 18 px; the H2 keeps its 29 px.
  *  - H4 AND H5 ROWS (D3): "TOC made from: Auto" lists the H1 to H5 of a page; an H6 is no row.
  *
@@ -17,6 +17,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { TEXT_FORMATTING_VERSION } from '../../shared/textFormatting'
 import { appWindow, editorOf, launchApp, layer, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -107,7 +108,7 @@ test('step 1 — "Heading 2 larger" three times: the H2 of the open page is 29px
   // The page restyles at once, under the open dialog: no reload, no new editor.
   await expect.poll(fontSize).toBe('29px')
   // Only the changed level and field are stored, in the vault (D1, D10); the app state has no such key.
-  await expect.poll(vaultFile).toEqual({ version: 1, h2: { size: 29 } })
+  await expect.poll(vaultFile).toEqual({ version: TEXT_FORMATTING_VERSION, h2: { size: 29 } })
   expect(Object.keys((await readState(userData)).settings)).not.toContain('headingStyles')
   await shoot(win, 'text-formatting-01-h2-29px')
 
@@ -119,7 +120,7 @@ test('step 1 — "Heading 2 larger" three times: the H2 of the open page is 29px
   for (let i = 0; i < 2; i++) await textLarger.click()
   await expect(textLine.locator('.heading-styles__size')).toHaveText('18 px')
   await expect.poll(() => paragraph.evaluate((el) => getComputedStyle(el).fontSize)).toBe('18px')
-  await expect.poll(vaultFile).toEqual({ version: 1, text: { size: 18 }, h2: { size: 29 } })
+  await expect.poll(vaultFile).toEqual({ version: TEXT_FORMATTING_VERSION, text: { size: 18 }, h2: { size: 29 } })
   expect(await fontSize()).toBe('29px')
 
   await win.keyboard.press('Escape')

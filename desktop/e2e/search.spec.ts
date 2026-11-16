@@ -88,7 +88,7 @@ const parentLabels = (w: Page) => w.locator('.sidebar__body .tree__row--context 
 /** The typed text, bold where it sits in a match. */
 const marks = (w: Page) => w.locator('.sidebar__body .tree__mark')
 /** What the keys of the search do, as the empty Search tab lists them below its line (YAZ-2662 D10). */
-const keyHints = (w: Page) => w.locator('.sidebar__body .sidebar__keys dd')
+const keyHints = (w: Page) => w.locator('.sidebar__body .sidebar__keys li')
 /** The labels of the search's two groups (YAZ-2662 D2): "Favorites and focus", then "Everything else". */
 const groupLabels = (w: Page) => w.locator('.sidebar__body > p.sidebar__group')
 /** The trees of the search, in the order drawn: with a pinned match the top group's is first. */
@@ -207,9 +207,17 @@ test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the ke
   await expect(bodyMsg(win)).toHaveText('Type to search every page and folder.')
   await expect(treeRows(win)).toHaveCount(0)
   await expect(keycap(win)).toBeVisible()
-  // Below the line, the keys of the search (YAZ-2662 S59): seven rows, each key in a keycap.
-  await expect(keyHints(win)).toHaveText(['Move', 'Open', 'Open in a background tab', 'Show in Files', 'Preview a file or open a folder, after ↑ or ↓', 'Open or close a folder, after ↑ or ↓', 'Back to the page'])
-  await expect(win.locator('.sidebar__body .sidebar__keys kbd')).toHaveText(['↑', '↓', '↵', '⌘↵', '⇧↵', 'space', '→', '←', 'esc'])
+  // Below the line, the keys of the search (YAZ-2662 S59): seven rows, each the action, then its keys in words in
+  // brackets (one hotkey label, YAZ-5332).
+  await expect(keyHints(win)).toHaveText([
+    'Move (Up / Down)',
+    'Open (Enter)',
+    'Open in a background tab (Cmd+Enter)',
+    'Show in Files (Shift+Enter)',
+    'Preview a file or open a folder, after Up or Down (Space)',
+    'Open or close a folder, after Up or Down (Right / Left)',
+    'Back to the page (Esc)',
+  ])
   await shoot(win, 'search-00-empty-tab')
 
   // Each match keeps its place: below its folder, which is open and dim. Nothing else shows —
@@ -397,10 +405,11 @@ test('step 7 — ⌘K, a query, a right-click on a result: "Show in sidebar" is 
   await expect(searchBar(win)).toBeFocused()
   await search(win, 'Nurture', NURTURE)
 
-  // A right-click on a result: the item leads its menu, before the focus toggle (S26, S27).
+  // A right-click on a result: the item leads its menu (S26), before the open items and the focus toggle (S27).
   await fileRow(win, 'Nurture Sequencing').click({ button: 'right' })
   await expect(rowMenuItems(win).first()).toHaveText('Show in sidebar')
-  await expect(rowMenuItems(win).nth(1)).toHaveText('Add to focus')
+  await expect(rowMenuItems(win).nth(1)).toHaveText('Open in new tab')
+  await expect(menuItem(win, 'Add to focus')).toBeVisible()
   await shoot(win, 'search-07-show-in-sidebar-menu')
   await menuItem(win, 'Show in sidebar').click()
 
@@ -460,7 +469,8 @@ test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the S
   await expect(topLabels(win)).toHaveText(['Nurture Sequencing'])
   await fileRow(win, 'Nurture Sequencing').click({ button: 'right' })
   await expect(rowMenuItems(win).first()).toHaveText('Show in sidebar')
-  await expect(rowMenuItems(win).nth(1)).toHaveText('Remove from focus')
+  await expect(rowMenuItems(win).nth(1)).toHaveText('Open in new tab') // then the open items (S27)
+  await expect(menuItem(win, 'Remove from focus')).toBeVisible()
   await shoot(win, 'search-09-focus-row-menu')
   await menuItem(win, 'Show in sidebar').click()
   // The row shows in Files, and the focus list is as it was (S36).
@@ -616,9 +626,9 @@ test('step 9 — ⌘K, a query: the match of a pinned folder shows FIRST, under 
   await expect(groupLabels(win)).toHaveText(['Favorites and focus', 'Everything else'])
   await expect(fileRow(win, 'Lead Gen')).toHaveClass(/tree__row--context/)
   // Esc with no panel on show (D9, S56): back to the lens the window last showed, Files, and the
-  // caret is in the open page — before YAZ-2662 the focus was given up.
+  // keyboard on a row there (YAZ-4995: the open page's, else the selected, else the first; the next Esc closes the sidebar).
   await searchBar(win).press('Escape')
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(win)).toHaveCount(0)
-  await expect(editorOf(win)).toBeFocused()
+  await expect(win.locator('.sidebar__body .tree__row:focus')).toHaveCount(1)
 })

@@ -197,12 +197,13 @@ test('step 5 — File › Export Excalidraw Drawing… writes a standalone .exca
   expect(await elementIds(path.join(vault, LINKED))).toEqual(['linked'])
 })
 
-test('step 6 — the canvas panel\'s Add tab opens with one field and its chips', async () => {
+test('step 6 — the canvas panel\'s Add tab opens with one field and its Filter button', async () => {
   const panel = drawingTab(win).locator('.default-sidebar')
   await drawingTab(win).getByRole('button', { name: 'Open workspace panel' }).click()
   await expect(panel).toBeVisible()
   await panel.getByRole('tab', { name: 'Add shapes, icons, and components' }).click() // the tab labelled "Add"
-  await expect(panel.getByRole('group', { name: 'Show' })).toBeVisible()
+  // What it shows is picked behind its Filter button ("Filter, N on" once a kind is picked), beside the one search field.
+  await expect(panel.getByRole('button', { name: /^Filter/ })).toBeVisible()
   await expect(panel.getByRole('searchbox', { name: 'Search shapes, icons, and components' })).toBeVisible()
   await shoot(win, 'board-tools-05-image-studio')
   await panel.getByRole('button', { name: 'Close workspace panel' }).click()

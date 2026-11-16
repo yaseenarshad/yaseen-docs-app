@@ -84,7 +84,7 @@ let app: ElectronApplication
 let win: Page
 
 const cog = (w: Page) => layer(w).locator('.page-settings__trigger')
-const menu = (w: Page) => layer(w).locator('.page-settings__menu')
+const menu = (w: Page) => w.locator('.page-settings__menu')
 // By its label: the menu has more `aria-pressed` buttons ("Section indent", YAZ-2709; since YAZ-2700 "Heading levels", "Table of contents", the three choices of "TOC made from:").
 const lineSwitch = (w: Page) => menu(w).locator('button[aria-pressed]', { hasText: 'Line numbers' })
 const host = (w: Page) => layer(w).locator('.editor-host')
@@ -133,9 +133,9 @@ test('step 1 — the cog opens the menu; "Line numbers" shows each block’s lin
   win = await appWindow(app, 'w1')
   await expect(editorOf(win).locator('p:text-is("Last paragraph.")')).toBeVisible()
 
-  // The cog is the first chip of the row, left of the zoom pill, and the numbers start off.
-  await expect(layer(win).locator('.status-chips > :first-child')).toHaveClass(/page-settings/)
-  await expect(layer(win).locator('.status-chips > .page-settings + .document-zoom')).toHaveCount(1)
+  // The page's own chips lead the row (YAZ-3746 D35), its fold-all button then the cog, left of the zoom pill; the numbers start off.
+  await expect(layer(win).locator('.status-chips > :first-child')).toHaveClass(/fold-all__trigger/)
+  await expect(layer(win).locator('.status-chips > .fold-all__trigger + .page-settings + .document-zoom')).toHaveCount(1)
   await expect(editorOf(win).locator('[data-line]')).toHaveCount(0)
 
   await cog(win).click()

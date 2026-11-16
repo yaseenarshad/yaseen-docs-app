@@ -38,12 +38,15 @@ const rowOf = (w: Page, text: string): Locator =>
 const paraOf = (row: Locator) => row.locator(PARA)
 const labelOf = (row: Locator) => row.locator('xpath=./div[contains(@class,"label-wrapper")]//*[contains(@class,"label")]').first()
 const menu = (w: Page) => w.locator('.ctx-menu--editor')
-/** Every row of the bullet's menu: "Open in new tab", then "Number children" (YAZ-3646 D9). */
+/** Every row of the bullet's menu: "Open in new tab", then "Number children" (YAZ-3646 D9), then the fold rows. */
 const menuRows = (w: Page) => menu(w).locator('.ctx-menu__item')
-/** The "Number children" ↔ "Bullet children" row: the LAST row, after "Open in new tab" and its line. */
-const menuRow = (w: Page) => menuRows(w).last()
-/** The two groups of the menu, a line between them (D9), as the tab menu draws its groups. */
-const groupLine = (w: Page) => menu(w).locator('.ctx-menu__item + .document-zoom__divider + .ctx-menu__item')
+/** The menu of a bullet with children: its two rows, then the fold rows. */
+const PARENT_MENU = ['Open in new tab', 'Number children', 'Collapse all', 'Expand all', 'Collapse this level', 'Expand this level', 'Lock open']
+/** The "Number children" ↔ "Bullet children" row, after "Open in new tab" and its line. */
+const menuRow = (w: Page) => menuRows(w).filter({ hasText: /^(Number|Bullet) children$/ })
+/** The menu as drawn, top to bottom: each row's text, and '—' for each line between groups (D9). */
+const menuShape = (w: Page): Promise<string[]> =>
+  menu(w).evaluate((el) => Array.from(el.querySelectorAll('.ctx-menu__item, .document-zoom__divider')).map((n) => (n.classList.contains('document-zoom__divider') ? '—' : (n.textContent ?? ''))))
 /** The bullet's own dot (its `.label-wrapper`): a right-click there opens the same menu (YAZ-3646 D8). */
 const dotOf = (row: Locator) => row.locator('xpath=./div[contains(@class,"label-wrapper")]')
 const crumbs = (w: Page) => editorOf(w).locator('nav[aria-label="Zoom breadcrumbs"] .outline-zoom-crumb')
@@ -110,9 +113,15 @@ test('step 1 — right-click on the handle of "Fundamentals" offers "Open in new
   test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   for (const text of CHILDREN) await expect(labelOf(rowOf(win, text))).toHaveClass(/\bbullet\b/)
   await openHandleMenu(win, 'Fundamentals')
-  await expect(menuRows(win)).toHaveText(['Open in new tab', 'Number children'])
-  await expect(menuRows(win).first()).toHaveAttribute('data-hint', '⇧-click')
-  await expect(groupLine(win)).toHaveCount(1)
+  // The fold rows of a bullet with children follow (Collapse all … Lock open).
+  await expect(menuRows(win)).toHaveText(PARENT_MENU)
+  // No "⇧-click" hint on the row (D20): it made the menu wider than its strip.
+  await expect(menuRows(win).first()).not.toHaveAttribute('data-hint')
+  // A line under "Open in new tab", and one above "Number children": a group of its own (a strip of the menu's buttons
+  // may stand between them).
+  const shape = await menuShape(win)
+  expect(shape.slice(0, 2)).toEqual(['Open in new tab', '—'])
+  expect(shape[shape.indexOf('Number children') - 1]).toBe('—')
   await expect(menuRow(win)).toHaveText('Number children')
   await expect(menuRow(win)).toBeEnabled()
   await shoot(win, 'numbered-menu')
@@ -183,7 +192,8 @@ test('step 6 — a leaf ("deep") still shows the row, disabled', async () => {
   test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   await openHandleMenu(win, 'deep')
   // A leaf is a bullet too: "Open in new tab" stays first and works; only "Number children" is grey.
-  await expect(menuRows(win)).toHaveText(['Open in new tab', 'Number children'])
+  await expect(menuRows(win).first()).toHaveText('Open in new tab')
+  await expect(menuRow(win)).toHaveText('Number children')
   await expect(menuRows(win).first()).toBeEnabled()
   await expect(menuRow(win)).toBeDisabled()
   await shoot(win, 'numbered-leaf-disabled')
@@ -195,7 +205,7 @@ test('step 7 — right-click on the DOT of "Fundamentals" opens the same menu; "
   await expect(tabsOf(win)).toHaveText(['Numbered'])
   await dotOf(rowOf(win, 'Fundamentals')).click({ button: 'right' })
   await expect(menu(win)).toBeVisible()
-  await expect(menuRows(win)).toHaveText(['Open in new tab', 'Number children'])
+  await expect(menuRows(win)).toHaveText(PARENT_MENU)
   await shoot(win, 'numbered-dot-menu')
   await menuRows(win).first().click()
   await expect(menu(win)).toBeHidden()

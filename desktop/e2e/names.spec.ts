@@ -232,6 +232,10 @@ test('step 11 — a table Name cell is text: a click selects, a double-click edi
   await cell.dblclick()
   await contents(win).locator('.view-cell-edit__input').fill('Candidate Uno')
   await win.keyboard.press('Enter')
+  // A folder page asks before it changes a page (Confirm changes, YAZ-3746 13AN): "Rename: Candidate One to Candidate Uno?".
+  const ask = win.getByRole('alertdialog', { name: 'Rename: Candidate One to Candidate Uno?' })
+  await ask.locator('.change-ask__go').click()
+  await expect(ask).toHaveCount(0)
   await confirmIfAsked(win)
   await expect.poll(() => read(path.join(dir, 'candidate-uno-k3m9x2pq7abc.md')).then(titleOf)).toBe('Candidate Uno')
   await expect(contents(win).locator('.view-table__name', { hasText: 'Candidate Uno' })).toBeVisible()

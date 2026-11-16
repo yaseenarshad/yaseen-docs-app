@@ -51,13 +51,15 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
   await menuItem(win, 'Duplicate tab').click()
   await expect(tabsOf(win)).toHaveText([NAME, NAME])
 
-  // D6, S26: four groups, the name items in the third.
+  // D6, S26: the groups, the name items in the third.
   await tabsOf(win).nth(1).click({ button: 'right' })
   expect((await groups(win)).map((g) => g.filter((label) => !label?.startsWith('Turn review')))).toEqual([
     ['Move to new window', 'Duplicate tab', 'Move to'],
     // Focus and Favorites (YAZ-3264 D2): where the sidebar's file menu has them.
     ['Show in sidebar', 'Add to focus', 'Copy path'],
     ['Set display name'],
+    // The page's own file name, in a group of its own after the tab's display name.
+    ['Rename file'],
     ['Add to favorites', 'Reveal in Finder', 'Open in VS Code'],
   ])
   await shoot(win, 'display-name-1-menu')
@@ -78,7 +80,8 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
   await expect(tabsOf(win)).toHaveText([NAME, LONG])
   // S7: after ⏎ the tab is as wide as every tab again: 200 px at most, its long name fades out.
   expect((await win.locator('.tabbar__tab').nth(1).boundingBox())!.width).toBeLessThanOrEqual(202)
-  await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${NAME}\n${pagePath}`)
+  // As the second tab of the page it also says which copy it is (YAZ-3343 D1).
+  await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${NAME}\n${pagePath}\n2 of 2`)
   await shoot(win, 'display-name-3-strip')
 
   // S12, S13: the board shows the name, and its filter finds the tab by it.

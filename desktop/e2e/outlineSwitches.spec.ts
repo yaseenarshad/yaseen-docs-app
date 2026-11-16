@@ -41,7 +41,7 @@ let app: ElectronApplication
 let win: Page
 
 const cog = (w: Page) => layer(w).locator('.page-settings__trigger')
-const menu = (w: Page) => layer(w).locator('.page-settings__menu')
+const menu = (w: Page) => w.locator('.page-settings__menu')
 const pageSwitch = (w: Page, label: 'Guide lines' | 'Folding') => menu(w).locator('button[aria-pressed]', { hasText: label })
 const chevrons = (w: Page) => editorOf(w).locator('.outline-toggle, .heading-toggle')
 const foldAll = (w: Page) => layer(w).locator('.fold-all__trigger')

@@ -5,7 +5,7 @@
  * widget (an invisible DIV, nothing to do with the visible caret), and the outline editor wraps
  * its blocks in `.content-dom`. A heading standing first must carry NO top margin — it sits on
  * the title row's gap exactly like a first paragraph — while headings between blocks keep their
- * per-level lead-in.
+ * lead-in: three block gaps (YAZ-3794), 12 px at the default 4 px gap.
  */
 import { expect, test } from '@playwright/test'
 import { mkdtemp, writeFile } from 'node:fs/promises'
@@ -30,6 +30,6 @@ test('a heading-first body carries no lead-in; a mid-document heading keeps its 
         return `${first} | ${later}`
       }),
     )
-    .toBe('0px | 28px')
+    .toBe('0px | 12px')
   await quitApp(app)
 })

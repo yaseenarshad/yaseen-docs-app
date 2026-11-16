@@ -93,8 +93,9 @@ test('step 2 — Duplicate tab: the copy shows the same breadcrumbs, fold and te
   await expect(tabsOf(win)).toHaveText([TITLE, TITLE])
   await expect(tabsOf(win).nth(1)).toHaveAttribute('aria-selected', 'true')
   await expectSourceView(win, 'pageview-2-duplicate')
-  // The copy holds the same zoom level (YAZ-3647 E10), so its tooltip names the same bullet.
-  await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${TITLE} › Alpha parent\n${pagePath}`)
+  // The copy holds the same zoom level (YAZ-3647 E10), so its tooltip names the same bullet; as the second tab of the
+  // page it also says which copy it is (YAZ-3343 D1).
+  await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${TITLE} › Alpha parent\n${pagePath}\n2 of 2`)
 
   // Back to the source, for the two new-window actions below.
   await tabsOf(win).nth(0).click()

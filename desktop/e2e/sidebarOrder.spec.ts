@@ -86,6 +86,9 @@ function twoVaultState(): AppState {
     { path: vaultB, lastOpened: now - 60_000 },
   ]
   state.folders[vaultB] = { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
+  // Each vault's OWN lists (YAZ-2702), which this spec is about: "Separate list for workspaces" Off on both tabs. On (the
+  // default since YAZ-4450 D4), a window of two vaults shows each vault's workspace list, another file.
+  state.settings.workspaceLists = { focus: false, favorites: false }
   return state
 }
 

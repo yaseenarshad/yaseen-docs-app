@@ -19,6 +19,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { withCommentsHint } from '../../shared/frontmatter'
 import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf, LINK_HERE, openLinksHere } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -135,8 +136,8 @@ test('step 6 — the links now render UNRESOLVED, and clicking one recreates the
   await shoot(win, 'delete-06-unresolved-link')
   await link.click({ modifiers: LINK_HERE }) // an open gesture (YAZ-3936): a plain click puts the caret
   // Create-on-click makes the page again, named as the link spells it (a plain vault, YAZ-2523
-  // 🔒 V3) — an accidental delete is recoverable here.
-  await expect.poll(() => readFile(path.join(vault, 'Doomed.md'), 'utf8').catch(() => null)).toBe('')
+  // 🔒 V3) — an accidental delete is recoverable here. A new page carries the comment hint (YAZ-4615 D10).
+  await expect.poll(() => readFile(path.join(vault, 'Doomed.md'), 'utf8').catch(() => null)).toBe(withCommentsHint(''))
   await expect(activeTab(win)).toHaveText('Doomed')
 })
 

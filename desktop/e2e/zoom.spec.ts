@@ -16,6 +16,8 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
+import { defaultAppState } from '../../shared/types'
 import { appWindow, clickMenuItem, editorOf, fileRow, launchApp, layer, readState, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -44,9 +46,12 @@ const ZOOM_KEY = /^[0-9a-z]{1,8}:\d{1,6}$/
 /**
  * Every place in the state file where a zoom could hide (YAZ-3400): each key and each string value that matches
  * `/zoom/i`, as a dotted path (`windows.0.file`). The vault's temp path is removed first, because its name has "zoom".
- * The sidebar zoom's own keys (YAZ-3389) are left out: `settings.sidebarZoom`, and `zoom` on a Files window; and the
- * App size, `settings.appZoom` (YAZ-3432), the whole window's zoom, never a page's.
+ * Left out: `zoom` on a Files window (the sidebar zoom, YAZ-3389), and a setting at its default value. A setting whose
+ * name says zoom (`sidebarZoom`, `appZoom`, `tocZoom`, `mediaHoverZoom`, `canvas.newShapesMatchZoom` …) is the person's
+ * choice, never a page's magnification; the magnification left behind would change one away from its default.
  */
+const DEFAULT_STATE: unknown = defaultAppState()
+const atPath = (v: unknown, dotted: string): unknown => dotted.split('.').reduce<unknown>((at, k) => (at !== null && typeof at === 'object' ? (at as Record<string, unknown>)[k] : undefined), v)
 const zoomPaths = (state: unknown, vault: string): string[] => {
   const out: string[] = []
   const walk = (v: unknown, at: string): void => {
@@ -57,8 +62,8 @@ const zoomPaths = (state: unknown, vault: string): string[] => {
     if (v === null || typeof v !== 'object') return
     for (const [k, child] of Object.entries(v)) {
       const here = at === '' ? k : `${at}.${k}`
-      // settings.tocZoom is the table of contents' own text size (YAZ-3939 5B), a setting that is meant to stay, as the two before it.
-      const notPage = here === 'settings.sidebarZoom' || here === 'settings.appZoom' || here === 'settings.tocZoom' || (/^windows\.\d+\.zoom$/.test(here) && (v as { kind?: unknown }).kind === 'files')
+      if (here.startsWith('settings.') && isDeepStrictEqual(child, atPath(DEFAULT_STATE, here))) continue
+      const notPage = /^windows\.\d+\.zoom$/.test(here) && (v as { kind?: unknown }).kind === 'files'
       if (/zoom/i.test(k.replaceAll(vault, '')) && !notPage) out.push(here)
       walk(child, here)
     }

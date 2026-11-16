@@ -80,15 +80,30 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   // The drag made up in the page leaves the window slow to close: it is closed, or its process ended, after 5 s.
+  // The process is taken before the close: once Playwright has closed the app, `app.process()` throws.
+  const proc = app?.process()
   await Promise.race([app?.close().catch(() => undefined), new Promise((r) => setTimeout(r, 5000))])
-  app?.process().kill()
+  if (proc !== undefined && proc.exitCode === null && proc.signalCode === null) proc.kill()
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
 test(`Rolling with ${CARDS} cards: each new day under a dragged card is drawn in one frame`, async () => {
   test.setTimeout(120_000)
   await contents(win).locator('.view-cal__today').click()
-  await expect.poll(() => contents(win).locator('.view-cal__grid .view-cal__card').count()).toBeGreaterThan(CARDS * 0.8)
+  // Loaded: every day Rolling draws holds its made-up cards. Its window is about 3 months around today (YAZ-5588), so it
+  // draws some of the 12 weeks, not all: the gate counts the one-day cards of the days in the DOM, the bars aside.
+  const singlesOn = (days: readonly string[]): number => {
+    const drawn = new Set(days)
+    return Array.from({ length: CARDS }, (_, i) => i).filter((i) => i % 40 !== 0 && drawn.has(on(i % 84))).length
+  }
+  await expect
+    .poll(async () => {
+      const days = await contents(win).locator('.view-cal__grid [data-day]').evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.day ?? ''))
+      const want = singlesOn(days)
+      const have = await contents(win).locator('.view-cal__grid .view-cal__day .view-cal__card').count()
+      return want > 100 && have >= want
+    })
+    .toBe(true)
   const result = await win.evaluate(async () => {
     const root = document.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) .view-cal')!
     // A task after React's own (its scheduler posts messages): the work of the dragover is done by then.

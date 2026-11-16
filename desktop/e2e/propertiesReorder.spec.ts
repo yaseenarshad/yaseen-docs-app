@@ -42,7 +42,7 @@ test.afterAll(async () => {
 test('step 1 — every shown row carries a grip, and the arrows are gone', async () => {
   await contents(win).locator('.view-tab__btn', { hasText: 'Table' }).click()
   await expect(headers()).toHaveText(['#', 'Name', 'Kpi category', 'Unit', 'Funnel stages'])
-  await contents(win).locator('[aria-label="Properties"]').click()
+  await contents(win).locator('[aria-label="Columns and view"]').click()
   await expect(contents(win).locator('[aria-label^="Reorder "]')).toHaveCount(4)
   await expect(contents(win).locator('[aria-label="Reorder Name"]')).toBeVisible()
   await expect(contents(win).locator('[aria-label="Move up"]')).toHaveCount(0)

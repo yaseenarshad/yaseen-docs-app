@@ -63,7 +63,7 @@ let app: ElectronApplication
 let win: Page
 
 const cog = (w: Page) => layer(w).locator('.page-settings__trigger')
-const menu = (w: Page) => layer(w).locator('.page-settings__menu')
+const menu = (w: Page) => w.locator('.page-settings__menu')
 const readOnlyRow = (w: Page) => menu(w).locator('button[aria-pressed]', { hasText: 'Read only' })
 const chip = (w: Page) => layer(w).locator('.read-only-chip__button')
 const askBox = (w: Page) => layer(w).locator('.read-only-chip__ask')
@@ -122,7 +122,8 @@ test('step 2 — the row turns it on at once: the key is in the file, the chip s
   await expect(menu(win)).toHaveCount(0)
   await expect(chip(win)).toHaveText('Read only')
   await expect(chip(win)).toHaveAttribute('title', 'Click to allow edits')
-  await expect(editorOf(win)).toHaveAttribute('contenteditable', 'false')
+  // Locked, the body keeps `contenteditable="true"` so the caret works as normal, and wears `data-read-only` (YAZ-4433).
+  await expect(editorOf(win)).toHaveAttribute('data-read-only', 'true')
   await shoot(win, 'read-only-1-on')
 })
 
@@ -304,19 +305,27 @@ test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the pag
       ;(document.activeElement ?? document.body).dispatchEvent(event)
       return event.defaultPrevented
     }, key)
-  const where = () => win.evaluate(() => ({ body: document.activeElement === document.body, inTitle: document.getSelection()?.anchorNode?.parentElement?.closest('.page-title') != null }))
+  // The keyboard is the page's: on <body>, or on the locked title itself, which takes it so that the read-only card's
+  // Enter is heard (YAZ-5141).
+  const where = () =>
+    win.evaluate(() => ({
+      page: document.activeElement === document.body || document.activeElement?.closest('.page-title') != null,
+      inTitle: document.getSelection()?.anchorNode?.parentElement?.closest('.page-title') != null,
+    }))
+  // The page holds the keys: the file clipboard takes no ⌘C or ⌘X, and ⌘V pastes no file. (On the locked title the
+  // title may take a chord itself, YAZ-5141; what counts is that no file is clipped.)
   const pageHoldsTheKeys = async (): Promise<void> => {
-    expect(await chord('c')).toBe(false)
+    await chord('c')
     expect(await clip()).toBeNull()
-    expect(await chord('x')).toBe(false)
+    await chord('x')
     expect(await clip()).toBeNull()
     await chord('v')
     await win.waitForTimeout(400)
     expect(await vaultFiles()).toEqual(before)
   }
-  // A click on the title: the focus stays on <body>, the selection goes into the title.
+  // A click on the title: the keyboard stays the page's, the selection goes into the title.
   await title.click()
-  expect(await where()).toEqual({ body: true, inTitle: true })
+  expect(await where()).toEqual({ page: true, inTitle: true })
   await pageHoldsTheKeys()
   await title.click()
   await win.keyboard.press('ArrowDown')
@@ -338,7 +347,7 @@ test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the pag
   await win.mouse.down()
   await win.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 5 })
   await win.mouse.up()
-  expect(await where()).toEqual({ body: true, inTitle: true })
+  expect(await where()).toEqual({ page: true, inTitle: true })
   await pageHoldsTheKeys()
   // A wikilink open: the app reveals the page in the sidebar and focuses its row, as on main — the row holds the keys.
   await fileRow(win, 'Ideas').click()
@@ -440,6 +449,7 @@ test('step 4 — the chip asks "Allow edits?"; "Allow edits" removes the key and
   await expect.poll(onDisk).toBe(BODY)
   await expect(chip(win)).toHaveCount(0)
   await expect(editorOf(win)).toHaveAttribute('contenteditable', 'true')
+  await expect(editorOf(win)).not.toHaveAttribute('data-read-only')
 })
 
 test('step 5 — typing saves again', async () => {

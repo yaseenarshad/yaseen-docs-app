@@ -251,10 +251,10 @@ test('step 3 — holding ⇧ says "Open here" on the highlighted row, and ⇧⏎
 
 test('step 4 — "Set display name" from the header menu renames the header, the window title and `folders[root].name`', async () => {
   // The header IS the current vault (YAZ-1798): its menu has the middle three groups only — no
-  // "Open in this window", no "Remove", and no "Reset" while no display name is set (YAZ-1974 D5). "Open in Files
-  // window" stands first on every vault, this one too (YAZ-3357 D5, S3).
+  // "Open in this window", no "Remove", and no "Reset" while no display name is set (YAZ-1974 D5). "Open folder page" (the vault's own page)
+  // leads, then "Open in Files window" on every vault, this one too (YAZ-3357 D5, S3).
   await trigger(win).click({ button: 'right' })
-  await expect(vaultMenuItems(win)).toHaveText(['Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  await expect(vaultMenuItems(win)).toHaveText(['Open folder page', 'Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   await vaultMenuItem(win, 'Set display name').click()
 
   // The name becomes a field WHERE it stood — the header — the folder name as its placeholder (D5).
@@ -285,7 +285,7 @@ test('step 5 — the display name survives quit → relaunch; "Reset to folder n
 
   // With a display name set the menu gains "Reset to folder name" — never "Rename" (D5).
   await trigger(win).click({ button: 'right' })
-  await expect(vaultMenuItems(win)).toHaveText(['Open in Files window', 'Set display name', 'Reset to folder name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  await expect(vaultMenuItems(win)).toHaveText(['Open folder page', 'Open in Files window', 'Set display name', 'Reset to folder name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   await vaultMenuItem(win, 'Reset to folder name').click()
   await expect(headerName(win)).toHaveText(BETA)
   await expect.poll(() => win.title()).toBe(BETA)
@@ -344,10 +344,12 @@ test('step 7 — "Open by itself" on a vault of a workspace window opens it ALON
   await expect(headerName(win)).toHaveText(`${ALPHA} + ${BETA}`)
   expect(await windowCount(app)).toBe(1)
 
-  // The row menu of a vault of THIS window: "Open by itself" leads it (D2, S11), its hint ⌥⏎.
+  // The row menu of a vault of THIS window: "Open folder page" (the vault's own page, YAZ-4921) leads it, then
+  // "Open by itself" (D2, S11), its hint ⌥⏎.
   await openPanel(win)
   await rowNamed(win, BETA).click({ button: 'right' })
-  await expect(vaultMenuItems(win).first()).toHaveText('Open by itself')
+  await expect(vaultMenuItems(win).first()).toHaveText('Open folder page')
+  await expect(vaultMenuItems(win).nth(1)).toHaveText('Open by itself')
   await expect(vaultMenuItem(win, 'Open by itself')).toHaveAttribute('data-hint', '⌥⏎')
   await shoot(win, 'vault-switcher-10-open-by-itself-menu')
   await vaultMenuItem(win, 'Open by itself').click()

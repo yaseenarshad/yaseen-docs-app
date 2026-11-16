@@ -90,7 +90,7 @@ test('a state file with no lens boots on FILES (YAZ-1846 D1): the file tree', as
 
 // ---------------------------------------------------------------- the Search tab (YAZ-2638 D2)
 
-test('the Search tab has the bar, one line of help and the keys of the search; a click on the tab and Esc in the page put the caret in the bar; Esc in the bar and the `esc` keycap go back to the lens the window last showed and put the caret in the open page; no lens has the bar', async () => {
+test('the Search tab has the bar, one line of help and the keys of the search; a click on the tab and Esc in the page put the caret in the bar; Esc in the bar and the `esc` keycap go back to the lens the window last showed, the keyboard on its row; no lens has the bar', async () => {
   // A click on the tab shows it, with the caret in its bar (S5) and no tree below (S7).
   await searchTab(win).click()
   await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')
@@ -99,7 +99,7 @@ test('the Search tab has the bar, one line of help and the keys of the search; a
   await expect(keycap(win)).toBeVisible()
   await expect(bodyMsg(win)).toHaveText(SEARCH_EMPTY)
   // Below the line, the keys of the search: seven rows (YAZ-2662 S59). `search.spec.ts` reads their words.
-  await expect(win.locator('.sidebar__body .sidebar__keys dd')).toHaveCount(7)
+  await expect(win.locator('.sidebar__body .sidebar__keys li')).toHaveCount(7)
   await expect(fileRow(win, 'Ideas')).toHaveCount(0)
   await shoot(win, 'lens-02-search-tab')
 
@@ -124,13 +124,13 @@ test('the Search tab has the bar, one line of help and the keys of the search; a
   await expect(searchBar(win)).toBeVisible()
   await expect(searchBar(win)).not.toBeFocused()
 
-  // Esc goes back to the lens the window last showed: Files (S12). The caret goes into the open
-  // page (YAZ-2662 S56; before, the focus was given up).
+  // Esc goes back to the lens the window last showed: Files (S12). The keyboard stays in the sidebar, on the open
+  // page's row (YAZ-4995: the next Esc closes the sidebar; the page's own Esc never does).
   await searchBar(win).press('Escape')
   await expectLens(win, 'Files')
   await expect(searchBar(win)).toHaveCount(0)
   await expect(fileRow(win, 'Ideas')).toBeVisible()
-  await expect(editorOf(win)).toBeFocused()
+  await expect(win.locator('.sidebar__body .tree__row--active')).toBeFocused()
 
   // From the Focus tab the way back is the Focus tab — by the keycap this time (S13). Focus has no bar either (S6).
   await focusTab(win).click()
@@ -142,8 +142,9 @@ test('the Search tab has the bar, one line of help and the keys of the search; a
   await keycap(win).click()
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true')
   await expect(bodyMsg(win)).toHaveText(FOCUS_EMPTY)
-  // A click on the keycap is the Esc key (YAZ-2662 S58): the caret is in the open page after it too.
-  await expect(editorOf(win)).toBeFocused()
+  // A click on the keycap is the Esc key (YAZ-2662 S58): the keyboard goes to a row of the tab that came back, and
+  // the empty Focus tab has none, so the focus is nowhere: not in the page either (YAZ-4995).
+  await expect(editorOf(win)).not.toBeFocused()
 })
 
 test('the Search tab is never stored (YAZ-2638 S15): a window that quits on it starts again on its last lens', async () => {
@@ -177,7 +178,7 @@ const barRow = (w: Page) =>
     more: row.querySelector('.sidebar__more')?.className ?? null,
   }))
 
-test('the tab row at 200 px (YAZ-3283): Recents from ⋯, "Hide Focus", Favorites dragged to the top in the panel; after a relaunch the row is the same', async () => {
+test('the tab row at 200 px (YAZ-3283): Recents from ⋯, Focus hidden and Favorites dragged to the top in the panel; after a relaunch the row is the same', async () => {
   const seed = seededState(vault, path.join(vault, SEED_FILE))
   seed.sidebarWidth = 200
   app = await launchApp({ userData: rowData, seedState: seed })
@@ -194,19 +195,20 @@ test('the tab row at 200 px (YAZ-3283): Recents from ⋯, "Hide Focus", Favorite
   await expect(moreButton(win)).toHaveClass(/sidebar__more--lit/)
   await shoot(win, 'lens-04-recents-from-more')
 
-  // Right-click Focus → "Hide Focus" (D4, S9): Focus leaves the bar.
+  // At 200 px the row holds Files and Search beside its buttons (Sort, Expand all), so Focus is in ⋯ too.
   const focus = win.locator('.sidebar__lenses [role="tab"][data-tab="focus"]')
-  await expect(focus).toBeVisible()
-  await focus.click({ button: 'right' })
-  await menuItem(win, 'Hide Focus').click()
   await expect(focus).toHaveCount(0)
 
-  // "Edit tab row…" (S17), then Favorites dragged to the top with real pointer moves (D5, S19).
+  // "Edit tab row…" (S17): "Show Focus" off hides it (D4, S9), then Favorites dragged to the top with real pointer
+  // moves (D5, S19).
   await lensTab(win, 'Files').click({ button: 'right' })
   await menuItem(win, 'Edit tab row…').click()
   await expect(rowPanel(win)).toBeVisible()
   expect(await panelOrder(win)).toEqual(['files', 'search', 'focus', 'favorites', 'sessions', 'recents'])
-  await expect(rowPanel(win).locator('[role="checkbox"][aria-label="Show Focus"]')).toHaveAttribute('aria-checked', 'false')
+  const showFocus = rowPanel(win).locator('[role="checkbox"][aria-label="Show Focus"]')
+  await expect(showFocus).toHaveAttribute('aria-checked', 'true')
+  await showFocus.click()
+  await expect(showFocus).toHaveAttribute('aria-checked', 'false')
   // The grab is on the name: a press on the box does not drag (S20).
   const grab = await rowPanel(win).locator('.tab-row-panel__row[data-tab="favorites"] .tab-row-panel__name').boundingBox()
   const top = await rowPanel(win).locator('.tab-row-panel__row[data-tab="files"]').boundingBox()
