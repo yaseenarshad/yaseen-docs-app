@@ -313,10 +313,18 @@
   text-align: end;
   font-variant-numeric: tabular-nums;
 }
-/* A longer column: its width from its text, between its min and max, sharing the box by weight. */
+/* A longer column: its width from its text, between its min and max, sharing the box by weight. YAZ-5658 Wide tables
+   (`tableLayout.ts` `columnWidths`, the same rule in px): Scroll sideways (the default), never under a readable line
+   (`READ_WIDTH`, 13.5em) unless its widest is less, or the box has less beside the short columns (a table of one long
+   column still fits a narrow phone); a wider table scrolls, its first column in place. */
 .page-table-box col.page-table__grow {
   width: var(--col-max);
-  width: clamp(var(--col-min), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-weight, 1)), var(--col-max));
+  width: clamp(var(--col-min), max(min(13.5em, calc(100cqw - var(--table-fixed, 0em) - 2px)), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-weight, 1))), var(--col-max));
+}
+/* Fit the screen: the longer columns share what the short ones leave by how much text each holds (`--col-share`), each
+   at least `FIT_MIN` (9em) and its longest word (`--col-hold`): no side scroll unless those do not fit. */
+[data-wide-tables='fit'] .page-table-box col.page-table__grow {
+  width: max(9em, var(--col-hold, 0em), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-share, 1)));
 }
 /* Code in a cell: a little smaller, so a column of names stays narrow; a short one (a command) on one line. */
 .page-table-box .page-table-frame .page-table table code {
@@ -680,9 +688,22 @@
    its own positioned box, above) and runs leftwards across the row (`100vw`), so on a table wider than the screen the
    pill sticks to the visible right end of the scroll box even when only a sliver of the last column shows. Its track
    rides the line (`--table-now`) and stays inside the row. Out of the flow, tabular digits: its text never moves the
-   table. A last cell with text keeps a right padding as wide as the slot's widest text (`--table-slot-chars`). */
-.page-table-box .page-table-frame .page-table table :is(th, td).table-slot-pad {
-  padding-right: calc(var(--table-slot-chars, 10) * 7px + 26px);
+   table. YAZ-5658: a last cell with text keeps room for the pill ON ITS LINE only: two floats at the cell's top
+   (`placeSlotRoom`, the Mac's rule too: `shared/tableSlots.ts`), a gap down to the text lines the pill crosses, then the
+   room, as wide as the slot's widest text (`--table-slot-chars`) and as tall as those lines (both heights set there). The text wraps around the room there and runs full
+   width on every other line (a padding down the whole cell left a narrow column one letter per line). When the line
+   beside the room would hold less than 4em, the room takes the whole line: no letters squeezed beside the pill. */
+.page-table-box .page-table .table-slot-gap {
+  float: right;
+  width: 0;
+  height: 0;
+}
+.page-table-box .page-table .table-slot-room {
+  --slot-room: calc(var(--table-slot-chars, 10) * 7px + 26px - 0.75em);
+  float: right;
+  clear: right;
+  width: max(var(--slot-room), min(100%, calc((var(--slot-room) + 4em - 100%) * 1000)));
+  height: 1.4em;
 }
 .page-table-box .page-table .table-slot-anchor {
   position: absolute;

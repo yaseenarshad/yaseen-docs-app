@@ -50,7 +50,7 @@ import type { Node as ProseNode, NodeType, Schema } from '@milkdown/kit/prose/mo
 import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { minutesOf, nowPlace as placeAmong, rowTimes as timesOfTexts, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
+import { minutesOf, nowPlace as placeAmong, placeSlotRoom, rowTimes as timesOfTexts, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
 import { detectTimeFormat, formatTime } from '@shared/timeFormat'
 import { cellTextAt, rowNoDim, tableHasMerge } from './cells'
 import { foldRuns, runOf, unfoldRun } from './tableFold'
@@ -164,7 +164,42 @@ function slotPill(start: number, end: number, at?: TableLookPlace): () => HTMLEl
   }
 }
 
-/** The widest text of the pill in a slot `start`–`end`, in characters: the right padding of a last cell with text. */
+/**
+ * YAZ-5658: the pill's room in a last cell with text, on the pill's own lines only (`shared/tableSlots.ts`, the phone's
+ * rule too): a widget at the start of the cell's first paragraph, two floats (a gap, then the room) in a box that takes
+ * no box of its own (`display: contents`). The clock puts them on the now line after each draw (`CalendarClock`).
+ * Before, a right padding ran down the whole cell, and a narrow column read one letter per line.
+ */
+function slotRoom(): HTMLElement {
+  const box = document.createElement('span')
+  box.className = 'table-slot-floats'
+  box.contentEditable = 'false'
+  for (const name of ['table-slot-gap', 'table-slot-room']) {
+    const el = document.createElement('span')
+    el.className = name
+    box.appendChild(el)
+  }
+  return box
+}
+
+/** Each pill's room in `root` on its now line: reads its cell's height (one cell a table), writes only what changed. */
+export function placeSlotRooms(root: ParentNode): void {
+  for (const box of root.querySelectorAll<HTMLElement>('.table-slot-floats')) {
+    const cell = box.closest<HTMLElement>('th, td')
+    const gap = box.querySelector<HTMLElement>('.table-slot-gap')
+    const room = box.querySelector<HTMLElement>('.table-slot-room')
+    if (cell === null || gap === null || room === null || getComputedStyle(box).display === 'none') continue
+    const now = Number(cell.parentElement?.style.getPropertyValue('--table-now') || 0)
+    // The cell's paragraph has its own padding above its first line (`table.css`): the lines start under both.
+    const c = getComputedStyle(cell)
+    const p = box.parentElement === null ? null : getComputedStyle(box.parentElement)
+    const sum = (a: string, b: string | undefined) => String((parseFloat(a) || 0) + (parseFloat(b ?? '') || 0))
+    const look = { paddingTop: sum(c.paddingTop, p?.paddingTop), paddingBottom: sum(c.paddingBottom, p?.paddingBottom), lineHeight: p?.lineHeight ?? c.lineHeight, fontSize: p?.fontSize ?? c.fontSize }
+    placeSlotRoom(now, { height: () => cell.clientHeight, look, gap, room })
+  }
+}
+
+/** The widest text of the pill in a slot `start`–`end`, in characters: the room of a last cell with text. */
 function pillChars(start: number, end: number, at?: TableLookPlace): number {
   const { mode, seconds } = slotTimeSetting(at)
   return slotPillChars(mode, seconds, start, end)
@@ -203,6 +238,8 @@ function calendarDecorations(table: ProseNode, pos: number, minutes: number, chi
         const pad = filled(row.lastChild!) ? ' table-slot-pad' : ''
         out.push(Decoration.node(cellFrom, cellFrom + row.lastChild!.nodeSize, { class: `table-slot-host${pad}`, style: `--table-slot-chars: ${chars}` }, { calendar: true }))
         out.push(Decoration.widget(cellFrom + 1, slotPill(place.start, place.end, at), { calendar: true, slotPill: true, key: `table-slot-${place.start}-${place.end}-${chars}`, side: -1, ignoreSelection: true }))
+        // YAZ-5658: the pill's room, at the start of the cell's first paragraph (its text wraps around it).
+        if (pad !== '' && row.lastChild!.firstChild?.isTextblock === true) out.push(Decoration.widget(cellFrom + 2, slotRoom, { calendar: true, key: 'table-slot-room', side: -1, ignoreSelection: true }))
       }
     }
     if (r === nextRow) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-next-row' }, { calendar: true }))
@@ -301,6 +338,17 @@ class CalendarClock {
     }
     this.#text()
     this.#seconds()
+    this.#rooms()
+  }
+
+  /** YAZ-5658: the pills' rooms on their now lines, in the next frame (after the draw); one frame for many updates. */
+  #roomFrame = 0
+  #rooms(): void {
+    if (this.#roomFrame !== 0 || typeof requestAnimationFrame === 'undefined' || this.view.dom.querySelector('.table-slot-floats') === null) return
+    this.#roomFrame = requestAnimationFrame(() => {
+      this.#roomFrame = 0
+      if (!this.view.isDestroyed) placeSlotRooms(this.view.dom)
+    })
   }
 
   /** Each second, while Time in slot counts seconds and the note shows a calendar table: not while hidden or off the screen. */
@@ -423,6 +471,7 @@ class CalendarClock {
   destroy(): void {
     this.#stop()
     if (this.#second !== null) clearTimeout(this.#second)
+    if (this.#roomFrame !== 0) cancelAnimationFrame(this.#roomFrame)
     this.#offSetting()
     this.#observer?.disconnect()
     this.#chips?.disconnect()

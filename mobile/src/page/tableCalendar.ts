@@ -1,4 +1,4 @@
-import { minutesOf, nowPlace, rowTimes, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
+import { minutesOf, nowPlace, placeSlotRoom as placeRoom, rowTimes, secondsOf, slotPillChars, slotRoomAt, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
 import { calendarLook, type CalendarLook } from './calendarLook'
 import { gridColumns } from './tableLayout'
 
@@ -32,12 +32,13 @@ import { gridColumns } from './tableLayout'
  * the now line says the time left in the now row's slot, or since it started (`19:14 left`, `20 min left`, `10:46 in`:
  * the Mac's `slotTimeLabel`, ONE copy in `shared/tableSlots.ts`), and the Now pill says `Now · 19:14 left`. As the Mac's
  * widget: an anchor in the now row's last cell, its track on the line (`--table-now`), the pill sticky at the right end of
- * the table's visible part; a last cell with text keeps a right padding as wide as the slot's widest text. The clock
+ * the table's visible part; YAZ-5658: a last cell with text keeps room for the pill on the pill's own line only (two
+ * floats, `placeSlotRoom`: its one read of the layout, once at each mark, in the next frame). The clock
  * sets the text only. With seconds, a timer to each next second runs only while a table with a pill is on the screen
  * and the app is in front; without, the minute's mark sets it. Off: no pill, no timer, nothing changes.
  */
 
-export { minutesOf, nowPlace, rowTimes, slotTimeLabel, type NowPlace }
+export { minutesOf, nowPlace, rowTimes, slotRoomAt, slotTimeLabel, type NowPlace }
 
 /** A cell's own text: without a Time in slot pill it holds (a one-column table's column A is its last cell). */
 const ownText = (cell: Element): string => {
@@ -74,27 +75,69 @@ function slotAnchor(): HTMLElement {
   return anchor
 }
 
+/** The two floats that keep the pill's room on its line in a cell with text (`tables.css`): the gap, then the room. */
+function slotRoom(): HTMLElement[] {
+  return ['table-slot-gap', 'table-slot-room'].map((name) => {
+    const el = document.createElement('span')
+    el.className = name
+    el.setAttribute('aria-hidden', 'true')
+    return el
+  })
+}
+
+/**
+ * YAZ-5658: puts the pill's room of `cell` (a now row's last cell with text) on the now line: the one rule of
+ * `shared/tableSlots.ts` (`placeSlotRoom`), on this cell's floats.
+ */
+export function placeSlotRoom(cell: HTMLElement): void {
+  const gap = cell.querySelector<HTMLElement>(':scope > .table-slot-gap')
+  const room = cell.querySelector<HTMLElement>(':scope > .table-slot-room')
+  if (gap === null || room === null) return
+  const now = Number(cell.parentElement?.style.getPropertyValue('--table-now') || 0)
+  placeRoom(now, { height: () => cell.clientHeight, look: getComputedStyle(cell), gap, room })
+}
+
+/** The cells whose room waits for the next frame (one frame for every table of the page). */
+const toPlace = new Set<HTMLElement>()
+let placing = 0
+function placeSoon(cell: HTMLElement): void {
+  toPlace.add(cell)
+  if (placing !== 0 || typeof requestAnimationFrame === 'undefined') return
+  placing = requestAnimationFrame(() => {
+    placing = 0
+    for (const c of toPlace) if (c.isConnected) placeSlotRoom(c)
+    toPlace.clear()
+  })
+}
+
+/** Every pill's room in `root` again (its columns changed width: Wide tables). */
+export function placeSlotRooms(root: ParentNode): void {
+  for (const cell of root.querySelectorAll<HTMLElement>('.table-slot-pad')) placeSoon(cell)
+}
+
 /**
  * The pill on `row` (the now row, or `null` for none) of `table` for the slot `start`–`end`: made, moved or taken away,
- * its cell padded when it has text. Its text at `seconds`. Writes only what changed.
+ * its cell given the pill's room on the now line when it has text. Its text at `seconds`. Writes only what changed.
  */
 function drawSlotPill(table: HTMLTableElement, row: HTMLTableRowElement | null, start: number, end: number, seconds: number, look: CalendarLook): void {
   const cell = row === null || look.slotTime === 'off' ? null : (row.cells[row.cells.length - 1] ?? null)
   for (const host of table.querySelectorAll<HTMLElement>('.table-slot-host')) {
     if (host === cell) continue
-    host.querySelector(':scope > .table-slot-anchor')?.remove()
+    for (const el of host.querySelectorAll(':scope > :is(.table-slot-anchor, .table-slot-gap, .table-slot-room)')) el.remove()
     host.classList.remove('table-slot-host', 'table-slot-pad')
     host.style.removeProperty('--table-slot-chars')
+    toPlace.delete(host)
   }
   if (cell === null) return
   let anchor = cell.querySelector<HTMLElement>(':scope > .table-slot-anchor')
   if (anchor === null) {
-    // Its own text, read before the pill comes: a cell with text keeps room for the pill at its right.
+    // Its own text, read before the pill comes: a cell with text keeps room for the pill on its line.
     const filled = (cell.textContent ?? '').trim() !== ''
-    cell.prepend((anchor = slotAnchor()))
+    cell.prepend(...(filled ? [(anchor = slotAnchor()), ...slotRoom()] : [(anchor = slotAnchor())]))
     cell.classList.add('table-slot-host')
     cell.classList.toggle('table-slot-pad', filled)
   }
+  if (cell.classList.contains('table-slot-pad')) placeSoon(cell)
   const chars = String(slotPillChars(look.slotTime, look.slotSeconds, start, end))
   if (cell.style.getPropertyValue('--table-slot-chars') !== chars) cell.style.setProperty('--table-slot-chars', chars)
   const pill = anchor.querySelector<HTMLElement>('.table-slot-pill')!

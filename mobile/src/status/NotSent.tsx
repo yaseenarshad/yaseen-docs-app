@@ -23,11 +23,13 @@ export const WHY_NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string
 export const notSentWords = (c: WaitingComment): string =>
   c.setting !== undefined ? settingWords(c.setting) : c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:(?:[-*+]|\d{1,9}[.)])[ \t]+|\|\d+\|[\d.]+\|)\[ \] ?/, '')}`
 
-/** A setting's row and what it becomes: "Folding on this page: Off", YAZ-5592 "This vault on mobile, Sticky headings: Off". */
+/** A setting's row and what it becomes: "Folding on this page: Off", YAZ-5592 "This vault on mobile, Sticky headings: Off", YAZ-5658 "Wide tables on this page: Fit the screen". */
 function settingWords(s: NonNullable<WaitingComment['setting']>): string {
-  const to = s.on ? 'On' : 'Off'
-  if ('file' in s) return `This vault on mobile, ${s.key === 'folding' ? 'Folding' : 'Sticky headings'}: ${to}`
-  return `${s.key === 'sticky-headings' ? 'Sticky headings' : 'Folding'} on this page: ${to}`
+  // YAZ-5658: Wide tables is a choice, not On / Off.
+  const wide = s.key === 'fitTables' || s.key === 'fit-tables'
+  const to = wide ? (s.on === null ? 'Same as the vault' : s.on ? 'Fit the screen' : 'Scroll sideways') : s.on ? 'On' : 'Off'
+  if ('file' in s) return `This vault on mobile, ${wide ? 'Wide tables' : s.key === 'folding' ? 'Folding' : 'Sticky headings'}: ${to}`
+  return `${wide ? 'Wide tables' : s.key === 'sticky-headings' ? 'Sticky headings' : 'Folding'} on this page: ${to}`
 }
 
 const pageName = (path: string): string => (path.split('/').pop() ?? path).replace(/\.md$/i, '')

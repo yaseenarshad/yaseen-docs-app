@@ -16,7 +16,7 @@ import { renderPage } from '../page/pageRender'
 import { heldText, holdText } from '../page/heldText'
 import { headingTarget, landOn } from '../page/headings'
 import { attachFolds, revealFolds, type PageFolds } from '../page/folds'
-import { pageOwnSwitch } from '../page/pageSwitches'
+import { pageOwnSwitch, wideTablesAttr } from '../page/pageSwitches'
 import { effectiveSwitch, useMobileSettings } from '../page/mobileSettings'
 import { stickHeadings } from '../page/stickyHeadings'
 import { useCommentsPort } from '../page/comments/PageComments'
@@ -128,9 +128,11 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
   useEffect(() => () => folds.current?.destroy(), [])
   // YAZ-5592: the vault's mobile settings; a page's own `folding` / `sticky-headings` wins.
   const vaultMobile = useMobileSettings(data, useCommentsPort()).settings
-  const own = (key: 'folding' | 'sticky-headings') => (typeof content === 'string' ? pageOwnSwitch(content, key) : undefined)
+  const own = (key: 'folding' | 'sticky-headings' | 'fit-tables') => (typeof content === 'string' ? pageOwnSwitch(content, key) : undefined)
   const foldingOn = effectiveSwitch(own('folding'), vaultMobile?.folding ?? true)
   const stickyOn = effectiveSwitch(own('sticky-headings'), vaultMobile?.stickyHeadings ?? true)
+  // YAZ-5658: Wide tables as the page's.
+  const wideTables = wideTablesAttr(effectiveSwitch(own('fit-tables'), vaultMobile?.fitTables ?? false))
   // YAZ-5591: the stuck headings of the panel, in its own scroller.
   const stuckLayer = useRef<HTMLDivElement>(null)
   const hasText = typeof content === 'string'
@@ -214,7 +216,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       {content === null && <p className="muted">{app.unit('This page is not on the phone.')}</p>}
       {/* YAZ-5591: the layer of stuck headings (copies), zero height. */}
       <div ref={stuckLayer} className="reader__stuck" aria-hidden="true" />
-      <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
+      <div className="reader__body" data-wide-tables={wideTables} ref={host} onClick={(e) => void onTap(e)} />
       {/* The end of the page, the full page's own component; a row opens another panel (the sheet's door). */}
       {data !== null && content !== undefined && <LinkedMentions path={path} data={data} store={app.services.store} door={door} />}
       {cardMenu}

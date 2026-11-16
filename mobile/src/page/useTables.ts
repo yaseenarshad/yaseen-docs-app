@@ -1,5 +1,5 @@
 import { useEffect, type RefObject } from 'react'
-import { watchCalendars, type CalendarOptions } from './tableCalendar'
+import { placeSlotRooms, watchCalendars, type CalendarOptions } from './tableCalendar'
 import { layoutTables } from './tableLayout'
 import { tableCalendarLook, type PhoneTableLook } from './tableLook'
 import { bandLookOf, DEFAULT_BAND, watchBand, type BandLook } from './rowBand'
@@ -163,6 +163,8 @@ export function watchTables(host: HTMLElement, load: Load = () => import('./tabl
       measureFreeze(box, screen)
     })
     script?.measure()
+    // YAZ-5658: a table that changed size (Wide tables, a turn of the phone): the Time in slot pill's room on its line again.
+    placeSlotRooms(host)
   }
   let view: { close(): void } | null = null
   let stopped = false

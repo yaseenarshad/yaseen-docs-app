@@ -10,6 +10,12 @@ import './tables.css'
  *  - GROW: a column of longer text wraps between words, inside a width from `--col-min` to `--col-max` em
  *    (`GROW_MIN` .. `GROW_MAX`, a comfortable line), sharing the screen by weight (`tables.css`, a container query unit).
  *    The min follows the column's longest word and its length, so a column of paragraphs never turns into a tower.
+ *  - YAZ-5658 Wide tables (the page body's `data-wide-tables`: the vault's `mobile.json`, a page's own `fit-tables`):
+ *    Scroll sideways (the default): each GROW column at least `READ_WIDTH` em (a readable line, about 190 px), up to
+ *    its widest, and never wider by itself than the box beside the FIT columns; a wider table scrolls, its first column
+ *    in place. Fit the screen: the GROW columns share what the FIT
+ *    columns leave by how much text each holds (`--col-share`), each at least `FIT_MIN` em (about 126 px) and its
+ *    longest word (`--col-hold`): no side scroll unless those do not fit. `columnWidths` is the same rule in px (the tests' 390 px phone).
  *  - The first column of a table of three columns or more stays in place while it scrolls sideways (`data-sticky`),
  *    at most `STICKY_MAX` em wide. A table whose file freezes columns (`freeze 2 cols`, YAZ-5480, `tableFile.ts`)
  *    keeps THOSE in place instead, each at most `STICKY_MAX` em wide (`frozenColumns`).
@@ -30,6 +36,10 @@ export const FIT_MAX = 10
 /** The narrowest and widest a GROW column gets. */
 export const GROW_MIN = 7
 export const GROW_MAX = 22
+/** YAZ-5658 Scroll sideways: the narrowest a GROW column gets, unless its widest is less (a readable line). */
+export const READ_WIDTH = 13.5
+/** YAZ-5658 Fit the screen: the narrowest a GROW column gets. */
+export const FIT_MIN = 9
 /** The longest min of a GROW column (a column of paragraphs). */
 export const GROW_MIN_LONG = 12
 /** The widest sticky first column. */
@@ -96,6 +106,10 @@ export interface Column {
   min: number
   /** GROW: its share of the screen against the other long columns (the Mac's width); else its widest. */
   weight?: number
+  /** GROW: how much text it holds (each body cell's text counts as its square root, so one long cell does not take all), em. */
+  text: number
+  /** The narrowest it gets without breaking a word or a whole code (Fit the screen's floor beside `FIT_MIN`), em. */
+  hold: number
 }
 
 const round = (n: number) => Math.round(n * 10) / 10
@@ -117,6 +131,7 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     let filled = 0
     let numbers = 0
     let clip = false
+    let amount = 0
     for (const cell of byColumn[c] ?? []) {
       const clipped = cell.hasAttribute('data-clip')
       if (clipped) clip = true
@@ -129,6 +144,7 @@ export function columnsOf(table: HTMLTableElement): Column[] {
         continue
       }
       body = Math.max(body, em.all)
+      amount += Math.sqrt(em.all)
       word = Math.max(word, em.word)
       whole = Math.max(whole, em.whole)
       const text = (cell.textContent ?? '').trim()
@@ -144,22 +160,23 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     if (natural <= FIT_MAX) {
       // A short column stays as wide as its text, whatever the Mac's width: on a phone its room goes to the long ones
       // (in the headless pictures, the Mac's extra room on short columns squeezed the long column into a tower).
-      cols.push({ kind: 'fit', num, max: round(natural), min: round(natural) })
+      cols.push({ kind: 'fit', num, max: round(natural), min: round(natural), text: round(amount), hold: round(natural) })
       continue
     }
     // A clipped column (one line, cut with "…") has no word that holds it open: its min is GROW_MIN.
+    const hold = round(Math.min(Math.max(word, whole) + PAD, GROW_MAX))
     const min0 = clip ? GROW_MIN : Math.max(GROW_MIN, whole + PAD, Math.min(GROW_MIN_LONG, Math.max(word + PAD, natural / 4)))
     const max = Math.min(GROW_MAX, natural)
     // A whole code (it never wraps) sets the min too, past the long-text cap.
     if (mac === null) {
-      cols.push({ kind: 'grow', num: false, max: round(max), min: round(Math.min(max, min0)) })
+      cols.push({ kind: 'grow', num: false, max: round(max), min: round(Math.min(max, min0)), text: round(amount), hold })
       continue
     }
     // A longer column the Mac sized shares the screen in the Mac's proportions (its weight), and the Mac's
     // width is a floor up to GROW_MIN_LONG (a phone has no room for more); never under the column's own min, so its
     // words stay whole, and never past its widest (a comfortable line).
     const min = Math.min(max, Math.max(min0, Math.min(mac, GROW_MIN_LONG)))
-    cols.push({ kind: 'grow', num: false, max: round(max), min: round(min), weight: mac })
+    cols.push({ kind: 'grow', num: false, max: round(max), min: round(min), weight: mac, text: round(amount), hold })
   }
   // The columns that stay in place (the first of a wide table, or the file's frozen ones): each at most STICKY_MAX wide.
   for (const col of cols.slice(0, frozenColumns(table, cols.length))) {
@@ -168,6 +185,35 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     col.min = Math.min(col.min, col.max)
   }
   return cols
+}
+
+/** Each GROW column's share of what the FIT columns leave (0..1; a FIT column 0): by its weight (Scroll sideways) and by its text (Fit the screen). */
+export function columnShares(cols: readonly Column[]): { weight: number[]; share: number[] } {
+  const grow = cols.filter((c) => c.kind === 'grow')
+  const weights = grow.reduce((n, c) => n + (c.weight ?? c.max), 0)
+  const texts = grow.reduce((n, c) => n + c.text, 0)
+  const part = (n: number) => Math.round(n * 1000) / 1000
+  return {
+    weight: cols.map((c) => (c.kind === 'grow' ? part((c.weight ?? c.max) / weights) : 0)),
+    share: cols.map((c) => (c.kind === 'grow' ? part(texts > 0 ? c.text / texts : 1 / grow.length) : 0)),
+  }
+}
+
+export type WideTables = 'scroll' | 'fit'
+
+/**
+ * The columns' widths in px in a box `box` px wide, by `tables.css`'s rule for `mode` (the browser lays them out from
+ * the CSS; this is the same sum, for the tests at a phone's width). A FIT column is its text's width.
+ */
+export function columnWidths(cols: readonly Column[], box: number, mode: WideTables): number[] {
+  const { weight, share } = columnShares(cols)
+  const fixed = cols.reduce((n, c) => n + (c.kind === 'fit' ? c.max : 0), 0)
+  const rest = (box - fixed * TABLE_PX - 2) / TABLE_PX
+  return cols.map((c, i) => {
+    if (c.kind === 'fit') return c.max * TABLE_PX
+    const em = mode === 'fit' ? Math.max(FIT_MIN, c.hold, rest * share[i]!) : Math.min(c.max, Math.max(c.min, Math.max(Math.min(READ_WIDTH, rest), rest * weight[i]!)))
+    return em * TABLE_PX
+  })
 }
 
 /** The phone's share of a Mac column's width: a phone shows a table smaller than the Mac's page does. */
@@ -269,18 +315,20 @@ export function layoutTable(table: HTMLTableElement): void {
   if (cols.length === 0) return
   const fixed = cols.reduce((n, c) => n + (c.kind === 'fit' ? c.max : 0), 0)
   const grow = cols.reduce((n, c) => n + (c.kind === 'grow' ? c.max : 0), 0)
-  const weights = cols.reduce((n, c) => n + (c.kind === 'grow' ? (c.weight ?? c.max) : 0), 0)
+  const { weight, share } = columnShares(cols)
   const group = document.createElement('colgroup')
-  for (const col of cols) {
+  cols.forEach((col, i) => {
     const el = document.createElement('col')
     if (col.kind === 'grow') {
       el.className = 'page-table__grow'
       el.style.setProperty('--col-min', `${col.min}em`)
       el.style.setProperty('--col-max', `${col.max}em`)
-      el.style.setProperty('--col-weight', String(round(((col.weight ?? col.max) / weights) * 1000) / 1000))
+      el.style.setProperty('--col-weight', String(weight[i]))
+      el.style.setProperty('--col-share', String(share[i]))
+      el.style.setProperty('--col-hold', `${col.hold}em`)
     }
     group.append(el)
-  }
+  })
   table.prepend(group)
   table.style.setProperty('--table-fixed', `${round(fixed)}em`)
   // Its width with every column at its widest: the full-screen view lays it out so.

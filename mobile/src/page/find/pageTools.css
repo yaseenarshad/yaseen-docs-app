@@ -68,6 +68,15 @@
 .page-tools__item:active {
   background: var(--bg-side);
 }
+/* YAZ-5658: the name over a group of choices (Wide tables on this page), with a line above it. */
+.page-tools__label {
+  margin-top: 4px;
+  padding: 10px 12px 2px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
 
 .find-line {
   display: flex;

@@ -54,7 +54,19 @@ export interface ToolsFor {
    * "Sticky headings on this page", a check row; none: the phone cannot write this page.
    */
   sticky?: { on: boolean; set(on: boolean): void } | null
+  /**
+   * YAZ-5658: the page's own Wide tables (`fit-tables: true | false`, the phone's own key; `null`: none): "Wide tables on
+   * this page", three choices: Same as the vault, Scroll sideways, Fit the screen; none: the phone cannot write this page.
+   */
+  wide?: { on: boolean | null; set(on: boolean | null): void } | null
 }
+
+/** YAZ-5658: the page's Wide tables choices, the page's own value each sets. */
+const WIDE_CHOICES: { on: boolean | null; label: string }[] = [
+  { on: null, label: 'Same as the vault' },
+  { on: false, label: 'Scroll sideways' },
+  { on: true, label: 'Fit the screen' },
+]
 
 /** The Mac's fold-all icons (`FoldAllButton.tsx`'s shape): two chevrons up to collapse, down to expand. */
 const foldAllIcon = (collapse: boolean) => (
@@ -95,6 +107,10 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
   const sticky = () => {
     setMenu(false)
     file.sticky?.set(!file.sticky.on)
+  }
+  const wide = (on: boolean | null) => {
+    setMenu(false)
+    if (file.wide?.on !== on) file.wide?.set(on)
   }
   const { copyPath, layer } = useCopyPath()
   const copy = async () => {
@@ -147,6 +163,21 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
                   </span>{' '}
                   Sticky headings on this page
                 </button>
+              )}
+              {menu && file.wide != null && (
+                <div role="group" aria-label="Wide tables on this page">
+                  <div className="page-tools__label" aria-hidden="true">
+                    Wide tables on this page
+                  </div>
+                  {WIDE_CHOICES.map((c) => (
+                    <button key={c.label} type="button" role="menuitemradio" aria-checked={file.wide!.on === c.on} className="page-tools__item" onClick={() => wide(c.on)}>
+                      <span aria-hidden="true" className="page-tools__icon">
+                        {file.wide!.on === c.on ? '✓' : ''}
+                      </span>{' '}
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
               )}
             </>
           )}
