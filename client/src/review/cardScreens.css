@@ -1231,6 +1231,24 @@ body.card-inbox--sizing {
     align-items: center;
   }
 }
+/* The Due today end's button on the Mac (`DueTodayEnd`, YAZ-5043): a quiet pill. */
+.card-inbox__done .due-end__go {
+  padding: 6px 8px 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.card-inbox__done .due-end__go:hover {
+  background: var(--bg-hover);
+}
+.card-inbox__done .due-end__go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .card-inbox__done-today {
   margin: 10px 0 0;
   font-size: 12px;
@@ -1517,7 +1535,7 @@ body.card-inbox--sizing {
 .card-inbox__done-from:hover .card-inbox__done-from-box {
   background: var(--bg-hover);
 }
-.card-inbox__done-fallback {
+.card-done__fallback {
   color: var(--fg);
 }
 

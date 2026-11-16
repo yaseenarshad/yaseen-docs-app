@@ -5,13 +5,13 @@ import { useAnswerTimer } from '@client/review/answerTimer'
 import { AGAIN_LABEL, AGAIN_TITLE, cardStateText, showsAgain } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
 import { newCardsFrom } from '@client/review/inboxMenu'
-import { addedLine, resetLine, reviewMoreCount, reviewMoreLabel, waitingLine } from '@client/review/cardWords'
+import { addedLine, resetLine } from '@client/review/cardWords'
 import { reviewDuration, todayCards, todayDuration } from '@client/review/reviewTime'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
 import { withCardNoTitle, type CardRating } from '@shared/cardLine'
-import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
+import { answerLabel, answerRatings } from '@shared/cardSchedule'
 import { cardPieces, cardSides, hiddenCount } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { ReviewHost } from '@client/review/reviewHost'
@@ -27,14 +27,13 @@ import { createReviewSource, type ReviewSource } from './source'
 import { setReviewInProgress } from './inProgress'
 import { SEEN_MS, useTapGuard } from './tapGuard'
 import { useWakeLock } from './wakeLock'
-import { FILTER_ICON, NEEDS_FIX, UNDO_SHOWN_MS, filterDone, filterLabel, hintText, lostTitle } from './words'
+import { FILTER_ICON, NEEDS_FIX, UNDO_SHOWN_MS, filterLabel, hintText, lostTitle } from './words'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
 import { useReviewTop } from '../screens/reviewTop'
 import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
 import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
-import { DueEnd } from './DueEnd'
-import { DoneCheer } from '@client/review/DoneCheer'
+import { DoneScreen, type DoneLook } from '@client/review/DoneScreen'
 import { CardActions } from '../cardMenu/lazy'
 import { overlayCount } from '../app/browserHistory'
 import { reviewKey } from './keys'
@@ -58,11 +57,9 @@ import './review.css'
  *    Up next, Title on the front, Open page (a card file: Open card); no Fix later, as the Mac's Inbox (YAZ-5625,
  *    YAZ-5430). The answer buttons work at any step, as on the Mac.
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
- *  - Done: "Inbox complete." (the Mac's words, YAZ-5624), today's work, and "Add more for today" (round 10, addition 2) when cards wait.
- *    Its 🎉, green ✓ and one burst of confetti on landing: the Mac's `DoneCheer` (YAZ-5662).
- *  - The end of Due today (the Mac's YAZ-5043, from the shared hook's `end`): after the first pass "You
- *    remembered 93% of 73 cards." with "Review missed cards 5"; then "Due today is done." with "Learn new cards 11"
- *    and its "from All folders ›" (the sheet's folder page). The ring and the confetti: `DueEnd.tsx`.
+ *  - Done: the Mac's own finish screens (`DoneScreen`, YAZ-5665): "Inbox complete." with its 🎉, ✓ and confetti, the
+ *    end of Due today (its ring, "Review missed cards 5", "Learn new cards 11" and its "from All folders ›", the sheet's
+ *    folder page), "Add more for today" when cards wait, and last "Today: 25 cards · 12 min", the time always.
  *  - The amber line (round 12, item 9): an answer whose card is gone, with Discard.
  *  - The screen stays on while a card shows (round 10, addition 4). The answer timer stops in the background
  *    (addition 5: the Mac's `useAnswerTimer` pauses on `visibilitychange`).
@@ -244,7 +241,7 @@ function SessionScreen({
   /** The vault's card look: the Mac's card variables, on the card. */
   cardLook: Record<string, string>
 }) {
-  // The end of Due today has its own screen (`DueEnd`); the YAZ-5465 shim that went on at once is gone.
+  // The end of Due today has its own screen (`DueTodayEnd`, in `DoneScreen`); the YAZ-5465 shim that went on at once is gone.
   const card = session.card
   const page = card?.page ?? null
   const pageText = page?.text ?? null
@@ -593,7 +590,27 @@ function SessionScreen({
     </button>
   )
   const topBox = useReviewTop()
+  // During the review only (the sheet's line): the time as Settings › Review › Time so far says. The finish screens show it always.
   const today = <TodayLine session={session} mode={review.settings.timeSoFar} />
+  const fromButton = (
+    <button type="button" className="due-end__from" aria-haspopup="dialog" aria-expanded={menu === 'from'} aria-label={`New cards from ${newCardsFrom(session)}. Choose folders`} onClick={() => setMenu(menu === 'from' ? null : 'from')}>
+      from {newCardsFrom(session)} ›
+    </button>
+  )
+  // "Add 10 new cards" (YAZ-5042) and its "from Spanish ›", "Add 2 Up next": one tap each (the Mac's pill has a field).
+  const adds =
+    addKinds.length === 0 ? null : (
+      <div className="review__done-adds">
+        {addKinds.map((k) => (
+          <span key={k} className="review__done-add">
+            <button type="button" className="btn review__add" onClick={() => review.addCards(k)}>
+              {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
+            </button>
+            {k === 'new' && fromButton}
+          </span>
+        ))}
+      </div>
+    )
 
   return (
     <div className="review review--mochi" onClickCapture={onTap} onTouchStart={NO_OP}>
@@ -669,27 +686,10 @@ function SessionScreen({
         </>
       ) : (
         <DoneStage>
-          {session.end !== null ? (
-            // Due today stopped (its % after the first pass, or done): its own screen, the rest after it.
-            <div className="review__done" role="status">
-              <DueEnd
-                end={session.end}
-                shown={shown}
-                onGoOn={review.goOn}
-                from={
-                  <button type="button" className="due-end__from" aria-haspopup="dialog" aria-expanded={menu === 'from'} aria-label={`New cards from ${newCardsFrom(session)}. Choose folders`} onClick={() => setMenu(menu === 'from' ? null : 'from')}>
-                    from {newCardsFrom(session)} ›
-                  </button>
-                }
-              >
-                <DoneBody review={review} session={session} addKinds={addKinds} today={today} title={false} shown={shown} />
-              </DueEnd>
-            </div>
-          ) : (
-            <div className="review__done" role="status">
-              <DoneBody review={review} session={session} addKinds={addKinds} today={today} title shown={shown} />
-            </div>
-          )}
+          {/* YAZ-5665: the Mac's own finish screens (`DoneScreen`), the phone's look. */}
+          <div className="review__done" role="status">
+            <DoneScreen review={review} session={session} shown={shown} look={DONE_LOOK} addKinds={addKinds} adds={adds} from={fromButton} unit={unit} />
+          </div>
           {(lastAnswer !== null || quietLine !== null) && <div className="review__hint">{lastLine}</div>}
         </DoneStage>
       )}
@@ -830,6 +830,9 @@ function LastLine({ last, back, quiet, undo, settings }: { last: { name: string;
 }
 
 /** The answer buttons' glyphs (as Mochi): ✕ Forgot, ✓ Remembered; with four buttons, Hard and Easy too. */
+/** The finish screens' look on the phone (`DoneScreen`, YAZ-5665): its classes, and a lighter burst over the Review screen. */
+export const DONE_LOOK: DoneLook = { title: 'review__done-title', line: 'review__done-line', more: 'link-btn review__done-more', today: 'review__done-today', go: 'btn due-end__go', area: '.review', burst: { maxDpr: 2, pieces: 80 } }
+
 const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good: '✓', easy: '⇈' }
 
 /** What an open menu keeps for itself: the menus, and the buttons that open them (a second tap there closes it: YAZ-5539). */
@@ -943,49 +946,6 @@ function DoneStage({ children }: { children: React.ReactNode }) {
     <div className="review__stage review__stage--done" data-settling={settling ? '' : undefined} onClickCapture={drop}>
       {children}
     </div>
-  )
-}
-
-/** What the done screen says; `title` false under the end of Due today, which has its own. */
-function DoneBody({ review, session, addKinds, today, title, shown }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[]; today: React.ReactNode; title: boolean; shown: boolean }) {
-  const adds = addKinds.map((k) => (
-    <button key={k} type="button" className="btn review__add" onClick={() => review.addCards(k)}>
-      {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
-    </button>
-  ))
-  if (session.filter !== 'all' && session.counts.all > 0)
-    return (
-      <>
-        {title && <p className="review__done-title">{filterDone(session.filter)}</p>}
-        {adds}
-        <button type="button" className="link-btn" onClick={() => review.setFilter('all')}>
-          {session.counts.all} more in All cards
-        </button>
-      </>
-    )
-  return (
-    <>
-      {title && (
-        // YAZ-5662: the 🎉, the green ✓ and one burst of confetti (the Mac's own `DoneCheer`), lighter on a phone.
-        <DoneCheer className="review__done-title" landing={session.landing} shown={shown} area=".review" burst={{ maxDpr: 2, pieces: 80 }}>
-          Inbox complete.
-        </DoneCheer>
-      )}
-      <p className="muted review__done-today">{today}</p>
-      {addKinds.length > 0 ? (
-        <>
-          <p className="muted review__waits">{waitingLine(session.more, addKinds)}</p>
-          {adds}
-        </>
-      ) : reviewMoreCount(addKinds, review.dueCount) > 0 ? (
-        // A new day began during the review (local midnight): today's cards are due now. The Mac's rule too (YAZ-5623).
-        <button type="button" className="btn review__add" onClick={() => review.start()}>
-          {reviewMoreLabel(reviewMoreCount(addKinds, review.dueCount))}
-        </button>
-      ) : (
-        <p className="muted">Nothing else is due today.</p>
-      )}
-    </>
   )
 }
 

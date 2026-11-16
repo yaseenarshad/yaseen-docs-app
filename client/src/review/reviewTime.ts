@@ -20,3 +20,13 @@ export const todayDuration = (seconds: number): string => (seconds < 60 ? `${sec
  * it (YAZ-5130): `TodayWork` shows it, hides it behind a click, or leaves it out, by Settings › Review › Time so far.
  */
 export const todayCards = (today: ReviewedToday): string => (today.cards === 0 ? '' : `Today: ${today.cards} card${today.cards === 1 ? '' : 's'}`)
+
+/**
+ * A finish screen's "Today: 25 cards · 12 min" (YAZ-5665, Yaseen: "on the completion screen can we show it?"): the
+ * time always, whatever Settings › Review › Time so far says (that setting is for DURING the review). No seconds today
+ * (only old reviews): the cards alone. Empty with no card today.
+ */
+export function todayDone(today: ReviewedToday): string {
+  const cards = todayCards(today)
+  return cards === '' || today.seconds === 0 ? cards : `${cards} · ${todayDuration(today.seconds)}`
+}

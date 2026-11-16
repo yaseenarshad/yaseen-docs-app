@@ -6,6 +6,7 @@
 import type { CardReview } from '@shared/cardLine'
 import { cardState, cardStateWithout, dayCount, recallChance, type AddKind } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
+import type { CardFilter } from './useCardReview'
 
 /** A date as the card screens say it: "Nov 21", with the year when it is not this year's. */
 export function cardDate(ms: number, now = Date.now()): string {
@@ -119,3 +120,6 @@ export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kin
 
 /** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
 export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
+
+/** A filter's finish screen with other cards left (YAZ-5017): the Mac's words, the phone's too (YAZ-5665). */
+export const filterDone = (filter: CardFilter): string => (filter === 'due' ? 'No due cards left.' : filter === 'next' ? 'No Up next cards left.' : 'No new cards left.')

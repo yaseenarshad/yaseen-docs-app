@@ -1,5 +1,6 @@
 /**
- * Today's review work in the Inbox (YAZ-5033): "Today: 31 cards · 9 min", in the top row and on the done screen.
+ * Today's review work in the Inbox (YAZ-5033): "Today: 31 cards · 9 min", in the top row DURING the review. The
+ * finish screens always show the time (YAZ-5665: `todayDone`, `DoneScreen`), on the Mac and the phone.
  *
  * TIME SO FAR (YAZ-5130, Yaseen: "having it in sight will be stressful"): the time follows Settings › Review › Time so
  * far. Hidden (the default): a small clock in the time's place, and the time ONLY in the clock's hover box (round 2,

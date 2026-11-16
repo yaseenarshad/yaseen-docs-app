@@ -4,7 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DueTodayEnd } from '@client/review/useCardReview'
 import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
-import { DueEnd, ringTurns } from './DueEnd'
+import { DueTodayEnd as DueEnd, ringTurns } from '@client/review/DueTodayEnd'
+import { DONE_LOOK } from './ReviewView'
 import { SEEN_MS } from './tapGuard'
 
 /**
@@ -301,13 +302,13 @@ describe('YAZ-5662: "Inbox complete." with a 🎉, a green ✓ and one burst of 
   })
 })
 
-describe('the end screen (DueEnd): waits while hidden, plays once, lazy confetti', () => {
+describe('the end screen (the shared DueTodayEnd, YAZ-5665): waits while hidden, plays once, lazy confetti', () => {
   let root: Root | null = null
   let el: HTMLElement
   let hidden = false
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') })
   const end = (over: Partial<DueTodayEnd> = {}): DueTodayEnd => ({ kind: 'done', id: `e${Math.random()}`, count: 5, remembered: 4, percent: 80, missed: 0, fresh: 3, ...over })
-  const draw = (e: DueTodayEnd, shown = true) => act(() => root!.render(<div className="review"><DueEnd end={e} shown={shown} onGoOn={() => undefined} /></div>))
+  const draw = (e: DueTodayEnd, shown = true) => act(() => root!.render(<div className="review"><DueEnd end={e} shown={shown} look={DONE_LOOK} onGoOn={() => undefined} /></div>))
   const motion = () => el.querySelector<HTMLElement>('.due-end')?.dataset.motion
   const sleep = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
   beforeEach(() => {
@@ -382,11 +383,11 @@ describe('the end screen (DueEnd): waits while hidden, plays once, lazy confetti
 })
 
 describe('smooth on a phone', () => {
-  it('every keyframe of the end screen moves only `transform` and `opacity`; Reduce Motion stops each animation', async () => {
+  it('every keyframe of the end screen (the Mac\'s and the phone\'s one CSS, YAZ-5665) moves only `transform` and `opacity`; Reduce Motion stops each animation', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, resolve } = await import('node:path')
     const { fileURLToPath } = await import('node:url')
-    const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'dueEnd.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../../client/src/review/dueTodayEnd.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
     const frames = [...css.matchAll(/@keyframes [\w-]+\s*\{([\s\S]*?\}\s*)\}/g)].map((m) => m[1])
     expect(frames.length).toBeGreaterThanOrEqual(6)
     const props = new Set(frames.flatMap((f) => [...f.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1])))

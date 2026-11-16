@@ -865,13 +865,81 @@
   --done-cheer-size: 58px;
 }
 
-.review__waits {
-  margin-top: 10px !important;
+/* The finish screens' words and buttons (`DoneScreen`, shared with the Mac; YAZ-5665): the phone's sizes. */
+.review__done-line {
+  color: var(--fg-muted);
+}
+
+/* YAZ-5322: the new cards come from All folders, said a little stronger. */
+.review__done .card-done__fallback {
+  color: var(--fg);
+}
+
+.review__done-adds {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
 }
 
 .review__add {
   min-width: 200px;
+  min-height: var(--tap);
   font-weight: 600;
+}
+
+.review__done-more {
+  min-height: var(--tap);
+}
+
+.review__done-today {
+  margin-top: 10px !important;
+  color: var(--fg-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The Due today end (`DueTodayEnd`): a column, and buttons a thumb can hit. */
+.review__done .due-end {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 340px;
+}
+
+.review__done .due-end__ring {
+  margin-bottom: 12px;
+}
+
+.review__done .due-end__actions {
+  margin: 14px 0 4px;
+}
+
+.review__done .due-end__go {
+  justify-content: center;
+  gap: 8px;
+  min-width: 220px;
+  min-height: 44px;
+  font-weight: 600;
+}
+
+.review__done .due-end__count {
+  min-width: 22px;
+  padding: 0 7px;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.due-end__from {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
 }
 
 /* ---- Lines that need the person ---- */

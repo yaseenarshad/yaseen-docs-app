@@ -386,10 +386,10 @@ describe('YAZ-5662: Inbox complete with a 🎉, a green ✓ and one burst of con
     expect(title?.classList.contains('done-cheer__title')).toBe(true)
     expect(title?.textContent).toBe('This page is done.')
     expect(cheerCss).toMatch(/\.done-cheer__title::before\s*\{[^}]*content:\s*'✓'[^}]*color:\s*var\(--ok\)/)
-    expect(dueCss).toMatch(/\.due-end__arc--ok\s*\{[^}]*stroke:\s*var\(--ok\)/)
+    expect(dueCss).toMatch(/\.due-end__fill\s*\{[^}]*border-top-color:\s*var\(--ok\)/)
     // The confetti's canvas draws above the Inbox's own layer, not under it.
     const z = (css: string, sel: string) => Number(new RegExp(`\\${sel}\\s*\\{[^}]*z-index:\\s*(\\d+)`).exec(css)?.[1])
-    expect(z(dueCss, '.due-end-confetti')).toBeGreaterThan(z(readFileSync(path.join(__dirname, 'cardScreens.css'), 'utf8'), '.card-inbox'))
+    expect(z(cheerCss, '.due-end-confetti')).toBeGreaterThan(z(readFileSync(path.join(__dirname, 'cardScreens.css'), 'utf8'), '.card-inbox'))
     await settle()
     expect(cheers()).toBe(1)
   })

@@ -1517,14 +1517,19 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     expect(tip()).toBeNull()
   })
 
-  it('hidden: the done screen has the same clock and box', () => {
+  it('YAZ-5665 (Yaseen: "on the completion screen can we show it?"): hidden, every finish screen shows the time, with no clock', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, today }
     render()
     const done = () => el.querySelector('.card-inbox__done-today')
-    expect(done()?.textContent).toBe('Today: 31 cards · ')
-    hover(done()!.querySelector('.card-inbox__time')!)
-    expect(tip()?.textContent).toBe('Time so far:9 min')
+    expect(done()?.textContent).toBe('Today: 31 cards · 9 min')
+    expect(el.querySelector('.card-inbox__done .card-inbox__time')).toBeNull()
+    // A page's, a filter's, and the Due today end too.
+    for (const more of [{ scope: 'page' as const }, { filter: 'new' as const, counts: { ...session.counts, all: 3 } }]) {
+      session = { ...session, ...more }
+      render()
+      expect(done()?.textContent).toBe('Today: 31 cards · 9 min')
+    }
   })
 
   it('hidden with no seconds today: no clock, as there is no time to show', () => {
@@ -1535,7 +1540,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     expect(clock()).toBeNull()
   })
 
-  it('off: the cards alone, no clock, in the top row and on the done screen; the answer still saves its seconds', async () => {
+  it('off: the cards alone, no clock, in the top row (the done screen: the time, YAZ-5665); the answer still saves its seconds', async () => {
     mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, timeSoFar: 'off' })
     session = { ...session, today }
     render()
@@ -1546,7 +1551,8 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
     session = { ...session, card: null }
     render()
-    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 31 cards')
+    // YAZ-5665: the finish screen shows the time whatever the setting says.
+    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 31 cards · 9 min')
     expect(el.querySelector('.card-inbox__time')).toBeNull()
   })
 })

@@ -73,7 +73,8 @@
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
  *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
  *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (round 2: only its hover box
- *    shows it, and a keyboard focus), or shows, or is off, by Settings › Review › Time so far. The timer and the saved seconds do not change with it.
+ *    shows it, and a keyboard focus), or shows, or is off, by Settings › Review › Time so far, DURING the review: every
+ *    finish screen shows the time (YAZ-5665, `DoneScreen`). The timer and the saved seconds do not change with it.
  *  - REVIEWS AT THE BOTTOM OF THE LAST SIDE (YAZ-5105, as Mochi; it amends YAZ-5000, which took them out of the Inbox):
  *    a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card, outside its frame (round 2): the
  *    card window's own `CardReviews`, closed until asked for, with no delete here. Round 3: it shows as soon as the
@@ -118,7 +119,7 @@ import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
 import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
-import { CARD_FILTERS, CardInboxBar } from './CardInboxBar'
+import { CardInboxBar } from './CardInboxBar'
 import { CardAgainChip, CardStateChip, answerIcon, answerLine, showsAgain } from './cardInboxChip'
 import { FocusIcon } from './cardInboxIcons'
 import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
@@ -126,21 +127,21 @@ import { CardInboxHints } from './CardInboxHints'
 import { KeyLabel } from '../keys/KeyLabel'
 import { withKeys } from '@shared/keyLabel'
 import { AddMoreField } from './AddMoreField'
-import { newCardsFrom, pickLabel, useNewCardsPicker } from './NewCardsPicker'
+import { newCardsFrom, useNewCardsPicker } from './NewCardsPicker'
 import { ChevronIcon } from './cardInboxIcons'
 import { useAnswerTimer } from './answerTimer'
-import { TodayWork } from './TodayWork'
-import { DueTodayEnd } from './DueTodayEnd'
-import { DoneCheer } from './DoneCheer'
-import { todayCards } from './reviewTime'
+import { DoneScreen, type DoneLook } from './DoneScreen'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 import { tourEvent } from '../course/tourBus'
-import { addedLine, resetLine, reviewMoreCount, reviewMoreLabel, waitingLine } from './cardWords'
+import { addedLine, resetLine } from './cardWords'
 import type { CardPlace } from '../editor/card/cardOpen'
 
 /** How long "Archived · Undo" stays under the buttons (YAZ-5621): the phone's `UNDO_SHOWN_MS`. */
 const ARCHIVED_SHOWN_MS = 4000
+
+/** The finish screens' look on the Mac (`DoneScreen`, YAZ-5665): the Inbox's own classes; the confetti over the window. */
+const DONE_LOOK: DoneLook = { title: 'card-inbox__done-title', line: 'card-inbox__done-line', more: 'card-inbox__done-more', today: 'card-inbox__done-today', go: 'due-end__go' }
 
 /** Where the Inbox's zoom is kept (YAZ-5372): `savedZoom`, localStorage. */
 const INBOX_ZOOM_KEY = 'inbox:zoom'
@@ -442,69 +443,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         {picker.picker}
       </div>
     )
-  const picked = pickLabel(session.newFrom)
-  const waits = addKinds.length > 0 && (
-    <>
-      {/* YAZ-5322, the fallback: said out loud, so a card's folder is never a surprise. */}
-      {session.newFallback && addKinds.includes('new') && <p className="card-inbox__done-line card-inbox__done-fallback">No new cards left in {picked}, so these come from All folders.</p>}
-      <p className="card-inbox__done-line">{waitingLine(session.more, addKinds, session.newFallback ? '' : picked)}</p>
-    </>
-  )
-  // The rest of the vault, after a review of one page or one folder: the way on.
-  const more = session.scope === 'vault' ? 0 : review.dueCount
-  // YAZ-5623 (the phone's rule): the vault done while cards are still due (a new day began, a card came back): "Review 12 more".
-  const again = session.scope === 'vault' ? reviewMoreCount(addKinds, review.dueCount) : 0
-  /** What the done screen says (YAZ-5017, YAZ-5042); `title` false under the Due today end (YAZ-5043), which has its own. */
-  const doneRest = (withTitle: boolean) =>
-                session.filter !== 'all' && session.counts.all > 0 ? (
-                  // The filter's cards are done, others are left (YAZ-5017): the way back to All cards.
-                  <>
-                    {withTitle && <p className="card-inbox__done-title">{session.filter === 'due' ? 'No due cards left.' : session.filter === 'next' ? 'No Up next cards left.' : 'No new cards left.'}</p>}
-                    {addButtons}
-                    <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.setFilter('all')}>
-                      {session.counts.all} more in {CARD_FILTERS[0].label}
-                    </button>
-                  </>
-                ) : session.scope === 'vault' ? (
-                  <>
-                    {withTitle && (
-                      <DoneCheer className="card-inbox__done-title" landing={session.landing} shown={shown}>
-                        Inbox complete.
-                      </DoneCheer>
-                    )}
-                    {courseOffer !== undefined ? (
-                      <CourseOffer {...courseOffer} />
-                    ) : again > 0 ? (
-                      <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
-                        {reviewMoreLabel(again)}
-                      </button>
-                    ) : addButtons === null ? (
-                      <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
-                    ) : (
-                      <>
-                        {waits}
-                        {addButtons}
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    {withTitle && (
-                      <DoneCheer className="card-inbox__done-title" landing={session.landing} shown={shown}>
-                        {session.scope === 'page' ? unit('This page is done.') : 'This folder is done.'}
-                      </DoneCheer>
-                    )}
-                    {waits}
-                    {addButtons}
-                    {more > 0 ? (
-                      <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
-                        {more} more in the Inbox
-                      </button>
-                    ) : (
-                      addButtons === null && <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
-                    )}
-                  </>
-                )
   // The band's title: once the card is fully shown where it waits (`notitle`).
   const headTitle = title.waits && !done ? '' : title.text
   /** The band's rename (YAZ-5164 part 3): the title on the card's line (YAZ-5308), one write; the Inbox reads the card again. */
@@ -599,29 +537,22 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         >
             {card === null ? (
               <div className="card-inbox__done" role="status">
-                {/* YAZ-5043: Due today stopped (its % after the first pass, or done): its own screen, the rest after it. */}
-                {session.end !== null ? (
-                  <DueTodayEnd
-                    end={session.end}
-                    shown={shown}
-                    onGoOn={review.goOn}
-                    from={
-                      <>
-                        {fromButton}
-                        {picker.picker}
-                      </>
-                    }
-                  >
-                    {doneRest(false)}
-                  </DueTodayEnd>
-                ) : (
-                  doneRest(true)
-                )}
-                {todayCards(session.today) !== '' && (
-                  <p className="card-inbox__done-today">
-                    <TodayWork today={session.today} time={time} />
-                  </p>
-                )}
+                <DoneScreen
+                  review={review}
+                  session={session}
+                  shown={shown}
+                  look={DONE_LOOK}
+                  addKinds={addKinds}
+                  adds={addButtons}
+                  from={
+                    <>
+                      {fromButton}
+                      {picker.picker}
+                    </>
+                  }
+                  unit={unit}
+                  offer={courseOffer !== undefined ? <CourseOffer {...courseOffer} /> : undefined}
+                />
               </div>
             ) : (
               text !== null &&

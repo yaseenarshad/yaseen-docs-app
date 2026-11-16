@@ -29,9 +29,6 @@ export const UNDO_SHOWN_MS = 4000
 
 export const filterLabel = (filter: CardFilter): string => FILTERS.find((f) => f.id === filter)?.label ?? 'All cards'
 
-/** A filter's done screen, as the Mac says it. */
-export const filterDone = (filter: CardFilter): string => (filter === 'due' ? 'No due cards left.' : filter === 'next' ? 'No Up next cards left.' : 'No new cards left.')
-
 /** Round 12, item 9: the amber line. "1 answer could not be saved". */
 export const lostTitle = (n: number): string => `${n} answer${n === 1 ? '' : 's'} could not be saved`
 

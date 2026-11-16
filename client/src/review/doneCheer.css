@@ -32,3 +32,12 @@
     animation: none;
   }
 }
+
+/* The confetti's canvas (`confetti.ts`), for the 🎉 and the Due today ring, on the Mac and the phone: over the screen
+   only, never the whole window, and never in the way of a click or a tap. Above the Inbox's own layer (`.card-inbox`,
+   z-index 30, cardScreens.css; YAZ-5662): at 20 it drew under it, unseen. */
+.due-end-confetti {
+  position: fixed;
+  pointer-events: none;
+  z-index: 31;
+}

@@ -18,8 +18,9 @@ export type PauseAfter = (typeof PAUSE_AFTER_CHOICES)[number]
 
 /**
  * Settings › Review › Time so far (YAZ-5130, Yaseen: "having it in sight will be stressful"): today's review time in
- * the Inbox. `hidden` (the default) shows a small clock in its place, and a click on it shows the time; `shown` shows
- * it as before; `off` shows no time and no clock. The answer timer runs the same in all three: each answer still saves its seconds.
+ * the Inbox DURING the review. `hidden` (the default) shows a small clock in its place, and a click on it shows the time;
+ * `shown` shows it as before; `off` shows no time and no clock. Every finish screen shows the time whatever this says
+ * (YAZ-5665). The answer timer runs the same in all three: each answer still saves its seconds.
  */
 export const TIME_SO_FAR_CHOICES = ['hidden', 'shown', 'off'] as const
 export type TimeSoFar = (typeof TIME_SO_FAR_CHOICES)[number]

@@ -2333,10 +2333,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
           {
             // YAZ-5130 (Yaseen: "having it in sight will be stressful"): only how the Inbox shows today's time
-            // (`TodayWork`); the timer saves each answer's seconds in all three.
+            // (`TodayWork`) DURING the review; the finish screens always show it (YAZ-5665). The timer saves each
+            // answer's seconds in all three.
             id: 'timeSoFar',
             label: 'Time so far',
-            hint: "Today's review time in the Inbox. Hidden shows a small clock: point at it to see the time. The Inbox still saves how long each answer took.",
+            hint: "Today's review time during a review. Hidden: point at the small clock to see it. Finish screens always show it. Answer times are saved.",
             keywords: [...REVIEW_KEYWORDS, 'timer', 'time', 'today', 'clock', 'hide', 'show', 'how long'],
             available: reviewOn,
             render: ({ review }) =>
