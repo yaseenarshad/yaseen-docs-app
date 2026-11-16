@@ -232,7 +232,7 @@ update.restart/0: invoke update:restart []; => "answer"; !> {"code":"NOT_FOUND",
 update.state/0: invoke update:state []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultConfig.onChange/1: on vaultConfig:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off vaultConfig:changed
 vaultConfig.read/2: invoke vaultConfig:read ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-vaultConfig.write/3: invoke vaultConfig:write ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultConfig.write/4: invoke vaultConfig:write ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 watch/2: send watch:subscribe [{"id":"0-0-0-0-0","root":"a0"}]; on watch:event -> listener[["ev"]]; off watch:event; send watch:unsubscribe ["0-0-0-0-0"]
 window.addVaultAndTake/4: invoke window:add-vault-and-take ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.closeOther/1: invoke window:close-other ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
