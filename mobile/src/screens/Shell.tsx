@@ -5,7 +5,7 @@ import { useReaderAhead } from '../explore/openReady'
 import { repoRemovedHelp, syncHelp } from '../app/help'
 import { topRoute, type Route, type Tab } from '../app/nav'
 import { FirstDownload } from './FirstDownload'
-import { ForwardButton, Frame, vaultName } from './Frame'
+import { ForwardButton, Frame, OpenVaultBadge, vaultName } from './Frame'
 import { Friends } from './Friends'
 import { lazyScreen } from './LazyScreen'
 import { CardView, PageView, routeWaiting } from './PageScreen'
@@ -112,7 +112,7 @@ export function Shell() {
     )
   return (
     <>
-      <Frame title={vaultName(app.vault.repo)} gear tabs notice={notice} review={TabScreen === null}>
+      <Frame title={vaultName(app.vault.repo)} badge={<OpenVaultBadge />} gear tabs notice={notice} review={TabScreen === null}>
         {TabScreen === null ? <ReviewSlot host={reviewHost} /> : <TabScreen />}
       </Frame>
       {kept}

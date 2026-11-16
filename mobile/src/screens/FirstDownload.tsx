@@ -1,6 +1,6 @@
 import { useApp } from '../app/AppState'
 import type { Help } from '../app/help'
-import { ForwardButton, Frame, vaultName } from './Frame'
+import { ForwardButton, Frame, OpenVaultBadge, vaultName } from './Frame'
 
 /**
  * The first download (row F2; round 10, item 8): a progress bar, then the open tab. The download goes on if it stops
@@ -12,7 +12,7 @@ export function FirstDownload({ help }: { help: Help | null }) {
   const progress = app.sync.progress
   const percent = progress === null || progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100)
   return (
-    <Frame title={vaultName(vault.repo)} gear>
+    <Frame title={vaultName(vault.repo)} badge={<OpenVaultBadge />} gear>
       <h2 className="title">{app.unit('Downloading your pages')}</h2>
       <p className="lead">{vault.repo}</p>
       <div className="progress" role="progressbar" aria-label="Download" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>

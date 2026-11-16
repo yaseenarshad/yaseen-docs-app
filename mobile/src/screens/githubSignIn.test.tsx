@@ -194,12 +194,17 @@ async function backFromRepoPage(t: Awaited<ReturnType<typeof phoneWithGithub>>) 
 }
 
 describe('Settings › GitHub (YAZ-5645 slice 2)', () => {
-  it('shows the account and its vaults; "Manage repos on GitHub" goes to GitHub\'s repo page and comes back to Settings', async () => {
+  it('shows the account (YAZ-5659: not its vaults, the Vaults section lists them); "Manage repos on GitHub" goes to GitHub\'s repo page and comes back to Settings', async () => {
     const t = await phoneWithGithub()
     await vaultOnGithub(t, 'code-s1')
     await h!.click('Settings')
     await h!.waitText('@yaseen')
-    expect(h!.text()).toContain('Signed in with GitHub. Access renews by itself. Vaults: yaseen/vault.')
+    expect(h!.text()).toContain('Signed in with GitHub. Access renews by itself.')
+    expect(h!.host.querySelector('.github-account')!.textContent).not.toContain('Vaults:')
+    // YAZ-5659: GitHub is the last section before "This phone" (the erase, apart); Vaults is the first.
+    const heads = [...h!.host.querySelectorAll('.screen h2.section')].map((e) => e.textContent)
+    expect(heads[0]).toBe('Vaults')
+    expect(heads.slice(-3)).toEqual(['About Yaseen Docs', 'GitHub', 'This phone'])
     await h!.click('Manage repos on GitHub')
     expect(t.went.at(-1)).toBe(GITHUB_CHOOSE_REPOS)
     await backFromRepoPage(t)

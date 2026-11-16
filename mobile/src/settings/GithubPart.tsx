@@ -57,7 +57,8 @@ export default function GithubPart() {
               <span className="row__main">
                 <strong>@{a.login}</strong>
                 <span className="muted github-account__note">
-                  Signed in with GitHub. Access renews by itself.{a.repos.length > 0 ? ` Vaults: ${a.repos.join(', ')}.` : ''}
+                  {/* YAZ-5659: no "Vaults: …" here, the Vaults section lists them. */}
+                  Signed in with GitHub. Access renews by itself.
                 </span>
               </span>
             </div>

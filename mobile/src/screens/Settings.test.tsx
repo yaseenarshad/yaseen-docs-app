@@ -5,7 +5,8 @@ import { act } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { BUILD, buildLine, buildShortTime, buildTime, versionWords } from '../settings/buildInfo'
 import { WHATS_NEW, entryDay } from '../settings/whatsNew'
-import { GOOD, mount, signInWithForm, type Harness } from './testing'
+import { GOOD, SECOND, mount, signInWithForm, type Harness } from './testing'
+import { BADGE_HUES, vaultNumber } from './VaultBadge'
 
 /** YAZ-5446: Settings › Version, What's new, and an erase that never happens by accident. */
 const HERE = import.meta.dirname
@@ -59,17 +60,121 @@ describe('the build at the top of Settings (YAZ-5555)', () => {
     expect(buildLine({ version: 'dev', built: 'not a time', commit: '' })).toBe('Build dev')
   })
 
-  it('it shows without opening anything: one short muted line, the first thing on the screen', async () => {
+  it('YAZ-5659: it shows without opening anything, one short muted line in About, right under What\'s new (with the address and Check for updates)', async () => {
     const x = await settings()
     const line = x.host.querySelector('.settings__build')!
     expect(line).not.toBeNull()
     expect(line.classList).toContain('muted')
     expect(line.textContent).toBe(buildLine(BUILD))
     expect(line.textContent).toMatch(/^Build \S+ · \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}$/)
-    // Above every row and section of Settings (and above What's new, which stays closed).
-    const first = x.host.querySelector('.screen h2, .screen .row')!
-    expect(line.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // In About: after the What's new row (which stays closed), before the next section.
+    const about = [...x.host.querySelectorAll('.screen h2')].find((e) => e.textContent === 'About Yaseen Docs')!
+    expect(toggle(x).compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(line.closest('.settings__update')!.previousElementSibling).toBe(toggle(x).closest('ul'))
+    expect(about.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(line.nextElementSibling!.classList).toContain('settings__host')
     expect(x.host.querySelector('.whats-new')).toBeNull()
+  })
+})
+
+describe('YAZ-5659: Settings starts with the vaults; each row a number, a name and its path', () => {
+  async function twoVaults(): Promise<Harness> {
+    const x = await mount()
+    await signInWithForm(x, 'yaseen/vault', GOOD)
+    await x.click('Settings')
+    await x.click('Add vault')
+    await signInWithForm(x, 'yaseen/second', SECOND)
+    return x
+  }
+  const rows = (x: Harness) =>
+    [...x.host.querySelectorAll('ul[aria-label="Vaults"] > li .vault-row')].map((r) => ({
+      n: r.querySelector('.vault-badge')?.textContent,
+      hue: r.querySelector<HTMLElement>('.vault-badge')?.dataset.hue,
+      name: r.querySelector('.vault-row__name')?.textContent,
+      path: r.querySelector('.vault-row__path')?.textContent,
+      open: r.querySelector('.vault-row__open')?.textContent ?? null,
+    }))
+  const topBadge = (x: Harness) => x.host.querySelector('.topbar .vault-badge')?.textContent ?? null
+
+  it('the first section is Vaults: no build line, address or Check for updates above it', async () => {
+    const x = await settings()
+    const first = x.host.querySelector('.screen h2, .screen .row, .screen .settings__build, .screen .settings__host')!
+    expect(first.tagName).toBe('H2')
+    expect(first.textContent).toBe('Vaults')
+    const heads = [...x.host.querySelectorAll('.screen h2.section')].map((e) => e.textContent)
+    expect(heads.indexOf('Vaults')).toBe(0)
+    expect(heads.at(-1)).toBe('This phone')
+  })
+
+  it('a row: the number badge, the name in words over "owner/repo · branch", the Open pill on the open vault, the ⋯', async () => {
+    h = await twoVaults()
+    await h.click('Settings')
+    expect(rows(h)).toEqual([
+      { n: '1', hue: 'blue', name: 'Vault', path: 'yaseen/vault · main', open: null },
+      { n: '2', hue: 'amber', name: 'Second', path: 'yaseen/second · main', open: 'Open' },
+    ])
+    const row = h.host.querySelector('.vault-row')!
+    expect(row.querySelector('.vault-badge')!.getAttribute('aria-hidden')).toBe('true')
+    expect(row.querySelector('.icon-btn')!.textContent!.trim()).toBe('⋯')
+    expect(h.button('Second, yaseen/second, open')).not.toBeNull()
+    expect(h.button('Open Vault, yaseen/vault')).not.toBeNull()
+  })
+
+  it('the numbers follow the list; opening a vault keeps them; the top bar shows the open one\'s', async () => {
+    h = await twoVaults()
+    expect(topBadge(h)).toBe('2')
+    await h.click('Settings')
+    await h.click('Open Vault, yaseen/vault')
+    expect(topBadge(h)).toBe('1')
+    await h.click('Settings')
+    expect(rows(h).map((r) => [r.n, r.name, r.open])).toEqual([
+      ['1', 'Vault', 'Open'],
+      ['2', 'Second', null],
+    ])
+  })
+
+  it('removing a vault renumbers the rest (remove 1: the old 2 becomes 1); one vault left, no badge in the top bar', async () => {
+    h = await twoVaults()
+    await h.click('Settings')
+    await h.click('More for yaseen/vault')
+    await h.click('Remove from this phone')
+    await h.click('Remove')
+    expect(rows(h).map((r) => [r.n, r.hue, r.name])).toEqual([['1', 'blue', 'Second']])
+    await h.click('Back')
+    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('second')
+    expect(topBadge(h)).toBeNull()
+  })
+
+  it('the badge: 34 px rounded square, medium weight, a soft colour per number (1 blue, 2 amber, 3 green, 4 pink, again)', () => {
+    expect(BADGE_HUES).toEqual(['blue', 'amber', 'green', 'pink'])
+    const list = ['a/one', 'a/two', 'a/three', 'a/four', 'a/five'].map((repo) => ({ repo, branch: 'main' }))
+    expect(list.map((v) => vaultNumber(list, `${v.repo}@main`))).toEqual([1, 2, 3, 4, 5])
+    expect(vaultNumber(list, 'a/gone@main')).toBeNull()
+    const css = readFileSync(join(HERE, '../styles.css'), 'utf8')
+    expect(css).toMatch(/\.vault-badge \{[^}]*width: 34px;[^}]*height: 34px;[^}]*border-radius: 9px;[^}]*font-weight: 500;/)
+    for (const hue of BADGE_HUES) {
+      expect(css).toContain(`.vault-badge[data-hue='${hue}'] {`)
+      expect(css).toContain(`:where([data-scheme='dark']) .vault-badge[data-hue='${hue}'] {`)
+    }
+  })
+
+  it('a long name and a long path each stay on one line, cut with "…", never wrapped into the other', async () => {
+    h = await twoVaults()
+    await h.click('Settings')
+    const style = document.createElement('style')
+    style.dataset.test = ''
+    style.textContent = readFileSync(join(HERE, '../styles.css'), 'utf8')
+    document.head.append(style)
+    for (const sel of ['.vault-row__name', '.vault-row__path']) {
+      const css = getComputedStyle(h.host.querySelector(sel)!)
+      expect(css.whiteSpace).toBe('nowrap')
+      expect(css.textOverflow).toBe('ellipsis')
+      expect(css.overflow).toBe('hidden')
+    }
+    expect(getComputedStyle(h.host.querySelector('.vault-row__name')!).fontSize).toBe('16px')
+    expect(getComputedStyle(h.host.querySelector('.vault-row__name')!).fontWeight).toBe('500')
+    expect(getComputedStyle(h.host.querySelector('.vault-row__words')!).minWidth).toBe('0px')
+    expect(getComputedStyle(h.host.querySelector('.vault-badge')!).flexShrink).toBe('0')
   })
 })
 

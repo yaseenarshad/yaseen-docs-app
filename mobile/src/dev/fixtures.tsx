@@ -20,6 +20,12 @@ const VAULTS: PhoneVault[] = [
   { repo: 'demo/demo-vault', branch: 'main', addedAt: 1 },
   { repo: 'demo/work-wiki', branch: 'main', addedAt: 2 },
 ]
+/** YAZ-5659 (`settings-vaults-light`, `-dark`): four vaults, one with a long name and path, the second open. */
+const MANY_VAULTS: PhoneVault[] = [
+  ...VAULTS,
+  { repo: 'demo/notecards-scratch-vault', branch: 'main', addedAt: 3 },
+  { repo: 'demo-person-with-a-long-name/research-notes-archive-twenty-twenty-six-vault', branch: 'phone-drafts', addedAt: 4 },
+]
 const ACCOUNT: VaultAccount = { login: 'demo', name: 'Demo Person', avatarUrl: '', gists: 'yes', expiresAt: null, checkedAt: 0 }
 const FAKE_TOKEN = 'github_pat_11FIXTURE0' + 'f'.repeat(72)
 
@@ -125,15 +131,17 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
   }
   const signedIn = !['repo-pick-github', 'sign-in', 'sign-in-iphone', 'sign-in-error', 'sign-in-typed', 'guide', 'repo-pick', 'repo-pick-many', 'repo-none'].includes(name)
   // YAZ-5645 slice 2: vaults on "Sign in with GitHub" (@demo): Settings › GitHub, and a repo taken off the app's list.
-  const onGithub = name === 'settings-github' || name === 'repo-gone'
+  const many = name.startsWith('settings-vaults')
+  const onGithub = name === 'settings-github' || name === 'repo-gone' || many
   if (onGithub) await tokens.savePair({ login: 'demo', access: FAKE_GH, accessEndsAt: null, refresh: null, refreshEndsAt: null })
+  const vaults = many ? MANY_VAULTS : name === 'settings' || name === 'erase' || onGithub ? VAULTS : VAULTS.slice(0, 1)
   if (signedIn) {
-    for (const v of name === 'settings' || name === 'erase' || onGithub ? VAULTS : VAULTS.slice(0, 1)) {
+    for (const v of vaults) {
       if (onGithub) await tokens.link(vaultId(v), 'demo')
       else await tokens.write(vaultId(v), FAKE_TOKEN)
       await saveAccount(store, vaultId(v), ACCOUNT)
     }
-    await saveVaultList(store, { vaults: name === 'settings' || name === 'erase' || onGithub ? VAULTS : VAULTS.slice(0, 1), open: vaultId(VAULTS[name === 'repo-gone' ? 1 : 0]) })
+    await saveVaultList(store, { vaults, open: vaultId(VAULTS[name === 'repo-gone' || many ? 1 : 0]) })
   }
   // YAZ-5559: the open vault's settings files, made up: all but the table look and the icons, and a link clicks file
   // that is not JSON (Vault health then says "Using defaults: link clicks, table look, icons").
@@ -196,8 +204,10 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
       break
     case 'settings-dark':
     case 'settings-light':
+    case 'settings-vaults-dark':
+    case 'settings-vaults-light':
       // YAZ-5565: Settings › Appearance chosen against the iPhone's own setting.
-      setAppearance(name === 'settings-dark' ? 'dark' : 'light')
+      setAppearance(name.endsWith('-dark') ? 'dark' : 'light')
     // falls through
     case 'settings':
     case 'erase':

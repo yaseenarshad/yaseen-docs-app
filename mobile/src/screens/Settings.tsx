@@ -7,10 +7,12 @@ import { friendsMessage } from '../auth/friends'
 import { BUILD, buildLine, versionWords } from '../settings/buildInfo'
 import { AppearancePart } from '../settings/AppearancePart'
 import { UpdateCheck } from '../settings/UpdateCheck'
+import { vaultTitle } from '../settings/vaultTitle'
 import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
 import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
 import { Frame, Problem } from './Frame'
+import { VaultBadge, vaultNumber } from './VaultBadge'
 import { InstallHint } from './InstallHint'
 import { lazyScreen } from './LazyScreen'
 
@@ -24,9 +26,10 @@ const MobileVaultPart = lazyScreen(() => import('../settings/MobileVaultPart'))
 const GithubPart = lazyScreen(() => import('../settings/GithubPart'))
 
 /**
- * Settings (decisions 7, 22; round 13, item 4; round 10, item 19): the vaults (switch, add, replace the token, reset the
- * local copy, remove), the Friends part ("Friends use @login", "Vaults that count", "Name"; no sharing switch), the
- * version and What's new, and last, apart, "Sign out and erase this phone" (it always asks first).
+ * Settings (decisions 7, 22; round 13, item 4; round 10, item 19; YAZ-5659): first the vaults (switch, add, replace the
+ * token, reset the local copy, remove), the Friends part ("Friends use @login", "Vaults that count", "Name"; no sharing
+ * switch), the version, What's new, the build and Check for updates, then GitHub, and last, apart, "Sign out and erase
+ * this phone" (it always asks first).
  */
 export function Settings() {
   const app = useApp()
@@ -55,12 +58,8 @@ export function Settings() {
 
   return (
     <Frame title="Settings" back={() => app.go({ type: 'back' })} tabs={app.phase === 'ready'}>
-      {/* YAZ-5555: which build runs, seen at once (the Version row below has the whole words). */}
-      <p className="muted settings__build">{buildLine(BUILD)}</p>
-      {/* YAZ-5593: the address the app runs from, and Check for updates. */}
-      <UpdateCheck />
       <InstallHint />
-      <GithubPart />
+      {/* YAZ-5659: Settings starts with the vaults; the build and Check for updates sit in About, GitHub last. */}
       <h2 className="section">Vaults</h2>
       <ul className="rows" aria-label="Vaults">
         {app.list.vaults.map((v) => (
@@ -79,6 +78,8 @@ export function Settings() {
       <AppearancePart />
 
       <AboutPart />
+
+      <GithubPart />
 
       {/* Never by accident: at the very bottom, apart from the other rows, in red, and it asks first (Cancel has the focus). */}
       <div className="settings__erase">
@@ -139,6 +140,11 @@ function AboutPart() {
           )}
         </li>
       </ul>
+      {/* YAZ-5555, YAZ-5593, YAZ-5659: under What's new, which build runs, the address it runs from, and Check for updates. */}
+      <div className="settings__update">
+        <p className="muted settings__build">{buildLine(BUILD)}</p>
+        <UpdateCheck />
+      </div>
     </>
   )
 }
@@ -147,21 +153,29 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
   const app = useApp()
   const id = vaultId(vault)
   const isOpen = id === app.vaultKey
+  const name = vaultTitle(vault.repo)
+  const number = vaultNumber(app.list.vaults, id)
   const [asking, setAsking] = useState<'reset' | 'remove' | null>(null)
   return (
     <li>
-      <div className="row">
+      <div className="row vault-row">
         <button
           type="button"
-          className="row__button"
+          className="row__button vault-row__button"
           aria-current={isOpen ? 'true' : undefined}
-          aria-label={isOpen ? `${vault.repo}, open` : `Open ${vault.repo}`}
+          aria-label={isOpen ? `${name}, ${vault.repo}, open` : `Open ${name}, ${vault.repo}`}
           onClick={() => !isOpen && void run(() => app.switchVault(id))}
           disabled={busy}
         >
-          <span className="row__main">{vault.repo}</span> <span className="row__side">{vault.branch}</span>
+          {number !== null && <VaultBadge n={number} />}
+          <span className="row__main vault-row__words">
+            <span className="vault-row__name">{name}</span>
+            <span className="vault-row__path">
+              {vault.repo} · {vault.branch}
+            </span>
+          </span>
         </button>
-        {isOpen && <span className="row__side">Open</span>}
+        {isOpen && <span className="vault-row__open">Open</span>}
         <button type="button" className="icon-btn" aria-label={`More for ${vault.repo}`} aria-expanded={more} onClick={onMore}>
           ⋯
         </button>

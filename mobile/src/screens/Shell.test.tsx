@@ -174,8 +174,8 @@ describe('Settings: vaults (decision 7)', () => {
   it('a tap on a vault switches the open vault; only the open vault is open in the sync', async () => {
     h = await twoVaults()
     await h.click('Settings')
-    expect(h.button('yaseen/second, open')).not.toBeNull()
-    await h.click('Open yaseen/vault')
+    expect(h.button('Second, yaseen/second, open')).not.toBeNull()
+    await h.click('Open Vault, yaseen/vault')
     expect(h.host.querySelector('.topbar__title')?.textContent).toBe('vault')
     expect((await loadVaultList(h.store)).open).toBe('yaseen/vault@main')
     expect(h.sync.opened.at(-1)?.repo).toBe('yaseen/vault')
