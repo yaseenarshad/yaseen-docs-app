@@ -20,7 +20,7 @@ afterAll(() => {
 
 const S = DEFAULT_REVIEW_SETTINGS
 /** Friday 13 November 2026, 15:00 in New York. */
-const NOW = Date.parse('2026-11-13T20:00Z')
+const NOW = Date.parse('2026-11-13T20:00:00.000Z')
 
 type R = [at: string, rating: CardRating, seconds?: number]
 const card = (id: string | null, reviews: R[], more: Partial<CardRecord> = {}): CardRecord => ({
@@ -39,11 +39,11 @@ const dayOf = (s: ReturnType<typeof stats>, day: string) => s.days.find((d) => d
  * answered then; due again today (13 November, 15:00Z). The test checks these dates first, so a change in FSRS shows here.
  */
 const S_REVIEWS: R[] = [
-  ['2026-11-01T15:00Z', 'good'],
-  ['2026-11-01T15:02Z', 'good'],
-  ['2026-11-05T15:00Z', 'again'],
-  ['2026-11-05T15:05Z', 'good'],
-  ['2026-11-07T15:00Z', 'good'],
+  ['2026-11-01T15:00:00.000Z', 'good'],
+  ['2026-11-01T15:02:00.000Z', 'good'],
+  ['2026-11-05T15:00:00.000Z', 'again'],
+  ['2026-11-05T15:05:00.000Z', 'good'],
+  ['2026-11-07T15:00:00.000Z', 'good'],
 ]
 
 describe('friendStats (YAZ-5069)', () => {
@@ -57,18 +57,18 @@ describe('friendStats (YAZ-5069)', () => {
     const cards = [
       // New today, answered three times: one card, one new card.
       card('GEO-1', [
-        ['2026-11-13T14:00Z', 'again', 5],
-        ['2026-11-13T14:01Z', 'good', 7],
-        ['2026-11-13T14:03Z', 'good', 4],
+        ['2026-11-13T14:00:00.000Z', 'again', 5],
+        ['2026-11-13T14:01:00.000Z', 'good', 7],
+        ['2026-11-13T14:03:00.000Z', 'good', 4],
       ]),
       card('GEO-2', [
-        ['2026-11-10T15:00Z', 'good', 10],
-        ['2026-11-10T15:02Z', 'good'],
-        ['2026-11-13T16:00Z', 'good', 6],
+        ['2026-11-10T15:00:00.000Z', 'good', 10],
+        ['2026-11-10T15:02:00.000Z', 'good'],
+        ['2026-11-13T16:00:00.000Z', 'good', 6],
       ]),
       card('GEO-3', []),
       // Archived: its answers were made, so they count in the day; it is not in review and not a new card left.
-      card('GEO-4', [['2026-11-13T17:00Z', 'hard', 3]], { off: true }),
+      card('GEO-4', [['2026-11-13T17:00:00.000Z', 'hard', 3]], { off: true }),
     ]
     const s = stats(cards)
     expect(s.days.map((d) => d.day)).toEqual(['2026-11-13', '2026-11-12', '2026-11-11', '2026-11-10'])
@@ -85,11 +85,11 @@ describe('friendStats (YAZ-5069)', () => {
 
   it('`mature`: the next gap is 21 days or more', () => {
     const old: R[] = [
-      ['2026-09-01T15:00Z', 'good'],
-      ['2026-09-01T15:02Z', 'good'],
-      ['2026-09-04T15:00Z', 'good'],
-      ['2026-09-14T15:00Z', 'good'],
-      ['2026-10-10T15:00Z', 'good'],
+      ['2026-09-01T15:00:00.000Z', 'good'],
+      ['2026-09-01T15:02:00.000Z', 'good'],
+      ['2026-09-04T15:00:00.000Z', 'good'],
+      ['2026-09-14T15:00:00.000Z', 'good'],
+      ['2026-10-10T15:00:00.000Z', 'good'],
     ]
     expect(cardHistory(card('A', old).reviews, S).at(-1)!.interval).toBeGreaterThanOrEqual(21)
     expect(cardHistory(card('B', S_REVIEWS).reviews, S).at(-1)!.interval).toBeLessThan(21)
@@ -106,7 +106,7 @@ describe('friendStats (YAZ-5069)', () => {
   })
 
   it('today counts once its due cards are finished', () => {
-    const s = stats([card('GEO-1', [...S_REVIEWS, ['2026-11-13T16:00Z', 'good']])])
+    const s = stats([card('GEO-1', [...S_REVIEWS, ['2026-11-13T16:00:00.000Z', 'good']])])
     expect(s.days[0]).toMatchObject({ done: true, cards: 1, newCards: 0 })
     expect(s.totals).toMatchObject({ dueLeft: 0, streak: 13, bestStreak: 13 })
   })
@@ -121,11 +121,11 @@ describe('friendStats (YAZ-5069)', () => {
   it('a missed day stops the streak', () => {
     // Learned on 9 November and due on 12 November (checked); not answered on the 12th, answered today.
     const reviews: R[] = [
-      ['2026-11-09T15:00Z', 'good'],
-      ['2026-11-09T15:02Z', 'good'],
+      ['2026-11-09T15:00:00.000Z', 'good'],
+      ['2026-11-09T15:02:00.000Z', 'good'],
     ]
     expect(new Date(cardHistory(card('T', reviews).reviews, S).at(-1)!.due).toISOString().slice(0, 10)).toBe('2026-11-12')
-    const s = stats([card('GEO-1', [...reviews, ['2026-11-13T15:00Z', 'good']])])
+    const s = stats([card('GEO-1', [...reviews, ['2026-11-13T15:00:00.000Z', 'good']])])
     expect(s.days.map((d) => [d.day, d.done])).toEqual([
       ['2026-11-13', true],
       ['2026-11-12', false],
@@ -137,23 +137,23 @@ describe('friendStats (YAZ-5069)', () => {
   })
 
   it('a due card that comes back in the same session counts in `dueLeft` until it is answered', () => {
-    const forgot = stats([card('GEO-1', [...S_REVIEWS, ['2026-11-13T15:00Z', 'again']])])
+    const forgot = stats([card('GEO-1', [...S_REVIEWS, ['2026-11-13T15:00:00.000Z', 'again']])])
     expect(forgot.totals.dueLeft).toBe(1)
     expect(forgot.days[0].done).toBe(false)
-    const back = stats([card('GEO-1', [...S_REVIEWS, ['2026-11-13T15:00Z', 'again'], ['2026-11-13T15:05Z', 'good']])])
+    const back = stats([card('GEO-1', [...S_REVIEWS, ['2026-11-13T15:00:00.000Z', 'again'], ['2026-11-13T15:05:00.000Z', 'good']])])
     expect(back.totals.dueLeft).toBe(0)
     expect(back.days[0].done).toBe(true)
   })
 
   it('the daily is the due cards only: no new card, no Up next card that is not due, no archived card, nothing while review is off', () => {
     const notDue: R[] = [
-      ['2026-11-12T15:00Z', 'good'],
-      ['2026-11-12T15:02Z', 'good'],
+      ['2026-11-12T15:00:00.000Z', 'good'],
+      ['2026-11-12T15:02:00.000Z', 'good'],
     ]
     const s = stats([
       card('GEO-1', []),
       // First answered today and left in its steps: a new card of today, not a due card.
-      card('GEO-2', [['2026-11-13T15:00Z', 'again']]),
+      card('GEO-2', [['2026-11-13T15:00:00.000Z', 'again']]),
       card('GEO-3', notDue, { next: true }),
       card('GEO-4', S_REVIEWS, { off: true }),
       // No ID yet: the Inbox does not show it.
@@ -171,13 +171,13 @@ describe('friendStats (YAZ-5069)', () => {
   })
 
   it('the local day turns at midnight in the person`s time zone', () => {
-    const cards = [card('GEO-1', [['2026-11-12T18:00Z', 'good']]), card('GEO-2', [['2026-11-12T19:00Z', 'good']])]
+    const cards = [card('GEO-1', [['2026-11-12T18:00:00.000Z', 'good']]), card('GEO-2', [['2026-11-12T19:00:00.000Z', 'good']])]
     // New York: both at 13:00 and 14:00 on 12 November.
     expect(dayOf(stats(cards), '2026-11-12')).toMatchObject({ cards: 2 })
     process.env.TZ = 'Asia/Kolkata'
     try {
       // India: 23:30 on 12 November, then 00:30 on 13 November.
-      const now = Date.parse('2026-11-13T06:30Z')
+      const now = Date.parse('2026-11-13T06:30:00.000Z')
       const s = stats(cards, now)
       expect(s.days.map((d) => [d.day, d.cards])).toEqual([
         ['2026-11-13', 1],
@@ -191,7 +191,7 @@ describe('friendStats (YAZ-5069)', () => {
 
   it('keeps the newest 90 days; the streak and the bests look at the whole history', () => {
     // Answered first 200 days ago; a card in its steps never ends, so no day is ever finished after its first.
-    const s = stats([card('GEO-1', [['2026-04-27T15:00Z', 'good']]), card('GEO-2', [['2026-04-27T15:00Z', 'good']])])
+    const s = stats([card('GEO-1', [['2026-04-27T15:00:00.000Z', 'good']]), card('GEO-2', [['2026-04-27T15:00:00.000Z', 'good']])])
     expect(s.days).toHaveLength(FRIEND_DAYS)
     expect(s.days[0].day).toBe('2026-11-13')
     expect(s.days[FRIEND_DAYS - 1].day).toBe('2026-08-16')
@@ -201,21 +201,21 @@ describe('friendStats (YAZ-5069)', () => {
   it('`addedThisWeek`, `bestDay` and `bestWeek` use local weeks from Monday', () => {
     const s = stats([
       card('GEO-1', [
-        ['2026-11-08T15:00Z', 'good'],
-        ['2026-11-08T15:02Z', 'good'],
-        ['2026-11-10T15:00Z', 'good'],
+        ['2026-11-08T15:00:00.000Z', 'good'],
+        ['2026-11-08T15:02:00.000Z', 'good'],
+        ['2026-11-10T15:00:00.000Z', 'good'],
       ]),
       card('GEO-2', [
-        ['2026-11-08T16:00Z', 'good'],
-        ['2026-11-08T16:02Z', 'good'],
+        ['2026-11-08T16:00:00.000Z', 'good'],
+        ['2026-11-08T16:02:00.000Z', 'good'],
       ]),
       card('GEO-3', [
-        ['2026-11-09T15:00Z', 'good'],
-        ['2026-11-09T15:02Z', 'good'],
+        ['2026-11-09T15:00:00.000Z', 'good'],
+        ['2026-11-09T15:02:00.000Z', 'good'],
       ]),
       card('GEO-4', [
-        ['2026-11-12T15:00Z', 'good'],
-        ['2026-11-12T15:02Z', 'good'],
+        ['2026-11-12T15:00:00.000Z', 'good'],
+        ['2026-11-12T15:02:00.000Z', 'good'],
       ]),
     ])
     // Sunday 8 November is last week: 2 cards. This week (from Monday 9 November): 1 + 1 + 1 cards, 2 of them new.
@@ -225,16 +225,16 @@ describe('friendStats (YAZ-5069)', () => {
   it('"Remembered %" and "days reviewed" use the last 30 days only', () => {
     const s = stats([
       card('GEO-1', [
-        ['2026-10-01T15:00Z', 'again'],
-        ['2026-10-01T15:01Z', 'again'],
-        ['2026-10-01T15:02Z', 'again'],
+        ['2026-10-01T15:00:00.000Z', 'again'],
+        ['2026-10-01T15:01:00.000Z', 'again'],
+        ['2026-10-01T15:02:00.000Z', 'again'],
       ]),
       card('GEO-2', [
-        ['2026-10-15T15:00Z', 'good'],
-        ['2026-11-10T15:00Z', 'again'],
-        ['2026-11-10T15:05Z', 'good'],
-        ['2026-11-12T15:00Z', 'good'],
-        ['2026-11-13T15:00Z', 'easy'],
+        ['2026-10-15T15:00:00.000Z', 'good'],
+        ['2026-11-10T15:00:00.000Z', 'again'],
+        ['2026-11-10T15:05:00.000Z', 'good'],
+        ['2026-11-12T15:00:00.000Z', 'good'],
+        ['2026-11-13T15:00:00.000Z', 'easy'],
       ]),
     ])
     // 15 October to 13 November: 4 remembered and 1 forgot. The three Forgot of 1 October are older.
@@ -246,11 +246,11 @@ describe('friendStats (YAZ-5069)', () => {
   it('numbers only: the JSON holds no card text and no title; a card file embedded on a page counts one time', () => {
     const cardFile = indexRecord(
       { path: '/v/capital-geo-140.md', name: 'capital-geo-140.md', basename: 'capital-geo-140', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1 },
-      ['---', 'kind: card', 'title: Secret capital', '---', '```card', 'Which city is lovely?', '---', 'Paris', '```', '<!-- card: GEO-140, 2026-11-13T15:00Z good 9s -->', ''].join('\n'),
+      ['---', 'kind: card', 'title: Secret capital', '---', '```card', 'Which city is lovely?', '---', 'Paris', '```', '<!-- card: GEO-140, 2026-11-13T15:00:00.000Z good 9s -->', ''].join('\n'),
     )
     const pageCard = indexRecord(
       { path: '/v/trip.md', name: 'trip.md', basename: 'trip', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1 },
-      ['Trip plan', '', '![[GEO-140]]', '', '```card', 'Hidden question', '---', 'Hidden answer', '```', '<!-- card: GEO-141, 2026-11-13T15:10Z again 4s -->', ''].join('\n'),
+      ['Trip plan', '', '![[GEO-140]]', '', '```card', 'Hidden question', '---', 'Hidden answer', '```', '<!-- card: GEO-141, 2026-11-13T15:10:00.000Z again 4s -->', ''].join('\n'),
     )
     const otherPage = indexRecord({ path: '/v/b.md', name: 'b.md', basename: 'b', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1 }, '![[GEO-140]] and ![[GEO-140]] again\n')
     const s = friendStats([{ pages: [cardFile, pageCard, otherPage], settings: S }], NOW)

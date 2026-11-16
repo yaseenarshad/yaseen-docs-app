@@ -7,7 +7,7 @@ import { ANSWERS_STATE, openOutbox } from './outbox'
 import type { CardOp } from './ops'
 
 const VAULT = 'yaseen/vault@main'
-const review = (id: string, minute: number): CardOp => ({ kind: 'review', id, review: { at: `2026-11-14T06:${String(minute).padStart(2, '0')}Z`, rating: 'good' } })
+const review = (id: string, minute: number): CardOp => ({ kind: 'review', id, review: { at: `2026-11-14T06:${String(minute).padStart(2, '0')}:00.000Z`, rating: 'good' } })
 const entry = (op: CardOp) => ({ op, path: 'a.md', title: `Card ${op.id}` })
 
 /** Each test gets a new phone; `start()` opens its storage again, as the next app start does. */

@@ -11,7 +11,7 @@ import type { VaultMedia } from '../media/ui/vaultMedia'
 // Checker round 4 (YAZ-5078): `#fixture=c4-<card>[-update][-answered][-lost]`. Made-up data, checker worktree only.
 const block = (text: string, line: string, fence = '```') => `${fence}card\n${text}\n${fence}\n<!-- card: ${line} -->`
 const page = (title: string, ...cards: string[]) => `---\ntitle: ${title}\n---\n\n# ${title}\n\n${cards.join('\n\n')}\n`
-const DUE = '2026-10-02T09:00Z good, 2026-10-12T09:00Z good'
+const DUE = '2026-10-02T09:00:00.000Z good, 2026-10-12T09:00:00.000Z good'
 const one = (text: string, extra = '', fence = '```') => ({ 'p.md': page('Geography', block(text, `CF-1${extra}, ${DUE}`, fence), block('Filler\n---\n{{filler}}', `CF-2, ${DUE}`)) })
 export const C4: Record<string, Record<string, string>> = {
   zero: one('Paris is the capital of France.'),
@@ -93,7 +93,7 @@ export async function mountCheck4Erase(root: Root, name: string): Promise<void> 
   const book = (groups: number) => {
     const waiting: { seq: number; group: number; op: unknown; path: string; title: string; madeAt: number }[] = []
     for (let g = 1; g <= groups; g++) {
-      const review = { kind: 'review', id: `X-${g}`, review: { at: '2026-11-14T06:00Z', rating: 'good' } }
+      const review = { kind: 'review', id: `X-${g}`, review: { at: '2026-11-14T06:00:00.000Z', rating: 'good' } }
       // The first answer is to an Up next card: two actions in ONE group.
       if (g === 1) waiting.push({ seq: waiting.length + 1, group: g, op: { kind: 'next', id: `X-${g}`, on: false }, path: 'a.md', title: 'T', madeAt: 0 })
       waiting.push({ seq: waiting.length + 1, group: g, op: review, path: 'a.md', title: 'T', madeAt: 0 })

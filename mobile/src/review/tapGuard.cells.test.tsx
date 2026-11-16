@@ -16,7 +16,7 @@ import { NOW, cardBlock, page } from './testing'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 vi.setConfig({ testTimeout: 30_000 })
 
-const OLD = '2026-10-04T09:00Z good'
+const OLD = '2026-10-04T09:00:00.000Z good'
 const cards = (n: number, p = 'KC') => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n{{w${i + 1}}}`, `${p}-${i + 1}, ${OLD}`))
 const real = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
 

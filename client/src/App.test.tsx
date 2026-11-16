@@ -5518,9 +5518,9 @@ describe('App card review (YAZ-4967)', () => {
     path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, title: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
     properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cards.map(([id, reviews]) => ({ id, off: false, next: false, reviews })),
   })
-  const hourAgo = () => [{ at: new Date(Date.now() - H).toISOString().slice(0, 16) + 'Z', rating: 'good' as const }]
+  const hourAgo = () => [{ at: new Date(Date.now() - H).toISOString().slice(0, 16) + ':00.000Z', rating: 'good' as const }]
   const RECORDS = () => [
-    page('x', '', ['V-1', [{ at: '2020-01-01T09:00Z', rating: 'good' }]], ['V-2', hourAgo()]), // due; not due
+    page('x', '', ['V-1', [{ at: '2020-01-01T09:00:00.000Z', rating: 'good' }]], ['V-2', hourAgo()]), // due; not due
     page('p', 'Work', ['V-3', []]), // new
   ]
   const withIndex = (records: IndexRecord[], ids = true) => (b: ReturnType<typeof installBridge>) =>
@@ -5764,7 +5764,7 @@ describe('App: the card flow (YAZ-4962)', () => {
   })
 
   it('the card window opens from the editor\'s open-card hook (`mdapp:card-open`): a card layer of the page, the card read-only; a hook with no page opens nothing', async () => {
-    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, title "Capital of France", 2026-01-02T09:00Z good -->'), mtime: 1 } }
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, title "Capital of France", 2026-01-02T09:00:00.000Z good -->'), mtime: 1 } }
     const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
     act(() => void document.dispatchEvent(new CustomEvent(CARD_OPEN, { detail: { path: null, cardId: 'WIKI-9', index: 0 } })))
     await act(async () => {})
@@ -5779,10 +5779,10 @@ describe('App: the card flow (YAZ-4962)', () => {
   })
 
   it('YAZ-5152: the preview ask (`mdapp:card-preview`) shows the card as the Inbox does, over the window, inside the app (its Card spacing); Space steps; Esc closes it; nothing is written', async () => {
-    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->'), mtime: 1 } }
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->'), mtime: 1 } }
     const { el, bridge } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
     const writesBefore = bridge.writeFile.mock.calls.length
-    act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_PREVIEW, { bubbles: true, detail: { path: PAGE, id: 'WIKI-9', text: 'Capital of {{France}}\n---\n{{Paris}}', notitle: false, reviews: [{ at: '2026-01-02T09:00Z', rating: 'good' }] } })))
+    act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_PREVIEW, { bubbles: true, detail: { path: PAGE, id: 'WIKI-9', text: 'Capital of {{France}}\n---\n{{Paris}}', notitle: false, reviews: [{ at: '2026-01-02T09:00:00.000Z', rating: 'good' }] } })))
     await vi.waitFor(() => expect(document.querySelector('.card-preview .card-inbox__card .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     const preview = document.querySelector<HTMLElement>('.card-preview')!
     expect(preview.closest('.app')).not.toBeNull()

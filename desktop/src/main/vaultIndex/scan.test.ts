@@ -179,7 +179,7 @@ describe('scanFile', () => {
       '---',
       'Paris',
       '```',
-      '<!-- card: WIKI-512, title "Capital of France?", 2026-11-12T14:05Z good, mochi abc, 2026-11-20T09:00Z again -->',
+      '<!-- card: WIKI-512, title "Capital of France?", 2026-11-12T14:05:00.000Z good, mochi abc, 2026-11-20T09:00:00.000Z again -->',
       '',
       '- in a list',
       '  ```card',
@@ -200,7 +200,7 @@ describe('scanFile', () => {
     await writeFile(file, bytes)
     const r = await scanFile(root, file)
     expect(r.cards).toEqual([
-      { id: 'WIKI-512', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-20T09:00Z', rating: 'again' }], title: 'Capital of France?' },
+      { id: 'WIKI-512', off: false, next: false, reviews: [{ at: '2026-11-12T14:05:00.000Z', rating: 'good' }, { at: '2026-11-20T09:00:00.000Z', rating: 'again' }], title: 'Capital of France?' },
       { id: null, off: false, next: false, reviews: [] },
       { id: 'WIKI-7', off: true, next: false, reviews: [] },
     ])
@@ -220,12 +220,12 @@ describe('scanFile', () => {
 
   it('YAZ-5037: a card file (`kind: card`, any case) has kind card, its card\'s title, and its card\'s ID only — no page ID', async () => {
     const file = path.join(root, 'capital-of-france-geo-140.md')
-    await writeFile(file, ['---', 'kind: " CARD "', 'tags: [geo]', '---', '```card', '###### Capital of **France**?', '---', 'Paris', '```', '<!-- card: GEO-140, title "Capital of France?", 2026-11-10T09:12Z good 12s -->', ''].join('\n'))
+    await writeFile(file, ['---', 'kind: " CARD "', 'tags: [geo]', '---', '```card', '###### Capital of **France**?', '---', 'Paris', '```', '<!-- card: GEO-140, title "Capital of France?", 2026-11-10T09:12:00.000Z good 12s -->', ''].join('\n'))
     const r = await scanFile(root, file)
     expect(r.kind).toBe('card')
     expect(r.title).toBe('Capital of France?')
     expect(r.id).toBeUndefined()
-    expect(r.cards).toEqual([{ id: 'GEO-140', off: false, next: false, reviews: [{ at: '2026-11-10T09:12Z', rating: 'good', seconds: 12 }], title: 'Capital of France?' }])
+    expect(r.cards).toEqual([{ id: 'GEO-140', off: false, next: false, reviews: [{ at: '2026-11-10T09:12:00.000Z', rating: 'good', seconds: 12 }], title: 'Capital of France?' }])
     expect(r.properties).toEqual({ kind: ' CARD ', tags: ['geo'] })
   })
 

@@ -96,7 +96,7 @@ beforeEach(() => {
   notices.length = 0
   doors = desktop()
   // A known card, due (out of its steps), and a new card.
-  page('K.md', ['Known {{a}}?', 'WIKI-5, 2026-09-01T09:00Z good, 2026-09-01T09:01Z good'], ['New {{b}}?', 'WIKI-6'])
+  page('K.md', ['Known {{a}}?', 'WIKI-5, 2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'], ['New {{b}}?', 'WIKI-6'])
 })
 
 afterEach(() => {
@@ -137,7 +137,7 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
   it('the daily limits hold: new cards a day, and "Add more for today" counts in the host, never in the app state; Up next a day uses the host`s day list', async () => {
     page('New.md', ...[10, 11, 12].map((n): [string, string] => [`New {{${n}}}`, `WIKI-${n}`]))
     // Two marked cards, known and not due (begun on another day, so neither takes a new card of today).
-    const known = '2026-11-11T07:00Z good, 2026-11-11T07:01Z good, 2026-11-12T08:00Z good'
+    const known = '2026-11-11T07:00:00.000Z good, 2026-11-11T07:01:00.000Z good, 2026-11-12T08:00:00.000Z good'
     page('Next.md', ['Marked {{x}}?', `WIKI-20, next, ${known}`], ['Marked {{y}}?', `WIKI-21, next, ${known}`])
     await mount({ ...S, newPerDay: 1, upNextPerDay: 1 })
     // Known WIKI-5 due, ONE new card (WIKI-6), ONE Up next (WIKI-20).

@@ -228,7 +228,7 @@ describe('the embed and its head (Q4, locked)', () => {
 })
 
 describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the Inbox and the page card', () => {
-  const LINE = '<!-- card: GEO-140, 2026-11-01T09:00Z good, 2026-11-06T09:00Z again 12s -->'
+  const LINE = '<!-- card: GEO-140, 2026-11-01T09:00:00.000Z good, 2026-11-06T09:00:00.000Z again 12s -->'
   it('a card with reviews shows THE strip (`CardStrip`) under its text, its right side empty (YAZ-5381); a click opens the table; the delete writes the original; no door: no strip', async () => {
     const deleteReview = vi.fn(async () => {})
     const settings = () => DEFAULT_REVIEW_SETTINGS
@@ -245,7 +245,7 @@ describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the
     box.querySelectorAll<HTMLButtonElement>('.card-reviews__delete')[1].click()
     await vi.waitFor(() => expect(document.querySelector('.confirm')).not.toBeNull())
     ;[...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === 'Remove review')!.click()
-    await vi.waitFor(() => expect(deleteReview).toHaveBeenCalledWith(CARD_FILE, 'GEO-140', { at: '2026-11-06T09:00Z', rating: 'again', seconds: 12 }))
+    await vi.waitFor(() => expect(deleteReview).toHaveBeenCalledWith(CARD_FILE, 'GEO-140', { at: '2026-11-06T09:00:00.000Z', rating: 'again', seconds: 12 }))
     const plain = await mount('Plan\n\n![[GEO-140]]\n')
     await tick(10)
     expect(boxes(plain.root)[0]!.querySelector('.card-reviews')).toBeNull()

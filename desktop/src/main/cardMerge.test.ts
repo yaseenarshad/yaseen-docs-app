@@ -13,9 +13,9 @@ const lineOf = (text: string, n = 0) => {
   return c.lineAt === null ? null : splitFrontmatter(text).body.split('\n')[c.lineAt]
 }
 
-const OLD = '2026-11-01T09:00Z good'
-const T = '2026-11-13T10:00Z good 4s'
-const M = '2026-11-13T10:05Z again 7s'
+const OLD = '2026-11-01T09:00:00.000Z good'
+const T = '2026-11-13T10:00:00.000Z good 4s'
+const M = '2026-11-13T10:05:00.000Z again 7s'
 
 describe('uniteCardLines', () => {
   it('the same card answered on both sides: each side holds the union of the reviews, in time order, and the same line', () => {
@@ -53,7 +53,7 @@ describe('uniteCardLines', () => {
     const mine = page(card('Hola\n---\nHello', `YAZ-7, ${OLD}, ${M}`))
     const [t, m] = uniteCardLines(base, theirs, mine)
     expect(lineOf(t)).toBe(lineOf(m))
-    expect(cardsOf(t)[0].reviews.map((r) => r.at)).toEqual(['2026-11-01T09:00Z', '2026-11-13T10:00Z', '2026-11-13T10:05Z'])
+    expect(cardsOf(t)[0].reviews.map((r) => r.at)).toEqual(['2026-11-01T09:00:00.000Z', '2026-11-13T10:00:00.000Z', '2026-11-13T10:05:00.000Z'])
     expect(pageCards(t)[0].text).toBe('Hola\n---\nHello!')
     expect(pageCards(m)[0].text).toBe('Hola\n---\nHello')
   })
@@ -83,14 +83,14 @@ describe('uniteCardLines', () => {
     const mine = page(card('Hola', `YAZ-7, off, ${OLD}`))
     const [t, m] = uniteCardLines(base, theirs, mine)
     expect(t).toBe(m)
-    expect(cardsOf(t)).toEqual([{ id: 'YAZ-7', off: true, next: true, reviews: [{ at: '2026-11-01T09:00Z', rating: 'good' }] }])
+    expect(cardsOf(t)).toEqual([{ id: 'YAZ-7', off: true, next: true, reviews: [{ at: '2026-11-01T09:00:00.000Z', rating: 'good' }] }])
   })
 
   it('the same review on both sides is one review; a timed copy of it wins', () => {
     const base = page(card('Hola', 'YAZ-7'))
-    const [t, m] = uniteCardLines(base, page(card('Hola', 'YAZ-7, 2026-11-13T10:00Z good')), page(card('Hola', 'YAZ-7, 2026-11-13T10:00Z good 4s, next')))
+    const [t, m] = uniteCardLines(base, page(card('Hola', 'YAZ-7, 2026-11-13T10:00:00.000Z good')), page(card('Hola', 'YAZ-7, 2026-11-13T10:00:00.000Z good 4s, next')))
     expect(t).toBe(m)
-    expect(lineOf(t)).toBe('<!-- card: YAZ-7, 2026-11-13T10:00Z good 4s, next -->')
+    expect(lineOf(t)).toBe('<!-- card: YAZ-7, 2026-11-13T10:00:00.000Z good 4s, next -->')
   })
 
   it('a card that moved pages (a convert on one side) is not united: the page with it is left for the line merge', () => {
@@ -145,9 +145,9 @@ describe('uniteCardLines', () => {
 })
 
 describe('uniteCardLines: a review removed on one side stays removed (YAZ-5155)', () => {
-  const R1 = '2026-11-01T09:00Z good'
-  const R2 = '2026-11-05T09:00Z again'
-  const R3 = '2026-11-13T10:00Z good 4s'
+  const R1 = '2026-11-01T09:00:00.000Z good'
+  const R2 = '2026-11-05T09:00:00.000Z again'
+  const R3 = '2026-11-13T10:00:00.000Z good 4s'
 
   it('base {R1, R2}, mine {R1} (an undo), theirs {R1, R2, R3}: {R1, R3}, both ways round', () => {
     const base = page(card('Hola', `YAZ-7, ${R1}, ${R2}`))

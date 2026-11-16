@@ -27,7 +27,7 @@ function vault(): Record<string, string> {
     const cards = Array.from({ length: PER_PAGE }, (_, i) => {
       const n = p * PER_PAGE + i + 1
       // Answered "good" 40 and 30 days ago: due today.
-      return cardBlock(`Question ${n}?\n---\nThe answer is {{${n}}}.`, `PF-${n}, 2026-10-04T09:00Z good, 2026-10-14T09:00Z good`)
+      return cardBlock(`Question ${n}?\n---\nThe answer is {{${n}}}.`, `PF-${n}, 2026-10-04T09:00:00.000Z good, 2026-10-14T09:00:00.000Z good`)
     })
     files[`deck-${String(p).padStart(3, '0')}.md`] = page(`Deck ${p}`, ...cards)
   }

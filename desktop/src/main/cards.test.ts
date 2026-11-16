@@ -32,45 +32,45 @@ const DAY = 86_400_000
 
 describe('the card line (D3)', () => {
   it('round-trips byte for byte with unknown parts kept in place, and each change touches only its own part', () => {
-    const text = '<!-- card: WIKI-512, mochi hneK1PH8, 2026-11-12T14:05Z good, later-thing, 2026-11-20T09:00Z again -->'
+    const text = '<!-- card: WIKI-512, mochi hneK1PH8, 2026-11-12T14:05:00.000Z good, later-thing, 2026-11-20T09:00:00.000Z again -->'
     const line = parseCardLine(text)!
     expect(formatCardLine(line)).toBe(text)
     expect(parseCardLine(`  ${text}  `)).toEqual(line)
     expect(line.parts.map((p) => p.kind)).toEqual(['id', 'other', 'review', 'other', 'review'])
 
-    const reviewed = withCardReview(line, { at: '2026-12-01T08:00Z', rating: 'hard' })
-    expect(formatCardLine(reviewed)).toBe('<!-- card: WIKI-512, mochi hneK1PH8, 2026-11-12T14:05Z good, later-thing, 2026-11-20T09:00Z again, 2026-12-01T08:00Z hard -->')
-    expect(formatCardLine(withoutCardReview(reviewed, '2026-11-12T14:05Z'))).toBe('<!-- card: WIKI-512, mochi hneK1PH8, later-thing, 2026-11-20T09:00Z again, 2026-12-01T08:00Z hard -->')
-    expect(withoutCardReview(line, '1999-01-01T00:00Z')).toBe(line)
-    expect(formatCardLine(withCardOff(line, true))).toBe('<!-- card: WIKI-512, off, mochi hneK1PH8, 2026-11-12T14:05Z good, later-thing, 2026-11-20T09:00Z again -->')
+    const reviewed = withCardReview(line, { at: '2026-12-01T08:00:00.000Z', rating: 'hard' })
+    expect(formatCardLine(reviewed)).toBe('<!-- card: WIKI-512, mochi hneK1PH8, 2026-11-12T14:05:00.000Z good, later-thing, 2026-11-20T09:00:00.000Z again, 2026-12-01T08:00:00.000Z hard -->')
+    expect(formatCardLine(withoutCardReview(reviewed, '2026-11-12T14:05:00.000Z'))).toBe('<!-- card: WIKI-512, mochi hneK1PH8, later-thing, 2026-11-20T09:00:00.000Z again, 2026-12-01T08:00:00.000Z hard -->')
+    expect(withoutCardReview(line, '1999-01-01T00:00:00.000Z')).toBe(line)
+    expect(formatCardLine(withCardOff(line, true))).toBe('<!-- card: WIKI-512, off, mochi hneK1PH8, 2026-11-12T14:05:00.000Z good, later-thing, 2026-11-20T09:00:00.000Z again -->')
     expect(formatCardLine(withCardOff(withCardOff(line, true), false))).toBe(text)
     expect(formatCardLine(withoutCardReviews(line))).toBe('<!-- card: WIKI-512, mochi hneK1PH8, later-thing -->')
     expect(formatCardLine(withCardId(line, 'WIKI-900'))).toBe(text.replace('WIKI-512', 'WIKI-900'))
 
     // The undo of a delete (YAZ-4964): the review goes back to its own place, so the line is the same bytes again.
-    const mixed = '<!-- card: WIKI-7, off, 2026-09-01T08:00Z good, mochi x1, 2026-10-02T09:30Z hard, 2026-08-03T10:00Z again -->'
-    for (const at of ['2026-09-01T08:00Z', '2026-10-02T09:30Z', '2026-08-03T10:00Z']) {
+    const mixed = '<!-- card: WIKI-7, off, 2026-09-01T08:00:00.000Z good, mochi x1, 2026-10-02T09:30:00.000Z hard, 2026-08-03T10:00:00.000Z again -->'
+    for (const at of ['2026-09-01T08:00:00.000Z', '2026-10-02T09:30:00.000Z', '2026-08-03T10:00:00.000Z']) {
       const before = parseCardLine(mixed)!
       const index = cardReviewIndex(before, at)
       const review = before.parts.flatMap((p) => (p.kind === 'review' && p.review.at === at ? [p.review] : []))[0]
       expect(formatCardLine(withCardReviewAt(withoutCardReview(before, at), review, index))).toBe(mixed)
     }
-    expect(cardReviewIndex(line, '1999-01-01T00:00Z')).toBe(-1)
-    expect(formatCardLine(withCardReviewAt(parseCardLine('<!-- card: WIKI-7 -->')!, { at: '2026-09-01T08:00Z', rating: 'good' }, 9))).toBe('<!-- card: WIKI-7, 2026-09-01T08:00Z good -->')
+    expect(cardReviewIndex(line, '1999-01-01T00:00:00.000Z')).toBe(-1)
+    expect(formatCardLine(withCardReviewAt(parseCardLine('<!-- card: WIKI-7 -->')!, { at: '2026-09-01T08:00:00.000Z', rating: 'good' }, 9))).toBe('<!-- card: WIKI-7, 2026-09-01T08:00:00.000Z good -->')
 
     // A card with no ID: the first part is a review, and the sweep's ID goes in front.
-    const bare = parseCardLine('<!--card:2026-11-12T14:05Z good,,-->')!
-    expect(formatCardLine(withCardId(bare, 'WIKI-1'))).toBe('<!-- card: WIKI-1, 2026-11-12T14:05Z good -->')
+    const bare = parseCardLine('<!--card:2026-11-12T14:05:00.000Z good,,-->')!
+    expect(formatCardLine(withCardId(bare, 'WIKI-1'))).toBe('<!-- card: WIKI-1, 2026-11-12T14:05:00.000Z good -->')
     expect(formatCardLine({ parts: [] })).toBeNull()
     // A bad time or rating is kept as text, never read as a review; the second ID-like part is kept too.
-    expect(parseCardLine('<!-- card: wiki-3, 2026-13-45T99:99Z good, 2026-11-12T14:05Z meh, WIKI-4 -->')!.parts).toEqual([
+    expect(parseCardLine('<!-- card: wiki-3, 2026-13-45T99:99:00.000Z good, 2026-11-12T14:05:00.000Z meh, WIKI-4 -->')!.parts).toEqual([
       { kind: 'id', id: 'WIKI-3' },
-      { kind: 'other', text: '2026-13-45T99:99Z good' },
-      { kind: 'other', text: '2026-11-12T14:05Z meh' },
+      { kind: 'other', text: '2026-13-45T99:99:00.000Z good' },
+      { kind: 'other', text: '2026-11-12T14:05:00.000Z meh' },
       { kind: 'other', text: 'WIKI-4' },
     ])
     for (const notOurs of ['<!-- code: width 300 -->', '<!-- cards: WIKI-1 -->', '<!-- card: a --> b -->', 'card: WIKI-1']) expect(parseCardLine(notOurs)).toBeNull()
-    expect(cardTime(Date.UTC(2026, 10, 12, 14, 5, 59))).toBe('2026-11-12T14:05Z')
+    expect(cardTime(Date.UTC(2026, 10, 12, 14, 5, 59, 123))).toBe('2026-11-12T14:05:59.123Z')
   })
 
   it('finds the cards of a page and rewrites only their lines: a line added under a bare fence, one emptied away, an indent kept', () => {
@@ -80,7 +80,7 @@ describe('the card line (D3)', () => {
       '```card',
       'One',
       '```',
-      '<!-- card: WIKI-1, 2026-11-12T14:05Z good -->',
+      '<!-- card: WIKI-1, 2026-11-12T14:05:00.000Z good -->',
       '',
       '- item',
       '  ```card',
@@ -104,16 +104,16 @@ describe('the card line (D3)', () => {
       [8, 12, null, '  ', 'Two {{word}}\n---\nBack'],
     ])
     expect(cardRecords(page)).toEqual([
-      { id: 'WIKI-1', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] },
+      { id: 'WIKI-1', off: false, next: false, reviews: [{ at: '2026-11-12T14:05:00.000Z', rating: 'good' }] },
       { id: null, off: false, next: false, reviews: [] },
     ])
     const given = rewritePageCards(page, (card, i) => (i === 1 ? withCardId(card.line, 'WIKI-2') : undefined))
     expect(given).toBe(page.replace('  Back\n  ```\n', '  Back\n  ```\n  <!-- card: WIKI-2 -->\n'))
     expect(rewritePageCards(given, (card, i) => (i === 1 ? withCardId(card.line, 'WIKI-2') : undefined))).toBe(given)
     // The Inbox's write: one review on the card named by ID; an empty line goes.
-    const at = '2026-11-20T09:00Z'
+    const at = '2026-11-20T09:00:00.000Z'
     expect(changeCard(given, 'WIKI-2', (l) => withCardReview(l, { at, rating: 'again' }))).toContain(`  <!-- card: WIKI-2, ${at} again -->`)
-    expect(changeCard(page, 'WIKI-1', () => ({ parts: [] }))).toBe(page.replace('<!-- card: WIKI-1, 2026-11-12T14:05Z good -->\n', ''))
+    expect(changeCard(page, 'WIKI-1', () => ({ parts: [] }))).toBe(page.replace('<!-- card: WIKI-1, 2026-11-12T14:05:00.000Z good -->\n', ''))
     expect(() => changeCard(page, 'WIKI-9', (l) => l)).toThrow(CardNotFoundError)
     expect(findCards('no cards here\n```js\nx\n```\n')).toEqual([])
   })
@@ -145,10 +145,10 @@ describe('code in a card is literal (the one fence walk, `shared/fences.ts`)', (
 
 describe('the schedule (D5): FSRS 5.4.2 replay', () => {
   const log: CardReview[] = [
-    { at: '2026-01-01T09:00Z', rating: 'good' },
-    { at: '2026-01-04T09:00Z', rating: 'good' },
-    { at: '2026-01-20T09:00Z', rating: 'again' },
-    { at: '2026-01-21T10:30Z', rating: 'good' },
+    { at: '2026-01-01T09:00:00.000Z', rating: 'good' },
+    { at: '2026-01-04T09:00:00.000Z', rating: 'good' },
+    { at: '2026-01-20T09:00:00.000Z', rating: 'again' },
+    { at: '2026-01-21T10:30:00.000Z', rating: 'good' },
   ]
 
   it('the same log gives the same due date every time, also with fuzz on, and the order on the line does not matter', () => {
@@ -157,8 +157,8 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     const first = cardState(log, fuzzed)
     for (let i = 0; i < 5; i++) expect(cardState(log, { ...DEFAULT_REVIEW_SETTINGS })).toEqual(first)
     expect(cardState([...log].reverse(), fuzzed)).toEqual(first)
-    expect(first).toMatchObject({ isNew: false, lastReview: '2026-01-21T10:30Z', lapses: 1 })
-    expect(first.due).toBe(Date.parse('2026-01-21T10:30Z') + first.interval * DAY)
+    expect(first).toMatchObject({ isNew: false, lastReview: '2026-01-21T10:30:00.000Z', lapses: 1 })
+    expect(first.due).toBe(Date.parse('2026-01-21T10:30:00.000Z') + first.interval * DAY)
     // Fuzz moves the date only within its range: off, the same log may land on another day, but near.
     const plain = cardState(log, { ...DEFAULT_REVIEW_SETTINGS, fuzz: false })
     expect(Math.abs(plain.interval - first.interval)).toBeLessThanOrEqual(Math.max(2, Math.ceil(plain.interval * 0.15)))
@@ -178,11 +178,11 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     expect(answerRatings(DEFAULT_REVIEW_SETTINGS)).toEqual(['again', 'good'])
     expect(answerRatings(four)).toEqual(['again', 'hard', 'good', 'easy'])
     expect(answerRatings(DEFAULT_REVIEW_SETTINGS).map((r) => answerLabel(r, DEFAULT_REVIEW_SETTINGS))).toEqual(['Forgot', 'Remembered'])
-    const mixed: CardReview[] = [...log, { at: '2026-02-10T09:00Z', rating: 'easy' }, { at: '2026-03-30T09:00Z', rating: 'hard' }]
-    expect(cardState(mixed, four).due).toBeGreaterThan(Date.parse('2026-03-30T09:00Z'))
+    const mixed: CardReview[] = [...log, { at: '2026-02-10T09:00:00.000Z', rating: 'easy' }, { at: '2026-03-30T09:00:00.000Z', rating: 'hard' }]
+    expect(cardState(mixed, four).due).toBeGreaterThan(Date.parse('2026-03-30T09:00:00.000Z'))
     const now = Date.parse('2026-04-30T12:34:56Z')
     const answers = previewAnswers(mixed, four, now)
-    expect(answers.map((a) => a.review)).toEqual(['again', 'hard', 'good', 'easy'].map((rating) => ({ at: '2026-04-30T12:34Z', rating })))
+    expect(answers.map((a) => a.review)).toEqual(['again', 'hard', 'good', 'easy'].map((rating) => ({ at: '2026-04-30T12:34:56.000Z', rating })))
     expect(answers[3].interval).toBeGreaterThan(answers[1].interval)
     for (const a of answers) expect(cardState([...mixed, a.review], four).due).toBe(a.due)
     const chance = recallChance(mixed, four, now)!
@@ -372,17 +372,17 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
   })
 
   it('YAZ-4999: `next` reads, writes and goes back to its place byte for byte', () => {
-    const text = '<!-- card: WIKI-512, next, 2026-11-12T14:05Z good -->'
+    const text = '<!-- card: WIKI-512, next, 2026-11-12T14:05:00.000Z good -->'
     const line = parseCardLine(text)!
     expect([isCardNext(line), cardNextIndex(line), formatCardLine(line)]).toEqual([true, 1, text])
-    expect(cardRecords(`\`\`\`card\nQ\n\`\`\`\n${text}`)).toEqual([{ id: 'WIKI-512', off: false, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }])
-    const plain = parseCardLine('<!-- card: WIKI-512, off, 2026-11-12T14:05Z good -->')!
-    expect(formatCardLine(withCardNext(plain, true))).toBe('<!-- card: WIKI-512, off, next, 2026-11-12T14:05Z good -->')
+    expect(cardRecords(`\`\`\`card\nQ\n\`\`\`\n${text}`)).toEqual([{ id: 'WIKI-512', off: false, next: true, reviews: [{ at: '2026-11-12T14:05:00.000Z', rating: 'good' }] }])
+    const plain = parseCardLine('<!-- card: WIKI-512, off, 2026-11-12T14:05:00.000Z good -->')!
+    expect(formatCardLine(withCardNext(plain, true))).toBe('<!-- card: WIKI-512, off, next, 2026-11-12T14:05:00.000Z good -->')
     expect(formatCardLine(withCardNext(EMPTY_CARD_LINE, true))).toBe('<!-- card: next -->')
     expect(withCardNext(line, true)).toBe(line)
-    expect(formatCardLine(withCardNext(line, false))).toBe('<!-- card: WIKI-512, 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(withCardNext(line, false))).toBe('<!-- card: WIKI-512, 2026-11-12T14:05:00.000Z good -->')
     // The undo of an answer: back at the place it had.
-    const odd = parseCardLine('<!-- card: WIKI-512, 2026-11-12T14:05Z good, next, kept -->')!
+    const odd = parseCardLine('<!-- card: WIKI-512, 2026-11-12T14:05:00.000Z good, next, kept -->')!
     expect(formatCardLine(withCardNext(withCardNext(odd, false), true, cardNextIndex(odd)))).toBe(formatCardLine(odd))
   })
 })

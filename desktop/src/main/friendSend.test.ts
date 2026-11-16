@@ -118,8 +118,8 @@ describe('never lower a day (round 12, item 2)', () => {
 describe('a time-zone change (decision 9: day numbers per device; round 10 item 21: accepted)', () => {
   it('each device counts its own local days; after a move the old days keep their counts and new days use the new zone', () => {
     const cards: CardRecord[] = [
-      { id: 'A-1', off: false, next: false, reviews: [{ at: '2026-11-14T03:30Z', rating: 'good' }] }, // 22:30 on the 13th in New York
-      { id: 'A-2', off: false, next: false, reviews: [{ at: '2026-11-14T15:00Z', rating: 'good' }] },
+      { id: 'A-1', off: false, next: false, reviews: [{ at: '2026-11-14T03:30:00.000Z', rating: 'good' }] }, // 22:30 on the 13th in New York
+      { id: 'A-2', off: false, next: false, reviews: [{ at: '2026-11-14T15:00:00.000Z', rating: 'good' }] },
     ]
     const vaults = [{ pages: [{ cards }], settings: DEFAULT_REVIEW_SETTINGS }]
     const profile = { login: 'y', name: 'Y', avatar: 'a', nickname: null }
@@ -149,7 +149,7 @@ describe('a time-zone change (decision 9: day numbers per device; round 10 item 
   })
 
   it('the day turns while the app is open: a new day entry starts', () => {
-    const cards: CardRecord[] = [{ id: 'A-1', off: false, next: false, reviews: [{ at: '2026-11-14T15:00Z', rating: 'good' }] }]
+    const cards: CardRecord[] = [{ id: 'A-1', off: false, next: false, reviews: [{ at: '2026-11-14T15:00:00.000Z', rating: 'good' }] }]
     const vaults = [{ pages: [{ cards }], settings: DEFAULT_REVIEW_SETTINGS }]
     const profile = { login: 'y', name: 'Y', avatar: 'a', nickname: null }
     const before = numbersFor(friendStats(vaults, Date.parse('2026-11-15T04:59:00Z')), profile, NOW)

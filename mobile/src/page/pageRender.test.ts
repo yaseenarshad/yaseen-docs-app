@@ -107,7 +107,7 @@ la biblioteca
 ---
 the library
 \`\`\`
-<!-- card: DEMO-12, 2026-11-01T10:00Z good -->
+<!-- card: DEMO-12, 2026-11-01T10:00:00.000Z good -->
 `
 
 describe('a page, read only, with no editor (YAZ-5079)', () => {
@@ -253,7 +253,7 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
   })
 
   it("a page's own card: the card drawn read only, its card line out of sight", async () => {
-    const el = await draw('Before.\n\n```card\nla biblioteca\n---\nthe library\n```\n<!-- card: DEMO-12, 2026-11-01T10:00Z good -->\n\nAfter.')
+    const el = await draw('Before.\n\n```card\nla biblioteca\n---\nthe library\n```\n<!-- card: DEMO-12, 2026-11-01T10:00:00.000Z good -->\n\nAfter.')
     expect(el.querySelector('.page-card .test-card')?.textContent).toBe('la biblioteca\n---\nthe library')
     expect(el.querySelector('.page-card')?.getAttribute('data-card-id')).toBe('DEMO-12')
     expect(el.textContent).not.toContain('card: DEMO-12')

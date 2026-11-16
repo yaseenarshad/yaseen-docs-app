@@ -23,7 +23,7 @@ beforeAll(async () => {
   cardsRoot = await mkdtemp(path.join(tmpdir(), 'mdapp-cardfiles-scale-'))
   pagesRoot = await mkdtemp(path.join(tmpdir(), 'mdapp-pages-scale-'))
   // Every card holds its title on its card line, in a page or a card file (YAZ-5308).
-  const card = (i: number) => `\`\`\`card\n---\nIts meaning {{${i}}}.\n\`\`\`\n<!-- card: WIKI-${i + 1}, title "What is word ${i}?", 2026-11-10T09:12Z good -->\n`
+  const card = (i: number) => `\`\`\`card\n---\nIts meaning {{${i}}}.\n\`\`\`\n<!-- card: WIKI-${i + 1}, title "What is word ${i}?", 2026-11-10T09:12:00.000Z good -->\n`
   await fill(cardsRoot, (i) => `---\nkind: card\ntags: [import]\n---\n${card(i)}`)
   await fill(pagesRoot, (i) => `---\nid: WIKI-${N + i + 1}\ntags: [import]\n---\n${card(i)}`)
   // Vaults that give IDs (only those have cards, YAZ-4946 D8); every page and card already holds one, and every card

@@ -674,7 +674,7 @@ describe('label and find', () => {
 describe('cards: due and card add (YAZ-4963)', () => {
   const DAY = 86_400_000
   const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA')
-  const minute = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
+  const minute = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}:00.000Z`
   const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
   /** A card line with `title` on it, right after the ID (YAZ-5308). */
   const titled = (title: string, line: string) => line.replace(/^([^,]+)/, `$1, title "${title}"`)

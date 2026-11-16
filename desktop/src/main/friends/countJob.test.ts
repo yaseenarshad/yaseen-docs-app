@@ -34,7 +34,7 @@ const VAULT = {
       title: `Secret card text ${p}-${c}`,
       off: c === 3 && p % 50 === 0,
       next: false,
-      reviews: Array.from({ length: Math.floor(rnd() * 11) }, () => ({ at: new Date(NOW - Math.floor(rnd() * 90 * 86_400_000)).toISOString().slice(0, 16) + 'Z', rating: RATINGS[Math.floor(rnd() * 4)], seconds: 5 })),
+      reviews: Array.from({ length: Math.floor(rnd() * 11) }, () => ({ at: new Date(NOW - Math.floor(rnd() * 90 * 86_400_000)).toISOString().slice(0, 16) + ':00.000Z', rating: RATINGS[Math.floor(rnd() * 4)], seconds: 5 })),
     })),
   })),
   settings: DEFAULT_REVIEW_SETTINGS,
@@ -107,8 +107,8 @@ describe('the count off the main thread (YAZ-5250)', () => {
 })
 
 describe('a closed vault, scanned from its files in the same worker (YAZ-5252)', () => {
-  const R1 = '2026-11-14T13:00Z good 7s'
-  const R2 = '2026-11-13T09:00Z again 4s'
+  const R1 = '2026-11-14T13:00:00.000Z good 7s'
+  const R2 = '2026-11-13T09:00:00.000Z again 4s'
   async function closedVault() {
     // The real path: main hands the worker only a real path (`knownClosedVaults`); on macOS the temp folder is under /var → /private/var.
     const root = await realpath(await mkdtemp(path.join(tmpdir(), 'yd-closed-vault-')))
@@ -123,7 +123,7 @@ describe('a closed vault, scanned from its files in the same worker (YAZ-5252)',
   it('the worker counts the open vault and the closed one together, exactly as friendStats of both', async () => {
     const root = await closedVault()
     try {
-      const open = { pages: [{ cards: [{ id: 'X-1', off: false, next: false, reviews: [{ at: '2026-11-14T12:00Z', rating: 'good', seconds: 3 }] }] }], settings: DEFAULT_REVIEW_SETTINGS } as unknown as FriendVault
+      const open = { pages: [{ cards: [{ id: 'X-1', off: false, next: false, reviews: [{ at: '2026-11-14T12:00:00.000Z', rating: 'good', seconds: 3 }] }] }], settings: DEFAULT_REVIEW_SETTINGS } as unknown as FriendVault
       const inThread = await scanVaultForCount(root)
       expect(inThread.pages.flatMap((p) => p.cards ?? []).map((c) => c.id)).toEqual(expect.arrayContaining(['WIKI-5', 'WIKI-6']))
       const count = makeCounter(worker, { scanDir: await mkdtemp(path.join(tmpdir(), 'yd-scan-cache-')) })
@@ -183,7 +183,7 @@ describe('a closed vault, scanned from its files in the same worker (YAZ-5252)',
   }, 60_000)
 
   it('the worker counts the days in the home zone it is given (YAZ-5251)', async () => {
-    const at = '2026-11-15T05:40Z' // 00:40 in New York (this file), 21:40 on Nov 14 in Los Angeles
+    const at = '2026-11-15T05:40:00.000Z' // 00:40 in New York (this file), 21:40 on Nov 14 in Los Angeles
     const v = { pages: [{ cards: [{ id: 'Z-1', off: false, next: false, reviews: [{ at, rating: 'good', seconds: 3 }] }] }], settings: DEFAULT_REVIEW_SETTINGS } as unknown as FriendVault
     const now = Date.parse('2026-11-15T06:00:00Z')
     const la = await countOffThread(worker, [v], now, 'America/Los_Angeles')

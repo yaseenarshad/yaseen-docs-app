@@ -11,7 +11,7 @@ import type { CardOp } from './ops'
 import { openOutbox, type Outbox } from './outbox'
 import { MAX_STALE_HEADS, commitSubject, sendOutbox } from './send'
 
-const at = (minute: number) => `2026-11-14T06:${String(minute).padStart(2, '0')}Z`
+const at = (minute: number) => `2026-11-14T06:${String(minute).padStart(2, '0')}:00.000Z`
 const good = (minute: number): CardReview => ({ at: at(minute), rating: 'good' })
 const answer = (id: string, minute: number): CardOp => ({ kind: 'review', id, review: good(minute) })
 const quiet = async () => {}
@@ -456,28 +456,3 @@ describe('YAZ-5514 W3: a resend after a lost reply never undoes a later Mac chan
   })
 })
 
-describe('YAZ-5514 W4: a second identical answer never doubles', () => {
-  it('two answers of one minute and rating (`nth: 2`), a lost reply, the Mac removes the first copy: the retry adds nothing', async () => {
-    const t = await setup(FILES)
-    let lose = true
-    const lossy: FetchLike = async (url, init) => {
-      const res = await t.s.github.fetch(url, init)
-      if ((init.method ?? 'GET') === 'PATCH' && lose) {
-        lose = false
-        const now = (await t.remoteFiles())['a.md']
-        expect(cardRecords(now).find((c) => c.id === 'NC-2')!.reviews).toHaveLength(2)
-        await t.s.git.push({ 'a.md': now.replace(`${at(1)} good, `, '') }) // the Mac takes one copy out
-        throw new TypeError('Load failed')
-      }
-      return res
-    }
-    const p = await phone(t.s, lossy)
-    await p.add(answer('NC-2', 1), { ...answer('NC-2', 1), nth: 2 } as CardOp)
-    expect(await p.send()).toMatchObject({ result: 'offline' })
-    expect(await t.reviewsOf('a.md', 'NC-2')).toEqual([at(1)])
-    const before = t.head()
-    expect(await p.send()).toMatchObject({ result: 'sent', sent: 2 })
-    expect(t.head()).toBe(before)
-    expect(await t.reviewsOf('a.md', 'NC-2')).toEqual([at(1)])
-  })
-})

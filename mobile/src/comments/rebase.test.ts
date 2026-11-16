@@ -118,8 +118,8 @@ describe('an answer and a comment go again onto the Mac\'s newest page', () => {
   it('M9: the Mac edited the line right BELOW the card line: the answer lands on the card line found by ID', () => {
     const base = '```card\nQ\n```\n<!-- card: NC-1 -->\nNext para\n'
     const mac = base.replace('Next para', 'Next para edited')
-    const out = applyOps(mac, [{ kind: 'review', id: 'NC-1', review: { at: '2026-11-14T06:01Z', rating: 'good' } }]).content
-    expect(out).toBe('```card\nQ\n```\n<!-- card: NC-1, 2026-11-14T06:01Z good -->\nNext para edited\n')
+    const out = applyOps(mac, [{ kind: 'review', id: 'NC-1', review: { at: '2026-11-14T06:01:00.000Z', rating: 'good' } }]).content
+    expect(out).toBe('```card\nQ\n```\n<!-- card: NC-1, 2026-11-14T06:01:00.000Z good -->\nNext para edited\n')
     expect(cardRecords(out)[0]!.reviews).toHaveLength(1)
   })
 

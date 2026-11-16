@@ -2601,7 +2601,7 @@ describe('the card window (YAZ-4962)', () => {
   })
 
   it('a card with reviews: the strip says the last answer, the next review and the recall chance in one line of words (YAZ-5032), with one (i); the table has Yaseen\'s columns; each row deletes its review', async () => {
-    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good, 2026-01-10T09:00Z again, 2026-01-11T09:00Z good -->')
+    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good, 2026-01-10T09:00:00.000Z again, 2026-01-11T09:00:00.000Z good -->')
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()
     await flush()
@@ -2635,11 +2635,11 @@ describe('the card window (YAZ-4962)', () => {
     expect(layers().map((l) => l.dataset.kind)).toEqual(['card'])
     act(() => deletes[1].click())
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === 'Remove review')!.click())
-    expect(deleteReview).toHaveBeenCalledExactlyOnceWith(PAGE, 'WIKI-9', { at: '2026-01-10T09:00Z', rating: 'again' })
+    expect(deleteReview).toHaveBeenCalledExactlyOnceWith(PAGE, 'WIKI-9', { at: '2026-01-10T09:00:00.000Z', rating: 'again' })
   })
 
   it('D13: the ⋯ menu turns review off and on and resets the history, through the card line of the file', async () => {
-    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->')
+    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->')
     writeFile.mockImplementation(async ({ path, content }) => {
       files[path] = content
       return { path, mtime: 2, size: content.length }
@@ -2656,7 +2656,7 @@ describe('the card window (YAZ-4962)', () => {
       await flush()
     }
     await pick('Archive card')
-    expect(files[PAGE]).toContain('<!-- card: WIKI-9, off, 2026-01-02T09:00Z good -->')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, off, 2026-01-02T09:00:00.000Z good -->')
     expect(strip()).toContain('Archived')
     await pick('Unarchive card')
     expect(strip()).not.toContain('Archived')
@@ -2665,14 +2665,14 @@ describe('the card window (YAZ-4962)', () => {
     expect([...document.querySelectorAll('.ctx-menu__item')].at(-1)?.textContent).toBe('Reset history')
     act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
     await pick('Reset history')
-    expect(files[PAGE]).toContain('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->')
     await confirmResetHistory()
     await flush()
     expect(files[PAGE]).toContain('<!-- card: WIKI-9 -->\n')
   })
 
   it('YAZ-4999: ⋯ Put at top of Inbox writes `next` and shows the chip "Up next"; its × removes the mark', async () => {
-    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->')
+    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->')
     writeFile.mockImplementation(async ({ path, content }) => {
       files[path] = content
       return { path, mtime: 2, size: content.length }
@@ -2687,12 +2687,12 @@ describe('the card window (YAZ-4962)', () => {
     act(() => put!.click())
     await flush()
     await flush()
-    expect(files[PAGE]).toContain('<!-- card: WIKI-9, next, 2026-01-02T09:00Z good -->')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, next, 2026-01-02T09:00:00.000Z good -->')
     expect(chip()?.textContent).toBe('Up next×')
     act(() => chip()!.querySelector<HTMLButtonElement>('[aria-label="Remove from top of Inbox"]')!.click())
     await flush()
     await flush()
-    expect(files[PAGE]).toContain('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->')
     expect(chip()).toBeNull()
   })
 
@@ -2777,7 +2777,7 @@ describe('the card window (YAZ-4962)', () => {
     await mount()
     await flush()
     expect(strip()).toEqual(['cards', 'New'])
-    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->')
+    files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->')
     // The same version: no read.
     readFile.mockClear()
     feed(1)

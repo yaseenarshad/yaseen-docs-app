@@ -12,8 +12,8 @@ const lineOf = (text: string) => {
   const c = pageCards(text)[0]
   return splitFrontmatter(text).body.split('\n')[c.lineAt!]
 }
-const OLD = '2026-11-01T09:00Z good'
-const A = '2026-11-14T06:01Z good 9s'
+const OLD = '2026-11-01T09:00:00.000Z good'
+const A = '2026-11-14T06:01:00.000Z good 9s'
 const HEAD = 'YAZ-7, title "Hola"'
 
 /** Both orders (the Mac as theirs, then as mine): the same line on both sides and in both orders, and a second merge changes nothing. */

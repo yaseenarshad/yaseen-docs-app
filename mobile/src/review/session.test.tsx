@@ -92,7 +92,7 @@ describe('Review: a full session (decision 11)', () => {
     expect(h.commits()).toBe(1)
     expect(h.answers.waiting()).toEqual([])
     const lines = await h.remoteLines()
-    expect(lines['DEMO-12']).toMatch(/^<!-- card: DEMO-12, title "la biblioteca", 2026-11-13T\d\d:00Z good 0s -->$/)
+    expect(lines['DEMO-12']).toMatch(/^<!-- card: DEMO-12, title "la biblioteca", 2026-11-13T\d\d:\d\d:\d\d\.\d{3}Z good 0s -->$/)
     expect(lines['DEMO-13']).toBe('<!-- card: DEMO-13, title "Hola", off, next, fix -->')
     expect(lines['DEMO-38']).toBe('<!-- card: DEMO-38, title "git pull" -->')
   })

@@ -18,7 +18,7 @@ import { applyComment, type NewComment } from './write'
  * for byte. LF and Windows CRLF files alike. Made-up card files only.
  */
 const COMMENTS = 'comments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-11-14T10:00:00Z\n    by: sam\n    body: Is the Seine right?\n  - id: bbbbbbbb\n    n: 1\n    at: 2026-11-14T10:05:00Z\n    reply_to: aaaaaaaa\n    body: "Yes, it is."\n'
-const LINE = '<!-- card: GEO-204, title "Rivers, of Seville", level "A2", 2026-11-01T09:00Z good -->'
+const LINE = '<!-- card: GEO-204, title "Rivers, of Seville", level "A2", 2026-11-01T09:00:00.000Z good -->'
 const CARD = '```card\nWhich river runs through Seville?\n---\nThe Guadalquivir.\n```\n'
 const file = (frontmatter = `kind: card\n${COMMENTS}`, line = LINE) => `---\n${frontmatter}---\n\n${CARD}${line}\n`
 const crlf = (text: string) => text.replace(/\n/g, '\r\n')
@@ -83,10 +83,10 @@ describe('a comment on a card file keeps the card part byte for byte (YAZ-5477)'
 })
 
 describe("the phone's own card writers keep a card file's comments byte for byte (YAZ-5477)", () => {
-  const R = { at: '2026-11-14T12:00Z', rating: 'good' as const }
+  const R = { at: '2026-11-14T12:00:00.000Z', rating: 'good' as const }
   const writers: [string, CardOp[]][] = [
     ['an answer (the answer splice)', [{ kind: 'review', id: 'GEO-204', review: R }]],
-    ['the Undo of a sent answer', [{ kind: 'unreview', id: 'GEO-204', at: '2026-11-01T09:00Z', rating: 'good' }]],
+    ['the Undo of a sent answer', [{ kind: 'unreview', id: 'GEO-204', at: '2026-11-01T09:00:00.000Z', rating: 'good' }]],
     ['Archive', [{ kind: 'off', id: 'GEO-204', on: true }]],
     ['Fix later', [{ kind: 'fix', id: 'GEO-204', on: true }]],
     ['Up next', [{ kind: 'next', id: 'GEO-204', on: true }]],
@@ -136,10 +136,10 @@ describe('a comment from the phone reaches a card file (fake GitHub, made-up vau
     expect(cardPart(after)).toBe(cardPart(start))
     expect(t.patches()).toBe(1)
     // An answer from Review on the same card file: the card line gains the review; the comment stays byte for byte.
-    await t.answers.add([{ op: { kind: 'review', id: 'GEO-204', review: { at: '2026-11-14T06:01Z', rating: 'good' } }, path: PATH, title: 'Rivers, of Seville' }])
+    await t.answers.add([{ op: { kind: 'review', id: 'GEO-204', review: { at: '2026-11-14T06:01:00.000Z', rating: 'good' } }, path: PATH, title: 'Rivers, of Seville' }])
     await t.tick(SEND_AFTER_MS)
     const answered = (await t.remote(PATH))!
     expect(commentsBlock(answered)).toBe(commentsBlock(after))
-    expect(answered).toBe(after.replace('good -->', 'good, 2026-11-14T06:01Z good -->'))
+    expect(answered).toBe(after.replace('good -->', 'good, 2026-11-14T06:01:00.000Z good -->'))
   })
 })

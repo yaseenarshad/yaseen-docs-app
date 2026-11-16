@@ -192,7 +192,7 @@ describe('YAZ-5552: every menu: a tap opens it, a tap on its button again closes
   it('Review: the deck button and ⋯ (YAZ-5539, now the shared rule)', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(REVIEW_NOW)
-    rh = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `MT-${n}, 2026-10-04T09:00Z good`))) })
+    rh = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `MT-${n}, 2026-10-04T09:00:00.000Z good`))) })
     const settle = rh.settle
     await tapsToggle(() => q('.review__count-btn')!, has('.review__sheet'), settle)
     await fingerTap(q('.review__count-btn')!, settle)

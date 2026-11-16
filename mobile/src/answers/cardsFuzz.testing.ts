@@ -27,7 +27,7 @@ const WORDS = ['alpha', 'Ünïcode', 'naïve café', '😀 emoji', '日本語', 
 export const word = (r: Rng) => pick(r, WORDS)
 
 export const CARD_IDS = ['NC-1', 'NC-2', 'NC-3', 'NC-4', 'nc-5', 'NC-6', 'NC-7', 'NC-8']
-export const at = (m: number) => `2026-11-14T${String(6 + Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}Z`
+export const at = (m: number) => `2026-11-14T${String(6 + Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}:00.000Z`
 
 /** A card line in many hand-made forms. */
 export function cardLine(r: Rng, id: string): string {
@@ -170,7 +170,7 @@ function randomOp(r: Rng, ids: string[]): CardOp {
   switch (int(r, 0, 6)) {
     case 0:
     case 1:
-      return { kind: 'review', id: idc, review: { at: at(int(r, 0, 30)), rating: pick(r, ['again', 'hard', 'good', 'easy'] as const) }, ...(chance(r, 0.2) && { nth: 2 }) }
+      return { kind: 'review', id: idc, review: { at: at(int(r, 0, 30)), rating: pick(r, ['again', 'hard', 'good', 'easy'] as const) } }
     case 2:
       return { kind: 'unreview', id: idc, at: at(int(r, 0, 30)), rating: 'good' }
     case 3:
@@ -228,8 +228,7 @@ export interface Finding {
 export function checkCardSequence(seed: number): Finding[] {
   const r = rng(seed)
   const { text, ids, shape } = page(r)
-  // An `nth: 2` review follows its first copy, as `opsBetween` makes them.
-  const ops = Array.from({ length: int(r, 1, 6) }, () => randomOp(r, ids)).flatMap((op) => (op.kind === 'review' && op.nth === 2 ? [{ ...op, nth: undefined }, op] : [op]))
+  const ops = Array.from({ length: int(r, 1, 6) }, () => randomOp(r, ids))
   const out: Finding[] = []
   const f = (kind: string, detail: string) => out.push({ kind, seed, detail })
   let content: string

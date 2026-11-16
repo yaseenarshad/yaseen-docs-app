@@ -23,7 +23,7 @@ afterEach(() => {
 const pad = (n: number) => String(n).padStart(2, '0')
 const at = (t: number) => {
   const d = new Date(t)
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}Z`
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00.000Z`
 }
 
 /** A tiny random source with a seed, so a failing order can be run again. */

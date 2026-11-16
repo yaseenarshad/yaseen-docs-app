@@ -20,7 +20,7 @@ afterEach(() => {
   h = undefined
   vi.useRealTimers()
 })
-const OLD = '2026-10-04T09:00Z good'
+const OLD = '2026-10-04T09:00:00.000Z good'
 const dueCards = (n: number) => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n{{w${i + 1}}}`, `DC-${i + 1}, ${OLD}`))
 const ids = (hh: ReviewHarness) => hh.answers.waiting().filter((w) => w.op.kind === 'review').map((w) => w.op.id)
 const real = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))

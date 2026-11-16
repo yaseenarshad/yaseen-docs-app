@@ -26,7 +26,7 @@ const page = (title: string, blocks: string[], extra = '') => `---\ntitle: ${tit
 /** A review two days ago: due in a few days, inside the window. */
 const NEAR = [`${cardTime(START - 2 * DAY)} good`]
 /** Reviews that put the next one months away: outside the window. */
-const FAR = ['2026-01-05T10:00Z easy', '2026-03-20T10:00Z easy', `${cardTime(START - DAY)} easy`]
+const FAR = ['2026-01-05T10:00:00.000Z easy', '2026-03-20T10:00:00.000Z easy', `${cardTime(START - DAY)} easy`]
 const dueOf = (line: string[]) => cardDueAt(line.map((l) => ({ at: l.split(' ')[0], rating: l.split(' ')[1] as 'good' })), S)
 const png = (n: number, size = 8) => new Uint8Array(size).fill(n)
 

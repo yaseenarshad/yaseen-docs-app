@@ -196,7 +196,7 @@ describe('the kept Review tab', () => {
     const before = state()
     await h.click('Friends')
     // On the Mac: TB-2's back changes, and a new due card is added in front.
-    await t.s.git.push({ 'cards/light.md': cardFile('Speed of light', cardBlock('How fast?\n---\n{{very}} {{quick}}', 'TB-2')), 'a-first.md': page('First', cardBlock('Newer?\n---\n{{n}}', 'TB-9, 2026-10-04T09:00Z good')) })
+    await t.s.git.push({ 'cards/light.md': cardFile('Speed of light', cardBlock('How fast?\n---\n{{very}} {{quick}}', 'TB-2')), 'a-first.md': page('First', cardBlock('Newer?\n---\n{{n}}', 'TB-9, 2026-10-04T09:00:00.000Z good')) })
     await act(async () => {
       await t.engine.syncNow()
       await t.engine.idle()

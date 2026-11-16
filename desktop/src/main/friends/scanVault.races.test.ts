@@ -24,7 +24,7 @@ vi.mock('node:fs/promises', async (orig) => {
 })
 const { scanClosedVault } = await import('./scanVault')
 
-const R1 = '2026-11-14T13:00Z good 7s'
+const R1 = '2026-11-14T13:00:00.000Z good 7s'
 let dir: string
 beforeEach(async () => void (dir = await realpath(await mkdtemp(path.join(tmpdir(), 'yd-c5-')))))
 afterEach(async () => {

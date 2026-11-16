@@ -39,16 +39,16 @@ describe('check-writes: the Mac merges a phone write with its own local edit', (
   })
   it('M3 phone answers NC-1 while the Mac answers NC-1 too: both reviews, no copy', () => {
     const base = '```card\nQ\n```\n<!-- card: NC-1 -->\n'
-    const phone = applyOps(base, [{ kind: 'review', id: 'NC-1', review: { at: '2026-11-14T06:01Z', rating: 'good' } }]).content
-    const mac = base.replace('NC-1 -->', 'NC-1, 2026-11-14T06:02Z hard -->')
+    const phone = applyOps(base, [{ kind: 'review', id: 'NC-1', review: { at: '2026-11-14T06:01:00.000Z', rating: 'good' } }]).content
+    const mac = base.replace('NC-1 -->', 'NC-1, 2026-11-14T06:02:00.000Z hard -->')
     const out = macMerge(base, phone, mac)
     expect.soft(out.copy).toBeUndefined()
-    expect.soft(cardRecords(out.text)[0].reviews.map((r) => r.at)).toEqual(['2026-11-14T06:01Z', '2026-11-14T06:02Z'])
+    expect.soft(cardRecords(out.text)[0].reviews.map((r) => r.at)).toEqual(['2026-11-14T06:01:00.000Z', '2026-11-14T06:02:00.000Z'])
   })
-  it('M4 phone answers the same card twice in one minute (nth 2) while the Mac changes that line: two reviews stay', () => {
+  it('M4 phone answers the same card twice in one second (YAZ-5642: two times) while the Mac changes that line: two reviews stay', () => {
     const base = '```card\nQ\n```\n<!-- card: NC-1 -->\n'
-    const r = { at: '2026-11-14T06:01Z', rating: 'again' as const }
-    const phone = applyOps(base, [{ kind: 'review', id: 'NC-1', review: r }, { kind: 'review', id: 'NC-1', review: r, nth: 2 }]).content
+    const r = { at: '2026-11-14T06:01:12.345Z', rating: 'again' as const }
+    const phone = applyOps(base, [{ kind: 'review', id: 'NC-1', review: r }, { kind: 'review', id: 'NC-1', review: { ...r, at: '2026-11-14T06:01:12.802Z' } }]).content
     expect(cardRecords(phone)[0].reviews).toHaveLength(2)
     const mac = base.replace('NC-1 -->', 'NC-1, fix -->')
     const out = macMerge(base, phone, mac)
@@ -82,14 +82,14 @@ describe('check-writes: the Mac merges a phone write with its own local edit', (
   })
   it('M8 phone answers card NC-1 while the Mac edits the card TEXT right above its line: no copy', () => {
     const base = '```card\nQ\n```\n<!-- card: NC-1 -->\n'
-    const phone = applyOps(base, [{ kind: 'review', id: 'NC-1', review: { at: '2026-11-14T06:01Z', rating: 'good' } }]).content
+    const phone = applyOps(base, [{ kind: 'review', id: 'NC-1', review: { at: '2026-11-14T06:01:00.000Z', rating: 'good' } }]).content
     const mac = base.replace('Q\n', 'Q edited\n')
     const out = macMerge(base, phone, mac)
     expect.soft(out.copy, out.how).toBeUndefined()
   })
   it('M9 phone answers NC-1 while the Mac edits the line right BELOW the card line: no copy', () => {
     const base = '```card\nQ\n```\n<!-- card: NC-1 -->\nNext para\n'
-    const phone = applyOps(base, [{ kind: 'review', id: 'NC-1', review: { at: '2026-11-14T06:01Z', rating: 'good' } }]).content
+    const phone = applyOps(base, [{ kind: 'review', id: 'NC-1', review: { at: '2026-11-14T06:01:00.000Z', rating: 'good' } }]).content
     const mac = base.replace('Next para', 'Next para edited')
     const out = macMerge(base, phone, mac)
     expect.soft(out.copy, out.how).toBeUndefined()

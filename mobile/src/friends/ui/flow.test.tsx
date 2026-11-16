@@ -155,7 +155,7 @@ describe('add a friend, both orders, on the real friends logic', () => {
     const p = await phoneOf(ALI, 'ali')
     await p.store.setState('ali/vault@main', 'index', {
       commit: 'c1',
-      records: { 'a.md': { cards: [{ id: 'A-1', off: false, next: false, reviews: [{ at: '2026-11-12T10:00Z', rating: 'good' }] }] } },
+      records: { 'a.md': { cards: [{ id: 'A-1', off: false, next: false, reviews: [{ at: '2026-11-12T10:00:00.000Z', rating: 'good' }] }] } },
     })
     let counts = 0
     const service = createFriendsService({

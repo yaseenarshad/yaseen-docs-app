@@ -17,7 +17,7 @@ afterEach(() => {
   h?.unmount()
   vi.useRealTimers()
 })
-const OLD = '2026-10-04T09:00Z good'
+const OLD = '2026-10-04T09:00:00.000Z good'
 const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2, 3].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `AU-${n}, ${OLD}`))) }
 const ops = (hh: ReviewHarness) => hh.answers.waiting().map((w) => `${w.op.kind}:${w.op.id}${'on' in w.op ? `:${w.op.on}` : ''}`)
 

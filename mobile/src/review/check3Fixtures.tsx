@@ -12,7 +12,7 @@ import type { VaultMedia } from '../media/ui/vaultMedia'
 // fake GitHub. In the checker's worktree only.
 const block = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->`
 const page = (title: string, ...cards: string[]) => `---\ntitle: ${title}\n---\n\n# ${title}\n\n${cards.join('\n\n')}\n`
-const DUE = '2026-10-02T09:00Z good, 2026-10-12T09:00Z good'
+const DUE = '2026-10-02T09:00:00.000Z good, 2026-10-12T09:00:00.000Z good'
 const long = `The long card\n\n${Array.from({ length: 30 }, (_, i) => `${i + 1}. A long made-up line about the printing press, line ${i + 1}.`).join('\n')}\n---\nAbout {{1450}}.`
 const SETS: Record<string, Record<string, string>> = {
   short: { 'words.md': page('Spanish words', block('Hola\n---\n{{Hello}}', `CK-1, ${DUE}`), block('Adios\n---\n{{Bye}}', `CK-2, ${DUE}`)) },

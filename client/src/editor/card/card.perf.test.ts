@@ -15,7 +15,7 @@ import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { renderCard } from './cardRender'
 import { cardBlockViewAt, cardEditorKind } from './cardBlockView'
 
-const CARD = (i: number) => `\`\`\`card\nWhat is the capital of {{Country ${i}}}? See [[Atlas]] and **the map**.\n---\nCity ${i}, on the river.\n\`\`\`\n<!-- card: WIKI-${100 + i}, 2026-11-01T09:00Z good, 2026-11-05T09:00Z good -->\n`
+const CARD = (i: number) => `\`\`\`card\nWhat is the capital of {{Country ${i}}}? See [[Atlas]] and **the map**.\n---\nCity ${i}, on the river.\n\`\`\`\n<!-- card: WIKI-${100 + i}, 2026-11-01T09:00:00.000Z good, 2026-11-05T09:00:00.000Z good -->\n`
 const page = (block: (i: number) => string) => `# Cards\n\n${Array.from({ length: 50 }, (_, i) => `Paragraph ${i} before the card.\n\n${block(i)}`).join('\n')}\nThe end.\n`
 const CARDS = page(CARD)
 const CODE = page((i) => CARD(i).replace('```card', '```markdown').replace(/<!--.*-->\n/, ''))

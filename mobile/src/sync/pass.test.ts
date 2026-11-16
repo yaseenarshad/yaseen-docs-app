@@ -106,10 +106,10 @@ describe('the sync pass (October 2E)', () => {
   })
 
   it('R6a: the Mac moves a card to its own file: one file loses it, one gains it; the index finds it by ID at its new file, with its reviews', async () => {
-    const s = await syncSetup({ 'p.md': `${pageText('P', 'NC-1')}\`\`\`card\nMoved\n\`\`\`\n<!-- card: NC-5, 2026-11-12T14:05Z good -->\n` })
+    const s = await syncSetup({ 'p.md': `${pageText('P', 'NC-1')}\`\`\`card\nMoved\n\`\`\`\n<!-- card: NC-5, 2026-11-12T14:05:00.000Z good -->\n` })
     await pass(s)
     expect((await index(s)).records['p.md'].cards!.map((c) => c.id)).toEqual(['NC-5'])
-    await s.git.push({ 'p.md': `${pageText('P', 'NC-1')}![[NC-5]]\n`, 'moved-nc-5.md': `---\nkind: card\n---\n\n\`\`\`card\nMoved\n\`\`\`\n<!-- card: NC-5, title "Moved", 2026-11-12T14:05Z good -->\n` })
+    await s.git.push({ 'p.md': `${pageText('P', 'NC-1')}![[NC-5]]\n`, 'moved-nc-5.md': `---\nkind: card\n---\n\n\`\`\`card\nMoved\n\`\`\`\n<!-- card: NC-5, title "Moved", 2026-11-12T14:05:00.000Z good -->\n` })
     await pass(s)
     const { records } = await index(s)
     const holders = Object.values(records).filter((r) => r.cards?.some((c) => c.id === 'NC-5'))

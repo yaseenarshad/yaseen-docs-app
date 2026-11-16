@@ -17,7 +17,7 @@ const FILES: Record<string, string> = {
   '.yaseendocs/review.json': '{"enabled": true}',
   '.yaseendocs/ids.json': '{"enabled": true, "letters": "GEO"}',
   'Geo.md': `---\ntitle: Geo\nid: GEO-9\n---\n\n${block('How many?\n---\nA {{thousand}}', 'GEO-1, title "1&#44;000 islands", tags "europe" "capitals", level "A2", secret "zebra-42"')}\n`,
-  'cards/capital-of-spain-geo-3.md': `---\nkind: card\n---\n\n${block('The capital is {{Madrid}}.', 'GEO-3, title "Capital of Spain", tags ["unicorn-7"], 2026-11-01T09:00Z good')}\n`,
+  'cards/capital-of-spain-geo-3.md': `---\nkind: card\n---\n\n${block('The capital is {{Madrid}}.', 'GEO-3, title "Capital of Spain", tags ["unicorn-7"], 2026-11-01T09:00:00.000Z good')}\n`,
 }
 
 let h: Harness | null = null

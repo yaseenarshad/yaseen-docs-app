@@ -20,7 +20,7 @@ const COMMENTS = [
 ].join('\n')
 const FILES: Record<string, string> = {
   '.yaseendocs/review.json': '{"enabled": true}',
-  'cards/bridge-of-triana-demo-7.md': `---\nkind: card\n${COMMENTS}\n---\n\n${block('Which bridge crosses to Triana?\n---\nThe Isabel II bridge.', 'DEMO-7, title "Bridge of Triana", 2026-11-01T08:00Z good')}\n`,
+  'cards/bridge-of-triana-demo-7.md': `---\nkind: card\n${COMMENTS}\n---\n\n${block('Which bridge crosses to Triana?\n---\nThe Isabel II bridge.', 'DEMO-7, title "Bridge of Triana", 2026-11-01T08:00:00.000Z good')}\n`,
 }
 
 let h: Harness | null = null

@@ -13,7 +13,7 @@ export interface FakeAnswers extends DotAnswers {
 
 export const lostAnswer = (seq: number, title = 'Speed of light', rating: 'good' | 'again' = 'good', id = 'NC-17'): LostAnswer => ({
   seq,
-  op: { kind: 'review', id, review: { at: '2026-11-13T11:01Z', rating } },
+  op: { kind: 'review', id, review: { at: '2026-11-13T11:01:00.000Z', rating } },
   path: 'cards/light.md',
   title,
   lostAt: 0,
@@ -71,7 +71,7 @@ export function fakeAnswers(vault = 'yaseen/vault@main'): FakeAnswers {
         state = { ...state, notSent: notSent.length === 0 ? undefined : { n: notSent.length, ticks: notSent.filter((c) => c.task !== undefined).length, gone: notSent.filter((c) => c.refused === 'gone').length } }
       }
       if (next.waiting !== undefined)
-        list = Array.from({ length: next.waiting }, (_, i) => ({ seq: i + 1, group: i + 1, op: { kind: 'review', id: `NC-${i + 1}`, review: { at: '2026-11-13T11:00Z', rating: 'good' } }, path: 'a.md', title: 'T', madeAt: 0 }))
+        list = Array.from({ length: next.waiting }, (_, i) => ({ seq: i + 1, group: i + 1, op: { kind: 'review', id: `NC-${i + 1}`, review: { at: '2026-11-13T11:00:00.000Z', rating: 'good' } }, path: 'a.md', title: 'T', madeAt: 0 }))
       state = { ...state, ...next, waiting: list.length }
       emit()
     },

@@ -17,7 +17,7 @@ const NOW = new Date(2026, 10, 13, 12).getTime()
 const pad = (n: number) => String(n).padStart(2, '0')
 const at = (t: number) => {
   const d = new Date(t)
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}Z`
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00.000Z`
 }
 /** `pages` pages of `per` cards, each with `answers` answers spread over the last 365 days. */
 function records(pages: number, per: number, answers: number): Record<string, IndexRecord> {

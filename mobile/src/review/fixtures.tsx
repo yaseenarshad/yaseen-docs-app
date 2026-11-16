@@ -13,7 +13,7 @@ import type { VaultMedia } from '../media/ui/vaultMedia'
  */
 const block = (text: string, line: string, fence = '```') => `${fence}card\n${text}\n${fence}\n<!-- card: ${line} -->`
 const page = (title: string, ...cards: string[]) => `---\ntitle: ${title}\n---\n\n# ${title}\n\n${cards.join('\n\n')}\n`
-const DUE = '2026-10-02T09:00Z good, 2026-10-12T09:00Z good'
+const DUE = '2026-10-02T09:00:00.000Z good, 2026-10-12T09:00:00.000Z good'
 
 const FILES: Record<string, string> = {
   '.yaseendocs/review.json': '{"newPerDay": 10}',

@@ -31,7 +31,7 @@ vi.mock('../../review/cardFile', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../review/cardFile')>()),
   changeCardLine: async (path: string, id: string, change: (l: import('@shared/cardLine').CardLine) => import('@shared/cardLine').CardLine, index?: number) => {
     const { formatCardLine, parseCardLine } = await import('@shared/cardLine')
-    fileWrites.push({ path, id, index, line: formatCardLine(change(parseCardLine('<!-- card: WIKI-7, 2026-11-12T14:05Z good -->')!)) })
+    fileWrites.push({ path, id, index, line: formatCardLine(change(parseCardLine('<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->')!)) })
   },
 }))
 
@@ -156,7 +156,7 @@ describe('the card line (load and save)', () => {
       '---',
       'Paris',
       '```',
-      '<!-- card: WIKI-5, 2026-11-12T14:05Z good, mochi abc,  off -->',
+      '<!-- card: WIKI-5, 2026-11-12T14:05:00.000Z good, mochi abc,  off -->',
       '<!-- code: width 900 -->',
       '',
       '* A bullet',
@@ -178,7 +178,7 @@ describe('the card line (load and save)', () => {
     })
     // The lines are the cards' attributes, not HTML blocks of the page (so line numbers match the worker, idea 29).
     expect(lines).toEqual([
-      ['card', '<!-- card: WIKI-5, 2026-11-12T14:05Z good, mochi abc,  off -->'],
+      ['card', '<!-- card: WIKI-5, 2026-11-12T14:05:00.000Z good, mochi abc,  off -->'],
       ['card', '<!-- card: WIKI-6 -->'],
       ['js', null],
     ])
@@ -283,7 +283,7 @@ describe('the card in the page', () => {
   })
 
   it('YAZ-5152: ⋯ › Preview, P on the selected card, and Edit card\'s Preview each send the one preview ask, with the card as shown (the typed text in Edit card); none writes', async () => {
-    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, notitle, 2026-11-12T14:05Z good -->\n`, { cards: { path: '/v/Page.md' } })
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, notitle, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     const asks: CardPreviewRequest[] = []
     document.addEventListener(CARD_PREVIEW, (e) => asks.push((e as CustomEvent<CardPreviewRequest>).detail))
     const before = getMarkdownForSave(crepe)
@@ -291,7 +291,7 @@ describe('the card in the page', () => {
     const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith('Preview'))!
     expect(row.textContent).toContain('P')
     row.click()
-    expect(asks).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', text: 'What is the capital of {{France}}?\n---\nParis', title: '', notitle: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }], properties: {} }])
+    expect(asks).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', text: 'What is the capital of {{France}}?\n---\nParis', title: '', notitle: true, reviews: [{ at: '2026-11-12T14:05:00.000Z', rating: 'good' }], properties: {} }])
     // P with the card selected: Preview, and the card is not typed over.
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, cardPos(view))))
     view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true, cancelable: true }))
@@ -309,7 +309,7 @@ describe('the card in the page', () => {
   })
 
   it('the ⋯ menu changes the card line in one undo step each; Copy card ID; Open card sends the one hook', async () => {
-    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good, kept -->\n`, { cards: { path: '/v/Page.md' } })
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good, kept -->\n`, { cards: { path: '/v/Page.md' } })
     const run = (label: string) => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith(label))!
@@ -317,7 +317,7 @@ describe('the card in the page', () => {
     }
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
     run('Archive card')
-    expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05Z good, kept -->')
+    expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good, kept -->')
     // YAZ-5046: an archived card says "Archived" in its head and looks muted.
     expect(root.querySelector('.card__state')?.textContent).toBe('Archived')
     expect(root.querySelector('.card')?.classList.contains('card--off')).toBe(true)
@@ -326,13 +326,13 @@ describe('the card in the page', () => {
     expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].at(-1)?.textContent).toMatch(/^Reset history/)
     run('Reset history')
     // YAZ-5376: it asks first, by typing; nothing changes until then.
-    expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05Z good, kept -->')
+    expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good, kept -->')
     await confirmResetHistory()
     expect(line()).toBe('<!-- card: WIKI-7, off, kept -->')
     undo(view.state, view.dispatch)
-    expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05Z good, kept -->')
+    expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good, kept -->')
     run('Unarchive card')
-    expect(line()).toBe('<!-- card: WIKI-7, 2026-11-12T14:05Z good, kept -->')
+    expect(line()).toBe('<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good, kept -->')
     expect(root.querySelector('.card__state')?.textContent).toBe('')
     expect(root.querySelector('.card')?.classList.contains('card--off')).toBe(false)
     const writeText = vi.fn(() => Promise.resolve())
@@ -346,7 +346,7 @@ describe('the card in the page', () => {
   })
 
   it('YAZ-5030: ⋯ "Title on the front" Show / Hide sets and removes `notitle` in one undo step; the head says "Title hidden in review"; the card still shows its title', async () => {
-    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good -->\n`, { cards: { path: '/v/Page.md' } })
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     const rowOf = () => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith('Title on the front'))!
@@ -357,7 +357,7 @@ describe('the card in the page', () => {
     const row = rowOf()
     expect(row.dataset.hint).toBe('Show')
     row.click()
-    expect(line()).toBe('<!-- card: WIKI-7, notitle, 2026-11-12T14:05Z good -->')
+    expect(line()).toBe('<!-- card: WIKI-7, notitle, 2026-11-12T14:05:00.000Z good -->')
     expect([mark().hidden, mark().textContent]).toEqual([false, 'Title hidden in review'])
     // The page shows the whole card, its first line too.
     expect(root.querySelector('.card__body')?.textContent).toContain('What is the capital of')
@@ -365,11 +365,11 @@ describe('the card in the page', () => {
     expect(rowOf().dataset.hint).toBe('Hide')
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     undo(view.state, view.dispatch)
-    expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05Z good -->', true])
+    expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', true])
   })
 
   it('YAZ-5097: ⋯ Fix later sets `fix` in one undo step; the head says "To fix"; Remove Fix later takes it off', async () => {
-    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->\n`, { cards: { path: '/v/Page.md' } })
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, next, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     const run = (label: string) => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent === label)
@@ -380,17 +380,17 @@ describe('the card in the page', () => {
     const mark = () => root.querySelector<HTMLElement>('.card__fix')!
     expect(mark().hidden).toBe(true)
     run('Fix later')
-    expect(line()).toBe('<!-- card: WIKI-7, next, fix, 2026-11-12T14:05Z good -->')
+    expect(line()).toBe('<!-- card: WIKI-7, next, fix, 2026-11-12T14:05:00.000Z good -->')
     expect([mark().hidden, mark().textContent]).toEqual([false, 'To fix'])
     undo(view.state, view.dispatch)
-    expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->', true])
+    expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, next, 2026-11-12T14:05:00.000Z good -->', true])
     run('Fix later')
     run('Remove Fix later')
-    expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->', true])
+    expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, next, 2026-11-12T14:05:00.000Z good -->', true])
   })
 
   it('YAZ-4999: ⋯ Put at top of Inbox and the chip`s × set and remove `next`, each in one undo step; read only, they write the FILE', async () => {
-    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good -->\n`, { cards: { path: '/v/Page.md' } })
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     const rowOf = (label: string) => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith(label))
@@ -400,29 +400,29 @@ describe('the card in the page', () => {
     const remove = () => chip().querySelector('.card__next-remove')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
     expect(chip().hidden).toBe(true)
     rowOf('Put at top of Inbox')!.click()
-    expect(line()).toBe('<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->')
+    expect(line()).toBe('<!-- card: WIKI-7, next, 2026-11-12T14:05:00.000Z good -->')
     expect([chip().hidden, chip().textContent]).toEqual([false, 'Up next×'])
     expect(chip().querySelector('button')?.getAttribute('aria-label')).toBe('Remove from top of Inbox')
     undo(view.state, view.dispatch)
-    expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05Z good -->', true])
+    expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', true])
     rowOf('Put at top of Inbox')!.click()
     expect(rowOf('Remove from top of Inbox')).toBeDefined()
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     remove()
-    expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05Z good -->', true])
+    expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', true])
     undo(view.state, view.dispatch)
-    expect(line()).toBe('<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->')
+    expect(line()).toBe('<!-- card: WIKI-7, next, 2026-11-12T14:05:00.000Z good -->')
     // Read only: the mark is review, not text — the file is written (no question asked).
     fileWrites.length = 0
     crepe.setReadonly(true)
     remove()
     await tick()
-    expect(fileWrites).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7, 2026-11-12T14:05Z good -->' }])
+    expect(fileWrites).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->' }])
   })
 
   it('read only locks the card`s text, not its review: no Edit card; ⋯ Archive card and Reset history write the FILE', async () => {
     fileWrites.length = 0
-    const { crepe, root } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good -->\n`, { cards: { path: '/v/Page.md' } })
+    const { crepe, root } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     crepe.setReadonly(true)
     const run = (label: string) => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
@@ -435,11 +435,11 @@ describe('the card in the page', () => {
     await confirmResetHistory()
     await tick()
     expect(fileWrites).toEqual([
-      { path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7, off, 2026-11-12T14:05Z good -->' },
+      { path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good -->' },
       { path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7 -->' },
     ])
     // The editor's own text is untouched: the file write comes back as an outside change.
-    expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, 2026-11-12T14:05Z good -->')
+    expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->')
   })
 
   it('Edit card is Crepe\'s code editor (made only then); YAZ-5001: ⌘↵ there is Done, while ⌘↵ in another code block still adds a line; the head says "Done (Esc / Cmd+Enter)"', async () => {
@@ -567,7 +567,7 @@ describe('the card in the page', () => {
 
 describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
   // YAZ-5033: the last review has its seconds (64 s); the older ones have none.
-  const LINE = '<!-- card: WIKI-7, 2026-11-01T09:00Z good, 2026-11-05T09:00Z again 13s, 2026-11-06T09:00Z good 64s -->'
+  const LINE = '<!-- card: WIKI-7, 2026-11-01T09:00:00.000Z good, 2026-11-05T09:00:00.000Z again 13s, 2026-11-06T09:00:00.000Z good 64s -->'
   const PAGE = `# Page\n\n${CARD}${LINE}\n\nAfter.\n`
   const settings = () => DEFAULT_REVIEW_SETTINGS
   // The strip's chunk (React and the properties panel's rows, YAZ-5383) loads once here, not inside the first waitFor.
@@ -637,7 +637,7 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
   })
 
   it('YAZ-5380: the strip`s parts open one at a time: Properties closes Reviews, a second click closes it; no change of the page, no undo step', async () => {
-    const page = `# Page\n\n${CARD}<!-- card: WIKI-7, tags "europe" "capitals", level "A2", 2026-11-12T14:05Z good -->\n`
+    const page = `# Page\n\n${CARD}<!-- card: WIKI-7, tags "europe" "capitals", level "A2", 2026-11-12T14:05:00.000Z good -->\n`
     const { crepe, root, view } = await mount(page, { cards: { path: '/v/Page-parts.md' }, cardReviews: { settings, deleteReview: vi.fn() } })
     const doc = view.state.doc
     const part = (name: string) => root.querySelector<HTMLButtonElement>(`.card .card-reviews__toggle[data-part="${name}"]`)
@@ -658,7 +658,7 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
   })
 
   it('YAZ-5383: the Properties part is the page panel`s own rows; an edit, an add and a rename write the card line (one undo step each); a card line word is refused', async () => {
-    const page = `# Page\n\n${CARD}<!-- card: WIKI-7, title "Capital", tags "europe" "capitals", level "A2", 2026-11-12T14:05Z good -->\n`
+    const page = `# Page\n\n${CARD}<!-- card: WIKI-7, title "Capital", tags "europe" "capitals", level "A2", 2026-11-12T14:05:00.000Z good -->\n`
     const { crepe, root, view } = await mount(page, { cards: { path: '/v/Page-props.md' }, cardReviews: { settings, deleteReview: vi.fn(), vault: () => ({ root: null }) } })
     const part = (name: string) => root.querySelector<HTMLButtonElement>(`.card .card-reviews__toggle[data-part="${name}"]`)
     await vi.waitFor(() => expect(part('properties')).not.toBeNull())
@@ -679,7 +679,7 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     await vi.waitFor(() => expect(row('level').querySelector('input')).not.toBeNull())
     typeIn(row('level').querySelector('input')!, 'B1')
     enter(row('level').querySelector('input')!)
-    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, title "Capital", tags "europe" "capitals", level "B1", 2026-11-12T14:05Z good -->'))
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, title "Capital", tags "europe" "capitals", level "B1", 2026-11-12T14:05:00.000Z good -->'))
     expect(undoDepth(view.state)).toBe(1)
     await vi.waitFor(() => expect(part('properties')?.textContent).toBe('Properties2'))
     // + Add property: a name, Enter; a card line word is refused, with the panel's words.
@@ -691,7 +691,7 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     await vi.waitFor(() => expect(panel().querySelector('.frontmatter-panel__error')?.textContent).toBe('"next" is a word the card line uses — choose another name'))
     typeIn(panel().querySelector<HTMLInputElement>('.frontmatter-add__name')!, 'source')
     enter(panel().querySelector('.frontmatter-add__name')!)
-    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('level "B1", source "", 2026-11-12T14:05Z good -->'))
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('level "B1", source "", 2026-11-12T14:05:00.000Z good -->'))
     // The page's own properties never move: the page has none, and still has none.
     expect(getMarkdownForSave(crepe).startsWith('# Page')).toBe(true)
   })
@@ -716,8 +716,8 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     expect(deleteReview).not.toHaveBeenCalled()
     ;[...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === 'Remove review')!.click()
     await vi.waitFor(() => expect(document.querySelector('.confirm')).toBeNull())
-    expect(deleteReview).toHaveBeenCalledWith(path, 'WIKI-7', { at: '2026-11-05T09:00Z', rating: 'again', seconds: 13 })
-    await vi.waitFor(() => expect(disk.get(path)).toBe(PAGE.replace(' 2026-11-05T09:00Z again 13s,', '')))
+    expect(deleteReview).toHaveBeenCalledWith(path, 'WIKI-7', { at: '2026-11-05T09:00:00.000Z', rating: 'again', seconds: 13 })
+    await vi.waitFor(() => expect(disk.get(path)).toBe(PAGE.replace(' 2026-11-05T09:00:00.000Z again 13s,', '')))
     // The app merges its own write into the open page: the section counts again, and the open table shows the new rows.
     expect(applyExternalMarkdown(crepe, disk.get(path)!)).toBe('applied')
     await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Remembered', '']))

@@ -14,7 +14,7 @@ describe('mergeLinesApart', () => {
     expect(mergeLinesApart('- [ ] One\n- [ ] Two\n', '- [x] One\n- [ ] Two\n', '- [ ] One\n- [x] Two\n')).toBe('- [x] One\n- [x] Two\n')
     // M9: the phone answers the card, the Mac edits the line right below its card line.
     const base = '```card\nQ\n```\n<!-- card: NC-1 -->\nNext para\n'
-    expect(mergeLinesApart(base, base.replace('NC-1 -->', 'NC-1, 2026-11-14T06:01Z good -->'), base.replace('Next para', 'Next para edited'))).toBe('```card\nQ\n```\n<!-- card: NC-1, 2026-11-14T06:01Z good -->\nNext para edited\n')
+    expect(mergeLinesApart(base, base.replace('NC-1 -->', 'NC-1, 2026-11-14T06:01:00.000Z good -->'), base.replace('Next para', 'Next para edited'))).toBe('```card\nQ\n```\n<!-- card: NC-1, 2026-11-14T06:01:00.000Z good -->\nNext para edited\n')
     // The Mac adds a line right below the phone's tick; and right above it.
     expect(mergeLinesApart('- [ ] One\n- [ ] Two\n', '- [x] One\n- [ ] Two\n', '- [ ] One\n- [ ] New\n- [ ] Two\n')).toBe('- [x] One\n- [ ] New\n- [ ] Two\n')
     expect(mergeLinesApart('- [ ] One\n- [ ] Two\n', '- [ ] One\n- [x] Two\n', '- [ ] One\n- [ ] New\n- [ ] Two\n')).toBe('- [ ] One\n- [ ] New\n- [x] Two\n')

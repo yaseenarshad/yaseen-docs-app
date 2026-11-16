@@ -14,7 +14,7 @@ afterEach(() => {
 })
 
 /** A review made 40 days ago: the card is due today. */
-const OLD = '2026-10-04T09:00Z good'
+const OLD = '2026-10-04T09:00:00.000Z good'
 const newCards = (n: number) => Array.from({ length: n }, (_, i) => cardBlock(`Card ${i + 1}?\n---\n{{answer ${i + 1}}}`, `NW-${i + 1}`))
 
 describe('Review: done, and "Add more for today" (round 10, addition 2)', () => {

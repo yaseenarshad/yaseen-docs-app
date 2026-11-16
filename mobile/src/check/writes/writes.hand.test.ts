@@ -8,7 +8,7 @@ import { applyComment } from '../../comments/write'
 import { macMerge } from './macMerge.testing'
 
 const card = (id: string, line = `<!-- card: ${id} -->`) => `\`\`\`card\nQ ${id}\n\`\`\`\n${line}\n`
-const rv = (m: number) => ({ at: `2026-11-14T07:${String(m).padStart(2, '0')}Z`, rating: 'good' as const })
+const rv = (m: number) => ({ at: `2026-11-14T07:${String(m).padStart(2, '0')}:00.000Z`, rating: 'good' as const })
 
 describe('check-writes: nasty cases', () => {
   it('N7 [comments] a page with a BOM and front matter: the comment goes INTO its block, not in a second block before the BOM', () => {

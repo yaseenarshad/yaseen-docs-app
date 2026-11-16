@@ -46,7 +46,7 @@ vi.mock('./cardFile', async (importOriginal) => ({
 
 const PATH = '/v/cards.md'
 const TWO_SIDES = 'Capital of {{France}}\n---\n{{Paris}} on the {{Seine}}'
-const AT = '2026-11-12T14:05Z'
+const AT = '2026-11-12T14:05:00.000Z'
 const answersOf = (s: ReviewSettings): CardAnswer[] =>
   (s.buttons === 4 ? (['again', 'hard', 'good', 'easy'] as const) : (['again', 'good'] as const)).map((rating, i) => ({ review: { at: AT, rating }, interval: [0, 3, 9, 20][i], due: 0, inSteps: rating === 'again' }))
 
@@ -493,7 +493,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
 
   it('YAZ-5105: a card with reviews shows its Reviews strip (the card window\'s own `CardReviews`) under the card, outside its frame, as soon as the last side shows (round 3: its hidden words shown or not); never on the front or an earlier side', async () => {
     mount(TWO_SIDES)
-    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again' }] } } }
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }, { at: '2026-11-13T09:00:00.000Z', rating: 'again' }] } } }
     render()
     await flush()
     const reviews = () => el.querySelector('.card-reviews')

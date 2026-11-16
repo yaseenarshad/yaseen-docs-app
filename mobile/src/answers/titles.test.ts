@@ -11,8 +11,8 @@ import { answersSetup, at } from './testing'
  * never remove, move or change a title. The phone never moves a title itself (the one-time move is the Mac's job,
  * `cardTitleSweep.ts`): an old card keeps its text as it is.
  */
-const R: CardReview = { at: '2026-11-14T06:01Z', rating: 'good', seconds: 9 }
-const R0 = '2026-11-01T09:00Z good'
+const R: CardReview = { at: '2026-11-14T06:01:00.000Z', rating: 'good', seconds: 9 }
+const R0 = '2026-11-01T09:00:00.000Z good'
 const TITLES = ['The "City" of Light', 'Paris, France', 'a --> b', 'C:\\ two \\\\', 'Ñandú über Straße', 'Speed 🚀✨', 'Ünï, "q" \\ --> 🙂']
 const part = (title: string) => formatCardLine(withCardTitle({ parts: [] }, title))!.replace(/^<!-- card: | -->$/g, '')
 const pageWith = (line: string) => `---\ntitle: P\n---\n\n# P\n\n\`\`\`card\nWhat is it?\n---\n{{It}}\n\`\`\`\n<!-- card: ${line} -->\n\nThe end.\n`
@@ -34,7 +34,7 @@ describe('applyOps keeps the title part byte for byte (decision 2)', () => {
       expect(cardTitleOf(pageCards(once)[0].line)).toBe(title)
     }
     const all = applyOps(page, [{ kind: 'next', id: 'NC-1', on: true }, { kind: 'off', id: 'NC-1', on: true }, { kind: 'fix', id: 'NC-1', on: true }, { kind: 'review', id: 'NC-1', review: R }]).content
-    expect(lineOf(all)).toBe(`<!-- card: NC-1, ${part(title)}, off, next, fix, ${R0}, 2026-11-14T06:01Z good 9s -->`)
+    expect(lineOf(all)).toBe(`<!-- card: NC-1, ${part(title)}, off, next, fix, ${R0}, 2026-11-14T06:01:00.000Z good 9s -->`)
   })
 
   it('an empty title part (`title ""`) and a hand-written one (`title "a > b"`) keep their bytes too', () => {
@@ -46,7 +46,7 @@ describe('applyOps keeps the title part byte for byte (decision 2)', () => {
   })
 
   it('a change of the title can never be sent as actions: it throws, so nothing is half saved', () => {
-    const before = parseCardLine('<!-- card: NC-1, title "Old", 2026-11-01T09:00Z good -->')!
+    const before = parseCardLine('<!-- card: NC-1, title "Old", 2026-11-01T09:00:00.000Z good -->')!
     expect(() => opsBetween('NC-1', before, withCardTitle(before, 'New'))).toThrow(UnsentChangeError)
     expect(() => opsBetween('NC-1', before, withCardTitle(before, ''))).toThrow(UnsentChangeError)
     expect(() => opsBetween('NC-1', parseCardLine('<!-- card: NC-1 -->')!, parseCardLine('<!-- card: NC-1, title "New" -->')!)).toThrow(UnsentChangeError)
@@ -89,7 +89,7 @@ describe('the phone`s ReviewHost reads the title off the card line', () => {
 describe('a vault the Mac has not moved yet (point 5): the phone reads it and never moves a title', () => {
   // Before the Mac's one-time move: a card in a page with its title as its first line, a card file with `title:`.
   const OLD = {
-    'p.md': '---\ntitle: P\n---\n\n```card\nLongest river\n\nWhich is it?\n---\nThe {{Nile}}.\n```\n<!-- card: OLD-1, 2026-11-01T09:00Z good -->\n',
+    'p.md': '---\ntitle: P\n---\n\n```card\nLongest river\n\nWhich is it?\n---\nThe {{Nile}}.\n```\n<!-- card: OLD-1, 2026-11-01T09:00:00.000Z good -->\n',
     'cards/capital-of-france-old-2.md': '---\nkind: card\ntitle: Capital of France\n---\n```card\nThe capital is {{Paris}}.\n```\n<!-- card: OLD-2 -->\n',
   }
 
@@ -110,7 +110,7 @@ describe('a vault the Mac has not moved yet (point 5): the phone reads it and ne
     await host.changeCardLine('cards/capital-of-france-old-2.md', 'OLD-2', (l) => ({ parts: [...l.parts, { kind: 'fix' }] }))
     const page = (await t.answers.text('p.md'))!
     const file = (await t.answers.text('cards/capital-of-france-old-2.md'))!
-    expect(page).toBe(OLD['p.md'].replace('2026-11-01T09:00Z good -->', `2026-11-01T09:00Z good, ${at(1)} good -->`))
+    expect(page).toBe(OLD['p.md'].replace('2026-11-01T09:00:00.000Z good -->', `2026-11-01T09:00:00.000Z good, ${at(1)} good -->`))
     expect(file).toBe(OLD['cards/capital-of-france-old-2.md'].replace('<!-- card: OLD-2 -->', `<!-- card: OLD-2, fix, ${at(1)} good -->`))
     expect(page + file).not.toContain('title "')
   })

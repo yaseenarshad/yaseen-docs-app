@@ -51,7 +51,7 @@ vi.mock('@client/api', async (importOriginal) => {
 })
 
 const DAY = 86_400_000
-const iso = (t: number) => new Date(t).toISOString().slice(0, 16) + 'Z'
+const iso = (t: number) => new Date(t).toISOString().slice(0, 16) + ':00.000Z'
 const ago = (days: number, hours = 0) => iso(NOW - days * DAY - hours * 3_600_000)
 
 // ── Vault 1: a language vault. New cards over the day limit, due, answered today, archived, Up next, Fix later,
@@ -258,10 +258,10 @@ afterEach(() => vi.useRealTimers())
 const R3 = (id: string, front: string, extra = '') => `\`\`\`card\n${front}\n---\nR3 back of ${id}: {{x ${id}}}\n---\nlast side {{y ${id}}} and {{z ${id}}}\n\`\`\`\n<!-- card: ${id}${extra} -->`
 const VR3P: Record<string, string> = {
   '.yaseendocs/review.json': '{"newPerDay": 2, "upNextPerDay": 1, "fuzz": false}',
-  'garden/plants.md': `---\ntitle: Plant notes (round 3)\n---\n\n# Plants\n\nSome text before the cards.\n\n${R3('PL-1', 'What is a fern?', ', 2026-09-20T08:00Z good, 2026-10-10T08:00Z good')}\n\n${R3('PL-2', 'Moss or lichen?')}\n\n${R3('PL-3', 'Which tree loses leaves?', ', next')}\n\n${R3('PL-4', 'Cactus water?', ', 2026-11-12T09:00Z again, 2026-11-13T07:00Z hard')}\n\n${R3('PL-5', 'Secret title\nWhat is a {{bulb}}?', ', notitle, 2026-10-25T08:00Z good')}\n`,
-  'cards/pl-6.md': `---\nkind: card\ntitle: Oak\n---\n\n${R3('PL-6', 'How old can an oak get?', ', 2026-08-01T08:00Z easy, 2026-09-15T08:00Z good')}\n`,
+  'garden/plants.md': `---\ntitle: Plant notes (round 3)\n---\n\n# Plants\n\nSome text before the cards.\n\n${R3('PL-1', 'What is a fern?', ', 2026-09-20T08:00:00.000Z good, 2026-10-10T08:00:00.000Z good')}\n\n${R3('PL-2', 'Moss or lichen?')}\n\n${R3('PL-3', 'Which tree loses leaves?', ', next')}\n\n${R3('PL-4', 'Cactus water?', ', 2026-11-12T09:00:00.000Z again, 2026-11-13T07:00:00.000Z hard')}\n\n${R3('PL-5', 'Secret title\nWhat is a {{bulb}}?', ', notitle, 2026-10-25T08:00:00.000Z good')}\n`,
+  'cards/pl-6.md': `---\nkind: card\ntitle: Oak\n---\n\n${R3('PL-6', 'How old can an oak get?', ', 2026-08-01T08:00:00.000Z easy, 2026-09-15T08:00:00.000Z good')}\n`,
   'cards/pl-7.md': `---\nkind: card\ntitle: Ivy\n---\n\n${R3('PL-7', 'Does ivy climb?', ', next')}\n`,
-  'garden/more.md': `---\ntitle: More\n---\n\n${R3('PL-8', 'Archived one?', ', off, 2026-10-01T08:00Z good')}\n\n${R3('PL-9', 'Rose thorns?', ', fix')}\n\n${R3('PL-10', 'Tulip from?')}\n\n${R3('PL-11', 'Daisy?', ', 2026-11-01T08:00Z good')}\n\n![[cards/pl-6]]\n\n![[PL-7]]\n`,
+  'garden/more.md': `---\ntitle: More\n---\n\n${R3('PL-8', 'Archived one?', ', off, 2026-10-01T08:00:00.000Z good')}\n\n${R3('PL-9', 'Rose thorns?', ', fix')}\n\n${R3('PL-10', 'Tulip from?')}\n\n${R3('PL-11', 'Daisy?', ', 2026-11-01T08:00:00.000Z good')}\n\n![[cards/pl-6]]\n\n![[PL-7]]\n`,
 }
 const SCRIPT_R3P: Action[] = ['again', 'good', 'undo', 'good', 'next', 'good', 'f-new', 'again', 'good', 'undo', 'undo', 'f-next', 'good', 'f-due', 'archive', 'good', 'fix', 'f-all', 'add-new', 'good', 'again', 'add-next', 'good', 'unnext', 'good', 'undo', 'good', 'again', 'again', 'next', 'good', 'p-archive-undo', 'p-next-undo', 'f-new', 'good', 'add-new', 'p-fix-undo', 'good', 'again', 'good']
 
@@ -269,10 +269,10 @@ const SCRIPT_R3P: Action[] = ['again', 'good', 'undo', 'good', 'next', 'good', '
 const C4 = (id: string, front: string, extra = '', back = `{{a ${id}}}`) => `\`\`\`card\n${front}\n---\n${back}\n\`\`\`\n<!-- card: ${id}${extra} -->`
 const V4: Record<string, string> = {
   '.yaseendocs/review.json': '{"newPerDay": 3, "upNextPerDay": 2, "fuzz": false, "buttons": 4}',
-  'lang/words.md': `---\ntitle: Words (round 4)\n---\n\n# Words\n\nText first.\n\n${C4('WD-1', 'casa?', ', 2026-10-20T08:00Z good, 2026-11-01T08:00Z good')}\n\n${C4('WD-2', 'perro?')}\n\n${C4('WD-3', 'gato?', ', next, 2026-11-10T08:00Z again')}\n\n${C4('WD-4', 'Hidden title\\nlibro?', ', notitle, fix, 2026-10-05T08:00Z hard')}\n\n${C4('WD-5', 'agua?', ', 2026-11-13T08:00Z again')}\n\n${C4('WD-6', 'sol?', ', 2026-09-01T08:00Z easy, 2026-10-01T08:00Z good')}\n\n${C4('WD-7', 'luna?')}\n`,
-  'cards/wd-8.md': `---\nkind: card\ntitle: Tree\n---\n\n${C4('WD-8', 'arbol?', ', 2026-10-25T08:00Z good')}\n`,
+  'lang/words.md': `---\ntitle: Words (round 4)\n---\n\n# Words\n\nText first.\n\n${C4('WD-1', 'casa?', ', 2026-10-20T08:00:00.000Z good, 2026-11-01T08:00:00.000Z good')}\n\n${C4('WD-2', 'perro?')}\n\n${C4('WD-3', 'gato?', ', next, 2026-11-10T08:00:00.000Z again')}\n\n${C4('WD-4', 'Hidden title\\nlibro?', ', notitle, fix, 2026-10-05T08:00:00.000Z hard')}\n\n${C4('WD-5', 'agua?', ', 2026-11-13T08:00:00.000Z again')}\n\n${C4('WD-6', 'sol?', ', 2026-09-01T08:00:00.000Z easy, 2026-10-01T08:00:00.000Z good')}\n\n${C4('WD-7', 'luna?')}\n`,
+  'cards/wd-8.md': `---\nkind: card\ntitle: Tree\n---\n\n${C4('WD-8', 'arbol?', ', 2026-10-25T08:00:00.000Z good')}\n`,
   'cards/wd-9.md': `---\nkind: card\ntitle: Sea\n---\n\n${C4('WD-9', 'mar?', ', next')}\n`,
-  'lang/more.md': `---\ntitle: More\n---\n\n${C4('WD-10', 'old?', ', off, 2026-10-01T08:00Z good')}\n\n${C4('WD-11', 'rojo?', ', 2026-11-02T08:00Z good')}\n\n${C4('WD-12', 'verde?')}\n\n![[cards/wd-8]]\n\n![[WD-9]]\n`,
+  'lang/more.md': `---\ntitle: More\n---\n\n${C4('WD-10', 'old?', ', off, 2026-10-01T08:00:00.000Z good')}\n\n${C4('WD-11', 'rojo?', ', 2026-11-02T08:00:00.000Z good')}\n\n${C4('WD-12', 'verde?')}\n\n![[cards/wd-8]]\n\n![[WD-9]]\n`,
 }
 const SCRIPT_4: Action[] = ['p-archive-undo', 'good', 'p-next-undo', 'again', 'p-fix-undo', 'hard', 'undo', 'easy', 'next', 'p-archive-undo', 'good', 'fix', 'p-fix-undo', 'again', 'archive', 'p-next-undo', 'good', 'f-new', 'good', 'p-archive-undo', 'undo', 'f-all', 'add-new', 'good', 'unnext', 'p-next-undo', 'good', 'again', 'add-next', 'p-archive-undo', 'good', 'undo', 'undo', 'p-fix-undo', 'good', 'archive', 'f-due', 'good', 'f-all', 'good']
 const CASES: [string, Record<string, string>, Action[]][] = [['R4 four buttons, marks and their Undos', V4, SCRIPT_4], ['R3 vault with phone-only mark Undos', VR3P, SCRIPT_R3P]]

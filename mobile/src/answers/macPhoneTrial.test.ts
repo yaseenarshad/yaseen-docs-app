@@ -11,9 +11,9 @@ import { addComment, readComments } from '@shared/comments'
 import { mergePageComments } from '@shared/commentMerge'
 import { applyComment } from '../comments/write'
 
-const P = { at: '2026-11-14T10:00Z', rating: 'good' as const, seconds: 4 }
-const M = { at: '2026-11-14T10:05Z', rating: 'again' as const, seconds: 9 }
-const R0 = '2026-11-01T09:00Z good'
+const P = { at: '2026-11-14T10:00:00.000Z', rating: 'good' as const, seconds: 4 }
+const M = { at: '2026-11-14T10:05:00.000Z', rating: 'again' as const, seconds: 9 }
+const R0 = '2026-11-01T09:00:00.000Z good'
 
 const page = (line: string, eol = '\n', fm = '---\nid: YAZ-1\n# a comment in front matter\ntags: [a, b]\n---\n') =>
   `${fm}# Words\n\n\`\`\`card\nHola, {{mundo}}\n---\nHello, world\n\`\`\`\n<!-- card: ${line} -->\n\nThe end.\n`.replace(/\n/g, eol)
@@ -54,7 +54,7 @@ describe('YAZ-5465 trial: phone and Mac on one card line', () => {
         // Both reviews, once each, in time order; every other part keeps its bytes.
         // A raw comma inside quotes is written `&#44;` (YAZ-5393): an older build splits there.
         const rest = line.replace(`, ${R0}`, '').replace('"a, b"', '"a&#44; b"')
-        expect(lineOf(out)).toBe(`<!-- card: ${rest}, ${R0}, 2026-11-14T10:00Z good 4s, 2026-11-14T10:05Z again 9s -->`)
+        expect(lineOf(out)).toBe(`<!-- card: ${rest}, ${R0}, 2026-11-14T10:00:00.000Z good 4s, 2026-11-14T10:05:00.000Z again 9s -->`)
         // Only the card line changed: the line ends and the front matter stay.
         expect(out.split(eol).length).toBe(base.split(eol).length)
         expect(out.replace(/<!-- card: [^\n]*-->/, '')).toBe(base.replace(/<!-- card: [^\n]*-->/, ''))
@@ -78,7 +78,7 @@ describe('YAZ-5465 trial: phone and Mac on one card line', () => {
     const base = page(`YAZ-7, next, ${R0}`)
     const t = phone(base, [{ kind: 'next', id: 'YAZ-7', on: false }, { kind: 'review', id: 'YAZ-7', review: P }])
     const m = mac(base, 'YAZ-7', (l) => withCardOff(l, true))
-    expect(cardRecords(merged(base, t, m))[0]).toMatchObject({ off: true, next: false, reviews: [{ at: '2026-11-01T09:00Z' }, { at: P.at }] })
+    expect(cardRecords(merged(base, t, m))[0]).toMatchObject({ off: true, next: false, reviews: [{ at: '2026-11-01T09:00:00.000Z' }, { at: P.at }] })
   })
 
   it('both sides set Fix later, one side clears it: the clear wins only against the base', () => {
@@ -94,7 +94,7 @@ describe('YAZ-5465 trial: phone and Mac on one card line', () => {
     const m = mac(base, 'GEO-1', (l) => withCardReview(withCardNext(l, false), M))
     const out = merged(base, t, m)
     expect(out.slice(0, out.indexOf('```'))).toBe(base.slice(0, base.indexOf('```')))
-    expect(cardRecords(out)[0].reviews.map((r) => r.at)).toEqual(['2026-11-01T09:00Z', P.at, M.at])
+    expect(cardRecords(out)[0].reviews.map((r) => r.at)).toEqual(['2026-11-01T09:00:00.000Z', P.at, M.at])
   })
 
   it('a line the phone wrote reads back the same on the Mac (no rewrite of odd bytes)', () => {

@@ -488,7 +488,7 @@ export function CardReviewsTable({ reviews, settings, onDelete, now = Date.now()
           </tr>
         </thead>
         <tbody>
-          {/* Keyed by place: two reviews in one minute are two rows (`withoutCardReview` takes the last of them). */}
+          {/* Keyed by place: each review is one row. */}
           {rows.map((row, i) => (
             <tr key={i}>
               <td>{cardFullDate(Date.parse(row.review.at))}</td>

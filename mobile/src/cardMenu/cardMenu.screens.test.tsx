@@ -16,7 +16,7 @@ import { BRANCH, REPO, VAULT } from '../sync/testing'
  * real answer list on the fake GitHub). Made-up files.
  */
 const block = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->`
-const RIVERS = `---\ntitle: Rivers\n---\n\n# Rivers\n\nThree cards.\n\n${block('Which river runs through Madrid?\n---\nThe Manzanares', 'RV-1, title "River of Madrid", 2026-11-01T09:00Z good')}\n\n${block('Which river runs through Paris?\n---\nThe Seine', 'RV-2')}\n\n${block('Which river runs through Vienna?\n---\nThe Danube', 'RV-3, title "River of Vienna", notitle, off')}\n`
+const RIVERS = `---\ntitle: Rivers\n---\n\n# Rivers\n\nThree cards.\n\n${block('Which river runs through Madrid?\n---\nThe Manzanares', 'RV-1, title "River of Madrid", 2026-11-01T09:00:00.000Z good')}\n\n${block('Which river runs through Paris?\n---\nThe Seine', 'RV-2')}\n\n${block('Which river runs through Vienna?\n---\nThe Danube', 'RV-3, title "River of Vienna", notitle, off')}\n`
 const LIGHT = `---\nkind: card\n---\n\n${block('How fast is light?\n---\nVery', 'RV-17, title "Speed of light"')}\n`
 const FILES = { '.yaseendocs/review.json': '{"enabled": true}', 'Rivers.md': RIVERS, 'cards/speed-of-light-rv-17.md': LIGHT }
 

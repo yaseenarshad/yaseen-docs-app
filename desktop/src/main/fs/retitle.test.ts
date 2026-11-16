@@ -212,7 +212,7 @@ describe('retitle: a folder (table C)', () => {
 describe('retitle: a card file (YAZ-5037, YAZ-5308 decision D)', () => {
   /** A card file whose card line holds `title` (none for null): its properties hold no title. */
   const cardFile = (title: string | null, text: string, id = 'YAZ-140') =>
-    `---\nkind: card\ntags: [geo]\n---\n\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${id}${title === null ? '' : `, title "${title}"`}, 2026-11-10T09:12Z good -->\n`
+    `---\nkind: card\ntags: [geo]\n---\n\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${id}${title === null ? '' : `, title "${title}"`}, 2026-11-10T09:12:00.000Z good -->\n`
 
   it('the new words go onto the card line, first; the card`s text is not touched; the file then takes the name built from them and the CARD\'s ID; no page ID is given', async () => {
     vi.mocked(giveId).mockClear()
@@ -226,7 +226,7 @@ describe('retitle: a card file (YAZ-5037, YAZ-5308 decision D)', () => {
   it('a title with a comma, a quote and a `-->` is written so the card line still reads it', async () => {
     const old = await page('Cards/yaz-140.md', cardFile(null, '---\nParis'))
     const { newPath } = await retitle(root, { path: old, title: 'Paris, "the" --> city' })
-    expect(await readFile(newPath, 'utf8')).toContain('<!-- card: YAZ-140, title "Paris&#44; \\"the\\" --\\> city", 2026-11-10T09:12Z good -->')
+    expect(await readFile(newPath, 'utf8')).toContain('<!-- card: YAZ-140, title "Paris&#44; \\"the\\" --\\> city", 2026-11-10T09:12:00.000Z good -->')
   })
 
   it('the placeholder title keeps the `<id>.md` name; the same name moves nothing', async () => {

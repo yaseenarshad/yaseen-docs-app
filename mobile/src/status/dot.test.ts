@@ -199,7 +199,7 @@ describe('every combination', () => {
   })
 })
 
-const waiting = (group: number, seq: number): WaitingAnswer => ({ seq, group, op: { kind: 'review', id: `NC-${group}`, review: { at: '2026-11-14T06:01Z', rating: 'good' } }, path: 'a.md', title: 'T', madeAt: 0 })
+const waiting = (group: number, seq: number): WaitingAnswer => ({ seq, group, op: { kind: 'review', id: `NC-${group}`, review: { at: '2026-11-14T06:01:00.000Z', rating: 'good' } }, path: 'a.md', title: 'T', madeAt: 0 })
 
 describe('1 vs N: what counts as one answer', () => {
   it('an answer is ONE person action: its two card actions (Up next off and the review) count one time', () => {
@@ -212,12 +212,12 @@ describe('1 vs N: what counts as one answer', () => {
     const lost = (seq: number, op: LostAnswer['op'], title = 'Speed of light'): LostAnswer => ({ seq, op, path: 'a.md', title, lostAt: 0 })
     const rows = lostRows([
       lost(4, { kind: 'next', id: 'NC-17', on: false }),
-      lost(5, { kind: 'review', id: 'NC-17', review: { at: '2026-11-14T06:01Z', rating: 'good' } }),
-      lost(6, { kind: 'review', id: 'NC-2', review: { at: '2026-11-14T06:02Z', rating: 'again' } }, 'Ohm'),
+      lost(5, { kind: 'review', id: 'NC-17', review: { at: '2026-11-14T06:01:00.000Z', rating: 'good' } }),
+      lost(6, { kind: 'review', id: 'NC-2', review: { at: '2026-11-14T06:02:00.000Z', rating: 'again' } }, 'Ohm'),
       lost(7, { kind: 'off', id: 'NC-3', on: true }, 'Old card'),
       lost(8, { kind: 'next', id: 'NC-4', on: true }, 'Soon'),
       lost(9, { kind: 'fix', id: 'NC-5', on: true }, 'Typo'),
-      lost(10, { kind: 'unreview', id: 'NC-6', at: '2026-11-14T06:03Z', rating: 'good' }, 'Undone'),
+      lost(10, { kind: 'unreview', id: 'NC-6', at: '2026-11-14T06:03:00.000Z', rating: 'good' }, 'Undone'),
     ])
     expect(rows).toEqual([
       { id: 'NC-17', title: 'Speed of light', answer: 'Remembered', seqs: [4, 5] },
@@ -230,7 +230,7 @@ describe('1 vs N: what counts as one answer', () => {
   })
 
   it('YAZ-5514: an answer refused because its card is on two pages says so', () => {
-    const op = { kind: 'review' as const, id: 'NC-2', review: { at: '2026-11-14T06:01Z', rating: 'good' as const } }
+    const op = { kind: 'review' as const, id: 'NC-2', review: { at: '2026-11-14T06:01:00.000Z', rating: 'good' as const } }
     expect(lostRows([{ seq: 1, op, path: 'c.md', title: 'Ohm', lostAt: 0, why: 'two-files' }])).toEqual([{ id: 'NC-2', title: 'Ohm', answer: 'Remembered', seqs: [1], note: 'The card is on two pages now' }])
   })
 })

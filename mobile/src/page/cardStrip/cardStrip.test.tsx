@@ -20,12 +20,12 @@ const FILES: Record<string, string> = {
   '.yaseendocs/ids.json': '{"enabled": true, "letters": "GEO"}',
   'Geo.md': `---\ntitle: Geography\nid: GEO-9\n---\n\nSee [[GEO-3]].\n\n${block(
     'How many islands?\n---\nA {{thousand}}',
-    'GEO-1, title "Islands", level "A2", 2026-11-01T09:00Z good'
+    'GEO-1, title "Islands", level "A2", 2026-11-01T09:00:00.000Z good'
   )}\n\n![[GEO-3]]\n`,
   'trips/Lisbon.md': `---\ntitle: Lisbon\nid: GEO-10\n---\n\nThe capital card: [[GEO-3]].\n`,
   'cards/capital-of-spain-geo-3.md': `---\nkind: card\n${COMMENTS}\n---\n\n${block(
     'The capital is {{Madrid}}.',
-    'GEO-3, title "Capital of Spain", tags "europe" "capitals", 2026-10-20T08:00Z good, 2026-10-24T08:00Z good, 2026-11-02T08:00Z hard'
+    'GEO-3, title "Capital of Spain", tags "europe" "capitals", 2026-10-20T08:00:00.000Z good, 2026-10-24T08:00:00.000Z good, 2026-11-02T08:00:00.000Z hard'
   )}\n`,
   'cards/tram-start-geo-4.md': `---\nkind: card\n---\n\n${block('Where does tram 28 start?\n---\nMartim Moniz', 'GEO-4, title "Tram start"')}\n`,
 }

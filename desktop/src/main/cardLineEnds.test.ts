@@ -33,7 +33,7 @@ const PAGE = [
   '---',
   'Back',
   '```',
-  '<!-- card: WIKI-1, title "One, word", 2026-11-12T14:05Z good -->',
+  '<!-- card: WIKI-1, title "One, word", 2026-11-12T14:05:00.000Z good -->',
   '',
   '- item',
   '  ```card',
@@ -126,7 +126,7 @@ describe('the index (rule 4): the same `cards` records for the two kinds of page
   })
 })
 
-const at = '2026-11-20T09:00Z'
+const at = '2026-11-20T09:00:00.000Z'
 /** Each card writer, as the app calls it: a review, Archive, Up next, hide the title, Edit card`s Done, the ID sweep, the moves and the fixes. */
 const WRITERS: [string, string, (content: string) => string][] = [
   ['an answer', PAGE, (c) => changeCard(c, 'WIKI-1', (l) => withCardReview(l, { at, rating: 'good', seconds: 7 }))],

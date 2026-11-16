@@ -30,7 +30,7 @@ const sweep = async (body: string) => {
   await sweepIds(root, records, [...records.values()], (q) => records.get(q)?.id)
   return pageCards(await readFile(p, 'utf8')).map((c) => [cardIdOf(c.line), cardReviewsOf(c.line).length])
 }
-const line = '<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-05T09:00Z good -->'
+const line = '<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good, 2026-11-05T09:00:00.000Z good -->'
 const card = (text: string, l: string | null) => `\`\`\`card\n${text}\n\`\`\`\n${l === null ? '' : `${l}\n`}\n`
 
 it('the card that was there first (the lower one) keeps its history: the editor saves the pasted copy with no ID (YAZ-4972)', async () => {
@@ -56,8 +56,8 @@ it('an agent`s copy with one ID on the page: the same text loses the copy`s hist
 it('same text, different reviews: no review leaves the file', async () => {
   const p = path.join(root, 'deck.md')
   // Mac A answered on Nov 1, Mac B on Nov 1 and Nov 7; a merge kept both blocks. Or: an agent wrote a stale copy above.
-  const a = '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'
-  const b = '<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-07T09:00Z good -->'
+  const a = '<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good -->'
+  const b = '<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good, 2026-11-07T09:00:00.000Z good -->'
   await writeFile(p, `---\nid: WIKI-1\n---\n\`\`\`card\nQ\n---\nA\n\`\`\`\n${a}\n\n\`\`\`card\nQ\n---\nA\n\`\`\`\n${b}\n`)
   const records = new Map([[p, await scanFile(root, p)]])
   await sweepIds(root, records, [...records.values()], (q) => records.get(q)?.id)
@@ -65,5 +65,5 @@ it('same text, different reviews: no review leaves the file', async () => {
   const all = pageCards(after).flatMap((c) => cardReviewsOf(c.line).map((r) => r.at))
   expect(pageCards(after).map((c) => cardIdOf(c.line))).toEqual(['WIKI-9', 'WIKI-10'])
   // The Nov 7 review exists only on the lower card. It must still be in the file.
-  expect(all).toContain('2026-11-07T09:00Z')
+  expect(all).toContain('2026-11-07T09:00:00.000Z')
 })

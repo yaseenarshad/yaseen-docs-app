@@ -44,10 +44,10 @@ describe('indexRecord: text to record (YAZ-5068)', () => {
   })
 
   it('YAZ-5308: a card file is titled by its card line; a `title` property is not its title', () => {
-    const r = indexRecord(meta('capital-of-france-geo-150.md'), ['---', 'kind: card', '---', '```card', 'Which city?', '---', 'Paris', '```', '<!-- card: GEO-150, title "Capital of France", 2026-11-10T09:12Z good 12s -->', ''].join('\n'))
+    const r = indexRecord(meta('capital-of-france-geo-150.md'), ['---', 'kind: card', '---', '```card', 'Which city?', '---', 'Paris', '```', '<!-- card: GEO-150, title "Capital of France", 2026-11-10T09:12:00.000Z good 12s -->', ''].join('\n'))
     expect(r.kind).toBe('card')
     expect(r.title).toBe('Capital of France')
-    expect(r.cards).toEqual([{ id: 'GEO-150', off: false, next: false, reviews: [{ at: '2026-11-10T09:12Z', rating: 'good', seconds: 12 }], title: 'Capital of France' }])
+    expect(r.cards).toEqual([{ id: 'GEO-150', off: false, next: false, reviews: [{ at: '2026-11-10T09:12:00.000Z', rating: 'good', seconds: 12 }], title: 'Capital of France' }])
   })
 
   it('YAZ-5309: a card file with no title on its card line is named by its card`s ID (a link, search, a label: the ID); one with no card by its file name', () => {

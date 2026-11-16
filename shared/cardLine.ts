@@ -12,11 +12,15 @@ import { inLineEnds, withLf } from './lineEnds'
  *   ---
  *   Paris
  *   ```
- *   <!-- card: WIKI-512, 2026-11-12T14:05Z good, 2026-11-20T09:00Z again -->
+ *   <!-- card: WIKI-512, 2026-11-12T14:05:31.204Z good, 2026-11-20T09:00:02.950Z again -->
  *
- * The line holds the card's ID (the vault's counter, D2), then each review: a UTC time to the minute and the FSRS
- * rating (`again | hard | good | easy`, D5), and how long the answer took when that is known (YAZ-5033: whole active
- * seconds, `2026-11-12T14:05Z good 13s`; an older review has none). `off` takes the card out of review. `next` puts it at the top of the Inbox
+ * The line holds the card's ID (the vault's counter, D2), then each review: its time and the FSRS rating (`again | hard
+ * | good | easy`, D5), and how long the answer took when that is known (YAZ-5033: whole active seconds,
+ * `2026-11-12T14:05:31.204Z good 13s`; a review made before it has none). THE TIME (YAZ-5642) is ISO 8601 in UTC to
+ * the millisecond, as `Date.prototype.toISOString` writes it (`cardTime`): two answers never share one, so a review is
+ * its time and rating, and no merge or Undo has to guess which of two "same" reviews is meant. It is the one form the
+ * line reads: a review time of any other form (the minute-only `2026-11-12T14:05Z` of the first builds) is an unknown
+ * part, kept as its text (a one-off conversion outside the app rewrites those once). `off` takes the card out of review. `next` puts it at the top of the Inbox
  * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. `notitle` hides the card's title on the
  * Inbox's front (YAZ-5030, "Title on the front: Hide"); absent, the title shows. `fix` marks the card "Fix later"
  * (YAZ-5097): it has a mistake to fix at the desk; it stays in review.
@@ -40,7 +44,7 @@ export type CardRating = 'again' | 'hard' | 'good' | 'easy'
 
 /** One review on a card line. */
 export interface CardReview {
-  /** UTC to the minute, `2026-11-12T14:05Z`: it sorts as a string. */
+  /** ISO 8601 UTC to the millisecond, `2026-11-12T14:05:31.204Z` (YAZ-5642, `cardTime`): it sorts as a string. */
   at: string
   rating: CardRating
   /**
@@ -110,14 +114,15 @@ export interface CardRecord {
 /** `<!-- card: … -->` on one line, any spaces inside the delimiters. */
 const LINE_RE = /^<!--[ \t]*card:[ \t]*(.*?)[ \t]*-->$/
 /**
- * A review part: a real UTC minute (month, day, hour and minute in range) and an FSRS rating, then the answer's
+ * A review part: a real UTC time to the millisecond (YAZ-5642: month, day, hour, minute and second in range, three
+ * digits of milliseconds, `Z`) and an FSRS rating, then the answer's
  * seconds when known (YAZ-5033): ` <n>s`, a whole number in its one written form (no leading zero, no sign), at most
  * `CARD_SECONDS_MAX`. Any other ending (`13.5s`, `013s`, `90000s`) makes the part unknown: kept as its text.
  */
-const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\dZ)[ \t]+(again|hard|good|easy)(?:[ \t]+(0|[1-9]\d{0,4})s)?$/
+const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z)[ \t]+(again|hard|good|easy)(?:[ \t]+(0|[1-9]\d{0,4})s)?$/
 
-/** A review time as the line writes it: UTC, to the minute (`2026-11-12T14:05Z`). */
-export const cardTime = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
+/** A review time as the line writes it (YAZ-5642): ISO 8601, UTC, to the millisecond (`2026-11-12T14:05:31.204Z`). */
+export const cardTime = (ms: number): string => new Date(ms).toISOString()
 
 /** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteText`). */
 const TITLE_RE = /^title[ \t]+("(?:[^"\\]|\\.)*")$/
@@ -288,7 +293,7 @@ export function parseCardLine(value: string): CardLine | null {
 /** Is `n` seconds a review part can hold (YAZ-5033): a whole number, 0 to `CARD_SECONDS_MAX`? */
 export const isCardSeconds = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= CARD_SECONDS_MAX
 
-/** A review part as the line writes it: `2026-11-12T14:05Z good`, and ` 13s` only when its seconds are known (YAZ-5033). */
+/** A review part as the line writes it: `2026-11-12T14:05:31.204Z good`, and ` 13s` only when its seconds are known (YAZ-5033). */
 export const formatCardReview = (r: CardReview): string => (isCardSeconds(r.seconds) ? `${r.at} ${r.rating} ${r.seconds}s` : `${r.at} ${r.rating}`)
 
 /**
@@ -502,7 +507,7 @@ export function withCardReview(line: CardLine, review: CardReview): CardLine {
   return { parts: [...line.parts.slice(0, at), { kind: 'review', review }, ...line.parts.slice(at)] }
 }
 
-/** Without the review made at `at` (the last one, should two share a minute). An unknown `at` changes nothing. */
+/** Without the review made at `at` (its full time, YAZ-5642: one review). An unknown `at` changes nothing. */
 export function withoutCardReview(line: CardLine, at: string): CardLine {
   const i = line.parts.map((p) => p.kind === 'review' && p.review.at === at).lastIndexOf(true)
   return i === -1 ? line : { parts: line.parts.filter((_, j) => j !== i) }

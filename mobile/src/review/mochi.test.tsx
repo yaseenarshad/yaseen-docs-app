@@ -22,7 +22,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-const OLD = '2026-10-04T09:00Z good'
+const OLD = '2026-10-04T09:00:00.000Z good'
 const ids = (hh: ReviewHarness) => hh.answers.waiting().filter((w) => w.op.kind === 'review').map((w) => w.op.id)
 const q = (sel: string) => h!.host.querySelector<HTMLElement>(sel)
 const hint = () => (q('.review__hint')?.textContent ?? '').replace(/\s+/g, ' ').trim()

@@ -19,6 +19,7 @@ import { sendOutbox, type SendReport } from '../src/answers/send'
 import { githubRemote, type GithubRemote } from '../src/sync/githubRemote'
 import { syncPass } from '../src/sync/pass'
 import { INDEX_STATE, phoneRecord, type PhoneIndex } from '../src/sync/phoneIndex'
+import { cardTime } from '@shared/cardLine'
 
 const REPO = 'yaseenarshad/notecards-scratch-vault'
 const BRANCH = 'main'
@@ -79,7 +80,7 @@ const remoteLine = async () => {
   return text.split('\n').find((l) => l.startsWith('<!-- card:'))
 }
 const add = (...ops: CardOp[]) => box.add(ops.map((op) => ({ op, path: CARD_FILE, title: 'Live test card' })), Date.now())
-const minute = (n: number) => `${new Date(Date.now() + n * 60_000).toISOString().slice(0, 16)}Z`
+const minute = (n: number) => cardTime(Date.now() + n * 60_000)
 
 await step('1. first download', pass)
 const h0 = (await store.checkpoint(VAULT))!.commit

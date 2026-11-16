@@ -21,7 +21,7 @@ const WORDS = ['alpha', 'Ünïcode', 'naïve café', '😀 emoji', '日本語', 
 export const word = (r: Rng) => pick(r, WORDS)
 
 export const CARD_IDS = ['NC-1', 'NC-2', 'NC-3', 'NC-4', 'nc-5', 'NC-6', 'NC-7', 'NC-8']
-export const at = (m: number) => `2026-11-14T${String(6 + Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}Z`
+export const at = (m: number) => `2026-11-14T${String(6 + Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}:00.000Z`
 
 /** A card line in many hand-made forms. */
 export function cardLine(r: Rng, id: string): string {

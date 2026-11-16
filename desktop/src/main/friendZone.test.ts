@@ -17,7 +17,7 @@ const HOME = 'America/New_York'
 const profile = { login: 'yaseen', name: 'Yaseen', avatar: '', nickname: null }
 /** `n` cards, each answered once at `at` (a UTC ms), one second apart. */
 const answered = (n: number, at: number): CardRecord[] =>
-  Array.from({ length: n }, (_, i) => ({ id: `C${i}`, off: false, next: false, reviews: [{ at: new Date(at + i * 1000).toISOString().slice(0, 16) + 'Z', rating: 'good' as const }] }))
+  Array.from({ length: n }, (_, i) => ({ id: `C${i}`, off: false, next: false, reviews: [{ at: new Date(at + i * 1000).toISOString().slice(0, 16) + ':00.000Z', rating: 'good' as const }] }))
 const vaultWith = (cards: CardRecord[]): FriendVault => ({ pages: [{ cards }], settings: DEFAULT_REVIEW_SETTINGS })
 const sum = (s: Pick<FriendStats, 'days'>) => s.days.reduce((n, d) => n + d.cards, 0)
 const daysWithCards = (s: Pick<FriendStats, 'days'>) => s.days.filter((d) => d.cards > 0).map((d) => [d.day, d.cards])

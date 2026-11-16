@@ -41,7 +41,7 @@ describe('the shell wires the answer list (decision 4)', () => {
     expect(win.count('online')).toBe(1)
 
     const writes = () => s.github.calls.filter((c) => c.method === 'PATCH').length
-    const add = (minute: number) => link.answers.add([{ op: { kind: 'review', id: 'NC-2', review: { at: `2026-11-14T06:0${minute}Z`, rating: 'good' } }, path: 'a.md', title: 'NC-2' }])
+    const add = (minute: number) => link.answers.add([{ op: { kind: 'review', id: 'NC-2', review: { at: `2026-11-14T06:0${minute}:00.000Z`, rating: 'good' } }, path: 'a.md', title: 'NC-2' }])
 
     // Hidden: at once, not 5 s later.
     await add(1)

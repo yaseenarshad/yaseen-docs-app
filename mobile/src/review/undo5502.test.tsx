@@ -23,7 +23,7 @@ vi.hoisted(() => {
  * real engine, answer list and host on the fake GitHub. The answer is a plain tap, NOT inside React's `act`, and time
  * runs as on the phone: React draws when its own scheduler says, as in the browser. Made-up data only.
  */
-const OLD = '2026-10-02T09:00Z good, 2026-10-12T09:00Z good'
+const OLD = '2026-10-02T09:00:00.000Z good, 2026-10-12T09:00:00.000Z good'
 const FILES = { '.yaseendocs/review.json': '{}', 'spanish.md': page('Spanish words', cardBlock('Hola?\n---\n{{Hello}}', `UN-1, ${OLD}`), cardBlock('Adios?\n---\n{{Bye}}', `UN-2, ${OLD}`), cardBlock('Gracias?\n---\n{{Thanks}}', `UN-3, ${OLD}`)) }
 
 let h: Harness

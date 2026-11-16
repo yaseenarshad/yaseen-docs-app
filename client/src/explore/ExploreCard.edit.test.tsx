@@ -15,7 +15,7 @@ import type { ExploreVault } from './ExplorePage'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const PATH = '/v/cards.md'
-const PAGE = '# Cards\n\nAbove.\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9, 2026-11-01T09:00Z good -->\n\nBelow.\n'
+const PAGE = '# Cards\n\nAbove.\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good -->\n\nBelow.\n'
 const disk = vi.hoisted(() => new Map<string, string>())
 
 vi.mock('../api', async (importOriginal) => {
