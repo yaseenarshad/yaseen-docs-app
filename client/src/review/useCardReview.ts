@@ -94,7 +94,8 @@ import { tourEvent } from '../course/tourBus'
  * THE END OF DUE TODAY (YAZ-5043, as Mochi's two passes): under All cards and Due today, a Forgot on a card with
  * reviews is held back to the end of the DUE part of the queue (before any new card), so the missed cards come before
  * the new ones. When the first pass of the due cards is done the session STOPS (`pause`): "You remembered 93% of 73
- * cards." with one button, "Review missed cards 5" (no skip: you finish them that day). When the missed cards are done
+ * cards." with one button, "Review missed cards 5" (no skip: you finish them that day). A missed card is one with a
+ * Forgot in this session (YAZ-5614): a card back after a ✓ (still in its learning steps) waits, but makes no stop. When the missed cards are done
  * too it stops again: "Due today is done.", then "Learn new cards 11" (`goOn`). The % counts each due card's FIRST
  * answer of this session only (`dueFirsts`, `sessionProgress.ts`): a card missed then got right counts as missed, a new card never counts, and a
  * history reset elsewhere changes nothing. Each stop shows once per session (`stage`): a card that becomes due later
@@ -403,11 +404,19 @@ const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> 
   const none = { stage: s.stage, pause: null }
   if (card.isNew || card.fromNew === true || s.stage === 'over' || (s.filter !== 'all' && s.filter !== 'due')) return none
   const due = s.queue.filter((c) => !c.isNew && c.fromNew !== true)
-  const missed = due.filter((c) => c.repeat === true).length
-  if (due.length > missed) return none
-  if (s.stage === 'first' && missed > 0) return { stage: 'missed', pause: 'missed' }
+  // The first pass is done when every due card waiting is a repeat (YAZ-5614: a repeat after a ✓, a card still in its
+  // learning steps, is no missed card: the stop needs a Forgot, so it never says "100%" with "Review missed cards 1").
+  if (due.some((c) => c.repeat !== true)) return none
+  // And the % it shows must be under 100: a first answer of this session was a Forgot (spec 15).
+  if (s.stage === 'first' && missedCards(s).length > 0 && s.answered.some((a) => a.first && a.rating === 'again')) return { stage: 'missed', pause: 'missed' }
   if (due.length > 0) return none
   return { stage: 'over', pause: 'done' }
+}
+
+/** The missed cards waiting (YAZ-5043): due cards back in this session after a Forgot of this session (YAZ-5614). */
+const missedCards = (s: Session): QueueCard[] => {
+  const forgot = new Set(s.answered.filter((a) => a.rating === 'again').map((a) => a.key))
+  return s.queue.filter((c) => !c.isNew && c.repeat === true && c.fromNew !== true && forgot.has(cardKey(c)))
 }
 
 /** The place of the card the filter shows next before (-1) or after (+1) `at`; -1 when there is none. */
@@ -630,7 +639,7 @@ const endOf = (s: Session): DueTodayEnd | null => {
     kind: s.pause,
     id: `${s.id}:${s.answered.length}:${s.pause}`,
     ...dueFirsts(s.answered),
-    missed: s.queue.filter((c) => !c.isNew && c.repeat === true && c.fromNew !== true).length,
+    missed: missedCards(s).length,
     // YAZ-5616: a new card begun today (its first ✓, `fromNew`) still waits for its second ✓ in this session: it counts.
     fresh: s.queue.filter((c) => c.isNew || c.fromNew === true).length,
   }
@@ -777,7 +786,9 @@ export function useCardReview(
   }, [])
 
   const head = session?.queue[session.at]
-  const turnKey = session === null || head === undefined ? null : `${session.turn}\n${head.path}\n${head.id}`
+  // The session's `id` too (YAZ-5614): a session closed and started again begins its turns at 1 again, and the card at
+  // its head must not take the fixed answers (their time) or the page of the session before.
+  const turnKey = session === null || head === undefined ? null : `${session.id}\n${session.turn}\n${head.path}\n${head.id}`
 
   // The notice door in a ref: the read below runs once per turn, whatever identity the caller's callback has.
   const notice = useRef(onNotice)
@@ -864,7 +875,7 @@ export function useCardReview(
   const fixAnswers = useCallback((): CardAnswer[] | null => {
     const { session, loaded, fixed, settings } = live.current
     const shown = session?.queue[session.at]
-    const key = session === null || shown === undefined ? null : `${session.turn}\n${shown.path}\n${shown.id}`
+    const key = session === null || shown === undefined ? null : `${session.id}\n${session.turn}\n${shown.path}\n${shown.id}`
     if (key === null || shown === undefined) return null
     // The card's page: read this turn, or read ahead (YAZ-5029) — the one the Inbox shows.
     const page = loaded?.key === key ? loaded.page : cached(shown)
@@ -935,9 +946,15 @@ export function useCardReview(
     [fixAnswers, onNotice, settle, forget, root, host],
   )
 
+  // YAZ-5614: the add and Reset steps whose undo ran. Two ⌘Z in one tick (a key repeat) both read the same last step
+  // before React takes the first one off the stack: the day's number must change once.
+  const undoneSteps = useRef(new WeakSet<UndoStep>())
+
   /** The add's undo (YAZ-5042): today's number goes down by what the add grew it; its cards not answered yet leave. */
   const undoAdd = useCallback(
     (step: AddStep) => {
+      if (undoneSteps.current.has(step)) return
+      undoneSteps.current.add(step)
       if (root !== null) {
         const now = host.cardsAddedToday(root)
         host.setCardsAdded(root, step.what === 'new' ? { ...now, newCards: now.newCards - step.delta } : { ...now, upNext: now.upNext - step.delta })
@@ -950,7 +967,8 @@ export function useCardReview(
   /** A Reset's undo (YAZ-5042 round 2): today's number goes back up; its cards join the session again, as an add's do. */
   const undoReset = useCallback(
     (step: ResetStep) => {
-      if (root === null) return
+      if (root === null || undoneSteps.current.has(step)) return
+      undoneSteps.current.add(step)
       const now = host.cardsAddedToday(root)
       const next = step.what === 'new' ? { ...now, newCards: now.newCards + step.delta } : { ...now, upNext: now.upNext + step.delta }
       host.setCardsAdded(root, next)
