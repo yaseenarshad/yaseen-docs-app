@@ -123,7 +123,7 @@ describe('useReadOnlyVault', () => {
     await act(async () => state.lock())
     expect([state.fileActionsAllowed(), state.locked, state.unlockedUntil, vi.getTimerCount()]).toEqual([false, true, null, 0])
     // Nothing of it is ever written: read-only.json says On all along.
-    expect(write.mock.calls).toEqual([['/vault', READ_ONLY_VAULT_FILE, { on: true }]])
+    expect(write.mock.calls).toEqual([['/vault', READ_ONLY_VAULT_FILE, { on: true }, READ_ONLY_VAULT_KEYS]])
   })
 
   it('YAZ-5581: "Until I lock it" runs with no timer until Lock now; it ends at quit (a new run of the app starts locked)', async () => {

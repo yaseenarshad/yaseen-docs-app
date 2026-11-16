@@ -7,11 +7,11 @@ import { FOLDER_PAGES_CHOICES, FOLDER_PAGES_LINE_MAX, FOLDER_PAGES_PERSONAL, FOL
 import { DEFAULT_FOLDER_PAGES, FOLDER_PAGE_CHOICES, MAX_CAL_LINE } from '@shared/types'
 
 describe('folder-pages.json (shared/folderPages.ts)', () => {
-  it('the 27 vault parts and the 4 personal ones are every Settings › Folder pages part, once', () => {
+  it('the 27 vault parts and the 5 personal ones are every Settings › Folder pages part, once', () => {
     expect(FOLDER_PAGES_VAULT_PARTS).toHaveLength(27)
     expect([...FOLDER_PAGES_VAULT_PARTS, ...FOLDER_PAGES_PERSONAL].sort()).toEqual(Object.keys(DEFAULT_FOLDER_PAGES).sort())
     // The choices and the line width, written out for the phone's first load, are types.ts'.
-    const { weekStartsOn: _personal, ...vaultChoices } = FOLDER_PAGE_CHOICES
+    const { weekStartsOn: _personal, cardClickOpens: _click, ...vaultChoices } = FOLDER_PAGE_CHOICES
     expect(FOLDER_PAGES_CHOICES).toEqual(vaultChoices)
     expect(FOLDER_PAGES_LINE_MAX).toBe(MAX_CAL_LINE)
   })

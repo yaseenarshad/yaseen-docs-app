@@ -75,7 +75,7 @@ export const FOLDER_PAGES_CHOICES = {
   textInCells: ['kind', 'wrap', 'clip'],
   groupIndent: ['medium', 'small', 'large'],
   subfolders: ['pages', 'rows', 'both', 'hide'],
-  calendarScale: ['month', 'week'],
+  calendarScale: ['month', 'week', 'rolling'],
   cardTitles: ['clip', 'wrap'],
   columnMarks: ['icon', 'name', 'off'],
   groupLines: ['hover', 'always', 'off'],
