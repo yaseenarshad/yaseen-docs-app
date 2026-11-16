@@ -8,7 +8,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
-import { useCardConvert, type CardConvertHost } from './useCardConvert'
+import { dropText, useCardConvert, type CardConvertHost } from './useCardConvert'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -104,7 +104,31 @@ describe('Put back into this page', () => {
   it('no other page embeds it: it runs at once, with the embed\'s text and place', async () => {
     mount()
     hook.door.putBack({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 1)
-    await vi.waitFor(() => expect(actions.putCardBackIntoPage).toHaveBeenCalledWith(PAGE, CARD_FILE, 'GEO-140', 'GEO-140', 1))
+    await vi.waitFor(() => expect(actions.putCardBackIntoPage).toHaveBeenCalledWith(PAGE, CARD_FILE, 'GEO-140', 'GEO-140', 1, expect.any(Function)))
+  })
+
+  it('YAZ-5647: the card file\'s other properties ask first; Cancel answers no, Put back yes', async () => {
+    expect(dropText(['aliases'])).toBe("The card file's aliases property is not moved to this page. It goes to the Trash with the card file.")
+    expect(dropText(['aliases', 'tags', 'id'])).toBe("The card file's aliases, tags and id properties are not moved to this page. They go to the Trash with the card file.")
+    let answer: Promise<boolean> | null = null
+    actions.putCardBackIntoPage.mockImplementationOnce((async (...args: unknown[]) => {
+      answer = (args[5] as (keys: readonly string[]) => Promise<boolean>)(['aliases', 'tags'])
+      await answer
+    }) as never)
+    mount()
+    hook.door.putBack({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 0)
+    await vi.waitFor(() => expect(document.querySelector('.confirm__text')?.textContent).toBe(dropText(['aliases', 'tags'])))
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!.click())
+    expect(await answer).toBe(false)
+    expect(document.querySelector('.confirm')).toBeNull()
+    actions.putCardBackIntoPage.mockImplementationOnce((async (...args: unknown[]) => {
+      answer = (args[5] as (keys: readonly string[]) => Promise<boolean>)(['aliases'])
+      await answer
+    }) as never)
+    hook.door.putBack({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 0)
+    await vi.waitFor(() => expect(document.querySelector('.confirm')).not.toBeNull())
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Put back')!.click())
+    expect(await answer).toBe(true)
   })
 
   it('other pages embed it: it asks first ("2 other pages embed this card. They will show it from this page."); Cancel runs nothing', async () => {

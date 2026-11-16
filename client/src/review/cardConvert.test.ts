@@ -146,6 +146,30 @@ describe('Put back into this page', () => {
     expect(disk.deleted).toEqual([])
   })
 
+  it('YAZ-5647: the card file\'s comments move into the page; other properties ask first, and No writes nothing', async () => {
+    const comments = 'comments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-11-14T10:00:00Z\n    body: Check the year\n'
+    put(PAGE, 'Above.\n\n![[GEO-140]]\n')
+    put(CARD, `---\nkind: card\n${comments}---\n${BLOCK}\n`)
+    const ask = vi.fn(async () => true)
+    await putCardBackIntoPage(PAGE, CARD, 'GEO-140', 'GEO-140', 0, ask)
+    expect(ask).not.toHaveBeenCalled()
+    expect(text(PAGE)).toBe(`---\n${comments}---\nAbove.\n\n${BLOCK}\n`)
+    expect(disk.deleted).toEqual([CARD])
+
+    disk.deleted.length = 0
+    disk.writes.length = 0
+    put(PAGE, 'Above.\n\n![[GEO-140]]\n')
+    put(CARD, `---\nkind: card\naliases: [Paris]\ntags: [geo]\n---\n${BLOCK}\n`)
+    const no = vi.fn(async () => false)
+    await putCardBackIntoPage(PAGE, CARD, 'GEO-140', 'GEO-140', 0, no)
+    expect(no).toHaveBeenCalledWith(['aliases', 'tags'])
+    expect(disk.writes).toEqual([])
+    expect(disk.deleted).toEqual([])
+    await putCardBackIntoPage(PAGE, CARD, 'GEO-140', 'GEO-140', 0, ask)
+    expect(text(PAGE)).toBe(`Above.\n\n${BLOCK}\n`)
+    expect(disk.deleted).toEqual([CARD])
+  })
+
   it('a card file that will not go: the page gets its bytes back', async () => {
     put(PAGE, 'Above.\n\n![[GEO-140]]\n')
     put(CARD, `---\nkind: card\n---\n${BLOCK}\n`)

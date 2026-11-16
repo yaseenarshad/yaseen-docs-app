@@ -21,6 +21,7 @@
 import {
   cardFileAsPage,
   cardFromText,
+  keysLostOnPutBack,
   moveCardOut,
   moveTextIntoCard,
   pageAsCardFile,
@@ -119,14 +120,19 @@ export async function moveCardToFile(page: string, id: string, index: number): P
 
 /**
  * PUT BACK INTO THIS PAGE: the `nth` lone embed `![[inner]]` of `page` becomes card `id`'s block from its card file
- * `cardPath`, at the embed's indent; then the card file goes to the Trash. Only a valid card file (this card and nothing
- * else) goes: one that holds more stops the action. A card file that will not go: the page gets its bytes back.
+ * `cardPath`, at the embed's indent, and the card file's comments join the page's (YAZ-5647); then the card file goes to
+ * the Trash. Only a valid card file (this card and nothing else) goes: one that holds more stops the action. A card
+ * file with other properties (`keysLostOnPutBack`) asks first (`askDrop`); No changes nothing. A card file that will
+ * not go: the page gets its bytes back.
  */
-export async function putCardBackIntoPage(page: string, cardPath: string, id: string, inner: string, nth: number): Promise<void> {
+export async function putCardBackIntoPage(page: string, cardPath: string, id: string, inner: string, nth: number, askDrop: (keys: readonly string[]) => Promise<boolean> = async () => false): Promise<void> {
   const file = await readSaved(page)
   const card = await readSaved(cardPath)
   // The card file goes to the Trash: only one that holds this card and nothing else.
   if (cardFileShape(splitFrontmatter(card.content).body).problem !== 'ok') throw new ConvertStopped('its card file holds more than this card. Fix it in its tab first.')
+  const lost = keysLostOnPutBack(card.content)
+  // Cancel: nothing is written. The writes after are compare-and-set on these reads, so a change meanwhile is a CONFLICT.
+  if (lost.length > 0 && !(await askDrop(lost))) return
   const written = await writeOnce(page, putCardBack(file.content, inner, nth, card.content, id), file.mtime)
   try {
     await api.file.delete({ path: cardPath })

@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { canBeCardFile, cardFileAsPage, cardFromText, embedLine, moveCardOut, moveTextIntoCard, pageAsCardFile, putCardBack, splitCardFile } from '@shared/cardConvert'
+import { canBeCardFile, cardFileAsPage, cardFromText, embedLine, keysLostOnPutBack, moveCardOut, moveTextIntoCard, pageAsCardFile, putCardBack, splitCardFile } from '@shared/cardConvert'
+import { readComments, threadsOf } from '@shared/comments'
 import { cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
 import { CardNotFoundError, cardRecords } from '@shared/cardLine'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
@@ -68,6 +69,47 @@ describe('Put back into this page', () => {
     expect(putCardBack(body, 'GEO-140', 1, cardFile, 'GEO-140')).toBe(`See ![[GEO-140]] here.\n\n\`\`\`\n![[GEO-140]]\n\`\`\`\n\n\`\`\`card\n![[GEO-140]]\n\`\`\`\n\n![[GEO-140]]\n\n${indented(BLOCK, '  ')}\n`)
     expect(() => putCardBack('No embed.\n', 'GEO-140', 0, cardFile, 'GEO-140')).toThrow()
     expect(() => putCardBack('![[GEO-140]]\n', 'GEO-140', 0, '---\nkind: card\n---\nNo card.\n', 'GEO-140')).toThrow(CardNotFoundError)
+  })
+})
+
+describe('Put back into this page keeps the card file\'s comments (YAZ-5647 item 1)', () => {
+  const COMMENTS = 'comments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-11-14T10:00:00Z\n    body: Check the year\n  - id: bbbbbbbb\n    n: 1\n    at: 2026-11-14T11:00:00Z\n    reply_to: aaaaaaaa\n    by: sam\n    body: Done\n  - id: cccccccc\n    n: 2\n    at: 2026-11-14T12:00:00Z\n    body: Second\n'
+
+  it('the card file\'s comments move into the page\'s `comments`, threads kept', () => {
+    const page = putCardBack('# Plan\n\n![[GEO-140]]\n', 'GEO-140', 0, cardFileOf(BLOCK, COMMENTS), 'GEO-140')
+    expect(splitFrontmatter(page).body).toBe(`# Plan\n\n${BLOCK}\n`)
+    const threads = threadsOf(readComments(page))
+    expect(threads.map((t) => [t.comment.id, t.comment.n, t.comment.body, t.replies.map((r) => [r.id, r.n, r.by, r.body])])).toEqual([
+      ['aaaaaaaa', 1, 'Check the year', [['bbbbbbbb', 1, 'sam', 'Done']]],
+      ['cccccccc', 2, 'Second', []],
+    ])
+  })
+
+  it('after the page\'s own comments: top-level numbers go on from the page\'s, an ID the page has is given a new one (its replies follow it)', () => {
+    const own = '---\ncomments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-11-01T10:00:00Z\n    body: Page note\n  - id: dddddddd\n    n: 4\n    at: 2026-11-01T11:00:00Z\n    body: Page note 4\n---\n# Plan\n\n![[GEO-140]]\n'
+    const page = putCardBack(own, 'GEO-140', 0, cardFileOf(BLOCK, COMMENTS), 'GEO-140')
+    const threads = threadsOf(readComments(page))
+    expect(threads.map((t) => [t.comment.n, t.comment.body, t.replies.map((r) => r.body)])).toEqual([
+      [1, 'Page note', []],
+      [4, 'Page note 4', []],
+      [5, 'Check the year', ['Done']],
+      [6, 'Second', []],
+    ])
+    const moved = threads[2].comment
+    expect(moved.id).not.toBe('aaaaaaaa')
+    expect(threads[2].replies[0].reply_to).toBe(moved.id)
+    expect(new Set(readComments(page).map((c) => c.id)).size).toBe(5)
+  })
+
+  it('a page whose `comments` is not a comment list is never overwritten: the Put back stops', () => {
+    expect(() => putCardBack('---\ncomments: my own\n---\n![[GEO-140]]\n', 'GEO-140', 0, cardFileOf(BLOCK, COMMENTS), 'GEO-140')).toThrow()
+  })
+
+  it('the other properties of the card file are named first (the caller asks); `kind`, `comments` and a `title` its card line holds are not', () => {
+    expect(keysLostOnPutBack(cardFileOf(BLOCK, COMMENTS))).toEqual([])
+    expect(keysLostOnPutBack(cardFileOf(BLOCK, `title: ${TITLE}\n`))).toEqual([])
+    expect(keysLostOnPutBack(cardFileOf(BLOCK, 'aliases: [Paris]\ntitle: Old\ntags: [geo]\n' + COMMENTS))).toEqual(['aliases', 'title', 'tags'])
+    expect(keysLostOnPutBack(cardFileOf(BLOCK, 'comments: my own\n'))).toEqual(['comments'])
   })
 })
 

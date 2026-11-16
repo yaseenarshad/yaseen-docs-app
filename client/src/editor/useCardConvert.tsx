@@ -43,6 +43,12 @@ function oneCardOnly(content: string): boolean {
   return shape.problem === 'ok' && cardIdOf(shape.cards[0].line) !== null
 }
 
+/** The ask before Put back drops the card file's other properties: "The card file's aliases and tags properties are not moved to this page. They go to the Trash with the card file." */
+export function dropText(keys: readonly string[]): string {
+  const names = keys.length === 1 ? keys[0] : `${keys.slice(0, -1).join(', ')} and ${keys[keys.length - 1]}`
+  return `The card file's ${names} ${keys.length === 1 ? 'property is' : 'properties are'} not moved to this page. ${keys.length === 1 ? 'It goes' : 'They go'} to the Trash with the card file.`
+}
+
 export interface CardConvertHost {
   root: string
   path: string
@@ -66,7 +72,7 @@ export interface CardConvertHost {
 export function useCardConvert(host: CardConvertHost): { door: CardConvertDoor; rows: () => readonly PageSwitch[]; sheet: ReactNode } {
   const ref = useRef(host)
   ref.current = host
-  const [ask, setAsk] = useState<{ text: string; go: () => void } | null>(null)
+  const [ask, setAsk] = useState<{ text: string; go: () => void; cancel?: () => void } | null>(null)
   const labelId = useId()
 
   const run = useCallback((failure: string, action: (actions: Actions) => Promise<unknown>): Promise<boolean> => {
@@ -85,7 +91,10 @@ export function useCardConvert(host: CardConvertHost): { door: CardConvertDoor; 
       },
       putBack: (card, inner, nth) => {
         const { path, wikilinks } = ref.current
-        const go = () => void run('put the card back', (a) => a.putCardBackIntoPage(path, card.path, card.id, inner, nth))
+        // The card file's other properties go to the Trash with it (its comments move to the page): ask first (YAZ-5647).
+        const askDrop = (keys: readonly string[]) =>
+          new Promise<boolean>((resolve) => setAsk({ text: dropText(keys), go: () => resolve(true), cancel: () => resolve(false) }))
+        const go = () => void run('put the card back', (a) => a.putCardBackIntoPage(path, card.path, card.id, inner, nth, askDrop))
         // The other pages that embed it show it from this page after.
         const others = wikilinks === undefined ? 0 : cardEmbedders(wikilinks.records, card.id, (target) => linkCard(target, wikilinks)).filter((r) => r.path !== path && r.path !== card.path).length
         if (others === 0) return go()
@@ -122,7 +131,10 @@ export function useCardConvert(host: CardConvertHost): { door: CardConvertDoor; 
           setAsk(null)
           ask.go()
         }}
-        onCancel={() => setAsk(null)}
+        onCancel={() => {
+          setAsk(null)
+          ask.cancel?.()
+        }}
       />
     )
   return { door, rows, sheet }
