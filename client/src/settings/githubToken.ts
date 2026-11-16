@@ -1,5 +1,5 @@
 /**
- * Is a GitHub token saved on this Mac? (YAZ-5098, Settings › Cards › "Friends"). It holds a yes or a no, never the token:
+ * Is a GitHub token saved on this Mac? (YAZ-5098, Settings › Cards › "GitHub"). It holds a yes or a no, never the token:
  * the token goes to main through `secrets:set` and no channel answers it back (`main/ipc/secrets.ts`).
  */
 import { useEffect, useSyncExternalStore } from 'react'

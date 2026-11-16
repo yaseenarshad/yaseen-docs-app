@@ -180,7 +180,7 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
 const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
-/** Settings › Cards › Friends (YAZ-5098): the token row. */
+/** Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row. */
 const FRIENDS_ROWS = ['githubToken']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
@@ -1566,7 +1566,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(reviewRows(el)).toEqual([...ALL, ...FRIENDS_ROWS])
     expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Card tables', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
-    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', 'Friends'])
+    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', 'GitHub'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!
     expect([how.open, how.querySelector('summary')?.textContent]).toEqual([false, 'How cards come back'])

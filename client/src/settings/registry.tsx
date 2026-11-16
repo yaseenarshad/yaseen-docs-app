@@ -498,10 +498,10 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 /** What the section title does not say: the feature's name, and where its cards turn up. */
 // YAZ-5154: the section is Cards now; "review" still finds it, the word people know it by.
 const REVIEW_KEYWORDS = ['cards', 'review', 'reviews', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
-/** "Friends" (YAZ-5098): the token row loads only when Settings shows it, so the first load stays the same. */
+/** "GitHub" (YAZ-5098, YAZ-5652): the token row loads only when Settings shows it, so the first load stays the same. */
 const GithubTokenControl = lazy(() => import('./GithubTokenControl').then((m) => ({ default: m.GithubTokenControl })))
-/** "Friends" (YAZ-5098): friends see your card numbers, so the Cards words find this row too. */
-const FRIENDS_KEYWORDS = [...REVIEW_KEYWORDS, 'github', 'token', 'friends', 'secret']
+/** "GitHub" (YAZ-5098, YAZ-5652): the Mac's GitHub token; the Cards words find this row too. */
+const GITHUB_KEYWORDS = [...REVIEW_KEYWORDS, 'github', 'token', 'friends', 'secret']
 /** Card spacing's rows (YAZ-5050). */
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
@@ -2464,13 +2464,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // YAZ-5098: the GitHub token for friends (4E5, YAZ-5086, whose switch goes in this group too). The token is
         // the Mac's, in main's secrets store, not this vault's: never a `SettingsState` field, never in review.json.
         // (The phone signs in with GitHub itself, YAZ-5645: the Mac shows it no code.)
-        title: 'Friends',
+        // YAZ-5652: "GitHub", not "Friends" — Friends sits behind a switch that is off, and the token stays.
+        title: 'GitHub',
         items: [
           {
             id: 'githubToken',
             label: 'GitHub token',
-            hint: 'This Mac sends your card numbers to friends with it. One token for all your vaults. It stays on this Mac, readable only by your user, and is never shown again.',
-            keywords: FRIENDS_KEYWORDS,
+            hint: 'This Mac reaches GitHub with it. One token for all your vaults. It stays on this Mac, readable only by your user, and is never shown again.',
+            keywords: GITHUB_KEYWORDS,
             wide: true,
             available: reviewOn,
             render: () => (

@@ -1,5 +1,5 @@
 /**
- * "GitHub token" (YAZ-5098; Settings › Cards › "Friends"): the one place the token is pasted on the Mac, for
+ * "GitHub token" (YAZ-5098; Settings › Cards › "GitHub"): the one place the token is pasted on the Mac, for
  * friends (4E5, YAZ-5086). The field is not React state:
  * the token is read from the field on Save, sent to main once (`secrets:set`), and the field is emptied. The row's
  * whole read-back is `secrets:has`. With no token, the row tells how to make one (decisions 13 and 17).
