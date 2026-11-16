@@ -68,11 +68,11 @@ vi.mock('../api', async (importOriginal) => {
   }
 })
 
-/** Three known cards due today, on one page. */
+/** Three known cards due today, on one page; each a month more overdue than the next (Review rules v1, rule 5: the most overdue day first). */
 const IDS = ['ARC-1', 'ARC-2', 'ARC-3']
 const PAGE = `${ROOT}/Archive.md`
 function seed(): void {
-  const block = (id: string) => cardBlock(`Card ${id} {{answer}}`, parseCardLine(`<!-- card: ${id}, 2026-09-01T09:00:00.000Z good, 2026-09-02T09:00:00.000Z good -->`)!)
+  const block = (id: string, i: number) => cardBlock(`Card ${id} {{answer}}`, parseCardLine(`<!-- card: ${id}, 2026-0${4 + i}-01T09:00:00.000Z good, 2026-0${4 + i}-02T09:00:00.000Z good -->`)!)
   vault.set(PAGE, `# Archive\n\n${IDS.map(block).join('\n')}`)
 }
 

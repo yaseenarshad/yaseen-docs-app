@@ -5,7 +5,7 @@ import { answersSetup } from '../answers/testing'
 import { mount, type Harness } from '../screens/testing'
 import { saveVaultList } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
-import { NOW, cardBlock, page } from './testing'
+import { NOW, inOrder, cardBlock, page } from './testing'
 
 /**
  * The phone's order of work (YAZ-5502): React draws in a task of its own (the browser's MessageChannel; Node's
@@ -24,7 +24,7 @@ vi.hoisted(() => {
  * runs as on the phone: React draws when its own scheduler says, as in the browser. Made-up data only.
  */
 const OLD = '2026-10-02T09:00:00.000Z good, 2026-10-12T09:00:00.000Z good'
-const FILES = { '.yaseendocs/review.json': '{}', 'spanish.md': page('Spanish words', cardBlock('Hola?\n---\n{{Hello}}', `UN-1, ${OLD}`), cardBlock('Adios?\n---\n{{Bye}}', `UN-2, ${OLD}`), cardBlock('Gracias?\n---\n{{Thanks}}', `UN-3, ${OLD}`)) }
+const FILES = { '.yaseendocs/review.json': '{}', 'spanish.md': page('Spanish words', cardBlock('Hola?\n---\n{{Hello}}', `UN-1, ${inOrder(OLD, 0)}`), cardBlock('Adios?\n---\n{{Bye}}', `UN-2, ${inOrder(OLD, 1)}`), cardBlock('Gracias?\n---\n{{Thanks}}', `UN-3, ${inOrder(OLD, 2)}`)) }
 
 let h: Harness
 beforeEach(() => {

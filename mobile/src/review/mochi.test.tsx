@@ -3,7 +3,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VAULT } from '../sync/testing'
 import { readNewFrom } from './newFromPick'
-import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
+import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
  * YAZ-5415: the Review screen like Mochi (the approved mockup, round 5). Tap anywhere (and what keeps its own tap), a
@@ -38,7 +38,7 @@ async function tapOn(el: Element | null) {
 const real = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
 
 describe('tap anywhere (YAZ-5415, round 4)', () => {
-  const ONE = { '.yaseendocs/review.json': '{}', 'p.md': page('Memory', cardBlock('{{Spaced}} repetition makes the next gap {{longer}}; a miss makes it {{short}}.', `MC-1, ${OLD}`), cardBlock('Two?', `MC-2, ${OLD}`)) }
+  const ONE = { '.yaseendocs/review.json': '{}', 'p.md': page('Memory', cardBlock('{{Spaced}} repetition makes the next gap {{longer}}; a miss makes it {{short}}.', `MC-1, ${inOrder(OLD, 0)}`), cardBlock('Two?', `MC-2, ${inOrder(OLD, 1)}`)) }
 
   it('the card, the empty space, the hint line and the crumb each show the next part', async () => {
     h = await reviewSetup(ONE)
@@ -54,7 +54,7 @@ describe('tap anywhere (YAZ-5415, round 4)', () => {
   })
 
   it('NOT: ← → ⋯ and an open menu (a tap outside it only closes it); a link in the card keeps its tap', async () => {
-    h = await reviewSetup({ ...ONE, 'p.md': page('Memory', cardBlock('See [the guide](https://example.com/guide) and {{this}}.', `MC-1, ${OLD}`), cardBlock('Two?', `MC-2, ${OLD}`)) })
+    h = await reviewSetup({ ...ONE, 'p.md': page('Memory', cardBlock('See [the guide](https://example.com/guide) and {{this}}.', `MC-1, ${inOrder(OLD, 0)}`), cardBlock('Two?', `MC-2, ${inOrder(OLD, 1)}`)) })
     await h.click('More card actions')
     expect(q('.review__menu--more')).not.toBeNull()
     await tapOn(q('.review__hint-text'))
@@ -105,7 +105,7 @@ describe('tap anywhere (YAZ-5415, round 4)', () => {
 })
 
 describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Undo in the hint line', () => {
-  const THREE = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...['A', 'B', 'C'].map((x, i) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `AR-${i + 1}, ${OLD}`))) }
+  const THREE = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...['A', 'B', 'C'].map((x, i) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `AR-${i + 1}, ${inOrder(OLD, i)}`))) }
 
   it('← and → move between cards; neither gives nor takes back an answer; a skipped card stays due and comes back at the end', async () => {
     h = await reviewSetup(THREE)
@@ -175,16 +175,18 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     })
     await h.click(/Choose what to review/)
     const rows = () => [...h!.host.querySelectorAll('.review__sheet-row')].map((r) => (r.textContent ?? '').replace(/\s+/g, ' ').trim())
-    expect(rows()).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›2'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434) */)
+    // Review rules v1, rule 7: MN-3 (new, Up next) is under Up next only; before, New cards said 2.
+    expect(rows()).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434) */)
     await h.click(/^Due today$/)
     expect(h.text()).toContain('Due today ▾')
     expect(h.head()).toBe('MN-1')
     await h.click(/Choose what to review/)
     await h.click(/^New cards$/)
-    // The new cards only (the Up next one goes first, as on the Mac).
+    // The new cards only: the Up next one is under Up next (rule 7).
     expect(h.text()).toContain('New cards ▾')
     expect(h.host.querySelector('.review__chip')?.textContent).toBe('New')
-    expect(h.text()).toContain('1 / 2')
+    expect(h.head()).toBe('MN-2')
+    expect(h.text()).toContain('1 / 1')
     await h.click(/Choose what to review/)
     await h.click(/^Up next$/)
     expect(h.head()).toBe('MN-3')

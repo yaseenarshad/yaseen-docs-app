@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { waitingCount } from '../status/dot'
-import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
+import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
  * YAZ-5078, the phone's decision: Undo takes back Archive card (and Up next and Fix later), through the answer list.
@@ -18,7 +18,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 const OLD = '2026-10-04T09:00:00.000Z good'
-const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2, 3].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `AU-${n}, ${OLD}`))) }
+const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2, 3].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `AU-${n}, ${inOrder(OLD, n - 1)}`))) }
 const ops = (hh: ReviewHarness) => hh.answers.waiting().map((w) => `${w.op.kind}:${w.op.id}${'on' in w.op ? `:${w.op.on}` : ''}`)
 
 async function archiveThenUndo(hh: ReviewHarness, between: () => Promise<void>) {
@@ -46,20 +46,20 @@ describe('Undo of Archive card on the phone', () => {
     expect(waitingCount(h.answers.waiting())).toBe(0)
     await h.wait(5_000)
     expect(h.commits()).toBe(0)
-    expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${OLD} -->`)
+    expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${inOrder(OLD, 0)} -->`)
   })
 
   it('sent: Undo adds the inverse; after the send GitHub has the card NOT archived', async () => {
     h = await reviewSetup(FILES)
     await archiveThenUndo(h, async () => {
       await h!.wait(5_000)
-      expect((await h!.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, off, ${OLD} -->`)
+      expect((await h!.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, off, ${inOrder(OLD, 0)} -->`)
     })
     expect(ops(h)).toEqual(['off:AU-1:false'])
     expect(waitingCount(h.answers.waiting())).toBe(1)
     await h.wait(5_000)
     expect(h.answers.waiting()).toEqual([])
-    expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${OLD} -->`)
+    expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${inOrder(OLD, 0)} -->`)
   })
 
   it('sent with its reply lost: Undo adds the inverse (the list keeps the archive); GitHub ends NOT archived', async () => {
@@ -76,14 +76,14 @@ describe('Undo of Archive card on the phone', () => {
     })
     await archiveThenUndo(h, async () => {
       await h!.wait(5_000)
-      expect((await h!.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, off, ${OLD} -->`)
+      expect((await h!.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, off, ${inOrder(OLD, 0)} -->`)
       expect(ops(h!)).toEqual(['off:AU-1:true']) // the list does not know it went
     })
     expect(ops(h)).toEqual(['off:AU-1:true', 'off:AU-1:false'])
     h.answers.online()
     await h.wait(5_000)
     expect(h.answers.waiting()).toEqual([])
-    expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${OLD} -->`)
+    expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${inOrder(OLD, 0)} -->`)
   })
 
   it('Up next has an Undo too: unsent, the mark leaves the list; the card line is as before (no Fix later in Review, YAZ-5625)', async () => {
@@ -117,6 +117,6 @@ describe('Undo of Archive card on the phone', () => {
         await h.settle()
         ;(h.answers as { add: unknown }).add = add
         await h.wait(5_000)
-        expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${OLD} -->`)
+        expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${inOrder(OLD, 0)} -->`)
       })
 })

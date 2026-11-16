@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
+import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
  * YAZ-5539: a second tap on the button that opened a menu closes it — the deck button at the top ("▣ All cards ▾ 1 / 2")
@@ -21,7 +21,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 const OLD = '2026-10-04T09:00:00.000Z good'
-const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `MT-${n}, ${OLD}`))) }
+const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `MT-${n}, ${inOrder(OLD, n - 1)}`))) }
 
 /**
  * A finger's tap on `el`: down, then the click, as the phone's browser runs them. A real tap's listeners each run

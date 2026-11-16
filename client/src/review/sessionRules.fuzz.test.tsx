@@ -150,29 +150,37 @@ describe('YAZ-5614 random sessions on the Mac: the rules always hold', () => {
     expect([d.review().dueCount, d.review().session?.counts.all]).toEqual([2, 2])
   })
 
-  it('a ✓ that leaves a card in its learning steps makes no "Review missed cards" stop (100%, seed 230)', async () => {
+  // Review rules v1, rule 2 (YAZ-5655) changed the expected end: a card with only ✕ is a New card, so it is in no Due
+  // today pass and makes no stop at all. Before, it was a due card and the pass ended on "Due today is done." (100%).
+  it('a ✓ that leaves a card in its learning steps makes no "Review missed cards" stop (seed 230; rule 2: a ✕-only card is New)', async () => {
     const d = macDriver(vault(card('AA-1', ', 2026-11-06T09:00:00.000Z again')), sanitizeReviewSettings({ fuzz: false }))
     await step(d, () => d.review().start())
+    expect(d.review().session?.counts).toMatchObject({ all: 1, due: 0, new: 1 })
     await step(d, () => d.review().showAnswers())
     await step(d, () => d.review().answer('good'))
-    // No miss: the card comes back at once (its second ✓ of the steps), with no % screen.
+    // No miss: the card comes back at once (its second ✓ of the steps), with no % screen, now a Due today card (rule 3).
     expect(d.review().session?.end).toBeNull()
-    expect(d.review().session?.card).toMatchObject({ id: 'AA-1', repeat: true })
+    expect(d.review().session?.card).toMatchObject({ id: 'AA-1', repeat: true, isNew: false })
     vi.setSystemTime(NOW + 70_000)
     await step(d, () => d.review().showAnswers())
     await step(d, () => d.review().answer('good'))
-    expect(d.review().session?.end).toMatchObject({ kind: 'done', percent: 100, missed: 0 })
+    expect(d.review().session?.end).toBeNull()
+    expect(d.review().session?.card).toBeNull()
   })
 
-  // OPEN ITEM 1 (YAZ-5614 result, waits for Yaseen's rule): the first answer to a NEW card of Up next takes a New
-  // cards place too, so the last new card of today leaves the session with no card done. `it.fails` while it does.
-  it.fails('open item 1: a Forgot on a new Up next card keeps today`s new cards', async () => {
+  // Open item 1 of YAZ-5614, now Review rules v1, rule 10 (YAZ-5655): Up next takes no New cards place. The counts
+  // follow rule 7 (each card in one list): Up next 1, New cards 1.
+  it('rule 10: a Forgot on a new Up next card keeps today`s new cards, also after the Inbox opens again', async () => {
     const d = macDriver(vault(card('AA-1', ', next'), card('AA-2'), card('AA-3')), sanitizeReviewSettings({ newPerDay: 1, fuzz: false }))
     await step(d, () => d.review().start())
-    expect(d.review().session?.counts).toMatchObject({ all: 2, next: 1, new: 2 })
+    expect(d.review().session?.counts).toMatchObject({ all: 2, next: 1, new: 1 })
     await step(d, () => d.review().showAnswers())
     await step(d, () => d.review().answer('again'))
-    // AA-1 waits to come back, AA-2 is still today's new card: All cards 2.
-    expect(d.review().session?.counts.all).toBe(2)
+    // AA-1 waits to come back (a New card: rule 2), AA-2 is still today's new card: All cards 2.
+    expect(d.review().session?.counts).toMatchObject({ all: 2, next: 0, new: 2 })
+    await step(d, () => d.review().close())
+    await step(d, () => d.review().start())
+    expect(d.review().session?.counts).toMatchObject({ all: 2, next: 0, due: 0, new: 2 })
+    expect(d.review().dueCount).toBe(2)
   })
 })

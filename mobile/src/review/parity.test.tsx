@@ -170,6 +170,8 @@ async function script(run: Run): Promise<string[]> {
   await step(2, () => run.review().answer('again', 30))
   await step(3, () => run.review().undo())
   await step(4, () => run.review().answer('good', 5))
+  // Review rules v1, rule 2: PA-5 (only ✕) is a New card now, so PA-1 ends Due today: its stop is passed with its button.
+  if (run.review().session?.end != null) await step(4, () => run.review().goOn())
   const c = () => run.review().session!.card!
   await step(5, () => run.review().setNext(c().path, c().id, true))
   await step(5, () => run.setFix(c().path, c().id, true))

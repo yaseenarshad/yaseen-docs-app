@@ -196,7 +196,8 @@ describe('YAZ-5613: a full day of reviews on the Mac, step by step (YAZ-5611 rul
   it('morning: Up next, Due today with misses, the two stops, Undo, the new cards (two ✓ each, New → Due today)', async () => {
     await mount()
     const steps: [string, () => Promise<void>, ReturnType<typeof row>][] = [
-      ['start', async () => undefined, row('UP-1', '1 of 6', '0/6', 6, 4, 2, 1)],
+      // Review rules v1, rule 7: UP-1 is under Up next only (before: Due today 4, with UP-1 in it too).
+      ['start', async () => undefined, row('UP-1', '1 of 6', '0/6', 6, 3, 2, 1)],
       // Up next first; a known card's ✓ lets it go.
       ['UP-1 ✓', () => answer('good'), row('DUE-1', '2 of 6', '1/6', 5, 3, 2)],
       // A ✕ grows nothing: the card waits at the end of the due cards.
@@ -277,10 +278,9 @@ describe('YAZ-5613: a full day of reviews on the Mac, step by step (YAZ-5611 rul
     expect(ids.filter((id) => id.startsWith('NEW-')).slice(-2)).toEqual(['NEW-3', 'NEW-4'])
   })
 
-  // OPEN ITEM (YAZ-5613 result, item 1): today a new card's ✕ keeps it under New cards in the session, but the Inbox
-  // opened again reads it as a Due today card (it has a review): New −1, Due today +1 with no ✓. `it.fails` holds the
-  // bug in view; when the rule is settled and fixed, this turns red and becomes a plain `it`.
-  it.fails('a new card ✕ once, then the Inbox opened again: it stays in its list, and no count jumps', async () => {
+  // Open item 1 of YAZ-5613, settled by Review rules v1, rule 2 (YAZ-5655; Mochi: "New cards stay new until the first
+  // correct review"): a new card's ✕ keeps it a New card, also after the Inbox opens again (it was `it.fails`).
+  it('rule 2: a new card ✕ once, then the Inbox opened again: it stays in its list, and no count jumps', async () => {
     await mount()
     for (let i = 0; i < 4; i++) await answer('good')
     await press(/^Learn new cards 2$/)

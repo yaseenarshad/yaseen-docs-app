@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { cardBlock, cardRecords, cardTime, cardReviewsOf, pageCards, parseCardLine, type CardLine } from '@shared/cardLine'
-import { cardState } from '@shared/cardSchedule'
+import { cardState, previewAnswers } from '@shared/cardSchedule'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { cardPlace, useCardReview, type CardReviewApi } from './useCardReview'
@@ -171,18 +171,22 @@ describe('useCardReview', () => {
     expect(review.session?.counts).toMatchObject({ all: 2, new: 1 })
   })
 
-  it('an answer writes exactly the review the button showed, fixed when the buttons appeared — also a minute later', async () => {
+  // Review rules v1, rule 15 (YAZ-5655) changed this test: the answer is written at the time the button was PRESSED, not
+  // when the buttons appeared (before: the fixed time of the buttons, D13). The buttons still show the fixed wait.
+  it('rule 15: an answer is written at the press time — a minute and a half after the buttons appeared, it is that time', async () => {
     await mount()
     await act(async () => review.start())
     let shown = null as ReturnType<CardReviewApi['showAnswers']>
     act(() => void (shown = review.showAnswers()))
     expect(shown?.map((a) => a.review.rating)).toEqual(['again', 'good'])
     expect(review.session?.answers).toBe(shown)
-    vi.setSystemTime(NOW + 90_000) // the reader waits: the fixed minute stays
+    vi.setSystemTime(NOW + 90_000) // the reader waits: the buttons keep what they showed
+    expect(review.session?.answers).toBe(shown)
     const remembered = shown!.find((a) => a.review.rating === 'good')!
     await step(() => review.answer('good'))
-    expect(reviewsOn('Geo.md', 'WIKI-1').at(-1)).toEqual(remembered.review)
-    expect(cardState(reviewsOn('Geo.md', 'WIKI-1'), S).due).toBe(remembered.due)
+    const written = reviewsOn('Geo.md', 'WIKI-1').at(-1)
+    expect(written).toEqual({ ...remembered.review, at: cardTime(NOW + 90_000) })
+    expect(cardState(reviewsOn('Geo.md', 'WIKI-1'), S).due).toBe(previewAnswers(reviewsOn('Geo.md', 'WIKI-1').slice(0, -1), S, NOW + 90_000)[1].due)
     expect(review.session?.end?.kind).toBe('done') // YAZ-5043: Due today is done, then the new cards
     await act(async () => review.goOn())
     expect(review.session?.card?.id).toBe('WIKI-3')
@@ -348,7 +352,8 @@ describe('useCardReview', () => {
     page('Bio/More.md', ['A {{second}} new card', 'WIKI-5, next'], ['Off {{one}}', 'WIKI-7, off, next'])
     await mount()
     await act(async () => review.start())
-    expect(review.session).toMatchObject({ filter: 'all', counts: { all: 4, next: 2, due: 2, new: 2 } })
+    // Rule 7 (Review rules v1): each card in one list only; before, the Up next cards counted under their kind too (due 2, new 2).
+    expect(review.session).toMatchObject({ filter: 'all', counts: { all: 4, next: 2, due: 1, new: 1 } })
     await act(async () => review.setFilter('next'))
     expect(review.session).toMatchObject({ filter: 'next', position: 1, total: 2, card: { id: 'WIKI-2', next: true, isNew: false }, canNext: true })
     act(() => review.move(1))
@@ -426,8 +431,9 @@ describe('useCardReview', () => {
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     await step(() => review.answer('good'))
-    expect(storage.getUpNextTaken(ROOT)).toEqual({ day: '2026-11-12', cards: ['WIKI-5'] })
-    expect(api.state.setFolder).toHaveBeenLastCalledWith(ROOT, { upNext: { day: '2026-11-12', cards: ['WIKI-5'] } })
+    // Rule 10 (Review rules v1): the answer BEGAN the new card, so the list names it too (`UP_NEXT_BEGUN`): it takes no New cards place.
+    expect(storage.getUpNextTaken(ROOT)).toEqual({ day: '2026-11-12', cards: ['WIKI-5', 'WIKI-5 new'] })
+    expect(api.state.setFolder).toHaveBeenLastCalledWith(ROOT, { upNext: { day: '2026-11-12', cards: ['WIKI-5', 'WIKI-5 new'] } })
     expect(localStorage.length).toBe(0)
     await step(() => review.undo())
     expect(storage.getUpNextTaken(ROOT)).toEqual({ day: '2026-11-12', cards: [] })

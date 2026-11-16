@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { UNDO_SHOWN_MS } from './words'
-import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
+import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
  * YAZ-5500 (reopened; Yaseen's pick: A, text only): right after ✕ or ✓, the hint line under the card says "Last:
@@ -17,9 +17,9 @@ const FILES = {
   '.yaseendocs/review.json': '{}',
   'capitals.md': page(
     'Capitals',
-    cardBlock('What is the capital of Spain?\n---\n{{Madrid}}', `CAP-1, title "Capital of Spain", ${OLD}`),
-    cardBlock('A card with no title?\n---\n{{yes}} and {{no}}', `CAP-2, ${OLD}`),
-    cardBlock('Third?\n---\n{{three}}', `CAP-3, ${OLD}`),
+    cardBlock('What is the capital of Spain?\n---\n{{Madrid}}', `CAP-1, title "Capital of Spain", ${inOrder(OLD, 0)}`),
+    cardBlock('A card with no title?\n---\n{{yes}} and {{no}}', `CAP-2, ${inOrder(OLD, 1)}`),
+    cardBlock('Third?\n---\n{{three}}', `CAP-3, ${inOrder(OLD, 2)}`),
   ),
 }
 

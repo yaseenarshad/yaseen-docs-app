@@ -460,8 +460,10 @@ describe('YAZ-5020: same-day steps — cards come back in the same session (Yase
     const lateLog: CardReview[] = [{ at: cardTime(late), rating: 'again' }]
     expect(cardState(lateLog, s).due).toBeGreaterThanOrEqual(new Date(2026, 5, 16).getTime())
     const page = { path: '/v/a.md', folder: '', cards: [{ id: 'V-1', off: false, next: false, reviews: lateLog }, { id: 'V-2', off: false, next: false, reviews: log([0, 'good'], [1, 'good']) }] }
-    expect(cardQueue([page], s, late).map((q) => q.id)).toEqual(['V-1'])
-    expect(pageCardCounts(page, s, late).due).toBe(1)
+    // Review rules v1, rule 2 (YAZ-5655): with only ✕ it is still a New card — in the queue as one, not in the page's
+    // "Due" count (before: a due card, counted 1).
+    expect(cardQueue([page], s, late).map((q) => [q.id, q.isNew])).toEqual([['V-1', true]])
+    expect(pageCardCounts(page, s, late).due).toBe(0)
     // Reopened in the same minute: a new card answered once is due again (its second Remembered).
     const once = { path: '/v/b.md', folder: '', cards: [{ id: 'V-3', off: false, next: false, reviews: log([0, 'good']) }] }
     expect(cardQueue([once], s, t0).map((q) => [q.id, q.isNew])).toEqual([['V-3', false]])
@@ -510,10 +512,12 @@ describe('YAZ-5322: the new cards order (Random for the day) and the saved folde
   const at = (ms: number): string => cardTime(ms)
   const card = (id: string, over: { next?: boolean; reviews?: CardReview[] } = {}) => ({ id, off: false, next: false, reviews: [] as CardReview[], ...over })
   const overdue: CardReview[] = [{ at: at(now - 400 * DAY), rating: 'good' }]
+  // Review rules v1, rule 5: the most overdue day first, then random for the day; WI-8 is one day more overdue than WI-7.
+  const older: CardReview[] = [{ at: at(now - 401 * DAY), rating: 'good' }]
   const records = [
     { path: '/v/spanish/verbs.md', folder: 'spanish', cards: [card('WI-1'), card('WI-4'), card('WI-7', { reviews: overdue })] },
     { path: '/v/spanish/deep/more.md', folder: 'spanish/deep', cards: [card('WI-9')] },
-    { path: '/v/geo/europe.md', folder: 'geo', cards: [card('WI-2'), card('WI-3'), card('WI-8', { reviews: overdue }), card('WI-10', { next: true })] },
+    { path: '/v/geo/europe.md', folder: 'geo', cards: [card('WI-2'), card('WI-3'), card('WI-8', { reviews: older }), card('WI-10', { next: true })] },
     { path: '/v/work.md', folder: '', cards: [card('WI-5')] },
   ]
   const s: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 2 }

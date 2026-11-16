@@ -23,7 +23,8 @@ const NOW = new Date(2026, 10, 12, 9, 0).getTime()
 const ROOT = '/mac'
 const PATH = `${ROOT}/D.md`
 /** Known cards, out of their steps, due today. */
-const KNOWN = '2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'
+/** A known card due today, begun in `month` of 2026: an earlier month is more overdue, so it comes first (Review rules v1, rule 5). */
+const KNOWN_ON = (month: number) => `2026-0${month}-01T09:00:00.000Z good, 2026-0${month}-01T09:01:00.000Z good`
 
 let host: MemoryReviewHost
 let records: IndexRecord[] = []
@@ -114,7 +115,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
   host = memoryReviewHost(new Map(), 'Mac vault')
-  base = phone = pageText(['Due {{a}}?', `TD-1, ${KNOWN}`], ['Due {{b}}?', `TD-2, ${KNOWN}`], ['Due {{c}}?', `TD-3, ${KNOWN}`], ['New {{d}}?', 'TD-4'])
+  base = phone = pageText(['Due {{a}}?', `TD-1, ${KNOWN_ON(5)}`], ['Due {{b}}?', `TD-2, ${KNOWN_ON(6)}`], ['Due {{c}}?', `TD-3, ${KNOWN_ON(7)}`], ['New {{d}}?', 'TD-4'])
   host.files.set(PATH, base)
 })
 afterEach(() => {

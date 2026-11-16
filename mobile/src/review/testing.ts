@@ -24,6 +24,13 @@ vi.setConfig({ testTimeout: 30_000 })
 export const NOW = new Date(2026, 10, 13, 10, 0, 0).getTime()
 
 /** A made-up card block with its line (`line`: the card line's parts after `card: `). */
+/**
+ * Review rules v1, rule 5 (YAZ-5655): Due today takes the most overdue DAY first, then one random order for the day. A
+ * test that wants its known cards in page order gives card `i` (0 first) the same `reviews`, each date moved earlier
+ * by 10 × (20 − i) days: card 0 the most overdue, each next one 10 days less (more than any fuzz), all still due.
+ */
+export const inOrder = (reviews: string, i: number): string =>
+  reviews.replace(/\d{4}-\d{2}-\d{2}(?=T)/g, (d) => new Date(Date.parse(`${d}T00:00:00.000Z`) - 10 * (20 - i) * 86_400_000).toISOString().slice(0, 10))
 export const cardBlock = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->`
 /** A made-up page with the cards given, as the Mac writes it. */
 export const page = (title: string, ...cards: string[]) => `---\ntitle: ${title}\n---\n\n# ${title}\n\n${cards.join('\n\n')}\n`

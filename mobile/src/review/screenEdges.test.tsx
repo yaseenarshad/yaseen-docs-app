@@ -7,7 +7,7 @@ import { saveVaultList } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
 import { lostRows as dotLostRows, waitingCount } from '../status/dot'
 import { lostRows as tabLostRows } from './ReviewView'
-import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
+import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 // Checker probes for YAZ-5078 (4B). Each `4B-x` test names a bug; the other tests check the facts their names state.
 
@@ -26,7 +26,7 @@ afterEach(() => {
 })
 
 const OLD = '2026-10-04T09:00:00.000Z good'
-const dueCards = (n: number, words = 1) => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n${Array.from({ length: words }, (_, w) => `{{w${i + 1}.${w + 1}}}`).join(' ')}`, `DC-${i + 1}, ${OLD}`))
+const dueCards = (n: number, words = 1) => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n${Array.from({ length: words }, (_, w) => `{{w${i + 1}.${w + 1}}}`).join(' ')}`, `DC-${i + 1}, ${inOrder(OLD, i)}`))
 const ids = (hh: ReviewHarness) => hh.answers.waiting().filter((w) => w.op.kind === 'review').map((w) => w.op.id)
 
 describe('the Review screen: Open page and Back, double taps, Undo, lost answers, filters, links', () => {
