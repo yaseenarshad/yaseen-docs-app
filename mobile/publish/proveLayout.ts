@@ -503,8 +503,8 @@ if (process.env.LAYOUT_PAGES !== 'no') {
 // YAZ-5658: Wide tables at the designer's 390 px phone (a made-up Time · Plan · Lookback day, the clock at 7:23, Time in
 // slot counting down), light and dark. Same as Desktop (the vault's default; `page-wide-own`: the page's own
 // `fit-tables: false` over the vault's Fit Screen): Plan and Lookback each at least 188 px, the table wider than its
-// box, Time in place; swiped to the end the pill stays at the box's right and covers no text (at rest it lies over
-// the cut Lookback: the issue's option B). Fit Screen (`page-wide-fit`): each at
+// box, Time in place; the pill sits on its room (YAZ-4965: at the visible right edge, or at the cut Lookback's left
+// when too little would be left beside it) and covers no text, at rest and swiped. Fit Screen (`page-wide-fit`): each at
 // least 125 px, the table inside its box. Both: the now row's Lookback never reads one letter per line (no line but its
 // last holds 2 letters or fewer), the pill on the line covers no text, the page never scrolls sideways.
 const WIDE_CHECK = `(() => {
@@ -534,10 +534,12 @@ const WIDE_CHECK = `(() => {
   box.scrollLeft = box.scrollWidth
   const end = pill ? at() : null
   box.scrollLeft = 0
-  // Same as Desktop at rest: the pill at the visible edge lies over the cut Lookback (the issue's option B); swiped to
-  // its end, the pill is at its room. Fit Screen: at rest.
-  const covered = document.querySelector('.reader__body').dataset.wideTables === 'fit' ? rest && rest.covered : end && end.covered
-  return { mode: document.querySelector('.reader__body').dataset.wideTables, cols, table: Math.round(r(table).width), box: box.clientWidth, perLine, covered, rest, end, pinned: table.rows[1].cells[0].hasAttribute('data-pin-col'), pill: pill && pill.textContent, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+  // YAZ-4965: at rest and swiped to its end, the pill covers no text (before, Same as Desktop at rest left the pill at
+  // the visible edge over the cut Lookback: the issue's option B).
+  const covered = !!(rest && rest.covered) || !!(end && end.covered)
+  // The pill on the screen at rest (inside the box), as the Mac shows it.
+  const seen = !pill || rest.inside
+  return { mode: document.querySelector('.reader__body').dataset.wideTables, cols, table: Math.round(r(table).width), box: box.clientWidth, perLine, covered, seen, rest, end, pinned: table.rows[1].cells[0].hasAttribute('data-pin-col'), pill: pill && pill.textContent, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
 })()`
 if (process.env.LAYOUT_WIDE !== 'no') {
   for (const scheme of ['light', 'dark'] as const) {
@@ -551,9 +553,9 @@ if (process.env.LAYOUT_WIDE !== 'no') {
       const lines = (m.perLine ?? []) as number[]
       const towers = lines.slice(0, -1).filter((n) => n <= 2).length
       const widths = fit ? m.cols.slice(1).every((w: number) => w >= 125) && m.table <= m.box + 1 : m.cols.slice(1).every((w: number) => w >= 188) && m.table > m.box && m.pinned
-      const ok = !m.none && m.mode === (fit ? 'fit' : 'scroll') && widths && lines.length > 1 && towers === 0 && !m.covered && m.rest?.inside && m.end?.inside && m.end.right <= 14 && !m.pageWide
+      const ok = !m.none && m.mode === (fit ? 'fit' : 'scroll') && widths && lines.length > 1 && towers === 0 && !m.covered && m.seen && !m.pageWide
       if (!ok) failed++
-      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 390x844, ${scheme}: ${m.none ? 'NO CALENDAR' : `${m.mode}; columns ${m.cols.join(' · ')} in a ${m.box} px box (table ${m.table}); Time ${m.pinned ? 'in place' : 'scrolls'}; the now row's Lookback ${lines.join('/')} letters a line (${towers} short); pill "${m.pill}" ${m.covered ? 'COVERS TEXT' : 'covers no text'}${fit ? '' : ' swiped to the end'}, ${m.rest?.right}px from the right at rest, ${m.end?.right}px swiped; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 390x844, ${scheme}: ${m.none ? 'NO CALENDAR' : `${m.mode}; columns ${m.cols.join(' · ')} in a ${m.box} px box (table ${m.table}); Time ${m.pinned ? 'in place' : 'scrolls'}; the now row's Lookback ${lines.join('/')} letters a line (${towers} short); pill "${m.pill}" ${m.covered ? 'COVERS TEXT' : 'covers no text'} at rest and swiped, ${m.seen ? 'on the screen at rest' : 'OFF THE SCREEN AT REST'}, ${m.rest?.right}px from the right at rest, ${m.end?.right}px swiped; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
     {
       // YAZ-5658 round 2: Same as Desktop with the widths the Mac saved (96 · 176 · 320 px at the Mac's 16 px text): each
@@ -563,9 +565,9 @@ if (process.env.LAYOUT_WIDE !== 'no') {
       writeFileSync(deskShot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       const m = await evaluate(WIDE_CHECK)
       const want = [84, 154, 280]
-      const ok = !m.none && m.mode === 'scroll' && want.every((w, i) => Math.abs(m.cols[i] - w) <= 2) && m.table > m.box && m.pinned && !m.covered && m.end?.inside && !m.pageWide
+      const ok = !m.none && m.mode === 'scroll' && want.every((w, i) => Math.abs(m.cols[i] - w) <= 2) && m.table > m.box && m.pinned && !m.covered && m.seen && !m.pageWide
       if (!ok) failed++
-      console.log(`${ok ? 'PASS' : 'FAIL'}  page-wide-desk at 390x844, ${scheme}: ${m.none ? 'NO CALENDAR' : `${m.mode}; columns ${m.cols.join(' · ')} (saved ${want.join(' · ')}) in a ${m.box} px box (table ${m.table}); Time ${m.pinned ? 'in place' : 'scrolls'}; pill ${m.covered ? 'COVERS TEXT' : 'covers no text'} swiped to the end; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${deskShot}`)
+      console.log(`${ok ? 'PASS' : 'FAIL'}  page-wide-desk at 390x844, ${scheme}: ${m.none ? 'NO CALENDAR' : `${m.mode}; columns ${m.cols.join(' · ')} (saved ${want.join(' · ')}) in a ${m.box} px box (table ${m.table}); Time ${m.pinned ? 'in place' : 'scrolls'}; pill ${m.covered ? 'COVERS TEXT' : 'covers no text'} at rest and swiped, ${m.seen ? 'on the screen at rest' : 'OFF THE SCREEN AT REST'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${deskShot}`)
     }
     const file = await open('page-wide-menu', 390, 844)
     const shot = file.replace('.png', `-${scheme}.png`)
@@ -1996,6 +1998,35 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
       const ok = !m.error && /^Build \S+ · \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}$/.test(m.text) && m.oneLine && m.below && m.above && m.inside && !m.pageWide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  settings build line at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.text}", ${m.oneLine ? 'one line' : 'WRAPS'}, ${m.below && m.above ? 'under What\'s new' : 'NOT UNDER WHAT\'S NEW'}, ${m.inside ? 'inside' : 'OUTSIDE'}, ${m.colour}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-4965: Settings › About's Version row (`#fixture=settings`), light and dark, at 320, 375 and 390 px: the label
+// "Version" whole (it was cut to "V…" at 390 px), the value whole and inside the screen, the two never on top of each other.
+const VERSION_ROW = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const value = document.querySelector('.settings__version')
+  const row = value && value.closest('.row')
+  const label = row && row.querySelector('.row__main')
+  if (!value || !label) return { error: 'no Version row' }
+  row.scrollIntoView({ block: 'center' })
+  const whole = (el) => el.scrollWidth <= el.clientWidth + 0.5
+  const a = r(label), b = r(value)
+  const apart = a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5 || a.right <= b.left + 0.5 || b.right <= a.left + 0.5
+  return { label: label.textContent, value: value.textContent, labelWhole: whole(label) && a.width >= label.scrollWidth - 0.5, valueWhole: whole(value), apart, inside: [a, b].every((x) => x.left >= 0 && x.right <= innerWidth + 0.5), pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_SETTINGS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of [[320, 568], [375, 667], [390, 844]] as const) {
+      const file = await open('settings', w, h)
+      const m = await evaluate(VERSION_ROW)
+      const shot = file.replace('.png', `-version-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const ok = !m.error && m.label === 'Version' && m.labelWhole && m.valueWhole && m.apart && m.inside && !m.pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  settings Version row at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.label}" ${m.labelWhole ? 'whole' : 'CUT'}, "${m.value}" ${m.valueWhole ? 'whole' : 'CUT'}, ${m.apart ? 'apart' : 'ON TOP OF EACH OTHER'}, ${m.inside ? 'inside' : 'OUTSIDE'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)

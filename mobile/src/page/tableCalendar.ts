@@ -1,4 +1,4 @@
-import { placeSlotRoom as placeRoom, slotRoomAt } from '@shared/slotRoom'
+import { overEdge, placeSlotRoom as placeRoom, slotRoomAt } from '@shared/slotRoom'
 import { minutesOf, nowPlace, rowTimes, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
 import { calendarLook, type CalendarLook } from './calendarLook'
 import { gridColumns } from './tableLayout'
@@ -95,7 +95,23 @@ export function placeSlotRoom(cell: HTMLElement): void {
   const room = cell.querySelector<HTMLElement>(':scope > .table-slot-room')
   if (gap === null || room === null) return
   const now = Number(cell.parentElement?.style.getPropertyValue('--table-now') || 0)
-  placeRoom(now, { height: () => cell.clientHeight, look: getComputedStyle(cell), gap, room })
+  const look = getComputedStyle(cell)
+  // YAZ-4965: the table's scroll box (none in the full-screen view, where it does not scroll): the room and the pill
+  // move in to its visible edge, so the pill never lies over the cut text.
+  const box = cell.closest<HTMLElement>('.page-table')
+  const scrolls = box !== null && /auto|scroll/.test(getComputedStyle(box).overflowX)
+  const anchor = cell.querySelector<HTMLElement>(':scope > .table-slot-anchor')
+  const side = {
+    over: () => (scrolls ? overEdge(cell, box) : 0),
+    content: () => cell.clientWidth - (parseFloat(look.paddingLeft) || 0) - (parseFloat(look.paddingRight) || 0),
+    width: () => cell.clientWidth,
+    room: () => room.getBoundingClientRect().width,
+    pill: () => anchor?.querySelector('.table-slot-pill')?.getBoundingClientRect().width ?? 0,
+    set: (px: string) => {
+      if (anchor !== null && anchor.style.getPropertyValue('--slot-side') !== px) anchor.style.setProperty('--slot-side', px)
+    },
+  }
+  placeRoom(now, { height: () => cell.clientHeight, look, gap, room, side })
 }
 
 /** The cells whose room waits for the next frame (one frame for every table of the page). */

@@ -697,8 +697,9 @@
 
 /* Time in slot (YAZ-5606, the Mac's YAZ-5602 `tableCalendar.css`; `drawSlotPill` in `tableCalendar.ts`): a pill at the
    right end of the now line, the Now pill's shape in the line's red. Its anchor fills the now row's last cell (already
-   its own positioned box, above) and runs leftwards across the row (`100vw`), so on a table wider than the screen the
-   pill sticks to the visible right end of the scroll box even when only a sliver of the last column shows. Its track
+   its own positioned box, above) and runs leftwards across the row (`100vw`). YAZ-4965: on a table wider than its box
+   the pill no longer sticks to the box's visible edge (it lay over the cut text there): it sits on its room, which
+   `placeSlotRoom` moves in to that edge (`--slot-side`, the room's right margin; `shared/slotRoom.ts`). Its track
    rides the line (`--table-now`) and stays inside the row. Out of the flow, tabular digits: its text never moves the
    table. YAZ-5658: a last cell with text keeps room for the pill ON ITS LINE only: two floats at the cell's top
    (`placeSlotRoom`, the Mac's rule too: `shared/slotRoom.ts`), a gap down to the text lines the pill crosses, then the
@@ -738,9 +739,7 @@
   height: 20px;
 }
 .page-table-box .page-table .table-slot-pill {
-  position: sticky;
-  right: 6px;
-  margin-right: 6px;
+  margin-right: calc(var(--slot-side, 0px) + 6px);
   box-sizing: border-box;
   height: 20px;
   padding: 0 8px;

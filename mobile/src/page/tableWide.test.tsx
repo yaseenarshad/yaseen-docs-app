@@ -16,6 +16,7 @@ import { MOBILE_SETTINGS_PATH } from '../comments/mobileWrite'
 import { calendarLook } from './calendarLook'
 import { forgetMobileSettings } from './mobileSettings'
 import { renderPage, type PageLook } from './pageRender'
+import { pillSideAt, slotSideAt } from '@shared/slotRoom'
 import { markCalendar, placeSlotRoom, setCalendarClock, slotRoomAt } from './tableCalendar'
 import { FIT_MIN, MAC_TEXT_PX, PAD, READ_WIDTH, columnWidths, columnsOf, deskWidths } from './tableLayout'
 
@@ -174,6 +175,9 @@ describe('YAZ-5658: the pill takes room on its own line only', () => {
     expect(slotRoomAt(1, 120, 7, 7, 19.6)).toEqual({ gap: 58.8, room: 39.2 })
     // One line: the room is that line.
     expect(slotRoomAt(0.8, 33.6, 7, 7, 19.6)).toEqual({ gap: 0, room: 19.6 })
+    // YAZ-4965: `clientHeight` is a whole px (151 for 7 lines of 19.6 px and 14 px of padding, 151.2): still 7 lines,
+    // so the room is the 6th and 7th, the ones the pill crosses (it was held one line up, and the pill's edge lay on text).
+    expect(slotRoomAt(0.767, 151, 7, 7, 19.6)).toEqual({ gap: 98, room: 39.2 })
   })
 
   it('placeSlotRoom sets the gap and the room from the cell\'s height; the pill moved away takes its floats with it', async () => {
@@ -192,6 +196,63 @@ describe('YAZ-5658: the pill takes room on its own line only', () => {
     // An empty last cell (8:00 Gym): the pill, no room.
     const empty = t.querySelector<HTMLTableRowElement>('.table-now-row')!.cells[2] as HTMLElement
     expect([empty.classList.contains('table-slot-pad'), empty.querySelector('.table-slot-room')]).toEqual([false, null])
+  })
+})
+
+describe('YAZ-4965: the pill never covers text, on a table wider than its box (Same as Desktop)', () => {
+  it('slotSideAt: the room moves in to the visible right edge; with under 4em of text beside it, it takes the rest of its lines', () => {
+    // The cell ends inside the box: the room stays at its right end, its own width.
+    expect(slotSideAt(0, 259, 86, 14)).toEqual({ side: 0, fill: 0 })
+    expect(slotSideAt(-20, 259, 86, 14)).toEqual({ side: 0, fill: 0 })
+    // 40 px of the cell past the edge, 133 px of text still beside the room: the room 40 px in.
+    expect(slotSideAt(40, 259, 86, 14)).toEqual({ side: 40, fill: 0 })
+    // The designer's 390 px phone, Same as Desktop (Lookback 280 px ending 162 px past the box): 11 px would be left
+    // beside the room, less than 4em: the room takes the whole visible part of its lines (97 px), no letters beside it.
+    expect(slotSideAt(162, 259, 86, 14)).toEqual({ side: 162, fill: 97 })
+    // The cell almost all past the edge: the room at its left. A room as wide as the cell: nowhere to go.
+    expect(slotSideAt(400, 259, 86, 14)).toEqual({ side: 173, fill: 86 })
+    expect(slotSideAt(162, 259, 259, 14)).toEqual({ side: 0, fill: 0 })
+  })
+
+  it('pillSideAt: the pill at the visible edge, never past its cell\'s left', () => {
+    expect(pillSideAt(0, 189, 78)).toBe(0)
+    expect(pillSideAt(96, 189, 78)).toBe(96)
+    expect(pillSideAt(200, 189, 78)).toBe(105)
+  })
+
+  it('placeSlotRoom puts the room and the pill at that place: the room\'s right margin, the anchor\'s --slot-side', async () => {
+    const t = (await draw(WIDE_DESK_PAGE)).querySelector('table')!
+    markCalendar(t, minutes(WIDE_NOW), calendarLook({ slotTime: 'down', slotSeconds: false }))
+    const cell = t.querySelector<HTMLTableRowElement>('.table-now-row')!.cells[2] as HTMLElement
+    const box = t.closest<HTMLElement>('.page-table')!
+    box.style.overflowX = 'auto'
+    const rect = (left: number, width: number) => ({ left, right: left + width, width, top: 0, bottom: 0, height: 0, x: left, y: 0, toJSON: () => ({}) })
+    // The box 356 px wide at x 17, scrolled 30 px; the cell 280 px wide, its right 518 px into the table.
+    Object.defineProperties(box, { clientWidth: { value: 356 }, offsetWidth: { value: 356 }, scrollLeft: { value: 30, writable: true } })
+    box.getBoundingClientRect = () => rect(17, 356)
+    cell.getBoundingClientRect = () => rect(17 + 238 - 30, 280)
+    Object.defineProperties(cell, { clientHeight: { value: 120 }, clientWidth: { value: 280 } })
+    cell.style.padding = '7px 10.5px'
+    cell.style.lineHeight = '19.6px'
+    cell.style.fontSize = '14px'
+    const room = cell.querySelector<HTMLElement>('.table-slot-room')!
+    room.getBoundingClientRect = () => rect(0, 86)
+    cell.querySelector<HTMLElement>('.table-slot-pill')!.getBoundingClientRect = () => rect(0, 78)
+    placeSlotRoom(cell)
+    expect([room.style.marginRight, room.style.minWidth]).toEqual(['162px', '97px'])
+    expect(cell.querySelector<HTMLElement>('.table-slot-anchor')!.style.getPropertyValue('--slot-side')).toBe('162px')
+    // The pill no longer sticks to the box's edge (it would lie over text there): it sits on its room.
+    expect(css).not.toMatch(/\.table-slot-pill\s*\{[^}]*position: sticky/)
+    expect(css).toMatch(/\.table-slot-pill\s*\{[^}]*margin-right: calc\(var\(--slot-side, 0px\) \+ 6px\)/)
+  })
+
+  it('a table inside its box: the room stays at the cell\'s right end', async () => {
+    const t = (await draw(WIDE_PAGE)).querySelector('table')!
+    markCalendar(t, minutes(WIDE_NOW), calendarLook({ slotTime: 'down', slotSeconds: false }))
+    const cell = t.querySelector<HTMLTableRowElement>('.table-now-row')!.cells[2] as HTMLElement
+    Object.defineProperties(cell, { clientHeight: { value: 120 }, clientWidth: { value: 140 } })
+    placeSlotRoom(cell)
+    expect(cell.querySelector<HTMLElement>('.table-slot-room')!.style.marginRight).toBe('0px')
   })
 })
 
