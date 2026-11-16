@@ -16,6 +16,11 @@
  * its steps leaves it red); empty while it waits otherwise (a new card back after its first Remembered, a card not
  * answered yet). The "3 / 13" count reads the same cards (`filterPlace`).
  *
+ * Option B (YAZ-5660, Yaseen picked it): in the first pass a red stays where the card was missed. Once the pass is over
+ * (no card of the filter waits unanswered) and the session moves on from its % screen, the bar is full and the reds
+ * slide to the right end: grey on the left, the cards still to come back empty, all red on the right. Then each ✓ of
+ * Review missed cards turns the leftmost red grey. A card that joins (the other device, Add more) opens the pass again.
+ *
  * The ring's % is each due card's FIRST answer of the session (`dueFirsts`): a card missed then got right counts as
  * missed, a new card never counts. The same answers draw the bar's red and grey in the first pass.
  */
@@ -58,11 +63,16 @@ export interface ProgressRun {
   open?: boolean
 }
 
-/** The bar of one filter: its parts (the answered cards, in order), how many cards are done, and how many cards in all. */
+/**
+ * The bar of one filter: its parts (the answered cards, in order), how many cards are done, and how many cards in all.
+ * `moved` (YAZ-5660): only as the reds slide to the right end, how many steps each red (left to right) moved, to draw
+ * the slide once.
+ */
 export interface FilterProgress {
   runs: ProgressRun[]
   done: number
   size: number
+  moved?: number[]
 }
 
 /** The bar's parts (YAZ-5020): each run of the same step as one part. */
@@ -85,11 +95,16 @@ function answeredCards(answers: readonly SessionAnswer[], filter: CardFilter): M
   return missed
 }
 
-/** The bar under `filter` (YAZ-5432, YAZ-5594): one step per card of the session, `queue` the cards still to show. */
-export function filterProgress(answers: readonly SessionAnswer[], queue: readonly SessionCard[], filter: CardFilter): FilterProgress {
+type Step = { missed: boolean; open: boolean }
+
+/**
+ * The bar under `filter` (YAZ-5432, YAZ-5594): one step per card of the session, `queue` the cards still to show.
+ * `paused`: the % screen of the pass is on show, so the reds still stand where they were missed (YAZ-5660).
+ */
+export function filterProgress(answers: readonly SessionAnswer[], queue: readonly SessionCard[], filter: CardFilter, { paused = false } = {}): FilterProgress {
   const answered = answeredCards(answers, filter)
   const waiting = new Set(queue.filter((c) => matchesFilter(c, filter)).map(keyOf))
-  const steps: { missed: boolean; open: boolean }[] = []
+  const steps: Step[] = []
   let done = 0
   for (const [key, missed] of answered) {
     const back = waiting.has(key)
@@ -98,7 +113,18 @@ export function filterProgress(answers: readonly SessionAnswer[], queue: readonl
   }
   let fresh = 0
   for (const key of waiting) if (!answered.has(key)) fresh++
-  return { runs: runsOf(steps), done, size: answered.size + fresh }
+  const size = answered.size + fresh
+  if (fresh > 0 || paused || !steps.some((s) => s.missed)) return { runs: runsOf(steps), done, size }
+  // The pass is over: grey, then the cards still to come back, then the reds (YAZ-5660).
+  const rank = (s: Step) => (s.missed ? 2 : s.open ? 1 : 0)
+  const order = steps.map((s, i) => ({ s, i })).sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i)
+  const progress: FilterProgress = { runs: runsOf(order.map((o) => o.s)), done, size }
+  // The slide is drawn once: as the session leaves the % screen, or at the answer that ends the pass (no % screen).
+  const last = answers.at(-1)
+  const ended = last !== undefined && matchesFilter(last, filter) && answers.filter((a) => a.key === last.key && matchesFilter(a, filter)).length === 1
+  const moved = order.flatMap((o, to) => (o.s.missed ? [to - o.i] : []))
+  if (ended && moved.some((m) => m > 0)) progress.moved = moved
+  return progress
 }
 
 /**

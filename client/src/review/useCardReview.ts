@@ -1308,7 +1308,7 @@ export function useCardReview(
       from,
       place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered.map((a) => a.rating),
-      progress: filterProgress(session.answered, queue, filter),
+      progress: filterProgress(session.answered, queue, filter, { paused: session.pause !== null }),
       today,
       more: scopePlan.more,
       adds: addsOf(scopePlan, settings),

@@ -117,6 +117,23 @@
   background: var(--danger) !important;
 }
 
+/* YAZ-5660 (option B): the pass over, each red slides from where it was missed to the right end, once. */
+.review__step[data-slide] {
+  animation: review-step-slide 280ms ease-out;
+}
+
+@keyframes review-step-slide {
+  from {
+    transform: translateX(calc(-1 * var(--moved) * (100% + 1px)));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review__step[data-slide] {
+    animation: none;
+  }
+}
+
 /* ---- The review sheet (the Mac's cards menu) ---- */
 
 .review__sheet {

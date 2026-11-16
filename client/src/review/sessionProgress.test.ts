@@ -25,7 +25,9 @@ describe('YAZ-5432: the progress bar counts only the tab on show', () => {
   })
 
   it('the first pass done, the missed cards wait: red, not done, and the bar no bigger', () => {
-    expect(filterProgress(answers.slice(0, 4), [card('b'), card('d')], 'due')).toEqual({
+    // On the % screen the reds stand where they were missed; on to the missed cards, they wait at the right end (YAZ-5660).
+    expect(filterProgress(answers.slice(0, 4), [card('b'), card('d')], 'due')).toMatchObject({ runs: [{ missed: false, count: 2 }, { missed: true, count: 2 }], done: 2, size: 4 })
+    expect(filterProgress(answers.slice(0, 4), [card('b'), card('d')], 'due', { paused: true })).toEqual({
       runs: [
         { missed: false, count: 1 },
         { missed: true, count: 1 },
@@ -83,5 +85,65 @@ describe('YAZ-5594, YAZ-5610: one step and one count per CARD, never per answer'
     expect(filterProgress(answers, queue, 'new')).toEqual({ runs: [{ missed: false, count: 1, open: true }], done: 0, size: 2 })
     expect(filterPlace(answers, queue, 0, 'new')).toEqual({ position: 2, total: 2 })
     expect(filterPlace(answers, queue, 1, 'new')).toEqual({ position: 2, total: 2 })
+  })
+})
+
+/** The bar as Yaseen reads it: g grey, r red, . empty, one letter per card. */
+const bar = (p: { runs: { missed: boolean; count: number; open?: boolean }[]; size: number }): string =>
+  p.runs.map((r) => (r.open === true ? '.' : r.missed ? 'r' : 'g').repeat(r.count)).join('').padEnd(p.size, '.')
+
+describe('YAZ-5660: option B — a red stays where it was missed; the pass over, the reds slide to the right end', () => {
+  // Yaseen's mockup: 17 due cards, missed 3, 5, 6 and 12. Made-up cards.
+  const ids = Array.from({ length: 17 }, (_, i) => `c${i + 1}`)
+  const missed = new Set(['c3', 'c5', 'c6', 'c12'])
+  const firstPass = (upTo: number): SessionAnswer[] => ids.slice(0, upTo).map((id) => due(id, missed.has(id) ? 'again' : 'good'))
+  const waiting = (upTo: number): SessionCard[] => [...ids.slice(upTo), ...ids.slice(0, upTo).filter((id) => missed.has(id))].map((id) => card(id))
+
+  it('first pass: each answer fills the next piece from the left; a red stays in its place', () => {
+    expect(bar(filterProgress(firstPass(1), waiting(1), 'due'))).toBe('g' + '.'.repeat(16))
+    expect(bar(filterProgress(firstPass(3), waiting(3), 'due'))).toBe('ggr' + '.'.repeat(14))
+    expect(bar(filterProgress(firstPass(6), waiting(6), 'due'))).toBe('ggrgrr' + '.'.repeat(11))
+    expect(bar(filterProgress(firstPass(12), waiting(12), 'due'))).toBe('ggrgrrgggggr' + '.'.repeat(5))
+  })
+
+  it('card 17: the bar is FULL with the reds in place (the % screen); on to the missed cards, 13 grey then 4 red', () => {
+    const answers = firstPass(17)
+    const pausedBar = filterProgress(answers, waiting(17), 'due', { paused: true })
+    expect(bar(pausedBar)).toBe('ggrgrrgggggrggggg')
+    expect(pausedBar.moved).toBeUndefined()
+    const slid = filterProgress(answers, waiting(17), 'due')
+    expect(bar(slid)).toBe('g'.repeat(13) + 'rrrr')
+    expect(slid).toMatchObject({ done: 13, size: 17 })
+    // The slide (drawn once): each red, left to right, moved from 3, 5, 6 and 12 to 14, 15, 16 and 17.
+    expect(slid.moved).toEqual([11, 10, 10, 5])
+  })
+
+  it('Review missed cards: each ✓ turns the leftmost red grey; a ✕ leaves it red; all grey = done', () => {
+    const answers = firstPass(17)
+    let queue = waiting(17)
+    const answer = (id: string, rating: CardRating) => {
+      answers.push(due(id, rating, false))
+      queue = queue.filter((c) => c.id !== id)
+      if (rating === 'again') queue.push(card(id))
+      return filterProgress(answers, queue, 'due')
+    }
+    expect(bar(answer('c3', 'good'))).toBe('g'.repeat(14) + 'rrr')
+    const again = answer('c5', 'again')
+    expect(bar(again)).toBe('g'.repeat(14) + 'rrr')
+    expect(again.moved).toBeUndefined()
+    expect(bar(answer('c6', 'good'))).toBe('g'.repeat(15) + 'rr')
+    expect(bar(answer('c12', 'good'))).toBe('g'.repeat(16) + 'r')
+    expect(answer('c5', 'good')).toEqual({ runs: [{ missed: false, count: 17 }], done: 17, size: 17 })
+  })
+
+  it('a card joins mid-session (the other device, Add more): the bar grows and the pass is not over', () => {
+    expect(bar(filterProgress(firstPass(17), [...waiting(17), card('c18')], 'due'))).toBe('ggrgrrgggggrggggg.')
+  })
+
+  it('New cards: a new card`s ✕ keeps it New and red; the pass over, it slides right', () => {
+    const answers = [fresh('x', 'again'), fresh('y', 'good')]
+    expect(bar(filterProgress(answers, [card('z', true), card('x', true)], 'new'))).toBe('rg.')
+    answers.push(fresh('z', 'good'))
+    expect(bar(filterProgress(answers, [card('x', true)], 'new'))).toBe('ggr')
   })
 })
