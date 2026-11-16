@@ -371,11 +371,10 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     edit = null
     draw()
     if (text.replace(/\n+$/, '') !== e.base.text || title !== e.base.title) {
-      // YAZ-5097: the edit is the fix: a card marked Fix later loses the mark in the same write.
-      const { fix: wasFix, ...rest } = e.base
-      read = { ...rest, text, title }
+      // Fix later stays: only a hand clears it (YAZ-5647 item 5).
+      read = { ...e.base, text, title }
       draw()
-      changeCardTextIn(e.base.path, e.base.id, text, e.base.index, title === e.base.title ? undefined : title, wasFix === true).catch((err: unknown) => {
+      changeCardTextIn(e.base.path, e.base.id, text, e.base.index, title === e.base.title ? undefined : title).catch((err: unknown) => {
         onNotice(`Can't save the card: ${err instanceof Error ? err.message : String(err)}`)
         read = e.base
         paint()

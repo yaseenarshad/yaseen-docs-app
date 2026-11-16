@@ -72,14 +72,13 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
     /**
      * Edit card's Done (YAZ-5003): the card's text by its ID and, when given, its `title` on its card line (YAZ-5308), in
      * one write; the rest of the file as it is on disk now. `onFail` after the notice (a card file tab's "Save failed",
-     * YAZ-5102). A changed card marked Fix later loses the mark in the same write (YAZ-5097: the edit is the fix; it
-     * asks nothing). No change: the mark stays.
+     * YAZ-5102). Fix later stays: only a hand clears it (YAZ-5647 item 5).
      */
     editDone(text: string, after: () => void, onFail?: () => void, title?: string) {
       if (card === null) return
       const retitled = title !== undefined && title !== card.title ? title : undefined
       if (text.replace(/\n+$/, '') === card.text && retitled === undefined) return after()
-      changeCardTextIn(path, card.id, text, card.index, retitled, card.fix === true).then(
+      changeCardTextIn(path, card.id, text, card.index, retitled).then(
         () => {
           read()
           after()

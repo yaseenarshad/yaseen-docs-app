@@ -21,7 +21,6 @@ import {
   isCardOff,
   pageCards,
   rewritePageCards,
-  withCardFix,
   withCardNext,
   withCardReview,
   withCardReviewAt,
@@ -113,18 +112,15 @@ export const changeCardLine = (path: string, id: string, change: (line: CardLine
 /**
  * Card `id`'s TEXT replaced by `text` (YAZ-5003, Edit card in the card window) and, when given, its `title` on its card
  * line (YAZ-5308, Edit card's Title field): ONE `transformFile`, as the app's own write, so a page open in a tab takes
- * it quietly. With no ID, the card at `index`. Throws `CardNotFoundError`. `fixed` (YAZ-5097): the edit is the fix, so
- * the line's `fix` goes in the same write.
+ * it quietly. With no ID, the card at `index`. Throws `CardNotFoundError`. The line's `fix` (Fix later) stays: it is set
+ * and cleared only by hand (YAZ-5647 item 5).
  */
-export const changeCardTextIn = (path: string, id: string | null, text: string, index: number, title?: string, fixed = false): Promise<unknown> =>
+export const changeCardTextIn = (path: string, id: string | null, text: string, index: number, title?: string): Promise<unknown> =>
   announcedWrite(path, () =>
     transformFile(path, (c) => {
       const next = changeCardText(c, id, text, index)
-      if (title === undefined && !fixed) return next
-      const line = (l: CardLine): CardLine => {
-        const titled = title === undefined ? l : withCardTitle(l, title)
-        return fixed ? withCardFix(titled, false) : titled
-      }
+      if (title === undefined) return next
+      const line = (l: CardLine): CardLine => withCardTitle(l, title)
       return id === null ? rewritePageCards(next, (card, n) => (n === index ? line(card.line) : undefined)) : changeCard(next, id, line, index)
     }),
   )
