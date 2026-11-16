@@ -9,7 +9,7 @@
  *   hover box over a button ("Remembered · 9 days"); `press` lights a button as a key or a click picks it.
  * - The last answer's line: "✓ Remembered · DEMO-2 · back in 9 days · Undo Cmd + Z" (`last`).
  * - The key row, in the app's words (`cardInboxHints`, `KeyLabel`: "Show (Space)"); `glowKey` lights one key ("Space").
- * - `done`: the done screen, "Inbox complete." and its quiet line.
+ * - `done`: the done screen, "Inbox complete." with the app's 🎉 and green ✓ (`DoneCheerLook`, YAZ-5662), and its quiet line.
  *
  * Everything is a pure function of its props (the beat and progress values), as every kit piece.
  */
@@ -17,6 +17,7 @@ import type { ReactNode } from 'react'
 import { cardInboxHints } from '../../../review/cardInboxKeys'
 import { ChevronIcon, ForgotIcon, InboxTrayIcon, RememberedIcon } from '../../../review/cardInboxIcons'
 import { KeyLabel } from '../../../keys/KeyLabel'
+import { DoneCheerLook } from '../../../review/DoneCheer'
 import { clamp, ease, lerp, type Beat } from './beat'
 import { CardView, type CardViewProps } from './CardView'
 import { Pointer } from './AppFrame'
@@ -146,9 +147,9 @@ export function InboxView({ beat, card, position = 1, total = 4, answered = [], 
             <div className="card-inbox__panel kit-inbox__done" style={{ opacity: clamp(d * 1.5) }}>
               <div className="card-inbox__body">
                 <div className="card-inbox__done" role="status">
-                  <p className="card-inbox__done-title" style={beat.reduced ? undefined : { transform: `scale(${lerp(0.94, 1, ease.back(d)).toFixed(4)})` }}>
+                  <DoneCheerLook className="card-inbox__done-title" titleStyle={beat.reduced ? undefined : { transform: `scale(${lerp(0.94, 1, ease.back(d)).toFixed(4)})` }}>
                     Inbox complete.
-                  </p>
+                  </DoneCheerLook>
                   <p className="card-inbox__done-line" style={{ opacity: clamp(d * 2 - 0.6) }}>
                     {doneLine}
                   </p>

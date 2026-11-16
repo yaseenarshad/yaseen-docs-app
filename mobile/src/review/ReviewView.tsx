@@ -34,6 +34,7 @@ import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
 import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import { DueEnd } from './DueEnd'
+import { DoneCheer } from '@client/review/DoneCheer'
 import { CardActions } from '../cardMenu/lazy'
 import { overlayCount } from '../app/browserHistory'
 import { reviewKey } from './keys'
@@ -58,6 +59,7 @@ import './review.css'
  *    YAZ-5430). The answer buttons work at any step, as on the Mac.
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
  *  - Done: "Inbox complete." (the Mac's words, YAZ-5624), today's work, and "Add more for today" (round 10, addition 2) when cards wait.
+ *    Its 🎉, green ✓ and one burst of confetti on landing: the Mac's `DoneCheer` (YAZ-5662).
  *  - The end of Due today (the Mac's YAZ-5043, from the shared hook's `end`): after the first pass "You
  *    remembered 93% of 73 cards." with "Review missed cards 5"; then "Due today is done." with "Learn new cards 11"
  *    and its "from All folders ›" (the sheet's folder page). The ring and the confetti: `DueEnd.tsx`.
@@ -680,12 +682,12 @@ function SessionScreen({
                   </button>
                 }
               >
-                <DoneBody review={review} session={session} addKinds={addKinds} today={today} title={false} />
+                <DoneBody review={review} session={session} addKinds={addKinds} today={today} title={false} shown={shown} />
               </DueEnd>
             </div>
           ) : (
             <div className="review__done" role="status">
-              <DoneBody review={review} session={session} addKinds={addKinds} today={today} title />
+              <DoneBody review={review} session={session} addKinds={addKinds} today={today} title shown={shown} />
             </div>
           )}
           {(lastAnswer !== null || quietLine !== null) && <div className="review__hint">{lastLine}</div>}
@@ -945,7 +947,7 @@ function DoneStage({ children }: { children: React.ReactNode }) {
 }
 
 /** What the done screen says; `title` false under the end of Due today, which has its own. */
-function DoneBody({ review, session, addKinds, today, title }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[]; today: React.ReactNode; title: boolean }) {
+function DoneBody({ review, session, addKinds, today, title, shown }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[]; today: React.ReactNode; title: boolean; shown: boolean }) {
   const adds = addKinds.map((k) => (
     <button key={k} type="button" className="btn review__add" onClick={() => review.addCards(k)}>
       {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
@@ -963,7 +965,12 @@ function DoneBody({ review, session, addKinds, today, title }: { review: CardRev
     )
   return (
     <>
-      {title && <p className="review__done-title">Inbox complete.</p>}
+      {title && (
+        // YAZ-5662: the 🎉, the green ✓ and one burst of confetti (the Mac's own `DoneCheer`), lighter on a phone.
+        <DoneCheer className="review__done-title" landing={session.landing} shown={shown} area=".review" burst={{ maxDpr: 2, pieces: 80 }}>
+          Inbox complete.
+        </DoneCheer>
+      )}
       <p className="muted review__done-today">{today}</p>
       {addKinds.length > 0 ? (
         <>

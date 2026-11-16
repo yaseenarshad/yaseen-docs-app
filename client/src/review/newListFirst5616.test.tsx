@@ -143,7 +143,7 @@ async function menu(): Promise<Record<string, string>> {
 /** What the screen says at this step: the card (or the stop / done screen), "N of M", the bar's done / whole, the menu. */
 async function look(): Promise<{ card: string; place: string | null; bar: string; menu: Record<string, string> }> {
   const end = el.querySelector('.due-end')
-  const done = el.querySelector('.card-inbox__done > *')?.textContent
+  const done = el.querySelector('.card-inbox__done > :not(.done-cheer__party)')?.textContent
   const card = showing() ?? (end !== null ? `stop: ${el.querySelector('.due-end')?.getAttribute('data-kind')}` : `done: ${done ?? ''}`)
   const bar = el.querySelector('.card-inbox__progress')
   return {
