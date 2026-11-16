@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { isCardSeconds, withCardNext, withCardOff, type CardLine, type CardRating, type CardReview } from '@shared/cardLine'
-import { addStep, anyUpNext, cardPlan, newCardFolders, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
+import { addStep, anyUpNext, cardPlan, cardState, isCardDue, newCardFolders, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
@@ -504,6 +504,13 @@ const withLive = (s: Session, live: readonly DueCard[], files: boolean, keep: Re
   return head !== undefined && gone.has(cardKey(head)) && s.pause === null && dueFirsts(s.answered).count > 0 ? { ...next, ...dueStop(next, head) } : next
 }
 
+/** A card with reviews that is not due today, nor Up next, nor off: the other device finished it (YAZ-5617). */
+const doneToday = (card: CardOnPage, settings: ReviewSettings): boolean => {
+  if (card.off || card.next || card.reviews.length === 0) return false
+  const state = cardState(card.reviews, settings)
+  return state.due !== null && !isCardDue(state.due, Date.now(), state.inSteps)
+}
+
 /** The session with the card at `at` gone from its queue (answered elsewhere, its page gone, review off): the next one shows. */
 const without = (s: Session, at: number): Session => {
   const queue = [...s.queue.slice(0, at), ...s.queue.slice(at + 1)]
@@ -1001,9 +1008,21 @@ export function useCardReview(
         return false
       },
     )
+    // YAZ-5617: the other device answered the card too (a sync brought it): after this undo it may be done for today.
+    // Then it does not come back, so it never gets a second review here (YAZ-5622); the file, read now, says.
+    const back = undone ? await host.readCard(last.card.path, last.card.id).catch(() => null) : null
     busy.current = false
     forget(last.card.path)
     if (undone && last.next >= 0 && last.card.next && root !== null) host.setUpNextTaken(root, last.card.id, false)
+    if (back !== null && doneToday(back, live.current.settings)) {
+      setSession((s) => {
+        if (s === null || s.undo.at(-1) !== last) return s
+        const queue = s.queue.filter((c) => !sameCard(c, last.card))
+        const at = Math.min(last.at, queue.length)
+        return fitted({ ...s, queue, at: at < queue.length ? at : 0, turn: s.turn + 1, undo: s.undo.slice(0, -1), answered: s.answered.slice(0, -1), stage: last.stage, pause: null })
+      })
+      return
+    }
     // The card back at its place (YAZ-5020), its repeat out of the queue and the session one smaller again; it shows
     // also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
     if (undone)
