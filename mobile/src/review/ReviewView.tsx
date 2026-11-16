@@ -54,7 +54,7 @@ import './review.css'
  *  - At the bottom, in reach of the thumb: ✕ Forgot and ✓ Remembered (or four by the setting), then ⋯: Archive card,
  *    Up next, Fix later, Open page (a card file: Open card). The answer buttons work at any step, as on the Mac.
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
- *  - Done: "Inbox complete", today's work, and "Add more for today" (round 10, addition 2) when cards wait.
+ *  - Done: "Inbox complete." (the Mac's words, YAZ-5624), today's work, and "Add more for today" (round 10, addition 2) when cards wait.
  *  - The end of Due today (the Mac's YAZ-5043, from the shared hook's `end`): after the first pass "You
  *    remembered 93% of 73 cards." with "Review missed cards 5"; then "Due today is done." with "Learn new cards 11"
  *    and its "from All folders ›" (the sheet's folder page). The ring and the confetti: `DueEnd.tsx`.
@@ -950,7 +950,7 @@ function DoneBody({ review, session, addKinds, today, title }: { review: CardRev
     )
   return (
     <>
-      {title && <p className="review__done-title">Inbox complete</p>}
+      {title && <p className="review__done-title">Inbox complete.</p>}
       <p className="muted review__done-today">{today}</p>
       {addKinds.length > 0 ? (
         <>

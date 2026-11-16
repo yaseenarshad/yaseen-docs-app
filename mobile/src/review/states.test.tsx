@@ -59,7 +59,7 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
     await h.click(/Choose what to review/)
     // YAZ-5415: the review sheet's rows: the glyph, the name, (New cards: "from All folders ›"), the count.
     const rows = [...h.host.querySelectorAll('.review__sheet-row')].map((r) => r.textContent)
-    expect(rows).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›2 / 2'])
+    expect(rows).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›2'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434) */)
     await h.click(/^Due today/)
     expect(h.text()).toContain('Due today ▾')
     expect(h.head()).toBe('DU-1')

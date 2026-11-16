@@ -175,7 +175,7 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     })
     await h.click(/Choose what to review/)
     const rows = () => [...h!.host.querySelectorAll('.review__sheet-row')].map((r) => (r.textContent ?? '').replace(/\s+/g, ' ').trim())
-    expect(rows()).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›2 / 3'])
+    expect(rows()).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›2'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434) */)
     await h.click(/^Due today$/)
     expect(h.text()).toContain('Due today ▾')
     expect(h.head()).toBe('MN-1')
@@ -201,18 +201,20 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     await h.click('Add 1 new card')
     expect(h.head()).toBe('RS-2')
     await h.click(/Choose what to review/)
+    // YAZ-5624: the count alone, as the Mac's New cards row (YAZ-5434): today's cards left, never "/ total".
     const newRow = () => (h!.host.querySelector('.review__sheet-row [data-kind="new"]')?.textContent ?? '').trim()
-    expect(newRow()).toBe('1 / 2')
+    expect(newRow()).toBe('1')
     expect(h.button(/Reset today's new cards/)).not.toBeNull()
     await h.click(/Reset today's new cards/)
     // Today is the Settings number again (1, done already): the added cards not on show leave; the one on show stays.
     expect(h.head()).toBe('RS-2')
-    expect(newRow()).toBe('1 / 3')
+    expect(newRow()).toBe('1')
     expect(h.button(/Reset today's new cards/)).toBeNull()
     expect(hint()).toContain("Reset today's new cards")
     await h.click('Undo')
     await h.click(/Choose what to review/)
-    expect(newRow()).toBe('1 / 2')
+    expect(newRow()).toBe('1')
+    expect(h.button(/Reset today's new cards/)).not.toBeNull()
   })
 
   it('New cards "from All folders ›": the folder page takes two folders; the count follows; the pick is kept', async () => {
@@ -239,7 +241,7 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     await h.click(/New cards from…$/)
     expect(h.button(/^New cards from languages, learning/)).not.toBeNull()
     // Today's new cards come from the two folders only: 2 + 3.
-    expect((h.host.querySelector('.review__sheet-row [data-kind="new"]')?.textContent ?? '').trim()).toBe('5 / 5')
+    expect((h.host.querySelector('.review__sheet-row [data-kind="new"]')?.textContent ?? '').trim()).toBe('5')
     expect(await readNewFrom(h.store, VAULT)).toEqual(['languages', 'learning'])
     await h.click(/^New cards$/)
     expect(h.head()).toMatch(/^L[AE]-/)

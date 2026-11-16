@@ -42,7 +42,7 @@ import { TodayWork } from './TodayWork'
 import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
 import { useNewCardsPicker } from './NewCardsPicker'
-import { pickLabel, showsFilter } from './inboxMenu'
+import { kindCount, kindCountText, pickLabel, showsFilter } from './inboxMenu'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
 const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
@@ -173,8 +173,8 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
               const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
               const count = session.counts[f.id]
-              // YAZ-5434: New cards' count stands alone ("9", not "9 / 23"); only Up next keeps its total.
-              const total = kind === 'next' && session.limited.next ? count + session.more.next : null
+              // YAZ-5434: New cards' count stands alone ("9", not "9 / 23"); only Up next keeps its total. The phone's rule too (`kindCount`, YAZ-5624).
+              const counted = kind === null ? { count, total: null } : kindCount(session, kind)
               const reset = kind !== null && resetCards !== undefined && session.canReset[kind]
               if (kind !== null && adding === kind && add > 0)
                 return (
@@ -215,7 +215,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                       data-add={add > 0 || undefined}
                       title={kind !== null && add > 0 ? `${session.more[kind]} more wait. Click to add.` : undefined}
                     >
-                    {total === null ? count : `${count} / ${total}`}
+                    {kindCountText(counted)}
                   </span>
                 </button>
               )
