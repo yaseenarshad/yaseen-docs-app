@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { DueTodayEnd } from '@client/review/useCardReview'
+import { reducedMotion, useInFront } from '@client/review/DoneCheer'
 import './dueEnd.css'
 
 /**
@@ -20,19 +21,6 @@ import './dueEnd.css'
 
 /** The stops whose animation played (by `DueTodayEnd.id`): each plays once, also when the tab draws again. */
 const played = new Set<string>()
-
-export const reducedMotion = (): boolean => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-/** Whether the screen is in front: the Review tab shows and the app is not hidden. */
-function useInFront(shown: boolean): boolean {
-  const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden')
-  useEffect(() => {
-    const on = () => setVisible(document.visibilityState !== 'hidden')
-    document.addEventListener('visibilitychange', on)
-    return () => document.removeEventListener('visibilitychange', on)
-  }, [])
-  return shown && visible
-}
 
 const cards = (n: number): string => `${n} card${n === 1 ? '' : 's'}`
 

@@ -60,7 +60,7 @@ let props: CardInboxProps
 const TITLE = 'Capital of France'
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { runs: [], done: 0, size: 12 }, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { runs: [], done: 0, size: 12 }, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
 }
 
 function render() {
@@ -1555,7 +1555,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
   const rows = () => [...document.querySelectorAll<HTMLElement>('.card-inbox__filter-row')]
   // A field reads as "[10]": the done screen's pill is "Add [10] new cards" (round 2).
   const textOf = (node: Node): string => (node instanceof HTMLInputElement ? `[${node.value}]` : node.childNodes.length === 0 ? (node.textContent ?? '') : [...node.childNodes].map(textOf).join(''))
-  const doneText = () => [...el.querySelectorAll('.card-inbox__done > *')].map(textOf)
+  const doneText = () => [...el.querySelectorAll('.card-inbox__done > :not(.done-cheer__party)')].map(textOf)
   const pills = () => [...el.querySelectorAll<HTMLElement>('.card-inbox__done-add')]
   const addButtons = () => pills().map((p) => p.querySelector<HTMLButtonElement>('.card-inbox__done-add-word')!)
 
@@ -2116,7 +2116,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
   const picker = () => document.querySelector<HTMLElement>('.card-inbox__picker')
   const pickerRows = () => [...picker()!.querySelectorAll<HTMLLabelElement>('.card-inbox__picker-row')]
   const textOf = (node: Node): string => (node instanceof HTMLInputElement ? `[${node.value}]` : node.childNodes.length === 0 ? (node.textContent ?? '') : [...node.childNodes].map(textOf).join(''))
-  const doneText = () => [...el.querySelectorAll('.card-inbox__done > *')].map(textOf)
+  const doneText = () => [...el.querySelectorAll('.card-inbox__done > :not(.done-cheer__party)')].map(textOf)
   const WAITING = { counts: { all: 22, next: 2, due: 10, new: 10 }, more: { new: 14, next: 3 }, adds: { new: 10, next: 2 }, limited: { new: true, next: true } }
   const SPANISH = [{ folder: 'spanish', label: 'Spanish' }]
 

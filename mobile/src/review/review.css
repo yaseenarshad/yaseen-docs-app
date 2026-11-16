@@ -860,6 +860,11 @@
   font-weight: 600;
 }
 
+/* YAZ-5662: the done screen's 🎉 (`DoneCheer`), big on a phone. */
+.review__done {
+  --done-cheer-size: 58px;
+}
+
 .review__waits {
   margin-top: 10px !important;
 }
