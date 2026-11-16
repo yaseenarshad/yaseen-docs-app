@@ -6,7 +6,7 @@ import type { SignInOutcome } from '../auth/signIn'
 import { vaultId } from '../store'
 import { Confirm } from './Confirm'
 import { Frame, Problem } from './Frame'
-import { FormLine, InstallHint } from './InstallHint'
+import { InstallHint } from './InstallHint'
 import { lazyScreen } from './LazyScreen'
 
 /** The repo list loads as its own chunk when the person taps "Show my repos". */
@@ -29,8 +29,9 @@ export type SignInMode = { kind: 'first' } | { kind: 'add' } | { kind: 'again'; 
 
 /**
  * The sign-in screen (decision 13): the token first, then the repo from the token's list. One link
- * "How to make a token" opens "Set up your phone". "Scan a code" reads the Mac's code (round 11, item 23). The token is
- * pasted here, inside the installed app: Safari and the app do not share storage.
+ * "How to make a token" opens "Set up your phone". "Scan a code" reads the Mac's code (round 11, item 23).
+ * YAZ-5644: THE ONE SIGN-IN SCREEN, in a browser tab and in the Home Screen app alike: the first sign-in, Add vault and
+ * Sign in again all open it (`Shell.tsx`). "Sign in with GitHub" (YAZ-5645) replaces its token form here, and only here.
  */
 export function SignIn({ mode }: { mode: SignInMode }) {
   const app = useApp()
@@ -122,7 +123,6 @@ export function SignIn({ mode }: { mode: SignInMode }) {
             spellCheck={false}
           />
         </label>
-        <FormLine />
         {step === 'typed' && mode.kind !== 'again' && (
           <label className="field">
             <span className="field__label">Repo</span>

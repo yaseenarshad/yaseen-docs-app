@@ -126,6 +126,9 @@ import { freePort } from './freePort'
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
  * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no skip a part).
+ *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
+ *    every bar and the full-screen table inside it, no install hint; a phone (upright and on its side) keeps the full
+ *    width. The install hint of a phone's tab at 320 and 375 px: one block above the form, How and ✕ 44 px taps.
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -183,8 +186,8 @@ await send('Page.enable', {}, page)
 await send('Runtime.enable', {}, page)
 const evaluate = async (expression: string) => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, page)).result.value
 
-async function open(name: string, width: number, height: number) {
-  await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: true }, page)
+async function open(name: string, width: number, height: number, mobile = true) {
+  await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: mobile ? 2 : 1, mobile }, page)
   // A fresh document each time: the same URL again (light, then dark) must never find the last one's "ready" mark.
   await send('Page.navigate', { url: 'about:blank' }, page)
   await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/?${name}-${width}#fixture=${name}` }, page)
@@ -1975,36 +1978,77 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
-// YAZ-5564: the install screen of a browser tab (`#fixture=install-gate`, `install-gate-desktop`), light and dark, at
-// 320 and 375 px: every line on the screen, nothing sideways, the Share picture drawn, the page's own background.
-if (process.env.LAYOUT_GATE !== 'no') {
-  const GATE = `(() => {
-    const r = (el) => el.getBoundingClientRect()
-    const lines = [...document.querySelectorAll('.install-gate h1, .install-gate p, .install-gate li')]
-    const icon = document.querySelector('.install-gate svg[role=img]')
+// YAZ-5644: a computer's browser tab (`styles.css`): from 720 x 560 the phone layout is a centred column of 640 px, the
+// side colour around it, light and dark at 1280 x 800 (not a phone: no touch). Every bar, the sheet of a full-screen
+// table and the page sit inside the column; nothing scrolls sideways; no install hint on a computer. A phone (390 x 844)
+// and a phone on its side (844 x 390) keep the full width. Then the hint of a phone's tab (`sign-in-iphone`, at 320 and
+// 375 px): one short block at the top (at most 3 lines at 320 px), its How and ✕ 44 px taps inside the screen; How opens the steps; ✕ hides it.
+if (process.env.LAYOUT_DESKTOP !== 'no') {
+  const COLUMN = `(() => {
+    const r = (el) => el ? el.getBoundingClientRect() : null
+    const body = r(document.body)
+    const inside = (el) => { const b = r(el); return b === null || (b.left >= body.left - 0.5 && b.right <= body.right + 0.5) }
+    const parts = ['.topbar', '.tabbar', '.screen', '.table-view', '.review__answers'].map((q) => document.querySelector(q)).filter(Boolean)
     return {
-      lines: lines.length,
-      inside: lines.every((el) => r(el).left >= 0 && r(el).right <= innerWidth + 0.5 && r(el).bottom <= innerHeight),
-      icon: icon !== null && r(icon).width === 20,
-      wide: document.scrollingElement.scrollWidth > innerWidth + 1,
-      controls: document.querySelectorAll('input, button, form, a').length,
-      bg: getComputedStyle(document.body).backgroundColor,
+      width: Math.round(body.width), left: Math.round(body.left), right: Math.round(innerWidth - body.right),
+      parts: parts.length, inside: parts.every(inside),
+      side: getComputedStyle(document.documentElement).backgroundColor, bg: getComputedStyle(document.body).backgroundColor,
+      wide: document.scrollingElement.scrollWidth > innerWidth + 1, hint: document.querySelector('section.install') !== null,
     }
+  })()`
+  const SIDE = { light: 'rgb(246, 246, 247)', dark: 'rgb(38, 38, 38)' }
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['sign-in', 'review-mochi', 'page', 'page-table-full', 'settings']) {
+      const file = await open(name, 1280, 800, false)
+      const shot = file.replace('.png', `-desktop-${scheme}.png`)
+      renameSync(file, shot)
+      const m = await evaluate(COLUMN)
+      const ok = m.width === 640 && Math.abs(m.left - m.right) <= 1 && m.parts >= 1 && m.inside && m.side === SIDE[scheme] && m.bg !== m.side && !m.wide && !m.hint
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} desktop ${scheme} at 1280x800: column ${m.width} px, ${m.left} | ${m.right} px at the sides; ${m.parts} parts ${m.inside ? 'inside it' : 'OUTSIDE'}; sides ${m.side}, column ${m.bg}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'nothing sideways'}; ${m.hint ? 'a HINT' : 'no hint'}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+  for (const [w, h] of [[390, 844], [844, 390]] as const) {
+    const file = await open('review-mochi', w, h)
+    const m = await evaluate(COLUMN)
+    const ok = m.width === w && m.left === 0 && !m.wide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  review-mochi phone at ${w}x${h}: full width (${m.width} px from ${m.left}); ${m.wide ? 'SCROLLS SIDEWAYS' : 'nothing sideways'}  ${file}`)
+  }
+  const HINT = `(async () => {
+    const r = (el) => el.getBoundingClientRect()
+    const hint = document.querySelector('section.install')
+    if (!hint) return { none: true }
+    const how = [...hint.querySelectorAll('button')].find((b) => b.textContent.trim() === 'How')
+    const close = hint.querySelector('button[aria-label="Not now"]')
+    const tap = (b) => r(b).width >= 43.5 && r(b).height >= 43.5 && r(b).left >= 0 && r(b).right <= innerWidth + 0.5
+    const first = r(hint).top < r(document.querySelector('form')).top
+    const closed = Math.round(r(hint).height)
+    const taps = tap(how) && tap(close)
+    how.click()
+    await new Promise((x) => setTimeout(x, 100))
+    const steps = hint.querySelectorAll('ol li').length
+    const expanded = how.getAttribute('aria-expanded')
+    close.click()
+    await new Promise((x) => setTimeout(x, 100))
+    return { first, closed, taps, steps, expanded, gone: document.querySelector('section.install') === null, kept: localStorage.getItem('notecard.homeScreenHint'), wide: document.scrollingElement.scrollWidth > innerWidth + 1 }
   })()`
   for (const scheme of ['light', 'dark'] as const) {
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
-    for (const name of ['install-gate', 'install-gate-desktop'])
-      for (const [w, h] of [[320, 568], [375, 667]] as const) {
-        const file = await open(name, w, h)
-        const shot = file.replace('.png', `-${scheme}.png`)
-        renameSync(file, shot)
-        const m = await evaluate(GATE)
-        const bg = scheme === 'dark' ? 'rgb(30, 30, 30)' : 'rgb(255, 255, 255)'
-        const ok = m.lines === (name === 'install-gate' ? 5 : 6) && m.inside && m.icon && !m.wide && m.controls === 0 && m.bg === bg
-        if (!ok) failed++
-        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at ${w}x${h}: ${m.lines} lines ${m.inside ? 'on the screen' : 'CUT'}; Share picture ${m.icon ? 'drawn' : 'MISSING'}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'nothing sideways'}; ${m.controls} controls; background ${m.bg}  ${shot}`)
-      }
+    for (const [w, h] of [[320, 568], [375, 667]] as const) {
+      await evaluate(`(() => { try { localStorage.removeItem('notecard.homeScreenHint') } catch {} })()`)
+      const file = await open('sign-in-iphone', w, h)
+      const shot = file.replace('.png', `-hint-${scheme}.png`)
+      renameSync(file, shot)
+      const m = await evaluate(HINT)
+      const ok = !m.none && m.first && m.closed <= 92 && m.taps && m.steps === 4 && m.expanded === 'true' && m.gone && m.kept === 'hidden' && !m.wide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  the install hint ${scheme} at ${w}x${h}: ${m.none ? 'NO HINT' : `${m.first ? 'above the form' : 'NOT FIRST'}, ${m.closed} px tall; How and ✕ ${m.taps ? '44 px taps' : 'SMALL or OUT'}; How shows ${m.steps} steps (${m.expanded}); ✕ ${m.gone ? 'hides it' : 'LEAVES IT'}, kept ${m.kept}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'nothing sideways'}`}  ${shot}`)
+    }
   }
+  await evaluate(`(() => { try { localStorage.removeItem('notecard.homeScreenHint') } catch {} })()`)
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 // YAZ-5565: Settings › Appearance, light and dark, at 375 px. System (the default) follows the iPhone; Dark and Light,

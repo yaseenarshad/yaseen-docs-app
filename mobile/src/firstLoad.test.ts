@@ -92,7 +92,5 @@ describe('the first load stays small (YAZ-5377, YAZ-5362)', () => {
     // 3. No dev-only or test-only module in any production chunk.
     const all = chunks.flatMap((c) => Object.keys(c.modules).map((m) => `${c.fileName}: ${short(m)}`))
     expect(all.filter((line) => NEVER_BUNDLED.some((r) => r.test(line.split(': ')[1])))).toEqual([])
-    // YAZ-5564: the dev and fixtures override of the install gate (`?as-installed`) is not in the real build.
-    expect(chunks.filter((c) => c.code.includes('as-installed')).map((c) => c.fileName)).toEqual([])
   }, 180_000)
 })

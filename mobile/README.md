@@ -1,7 +1,28 @@
 # mobile/ — Notecard, the phone web app
 
-A plain Vite + React + TypeScript web app (YAZ-5055; this workspace is YAZ-5071). It runs in Safari and as a Home
-Screen web app. It keeps each vault on the phone, in IndexedDB, and talks only to GitHub. There is no server.
+A plain Vite + React + TypeScript web app (YAZ-5055; this workspace is YAZ-5071). It keeps each vault on the device,
+in IndexedDB, and talks only to GitHub. There is no server.
+
+## Where it runs (YAZ-5644, the web version)
+
+* **Any browser tab:** a phone, a tablet or a computer (Chrome, Safari, Firefox). A tab runs the whole app: the
+  sign-in, the vault on the device, the offline worker, the update line. The person chooses the tab, the Home Screen
+  app, or both.
+* **Add to Home Screen** is a choice. On a phone's or a tablet's tab, a light hint at the top of the sign-in and of
+  Settings says so (`src/screens/InstallHint.tsx`, `hintKind` in `src/pwa/homeScreen.ts`): "How" shows the steps, ✕
+  hides it for this browser. No hint on a computer or in the Home Screen app.
+* **Two copies are fine.** On iOS, Safari and the Home Screen app keep their data apart: each is its own copy of the
+  vault, signed in on its own. Both may write: every write is one compare-and-swap commit, again on the newest file
+  when the other copy wrote first. Tabs of one browser share one copy; Web Locks let one tab sync a vault at a time.
+* **A computer (or a tablet):** from a window 720 px wide and 560 px tall, the phone layout is a centred column of
+  640 px (`styles.css`); sheets, menus and the full-screen table stay inside it. A phone on its side keeps the full
+  width. Review takes keys: Space or Enter shows the next part, 1 to 4 answer (`src/review/keys.ts`).
+* **The sign-in** is one screen, `src/screens/SignIn.tsx` (first sign-in, Add vault, Sign in again). "Sign in with
+  GitHub" (YAZ-5645) replaces its token form there.
+* **Safari's 7-day rule:** Safari may delete a site's data after 7 days of Safari use without a visit (not in the
+  Home Screen app). The person then sees the sign-in screen, signs in, and the vault downloads again. Only answers that
+  were never sent are lost.
+* **No storage** (some Private Browsing): the app says so in one message (`NoStorage`, `src/App.tsx`).
 
 ## Run, build, test
 
@@ -197,12 +218,14 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
 * **Build check:** `npm run mobile:build` ends with `publish/checkBuild.ts`: no screen fixtures, no `localhost`, no
   source maps, no token in `dist/`; every publish part there; the size report.
 * **Headless check:** `npm run mobile:prove-offline` (it builds first; `publish/proveOffline.ts`). Chrome with no window opens the
-  build on a local copy of the host (`publish/serve.ts`): zero CSP violations, the worker installs, the app opens with
-  the host down, a new version takes over at the next open, a broken deploy never installs. Run it after a change to
+  build on a local copy of the host (`publish/serve.ts`), as a plain browser tab: zero CSP violations, the worker
+  installs, the storage opens, the app opens with the host down, a new version takes over at the next open, a broken
+  deploy never installs; the same build as the Home Screen app. Run it after a change to
   the service worker, the headers or the update flow.
 * **Layout check:** `npm run mobile:prove-layout` (it builds the fixtures first; `publish/proveLayout.ts`). Chrome with
   no window, at the phone sizes, light and dark: the asks, tables, calendar, tasks, reading look, sheets and folder
-  pages sit inside the screen and the page never scrolls sideways. Run it after a change to a screen's layout.
+  pages sit inside the screen and the page never scrolls sideways. At 1280 x 800 (a computer): the centred column and
+  everything inside it; the phone's install hint. Run it after a change to a screen's layout.
 * **Sheet drag check (YAZ-5472):** `npm run mobile:prove-smooth` (it builds the fixtures first; `publish/proveSmooth.ts`).
   Chrome with no window drags a sheet with touch and reports layouts, frame gaps and late frames, and where the sheet
   ends. Run it after a change to the sheets or their drag.

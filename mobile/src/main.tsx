@@ -9,9 +9,6 @@ import { lazyMedia } from './media/ui/lazyMedia'
 import { lazyFriends } from './friends/ui/lazy'
 import { cameraScanner } from './scan/camera'
 import { openPhoneStorage } from './store'
-import { browserFacts } from './pwa/homeScreen'
-import { asInstalled, gateOf } from './pwa/installGate'
-import { InstallGate } from './screens/InstallGate'
 import { noteStorageCall, noteSyncStatus, startWakeLog } from './store/wakeLog'
 import './styles.css'
 
@@ -30,11 +27,9 @@ else void boot(root)
 
 // A new version NEVER starts by itself, not even here at a cold start: the app starts the version the person runs,
 // and "A new version is ready" waits for a tap on Restart (`pwa/safeMoment.ts`). After that tap, the address loses
-// its update mark. A browser tab shows only the install screen.
+// its update mark. YAZ-5644: the same start in a browser tab (phone, tablet, computer) and in the Home Screen app: the
+// sign-in, the storage and the worker. A phone's tab shows a light hint to add the app (`screens/InstallHint.tsx`).
 async function boot(root: Root) {
-  // YAZ-5564: a browser tab shows only the install screen: no storage opens, no worker, no sign-in.
-  const gate = gateOf(browserFacts(), asInstalled(location.search))
-  if (gate !== 'app') return void root.render(<InstallGate desktop={gate === 'desktop'} />)
   forgetUpdateMark()
   await start(root)
 }

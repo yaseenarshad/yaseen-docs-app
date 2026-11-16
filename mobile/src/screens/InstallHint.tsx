@@ -1,9 +1,6 @@
 import { useState } from 'react'
-import { HOME_SCREEN, browserFacts, safariStep, whereAmI } from '../pwa/homeScreen'
+import { HOME_SCREEN, browserFacts, hintKind, safariStep } from '../pwa/homeScreen'
 import { hideHint, hintHidden } from '../store/hintPref'
-
-/** Where this page runs: a browser tab on an iPhone, another browser, or the Home Screen app. */
-const runsAs = () => whereAmI(browserFacts())
 
 /** The three lines that Safari shows at the left of the address bar (iOS 26). */
 function MenuIcon() {
@@ -15,57 +12,64 @@ function MenuIcon() {
 }
 
 /**
- * "Add Yaseen Docs to your Home Screen": at the top of the sign-in and of Settings, only in a browser tab (never in the
- * Home Screen app). "Not now" hides it for this browser.
+ * YAZ-5644: "Add Yaseen Docs to your Home Screen. It opens like an app." One light line at the top of the sign-in and
+ * of Settings, only in a browser tab on a phone or a tablet (`hintKind`): never on a computer, never in the Home Screen
+ * app. The tab runs the whole app, so this is a choice, never a wall. "How" opens the steps; ✕ ("Not now") hides it for
+ * this browser, and it stays hidden.
  */
 export function InstallHint() {
   const [hidden, setHidden] = useState(hintHidden)
-  const kind = runsAs()
-  if (kind === 'standalone' || hidden) return null
+  const [open, setOpen] = useState(false)
+  const kind = hintKind(browserFacts())
+  if (kind === null || hidden) return null
   return (
     <section className="install" aria-labelledby="install-title">
-      <h2 id="install-title" className="install__title">
-        {HOME_SCREEN.title}
-      </h2>
-      <p className="install__text">{HOME_SCREEN.why}</p>
-      {kind === 'ios-safari' && (
-        <>
-          <ol className="guide-steps install__steps">
-            {HOME_SCREEN.safari.map((s, i) => (
-              <li key={s.tap}>
-                {/* The first tap is drawn: the ☰ glyph is small, and VoiceOver reads it as "trigram for heaven". */}
-                {i === 0 ? (
-                  <>
-                    Tap <MenuIcon /> {s.where}.
-                  </>
-                ) : (
-                  safariStep(s)
-                )}
-              </li>
-            ))}
-          </ol>
-          <p className="muted">{HOME_SCREEN.olderSafari}</p>
-        </>
+      <div className="install__bar">
+        <p id="install-title" className="install__line">
+          <b>{HOME_SCREEN.title}.</b> {HOME_SCREEN.short}
+        </p>
+        <button type="button" className="link-btn install__how" aria-expanded={open} aria-controls="install-steps" onClick={() => setOpen(!open)}>
+          How
+        </button>
+        <button
+          type="button"
+          className="icon-btn install__close"
+          aria-label="Not now"
+          onClick={() => {
+            hideHint()
+            setHidden(true)
+          }}
+        >
+          ✕
+        </button>
+      </div>
+      {open && (
+        <div id="install-steps" className="install__more">
+          <p className="install__text">{HOME_SCREEN.why}</p>
+          {kind === 'ios-safari' && (
+            <>
+              <ol className="guide-steps install__steps">
+                {HOME_SCREEN.safari.map((s, i) => (
+                  <li key={s.tap}>
+                    {/* The first tap is drawn: the ☰ glyph is small, and VoiceOver reads it as "trigram for heaven". */}
+                    {i === 0 ? (
+                      <>
+                        Tap <MenuIcon /> {s.where}.
+                      </>
+                    ) : (
+                      safariStep(s)
+                    )}
+                  </li>
+                ))}
+              </ol>
+              <p className="muted">{HOME_SCREEN.olderSafari}</p>
+            </>
+          )}
+          {kind === 'ios-other' && <p className="install__text">{HOME_SCREEN.otherIos}</p>}
+          {kind === 'android' && <p className="install__text">{HOME_SCREEN.android}</p>}
+          {kind !== 'android' && <p className="install__text install__apart">{HOME_SCREEN.apart}</p>}
+        </div>
       )}
-      {kind === 'ios-other' && <p className="install__text">{HOME_SCREEN.otherIos}</p>}
-      {kind === 'not-ios' && <p className="install__text">{HOME_SCREEN.notIos}</p>}
-      {kind !== 'not-ios' && <p className="install__text install__apart">{HOME_SCREEN.apart}</p>}
-      <button
-        type="button"
-        className="link-btn"
-        onClick={() => {
-          hideHint()
-          setHidden(true)
-        }}
-      >
-        Not now
-      </button>
     </section>
   )
-}
-
-/** The sign-in form's one line, on an iPhone outside the Home Screen app. */
-export function FormLine() {
-  const kind = runsAs()
-  return kind === 'ios-safari' || kind === 'ios-other' ? <p className="muted">{HOME_SCREEN.formLine}</p> : null
 }

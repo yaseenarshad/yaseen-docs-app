@@ -35,6 +35,8 @@ import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import { DueEnd } from './DueEnd'
 import { CardActions } from '../cardMenu/lazy'
+import { overlayCount } from '../app/browserHistory'
+import { reviewKey } from './keys'
 import './review.css'
 
 /**
@@ -546,6 +548,24 @@ function SessionScreen({
     if (blank !== null && cardBox.current?.contains(blank) === true) return showPart(Number(blank.dataset.hidden))
     advance()
   }
+
+  // YAZ-5644: the keyboard (`keys.ts`): only while this card is on the screen with nothing over it (no menu, sheet or
+  // ask), through the same `advance` and `answerWith` as a tap (the guard holds).
+  const onKey = useRef<(e: KeyboardEvent) => void>(() => {})
+  onKey.current = (e) => {
+    if (!shown || menu !== null || card === null || overlayCount() > 0) return
+    if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]') !== null) return
+    const key = reviewKey(e, ratings.length)
+    if (key === null) return
+    e.preventDefault()
+    if (key.kind === 'next') advance()
+    else answerWith(ratings[key.index])
+  }
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => onKey.current(e)
+    document.addEventListener('keydown', listener)
+    return () => document.removeEventListener('keydown', listener)
+  }, [])
 
   const filter = session.filter
   const countButton = (

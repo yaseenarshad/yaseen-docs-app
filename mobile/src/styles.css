@@ -84,6 +84,23 @@ body {
   inset: 0;
 }
 
+/* YAZ-5644: A COMPUTER (OR A TABLET): THE PHONE LAYOUT IN A CENTRED COLUMN. From a window 720 px wide AND 560 px tall
+   (a phone on its side stays full width), the body is a column of 640 px, the side colour around it. The transform
+   makes the column the box of every `position: fixed` part (sheets, menus, the full-screen table, the update line),
+   so they stay inside it. `publish/proveLayout.ts` checks it at 1280 x 800. */
+@media (min-width: 720px) and (min-height: 560px) {
+  html {
+    background: var(--bg-side);
+  }
+  body {
+    max-width: 640px;
+    margin: 0 auto;
+    transform: translateZ(0);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+}
+
 body {
   font: 16px/1.45 var(--font);
   color: var(--fg);
@@ -507,19 +524,36 @@ button,
   font-size: 14px;
 }
 
-/* The install hint: a quiet card at the top of the sign-in and of Settings, only in a browser tab. */
+/* YAZ-5644: the install hint: ONE light line at the top of the sign-in and of Settings, only in a phone's or a tablet's
+   browser tab. "How" opens the steps under it; ✕ hides it. */
 .install {
   margin: 0 0 16px;
-  padding: 12px 14px 4px;
+  padding: 0 0 0 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-side);
 }
 
-.install__title {
-  margin: 0 0 4px;
-  font-size: 17px;
-  font-weight: 600;
+.install__bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.install__line {
+  flex: 1;
+  min-width: 0;
+  margin: 8px 0;
+  font-size: 15px;
+}
+
+.install__how,
+.install__close {
+  flex-shrink: 0;
+}
+
+.install__more {
+  padding: 0 12px 8px 0;
 }
 
 .install__text {
