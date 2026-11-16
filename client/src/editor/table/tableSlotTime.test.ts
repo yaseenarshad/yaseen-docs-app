@@ -200,7 +200,11 @@ describe('the pill on the now line', () => {
     expect(view.state.doc.textContent).not.toContain('table-slot')
     // No padding down the whole cell; a clipped (one-line) cell keeps the padding, without the floats.
     expect(calendarCss).not.toMatch(/\.table-slot-pad > p \{\s*padding-right/)
-    expect(calendarCss).toMatch(/@container style\(--table-text: clip\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-slot-pad:not\(\[data-cell-text='wrap'\]\) > p \{\s*padding-right: var\(--table-clip-pad\);/)
+    expect(calendarCss).toMatch(/@container style\(--table-text: clip\) \{\s*\.table-slot-pad:not\(\[data-cell-text='wrap'\]\) > p \{\s*padding-right: var\(--table-clip-pad\);/)
+    // "30:00 left": the room (and a clipped cell's padding) 10 × 7 + 26 px; the floats styled where they are made.
+    expect(cell.style.getPropertyValue('--table-clip-pad')).toBe('96px')
+    const room = floats!.querySelector<HTMLElement>('.table-slot-room')!
+    expect([room.style.float, room.style.clear]).toEqual(['right', 'right'])
     vi.setSystemTime(new Date(2026, 10, 2, 10, 40, 0))
     await vi.advanceTimersByTimeAsync(61_000)
     // An empty last cell: the pill, no room; the room left the cell it was in.

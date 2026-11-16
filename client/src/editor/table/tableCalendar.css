@@ -66,48 +66,18 @@
    row's top edge, above the row's bottom edge at its end. The pill sticks to the right end of the table's visible part
    (a table wider than the window): its own file, as the chip's, since `table.css` holds one sticky rule. Out of the flow, tabular digits: its text never moves the table. YAZ-5658: a
    last cell with text keeps room for the pill on the lines the pill crosses only (`slotRoom`, `shared/tableSlots.ts`):
-   two floats at the start of its first paragraph, a gap, then the room as wide as the slot's widest text
-   (`--table-slot-chars`); its text wraps around the room there and runs full width on every other line. A clipped
-   cell (one line) keeps the right padding (`--table-clip-pad`) instead. */
+   two floats at the start of its first paragraph, a gap, then the room as wide as the slot's widest text; its text
+   wraps around the room there and runs full width on every other line. A clipped cell (one line) keeps the right
+   padding (`--table-clip-pad`) instead. */
 .milkdown .ProseMirror .milkdown-table-block .table-slot-host:not(.table-frozen-col, .table-frozen-row > *) {
   position: relative;
 }
 
-.milkdown .ProseMirror .milkdown-table-block :is(th, td).table-slot-pad {
-  --table-clip-pad: calc(var(--table-slot-chars, 10) * 7px + 26px);
-}
-
-/* The room's two floats (their heights set by `placeSlotRooms`); with less than 4em beside it, the room takes the line. */
-.milkdown .ProseMirror .milkdown-table-block .table-slot-floats {
-  display: contents;
-}
-
-.milkdown .ProseMirror .milkdown-table-block .table-slot-gap {
-  float: right;
-  width: 0;
-  height: 0;
-}
-
-.milkdown .ProseMirror .milkdown-table-block .table-slot-room {
-  --slot-room: calc(var(--table-slot-chars, 10) * 7px + 26px);
-  float: right;
-  clear: right;
-  width: max(var(--slot-room), min(100%, calc((var(--slot-room) + 4em - 100%) * 1000)));
-  height: 1.5em;
-}
-
-/* A clipped cell is one line: the padding at its right, no floats. */
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] .table-slot-floats {
-  display: none;
-}
-
+/* The room's floats are styled where they are made (`slotRoom`): no bytes here. A clipped cell is one line: its
+   padding at the right (`--table-clip-pad`, the cell's own, from the decoration); `table.css` pads a clipped column. */
 @container style(--table-text: clip) {
-  .milkdown .ProseMirror .milkdown-table-block .table-slot-pad:not([data-cell-text='wrap']) > p {
+  .table-slot-pad:not([data-cell-text='wrap']) > p {
     padding-right: var(--table-clip-pad);
-  }
-
-  .milkdown .ProseMirror .milkdown-table-block :is(th, td):not([data-cell-text='wrap']) .table-slot-floats {
-    display: none;
   }
 }
 
