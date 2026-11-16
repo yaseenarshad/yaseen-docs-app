@@ -2,7 +2,7 @@
  * Calendar bars follow the view's sort (YAZ-5603) against the REAL app: a folder's Calendar view sorted by Order, with
  * two bars over the same first shown day where the shorter one has the lower Order (the "Sarmad" case). In Month, Week
  * and Rolling, with "Fold long days" On and Off and "Card titles: Wrap": the bar that sorts first sits above; no two
- * bars, and no bar and card, share a spot. With the sort taken away the longer bar is on top again (start, then length).
+ * bars, and no bar and card, share a spot. Folded, a Month or Rolling row shows at most 2 lanes (YAZ-5604 item 7). With the sort taken away the longer bar is on top again (start, then length).
  * The run is the person's choice (it opens a window): `npm run e2e:only -- calendarBarOrder`.
  * `BAR_ORDER_FOLDER=<folder>` runs the overlap checks on a COPY of that folder (never the folder itself), and
  * `BAR_ORDER_SHOTS=<dir>` keeps a screenshot of each view there.
@@ -164,20 +164,36 @@ const shoot = async (name: string) => {
   await win.screenshot({ path: path.join(shots, `${name}.png`) })
 }
 
+/** In the row where `a` and `b` both show, whether `hidden` has no piece there (folded into "+N more"); null when no row has both. */
+const foldedOut = (rows: Awaited<ReturnType<typeof measure>>['rows'], a: string, b: string, hidden: string): boolean | null => {
+  const row = rows.find((r) => r.some((x) => x.title.startsWith(a)) && r.some((x) => x.title.startsWith(b)))
+  return row === undefined ? null : !row.some((x) => x.title.startsWith(hidden))
+}
+
 for (const scale of ['month', 'week', 'rolling'] as const)
   for (const fold of [true, false])
     test(`${scale}, fold ${fold ? 'On' : 'Off'}: the bar that sorts first is on top, and nothing overlaps`, async () => {
       const grid = contents(win).locator('.view-cal__grid')
       await setCalendar({ calendarScale: scale, foldDays: fold ? undefined : false })
       await expect(grid).toHaveClass(scale === 'month' ? /^view-cal__grid(?! view-cal__grid--(week|rolling))/ : new RegExp(`view-cal__grid--${scale}`))
-      await settle()
+      // A folded Month or Rolling row shows at most 2 lanes of bars (YAZ-5604 item 7): "Long trip" (Order 9) is the third,
+      // so it goes into "+N more" in the row it shares with the other two. Week, and fold Off, show every lane.
+      const folds = fold && scale !== 'week'
+      // Wait until the fold setting has loaded: the page shows what the setting says, not the one before.
+      await expect
+        .poll(async () => {
+          await settle()
+          const rows = (await measure(win)).rows
+          return folds ? foldedOut(rows, 'Short meeting', 'Conference', 'Long trip') : above(rows, 'Short meeting', 'Long trip')
+        })
+        .toBe(true)
       const m = await measure(win)
       await shoot(`${scale}-fold-${fold ? 'on' : 'off'}`)
       expect(m.rows.flat().length).toBeGreaterThan(0)
       expect.soft(m.overlaps, 'a bar on a bar or a card').toEqual([])
       if (real === undefined) {
-        expect.soft(above(m.rows, 'Short meeting', 'Long trip'), 'Short meeting (Order 1) above Long trip (Order 9)').toBe(true)
-        expect.soft(above(m.rows, 'Conference', 'Long trip'), 'Conference (Order 3) above Long trip (Order 9)').toBe(true)
+        expect.soft(above(m.rows, 'Short meeting', 'Conference'), 'Short meeting (Order 1) above Conference (Order 3)').toBe(true)
+        if (!folds) expect.soft(above(m.rows, 'Conference', 'Long trip'), 'Conference (Order 3) above Long trip (Order 9)').toBe(true)
       }
     })
 
@@ -185,8 +201,12 @@ test('no sort: start, then length, as before', async () => {
   test.skip(real !== undefined, 'the made-up folder only')
   await setCalendar({ calendarScale: 'month', foldDays: undefined, sort: false })
   await expect(contents(win).locator('.view-cal__grid')).not.toHaveClass(/view-cal__grid--(week|rolling)/)
-  await expect.poll(async () => above((await measure(win)).rows, 'Long trip', 'Short meeting')).toBe(true)
-  await settle()
+  await expect
+    .poll(async () => {
+      await settle()
+      return above((await measure(win)).rows, 'Long trip', 'Short meeting')
+    })
+    .toBe(true)
   const m = await measure(win)
   await shoot('month-no-sort')
   expect(m.overlaps).toEqual([])
