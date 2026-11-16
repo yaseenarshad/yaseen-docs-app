@@ -119,7 +119,7 @@ import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CARD_FILTERS, CardInboxBar } from './CardInboxBar'
-import { CardStateChip, answerIcon, answerLine } from './cardInboxChip'
+import { CardAgainChip, CardStateChip, answerIcon, answerLine, showsAgain } from './cardInboxChip'
 import { FocusIcon } from './cardInboxIcons'
 import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
 import { CardInboxHints } from './CardInboxHints'
@@ -548,6 +548,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
           {card !== null && (
             <>
               <CardStateChip card={card} />
+              {/* YAZ-5626 (the phone's YAZ-5594): a card back after a Forgot says so, "Again", beside its state. */}
+              {showsAgain(card) && <CardAgainChip />}
               <span className="card-inbox__head">
                 <CardId id={card.id} onNotice={onNotice} />
                 {card.page?.next === true && <CardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}

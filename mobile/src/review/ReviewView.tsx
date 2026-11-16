@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { createPortal } from 'react-dom'
 import { useMenuToggle } from '../app/menuToggle'
 import { useAnswerTimer } from '@client/review/answerTimer'
-import { cardStateText } from '@client/review/cardInboxChip'
+import { AGAIN_LABEL, AGAIN_TITLE, cardStateText, showsAgain } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
 import { newCardsFrom } from '@client/review/inboxMenu'
 import { addedLine, resetLine, reviewMoreCount, reviewMoreLabel, waitingLine } from '@client/review/cardWords'
@@ -596,9 +596,9 @@ function SessionScreen({
                   <i aria-hidden="true" />
                   {card.isNew ? 'New' : 'Due'}
                 </span>
-                {card.repeat === true && (
-                  <span className="review__again" title="You forgot it: it comes back until you remember it">
-                    Again
+                {showsAgain(card) && (
+                  <span className="review__again" title={AGAIN_TITLE}>
+                    {AGAIN_LABEL}
                   </span>
                 )}
                 {crumb.length > 0 && (

@@ -176,6 +176,22 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(band()).toBe('Capital of France')
   })
 
+  it('YAZ-5626: a card back after a Forgot wears "Again" beside its state chip, as on the phone (YAZ-5594); others none', () => {
+    mount(TWO_SIDES)
+    const again = () => el.querySelector('.card-inbox__above .card-inbox__again')
+    expect(again()).toBeNull()
+    session = { ...session, card: { ...session.card!, isNew: false, repeat: true } }
+    render()
+    expect(again()?.textContent).toBe('Again')
+    expect(again()?.getAttribute('title')).toBe('You forgot it: it comes back until you remember it')
+    // Right after the state chip, before the ID.
+    expect(again()?.previousElementSibling?.classList.contains('card-inbox__state')).toBe(true)
+    // Remembered: the card leaves; the next one has no label. The done screen has none.
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', repeat: undefined } }
+    render()
+    expect(again()).toBeNull()
+  })
+
   it('YAZ-4999: an up-next card shows the chip "Up next" after the ID; its × removes the mark (setNext)', () => {
     mount(TWO_SIDES)
     expect(el.querySelector('.card__next')).toBeNull()
