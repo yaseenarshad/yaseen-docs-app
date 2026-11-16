@@ -206,6 +206,29 @@ const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'n
 const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
 const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/
 const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
+const DECIMAL_RE = /^(-?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/
+
+/** A decimal's value as one key (`2.50`, `25e-1` and `2.5` share one), so two forms of one number compare equal. */
+function decimalKey(text: string): string {
+  const [, sign, whole, frac = '', exp = '0'] = DECIMAL_RE.exec(text)!
+  let digits = (whole + frac).replace(/^0+/, '')
+  if (digits === '') return '0'
+  let e = BigInt(exp) - BigInt(frac.length)
+  const kept = digits.replace(/0+$/, '')
+  e += BigInt(digits.length - kept.length)
+  digits = kept
+  return `${sign}${digits}e${e}`
+}
+
+/**
+ * A bare number token as a value (YAZ-5647 item 2): a number when a double holds it exactly, else its text unchanged.
+ * `1e400` (Infinity) and `12345678901234567890` (a double makes it …000) read as text, so the card shows what the line
+ * says and a write keeps the part's bytes. `2.50`, `1E5`, `1e-7` hold exactly and stay numbers.
+ */
+function numberValue(text: string): CardPropertyScalar {
+  const n = Number(text)
+  return Number.isFinite(n) && decimalKey(String(n)) === decimalKey(text) ? n : text
+}
 
 /**
  * Can `name` be a card property's name (YAZ-5379)? A property name (`isPropertyName`: not empty, no space at either
@@ -244,7 +267,7 @@ function parseProperty(text: string): { name: string; value: CardPropertyValue }
   const values: CardPropertyScalar[] = []
   for (const t of rest) {
     if (t.startsWith('"')) values.push(unquoteText(t))
-    else if (NUMBER_RE.test(t)) values.push(Number(t))
+    else if (NUMBER_RE.test(t)) values.push(numberValue(t))
     else if (t === 'true' || t === 'false') values.push(t === 'true')
     else return null
   }
