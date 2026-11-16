@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { loadAccount, saveAccount } from '../auth/account'
 import { GOOD, mount, newPhone, NOW, signInWithForm, type Harness } from '../screens/testing'
 import { clockTime } from './dot'
 import { LAST_SYNC_STATE } from './lastSync'
 import { DOT_TIMES } from './storeCheck'
 import { fakeAnswers, lostAnswer, type FakeAnswers } from './testing'
+
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
 
 /**
  * The dot in the top bar (YAZ-5080): the real app (4A) with the fake sync and a fake answer list. Each state, what a

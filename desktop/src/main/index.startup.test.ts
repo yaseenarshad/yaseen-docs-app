@@ -123,7 +123,14 @@ vi.mock('./library/folder', () => ({ ensureLibraryFolder: vi.fn(async () => '/us
 vi.mock('./updater', async (importOriginal) => ({ shortVersion: (await importOriginal<typeof import('./updater')>()).shortVersion, createUpdater: h.createUpdater, runFile: vi.fn(), spawnDetached: vi.fn(), RELEASES_PAGE: 'https://github.com/yaseenarshad/yaseen-docs-app/releases/latest' }))
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))
 // The Mac's send of the numbers (YAZ-5086) has its own tests (`friends/`): here it is a stub, with no watcher and no call.
-vi.mock('./friends', () => ({ startFriendsSend: () => ({ look: vi.fn(), tokenChanged: vi.fn(), stop: vi.fn(async () => undefined) }) }))
+const friendsStub = vi.hoisted(() => ({ on: false, start: vi.fn() }))
+vi.mock('./friends', () => ({ startFriendsSend: friendsStub.start.mockImplementation(() => ({ look: vi.fn(async () => ({ status: 'idle' })), tokenChanged: vi.fn(), stop: vi.fn(async () => undefined) })) }))
+// YAZ-5652: the Friends switch, as `index.ts` reads it on ready.
+vi.mock('@shared/features', () => ({
+  get FRIENDS_ENABLED() {
+    return friendsStub.on
+  },
+}))
 vi.mock('./drawImport', async (importOriginal) => ({ ...(await importOriginal<typeof import('./drawImport')>()), startDrawImport: h.startDrawImport }))
 vi.mock('./cardSkill', async (importOriginal) => ({ ...(await importOriginal<typeof import('./cardSkill')>()), ensureCardSkill: h.ensureCardSkill, cardSkillStamp: h.cardSkillStamp }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
@@ -155,6 +162,7 @@ function gate(): { promise: Promise<void>; open: () => void } {
 
 beforeEach(async () => {
   vi.clearAllMocks()
+  friendsStub.on = false
   Object.assign(h.s, { order: [], on: new Map(), windows: [], stored: [] })
   h.handles.clear()
   h.updater.kind = 'idle'
@@ -376,14 +384,34 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith('update:state-changed', { kind: 'ready', version: '1.0.13' })
   })
 
-  it('on ready registers the four update doors (and the memory meter\'s, YAZ-3737 D1; the spell checker\'s, YAZ-4464; the friends send\'s, YAZ-5086) before the windows restore, then starts the timer (D7)', async () => {
+  it('on ready registers the four update doors (and the memory meter\'s, YAZ-3737 D1; the spell checker\'s, YAZ-4464) before the windows restore, then starts the timer (D7)', async () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['course-audio:chapter', 'course-audio:chapter-starting', 'course-audio:open', 'friends:status', 'memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['course-audio:chapter', 'course-audio:chapter-starting', 'course-audio:open', 'memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })
+  })
+
+  it('YAZ-5652: with Friends off, the friends sender never starts and `friends:status` is not there', async () => {
+    h.s.ready()
+    await settle()
+    expect(friendsStub.start).not.toHaveBeenCalled()
+    expect(h.handles.has('friends:status')).toBe(false)
+  })
+
+  it("YAZ-5652: with Friends on, today's start: the sender starts once and `friends:status` answers its look", async () => {
+    vi.clearAllMocks()
+    friendsStub.on = true
+    h.handles.clear()
+    vi.resetModules()
+    await import('./index')
+    h.s.ready()
+    await settle()
+    await settle()
+    expect(friendsStub.start).toHaveBeenCalledOnce()
+    await expect(invoke('friends:status')).resolves.toEqual({ ok: true, value: { status: 'idle' } })
   })
 
   it('the course sound (YAZ-5159): its doors are there at start, and nothing downloads at app start', async () => {

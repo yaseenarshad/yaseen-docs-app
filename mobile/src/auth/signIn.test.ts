@@ -10,6 +10,9 @@ import { WRITE_PROBE, checkSignIn, signInMessage, type SignInError } from './che
 import { loadFriendsAccount, recordGistsRefused } from './friends'
 import { forgetVaultAndToken, signIn, signInAgain, signOutAndErase, startState, type SignInDeps } from './signIn'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 const NOW = Date.UTC(2026, 10, 13, 12)
 const GOOD = 'github_pat_11GOODGOOD0goodgoodgood_' + 'g'.repeat(59)
 const NO_GISTS = 'github_pat_11NOGISTS0nogistsnogists_' + 'n'.repeat(59)

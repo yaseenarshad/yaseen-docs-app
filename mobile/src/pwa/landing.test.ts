@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 /**
  * YAZ-5289: the landing page (`landing.ts`) in a page, for each kind of link. The code is read from the fragment ONLY
  * (the part that no browser sends to a server). A code in the query (`?c=`) is not read. The code is drawn as text.

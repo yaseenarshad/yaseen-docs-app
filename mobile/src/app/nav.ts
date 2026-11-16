@@ -7,6 +7,8 @@
  * Daily pages are on. A plain vault has Search alone, and then there is no tab bar at all (`showsTabBar`).
  */
 
+import { FRIENDS_ENABLED } from '@shared/features'
+
 export type Tab = 'friends' | 'review' | 'search'
 
 /** In the order of the tab bar. There is no Pages tab: Search lists the pages when its box is empty (4C). */
@@ -25,8 +27,11 @@ export interface VaultTabs {
 /** A vault with neither: Search alone. Also the answer while nothing is known yet. */
 export const PLAIN_VAULT: VaultTabs = Object.freeze({ review: false, daily: false })
 
-/** The tab may show in this vault: Search always; Review and Friends with Review on. */
-export const hasTab = (tab: Tab, vault: VaultTabs): boolean => tab === 'search' || vault.review
+/**
+ * The tab may show in this vault: Search always; Review and Friends with Review on. YAZ-5652: Friends never while
+ * it is off (`shared/features.ts`); a way to it (the opening tab, "Finish it in Friends") lands on another tab.
+ */
+export const hasTab = (tab: Tab, vault: VaultTabs): boolean => tab === 'search' || (vault.review && (tab !== 'friends' || FRIENDS_ENABLED))
 
 /** The tabs of the bar for this vault, in order. */
 export const tabsOf = (vault: VaultTabs): readonly { id: Tab; label: string }[] => TABS.filter((t) => hasTab(t.id, vault))
@@ -39,7 +44,7 @@ export const tabIn = (tab: Tab, vault: VaultTabs): Tab => (hasTab(tab, vault) ? 
 
 /** Decision 21: the app opens on Friends. With no friend yet, it opens on Review. A vault with Review off: Search. */
 export function openingTab(hasFriends: boolean, vault: VaultTabs): Tab {
-  return tabIn(hasFriends ? 'friends' : 'review', vault)
+  return tabIn(hasFriends && hasTab('friends', vault) ? 'friends' : 'review', vault)
 }
 
 /** A screen over the tabs (or over the first sign-in). The last one in the stack shows; Back closes it. */

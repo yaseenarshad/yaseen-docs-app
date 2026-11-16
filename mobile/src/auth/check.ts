@@ -1,3 +1,4 @@
+import { FRIENDS_ENABLED } from '@shared/features'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { GithubError, githubClient, repoPath, type FetchLike, type GithubClient } from '../github/client'
 import type { GistsAccess, VaultAccount } from './account'
@@ -138,7 +139,8 @@ export async function checkSignIn(input: SignInInput, deps: CheckDeps = {}): Pro
       login: u.login,
       name: u.name ?? null,
       avatarUrl: u.avatar_url,
-      gists: await gistsAccess(client, user.headers),
+      // YAZ-5652: only Friends uses gists; with it off, no Gists check (no `POST /gists`): not known.
+      gists: FRIENDS_ENABLED ? await gistsAccess(client, user.headers) : 'unknown',
       expiresAt: readTokenEnd(user.headers),
       checkedAt: now(),
     }

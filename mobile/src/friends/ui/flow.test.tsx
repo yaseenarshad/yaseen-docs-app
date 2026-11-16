@@ -9,6 +9,9 @@ import { gistsFetch } from '../testing'
 import { createOwnNumbers } from '../ownNumbers'
 import { createFriendsService } from './service'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 /**
  * YAZ-5085 (4E4): the whole add-a-friend flow in BOTH orders, through the screens, on the REAL friends logic (4E1, 4E2,
  * the marks) and a fake gist API behind `fetch` (no real GitHub call). Ali uses the app; Bea is a second phone driven

@@ -21,7 +21,7 @@ import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerFriendsIpc } from './ipc/friends'
 import { onRendererSecretSet } from './ipc/secrets'
-import { startFriendsSend } from './friends'
+import { FRIENDS_ENABLED } from '@shared/features'
 import { registerSpellerIpc } from './ipc/speller'
 import { registerUpdateIpc } from './ipc/update'
 import { askHeap, askTabs, askViews, registerMemoryIpc } from './ipc/memory'
@@ -445,11 +445,15 @@ app.whenReady().then(() => {
   }, settingsFolder)
   // The Mac sends the numbers too (YAZ-5086, decision 16): with the same token, when a file with cards changes, and once
   // after the start. A new token (or a removed one) starts over.
-  const friendsSend = startFriendsSend(store, secrets, app.getPath('userData'))
-  registerFriendsIpc(() => friendsSend.look())
-  onRendererSecretSet((name) => {
-    if (name === GITHUB_TOKEN_SECRET) friendsSend.tokenChanged()
-  })
+  // YAZ-5652: only with Friends on (`shared/features.ts`). Off, nothing starts: no sender, no gist call, no
+  // `friends:status`; and the sender is a chunk of its own (`import()`), so with the switch off the build drops it.
+  if (FRIENDS_ENABLED) {
+    const friendsSend = import('./friends').then((m) => m.startFriendsSend(store, secrets, app.getPath('userData')))
+    registerFriendsIpc(async () => (await friendsSend).look())
+    onRendererSecretSet((name) => {
+      if (name === GITHUB_TOKEN_SECRET) void friendsSend.then((f) => f.tokenChanged())
+    })
+  }
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'), store.get().settingsFolder)

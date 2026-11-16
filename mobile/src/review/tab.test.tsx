@@ -8,6 +8,9 @@ import { saveVaultList } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
 import { NOW, cardBlock, cardFile, page } from './testing'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 /**
  * 4B in the app: the Review tab replaces 4A's placeholder; "Open page" lands in 4C's read-only page (at the card) and
  * "Open card" in 4C's card view, through 4A's navigation; Back comes back to the card.

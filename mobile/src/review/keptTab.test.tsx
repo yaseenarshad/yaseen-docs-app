@@ -7,6 +7,9 @@ import { saveVaultList } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
 import { NOW, cardBlock, cardFile, page } from './testing'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 // Checker round 2 probes for YAZ-5224 (the Review tab stays mounted). Made-up data only.
 
 let h: Harness

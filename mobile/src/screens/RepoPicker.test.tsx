@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadVaultList } from '../store'
 import { GOOD, MANY, mount, NO_CONTENTS, NO_REPOS, signInWithForm, WRONG, type Harness } from './testing'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 /**
  * YAZ-5408: paste the token, then pick the repo from the token's list. The pick runs the existing check (3E) unchanged.
  * "Type the repo name" stays as a small fallback.
