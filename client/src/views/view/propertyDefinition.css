@@ -233,6 +233,11 @@
   width: 100%;
   padding: 9px;
 }
+/* A row without the pencil (YAZ-5770): its words start after the pencil's slot (9 px padding + 15 px glyph + 8 px gap),
+   as ContextMenu's `.ctx-menu--glyphs` rows do. */
+.frontmatter-property-menu__items--glyphs > .view-popover__item:not(:has(> .ctx-menu__label)) {
+  padding-left: 32px;
+}
 .frontmatter-property-menu__actions {
   display: flex;
   justify-content: flex-end;

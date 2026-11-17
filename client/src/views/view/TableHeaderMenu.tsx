@@ -252,7 +252,8 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
-      <div className="view-header-menu">
+      {/* The pencil on "Rename column…" (YAZ-5770): the menu's other rows start their words after the same empty slot, as ContextMenu's do. */}
+      <div className={mode === 'menu' ? 'view-header-menu ctx-menu--glyphs' : 'view-header-menu'}>
         {mode === 'edit' ? (
           <ColumnDetail
             columnKey={key}

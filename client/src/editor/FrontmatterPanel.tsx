@@ -880,7 +880,8 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
             onDone={() => setPropertyMenu(null)}
           />
         ) : (
-          <div role="menu" aria-label={`Property ${propertyMenu.key}`} className="frontmatter-property-menu__items">
+          // The pencil on Rename… (YAZ-5770): with it shown, the other rows start their words after its slot.
+          <div role="menu" aria-label={`Property ${propertyMenu.key}`} className={renameable(propertyMenu.row) ? 'frontmatter-property-menu__items frontmatter-property-menu__items--glyphs' : 'frontmatter-property-menu__items'}>
             {/* A column's row edits that column on its folder (C2, C6); a field no folder defines, with a vault root, the vault's declaration (YAZ-4551 D21). */}
             {typeable(propertyMenu.row) && <button className="view-popover__item" type="button" role="menuitem" onClick={() => { const menu = propertyMenu; unlockThen(menu.anchor, () => setPropertyMenu({ ...menu, editing: true })) }}>Edit property <span>›</span></button>}
             {renameable(propertyMenu.row) && <button className="view-popover__item" type="button" role="menuitem" onClick={() => { const menu = propertyMenu; unlockThen(menu.anchor, () => setPropertyMenu({ ...menu, renaming: true })) }}><span className="ctx-menu__label"><PencilIcon />Rename…</span></button>}

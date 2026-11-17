@@ -34,4 +34,12 @@ describe('the rename rows (YAZ-5770)', () => {
     })
     expect(missing).toEqual([])
   })
+
+  it('the two hand-built menus line their other rows up with the pencil row: the header menu wears ContextMenu\'s class, the property menu its own rule', () => {
+    const read = (file: string) => readFileSync(path.join(src, file), 'utf8')
+    expect(read('views/view/TableHeaderMenu.tsx')).toContain("mode === 'menu' ? 'view-header-menu ctx-menu--glyphs'")
+    expect(read('app.css')).toContain('.ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__item:not(:has(> .ctx-menu__label))')
+    expect(read('editor/FrontmatterPanel.tsx')).toContain('frontmatter-property-menu__items--glyphs')
+    expect(read('views/view/propertyDefinition.css')).toMatch(/\.frontmatter-property-menu__items--glyphs > \.view-popover__item:not\(:has\(> \.ctx-menu__label\)\) \{\s*padding-left: 32px;/)
+  })
 })
