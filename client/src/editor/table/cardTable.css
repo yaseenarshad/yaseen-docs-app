@@ -117,6 +117,17 @@
   background-image: var(--table-page-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none);
 }
 
+/* Inline code in a cell (YAZ-5683): inline, not Crepe's `inline-block` (`.milkdown .ProseMirror code`), whose box was as
+   wide as its longest unbreakable run: a path with no spaces ran over the next column. Inline, it breaks as the cell's
+   text does (at a space, then a word that does not fit, ProseMirror's `break-word`), and its background and rounded
+   ends go with it on each line. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td) code,
+.card__sides .card__side :is(th, td) code {
+  display: inline;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
 /* Header row (YAZ-4774): Settings › Tables › Header row on `.app`, a page table's own parts on its block, a folder
    table's on its `.view-table` (`views.css`), a calendar's day names on its `.view-cal__week`, the "Aa" chip on its
    `.view-style__chip` (YAZ-4834 P1) and a Super table view's on its `.super-view` (P21), each as `data-table-header-*`;
