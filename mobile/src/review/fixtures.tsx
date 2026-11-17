@@ -104,6 +104,31 @@ const ROOM = (kind: string): Record<string, string> => ({
 })
 
 /**
+ * YAZ-5711: `#fixture=review-mochi-pill`: Review's first card holds a page pill ([[Plan]]); the proof taps it (an
+ * Explore panel over Review) and measures that the Review screen behind stays still.
+ */
+const MOCHI_PILL: Record<string, string> = {
+  ...MOCHI,
+  'learning/memory.md': page('Memory', block('How does a review plan keep a fact? See [[Plan]].\n---\nYou see the fact again just before you would {{forget}} it.', `MEM-1, ${DUE}`)),
+}
+
+/**
+ * YAZ-5713: the card's crumb as Yaseen's screenshot had it, "New cards test / History / History cards", side 2 showing;
+ * `-deep` four folders above the page. `-bubble`: a tap on the crumb (the full path and Show in Search); `-search`
+ * (YAZ-5714): Show in Search pressed, the Search tab open at the page, its row lit. Made-up data.
+ */
+const CRUMB = (deep: boolean): Record<string, string> => ({
+  '.yaseendocs/review.json': '{}',
+  [deep ? 'School/Year two/Spring term/World history/history-cards.md' : 'New cards test/History/history-cards.md']: page(
+    'History cards',
+    block('The year the US declared independence?\n---\n{{1776}}', 'NC-6042, title "The year the US declared independence"'),
+  ),
+  'New cards test/Other page.md': page('Other page', 'Text.'),
+  'School/Notes.md': page('Notes', 'Text.'),
+  'Zoo.md': page('Zoo', 'Text.'),
+})
+
+/**
  * YAZ-5495 (the Mac's YAZ-5043): the end of Due today. Five made-up due cards and three new ones; `-clear` has no new
  * card. `#fixture=review-due-missed` (the % screen after one Forgot), `-done` (Due today is done, Learn new cards),
  * `-clear` (done, nothing new left).
@@ -157,7 +182,7 @@ const press = (name: string | RegExp) => {
 const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
-  const files = name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name.startsWith('review-room-') ? ROOM(name.slice('review-room-'.length)) : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const files = name.startsWith('review-crumb') ? CRUMB(name.startsWith('review-crumb-deep')) : name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name === 'review-mochi-pill' ? MOCHI_PILL : name.startsWith('review-mochi') ? MOCHI : name.startsWith('review-room-') ? ROOM(name.slice('review-room-'.length)) : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
   // YAZ-5706: the zoom is kept on this phone; each fixture starts at 100% (one browser runs them all).
   writeReviewZoom(name === 'review-room-z50' ? 50 : name === 'review-room-z200' ? 200 : 100)
@@ -176,9 +201,11 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
           : { status: 'missing', path, why: 'offline' },
   }
   const backend = memoryBackend()
-  const store = await openVaultStore(backend)
-  const tokens = tokenStoreOn(backend)
-  await tokens.write(VAULT, 'github_pat_11FIXTURE0' + 'f'.repeat(72))
+  // YAZ-5714: the crumb's Show in Search reads the vault's own copy (the tests' way): the review's store and tokens.
+  const own = name.startsWith('review-crumb')
+  const store = own ? t.store : await openVaultStore(backend)
+  const tokens = own ? t.s.tokens : tokenStoreOn(backend)
+  if (!own) await tokens.write(VAULT, 'github_pat_11FIXTURE0' + 'f'.repeat(72))
   const vault = { repo: REPO, branch: BRANCH, addedAt: 1 }
   // YAZ-5663: a second vault on the phone, added first (the open one is number 2): the top bar shows no number.
   const others = name === 'review-two-vaults' ? [{ repo: 'demo/notecards-scratch-vault', branch: 'main', addedAt: 0 }] : []
@@ -302,6 +329,19 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
     case 'review-room-z200':
       // YAZ-5716: the long card's back side shown; the first hidden word shown.
       tap()
+      break
+    case 'review-crumb':
+    case 'review-crumb-deep':
+    case 'review-crumb-bubble':
+    case 'review-crumb-deep-bubble':
+    case 'review-crumb-search':
+      tap()
+      await wait(40)
+      tap()
+      await wait(40)
+      if (name.endsWith('-bubble') || name === 'review-crumb-search') press(/Show the card's place$/)
+      await wait(60)
+      if (name === 'review-crumb-search') press('Show in Search')
       break
     case 'review-mochi-more':
       tap()

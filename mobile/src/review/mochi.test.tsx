@@ -40,10 +40,15 @@ const real = (ms: number) => act(async () => void (await new Promise((r) => setT
 describe('tap anywhere (YAZ-5415, round 4)', () => {
   const ONE = { '.yaseendocs/review.json': '{}', 'p.md': page('Memory', cardBlock('{{Spaced}} repetition makes the next gap {{longer}}; a miss makes it {{short}}.', `MC-1, ${inOrder(OLD, 0)}`), cardBlock('Two?', `MC-2, ${inOrder(OLD, 1)}`)) }
 
-  it('the card, the empty space, the hint line and the crumb each show the next part', async () => {
+  it('the card, the empty space and the hint line each show the next part; the crumb keeps its tap (YAZ-5713: its bubble)', async () => {
     h = await reviewSetup(ONE)
     expect(hint()).toBe('Tap anywhere · 3 left')
     await tapOn(q('.review__crumb'))
+    expect(shownWords()).toEqual([])
+    expect(q('.place-bubble')).not.toBeNull()
+    await tapOn(q('.review__crumb'))
+    expect(q('.place-bubble')).toBeNull()
+    await tapOn(q('.phone-card__body'))
     expect(shownWords()).toEqual(['Spaced'])
     await tapOn(q('.review__hint-text'))
     expect(shownWords()).toEqual(['Spaced', 'longer'])
@@ -107,9 +112,16 @@ describe('tap anywhere (YAZ-5415, round 4)', () => {
 describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Undo in the hint line', () => {
   const THREE = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...['A', 'B', 'C'].map((x, i) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `AR-${i + 1}, ${inOrder(OLD, i)}`))) }
 
-  it('← and → move between cards; neither gives nor takes back an answer; a skipped card stays due and comes back at the end', async () => {
+  it('← and → move between cards and loop around (YAZ-5715, as Mochi); neither gives nor takes back an answer; a skipped card stays due and comes back at the end', async () => {
     h = await reviewSetup(THREE)
-    expect(h.button('Previous card')?.disabled).toBe(true)
+    // ← at the first card: the last; → at the last: the first. The arrows never look disabled at the ends.
+    expect(h.button('Previous card')?.disabled).toBe(false)
+    await h.click('Previous card')
+    expect(h.head()).toBe('AR-3')
+    expect(h.button('Next card')?.disabled).toBe(false)
+    await h.click('Next card')
+    expect(h.head()).toBe('AR-1')
+    expect(h.text()).toContain('0 / 3')
     await h.click('Next card')
     expect(h.head()).toBe('AR-2')
     // YAZ-5675 (Mochi): "done / total"; → answers nothing.
@@ -124,8 +136,12 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
     await h.click('Remembered')
     expect(h.head()).toBe('AR-1')
     expect(ids(h)).toEqual(['AR-2', 'AR-3'])
-    // ← never takes an answer back.
+    // ← never takes an answer back: one card left, the arrows do nothing.
     expect(h.button('Previous card')?.disabled).toBe(true)
+    expect(h.button('Next card')?.disabled).toBe(true)
+    await h.click('Previous card')
+    expect(h.head()).toBe('AR-1')
+    expect(ids(h)).toEqual(['AR-2', 'AR-3'])
   })
 
   it('an answer before all parts show; the answer\'s line with its Undo in the hint line until the next card\'s first tap (it stays in ⋯)', async () => {

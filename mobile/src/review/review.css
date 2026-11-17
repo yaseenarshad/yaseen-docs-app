@@ -529,11 +529,14 @@
 /* No press look on the card. A tap shows the next part (or rings ✕ and ✓), and that is all it does: the
    accent tint that flashed on each tap is gone, as the Mac's card has none. */
 
+/* YAZ-5716: the row over the text (the chip, the crumb, Side 1 of 2) sits 16 px in from the card's edge, as Mochi's chip
+   near its corner; the text keeps the full 32 px. At 320 px the crumb keeps room for the page's name (YAZ-5713). */
 .review__cardtop {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  margin-inline: -16px;
 }
 
 .review__chip {
@@ -569,13 +572,35 @@
   background: none;
 }
 
+/* YAZ-5713: the crumb takes the room between the chip and "Side 2 of 2" (its width is the room `usePlaceFold` reads) and
+   folds from the start. It is a button: a tap opens the bubble with the full path (`PlaceBubble`), a 44 px tap (the
+   padding) on a line as tall as before (the negative margin). */
 .review__crumb {
+  flex: 1 1 0;
   min-width: 0;
+  min-height: var(--tap);
+  margin: -15px 0;
+  padding: 0;
+  border: 0;
+  background: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
+  font: inherit;
   font-size: calc(11.5px * var(--review-zoom, 1));
   color: var(--fg-muted);
+  cursor: pointer;
+}
+.review__cardtop {
+  position: relative;
+}
+.review .place-bubble__go {
+  min-height: var(--tap);
+  font-size: 15px;
+}
+.review .place-bubble__path {
+  font-size: 14px;
 }
 
 .review__crumb-folder {

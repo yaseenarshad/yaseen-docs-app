@@ -21,6 +21,9 @@
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
   /* The smallest thing a finger taps (Apple: 44 pt). */
   --tap: 44px;
+  /* The Mac's Show in sidebar glow (YAZ-5714: Show in Search). */
+  --reveal-bg: #ffe36e;
+  --reveal-fg: #2d2500;
   color-scheme: light;
 }
 
@@ -35,6 +38,8 @@
   --danger: #e06c6c;
   --warn: #d9a13c;
   --ok: #4fb573;
+  --reveal-bg: #d9b72a;
+  --reveal-fg: #1e1900;
   /* White on the dark accent is 3.03:1: the dark text of the page is 5.51:1. */
   --on-accent: #1e1e1e;
   --control-border: #707070;

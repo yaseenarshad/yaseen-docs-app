@@ -141,6 +141,8 @@ import { freePort } from './freePort'
  *    content with the hint line under it, a long card scrolls as one page (and at its end), ✕ ✓ neutral grey.
  *  - the Review top bar (`#fixture=review-mochi`, `review-mochi-more`, YAZ-5698), light and dark, at 320, 375 and 390 px:
  *    the filter on the left (a 44 px tap), the count in the true centre (1 px), the dot and the ⚙ right, no overlap.
+ *  - the card's crumb (`#fixture=review-crumb`, `-deep`, `-bubble`, `-search`, YAZ-5713, YAZ-5714), light and dark, at 320, 375
+ *    and 390 px: folded from the start, the page whole; the bubble inside the screen; Show in Search lands on the lit row.
  *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
  *    every bar and the full-screen table inside it, no install hint; a phone (upright and on its side) keeps the full
  *    width. The install hint of a phone's tab at 320 and 375 px: one block above the sign-in (its first button: Sign in
@@ -2786,6 +2788,138 @@ if (process.env.LAYOUT_REVIEW_ROOM !== 'no') {
           console.log(`${endOk ? 'PASS' : 'FAIL'}  Review room ${name.slice('review-room-'.length)} scrolled to its end at ${w}, ${scheme}: ${end.error ?? `the hint ${end.hintGap} px under the card, ${end.hintIn ? 'in view' : 'OUT OF VIEW'}; the controls end at ${end.dockBottom} (tab bar at ${end.tabTop})`}  ${endFile}`)
         }
       }
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5711: a pill in a Review card (and ⋯ › Open page, and the ⋯ menu itself) opens over Review, and the Review
+// screen BEHIND stays still: the screen, the card and the bar at the same place before the tap, while the panel is open
+// and after it closes (within 0.5 px); the window never scrolls. Touch on, at 320, 375 and 390 px, light. Pictures of
+// before, while and after.
+const REVIEW_STILL = `(() => {
+  const r = (q) => { const el = document.querySelector(q); if (!el) return null; const b = el.getBoundingClientRect(); return Math.round(b.top * 10) / 10 }
+  return {
+    review: r('.review'), card: r('.review__card'), progress: r('.review__progress'), filter: r('.review__filter'),
+    scrollY: window.scrollY, viewport: Math.round((window.visualViewport?.offsetTop ?? 0) * 10) / 10,
+    doc: document.scrollingElement?.scrollTop ?? 0, panels: document.querySelectorAll('.explore-sheet').length,
+    menu: document.querySelector('.review__menu--more') !== null,
+  }
+})()`
+const tapAt = async (x: number, y: number) => {
+  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }, page)
+  await wait(40)
+  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, page)
+}
+const centreOf = async (q: string) => evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(q)})].find((e) => e.getBoundingClientRect().height > 0); if (!el) return null; const b = el.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] })()`)
+if (process.env.LAYOUT_REVIEW_STILL !== 'no') {
+  type Still = { review: number | null; card: number | null; progress: number | null; filter: number | null; scrollY: number; viewport: number; doc: number; panels: number; menu: boolean }
+  const same = (a: Still, b: Still) => (['review', 'card', 'progress'] as const).every((k) => a[k] !== null && b[k] !== null && Math.abs((a[k] as number) - (b[k] as number)) <= 0.5) && b.scrollY === 0 && b.viewport === 0 && b.doc === 0
+  const say = (m: Still) => `screen ${m.review}, card ${m.card}, bar ${m.progress}, filter ${m.filter}, scrollY ${m.scrollY}, viewport ${m.viewport}, document ${m.doc}`
+  const shoot = async (file: string) => writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+  for (const [w, h] of SIZES) {
+    for (const how of ['pill', 'open page', 'cards menu'] as const) {
+      await open('review-mochi-pill', w, h)
+      await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, page)
+      await wait(600) // past the tap guard (YAZ-5226)
+      const slug = how.replace(' ', '-')
+      const before = (await evaluate(REVIEW_STILL)) as Still
+      await shoot(join(out, `review-still-${slug}-${w}-1-before.png`))
+      if (how === 'pill') {
+        const at = await centreOf('.review__card [data-card-link]')
+        if (at) await tapAt(at[0], at[1])
+      } else {
+        const more = await centreOf('.review__more')
+        if (more) await tapAt(more[0], more[1])
+        await wait(200)
+        if (how === 'open page') {
+          const item = await evaluate(`(() => { const b = [...document.querySelectorAll('.review__menu--more button')].find((x) => /^Open (page|card)$/.test(x.textContent.trim())); if (!b) return null; const q = b.getBoundingClientRect(); return [q.left + q.width / 2, q.top + q.height / 2] })()`)
+          if (item) await tapAt(item[0], item[1])
+        }
+      }
+      await wait(700) // the panel has slid up
+      const during = (await evaluate(REVIEW_STILL)) as Still
+      const duringShot = join(out, `review-still-${slug}-${w}-2-open.png`)
+      await shoot(duringShot)
+      // The screen behind the panel, the panel hidden for this one picture.
+      await evaluate(`document.querySelector('.explore-layer')?.style.setProperty('visibility', 'hidden')`)
+      await shoot(join(out, `review-still-${slug}-${w}-2-behind.png`))
+      await evaluate(`document.querySelector('.explore-layer')?.style.removeProperty('visibility')`)
+      // Closed: a tap on the dim above the panel (the ⋯ menu: a tap on ⋯ again).
+      if (how === 'cards menu') {
+        const more = await centreOf('.review__more')
+        if (more) await tapAt(more[0], more[1])
+      } else await tapAt(w / 2, 4)
+      await wait(700)
+      const after = (await evaluate(REVIEW_STILL)) as Still
+      await shoot(join(out, `review-still-${slug}-${w}-3-after.png`))
+      await send('Emulation.setTouchEmulationEnabled', { enabled: false }, page)
+      const opened = how === 'cards menu' ? during.menu : during.panels > 0
+      const ok = opened && after.panels === 0 && !after.menu && same(before, during) && same(before, after)
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  Review stays still under the ${how} at ${w}x${h}: ${opened ? 'it opened' : 'NOTHING OPENED'}; before: ${say(before)}; open: ${say(during)}; closed: ${say(after)}${after.panels > 0 || after.menu ? '; NOT CLOSED' : ''}  ${duringShot}`)
+    }
+  }
+}
+// YAZ-5713: the card's crumb folds from the START (`review-crumb`: Yaseen's screenshot's path; `-deep`: four folders),
+// light and dark, at 320, 375 and 390 px: the page's name whole at the crumb's end, the shown parts the last ones (a
+// "…" first when any folds), nothing over the chip or "Side 2 of 2", a 44 px tap, never sideways. `-bubble`: a tap on
+// it opens the bubble: inside the screen, the full path in it, Show in Search a 44 px tap its centre hits. YAZ-5714
+// (`review-crumb-search`): Show in Search lands on Search, the page's row lit and on the screen, its folders open.
+const REVIEW_CRUMB = `(() => {
+  const r = (el) => el ? el.getBoundingClientRect() : null
+  const W = window.innerWidth, H = window.innerHeight
+  const crumb = document.querySelector('.review__crumb')
+  if (!crumb) return { error: 'no crumb' }
+  const c = r(crumb)
+  const shown = [...crumb.children].filter((e) => getComputedStyle(e).display !== 'none')
+  const pageEl = crumb.querySelector('b')
+  const p = r(pageEl)
+  const chip = r(document.querySelector('.review__chip'))
+  const sides = r(document.querySelector('.review__sides'))
+  const bubble = document.querySelector('.place-bubble')
+  const go = bubble && bubble.querySelector('.place-bubble__go')
+  const b = r(bubble), g = r(go)
+  const hit = g ? document.elementFromPoint(g.left + g.width / 2, g.top + g.height / 2) : null
+  return {
+    W, text: shown.map((e) => e.textContent.trim()).join(' '),
+    pageWhole: p.right <= c.right + 0.5 && p.left >= c.left - 0.5,
+    clear: chip.right <= c.left + 0.5 && (!sides || c.right <= sides.left + 0.5),
+    tap: Math.round(c.height),
+    bubble: bubble ? { path: bubble.querySelector('.place-bubble__path').textContent, inside: b.left >= 0 && b.right <= W + 0.5 && b.bottom <= H, go: [Math.round(g.width), Math.round(g.height)], hits: hit === go || (hit && go.contains(hit)) } : null,
+    sideways: document.documentElement.scrollWidth > W,
+  }
+})()`
+const SEARCH_REVEAL = `(() => {
+  const r = (el) => el ? el.getBoundingClientRect() : null
+  const lit = document.querySelector('.tree__row--revealed')
+  if (!lit) return { error: 'no lit row; ' + (document.querySelector('.search') ? 'on Search' : 'NOT on Search') }
+  const l = r(lit), top = r(document.querySelector('.topbar')), tab = r(document.querySelector('.tabbar'))
+  const open = [...document.querySelectorAll('.tree [aria-expanded="true"] > .tree__row')].map((e) => e.dataset.path)
+  return { path: lit.dataset.path, label: lit.querySelector('.tree__label').textContent, onScreen: l.top >= top.bottom - 0.5 && l.bottom <= (tab ? tab.top : innerHeight) + 0.5, bg: getComputedStyle(lit).backgroundColor, open, sideways: document.documentElement.scrollWidth > innerWidth }
+})()`
+if (process.env.LAYOUT_CRUMB !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of SIZES) {
+      for (const name of ['review-crumb', 'review-crumb-deep', 'review-crumb-bubble', 'review-crumb-deep-bubble']) {
+        await open(name, w, h)
+        const m = await evaluate(REVIEW_CRUMB)
+        const file = join(out, `crumb-${name}-${w}-${scheme}.png`)
+        writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: w, height: name.endsWith('-bubble') ? 300 : 200, scale: 2 } }, page)).data, 'base64'))
+        const bubbled = name.endsWith('-bubble')
+        const full = name.includes('deep') ? 'School / Year two / Spring term / World history / History cards' : 'New cards test / History / History cards'
+        const ok = !m.error && m.text.endsWith('History cards') && m.pageWhole && m.clear && m.tap >= 44 && !m.sideways && (!bubbled || (m.bubble !== null && m.bubble.path === full && m.bubble.inside && m.bubble.go[1] >= 44 && m.bubble.hits))
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  Review crumb ${name} at ${w}, ${scheme}: ${m.error ?? `"${m.text}"; the page ${m.pageWhole ? 'whole' : 'CUT'}; ${m.clear ? 'clear of the chip and the sides' : 'OVERLAP'}; a ${m.tap} px tap${m.bubble ? `; the bubble "${m.bubble.path}" ${m.bubble.inside ? 'inside' : 'OFF SCREEN'}, Show in Search ${m.bubble.go.join('x')}${m.bubble.hits ? '' : ' TAP MISSES'}` : ''}${m.sideways ? '; SCROLLS SIDEWAYS' : ''}`}  ${file}`)
+      }
+      await open('review-crumb-search', w, h)
+      await wait(300)
+      const m = await evaluate(SEARCH_REVEAL)
+      const file = join(out, `crumb-search-${w}-${scheme}.png`)
+      writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const ok = !m.error && m.path === 'New cards test/History/history-cards.md' && m.onScreen && m.open.join('|') === 'New cards test|New cards test/History' && !m.sideways
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  Show in Search at ${w}, ${scheme}: ${m.error ?? `"${m.label}" lit (${m.bg}), ${m.onScreen ? 'on the screen' : 'OFF SCREEN'}; open ${m.open.join(', ')}${m.sideways ? '; SCROLLS SIDEWAYS' : ''}`}  ${file}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)

@@ -64,7 +64,9 @@ async function phoneDriver(vault: FlowVault): Promise<FlowDriver> {
         menu[id] = Number(/^\d+/.exec(row.querySelector('.review__sheet-n')?.textContent ?? '')?.[0] ?? NaN)
       }
       await closeSheet()
-      return { filter, card, menu, ...shared }
+      const arrow = (name: string) => q<HTMLButtonElement>(`.review__arrow[aria-label="${name}"]`)
+      const arrows = box === null ? null : { back: arrow('Previous card')?.disabled === false, next: arrow('Next card')?.disabled === false }
+      return { filter, card, menu, arrows, ...shared }
     },
     async answer(rating: CardRating) {
       vi.setSystemTime(Date.now() + 4_000)
@@ -75,6 +77,9 @@ async function phoneDriver(vault: FlowVault): Promise<FlowDriver> {
       if (h!.button('Undo') !== null) return h!.click('Undo')
       if (h!.button('More card actions') !== null) await h!.click('More card actions')
       await h!.click('Undo last answer')
+    },
+    async move(delta) {
+      await click(q(`.review__arrow[aria-label="${delta < 0 ? 'Previous card' : 'Next card'}"]`), 'the arrow')
     },
     async filter(f) {
       await openSheet()

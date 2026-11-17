@@ -38,6 +38,8 @@ describe('the Review tab styles', () => {
   it('YAZ-5716: Mochi\'s side room: a 16 px gutter and 32 px inside the card, left and right', () => {
     expect(css).toMatch(/\.review__stage \{[^}]*padding: 8px 16px 0;/)
     expect(css).toMatch(/\.review__card \{[^}]*padding: 14px 32px 24px;/)
+    // The row over the text sits 16 px in from the card's edge, as Mochi's chip.
+    expect(css).toMatch(/\.review__cardtop \{[^}]*margin-inline: -16px;/)
     // The vault's Card width is the text's: the card adds its two 32 px sides.
     expect(css).toMatch(/\.review__card \{[^}]*max-width: calc\(var\(--card-text-width, 100vw\) \+ 64px\);/)
   })
