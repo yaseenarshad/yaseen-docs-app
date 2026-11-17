@@ -156,7 +156,8 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             ))}
           </nav>
         )}
-        {(session.card !== null || session.end !== null) && (
+        {/* YAZ-5680 check 2: on every finish screen too, as Mochi ("Finished learning cards." with 4 / 4). */}
+        {session.progress.total > 0 && (
           <span className="card-inbox__place">
             <SessionCount session={session} icon={<current.icon />} />
           </span>

@@ -90,6 +90,8 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     // YAZ-5678 (Mochi's words): the learned cards wait under Due today.
     expect(title()).toBe('Finished learning cards.')
     expect(h.text()).toContain(`Review cards ${5 + NEW.length}`)
+    // YAZ-5680 check 2: the count stays at the top right, as Mochi's "4 / 4".
+    expect(q('.review__place .session-count__done')?.textContent).toContain(`${NEW.length} / ${NEW.length}`)
   })
 
   it('3. Forgot → "You remembered 60% of cards." (YAZ-5677, Mochi`s words) with ONE button → the missed cards in order → "Due today is done." → Learn new cards', async () => {

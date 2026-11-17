@@ -570,7 +570,8 @@ function SessionScreen({
   }, [])
 
   const filter = session.filter
-  const counted = card !== null || session.end !== null
+  // YAZ-5680 check 2: on every finish screen too, as Mochi ("Finished learning cards." with 4 / 4).
+  const counted = session.progress.total > 0
   const countButton = (
     <button
       type="button"

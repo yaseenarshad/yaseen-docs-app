@@ -1476,6 +1476,17 @@ describe("YAZ-5674: the top right as Mochi's — ✕ K, the filter's icon, done 
     expect(top()?.querySelector('circle')?.getAttribute('stroke-dasharray')).toBe('2.2 2')
   })
 
+  it('YAZ-5680 check 2: every finish screen keeps the count, as Mochi ("Finished learning cards." with 4 / 4); an empty session has none', () => {
+    mount(TWO_SIDES)
+    session = { ...session, card: null, filter: 'new', counts: { all: 4, next: 0, due: 4, new: 0 }, progress: { done: 4, total: 4, waiting: 0 }, misses: 0 }
+    render()
+    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Finished learning cards.')
+    expect(top()?.textContent).toBe('4 / 4')
+    session = { ...session, filter: 'all', counts: { all: 0, next: 0, due: 0, new: 0 }, progress: { done: 0, total: 0, waiting: 0 } }
+    render()
+    expect(top()).toBeNull()
+  })
+
   it('no "Today: …" and no "N of M" in the top row; today`s total is the cards menu`s last line', () => {
     mount(TWO_SIDES, SHOWN)
     session = { ...session, today: { cards: 31, reviews: 35, seconds: 9 * 60 + 10 } }
