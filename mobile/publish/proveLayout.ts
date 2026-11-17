@@ -1556,7 +1556,7 @@ if (process.env.LAYOUT_CARD_MENU !== 'no') {
     console.log(`${ok ? 'PASS' : 'FAIL'}  card-menu ${scheme} at 375x667: the card ⋯ ${more.last ? 'last in the head' : 'NOT LAST IN THE HEAD'}, ${more.inCard ? 'in the card' : 'OUTSIDE THE CARD'}, ${more.rightGap}px from its right, ${more.tap ? '44px tap' : 'TAP TOO SMALL'}, ${more.hit ? 'its centre the ⋯' : 'COVERED'}; menu ${m.top}-${m.bottom}, the screen ${m.screenTop}-${m.screenBottom}, first row ${m.hit ? 'on top' : 'COVERED'}; top bar ⋯ ${JSON.stringify(bar.rows)}, ${bar.actions} card actions  ${shot}`)
   }
   // YAZ-5548: a page card's ⋯ in an Explore panel (`#fixture=sheet-card-menu`), light and dark, at 375 px: at the right of
-  // its head (inside the card, a 44 px tap, its centre the ⋯ itself); its menu open (Archive card armed) inside the panel's
+  // its head (inside the card, a 44 px tap, its centre the ⋯ itself); its menu open (Archive card asks in place, YAZ-5697) inside the panel's
   // scroller, its first row on top.
   for (const scheme of ['light', 'dark'] as const) {
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
@@ -1585,7 +1585,7 @@ if (process.env.LAYOUT_CARD_MENU !== 'no') {
     })()`)
     const shot = file.replace('.png', `-${scheme}.png`)
     writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
-    const ok = m.error === undefined && m.last && m.inCard && m.tap && m.hit && m.armed === 'Tap again to archive' && m.top >= m.sheetTop - 0.5 && m.bottom <= m.sheetBottom + 0.5 && m.first
+    const ok = m.error === undefined && m.last && m.inCard && m.tap && m.hit && m.armed === 'Archive this card?CancelArchive' && m.top >= m.sheetTop - 0.5 && m.bottom <= m.sheetBottom + 0.5 && m.first
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  sheet-card-menu ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
   }
