@@ -180,6 +180,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
             // The one card menu (YAZ-5697 round 2): the window's rows of it.
             cardMenuSections({
               marks: cardMarksOf(card),
+              path,
               upNext: true,
               copyId: id,
               reset: true,

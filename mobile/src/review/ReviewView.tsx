@@ -58,7 +58,7 @@ import './review.css'
  *    for a card in a page (round 15, item 4). The title is the card line's (decision D): never a
  *    line of the card's text, so the text is drawn whole. A card with no title: the ID alone, as the Mac's Inbox head.
  *    "Title on the front: Hide" (`notitle`): the ID alone at every step and after the answer (YAZ-5695). A shown
- *    title comes as the Mac's (YAZ-5696, `titleShows`): at once, after the front or with Side 2, by the card's own
+ *    title comes as the Mac's (YAZ-5696, `titleShows`): Never, Always, After the first click or With Side 2, by the card's own
  *    choice or review.json's `titleAt`; a title that holds a hidden-word mark waits until the card is fully shown. A card
  *    file that is not valid says so (round 15, item 3).
  *  - A TAP ON THE CARD shows the next hidden word, else the next side: what Space does on the Mac. No swipes.
@@ -259,7 +259,7 @@ function SessionScreen({
   // the Mac's one rule). WHEN a shown title comes is the Mac's rule too (YAZ-5696, `titleShows`): the card's own
   // choice, else review.json's `titleAt`; a title that holds a hidden-word mark waits until the card is fully shown.
   const text = pageText
-  const cardName = page === null ? '' : reviewTitleOf(page)
+  const cardName = page === null ? '' : reviewTitleOf(page, review.settings.titleAt)
   const titleText = pageText === null ? '' : cardName
   const record = card === null ? undefined : source.records.find((r) => r.path === card.path)
   const cardFile = record?.kind === 'card'
@@ -540,7 +540,9 @@ function SessionScreen({
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
   const canUndo = shownLine?.undo === true || session.canUndo
 
-  const headTitle = titleShows({ title: titleText, at: page?.titleAt ?? review.settings.titleAt, counts, sides: step.sides, open: step.open }) ? titleText : ''
+  // A global Never with no own choice gave no title (`reviewTitleOf`); a title that is here then shows at once.
+  const titleAt = page?.titleAt ?? (review.settings.titleAt === 'never' ? 'always' : review.settings.titleAt)
+  const headTitle = titleShows({ title: titleText, at: titleAt, counts, sides: step.sides, open: step.open, next: step.next }) ? titleText : ''
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
   // The crumb (YAZ-5132's place, from the first folder, YAZ-5682): "LEARNING / Memory", inside the card, on the chip's line.
   const crumb = session.place.map((p) => p.label)
@@ -795,6 +797,7 @@ function SessionScreen({
                 marks={page === null ? null : { off: false, next: page.next === true, fix: false, notitle: page.notitle === true, ...(page.titleAt !== undefined && { titleAt: page.notitle === true ? 'never' : page.titleAt }) }}
                 upNext
                 fix={false}
+                titleGlobal={review.settings.titleAt}
                 rowClassName="review__menu-row"
                 onAction={(a) => {
                   if (a.kind === 'off') return archive()

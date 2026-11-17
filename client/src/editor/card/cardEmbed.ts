@@ -159,6 +159,7 @@ export function cardEmbedMenuDoors(o: {
   const failed = (err: unknown) => o.onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`)
   return {
     marks: o.marks,
+    path: card.path,
     upNext: true,
     copyId: card.id,
     reset: true,

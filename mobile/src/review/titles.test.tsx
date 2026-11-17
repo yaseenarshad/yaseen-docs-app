@@ -120,15 +120,13 @@ describe('the answer list keeps the title part byte for byte (decision 2 with YA
   })
 })
 
-describe('when a shown title appears (YAZ-5696, Design 2): the Mac\'s one rule (`titleShows`)', () => {
+describe('when a title shows (YAZ-5696: Never · Always · After the first click · With Side 2): the Mac\'s one rule (`titleShows`)', () => {
   // Two hidden words on the front, one on Side 2.
   const CARD = 'A {{one}} and {{two}}\n---\n{{three}}'
   const withGlobal = (titleAt: string, line: string) => ({ '.yaseendocs/review.json': JSON.stringify({ titleAt }), 'p.md': page('Geography', cardBlock(CARD, line)) })
 
-  it('the global After the front: the ID alone until the front\'s last word, then "Title · ID"; VoiceOver hears it only then', async () => {
-    h = await reviewSetup(withGlobal('front', 'TI-20, title "Numbers"'))
-    expect(h.head()).toBe('TI-20')
-    await h.tap()
+  it('the global After the first click: the ID alone until the first tap, then "Title · ID"; VoiceOver hears it only then', async () => {
+    h = await reviewSetup(withGlobal('click', 'TI-20, title "Numbers"'))
     expect(h.head()).toBe('TI-20')
     expect(spoken()).not.toContain('Numbers')
     await h.tap()
@@ -136,8 +134,19 @@ describe('when a shown title appears (YAZ-5696, Design 2): the Mac\'s one rule (
     expect(spoken()).toContain('Numbers')
   })
 
-  it('the card\'s own `title-side2` wins over the global At once: the title comes with Side 2', async () => {
-    h = await reviewSetup(withGlobal('once', 'TI-21, title "Numbers", title-side2'))
+  it('the global Never: the ID alone at every step and in the answer\'s line', async () => {
+    h = await reviewSetup(withGlobal('never', 'TI-24, title "Numbers"'))
+    await h.tap()
+    await h.tap()
+    await h.tap()
+    expect(h.head()).toBe('TI-24')
+    await h.click('Remembered')
+    expect(h.text()).toContain('Remembered · TI-24 · back')
+    expect(h.text()).not.toContain('Numbers')
+  })
+
+  it('the card\'s own `title-side2` wins over the global Always: the title comes with Side 2', async () => {
+    h = await reviewSetup(withGlobal('always', 'TI-21, title "Numbers", title-side2'))
     await h.tap()
     await h.tap()
     expect(h.head()).toBe('TI-21')
@@ -145,13 +154,16 @@ describe('when a shown title appears (YAZ-5696, Design 2): the Mac\'s one rule (
     expect(h.head()).toBe('Numbers · TI-21')
   })
 
-  it('the card\'s own `title-once` wins over the global With Side 2', async () => {
-    h = await reviewSetup(withGlobal('side2', 'TI-22, title "Numbers", title-once'))
+  it('the card\'s own `title-always` wins over the global Never', async () => {
+    h = await reviewSetup(withGlobal('never', 'TI-22, title "Numbers", title-always'))
     expect(h.head()).toBe('Numbers · TI-22')
   })
 
-  it('an answer keeps the part byte for byte', async () => {
-    h = await reviewSetup(withGlobal('once', 'TI-23, title "Numbers", title-front'))
+  it("round 1's `title-front` reads as After the first click; an answer keeps its bytes", async () => {
+    h = await reviewSetup(withGlobal('always', 'TI-23, title "Numbers", title-front'))
+    expect(h.head()).toBe('TI-23')
+    await h.tap()
+    expect(h.head()).toBe('Numbers · TI-23')
     await h.click('Remembered')
     const line = (await h.answers.text('p.md'))!.split('\n').find((l) => l.startsWith('<!-- card: TI-23'))!
     expect(line).toMatch(/^<!-- card: TI-23, title "Numbers", title-front, \S+ good( \d+s)? -->$/)

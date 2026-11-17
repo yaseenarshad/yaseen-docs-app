@@ -311,7 +311,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   // The one card menu (YAZ-5697 round 2): a card file's rows of it; Turn into a page asks first (it rewrites and renames
   // the file, and no Undo takes it back).
   const sections = (): MenuSection[] =>
-    cardMenuSections({ marks: cardMarksOf(card), upNext: reviewOn, copyId: id, copyLink: true, reset: true, unit, change: (c) => void writes.changeLine(c), onNotice, preview: card === null ? undefined : preview, toPage: converts ? toPage : undefined })
+    cardMenuSections({ marks: cardMarksOf(card), path, upNext: reviewOn, copyId: id, copyLink: true, reset: true, unit, change: (c) => void writes.changeLine(c), onNotice, preview: card === null ? undefined : preview, toPage: converts ? toPage : undefined })
   const fixes =
     !converts ? null : shape.problem === 'many' ? (
       <button type="button" onClick={() => convert('split the card file', (a) => a.splitIntoCardFiles(path))}>

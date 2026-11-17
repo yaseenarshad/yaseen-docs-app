@@ -1,4 +1,4 @@
-import { CARD_TITLE_AT, type CardTitleAt } from './cardTitleAt'
+import { CARD_TITLE_SHOW, OLD_TITLE_AT, type CardTitleShow } from './cardTitleAt'
 import { isRecord } from './guards'
 
 /**
@@ -69,10 +69,11 @@ export interface ReviewSettings {
   /** How the Inbox shows today's review time (YAZ-5130): hidden behind a click, shown, or off. Only how it shows. */
   timeSoFar: TimeSoFar
   /**
-   * When a card's title shows in Review (YAZ-5696, Settings › Cards › Card look › "Show card titles"): at once, after
-   * the front, or with Side 2. A card's own choice on its line wins (`cardTitleAtOf`); `notitle` never shows it.
+   * When a card's title shows in Review (YAZ-5696, Settings › Cards › Card look › "Show card titles"): Never, Always
+   * (the default: as before), After the first click, With Side 2. A card's own choice on its line wins
+   * (`cardTitleAtOf`); `notitle` never shows it. Round 1's `once` and `front` read as Always and After the first click.
    */
-  titleAt: CardTitleAt
+  titleAt: CardTitleShow
   /** The FSRS weights: 21 numbers (FSRS-6); 17 or 19 are read too (ts-fsrs fills in the rest). */
   weights: number[]
 }
@@ -94,7 +95,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   fuzz: true,
   pauseAfter: 60,
   timeSoFar: 'hidden',
-  titleAt: 'once',
+  titleAt: 'always',
   weights: [...DEFAULT_CARD_WEIGHTS],
 }) as ReviewSettings
 
@@ -132,7 +133,7 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     fuzz: typeof r.fuzz === 'boolean' ? r.fuzz : d.fuzz,
     pauseAfter: (PAUSE_AFTER_CHOICES as readonly unknown[]).includes(r.pauseAfter) ? (r.pauseAfter as PauseAfter) : d.pauseAfter,
     timeSoFar: (TIME_SO_FAR_CHOICES as readonly unknown[]).includes(r.timeSoFar) ? (r.timeSoFar as TimeSoFar) : d.timeSoFar,
-    titleAt: (CARD_TITLE_AT as readonly unknown[]).includes(r.titleAt) ? (r.titleAt as CardTitleAt) : d.titleAt,
+    titleAt: (CARD_TITLE_SHOW as readonly unknown[]).includes(r.titleAt) ? (r.titleAt as CardTitleShow) : typeof r.titleAt === 'string' && Object.hasOwn(OLD_TITLE_AT, r.titleAt) ? OLD_TITLE_AT[r.titleAt] : d.titleAt,
     weights: isWeights(r.weights) ? [...r.weights] : [...d.weights],
   }
 }

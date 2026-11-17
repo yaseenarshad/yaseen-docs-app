@@ -19,7 +19,7 @@ const block = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!--
 const RIVERS = `---\ntitle: Rivers\n---\n\n# Rivers\n\nTwo cards.\n\n${block('Which river runs through Madrid?\n---\nThe Manzanares', 'RV-1, title "River of Madrid"')}\n\n${block('Which river runs through Vienna?\n---\nThe Danube', 'RV-3, title "River of Vienna", notitle, off')}\n`
 const LIGHT = `---\nkind: card\n---\n\n${block('How fast is light?\n---\nVery', 'RV-17, title "Speed of light"')}\n`
 const FILES = { '.yaseendocs/review.json': '{"enabled": true}', '.yaseendocs/link-click.json': '{"click":"explore"}', 'Rivers.md': RIVERS, 'cards/speed-of-light-rv-17.md': LIGHT }
-const MAC_ORDER = ['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›']
+const MAC_ORDER = ['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault (Always) ›']
 
 let h: Harness | null = null
 beforeEach(() => {

@@ -379,7 +379,7 @@ describe('the card in the page', () => {
     const choose = async (label: string) => {
       parentOf().click()
       const sub = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub button')]
-      expect(sub.map((b) => b.textContent)).toEqual(['Default', 'At once', 'After the front', 'With Side 2', 'Never'])
+      expect(sub.map((b) => b.textContent)).toEqual(['Default', 'Never', 'Always', 'After the first click', 'With Side 2'])
       sub.find((b) => b.textContent === label)!.click()
       await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
       return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')]
@@ -388,7 +388,13 @@ describe('the card in the page', () => {
     const mark = () => root.querySelector<HTMLElement>('.card__notitle')!
     expect(mark().hidden).toBe(true)
     expect(parentOf().dataset.hint).toBe('Default')
+    // Round 2: the row's small eye; its hover box says each of the four in one line.
+    const eye = document.querySelector<HTMLElement>('.ctx-menu .card-title-help')!
+    expect(eye.getAttribute('aria-description')).toContain('After the first click: The title shows after your first Space or tap on the card.')
+    eye.dispatchEvent(new MouseEvent('mouseenter'))
+    await vi.waitFor(() => expect(document.querySelector('.hover-tip .card-title-help__box')?.textContent).toContain('Never: The title never shows in Review.'))
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.querySelector('.hover-tip .card-title-help__box')).toBeNull()
     // Never: it asks first, Cancel first and focused; Cancel writes nothing.
     let answers = await choose('Never')
     expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Never show the title in review?')
