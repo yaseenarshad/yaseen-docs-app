@@ -146,11 +146,16 @@ export const getBindingGap = (
  * vanished.
  */
 const MAX_BINDING_DISTANCE_SCREEN_PX = 60;
+/**
+ * YAZ-5739: the least reach on screen when zoomed far out. The board-px floor
+ * (30) is 3 screen px at 10%, upstream's lowest zoom, but 0.3 px at 1%.
+ */
+const MIN_BINDING_DISTANCE_SCREEN_PX = 3;
 
 export const maxBindingDistance_simple = (zoom?: AppState["zoom"]): number => {
   const BASE_BINDING_DISTANCE = Math.max(BASE_BINDING_GAP, 15);
   const zoomValue = zoom?.value && zoom.value < 1 ? zoom.value : 1;
-  return Math.min(
+  const reach = Math.min(
     clamp(
       // reducing zoom impact so that the diff between binding distance and
       // binding gap is kept to minimum when possible
@@ -160,6 +165,7 @@ export const maxBindingDistance_simple = (zoom?: AppState["zoom"]): number => {
     ),
     MAX_BINDING_DISTANCE_SCREEN_PX / (zoom?.value ?? 1),
   );
+  return Math.max(reach, MIN_BINDING_DISTANCE_SCREEN_PX / (zoom?.value ?? 1));
 };
 
 export const isBindingEnabled = (appState: {
@@ -630,7 +636,6 @@ export const getBindingStrategyForDraggingBindingElementEndpoints = (
     altKey?: boolean;
     finalize?: boolean;
     initialBinding?: boolean;
-    zoom?: AppState["zoom"];
     gridSize?: NullableGridSize;
   },
 ): { start: BindingStrategy; end: BindingStrategy } => {
@@ -671,7 +676,6 @@ const getBindingStrategyForDraggingBindingElementEndpoints_simple = (
     altKey?: boolean;
     finalize?: boolean;
     initialBinding?: boolean;
-    zoom?: AppState["zoom"];
     gridSize?: NullableGridSize;
   },
 ): { start: BindingStrategy; end: BindingStrategy } => {
@@ -718,7 +722,9 @@ const getBindingStrategyForDraggingBindingElementEndpoints_simple = (
       draggingPoints,
       elementsMap,
       elements,
-      opts?.zoom,
+      // YAZ-5739: the zoom of the board; no caller set `opts.zoom`, so the
+      // reach was the zoom-1 reach and elbow arrows did not bind below 13%
+      appState.zoom,
     );
   }
 
@@ -1025,6 +1031,7 @@ const getBindingStrategyForDraggingBindingElementEndpoints_complex = (
       draggingPoints,
       elementsMap,
       elements,
+      appState.zoom,
     );
   }
 
@@ -1359,7 +1366,14 @@ const updateArrowBindings = (
       element: bindableElement,
       point,
       elementsMap,
-      threshold: maxBindingDistance_simple(appState.zoom),
+      // YAZ-5739: a bound end sits one binding gap out, which is more than
+      // the reach for an arrow made below 20% (600 vs 300 board px at 1%);
+      // 1 screen px more covers the rounding of the gap
+      threshold: Math.max(
+        maxBindingDistance_simple(appState.zoom),
+        getBindingGap(bindableElement, latestElement) +
+          1 / appState.zoom.value,
+      ),
     });
   const strategyName = startOrEnd === "startBinding" ? "start" : "end";
   unbindBindingElement(latestElement, strategyName, scene);
@@ -1389,6 +1403,16 @@ const updateArrowBindings = (
         strategyName,
         scene,
         strategy[strategyName].focusPoint,
+      );
+    } else if (!strategy[strategyName]?.element) {
+      // YAZ-5739: the end is past the reach but within its own gap: it
+      // keeps its binding
+      bindBindingElement(
+        latestElement,
+        bindableElement,
+        binding.mode,
+        strategyName,
+        scene,
       );
     }
   }
