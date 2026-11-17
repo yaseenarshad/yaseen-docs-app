@@ -194,7 +194,7 @@ describe('YAZ-5043: the end of Due today', () => {
     expect(seen).toEqual(NEW)
     expect(review.session).toMatchObject({ end: null, counts: { new: 0, due: 8, all: 8 } })
     // YAZ-5678 (Mochi's words): the learned cards wait under Due today.
-    expect(doneText()).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 8', 'Today: 3 cards'])
+    expect(doneText()).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 8', 'Today: 3 learned · 0 reviews'])
     await press(/^Review cards 8$/)
     expect(review.session?.filter).toBe('due')
   })
@@ -409,7 +409,7 @@ describe('YAZ-5662: Inbox complete with a 🎉, a green ✓ and one burst of con
     await answer('good')
     expect(el.querySelector('.due-end[data-kind="done"] .done-cheer__party')?.textContent).toBe('🎉')
     expect(el.querySelector('.done-cheer__title')?.textContent).toBe('Finished reviewing missed cards.')
-    expect([...el.querySelectorAll('.card-inbox__done > *')].at(-1)?.textContent).toBe('Today: 5 cards · 6 reviews')
+    expect([...el.querySelectorAll('.card-inbox__done > *')].at(-1)?.textContent).toBe('Today: 0 learned · 5 reviews')
     await settle()
     expect(cheers()).toBe(1)
     await press(/^Learn new cards 3$/)

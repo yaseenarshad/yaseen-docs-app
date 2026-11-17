@@ -81,7 +81,7 @@ afterEach(() => {
 })
 
 /** The vault's counts as the Inbox row shows them, the session's lists, and today's work. */
-const counts = () => ({ due: review.dueCount, today: review.session?.today.cards ?? null })
+const counts = () => ({ due: review.dueCount, today: review.session?.today.reviews ?? null })
 
 describe('YAZ-5615: a new day during a review (spec 21)', () => {
   it('tonight TOM-1 is not due; the setup is as the test means it', async () => {
@@ -102,7 +102,7 @@ describe('YAZ-5615: a new day during a review (spec 21)', () => {
     await act(async () => void vi.advanceTimersByTime(3 * 60_000))
     // TOM-1 is due now, and Saturday has its own new card: NEW-1 (in the session) and the due card.
     expect(review.dueCount).toBe(2)
-    expect(review.session!.today.cards).toBe(0)
+    expect(review.session!.today.reviews).toBe(0)
     // The open session keeps its queue: the card on show stays, nothing of the new day joins it.
     expect(review.session!.card!.id).toBe('NEW-1')
     expect(review.session!.counts.all).toBe(1)

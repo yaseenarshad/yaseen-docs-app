@@ -14,7 +14,7 @@ import { FILTERS, FILTER_ICON } from './words'
  *    hint line's Undo takes it back, as on the Mac.
  *  - "from … ›" opens the folder page: All folders, then each folder with new cards, a tick box each; more than one
  *    may be ticked, a folder takes its subfolders (`toggledPick`). A change saves at once (`setNewFrom`).
- *  - Today's work ("Today: 31 cards · 9 min") sits at the foot.
+ *  - Today's work ("Today: 2 learned · 31 reviews · 9 min") sits at the foot.
  */
 export function ReviewSheet({
   session,
