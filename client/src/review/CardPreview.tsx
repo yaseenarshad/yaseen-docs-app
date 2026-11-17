@@ -54,7 +54,8 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
   const columnRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
-  const { text, title } = useCardFront(card.text, card.title, card.notitle)
+  // A title hidden in review is the Inbox's (YAZ-5695): no band, and the bar names the card by its ID.
+  const { text, title: headTitle } = useCardFront(card.text, card.title, card.notitle)
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
   const steps = useCardSteps(text, cardKey, rootRef)
@@ -110,7 +111,6 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
     return () => window.removeEventListener('keydown', onKey, true)
   }, [])
 
-  const headTitle = title.waits && !steps.done ? '' : title.text
   const named = headTitle !== '' ? headTitle : (card.id ?? '')
   /** A click on the card (not on a blank: that shows its word): the marked word, or at the end the front again. */
   const step = () => {

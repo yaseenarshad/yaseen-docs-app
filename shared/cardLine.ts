@@ -385,6 +385,13 @@ export const isCardNext = (line: CardLine): boolean => line.parts.some((p) => p.
 export const isCardNoTitle = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'notitle')
 /** The card's title (YAZ-5308: its `title` part), '' for a card with none. */
 export const cardTitleOf = (line: CardLine): string => line.parts.find((p) => p.kind === 'title')?.title ?? ''
+/**
+ * The card's title as Review may show it (YAZ-5695, Yaseen: "if the title is a setting on the card that it should never
+ * show up in reviews, it should never show up in reviews. Period."): '' while the card is "Title hidden in review"
+ * (`notitle`) — on no side, at no step, fully shown or after the answer, Mac (`useCardFront`, the answer line, the
+ * Preview) and phone (`ReviewView`) alike. Outside Review (the page, the card window, Explore) the title shows as ever.
+ */
+export const reviewTitleOf = (card: { title?: string; notitle?: boolean }): string => (card.notitle === true ? '' : (card.title ?? ''))
 const cardRecordOf = (line: CardLine): CardRecord => {
   const title = cardTitleOf(line)
   const properties = cardPropertiesOf(line)

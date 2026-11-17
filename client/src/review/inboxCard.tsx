@@ -6,6 +6,7 @@
  * What each adds is its own: the Inbox its answers, its timer and its session; the Preview none of them.
  */
 import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { reviewTitleOf } from '@shared/cardLine'
 import { cardSides, hiddenCount } from '@shared/cardText'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBody, type CardLinkDoors } from './cardParts'
@@ -20,12 +21,11 @@ export interface CardStep extends Reveal {
 
 /**
  * The card's front and head title (YAZ-5030, YAZ-5308). The front is the card's text (its sides only) and the head shows
- * its title, off its card line: never part of the text, so it is never a Space step. "Title on the front: Hide"
- * (`notitle`) makes the head's title wait for the card's last step.
+ * its title, off its card line: never part of the text, so it is never a Space step. "Title hidden in review" (`notitle`)
+ * means no title at all, at every step (YAZ-5695, `reviewTitleOf`): no band, fully shown too.
  */
-export function useCardFront(pageText: string | null, title: string, notitle: boolean): { text: string | null; title: { text: string; waits: boolean } } {
-  const head = useMemo(() => ({ text: pageText === null ? '' : title, waits: notitle }), [pageText, title, notitle])
-  return { text: pageText, title: head }
+export function useCardFront(pageText: string | null, title: string, notitle: boolean): { text: string | null; title: string } {
+  return { text: pageText, title: pageText === null ? '' : reviewTitleOf({ title, notitle }) }
 }
 
 export interface CardSteps {

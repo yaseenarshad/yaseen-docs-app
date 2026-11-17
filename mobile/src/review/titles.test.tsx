@@ -7,8 +7,8 @@ import { NOW, cardBlock, cardFile, page, reviewSetup, type ReviewHarness } from 
 /**
  * YAZ-5309 (YAZ-5308, decision D): the Review screen reads a card's title ONLY off its card line (`title "…"`). The
  * card's text is only its sides: its first line is part of the question, never the title. The head is the Mac Inbox's
- * head: "Title · ID", the ID alone for a card with no title, and with `notitle` the ID alone until the card is fully
- * shown. VoiceOver (YAZ-5314) never hears a title before the head shows it.
+ * head: "Title · ID", the ID alone for a card with no title, and with `notitle` the ID alone at every step, fully shown and
+ * after the answer too (YAZ-5695). VoiceOver (YAZ-5314) never hears a title the head does not show.
  */
 let h: ReviewHarness | undefined
 beforeEach(() => {
@@ -57,7 +57,7 @@ describe('the Review head: the title off the card line', () => {
     expect(h.head()).toBe('TI-5')
   })
 
-  it('`notitle` ("Title on the front: Hide"): the ID alone until the card is fully shown; the text is never cut', async () => {
+  it('`notitle` ("Title on the front: Hide", YAZ-5695): the ID alone at EVERY step, fully shown too, and after the answer; the text is never cut', async () => {
     h = await reviewSetup(vault(cardBlock('Longest river\n---\nThe {{Nile}}', 'TI-6, title "Rivers", notitle')))
     expect(h.head()).toBe('TI-6')
     expect(h.cardText()).toBe('Longest river')
@@ -65,19 +65,23 @@ describe('the Review head: the title off the card line', () => {
     expect(h.head()).toBe('TI-6')
     await h.tap()
     expect(h.cardText()).toBe('Longest river The Nile')
-    expect(h.head()).toBe('Rivers · TI-6')
+    expect(h.head()).toBe('TI-6')
+    expect(h.text()).not.toContain('Rivers')
+    await h.click('Remembered')
+    expect(h.text()).toContain('Last: TI-6 (Remembered)')
+    expect(h.text()).not.toContain('Rivers')
   })
 })
 
 describe('VoiceOver (YAZ-5314): a title never gives the answer away', () => {
-  it('with `notitle`, no title is read until the card is fully shown', async () => {
+  it('with `notitle`, no title is ever read (YAZ-5695), fully shown too', async () => {
     h = await reviewSetup(vault(cardBlock('Which river?\n---\n{{Nile}}', 'TI-7, title "The Nile", notitle')))
     expect(spoken()).not.toContain('The Nile')
     await h.tap()
     expect(spoken()).not.toContain('The Nile')
     await h.tap()
-    expect(h.head()).toBe('The Nile · TI-7')
-    expect(spoken()).toContain('The Nile')
+    expect(h.head()).toBe('TI-7')
+    expect(spoken()).not.toContain('The Nile')
   })
 
   it('a title that holds a hidden-word mark (`{{…}}`) waits as `notitle` does: its words are no answer before the end', async () => {
