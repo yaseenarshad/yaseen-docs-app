@@ -1,7 +1,7 @@
 import { isSupportedFile } from '@shared/fileKind'
 import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
-import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, HeartIcon, PencilIcon } from '../views/view/icons'
 import { focusPlaces, scopeGroup, type MenuAction, type MenuSection } from '../sidebar/menuSections'
 import type { ListState } from '../lists/useVaultListsHere'
 import { useUnit } from '../vault/unitWord'
@@ -120,12 +120,12 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     ],
     [
       // Never "Rename": that word renames on disk in the file menu (YAZ-2949 D3, the vault menu's words).
-      ...(onRename === undefined ? [] : [{ id: 'rename', label: 'Set display name', onSelect: () => onRename(menu.id) }]),
+      ...(onRename === undefined ? [] : [{ id: 'rename', label: 'Set display name', icon: <PencilIcon />, onSelect: () => onRename(menu.id) }]),
       ...(menu.named && onResetName !== undefined ? [{ id: 'reset-name', label: unit('Reset to page name'), onSelect: () => onResetName(menu.id) }] : []),
     ],
     // "Rename file" (YAZ-4248), a group of its own after the tab's name, so the file's name and the tab's are apart.
     // Grey on a tab that shows no file (a folder page, Settings).
-    onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', disabled: !isSupportedFile(menu.path), onSelect: () => onRenameFile(menu.path) }],
+    onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', icon: <PencilIcon />, disabled: !isSupportedFile(menu.path), onSelect: () => onRenameFile(menu.path) }],
     [
       ...(lists === null || onToggleFavorite === undefined
         ? []

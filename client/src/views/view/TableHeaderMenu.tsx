@@ -25,6 +25,7 @@ import { type Rule, inferType, propertyValues } from './filterRows'
 import { columnTyping } from '../editorType'
 import { isMentionsColumn } from '../mentionsColumn'
 import { TextField } from './TextField'
+import { PencilIcon } from './icons'
 import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, textInCellsOf, toggleHeaderRowPlain, useFolderHeaderRow } from './TableLookSettings'
 import { HEADER_ROW_CHOICES, headerRowLabel, type HeaderRowOwn } from '@shared/types'
 import { headerSwatch } from '../../editor/table/colours'
@@ -308,7 +309,11 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                 Edit column…
               </button>
               <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('rename')}>
-                Rename column…
+                {/* The pencil marks every row that changes a name (YAZ-5770). */}
+                <span className="ctx-menu__label">
+                  <PencilIcon />
+                  Rename column…
+                </span>
               </button>
               <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('add')}>
                 Add column to the right…

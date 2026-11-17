@@ -3,7 +3,7 @@ import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
-import { CopyIcon, EyeIcon, FolderIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, FolderIcon, HeartIcon, PencilIcon } from '../views/view/icons'
 import type { CreateKind } from './createEntry'
 import { NewKindIcon } from './FileIcon'
 import type { MenuTargets } from './Sidebar'
@@ -514,7 +514,8 @@ const reviewPage: Leaf = (t, h) => {
 const rename: Leaf = (t, h) => {
   const path = t.renamePath
   if (path === null) return null
-  return { id: 'rename', label: 'Rename', onSelect: () => h.onRename(path) }
+  // The pencil marks every row that changes a name (YAZ-5770).
+  return { id: 'rename', label: 'Rename', icon: createElement(PencilIcon), onSelect: () => h.onRename(path) }
 }
 
 /**

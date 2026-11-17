@@ -14,7 +14,7 @@
 import type { LinkActions } from '../editor/linkMenu'
 import { copyText } from '../editor/linkMenu'
 import { focusPlaces, scopeGroup, type MenuItem, type MenuSection } from '../sidebar/menuSections'
-import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, HeartIcon, PencilIcon } from '../views/view/icons'
 import { requestPageWindow } from '../views/pageWindowRequest'
 
 export interface ExploreMenuDoors {
@@ -85,7 +85,7 @@ export function explorePageSections(path: string, doors: ExploreMenuDoors): Menu
       },
     ],
     [...(a.showInSidebar === undefined ? [] : [{ id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: then(() => a.showInSidebar?.(path)) }]), ...focus, { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void copyText(path, 'path', doors.onNotice) }],
-    doors.onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', onSelect: then(() => doors.onRenameFile?.(path)) }],
+    doors.onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', icon: <PencilIcon />, onSelect: then(() => doors.onRenameFile?.(path)) }],
     [
       ...favorite,
       ...(a.reveal === undefined ? [] : [{ id: 'reveal', label: 'Reveal in Finder', onSelect: () => a.reveal?.(path) }]),

@@ -50,7 +50,7 @@ import { ColumnSearch } from '../views/view/ColumnSearch'
 import { LinkPills, cellContent } from '../views/view/GroupHeader'
 import { PillLook, usePillLook } from './wikilink/LinkPillParts'
 import { openByGesture, type OpenHandlers } from '../lib/openGesture'
-import { PropertiesIcon } from '../views/view/icons'
+import { PencilIcon, PropertiesIcon } from '../views/view/icons'
 import { readForWrite, trackFileWrite, transformFile, type ContentTransform } from '../views/writeProperty'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { WikilinkHover } from './wikilink/wikilinkHover'
@@ -883,7 +883,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
           <div role="menu" aria-label={`Property ${propertyMenu.key}`} className="frontmatter-property-menu__items">
             {/* A column's row edits that column on its folder (C2, C6); a field no folder defines, with a vault root, the vault's declaration (YAZ-4551 D21). */}
             {typeable(propertyMenu.row) && <button className="view-popover__item" type="button" role="menuitem" onClick={() => { const menu = propertyMenu; unlockThen(menu.anchor, () => setPropertyMenu({ ...menu, editing: true })) }}>Edit property <span>›</span></button>}
-            {renameable(propertyMenu.row) && <button className="view-popover__item" type="button" role="menuitem" onClick={() => { const menu = propertyMenu; unlockThen(menu.anchor, () => setPropertyMenu({ ...menu, renaming: true })) }}>Rename…</button>}
+            {renameable(propertyMenu.row) && <button className="view-popover__item" type="button" role="menuitem" onClick={() => { const menu = propertyMenu; unlockThen(menu.anchor, () => setPropertyMenu({ ...menu, renaming: true })) }}><span className="ctx-menu__label"><PencilIcon />Rename…</span></button>}
             <button className="view-popover__item" type="button" role="menuitem" onClick={() => {
               const { key, row } = propertyMenu
               void navigator.clipboard.writeText(copyText(row.raw)).catch((err: unknown) => setError(`Could not copy "${key}": ${messageOf(err)}`))

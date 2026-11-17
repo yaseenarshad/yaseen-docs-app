@@ -1,6 +1,6 @@
 import { createElement, type ReactNode } from 'react'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
-import { CopyIcon, FolderIcon } from '../views/view/icons'
+import { CopyIcon, FolderIcon, PencilIcon } from '../views/view/icons'
 import type { KeyedVault } from '@shared/types'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { errorText, type MenuAction, type MenuSection } from './menuSections'
@@ -122,7 +122,8 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
       ...(isCurrent || h.onOpenHere === undefined ? [] : [{ id: 'open-here', label: 'Open in this window', hint: '⇧⏎', onSelect: () => h.onOpenHere?.(path) }]),
     ],
     [
-      { id: 'rename', label: 'Set display name', onSelect: () => h.onRename(path) },
+      // The pencil marks every row that changes a name (YAZ-5770).
+      { id: 'rename', label: 'Set display name', icon: createElement(PencilIcon), onSelect: () => h.onRename(path) },
       ...(renamed ? [{ id: 'reset-name', label: 'Reset to folder name', onSelect: () => h.onResetName(path) }] : []),
       {
         id: 'key',
@@ -145,7 +146,7 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
 export function buildVaultSetMenuSections(id: string, h: VaultSetMenuHandlers): MenuSection[] {
   return [
     [
-      { id: 'rename-set', label: 'Rename', onSelect: () => h.onRename(id) },
+      { id: 'rename-set', label: 'Rename', icon: createElement(PencilIcon), onSelect: () => h.onRename(id) },
       { id: 'remove-set', label: 'Remove from workspaces', onSelect: () => h.onRemove(id) },
     ],
   ]
