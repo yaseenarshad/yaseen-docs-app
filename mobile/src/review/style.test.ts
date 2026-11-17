@@ -21,20 +21,52 @@ const blockAfter = (text: string, start: string) => {
 }
 
 describe('the Review tab styles', () => {
-  it('YAZ-5706: the zoom scales the card\'s parts with CSS zoom (they reflow in the card\'s width), never the card box; the Zoom row\'s buttons are touch-sized', () => {
-    expect(css).toMatch(/\.review__card > \* \{[^}]*zoom: var\(--review-zoom, 1\);/)
-    expect(css).not.toMatch(/\.review__card \{[^}]*zoom:/)
-    // The card's width is the screen's at any zoom: 50% never halves it.
+  it('YAZ-5716: the zoom changes the text size only (no CSS zoom): the paddings, gaps and the card\'s edges stay in px; the Zoom row\'s buttons are touch-sized', () => {
+    expect(css).not.toMatch(/(^|[\s;{])zoom:/)
+    // The card's text: the vault's Card text size (else Mochi's 16 px), times the zoom.
+    expect(css).toMatch(/\.review__card \.phone-card__body \{[^}]*font-size: calc\(var\(--card-text-size, 16px\) \* var\(--review-zoom, 1\)\);/)
+    // The words above the text scale with it, each from its own px.
+    for (const [sel, px] of [['.review__chip', '10.5px'], ['.review__crumb', '11.5px'], ['.review__sides', '11.5px'], ['.review__head', '15px'], ['.review__id', '13px'], ['.review__fix', '14px']]) expect(blockAfter(css, `${sel} {`)).toContain(`font-size: calc(${px} * var(--review-zoom, 1));`)
+    // The card's padding and the line between sides never read the zoom.
+    expect(blockAfter(css, '.review__card {')).not.toMatch(/padding[^;]*--review-zoom/)
+    expect(css).toMatch(/\.review__card \.card__rule \{[^}]*margin-inline: -16px;/)
     expect(css).not.toMatch(/max-width:[^;]*--review-zoom/)
     expect(css).toMatch(/\.review__zoom button \{[^}]*min-width: var\(--tap\);[^}]*min-height: var\(--tap\);/)
     expect(css).toMatch(/\.review__card\[data-zoom='in'\] \.review__cardtop \{[^}]*flex-wrap: wrap;/)
-    expect(css).toMatch(/\.review__card \.card__rule \{[^}]*margin-inline: calc\(-16px \/ var\(--review-zoom, 1\)\);/)
   })
 
-  it('YAZ-5415: the controls stay at the bottom while a long card scrolls: the screen never scrolls, the card does (no scroll bar)', () => {
+  it('YAZ-5716: Mochi\'s side room: a 16 px gutter and 32 px inside the card, left and right', () => {
+    expect(css).toMatch(/\.review__stage \{[^}]*padding: 8px 16px 0;/)
+    expect(css).toMatch(/\.review__card \{[^}]*padding: 14px 32px 24px;/)
+    // The vault's Card width is the text's: the card adds its two 32 px sides.
+    expect(css).toMatch(/\.review__card \{[^}]*max-width: calc\(var\(--card-text-width, 100vw\) \+ 64px\);/)
+  })
+
+  it('YAZ-5716: ✕ and ✓ are one neutral grey with a white icon (no red or green at rest), light and dark', () => {
+    const answer = blockAfter(css, '.review__answer {')
+    expect(answer).toContain('background: var(--review-answer-bg);')
+    expect(answer).toContain('color: #fff;')
+    expect(css).not.toMatch(/\.review__answer\[data-rating/)
+    const light = tokens(blockAfter(css, ':root {\n  --review-answer-bg'))
+    const dark = tokens(blockAfter(css, ":root:where([data-scheme='dark']) {\n  --review-answer-bg"))
+    for (const t of [light, dark]) {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(t['--review-answer-bg'].slice(i, i + 2), 16))
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(6)
+    }
+    // The press look stays.
+    expect(css).toMatch(/\.review__answer:active:not\(:disabled\) \{[^}]*transform: scale\(0\.93\);/)
+  })
+
+  it('YAZ-5716: the card ends where its content ends; a long card scrolls as one page (the stage, no scroll bar) with the hint line under it and the controls at the bottom', () => {
     expect(app).toMatch(/\.screen--review \{[^}]*padding: 0;[^}]*overflow: hidden;/)
-    expect(css).toMatch(/\.review__card \{[^}]*flex: 1 1 0;[^}]*min-height: 0;[^}]*overflow-y: auto;[^}]*scrollbar-width: none;/)
-    expect(css).toMatch(/\.review__card::-webkit-scrollbar \{\s*display: none;/)
+    expect(css).toMatch(/\.review__stage \{[^}]*flex: 1 1 0;[^}]*min-height: 0;[^}]*overflow-y: auto;[^}]*scrollbar-width: none;/)
+    expect(css).toMatch(/\.review__stage::-webkit-scrollbar \{\s*display: none;/)
+    const card = blockAfter(css, '.review__card {')
+    expect(card).toContain('flex: none;')
+    expect(card).not.toMatch(/overflow-y: auto/)
+    expect(card).not.toMatch(/flex: 1/)
+    // The hint sits under the card; on a long card it stays at the stage's foot until the card's end comes up.
+    expect(css).toMatch(/\.review__stage > \.review__hint \{[^}]*position: sticky;[^}]*bottom: 0;/)
     expect(css).toMatch(/\.review__dock \{[^}]*flex: none;/)
   })
 

@@ -2690,6 +2690,88 @@ if (process.env.LAYOUT_REVIEW_ZOOM !== 'no') {
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
+// YAZ-5716 (Mochi's breathing room), light and dark, at 320, 375 and 390 px: a short card, a long card, hidden words, and
+// the hidden-words card at 50% and 200%. Measured: where the text starts and ends (from each screen edge, and as a share
+// of the width), the text size, the characters on the first line, the card's inner side padding; the card ends where
+// its content ends with the hint line right under it (a short card), a long card scrolls as one page (the card itself
+// never scrolls) with the controls at the bottom; zoom changes the text size only (the paddings stay 32 px); the ✕ / ✓
+// buttons one neutral grey with a white icon; nothing sideways.
+const REVIEW_ROOM = `(() => {
+  const r = (el) => el ? el.getBoundingClientRect() : null
+  const W = window.innerWidth
+  const card = document.querySelector('.review__card')
+  const body = document.querySelector('.review__card .phone-card__body')
+  const hint = document.querySelector('.review__hint')
+  const dock = document.querySelector('.review__dock')
+  const stage = document.querySelector('.review__stage')
+  const p = body && body.querySelector('.card__side p, p')
+  if (!card || !body || !hint || !dock || !stage || !p) return { error: 'missing ' + JSON.stringify({ card: !!card, body: !!body, hint: !!hint, dock: !!dock, stage: !!stage, p: !!p }) }
+  const c = r(card), pr = r(p), h = r(hint), d = r(dock)
+  // The first line's characters: walk the text until the line breaks.
+  const text = p.firstChild && p.firstChild.nodeType === 3 ? p.firstChild : null
+  let chars = 0
+  if (text) {
+    const range = document.createRange()
+    let top = null
+    for (let i = 0; i < text.length; i++) {
+      range.setStart(text, i); range.setEnd(text, i + 1)
+      const rr = range.getClientRects()[0]
+      if (!rr) continue
+      if (top === null) top = rr.top
+      if (rr.top > top + 2) break
+      chars++
+    }
+  }
+  const cs = getComputedStyle(card)
+  const last = [...card.children].filter((e) => getComputedStyle(e).display !== 'none').at(-1)
+  const answers = [...document.querySelectorAll('.review__answer')].map((b) => ({ bg: getComputedStyle(b).backgroundColor, fg: getComputedStyle(b).color }))
+  return {
+    W,
+    left: Math.round(pr.left), right: Math.round(W - pr.right),
+    leftPct: Math.round((pr.left / W) * 1000) / 10,
+    gutter: Math.round(c.left), pad: parseFloat(cs.paddingLeft),
+    size: parseFloat(getComputedStyle(p).fontSize),
+    chars,
+    cardEnd: Math.round(c.bottom - r(last).bottom - parseFloat(cs.paddingBottom)),
+    hintGap: Math.round(h.top - c.bottom),
+    cardScrolls: card.scrollHeight > card.clientHeight + 1,
+    pageScrolls: stage.scrollHeight > stage.clientHeight + 1,
+    dockBottom: Math.round(d.bottom), tabTop: Math.round(r(document.querySelector('.tabbar'))?.top ?? window.innerHeight),
+    answers,
+    sideways: document.documentElement.scrollWidth > W || card.scrollWidth > card.clientWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_REVIEW_ROOM !== 'no') {
+  const pad0: Record<string, number> = {}
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of SIZES) {
+      for (const [name, zoom] of [['review-room-short', 1], ['review-room-long', 1], ['review-room-hidden', 1], ['review-room-z50', 0.5], ['review-room-z200', 2]] as const) {
+        const shot = await open(name, w, h)
+        const file = join(out, `room-${name.slice('review-room-'.length)}-${w}-${scheme}.png`)
+        renameSync(shot, file)
+        const m = await evaluate(REVIEW_ROOM)
+        if (name === 'review-room-hidden') pad0[`${w}-${scheme}`] = m.pad
+        type A = { bg: string; fg: string }
+        const grey = (c: string) => { const [r, g, b] = (c.match(/[\d.]+/g) ?? []).map(Number); return Math.max(r, g, b) - Math.min(r, g, b) <= 6 }
+        const as = (m.answers ?? []) as A[]
+        const neutral = as.length >= 2 && as.every((a) => a.bg === as[0].bg && a.fg === as[0].fg && grey(a.bg) && a.fg === 'rgb(255, 255, 255)')
+        const long = name === 'review-room-long'
+        const ok =
+          !m.error &&
+          m.gutter >= 15 && m.gutter <= 17 && m.pad === 32 &&
+          Math.abs(m.size - 16 * zoom) < 0.01 &&
+          m.leftPct >= 11.5 &&
+          !m.cardScrolls && Math.abs(m.cardEnd) <= 1 &&
+          (long ? m.pageScrolls : m.hintGap >= 0 && m.hintGap <= 12) &&
+          m.dockBottom <= m.tabTop + 0.5 && neutral && !m.sideways
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  Review room ${name.slice('review-room-'.length)} at ${w}, ${scheme}: ${m.error ?? `text ${m.left} px from the left (${m.leftPct}%), ${m.right} px from the right; gutter ${m.gutter}, padding ${m.pad}; text ${m.size} px; ${m.chars} characters on the first line; the card ends ${m.cardEnd} px past its content, the hint ${m.hintGap} px under it; the card ${m.cardScrolls ? 'SCROLLS INSIDE' : 'never scrolls inside'}, the page ${m.pageScrolls ? 'scrolls' : 'fits'}; ✕ ✓ ${as.map((a) => `${a.bg} on ${a.fg}`).join(' / ')}${neutral ? '' : ' NOT NEUTRAL'}${m.sideways ? '; SIDEWAYS' : ''}`}  ${file}`)
+      }
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
 chrome.kill()
 server.close()
 console.log(failed === 0 ? `\nAll layout checks pass. Pictures: ${out}` : `\n${failed} layout checks FAILED. Pictures: ${out}`)
