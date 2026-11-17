@@ -61,3 +61,34 @@
 .tree[data-lines='hover'][data-touch] > li > .tree__row::before {
   opacity: 1;
 }
+
+/*
+ * Show in Search (YAZ-5714): the row the Review crumb's bubble asked for glows, the Mac's Show in sidebar yellow for the
+ * Mac's 3 s (`SIDEBAR_REVEAL_MS`): held for 1.5 s, then it fades out over 1.5 s. The tree puts the class on once the row
+ * is on the screen and takes it off at the animation's end (`useRevealGlow`). In the tree's own chunk (not the first load). Reduced motion: held 1.5 s, no fade.
+ */
+.search .tree__row--revealed {
+  animation: tree-reveal 3s linear;
+}
+
+@keyframes tree-reveal {
+  0%, 50% {
+    background-color: var(--reveal-bg);
+    color: var(--reveal-fg);
+    animation-timing-function: ease-out;
+  }
+}
+
+@keyframes tree-reveal-still {
+  from,
+  to {
+    background-color: var(--reveal-bg);
+    color: var(--reveal-fg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search .tree__row--revealed {
+    animation: tree-reveal-still 1.5s;
+  }
+}

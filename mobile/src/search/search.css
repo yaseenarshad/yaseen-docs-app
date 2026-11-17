@@ -188,13 +188,6 @@
   gap: 8px;
 }
 
-/* Show in Search (YAZ-5714): the row the Review crumb's bubble asked for glows, the Mac's Show in sidebar yellow. */
-.search .tree__row--revealed {
-  background: var(--reveal-bg);
-  color: var(--reveal-fg);
-  transition: background-color 0.4s;
-}
-
 /*
  * The results in the tree, as the Mac's Search tab draws them (`client/src/app.css`): the typed text marked in
  * a match (`tree__mark`, the `==highlight==` wash and weight); a row that is no match (a parent, a row inside a matched
