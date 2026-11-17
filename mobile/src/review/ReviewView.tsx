@@ -27,7 +27,8 @@ import { createReviewSource, type ReviewSource } from './source'
 import { setReviewInProgress } from './inProgress'
 import { SEEN_MS, useTapGuard } from './tapGuard'
 import { useWakeLock } from './wakeLock'
-import { FILTER_ICON, NEEDS_FIX, UNDO_SHOWN_MS, filterLabel, hintText, lostTitle } from './words'
+import { NEEDS_FIX, UNDO_SHOWN_MS, hintText, lostTitle } from './words'
+import { FilterIcon, filterLabel } from '@client/review/cardFilters'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
 import { useReviewTop } from '../screens/reviewTop'
 import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
@@ -47,7 +48,7 @@ import './review.css'
  * answer list, never files); the card is the Mac's own drawing (`PhoneCard`). The mockup (version 9) is the spec.
  *
  *  - The top row: the filter "All cards ▾" (round 10, addition 1: All cards, Up next, Due today, New cards, with
- *    counts; its sheet ends with today's work, "Today: 2 learned · 31 reviews · 9 min") and Mochi's count, "✕ 2 ▣ 4 / 6" (YAZ-5674,
+ *    counts; its sheet ends with today's work, "Today: 2 learned · 31 reviews · 9 min") and Mochi's count, "✕ 2 · tray 4 / 6" (YAZ-5674,
  *    the Mac's `SessionCount`).
  *  - Above the card: its state ("Due today", "New card"); then the head, "Title · ID", with "in <page>"
  *    for a card in a page (round 15, item 4). The title is the card line's (decision D): never a
@@ -585,10 +586,10 @@ function SessionScreen({
       }}
     >
       <span className="review__mode">{filterLabel(session.filter)} ▾</span>
-      {/* YAZ-5674: Mochi's count, the Mac's piece; the list's glyph moves here, in front of "done / total" (once). */}
+      {/* YAZ-5674: Mochi's count, the Mac's piece; the list's glyph moves here, in front of "done / total" (once). YAZ-5691: the Mac's icon. */}
       {counted && (
         <span className="review__place">
-          <SessionCount session={session} icon={<span aria-hidden="true">{FILTER_ICON[filter]}</span>} />
+          <SessionCount session={session} icon={<FilterIcon filter={filter} />} />
         </span>
       )}
     </button>

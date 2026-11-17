@@ -60,7 +60,7 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
     // YAZ-5415: the review sheet's rows: the glyph, the name, the count (YAZ-5685: the pick is under the ⚙).
     const rows = [...h.host.querySelectorAll('.review__sheet-row')].map((r) => r.textContent)
     // Review rules v1, rule 7: DU-3 (new, Up next) is under Up next only; before, New cards said 2.
-    expect(rows).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cards1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434); YAZ-5685: no "from" on the row */)
+    expect(rows).toEqual(['All cards3', 'Up next1', 'Due today1', 'New cards1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434); YAZ-5685: no "from" on the row */)
     await h.click(/^Due today/)
     expect(h.text()).toContain('Due today ▾')
     expect(h.head()).toBe('DU-1')

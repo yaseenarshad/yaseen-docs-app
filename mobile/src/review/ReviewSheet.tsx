@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react'
-import { kindCount, kindCountText, newCardsFrom, newRowNote, pickLabel, showsFilter, toggledPick, underFolder } from '@client/review/inboxMenu'
+import { kindCount, kindCountText, newCardsFrom, newRowNote, pickLabel, toggledPick, underFolder } from '@client/review/inboxMenu'
+import { FilterIcon, inboxFilters } from '@client/review/cardFilters'
 import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, useSettingsFold } from '@client/review/ReviewSettingsPart'
 import type { CardReviewApi, CardReviewSession, NewCardFolder } from '@client/review/useCardReview'
 import type { AddKind } from '@shared/cardSchedule'
-import { FILTERS, FILTER_ICON } from './words'
 
 /**
  * THE REVIEW MENU as a sheet (the Mac's cards menu, `CardInboxBar`): a tap on
@@ -43,7 +43,7 @@ export function ReviewSheet({
   return (
     <div className="review__sheet" role="dialog" aria-label="What to review">
       <div role="menu" aria-label="Which cards">
-        {FILTERS.filter((f) => showsFilter(f.id, session)).map((f) => {
+        {inboxFilters(session).map((f) => {
           const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
           // The Mac's rule (YAZ-5624, YAZ-5434): New cards "10" alone, Up next "2 / 5".
           const counted = kind === null ? { count: session.counts[f.id], total: null } : kindCount(session, kind)
@@ -65,8 +65,9 @@ export function ReviewSheet({
                   review.setFilter(f.id)
                 }}
               >
+                {/* YAZ-5691: the Mac menu's own icon. */}
                 <span className="review__sheet-ic" aria-hidden="true">
-                  {FILTER_ICON[f.id]}
+                  <FilterIcon filter={f.id} />
                 </span>
                 <span className="review__sheet-name">{f.label}</span>
                 {f.id === 'new' && note !== '' && <span className="review__sheet-note-from">· {note}</span>}

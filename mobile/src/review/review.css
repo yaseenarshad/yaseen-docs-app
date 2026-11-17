@@ -173,8 +173,10 @@
 }
 
 .review__sheet-ic {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
   width: 22px;
-  text-align: center;
   color: var(--fg-muted);
 }
 

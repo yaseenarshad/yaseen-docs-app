@@ -136,7 +136,7 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
     expect([place(), ...bar()]).toEqual([[3, 4], 75, 100, '3', '4'])
     await h.click('Forgot')
     // The list's count: the one card left, not one per ✕.
-    expect(await dueRow()).toBe('◷Due today1')
+    expect(await dueRow()).toBe('Due today1')
     await h.click('Remembered')
     expect(q('.review__done-title')?.textContent).toBe('Finished reviewing missed cards.')
     expect(bar()).toEqual([100, 100, '3', '3'])
