@@ -36,8 +36,10 @@ export function SessionCount({ session, icon }: { session: Numbers; icon: ReactN
       )}
       <span className="session-count__done" aria-hidden="true">
         {icon}
-        <span className="session-count__n">{done}</span>
-        <span className="session-count__total"> / {total}</span>
+        <span>
+          <span className="session-count__n">{done}</span>
+          <span className="session-count__total"> / {total}</span>
+        </span>
       </span>
     </span>
   )
