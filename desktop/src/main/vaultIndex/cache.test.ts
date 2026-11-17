@@ -365,12 +365,12 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     '```card',
     'A card links [[Card Link]] and #card-tag',
     '```',
-    '<!-- card: CAN-3, title "Card, links", tags "x" "y", level 2, off, next, notitle, fix, 2026-11-12T14:05:00.000Z good, 2026-11-13T09:00:00.000Z again 13s -->',
+    '<!-- card: CAN-3, title "Card, links", tags "x" "y", level 2, off, next, notitle, fix, 2026-11-12T14:05:00.000Z good, 2026-11-13T09:00:00.000Z again 13s, 2026-11-14T08:30Z good -->',
     '',
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 21,
+    cacheVersion: 22,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
@@ -401,7 +401,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       // Its own properties too (YAZ-5349, CACHE_VERSION 19), off its card line.
       // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
       // Its `fix` (YAZ-5097) too: the Card fix status column reads no file. CACHE_VERSION 19: the demo (YAZ-5430) and the phone (YAZ-5309) each took 18.
-      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05:00.000Z', rating: 'good' }, { at: '2026-11-13T09:00:00.000Z', rating: 'again', seconds: 13 }], title: 'Card, links', notitle: true, fix: true, properties: { tags: ['x', 'y'], level: 2 } }],
+      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05:00.000Z', rating: 'good' }, { at: '2026-11-13T09:00:00.000Z', rating: 'again', seconds: 13 }, { at: '2026-11-14T08:30:00.000Z', rating: 'good' }], title: 'Card, links', notitle: true, fix: true, properties: { tags: ['x', 'y'], level: 2 } }],
     },
     // A card file (YAZ-5037, CACHE_VERSION 15): `kind: card` in its properties, its title its card's (off its card line, YAZ-5308).
     cardFile: { kind: 'card', title: 'Capital of France?' },
