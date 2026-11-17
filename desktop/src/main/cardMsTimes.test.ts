@@ -26,7 +26,7 @@ describe('the writer: the full ISO 8601 UTC time to the millisecond', () => {
   })
 })
 
-describe('the reader: one form', () => {
+describe('the reader: the written form, and any other valid ISO 8601 time (YAZ-5673, cardShortTimes.test.ts)', () => {
   it('reads a millisecond time as a review; every other part keeps its bytes', () => {
     const text = `<!-- card: WIKI-1, title "Capital", off, ${PHONE} again 4s, ${MAC} good, mochi x1 -->`
     const parsed = parseCardLine(text)!
@@ -37,8 +37,8 @@ describe('the reader: one form', () => {
     expect(formatCardLine(parsed)).toBe(text)
   })
 
-  it('a time of any other form is an unknown part, kept as its text: a minute-only time, seconds without milliseconds, an offset, a bad second', () => {
-    for (const part of ['2026-11-15T15:39Z good', '2026-11-15T15:39:12Z good', '2026-11-15T15:39:12.34Z good', '2026-11-15T15:39:12.345+00:00 good', '2026-11-15T15:39:60.000Z good', '2026-11-15T15:39:12.345z good']) {
+  it('a time that is no valid ISO 8601 UTC time is an unknown part, kept as its text: a bad second, a small `z`, no zone', () => {
+    for (const part of ['2026-11-15T15:39:60.000Z good', '2026-11-15T15:39:12.345z good', '2026-11-15T15:39:12.345 good']) {
       const text = `<!-- card: WIKI-1, ${part}, ${MAC} good -->`
       const parsed = parseCardLine(text)!
       expect(parsed.parts.map((p) => p.kind), part).toEqual(['id', 'other', 'review'])

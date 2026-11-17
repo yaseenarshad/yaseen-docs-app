@@ -19,8 +19,10 @@ import { inLineEnds, withLf } from './lineEnds'
  * `2026-11-12T14:05:31.204Z good 13s`; a review made before it has none). THE TIME (YAZ-5642) is ISO 8601 in UTC to
  * the millisecond, as `Date.prototype.toISOString` writes it (`cardTime`): two answers never share one, so a review is
  * its time and rating, and no merge or Undo has to guess which of two "same" reviews is meant. It is the one form the
- * line reads: a review time of any other form (the minute-only `2026-11-12T14:05Z` of the first builds) is an unknown
- * part, kept as its text (a one-off conversion outside the app rewrites those once). `off` takes the card out of review. `next` puts it at the top of the Inbox
+ * line WRITES. The line READS any valid ISO 8601 time (YAZ-5673): with or without seconds or milliseconds, `Z` or an
+ * offset (the minute-only `2026-11-12T14:05Z` of the first builds and of the demo vault's seed); its `at` is that
+ * instant in the written form, and the part keeps its own text (`raw`), so no write rewrites a user's old review just
+ * to change its form. An invalid time (`2026-02-30T…`, no zone) is an unknown part, kept as its text. `off` takes the card out of review. `next` puts it at the top of the Inbox
  * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. `notitle` hides the card's title on the
  * Inbox's front (YAZ-5030, "Title on the front: Hide"); absent, the title shows. `fix` marks the card "Fix later"
  * (YAZ-5097): it has a mistake to fix at the desk; it stays in review.
@@ -67,7 +69,7 @@ export type CardPart =
   | { kind: 'id'; id: string }
   | { kind: 'title'; title: string; raw?: string }
   | { kind: 'property'; name: string; value: CardPropertyValue; raw?: string }
-  | { kind: 'review'; review: CardReview }
+  | { kind: 'review'; review: CardReview; raw?: string }
   | { kind: 'off' }
   | { kind: 'next' }
   | { kind: 'notitle' }
@@ -114,21 +116,50 @@ export interface CardRecord {
 /** `<!-- card: … -->` on one line, any spaces inside the delimiters. */
 const LINE_RE = /^<!--[ \t]*card:[ \t]*(.*?)[ \t]*-->$/
 /**
- * A review part: a real UTC time to the millisecond (YAZ-5642: month, day, hour, minute and second in range, three
- * digits of milliseconds, `Z`) and an FSRS rating, then the answer's
- * seconds when known (YAZ-5033): ` <n>s`, a whole number in its one written form (no leading zero, no sign), at most
- * `CARD_SECONDS_MAX`. Any other ending (`13.5s`, `013s`, `90000s`) makes the part unknown: kept as its text.
+ * A review part: a real ISO 8601 time (YAZ-5673: the date, the hour and minute, then seconds and a fraction when
+ * written, then `Z` or an offset `±HH:MM`; each field in range, `reviewAt` checks the day) and an FSRS rating, then the
+ * answer's seconds when known (YAZ-5033): ` <n>s`, a whole number in its one written form (no leading zero, no sign),
+ * at most `CARD_SECONDS_MAX`. Any other ending (`13.5s`, `013s`, `90000s`) makes the part unknown: kept as its text.
  */
-const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z)[ \t]+(again|hard|good|easy)(?:[ \t]+(0|[1-9]\d{0,4})s)?$/
+const REVIEW_RE =
+  /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))[ \t]+(again|hard|good|easy)(?:[ \t]+(0|[1-9]\d{0,4})s)?$/
+/** The written form of the line (YAZ-5642), the one `at` this reader passes as it is. */
+const FULL_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+
+/**
+ * A review time `REVIEW_RE` matched, as the instant in the written form (`cardTime`), or null when its day is not on the
+ * calendar (`2026-02-30`). The full form is passed as it is; any other is read to the millisecond (more digits are cut).
+ */
+function reviewAt(time: string): string | null {
+  const y = Number(time.slice(0, 4))
+  const m = Number(time.slice(5, 7))
+  const d = Number(time.slice(8, 10))
+  if (new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) return null
+  if (FULL_TIME_RE.test(time)) return time
+  // `Date.parse` reads a fraction of any length but no more than ms; it is cut to three digits first, so it never rounds.
+  const ms = Date.parse(time.replace(/(\.\d{3})\d+/, '$1'))
+  return Number.isNaN(ms) ? null : cardTime(ms)
+}
 
 /** A review time as the line writes it (YAZ-5642): ISO 8601, UTC, to the millisecond (`2026-11-12T14:05:31.204Z`). */
 export const cardTime = (ms: number): string => new Date(ms).toISOString()
+
+/** The review part `text` holds (its own text kept as `raw` when it is not the written form), or null. */
+function reviewPart(text: string): Extract<CardPart, { kind: 'review' }> | null {
+  const m = REVIEW_RE.exec(text)
+  if (m === null) return null
+  const seconds = m[3] === undefined ? undefined : Number(m[3])
+  const at = reviewAt(m[1])
+  if (at === null || (seconds !== undefined && seconds > CARD_SECONDS_MAX)) return null
+  const review: CardReview = seconds === undefined ? { at, rating: m[2] as CardRating } : { at, rating: m[2] as CardRating, seconds }
+  return formatCardReview(review) === text ? { kind: 'review', review } : { kind: 'review', review, raw: text }
+}
 
 /** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteText`). */
 const TITLE_RE = /^title[ \t]+("(?:[^"\\]|\\.)*")$/
 
 /** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle`, `fix` (YAZ-5097) or an ID. */
-const isKnownPart = (text: string): boolean => REVIEW_RE.test(text) || text === 'off' || text === 'next' || text === 'notitle' || text === 'fix' || isNumberId(text)
+const isKnownPart = (text: string): boolean => reviewPart(text) !== null || text === 'off' || text === 'next' || text === 'notitle' || text === 'fix' || isNumberId(text)
 
 /**
  * The parts of a line's body, split on its commas: a comma inside a quoted text (a title, a property's value) splits
@@ -283,11 +314,9 @@ export function parseCardLine(value: string): CardLine | null {
   let titled = false
   for (const text of splitParts(body)) {
     if (text === '') continue
-    const review = REVIEW_RE.exec(text)
-    const seconds = review?.[3] === undefined ? undefined : Number(review[3])
+    const review = reviewPart(text)
     const title = titled ? null : TITLE_RE.exec(text)
-    if (review !== null && (seconds === undefined || seconds <= CARD_SECONDS_MAX))
-      parts.push({ kind: 'review', review: seconds === undefined ? { at: review[1], rating: review[2] as CardRating } : { at: review[1], rating: review[2] as CardRating, seconds } })
+    if (review !== null) parts.push(review)
     else if (title !== null && cleanCardTitle(unquoteText(title[1])) !== '') {
       titled = true
       const clean = cleanCardTitle(unquoteText(title[1]))
@@ -335,7 +364,7 @@ export function formatCardLine(line: CardLine): string | null {
         : p.kind === 'property'
           ? (p.raw ?? formatProperty(p.name, p.value))
           : p.kind === 'review'
-            ? formatCardReview(p.review)
+            ? (p.raw ?? formatCardReview(p.review))
             : p.kind === 'other'
               ? p.text
               : p.kind,
@@ -559,11 +588,15 @@ export function withCardReviews(line: CardLine, add: readonly CardReview[]): Car
   const fresh = add.filter((r) => !seen.has(cardReviewKey(r)) && (seen.add(cardReviewKey(r)), true)).map((r) => timed.get(cardReviewKey(r)) ?? r)
   if (fresh.length === 0 && !upgraded) return line
   const all = [...held, ...fresh].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+  // A review the line held as it was keeps its part, and so its own text (`raw`, YAZ-5673), in whichever place it takes.
+  const own = new Map<CardReview, CardPart>()
+  for (const p of line.parts) if (p.kind === 'review') own.set(p.review, p)
+  const partOf = (review: CardReview): CardPart => own.get(review) ?? { kind: 'review', review }
   let n = 0
-  const parts: CardPart[] = line.parts.map((p) => (p.kind === 'review' ? { kind: 'review', review: all[n++] } : p))
+  const parts: CardPart[] = line.parts.map((p) => (p.kind === 'review' ? partOf(all[n++]) : p))
   const last = parts.map((p) => p.kind === 'review').lastIndexOf(true)
   const at = last === -1 ? parts.length : last + 1
-  return { parts: [...parts.slice(0, at), ...all.slice(n).map((review): CardPart => ({ kind: 'review', review })), ...parts.slice(at)] }
+  return { parts: [...parts.slice(0, at), ...all.slice(n).map(partOf), ...parts.slice(at)] }
 }
 
 /** The place among the line's parts of the review `withoutCardReview(line, at)` removes, or -1 when no review is at `at`. */
