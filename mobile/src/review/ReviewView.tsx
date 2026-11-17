@@ -329,6 +329,7 @@ function SessionScreen({
   const { reset: resetGuard } = guard
   useEffect(() => resetGuard(), [shown, resetGuard])
 
+  // YAZ-5716: the page that scrolls the card (the stage), with the hint line at its foot: the reading scroll's room.
   const cardBox = useRef<HTMLDivElement>(null)
   // The end of the card (the Mac's end cue): one more tap when every part shows makes ✕
   // and ✓ bounce once with a soft ring. Two names, so each new tap plays it again.
@@ -694,10 +695,12 @@ function SessionScreen({
 
       {card !== null ? (
         <>
-          <div className="review__stage">
+          {/* YAZ-5716: the stage is the page that scrolls (the reading scroll's room): the card, as tall as its content,
+              then the hint line right under it; the controls stay below, outside it. */}
+          <div ref={cardBox} className="review__stage">
             {/* The card is TEXT for VoiceOver (its question is read; a hidden word stays "Hidden word" until it
                 shows), not one button with a label. The tap is the sighted way; VoiceOver has its own button below. */}
-            <div ref={cardBox} className="review__card card card-screen" style={{ ...cardLook, ...zoomStyle(zoom) }} data-zoom={zoom > 100 ? 'in' : undefined} data-back={back ? (answeredNow % 2 === 0 ? 'a' : 'b') : undefined}>
+            <div className="review__card card card-screen" style={{ ...cardLook, ...zoomStyle(zoom) }} data-zoom={zoom > 100 ? 'in' : undefined} data-back={back ? (answeredNow % 2 === 0 ? 'a' : 'b') : undefined}>
               <div className="review__cardtop">
                 <span className="review__chip" data-new={card.isNew || undefined} title={cardStateText(card, Date.now())}>
                   <i aria-hidden="true" />
@@ -736,9 +739,16 @@ function SessionScreen({
                 <div className="review__card-wait" aria-busy="true" />
               )}
             </div>
-            <div className="review__fade" data-on={more || undefined} aria-hidden="true" />
-            <div className="review__more-cue" data-on={more || undefined} aria-hidden="true">
-              ↓ more
+            <div className="review__foot">
+              <div className="review__fade" data-on={more || undefined} aria-hidden="true" />
+              <div className="review__more-cue" data-on={more || undefined} aria-hidden="true">
+                ↓ more
+              </div>
+              <div className="review__hint">
+                {lastAnswer === null && quietLine === null && <span className="review__hint-text">{hintText(left)}</span>}
+                {lastLine}
+                {toast}
+              </div>
             </div>
           </div>
           <button type="button" className="sr-only" onClick={advance} disabled={done}>
@@ -747,11 +757,6 @@ function SessionScreen({
           <p className="sr-only" aria-live="polite">
             {revealed}
           </p>
-          <div className="review__hint">
-            {lastAnswer === null && quietLine === null && <span className="review__hint-text">{hintText(left)}</span>}
-            {lastLine}
-            {toast}
-          </div>
         </>
       ) : (
         <DoneStage>

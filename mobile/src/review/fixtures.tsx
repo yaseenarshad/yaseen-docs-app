@@ -296,10 +296,11 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
         await wait(30)
       }
       break
+    case 'review-room-long':
     case 'review-room-hidden':
     case 'review-room-z50':
     case 'review-room-z200':
-      // YAZ-5716: the first hidden word shown.
+      // YAZ-5716: the long card's back side shown; the first hidden word shown.
       tap()
       break
     case 'review-mochi-more':

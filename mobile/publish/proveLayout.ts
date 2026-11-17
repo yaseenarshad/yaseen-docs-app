@@ -134,7 +134,11 @@ import { freePort } from './freePort'
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
  * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no, LAYOUT_WIDE=no, LAYOUT_CELL_CODE=no skip a part).
  *  - the Review zoom (`#fixture=review-mochi-zoom-max`, `-min`, YAZ-5706), light and dark, at 320, 375 and 390 px: the ⋯
- *    menu's Zoom at 400% and 50%, inside the screen, 44 px taps; the card's parts zoomed, a long word inside the card.
+ *    menu's Zoom at 400% and 50%, inside the screen, 44 px taps; the card's text at that size (YAZ-5716: the paddings
+ *    stay), a long word inside the card.
+ *  - the Review's breathing room (`#fixture=review-room-short`, `-long`, `-hidden`, `-z50`, `-z200`, YAZ-5716), light
+ *    and dark, at 320, 375 and 390 px: 16 px gutter and 32 px inside, 16 px text times the zoom, the card ends at its
+ *    content with the hint line under it, a long card scrolls as one page (and at its end), ✕ ✓ neutral grey.
  *  - the Review top bar (`#fixture=review-mochi`, `review-mochi-more`, YAZ-5698), light and dark, at 320, 375 and 390 px:
  *    the filter on the left (a 44 px tap), the count in the true centre (1 px), the dot and the ⚙ right, no overlap.
  *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
@@ -2633,7 +2637,7 @@ if (process.env.LAYOUT_REVIEW_TOP !== 'no') {
 }
 // YAZ-5706: the ⋯ menu's Zoom walked to each wall (`review-mochi-zoom-max` 400%, `-min` 50%), light and dark, at 320, 375
 // and 390 px: the menu inside the screen, its − % + each a 44 px tap that its centre hits, the wall's button off; the
-// card's parts zoomed (CSS zoom) and reflowing in the card, the card as wide as at 100%: a long word written in breaks inside it, the card never
+// card's text at that size (YAZ-5716: the text size only, the side padding stays 32 px) and reflowing in the card, the card as wide as at 100%: a long word written in breaks inside it, the card never
 // scrolls sideways and nor does the screen. Then the menu shut: a picture of the card at that zoom.
 const REVIEW_ZOOM = (want: number) => `(() => {
   const r = (el) => el ? el.getBoundingClientRect() : null
@@ -2653,11 +2657,12 @@ const REVIEW_ZOOM = (want: number) => `(() => {
   const c = r(card), wq = r(word)
   const out = {
     W, percent: document.querySelector('.review__zoom [data-zoom="reset"]')?.textContent,
-    zoom: getComputedStyle(body).zoom,
+    zoom: parseFloat(getComputedStyle(body).fontSize) / 16,
+    pad: parseFloat(getComputedStyle(card).paddingLeft),
     menuIn: menu.left >= 0 && menu.right <= W + 0.5 && menu.top >= 0 && menu.bottom <= H + 0.5,
     buttons: b,
     wordIn: wq.left >= c.left - 0.5 && wq.right <= c.right + 0.5,
-    wordLines: Math.round(wq.height / parseFloat(getComputedStyle(word).lineHeight || '20') / Number(getComputedStyle(body).zoom || 1)),
+    wordLines: Math.round(wq.height / parseFloat(getComputedStyle(word).lineHeight || '20')),
     full: Math.round(c.width),
     cardSideways: card.scrollWidth > card.clientWidth + 1,
     past: [...card.querySelectorAll('*')].filter((e) => r(e).right > c.right + 0.5).slice(0, 3).map((e) => e.className || e.tagName),
@@ -2682,9 +2687,9 @@ if (process.env.LAYOUT_REVIEW_ZOOM !== 'no') {
         type B = { z: string; w: number; h: number; hit: boolean; off: boolean }
         const bs = (m.buttons ?? []) as B[]
         const wall = want === 400 ? 'in' : 'out'
-        const ok = !m.error && m.percent === `${want}%` && Number(m.zoom) === want / 100 && m.menuIn && bs.length === 3 && bs.every((x) => x.w >= 44 && x.h >= 44 && (x.off || x.hit)) && bs.every((x) => x.off === (x.z === wall)) && m.full >= w - 48 && m.wordIn && !m.cardSideways && !m.sideways
+        const ok = !m.error && m.percent === `${want}%` && Number(m.zoom) === want / 100 && m.menuIn && bs.length === 3 && bs.every((x) => x.w >= 44 && x.h >= 44 && (x.off || x.hit)) && bs.every((x) => x.off === (x.z === wall)) && m.pad === 32 && m.full >= w - 48 && m.wordIn && !m.cardSideways && !m.sideways
         if (!ok) failed++
-        console.log(`${ok ? 'PASS' : 'FAIL'}  Review zoom ${want}% at ${w}, ${scheme}: ${m.error ?? `the row says ${m.percent}, the card's parts at zoom ${m.zoom}; the menu ${m.menuIn ? 'inside' : 'OFF SCREEN'}; ${bs.map((x) => `${x.z} ${x.w}x${x.h}${x.off ? ' off' : x.hit ? '' : ' TAP MISSES'}`).join(', ')}; a long word ${m.wordIn ? `inside the card (${m.wordLines} lines)` : 'PAST THE CARD'}; the card ${m.full} px wide, ${m.cardSideways ? `SCROLLS SIDEWAYS (${m.past.join(', ')})` : 'never sideways'}${m.sideways ? '; THE SCREEN SCROLLS SIDEWAYS' : ''}`}  ${menuShot} ${cardShot}`)
+        console.log(`${ok ? 'PASS' : 'FAIL'}  Review zoom ${want}% at ${w}, ${scheme}: ${m.error ?? `the row says ${m.percent}, the card's text at ${m.zoom}× (YAZ-5716: the text size only), its side padding ${m.pad} px; the menu ${m.menuIn ? 'inside' : 'OFF SCREEN'}; ${bs.map((x) => `${x.z} ${x.w}x${x.h}${x.off ? ' off' : x.hit ? '' : ' TAP MISSES'}`).join(', ')}; a long word ${m.wordIn ? `inside the card (${m.wordLines} lines)` : 'PAST THE CARD'}; the card ${m.full} px wide, ${m.cardSideways ? `SCROLLS SIDEWAYS (${m.past.join(', ')})` : 'never sideways'}${m.sideways ? '; THE SCREEN SCROLLS SIDEWAYS' : ''}`}  ${menuShot} ${cardShot}`)
       }
     }
   }
@@ -2734,6 +2739,7 @@ const REVIEW_ROOM = `(() => {
     chars,
     cardEnd: Math.round(c.bottom - r(last).bottom - parseFloat(cs.paddingBottom)),
     hintGap: Math.round(h.top - c.bottom),
+    hintIn: h.bottom <= r(stage).bottom + 0.5 && h.top >= r(stage).top,
     cardScrolls: card.scrollHeight > card.clientHeight + 1,
     pageScrolls: stage.scrollHeight > stage.clientHeight + 1,
     dockBottom: Math.round(d.bottom), tabTop: Math.round(r(document.querySelector('.tabbar'))?.top ?? window.innerHeight),
@@ -2763,10 +2769,22 @@ if (process.env.LAYOUT_REVIEW_ROOM !== 'no') {
           Math.abs(m.size - 16 * zoom) < 0.01 &&
           m.leftPct >= 11.5 &&
           !m.cardScrolls && Math.abs(m.cardEnd) <= 1 &&
-          (long ? m.pageScrolls : m.hintGap >= 0 && m.hintGap <= 12) &&
+          (m.pageScrolls ? m.hintIn : m.hintGap >= 0 && m.hintGap <= 12) &&
+          (!long || m.pageScrolls) &&
           m.dockBottom <= m.tabTop + 0.5 && neutral && !m.sideways
         if (!ok) failed++
-        console.log(`${ok ? 'PASS' : 'FAIL'}  Review room ${name.slice('review-room-'.length)} at ${w}, ${scheme}: ${m.error ?? `text ${m.left} px from the left (${m.leftPct}%), ${m.right} px from the right; gutter ${m.gutter}, padding ${m.pad}; text ${m.size} px; ${m.chars} characters on the first line; the card ends ${m.cardEnd} px past its content, the hint ${m.hintGap} px under it; the card ${m.cardScrolls ? 'SCROLLS INSIDE' : 'never scrolls inside'}, the page ${m.pageScrolls ? 'scrolls' : 'fits'}; ✕ ✓ ${as.map((a) => `${a.bg} on ${a.fg}`).join(' / ')}${neutral ? '' : ' NOT NEUTRAL'}${m.sideways ? '; SIDEWAYS' : ''}`}  ${file}`)
+        console.log(`${ok ? 'PASS' : 'FAIL'}  Review room ${name.slice('review-room-'.length)} at ${w}, ${scheme}: ${m.error ?? `text ${m.left} px from the left (${m.leftPct}%), ${m.right} px from the right; gutter ${m.gutter}, padding ${m.pad}; text ${m.size} px; ${m.chars} characters on the first line; the card ends ${m.cardEnd} px past its content; the card ${m.cardScrolls ? 'SCROLLS INSIDE' : 'never scrolls inside'}, the page ${m.pageScrolls ? `scrolls, the hint line ${m.hintIn ? 'at its foot' : 'OUT OF VIEW'}` : `fits, the hint ${m.hintGap} px under the card`}; ✕ ✓ ${as.map((a) => `${a.bg} on ${a.fg}`).join(' / ')}${neutral ? '' : ' NOT NEUTRAL'}${m.sideways ? '; SIDEWAYS' : ''}`}  ${file}`)
+        // A page that scrolls, at its end: the card's end comes up and the hint line sits right under it.
+        if (m.pageScrolls) {
+          await evaluate(`(() => { const s = document.querySelector('.review__stage'); s.scrollTop = s.scrollHeight })()`)
+          await wait(300)
+          const end = await evaluate(REVIEW_ROOM)
+          const endFile = join(out, `room-${name.slice('review-room-'.length)}-end-${w}-${scheme}.png`)
+          writeFileSync(endFile, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+          const endOk = !end.error && end.hintGap >= 0 && end.hintGap <= 12 && end.hintIn && end.dockBottom <= end.tabTop + 0.5
+          if (!endOk) failed++
+          console.log(`${endOk ? 'PASS' : 'FAIL'}  Review room ${name.slice('review-room-'.length)} scrolled to its end at ${w}, ${scheme}: ${end.error ?? `the hint ${end.hintGap} px under the card, ${end.hintIn ? 'in view' : 'OUT OF VIEW'}; the controls end at ${end.dockBottom} (tab bar at ${end.tabTop})`}  ${endFile}`)
+        }
       }
     }
   }

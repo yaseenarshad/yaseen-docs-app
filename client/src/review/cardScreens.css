@@ -1020,19 +1020,10 @@ body.card-inbox--sizing {
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
   }
 }
-/* Forgot and Remembered tell apart at a glance: the colour is on the glyph only; the word stays the text colour. */
+/* YAZ-5716 (Yaseen: no colour on remembered or forgotten, "it'll keep the eyes focused"): the glyph is the word's own
+   text colour, as the phone's neutral ✕ ✓; the glyph and the word tell them apart. */
 .card-inbox__answer-icon {
   flex: none;
-}
-.card-inbox__answer[data-rating='again'] .card-inbox__answer-icon {
-  color: var(--danger);
-}
-.card-inbox__answer[data-rating='hard'] .card-inbox__answer-icon {
-  color: var(--warn);
-}
-.card-inbox__answer[data-rating='good'] .card-inbox__answer-icon,
-.card-inbox__answer[data-rating='easy'] .card-inbox__answer-icon {
-  color: var(--ok);
 }
 /* The last answer's line (YAZ-5025 round 2): one quiet line, centred under the buttons, grey for every answer; only its mark has the answer's colour (YAZ-5433). The row keeps
    its height when empty, so nothing under it moves (YAZ-5029). */

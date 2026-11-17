@@ -36,10 +36,12 @@ describe('YAZ-5716: the card, then the hint line, in one page', () => {
     h = await reviewSetup(FILES)
     const stage = q('.review__stage')!
     const card = q('.review__card')!
+    const foot = q('.review__foot')!
     const hint = q('.review__hint')!
     expect(card.parentElement).toBe(stage)
-    expect(hint.parentElement).toBe(stage)
-    expect(card.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(foot.parentElement).toBe(stage)
+    expect(hint.parentElement).toBe(foot)
+    expect(card.nextElementSibling).toBe(foot)
     expect(stage.contains(q('.review__dock'))).toBe(false)
     expect(hint.textContent).toMatch(/Tap anywhere/)
   })

@@ -66,7 +66,7 @@ describe('the Review tab styles', () => {
     expect(card).not.toMatch(/overflow-y: auto/)
     expect(card).not.toMatch(/flex: 1/)
     // The hint sits under the card; on a long card it stays at the stage's foot until the card's end comes up.
-    expect(css).toMatch(/\.review__stage > \.review__hint \{[^}]*position: sticky;[^}]*bottom: 0;/)
+    expect(css).toMatch(/\.review__foot \{[^}]*position: sticky;[^}]*bottom: 0;/)
     expect(css).toMatch(/\.review__dock \{[^}]*flex: none;/)
   })
 

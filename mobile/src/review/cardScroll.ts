@@ -3,7 +3,8 @@ import { glideView, inRoom, readingScroll } from '@client/review/inboxScroll'
 
 /**
  * THE CARD'S READING SCROLL on the phone: the Mac Inbox's rules (`inboxScroll.ts`, YAZ-5049 rounds 2–6), on
- * the phone's card, which scrolls inside itself (the room is the card's own box).
+ * the phone's Review page (YAZ-5716: the stage scrolls the card and the hint line under it as one page, as the Mac's
+ * Inbox view; the room is the stage's box above the hint line, which stays at its foot).
  *
  *  - A tap never shows a part you cannot see: when the part the tap would show is not wholly in view, that tap only
  *    glides the card so the part sits a third of the way down (above the view: the least scroll). The next tap shows it.
@@ -16,11 +17,13 @@ export type TapTarget = number | 'side' | 'end'
 
 const spanOf = (r: DOMRect): Span => ({ start: r.top, end: r.bottom })
 
-/** What shows of the card's text: its box less its bottom padding (the fade and "↓ more" lie over that). */
+/** What shows of the card's text: the page's box less its bottom padding and the hint line at its foot (the fade and
+ * "↓ more" lie just above that line). */
 function roomOf(view: HTMLElement): Span {
   const box = view.getBoundingClientRect()
   const pad = parseFloat(getComputedStyle(view).paddingBottom) || 0
-  return { start: box.top, end: box.bottom - pad }
+  const hint = view.querySelector(':scope > .review__foot')?.getBoundingClientRect().height ?? 0
+  return { start: box.top, end: box.bottom - pad - hint }
 }
 
 export function tapMove(view: HTMLElement, target: TapTarget): number {
