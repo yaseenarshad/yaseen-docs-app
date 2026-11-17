@@ -20,11 +20,11 @@
 }
 
 /* The cut cell's full text (YAZ-4901 item 4): wrapped, at most 12 lines (the text's own cap, and this clamp for lines
-   that wrap), then "…". */
+   that wrap), then "…". A card that its max-height cuts clamps to fewer rows (`--fit-lines`, `fitCard`, YAZ-5747). */
 .cell-note-preview__text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 12;
+  -webkit-line-clamp: var(--fit-lines, 12);
   overflow: hidden;
   padding: 8px 12px;
   line-height: 1.4;

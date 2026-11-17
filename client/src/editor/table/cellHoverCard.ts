@@ -40,8 +40,6 @@ export interface CellCard {
   box: HTMLElement
   dwell: number
   under: boolean
-  /** Run once the box is on the page and placed: the note box drops the lines its `max-height` cuts (YAZ-5717). */
-  fit?: (box: HTMLElement) => void
 }
 
 export interface CellCards {
@@ -73,11 +71,43 @@ export function textPart(lines: string[]): HTMLElement {
   return part
 }
 
+/** The padding under the full-text part and under the note's lines, in px (`cellHoverCard.css`). */
+const PAD = 8
+/** The full-text part's line height, in em (`.cell-note-preview__text` in `cellHoverCard.css`). */
+const TEXT_LINE_HEIGHT = 1.4
+
+/**
+ * A card that its `max-height` cuts (YAZ-5717: the window less 16px, or the room beside the cell, YAZ-5747) ends with
+ * "…", never in the middle with no sign. Every card, on show only; a card that is not cut reads only its own rect.
+ * - The full-text part cut: it clamps to the rows that fit (`--fit-lines`, its own "…"), and the note's part under it goes.
+ * - Else the note's lines cut (YAZ-5746): the lines past the bottom go, and the last line that shows reads "…".
+ */
+export function fitCard(box: HTMLElement): void {
+  const rect = box.getBoundingClientRect()
+  // No layout (a box that is not drawn): nothing to measure.
+  if (rect.height === 0) return
+  const text = box.querySelector<HTMLElement>('.cell-note-preview__text')
+  const textRect = text?.getBoundingClientRect()
+  if (text && textRect && textRect.bottom > rect.bottom) {
+    const row = parseFloat(getComputedStyle(text).fontSize) * TEXT_LINE_HEIGHT
+    text.style.setProperty('--fit-lines', String(Math.max(1, Math.floor((rect.bottom - PAD - (textRect.top + PAD)) / row))))
+    while (text.nextElementSibling) text.nextElementSibling.remove()
+    return
+  }
+  const bottom = rect.bottom - PAD
+  const lines = Array.from(box.querySelectorAll<HTMLElement>('.cell-note-preview__line'))
+  const past = lines.findIndex((line) => line.getBoundingClientRect().bottom > bottom)
+  if (past < 0) return
+  const keep = Math.max(1, past)
+  for (const line of lines.slice(keep)) line.remove()
+  lines[keep - 1].textContent = '…'
+}
+
 /**
  * Under the cell at its left edge; above it when there is no room under; inside the window. As wide as its text
  * (YAZ-4903: no empty room beside a short text), up to the cell's width clamped to 240–420 px, then the text wraps.
  * It never covers its cell (YAZ-5747): a card that fits on neither side goes to the side with more room, as tall as
- * that room, and the card's `fit` drops the note lines that this cuts.
+ * that room, and `fitCard` ends what this cuts with "…".
  */
 function placeUnder(box: HTMLElement, cell: HTMLElement): void {
   const rect = cell.getBoundingClientRect()
@@ -137,7 +167,7 @@ export function cellHoverCards(build: (cell: HTMLElement) => CellCard | null): C
       const rect = card.box.getBoundingClientRect()
       if (rect.bottom > window.innerHeight - EDGE) card.box.style.top = `${Math.max(EDGE, window.innerHeight - EDGE - rect.height)}px`
     }
-    card.fit?.(card.box)
+    fitCard(card.box)
     shown = card.box
     warm = true
   }
