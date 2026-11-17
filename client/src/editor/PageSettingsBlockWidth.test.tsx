@@ -95,8 +95,8 @@ describe('the cog’s block widths (YAZ-4783 layer 2)', () => {
 })
 
 describe('the cog’s "Page width" row (YAZ-5640)', () => {
-  it('YAZ-5753: the row says the vault’s word: "Note width" in a vault that calls a page a note, "Page width" by default', () => {
-    for (const [word, unit] of [['Page', undefined], ['Note', unitTextOf(UNIT_WORDS.note)]] as const) {
+  it('YAZ-5753: the row says the vault’s word: "Doc width" in a vault that calls a page a doc, "Page width" by default', () => {
+    for (const [word, unit] of [['Page', undefined], ['Doc', unitTextOf(UNIT_WORDS.doc)]] as const) {
       container = document.createElement('div')
       document.body.append(container)
       root = createRoot(container)
