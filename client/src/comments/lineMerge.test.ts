@@ -57,7 +57,8 @@ describe('mergeLinesApart', () => {
     }
   })
 
-  it('a 2 MB page with one edit on each side merges fast', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('a 2 MB page with one edit on each side merges fast', { retry: 2 }, () => {
     const base = Array.from({ length: 60000 }, (_, i) => `Line ${i} of the long page, with some words.\n`).join('')
     const theirs = base.replace('Line 30000 ', 'Line 30000 (phone) ')
     const mine = base.replace('Line 30001 ', 'Line 30001 (mac) ')

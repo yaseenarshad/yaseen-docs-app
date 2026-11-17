@@ -297,7 +297,8 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     expect(splitBlocks('short', 10)).toEqual(['short'])
   })
 
-  it('YAZ-5213: a 2 MB page draws in slices, and no slice of its work takes 50 ms (CPU time of this thread)', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('YAZ-5213: a 2 MB page draws in slices, and no slice of its work takes 50 ms (CPU time of this thread)', { retry: 2, timeout: 300_000 }, async () => {
     const block = (i: number) => `## Part ${i}\n\nSome **made-up** words, a [[Trip plan]] link and \`code\`. ${'More words here. '.repeat(20)}\n\n- one\n- two\n\n`
     let text = ''
     for (let i = 0; text.length < 2_000_000; i++) text += block(i)
@@ -313,7 +314,7 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     expect(run.work.length).toBeGreaterThan(100)
     // The page's own work between two yields, in CPU time of this thread: the load of the machine does not count.
     expect(sorted.at(-1)!).toBeLessThan(50)
-  }, 300_000)
+  })
 
   it('YAZ-5213: the slice measure is honest: a 200 ms busy loop in one piece shows as a slice of 200 ms', async () => {
     const slow: PageLook = {

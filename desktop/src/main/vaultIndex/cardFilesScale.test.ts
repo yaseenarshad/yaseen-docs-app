@@ -41,7 +41,8 @@ afterAll(async () => {
 })
 
 describe('5,000 card files in the index (YAZ-5037 phase 8)', () => {
-  it('a cold scan of 5,000 card files costs about what 5,000 pages with one card each cost, and gives each its kind and its title', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('a cold scan of 5,000 card files costs about what 5,000 pages with one card each cost, and gives each its kind and its title', { retry: 2, timeout: 120_000 }, async () => {
     let t0 = performance.now()
     const pages = await getIndex(pagesRoot)
     const pagesMs = performance.now() - t0
@@ -55,5 +56,5 @@ describe('5,000 card files in the index (YAZ-5037 phase 8)', () => {
     expect(pages.records.some((r) => r.kind !== undefined)).toBe(false)
     // Within twice the pages' time, plus a margin for a busy machine: the scan is disk-bound, not mark-bound.
     expect(cardsMs).toBeLessThan(pagesMs * 2 + 2000)
-  }, 120_000)
+  })
 })

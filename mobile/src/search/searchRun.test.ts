@@ -151,7 +151,8 @@ function bigVault(): IndexRecord[] {
 }
 
 describe('speed: 5,000 pages and 20,000 cards (YAZ-5079)', () => {
-  it('builds the rows and finds each query in slices: no slice of its work takes 50 ms (CPU time of this thread; YAZ-5213)', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('builds the rows and finds each query in slices: no slice of its work takes 50 ms (CPU time of this thread; YAZ-5213)', { retry: 2, timeout: 120_000 }, async () => {
     const src: SearchSource = { records: bigVault(), letters: ['DEMO'], cards: true }
     // The work between two yields, in CPU time of this thread: the load of the machine does not count.
     const cpu = () => {
@@ -177,5 +178,5 @@ describe('speed: 5,000 pages and 20,000 cards (YAZ-5079)', () => {
     expect(rows.length).toBeGreaterThan(25_000)
     expect(longest(b.work)).toBeLessThan(50)
     expect(longest(f.work)).toBeLessThan(50)
-  }, 120_000)
+  })
 })

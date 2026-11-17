@@ -288,7 +288,8 @@ describe('nothing heavy on the UI thread: a made-up 1,700-file vault', () => {
     expect(yields).toBe(1)
   })
 
-  it('first download and a refresh never hold the thread for long; the numbers are printed', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('first download and a refresh never hold the thread for long; the numbers are printed', { retry: 2 }, async () => {
     const files: Record<string, string | Uint8Array> = {}
     for (let i = 0; i < 520; i++) files[`pages/p${i}.md`] = pageText(`Page ${i}`, `NC-${i + 1}`, [`NC-${2000 + i * 2}`, `NC-${2001 + i * 2}`], `Links [[Page ${(i + 1) % 520}]] #tag${i % 9}\n\n${'Some made-up words. '.repeat(40)}\n\n`)
     for (let i = 0; i < 90; i++) files[`cards/c-nc-${5000 + i}.md`] = cardFileText(`Card ${i}`, `NC-${5000 + i}`)

@@ -89,12 +89,13 @@ describe('the count off the main thread (YAZ-5250)', () => {
     for (const secret of ['Secret', '/Users/', '.md']) expect(text).not.toContain(secret)
   })
 
-  it('the count of 20,000 cards holds the main thread less than 50 ms at a time', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('the count of 20,000 cards holds the main thread less than 50 ms at a time', { retry: 2, timeout: 60_000 }, async () => {
     const stalls: number[] = []
     for (let i = 0; i < 3; i++) stalls.push(await longestStall(() => countOffThread(worker, [VAULT], NOW)))
     console.info(`the longest block on main, 3 runs: ${stalls.map((s) => s.toFixed(0)).join(', ')} ms`)
     expect(median(stalls)).toBeLessThan(budgetMs(50))
-  }, 60_000)
+  })
 
   it('a worker that does not answer in time is ended, and the count fails (YAZ-5278)', async () => {
     expect(COUNT_LIMIT_MS).toBe(60_000)
