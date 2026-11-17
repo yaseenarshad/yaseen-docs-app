@@ -37,6 +37,12 @@ export const CARD_TITLE_CHOICES: readonly { choice: CardTitleChoice; label: stri
 export const cardTitleChoiceLabel = (choice: CardTitleChoice, global?: CardTitleShow): string =>
   choice === 'default' ? (global === undefined ? 'Default' : `Default (${LABELS[global]})`) : LABELS[choice]
 
+/**
+ * The card menu row's word for the choice now (round 3, Yaseen: the row as narrow as the other rows): the short word,
+ * "Default" plainly; the list under it keeps "Default (Always)".
+ */
+export const cardTitleChoiceShort = (choice: CardTitleChoice): string => (choice === 'default' ? 'Default' : choice === 'click' ? 'After first click' : LABELS[choice])
+
 /** The setting's choices, in order, with their words. */
 export const CARD_TITLE_SHOW_OPTIONS: readonly { value: CardTitleShow; label: string }[] = (['never', 'always', 'click', 'side2'] as const).map((value) => ({ value, label: LABELS[value] }))
 
