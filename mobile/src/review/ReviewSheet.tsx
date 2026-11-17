@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { kindCount, kindCountText, newCardsFrom, newRowPick, noMoreNew, pickLabel, toggledPick, underFolder } from '@client/review/inboxMenu'
 import { FilterIcon, inboxFilters } from '@client/review/cardFilters'
-import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, upNextSettings, useSettingsFold } from '@client/review/ReviewSettingsPart'
+import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, orderSettings, upNextSettings, useSettingsFold } from '@client/review/ReviewSettingsPart'
 import { AddMoreField } from '@client/review/AddMoreField'
 import type { CardReviewApi, CardReviewSession, NewCardFolder } from '@client/review/useCardReview'
 import type { AddKind } from '@shared/cardSchedule'
@@ -30,7 +30,7 @@ export function ReviewSheet({
   folders: atFolders = false,
 }: {
   session: CardReviewSession
-  review: Pick<CardReviewApi, 'setFilter' | 'resetCards' | 'setNewFrom' | 'newCardFolders' | 'addCards'>
+  review: Pick<CardReviewApi, 'setFilter' | 'resetCards' | 'setNewFrom' | 'newCardFolders' | 'addCards' | 'setOrder'>
   today: ReactNode
   onClose: () => void
   /** Open at the folder page ("Learn new cards" … "from All folders ›"); its ‹ closes the sheet. */
@@ -102,6 +102,7 @@ export function ReviewSheet({
             session.adds.new === 0 ? <span className="card-inbox__add-none">{noMoreNew(session)}</span> : <AddMoreField kind="new" look="setting" start={session.adds.new} onAdd={(n) => review.addCards('new', n)} />,
           ),
           ...(session.adds.next > 0 ? [upNextSettings(<AddMoreField kind="next" look="setting" start={session.adds.next} onAdd={(n) => review.addCards('next', n)} />)] : []),
+          ...orderSettings(session.order, review.setOrder, 'review__sheet'),
         ]}
       />
     </div>

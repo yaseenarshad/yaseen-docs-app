@@ -82,7 +82,7 @@ let review: CardReviewApi
 const wikilinks = createWikilinkResolveSource()
 
 function Screen() {
-  review = useCardReview(ROOT, source, { ...DEFAULT_REVIEW_SETTINGS }, () => undefined, undefined, desktopReviewHost)
+  review = useCardReview(ROOT, source, { ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }, () => undefined, undefined, desktopReviewHost)
   if (review.session === null) return null
   return (
     <CardInbox

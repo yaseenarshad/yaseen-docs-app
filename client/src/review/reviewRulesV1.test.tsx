@@ -14,7 +14,7 @@ import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
 import { memoryReviewHost, type MemoryReviewHost } from './memoryReviewHost'
 
-const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, fuzz: false }
+const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, fuzz: false, dueTodayOrder: 'in-order' }
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
 const ROOT = '/rules'
 const DAY = 86_400_000
@@ -143,13 +143,19 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
     expect([review.session?.card?.id, review.session?.progress.total]).toEqual(['UP-1', 1])
   })
 
-  it('rule 8: the % screen counts every card answered in that pass, an Up next card too (a new one as well)', async () => {
+  // YAZ-5707 (Mochi's finding E5): All cards has no % screen, it is one run; the % screen is Due today's, where no Up
+  // next card is. So rule 8 holds only behind the switch `ALL_CARDS_STOP_BEFORE_MISSED`; on All cards the missed card
+  // comes back at the end of the run.
+  it('rule 8 (YAZ-5707): All cards has no % screen; the Up next card counts in the run and the missed card comes back at its end', async () => {
     page('A.md', ['UP-1', ', next'], ['DUE-1', known(5)], ['DUE-2', known(6)])
     await mount()
     await answer('UP-1', 'good')
     await answer('DUE-1', 'again')
     await answer('DUE-2', 'good')
-    expect(review.session?.end).toMatchObject({ kind: 'missed', count: 3, remembered: 2, percent: 67, missed: 1 })
+    expect(review.session?.end).toBeNull()
+    await answer('UP-1', 'good')
+    await answer('DUE-1', 'good')
+    expect(review.session?.card ?? null).toBeNull()
   })
 
   it('rule 10: an Up next card never takes a New cards place — not in the session, not after the Inbox opens again; a card begun as a plain new card keeps its place', async () => {
@@ -190,10 +196,10 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
     page('A.md', ['DUE-1', known(5)], ['NEW-1', ''], ['NEW-2', ''])
     await mount({ ...S, newPerDay: 1 })
     await step(() => review.addCards('new', 1))
-    // NEW-1 begun under New cards (its first ✓), then DUE-1 under All cards: the stop, with NEW-2 under it.
+    // NEW-1 begun under New cards (its first ✓), then DUE-1 under Due today: the stop, with NEW-2 under it.
     await act(async () => review.setFilter('new'))
     await answer('NEW-1', 'good')
-    await act(async () => review.setFilter('all'))
+    await act(async () => review.setFilter('due'))
     await answer('DUE-1', 'good')
     expect(review.session?.end?.kind).toBe('done')
     // Reset: today's number back to 1, which NEW-1 used. NEW-2 is not in today's list, so it never shows.

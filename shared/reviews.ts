@@ -34,6 +34,22 @@ export type TimeSoFar = (typeof TIME_SO_FAR_CHOICES)[number]
 export const NEW_CARD_ORDERS = ['oldest', 'newest', 'random'] as const
 export type NewCardOrder = (typeof NEW_CARD_ORDERS)[number]
 
+/**
+ * The order of an All cards run (YAZ-5707, the cards menu's ⚙ › All cards › Order): `due-first` (the default) every due
+ * card, then today's new cards; `shuffle` the due and the new cards mixed at random, as Mochi's Shuffle, once per
+ * session (`useCardReview`). Up next cards go first either way.
+ */
+export const ALL_CARDS_ORDERS = ['due-first', 'shuffle'] as const
+export type AllCardsOrder = (typeof ALL_CARDS_ORDERS)[number]
+
+/**
+ * The order of Due today (YAZ-5707, Yaseen's "one row per filter"; the ⚙ › Due today › Order): `shuffle` (the default,
+ * as Mochi, finding E6) the due cards in a random order, once per session; `in-order` the queue's own order (most
+ * overdue first, then one order for the day: `cardPlan`). It orders the due cards under All cards too.
+ */
+export const DUE_TODAY_ORDERS = ['in-order', 'shuffle'] as const
+export type DueTodayOrder = (typeof DUE_TODAY_ORDERS)[number]
+
 export interface ReviewSettings {
   /** Review cards in this vault: off, no card is due and the Inbox shows none. */
   enabled: boolean
@@ -59,6 +75,10 @@ export interface ReviewSettings {
    * All folders (`CardPlan.newFallback`). No Settings row: the Inbox is where it is picked.
    */
   newFrom: string[]
+  /** The order of an All cards run (YAZ-5707): Due first or Shuffle. Saved here so the phone follows the Mac. */
+  allCardsOrder: AllCardsOrder
+  /** The order of Due today (YAZ-5707): In order or Shuffle. Saved here so the phone follows the Mac. */
+  dueTodayOrder: DueTodayOrder
   /** Spread due dates (FSRS fuzz): cards made together do not all come back on one day. */
   fuzz: boolean
   /**
@@ -92,6 +112,8 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   upNextPerDay: null,
   newOrder: 'oldest',
   newFrom: [],
+  allCardsOrder: 'due-first',
+  dueTodayOrder: 'shuffle',
   fuzz: true,
   pauseAfter: 60,
   timeSoFar: 'hidden',
@@ -130,6 +152,8 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     upNextPerDay: r.upNextPerDay === null || wholeIn(r.upNextPerDay, 0, 9999) ? r.upNextPerDay : d.upNextPerDay,
     newOrder: (NEW_CARD_ORDERS as readonly unknown[]).includes(r.newOrder) ? (r.newOrder as NewCardOrder) : d.newOrder,
     newFrom: sanitizeNewFrom(r.newFrom),
+    allCardsOrder: (ALL_CARDS_ORDERS as readonly unknown[]).includes(r.allCardsOrder) ? (r.allCardsOrder as AllCardsOrder) : d.allCardsOrder,
+    dueTodayOrder: (DUE_TODAY_ORDERS as readonly unknown[]).includes(r.dueTodayOrder) ? (r.dueTodayOrder as DueTodayOrder) : d.dueTodayOrder,
     fuzz: typeof r.fuzz === 'boolean' ? r.fuzz : d.fuzz,
     pauseAfter: (PAUSE_AFTER_CHOICES as readonly unknown[]).includes(r.pauseAfter) ? (r.pauseAfter as PauseAfter) : d.pauseAfter,
     timeSoFar: (TIME_SO_FAR_CHOICES as readonly unknown[]).includes(r.timeSoFar) ? (r.timeSoFar as TimeSoFar) : d.timeSoFar,

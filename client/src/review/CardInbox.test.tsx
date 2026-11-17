@@ -60,7 +60,7 @@ let props: CardInboxProps
 const TITLE = 'Capital of France'
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, learned: null, today: { cards: 0, learned: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, learned: null, today: { cards: 0, learned: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, order: { all: 'due-first', due: 'shuffle' }, end: null, landing: null, ...over }
 }
 
 function render() {
@@ -97,6 +97,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     addCards: vi.fn(),
     resetCards: vi.fn(),
     setNewFrom: vi.fn(),
+    setOrder: vi.fn(),
     goOn: vi.fn(),
     newCardFolders: vi.fn(() => ({ all: 38, folders: [{ folder: 'spanish', label: 'Spanish', count: 24 }, { folder: 'spanish/verbs', label: 'Verbs', count: 4 }, { folder: 'geo', label: 'Geography', count: 12 }] })),
   }
@@ -2476,6 +2477,34 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('new')
   })
 
+  it('YAZ-5707: the ⚙ part ends with "All cards" · Order Due first · Shuffle and "Due today" · Order In order · Shuffle, one picked in each; a click saves that row alone, the menu stays open', () => {
+    mount(TWO_SIDES)
+    session = { ...session, ...WAITING }
+    render()
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
+    const settings = openSettings()
+    const sections = [...settings.querySelectorAll('section')].slice(-2)
+    const rows = () =>
+      [...part()!.querySelectorAll('section')].slice(-2).map((g) => [
+        g.querySelector('h6')!.textContent,
+        g.querySelector('li[data-setting="order"]')!.firstElementChild!.textContent,
+        g.querySelector('[role="radiogroup"]')!.getAttribute('aria-label'),
+        [...g.querySelectorAll('button[role="radio"]')].map((c) => `${c.textContent}${c.getAttribute('aria-checked') === 'true' ? ' ✓' : ''}`),
+      ])
+    expect(rows()).toEqual([
+      ['All cards', 'Order', 'Order of All cards', ['Due first ✓', 'Shuffle']],
+      ['Due today', 'Order', 'Order of Due today', ['In order', 'Shuffle ✓']],
+    ])
+    act(() => sections[0].querySelectorAll<HTMLButtonElement>('button[role="radio"]')[1].click())
+    expect(review.setOrder).toHaveBeenLastCalledWith({ all: 'shuffle' })
+    act(() => sections[1].querySelectorAll<HTMLButtonElement>('button[role="radio"]')[0].click())
+    expect(review.setOrder).toHaveBeenLastCalledWith({ due: 'in-order' })
+    expect(part()).not.toBeNull()
+    session = { ...session, order: { all: 'shuffle', due: 'in-order' } }
+    render()
+    expect(rows().map((r) => r[3])).toEqual([['Due first', 'Shuffle ✓'], ['In order ✓', 'Shuffle']])
+  })
+
   it('YAZ-5690: the ⚙ part`s "Add today" — a number field at the Settings number and "Add" — adds that many new cards for today; Enter too; the menu stays open; nothing more to add: a quiet "No more new cards in …"', () => {
     mount(TWO_SIDES)
     session = { ...session, ...WAITING }
@@ -2538,6 +2567,8 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     expect([...part()!.querySelectorAll('section')].map((g) => [g.querySelector('h6')!.textContent, [...g.querySelectorAll('li')].map((li) => li.getAttribute('data-setting'))])).toEqual([
       ['New cards', ['from', 'add']],
       ['Up next', ['add']],
+      ['All cards', ['order']],
+      ['Due today', ['order']],
     ])
     const upNext = () => part()!.querySelectorAll('section')[1]!
     const number = upNext().querySelector<HTMLInputElement>('input.card-inbox__add-number')!
@@ -2550,7 +2581,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     // No Up next card waiting beyond today's limit: no Up next group at all.
     session = { ...session, more: { new: 38, next: 0 }, adds: { new: 10, next: 0 } }
     render()
-    expect([...part()!.querySelectorAll('h6')].map((h) => h.textContent)).toEqual(['New cards'])
+    expect([...part()!.querySelectorAll('h6')].map((h) => h.textContent)).toEqual(['New cards', 'All cards', 'Due today'])
   })
 
   it('YAZ-5685: closing the menu folds the part — a click on the filter, Esc — so it opens folded each time; with nothing done today the ⚙ stays', () => {

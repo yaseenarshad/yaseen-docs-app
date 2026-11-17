@@ -57,7 +57,7 @@ const ago = (days: number, hours = 0) => iso(NOW - days * DAY - hours * 3_600_00
 // ── Vault 1: a language vault. New cards over the day limit, due, answered today, archived, Up next, Fix later,
 //    a card with 5 hidden words, a two-sided card, pages and card files, an invalid card file. newPerDay 3.
 const V1: Record<string, string> = {
-  '.yaseendocs/review.json': JSON.stringify({ newPerDay: 3, fuzz: false }),
+  '.yaseendocs/review.json': JSON.stringify({ dueTodayOrder: 'in-order', newPerDay: 3, fuzz: false }),
   'lang/verbs.md': page(
     'Verbs',
     cardBlock('ser?\n---\n{{to be}}', `VB-1, ${ago(20)} good, ${ago(9)} good`),
@@ -84,7 +84,7 @@ const V1: Record<string, string> = {
 
 // ── Vault 2: the new-card limit is spent by reviews IN THE FILES (another device answered 3 new cards today).
 const V2: Record<string, string> = {
-  '.yaseendocs/review.json': JSON.stringify({ newPerDay: 3, upNextPerDay: 1, fuzz: false }),
+  '.yaseendocs/review.json': JSON.stringify({ dueTodayOrder: 'in-order', newPerDay: 3, upNextPerDay: 1, fuzz: false }),
   'a.md': page(
     'Done elsewhere',
     cardBlock('n1?\n---\n{{1}}', `NW-1, ${ago(0, 3)} good`),
@@ -102,7 +102,7 @@ const V2: Record<string, string> = {
 // ── Vault 3: four buttons, many due cards, archived and fixed among them.
 const V3cards = Array.from({ length: 14 }, (_, i) => cardBlock(`q${i}?\n---\n{{a${i}}} and {{b${i}}}`, `QQ-${i + 1}${i % 3 === 0 ? `, ${ago(9 + i)} good, ${ago(2 + (i % 4))} hard` : i % 5 === 1 ? ', fix' : i === 7 ? ', off' : ''}`))
 const V3: Record<string, string> = {
-  '.yaseendocs/review.json': JSON.stringify({ buttons: 4, newPerDay: 5, fuzz: false }),
+  '.yaseendocs/review.json': JSON.stringify({ dueTodayOrder: 'in-order', buttons: 4, newPerDay: 5, fuzz: false }),
   'q/one.md': page('One', ...V3cards.slice(0, 7)),
   'q/two.md': page('Two', ...V3cards.slice(7)),
   'cards/x.md': cardFile('X card', cardBlock('x?\n---\n{{x}}', `XX-1, ${ago(4)} again`)),
@@ -128,6 +128,7 @@ function mount(source: Parameters<typeof useCardReview>[1], host: ReviewHost, ro
   return { get: () => api, root: r }
 }
 
+// The vaults' review.json say Due today In order (YAZ-5707): the two sides compare the plan's order.
 const settingsOf = (files: Record<string, string>) => sanitizeReviewSettings(JSON.parse(files['.yaseendocs/review.json']))
 
 async function desktopRun(files: Record<string, string>): Promise<Run> {
@@ -257,7 +258,7 @@ afterEach(() => vi.useRealTimers())
 
 const R3 = (id: string, front: string, extra = '') => `\`\`\`card\n${front}\n---\nR3 back of ${id}: {{x ${id}}}\n---\nlast side {{y ${id}}} and {{z ${id}}}\n\`\`\`\n<!-- card: ${id}${extra} -->`
 const VR3P: Record<string, string> = {
-  '.yaseendocs/review.json': '{"newPerDay": 2, "upNextPerDay": 1, "fuzz": false}',
+  '.yaseendocs/review.json': '{\"dueTodayOrder\": \"in-order\", "newPerDay": 2, "upNextPerDay": 1, "fuzz": false}',
   'garden/plants.md': `---\ntitle: Plant notes (round 3)\n---\n\n# Plants\n\nSome text before the cards.\n\n${R3('PL-1', 'What is a fern?', ', 2026-09-20T08:00:00.000Z good, 2026-10-10T08:00:00.000Z good')}\n\n${R3('PL-2', 'Moss or lichen?')}\n\n${R3('PL-3', 'Which tree loses leaves?', ', next')}\n\n${R3('PL-4', 'Cactus water?', ', 2026-11-12T09:00:00.000Z again, 2026-11-13T07:00:00.000Z hard')}\n\n${R3('PL-5', 'Secret title\nWhat is a {{bulb}}?', ', notitle, 2026-10-25T08:00:00.000Z good')}\n`,
   'cards/pl-6.md': `---\nkind: card\ntitle: Oak\n---\n\n${R3('PL-6', 'How old can an oak get?', ', 2026-08-01T08:00:00.000Z easy, 2026-09-15T08:00:00.000Z good')}\n`,
   'cards/pl-7.md': `---\nkind: card\ntitle: Ivy\n---\n\n${R3('PL-7', 'Does ivy climb?', ', next')}\n`,
@@ -268,7 +269,7 @@ const SCRIPT_R3P: Action[] = ['again', 'good', 'undo', 'good', 'next', 'good', '
 
 const C4 = (id: string, front: string, extra = '', back = `{{a ${id}}}`) => `\`\`\`card\n${front}\n---\n${back}\n\`\`\`\n<!-- card: ${id}${extra} -->`
 const V4: Record<string, string> = {
-  '.yaseendocs/review.json': '{"newPerDay": 3, "upNextPerDay": 2, "fuzz": false, "buttons": 4}',
+  '.yaseendocs/review.json': '{\"dueTodayOrder\": \"in-order\", "newPerDay": 3, "upNextPerDay": 2, "fuzz": false, "buttons": 4}',
   'lang/words.md': `---\ntitle: Words (round 4)\n---\n\n# Words\n\nText first.\n\n${C4('WD-1', 'casa?', ', 2026-10-20T08:00:00.000Z good, 2026-11-01T08:00:00.000Z good')}\n\n${C4('WD-2', 'perro?')}\n\n${C4('WD-3', 'gato?', ', next, 2026-11-10T08:00:00.000Z again')}\n\n${C4('WD-4', 'Hidden title\\nlibro?', ', notitle, fix, 2026-10-05T08:00:00.000Z hard')}\n\n${C4('WD-5', 'agua?', ', 2026-11-13T08:00:00.000Z again')}\n\n${C4('WD-6', 'sol?', ', 2026-09-01T08:00:00.000Z easy, 2026-10-01T08:00:00.000Z good')}\n\n${C4('WD-7', 'luna?')}\n`,
   'cards/wd-8.md': `---\nkind: card\ntitle: Tree\n---\n\n${C4('WD-8', 'arbol?', ', 2026-10-25T08:00:00.000Z good')}\n`,
   'cards/wd-9.md': `---\nkind: card\ntitle: Sea\n---\n\n${C4('WD-9', 'mar?', ', next')}\n`,

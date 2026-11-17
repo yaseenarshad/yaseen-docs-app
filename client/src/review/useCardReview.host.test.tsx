@@ -14,7 +14,7 @@ import { useCardReview, type CardReviewApi } from './useCardReview'
 import { memoryReviewHost, type MemoryReviewHost } from './memoryReviewHost'
 import { storage } from '../lib/storage'
 
-const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS }
+const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
 const ROOT = '/phone'
 
@@ -114,18 +114,18 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
     const before = host.files.get(`${ROOT}/K.md`)
     await answer('WIKI-5', 'again')
     expect(reviewsOn('K.md', 'WIKI-5').map((r) => r.rating)).toEqual(['good', 'good', 'again'])
-    // The due cards' first pass is done with a miss: the Mac's stop (YAZ-5043, merged in YAZ-5465).
-    await vi.waitFor(() => expect(review.session?.end?.kind).toBe('missed'))
+    // All cards is one run (YAZ-5707): no stop, the new card next.
+    await shown('WIKI-6')
     // Undo: the review out, the file the same bytes, the card back at its place.
     await step(() => review.undo())
     expect(host.files.get(`${ROOT}/K.md`)).toBe(before)
     await shown('WIKI-5')
     expect([review.session?.progress.done, review.session?.progress.total, review.session?.canUndo]).toEqual([0, 2, false])
-    // Forgot again; the missed pass brings it back first, then the new card twice Remembered.
+    // Forgot again; the new card twice Remembered, then the missed card at the end of the run.
     await answer('WIKI-5', 'again')
+    await answer('WIKI-6', 'good')
+    await answer('WIKI-6', 'good')
     await answer('WIKI-5', 'good')
-    await answer('WIKI-6', 'good')
-    await answer('WIKI-6', 'good')
     expect(review.session?.card).toBeNull()
     expect(review.dueCount).toBe(0)
     // The breadcrumb's vault is the host's name.

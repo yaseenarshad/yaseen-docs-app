@@ -8,13 +8,14 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { cardBlock, cardRecords, cardReviewsOf, cardTime, pageCards, parseCardLine, type CardRating, type CardReview } from '@shared/cardLine'
 import { answerLabel, answerRatings, cardHistory, cardPlan, isCardDue, reviewedToday } from '@shared/cardSchedule'
-import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import { DEFAULT_REVIEW_SETTINGS, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
 import { todayCards } from './reviewTime'
 import { memoryReviewHost, type MemoryReviewHost } from './memoryReviewHost'
 
-const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, fuzz: false }
+// Due today In order: these tests read the plan's order (YAZ-5707's Shuffle has its own tests below).
+const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, fuzz: false, dueTodayOrder: 'in-order' }
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
 const ROOT = '/rules'
 const DAY = 86_400_000
@@ -158,30 +159,18 @@ describe('YAZ-5675: what each answer does to the numbers (Mochi, YAZ-5671)', () 
   })
 
   it('findings 5, 6 and 18: All cards — a due Forgot adds 1 to the total, a new card learned adds 1; the numbers survive a filter switch', async () => {
-    dueCards(2)
+    dueCards(1)
     newCards(1)
     await mount()
-    expect(top()).toBe('0 / 3 | grey 0 red 0 | all 3 due 2 new 1')
+    expect(top()).toBe('0 / 2 | grey 0 red 0 | all 2 due 1 new 1')
     await go('again')
-    expect(top()).toBe('✕ 1 · 1 / 4 | grey 25 red 50 | all 3 due 2 new 1')
+    expect(top()).toBe('✕ 1 · 1 / 3 | grey 33 red 67 | all 2 due 1 new 1')
     await go('good')
-    expect(top()).toBe('✕ 1 · 2 / 4 | grey 50 red 75 | all 2 due 1 new 1')
-    // The % screen of the first pass; then the missed card.
-    await act(async () => review.goOn())
-    await go('good')
-    expect(top()).toBe('2 / 3 | grey 67 red 67 | all 1 due 0 new 1')
-    // "Finished reviewing missed cards." · Learn new cards 1.
-    expect(review.session?.end).toMatchObject({ kind: 'done', fresh: 1 })
-    await act(async () => review.goOn())
-    await go('good')
-    expect(top()).toBe('3 / 4 | grey 75 red 75 | all 1 due 1 new 0')
+    expect(top()).toBe('✕ 1 · 2 / 4 | grey 50 red 75 | all 2 due 2 new 0')
     await act(async () => review.setFilter('new'))
-    expect(top()).toBe('1 / 1 | grey 100 red 100 | all 1 due 1 new 0')
+    expect(top()).toBe('1 / 1 | grey 100 red 100 | all 2 due 2 new 0')
     await act(async () => review.setFilter('all'))
-    expect(top()).toBe('3 / 4 | grey 75 red 75 | all 1 due 1 new 0')
-    // Its second ✓, as a Due today card: done +1.
-    await go('good')
-    expect(top()).toBe('4 / 4 | grey 100 red 100 | all 0 due 0 new 0')
+    expect(top()).toBe('✕ 1 · 2 / 4 | grey 50 red 75 | all 2 due 2 new 0')
   })
 
   it('⌘Z takes the numbers back with the answer', async () => {
@@ -348,6 +337,8 @@ describe('YAZ-5702: only misses come back; FSRS in days only, as Mochi (YAZ-5703
     it('due ✓: done for today, no stop, nothing back (also a card with a recent lapse)', async () => {
       page('D.md', ['DUE-1', known(9)], ['DUE-20', lapsed(3)])
       await mount()
+      // Due today: the stops are its own (YAZ-5707: All cards never stops).
+      await act(async () => review.setFilter('due'))
       await go('good')
       await go('good')
       expect(review.session?.end).toMatchObject({ kind: 'done' })
@@ -357,6 +348,7 @@ describe('YAZ-5702: only misses come back; FSRS in days only, as Mochi (YAZ-5703
     it('due ✕: back only in "Review missed cards"; its ✓ there is done for today', async () => {
       page('D.md', ['DUE-1', known(9)], ['DUE-20', lapsed(3)])
       await mount()
+      await act(async () => review.setFilter('due'))
       await go('again')
       await go('again')
       expect(review.session?.card ?? null).toBeNull()
@@ -406,5 +398,224 @@ describe('YAZ-5702: only misses come back; FSRS in days only, as Mochi (YAZ-5703
     await go('again')
     await go('good')
     expect(review.session?.counts.due).toBe(1)
+  })
+})
+
+describe('YAZ-5707: All cards is ONE run, as Mochi (YAZ-5703 finding E5): due, new, the learned cards` same-day reviews, then the missed cards at the end; no stop', () => {
+  /** Answers every card as it comes: ✕ on the ids in `miss` (their first time), ✓ on all else, until nothing is left; returns the kinds seen first. */
+  const runAll = async (miss: readonly string[]): Promise<{ firsts: string[]; tops: Map<string, string> }> => {
+    const firsts: string[] = []
+    const seen = new Set<string>()
+    const tops = new Map<string, string>()
+    for (let i = 0; i < 100 && review.session?.card != null; i++) {
+      expect(review.session.end).toBeNull()
+      const card = review.session.card
+      // The chip reads `isNew`: a NEW card shows "New card" until its first ✓, a due card never does.
+      expect(card.isNew).toBe(card.id.startsWith('NEW') && !seen.has(card.id))
+      if (!seen.has(card.id)) firsts.push(card.id)
+      const rating: CardRating = miss.includes(card.id) && !seen.has(card.id) ? 'again' : 'good'
+      seen.add(card.id)
+      await answer(card.id, rating)
+      tops.set(`after ${firsts.length}${rating === 'again' ? ' ✕' : ''}:${i}`, top())
+      if (firsts.length === 24 && !tops.has('end of first answers')) {
+        const next = review.session?.card
+        if (next != null && seen.has(next.id)) tops.set('end of first answers', top())
+      }
+    }
+    return { firsts, tops }
+  }
+
+  it('Yaseen`s case, Due first: 14 due + 10 new, 2 ✕ → one run, ✕ 2 · 24 / 36 after the first answers, no stop, the misses last, then Inbox complete with a full bar', async () => {
+    dueCards(14)
+    newCards(10)
+    await mount()
+    expect(top()).toBe('0 / 24 | grey 0 red 0 | all 24 due 14 new 10')
+    const { firsts, tops } = await runAll(['DUE-1', 'DUE-2'])
+    // Due first: every due card, then the new cards, in one run (no "% / Review missed cards" stop, no "Learn new cards").
+    expect(firsts.slice(0, 14).every((id) => id.startsWith('DUE'))).toBe(true)
+    expect(firsts.slice(14).every((id) => id.startsWith('NEW'))).toBe(true)
+    // After the 24 first answers: 2 misses (+1 each) and 10 learned cards (+1 each: their same-day review joins).
+    expect(tops.get('end of first answers')).toBe('✕ 2 · 24 / 36 | grey 67 red 72 | all 12 due 12 new 0')
+    // Inbox complete: the bar full, nothing left, no stop screen.
+    expect(review.session?.card ?? null).toBeNull()
+    expect(review.session?.end).toBeNull()
+    expect(top()).toBe('34 / 34 | grey 100 red 100 | all 0 due 0 new 0')
+  })
+
+  it('the order of the tail: the learned cards` same-day reviews, then the missed cards at the very end (chip ✕ Again), the ✕ shown until they are done', async () => {
+    dueCards(2)
+    newCards(1)
+    await mount()
+    const missed = review.session!.card!.id
+    await go('again')
+    expect(top()).toBe('✕ 1 · 1 / 4 | grey 25 red 50 | all 3 due 2 new 1')
+    await go('good')
+    expect(top()).toBe('✕ 1 · 2 / 4 | grey 50 red 75 | all 2 due 1 new 1')
+    // No stop between the due part and the new part.
+    expect(review.session?.end).toBeNull()
+    await answer('NEW-1', 'good')
+    expect(top()).toBe('✕ 1 · 3 / 5 | grey 60 red 80 | all 2 due 2 new 0')
+    await answer('NEW-1', 'good')
+    expect(top()).toBe('✕ 1 · 4 / 5 | grey 80 red 100 | all 1 due 1 new 0')
+    // The bar is full; no stop: the missed card comes straight back.
+    expect(review.session?.end).toBeNull()
+    await shown(missed)
+    expect(review.session?.card).toMatchObject({ repeat: true, forgot: true })
+    await answer(missed, 'good')
+    expect(top()).toBe('4 / 4 | grey 100 red 100 | all 0 due 0 new 0')
+    expect(review.session?.card ?? null).toBeNull()
+    expect(review.session?.end).toBeNull()
+  })
+
+  it('a ✕ on a learned card`s same-day review makes it a missed card at the end; a ✕ on a new card moves nothing and keeps it in the run', async () => {
+    newCards(2)
+    dueCards(1)
+    await mount()
+    await answer('DUE-1', 'good')
+    await answer('NEW-1', 'again')
+    expect(top()).toBe('1 / 3 | grey 33 red 33 | all 2 due 0 new 2')
+    await answer('NEW-2', 'good')
+    expect(top()).toBe('2 / 4 | grey 50 red 50 | all 2 due 1 new 1')
+    await answer('NEW-1', 'good')
+    expect(top()).toBe('3 / 5 | grey 60 red 60 | all 2 due 2 new 0')
+    await answer('NEW-2', 'again')
+    expect(top()).toBe('✕ 1 · 4 / 6 | grey 67 red 83 | all 2 due 2 new 0')
+    await answer('NEW-1', 'good')
+    await answer('NEW-2', 'good')
+    expect(top()).toBe('5 / 5 | grey 100 red 100 | all 0 due 0 new 0')
+  })
+
+  it('Due today keeps its stop: "You remembered N%" and Review missed cards', async () => {
+    dueCards(2)
+    newCards(1)
+    await mount()
+    await act(async () => review.setFilter('due'))
+    await go('again')
+    await go('good')
+    expect(review.session?.end).toMatchObject({ kind: 'missed', missed: 1, percent: 50 })
+  })
+
+  it('finding E5: the run carries today`s earlier work: 2 new cards learned in an earlier session → All cards starts at 2 / 7', async () => {
+    newCards(5)
+    await mount()
+    await act(async () => review.setFilter('new'))
+    await answer('NEW-1', 'good')
+    await answer('NEW-2', 'good')
+    await reopen()
+    expect(top()).toBe('2 / 7 | grey 29 red 29 | all 5 due 2 new 3')
+    // E5's rows: a new card's Forgot moves nothing; a learned new card +1 (its same-day review joins); a due ✕ +1 and ✕ 1.
+    await go('good')
+    expect(top()).toBe('3 / 7 | grey 43 red 43 | all 4 due 1 new 3')
+    await go('good')
+    await answer('NEW-3', 'again')
+    expect(top()).toBe('4 / 7 | grey 57 red 57 | all 3 due 0 new 3')
+    await answer('NEW-4', 'good')
+    expect(top()).toBe('5 / 8 | grey 63 red 63 | all 3 due 1 new 2')
+  })
+
+  describe('the Order setting: Due first (default) · Shuffle', () => {
+    /** A seeded Math.random: the same mix each run. */
+    const seeded = () => {
+      let x = 7
+      return vi.spyOn(Math, 'random').mockImplementation(() => ((x = (x * 16807) % 2147483647) - 1) / 2147483646)
+    }
+
+    it('the defaults: All cards Due first, Due today Shuffle (Mochi, E6); each its own key in review.json', () => {
+      expect(DEFAULT_REVIEW_SETTINGS.allCardsOrder).toBe('due-first')
+      expect(DEFAULT_REVIEW_SETTINGS.dueTodayOrder).toBe('shuffle')
+      expect(sanitizeReviewSettings({ dueTodayOrder: 'in-order' })).toMatchObject({ dueTodayOrder: 'in-order', allCardsOrder: 'due-first' })
+      expect(sanitizeReviewSettings({ dueTodayOrder: 'later' }).dueTodayOrder).toBe('shuffle')
+      expect(sanitizeReviewSettings({ allCardsOrder: 'shuffle' }).allCardsOrder).toBe('shuffle')
+      expect(sanitizeReviewSettings({ allCardsOrder: 'sideways' }).allCardsOrder).toBe('due-first')
+    })
+
+    it('Yaseen`s case in Shuffle: due and new mixed, each card`s chip right, the same numbers: ✕ 2 · 24 / 36, then Inbox complete at 34 / 34', async () => {
+      const random = seeded()
+      dueCards(14)
+      newCards(10)
+      await mount({ ...S, allCardsOrder: 'shuffle' })
+      expect(top()).toBe('0 / 24 | grey 0 red 0 | all 24 due 14 new 10')
+      const { firsts, tops } = await runAll(['DUE-1', 'DUE-2'])
+      random.mockRestore()
+      // Mixed: a new card before the last due card.
+      expect(firsts.findIndex((id) => id.startsWith('NEW'))).toBeLessThan(firsts.length - 1 - [...firsts].reverse().findIndex((id) => id.startsWith('DUE')))
+      // Each kind keeps its own order (most overdue first; the new cards' order), so Due today and New cards read the same.
+      expect(firsts.filter((id) => id.startsWith('NEW'))).toEqual(Array.from({ length: 10 }, (_, i) => `NEW-${i + 1}`))
+      expect(tops.get('end of first answers')).toBe('✕ 2 · 24 / 36 | grey 67 red 72 | all 12 due 12 new 0')
+      expect(review.session?.card ?? null).toBeNull()
+      expect(review.session?.end).toBeNull()
+      expect(top()).toBe('34 / 34 | grey 100 red 100 | all 0 due 0 new 0')
+    })
+
+    /** Due cards one day apart: DUE-1 the most overdue, so In order is DUE-1, DUE-2, … */
+    const spread = (n: number) => page('D.md', ...Array.from({ length: n }, (_, i): [string, string] => [`DUE-${i + 1}`, known(Math.min(9, i + 1), 1)]))
+    const dueRun = async (): Promise<string[]> => {
+      const ids: string[] = []
+      while (review.session?.card != null && ids.length < 20) {
+        ids.push(review.session.card.id)
+        await answer(review.session.card.id, 'good')
+      }
+      return ids
+    }
+
+    it('Due today In order: the most overdue first (the plan`s order)', async () => {
+      spread(6)
+      await mount({ ...S, dueTodayOrder: 'in-order' })
+      await act(async () => review.setFilter('due'))
+      expect(await dueRun()).toEqual(['DUE-1', 'DUE-2', 'DUE-3', 'DUE-4', 'DUE-5', 'DUE-6'])
+    })
+
+    it('Due today Shuffle (the default): the due cards in a random order, each once, then Due today is done; All cards Due first keeps that order before the new cards', async () => {
+      const random = seeded()
+      spread(6)
+      newCards(2)
+      await mount({ ...S, dueTodayOrder: 'shuffle' })
+      random.mockRestore()
+      await act(async () => review.setFilter('due'))
+      const ids = await dueRun()
+      expect([...ids].sort()).toEqual(['DUE-1', 'DUE-2', 'DUE-3', 'DUE-4', 'DUE-5', 'DUE-6'])
+      expect(ids).not.toEqual(['DUE-1', 'DUE-2', 'DUE-3', 'DUE-4', 'DUE-5', 'DUE-6'])
+      expect(review.session?.end).toMatchObject({ kind: 'done' })
+    })
+
+    it('Due today Shuffle is stable for the session (⌘Z, a filter switch); a change of the row reorders the cards not answered yet at once', async () => {
+      const random = seeded()
+      spread(6)
+      await mount({ ...S, dueTodayOrder: 'shuffle' })
+      random.mockRestore()
+      await act(async () => review.setFilter('due'))
+      const first = review.session!.card!.id
+      await answer(first, 'good')
+      const second = review.session!.card!.id
+      await step(() => review.undo())
+      await answer(first, 'good')
+      expect(review.session!.card!.id).toBe(second)
+      await act(async () => review.setFilter('all'))
+      await act(async () => review.setFilter('due'))
+      expect(review.session!.card!.id).toBe(second)
+      // In order now: the card on show stays, the others follow the plan's order.
+      await act(async () => root?.render(<Probe settings={{ ...S, dueTodayOrder: 'in-order' }} />))
+      const rest = (await dueRun()).slice(1)
+      expect(rest).toEqual([...rest].sort())
+    })
+
+    it('Shuffle is stable for the session: ⌘Z and a filter switch never mix again', async () => {
+      const random = seeded()
+      dueCards(6)
+      newCards(6)
+      await mount({ ...S, allCardsOrder: 'shuffle' })
+      random.mockRestore()
+      const order = () => review.session!.card!.id
+      const first = order()
+      await answer(first, 'good')
+      const second = order()
+      await step(() => review.undo())
+      await shown(first)
+      await answer(first, 'good')
+      expect(order()).toBe(second)
+      await act(async () => review.setFilter('due'))
+      await act(async () => review.setFilter('all'))
+      expect(order()).toBe(second)
+    })
   })
 })

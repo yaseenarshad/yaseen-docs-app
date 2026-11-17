@@ -95,7 +95,7 @@ let root: Root | null = null
 let el: HTMLElement
 let review: CardReviewApi
 const wikilinks = createWikilinkResolveSource()
-const SETTINGS: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 2 }
+const SETTINGS: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 2, dueTodayOrder: 'in-order' }
 
 function Screen({ settings }: { settings: ReviewSettings }) {
   review = useCardReview(ROOT, source, settings, () => undefined, undefined, desktopReviewHost)
@@ -205,22 +205,21 @@ describe('YAZ-5613: a full day of reviews on the Mac, step by step (YAZ-5611 rul
       ['DUE-1 ✕', () => answer('again'), row('DUE-2', '2 / 7', '2/7', 5, 3, 2)],
       ['DUE-2 ✓', () => answer('good'), row('DUE-3', '3 / 7', '3/7', 4, 2, 2)],
       // The first pass of Due today is done with one miss: the stop, before the new cards.
-      ['DUE-3 ✓', () => answer('good'), row('stop: missed', null, '4/7', 3, 1, 2)],
-      ['Review missed cards', () => press(/^Review missed cards 1$/), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
-      // The missed pass: a ✕ moves nothing.
-      ['DUE-1 ✕ again', () => answer('again'), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
-      ['Undo', () => step(() => review.undo()), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
-      ['DUE-1 ✕ again', () => answer('again'), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
-      // A known card needs one ✓ after its misses: the total −1; Due today is done.
-      ['DUE-1 ✓', () => answer('good'), row('stop: done', null, '4/6', 2, 0, 2)],
-      ['Learn new cards', () => press(/^Learn new cards 2$/), row('NEW-1', '4 / 6', '4/6', 2, 0, 2)],
+      // YAZ-5707 (Mochi's E5): All cards is ONE run — no stop between the due and the new cards.
+      ['DUE-3 ✓', () => answer('good'), row('NEW-1', '4 / 7', '4/7', 3, 1, 2)],
       // Yaseen's rule: a new card's first ✓ moves it into Due today (New −1, Due today +1); All cards the same. Mochi: done +1, total +1.
-      ['NEW-1 ✓ (first)', () => answer('good'), row('NEW-2', '5 / 7', '5/7', 2, 1, 1)],
-      // A new card's ✕ keeps it under New cards and moves no number; it comes back at the end.
-      ['NEW-2 ✕', () => answer('again'), row('NEW-1', '5 / 7', '5/7', 2, 1, 1)],
-      ['NEW-1 ✓ (second)', () => answer('good'), row('NEW-2', '6 / 7', '6/7', 1, 0, 1)],
-      ['NEW-2 ✓ (first)', () => answer('good'), row('NEW-2', '7 / 8', '7/8', 1, 1, 0)],
-      ['NEW-2 ✓ (second)', () => answer('good'), row('done: Inbox complete.', null, '8/8', 0, 0, 0)],
+      ['NEW-1 ✓ (first)', () => answer('good'), row('NEW-2', '5 / 8', '5/8', 3, 2, 1)],
+      // A new card's ✕ keeps it under New cards and moves no number; it comes back after the same-day reviews.
+      ['NEW-2 ✕', () => answer('again'), row('NEW-1', '5 / 8', '5/8', 3, 2, 1)],
+      ['NEW-1 ✓ (second)', () => answer('good'), row('NEW-2', '6 / 8', '6/8', 2, 1, 1)],
+      ['NEW-2 ✓ (first)', () => answer('good'), row('NEW-2', '7 / 9', '7/9', 2, 2, 0)],
+      // The missed card comes back at the end of the run.
+      ['NEW-2 ✓ (second)', () => answer('good'), row('DUE-1', '8 / 9', '8/9', 1, 1, 0)],
+      // Its ✕ again moves nothing.
+      ['DUE-1 ✕ again', () => answer('again'), row('DUE-1', '8 / 9', '8/9', 1, 1, 0)],
+      ['Undo', () => step(() => review.undo()), row('DUE-1', '8 / 9', '8/9', 1, 1, 0)],
+      // A known card needs one ✓ after its misses: the total −1; the bar full, Inbox complete.
+      ['DUE-1 ✓', () => answer('good'), row('done: Inbox complete.', null, '8/8', 0, 0, 0)],
     ]
     const seen = []
     const want = []
@@ -230,16 +229,15 @@ describe('YAZ-5613: a full day of reviews on the Mac, step by step (YAZ-5611 rul
       want.push({ step: name, ...expected })
     }
     expect(seen).toEqual(want)
-    // The % stop counted each due card's FIRST answer: UP-1, DUE-1 (missed), D-2, D-3.
-    expect(review.session?.answered.length).toBe(11)
+    expect(review.session?.answered.length).toBe(10)
   })
 
   it('the afternoon: the Inbox opened again keeps the same cards in the lists; Add more and its Undo; the next day starts the limit again', async () => {
     await mount()
     // Up next and the three due cards, all remembered; NEW-1 begun (its first ✓).
     for (let i = 0; i < 4; i++) await answer('good')
-    expect(await look()).toEqual(row('stop: done', null, '4/6', 2, 0, 2))
-    await press(/^Learn new cards 2$/)
+    // YAZ-5707: no stop on All cards; the new cards come next.
+    expect(await look()).toEqual(row('NEW-1', '4 / 6', '4/6', 2, 0, 2))
     await answer('good')
     const before = await look()
     expect(before).toEqual(row('NEW-2', '5 / 7', '5/7', 2, 1, 1))
@@ -247,19 +245,19 @@ describe('YAZ-5613: a full day of reviews on the Mac, step by step (YAZ-5611 rul
     // the new-card limit counts NEW-1 as begun today, so no third new card joins.
     vi.setSystemTime(Date.now() + 60 * 60_000)
     await open()
-    expect(await look()).toEqual(row('NEW-1', '0 / 2', '0/2', 2, 1, 1))
+    // YAZ-5707 (Mochi's E5): the run carries today's earlier work on its cards: NEW-1 learned already.
+    expect(await look()).toEqual(row('NEW-1', '1 / 3', '1/3', 2, 1, 1))
     await answer('good') // N-1's second ✓: it is done
-    expect(await look()).toEqual(row('stop: done', null, '1/2', 1, 0, 1))
-    await press(/^Learn new cards 1$/)
+    expect(await look()).toEqual(row('NEW-2', '2 / 3', '2/3', 1, 0, 1))
     await answer('good')
     await answer('good')
-    expect(await look()).toEqual(row('done: Inbox complete.', null, '3/3', 0, 0, 0))
+    expect(await look()).toEqual(row('done: Inbox complete.', null, '4/4', 0, 0, 0))
     expect(review.session?.more.new).toBe(2)
     // Add more for today: one more day of the Settings number (2), never more than what waits.
     await step(() => review.addCards('new'))
-    expect(await look()).toEqual(row('NEW-3', '3 / 5', '3/5', 2, 0, 2))
+    expect(await look()).toEqual(row('NEW-3', '4 / 6', '4/6', 2, 0, 2))
     await step(() => review.undo())
-    expect(await look()).toEqual(row('done: Inbox complete.', null, '3/3', 0, 0, 0))
+    expect(await look()).toEqual(row('done: Inbox complete.', null, '4/4', 0, 0, 0))
     expect(review.session?.more.new).toBe(2)
 
     // The next day, 9:00: the limit starts again (2 new cards: N-3, N-4); no card of yesterday is in New cards; every
@@ -285,7 +283,6 @@ describe('YAZ-5613: a full day of reviews on the Mac, step by step (YAZ-5611 rul
   it('rule 2: a new card ✕ once, then the Inbox opened again: it stays in its list, and no count jumps', async () => {
     await mount()
     for (let i = 0; i < 4; i++) await answer('good')
-    await press(/^Learn new cards 2$/)
     await answer('again') // NEW-1 ✕: it stays under New cards (YAZ-5017)
     const inSession = await look()
     expect(inSession).toEqual(row('NEW-2', '4 / 6', '4/6', 2, 0, 2))

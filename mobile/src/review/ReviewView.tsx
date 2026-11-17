@@ -36,7 +36,7 @@ import { FilterIcon, filterLabel } from '@client/review/cardFilters'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
 import { useReviewTop } from '../screens/reviewTop'
 import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
-import { readNewFrom, saveNewFrom } from './newFromPick'
+import { readNewFrom, readOrders, saveNewFrom, saveOrder, type PhoneOrders } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import { DoneScreen, type DoneLook } from '@client/review/DoneScreen'
 import { SessionBar, SessionCount } from '@client/review/SessionCount'
@@ -99,6 +99,8 @@ interface Setup {
   media: VaultMedia
   /** This phone's pick of the folders new cards come from (`newFromPick.ts`); null: the Mac's. */
   pick: string[] | null
+  /** This phone's Order rows (YAZ-5707, `newFromPick.ts`); each null: the Mac's. */
+  order: PhoneOrders
 }
 
 /** ONE source and ONE host for the life of the vault (the hook follows their identity). */
@@ -113,8 +115,8 @@ export function ReviewView(props: ReviewViewProps) {
     const source = createReviewSource(link, vault, vaultName)
     const own = given === undefined ? storedMedia(link.store, vault) : null
     const media = given ?? own!
-    void Promise.all([openPhoneDays(link.store, vault), readNewFrom(link.store, vault)]).then(([days, pick]) => {
-      if (live) setSetup({ source, media, pick, host: phoneReviewHost({ answers: link.answers, days, vaultName: () => vaultName }) })
+    void Promise.all([openPhoneDays(link.store, vault), readNewFrom(link.store, vault), readOrders(link.store, vault)]).then(([days, pick, order]) => {
+      if (live) setSetup({ source, media, pick, order, host: phoneReviewHost({ answers: link.answers, days, vaultName: () => vaultName }) })
     })
     return () => {
       live = false
@@ -124,7 +126,7 @@ export function ReviewView(props: ReviewViewProps) {
     }
   }, [link, vault, vaultName, given])
   if (setup === null) return <Waiting />
-  return <ReviewSession {...props} source={setup.source} host={setup.host} media={setup.media} pick={setup.pick} />
+  return <ReviewSession {...props} source={setup.source} host={setup.host} media={setup.media} pick={setup.pick} order={setup.order} />
 }
 
 function Waiting() {
@@ -160,15 +162,32 @@ type Step = Reveal & { key: string | null }
 /** `words` and `rating`: the hint line's "✓ Remembered · Capital of Spain · back in 9 days · Undo", right after the answer (the Mac's, YAZ-5693). */
 type Line = { kind: 'answer'; count: number; path: string; id: string; words: AnswerWords; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
-function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, shown = true }: ReviewViewProps & Setup) {
+function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, order: firstOrder, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings: vaultSettings } = useSourceState(source)
   // Where new cards come from — the Mac's rule (`setNewFrom` → `saveSettings` → `newFrom`), this phone's pick.
   const [pick, setPick] = useState(firstPick)
-  const settings = useMemo(() => (pick === null ? vaultSettings : { ...vaultSettings, newFrom: pick }), [vaultSettings, pick])
+  // YAZ-5707: the two Order rows, the same way: each this phone's pick, else the Mac's.
+  const [order, setOrder] = useState(firstOrder)
+  const settings = useMemo(() => {
+    const picked = pick === null ? vaultSettings : { ...vaultSettings, newFrom: pick }
+    return { ...picked, allCardsOrder: order.all ?? picked.allCardsOrder, dueTodayOrder: order.due ?? picked.dueTodayOrder }
+  }, [vaultSettings, pick, order])
+  const now = useRef(settings)
+  now.current = settings
   const saveSettings = useCallback(
     (next: ReviewSettings) => {
-      setPick(next.newFrom)
-      void saveNewFrom(link.store, vault, next.newFrom)
+      if (next.newFrom.join('\n') !== now.current.newFrom.join('\n')) {
+        setPick(next.newFrom)
+        void saveNewFrom(link.store, vault, next.newFrom)
+      }
+      if (next.allCardsOrder !== now.current.allCardsOrder) {
+        setOrder((o) => ({ ...o, all: next.allCardsOrder }))
+        void saveOrder(link.store, vault, 'all', next.allCardsOrder)
+      }
+      if (next.dueTodayOrder !== now.current.dueTodayOrder) {
+        setOrder((o) => ({ ...o, due: next.dueTodayOrder }))
+        void saveOrder(link.store, vault, 'due', next.dueTodayOrder)
+      }
     },
     [link, vault],
   )

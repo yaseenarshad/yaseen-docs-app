@@ -16,7 +16,7 @@ import { api } from '../api'
 import { storage } from '../lib/storage'
 import { listenTour } from '../course/tourBus'
 
-const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS }
+const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
 /**
  * `text` as a pattern where the answer time `cardTime(NOW)` may have moved on by some milliseconds (YAZ-5642: the time is
@@ -163,11 +163,9 @@ describe('useCardReview', () => {
     await act(async () => review.answer('again'))
     stop()
     expect(heard).toEqual([['inbox-answered', `${ROOT}/Geo.md`]])
-    // YAZ-5043: the first pass of Due today ends at its % screen; the missed card comes back before the new card.
-    await vi.waitFor(() => expect(review.session?.end?.kind).toBe('missed'))
-    await act(async () => review.goOn())
-    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', isNew: false, page: { text: 'Capital of {{France}}?' } }))
-    // The new card waits behind it.
+    // YAZ-5707: All cards is one run with no stop: the new card next, the missed card at the end.
+    expect(review.session?.end).toBeNull()
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-3', isNew: true }))
     expect(review.session?.counts).toMatchObject({ all: 2, new: 1 })
   })
 
@@ -187,8 +185,8 @@ describe('useCardReview', () => {
     const written = reviewsOn('Geo.md', 'WIKI-1').at(-1)
     expect(written).toEqual({ ...remembered.review, at: cardTime(NOW + 90_000) })
     expect(cardState(reviewsOn('Geo.md', 'WIKI-1'), S).due).toBe(previewAnswers(reviewsOn('Geo.md', 'WIKI-1').slice(0, -1), S, NOW + 90_000)[1].due)
-    expect(review.session?.end?.kind).toBe('done') // YAZ-5043: Due today is done, then the new cards
-    await act(async () => review.goOn())
+    // YAZ-5707: All cards is one run: the new card next, with no stop.
+    expect(review.session?.end).toBeNull()
     expect(review.session?.card?.id).toBe('WIKI-3')
     expect(review.session?.canUndo).toBe(true)
     expect(review.dueCount).toBe(1)
@@ -637,7 +635,9 @@ describe('useCardReview', () => {
       lines(true)
       await mount()
       await act(async () => review.start())
-      expect(review.session).toMatchObject({ filter: 'all', counts: { all: 4, next: 4 }, progress: { total: 4 }, card: { id: 'WIKI-1', next: true } })
+      // YAZ-5707: All cards carries today's earlier work on its cards (Mochi's E5): WIKI-2 learned and reviewed today
+      // (2), WIKI-8 learned today (1): 3 / 7.
+      expect(review.session).toMatchObject({ filter: 'all', counts: { all: 4, next: 4 }, progress: { done: 3, total: 7 }, card: { id: 'WIKI-1', next: true } })
       await act(async () => review.setFilter('next'))
       expect(review.session).toMatchObject({ filter: 'next', progress: { total: 4 }, counts: { next: 4 } })
     })
@@ -701,7 +701,7 @@ describe('useCardReview', () => {
       // Another page changed: a new snapshot, but Geo.md's record is still the one before the answer.
       records = [...stale]
       await act(async () => listeners.forEach((l) => l()))
-      await act(async () => review.goOn()) // YAZ-5043: past "Due today is done."
+      // YAZ-5707: All cards is one run: the new card next, with no stop.
       expect(review.session).toMatchObject({ card: { id: 'WIKI-3' }, counts: { next: 0, all: 1 } })
     })
   })
@@ -714,8 +714,8 @@ describe('useCardReview', () => {
     // Same-day steps (YAZ-5020): a Forgot puts the card back. YAZ-5675 (Mochi): done +1 and the total +1.
     await step(() => review.answer('again'))
     expect(review.session).toMatchObject({ answered: ['again'], progress: { done: 1, total: 3, waiting: 1 } })
-    await act(async () => review.goOn()) // YAZ-5043: the missed card, before the new card
-    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { id: 'WIKI-1' } }))
+    // YAZ-5707: All cards is one run: the new card next, the missed card at the end.
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-3', page: { id: 'WIKI-3' } }))
     await step(() => review.answer('good'))
     expect(review.session?.answered).toEqual(['again', 'good'])
     await step(() => review.undo())
@@ -853,21 +853,19 @@ describe('useCardReview: same-day returns (YAZ-5702: a ✕, a new card`s first �
     await act(async () => review.start())
     expect(place()).toEqual(['WIKI-5', 0, 2])
     await answer('WIKI-5', 'again')
-    // YAZ-5043: the missed known card comes back before the new card, after the % screen.
-    expect(review.session?.end?.kind).toBe('missed')
-    await act(async () => review.goOn())
+    // YAZ-5707: All cards is one run with no stop: the new card, its same-day review, then the missed card at the end.
+    expect(review.session?.end).toBeNull()
+    await shown('WIKI-6')
+    expect(place()).toEqual(['WIKI-6', 1, 3])
+    await answer('WIKI-6', 'good')
+    await shown('WIKI-6')
+    expect(place()).toEqual(['WIKI-6', 2, 4])
+    await answer('WIKI-6', 'good')
     await shown('WIKI-5')
-    expect(place()).toEqual(['WIKI-5', 1, 3])
+    expect(place()).toEqual(['WIKI-5', 3, 4])
     await answer('WIKI-5', 'good')
-    expect(review.session?.end?.kind).toBe('done')
-    await act(async () => review.goOn())
-    await shown('WIKI-6')
-    expect(place()).toEqual(['WIKI-6', 1, 2])
-    await answer('WIKI-6', 'good')
-    await shown('WIKI-6')
-    expect(place()).toEqual(['WIKI-6', 2, 3])
-    await answer('WIKI-6', 'good')
     expect(review.session?.card).toBeNull()
+    expect(review.session?.progress).toMatchObject({ done: 3, total: 3 })
     expect(reviewsOn('K.md', 'WIKI-5').map((r) => r.rating)).toEqual(['good', 'good', 'again', 'good'])
     expect(reviewsOn('K.md', 'WIKI-6').map((r) => r.rating)).toEqual(['good', 'good'])
     expect(cardState(reviewsOn('K.md', 'WIKI-6'), S)).toMatchObject({ comesBack: false })
@@ -898,7 +896,8 @@ describe('useCardReview: same-day returns (YAZ-5702: a ✕, a new card`s first �
     act(() => review.close())
     expect(review.dueCount).toBe(2)
     await act(async () => review.start())
-    expect(review.session).toMatchObject({ progress: { total: 2 } })
+    // YAZ-5707: All cards carries today's earlier work (Mochi's E5): WIKI-5's ✕ is done already.
+    expect(review.session).toMatchObject({ progress: { done: 1, total: 3 } })
     expect(review.session?.card?.id).toBe('WIKI-5')
   })
 
@@ -907,7 +906,7 @@ describe('useCardReview: same-day returns (YAZ-5702: a ✕, a new card`s first �
     await act(async () => review.start())
     const before = vault.get(`${ROOT}/K.md`)
     await answer('WIKI-5', 'again')
-    expect(review.session?.end?.kind).toBe('missed') // YAZ-5043: the % screen; ⌘Z takes it back with the answer
+    await shown('WIKI-6') // YAZ-5707: no stop on All cards; ⌘Z takes the answer back
     await step(() => review.undo())
     expect(vault.get(`${ROOT}/K.md`)).toBe(before)
     await shown('WIKI-5')
@@ -1249,8 +1248,7 @@ describe('YAZ-5675 (Mochi`s numbers): "done / total", the bar and every list`s c
     const lists = () => ({ counts: review.session!.counts, place: `${review.session!.progress.done} / ${review.session!.progress.total}`, done: review.session!.progress.done, size: review.session!.progress.total })
     expect(lists()).toEqual({ counts: { all: 3, next: 0, due: 1, new: 2 }, place: '0 / 3', done: 0, size: 3 })
     await answer('WIKI-31', 'good')
-    expect(review.session?.end?.kind).toBe('done')
-    await act(async () => review.goOn())
+    expect(review.session?.end).toBeNull() // YAZ-5707: All cards is one run, no stop
     await answer('WIKI-32', 'good')
     // Out of New cards, into Due today; under All cards done +1 and the total +1 (it comes back today: YAZ-5675, Mochi).
     expect(lists()).toEqual({ counts: { all: 2, next: 0, due: 1, new: 1 }, place: '2 / 4', done: 2, size: 4 })

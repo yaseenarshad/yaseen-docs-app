@@ -16,8 +16,24 @@ export const at = (minute: number) => `2026-11-14T06:${String(minute).padStart(2
 export const answer = (id: string, minute: number): CardOp => ({ kind: 'review', id, review: { at: at(minute), rating: 'good' } })
 export const FILES = { 'a.md': pageText('A', 'NC-1', ['NC-2', 'NC-3']), 'cards/light-nc-17.md': cardFileText('Speed of light', 'NC-17') }
 
-export async function answersSetup(options: { files?: Record<string, string>; fetch?: (s: Awaited<ReturnType<typeof syncSetup>>) => FetchLike } = {}) {
-  const s = await syncSetup(options.files ?? FILES)
+/**
+ * Due today's Order (YAZ-5707) is In order in these vaults unless their review.json names one or `dueShuffle` is set:
+ * the tests read the plan's order; the Shuffle default has its own tests.
+ */
+export function planOrder(files: Record<string, string>): Record<string, string> {
+  const name = '.yaseendocs/review.json'
+  let json: Record<string, unknown>
+  try {
+    json = JSON.parse(files[name] ?? '{}') as Record<string, unknown>
+  } catch {
+    return files
+  }
+  return 'dueTodayOrder' in json ? files : { ...files, [name]: JSON.stringify({ ...json, dueTodayOrder: 'in-order' }) }
+}
+
+export async function answersSetup(options: { files?: Record<string, string>; dueShuffle?: boolean; fetch?: (s: Awaited<ReturnType<typeof syncSetup>>) => FetchLike } = {}) {
+  const files = options.files ?? FILES
+  const s = await syncSetup(options.dueShuffle === true ? files : planOrder(files))
   const store = s.store
   const clock = fakeClock()
   const fetch = options.fetch?.(s) ?? s.github.fetch

@@ -95,18 +95,17 @@ describe('YAZ-5613: a full day of reviews on the phone, step by step (YAZ-5611 r
       // YAZ-5675 (Mochi, as the Mac): a ✕ is done +1 and the total +1.
       ['DUE-1 ✕', () => answer('Forgot'), row('DUE-2', '2 / 7', '2/7', 5, 3, 2)],
       ['DUE-2 ✓', () => answer('Remembered'), row('DUE-3', '3 / 7', '3/7', 4, 2, 2)],
-      ['DUE-3 ✓', () => answer('Remembered'), row('stop: missed', null, '4/7', 3, 1, 2)],
-      ['Review missed cards', () => h!.click('Review missed cards 1'), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
-      ['DUE-1 ✕ again', () => answer('Forgot'), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
-      ['Undo (in ⋯)', undo, row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
-      ['DUE-1 ✕ again', () => answer('Forgot'), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
-      ['DUE-1 ✓', () => answer('Remembered'), row('stop: done', null, '4/6', 2, 0, 2)],
-      ['Learn new cards', () => h!.click('Learn new cards 2'), row('NEW-1', '4 / 6', '4/6', 2, 0, 2)],
-      ['NEW-1 ✓ (first)', () => answer('Remembered'), row('NEW-2', '5 / 7', '5/7', 2, 1, 1)],
-      ['NEW-2 ✕', () => answer('Forgot'), row('NEW-1', '5 / 7', '5/7', 2, 1, 1)],
-      ['NEW-1 ✓ (second)', () => answer('Remembered'), row('NEW-2', '6 / 7', '6/7', 1, 0, 1)],
-      ['NEW-2 ✓ (first)', () => answer('Remembered'), row('NEW-2', '7 / 8', '7/8', 1, 1, 0)],
-      ['NEW-2 ✓ (second)', () => answer('Remembered'), row('done: Inbox complete.', null, '8/8', 0, 0, 0)],
+      // YAZ-5707 (Mochi's E5, as the Mac): All cards is ONE run — no stop between the due and the new cards.
+      ['DUE-3 ✓', () => answer('Remembered'), row('NEW-1', '4 / 7', '4/7', 3, 1, 2)],
+      ['NEW-1 ✓ (first)', () => answer('Remembered'), row('NEW-2', '5 / 8', '5/8', 3, 2, 1)],
+      ['NEW-2 ✕', () => answer('Forgot'), row('NEW-1', '5 / 8', '5/8', 3, 2, 1)],
+      ['NEW-1 ✓ (second)', () => answer('Remembered'), row('NEW-2', '6 / 8', '6/8', 2, 1, 1)],
+      ['NEW-2 ✓ (first)', () => answer('Remembered'), row('NEW-2', '7 / 9', '7/9', 2, 2, 0)],
+      // The missed card comes back at the end of the run.
+      ['NEW-2 ✓ (second)', () => answer('Remembered'), row('DUE-1', '8 / 9', '8/9', 1, 1, 0)],
+      ['DUE-1 ✕ again', () => answer('Forgot'), row('DUE-1', '8 / 9', '8/9', 1, 1, 0)],
+      ['Undo (in ⋯)', undo, row('DUE-1', '8 / 9', '8/9', 1, 1, 0)],
+      ['DUE-1 ✓', () => answer('Remembered'), row('done: Inbox complete.', null, '8/8', 0, 0, 0)],
     ]
     const seen = []
     const want = []
@@ -121,17 +120,16 @@ describe('YAZ-5613: a full day of reviews on the phone, step by step (YAZ-5611 r
   it('the Review tab opened again the same day: the same cards in the same lists (a begun new card in Due today), no third new card', async () => {
     h = await reviewSetup(FILES)
     for (let i = 0; i < 4; i++) await answer('Remembered')
-    await h.click('Learn new cards 2')
-    await answer('Remembered') // NEW-1's first ✓
+    await answer('Remembered') // NEW-1's first ✓ (YAZ-5707: no stop before the new cards on All cards)
     expect(await look()).toEqual(row('NEW-2', '5 / 7', '5/7', 2, 1, 1))
     await reopen(60 * 60_000)
-    expect(await look()).toEqual(row('NEW-1', '0 / 2', '0/2', 2, 1, 1))
+    // YAZ-5707 (Mochi's E5): the run carries today's earlier work on its cards: NEW-1 learned already.
+    expect(await look()).toEqual(row('NEW-1', '1 / 3', '1/3', 2, 1, 1))
     await answer('Remembered')
-    expect(await look()).toEqual(row('stop: done', null, '1/2', 1, 0, 1))
-    await h.click('Learn new cards 1')
+    expect(await look()).toEqual(row('NEW-2', '2 / 3', '2/3', 1, 0, 1))
     await answer('Remembered')
     await answer('Remembered')
-    expect(await look()).toEqual(row('done: Inbox complete.', null, '3/3', 0, 0, 0))
+    expect(await look()).toEqual(row('done: Inbox complete.', null, '4/4', 0, 0, 0))
     // The next day, 9:00: the new-card limit starts again (NEW-3, NEW-4), and no card of yesterday is a new card.
     vi.setSystemTime(new Date(2026, 10, 13, 9, 0).getTime())
     await reopen(0)
@@ -145,7 +143,6 @@ describe('YAZ-5613: a full day of reviews on the phone, step by step (YAZ-5611 r
   it('rule 2: a new card ✕ once, then the tab opened again: it stays in its list, and no count jumps', async () => {
     h = await reviewSetup(FILES)
     for (let i = 0; i < 4; i++) await answer('Remembered')
-    await h.click('Learn new cards 2')
     await answer('Forgot') // NEW-1 ✕: it stays under New cards
     const inSession = await look()
     expect(inSession).toEqual(row('NEW-2', '4 / 6', '4/6', 2, 0, 2))

@@ -39,11 +39,17 @@ const showing = () => (q('.review__card') === null ? null : h!.head())
 const hint = () => (q('.review__hint')?.textContent ?? '').replace(/\s+/g, ' ').trim()
 const place = () => /(\d+) \/ (\d+)/.exec(h!.text())?.slice(1).map(Number)
 /** The bar's grey and red ends, in whole %. */
+/** Due today (YAZ-5707: its % screen and "Review missed cards" are Due today's; All cards is one run with no stop). */
+const dueToday = async () => {
+  await h!.click(/Choose what to review/)
+  await h!.click('Due today')
+}
 const ends = () => ['grey', 'red'].map((part) => Math.round(parseFloat(h!.host.querySelector<HTMLElement>(`.review__progress .session-bar__${part}`)?.style.width ?? '0')))
 
 describe('YAZ-5594: ✕ on the last missed card', () => {
   it('Yaseen\'s NC-205: each ✕ brings it back at once, and the screen SAYS so (never looks stuck); ✓ lets it go', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 10}', 'Try/Cards in a page.md': page('Cards in a page', NC205, NC207) })
+    await dueToday()
     expect(showing()).toBe('NC-205')
     expect(q('.review__again')).toBeNull()
     await h.click('Forgot')
@@ -89,6 +95,7 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
 
   it('Undo of the ✕ that brought it back: the line and the animation go', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 10}', 'Try/Cards in a page.md': page('Cards in a page', NC205, NC207) })
+    await dueToday()
     await h.click('Forgot')
     await h.click('Review missed cards 1')
     await h.click('Forgot')
@@ -112,6 +119,7 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
   it('YAZ-5675 (Mochi): 3 cards, the last forgotten 3 times then remembered — its first Forgot adds 1 to the total once; the list says 1', async () => {
     const known = (x: string, id: string, i: number) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `${id}, ${inOrder('2026-10-04T09:00:00.000Z good, 2026-10-04T09:01:00.000Z good', i)}`)
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', known('A', 'PB-1', 0), known('B', 'PB-2', 1), known('C', 'PB-3', 2)) })
+    await dueToday()
     const bar = () => [...ends(), q('.review__progress')?.getAttribute('aria-valuenow'), q('.review__progress')?.getAttribute('aria-valuemax')]
     const dueRow = async () => {
       await h!.click(/Choose what to review/)
@@ -170,6 +178,7 @@ describe('YAZ-5676: the phone draws Mochi`s bar, as the Mac', () => {
   it('3 cards, the first missed: the red travels right with the grey; full at the % screen; each ✓ of the missed pass turns it grey', async () => {
     const known = (x: string, id: string, i: number) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `${id}, ${inOrder('2026-10-04T09:00:00.000Z good, 2026-10-04T09:01:00.000Z good', i)}`)
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', known('A', 'PB-1', 0), known('B', 'PB-2', 1), known('C', 'PB-3', 2)) })
+    await dueToday()
     await h.click('Forgot')
     expect(ends()).toEqual([25, 50])
     await h.click('Remembered')

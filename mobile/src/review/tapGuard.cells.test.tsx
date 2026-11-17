@@ -134,8 +134,8 @@ describe('the tap guard, cell by cell, on the screen', () => {
     expect(reviewInProgress()).toBe(true)
     await s.press('Remembered')
     await s.settle()
-    // YAZ-5495 (the Mac's YAZ-5043): the last due card answered: "Due today is done." in place of "Inbox complete".
-    expect(s.text()).toContain('Finished reviewing.')
+    // YAZ-5707: All cards is one run, no stop: the last card answered, "Inbox complete.".
+    expect(s.text()).toContain('Inbox complete.')
     expect(s.guarded()).toBe(false)
     expect(reviewInProgress()).toBe(true) // Undo remains
     // YAZ-5519 S5: the screen after the last card takes no tap for SEEN_MS (a double tap's second tap); then Undo.

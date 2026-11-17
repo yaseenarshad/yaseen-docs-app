@@ -79,7 +79,7 @@ let root: Root | null = null
 let el: HTMLElement
 let review: CardReviewApi
 const wikilinks = createWikilinkResolveSource()
-const SETTINGS: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 2 }
+const SETTINGS: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 2, dueTodayOrder: 'in-order' }
 
 function Screen({ settings }: { settings: ReviewSettings }) {
   review = useCardReview(ROOT, source, settings, () => undefined, undefined, desktopReviewHost)
@@ -190,7 +190,7 @@ async function rest(): Promise<string[]> {
 }
 
 describe('YAZ-5616: new cards begun in the New cards list come back the same day (Mac)', () => {
-  it('then All cards: the due cards, "Due today is done." offers the 2 begun cards, their second ✓, Inbox complete', async () => {
+  it('then All cards: one run (YAZ-5707) — the due cards, the 2 begun cards` second ✓, Inbox complete', async () => {
     await mount()
     await act(async () => review.setFilter('new'))
     await answer('good') // NEW-1's first ✓: it moves into Due today, out of this list
@@ -198,7 +198,7 @@ describe('YAZ-5616: new cards begun in the New cards list come back the same day
     // YAZ-5678 (Mochi's words): the new cards learned wait under Due today.
     expect((await look()).card).toBe('done: Finished learning cards.')
     await act(async () => review.setFilter('all'))
-    expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'stop: done', 'NEW-1', 'NEW-2', 'done: Inbox complete.'])
+    expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'NEW-1', 'NEW-2', 'done: Inbox complete.'])
     // YAZ-5675 (Mochi): All cards counts each new card's first ✓ and its second (the card came back today): 2 + 2 + 2.
     expect((await look()).bar).toBe('6/6')
   })
