@@ -1556,7 +1556,7 @@ describe('YAZ-5689: the top row`s right end is the count and ONE sliders icon, "
     session = { ...session, today }
     withFocus(false, vi.fn())
     act(() => view()!.click())
-    expect([panel()?.getAttribute('role'), panel()?.getAttribute('aria-label'), view()!.getAttribute('aria-expanded')]).toEqual(['dialog', 'View', 'true'])
+    expect([panel()?.getAttribute('role'), panel()?.querySelector('[role="group"]')?.getAttribute('aria-label'), view()!.getAttribute('aria-expanded')]).toEqual(['dialog', 'View', 'true'])
     expect(labels()).toEqual(['Time', 'Zoom', 'Focus mode'])
     expect(open().querySelector('.document-zoom')?.getAttribute('aria-label')).toBe('Inbox zoom')
     act(() => view()!.click())

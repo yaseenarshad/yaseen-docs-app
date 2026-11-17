@@ -2337,7 +2337,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // show it (YAZ-5665). The timer saves each answer's seconds in all three.
             id: 'timeSoFar',
             label: 'Time so far',
-            hint: "Today's review time in Review's View panel (the sliders at the top right) during a review. Hidden: click Show to see it. Finish screens always show it. Answer times are saved.",
+            hint: "Today's review time in Review's View panel (top right). Hidden: click Show to see it. Finish screens always show it. Answer times are saved.",
             keywords: [...REVIEW_KEYWORDS, 'timer', 'time', 'today', 'clock', 'hide', 'show', 'how long'],
             available: reviewOn,
             render: ({ review }) =>

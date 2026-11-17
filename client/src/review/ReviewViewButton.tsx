@@ -69,8 +69,8 @@ export function ReviewViewButton({ seconds, time, zoom, setZoom, focusMode, onFo
         <PropertiesIcon />
       </button>
       {at !== null && (
-        <ContextMenuSurface x={at.x} y={at.y} width={PANEL_WIDTH} onClose={close} role="dialog" label="View" className="card-inbox__view-panel">
-          <div className="card-inbox__view-list">
+        <ContextMenuSurface x={at.x} y={at.y} width={PANEL_WIDTH} onClose={close} role="dialog" className="card-inbox__view-panel">
+          <div className="card-inbox__view-list" role="group" aria-label="View">
             {time !== 'off' && (
               <div className="card-inbox__view-row" data-row="time">
                 <span className="card-inbox__view-label">Time</span>
