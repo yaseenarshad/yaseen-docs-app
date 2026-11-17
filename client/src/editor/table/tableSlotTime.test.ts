@@ -254,11 +254,13 @@ describe('the pill in tableCalendar.css', () => {
   const rules = [...calendarCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }))
   const rule = (part: string) => rules.find(({ selector }) => selector.endsWith(part))?.body ?? ''
 
-  it('out of the flow, on the line inside the row, on its room (YAZ-4965: moved in to the visible edge, not stuck over text), tabular digits', () => {
+  it('out of the flow, on the line inside the row, stuck to the visible right edge (YAZ-5700: over the text there, on its own background), tabular digits', () => {
     expect(rule('.table-slot-anchor')).toMatch(/position:\s*absolute/)
     expect(rule('.table-slot-track')).toMatch(/top:\s*clamp\(0px, calc\(var\(--table-now, 0\) \* 100% - 10px\), calc\(100% - 20px\)\)/)
-    expect(rule('.table-slot-pill')).not.toMatch(/position:\s*sticky/)
-    expect(rule('.table-slot-pill')).toMatch(/margin-right:\s*calc\(var\(--slot-side, 0px\) \+ 6px\)/)
+    expect(rule('.table-slot-pill')).toMatch(/position:\s*sticky/)
+    expect(rule('.table-slot-pill')).toMatch(/right:\s*6px/)
+    expect(rule('.table-slot-pill')).toMatch(/background:\s*var\(--bg\)/)
+    expect(calendarCss).not.toContain('--slot-side')
     expect(rule('.table-slot-pill')).toMatch(/font-variant-numeric:\s*tabular-nums/)
     expect(rule('.table-slot-pill')).toMatch(/color:\s*var\(--table-text-red\)/)
   })
