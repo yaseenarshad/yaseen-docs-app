@@ -64,6 +64,19 @@ export type CardPropertyScalar = string | number | boolean
 /** A card property's value: one value, or a list of two or more (`tags "europe" "capitals"`). */
 export type CardPropertyValue = CardPropertyScalar | CardPropertyScalar[]
 
+/**
+ * WHEN a card's title shows in Review (YAZ-5696, Design 2): at once, after the front (no hidden word left on it), or
+ * with Side 2 (the last side). The global default is review.json's `titleAt`; a card's own choice is one card line
+ * part, its word in `CARD_TITLE_AT_WORDS`. Never is `notitle`, as before.
+ */
+export type CardTitleAt = 'once' | 'front' | 'side2'
+export const CARD_TITLE_AT: readonly CardTitleAt[] = ['once', 'front', 'side2']
+/** Each choice's word on the card line: `title-once`, `title-front`, `title-side2`. */
+export const CARD_TITLE_AT_WORDS: Readonly<Record<CardTitleAt, string>> = { once: 'title-once', front: 'title-front', side2: 'title-side2' }
+const titleAtOfWord = (text: string): CardTitleAt | null => CARD_TITLE_AT.find((at) => CARD_TITLE_AT_WORDS[at] === text) ?? null
+/** The ⋯ menu's "Title in review" choice: Default (no part), one of the three, or Never (`notitle`). */
+export type CardTitleChoice = 'default' | CardTitleAt | 'never'
+
 /** One part of a card line, in the order the line holds them. */
 export type CardPart =
   | { kind: 'id'; id: string }
@@ -73,6 +86,7 @@ export type CardPart =
   | { kind: 'off' }
   | { kind: 'next' }
   | { kind: 'notitle' }
+  | { kind: 'titleat'; at: CardTitleAt }
   | { kind: 'fix' }
   | { kind: 'other'; text: string }
 
@@ -107,6 +121,8 @@ export interface CardRecord {
   title?: string
   /** The title is hidden on the Inbox's front (the line's `notitle` part, YAZ-5030); absent: it shows. */
   notitle?: true
+  /** When the title shows in Review, the card's own choice (YAZ-5696, `title-front`…); absent: the global default. */
+  titleAt?: CardTitleAt
   /** The card is marked "Fix later" (the line's `fix`, YAZ-5097): the Cards table's Card fix status; absent: no mark. */
   fix?: true
   /** The card's own properties (its line's property parts, YAZ-5379, `cardPropertiesOf`); absent for a card with none. */
@@ -159,7 +175,7 @@ function reviewPart(text: string): Extract<CardPart, { kind: 'review' }> | null 
 const TITLE_RE = /^title[ \t]+("(?:[^"\\]|\\.)*")$/
 
 /** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle`, `fix` (YAZ-5097) or an ID. */
-const isKnownPart = (text: string): boolean => reviewPart(text) !== null || text === 'off' || text === 'next' || text === 'notitle' || text === 'fix' || isNumberId(text)
+const isKnownPart = (text: string): boolean => reviewPart(text) !== null || text === 'off' || text === 'next' || text === 'notitle' || titleAtOfWord(text) !== null || text === 'fix' || isNumberId(text)
 
 /**
  * The parts of a line's body, split on its commas: a comma inside a quoted text (a title, a property's value) splits
@@ -233,7 +249,7 @@ const titlePart = (title: string): string => `title ${quoteText(title)}`
 // read as a property (a bare word alone, a bare value that is no number or checkbox) stays an unknown part, kept.
 
 /** The card line's own words: never a property's name (YAZ-5379), in any capitals. */
-const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle', 'fix'])
+const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle', 'fix', ...Object.values(CARD_TITLE_AT_WORDS)])
 const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
 const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/
 const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
@@ -326,6 +342,7 @@ export function parseCardLine(value: string): CardLine | null {
     } else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
+    else if (titleAtOfWord(text) !== null) parts.push({ kind: 'titleat', at: titleAtOfWord(text)! })
     else if (text === 'fix') parts.push({ kind: 'fix' })
     else if (!id && isNumberId(text)) {
       id = true
@@ -367,7 +384,9 @@ export function formatCardLine(line: CardLine): string | null {
             ? (p.raw ?? formatCardReview(p.review))
             : p.kind === 'other'
               ? p.text
-              : p.kind,
+              : p.kind === 'titleat'
+                ? CARD_TITLE_AT_WORDS[p.at]
+                : p.kind,
   )
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
 }
@@ -385,6 +404,13 @@ export const isCardNext = (line: CardLine): boolean => line.parts.some((p) => p.
 export const isCardNoTitle = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'notitle')
 /** The card's title (YAZ-5308: its `title` part), '' for a card with none. */
 export const cardTitleOf = (line: CardLine): string => line.parts.find((p) => p.kind === 'title')?.title ?? ''
+/** The card's own "when the title shows" (YAZ-5696), or null: the global default. */
+export const cardTitleAtOf = (line: CardLine): CardTitleAt | null => {
+  const part = line.parts.find((p) => p.kind === 'titleat')
+  return part?.kind === 'titleat' ? part.at : null
+}
+/** The ⋯ menu's "Title in review" choice the line holds: Never (`notitle`) first, then the card's own timing, else Default. */
+export const cardTitleChoiceOf = (line: CardLine): CardTitleChoice => (isCardNoTitle(line) ? 'never' : (cardTitleAtOf(line) ?? 'default'))
 /**
  * The card's title as Review may show it (YAZ-5695, Yaseen: "if the title is a setting on the card that it should never
  * show up in reviews, it should never show up in reviews. Period."): '' while the card is "Title hidden in review"
@@ -402,6 +428,7 @@ const cardRecordOf = (line: CardLine): CardRecord => {
     reviews: cardReviewsOf(line),
     ...(title !== '' && { title }),
     ...(isCardNoTitle(line) && { notitle: true as const }),
+    ...(cardTitleAtOf(line) !== null && { titleAt: cardTitleAtOf(line)! }),
     ...(isCardFix(line) && { fix: true as const }),
     ...(Object.keys(properties).length > 0 && { properties }),
   }
@@ -535,6 +562,21 @@ export function withCardNoTitle(line: CardLine, hide: boolean): CardLine {
 }
 
 /**
+ * The ⋯ menu's "Title in review" (YAZ-5696): Default takes both `notitle` and the timing part away; Never is `notitle`
+ * (`withCardNoTitle`); each of the three is its one part, in `notitle`'s place (after the head and any `off` / `next`).
+ * The line holds one of them at most. The same choice again gives the same line.
+ */
+export function withCardTitleChoice(line: CardLine, choice: CardTitleChoice): CardLine {
+  if (cardTitleChoiceOf(line) === choice && line.parts.filter((p) => p.kind === 'notitle' || p.kind === 'titleat').length <= 1) return line
+  const bare: CardLine = { parts: line.parts.filter((p) => p.kind !== 'notitle' && p.kind !== 'titleat') }
+  if (choice === 'default') return bare
+  if (choice === 'never') return withCardNoTitle(bare, true)
+  let i = afterHead(bare)
+  while (bare.parts[i]?.kind === 'off' || bare.parts[i]?.kind === 'next') i++
+  return { parts: [...bare.parts.slice(0, i), { kind: 'titleat', at: choice }, ...bare.parts.slice(i)] }
+}
+
+/**
  * The "Fix later" mark (YAZ-5097; round 10, addition 3 of YAZ-5055): the word `fix` on the card line, its own part kind
  * as `off`, `next` and `notitle` are. The phone writes it (YAZ-5073, the `fix` action), the Mac's ⋯ menus and the Cards
  * table's Card fix status (YAZ-5430) too; that column reads it off the index (`CardRecord.fix`). An older build
@@ -552,7 +594,7 @@ export function withCardFix(line: CardLine, on: boolean): CardLine {
   if (isCardFix(line) === on) return line
   if (!on) return { parts: line.parts.filter((p) => p.kind !== 'fix') }
   let i = afterHead(line)
-  while (line.parts[i]?.kind === 'off' || line.parts[i]?.kind === 'next' || line.parts[i]?.kind === 'notitle') i++
+  while (line.parts[i]?.kind === 'off' || line.parts[i]?.kind === 'next' || line.parts[i]?.kind === 'notitle' || line.parts[i]?.kind === 'titleat') i++
   return { parts: [...line.parts.slice(0, i), { kind: 'fix' }, ...line.parts.slice(i)] }
 }
 

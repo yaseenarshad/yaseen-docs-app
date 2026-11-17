@@ -56,7 +56,7 @@ export const isCardPreviewKey = (event: ReactKeyboardEvent): boolean =>
 /** Preview a shown card (YAZ-5152), from `from`, as the Inbox reads it. */
 export function previewCardOf(from: Element | null, path: string, card: CardAtPage): void {
   if (from === null) return
-  previewCard(from, { path, id: card.id, text: card.text, title: card.title, notitle: card.notitle === true, reviews: card.reviews, properties: card.properties })
+  previewCard(from, { path, id: card.id, text: card.text, title: card.title, notitle: card.notitle === true, ...(card.titleAt !== undefined && { titleAt: card.titleAt }), reviews: card.reviews, properties: card.properties })
 }
 
 /** A ⋯ change of the card line (D13): `changeCardLine`'s change. */

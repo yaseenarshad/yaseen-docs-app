@@ -63,7 +63,7 @@ import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstr
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { askResetHistory } from './askResetHistory'
-import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
+import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
@@ -677,7 +677,7 @@ export class CardBlockView implements NodeView {
     const line = cardLineOf(this.node)
     const text = this.inner?.editor.text() ?? this.node.textContent
     const title = this.inner?.editor.title() ?? cardTitleOf(line)
-    previewCard(this.dom, { path, id: cardIdOf(line), text, title, notitle: isCardNoTitle(line), reviews: cardReviewsOf(line), properties: cardPropertiesOf(line) })
+    previewCard(this.dom, { path, id: cardIdOf(line), text, title, notitle: isCardNoTitle(line), ...(cardTitleAtOf(line) !== null && { titleAt: cardTitleAtOf(line)! }), reviews: cardReviewsOf(line), properties: cardPropertiesOf(line) })
   }
 
   /** Sends the open hook for this card (D13). */

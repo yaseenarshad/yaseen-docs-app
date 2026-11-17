@@ -1234,6 +1234,101 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
   })
 })
 
+describe('when a shown title appears (YAZ-5696, Design 2)', () => {
+  // Two hidden words on the front, one on Side 2.
+  const CARD = 'A {{one}} and {{two}}\n---\n{{three}}'
+  const at = (titleAt: 'once' | 'front' | 'side2', own?: { titleAt?: 'once' | 'front' | 'side2'; title?: string }) => {
+    mount(CARD, { ...DEFAULT_REVIEW_SETTINGS, titleAt })
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, ...(own?.title !== undefined && { title: own.title }), ...(own?.titleAt !== undefined && { titleAt: own.titleAt }) } } }
+    render()
+  }
+  /** The band: 'shown' with its title, 'waits' (it keeps its room, the title not seen or read), or 'none'. */
+  const band = () => {
+    const b = el.querySelector<HTMLElement>('.card-inbox__panel > .card-band')
+    if (b === null) return 'none'
+    return b.classList.contains('card-band--waiting') ? `waits` : `shown: ${b.textContent}`
+  }
+  const click = (sel: string) => act(() => el.querySelector<HTMLElement>(sel)!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+  it('At once (the default): the title shows from the front, as before', async () => {
+    at('once')
+    await flush()
+    expect(band()).toBe('shown: Capital of France')
+  })
+
+  it('After the front: the band keeps its room and waits; the front\'s last word shows it; hiding a front word again takes it away', async () => {
+    at('front')
+    await flush()
+    expect(band()).toBe('waits')
+    const waiting = el.querySelector<HTMLElement>('.card-inbox__panel > .card-band')!
+    expect(waiting.getAttribute('aria-hidden')).toBe('true')
+    press(' ')
+    expect(band()).toBe('waits')
+    press(' ')
+    expect(shown()).toEqual(['one', 'two'])
+    expect(band()).toBe('shown: Capital of France')
+    // A click on a shown front word hides it again: the title waits again.
+    click('.card__hidden[data-hidden="0"]')
+    expect(band()).toBe('waits')
+  })
+
+  it('With Side 2: the title waits through the front, and shows with Side 2', async () => {
+    at('side2')
+    await flush()
+    press(' ')
+    press(' ')
+    expect(band()).toBe('waits')
+    press(' ')
+    expect(sides()).toBe(2)
+    expect(band()).toBe('shown: Capital of France')
+  })
+
+  it('the card\'s own choice wins over the global one', async () => {
+    at('once', { titleAt: 'side2' })
+    await flush()
+    expect(band()).toBe('waits')
+    at('side2', { titleAt: 'once' })
+    await flush()
+    expect(band()).toBe('shown: Capital of France')
+  })
+
+  it('a title with a hidden-word mark waits until the card is fully shown, At once too', async () => {
+    at('once', { title: 'Capital: {{Paris}}' })
+    await flush()
+    expect(band()).toBe('waits')
+    press(' ')
+    press(' ')
+    press(' ')
+    expect(band()).toBe('waits')
+    press(' ')
+    expect(shown()).toEqual(['one', 'two', 'three'])
+    expect(band()).toBe('shown: Capital: {{Paris}}')
+  })
+
+  it('a card that comes back (another card, then this one again) starts at its front: the title waits again', async () => {
+    at('front')
+    await flush()
+    press(' ')
+    press(' ')
+    expect(band()).toBe('shown: Capital of France')
+    const was = session.card!
+    session = { ...session, card: { ...was, id: 'WIKI-10', page: { ...was.page!, id: 'WIKI-10' } } }
+    render()
+    session = { ...session, card: was }
+    render()
+    expect(band()).toBe('waits')
+  })
+
+  it('the answer line names the card by its title, though it had not shown yet', async () => {
+    at('side2')
+    await flush()
+    press('2')
+    session = { ...session, answered: ['good'], canUndo: true }
+    render()
+    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France · back in 3 days · Undo (Cmd+Z)')
+  })
+})
+
 describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
   /** jsdom has no media engine: `play` and `pause` move `paused`. */
   beforeEach(() => {

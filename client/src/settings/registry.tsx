@@ -2485,6 +2485,29 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
+            // YAZ-5696 (Design 2, Yaseen: "on cards in which the title is shown, at what point should the title show?"):
+            // the vault's default, in review.json so the phone reads it too; a card's own ⋯ › Title in review wins
+            // (`titleShows`). At once is today's behaviour, so nothing changes until it is changed.
+            id: 'cardTitleAt',
+            label: 'Show card titles',
+            hint: "When a card's title shows in Review. After the front: once the front has no hidden word left. A card's own ⋯ › Title in review wins.",
+            keywords: [...REVIEW_KEYWORDS, 'title', 'band', 'when', 'show', 'once', 'front', 'side 2', 'back', 'flip', 'space'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'At once', value: 'once' as const },
+                    { label: 'After the front', value: 'front' as const },
+                    { label: 'With Side 2', value: 'side2' as const },
+                  ]}
+                  value={review.settings.titleAt}
+                  onChange={(titleAt) => review.save({ ...review.settings, titleAt })}
+                  ariaLabel="Show card titles"
+                />
+              ),
+          },
+          {
             // YAZ-5136 round 3 (Yaseen: "a separate table setting so you can put a "same as pages" or ... center ... on cards
             // in particular"): the app's settings, Card width's pattern. Read anywhere and in Edit card.
             id: 'cardTablePosition',

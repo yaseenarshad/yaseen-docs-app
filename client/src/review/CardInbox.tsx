@@ -28,6 +28,9 @@
  *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the title is on the card line (YAZ-5308), never in
  *    the text, so it is never a Space step. YAZ-5695 (Yaseen: "it should never show up in reviews. Period."): no band
  *    at any step, fully shown too, and the answer line names the card by its ID (`reviewTitleOf`).
+ *  - WHEN A SHOWN TITLE APPEARS (YAZ-5696, Design 2): at once, after the front or with Side 2 — the card's own choice
+ *    (⋯ › Title in review, its line's `title-front`…), else Settings › Cards › Show card titles (`bandTitle`,
+ *    `titleShows`). While it waits the band keeps its room, empty to the eye and to VoiceOver, so the card never jumps.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -116,7 +119,7 @@ import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { ARCHIVE_PATH } from './cardInboxIcons'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
-import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
+import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
 import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
@@ -261,6 +264,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   // shared with the Preview (YAZ-5152, `inboxCard.tsx`). The card's sound stops with the card and a hidden Inbox.
   const steps = useCardSteps(text, cardKey, rootRef)
   const { counts, step, done, nextSide, onLastSide } = steps
+  // YAZ-5696: when the band's title shows (the card's own choice, else Settings › Cards › Show card titles).
+  const band = bandTitle(headTitle, card?.page?.titleAt, review.settings.titleAt, steps)
   const bodyRef = useRef<HTMLDivElement>(null)
   useStepScroll(steps, shown, rootRef)
 
@@ -507,8 +512,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
               // The title band at the top of the card's frame (YAZ-5308 A3), no label. A card file's title opens its tab; a
               // card in a page's is the page title's own component, a click renames the card (its card line), as in the
               // page's card (YAZ-5164 part 3). In a Read only vault it shows only.
-              <CardBand>
-                {cardFile ? (
+              <CardBand waiting={band.waits}>
+                {band.waits ? (
+                  <span className="card-inbox__name">{headTitle}</span>
+                ) : cardFile ? (
                   <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openFile(card.path)}>
                     {headTitle}
                   </button>
