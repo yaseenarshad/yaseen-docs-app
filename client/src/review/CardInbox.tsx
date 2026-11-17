@@ -121,7 +121,7 @@ import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CardInboxBar } from './CardInboxBar'
-import { CardAgainChip, CardStateChip, answerIcon, answerLine, showsAgain } from './cardInboxChip'
+import { AnswerLine, CardAgainChip, CardStateChip, answerIcon, answerWords, showsAgain, type AnswerWords } from './cardInboxChip'
 import { FocusIcon } from './cardInboxIcons'
 import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
 import { CardInboxHints } from './CardInboxHints'
@@ -222,8 +222,8 @@ const ICON_TOP = icon('M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3')
 const ICON_CARD = icon('M2.5 3.5h11v9h-11zM2.5 6.5h11')
 
 /** The last answer's line (YAZ-5025 round 2): its words, its answer, and the session's answer count with it. */
-interface AnswerLine {
-  text: string
+interface LastAnswer {
+  words: AnswerWords
   rating: CardRating
   count: number
 }
@@ -316,15 +316,15 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
 
   // The last answer's line (YAZ-5025 round 2): its words fixed when the answer is given, shown once the session counts
   // it (`count`: the session's answers with it), and only while that answer is still the session's last (an undo clears it).
-  const pendingLine = useRef<AnswerLine | null>(null)
-  const [lastLine, setLastLine] = useState<AnswerLine | null>(null)
+  const pendingLine = useRef<LastAnswer | null>(null)
+  const [lastLine, setLastLine] = useState<LastAnswer | null>(null)
   const answerWith = useCallback((rating: CardRating) => {
     const { session, review, card, answerSeconds } = live.current
     // The answers as the hook fixed them (a digit can come before the buttons show: they are fixed now, as `answer` would).
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
     // The card by its title (YAZ-5030), a title hidden in review too: the answer is given.
     const title = card?.page?.title ?? ''
-    pendingLine.current = fixed === undefined || card === null ? null : { text: answerLine(rating, card.id, fixed.interval, fixed.inSteps, review.settings, title), rating, count: session.answered.length + 1 }
+    pendingLine.current = fixed === undefined || card === null ? null : { words: answerWords(rating, card.id, fixed.interval, fixed.inSteps, review.settings, title), rating, count: session.answered.length + 1 }
     void review.answer(rating, answerSeconds())
   }, [])
   const answeredCount = session.answered.length
@@ -658,13 +658,16 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
             </>
           ) : (
             line !== null && (
-            <>
-              <span className="card-inbox__last-mark">{line.text.slice(0, line.text.indexOf(' '))}</span>
-              <span className="card-inbox__last-text">{line.text.slice(line.text.indexOf(' '))} · </span>
-              <button type="button" className="card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
-                <KeyLabel action="Undo" keys="⌘Z" />
-              </button>
-            </>
+              // YAZ-5693: the Mac's and the phone's one piece (`AnswerLine`).
+              <AnswerLine
+                words={line.words}
+                base="card-inbox__last"
+                undo={
+                  <button type="button" className="card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
+                    <KeyLabel action="Undo" keys="⌘Z" />
+                  </button>
+                }
+              />
             )
           )}
         </div>

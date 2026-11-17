@@ -128,22 +128,22 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
     expect(h.button('Previous card')?.disabled).toBe(true)
   })
 
-  it('an answer before all parts show; "Last: … · ↶ Undo" in the hint line until the next card\'s first tap (it stays in ⋯)', async () => {
+  it('an answer before all parts show; the answer\'s line with its Undo in the hint line until the next card\'s first tap (it stays in ⋯)', async () => {
     h = await reviewSetup(THREE)
     expect(h.cardText()).toBe('A?')
     await h.click('Forgot')
     expect(ids(h)).toEqual(['AR-1'])
     // YAZ-5500: the answer in words, with its Undo, in the hint line's place (one thing, not two).
-    expect(hint()).toBe('Last: AR-1 (Forgot) · ↶ Undo')
+    expect(hint()).toBe('✕ Forgot · AR-1 · back later today · Undo')
     expect(q('.review__hint .review__undo')?.getAttribute('aria-label')).toBe('Undo')
-    expect(q('.review__last[role="status"] .review__lastanswer')).not.toBeNull()
+    expect(q('.review__last[role="status"] .review__last-mark')).not.toBeNull()
     await h.click('Undo')
     expect(h.head()).toBe('AR-1')
     expect(ids(h)).toEqual([])
     await h.click('Remembered')
     // No timer: it is still there after 4 s.
     await real(4_100)
-    expect(hint()).toBe('Last: AR-1 (Remembered) · ↶ Undo')
+    expect(hint()).toMatch(/^✓ Remembered · AR-1 · back (later today|today|in \d+ days?) · Undo$/)
     // The first tap on the next card puts it away: the plain hint again.
     await h.tap()
     expect(q('.review__hint .review__undo')).toBeNull()

@@ -35,7 +35,7 @@ describe("Review's ⋯ card actions (YAZ-5505)", () => {
     expect(h.answers.waiting()).toHaveLength(0)
     await h.click('Tap again to archive')
     expect(h.head()).toBe('TT-2')
-    expect(h.last()).toBe('Archived↶ Undo')
+    expect(h.last()).toBe('Archived · Undo')
     expect(h.answers.waiting().map((w) => w.op.kind)).toEqual(['off'])
   })
 

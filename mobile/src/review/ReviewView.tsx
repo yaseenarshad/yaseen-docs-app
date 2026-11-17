@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { createPortal } from 'react-dom'
 import { useMenuToggle } from '../app/menuToggle'
 import { useAnswerTimer } from '@client/review/answerTimer'
-import { AGAIN_LABEL, AGAIN_TITLE, cardStateText, showsAgain } from '@client/review/cardInboxChip'
+import { AGAIN_LABEL, AGAIN_TITLE, AnswerLine, answerWords, cardStateText, showsAgain, type AnswerWords } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
 import { newCardsFrom } from '@client/review/inboxMenu'
 import { addedLine, resetLine } from '@client/review/cardWords'
@@ -151,8 +151,8 @@ type Step = Reveal & { key: string | null }
 
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 /** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
-/** `name` and `rating`: the hint line's "Last: Capital of Spain (Forgot) · ↶ Undo", right after the answer. */
-type Line = { kind: 'answer'; count: number; path: string; id: string; name: string; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
+/** `words` and `rating`: the hint line's "✓ Remembered · Capital of Spain · back in 9 days · Undo", right after the answer (the Mac's, YAZ-5693). */
+type Line = { kind: 'answer'; count: number; path: string; id: string; words: AnswerWords; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings: vaultSettings } = useSourceState(source)
@@ -399,7 +399,7 @@ function SessionScreen({
   // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards").
   const [menu, setMenu] = useState<'filter' | 'from' | 'more' | null>(null)
   const [line, setLine] = useState<Line | null>(null)
-  // The answer's "Last: … · ↶ Undo" stays until the first thing done on the next card (a tap that
+  // The answer's "✓ Remembered · … · Undo" stays until the first thing done on the next card (a tap that
   // shows a part, ← or →, the deck drawer); then the hint line is the plain hint again. No timer. Undo stays in ⋯.
   const [putAway, setPutAway] = useState<Line | null>(null)
   const firstAction = () => void (line?.kind === 'answer' && putAway !== line && setPutAway(line))
@@ -418,7 +418,10 @@ function SessionScreen({
     const answeredBefore = session.answered.length
     // The title's words as they read (a hidden-word mark gives its words: the card is answered), else the ID.
     const name = cardPieces(cardName).map((p) => p.text).join('').trim()
-    const answeredLine: Line = { kind: 'answer', count: answeredBefore + 1, path: card.path, id: card.id, name: name === '' ? card.id : name, rating }
+    // YAZ-5693: the Mac's words, from the answer the hook fixed for this button ("back in 9 days"), as the Mac's Inbox.
+    const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
+    const words = answerWords(rating, card.id, fixed?.interval ?? 0, fixed?.inSteps ?? false, review.settings, name)
+    const answeredLine: Line = { kind: 'answer', count: answeredBefore + 1, path: card.path, id: card.id, words, rating }
     setLine(answeredLine)
     // The guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
     // Whether the answer counted is the hook's own word (`answer` gives it), never read off the screen: on
@@ -508,7 +511,7 @@ function SessionScreen({
               ? { kind: 'mark', text: line.text, undo: false }
               : null
   // An add, a mark or Archive card sits IN the hint line for about 4 seconds, then goes; Undo stays
-  // in ⋯. An answer has no timer: its "Last: … · ↶ Undo" (below) goes at the first action on the next card.
+  // in ⋯. An answer has no timer: its line with its Undo (below) goes at the first action on the next card.
   const [fresh, setFresh] = useState<object | null>(null)
   const lineId = session.lastAdd ?? line
   useEffect(() => {
@@ -518,13 +521,13 @@ function SessionScreen({
     return () => clearTimeout(id)
   }, [lineId])
   const quietLine = shownLine !== null && shownLine.kind !== 'answer' && fresh === lineId ? shownLine : null
-  // Right after an answer, the hint line says it, with its Undo: "Last: Capital of Spain (Forgot) · ↶ Undo".
+  // Right after an answer, the hint line says it, with its Undo: "✕ Forgot · Capital of Spain · back later today · Undo".
   const lastAnswer = shownLine?.kind === 'answer' && line?.kind === 'answer' && putAway !== line ? { ...line, undo: shownLine.undo } : null
   // YAZ-5594: a Forgot keeps the card in its steps (YAZ-5020, the Mac's rule), and with no other card before the new
   // cards (the last missed card, the last new card) it is the NEXT card: the same card, at once. It must not look stuck:
   // the line says why it is back, and the card comes in again (a fresh front, the "Again" chip).
   const back = lastAnswer !== null && lastAnswer.rating === 'again' && card !== null && card.path === lastAnswer.path && card.id === lastAnswer.id && lastAnswer.count === answeredNow
-  const lastLine = <LastLine last={lastAnswer} back={back} quiet={quietLine} undo={undo} settings={review.settings} />
+  const lastLine = <LastLine last={lastAnswer} back={back} quiet={quietLine} undo={undo} />
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
   const canUndo = shownLine?.undo === true || session.canUndo
 
@@ -786,48 +789,36 @@ const NO_OP = () => undefined
 export const BACK_LINE = 'Forgot: back until you remember it'
 
 /**
- * The status part of the hint line. After an answer (Yaseen's pick A, text only): "Last: Capital of Spain
- * (Forgot) · ↶ Undo" — the answer in words, no ✕ or ✓ and no colour, so nothing leans on the next answer; one line, a
- * long title gives way with "…". Its words are not a tap (a tap on them never steps the card); its Undo takes the answer
- * back. Else an add, a mark or Archive card, with its Undo, for its few seconds.
+ * The status part of the hint line. After an answer, the Mac's line from the Mac's piece (YAZ-5693, `AnswerLine`): "✓
+ * Remembered · Capital of Spain · back in 9 days · Undo" — only the mark has the answer's colour; one line, the name gives
+ * way with "…". Its words are not a tap (a tap on them never steps the card); its Undo (touch-sized) takes the answer
+ * back. Else an add, a mark or Archive card, "Archived · Undo" as the Mac's, for its few seconds.
  */
-function LastLine({ last, back, quiet, undo, settings }: { last: { name: string; rating: CardRating; undo: boolean } | null; back: boolean; quiet: { text: string; undo: boolean } | null; undo: () => void; settings: ReviewSettings }) {
+function LastLine({ last, back, quiet, undo }: { last: { words: AnswerWords; rating: CardRating; undo: boolean } | null; back: boolean; quiet: { text: string; undo: boolean } | null; undo: () => void }) {
   const undoButton = (
     <button type="button" className="review__undo" aria-label="Undo" onClick={undo}>
-      ↶ Undo
+      Undo
     </button>
   )
   return (
-    <span className="review__last" role="status" aria-live="polite">
+    <span className="review__last" role="status" aria-live="polite" data-rating={last !== null && !back ? last.rating : undefined}>
       {last !== null && back ? (
         <>
-          <span className="review__lastanswer review__lastanswer--back">
+          <span className="review__last-text">
             {BACK_LINE}
-            {last.undo && (
-              <span className="review__lastanswer-sep" aria-hidden="true">
-                {' · '}
-              </span>
-            )}
+            {last.undo && ' · '}
           </span>
           {last.undo && undoButton}
         </>
       ) : last !== null ? (
-        <>
-          <span className="review__lastanswer">
-            Last: <span className="review__lastanswer-name">{last.name}</span>
-            <span className="review__lastanswer-rating"> ({answerLabel(last.rating, settings)})</span>
-            {last.undo && (
-              <span className="review__lastanswer-sep" aria-hidden="true">
-                {' · '}
-              </span>
-            )}
-          </span>
-          {last.undo && undoButton}
-        </>
+        <AnswerLine words={last.words} base="review__last" undo={last.undo ? undoButton : null} />
       ) : (
         quiet !== null && (
           <>
-            <span className="review__line">{quiet.text}</span>
+            <span className="review__last-text">
+              {quiet.text}
+              {quiet.undo && ' · '}
+            </span>
             {quiet.undo && undoButton}
           </>
         )
@@ -846,7 +837,7 @@ const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good
 const MENU_OWN_TAPS = '.review__sheet, .review__menu, .review__count-btn, .review__more, .due-end__from'
 
 /** What a tap on the screen keeps for itself: every control (its own rule), and the open menus. */
-const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__lastanswer'
+const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__last-mark, .review__last-text'
 
 const drawings = new WeakMap<object, string>()
 let drawingCount = 0
@@ -906,7 +897,7 @@ function TodayLine({ session, mode: setting }: { session: CardReviewSession; mod
 
 /**
  * S5 (sweep1): the screen after the last card, which takes no tap for `SEEN_MS` after it appears, as a new card (the tap
- * guard). Its "↶ Undo" sits where ✓ was: the second tap of a quick double tap on ✓ hit it and took the
+ * guard). Its "Undo" sits where ✓ was: the second tap of a quick double tap on ✓ hit it and took the
  * answer back, with no word. A tap under 400 ms is that second tap: it is dropped, before any button sees it.
  */
 function DoneStage({ children }: { children: React.ReactNode }) {

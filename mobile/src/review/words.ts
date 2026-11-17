@@ -12,7 +12,7 @@ import { lostRows } from '../status/dot'
 /** The hint line: "Tap anywhere · 3 left" while parts hide, "Did you remember it?" once all show. */
 export const hintText = (left: number): string => (left > 0 ? `Tap anywhere · ${left} left` : 'Did you remember it?')
 
-/** How long "↶ Undo" stays in the hint line after an answer or an action (round 5). It stays in ⋯. */
+/** How long "Undo" stays in the hint line after an answer or an action (round 5). It stays in ⋯. */
 export const UNDO_SHOWN_MS = 4000
 
 /** Round 12, item 9: the amber line. "1 answer could not be saved". */

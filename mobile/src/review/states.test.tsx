@@ -28,7 +28,7 @@ describe('Review: done, and "Add more for today" (round 10, addition 2)', () => 
     expect(h.text()).toContain('3 new cards wait for another day.')
     await h.click('Add 2 new cards')
     expect(h.head()).toBe('NW-3')
-    expect(h.last()).toBe('Added 2 new cards for today↶ Undo')
+    expect(h.last()).toBe('Added 2 new cards for today · Undo')
     await h.click('Undo')
     expect(h.text()).toContain('Inbox complete')
     expect(h.button('Add 2 new cards')).not.toBeNull()

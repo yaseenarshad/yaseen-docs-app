@@ -61,7 +61,7 @@ describe('the Review tab styles', () => {
   })
 
   it('YAZ-5233: Undo and a sound\'s play button are 44 pt', () => {
-    // The quiet "↶ Undo" (26 px to the eye) takes a 44 pt tap: its box reaches 9 px over and under it.
+    // The quiet "Undo" (26 px to the eye) takes a 44 pt tap: its box reaches 9 px over and under it.
     expect(css).toMatch(/\.review__undo \{[^}]*height: 26px;/)
     expect(css).toMatch(/\.review__undo::after \{[^}]*inset: -9px -4px;/)
     expect(css).toMatch(/\.review__card \.card__audio-play \{[^}]*min-width: var\(--tap\);[^}]*min-height: var\(--tap\);/)

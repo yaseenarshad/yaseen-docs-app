@@ -597,7 +597,7 @@
   visibility: visible;
 }
 
-/* ---- The hint line: "Tap anywhere · 3 left", "Did you remember it?"; after an answer, "Last: … · ↶ Undo" ---- */
+/* ---- The hint line: "Tap anywhere · 3 left", "Did you remember it?"; after an answer, the Mac's "✓ Remembered · … · Undo" ---- */
 
 .review__hint {
   display: flex;
@@ -613,44 +613,47 @@
   text-align: center;
 }
 
-/* "Last: Capital of Spain (Forgot)" — one quiet line; a long title gives way with "…", the answer word stays. */
-.review__lastanswer {
+/* YAZ-5693: the Mac's line (`AnswerLine`, its look in `cardScreens.css`): "✓ Remembered · Capital of Spain · back in 9
+   days · Undo" — one quiet line, only its mark in the answer's colour; the name gives way with "…", the rest stays. */
+.review__last {
   display: inline-flex;
+  align-items: center;
   min-width: 0;
   max-width: 100%;
   white-space: nowrap;
 }
 
-.review__lastanswer-name {
+.review__last-mark {
+  flex: none;
+  margin-right: 1px;
+  color: var(--ok);
+}
+
+.review__last[data-rating='hard'] .review__last-mark {
+  color: var(--warn);
+}
+
+.review__last[data-rating='again'] .review__last-mark {
+  color: var(--danger);
+}
+
+.review__last-text {
+  display: inline-flex;
   min-width: 0;
-  margin-left: 0.3em;
+  white-space: pre;
+}
+
+.review__last-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.review__lastanswer-rating {
-  flex: none;
-  white-space: pre;
-}
-
-/* "· ↶ Undo" after the answer word: the button sits close, its 44 pt box still reaches the finger. */
-.review__lastanswer-sep {
-  flex: none;
-  white-space: pre;
-}
-
-.review__lastanswer + .review__undo {
+/* "· Undo" after the words: the button sits close, its 44 pt box still reaches the finger. */
+.review__last-text + .review__undo {
   flex: none;
   margin-left: -6px;
   padding: 0 6px 0 2px;
-}
-
-.review__last {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 100%;
 }
 
 .review__last:empty {

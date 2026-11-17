@@ -25,7 +25,7 @@ export const SAVE_LIMIT_MS = 10_000
  *    ended): `ready` at once. With another card: `awaiting` (or nothing, when `shown` came first).
  *  - `undo` (any time, also at 0 ms): `ready` (the card that comes back is one the person saw). But from the screen
  *    after the last card (`fromDone`, sweep2 M-A): `settling`. The card that comes back is drawn where the
- *    finger is (its ✓ sits under "↶ Undo"), so the second tap of a double tap on Undo answered it. Its key is `UNDONE`:
+ *    finger is (its ✓ sits under "Undo"), so the second tap of a double tap on Undo answered it. Its key is `UNDONE`:
  *    the drawing of the card that comes back starts the 400 ms again; the timer still ends it.
  *  - `arrive`: a card is drawn where the screen after the last card was ("Review missed cards", "Learn new cards", an
  *    Undo): `settling`, as `undo` with `fromDone` (sweep2 nit 3: the second tap of a double tap showed side 2).
