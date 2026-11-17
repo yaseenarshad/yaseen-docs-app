@@ -1153,6 +1153,7 @@ body.card-inbox--sizing {
 .card-inbox__done-adds {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
   gap: 8px;
   margin: 14px 0 6px;
@@ -1431,7 +1432,15 @@ body.card-inbox--sizing {
 .card-inbox__add-setting .card-inbox__add-number:focus {
   border-color: var(--accent);
 }
-/* The ask in place (round 3, `AskInPlace`): the question over Cancel and Add, in the row's own room. */
+/* The ask in place (round 3, `AskInPlace`): the question over Cancel and Add, in the row's own room. YAZ-5699: the
+   done screen's pill asks the same, centred where the pill was. */
+.card-inbox__done-ask .confirm__text {
+  margin: 0 0 8px;
+  text-align: center;
+}
+.card-inbox__done-ask .confirm__actions {
+  justify-content: center;
+}
 .card-inbox__add-ask {
   flex: 1 1 auto;
   padding: 4px 0;

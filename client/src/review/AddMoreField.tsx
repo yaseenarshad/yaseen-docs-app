@@ -7,10 +7,10 @@
  * - Enter adds the number (above what waits adds all that waits: the hook's rule); empty or 0 adds nothing.
  * - Esc leaves the field; Up and Down change the number by 1.
  * - The field's keys stay in it: they reach neither the Inbox's keys (Space, the digits) nor the menu's Esc.
- * - On the done screen a click on "Add" or the words adds the number shown; a click on the number types.
- * - In the ⚙ part (`setting`, YAZ-5690 round 3, Yaseen: "too easy to click") "Add" or Enter never adds on its own: it
- *   asks in place, "Add 7 new cards to today?" with Cancel first and focused (`AskInPlace`); Add there adds. Cancel,
- *   Esc or a click elsewhere goes back to the field.
+ * - On the done screen "Add" or the words take the number shown; a click on the number types.
+ * - Neither look adds on one click (YAZ-5690 round 3 the ⚙ part, YAZ-5699 the done screen; Yaseen: "that should be a
+ *   two click as well"): "Add", the words or Enter ask in place, "Add 7 new cards to today?" with Cancel first and
+ *   focused (`AskInPlace`); Add there adds. Cancel, Esc or a click elsewhere goes back to the field.
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { AddKind } from '@shared/cardSchedule'
@@ -52,9 +52,7 @@ export function AddMoreField({ kind, start, onAdd, look, after }: AddMoreFieldPr
   const add = () => {
     const n = typedCount(value)
     if (n === null) return
-    if (look === 'setting') return setAsking(n)
-    typed.current = false
-    onAdd(n)
+    setAsking(n)
   }
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     e.stopPropagation()
@@ -91,12 +89,12 @@ export function AddMoreField({ kind, start, onAdd, look, after }: AddMoreFieldPr
       }}
     />
   )
-  if (look === 'setting' && asking !== null)
+  if (asking !== null)
     return (
       <AskInPlace
         question={addQuestion(kind, asking)}
         yes="Add"
-        className="card-inbox__add-ask"
+        className={look === 'setting' ? 'card-inbox__add-ask' : 'card-inbox__done-ask'}
         onYes={() => {
           setAsking(null)
           typed.current = false

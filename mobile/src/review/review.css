@@ -350,22 +350,30 @@
   color: var(--fg);
 }
 
-/* The ask in place (YAZ-5690 round 3, `AskInPlace`): the question, then Cancel and Add, 44 pt each. */
+/* The ask in place (YAZ-5690 round 3, `AskInPlace`; YAZ-5699 the finish screen's adds): the question, then Cancel and Add, 44 pt each. */
+.review__done-ask {
+  width: 100%;
+  text-align: center;
+}
+
 .review__sheet-settings .ask-in-place {
   flex: 1 1 auto;
   padding: 6px 0;
 }
-.review__sheet-settings .ask-in-place .confirm__text {
+.review .ask-in-place .confirm__text {
   margin: 0 0 8px;
   font-size: 14px;
   color: var(--fg);
 }
-.review__sheet-settings .ask-in-place .confirm__actions {
+.review .ask-in-place .confirm__actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
-.review__sheet-settings .ask-in-place .confirm__btn {
+.review .review__done-ask .confirm__actions {
+  justify-content: center;
+}
+.review .ask-in-place .confirm__btn {
   min-width: 72px;
   height: 44px;
   padding: 0 14px;
@@ -376,7 +384,7 @@
   font: inherit;
   font-size: 15px;
 }
-.review__sheet-settings .ask-in-place .confirm__btn + .confirm__btn {
+.review .ask-in-place .confirm__btn + .confirm__btn {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
