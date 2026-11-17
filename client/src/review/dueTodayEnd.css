@@ -1,7 +1,7 @@
 /* THE END OF DUE TODAY (YAZ-5043, Option A; `DueTodayEnd.tsx`): ONE look for the Mac and the phone (YAZ-5665). Loaded
    with the Inbox's and the Review tab's chunks, never eagerly. The ring comes down from the top bar flat as a line,
-   rounds into a ring, fills to the % in 600 ms, and four dots float out once. Done: it closes in green and the ✓ pops
-   in. Every animation here is `transform` or `opacity` (the compositor runs them): the fill is two half rings that TURN
+   rounds into a ring, fills to the % in 600 ms, and four dots float out once (the first pass's end; YAZ-5678: Due today
+   done is a finish screen, `DoneScreen`). Every animation here is `transform` or `opacity` (the compositor runs them): the fill is two half rings that TURN
    into place (`ringTurns`), each clipped to its half. `data-motion="wait"` (not in front yet) holds the start; `still`
    (seen already, Reduce motion) shows the end at once. Each app sets its own buttons (`.due-end__go`) and layout. */
 .due-end__ring {
@@ -49,17 +49,6 @@
   transform: rotate(var(--due-r2));
 }
 
-.due-end__check {
-  position: absolute;
-  inset: 0;
-}
-.due-end__check path {
-  fill: none;
-  stroke: var(--ok);
-  stroke-width: 4.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
 .due-end__pct {
   position: absolute;
   inset: 0;
@@ -105,10 +94,7 @@
 .due-end[data-motion='play'] .due-end__pct {
   animation: due-end-fade 300ms 300ms ease-out both;
 }
-.due-end[data-motion='play'] .due-end__check {
-  animation: due-end-pop 320ms 760ms cubic-bezier(0.3, 1.5, 0.5, 1) both;
-}
-.due-end[data-motion='play'][data-kind='missed'] .due-end__dot {
+.due-end[data-motion='play'] .due-end__dot {
   animation: due-end-dot 900ms 640ms ease-out both;
 }
 .due-end[data-motion='play'] > :not(.due-end__ring) {
@@ -134,12 +120,6 @@
 @keyframes due-end-fade {
   from {
     opacity: 0;
-  }
-}
-@keyframes due-end-pop {
-  from {
-    opacity: 0;
-    transform: scale(0.4);
   }
 }
 @keyframes due-end-dot {

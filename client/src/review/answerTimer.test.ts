@@ -77,7 +77,9 @@ describe('the words for the time', () => {
     expect([0, 45, 60, 89, 90, 9 * 60 + 29].map(todayDuration)).toEqual(['0 s', '45 s', '1 min', '1 min', '2 min', '9 min'])
     // The time is its own part (YAZ-5130: hidden, shown or off by the setting); the cards always read the same.
     expect(todayCards({ cards: 0, reviews: 0, seconds: 0 })).toBe('')
-    expect(todayCards({ cards: 31, reviews: 40, seconds: 540 })).toBe('Today: 31 cards')
+    // YAZ-5678 (honest numbers): different cards, and the answers too when a card was answered more than once.
+    expect(todayCards({ cards: 31, reviews: 40, seconds: 540 })).toBe('Today: 31 cards · 40 reviews')
     expect(todayCards({ cards: 1, reviews: 1, seconds: 0 })).toBe('Today: 1 card')
+    expect(todayCards({ cards: 10, reviews: 10, seconds: 0 })).toBe('Today: 10 cards')
   })
 })

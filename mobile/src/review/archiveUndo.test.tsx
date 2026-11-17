@@ -23,7 +23,7 @@ const ops = (hh: ReviewHarness) => hh.answers.waiting().map((w) => `${w.op.kind}
 
 async function archiveThenUndo(hh: ReviewHarness, between: () => Promise<void>) {
   expect(hh.head()).toBe('AU-1')
-  expect(hh.text()).toContain('1 / 3')
+  expect(hh.text()).toContain('0 / 3')
   await hh.click('More card actions')
   await hh.click('Archive card')
   expect(hh.head()).toBe('AU-2')
@@ -32,7 +32,7 @@ async function archiveThenUndo(hh: ReviewHarness, between: () => Promise<void>) 
   await hh.click('Undo')
   // Back in the session, at its place, with the same counts.
   expect(hh.head()).toBe('AU-1')
-  expect(hh.text()).toContain('1 / 3')
+  expect(hh.text()).toContain('0 / 3')
   expect(hh.last()).not.toContain('Archived')
 }
 

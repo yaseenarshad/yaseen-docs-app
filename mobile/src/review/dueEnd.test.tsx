@@ -61,14 +61,14 @@ const title = () => q('.review__done-title')?.textContent ?? null
 const listed = () => h!.answers.waiting().filter((w) => w.op.kind === 'review').map((w) => w.op.id)
 
 describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', () => {
-  it('1. Due today alone: only the five due cards, then "Due today is done." with "Learn new cards 3", which starts them', async () => {
+  it('1. Due today alone: only the five due cards, then "Finished reviewing." (YAZ-5678, Mochi`s words) with "Learn new cards 3", which starts them', async () => {
     h = await reviewSetup(FILES)
     await pick('Due today')
     const seen: string[] = []
     while (showing() !== null) seen.push(await answer('Remembered'))
     expect(seen).toEqual(DUE)
-    expect(title()).toBe('Due today is done.')
-    expect(endText()).toContain('You remembered 100% of 5 cards.')
+    expect(title()).toBe('Finished reviewing.')
+    expect(endText()).toContain('How about learning some new cards?')
     expect(endButtons()).toEqual(['Learn new cards 3', 'from All folders ›'])
     expect(q('.due-end')?.dataset.kind).toBe('done')
     await h.click('Learn new cards 3')
@@ -87,31 +87,31 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     }
     // Yaseen's rule (from Mochi): out of New cards after its first Remembered, back the same day under Due today.
     expect([...seen].sort()).toEqual(NEW)
-    expect(title()).toBe('No new cards left.')
-    expect(h.text()).toContain(`${5 + NEW.length} more in All cards`)
+    // YAZ-5678 (Mochi's words): the learned cards wait under Due today.
+    expect(title()).toBe('Finished learning cards.')
+    expect(h.text()).toContain(`Review cards ${5 + NEW.length}`)
   })
 
-  it('3. Forgot → "You remembered 60% of 5 cards." with ONE button → the missed cards in order → "Due today is done." → Learn new cards', async () => {
+  it('3. Forgot → "You remembered 60% of cards." (YAZ-5677, Mochi`s words) with ONE button → the missed cards in order → "Due today is done." → Learn new cards', async () => {
     h = await reviewSetup(FILES)
     await pick('Due today')
     for (const r of ['Remembered', 'Forgot', 'Remembered', 'Forgot', 'Remembered'] as const) await answer(r)
     expect(showing()).toBeNull()
     expect(q('.due-end')?.dataset.kind).toBe('missed')
-    expect(title()).toBe('You remembered 60% of 5 cards.')
-    expect(endText()).toContain('2 cards to look at again while they are fresh.')
+    expect(title()).toBe('You remembered 60% of cards.')
+    expect(endText()).toContain("Now let's review the cards you missed again.")
     expect(q('.due-end__pct')?.textContent).toBe('60%')
     // No skip: one button.
     expect(endButtons()).toEqual(['Review missed cards 2'])
-    // The step bar keeps its grey and red.
-    expect([...h.host.querySelectorAll('.review__step[data-answer]')].map((s) => (s as HTMLElement).dataset.answer)).toEqual(['remembered', 'forgot', 'remembered', 'forgot', 'remembered'])
+    // The bar (YAZ-5676, Mochi's): full, the 2 misses waiting as red at the right end (5 / 7).
+    expect(['grey', 'red'].map((p) => Math.round(parseFloat(h!.host.querySelector<HTMLElement>(`.session-bar__${p}`)!.style.width)))).toEqual([71, 100])
     await h.click('Review missed cards 2')
     expect(await answer('Remembered')).toBe('VRB-2')
     expect(await answer('Remembered')).toBe('VRB-4')
     expect(showing()).toBeNull()
-    expect(title()).toBe('Due today is done.')
-    // The % counts first answers only.
-    expect(endText()).toContain('You remembered 60% of 5 cards.')
-    expect(q('.due-end__check')).not.toBeNull()
+    // YAZ-5678: our 🎉 and green ✓, Mochi's words.
+    expect(title()).toBe('Finished reviewing missed cards.')
+    expect(q('.due-end .done-cheer__party')?.textContent).toBe('🎉')
     await h.click('Learn new cards 3')
     expect(NEW).toContain(showing())
     // Every answer went through the phone's answer list, none past it.
@@ -124,11 +124,11 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     seen.push(await answer('Forgot'))
     for (let i = 0; i < 4; i++) seen.push(await answer('Remembered'))
     expect(seen).toEqual(DUE)
-    expect(title()).toBe('You remembered 80% of 5 cards.')
+    expect(title()).toBe('You remembered 80% of cards.')
     await h.click('Review missed cards 1')
     expect(await answer('Remembered')).toBe('VRB-1')
     // The break before the new cards.
-    expect(title()).toBe('Due today is done.')
+    expect(title()).toBe('Finished reviewing missed cards.')
     await h.click('Learn new cards 3')
     expect(h.text()).toContain('All cards ▾')
     while (showing() !== null && seen.length < 20) seen.push(await answer('Remembered'))
@@ -150,7 +150,7 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(showing()).toBe('VRB-5')
     expect(await answer('Remembered')).toBe('VRB-5')
     expect(q('.due-end')?.dataset.kind).toBe('done')
-    expect(endText()).toContain('You remembered 100% of 5 cards.')
+    expect(title()).toBe('Finished reviewing.')
     expect(listed()).toEqual(DUE)
   })
 
@@ -195,7 +195,7 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(q('.review__answers')?.dataset.guard).toBe('')
     // After the 400 ms, ✓ answers it (a choice).
     expect(await answer('Remembered')).toBe('VRB-5')
-    expect(endText()).toContain('You remembered 100% of 5 cards.')
+    expect(title()).toBe('Finished reviewing.')
     expect(listed()).toEqual(DUE)
   })
 
@@ -225,24 +225,28 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(q('.review__sheet')?.getAttribute('aria-label')).toBe('New cards from')
     await h.click(/New cards from…$/)
     expect(q('.review__sheet')).toBeNull()
-    expect(title()).toBe('Due today is done.')
+    expect(title()).toBe('Finished reviewing.')
   })
 
-  it('7. Due today is done with no new card left: the done screen\'s own lines under it, no "Learn new cards"', async () => {
+  it('7. Due today done with no new card left: "Finished reviewing." and the done screen\'s own lines under it, no "Learn new cards"', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': FILES['.yaseendocs/review.json'], 'verbs.md': FILES['verbs.md'] })
     await pick('Due today')
     for (let i = 0; i < 5; i++) await answer('Remembered')
-    expect(title()).toBe('Due today is done.')
+    expect(title()).toBe('Finished reviewing.')
     expect(endButtons().some((b) => b.startsWith('Learn new cards'))).toBe(false)
     expect(h.text()).toContain('Nothing else is due today.')
   })
 
-  it('8. Reduce Motion: the ring shows full at once, still, and the confetti never loads', async () => {
+  it('8. Reduce Motion: the ring shows full at once, still; the finish screen`s 🎉 still, and the confetti never loads', async () => {
     reduce = true
     h = await reviewSetup(FILES)
     await pick('Due today')
-    for (let i = 0; i < 5; i++) await answer('Remembered')
+    for (const r of ['Remembered', 'Remembered', 'Remembered', 'Remembered', 'Forgot'] as const) await answer(r)
     expect(q('.due-end')?.dataset.motion).toBe('still')
+    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
+    await h.click('Review missed cards 1')
+    await answer('Remembered')
+    expect(q('.done-cheer__party')?.dataset.motion).toBe('still')
     await act(async () => void (await new Promise((r) => setTimeout(r, 700))))
     expect(burst).not.toHaveBeenCalled()
   })
@@ -267,8 +271,9 @@ describe('YAZ-5662: "Inbox complete." with a 🎉, a green ✓ and one burst of 
     expect(party?.nextElementSibling?.className).toBe('review__done-title done-cheer__title')
     expect(q('.review__done-today')).not.toBeNull()
     await settle()
-    expect(cheers()).toHaveLength(1)
-    const options = cheers()[0]![1] as { within: Element; maxDpr: number; pieces: number }
+    // YAZ-5678: one burst per landing — "Finished reviewing." after the due cards, then "Inbox complete.".
+    expect(cheers()).toHaveLength(2)
+    const options = cheers()[1]![1] as { within: Element; maxDpr: number; pieces: number }
     expect(options.within === q('.review')).toBe(true)
     expect([options.maxDpr, options.pieces]).toEqual([2, 80])
   })
@@ -286,7 +291,7 @@ describe('YAZ-5662: "Inbox complete." with a 🎉, a green ✓ and one burst of 
       await away('visible')
       await settle()
       expect(q('.done-cheer__party')).not.toBeNull()
-      expect(cheers()).toHaveLength(1)
+      expect(cheers()).toHaveLength(2)
     } finally {
       if (visible !== undefined) Object.defineProperty(document, 'visibilityState', visible)
       else delete (document as { visibilityState?: unknown }).visibilityState
@@ -302,12 +307,12 @@ describe('YAZ-5662: "Inbox complete." with a 🎉, a green ✓ and one burst of 
   })
 })
 
-describe('the end screen (the shared DueTodayEnd, YAZ-5665): waits while hidden, plays once, lazy confetti', () => {
+describe('the first pass`s end screen (the shared DueTodayEnd, YAZ-5665): waits while hidden, plays once, no confetti', () => {
   let root: Root | null = null
   let el: HTMLElement
   let hidden = false
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') })
-  const end = (over: Partial<DueTodayEnd> = {}): DueTodayEnd => ({ kind: 'done', id: `e${Math.random()}`, count: 5, remembered: 4, percent: 80, missed: 0, fresh: 3, ...over })
+  const end = (over: Partial<DueTodayEnd> = {}): DueTodayEnd => ({ kind: 'missed', id: `e${Math.random()}`, count: 5, remembered: 4, percent: 80, missed: 1, fresh: 3, ...over })
   const draw = (e: DueTodayEnd, shown = true) => act(() => root!.render(<div className="review"><DueEnd end={e} shown={shown} look={DONE_LOOK} onGoOn={() => undefined} /></div>))
   const motion = () => el.querySelector<HTMLElement>('.due-end')?.dataset.motion
   const sleep = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
@@ -322,22 +327,16 @@ describe('the end screen (the shared DueTodayEnd, YAZ-5665): waits while hidden,
     el.remove()
   })
 
-  it('the app hidden: it waits; it plays when the app shows, then the confetti loads once', async () => {
+  it('the app hidden: it waits; it plays when the app shows (YAZ-5678: the confetti is the finish screens`, never the ring`s)', async () => {
     hidden = true
     const e = end()
     draw(e)
     expect(motion()).toBe('wait')
-    await sleep(700)
-    expect(burst).not.toHaveBeenCalled()
     hidden = false
     act(() => void document.dispatchEvent(new Event('visibilitychange')))
     expect(motion()).toBe('play')
     await sleep(700)
-    expect(burst).toHaveBeenCalledTimes(1)
-    // Over the Review screen, at most 2× the pixels.
-    const options = burst.mock.calls[0][1] as { within: Element; maxDpr: number }
-    expect(options.within === el.querySelector('.review')).toBe(true)
-    expect(options.maxDpr).toBe(2)
+    expect(burst).not.toHaveBeenCalled()
   })
 
   it('the Review tab off the screen: it waits; shown, it plays; hidden and shown again, it never starts over', async () => {
@@ -351,15 +350,6 @@ describe('the end screen (the shared DueTodayEnd, YAZ-5665): waits while hidden,
     expect(motion()).not.toBe('wait')
     await sleep(700)
     // The % screen has no confetti.
-    expect(burst).not.toHaveBeenCalled()
-  })
-
-  it('the app hides during the fill: the confetti does not start', async () => {
-    draw(end())
-    expect(motion()).toBe('play')
-    hidden = true
-    act(() => void document.dispatchEvent(new Event('visibilitychange')))
-    await sleep(700)
     expect(burst).not.toHaveBeenCalled()
   })
 
@@ -389,7 +379,7 @@ describe('smooth on a phone', () => {
     const { fileURLToPath } = await import('node:url')
     const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../../client/src/review/dueTodayEnd.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
     const frames = [...css.matchAll(/@keyframes [\w-]+\s*\{([\s\S]*?\}\s*)\}/g)].map((m) => m[1])
-    expect(frames.length).toBeGreaterThanOrEqual(6)
+    expect(frames.length).toBeGreaterThanOrEqual(5)
     const props = new Set(frames.flatMap((f) => [...f.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1])))
     expect([...props].sort()).toEqual(['opacity', 'transform'])
     expect(css).not.toMatch(/transition\s*:/)

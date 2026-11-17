@@ -20,7 +20,7 @@ const newCards = (n: number) => Array.from({ length: n }, (_, i) => cardBlock(`C
 describe('Review: done, and "Add more for today" (round 10, addition 2)', () => {
   it('"Inbox complete", today\'s work, what waits, "Add 2 new cards"; the add shows a card at once, and Undo takes it back', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('P', ...newCards(5)) })
-    expect(h.text()).toContain('1 / 2')
+    expect(h.text()).toContain('0 / 2')
     // A new card needs two Remembered (its same-day steps): four answers end the session.
     for (let i = 0; i < 4; i++) await h.click('Remembered')
     expect(h.text()).toContain('Inbox complete')
@@ -64,10 +64,10 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
     await h.click(/^Due today/)
     expect(h.text()).toContain('Due today ▾')
     expect(h.head()).toBe('DU-1')
-    expect(h.text()).toContain('1 / 1')
+    expect(h.text()).toContain('0 / 1')
     await h.click('Remembered')
     // YAZ-5495 (the Mac's YAZ-5043): "Due today is done." with "Learn new cards 1" in place of "No due cards left." (rule 7: DU-3 is Up next's).
-    expect(h.text()).toContain('Due today is done.')
+    expect(h.text()).toContain('Finished reviewing.')
     await h.click('Learn new cards 1')
     expect(h.text()).toContain('New cards ▾')
     expect(h.button('Remembered')).not.toBeNull()
@@ -82,7 +82,7 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
     await h.click(/^New cards/)
     expect(h.text()).toContain('New cards ▾')
     // Rule 7: DU-2 alone (DU-3 is under Up next).
-    expect(h.text()).toMatch(/1 \/ 1/)
+    expect(h.text()).toMatch(/0 \/ 1/)
   })
 })
 

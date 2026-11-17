@@ -107,19 +107,13 @@ export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKi
 
 /**
  * YAZ-5623: the vault's done screen when nothing waits to be added but cards are still due (a new day began at local
- * midnight during the review, a card came back): how many it offers, "Review 12 more", which starts the vault's review
- * again; 0 offers nothing ("Nothing else is due today."). The phone's rule, now the Mac's too: one rule, one text.
+ * midnight during the review, a card came back): how many it offers, "Review cards 12" (YAZ-5678, Mochi's words), which
+ * starts the vault's review again; 0 offers nothing ("Nothing else is due today."). One rule, one text, both apps.
  */
 export const reviewMoreCount = (addKinds: readonly AddKind[], dueCount: number): number => (addKinds.length === 0 ? dueCount : 0)
-
-/** The done screen's way on (YAZ-5623): "Review 12 more". */
-export const reviewMoreLabel = (n: number): string => `Review ${n} more`
 
 /** The add's line (YAZ-5042), after its "+": "Added 10 new cards for today". */
 export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kind === 'new' ? 'new' : 'Up next'} card${n === 1 ? '' : 's'} for today`
 
 /** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
 export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
-
-/** A filter's finish screen with other cards left (YAZ-5017): the Mac's words, the phone's too (YAZ-5665). */
-export const filterDone = (filter: CardFilter): string => (filter === 'due' ? 'No due cards left.' : filter === 'next' ? 'No Up next cards left.' : 'No new cards left.')

@@ -140,7 +140,7 @@ async function menu(): Promise<Record<string, string>> {
   await act(async () => toggle.click())
   return counts
 }
-/** What the screen says at this step: the card (or the stop / done screen), "N of M", the bar's done / whole, the menu. */
+/** What the screen says at this step: the card (or the stop / done screen), "done / total", the bar's done / whole, the menu. */
 async function look(): Promise<{ card: string; place: string | null; bar: string; menu: Record<string, string> }> {
   const end = el.querySelector('.due-end')
   const done = el.querySelector('.card-inbox__done > :not(.done-cheer__party)')?.textContent
@@ -195,10 +195,12 @@ describe('YAZ-5616: new cards begun in the New cards list come back the same day
     await act(async () => review.setFilter('new'))
     await answer('good') // NEW-1's first ✓: it moves into Due today, out of this list
     await answer('good') // NEW-2's first ✓
-    expect((await look()).card).toBe('done: No new cards left.')
+    // YAZ-5678 (Mochi's words): the new cards learned wait under Due today.
+    expect((await look()).card).toBe('done: Finished learning cards.')
     await act(async () => review.setFilter('all'))
     expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'stop: done', 'NEW-1', 'NEW-2', 'done: Inbox complete.'])
-    expect((await look()).bar).toBe('4/4')
+    // YAZ-5675 (Mochi): All cards counts each new card's first ✓ and its second (the card came back today): 2 + 2 + 2.
+    expect((await look()).bar).toBe('6/6')
   })
 
   it('then Due today: the begun cards are Due today cards, so its end leads on to them', async () => {

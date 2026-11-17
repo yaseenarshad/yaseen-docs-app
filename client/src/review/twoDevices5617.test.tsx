@@ -89,7 +89,7 @@ const finish = async (): Promise<string[]> => {
   }
   return seen
 }
-const place = () => [review.session?.position, review.session?.total]
+const place = () => [review.session?.progress.done, review.session?.progress.total]
 
 /**
  * The phone, and Docs' sync between it and the Mac. `base` is the page as both last synced; the phone answers on its
@@ -149,11 +149,11 @@ describe('YAZ-5617 Mac: the phone answers while the Mac reviews', () => {
     await mount()
     await act(async () => review.start())
     await answer('TD-1', 'good')
-    expect(place()).toEqual([2, 4])
+    expect(place()).toEqual([1, 4])
     phoneAnswers('TD-3', 'good')
     await sync()
     expect(review.session?.counts).toMatchObject({ all: 2, due: 1, new: 1 })
-    expect(place()).toEqual([2, 3])
+    expect(place()).toEqual([1, 3])
     expect(await finish()).toEqual(['TD-2', 'TD-4', 'TD-4'])
     for (const id of ['TD-1', 'TD-2', 'TD-3']) expect(ratings(id)).toEqual(['good', 'good', 'good'])
     expect(ratings('TD-4')).toEqual(['good', 'good'])

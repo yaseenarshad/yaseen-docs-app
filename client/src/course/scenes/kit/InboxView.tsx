@@ -2,8 +2,8 @@
  * THE INBOX, IN THE COURSE (YAZ-5121, chapter 3 on): a calm copy of the app's Inbox tab on made-up cards, built from
  * the SAME class names as `review/CardInbox.tsx` and `CardInboxBar.tsx`, so the app's own `cardScreens.css` draws it:
  *
- * - The top row: the filter "All cards ▾" (its real glyphs), the card's place, "1 of 4"; the thin progress bar
- *   (a Remembered grey, a Forgot red).
+ * - The top row: the filter "All cards ▾" (its real glyphs), the card's place, Mochi's "✕ 1 · 1 / 5" (`SessionCount`,
+ *   YAZ-5674) and its progress bar (`SessionBar`, YAZ-5676), on the first pass's numbers (YAZ-5675).
  * - The card: `CardView` (the app's own `renderCard`, the state chip, "Title · ID", "Side 1 of 2").
  * - The buttons row: ← →, Forgot and Remembered (the real glyphs, the 1 and 2 keys), ⋯. `hover` shows the app's
  *   hover box over a button ("Remembered · 9 days"); `press` lights a button as a key or a click picks it.
@@ -18,6 +18,7 @@ import { cardInboxHints } from '../../../review/cardInboxKeys'
 import { ChevronIcon, ForgotIcon, InboxTrayIcon, RememberedIcon } from '../../../review/cardInboxIcons'
 import { KeyLabel } from '../../../keys/KeyLabel'
 import { DoneCheerLook } from '../../../review/DoneCheer'
+import { SessionBar, SessionCount } from '../../../review/SessionCount'
 import { clamp, ease, lerp, type Beat } from './beat'
 import { CardView, type CardViewProps } from './CardView'
 import { Pointer } from './AppFrame'
@@ -36,10 +37,9 @@ interface InboxViewProps {
   beat: Beat
   /** The card (`CardView`'s props, less the beat and the frame). Absent with `done`. */
   card?: Omit<CardViewProps, 'beat' | 'chrome'>
-  /** "1 of 4". */
-  position?: number
+  /** The cards of the first pass (Mochi's total before a miss). */
   total?: number
-  /** The progress bar: each answer so far, in order (true: a Forgot, red), out of `total`. */
+  /** Each answer so far of the first pass, in order (true: a Forgot): done +1 each, a Forgot the total and ✕ +1. */
   answered?: readonly boolean[]
   /** The card's place in the top row: "Course Cards › Light". */
   place?: readonly string[]
@@ -97,8 +97,10 @@ function AnswerButton({ beat, kind, look, hover, cursor }: { beat: Beat; kind: '
   )
 }
 
-export function InboxView({ beat, card, position = 1, total = 4, answered = [], place, forgot = {}, remembered = {}, hover, cursor, last, keys = {}, glowKey = {}, done = 0, doneLine = 'Nothing else is due today. Enjoy your day!', children, label = 'The Inbox, on made-up cards' }: InboxViewProps) {
+export function InboxView({ beat, card, total = 4, answered = [], place, forgot = {}, remembered = {}, hover, cursor, last, keys = {}, glowKey = {}, done = 0, doneLine = 'Nothing else is due today. Enjoy your day!', children, label = 'The Inbox, on made-up cards' }: InboxViewProps) {
   const d = clamp(done)
+  const misses = answered.filter(Boolean).length
+  const numbers = { progress: { done: answered.length, total: total + misses, waiting: misses }, misses }
   const showCard = card !== undefined && d < 1
   const hints = cardInboxHints({ card: d < 1 && card !== undefined, answering: keys.answering ?? false, canUndo: keys.canUndo ?? false, nextSide: keys.nextSide ?? false }).filter((h) => h.keys !== '⌘↵')
   return (
@@ -128,15 +130,11 @@ export function InboxView({ beat, card, position = 1, total = 4, answered = [], 
             )}
             {showCard && (
               <span className="card-inbox__place">
-                {position} of {total}
+                <SessionCount session={numbers} icon={<InboxTrayIcon />} />
               </span>
             )}
           </div>
-          <div className="card-inbox__progress">
-            {answered.map((missed, i) => (
-              <span key={i} className="card-inbox__progress-part" data-missed={missed || undefined} style={{ width: `${(100 / Math.max(1, total)).toFixed(3)}%` }} />
-            ))}
-          </div>
+          <SessionBar session={numbers} className="card-inbox__progress" />
         </div>
         <div className="kit-inbox__column">
           {showCard ? (

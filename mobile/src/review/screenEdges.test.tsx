@@ -166,7 +166,7 @@ describe('the Review screen: Open page and Back, double taps, Undo, lost answers
     // YAZ-5321: no card is marked Up next, so the menu has no Up next row; New cards is the list with no card here.
     await h.click(/^New cards$/)
     expect(rows.map((r) => r?.replace(/^\W+/u, ''))).toEqual(['All cards', 'Due today', 'New cards'])
-    expect(h.text()).toContain('No new cards left.')
+    expect(h.text()).toContain('Finished learning cards.')
     await h.click(/Choose what to review/)
     await h.click(/^All cards$/)
     expect(h.head()).toBe('DC-1')

@@ -166,15 +166,15 @@ afterEach(() => {
 })
 
 describe('YAZ-5043: the end of Due today', () => {
-  it('1. Due today alone: only the five due cards show, then "Due today is done." with "Learn new cards 3", which starts them', async () => {
+  it('1. Due today alone: only the five due cards show, then "Finished reviewing." (YAZ-5678, none missed) with "Learn new cards 3", which starts them', async () => {
     await mount()
     expect(review.session?.counts).toMatchObject({ all: 8, due: 5, new: 3 })
     await step(() => review.setFilter('due'))
     const seen: string[] = []
     while (showing() !== null) seen.push(await answer('good'))
     expect(seen).toEqual(DUE)
-    expect(doneText()[0]).toMatch(/Due today is done\./)
-    expect(endText()).toContain('You remembered 100% of 5 cards.')
+    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Finished reviewing.')
+    expect(endText()).toContain('How about learning some new cards?')
     expect(button(/^Learn new cards 3$/)).toBeDefined()
     await press(/^Learn new cards/)
     expect(review.session?.filter).toBe('new')
@@ -193,27 +193,29 @@ describe('YAZ-5043: the end of Due today', () => {
     // back the same day: New one less, Due today one more, All cards the same cards.
     expect(seen).toEqual(NEW)
     expect(review.session).toMatchObject({ end: null, counts: { new: 0, due: 8, all: 8 } })
-    expect(doneText()[0]).toBe('No new cards left.')
-    expect(doneText()).toContain('8 more in All cards')
+    // YAZ-5678 (Mochi's words): the learned cards wait under Due today.
+    expect(doneText()).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 8', 'Today: 3 cards'])
+    await press(/^Review cards 8$/)
+    expect(review.session?.filter).toBe('due')
   })
 
-  it('3a. Due today with two Forgot: the first pass stops at "You remembered 60% of 5 cards." with ONE button, "Review missed cards 2"', async () => {
+  it('3a. YAZ-5677 (Mochi`s words): Due today with two Forgot: the first pass stops at "You remembered 60% of cards." with ONE button, "Review missed cards 2"', async () => {
     await mount()
     await step(() => review.setFilter('due'))
     for (const r of ['good', 'again', 'good', 'again', 'good'] as const) await answer(r)
     expect(pct(review.session!.answered)).toBe(60)
     expect(showing()).toBeNull()
     expect(review.session?.end).toMatchObject({ kind: 'missed', percent: 60, count: 5, missed: 2 })
-    expect(endText()).toContain('You remembered 60% of 5 cards.')
-    expect(endText()).toContain('2 cards to look at again while they are fresh.')
-    // Item 7: no skip. One button.
+    expect(el.querySelector('.due-end .card-inbox__done-title')?.textContent).toBe('You remembered 60% of cards.')
+    expect(el.querySelector('.due-end .card-inbox__done-line')?.textContent).toBe("Now let's review the cards you missed again.")
+    // Item 7, Yaseen (YAZ-5672): no Skip and finish. One button.
     expect([...el.querySelectorAll('.due-end button')].map((b) => b.textContent)).toEqual(['Review missed cards 2'])
     // The missed ones, in the order missed.
     await press(/^Review missed cards/)
     expect(await answer('good')).toBe('DUE-2')
     expect(await answer('good')).toBe('DUE-4')
     expect(showing()).toBeNull()
-    expect(doneText()[0]).toMatch(/Due today is done\./)
+    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Finished reviewing missed cards.')
   })
 
   it('3b. Item 3: the % counts first answers only — a missed card got right later, or missed again, does not change it', async () => {
@@ -227,10 +229,9 @@ describe('YAZ-5043: the end of Due today', () => {
     expect(review.session?.end).toBeNull()
     expect(await answer('good')).toBe('DUE-2')
     expect(review.session?.end).toMatchObject({ kind: 'done', percent: 80, count: 5 })
-    expect(endText()).toContain('You remembered 80% of 5 cards.')
   })
 
-  it('3c. Due today done: the ring closes with a ✓, the screen says the %, and "Learn new cards 3" in place of "3 more in All cards"', async () => {
+  it('3c. YAZ-5678: Due today done after the missed pass: our 🎉 and green ✓, "Finished reviewing missed cards.", "Learn new cards 3" in place of "3 more in All cards"', async () => {
     await mount()
     await step(() => review.setFilter('due'))
     for (const r of ['good', 'again', 'good', 'good', 'good'] as const) await answer(r)
@@ -238,9 +239,10 @@ describe('YAZ-5043: the end of Due today', () => {
     await answer('good')
     expect(showing()).toBeNull()
     expect(el.querySelector('.due-end')?.getAttribute('data-kind')).toBe('done')
-    expect(el.querySelector('.due-end__check')).not.toBeNull()
-    expect(doneText()[0]).toContain('Due today is done.')
-    expect(endText()).toContain('You remembered 80% of 5 cards.')
+    expect(el.querySelector('.due-end .done-cheer__party')?.textContent).toBe('🎉')
+    expect(el.querySelector('.due-end .done-cheer__title')?.textContent).toBe('Finished reviewing missed cards.')
+    expect(el.querySelector('.due-end__ring')).toBeNull()
+    expect(endText()).toContain('How about learning some new cards?')
     expect(button(/more in All cards/)).toBeUndefined()
     expect(el.querySelector('.card-inbox__done-from')?.textContent).toContain('All folders')
     await press(/^Learn new cards/)
@@ -292,10 +294,10 @@ describe('YAZ-5043: the end of Due today', () => {
     await act(async () => reindex())
     expect(review.session?.scope).toBe('page')
     for (const r of ['again', 'good', 'good', 'good', 'good'] as const) await answer(r)
-    expect(endText()).toContain('You remembered 80% of 5 cards.')
+    expect(endText()).toContain('You remembered 80% of cards.')
     await press(/^Review missed cards 1/)
     await answer('good')
-    expect(doneText()[0]).toContain('Due today is done.')
+    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Finished reviewing missed cards.')
   })
 
   it('7. Item 15: a card that becomes due after the % screen closed never brings it back', async () => {
@@ -340,8 +342,11 @@ describe('YAZ-5043: the end of Due today', () => {
     reduce = true
     await mount()
     await step(() => review.setFilter('due'))
-    for (let i = 0; i < 5; i++) await answer('good')
+    for (const r of ['good', 'good', 'good', 'good', 'again'] as const) await answer(r)
     expect(el.querySelector('.due-end')?.getAttribute('data-motion')).toBe('still')
+    await press(/^Review missed cards/)
+    await answer('good')
+    // The finish screen: the 🎉 still (DoneCheer), no confetti.
     expect(document.querySelector('.due-end-confetti')).toBeNull()
   })
 
@@ -392,6 +397,26 @@ describe('YAZ-5662: Inbox complete with a 🎉, a green ✓ and one burst of con
     expect(z(cheerCss, '.due-end-confetti')).toBeGreaterThan(z(readFileSync(path.join(__dirname, 'cardScreens.css'), 'utf8'), '.card-inbox'))
     await settle()
     expect(cheers()).toBe(1)
+  })
+
+  it('YAZ-5678: Mochi`s finish screens wear it too — "Finished reviewing missed cards." and "Finished learning cards.", one burst each landing; Today last', async () => {
+    await mount()
+    await step(() => review.setFilter('due'))
+    for (const r of ['good', 'again', 'good', 'good', 'good'] as const) await answer(r)
+    // The first pass's end is the ring, no cheer.
+    expect(el.querySelector('.done-cheer__party')).toBeNull()
+    await press(/^Review missed cards/)
+    await answer('good')
+    expect(el.querySelector('.due-end[data-kind="done"] .done-cheer__party')?.textContent).toBe('🎉')
+    expect(el.querySelector('.done-cheer__title')?.textContent).toBe('Finished reviewing missed cards.')
+    expect([...el.querySelectorAll('.card-inbox__done > *')].at(-1)?.textContent).toBe('Today: 5 cards · 6 reviews')
+    await settle()
+    expect(cheers()).toBe(1)
+    await press(/^Learn new cards 3$/)
+    for (let i = 0; i < 3; i++) await answer('good')
+    expect(el.querySelector('.done-cheer__title')?.textContent).toBe('Finished learning cards.')
+    await settle()
+    expect(cheers()).toBe(2)
   })
 
   it('once per landing: not again when the tab is opened again, nor for a session opened already done', async () => {

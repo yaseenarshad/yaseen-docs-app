@@ -1,0 +1,107 @@
+/* MOCHI'S NUMBERS (YAZ-5672, `SessionCount.tsx`): the Mac's Inbox and the phone's Review draw the same. */
+
+/* The top right (YAZ-5674): ✕ K in red, then the filter's icon and "done / total", quiet. */
+.session-count {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.session-count__misses {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--danger);
+  font-weight: 600;
+}
+.session-count__done {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* The bar (YAZ-5676, Mochi's exactly, YAZ-5671 finding 14). Light: Mochi's measured colours. Dark (Mochi was measured in
+   light only): the same idea on a dark page — a faint white track, a mid grey, and the red's brick hue darker. */
+.session-bar {
+  --session-track: rgba(51, 51, 51, 0.1);
+  --session-red: rgb(209, 179, 173);
+  --session-grey: rgb(200, 200, 200);
+  position: relative;
+  flex: none;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--session-track);
+}
+:root:is([data-theme='dark'], [data-scheme='dark']) .session-bar {
+  --session-track: rgba(255, 255, 255, 0.1);
+  --session-red: rgb(122, 78, 72);
+  --session-grey: rgb(110, 110, 110);
+}
+.session-bar__red,
+.session-bar__grey {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 3px;
+  transition: width 0.2s cubic-bezier(0.36, 0.66, 0.04, 1);
+}
+.session-bar__red {
+  background: var(--session-red);
+}
+.session-bar__grey {
+  background: var(--session-grey);
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-bar__red,
+  .session-bar__grey {
+    transition: none;
+  }
+}
+
+/* "Added card to reviews · Undo" (YAZ-5679, Mochi's note): small, bottom right, about 3 s. */
+.learned-note {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  color: var(--fg);
+  font-size: 13px;
+  white-space: nowrap;
+  animation: learned-note-in 160ms ease-out both;
+}
+.learned-note__sep {
+  color: var(--fg-muted);
+}
+.learned-note__undo {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+@keyframes learned-note-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .learned-note {
+    animation: none;
+  }
+}

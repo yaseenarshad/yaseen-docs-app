@@ -124,7 +124,7 @@ describe('Review: the kinds of card', () => {
       'a.md': page('A', '![[NC-17]]'),
       'b.md': page('B', '![[NC-17]]'),
     })
-    expect(h.text()).toContain('1 / 1')
+    expect(h.text()).toContain('0 / 1')
   })
 
   it('"Title on the front: Hide" (notitle): the ID alone until the card is fully shown, then the title', async () => {

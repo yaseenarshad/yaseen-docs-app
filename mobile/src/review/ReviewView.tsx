@@ -34,6 +34,8 @@ import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
 import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import { DoneScreen, type DoneLook } from '@client/review/DoneScreen'
+import { SessionBar, SessionCount } from '@client/review/SessionCount'
+import { LearnedNote } from '@client/review/LearnedNote'
 import { CardActions } from '../cardMenu/lazy'
 import { overlayCount } from '../app/browserHistory'
 import { reviewKey } from './keys'
@@ -45,8 +47,9 @@ import './review.css'
  * answer list, never files); the card is the Mac's own drawing (`PhoneCard`). The mockup (version 9) is the spec.
  *
  *  - The top row: the filter "All cards ▾" (round 10, addition 1: All cards, Up next, Due today, New cards, with
- *    counts) and today's work, "Today: 31 cards · 9 min".
- *  - Above the card: its state ("Due today", "New card") and "3 of 12"; then the head, "Title · ID", with "in <page>"
+ *    counts; its sheet ends with today's work, "Today: 31 cards · 9 min") and Mochi's count, "✕ 2 ▣ 4 / 6" (YAZ-5674,
+ *    the Mac's `SessionCount`).
+ *  - Above the card: its state ("Due today", "New card"); then the head, "Title · ID", with "in <page>"
  *    for a card in a page (round 15, item 4). The title is the card line's (decision D): never a
  *    line of the card's text, so the text is drawn whole. A card with no title: the ID alone, as the Mac's Inbox head.
  *    "Title on the front: Hide" (`notitle`): the ID alone until the card is fully shown; so too a title that holds a
@@ -567,24 +570,24 @@ function SessionScreen({
   }, [])
 
   const filter = session.filter
+  const counted = card !== null || session.end !== null
   const countButton = (
     <button
       type="button"
       className="review__count-btn"
       aria-haspopup="dialog"
       aria-expanded={menu === 'filter'}
-      aria-label={`${filterLabel(session.filter)}${card !== null ? `, card ${session.position} of ${session.total}` : ''}. Choose what to review`}
+      aria-label={`${filterLabel(session.filter)}${counted ? `, ${session.misses > 0 ? `${session.misses} missed, ` : ''}${session.progress.done} of ${session.progress.total} done` : ''}. Choose what to review`}
       onClick={() => {
         if (menu !== 'filter') firstAction()
         setMenu(menu === 'filter' ? null : 'filter')
       }}
     >
-      <span className="review__mode">
-        {FILTER_ICON[filter]} {filterLabel(session.filter)} ▾
-      </span>
-      {card !== null && (
+      <span className="review__mode">{filterLabel(session.filter)} ▾</span>
+      {/* YAZ-5674: Mochi's count, the Mac's piece; the list's glyph moves here, in front of "done / total" (once). */}
+      {counted && (
         <span className="review__place">
-          {session.position} <small>/ {session.total}</small>
+          <SessionCount session={session} icon={<span aria-hidden="true">{FILTER_ICON[filter]}</span>} />
         </span>
       )}
     </button>
@@ -615,7 +618,9 @@ function SessionScreen({
   return (
     <div className="review review--mochi" onClickCapture={onTap} onTouchStart={NO_OP}>
       {topBox !== null && shown ? createPortal(countButton, topBox) : <div className="review__top">{countButton}</div>}
-      <Progress session={session} />
+      <SessionBar session={session} className="review__progress" />
+      {/* YAZ-5679: the Mac's note, "Added card to reviews · Undo". */}
+      <LearnedNote learned={session.learned} onUndo={undo} />
       {answers.lost.length > 0 && <LostAnswers answers={answers} link={link} />}
       {notice !== null && (
         <p className="review__notice" role="alert">
@@ -840,34 +845,6 @@ const MENU_OWN_TAPS = '.review__sheet, .review__menu, .review__count-btn, .revie
 
 /** What a tap on the screen keeps for itself: every control (its own rule), and the open menus. */
 const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__lastanswer'
-
-/**
- * The progress bar in steps (round 4; the Mac's YAZ-5020): one step for each CARD of the session (YAZ-5594), in the
- * order answered — red while its last answer was a Forgot, grey once it is done, empty while it waits. A card that
- * comes back adds no step: the bar does not grow. A long session draws runs. It counts ONLY the list on show (the
- * Mac's YAZ-5432, `session.progress`): Due today done fills it. Option B (YAZ-5660): a red stays where it was missed;
- * the pass over, the reds slide to the right end (`progress.moved`), then each ✓ turns the leftmost red grey.
- */
-function Progress({ session }: { session: CardReviewSession }) {
-  // The Mac's bar: the filter on show only, `session.progress` (one rule for both apps).
-  const { runs, done } = session.progress
-  const size = Math.max(1, session.progress.size)
-  const steps = size <= 80
-  const marks = runs.flatMap((run) => Array.from({ length: run.count }, () => (run.open === true ? undefined : run.missed ? 'forgot' : 'remembered')))
-  // YAZ-5660: the pass over, the reds slide to the right end once: each red starts where it was missed.
-  const moved = session.progress.moved
-  let red = 0
-  const slide = (mark: string | undefined): CSSProperties | undefined => (moved !== undefined && mark === 'forgot' ? ({ '--moved': moved[red++] } as CSSProperties) : undefined)
-  return (
-    <div className="review__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.progress.size} aria-valuenow={done} data-steps={steps || undefined}>
-      {steps
-        ? Array.from({ length: size }, (_, i) => {
-            return <span key={i} className="review__step" data-answer={marks[i]} data-slide={(moved !== undefined && marks[i] === 'forgot') || undefined} style={slide(marks[i])} />
-          })
-        : runs.map((run, i) => <span key={i} className="review__step" data-answer={run.open === true ? undefined : run.missed ? 'forgot' : 'remembered'} style={{ flex: `0 0 ${(100 * run.count) / size}%` }} />)}
-    </div>
-  )
-}
 
 const drawings = new WeakMap<object, string>()
 let drawingCount = 0

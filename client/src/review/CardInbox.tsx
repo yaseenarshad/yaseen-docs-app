@@ -8,7 +8,7 @@
  *    closes as any tab does (its ✕, ⌘W): no × of its own, and Esc does not close it.
  *  - The top row (YAZ-5017, `CardInboxBar`): the filter "All cards ▾" (All cards, Due today, New cards, with counts)
  *    with what is under review by it ("· in spanish-words"), then the CURRENT card's place, vault › folder › page, each
- *    part a link with its icon (YAZ-5132: the one breadcrumb; `openPlace`: the folder page; the page as O), and "3 of 12" of the filter's cards on the right.
+ *    part a link with its icon (YAZ-5132: the one breadcrumb; `openPlace`: the folder page; the page as O), and Mochi's "✕ 2 · 4 / 6" on the right (YAZ-5674).
  *  - Above the card, outside its frame (YAZ-5027): the state chip (YAZ-5018, as Mochi's: "New card", "Due today",
  *    "Due · 3 days ago"), then THE HEAD: the card ID small and grey (a click copies it, D20). A card in a page says its
  *    page in the top row's ONE breadcrumb (YAZ-5132: no "in <page>" here), whose page part opens it as O does. Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
@@ -70,8 +70,9 @@
  *    least 420 px, at most the tab's width less its margins; the width stays for the app's run, in memory only.
  *  - HOW LONG EACH ANSWER TOOK (YAZ-5033, `answerTimer.ts`): the timer starts when a card shows (again when ⌘Z shows
  *    it again), pauses while the Inbox is not in front and over any stretch of "Pause the timer after" with no key or
- *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
- *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
+ *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The cards menu's last line
+ *    says today's work across the vault (YAZ-5674: out of the top row), "Today: 31 cards · 9 min" (`session.today`, from
+ *    the index), and the done screen says it too.
  *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (round 2: only its hover box
  *    shows it, and a keyboard focus), or shows, or is off, by Settings › Review › Time so far, DURING the review: every
  *    finish screen shows the time (YAZ-5665, `DoneScreen`). The timer and the saved seconds do not change with it.
@@ -131,6 +132,7 @@ import { newCardsFrom, useNewCardsPicker } from './NewCardsPicker'
 import { ChevronIcon } from './cardInboxIcons'
 import { useAnswerTimer } from './answerTimer'
 import { DoneScreen, type DoneLook } from './DoneScreen'
+import { LearnedNote } from './LearnedNote'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 import { tourEvent } from '../course/tourBus'
@@ -240,7 +242,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const { text, title } = useCardFront(pageText, card?.page?.title ?? '', card?.page?.notitle === true)
   // A card FILE (YAZ-5037): "Open card" in the key row, and no "in <page>". One look in the index the vault already holds.
   const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
-  // A card that comes back (YAZ-5594: same place, "3 of 3") is a new turn: the answers so far tell the two apart.
+  // A card that comes back (YAZ-5594: the same card again) is a new turn: the answers so far tell the two apart.
   const cardKey = card === null ? null : `${session.answered.length}\n${card.path}\n${card.id}`
   /**
    * O (YAZ-5307): the card's file at its top, or a card in a page landed on it when Settings › Cards › Inbox: O opens the
@@ -670,6 +672,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         <CardInboxHints hints={hints} />
         </div>
       </div>
+      {/* YAZ-5679: Mochi's "Added card to reviews · Undo" when a new card is learned. */}
+      <LearnedNote learned={session.learned} onUndo={() => void review.undo()} />
     </div>
   )
 }

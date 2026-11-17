@@ -65,9 +65,11 @@ describe('YAZ-5616: new cards begun in the New cards list come back the same day
     await pick('New cards')
     await answer('Remembered') // NEW-1's first ✓: it moves into Due today, out of this list
     await answer('Remembered') // NEW-2's first ✓
-    expect(card()).toBe('done: No new cards left.')
-    await h.click('4 more in All cards')
+    // YAZ-5678 (Mochi's words): the learned cards wait under Due today; its button goes there.
+    expect(card()).toBe('done: Finished learning cards.')
+    await h.click('Review cards 4')
     expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'stop: done', 'NEW-1', 'NEW-2', 'done: Inbox complete.'])
+    // YAZ-5675 (Mochi): Due today counts the 2 due cards and the 2 learned cards' second ✓.
     expect(q('.review__progress')?.getAttribute('aria-valuenow')).toBe('4')
     expect(q('.review__progress')?.getAttribute('aria-valuemax')).toBe('4')
   })

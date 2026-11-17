@@ -73,7 +73,7 @@ describe('Review with 3,000 due cards', () => {
       const t = await answersSetup({ files })
       const o = await probe(() => mountReview(t))
       h = o.value
-      total = h.text().match(/1 \/ [\d,]+/)?.[0] ?? ''
+      total = h.text().match(/0 \/ [\d,]+/)?.[0] ?? ''
       const a = await probe(async () => {
         await act(async () => h!.button('Remembered')!.click())
         await h!.settle()
@@ -82,8 +82,8 @@ describe('Review with 3,000 due cards', () => {
       if (a.longest < answer.longest) answer = a
     }
     console.log(`[4B perf] 3,000 due cards: open ${open.ms.toFixed(0)} ms, longest hold ${open.longest.toFixed(1)} ms of CPU; answer ${answer.ms.toFixed(0)} ms, longest hold ${answer.longest.toFixed(1)} ms of CPU; "${total}"`)
-    expect(total).toBe('1 / 3000')
-    expect(h!.text()).toContain('2 / 3000')
+    expect(total).toBe('0 / 3000')
+    expect(h!.text()).toContain('1 / 3000')
     expect(open.longest).toBeLessThan(50)
     expect(answer.longest).toBeLessThan(50)
   }, 120_000)
