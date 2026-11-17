@@ -93,8 +93,8 @@ import { tourEvent } from '../course/tourBus'
  *
  * THE END OF DUE TODAY (YAZ-5043, as Mochi's two passes): under All cards and Due today, a Forgot on a card with
  * reviews is held back to the end of the DUE part of the queue (before any new card), so the missed cards come before
- * the new ones. When the first pass of the due cards is done the session STOPS (`pause`): "You remembered 93% of 73
- * cards." with one button, "Review missed cards 5" (no skip: you finish them that day). A missed card is one with a
+ * the new ones. When the first pass of the due cards is done the session STOPS (`pause`): "You remembered 93% of
+ * cards." with one button, "Review missed cards 5" (no skip: you finish them that day; YAZ-5677, Mochi's words). A missed card is one with a
  * Forgot in this session (YAZ-5614): a card back after a ✓ (still in its learning steps) waits, but makes no stop. When the missed cards are done
  * too it stops again: "Due today is done.", then "Learn new cards 11" (`goOn`). The % counts each due card's FIRST
  * answer of this session only (`dueFirsts`, `sessionProgress.ts`): a card missed then got right counts as missed, a new card never counts, and a

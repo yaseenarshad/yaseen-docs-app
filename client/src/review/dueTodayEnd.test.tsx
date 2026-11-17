@@ -197,16 +197,16 @@ describe('YAZ-5043: the end of Due today', () => {
     expect(doneText()).toContain('8 more in All cards')
   })
 
-  it('3a. Due today with two Forgot: the first pass stops at "You remembered 60% of 5 cards." with ONE button, "Review missed cards 2"', async () => {
+  it('3a. YAZ-5677 (Mochi`s words): Due today with two Forgot: the first pass stops at "You remembered 60% of cards." with ONE button, "Review missed cards 2"', async () => {
     await mount()
     await step(() => review.setFilter('due'))
     for (const r of ['good', 'again', 'good', 'again', 'good'] as const) await answer(r)
     expect(pct(review.session!.answered)).toBe(60)
     expect(showing()).toBeNull()
     expect(review.session?.end).toMatchObject({ kind: 'missed', percent: 60, count: 5, missed: 2 })
-    expect(endText()).toContain('You remembered 60% of 5 cards.')
-    expect(endText()).toContain('2 cards to look at again while they are fresh.')
-    // Item 7: no skip. One button.
+    expect(el.querySelector('.due-end .card-inbox__done-title')?.textContent).toBe('You remembered 60% of cards.')
+    expect(el.querySelector('.due-end .card-inbox__done-line')?.textContent).toBe("Now let's review the cards you missed again.")
+    // Item 7, Yaseen (YAZ-5672): no Skip and finish. One button.
     expect([...el.querySelectorAll('.due-end button')].map((b) => b.textContent)).toEqual(['Review missed cards 2'])
     // The missed ones, in the order missed.
     await press(/^Review missed cards/)
@@ -292,7 +292,7 @@ describe('YAZ-5043: the end of Due today', () => {
     await act(async () => reindex())
     expect(review.session?.scope).toBe('page')
     for (const r of ['again', 'good', 'good', 'good', 'good'] as const) await answer(r)
-    expect(endText()).toContain('You remembered 80% of 5 cards.')
+    expect(endText()).toContain('You remembered 80% of cards.')
     await press(/^Review missed cards 1/)
     await answer('good')
     expect(doneText()[0]).toContain('Due today is done.')

@@ -4,8 +4,8 @@
  * Review tab (YAZ-5665: the phone's own copy, `DueEnd.tsx`, is gone). Each app gives its look (`DoneLook`).
  *
  *  - After the first pass: the top bar's grey and red slide down into a small ring, which fills to the % (600 ms), and
- *    four small dots float out once. "You remembered 93% of 73 cards." and ONE button, "Review missed cards 5" (item 7:
- *    no skip; you finish them that day).
+ *    four small dots float out once. Mochi's words (YAZ-5677): "You remembered 93% of cards." / "Now let's review the
+ *    cards you missed again." and ONE button, "Review missed cards 5" (item 7, and Yaseen on YAZ-5672: no Skip and finish).
  *  - Due today done: the ring closes in green and a ✓ pops in, with one burst of confetti (item 13, lazy:
  *    `confetti.ts` loads only here). "Due today is done." then "Learn new cards 11" with its "from Spanish ▾".
  *  - Smooth on a phone (the phone's ring, YAZ-5665): the ring fills by turning two half rings (`transform`), every
@@ -179,10 +179,9 @@ export function DueTodayEnd({ end, shown, look, onGoOn, from, children }: Props)
         </>
       ) : (
         <>
-          <p className={look.title}>
-            You remembered {end.percent}% of {cards(end.count)}.
-          </p>
-          <p className={look.line}>{cards(end.missed)} to look at again while they are fresh.</p>
+          {/* YAZ-5677: Mochi's words (YAZ-5671 findings 8, 15, 16); no Skip and finish (Yaseen, YAZ-5672). */}
+          <p className={look.title}>You remembered {end.percent}% of cards.</p>
+          <p className={look.line}>Now let&apos;s review the cards you missed again.</p>
           <div className="due-end__actions">{go(<RefreshIcon />, 'Review missed cards', end.missed)}</div>
         </>
       )}

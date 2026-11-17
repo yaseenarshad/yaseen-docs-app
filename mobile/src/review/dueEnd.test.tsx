@@ -91,14 +91,14 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(h.text()).toContain(`${5 + NEW.length} more in All cards`)
   })
 
-  it('3. Forgot → "You remembered 60% of 5 cards." with ONE button → the missed cards in order → "Due today is done." → Learn new cards', async () => {
+  it('3. Forgot → "You remembered 60% of cards." (YAZ-5677, Mochi`s words) with ONE button → the missed cards in order → "Due today is done." → Learn new cards', async () => {
     h = await reviewSetup(FILES)
     await pick('Due today')
     for (const r of ['Remembered', 'Forgot', 'Remembered', 'Forgot', 'Remembered'] as const) await answer(r)
     expect(showing()).toBeNull()
     expect(q('.due-end')?.dataset.kind).toBe('missed')
-    expect(title()).toBe('You remembered 60% of 5 cards.')
-    expect(endText()).toContain('2 cards to look at again while they are fresh.')
+    expect(title()).toBe('You remembered 60% of cards.')
+    expect(endText()).toContain("Now let's review the cards you missed again.")
     expect(q('.due-end__pct')?.textContent).toBe('60%')
     // No skip: one button.
     expect(endButtons()).toEqual(['Review missed cards 2'])
@@ -124,7 +124,7 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     seen.push(await answer('Forgot'))
     for (let i = 0; i < 4; i++) seen.push(await answer('Remembered'))
     expect(seen).toEqual(DUE)
-    expect(title()).toBe('You remembered 80% of 5 cards.')
+    expect(title()).toBe('You remembered 80% of cards.')
     await h.click('Review missed cards 1')
     expect(await answer('Remembered')).toBe('VRB-1')
     // The break before the new cards.
