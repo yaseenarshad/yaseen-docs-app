@@ -2,13 +2,13 @@ import '../sidebar/rowAsk.css'
 
 /**
  * A DOM menu row's ask in place (YAZ-5696 with YAZ-5697): the page's own menus (`blockHandleMenu.ts`, the card block's
- * ⋯) are drawn without React, so the ContextMenu's `RowAsk` is drawn here the same way: its question, then Cancel
+ * ⋯) are drawn without React, so the shared `AskInPlace` (ContextMenu's `RowAsk`) is drawn here the same way: its question, then Cancel
  * (first, with the focus: a stray Enter runs nothing) and the answer, in the confirm sheet's buttons. Cancel, or the
  * focus leaving it, puts the row back; only the answer runs `onYes`. A lazy chunk: the menu loads it at the first ask.
  */
 export function askInPlace(row: HTMLButtonElement, ask: { question: string; yes: string; danger?: boolean }, onYes: () => void): void {
   const box = document.createElement('div')
-  box.className = 'ctx-menu__ask'
+  box.className = 'ask-in-place ctx-menu__ask'
   box.setAttribute('role', 'group')
   box.setAttribute('aria-label', ask.question)
   const text = document.createElement('p')
