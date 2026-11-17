@@ -40,9 +40,9 @@ function dayOf(bounds: readonly string[], at: string): number {
  * today is always there.
  *
  * Due cards, for today and for each past day: a card is a due card of a day when it was answered before that day, it
- * is not archived, it has an ID, and the answers made before that day made it due before the day's end (or left it in
- * its same-day steps). It is finished when the answers up to the day's end move its due date past the day's end, out
- * of its steps. So a card that is new that day, or an Up next card that was not due, is never a due card of it. A copy
+ * is not archived, it has an ID, and the answers made before that day made it due before the day's end. It is finished
+ * when the answers up to the day's end move its due date past the day's end, so a day whose last answer to it is a
+ * Forgot is not finished (a ✕ is due again at once, YAZ-5702: it comes back in "Review missed cards"). So a card that is new that day, or an Up next card that was not due, is never a due card of it. A copy
  * of an ID on the same page counts one time, as the Inbox shows it one time. A vault with review off has no due card.
  */
 export function friendStats(vaults: readonly FriendVault[], now: number, zone?: string | null): Omit<FriendStats, 'login' | 'name' | 'avatar'> {
@@ -140,12 +140,12 @@ function* friendStatsSteps(vaults: readonly FriendVault[], now: number, zone?: s
         for (let d = Math.max(firstDay + 1, 0); d <= last; d++) {
           while (before < history.length && history[before].review.at < bounds[d]) before++
           const was = history[before - 1]
-          if (!(was.inSteps || was.due < ends[d])) continue
+          if (!(was.due < ends[d])) continue
           let upTo = before
           const end = d === last ? todayEnd : bounds[d + 1]
           while (upTo < history.length && history[upTo].review.at < end) upTo++
           const after = history[upTo - 1]
-          if (after.inSteps || after.due < ends[d]) {
+          if (after.due < ends[d]) {
             undone[d] = true
             if (d === last) totals.dueLeft++
           }

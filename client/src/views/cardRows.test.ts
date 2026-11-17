@@ -68,9 +68,10 @@ describe('YAZ-5319: card rows', () => {
     expect((spain['card.lastReview'] as DateValue).ms).toBe(Date.parse('2026-11-03T09:00:00.000Z'))
     // A new card: nothing reviewed, nothing scheduled; it is Up next.
     expect([plain['card.status'], plain['card.nextReview'], plain['card.lastReview'], plain['card.reviews'], plain['card.successRate'], plain['card.upNext']]).toEqual(['Active', null, null, null, null, true])
-    // A card file lives in itself: no Page. Its next review is the schedule's date, after its last.
+    // A card file lives in itself: no Page. Its next review is the schedule's date: its one ✓ (a new card's first) added
+    // it to that day's reviews (YAZ-5702), so it is due from that answer on.
     expect([river['card.page'], river['card.status'], river['card.reviews'], river['card.successRate'], river['card.id']]).toEqual([null, 'Active', 1, 100, 'GEO-3'])
-    expect((river['card.nextReview'] as DateValue).ms).toBeGreaterThan(Date.parse('2026-11-10T09:00:00.000Z'))
+    expect((river['card.nextReview'] as DateValue).ms).toBe(Date.parse('2026-11-10T09:00:00.000Z'))
   })
 
   it('"Card status is Archived" finds the archived card inside a page; the rule reads back as the Filter menu row', () => {

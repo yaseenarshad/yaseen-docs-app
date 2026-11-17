@@ -15,10 +15,10 @@ export function cardDate(ms: number, now = Date.now()): string {
 }
 
 /**
- * A wait as the screens say it: "later today" for a card in its same-day steps (YAZ-5020: it comes back in this
- * session), "today" for 0, else "9 days".
+ * A wait as the screens say it: "later today" for a card that comes back in this session (YAZ-5702: a ✕, or a new
+ * card's first ✓, added to today's reviews), "today" for 0, else "9 days".
  */
-export const cardWait = (days: number, inSteps = false): string => (inSteps ? 'later today' : days === 0 ? 'today' : dayCount(days))
+export const cardWait = (days: number, comesBack = false): string => (comesBack ? 'later today' : days === 0 ? 'today' : dayCount(days))
 
 /** The day `due` is past (the strip then says "Overdue · …" with no "Due" label). */
 export const cardOverdue = (due: number, now: number): boolean => due < new Date(now).setHours(0, 0, 0, 0)
@@ -33,7 +33,8 @@ export const reviewsTitle = (n: number): string => `${n} Review${n === 1 ? '' : 
 export interface CardFactsData {
   last: CardReview
   interval: number
-  inSteps: boolean
+  /** It comes back today (YAZ-5702): a ✕, or a new card's first ✓. */
+  comesBack: boolean
   due: number
   recall: number | null
 }
@@ -42,7 +43,7 @@ export function cardFacts(reviews: readonly CardReview[], settings: ReviewSettin
   const state = cardState(reviews, settings)
   const last = state.lastReview === null ? undefined : reviews.filter((r) => r.at === state.lastReview).at(-1)
   if (state.isNew || last === undefined || state.due === null) return null
-  return { last, interval: state.interval, inSteps: state.inSteps, due: state.due, recall: recallChance(reviews, settings, now) }
+  return { last, interval: state.interval, comesBack: state.comesBack, due: state.due, recall: recallChance(reviews, settings, now) }
 }
 
 /** The (i) of the recall chance (YAZ-5032; round 2, plain words): the strip's one help. */
@@ -53,12 +54,12 @@ const daysUntil = (ms: number, now: number): number => Math.round((new Date(ms).
 
 /**
  * The review to come in words (YAZ-5032), the strip's and the table's last row: its date in full (none for today and
- * for a card in its same-day steps), and how far it is — "in 183 days", "3 days ago", "today", "later today".
+ * for a card that comes back today, YAZ-5702), and how far it is — "in 183 days", "3 days ago", "today", "later today".
  */
-export function cardNextReview(due: number, inSteps: boolean, now: number): { date: string | null; days: number | null; when: string } {
+export function cardNextReview(due: number, comesBack: boolean, now: number): { date: string | null; days: number | null; when: string } {
   const days = daysUntil(due, now)
-  // A step of a day gone by is overdue like any card: its date, and how long ago.
-  if (inSteps && days >= 0) return { date: null, days: null, when: 'later today' }
+  // Back on a day gone by: overdue like any card, its date and how long ago.
+  if (comesBack && days >= 0) return { date: null, days: null, when: 'later today' }
   if (days === 0) return { date: null, days: 0, when: 'today' }
   const n = Math.abs(days)
   // Round 2 (plain words): a day ahead or behind is "tomorrow" or "yesterday".
@@ -87,8 +88,8 @@ export function cardRemoveOutcome(reviews: readonly CardReview[], review: CardRe
   const after = cardStateWithout(reviews, review.at, settings)
   if (after.isNew || after.due === null) return "This is the card's only review. The card becomes new again."
   const before = cardState(reviews, settings)
-  const was = before.due === null ? cardNextReview(now, false, now) : cardNextReview(before.due, before.inSteps, now)
-  const will = cardNextReview(after.due, after.inSteps, now)
+  const was = before.due === null ? cardNextReview(now, false, now) : cardNextReview(before.due, before.comesBack, now)
+  const will = cardNextReview(after.due, after.comesBack, now)
   const from = was.date ?? was.when
   const to = will.date ?? will.when
   if (from === to) return `The due date stays ${to}.`

@@ -36,8 +36,8 @@
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
  *    hover is the truth, D13), and 1–2 / 1–4 answer at any step.
  *  - The buttons (D5): ✕ Forgot · ✓ Remembered, or ↺ Again · ~ Hard · ✓ Good · ⇈ Easy, by the setting, round as
- *    Mochi's (YAZ-5018); the hover says when the card comes back ("Remembered · 9 days"; "Forgot · later today" while
- *    the answer keeps it in its same-day steps, YAZ-5020: it comes back at the end of this session).
+ *    Mochi's (YAZ-5018); the hover says when the card comes back ("Remembered · 9 days"; "Forgot · later today" when
+ *    the card comes back in this session: a ✕, or a new card's first ✓, YAZ-5702).
  *  - The keys (`cardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O, E, ← → (YAZ-5004: the card before
  *    or after, no answer), ⌘↵ (the page in a background tab: the review stays), Esc (only the ⋯ row; then the Esc order
  *    goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu is open (Explore is a dialog), is not the
@@ -321,7 +321,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
     // The card by its title (YAZ-5030); a title hidden in review never shows (YAZ-5695): its ID.
     const title = card?.page == null ? '' : reviewTitleOf(card.page, review.settings.titleAt)
-    pendingLine.current = fixed === undefined || card === null ? null : { words: answerWords(rating, card.id, fixed.interval, fixed.inSteps, review.settings, title), rating, count: session.answered.length + 1 }
+    pendingLine.current = fixed === undefined || card === null ? null : { words: answerWords(rating, card.id, fixed.interval, fixed.comesBack, review.settings, title), rating, count: session.answered.length + 1 }
     void review.answer(rating, answerSeconds())
   }, [])
   const answeredCount = session.answered.length
@@ -587,7 +587,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
                 const a = session.answers?.find((x) => x.review.rating === rating)
                 const label = answerLabel(rating, review.settings)
                 // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
-                const comesBack = a === undefined ? label : `${label} · ${cardWait(a.interval, a.inSteps)}`
+                const comesBack = a === undefined ? label : `${label} · ${cardWait(a.interval, a.comesBack)}`
                 return (
                   <HoverTip key={rating} text={comesBack}>
                     <button type="button" className="explore__button card-inbox__answer" data-rating={rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => live.current.card?.page != null && answerWith(rating)}>

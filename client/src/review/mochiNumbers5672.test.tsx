@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { cardBlock, cardRecords, cardReviewsOf, cardTime, pageCards, parseCardLine, type CardRating, type CardReview } from '@shared/cardLine'
-import { CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS, answerLabel, answerRatings, cardHistory, cardPlan, isCardDue, reviewedToday } from '@shared/cardSchedule'
+import { answerLabel, answerRatings, cardHistory, cardPlan, isCardDue, reviewedToday } from '@shared/cardSchedule'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
@@ -46,7 +46,7 @@ const page = (name: string, ...cards: [string, string][]): void => {
   host.files.set(`${ROOT}/${name}`, `# ${name}\n\n${cards.map(([id, rest]) => cardBlock(`Card ${id} {{x}}`, parseCardLine(`<!-- card: ${id}${rest} -->`)!)).join('\n')}`)
 }
 const reviewsOf = (name: string, id: string): CardReview[] => cardReviewsOf(pageCards(host.files.get(`${ROOT}/${name}`)!).find((c) => c.line.parts.some((p) => p.kind === 'id' && p.id === id))!.line)
-/** Two ✓ on day `d` of 2026 (month `m`): a known card, out of its steps, due long before today. */
+/** Two ✓ on day `d` of 2026 (month `m`): a known card, due long before today. */
 const known = (m: number, d = 1) => `, 2026-0${m}-0${d}T09:00:00.000Z good, 2026-0${m}-0${d}T09:01:00.000Z good`
 /** The other device's answer: the file changes, then the index has it (a sync). */
 const elsewhere = async (name: string, id: string, rating: CardRating, at = Date.now()) => {
@@ -289,8 +289,8 @@ describe('YAZ-5684: the Today line counts like Mochi`s Dashboard (finding 13): N
   })
 })
 
-describe('YAZ-5702: only misses come back (the YAZ-5655 amendment; Mochi, YAZ-5671)', () => {
-  /** A card with a ✓ and then a ✕ while it was still learning (a recent lapse): FSRS keeps it in its learning steps. */
+describe('YAZ-5702: only misses come back; FSRS in days only, as Mochi (YAZ-5703)', () => {
+  /** A card with a ✓ and then a ✕ days ago (a recent lapse): the case that came back twice under the old one-minute steps. */
   const lapsed = (d: number) => `, 2026-11-0${d}T09:00:00.000Z good, 2026-11-0${d + 1}T09:00:00.000Z again`
 
   it('Yaseen`s case: 21 due (2 with a recent lapse), 13 ✕ and 8 ✓ → ✕ 13 · 21 / 34, Due today 13, the bar full', async () => {
@@ -302,18 +302,18 @@ describe('YAZ-5702: only misses come back (the YAZ-5655 amendment; Mochi, YAZ-56
     for (let i = 0; i < 21; i++) await go(missed.has(review.session!.card!.id) ? 'again' : 'good')
     expect(top()).toBe('✕ 13 · 21 / 34 | grey 62 red 100 | all 13 due 13 new 0')
     expect(review.session?.end).toMatchObject({ kind: 'missed', percent: 38, missed: 13 })
-    // The missed pass: each ✓ is done for today, also on a card FSRS still keeps in a step.
+    // The missed pass: each ✓ is done for today.
     await act(async () => review.goOn())
     for (let i = 0; i < 13; i++) await go('good')
     expect(top()).toBe('21 / 21 | grey 100 red 100 | all 0 due 0 new 0')
-    // And not back later today, nor in a new session; tomorrow it is due again.
+    // And not back later today, nor in a new session.
     vi.setSystemTime(Date.now() + 3 * 3_600_000)
     await reopen()
     expect(review.session?.card ?? null).toBeNull()
     expect(plan().queue.length).toBe(0)
   })
 
-  it('a ✕ then ✓ on a card with a recent lapse: back once in the missed pass, then done for today; due tomorrow', async () => {
+  it('a ✕ then ✓ on a card with a recent lapse: back once in the missed pass, then done for today; due in days', async () => {
     page('D.md', ['DUE-20', lapsed(3)], ['DUE-1', known(9)])
     await mount()
     await act(async () => review.setFilter('due'))
@@ -327,12 +327,12 @@ describe('YAZ-5702: only misses come back (the YAZ-5655 amendment; Mochi, YAZ-56
     await answer('DUE-20', 'good')
     expect(top()).toBe('2 / 2 | grey 100 red 100 | all 0 due 0 new 0')
     const reviews = reviewsOf('D.md', 'DUE-20')
-    // The .md keeps every answer; only when the card shows again changed.
+    // The .md keeps every answer.
     expect(reviews.map((r) => r.rating)).toEqual(['good', 'again', 'again', 'good'])
     const last = cardHistory(reviews, S).at(-1)!
-    expect(last.inSteps).toBe(false)
+    expect(last.comesBack).toBe(false)
+    expect(last.interval).toBeGreaterThanOrEqual(1)
     expect(isCardDue(last.due, Date.now())).toBe(false)
-    expect(isCardDue(last.due, new Date(2026, 10, 13, 0, 0).getTime())).toBe(true)
   })
 
   /** Nothing comes back later today, nor in a session opened again. */
@@ -344,8 +344,8 @@ describe('YAZ-5702: only misses come back (the YAZ-5655 amendment; Mochi, YAZ-56
     expect(plan().queue).toEqual([])
   }
 
-  describe('the four rows: due ✓, due ✕, new ✕, new ✓ (CHANGED: a ✓ that FSRS keeps in a step, on a card that had a ✓)', () => {
-    it('due ✓ (CHANGED for a card with a recent lapse): done for today, no stop, nothing back', async () => {
+  describe('the four rows: due ✓, due ✕, new ✕, new ✓', () => {
+    it('due ✓: done for today, no stop, nothing back (also a card with a recent lapse)', async () => {
       page('D.md', ['DUE-1', known(9)], ['DUE-20', lapsed(3)])
       await mount()
       await go('good')
@@ -354,7 +354,7 @@ describe('YAZ-5702: only misses come back (the YAZ-5655 amendment; Mochi, YAZ-56
       await doneForToday()
     })
 
-    it('due ✕ (unchanged): back only in "Review missed cards"; its ✓ there is done for today (CHANGED for a card with a recent lapse)', async () => {
+    it('due ✕: back only in "Review missed cards"; its ✓ there is done for today', async () => {
       page('D.md', ['DUE-1', known(9)], ['DUE-20', lapsed(3)])
       await mount()
       await go('again')
@@ -367,7 +367,7 @@ describe('YAZ-5702: only misses come back (the YAZ-5655 amendment; Mochi, YAZ-56
       await doneForToday()
     })
 
-    it('new ✕ (unchanged): back in the new-cards run until its first ✓', async () => {
+    it('new ✕: back in the new-cards run until its first ✓', async () => {
       newCards(1)
       await mount()
       await answer('NEW-1', 'again')
@@ -376,16 +376,18 @@ describe('YAZ-5702: only misses come back (the YAZ-5655 amendment; Mochi, YAZ-56
       expect(review.session?.counts).toMatchObject({ new: 1, due: 0 })
     })
 
-    it('new ✓ (unchanged): added to reviews, ONE more review today; its ✓ is done for today', async () => {
+    it('new ✓: added to today`s reviews, ONE more review today, also in an Inbox opened again; its ✓ is done for today', async () => {
       newCards(1)
       await mount()
       await answer('NEW-1', 'good')
+      expect(review.session?.counts).toMatchObject({ new: 0, due: 1 })
+      await reopen()
       expect(review.session?.counts).toMatchObject({ new: 0, due: 1 })
       await answer('NEW-1', 'good')
       await doneForToday()
     })
 
-    it('new ✓, then ✕ on its same-day review: back as a missed card; its ✓ then is done for today (CHANGED: it came back once more)', async () => {
+    it('new ✓, then ✕ on its same-day review: back as a missed card; its ✓ then is done for today', async () => {
       newCards(1)
       await mount()
       await answer('NEW-1', 'good')

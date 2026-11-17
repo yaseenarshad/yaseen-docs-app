@@ -48,7 +48,7 @@ export interface FriendDay {
   cards: number
   /** The seconds the day's answers took; an answer with no time counts 0. */
   seconds: number
-  /** The answers that were not Forgot (`hard`, `good`, `easy`). Each answer counts, also one in the same-day steps. */
+  /** The answers that were not Forgot (`hard`, `good`, `easy`). Each answer counts, also a second one the same day. */
   remembered: number
   /** The answers that were Forgot (`again`). */
   forgot: number

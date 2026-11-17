@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { cardBlock, cardRecords, cardReviewsOf, cardTime, pageCards, parseCardLine, type CardRating, type CardReview } from '@shared/cardLine'
-import { CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS, answerLabel, answerRatings, cardHistory, cardPlan, isCardDue, reviewedToday } from '@shared/cardSchedule'
+import { answerLabel, answerRatings, cardHistory, cardPlan, isCardDue, reviewedToday } from '@shared/cardSchedule'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
@@ -46,7 +46,7 @@ const page = (name: string, ...cards: [string, string][]): void => {
   host.files.set(`${ROOT}/${name}`, `# ${name}\n\n${cards.map(([id, rest]) => cardBlock(`Card ${id} {{x}}`, parseCardLine(`<!-- card: ${id}${rest} -->`)!)).join('\n')}`)
 }
 const reviewsOf = (name: string, id: string): CardReview[] => cardReviewsOf(pageCards(host.files.get(`${ROOT}/${name}`)!).find((c) => c.line.parts.some((p) => p.kind === 'id' && p.id === id))!.line)
-/** Two ✓ on day `d` of 2026 (month `m`): a known card, out of its steps, due long before today. */
+/** Two ✓ on day `d` of 2026 (month `m`): a known card, due long before today. */
 const known = (m: number, d = 1) => `, 2026-0${m}-0${d}T09:00:00.000Z good, 2026-0${m}-0${d}T09:01:00.000Z good`
 /** The other device's answer: the file changes, then the index has it (a sync). */
 const elsewhere = async (name: string, id: string, rating: CardRating, at = Date.now()) => {
@@ -274,9 +274,10 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
     expect(reviewsOf('A.md', 'DUE-1').slice(-2).map((r) => r.at)).toEqual([cardTime(NOW), cardTime(NOW + 1)])
   })
 
-  it('kept: the names, two buttons (four as a setting), learning steps 1m 1m, relearning 1m', () => {
+  it('kept: the names, two buttons (four as a setting); no learning steps (days only, YAZ-5702)', () => {
     expect(answerRatings(S).map((r) => answerLabel(r, S))).toEqual(['Forgot', 'Remembered'])
     expect(answerRatings({ ...S, buttons: 4 }).map((r) => answerLabel(r, { ...S, buttons: 4 }))).toEqual(['Again', 'Hard', 'Good', 'Easy'])
-    expect([CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS]).toEqual([['1m', '1m'], ['1m']])
+    // A ✕ and a new card's first ✓ come back today; every wait FSRS gives is whole days.
+    expect(cardHistory([{ at: '2026-11-12T09:00:00.000Z', rating: 'again' }], S).map((r) => [r.comesBack, r.interval >= 1])).toEqual([[true, true]])
   })
 })

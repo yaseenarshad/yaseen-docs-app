@@ -71,14 +71,14 @@ describe('YAZ-5615: the next review of each answer, as the phone writes it', () 
     expect(Date.parse(reviews[0].at)).toBeGreaterThanOrEqual(NOW)
     expect(Date.parse(reviews[1].at)).toBeGreaterThan(Date.parse(reviews[0].at))
     const after = cardState(reviews, { ...DEFAULT_REVIEW_SETTINGS, fuzz: false })
-    expect(after.inSteps).toBe(false)
+    expect(after.comesBack).toBe(false)
     expect(after.interval).toBeGreaterThanOrEqual(1)
     expect(after.due).toBe(Date.parse(reviews[1].at) + after.interval * 86_400_000)
   })
 })
 
 describe('YAZ-5702 on the phone: only misses come back (the YAZ-5655 amendment)', () => {
-  /** A ✓ and then a ✕ while it was still learning (a recent lapse): FSRS keeps it in its learning steps. */
+  /** A ✓ and then a ✕ days ago (a recent lapse): the case that came back twice under the old one-minute steps. */
   const LAPSED = ', 2026-11-03T09:00:00.000Z good, 2026-11-04T09:00:00.000Z again'
   /** A known card, due long ago. */
   const KNOWN = ', 2026-09-01T09:00:00.000Z good, 2026-09-02T09:00:00.000Z good'

@@ -34,7 +34,7 @@ describe('YAZ-5624: the same New count and the same "Inbox complete." on the Mac
     await h.click(/^All cards$/)
     h.unmount()
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 1}', 'p.md': page('P', ...newCards(1)) })
-    // A new card needs two Remembered (its same-day steps).
+    // A new card needs two Remembered (the first adds it to today's reviews, YAZ-5702).
     for (let i = 0; i < 2; i++) await h.click('Remembered')
     expect(h.host.querySelector('.review__done-title')?.textContent).toBe('Inbox complete.')
   })

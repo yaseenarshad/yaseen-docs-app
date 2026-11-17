@@ -95,7 +95,7 @@ beforeEach(() => {
   host = memoryReviewHost(new Map(), 'Phone vault')
   notices.length = 0
   doors = desktop()
-  // A known card, due (out of its steps), and a new card.
+  // A known card, due, and a new card.
   page('K.md', ['Known {{a}}?', 'WIKI-5, 2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'], ['New {{b}}?', 'WIKI-6'])
 })
 

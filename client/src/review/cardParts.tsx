@@ -246,8 +246,8 @@ const Dot = () => <span className="card-strip__dot"> · </span>
 export function CardFacts({ reviews, settings, now = Date.now() }: { reviews: readonly CardReview[]; settings: ReviewSettings; now?: number }) {
   const facts = cardFacts(reviews, settings, now)
   if (facts === null) return null
-  const { inSteps, due, recall } = facts
-  const next = cardNextReview(due, inSteps, now)
+  const { comesBack, due, recall } = facts
+  const next = cardNextReview(due, comesBack, now)
   return (
     <span className="card-strip__fact card-strip__line">
       <span className="card-strip__next" data-overdue={cardOverdue(due, now) || undefined}>
@@ -479,7 +479,7 @@ export function CardReviewsTable({ reviews, settings, onDelete, now = Date.now()
   const rows = cardHistory(reviews, settings)
   const last = rows.at(-1)
   // A new card is due today, as the Inbox shows it.
-  const next = last === undefined ? cardNextReview(now, false, now) : cardNextReview(last.due, last.inSteps, now)
+  const next = last === undefined ? cardNextReview(now, false, now) : cardNextReview(last.due, last.comesBack, now)
   // The chance for a card with reviews (none for a new card: there is nothing to remember yet).
   const recall = last === undefined ? null : recallChance(reviews, settings, now)
   const [asking, setAsking] = useState<CardReview | null>(null)

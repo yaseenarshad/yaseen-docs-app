@@ -48,7 +48,7 @@ const PATH = '/v/cards.md'
 const TWO_SIDES = 'Capital of {{France}}\n---\n{{Paris}} on the {{Seine}}'
 const AT = '2026-11-12T14:05:00.000Z'
 const answersOf = (s: ReviewSettings): CardAnswer[] =>
-  (s.buttons === 4 ? (['again', 'hard', 'good', 'easy'] as const) : (['again', 'good'] as const)).map((rating, i) => ({ review: { at: AT, rating }, interval: [0, 3, 9, 20][i], due: 0, inSteps: rating === 'again' }))
+  (s.buttons === 4 ? (['again', 'hard', 'good', 'easy'] as const) : (['again', 'good'] as const)).map((rating, i) => ({ review: { at: AT, rating }, interval: [0, 3, 9, 20][i], due: 0, comesBack: rating === 'again' }))
 
 let root: Root | null = null
 let el: HTMLElement
@@ -181,7 +181,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     mount(TWO_SIDES)
     const again = () => el.querySelector('.card-inbox__above .card-inbox__again')
     expect(again()).toBeNull()
-    // A new card back for its second ✓ (YAZ-5610): in its steps, but not forgotten, so no label (YAZ-5626, Yaseen).
+    // A new card back for its second ✓ (YAZ-5610): it comes back, but not forgotten, so no label (YAZ-5626, Yaseen).
     session = { ...session, card: { ...session.card!, isNew: false, repeat: true, forgot: false } }
     render()
     expect(again()).toBeNull()

@@ -135,10 +135,10 @@ describe('YAZ-5615: a new day during a review (spec 21)', () => {
     await step(() => review.answer('good')) // DUE-1
     await step(() => review.answer('good')) // TOM-1
     await step(() => review.goOn()) // past "Due today is done."
-    await step(() => review.answer('good')) // NEW-1 first ✓: it stays in its steps
+    await step(() => review.answer('good')) // NEW-1 first ✓: added to today's reviews (YAZ-5702)
     expect(review.dueCount).toBe(1)
     await act(async () => void vi.advanceTimersByTime(new Date(2026, 10, 15).getTime() - Date.now() + 1_000))
-    expect(review.dueCount).toBe(2) // NEW-1 in its steps, and NEW-2 for Sunday
+    expect(review.dueCount).toBe(2) // NEW-1 added today, and NEW-2 for Sunday
   })
 
   it('a focus on the same day changes no count', async () => {

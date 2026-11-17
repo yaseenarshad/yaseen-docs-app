@@ -209,7 +209,7 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
 
   it('Reset sets today\'s new cards back to the Settings number (never below today\'s work); Undo takes it back', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 1}', 'p.md': page('P', ...[1, 2, 3].map((n) => cardBlock(`N${n}?`, `RS-${n}`))) })
-    // The first new card needs two Remembered (its same-day steps); then the done screen adds one more.
+    // The first new card needs two Remembered (the first adds it to today's reviews, YAZ-5702); then the done screen adds one more.
     for (let i = 0; i < 2; i++) await h.click('Remembered')
     expect(h.text()).toContain('Inbox complete')
     await h.click('Add 1 new card')

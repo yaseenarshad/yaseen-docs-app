@@ -7,8 +7,8 @@ import { cardBlock, inOrder, page, reviewSetup, type ReviewHarness } from './tes
  * YAZ-5594 (Urgent; Yaseen: "im hitting the X and its not removing NC205... but the progress bar is contining to go
  * red and the btottom says last NC205 forgot undo but NC205 still shows"). The demo vault's "Try / Cards in a page":
  * NC-205 ("Missed for a while (overdue)") was the last due card. Its Forgot gave the % screen, "Review missed cards 1",
- * and then each ✕ brought NC-205 straight back: the Mac's rule (YAZ-5020 same-day steps, YAZ-5043 missed cards before
- * new cards, the shared `useCardReview`): a Forgot keeps the card in its steps until it is remembered, and with no
+ * and then each ✕ brought NC-205 straight back: the Mac's rule (YAZ-5702 a ✕ comes back, YAZ-5043 missed cards before
+ * new cards, the shared `useCardReview`): a Forgot brings the card back until it is remembered, and with no
  * other missed card it is the next card itself. The Mac does the same. The phone said only "Last: NC-205 (Forgot)", so
  * it looked stuck. Now: the line says why it is back, the card wears "Again", and it comes in again (an animation).
  * Remembered lets it go and the new cards come. The card's own text (made-up demo data); the real engine and list.

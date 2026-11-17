@@ -138,8 +138,8 @@ beforeEach(() => {
   storage.setUpNextTaken(ROOT, { day: '2000-1-1', cards: [] }) // YAZ-5028: the day's Up next list, of no day
   storage.setCardsAdded(ROOT, { day: '2000-1-1', newCards: 0, upNext: 0 }) // YAZ-5042: the day's added numbers, of no day
   vi.mocked(api.state.setFolder).mockClear()
-  // Due: answered "good" 30 days ago (still in its steps). Not due: two "good" an hour ago (out of its steps, YAZ-5020:
-  // a new card needs two). New: no review. Off: never.
+  // Due: answered "good" once, 30 days ago (added to that day's reviews, never reviewed again, YAZ-5702). Not due: two
+  // "good" an hour ago (the second gave days). New: no review. Off: never.
   page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00:00.000Z good, 2026-11-12T07:01:00.000Z good'])
   page('Bio/Cells.md', ['What is a {{cell}}?', 'WIKI-3'], ['Off card', 'WIKI-4, title "Off card", off'])
 })
@@ -358,7 +358,7 @@ describe('useCardReview', () => {
     // WIKI-2 answered: out of Up next (`next` gone), "2 of 2".
     await vi.waitFor(() => expect(review.session).toMatchObject({ progress: { total: 2 }, counts: { next: 1 }, card: { id: 'WIKI-5' } }))
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
-    // A new card's first Remembered keeps it in its steps: the repeat is not up next, so Up next is done.
+    // A new card's first Remembered adds it to today's reviews (YAZ-5702): the repeat is not up next, so Up next is done.
     await step(() => review.answer('good'))
     expect(review.session).toMatchObject({ card: null, counts: { next: 0 } })
     expect(review.session?.counts.all).toBeGreaterThan(0)
@@ -624,8 +624,8 @@ describe('useCardReview', () => {
   })
 
   describe('YAZ-5031: Up next follows the marks on the card lines', () => {
-    // WIKI-1 reviewed and due, WIKI-2 reviewed and not due, WIKI-3 new, WIKI-8 in its same-day steps (one Remembered a
-    // minute ago: a new card needs two). `marked` puts `next` on all four, or on none.
+    // WIKI-1 reviewed and due, WIKI-2 reviewed and not due, WIKI-3 new, WIKI-8 added to today's reviews (its first
+    // Remembered a minute ago, YAZ-5702). `marked` puts `next` on all four, or on none.
     const lines = (marked: boolean) => {
       const n = marked ? ', next' : ''
       page('Geo.md', ['Capital of {{France}}?', `WIKI-1${n}, 2026-10-13T09:00:00.000Z good`], ['Capital of {{Peru}}?', `WIKI-2${n}, 2026-11-12T07:00:00.000Z good, 2026-11-12T07:01:00.000Z good`])
@@ -633,7 +633,7 @@ describe('useCardReview', () => {
       page('Bio/Learn.md', ['A {{step}} card', `WIKI-8${n}, ${cardTime(NOW - 60_000)} good`])
     }
 
-    it('marked at start — new, reviewed and due, reviewed and not due, in its steps — they are the Up next count and filter, and first in All cards', async () => {
+    it('marked at start — new, reviewed and due, reviewed and not due, added today — they are the Up next count and filter, and first in All cards', async () => {
       lines(true)
       await mount()
       await act(async () => review.start())
@@ -646,7 +646,7 @@ describe('useCardReview', () => {
       lines(false)
       await mount()
       await act(async () => review.start())
-      // WIKI-8 (in its steps) is due now, WIKI-1 is due, WIKI-3 is new; WIKI-2 is not due.
+      // WIKI-8 (added today) is due now, WIKI-1 is due, WIKI-3 is new; WIKI-2 is not due.
       expect(review.session).toMatchObject({ counts: { all: 3, next: 0 } })
       const shown = review.session?.card?.id
       lines(true)
@@ -833,8 +833,8 @@ describe('useCardReview', () => {
   })
 })
 
-describe('useCardReview: same-day steps (YAZ-5020)', () => {
-  /** A known card (out of its steps, due) and a new card. */
+describe('useCardReview: same-day returns (YAZ-5702: a ✕, a new card`s first ✓)', () => {
+  /** A known card (due) and a new card. */
   beforeEach(() => {
     vault = new Map()
     page('K.md', ['Known {{a}}?', 'WIKI-5, 2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'], ['New {{b}}?', 'WIKI-6'])
@@ -848,7 +848,7 @@ describe('useCardReview: same-day steps (YAZ-5020)', () => {
   }
   const place = () => [review.session?.card?.id ?? null, review.session?.progress.done, review.session?.progress.total]
 
-  it('Forgot sends a known card to the end, one Remembered lets it go; a new card needs two Remembered; "done / total" as Mochi (YAZ-5675)', async () => {
+  it('Forgot sends a known card to the end, one Remembered lets it go; a new card`s first Remembered adds it to today`s reviews, one more Remembered lets it go; "done / total" as Mochi (YAZ-5675)', async () => {
     await mount()
     await act(async () => review.start())
     expect(place()).toEqual(['WIKI-5', 0, 2])
@@ -870,7 +870,7 @@ describe('useCardReview: same-day steps (YAZ-5020)', () => {
     expect(review.session?.card).toBeNull()
     expect(reviewsOn('K.md', 'WIKI-5').map((r) => r.rating)).toEqual(['good', 'good', 'again', 'good'])
     expect(reviewsOn('K.md', 'WIKI-6').map((r) => r.rating)).toEqual(['good', 'good'])
-    expect(cardState(reviewsOn('K.md', 'WIKI-6'), S)).toMatchObject({ inSteps: false })
+    expect(cardState(reviewsOn('K.md', 'WIKI-6'), S)).toMatchObject({ comesBack: false })
     expect(review.dueCount).toBe(0)
   })
 

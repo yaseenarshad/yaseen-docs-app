@@ -71,9 +71,9 @@ export function randomVault(seed: number, now: number): { files: Record<string, 
     () => '', // new
     () => `, ${ago(40 + Math.floor(rnd() * 40))} good, ${ago(10 + Math.floor(rnd() * 20))} good`, // known, maybe due
     () => `, ${ago(30)} good, ${ago(12)} hard, ${ago(3)} good`,
-    () => `, ${ago(5 + Math.floor(rnd() * 5))} again`, // still in its steps
+    () => `, ${ago(5 + Math.floor(rnd() * 5))} again`, // only ✕: still a New card (rule 2)
     () => `, ${ago(9)} easy`,
-    () => `, ${ago(0, 2)} good`, // begun today
+    () => `, ${ago(0, 2)} good`, // added today (its first ✓, YAZ-5703)
     () => `, ${ago(0, 3)} again, ${ago(0, 2)} good`,
     () => `, ${ago(1, 1)} good, ${ago(1)} good`, // answered yesterday
   ]
@@ -321,11 +321,11 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
           const after = snap(r())
           // A card kept on show after its mark went off (or held after a mark change, open item 4) is not in the Inbox
           // row's count: its answer may bring it in.
-          // Rule 7: a card back in its steps moves to its own list: a new card's first ✓ to Due today, an Up next card to
+          // Rule 7: a card that comes back (YAZ-5702) moves to its own list: a new card's first ✓ to Due today, an Up next card to
           // Due today (it has a ✓) or New cards (only ✕).
-          const backTo = card!.isNew && rating !== 'again' ? 'due' : shown!.inSteps && card!.next ? (card!.isNew ? 'new' : 'due') : null
+          const backTo = card!.isNew && rating !== 'again' ? 'due' : shown!.comesBack && card!.next ? (card!.isNew ? 'new' : 'due') : null
           noGrowth(before, after, line, backTo === 'due' ? 1 : 0, kept.has(card!.id) || planChanged, backTo === 'new' ? 1 : 0)
-          // An answer that leaves the card in its steps (a Forgot, a new card's first Remembered) keeps it in the session.
+          // An answer whose card comes back (a Forgot, a new card's first Remembered, YAZ-5702) keeps it in the session.
           // Rule 10 (Review rules v1): an Up next card takes no New cards place, so its answer pushes no new card out.
           // A new card kept on show past today's new cards (its mark went off on show, YAZ-5031) still may.
           const pushedOut = card!.isNew && kept.has(card!.id) && driver.settings.newPerDay !== null ? 1 : 0
@@ -336,7 +336,7 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
           }
           // A card kept on show while not due leaves once it is not on show (`settle`): it may go with this answer.
           const keptAway = [...kept].filter((id) => id !== card!.id).length
-          if (shown!.inSteps && after !== null && before !== null && after.counts.all < before.counts.all - pushedOut - keptAway) fail('3. a card still in its steps stays in the session (All cards the same)', { line, before: before.counts, after: after.counts, end: after.end, plan: driver.plan().map((c) => c.id), reviews: ledger.get(card!.id), shown })
+          if (shown!.comesBack && after !== null && before !== null && after.counts.all < before.counts.all - pushedOut - keptAway) fail('3. a card that comes back stays in the session (All cards the same)', { line, before: before.counts, after: after.counts, end: after.end, plan: driver.plan().map((c) => c.id), reviews: ledger.get(card!.id), shown })
         } else same(before, snap(r()), line)
         break
       }

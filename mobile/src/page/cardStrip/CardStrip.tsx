@@ -153,7 +153,7 @@ function ReviewsTable({ reviews, settings, now }: { reviews: readonly CardReview
   const rows = cardHistory(reviews, settings)
   const last = rows.at(-1)
   // A new card is due today, as the Inbox shows it; it has no chance yet (there is nothing to remember).
-  const next = last === undefined ? cardNextReview(now, false, now) : cardNextReview(last.due, last.inSteps, now)
+  const next = last === undefined ? cardNextReview(now, false, now) : cardNextReview(last.due, last.comesBack, now)
   const recall = last === undefined ? null : recallChance(reviews, settings, now)
   return (
     <div className="phone-strip__scroll">

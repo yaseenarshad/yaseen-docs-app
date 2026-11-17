@@ -35,22 +35,22 @@ const stats = (cards: CardRecord[], now = NOW) => friendStats([vault(cards)], no
 const dayOf = (s: ReturnType<typeof stats>, day: string) => s.days.find((d) => d.day === day)
 
 /**
- * Card S: learned on 1 November, due 5 November; Forgot and then Remembered on 5 November; due 7 November and
- * answered then; due again today (13 November, 15:00Z). The test checks these dates first, so a change in FSRS shows here.
+ * Card S: learned on 1 November, due 5 November; Forgot and then Remembered on 5 November; due 8 November and
+ * answered then (days only, YAZ-5702); due again today (13 November, 15:00Z). The test checks these dates first, so a change in FSRS shows here.
  */
 const S_REVIEWS: R[] = [
   ['2026-11-01T15:00:00.000Z', 'good'],
   ['2026-11-01T15:02:00.000Z', 'good'],
   ['2026-11-05T15:00:00.000Z', 'again'],
   ['2026-11-05T15:05:00.000Z', 'good'],
-  ['2026-11-07T15:00:00.000Z', 'good'],
+  ['2026-11-08T15:00:00.000Z', 'good'],
 ]
 
 describe('friendStats (YAZ-5069)', () => {
   it('the schedule of card S is as the streak tests expect', () => {
     const rows = cardHistory(card('GEO-1', S_REVIEWS).reviews, S)
-    expect(rows.map((r) => new Date(r.due).toISOString().slice(0, 10))).toEqual(['2026-11-01', '2026-11-05', '2026-11-05', '2026-11-07', '2026-11-13'])
-    expect(rows.at(-1)!.inSteps).toBe(false)
+    expect(rows.map((r) => new Date(r.due).toISOString().slice(0, 10))).toEqual(['2026-11-01', '2026-11-05', '2026-11-05', '2026-11-08', '2026-11-13'])
+    expect(rows.at(-1)!.comesBack).toBe(false)
   })
 
   it('a day`s numbers: each card one time, every answer in remembered and forgot, the seconds, and the new cards; today is `reviewedToday`', () => {
@@ -100,8 +100,8 @@ describe('friendStats (YAZ-5069)', () => {
 
   it('the streak goes on across days with no due card, and an unfinished today does not stop it', () => {
     const s = stats([card('GEO-1', S_REVIEWS)])
-    // 8 to 12 November: no due card, so finished. Today: card S is due and not answered.
-    for (const day of ['2026-11-08', '2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12']) expect(dayOf(s, day)).toMatchObject({ cards: 0, done: true })
+    // 9 to 12 November: no due card, so finished. Today: card S is due and not answered.
+    for (const day of ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12']) expect(dayOf(s, day)).toMatchObject({ cards: 0, done: true })
     expect(s.days.every((d) => d.done || d.day === '2026-11-13')).toBe(true)
     expect(s.days[0]).toMatchObject({ day: '2026-11-13', done: false })
     expect(s.totals).toMatchObject({ dueLeft: 1, streak: 12, bestStreak: 12 })

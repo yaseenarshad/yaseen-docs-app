@@ -21,7 +21,7 @@ describe('Review: done, and "Add more for today" (round 10, addition 2)', () => 
   it('"Inbox complete", today\'s work, what waits, "Add 2 new cards"; the add shows a card at once, and Undo takes it back', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('P', ...newCards(5)) })
     expect(h.text()).toContain('0 / 2')
-    // A new card needs two Remembered (its same-day steps): four answers end the session.
+    // A new card needs two Remembered (the first adds it to today's reviews, YAZ-5702): four answers end the session.
     for (let i = 0; i < 4; i++) await h.click('Remembered')
     expect(h.text()).toContain('Inbox complete')
     expect(h.text()).toContain('Today: 2 learned · 0 reviews')

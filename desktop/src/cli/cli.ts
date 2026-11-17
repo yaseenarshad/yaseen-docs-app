@@ -165,12 +165,11 @@ shows them: first the cards up next (see \`card next\`), then the cards due toda
 new cards in the vault's "New cards order" (oldest first, newest first, or random for the day), from the
 folders the Inbox picked for new cards when any (all folders when they have none left), as many as its "New cards a day" leaves
 for today (all of them when that box is empty). A line is the day it was due (\`next\` for a card up next,
-\`new\` for a new card, \`steps\` for a card in its same-day steps: Forgot, or a new card not yet Remembered
-twice; it is due now, minutes after its last answer), the card's id, its title (\`title "…"\` on its card line) and its page.
-Given a page, \`due\` lists every card on it, each with the day it is next due, \`next\`, \`new\`, \`steps\`, or
+\`new\` for a new card, \`back\` for a card that comes back today: a Forgot, or a new card's first Remembered
+(added to today's reviews); it is due now), the card's id, its title (\`title "…"\` on its card line) and its page.
+Given a page, \`due\` lists every card on it, each with the day it is next due, \`next\`, \`new\`, \`back\` (it comes back today), or
 \`off\` (archived: the app's "Archive card"); \`fix\` after the title marks a card "Fix later" (it has a mistake to fix). The app works the dates out from each card's reviews with FSRS and never writes
-them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`title\`, \`due\` (ISO time; the
-minute a step ends), \`isNew\`, \`next\` and \`inSteps\` (and \`off\` for a page, and \`fix: true\` for a card marked Fix later), and \`cardFile: true\` for a card that lives in a card file.
+them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`title\`, \`due\` (ISO time), \`isNew\`, \`next\` and \`comesBack\` (and \`off\` for a page, and \`fix: true\` for a card marked Fix later), and \`cardFile: true\` for a card that lives in a card file.
 
 \`card add\` adds a card to a page, with a new id from the vault's counter, as the app gives one:
 \`--body\` (\`--body -\` for stdin) is the card's text, its sides only, and \`--title\` (one line) its title, written
@@ -422,9 +421,9 @@ const inCardFile = (record: IndexRecord | undefined): { cardFile?: true } => (re
 
 /**
  * `due` (YAZ-4963, idea 12): the cards due now, or every card of one page with the day it is next due. The date
- * is computed by the same `shared/cardSchedule.ts` the Inbox uses, from the same scan, so the two agree. A card in its
- * same-day steps (YAZ-5020: a Forgot, or a new card's first Remembered; only misses come back, YAZ-5702) is due now, whatever minute its step ends:
- * it is listed as `steps` (`--json`: `inSteps: true`, `due` the minute its step ends).
+ * is computed by the same `shared/cardSchedule.ts` the Inbox uses, from the same scan, so the two agree. Waits are
+ * whole days (YAZ-5702, as Mochi, YAZ-5703). A card that comes back today (a Forgot, a new card's first ✓) is due
+ * now, listed as `back` (`--json`: `comesBack: true`).
  */
 async function due(target: string, json: boolean, io: Io): Promise<void> {
   const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA') // the LOCAL day, as YYYY-MM-DD
@@ -439,7 +438,7 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
     const record = await scanFile(root, target)
     const rows = (record.cards ?? []).map((card, i) => {
       const state = cardState(card.reviews, settings)
-      return { id: card.id, page: target, title: titles[i] ?? '', due: card.off ? null : state.isNew || card.next ? iso(now) : iso(state.due!), isNew: state.isNew, next: card.next, off: card.off, inSteps: state.inSteps, ...(card.fix === true && { fix: true as const }), ...inCardFile(record) }
+      return { id: card.id, page: target, title: titles[i] ?? '', due: card.off ? null : state.isNew || card.next ? iso(now) : iso(state.due!), isNew: state.isNew, next: card.next, off: card.off, comesBack: state.comesBack, ...(card.fix === true && { fix: true as const }), ...inCardFile(record) }
     })
     if (!settings.enabled && rows.length > 0) io.stderr(`cards are off for this vault (Settings › Cards › Use cards in this vault): no card is due\n`)
     if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
@@ -447,7 +446,7 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
       io.stdout(
         rows.length === 0
           ? `no cards on ${target}\n`
-          : rows.map((r) => `${r.due === null ? 'off       ' : r.next ? 'next      ' : r.isNew ? 'new       ' : r.inSteps ? 'steps     ' : day(Date.parse(r.due))}  ${r.id ?? '(no id yet)'}  ${r.title}${'fix' in r ? '  fix' : ''}\n`).join(''),
+          : rows.map((r) => `${r.due === null ? 'off       ' : r.next ? 'next      ' : r.isNew ? 'new       ' : r.comesBack ? 'back      ' : day(Date.parse(r.due))}  ${r.id ?? '(no id yet)'}  ${r.title}${'fix' in r ? '  fix' : ''}\n`).join(''),
       )
     return
   }
@@ -462,11 +461,11 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
   const titles = new Map<string, string[]>()
   for (const { path } of queue) if (!titles.has(path)) titles.set(path, await cardTitles(path))
   const byPath = new Map(records.map((r) => [r.path, r]))
-  const inSteps = (q: (typeof queue)[number]): boolean => !q.isNew && cardState(byPath.get(q.path)?.cards?.[q.index]?.reviews ?? [], settings).inSteps
-  const rows = queue.map((q) => ({ id: q.id, page: q.path, title: titles.get(q.path)?.[q.index] ?? '', due: iso(q.due), isNew: q.isNew, next: q.next, inSteps: inSteps(q), ...inCardFile(byPath.get(q.path)) }))
+  const comesBack = (q: (typeof queue)[number]): boolean => !q.isNew && cardState(byPath.get(q.path)?.cards?.[q.index]?.reviews ?? [], settings).comesBack
+  const rows = queue.map((q) => ({ id: q.id, page: q.path, title: titles.get(q.path)?.[q.index] ?? '', due: iso(q.due), isNew: q.isNew, next: q.next, comesBack: comesBack(q), ...inCardFile(byPath.get(q.path)) }))
   if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
   else if (!settings.enabled) io.stdout(`cards are off for this vault (Settings › Cards › Use cards in this vault): no card is due\n`)
-  else io.stdout(rows.length === 0 ? `nothing is due under ${target}\n` : rows.map((r) => `${r.next ? 'next      ' : r.isNew ? 'new       ' : r.inSteps ? 'steps     ' : day(Date.parse(r.due))}  ${r.id}  ${r.title}  ${r.page}\n`).join(''))
+  else io.stdout(rows.length === 0 ? `nothing is due under ${target}\n` : rows.map((r) => `${r.next ? 'next      ' : r.isNew ? 'new       ' : r.comesBack ? 'back      ' : day(Date.parse(r.due))}  ${r.id}  ${r.title}  ${r.page}\n`).join(''))
 }
 
 /** The app's state file as the store itself reads it (`parseState`); only READ. No file yet is the default state; a damaged one is refused and left for the app to move aside. */

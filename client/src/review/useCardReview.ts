@@ -58,11 +58,11 @@ import { tourEvent } from '../course/tourBus'
  * Forgot on a due card is done +1 and total +1, a new card learned under All cards total +1, a Remembered in the missed
  * pass total −1. A new session (or the Inbox tab closed) starts it empty.
  *
- * Same-day steps (YAZ-5020): an answer that leaves the card in its steps (`CardAnswer.inSteps`: a Forgot; a new card's
- * first Remembered) puts it back at the END of this session's queue. Only misses come back (YAZ-5702, the YAZ-5655
- * amendment): a ✓ on a card that already had a ✓ is done for today, also when FSRS keeps it in a step
- * (`shared/cardSchedule.ts` holds it to tomorrow), so a due card's ✓ never puts it back. Closed and opened again, the
- * Inbox shows a card put back at once (`cardQueue`). ⌘Z takes the repeat out again and puts the card back at its place.
+ * Same-day returns (YAZ-5702, as Mochi, YAZ-5703; the scheduler is days only): an answer whose card comes back
+ * (`CardAnswer.comesBack`) puts it back at the END of this session's queue: a Forgot (a due card's once, in "Review
+ * missed cards"), or a new card's first Remembered (added to today's reviews: one more review today, also in an Inbox
+ * opened again, `cardQueue`). A due card's ✓ is done for today. ⌘Z takes the repeat out again and puts the card back
+ * at its place.
  *
  * Fast ← → (YAZ-5029, Yaseen: "why does these two things jump and show like a small version of them like latency?"):
  * the cards around the one showing (`AHEAD` each way, under the filter) are read ahead into a small cache, so the next
@@ -124,7 +124,7 @@ export interface CardReviewResume {
 export interface ShownCard extends DueCard {
   /** The card as its page holds it now; null while the page is read. */
   page: CardOnPage | null
-  /** Put back by an answer that left it in its steps (YAZ-5020): a Forgot, a new card's first Remembered. */
+  /** Put back by an answer whose card comes back (YAZ-5702): a Forgot, a new card's first Remembered. */
   repeat?: boolean
   /** Put back by a Forgot (✕, YAZ-5626): the one card that wears "Again"; a new card back for its second ✓ does not. */
   forgot?: boolean
@@ -385,8 +385,8 @@ interface ArchiveStep {
 type UndoStep = AnswerStep | AddStep | ResetStep | ArchiveStep
 
 /**
- * A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps: a Forgot,
- * or a new card's first Remembered (only misses come back, YAZ-5702: a due card's ✓ never does).
+ * A card of a session's queue; `repeat` (YAZ-5702): put back at the end by a Forgot, or by a new card's first Remembered
+ * (added to today's reviews); a due card's ✓ never does.
  * `fromNew` (YAZ-5610, Yaseen's rule from Mochi): a new card past its first Remembered, back the same day as a Due today
  * card; it is no missed card (the % screen's "Review missed cards" leaves it out) and waits at the end of the session.
  * `forgot` (YAZ-5626): put back by a Forgot (✕), so it wears "Again"; the last answer decides.
@@ -603,7 +603,7 @@ const dueEnd = (queue: readonly QueueCard[]): number => {
 const doneToday = (card: CardOnPage, settings: ReviewSettings): boolean => {
   if (card.off || card.next || card.reviews.length === 0) return false
   const state = cardState(card.reviews, settings)
-  return state.due !== null && !isCardDue(state.due, Date.now(), state.inSteps)
+  return state.due !== null && !isCardDue(state.due, Date.now())
 }
 
 /** The session with the card at `at` gone from its queue (answered elsewhere, its page gone, review off): the next one shows. */
@@ -1029,9 +1029,9 @@ export function useCardReview(
       }
       setSession((s) => {
         if (s === null || !showing(s, card)) return s
-        // Still in its steps (YAZ-5020): back at the end of this session, no longer new or up next. Only misses come back
-        // (YAZ-5702, the YAZ-5655 amendment): a ✓ on a card that had a ✓ is never in its steps here (`cardSchedule.ts`).
-        const repeat = written !== 'gone' && chosen.inSteps
+        // It comes back (YAZ-5702): a ✕, or a new card's first ✓ (added to today's reviews). Back at the end of this
+        // session, no longer new or up next. A due card's ✓ is done for today.
+        const repeat = written !== 'gone' && chosen.comesBack
         // YAZ-5043: a due card's first answer this session counts for the % (a repeat's, a new card's never do); rule 8:
         // an Up next card's too, new or not.
         const key = cardKey(card)

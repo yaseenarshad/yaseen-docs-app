@@ -443,7 +443,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
 function cardDue(reviews: readonly CardReview[], settings: ReviewSettings, now = Date.now()): string {
   const facts = cardFacts(reviews, settings, now)
   if (facts === null) return 'New'
-  return `Due ${cardNextReview(facts.due, facts.inSteps, now).when}`
+  return `Due ${cardNextReview(facts.due, facts.comesBack, now).when}`
 }
 
 /** The tab's ⋯ and its menu (the card's rows), built when it opens. */

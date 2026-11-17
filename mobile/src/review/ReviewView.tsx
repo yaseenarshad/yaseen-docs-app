@@ -426,7 +426,7 @@ function SessionScreen({
     const name = cardPieces(cardName).map((p) => p.text).join('').trim()
     // YAZ-5693: the Mac's words, from the answer the hook fixed for this button ("back in 9 days"), as the Mac's Inbox.
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
-    const words = answerWords(rating, card.id, fixed?.interval ?? 0, fixed?.inSteps ?? false, review.settings, name)
+    const words = answerWords(rating, card.id, fixed?.interval ?? 0, fixed?.comesBack ?? false, review.settings, name)
     const answeredLine: Line = { kind: 'answer', count: answeredBefore + 1, path: card.path, id: card.id, words, rating }
     setLine(answeredLine)
     // The guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
@@ -529,7 +529,7 @@ function SessionScreen({
   const quietLine = shownLine !== null && shownLine.kind !== 'answer' && fresh === lineId ? shownLine : null
   // Right after an answer, the hint line says it, with its Undo: "✕ Forgot · Capital of Spain · back later today · Undo".
   const lastAnswer = shownLine?.kind === 'answer' && line?.kind === 'answer' && putAway !== line ? { ...line, undo: shownLine.undo } : null
-  // YAZ-5594: a Forgot keeps the card in its steps (YAZ-5020, the Mac's rule), and with no other card before the new
+  // YAZ-5594: a Forgot brings the card back (YAZ-5702, the Mac's rule), and with no other card before the new
   // cards (the last missed card, the last new card) it is the NEXT card: the same card, at once. It must not look stuck:
   // the line says why it is back, and the card comes in again (a fresh front, the "Again" chip).
   const back = lastAnswer !== null && lastAnswer.rating === 'again' && card !== null && card.path === lastAnswer.path && card.id === lastAnswer.id && lastAnswer.count === answeredNow
