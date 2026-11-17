@@ -23,6 +23,12 @@ export const newCardsFrom = (session: Pick<CardReviewSession, 'newFrom' | 'newFa
  */
 export const newRowPick = (session: Pick<CardReviewSession, 'newFrom' | 'newFallback'>): string => (session.newFrom.length === 0 || session.newFallback ? '' : pickLabel(session.newFrom))
 
+/**
+ * The ⚙ part's Add today when no new card waits beyond today's limit (YAZ-5690 round 2, Yaseen: keep the row, say
+ * why): "No more new cards in Spanish", or "… in any folder" for All folders and the fallback (`newRowPick`).
+ */
+export const noMoreNew = (session: Pick<CardReviewSession, 'newFrom' | 'newFallback'>): string => `No more new cards in ${newRowPick(session) === '' ? 'any folder' : newRowPick(session)}`
+
 /** `folder` lies under `ancestor` (root-relative paths). */
 export const underFolder = (folder: string, ancestor: string): boolean => folder.startsWith(`${ancestor}/`)
 

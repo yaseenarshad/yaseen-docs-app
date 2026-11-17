@@ -328,6 +328,47 @@
   color: var(--fg);
 }
 
+/* The ask in place (YAZ-5690 round 3, `AskInPlace`): the question, then Cancel and Add, 44 pt each. */
+.review__sheet-settings .ask-in-place {
+  flex: 1 1 auto;
+  padding: 6px 0;
+}
+.review__sheet-settings .ask-in-place .confirm__text {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--fg);
+}
+.review__sheet-settings .ask-in-place .confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.review__sheet-settings .ask-in-place .confirm__btn {
+  min-width: 72px;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+}
+.review__sheet-settings .ask-in-place .confirm__btn + .confirm__btn {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* No more new cards (YAZ-5690 round 2): a quiet line in the field's place. */
+.review__sheet-settings .card-inbox__add-none {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 13px;
+  text-align: right;
+}
+
 /* "Add today [10] Add" (YAZ-5690, the Mac's field): a 44 pt number box (the number keypad) and a 44 pt Add. */
 .review__sheet-settings .card-inbox__add-setting {
   display: inline-flex;
@@ -361,9 +402,7 @@
   font-size: 15px;
   font-weight: 600;
 }
-.review__sheet-settings .card-inbox__add-setting :disabled {
-  opacity: 0.45;
-}
+
 
 .review__sheet-pick > .review__sheet-name {
   flex: none;

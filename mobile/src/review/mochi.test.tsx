@@ -294,7 +294,7 @@ describe('the review sheet\'s ⚙ (YAZ-5685, the Mac\'s cards menu)', () => {
     expect(cog().getAttribute('aria-expanded')).toBe('true')
     expect(part()!.previousElementSibling).toBe(foot)
     expect(part()!.querySelector('h6')!.textContent).toBe('New cards')
-    expect([...part()!.querySelectorAll('li')].map((li) => (li.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual(['FromAll folders ›', 'Add today1Add'.replace('1', '')])
+    expect([...part()!.querySelectorAll('li')].map((li) => (li.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual(['FromAll folders ›', 'Add todayNo more new cards in any folder'])
     await h.click('Review settings')
     expect(part()).toBeNull()
     await h.click('Review settings')
@@ -321,9 +321,42 @@ describe('the review sheet\'s ⚙ (YAZ-5685, the Mac\'s cards menu)', () => {
     const row = () => part()!.querySelector<HTMLElement>('li[data-setting="add"]')!
     const number = row().querySelector<HTMLInputElement>('input.card-inbox__add-number')!
     expect([row().firstElementChild!.textContent, number.value, number.inputMode, row().querySelector('button')!.textContent]).toEqual(['Add today', '1', 'numeric', 'Add'])
+    // YAZ-5690 round 3: one tap asks in place ("Add 1 new card to today?", Cancel first); the second adds.
     await tapOn(row().querySelector('button')!)
+    await h.settle()
+    expect(newCount()).toBe('1')
+    expect([...row().querySelectorAll('.ask-in-place button')].map((b) => b.textContent)).toEqual(['Cancel', 'Add'])
+    expect(row().querySelector('.ask-in-place .confirm__text')!.textContent).toBe('Add 1 new card to today?')
+    await tapOn(row().querySelectorAll<HTMLButtonElement>('.ask-in-place button')[1]!)
     await h.settle()
     expect(newCount()).toBe('2')
     expect(q('.review__sheet-foot')!.textContent).not.toMatch(/learned|reviews/)
+  })
+
+  it('YAZ-5690 round 2: the ⚙ part has "Up next" · "Add today [N] Add" while a card is marked Up next; a tap on a count only picks its filter', async () => {
+    const UP = { ...FILES, '.yaseendocs/review.json': '{"newPerDay": 10, "upNextPerDay": 1}', 'trip/lisbon.md': page('Lisbon', cardBlock('L?', 'TR-1, next'), cardBlock('M?', 'TR-2, next')) }
+    h = await reviewSetup(UP)
+    await h.click(/Choose what to review/)
+    await h.click('Review settings')
+    expect([...part()!.querySelectorAll('h6')].map((x) => x.textContent)).toEqual(['New cards', 'Up next'])
+    const add = part()!.querySelectorAll('section')[1]!.querySelector<HTMLButtonElement>('button.card-inbox__add-go')!
+    expect(part()!.querySelectorAll('section')[1]!.querySelector('input')!.getAttribute('aria-label')).toBe('How many Up next cards to add')
+    await tapOn(add)
+    await h.settle()
+    await tapOn(part()!.querySelectorAll('section')[1]!.querySelectorAll<HTMLButtonElement>('.ask-in-place button')[1]!)
+    await h.settle()
+    const nextCount = () => [...h!.host.querySelectorAll('.review__sheet-row')].find((r) => r.querySelector('[data-filter="next"]'))!.querySelector('.review__sheet-n')!.textContent
+    expect(nextCount()).toBe('2 / 2')
+    // Nothing waits now: no Up next group.
+    expect([...part()!.querySelectorAll('h6')].map((x) => x.textContent)).toEqual(['New cards'])
+  })
+
+  it('YAZ-5690 round 2: no new card beyond today`s limit: Add today says "No more new cards in any folder"; no Up next waiting: no group', async () => {
+    h = await reviewSetup(FILES)
+    await h.click(/Choose what to review/)
+    await h.click('Review settings')
+    expect([...part()!.querySelectorAll('h6')].map((x) => x.textContent)).toEqual(['New cards'])
+    expect([...part()!.querySelectorAll('li')].map((li) => li.getAttribute('data-setting'))).toEqual(['from', 'add'])
+    expect(part()!.querySelector('li[data-setting="add"] .card-inbox__add-none')?.textContent).toBe('No more new cards in any folder')
   })
 })
