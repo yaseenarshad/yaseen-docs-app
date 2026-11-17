@@ -52,9 +52,10 @@ export function Review({ shown = true }: { shown?: boolean }) {
       vault={app.vaultKey}
       vaultName={vaultName(app.vault.repo)}
       unit={app.unit}
-      // The page opens AT the card (`at`), as 4C's page view reads it. YAZ-5472 Q4: Open page and Open card
-      // are a tab screen's first open, so ALWAYS a full page (Back returns to Review).
-      open={(to) => openFile(app, to.kind === 'card' ? { kind: 'card', path: to.path, id: to.id } : { kind: 'page', path: to.path, ...(to.at !== undefined && { at: to.at }) }, { from: 'tab' })}
+      // The page opens AT the card (`at`), as 4C's page view reads it. YAZ-5704: a pill in the card and ⋯'s Open page
+      // and Open card are opens from INSIDE a card: on "explore" an Explore panel over Review (closed, the same card and
+      // step), as the Mac's Inbox opens Explore's layer (YAZ-5145); else the full page (Back returns to Review).
+      open={(to) => openFile(app, to.kind === 'card' ? { kind: 'card', path: to.path, id: to.id } : { kind: 'page', path: to.path, ...(to.at !== undefined && { at: to.at }) }, { from: 'inside' })}
     />
   )
 }

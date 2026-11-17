@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
 import { useReaderAhead } from '../explore/openReady'
+import { sheetStack, subscribeSheets } from '../explore/sheets'
 import { repoRemovedHelp, syncHelp } from '../app/help'
 import { topRoute, type Route, type Tab } from '../app/nav'
 import { FirstDownload } from './FirstDownload'
@@ -36,6 +37,7 @@ const TAB_SCREENS: Record<Exclude<Tab, 'review'>, () => React.JSX.Element> = { f
  * place of the shell's tree, drawn through a portal into a box of its own (`host`); the Review tab puts that box on
  * the screen, any other screen takes it off. Off the screen the box is out of the document (no hidden text, no hidden
  * buttons), the session, the shown side and Undo stay, and `shown` is false (the answer timer and the Wake Lock rest).
+ * An Explore panel over Review (YAZ-5704: a link in the card) leaves the box on the screen, under it, with `shown` false too.
  */
 function ReviewSlot({ host }: { host: HTMLElement }) {
   const place = useRef<HTMLDivElement>(null)
@@ -76,10 +78,13 @@ export function Shell() {
     document.addEventListener('focusout', home)
     return () => document.removeEventListener('focusout', home)
   }, [route])
-  const reviewShown = route === null && app.nav.tab === 'review'
+  // YAZ-5704: a panel over Review (a link in its card) rests it as a page does: no answer time, no Wake Lock.
+  const panels = useSyncExternalStore(subscribeSheets, sheetStack).length
+  const reviewOnTab = route === null && app.nav.tab === 'review'
+  const reviewShown = reviewOnTab && panels === 0
   // The kept Review, always the SECOND child of what the shell returns once the tabs are ready, so it never remounts.
   // Only while the open vault has Review on; another vault's Review is not kept.
-  const kept = tabsReady && app.tabs.review && (reviewKept || reviewShown) ? createPortal(<Review shown={reviewShown} />, reviewHost) : null
+  const kept = tabsReady && app.tabs.review && (reviewKept || reviewOnTab) ? createPortal(<Review shown={reviewShown} />, reviewHost) : null
 
   if (app.phase === 'loading') return <div className="app" aria-busy="true" />
 

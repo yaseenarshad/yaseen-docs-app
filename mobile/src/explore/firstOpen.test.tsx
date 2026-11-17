@@ -18,7 +18,7 @@ import { closeAll, sheetStack } from './sheets'
  *  - a link or a row tapped INSIDE that page (a link, a folder page's rows) opens an Explore panel when the vault says
  *    explore; a link in the panel opens another; Back closes the panel;
  *  - with "open" (no link-click file), everything opens full screen.
- * Review's "Open page" and "Open card" are in `review/tab.test.tsx`.
+ * Review's links and its "Open page" and "Open card" open from inside a card (YAZ-5704): `review/reviewLinks5704.test.tsx`.
  */
 let h: Harness | null = null
 beforeEach(() => {
