@@ -6722,6 +6722,33 @@ describe('focus tab (YAZ-2619)', () => {
       expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Projects/Alpha`), body(el).scrollTop]).toEqual(['true', 'false', 40])
     })
 
+    it('YAZ-5749: the sidebar shown again puts the scroll back once the tree has drawn its rows — a browser clamps a scroll written before', async () => {
+      // A browser clamps `scrollTop` to the content (jsdom does not): here each drawn row is 20 px of it.
+      const real = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!
+      const held = new WeakMap<Element, number>()
+      Object.defineProperty(Element.prototype, 'scrollTop', {
+        configurable: true,
+        get(this: Element) {
+          return held.get(this) ?? 0
+        },
+        set(this: Element, to: number) {
+          held.set(this, Math.max(0, Math.min(to, this.querySelectorAll('.tree__row').length * 20)))
+        },
+      })
+      try {
+        const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5749-A', settings: PER_TAB }, { focus: ['/Projects'] })
+        await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+        body(el).scrollTop = 40
+        expect(body(el).scrollTop).toBe(40)
+        await act(async () => root?.render(<></>))
+        // Shown again: the first render has no rows, the tree lands after its read.
+        await rerender({ activeTab: 'yaz5749-A', settings: PER_TAB })
+        expect([isOpen(el, `${v}/Projects`), body(el).scrollTop]).toEqual(['true', 40])
+      } finally {
+        Object.defineProperty(Element.prototype, 'scrollTop', real)
+      }
+    })
+
     it('"One place for the window" (the default): a tab switch changes nothing, and the open folders go to the store as before', async () => {
       const setExpanded = vi.spyOn(storage, 'setExpanded')
       const { el, v, props, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-C' }, { focus: ['/Projects'] })

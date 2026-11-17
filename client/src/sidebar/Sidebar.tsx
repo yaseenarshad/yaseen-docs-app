@@ -1259,8 +1259,10 @@ export function Sidebar({
     const place = to === null ? undefined : readPlace(to)
     if (place !== undefined) putBack(place, from !== undefined)
   }, [perTab, activeTab])
+  // Only once every vault's tree has landed (YAZ-5749): a mount reads its trees again, and a scroll written over no rows
+  // is clamped to 0. The commit that lands them draws the rows, so this writes once, then holds nothing.
   useLayoutEffect(() => {
-    if (placeScroll.current === null || bodyRef.current === null) return
+    if (placeScroll.current === null || !loaded || bodyRef.current === null) return
     bodyRef.current.scrollTop = placeScroll.current
     placeScroll.current = null
   })
