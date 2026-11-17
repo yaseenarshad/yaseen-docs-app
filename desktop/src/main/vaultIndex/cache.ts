@@ -25,9 +25,10 @@ import { atomicWrite } from '../fs/fsUtils'
  */
 /**
  * 20 (YAZ-5512 S1): an empty block (`---\n---`) ends at its own second fence, not at a later `---` line. 21 (YAZ-5512
- * C1): a page that starts with a BOM has its block read (its properties were body text).
+ * C1): a page that starts with a BOM has its block read (its properties were body text). 22 (YAZ-5673): a card line's
+ * review time without seconds or milliseconds, or with an offset, is read (those cards were cached as New).
  */
-export const CACHE_VERSION = 21
+export const CACHE_VERSION = 22
 /** Trailing debounce per root; bursts (a big paste, a sync tool landing) coalesce into one write. */
 const PERSIST_DEBOUNCE_MS = 5000
 /**
