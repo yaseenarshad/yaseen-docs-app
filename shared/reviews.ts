@@ -1,4 +1,4 @@
-import { CARD_TITLE_AT, type CardTitleAt } from './cardLine'
+import { CARD_TITLE_AT, type CardTitleAt } from './cardTitleAt'
 import { isRecord } from './guards'
 
 /**

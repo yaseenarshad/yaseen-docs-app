@@ -7,7 +7,7 @@
  * Unarchive card does not ask: it only brings a card back. Put at top of Inbox and Fix later do not ask: each is taken
  * back on the same row (and by Undo in the Inbox).
  */
-import type { CardTitleChoice } from './cardLine'
+import type { CardTitleChoice } from './cardTitleAt'
 import { cardTitleChoiceLabel } from './cardTitleShows'
 
 export interface CardAsk {

@@ -2,10 +2,10 @@
  * An ask in place (YAZ-5690 round 3, Yaseen: "too easy to click"; the same shape as YAZ-5697's card ⋯ row ask): a short
  * question, then Cancel (first, with the focus: a stray Enter or a second click on the same spot runs nothing) and the
  * answer, in the confirm sheet's buttons (`confirm__text`, `confirm__btn`). Esc is Cancel, and only Cancel: the key
- * stops here, so the menu around it stays open. The focus leaving it (a click elsewhere) is Cancel too.
+ * stops here, so the menu around it stays open (`escape="menu"`: the menu's own Esc closes it, YAZ-5697). The focus leaving it (a click elsewhere) is Cancel too.
  *
  * ONE piece for every in-place ask: the Review cards menu's and the phone sheet's "Add today" (`AddMoreField`), and the
- * sidebar menu's row ask (YAZ-5697) can take it as its body. `buttonRole` lets a menu keep its `menuitem` roles.
+ * menus' row ask (YAZ-5697, `sidebar/RowAsk.tsx`, the card ⋯ menu). `buttonRole` lets a menu keep its `menuitem` roles.
  */
 import { useLayoutEffect, useRef } from 'react'
 
@@ -19,9 +19,11 @@ export interface AskInPlaceProps {
   className?: string
   buttonRole?: 'menuitem'
   tour?: string
+  /** Esc: Cancel here (the default), or left to the menu around it, which closes and so runs nothing (YAZ-5697's row ask). */
+  escape?: 'cancel' | 'menu'
 }
 
-export function AskInPlace({ question, yes, danger = false, onYes, onNo, className, buttonRole, tour }: AskInPlaceProps) {
+export function AskInPlace({ question, yes, danger = false, onYes, onNo, className, buttonRole, tour, escape = 'cancel' }: AskInPlaceProps) {
   const cancel = useRef<HTMLButtonElement>(null)
   useLayoutEffect(() => cancel.current?.focus({ preventScroll: true }), [])
   return (
@@ -31,9 +33,9 @@ export function AskInPlace({ question, yes, danger = false, onYes, onNo, classNa
       aria-label={question}
       data-tour={tour}
       onKeyDown={(e) => {
-        e.stopPropagation()
-        if (e.key !== 'Escape') return
+        if (e.key !== 'Escape' || escape === 'menu') return
         e.preventDefault()
+        e.stopPropagation()
         onNo()
       }}
       onBlur={(e) => {
