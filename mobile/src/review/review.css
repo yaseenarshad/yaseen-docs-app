@@ -80,8 +80,8 @@
   font-size: 14px;
 }
 
-/* YAZ-5679: the "Added card to reviews" note sits above the row of controls. */
-.review > .learned-note {
+/* YAZ-5679: the "Added card to reviews" toast sits above the row of controls. */
+.review > .learned-toast {
   bottom: calc(var(--tap) + 28px);
 }
 

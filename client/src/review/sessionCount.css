@@ -64,8 +64,8 @@
   }
 }
 
-/* "Added card to reviews · Undo" (YAZ-5679, Mochi's note): small, bottom right, about 3 s. */
-.learned-note {
+/* "Added card to reviews · Undo" (YAZ-5679, Mochi's toast): small, bottom right, about 3 s. */
+.learned-toast {
   position: absolute;
   right: 16px;
   bottom: 16px;
@@ -81,12 +81,12 @@
   color: var(--fg);
   font-size: 13px;
   white-space: nowrap;
-  animation: learned-note-in 160ms ease-out both;
+  animation: learned-toast-in 160ms ease-out both;
 }
-.learned-note__sep {
+.learned-toast__sep {
   color: var(--fg-muted);
 }
-.learned-note__undo {
+.learned-toast__undo {
   padding: 0;
   border: 0;
   background: none;
@@ -94,14 +94,14 @@
   font: inherit;
   cursor: pointer;
 }
-@keyframes learned-note-in {
+@keyframes learned-toast-in {
   from {
     opacity: 0;
     transform: translateY(4px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .learned-note {
+  .learned-toast {
     animation: none;
   }
 }

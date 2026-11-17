@@ -166,7 +166,7 @@ export interface CardReviewSession {
   misses: number
   /**
    * The last thing done was a Remembered that learned a new card (YAZ-5679, Mochi's "Added card to reviews · Undo"):
-   * one key per such answer, so the note shows for it; Undo (`undo`) takes that answer back. Null otherwise.
+   * one key per such answer, so the toast shows for it; Undo (`undo`) takes that answer back. Null otherwise.
    */
   learned: string | null
   /** Today's review work across the vault, from the index (YAZ-5033): the top row's and the done screen's "Today: …". */

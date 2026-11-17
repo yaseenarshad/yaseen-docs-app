@@ -35,7 +35,7 @@ import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import { DoneScreen, type DoneLook } from '@client/review/DoneScreen'
 import { SessionBar, SessionCount } from '@client/review/SessionCount'
-import { LearnedNote } from '@client/review/LearnedNote'
+import { LearnedToast } from '@client/review/LearnedToast'
 import { CardActions } from '../cardMenu/lazy'
 import { overlayCount } from '../app/browserHistory'
 import { reviewKey } from './keys'
@@ -620,8 +620,8 @@ function SessionScreen({
     <div className="review review--mochi" onClickCapture={onTap} onTouchStart={NO_OP}>
       {topBox !== null && shown ? createPortal(countButton, topBox) : <div className="review__top">{countButton}</div>}
       <SessionBar session={session} className="review__progress" />
-      {/* YAZ-5679: the Mac's note, "Added card to reviews · Undo". */}
-      <LearnedNote learned={session.learned} onUndo={undo} />
+      {/* YAZ-5679: the Mac's toast, "Added card to reviews · Undo". */}
+      <LearnedToast learned={session.learned} onUndo={undo} />
       {answers.lost.length > 0 && <LostAnswers answers={answers} link={link} />}
       {notice !== null && (
         <p className="review__notice" role="alert">

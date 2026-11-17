@@ -47,10 +47,10 @@ describe('YAZ-5676: the progress bar is Mochi`s exactly (YAZ-5671 finding 14)', 
     for (const sheet of [mac, phone]) expect(sheet).not.toMatch(/progress-part|review__step|data-slide|--moved|review-step-slide/)
   })
 
-  it('YAZ-5680 check 4: the Mac`s "Added card to reviews" note sits above the key row at the bottom (16 px band + the row), never over it; it stays on the finish screen, as Mochi`s (finding 12)', () => {
+  it('YAZ-5680 check 4: the Mac`s "Added card to reviews" toast sits above the key row at the bottom (16 px band + the row), never over it; it stays on the finish screen, as Mochi`s (finding 12)', () => {
     const mac = read('cardScreens.css')
-    const note = decls('.card-inbox > .learned-note', mac)
-    expect(note.position).toBe('fixed')
-    expect(parseFloat(note.bottom ?? '0')).toBeGreaterThanOrEqual(56)
+    const toast = decls('.card-inbox > .learned-toast', mac)
+    expect(toast.position).toBe('fixed')
+    expect(parseFloat(toast.bottom ?? '0')).toBeGreaterThanOrEqual(56)
   })
 })

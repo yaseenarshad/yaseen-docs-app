@@ -1425,31 +1425,31 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
   })
 })
 
-describe('YAZ-5679: "Added card to reviews · Undo" (Mochi`s note) when a new card is learned', () => {
+describe('YAZ-5679: "Added card to reviews · Undo" (Mochi`s toast) when a new card is learned', () => {
   it('shows at the bottom right for about 3 s; its Undo takes the answer back; a new learned card shows it again', () => {
     vi.useFakeTimers()
     try {
       mount(TWO_SIDES)
-      const note = () => el.querySelector('.card-inbox > .learned-note')
-      expect(note()).toBeNull()
+      const toast = () => el.querySelector('.card-inbox > .learned-toast')
+      expect(toast()).toBeNull()
       session = { ...session, learned: 's1:a' }
       render()
-      expect(note()?.textContent).toBe('Added card to reviews·Undo')
+      expect(toast()?.textContent).toBe('Added card to reviews·Undo')
       act(() => void vi.advanceTimersByTime(2900))
-      expect(note()).not.toBeNull()
+      expect(toast()).not.toBeNull()
       act(() => void vi.advanceTimersByTime(200))
-      expect(note()).toBeNull()
+      expect(toast()).toBeNull()
       session = { ...session, learned: 's1:b' }
       render()
-      act(() => note()!.querySelector<HTMLButtonElement>('.learned-note__undo')!.click())
+      act(() => toast()!.querySelector<HTMLButtonElement>('.learned-toast__undo')!.click())
       expect(review.undo).toHaveBeenCalledOnce()
-      expect(note()).toBeNull()
+      expect(toast()).toBeNull()
       // The next answer (not a learned card): gone.
       session = { ...session, learned: 's1:c' }
       render()
       session = { ...session, learned: null }
       render()
-      expect(note()).toBeNull()
+      expect(toast()).toBeNull()
     } finally {
       vi.useRealTimers()
     }

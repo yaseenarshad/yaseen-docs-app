@@ -637,9 +637,9 @@
 .card-inbox__tools:has(.card-inbox__focus[aria-pressed='true']) {
   opacity: 1;
 }
-/* YAZ-5679: the "Added card to reviews" note stays at the window's bottom right while the Inbox scrolls. YAZ-5680
+/* YAZ-5679: the "Added card to reviews" toast stays at the window's bottom right while the Inbox scrolls. YAZ-5680
    check 4: above the key row (the dock's 16 px and the row), never over it; it stays on the finish screen as Mochi's. */
-.card-inbox > .learned-note {
+.card-inbox > .learned-toast {
   position: fixed;
   bottom: 60px;
 }
