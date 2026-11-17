@@ -1258,9 +1258,9 @@ describe('YAZ-5675 (Mochi`s numbers): "done / total", the bar and every list`s c
     await act(async () => review.setFilter('due'))
     expect(review.session?.card).toMatchObject({ id: 'WIKI-32', isNew: false })
     expect(lists()).toMatchObject({ place: '1 / 2', done: 1, size: 2 })
-    // No % screen for it: it is no missed card.
+    // No % screen for it: it is no missed card. It ends Due today's one pass (YAZ-5708): "Finished reviewing.".
     await answer('WIKI-32', 'good')
-    expect(review.session?.end).toBeNull()
+    expect(review.session?.end).toMatchObject({ kind: 'done', missed: 0 })
     await act(async () => review.setFilter('all'))
     expect(lists()).toEqual({ counts: { all: 1, next: 0, due: 0, new: 1 }, place: '3 / 4', done: 3, size: 4 })
     await shown('WIKI-33')

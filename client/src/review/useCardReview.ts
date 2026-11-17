@@ -93,11 +93,12 @@ import { tourEvent } from '../course/tourBus'
  *
  * THE END OF DUE TODAY (YAZ-5043, as Mochi's two passes; Review rules, the consolidated list on YAZ-5655, rules 6–7 and
  * 20–21). Only Due today stops (`pause`): All cards is one run (below), and Up next and New cards never stop. A Forgot
- * on a card with reviews goes back to the end of the DUE part of the queue (before any new card). When the first pass
- * of the due cards is done the session STOPS: "You remembered 93% of cards." with one button, "Review missed cards 5"
+ * on a card with reviews goes back to the very end of the queue (`repeatPlace`). When the first pass of the due cards
+ * is done the session STOPS: "You remembered 93% of cards." with one button, "Review missed cards 5"
  * (no skip: you finish them that day; YAZ-5677, Mochi's words). A missed card is one with a Forgot in this session:
- * only misses come back (YAZ-5702); a learned new card's one same-day review (`fromNew`) waits after the pass and makes
- * no stop. When the missed cards are done too it stops again: "Finished reviewing missed cards." (YAZ-5678), then
+ * only misses come back (YAZ-5702). A learned new card's one same-day review (`fromNew`) is a Due today card of the
+ * pass like any other (YAZ-5708, Mochi: "Finished learning cards." · "Review cards 4" is one Due today run), before
+ * the misses; it is no first answer for the %. When the missed cards are done too it stops again: "Finished reviewing missed cards." (YAZ-5678), then
  * "Learn new cards 11" (`goOn`). The % counts each due card's FIRST answer of this session only (`dueFirsts`,
  * `sessionProgress.ts`): a card missed then got right counts as missed, a new card never counts, and a history reset
  * elsewhere changes nothing. Each stop shows once per session (`stage`): a card that becomes due later never brings
@@ -405,7 +406,7 @@ type UndoStep = AnswerStep | AddStep | ResetStep | ArchiveStep
  * A card of a session's queue; `repeat` (YAZ-5702): put back at the end by a Forgot, or by a new card's first Remembered
  * (added to today's reviews); a due card's ✓ never does.
  * `fromNew` (YAZ-5610, Yaseen's rule from Mochi): a new card past its first Remembered, back the same day as a Due today
- * card; it is no missed card (the % screen's "Review missed cards" leaves it out) and waits at the end of the session.
+ * card; it is no missed card (the % screen's "Review missed cards" leaves it out) and waits before the misses.
  * `forgot` (YAZ-5626): put back by a Forgot (✕), so it wears "Again"; the last answer decides.
  */
 type QueueCard = DueCard & { repeat?: boolean; fromNew?: boolean; forgot?: boolean }
@@ -430,20 +431,14 @@ const fitted = (s: Session): Session => {
   return { ...s, at: at === -1 ? s.queue.length : at }
 }
 /**
- * Where a Forgot's repeat goes (YAZ-5043): a new card's at the end; a due card's at the end of the DUE part of `rest`,
- * so the missed cards come before the new cards under All cards too.
+ * Where a card back after an answer goes (YAZ-5707 for All cards; YAZ-5708 for every filter, so Due today's missed
+ * cards come after its learned cards' same-day reviews): the run's own cards (a new card after ✕) after the run's last
+ * card; a same-day review after the run and the other same-day reviews; a missed card at the very end.
  */
-const repeatPlace = (rest: readonly QueueCard[], from: number, card: QueueCard, back: QueueCard, filter: CardFilter): number => {
-  if (filter === 'all') {
-    // YAZ-5707: the run's own cards (a new card after ✕) after the run's last card; a same-day review after the
-    // run and the other same-day reviews; a missed card at the very end.
-    const part = allPart(back)
-    if (part === 2) return rest.length
-    for (let i = rest.length - 1; i >= from; i--) if (allPart(rest[i]) <= part) return i + 1
-    return from
-  }
-  if (card.isNew || card.fromNew === true) return rest.length
-  for (let i = rest.length - 1; i >= from; i--) if (!rest[i].isNew) return i + 1
+const repeatPlace = (rest: readonly QueueCard[], from: number, back: QueueCard): number => {
+  const part = allPart(back)
+  if (part === 2) return rest.length
+  for (let i = rest.length - 1; i >= from; i--) if (allPart(rest[i]) <= part) return i + 1
   return from
 }
 
@@ -455,9 +450,10 @@ const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> 
   const none = { stage: s.stage, pause: null }
   if (!inPass(card, s.filter) || s.stage === 'over' || s.filter !== 'due') return none
   const due = s.queue.filter((c) => inPass(c, s.filter))
-  // The first pass is done when every due card waiting is a repeat: a missed card (only misses come back, YAZ-5702, the
-  // YAZ-5655 amendment). The stop needs a Forgot, so it never says "100%" with "Review missed cards 1").
-  if (due.some((c) => c.repeat !== true)) return none
+  // The first pass is done when every due card waiting is a missed card (only misses come back, YAZ-5702, the YAZ-5655
+  // amendment); a learned card's same-day review is a card of the pass (YAZ-5708). The stop needs a Forgot, so it never
+  // says "100%" with "Review missed cards 1").
+  if (due.some((c) => allPart(c) !== 2)) return none
   // And the % it shows must be under 100: a first answer of this session was a Forgot (spec 15).
   if (s.stage === 'first' && missedCards(s).length > 0 && s.answered.some((a) => a.first && a.rating === 'again')) return { stage: 'missed', pause: 'missed' }
   if (due.length > 0) return none
@@ -526,10 +522,10 @@ const ordered = (queue: readonly QueueCard[], from: number, s: Pick<ReviewSettin
   mixed(dueOrdered(queue, from, s.dueTodayOrder, rank), from, s.allCardsOrder)
 
 /**
- * A card of Due today's pass (YAZ-5043): its own cards (rule 7). A new card begun today (`fromNew`) waits for its
- * second ✓ after the pass. (All cards has no pass since YAZ-5707.)
+ * A card of Due today's pass (YAZ-5043): its own cards (rule 7), a new card learned today (`fromNew`) too: it is a Due
+ * today card now (YAZ-5708, Mochi's "Review cards 4"). (All cards has no pass since YAZ-5707.)
  */
-const inPass = (c: QueueCard, filter: CardFilter): boolean => c.fromNew !== true && matchesFilter(c, filter)
+const inPass = (c: QueueCard, filter: CardFilter): boolean => matchesFilter(c, filter)
 
 /** The missed cards waiting (YAZ-5043): due cards back in this session after a Forgot of this session (only misses come back, YAZ-5702). */
 const missedCards = (s: Session): QueueCard[] => {
@@ -1161,7 +1157,7 @@ export function useCardReview(
         const rest: QueueCard[] = [...s.queue.slice(0, s.at), ...after]
         const learned = card.isNew && rating !== 'again'
         const back: QueueCard = { ...card, due: chosen.due, next: false, repeat: true, forgot: rating === 'again', ...(learned ? { isNew: false, fromNew: true } : {}) }
-        const place = repeatPlace(rest, s.at, card, back, s.filter)
+        const place = repeatPlace(rest, s.at, back)
         const queue = repeat ? [...rest.slice(0, place), back, ...rest.slice(place)] : rest
         // YAZ-5432: with what the card was, so each filter's bar reads its own answers.
         const answered = written !== 'gone' ? [...s.answered, { key, rating, isNew: card.isNew, next: card.next, first }] : s.answered

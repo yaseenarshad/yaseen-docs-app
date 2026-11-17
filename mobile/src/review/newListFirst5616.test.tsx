@@ -60,7 +60,9 @@ const rest = async (): Promise<string[]> => {
 }
 
 describe('YAZ-5616: new cards begun in the New cards list come back the same day (phone)', () => {
-  it('then All cards: the due cards, "Due today is done." offers the 2 begun cards, their second ✓, Inbox complete', async () => {
+  // YAZ-5708 (Mochi: "Review cards 4" is one Due today run): the begun cards are cards of Due today's one pass; before,
+  // it stopped after DUE-2 with "Learn new cards 2".
+  it('then Review cards 4: the due cards and the 2 begun cards` second ✓ in one Due today pass, then its end', async () => {
     h = await reviewSetup(FILES)
     await pick('New cards')
     await answer('Remembered') // NEW-1's first ✓: it moves into Due today, out of this list
@@ -68,19 +70,19 @@ describe('YAZ-5616: new cards begun in the New cards list come back the same day
     // YAZ-5678 (Mochi's words): the learned cards wait under Due today; its button goes there.
     expect(card()).toBe('done: Finished learning cards.')
     await h.click('Review cards 4')
-    expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'stop: done', 'NEW-1', 'NEW-2', 'done: Inbox complete.'])
+    expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'NEW-1', 'NEW-2', 'stop: done'])
     // YAZ-5675 (Mochi): Due today counts the 2 due cards and the 2 learned cards' second ✓.
     expect(q('.review__progress')?.getAttribute('aria-valuenow')).toBe('4')
     expect(q('.review__progress')?.getAttribute('aria-valuemax')).toBe('4')
   })
 
-  it('then Due today: the begun cards are Due today cards, so its end leads on to them', async () => {
+  it('then Due today: the begun cards are Due today cards of its one pass, then its end', async () => {
     h = await reviewSetup(FILES)
     await pick('New cards')
     await answer('Remembered')
     await answer('Remembered')
     await pick('Due today')
-    // Nothing is left in any list: the vault's done screen.
-    expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'stop: done', 'NEW-1', 'NEW-2', 'done: Inbox complete.'])
+    // Nothing is left in any list after the one pass: "Finished reviewing.".
+    expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'NEW-1', 'NEW-2', 'stop: done'])
   })
 })
