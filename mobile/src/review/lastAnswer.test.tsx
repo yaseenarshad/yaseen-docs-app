@@ -118,6 +118,22 @@ describe('YAZ-5500: the last answer in the hint line, right after answering', ()
     expect(hint()).toMatch(plain)
   })
 
+  it('YAZ-5710: on a finish screen the deck drawer keeps it; closed, its Undo takes the last answer back (the Mac\'s ⌘Z)', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'capitals.md': page('Capitals', cardBlock('What is the capital of Spain?\n---\n{{Madrid}}', `CAP-1, title "Capital of Spain", ${inOrder(OLD, 0)}`)) })
+    await h.click('Remembered')
+    expect(q('.review__card')).toBeNull()
+    expect(hint()).toMatch(/^✓ Remembered · Capital of Spain · back in \d+ days? · Undo$/)
+    await h.click(/Choose what to review/)
+    expect(q('.review__sheet')).not.toBeNull()
+    await h.click(/Choose what to review/)
+    expect(q('.review__sheet')).toBeNull()
+    expect(hint()).toMatch(/^✓ Remembered · Capital of Spain · back in \d+ days? · Undo$/)
+    await h.click('Undo')
+    expect(h.head()).toContain('CAP-1')
+    expect(q('.review__last-mark')).toBeNull()
+    expect(h.answers.waiting()).toHaveLength(0)
+  })
+
   it('opening ⋯ keeps it; its Undo takes the answer back, and the line with it', async () => {
     h = await reviewSetup(FILES)
     await h.click('Forgot')

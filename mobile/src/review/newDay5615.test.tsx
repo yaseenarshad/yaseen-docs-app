@@ -3,7 +3,7 @@
  * YAZ-5615 (checker c, against the YAZ-5611 rules) on the phone: review dates and a new day. The real Review screen
  * on the real engine and answer list (`reviewSetup`). Spec 21: the day is the phone's local calendar day from
  * midnight. A phone app in the background runs no timer: when it comes back after midnight, the new day shows (its
- * due cards, "Today: …" back to none; YAZ-5684 counts as Mochi). The review the phone writes gives the wait the shared schedule shows (D13).
+ * due cards, "Today: …" back to none; YAZ-5710: "Today: N cards"). The review the phone writes gives the wait the shared schedule shows (D13).
  * Made-up data only.
  */
 import { act } from 'react'
@@ -41,13 +41,13 @@ describe('YAZ-5615: the phone comes back after midnight (spec 21)', () => {
     vi.setSystemTime(late + 30_000)
     await h.click('Remembered')
     expect(h.text()).toContain('Inbox complete')
-    expect(h.text()).toContain('Today: 1 learned · 0 reviews')
+    expect(h.text()).toContain('Today: 1 card')
     // The phone goes to the background; it comes back on Saturday at 8:00. Its midnight timer never ran.
     await setVisible('hidden')
     vi.setSystemTime(new Date(2026, 10, 14, 8, 0).getTime())
     await setVisible('visible')
     await h.settle()
-    expect(h.text()).not.toContain('Today: 1 learned · 0 reviews')
+    expect(h.text()).not.toContain('Today: 1 card')
     expect(h.button(/^Review cards \d+$/)?.textContent).toBe('Review cards 1')
     await h.click('Review cards 1')
     expect(h.head()).toBe('ND-1')

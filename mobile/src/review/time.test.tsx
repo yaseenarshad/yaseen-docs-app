@@ -77,11 +77,11 @@ describe('Review: the day changes at local midnight during a session (decision 9
     vi.setSystemTime(late + 30_000)
     await h.click('Remembered')
     expect(h.text()).toContain('Inbox complete')
-    expect(h.text()).toContain('Today: 1 learned · 0 reviews')
+    expect(h.text()).toContain('Today: 1 card')
     // Midnight: the review's own timer moves the day.
     await act(async () => void vi.advanceTimersByTime(60_000))
     await h.settle()
-    expect(h.text()).not.toContain('Today: 1 learned · 0 reviews')
+    expect(h.text()).not.toContain('Today: 1 card')
     const due = h.button(/^Review cards \d+$/)
     expect(due?.textContent).toBe('Review cards 1')
     await h.click('Review cards 1')

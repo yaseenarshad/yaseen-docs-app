@@ -192,14 +192,14 @@ describe('YAZ-5615: local midnight', () => {
     expect(cardNextReview(after.due!, true, local(2026, 10, 13, 8)).when).toBe('yesterday')
   })
 
-  it("today's work (a card learned: YAZ-5684) counts from 00:00 to 24:00 local; one at 23:59:59.999 is yesterday's", () => {
+  it("today's work (a card answered: YAZ-5710) counts from 00:00 to 24:00 local; one at 23:59:59.999 is yesterday's", () => {
     const page = (...reviews: CardReview[]) => ({ cards: [{ id: 'A-1', reviews, off: false, next: false } as never] })
     const lastSecond = at(tonight - 1, 'good')
     const firstSecond = at(tonight, 'good')
-    expect(reviewedToday([page(lastSecond)], tonight - 1).learned).toBe(1)
-    expect(reviewedToday([page(lastSecond)], tonight).learned).toBe(0)
-    expect(reviewedToday([page(firstSecond)], tonight).learned).toBe(1)
-    expect(reviewedToday([page(firstSecond)], tonight - 1).learned).toBe(0)
+    expect(reviewedToday([page(lastSecond)], tonight - 1).cards).toBe(1)
+    expect(reviewedToday([page(lastSecond)], tonight).cards).toBe(0)
+    expect(reviewedToday([page(firstSecond)], tonight).cards).toBe(1)
+    expect(reviewedToday([page(firstSecond)], tonight - 1).cards).toBe(0)
   })
 
   it('the new-card limit starts again at midnight: cards begun at 23:50 use up tonight, not tomorrow', () => {
@@ -220,8 +220,8 @@ describe("YAZ-5615: the day start — Review's day starts at midnight (the table
     const early = local(2026, 10, 12, 4, 30)
     const content = `\`\`\`card\nQ {{a}}\n\`\`\`\n<!-- card: NEW-1, ${cardTime(early)} good -->\n\n\`\`\`card\nQ {{b}}\n\`\`\`\n<!-- card: NEW-2 -->`
     const records = [{ path: '/v/P.md', folder: '', cards: cardRecords(content) }]
-    expect(reviewedToday(records, NOW)).toMatchObject({ learned: 1, reviews: 0 })
-    expect(reviewedToday(records, local(2026, 10, 11, 23)).learned).toBe(0)
+    expect(reviewedToday(records, NOW).cards).toBe(1)
+    expect(reviewedToday(records, local(2026, 10, 11, 23)).cards).toBe(0)
     // One new card a day: NEW-1, begun at 04:30, is today's; NEW-2 waits for tomorrow.
     const plan = cardPlan(records, { ...S, newPerDay: 1 }, NOW)
     expect(plan.queue.map((c) => c.id)).toEqual(['NEW-1'])
@@ -271,10 +271,10 @@ describe('YAZ-5615: time zones', () => {
       const content = `\`\`\`card\nQ {{a}}\n\`\`\`\n<!-- card: NEW-1, ${cardTime(late)} good -->\n\n\`\`\`card\nQ {{b}}\n\`\`\`\n<!-- card: NEW-2 -->`
       const records = [{ path: '/v/P.md', folder: '', cards: cardRecords(content) }]
       const now = local(2026, 10, 12, 23, 45)
-      expect(reviewedToday(records, now).learned).toBe(1)
+      expect(reviewedToday(records, now).cards).toBe(1)
       expect(cardPlan(records, { ...S, newPerDay: 1 }, now).queue.map((c) => c.id)).toEqual(['NEW-1'])
       // The next morning in Denver it is yesterday's.
-      expect(reviewedToday(records, local(2026, 10, 13, 8)).learned).toBe(0)
+      expect(reviewedToday(records, local(2026, 10, 13, 8)).cards).toBe(0)
       expect(cardPlan(records, { ...S, newPerDay: 1 }, local(2026, 10, 13, 8)).queue.map((c) => c.id)).toEqual(['NEW-1', 'NEW-2'])
     })
   })
@@ -295,9 +295,9 @@ describe('YAZ-5615: time zones', () => {
         expect(isCardDue(end - 1, noon)).toBe(true)
         expect(isCardDue(end, noon)).toBe(false)
         const page = (ms: number) => ({ cards: [{ id: 'A-1', reviews: [at(ms, 'good')], off: false, next: false } as never] })
-        expect(reviewedToday([page(start)], noon).learned).toBe(1)
-        expect(reviewedToday([page(end - 1)], noon).learned).toBe(1)
-        expect(reviewedToday([page(end)], noon).learned).toBe(0)
+        expect(reviewedToday([page(start)], noon).cards).toBe(1)
+        expect(reviewedToday([page(end - 1)], noon).cards).toBe(1)
+        expect(reviewedToday([page(end)], noon).cards).toBe(0)
         // A card due at 08:00 the next morning is "tomorrow"; one due at 08:00 the day before is "yesterday", "1 day ago".
         expect(cardNextReview(local(y, m, d + 1, 8), false, noon).when).toBe('tomorrow')
         expect(cardNextReview(local(y, m, d - 1, 8), false, noon).when).toBe('yesterday')

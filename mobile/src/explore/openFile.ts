@@ -18,9 +18,10 @@ import { isSheetRoute, openSheet } from './sheets'
  *    vault (`.yaseendocs/link-click.json`, the Mac's "Clicking a link"): `"explore"` opens an Explore panel
  *    over where you are (`openSheet`; Back closes the panel); `"open"`, or no file, opens it full screen (`go`). That is
  *    every link of the reader through its own door (`page/openLink.ts`: a link, a pill, "Linked from", "Embedded
- *    from"), a folder page's rows (`FolderBody.tsx`, `FolderTable.tsx`, `FolderCards.tsx`), and Review's card
- *    (`Review.tsx`, YAZ-5704: a pill in the card, ⋯'s "Open page" and "Open card"; the panel opens over Review, which
- *    rests under it).
+ *    from") and a folder page's rows (`FolderBody.tsx`, `FolderTable.tsx`, `FolderCards.tsx`).
+ *  - Review's card (`Review.tsx`, YAZ-5704, YAZ-5710: a pill in the card, ⋯'s "Open page" and "Open card") ALWAYS
+ *    opens an Explore panel over Review (`click: 'explore'`), whatever the file says, as the Mac's Inbox; Review rests
+ *    under it. The panel's links open more panels; its ⋯ "Open full page" opens a page whose links follow the file.
  * A screen that is not a file (Settings, a friend) always opens full screen.
  */
 

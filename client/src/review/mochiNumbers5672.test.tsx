@@ -11,7 +11,7 @@ import { answerLabel, answerRatings, cardHistory, cardPlan, isCardDue, reviewedT
 import { DEFAULT_REVIEW_SETTINGS, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
-import { todayCards } from './reviewTime'
+import { todayDone } from './reviewTime'
 import { memoryReviewHost, type MemoryReviewHost } from './memoryReviewHost'
 
 // Due today In order: these tests read the plan's order (YAZ-5707's Shuffle has its own tests below).
@@ -228,11 +228,11 @@ describe('YAZ-5681: the ✕ and the red follow the open filter (differs from Moc
 })
 
 describe('YAZ-5680 check 3: today`s line follows the answers at once, also before the index has the write (the Mac`s index lags)', () => {
-  it('two answers with no index update: 2 reviews; ⌘Z with no index update: back to 1; the index catching up changes nothing', async () => {
+  it('two answers with no index update: 2 cards; ⌘Z with no index update: back to 1; the index catching up changes nothing', async () => {
     dueCards(3)
     await mount()
-    const today = () => [review.session!.today.learned, review.session!.today.reviews]
-    expect(today()).toEqual([0, 0])
+    const today = () => review.session!.today.cards
+    expect(today()).toBe(0)
     // No reindex after each answer: the index has not caught up yet.
     const raw = async (r: CardRating) => {
       await shown(review.session!.card!.id)
@@ -242,16 +242,16 @@ describe('YAZ-5680 check 3: today`s line follows the answers at once, also befor
     }
     await raw('good')
     await raw('again')
-    expect(today()).toEqual([0, 2])
+    expect(today()).toBe(2)
     await act(async () => void (await review.undo()))
-    expect(today()).toEqual([0, 1])
+    expect(today()).toBe(1)
     await act(async () => reindex())
-    expect(today()).toEqual([0, 1])
+    expect(today()).toBe(1)
   })
 })
 
-describe('YAZ-5684: the Today line counts like Mochi`s Dashboard (finding 13): N learned · M reviews', () => {
-  it('due A ✓, B ✕, C ✓, missed B ✓; then, in a new session, new N1 ✕, N1 ✓, N2 ✓ → "Today: 2 learned · 3 reviews"', async () => {
+describe('YAZ-5710: the one Today line counts every different card answered today, once (it was YAZ-5684`s N learned · M reviews)', () => {
+  it('due A ✓, B ✕, C ✓, missed B ✓; then, in a new session, new N1 ✕, N1 ✓, N2 ✓ → "Today: 5 cards"', async () => {
     dueCards(3)
     newCards(2)
     await mount()
@@ -261,7 +261,7 @@ describe('YAZ-5684: the Today line counts like Mochi`s Dashboard (finding 13): N
     await go('good')
     await act(async () => review.goOn())
     await go('good')
-    expect(review.session?.today).toMatchObject({ learned: 0, reviews: 3 })
+    expect(review.session?.today.cards).toBe(3)
     // Closed and opened again the same day: counted from the cards' own review lines, not this session.
     await act(async () => review.close())
     await act(async () => review.start())
@@ -269,12 +269,12 @@ describe('YAZ-5684: the Today line counts like Mochi`s Dashboard (finding 13): N
     await go('again')
     await go('good')
     await go('good')
-    expect(review.session?.today).toMatchObject({ learned: 2, reviews: 3 })
-    expect(todayCards(review.session!.today)).toBe('Today: 2 learned · 3 reviews')
-    // The learned cards' second ✓ later today adds nothing (they were not due cards this morning).
+    expect(review.session?.today.cards).toBe(5)
+    expect(todayDone({ ...review.session!.today, seconds: 0 })).toBe('Today: 5 cards')
+    // The learned cards' second ✓ later today adds nothing: each card counts once.
     await act(async () => review.setFilter('due'))
     while (review.session?.card) await go('good')
-    expect(review.session?.today).toMatchObject({ learned: 2, reviews: 3 })
+    expect(review.session?.today.cards).toBe(5)
   })
 })
 

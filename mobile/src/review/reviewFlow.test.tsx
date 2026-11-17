@@ -55,10 +55,8 @@ async function phoneDriver(vault: FlowVault): Promise<FlowDriver> {
       const box = q('.review__card')
       const card = box === null ? null : { id: (q('.review__id')?.textContent ?? '').trim(), isNew: q('.review__chip[data-new]') !== null, again: q('.review__again') !== null }
       const shared = readShared(h!.host, DONE_LOOK, box === null ? q('.review__done') : null)
-      // The sheet's counts: what is left in each list (Up next only while some card is marked). Not on a finish screen:
-      // the sheet puts the last answer's line away (its Undo), as any first tap does, and a finish screen has no ⋯ to
-      // undo from; the Mac checks the counts there.
-      if (box === null) return { filter, card, menu: null, ...shared }
+      // The sheet's counts: what is left in each list (Up next only while some card is marked), on a finish screen too:
+      // there the sheet keeps the last answer's line and its Undo (YAZ-5710).
       await openSheet()
       const menu: Record<CardFilter, number> = { all: 0, next: 0, due: 0, new: 0 }
       for (const row of h!.host.querySelectorAll('.review__sheet-row')) {

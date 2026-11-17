@@ -69,7 +69,7 @@ import './review.css'
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
  *  - Done: the Mac's own finish screens (`DoneScreen`, YAZ-5665): "Inbox complete." with its 🎉, ✓ and confetti, the
  *    end of Due today (its ring, "Review missed cards 5", "Learn new cards 11" and its "from All folders ›", the sheet's
- *    folder page), "Add more for today" when cards wait, and last "Today: 2 learned · 25 reviews · 12 min", the time always.
+ *    folder page), "Add more for today" when cards wait, and last "Today: 21 cards · 12 min" (the sheet's words), the time always.
  *  - The amber line (round 12, item 9): an answer whose card is gone, with Discard.
  *  - The screen stays on while a card shows (round 10, addition 4). The answer timer stops in the background
  *    (addition 5: the Mac's `useAnswerTimer` pauses on `visibilitychange`).
@@ -429,6 +429,7 @@ function SessionScreen({
   const [line, setLine] = useState<Line | null>(null)
   // The answer's "✓ Remembered · … · Undo" stays until the first thing done on the next card (a tap that
   // shows a part, ← or →, the deck drawer); then the hint line is the plain hint again. No timer. Undo stays in ⋯.
+  // On a finish screen (no next card) it stays, the deck drawer opened or not (YAZ-5710).
   const [putAway, setPutAway] = useState<Line | null>(null)
   const firstAction = () => void (line?.kind === 'answer' && putAway !== line && setPutAway(line))
   const ratings = answerRatings(review.settings)
@@ -621,7 +622,9 @@ function SessionScreen({
         aria-expanded={menu === 'filter'}
         aria-label={`${filterLabel(filter)}. Choose what to review`}
         onClick={() => {
-          if (menu !== 'filter') firstAction()
+          // A first action on a CARD puts the answer's line away. A finish screen has no card and no ⋯: the line, and
+          // its Undo, stay under the sheet (YAZ-5710, as the Mac's ⌘Z).
+          if (menu !== 'filter' && card !== null) firstAction()
           setMenu(menu === 'filter' ? null : 'filter')
         }}
       >

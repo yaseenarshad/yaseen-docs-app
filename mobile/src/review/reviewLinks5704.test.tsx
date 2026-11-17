@@ -10,10 +10,10 @@ import { BRANCH, REPO, VAULT } from '../sync/testing'
 import { NOW, cardBlock, cardFile, page } from './testing'
 
 /**
- * YAZ-5704: a link in a Review card (a page pill, a card pill) and ⋯ › Open page / Open card follow the vault's
- * "Clicking a link": on "explore" they open an Explore panel OVER Review (as the Mac's Inbox opens Explore's layer,
+ * YAZ-5704, YAZ-5710: a link in a Review card (a page pill, a card pill) and ⋯ › Open page / Open card ALWAYS open an
+ * Explore panel OVER Review, whatever the vault's "Clicking a link" says (as the Mac's Inbox opens Explore's layer,
  * YAZ-5145); closing it comes back to the same card and step, and the answer timer counts no time while it is open.
- * On "open" (or no file) they open the full page, as before. Made-up vault only.
+ * Outside Review (a page opened full-size) the setting works as before. Made-up vault only.
  */
 let h: Harness
 beforeEach(() => {
@@ -149,16 +149,44 @@ describe('YAZ-5704: with the vault on "explore", Review opens an Explore panel o
   })
 })
 
-describe('YAZ-5704: with the vault on "open", Review\'s links open the full page, as the setting says', () => {
-  it('a page pill: the full page, no panel; Back comes back to the card', async () => {
+describe('YAZ-5710: in Review the panel opens whatever the vault\'s "Clicking a link" says (as the Mac); outside Review it follows the setting', () => {
+  it.each([['"open"', { ...BASE, '.yaseendocs/link-click.json': '{"click":"open"}' }], ['no file', BASE]] as const)('vault on %s: a page pill, ⋯ › Open page and a card pill open a panel over Review, no Back', async (_, files) => {
+    await app(files, 'open')
+    await seen()
+    const before = state()
+    await tap(pill(/Trip plan/))
+    await until(() => sheets().length === 1 && sheets()[0].textContent?.includes('Take the train') === true)
+    expect(sheetStack().map((s) => s.route)).toEqual([{ kind: 'page', path: 'Trip plan.md' }])
+    expect(h.button('Back')).toBeNull()
+    await close()
+    expect(state()).toEqual(before)
+    await h.click('More card actions')
+    await h.click('Open page')
+    await until(() => sheets().length === 1 && sheets()[0].textContent?.includes('Madrid') === true)
+    expect(sheetStack().map((s) => s.route)).toEqual([{ kind: 'page', path: 'spanish.md', at: 'TB-1' }])
+    await close()
+    await tap(pill(/Speed of light|TB-2/))
+    await until(() => sheets().length === 1 && sheets()[0].textContent?.includes('How fast?') === true)
+    expect(sheetStack().map((s) => s.route)).toEqual([{ kind: 'card', path: 'cards/light.md', id: 'TB-2' }])
+    expect(h.button('Back')).toBeNull()
+    await close()
+    expect(state()).toEqual(before)
+  })
+
+  it('vault on "open": the panel\'s Open full page, then a link on that page opens the full page, as the setting says', async () => {
     await app(BASE, 'open')
     await seen()
     await tap(pill(/Trip plan/))
-    await until(() => h.text().includes('Take the train'))
+    await until(() => sheets().length === 1 && sheets()[0].textContent?.includes('Take the train') === true)
+    await act(async () => sheets()[0].querySelector<HTMLButtonElement>('.explore-sheet__more')!.click())
+    const full = [...document.querySelectorAll<HTMLElement>('.explore-sheet [role="menuitem"]')].find((b) => b.textContent === 'Open full page')!
+    await act(async () => full.click())
+    await until(() => sheets().length === 0 && h.button('Back') !== null)
+    expect(h.text()).toContain('Take the train')
+    const link = [...h.host.querySelectorAll<HTMLElement>('.reader__body a, .reader__body [data-open]')].find((a) => /Spanish words/.test(a.textContent ?? ''))
+    await act(async () => link!.click())
+    await until(() => h.text().includes('Madrid'))
     expect(sheetStack()).toEqual([])
-    expect(h.button('Back')).not.toBeNull()
-    await h.click('Back')
-    await until(() => h.text().includes('TB-1'))
-    expect(h.text()).toContain('TB-1')
+    expect(h.text()).toContain('Madrid')
   })
 })

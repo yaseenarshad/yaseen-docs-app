@@ -16,19 +16,10 @@ export function reviewDuration(seconds: number | undefined): string {
 export const todayDuration = (seconds: number): string => (seconds < 60 ? `${seconds} s` : `${Math.round(seconds / 60)} min`)
 
 /**
- * "Today: 2 learned · 3 reviews" (YAZ-5684, as Mochi's Dashboard, which always shows both): new cards that got their
- * first ✓ today, and the first answer today on each due card (`reviewedToday`); empty with neither. The time, "9 min"
- * (`todayDuration`), is its own part after it on the finish screens (`todayDone`).
- */
-export function todayCards(today: ReviewedToday): string {
-  if (today.learned === 0 && today.reviews === 0) return ''
-  return `Today: ${today.learned} learned · ${today.reviews} review${today.reviews === 1 ? '' : 's'}`
-}
-
-/**
- * The cards menu's foot (YAZ-5690, Yaseen: "I do agree with you that we can do today twenty one cards"): "Today: 21
- * cards", every different card answered today, new and due; no reviews and no time (the time is in the top row's
- * View panel, YAZ-5689). Empty with none. The phone's sheet says the same, its time after it (it has no View panel).
+ * THE ONE TODAY LINE (YAZ-5690, YAZ-5710, Yaseen: "lets go with ur rec"): "Today: 21 cards", every different card
+ * answered today, new and due. The cards menu's foot (the Mac: no reviews and no time, the time is in the top row's
+ * View panel, YAZ-5689; the phone's sheet: its time after it, it has no View panel) and every finish screen
+ * (`todayDone`). Empty with none.
  */
 export function todayStudied(today: ReviewedToday): string {
   if (today.cards === 0) return ''
@@ -36,11 +27,11 @@ export function todayStudied(today: ReviewedToday): string {
 }
 
 /**
- * A finish screen's "Today: 2 learned · 31 reviews · 12 min" (YAZ-5665, Yaseen: "on the completion screen can we show it?"): the
+ * A finish screen's "Today: 21 cards · 12 min" (YAZ-5665, YAZ-5710): the cards menu's words (`todayStudied`), then the
  * time always, whatever Settings › Review › Time so far says (that setting is for DURING the review). No seconds today
- * (only old reviews): the counts alone. Empty with nothing today.
+ * (only old reviews): the cards alone. Empty with nothing today.
  */
 export function todayDone(today: ReviewedToday): string {
-  const cards = todayCards(today)
+  const cards = todayStudied(today)
   return cards === '' || today.seconds === 0 ? cards : `${cards} · ${todayDuration(today.seconds)}`
 }

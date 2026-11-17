@@ -74,8 +74,8 @@
  *  - HOW LONG EACH ANSWER TOOK (YAZ-5033, `answerTimer.ts`): the timer starts when a card shows (again when ⌘Z shows
  *    it again), pauses while the Inbox is not in front and over any stretch of "Pause the timer after" with no key or
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The cards menu's last line
- *    says "Today: 21 cards" (YAZ-5690, `session.today`, from the index); the done screen says "Today: 2 learned · 31
- *    reviews · 9 min".
+ *    says "Today: 21 cards" (YAZ-5690, `session.today`, from the index); the done screen says the same words with the
+ *    time, "Today: 21 cards · 9 min" (YAZ-5710, one Today line).
  *    TIME SO FAR (YAZ-5130; YAZ-5689 in the top row's View panel, `ReviewViewButton`): behind a "Show" by default, or
  *    shown, or off, by Settings › Review › Time so far, DURING the review: every finish screen shows the time
  *    (YAZ-5665, `DoneScreen`). The timer and the saved seconds do not change with it.
