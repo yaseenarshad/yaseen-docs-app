@@ -29,7 +29,9 @@ describe('the Review head: the title off the card line', () => {
     h = await reviewSetup(vault(cardBlock('Which river?\n---\nThe {{Nile}}', 'TI-1, title "Longest river"')))
     expect(h.head()).toBe('Longest river · TI-1')
     // YAZ-5415: the page is in the crumb, on the chip's line inside the card. YAZ-5682: a page at the vault's top is its name alone.
-    expect(h.host.querySelector('.review__crumb')?.textContent).toBe('Geography')
+    expect(h.host.querySelector('.review__crumb')?.getAttribute('title')).toBe('Geography')
+    expect(h.host.querySelector('.review__crumb b')?.textContent).toBe('Geography')
+    expect(h.host.querySelectorAll('.review__crumb [data-fold]')).toHaveLength(1)
     expect(h.cardText()).toBe('Which river?')
     await h.tap()
     expect(h.cardText()).toBe('Which river? The _')

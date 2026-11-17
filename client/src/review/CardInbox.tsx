@@ -181,6 +181,8 @@ export interface CardInboxProps {
   onNotice: (message: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void
   /** A folder of the top row's card place (YAZ-5017 round 2): the vault's or a folder's page, in a tab. The page part opens as O does. */
   openPlace?: (path: string) => void
+  /** The breadcrumb bubble's Show in sidebar (YAZ-5713): the App's own Show in sidebar. */
+  showInSidebar?: (path: string) => void
   /** Focus mode (YAZ-5375, App's, remembered): on, the tab row hides while the Inbox shows. The bar's button, F and Esc change it. */
   focusMode?: boolean
   onFocusMode?: (on: boolean) => void
@@ -225,7 +227,7 @@ interface LastAnswer {
 // The done screen's words moved to `cardWords.ts` (YAZ-5078), so the phone's Review screen says them too.
 export { addedLine, resetLine, waitingLine } from './cardWords'
 
-export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, showInSidebar, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -479,6 +481,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         addCards={review.addCards}
         resetCards={review.resetCards}
         openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))}
+        showInSidebar={card !== null && showInSidebar !== undefined ? () => showInSidebar(card.path) : undefined}
         pick={review}
         view={<ReviewViewButton seconds={session.today.seconds} time={time} zoom={zoom} setZoom={setZoom} focusMode={focusMode} onFocusMode={onFocusMode} />}
       />

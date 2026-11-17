@@ -92,12 +92,13 @@ describe('the top row`s View icon and the breadcrumb (YAZ-5689)', () => {
     expect(dot).toMatchObject({ background: 'var(--accent)', 'border-radius': '50%' })
   })
 
-  it('the crumb: no percentage cap on the page part; folders shrink far sooner than the page`s name', () => {
-    const part = decls(cards, '.card-inbox__path-part')
+  it('the crumb: no percentage cap on the page part; YAZ-5713: the folders never shrink (they fold from the start, `usePlaceFold`), the page`s name does', () => {
     const page = decls(cards, ".card-inbox__path-part[data-kind='page']")
     expect(page['max-width']).toBeUndefined()
-    const shrink = (d: Record<string, string>) => Number((d['flex'] ?? '').split(' ')[1] ?? d['flex-shrink'])
-    expect(shrink(part)).toBeGreaterThanOrEqual(100 * shrink(page))
-    expect(shrink(page)).toBeGreaterThan(0)
+    expect(decls(cards, '.card-inbox__path-item')['flex']).toBe('none')
+    expect(decls(cards, ".card-inbox__path-item[data-kind='page']")['flex']).toBe('0 1 auto')
+    // The box is as wide as its room, not its content: the fold reads that width.
+    expect(decls(cards, '.card-inbox__path-box')['flex']).toBe('1 1 0')
+    expect(decls(cards, '.card-inbox__path')['flex']).toBe('1 1 0')
   })
 })

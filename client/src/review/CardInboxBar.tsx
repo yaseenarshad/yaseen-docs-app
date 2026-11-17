@@ -6,7 +6,9 @@
  * one card at a time, the Inbox's ONE breadcrumb (YAZ-5132, Yaseen: "we should just have the breadcrumb at the top"):
  * its folders and the page, "spanish-words › Verbs" (no vault, YAZ-5682: the Inbox is one vault's), each with the tree's own icon (`FileIcon`:
  * a folder's, a page's); a card file ends at its folder (its name is its title, the head's). Each part is a link: a
- * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
+ * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path folds from the START
+ * (YAZ-5713, `usePlaceFold`, the phone's rule): "… › History › History cards", the page always shown; a click on "…"
+ * opens the bubble with the full path and Show in sidebar (`PlaceBubble`).
  * On the right Mochi's count (YAZ-5674, `SessionCount`): a red ✕ K (the misses waiting; none at 0 and in the missed
  * pass), the open filter's icon, then "done / total" of the filter on show (YAZ-5675); then ONE quiet sliders icon,
  * "View" (YAZ-5689, `ReviewViewButton`: Time, Zoom, Focus mode behind a click). Under it Mochi's progress bar
@@ -36,7 +38,7 @@
  * No Archived row (YAZ-5319, Yaseen: "there will be too many to review that way"): a folder page's table finds archived
  * cards (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
  */
-import { Fragment, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardPlacePart, CardReviewApi, CardReviewSession } from './useCardReview'
@@ -49,6 +51,8 @@ import { kindCount, kindCountText, newRowPick, noMoreNew, pickLabel } from './in
 import { CARD_FILTERS, inboxFilters } from './cardFilters'
 import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, orderSettings, upNextSettings, useSettingsFold } from './ReviewSettingsPart'
 import { ChevronIcon, FolderIcon, PageIcon, VaultIcon } from './cardInboxIcons'
+import { foldStyle, usePlaceFold } from './placeFold'
+import { PlaceBubble } from './PlaceBubble'
 
 const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders' | 'setOrder'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }), setOrder: () => undefined }
 
@@ -61,13 +65,15 @@ interface CardInboxBarProps {
   resetCards?: (kind: AddKind) => void
   /** A click on a part of the card's place: the folder page of the vault or a folder, or the page. */
   openPlace?: (part: CardPlacePart) => void
+  /** The bubble's Show in sidebar (YAZ-5713): the card's page in the sidebar, lit (the Mac's own Show in sidebar). */
+  showInSidebar?: () => void
   /** The folder pick for new cards (YAZ-5322): the picker's rows and its save; without it the row has no "from". */
   pick?: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders' | 'setOrder'>
   /** The row's right end after the count (YAZ-5689): the one "View" icon (`ReviewViewButton`: Time, Zoom, Focus mode). */
   view?: ReactNode
 }
 
-export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, pick, view }: CardInboxBarProps) {
+export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, showInSidebar, pick, view }: CardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const picker = useNewCardsPicker(pick ?? NO_PICK, session)
@@ -126,23 +132,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             <span className="card-inbox__from-part">in {session.from.join(' / ')}</span>
           </span>
         )}
-        {session.place.length > 0 && (
-          <nav className="card-inbox__path" aria-label="Card's place" title={session.place.map((p) => p.label).join(' › ')}>
-            {session.place.map((part, i) => (
-              <Fragment key={part.path}>
-                {i > 0 && (
-                  <span className="card-inbox__path-sep" aria-hidden="true">
-                    ›
-                  </span>
-                )}
-                <button type="button" className="card-inbox__path-part" data-kind={part.kind} disabled={openPlace === undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => openPlace?.(part)}>
-                  <FileIcon path={part.path} folder={part.kind !== 'page'} />
-                  <span className="card-inbox__path-name">{part.label}</span>
-                </button>
-              </Fragment>
-            ))}
-          </nav>
-        )}
+        {session.place.length > 0 && <CardPath parts={session.place} openPlace={openPlace} showInSidebar={showInSidebar} />}
         {/* YAZ-5680 check 2: on every finish screen too, as Mochi ("Finished learning cards." with 4 / 4). */}
         {session.progress.total > 0 && (
           <span className="card-inbox__place">
@@ -237,5 +227,75 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
       </div>
       <SessionBar session={session} className="card-inbox__progress" />
     </div>
+  )
+}
+
+/**
+ * The card's place (YAZ-5132, YAZ-5682): folder › page, each a link with its icon. YAZ-5713: too long, it folds from the
+ * start into "…" (`usePlaceFold`, the phone's rule), the fewest parts that make the rest fit; the page always shows and
+ * cuts itself only alone too long. A click on "…" opens the bubble: the full path and Show in sidebar; a click outside
+ * or Escape closes it.
+ */
+function CardPath({ parts, openPlace, showInSidebar }: { parts: readonly CardPlacePart[]; openPlace?: (part: CardPlacePart) => void; showInSidebar?: () => void }) {
+  const box = useRef<HTMLElement>(null)
+  const labels = parts.map((p) => p.label)
+  const path = labels.join(' › ')
+  const folded = usePlaceFold(box, path)
+  const [open, setOpen] = useState(false)
+  useEffect(() => setOpen(false), [path])
+  useEffect(() => {
+    if (!open) return
+    const down = (e: Event) => {
+      if (e.target instanceof Element && e.target.closest('.place-bubble, .card-inbox__path-more') !== null) return
+      setOpen(false)
+    }
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', down)
+    document.addEventListener('keydown', key, true)
+    return () => {
+      document.removeEventListener('mousedown', down)
+      document.removeEventListener('keydown', key, true)
+    }
+  }, [open])
+  return (
+    <span className="card-inbox__path-box">
+      <nav ref={box} className="card-inbox__path" aria-label="Card's place" title={path}>
+        <span className="card-inbox__path-item" data-fold-more="" style={folded === 0 ? { display: 'none' } : undefined}>
+          <button type="button" className="card-inbox__path-more" aria-label={`Show the full place: ${labels.join(' / ')}`} aria-haspopup="dialog" aria-expanded={open} onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen((o) => !o)}>
+            …
+          </button>
+          <span className="card-inbox__path-sep" aria-hidden="true">
+            ›
+          </span>
+        </span>
+        {parts.map((part, i) => (
+          <span key={part.path} className="card-inbox__path-item" data-kind={part.kind} data-fold="" style={foldStyle(i, folded)}>
+            <button type="button" className="card-inbox__path-part" data-kind={part.kind} disabled={openPlace === undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => openPlace?.(part)}>
+              <FileIcon path={part.path} folder={part.kind !== 'page'} />
+              <span className="card-inbox__path-name">{part.label}</span>
+            </button>
+            {i < parts.length - 1 && (
+              <span className="card-inbox__path-sep" aria-hidden="true">
+                ›
+              </span>
+            )}
+          </span>
+        ))}
+      </nav>
+      {open && (
+        <PlaceBubble
+          parts={labels}
+          action="Show in sidebar"
+          onAction={() => {
+            setOpen(false)
+            showInSidebar?.()
+          }}
+        />
+      )}
+    </span>
   )
 }

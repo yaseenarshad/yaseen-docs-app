@@ -4,6 +4,7 @@ import { useMenuToggle } from '../app/menuToggle'
 import { choose, chosenOf, heldList, loadScope, loadingScope, type ListKind, type Scope } from './lists'
 import { ALL_TYPES, PHONE_KINDS, type PhoneKind, type PhoneType } from './searchRun'
 import { RowIcon } from './rowIcon'
+import { revealOf } from './searchState'
 import type { TreeKind } from './vaultTree'
 import type { VaultData } from './vaultData'
 
@@ -56,7 +57,11 @@ export function SearchBar({ data, kind, cards, onType, onScope }: { data: VaultD
   // The Type menu is an overlay of the app's one stack: a Back closes it, and Search stays. The app's one rule for
   // menus: the chip again, a tap outside (only that), Escape or Back closes it.
   useMenuToggle(menu, () => setMenu(false), TYPE_MENU_OWN)
-  const [on, setOn] = useState(() => chosenOf(vaultKey))
+  // Show in Search (YAZ-5714): the whole tree, so no list filter (the page may not be in it).
+  const [on, setOn] = useState(() => {
+    if (revealOf() !== null) choose(vaultKey, null)
+    return chosenOf(vaultKey)
+  })
   const types = PHONE_KINDS.filter(([value]) => cards || value !== 'cards')
   // Two types joined only while the bar keeps one line (a 375 pt phone has no room for "Pages + Cards" and the three
   // chips): measured before the paint, else the count.

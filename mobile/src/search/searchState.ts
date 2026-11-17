@@ -54,8 +54,31 @@ export function openFoldersOf(vault: string | null): Set<string> {
   return set
 }
 
-/** Forgets the box, the Type, the line and the open folders (a test starts clean). */
+/** The row the tree shows next time it draws (YAZ-5714, Show in Search): its folders open, scrolled to, glowing. */
+let revealing: string | null = null
+
+/**
+ * Show in Search (YAZ-5714, the bubble of Review's crumb): the next Search shows the whole tree (the box empty, no Type),
+ * every folder above `path` open, and the tree scrolls to its row and lights it, as the Mac's Show in sidebar. The
+ * list filter (Favorites) goes too (`SearchBar`): the page may not be in it.
+ */
+export function revealInSearch(vault: string | null, path: string): void {
+  Object.assign(held, { vault, query: '', type: [], shown: null, scroll: 0 })
+  const open = openFoldersOf(vault)
+  const parts = path.split('/')
+  for (let i = 1; i < parts.length; i++) open.add(parts.slice(0, i).join('/'))
+  revealing = path
+}
+
+/** The row to show, once: the tree takes it when its row is drawn. */
+export const revealOf = (): string | null => revealing
+export function revealDone(): void {
+  revealing = null
+}
+
+/** Forgets the box, the Type, the line, the open folders and a reveal (a test starts clean). */
 export function forgetSearch(): void {
   Object.assign(held, { vault: null, query: '', type: [], shown: null, scroll: 0, notice: null })
   opened.clear()
+  revealing = null
 }

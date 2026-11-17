@@ -7,7 +7,8 @@ import type { PhoneType } from './searchRun'
 import { useApp } from '../app/AppState'
 import type { Route } from '../app/nav'
 import type { VaultData } from './vaultData'
-import { openFoldersOf } from './searchState'
+import { openFoldersOf, revealDone, revealOf } from './searchState'
+import { SIDEBAR_REVEAL_MS } from '@client/sidebar/revealRow'
 import { ICON_KIND, RowIcon } from './rowIcon'
 import { TreeIconsContext, useTreeIcons } from './treeIcons'
 import { buildTree, visibleRows, type TreeRow } from './vaultTree'
@@ -56,14 +57,14 @@ const folderRowsFor = (data: VaultData) => {
   return rows
 }
 
-export default function SearchTree({ data, cards, shown, onMore, scope }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; scope: Scope | null }) {
+export default function SearchTree({ data, cards, shown, onMore, onReach, scope }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; onReach?: (rows: number) => void; scope: Scope | null }) {
   // A list filter on (Favorites): that list, as the Mac's tab of it draws it.
   if (scope !== null) return <ListTree data={data} cards={cards} shown={shown} onMore={onMore} scope={scope} />
-  return <FullTree data={data} cards={cards} shown={shown} onMore={onMore} />
+  return <FullTree data={data} cards={cards} shown={shown} onMore={onMore} onReach={onReach} />
 }
 
 /** The whole vault's tree. */
-function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: boolean; shown: number; onMore: () => void }) {
+function FullTree({ data, cards, shown, onMore, onReach }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; onReach?: (rows: number) => void }) {
   const app = useApp()
   // The vault's "Show IDs in the files list", as the Mac's Files tree.
   const ids = useIdsForm(data)
@@ -86,6 +87,25 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
     },
     [open],
   )
+  // Show in Search (YAZ-5714): the row drawn (more rows first when it is past "Show more"), scrolled to the screen's
+  // middle and lit for the Mac's 3 s (`SIDEBAR_REVEAL_MS`), once. After the tab's own scroll place is given back.
+  const list = useRef<HTMLUListElement>(null)
+  const reveal = revealOf()
+  const at = reveal === null ? -1 : rows.findIndex((r) => r.path === reveal)
+  useEffect(() => {
+    if (reveal === null) return
+    if (at >= shown && onReach !== undefined) return onReach(at + 1)
+    revealDone()
+    const row = [...(list.current?.querySelectorAll<HTMLElement>('.tree__row[data-path]') ?? [])].find((r) => r.dataset.path === reveal)
+    if (row === undefined) return
+    row.scrollIntoView?.({ block: 'center' })
+    row.classList.add('tree__row--revealed')
+    const timer = setTimeout(() => row.classList.remove('tree__row--revealed'), SIDEBAR_REVEAL_MS)
+    return () => {
+      clearTimeout(timer)
+      row.classList.remove('tree__row--revealed')
+    }
+  }, [reveal, at, shown, onReach])
   // The open folders stick at the top while their rows scroll under them.
   const drawn = rows.slice(0, shown)
   return (
@@ -93,13 +113,14 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
       <h2 className="section">{app.unit('Pages')}</h2>
       <TreeIconsContext.Provider value={icons}>
       <TreeLook rows={drawn} icons={icons} />
-      <ul className="tree" role="tree" aria-label={app.unit('Pages')} style={icons.style} data-icon-colors={icons.colored} onPointerDown={() => blockSelectionUntilLift()}>
+      <ul ref={list} className="tree" role="tree" aria-label={app.unit('Pages')} style={icons.style} data-icon-colors={icons.colored} onPointerDown={() => blockSelectionUntilLift()}>
         {drawn.map((row) => (
           <li key={row.path} role="treeitem" aria-expanded={row.kind === 'folder' ? row.open : undefined}>
             <button
               type="button"
               className={`tree__row tree__row--${row.kind === 'folder' ? 'dir' : 'file'}`}
               data-kind={ICON_KIND[row.kind]}
+              data-path={row.path}
               style={{ '--tree-depth': row.depth } as CSSProperties}
               aria-label={`${row.label}, ${kindWord(row.kind, app.unit('page'))}`}
               onClick={() => (row.kind === 'folder' ? toggle(row.path) : openFile(app, treeRoute(row), { from: 'tab' }))}
