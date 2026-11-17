@@ -240,10 +240,12 @@ const cappedElementCanvasSize = (
     scale = Math.sqrt(AREA_LIMIT / (width * height));
   }
 
-  // YAZ-5739: round up, so a flat line far out keeps a 1 px bitmap (floor
-  // made it 0 px, and it drew nothing)
-  width = Math.min(WIDTH_HEIGHT_LIMIT, Math.max(1, Math.ceil(width * scale)));
-  height = Math.min(WIDTH_HEIGHT_LIMIT, Math.max(1, Math.ceil(height * scale)));
+  // YAZ-5739: at least 1 px, so a flat line far out keeps a bitmap (floor
+  // made it 0 px, and it drew nothing). Round down otherwise: rounding up
+  // took a capped bitmap past AREA_LIMIT, which iOS 17 Safari draws as
+  // nothing (YAZ-5755)
+  width = Math.min(WIDTH_HEIGHT_LIMIT, Math.max(1, Math.floor(width * scale)));
+  height = Math.min(WIDTH_HEIGHT_LIMIT, Math.max(1, Math.floor(height * scale)));
 
   return { width, height, scale };
 };

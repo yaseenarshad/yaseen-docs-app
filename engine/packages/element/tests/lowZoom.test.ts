@@ -284,3 +284,52 @@ describe("YAZ-5739 polish: an arrow with only a start head gets the room of a he
     expect(Math.abs(startOnly.h - endOnly.h)).toBeLessThan(1);
   });
 });
+
+describe("YAZ-5755: a large shape's bitmap stays within the canvas area limit (iOS 17 Safari draws nothing past it)", () => {
+  const AREA_LIMIT = 16777216;
+  const before = window.devicePixelRatio;
+  afterEach(() => setPixelRatio(before));
+
+  /** The size of the bitmap that `renderElement` makes for `element` at `zoom`. */
+  const bitmapOf = (element: ExcalidrawElement, zoom: number) => {
+    const made: HTMLCanvasElement[] = [];
+    const create = document.createElement.bind(document);
+    (document as any).createElement = (tag: string, ...rest: any[]) => {
+      const el = create(tag, ...rest);
+      if (tag === "canvas") {
+        made.push(el as HTMLCanvasElement);
+      }
+      return el;
+    };
+    try {
+      draw(element, zoom);
+    } finally {
+      (document as any).createElement = create;
+    }
+    const bitmap = made.find((c) => c.width > 0 && c !== made[0])!;
+    return bitmap.width * bitmap.height;
+  };
+
+  it.each([
+    ["a box made at 1%, shown at 100%, devicePixelRatio 2", 0.01, 1, 2, 60, 40],
+    ["a 2000 × 1500 box made at 100%, shown at 100%, devicePixelRatio 3", 1, 1, 3, 2000, 1500],
+    ["a 1500 × 1000 box made at 100%, shown at 200%, devicePixelRatio 2", 1, 2, 2, 1500, 1000],
+  ])("%s", (_name, madeAt, viewZoom, dpr, w, h) => {
+    setPixelRatio(dpr);
+    const rect = {
+      ...newElement({
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: w / madeAt,
+        height: h / madeAt,
+        strokeWidth: toBoardSize(2, madeAt),
+        roughness: 0,
+        roundness: null,
+        customData: withStyleScale(undefined, madeAt),
+      }),
+      seed: 1,
+    };
+    expect(bitmapOf(rect, viewZoom)).toBeLessThanOrEqual(AREA_LIMIT);
+  });
+});
