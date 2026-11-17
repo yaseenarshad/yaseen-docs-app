@@ -324,13 +324,50 @@
   color: var(--fg);
 }
 
+/* "Add today [10] Add" (YAZ-5690, the Mac's field): a 44 pt number box (the number keypad) and a 44 pt Add. */
+.review__sheet-settings .card-inbox__add-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.review__sheet-settings .card-inbox__add-number {
+  box-sizing: border-box;
+  min-width: 56px;
+  height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.review__sheet-settings .card-inbox__add-go {
+  min-width: 64px;
+  height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+.review__sheet-settings .card-inbox__add-setting :disabled {
+  opacity: 0.45;
+}
+
 .review__sheet-pick > .review__sheet-name {
   flex: none;
   white-space: nowrap;
 }
 
 /* "New cards · Spanish": the pick, quiet, on the row; a long name gets "…". */
-.review__sheet-note-from {
+.review__sheet-row-pick {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

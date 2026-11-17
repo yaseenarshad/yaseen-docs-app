@@ -1,6 +1,7 @@
 /**
  * "Add [10] more new cards" (YAZ-5042 round 2, Yaseen: "keep it add ten cards, but we do the math behind the
- * scenes"): ONE small field for how many MORE cards today takes, in the cards menu's row and on the done screen's pill.
+ * scenes"): ONE small field for how many MORE cards today takes: the cards menu's Up next row, the done screen's pill,
+ * and the ⚙ part's "Add today [10] Add" (YAZ-5690, look `setting`, the Mac's cards menu and the phone's sheet).
  * The number starts at the Settings number (`start`, at most what waits) and is selected, so typing replaces it.
  *
  * - Enter adds the number (above what waits adds all that waits: the hook's rule); empty or 0 adds nothing.
@@ -18,8 +19,10 @@ interface AddMoreFieldProps {
   onAdd: (count: number) => void
   /** Esc: back to the count (the menu). The done screen's pill has none. */
   onCancel?: () => void
-  /** `menu`: "Add [10] more new cards", focused at once. `done`: the pill, "Add [10] new cards". */
-  look: 'menu' | 'done'
+  /** `menu`: "Add [10] more new cards", focused at once. `done`: the pill, "Add [10] new cards". `setting`: "[10] Add", not focused. */
+  look: 'menu' | 'done' | 'setting'
+  /** Nothing waits (`setting`): the field and Add are off. */
+  disabled?: boolean
   /** The done pill's end (YAZ-5322): "from [Spanish ▾]", the new cards' folder pick. */
   after?: ReactNode
 }
@@ -36,7 +39,7 @@ export const typedCount = (value: string): number | null => {
   return value.trim() !== '' && Number.isInteger(n) && n > 0 ? n : null
 }
 
-export function AddMoreField({ kind, start, onAdd, onCancel, look, after }: AddMoreFieldProps) {
+export function AddMoreField({ kind, start, onAdd, onCancel, look, after, disabled = false }: AddMoreFieldProps) {
   const [value, setValue] = useState(String(start))
   const input = useRef<HTMLInputElement>(null)
   // The done screen's pill follows a new start (another add, another day) while nobody types in it.
@@ -79,6 +82,7 @@ export function AddMoreField({ kind, start, onAdd, onCancel, look, after }: AddM
       inputMode="numeric"
       aria-label={kind === 'new' ? 'How many new cards to add' : 'How many Up next cards to add'}
       value={value}
+      disabled={disabled}
       style={{ width: `${Math.max(2, value.length) + 1}ch` }}
       onChange={(e) => {
         typed.current = true
@@ -87,10 +91,19 @@ export function AddMoreField({ kind, start, onAdd, onCancel, look, after }: AddM
       onKeyDown={onKeyDown}
       onFocus={(e) => e.target.select()}
       onBlur={() => {
-        if (look === 'done' && typedCount(value) === null) setValue(String(start))
+        if (look !== 'menu' && typedCount(value) === null) setValue(String(start))
       }}
     />
   )
+  if (look === 'setting')
+    return (
+      <span className="card-inbox__add-setting" data-kind={kind}>
+        {field}
+        <button type="button" className="card-inbox__add-go" disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={add}>
+          Add
+        </button>
+      </span>
+    )
   if (look === 'menu')
     return (
       <span className="card-inbox__add-field" data-kind={kind}>

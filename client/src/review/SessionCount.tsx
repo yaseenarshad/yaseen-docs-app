@@ -4,7 +4,9 @@
  *
  *  - `SessionCount` (YAZ-5674), the top right: a red ✕ K (the open filter's due cards back after a Forgot, YAZ-5681;
  *    hidden at 0 and in the missed pass), the open filter's icon (the menu's own: an inbox tray for All cards, a dotted circle for New
- *    cards), then "done / total". It replaces "N of M" and the top row's "Today: N cards · ⏱".
+ *    cards), then "done / total". YAZ-5689, as Mochi's (Yaseen: "make the numbers on this bigger… the 3 normal black
+ *    color"): the filter button's size, the done number in the text colour and a little bolder, "/ total" and the icon
+ *    grey, the ✕ red with its number in the text colour. It replaces "N of M" and the top row's "Today: N cards · ⏱".
  *  - `SessionBar` (YAZ-5676, YAZ-5671 finding 14, measured from Mochi's page): a 6 px track with 3 px corners; a red
  *    fill under a grey fill, both from the left edge; grey = done ÷ total, red = (done + waiting) ÷ total, so the red
  *    always sits right after the grey and travels right with it. Both widths move with Mochi's own easing; with Reduce
@@ -29,12 +31,13 @@ export function SessionCount({ session, icon }: { session: Numbers; icon: ReactN
           <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
             <path d="m3.5 3.5 9 9M12.5 3.5l-9 9" />
           </svg>
-          {misses}
+          <span className="session-count__misses-n">{misses}</span>
         </span>
       )}
       <span className="session-count__done" aria-hidden="true">
         {icon}
-        {done} / {total}
+        <span className="session-count__n">{done}</span>
+        <span className="session-count__total"> / {total}</span>
       </span>
     </span>
   )

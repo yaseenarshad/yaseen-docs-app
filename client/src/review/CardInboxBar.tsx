@@ -8,16 +8,17 @@
  * a folder's, a page's); a card file ends at its folder (its name is its title, the head's). Each part is a link: a
  * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
  * On the right Mochi's count (YAZ-5674, `SessionCount`): a red ✕ K (the misses waiting; none at 0 and in the missed
- * pass), the open filter's icon, then "done / total" of the filter on show (YAZ-5675). Under it Mochi's progress bar
- * (YAZ-5676, `SessionBar`). Today's work across the vault ("Today: 2 learned · 31 reviews · 9 min", YAZ-5033; the time hidden behind a
- * clock's hover box by default, YAZ-5130, `TodayWork`) is the cards menu's last line, as the phone's sheet has it: Mochi's
- * top row has none (Yaseen: "the today is not needed").
+ * pass), the open filter's icon, then "done / total" of the filter on show (YAZ-5675); then ONE quiet sliders icon,
+ * "View" (YAZ-5689, `ReviewViewButton`: Time, Zoom, Focus mode behind a click). Under it Mochi's progress bar
+ * (YAZ-5676, `SessionBar`). "Today: 21 cards" (YAZ-5690: every different card answered today; no reviews, no time) is
+ * the cards menu's last line, as the phone's sheet has it: Mochi's top row has none (Yaseen: "the today is not needed").
  *
  * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
  * total is? like / 5"): the Up next row reads "today / total" — "2 / 5" (New cards' count stands alone, YAZ-5434); the total is every
- * card of that kind and never changes with an add. With no limit the count stands alone, as before. A click on a count
- * while cards wait turns the row into "Add [10] more new cards" (`AddMoreField`): Enter adds that many to today
- * (10 + 12 = 22), Esc goes back; the menu stays open, so the count changes before your eyes. After an add the row
+ * card of that kind and never changes with an add. With no limit the count stands alone, as before. A click on Up
+ * next's count while cards wait turns the row into "Add [2] more Up next" (`AddMoreField`): Enter adds that many to
+ * today, Esc goes back; the menu stays open, so the count changes before your eyes. New cards' add is the ⚙ part's
+ * "Add today [10] Add" (YAZ-5690, Yaseen: "add new cards under the settings"): a click on its count picks the filter. After an add the row
  * says "22 / 48 · Reset": Reset sets today back to the Settings number, never below today's work. No pop-up: it
  * changes today only, and the line under the buttons (Undo, ⌘Z) takes back the last add or Reset.
  *
@@ -25,9 +26,9 @@
  * three even rows, "New cards  9" the same shape as the others (no second line under it). The Today line, the menu's
  * last, ends with a small ⚙ (`ReviewSettingsCog`): a click (Enter, Space) opens the settings part under it
  * (`ReviewSettingsPart`, shared with the phone's sheet): "New cards", then "From" and the folder picker's door
- * ("All folders ▾"; a click opens `NewCardsPicker` beside the menu). A click again, or closing the menu, folds it, so
+ * ("All folders ▾"; a click opens `NewCardsPicker` beside the menu), and "Add today [10] Add" (YAZ-5690). A click again, or closing the menu, folds it, so
  * it opens folded each time. While a folder is picked the New cards row says it quietly, "New cards · Spanish"
- * (`newRowNote`), and the chip "New cards: Spanish ×" sits by the filter; × goes back to All folders. The count follows
+ * (`newRowPick`), and the chip "New cards: Spanish ×" sits by the filter; × goes back to All folders. The count follows
  * the pick (`cardPlan`).
  *
  * No Archived row (YAZ-5319, Yaseen: "there will be too many to review that way"): a folder page's table finds archived
@@ -38,13 +39,11 @@ import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardPlacePart, CardReviewApi, CardReviewSession } from './useCardReview'
 import { FileIcon } from '../sidebar/FileIcon'
-import { todayCards } from './reviewTime'
-import { TodayWork } from './TodayWork'
-import type { TimeSoFar } from '@shared/reviews'
+import { todayStudied } from './reviewTime'
 import { AddMoreField } from './AddMoreField'
 import { SessionBar, SessionCount } from './SessionCount'
 import { useNewCardsPicker } from './NewCardsPicker'
-import { kindCount, kindCountText, newRowNote, pickLabel, showsFilter } from './inboxMenu'
+import { kindCount, kindCountText, newRowPick, pickLabel, showsFilter } from './inboxMenu'
 import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, useSettingsFold } from './ReviewSettingsPart'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
@@ -77,15 +76,13 @@ interface CardInboxBarProps {
   resetCards?: (kind: AddKind) => void
   /** A click on a part of the card's place: the folder page of the vault or a folder, or the page. */
   openPlace?: (part: CardPlacePart) => void
-  /** Time so far (YAZ-5130): how today's time shows, Settings › Review. */
-  time: TimeSoFar
   /** The folder pick for new cards (YAZ-5322): the picker's rows and its save; without it the row has no "from". */
   pick?: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'>
-  /** The bar's own controls at its right end, quiet until the bar is pointed at (YAZ-5372: the Inbox's zoom). */
-  tools?: ReactNode
+  /** The row's right end after the count (YAZ-5689): the one "View" icon (`ReviewViewButton`: Time, Zoom, Focus mode). */
+  view?: ReactNode
 }
 
-export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time, pick, tools }: CardInboxBarProps) {
+export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, pick, view }: CardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   // YAZ-5042 round 2: the row whose count turned into "Add [n] more"; it closes with the menu.
@@ -100,7 +97,9 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
     settings.fold()
   }
   const picked = pickLabel(session.newFrom)
-  const note = newRowNote(session)
+  const rowPick = newRowPick(session)
+  // YAZ-5690: "Today: 21 cards", every different card answered today; the time is the View panel's (YAZ-5689).
+  const studied = todayStudied(session.today)
   const current = CARD_FILTERS.find((f) => f.id === session.filter) ?? CARD_FILTERS[0]
   const ScopeIcon = session.scope === 'page' ? PageIcon : session.scope === 'folder' ? FolderIcon : VaultIcon
   const toggle = () => {
@@ -168,13 +167,14 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             <SessionCount session={session} icon={<current.icon />} />
           </span>
         )}
-        {tools !== undefined && <span className="card-inbox__tools">{tools}</span>}
+        {view}
         {menu !== null && (
           <ContextMenuSurface x={menu.x} y={menu.y} onClose={closeMenu} className="card-inbox__filter-menu">
             {inboxFilters(session).map((f) => {
               // YAZ-5042: the two rows that have a number a day read "today / total" (round 2), and add on a click.
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
-              const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
+              // YAZ-5690: New cards' add is the ⚙ part's "Add today"; only Up next's count still turns into its field.
+              const add = kind !== 'next' || addCards === undefined ? 0 : session.adds.next
               const count = session.counts[f.id]
               // YAZ-5434: New cards' count stands alone ("9", not "9 / 23"); only Up next keeps its total. The phone's rule too (`kindCount`, YAZ-5624).
               const counted = kind === null ? { count, total: null } : kindCount(session, kind)
@@ -211,7 +211,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                     <f.icon />
                     {f.label}
                     {/* YAZ-5685: the pick, quietly; nothing for All folders. */}
-                    {f.id === 'new' && pick !== undefined && note !== '' && <span className="card-inbox__filter-note">· {note}</span>}
+                    {f.id === 'new' && pick !== undefined && rowPick !== '' && <span className="card-inbox__filter-pick">· {rowPick}</span>}
                   </span>
                   <span
                       className="card-inbox__count"
@@ -237,11 +237,11 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             })}
             {/* YAZ-5674: today's work, out of the top row (Mochi has none there); the phone's sheet ends the same way.
                 YAZ-5685: the ⚙ at its right opens the settings part under it. */}
-            {(todayCards(session.today) !== '' || pick !== undefined) && (
+            {(studied !== '' || pick !== undefined) && (
               <div className="card-inbox__menu-foot" role="none">
-                {todayCards(session.today) !== '' && (
+                {studied !== '' && (
                   <p className="card-inbox__menu-today" role="none">
-                    <TodayWork today={session.today} time={time} />
+                    {studied}
                   </p>
                 )}
                 {pick !== undefined && <ReviewSettingsCog fold={settings} className="card-inbox__cog" />}
@@ -266,6 +266,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                       <span className="card-inbox__new-from-name">{picked === '' ? 'All folders' : picked}</span>
                       <ChevronIcon size={10} />
                     </button>,
+                    addCards === undefined ? undefined : <AddMoreField kind="new" look="setting" start={session.adds.new} disabled={session.adds.new === 0} onAdd={(n) => addCards('new', n)} />,
                   ),
                 ]}
               />

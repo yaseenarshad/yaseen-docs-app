@@ -148,7 +148,7 @@ describe('the union of a card`s copies: a review is its time and its rating; the
 })
 
 describe("today's total (YAZ-5033): the reviews of the local day across the index", () => {
-  it('counts the cards answered today (once each), the reviews, and their seconds; an old review counts 0 s; yesterday and tomorrow are out', () => {
+  it('counts the cards answered today (once each, YAZ-5690), the learned and the reviews as Mochi (YAZ-5684: three new cards learned, no due card), and their seconds; an old review counts 0 s; yesterday and tomorrow are out', () => {
     const now = new Date(2026, 10, 13, 15, 30).getTime()
     const at = (h: number, m = 0, day = 13) => new Date(2026, 10, day, h, m).toISOString().slice(0, 16) + ':00.000Z'
     const rec = (...reviews: CardReview[]) => ({ id: 'X', off: false, next: false, reviews })
@@ -158,7 +158,7 @@ describe("today's total (YAZ-5033): the reviews of the local day across the inde
       {},
       { cards: [{ ...rec({ at: at(23, 59), rating: 'easy', seconds: 4 }), off: true }] },
     ]
-    expect(reviewedToday(pages, now)).toEqual({ cards: 3, reviews: 4, seconds: 64 })
-    expect(reviewedToday([], now)).toEqual({ cards: 0, reviews: 0, seconds: 0 })
+    expect(reviewedToday(pages, now)).toEqual({ cards: 3, learned: 3, reviews: 0, seconds: 64 })
+    expect(reviewedToday([], now)).toEqual({ cards: 0, learned: 0, reviews: 0, seconds: 0 })
   })
 })

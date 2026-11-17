@@ -6,7 +6,7 @@ import { AGAIN_LABEL, AGAIN_TITLE, cardStateText, showsAgain } from '@client/rev
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
 import { newCardsFrom } from '@client/review/inboxMenu'
 import { addedLine, resetLine } from '@client/review/cardWords'
-import { reviewDuration, todayCards, todayDuration } from '@client/review/reviewTime'
+import { reviewDuration, todayDuration, todayStudied } from '@client/review/reviewTime'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
@@ -881,10 +881,14 @@ export function spokenText(el: Element): string {
  */
 const CARD_OWN_TAPS = 'a[href], [data-card-link], [data-card-board], img, .card__audio-play, .page-media'
 
-/** "Today: 2 learned · 31 reviews · 9 min", with the time as the setting says (hidden behind a tap by default). */
+/**
+ * The sheet's foot: "Today: 21 cards" (YAZ-5690, the Mac's words: every different card answered today), then the time
+ * as Settings › Review › Time so far says (hidden behind a ⏱ tap by default). The phone keeps its time here: it has no
+ * View panel (the Mac's top row, YAZ-5689).
+ */
 function TodayLine({ session, mode: setting }: { session: CardReviewSession; mode: CardReviewApi['settings']['timeSoFar'] }) {
   const [open, setOpen] = useState(false)
-  const cards = todayCards(session.today)
+  const cards = todayStudied(session.today)
   if (cards === '') return <span className="review__today" />
   const mode = session.today.seconds === 0 ? 'off' : setting
   return (

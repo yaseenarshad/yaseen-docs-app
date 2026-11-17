@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
-import { kindCount, kindCountText, newCardsFrom, newRowNote, pickLabel, showsFilter, toggledPick, underFolder } from '@client/review/inboxMenu'
+import { kindCount, kindCountText, newCardsFrom, newRowPick, pickLabel, showsFilter, toggledPick, underFolder } from '@client/review/inboxMenu'
 import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, useSettingsFold } from '@client/review/ReviewSettingsPart'
+import { AddMoreField } from '@client/review/AddMoreField'
 import type { CardReviewApi, CardReviewSession, NewCardFolder } from '@client/review/useCardReview'
 import type { AddKind } from '@shared/cardSchedule'
 import { FILTERS, FILTER_ICON } from './words'
@@ -11,14 +12,15 @@ import { FILTERS, FILTER_ICON } from './words'
  *
  *  - All cards (count) · Up next "today / total" with Reset (only while some card is marked Up next) ·
  *    Due today (count) · New cards and its count alone, "10" (the Mac's YAZ-5434, YAZ-5624), with Reset; while a folder
- *    is picked the row says it quietly, "New cards · Spanish" (YAZ-5685, `newRowNote`).
+ *    is picked the row says it quietly, "New cards · Spanish" (YAZ-5685, `newRowPick`).
  *  - Reset sets today's number of that kind back to the Settings number, never below today's work (`resetCards`); the
  *    hint line's Undo takes it back, as on the Mac.
  *  - Today's line ends with a ⚙ (YAZ-5685, the Mac's pieces, `ReviewSettingsPart`): a tap opens the settings under
- *    it, "New cards" · "From  All folders ›"; a tap again folds it, and each new sheet opens folded.
+ *    it, "New cards" · "From  All folders ›" · "Add today [10] Add" (YAZ-5690, the Mac's field, 44 pt here); a tap
+ *    again folds it, and each new sheet opens folded.
  *  - "All folders ›" opens the folder page: All folders, then each folder with new cards, a tick box each; more than one
  *    may be ticked, a folder takes its subfolders (`toggledPick`). A change saves at once (`setNewFrom`).
- *  - Today's work ("Today: 2 learned · 31 reviews · 9 min") sits at the foot, the ⚙ at its right.
+ *  - Today's work ("Today: 21 cards · ⏱", YAZ-5690; the time as Time so far says) sits at the foot, the ⚙ at its right.
  */
 export function ReviewSheet({
   session,
@@ -28,7 +30,7 @@ export function ReviewSheet({
   folders: atFolders = false,
 }: {
   session: CardReviewSession
-  review: Pick<CardReviewApi, 'setFilter' | 'resetCards' | 'setNewFrom' | 'newCardFolders'>
+  review: Pick<CardReviewApi, 'setFilter' | 'resetCards' | 'setNewFrom' | 'newCardFolders' | 'addCards'>
   today: ReactNode
   onClose: () => void
   /** Open at the folder page ("Learn new cards" … "from All folders ›"); its ‹ closes the sheet. */
@@ -39,7 +41,7 @@ export function ReviewSheet({
   if (folders !== null && atFolders) return <FolderPage rows={folders} session={session} onPick={review.setNewFrom} onBack={onClose} />
   if (folders !== null) return <FolderPage rows={folders} session={session} onPick={review.setNewFrom} onBack={() => setFolders(null)} />
   const from = newCardsFrom(session)
-  const note = newRowNote(session)
+  const rowPick = newRowPick(session)
   return (
     <div className="review__sheet" role="dialog" aria-label="What to review">
       <div role="menu" aria-label="Which cards">
@@ -69,7 +71,7 @@ export function ReviewSheet({
                   {FILTER_ICON[f.id]}
                 </span>
                 <span className="review__sheet-name">{f.label}</span>
-                {f.id === 'new' && note !== '' && <span className="review__sheet-note-from">· {note}</span>}
+                {f.id === 'new' && rowPick !== '' && <span className="review__sheet-row-pick">· {rowPick}</span>}
               </button>
               <span className="review__sheet-n" data-kind={kind ?? undefined} data-empty={count === 0 || undefined}>
                 {countText}
@@ -95,6 +97,7 @@ export function ReviewSheet({
             <button type="button" className="review__sheet-from" aria-label={`New cards from ${from}. Choose folders`} onClick={() => setFolders(review.newCardFolders())}>
               {from} ›
             </button>,
+            <AddMoreField kind="new" look="setting" start={session.adds.new} disabled={session.adds.new === 0} onAdd={(n) => review.addCards('new', n)} />,
           ),
         ]}
       />

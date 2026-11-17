@@ -1,5 +1,5 @@
 /**
- * How long reviews took, in words (YAZ-5033): the Reviews table's Time column and the Inbox's "Today: …" (`TodayWork`). Pure.
+ * How long reviews took, in words (YAZ-5033): the Reviews table's Time column, the Inbox's "Today: …" and the View panel's Time (`ReviewViewButton`). Pure.
  */
 import type { ReviewedToday } from '@shared/cardSchedule'
 
@@ -18,12 +18,21 @@ export const todayDuration = (seconds: number): string => (seconds < 60 ? `${sec
 /**
  * "Today: 2 learned · 3 reviews" (YAZ-5684, as Mochi's Dashboard, which always shows both): new cards that got their
  * first ✓ today, and the first answer today on each due card (`reviewedToday`); empty with neither. The time, "9 min"
- * (`todayDuration`), is its own part after it (YAZ-5130): `TodayWork` shows it, hides it behind a click, or leaves it
- * out, by Settings › Review › Time so far.
+ * (`todayDuration`), is its own part after it on the finish screens (`todayDone`).
  */
 export function todayCards(today: ReviewedToday): string {
   if (today.learned === 0 && today.reviews === 0) return ''
   return `Today: ${today.learned} learned · ${today.reviews} review${today.reviews === 1 ? '' : 's'}`
+}
+
+/**
+ * The cards menu's foot (YAZ-5690, Yaseen: "I do agree with you that we can do today twenty one cards"): "Today: 21
+ * cards", every different card answered today, new and due; no reviews and no time (the time is in the top row's
+ * View panel, YAZ-5689). Empty with none. The phone's sheet says the same, its time after it (it has no View panel).
+ */
+export function todayStudied(today: ReviewedToday): string {
+  if (today.cards === 0) return ''
+  return `Today: ${today.cards} card${today.cards === 1 ? '' : 's'}`
 }
 
 /**

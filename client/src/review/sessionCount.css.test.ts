@@ -54,3 +54,18 @@ describe('YAZ-5676: the progress bar is Mochi`s exactly (YAZ-5671 finding 14)', 
     expect(parseFloat(toast.bottom ?? '0')).toBeGreaterThanOrEqual(56)
   })
 })
+
+describe('YAZ-5689: the count reads as Mochi`s (Yaseen: "make the numbers bigger… the 3 normal black color")', () => {
+  it('the size of the filter button`s words; the done number in the text colour, a little bolder; "/ total" and the icon grey; the ✕ red, its number in the text colour', () => {
+    const mac = read('cardScreens.css')
+    const filterSize = decls('.card-inbox__filter', mac)['font-size']
+    expect(decls('.session-count')).toMatchObject({ 'font-size': filterSize, color: 'var(--fg-muted)' })
+    expect(decls('.session-count__n')).toMatchObject({ color: 'var(--fg)', 'font-weight': '600' })
+    expect(decls('.session-count__total')).toMatchObject({ color: 'var(--fg-muted)' })
+    expect(decls('.session-count__misses')).toMatchObject({ color: 'var(--danger)' })
+    expect(decls('.session-count__misses-n')).toMatchObject({ color: 'var(--fg)' })
+    // The Mac's top row sets no size or colour of its own on the count.
+    expect(decls('.card-inbox__place', mac)).not.toHaveProperty('font-size')
+    expect(decls('.card-inbox__place', mac)).not.toHaveProperty('color')
+  })
+})

@@ -294,7 +294,7 @@ describe('the review sheet\'s ⚙ (YAZ-5685, the Mac\'s cards menu)', () => {
     expect(cog().getAttribute('aria-expanded')).toBe('true')
     expect(part()!.previousElementSibling).toBe(foot)
     expect(part()!.querySelector('h6')!.textContent).toBe('New cards')
-    expect([...part()!.querySelectorAll('li')].map((li) => (li.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual(['FromAll folders ›'])
+    expect([...part()!.querySelectorAll('li')].map((li) => (li.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual(['FromAll folders ›', 'Add today1Add'.replace('1', '')])
     await h.click('Review settings')
     expect(part()).toBeNull()
     await h.click('Review settings')
@@ -305,10 +305,25 @@ describe('the review sheet\'s ⚙ (YAZ-5685, the Mac\'s cards menu)', () => {
     // Back from the folder page: the part is still open, and the row says the pick quietly.
     expect(h.button(/^New cards from trip/)).not.toBeNull()
     const newRow = [...h.host.querySelectorAll('.review__sheet-row')].find((r) => r.querySelector('[data-filter="new"]'))!
-    expect(newRow.querySelector('.review__sheet-note-from')?.textContent).toBe('· trip')
+    expect(newRow.querySelector('.review__sheet-row-pick')?.textContent).toBe('· trip')
     // Closed and opened again: folded.
     await tapOn(q('.review__card'))
     await h.click(/Choose what to review/)
     expect([cog().getAttribute('aria-expanded'), part()]).toEqual(['false', null])
+  })
+
+  it('YAZ-5690: "Add today [N] Add" under From adds that many new cards for today (the Mac`s field, 44 pt); the foot says "Today: N cards"', async () => {
+    h = await reviewSetup({ ...FILES, '.yaseendocs/review.json': '{"newPerDay": 1}' })
+    await h.click(/Choose what to review/)
+    const newCount = () => [...h!.host.querySelectorAll('.review__sheet-row')].find((r) => r.querySelector('[data-filter="new"]'))!.querySelector('.review__sheet-n')!.textContent
+    expect(newCount()).toBe('1')
+    await h.click('Review settings')
+    const row = () => part()!.querySelector<HTMLElement>('li[data-setting="add"]')!
+    const number = row().querySelector<HTMLInputElement>('input.card-inbox__add-number')!
+    expect([row().firstElementChild!.textContent, number.value, number.inputMode, row().querySelector('button')!.textContent]).toEqual(['Add today', '1', 'numeric', 'Add'])
+    await tapOn(row().querySelector('button')!)
+    await h.settle()
+    expect(newCount()).toBe('2')
+    expect(q('.review__sheet-foot')!.textContent).not.toMatch(/learned|reviews/)
   })
 })
