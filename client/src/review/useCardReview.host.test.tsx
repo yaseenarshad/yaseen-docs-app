@@ -241,7 +241,11 @@ describe('a card answered on the other device (YAZ-5622)', () => {
     act(() => review.move(1))
     await shown('WIKI-8')
     await elsewhere('D.md', 'WIKI-7', 'good')
-    expect(review.session?.canBack).toBe(false)
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 3])
+    // ← loops around (YAZ-5715): to the last card left, never to WIKI-7.
+    act(() => review.move(-1))
+    await vi.waitFor(() => expect(review.session?.card?.id).not.toBe('WIKI-8'))
+    expect(review.session?.card?.id).not.toBe('WIKI-7')
     expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 3])
   })
 

@@ -28,7 +28,8 @@ import { tourEvent } from '../course/tourBus'
  * same write (YAZ-4999 D3), and its undo puts it back.
  *
  * ← → (YAZ-5004) move the card showing through the queue with no answer: `at` is the one new piece of state, the
- * place of the card showing; a card you leave stays in the queue. `turnOff` (the Inbox ⋯'s Archive card) writes `off`
+ * place of the card showing; a card you leave stays in the queue. They loop around, as Mochi (YAZ-5715): → past the
+ * last card shows the first, ← before the first the last; with one card left they do nothing. `turnOff` (the Inbox ⋯'s Archive card) writes `off`
  * and takes the card out of the queue.
  *
  * Archived cards (YAZ-5046) are never in the queue. The Inbox lists none (YAZ-5319): a folder page's table finds them
@@ -149,7 +150,7 @@ export interface CardReviewSession {
   cards?: CardReviewScope
   /** The card showing; null once nothing is left (the done screen). */
   card: ShownCard | null
-  /** ← and → (YAZ-5004): a card before or after the one showing is still in the queue. */
+  /** ← and → (YAZ-5004): another card of the filter is still in the queue (they loop around, YAZ-5715: both or neither). */
   canBack: boolean
   canNext: boolean
   /** Each button's outcome, fixed by `showAnswers` for the card showing (in button order); null until then. */
@@ -534,9 +535,16 @@ const missedCards = (s: Session): QueueCard[] => {
   return s.queue.filter((c) => !c.isNew && c.repeat === true && (c.fromNew !== true || c.forgot === true) && forgot.has(cardKey(c)))
 }
 
-/** The place of the card the filter shows next before (-1) or after (+1) `at`; -1 when there is none. */
+/**
+ * The place of the card the filter shows next before (-1) or after (+1) `at`, looping around as Mochi (YAZ-5715): past
+ * the last card the first, before the first the last; -1 when no other card shows (one card left: the arrows do nothing).
+ */
 const stepFrom = (s: Session, delta: -1 | 1): number => {
-  for (let i = s.at + delta; i >= 0 && i < s.queue.length; i += delta) if (matchesFilter(s.queue[i], s.filter)) return i
+  const n = s.queue.length
+  for (let k = 1; k < n; k++) {
+    const i = (((s.at + delta * k) % n) + n) % n
+    if (matchesFilter(s.queue[i], s.filter)) return i
+  }
   return -1
 }
 /** The menu's counts (rule 7): each card in one list only, so All cards = Up next + Due today + New cards. */
