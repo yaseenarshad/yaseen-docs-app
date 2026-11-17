@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
- * YAZ-5539: a second tap on the button that opened a menu closes it — the deck button at the top ("▣ All cards ▾ 1 / 2")
+ * YAZ-5539: a second tap on the button that opened a menu closes it — the deck button at the top ("All cards" on the left)
  * and its drawer, and ⋯ and its menu. A tap is a finger's whole run, as a phone sends it: `pointerdown` (the screen's
  * tap-outside listener) and then `click`. Before, the screen's own click handler closed the menu and the button's click,
  * drawn after it, opened it again. Made-up data only.
@@ -52,7 +52,7 @@ const q = (sel: string) => h!.host.querySelector<HTMLElement>(sel)
 describe('YAZ-5539: tap the button again to close its menu', () => {
   it('the deck button: the first tap opens the drawer, the second closes it, a third opens it again', async () => {
     h = await reviewSetup(FILES)
-    const deck = () => q('.review__count-btn')!
+    const deck = () => q('.review__filter')!
     await fingerTap(deck())
     expect(q('.review__sheet')).not.toBeNull()
     expect(deck().getAttribute('aria-expanded')).toBe('true')
@@ -83,7 +83,7 @@ describe('YAZ-5539: tap the button again to close its menu', () => {
     expect(q('.review__menu--more')).toBeNull()
     expect(h.cardText()).toBe('Q1?')
     await fingerTap(q('.review__more')!)
-    await fingerTap(q('.review__count-btn')!)
+    await fingerTap(q('.review__filter')!)
     expect(q('.review__menu--more')).toBeNull()
     expect(q('.review__sheet')).not.toBeNull()
   })

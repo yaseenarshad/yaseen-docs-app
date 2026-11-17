@@ -132,6 +132,8 @@ import { freePort } from './freePort'
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
  * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no, LAYOUT_WIDE=no, LAYOUT_CELL_CODE=no skip a part).
+ *  - the Review top bar (`#fixture=review-mochi`, `review-mochi-more`, YAZ-5698), light and dark, at 320, 375 and 390 px:
+ *    the filter on the left (a 44 px tap), the count in the true centre (1 px), the dot and the ⚙ right, no overlap.
  *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
  *    every bar and the full-screen table inside it, no install hint; a phone (upright and on its side) keeps the full
  *    width. The install hint of a phone's tab at 320 and 375 px: one block above the sign-in (its first button: Sign in
@@ -1971,7 +1973,7 @@ const MENUS: { fixture: string; name: string; button: string; menu: string; outs
   { fixture: 'page', name: 'a page card\'s ⋯', button: '.reader__body .page-card .card__more', menu: '.card-menu', outside: '.reader__body h1', what: `document.querySelector('.topbar__title')?.textContent` },
   { fixture: 'search-tree', name: 'Search\'s Type chip', button: '.search__type-chip', menu: '.search__menu', outside: '.tree__row--dir', what: `document.querySelector('.tree__row--dir')?.closest('li')?.getAttribute('aria-expanded')` },
   { fixture: 'explore-mentions', name: 'an Explore sheet\'s ⋯', button: '.explore-sheet:last-of-type .explore-sheet__more', menu: '.explore-sheet__menu', outside: '.explore-sheet:last-of-type .linked-mentions__header', what: `[document.querySelectorAll('.explore-sheet').length, document.querySelector('.explore-sheet:last-of-type .linked-mentions__header')?.getAttribute('aria-expanded')].join()` },
-  { fixture: 'review-mochi-menus', name: 'Review\'s deck button', button: '.review__count-btn', menu: '.review__sheet', outside: '.review__card', what: `document.querySelector('.review__card')?.textContent` },
+  { fixture: 'review-mochi-menus', name: 'Review\'s deck button', button: '.review__filter', menu: '.review__sheet', outside: '.review__card', what: `document.querySelector('.review__card')?.textContent` },
   { fixture: 'page-not-sent', name: 'the sync dot, loud (its sheet)', button: '.sync-status', menu: '.status-sheet', outside: '.reader__body h1', what: `document.querySelector('.topbar__title')?.textContent` },
   { fixture: 'review-mochi-menus', name: 'Review\'s ⋯', button: '.review__more', menu: '.review__menu--more', outside: '.review__card', what: `document.querySelector('.review__card')?.textContent` },
 ]
@@ -2558,6 +2560,59 @@ if (process.env.LAYOUT_FOLDS !== 'no') {
             : !folded.some((l) => l.startsWith('934am') || l === 'Morning') && folded.some((l) => l.startsWith('933am')))
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 375x667, ${scheme}: ${rows.length} arrows (${rows.map((x) => `${x.label}${x.expanded === 'false' ? ' folded' : ''} ${x.size}${x.hit ? '' : ' TAP MISSES'}${x.dot === false ? ' DOT OUTSIDE' : ''}`).join('; ')}); numbered lists ${n.ol}; 934am ${n.parent}; 933am ${n.next}; ${Object.entries(lines).map(([w, v]) => `"${w}" ${v}`).join(', ')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5698: the Review top bar split as Mochi's iPhone: the filter on the left (a 44 px tap, its icon and name, or its
+// icon alone when the name does not fit), the count in the TRUE centre of the screen (within 1 px), the dot and the ⚙ on
+// the right; nothing overlaps; the progress bar under it. Light and dark, at 320, 375 and 390 px; with no miss, with one,
+// and the long case (✕ 12, 120 / 1033, "Due today" written in).
+const REVIEW_TOP = (long: boolean) => `(() => {
+  if (${long}) {
+    const n = document.querySelector('.review__place .session-count__misses-n'); if (n) n.textContent = '12'
+    const d = document.querySelector('.review__place .session-count__n'); if (d) d.textContent = '120'
+    const t = document.querySelector('.review__place .session-count__total'); if (t) t.textContent = ' / 1033'
+    const l = document.querySelector('.review__filter-label'); if (l) l.textContent = 'Due today'
+  }
+  const r = (el) => el ? el.getBoundingClientRect() : null
+  const W = window.innerWidth
+  const bar = r(document.querySelector('.topbar'))
+  const filter = r(document.querySelector('.review__filter'))
+  const count = r(document.querySelector('.review__place .session-count'))
+  const label = r(document.querySelector('.review__filter-label'))
+  const dot = r(document.querySelector('.topbar .sync-status'))
+  const gear = r(document.querySelector('.topbar__gear'))
+  const progress = r(document.querySelector('.review__progress'))
+  if (!filter || !count || !dot || !gear) return { error: 'missing ' + JSON.stringify({ filter: !!filter, count: !!count, dot: !!dot, gear: !!gear }) }
+  const at = (b, sel) => { const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!e && !!e.closest(sel) }
+  return {
+    W, centre: Math.round((count.left + count.width / 2 - W / 2) * 10) / 10,
+    filter: [Math.round(filter.left), Math.round(filter.right), Math.round(filter.height)],
+    count: [Math.round(count.left), Math.round(count.right)],
+    dot: Math.round(dot.left), gear: Math.round(gear.right),
+    named: !!label && label.top < filter.bottom - 1 && label.right <= filter.right + 0.5,
+    clear: filter.right <= count.left + 0.5 && count.right <= dot.left + 0.5 && (!label || label.top >= filter.bottom - 1 || label.right <= count.left + 0.5),
+    inside: filter.left >= 0 && gear.right <= W + 0.5,
+    taps: at(filter, '.review__filter') && at(count, '.review__place') && at(dot, '.sync-status') && at(gear, '.topbar__gear'),
+    under: !!progress && progress.top >= bar.bottom - 0.5,
+    sideways: document.documentElement.scrollWidth > W,
+  }
+})()`
+if (process.env.LAYOUT_REVIEW_TOP !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of SIZES) {
+      for (const [name, long] of [['review-mochi', false], ['review-mochi-more', false], ['review-mochi-more', true]] as const) {
+        await open(name, w, h)
+        const m = await evaluate(REVIEW_TOP(long))
+        await wait(50)
+        const file = join(out, `review-top-${name}${long ? '-long' : ''}-${w}-${scheme}.png`)
+        writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: w, height: 120, scale: 2 } }, page)).data, 'base64'))
+        const ok = !m.error && Math.abs(m.centre) <= 1 && m.filter[2] >= 44 && m.filter[1] - m.filter[0] >= 44 && m.clear && m.inside && m.taps && m.under && !m.sideways
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  Review top bar ${name}${long ? ' (long)' : ''} at ${w}, ${scheme}: ${m.error ?? `the count ${m.centre} px from the centre (${m.count.join('-')}); the filter ${m.filter[0]}-${m.filter[1]}, ${m.filter[2]} px tall, ${m.named ? 'icon and name' : 'ICON ALONE'}; the dot at ${m.dot}, the ⚙ ends ${m.gear}; ${m.clear ? 'nothing overlaps' : 'OVERLAP'}; ${m.inside ? 'inside' : 'OFF SCREEN'}; ${m.taps ? 'each part taps itself' : 'A TAP MISSES'}; progress bar ${m.under ? 'under it' : 'NOT UNDER'}${m.sideways ? '; SCROLLS SIDEWAYS' : ''}`}  ${file}`)
+      }
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)

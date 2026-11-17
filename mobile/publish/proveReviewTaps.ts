@@ -62,7 +62,7 @@ const screen = (page: Page): Promise<Screen> =>
     const [n, m] = place === null ? [null, null] : place.split('/').map((x) => Number(x.trim()))
     const bar = document.querySelector('.review__progress')
     return {
-      list: (text('.review__mode') ?? '').replace(/^\S+\s/, '').replace(/ ▾$/, ''),
+      list: text('.review__filter-label') ?? '',
       n,
       m,
       bar: { done: Number(bar?.getAttribute('aria-valuenow')), size: Number(bar?.getAttribute('aria-valuemax')), forgot: document.querySelectorAll('.review__step[data-answer="forgot"]').length },
@@ -99,16 +99,16 @@ async function tap(page: Page, name: string | RegExp) {
 /** The sheet's counts ("All cards" → "8"), opened by a tap on the top and closed by another. */
 async function sheet(page: Page): Promise<Record<string, string>> {
   await settled(page)
-  await page.locator('.review__count-btn').tap()
+  await page.locator('.review__filter').tap()
   await page.waitForSelector('.review__sheet')
   const rows = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.review__sheet-row')].map((r) => [r.querySelector('.review__sheet-name')?.textContent ?? '', r.querySelector('.review__sheet-n')?.textContent ?? ''])))
-  await page.locator('.review__count-btn').tap()
+  await page.locator('.review__filter').tap()
   await page.waitForSelector('.review__sheet', { state: 'detached' })
   return rows
 }
 async function pick(page: Page, list: string) {
   await settled(page)
-  await page.locator('.review__count-btn').tap()
+  await page.locator('.review__filter').tap()
   await page.locator(`.review__sheet-pick[aria-label="${list}"]`).tap()
   await page.waitForTimeout(150)
   await settled(page)

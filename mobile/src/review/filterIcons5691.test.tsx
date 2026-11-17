@@ -33,13 +33,13 @@ const SIGNS = /[▣⤒◷◌]/
 describe('YAZ-5691: the phone wears the Mac`s filter icons', () => {
   it('the count at the top: the open filter`s Mac icon before "done / total", no text sign', async () => {
     h = await reviewSetup(FILES)
-    const done = () => h!.host.querySelector('.review__count-btn .session-count__done')
+    const done = () => h!.host.querySelector('.review__place .session-count__done')
     expect(done()?.querySelector('svg')?.outerHTML).toBe(mac('all'))
     expect(done()?.textContent).toBe('0 / 3')
     await h.click(/Choose what to review/)
     await h.click(/^Due today$/)
     expect(done()?.querySelector('svg')?.outerHTML).toBe(mac('due'))
-    expect(h.host.querySelector('.review__count-btn')?.textContent).not.toMatch(SIGNS)
+    expect(h.host.querySelector('.review__filter')?.textContent).not.toMatch(SIGNS)
   })
 
   it('the sheet: each row`s icon is the Mac menu`s, in the Mac`s order; no text signs', async () => {

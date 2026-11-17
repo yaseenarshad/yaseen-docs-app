@@ -198,8 +198,8 @@ describe('YAZ-5552: every menu: a tap opens it, a tap on its button again closes
     // YAZ-5657 rule 5: Due today is random within a day, so Q1 is the more overdue one (`inOrder`) to come first.
     rh = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `MT-${n}, ${inOrder('2026-10-04T09:00:00.000Z good', n - 1)}`))) })
     const settle = rh.settle
-    await tapsToggle(() => q('.review__count-btn')!, has('.review__sheet'), settle)
-    await fingerTap(q('.review__count-btn')!, settle)
+    await tapsToggle(() => q('.review__filter')!, has('.review__sheet'), settle)
+    await fingerTap(q('.review__filter')!, settle)
     await tapsToggle(() => q('.review__more')!, has('.review__menu--more'), settle)
     expect(rh.cardText()).toBe('Q1?')
   })

@@ -28,7 +28,7 @@ describe('Review: a full session (decision 11)', () => {
   it('tap, tap, Remembered, Forgot, Undo, Up next, Archive card, Open page; one commit reaches GitHub', async () => {
     h = await reviewSetup(FILES)
     // The first card: its state (the chip, YAZ-5415: "New" / "Due"), "0 / 3", the head "Title · ID" (round 15, item 4) and the crumb (the page).
-    expect(h.text()).toContain('All cards ▾')
+    expect(h.host.querySelector('.review__filter-label')?.textContent).toBe('All cards')
     expect(h.host.querySelector('.review__chip')?.textContent).toBe('New')
     expect(h.host.querySelector('.review__chip')?.getAttribute('title')).toBe('New card')
     expect(h.text()).toContain('0 / 3')

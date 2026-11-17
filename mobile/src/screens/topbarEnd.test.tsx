@@ -20,7 +20,7 @@ describe('YAZ-5475: one top bar end for every screen', () => {
     expect(css.match(/--topbar-gear-size:/g)).toHaveLength(1)
     expect(css.match(/--topbar-end-pull:/g)).toHaveLength(1)
     expect(css).toMatch(/\.topbar__gear \{\s*font-size: var\(--topbar-gear-size\);/)
-    // YAZ-5501: Review too — no screen is left out of the pull, and its dot comes after its "▣ All cards ▾", before the ⚙.
+    // YAZ-5501: Review too — no screen is left out of the pull, and its dot comes after its filter and count, before the ⚙.
     expect(css).toMatch(/\.topbar__gear \{\s*font-size: var\(--topbar-gear-size\);\s*margin-left: var\(--topbar-end-pull\);/)
     expect(css).not.toContain(':not(.topbar--review)')
     expect(css).not.toMatch(/\.topbar--review[^{]*\{[^}]*(grid-template-columns|justify-self)/)
