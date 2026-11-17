@@ -11,7 +11,7 @@ import { FOLDER_FILES, calendarFiles } from './folderVault'
 import { todayKey } from '@client/views/calendar'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
-import { CALENDAR_NOW, CALENDAR_PAGE, CALENDAR_SLOT_NOW, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE, WIDE_DESK_PAGE, WIDE_NOW, WIDE_PAGE } from './tableFixtures'
+import { CALENDAR_NOW, CALENDAR_PAGE, CALENDAR_SLOT_NOW, CELL_CODE_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE, WIDE_DESK_PAGE, WIDE_NOW, WIDE_PAGE } from './tableFixtures'
 import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
 import { MOBILE_SETTINGS_FILES, STICKY_HEADINGS_FILES, CENTRE_FILES, FOLDS_FILES, NUMBERED_FOLDS_FILES, SECTIONS_FILES, SUBHEADS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
@@ -55,6 +55,7 @@ import { openSheet } from '../explore/sheets'
  * default (Same as Desktop), `page-wide-fit` the vault's mobile.json says Fit Screen, `page-wide-own` the same vault
  * with the page's own `fit-tables: false` (Same as Desktop wins), `page-wide-menu` its ⋯ open (Wide tables on this page),
  * round 2 `page-wide-desk` the vault's default with the widths the Mac saved (`WIDE_DESK_PAGE`, Lookback widened).
+ * YAZ-5683 long code in a cell (`CELL_CODE_PAGE`): `page-cell-code` Same as Desktop, `page-cell-code-fit` Fit Screen.
  * YAZ-5494: `page-tasks` a made-up page of tasks in every shape (`taskFixtures.ts`): each box of the page a check box a
  * tap ticks (44 px around it), the card's box a glyph. YAZ-5510: `page-tasks-numbered` numbered tasks (`1.` to `11.`): only
  * the box, in the number's place (the Mac's rule), then the text.
@@ -99,7 +100,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-calendar-slot-down', 'page-calendar-slot-up', 'page-calendar-slot-chip', 'page-tasks', 'page-tasks-numbered', 'page-cell-tasks', 'page-cell-tasks-full', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile', 'settings-mobile-open', 'page-wide-scroll', 'page-wide-fit', 'page-wide-own', 'page-wide-menu', 'page-wide-desk'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-calendar-slot-down', 'page-calendar-slot-up', 'page-calendar-slot-chip', 'page-tasks', 'page-tasks-numbered', 'page-cell-tasks', 'page-cell-tasks-full', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile', 'settings-mobile-open', 'page-wide-scroll', 'page-wide-fit', 'page-wide-own', 'page-wide-menu', 'page-wide-desk', 'page-cell-code', 'page-cell-code-fit'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -258,6 +259,11 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
               'Day plan.md': `---\ntitle: Day plan\n${name === 'page-wide-own' || name === 'page-wide-menu' ? 'fit-tables: false\n' : ''}---\n\n${name === 'page-wide-desk' ? WIDE_DESK_PAGE : WIDE_PAGE}\n`,
               '.yaseendocs/table-look.json': JSON.stringify({ version: 1, look: { slotTime: 'down', slotSeconds: false } }),
               ...(name === 'page-wide-scroll' || name === 'page-wide-desk' ? {} : { '.yaseendocs/mobile.json': JSON.stringify({ version: 1, fitTables: true }) }),
+            }
+        : name.startsWith('page-cell-code')
+          ? {
+              'Mac paths.md': `---\ntitle: Mac paths\n---\n\n${CELL_CODE_PAGE}\n`,
+              ...(name === 'page-cell-code-fit' ? { '.yaseendocs/mobile.json': JSON.stringify({ version: 1, fitTables: true }) } : {}),
             }
         : name === 'page-table-look'
           ? { 'Table look.md': `---\ntitle: Table look\n---\n\n${LOOK_PAGE}\n` }
@@ -861,6 +867,12 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       }
       break
     }
+    case 'page-cell-code':
+    case 'page-cell-code-fit':
+      await typed('mac paths')
+      await open(/^Mac paths/, '.reader__body .page-table-box')
+      await wait(200)
+      break
     case 'page-tasks':
       await typed('weekend jobs')
       await open(/^Weekend jobs/, '.reader__body .page-task[data-task]')

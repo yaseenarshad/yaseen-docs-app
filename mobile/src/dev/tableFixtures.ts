@@ -205,3 +205,32 @@ export const WIDE_PAGE = ['# Day plan', WIDE_TABLE, 'Notes after the table.'].jo
 /** YAZ-5658 round 2: the same table with the widths the Mac saved (Lookback widened to 320 px): Same as Desktop draws them. */
 export const WIDE_DESK_TABLE = WIDE_TABLE.replace('<!-- table: freeze 1 row 1 col, calendar 30m -->', '<!-- table: widths 96 176 320, freeze 1 row 1 col, calendar 30m -->')
 export const WIDE_DESK_PAGE = ['# Day plan', WIDE_DESK_TABLE, 'Notes after the table.'].join('\n\n')
+
+/**
+ * YAZ-5683: long code in a cell. A made-up copy of the report's "What is on the Mac" table (paths with no spaces in
+ * inline code, the Where column saved at 304 px on the Mac), then each kind of long text beside a column that must not be
+ * covered: a plain 64-letter word, a URL, code with spaces, code with none, and bold or a link around it.
+ */
+const LONG_WORD = 'Pneumonoultramicroscopicsilicovolcanoconiosisxyzabcdefghijklmnop'
+const LONG_URL = 'https://example.com/a/very/long/path/with/no/spaces/at/all/index.html'
+export const CELL_CODE_TABLE = [
+  '| What | Where | What it gave us |',
+  '| :-- | :-- | :-- |',
+  '| The desktop program | `/Applications/Sample.app/Contents/Resources/app.asar` | The desktop shell\'s code |',
+  '| The local database | `~/Library/Application Support/Sample/Partitions/sample2/IndexedDB/` | Projects and every change made to them |',
+  '| The cache | `~/Library/Application Support/Sample/Partitions/sample2/Cache/Cache_Data/` | The editor\'s code, and the servers\' saved replies |',
+  '| Helper programs | `/Applications/Sample.app/Contents/Resources/` | Names only: screen capture, mouse, keyboard |',
+  '<!-- table: widths auto 304 auto -->',
+].join('\n')
+export const CELL_CODE_CASES = [
+  '| Case | Cell | Next column |',
+  '| --- | --- | --- |',
+  `| Plain long word | ${LONG_WORD} | Next column text |`,
+  `| Plain URL | ${LONG_URL} | Next column text |`,
+  '| Code with spaces | `run the long command --with --many --flags here` | Next column text |',
+  `| Code, no spaces | \`${LONG_URL}\` | Next column text |`,
+  `| Bold code | **\`${LONG_WORD}\`** | Next column text |`,
+  `| Link code | [\`${LONG_URL}\`](https://example.com) | Next column text |`,
+  '<!-- table: widths 120 200 auto -->',
+].join('\n')
+export const CELL_CODE_PAGE = ['# What is on the Mac', CELL_CODE_TABLE, 'Every kind of long text:', CELL_CODE_CASES, 'Notes after the tables.'].join('\n\n')

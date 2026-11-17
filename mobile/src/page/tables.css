@@ -292,8 +292,9 @@
   white-space: normal;
 }
 
-/* Review has no widths from `tableLayout.ts`: a word stays whole there; the card scrolls sideways when it must. */
-.review__card .card__sides .card__table table :is(th, td) {
+/* Review has no widths from `tableLayout.ts`: a word stays whole there; the card scrolls sideways when it must. A table
+   the Mac sized (`data-sized`, a fixed layout) breaks a word longer than its column instead (`card.css`, YAZ-5683). */
+.review__card .card__sides .card__table table:not([data-sized]) :is(th, td) {
   overflow-wrap: normal;
 }
 .review__card .card__sides .card__table {

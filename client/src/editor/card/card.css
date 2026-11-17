@@ -529,6 +529,11 @@
   overflow-wrap: normal;
   word-break: normal;
 }
+/* A sized table (a fixed layout) cannot grow for a long word: the word breaks in its cell, as a page table's does
+   (ProseMirror's `break-word`), never over the next column (YAZ-5683). */
+.card__sides .card__side table[data-sized] :is(th, td) {
+  overflow-wrap: break-word;
+}
 .card__sides .card__side th:not([align]) {
   text-align: start;
 }
