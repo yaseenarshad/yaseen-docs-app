@@ -5,7 +5,11 @@ import rough from "roughjs/bin/rough";
 
 import type { LocalPoint } from "@excalidraw/math";
 
-import { newElement, newLinearElement } from "../src/newElement";
+import {
+  newArrowElement,
+  newElement,
+  newLinearElement,
+} from "../src/newElement";
 import { renderElement } from "../src/renderElement";
 import { ShapeCache } from "../src/shape";
 import { maxBindingDistance_simple } from "../src/binding";
@@ -142,22 +146,28 @@ describe("YAZ-5739 cause 2: a straight line or arrow vanishes below 2.5% (its bi
   beforeEach(() => setPixelRatio(2));
   afterEach(() => setPixelRatio(before));
 
+  /** A line, or an arrow with an end arrowhead (padding 40, not 20). */
+  const linear = (
+    type: "line" | "arrow",
+    opts: Omit<Parameters<typeof newLinearElement>[0], "type">,
+  ) =>
+    type === "arrow"
+      ? newArrowElement({ type, ...opts, endArrowhead: "arrow" })
+      : newLinearElement({ type, ...opts });
+
   /** A flat line made at 100%, 2000 board px long: 20 screen px at 1%. */
   const flat = (type: "line" | "arrow") =>
-    newLinearElement({
-      type,
+    linear(type, {
       x: 0,
       y: 0,
       strokeWidth: 2,
       roughness: 0,
       points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(2000, 0)],
-      endArrowhead: type === "arrow" ? "arrow" : null,
     });
 
   /** A flat line or arrow just drawn at `zoom`: 60 screen px, a 2 px line. */
   const newFlat = (type: "line" | "arrow", zoom: number) =>
-    newLinearElement({
-      type,
+    linear(type, {
       x: 0,
       y: 0,
       strokeWidth: toBoardSize(2, zoom),
@@ -167,7 +177,6 @@ describe("YAZ-5739 cause 2: a straight line or arrow vanishes below 2.5% (its bi
         pointFrom<LocalPoint>(0, 0),
         pointFrom<LocalPoint>(60 / zoom, 0),
       ],
-      endArrowhead: type === "arrow" ? "arrow" : null,
     });
 
   it.each([0.1, 0.05, 0.03, 0.02, 0.01])(
