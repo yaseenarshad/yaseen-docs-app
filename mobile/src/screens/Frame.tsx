@@ -35,7 +35,7 @@ export function Frame({
   /** A problem line under the top bar. */
   notice?: ReactNode
   /**
-   * The Review tab (as Mochi): ONE line — the Review screen's "All cards ▾ 3 / 12" first (`reviewTop.ts`),
+   * The Review tab (as Mochi): ONE line — the Review screen's filter on the left and its count centred (`reviewTop.ts`, YAZ-5698),
    * then the sync dot (its words in its sheet) and the gear on the right, as on every other screen. The
    * screen fills the space between the bars.
    */

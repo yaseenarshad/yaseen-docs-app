@@ -306,11 +306,24 @@ button,
   display: none !important;
 }
 
+/*
+ * YAZ-5698 (Mochi's iPhone): the Review screen's filter on the left, its count in the TRUE centre of the screen. The box
+ * is three columns, the outer two equal, so the middle one (the count) sits at the box's centre; the box reaches under
+ * the dot and the ⚙ (they sit over its empty right column) to 6 px from the right edge, as it starts 6 px from the left:
+ * its centre is the screen's. `--review-top-end`: the dot and the ⚙ (two taps, the ⚙ pulled over the dot) and the two gaps.
+ */
 .topbar__review {
-  display: flex;
+  --review-top-end: calc(2 * var(--tap) + var(--topbar-end-pull) + 8px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
   flex: 1;
-  justify-content: flex-start;
   min-width: 0;
+  margin-right: calc(2px - var(--review-top-end));
+  pointer-events: none;
+}
+.topbar__review > * {
+  pointer-events: auto;
 }
 
 .screen--review {

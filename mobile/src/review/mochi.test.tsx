@@ -156,13 +156,14 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
 
   it('YAZ-5674: the count as Mochi`s, the Mac`s piece — a red ✕ K, the open list`s glyph, "done / total"; the glyph once', async () => {
     h = await reviewSetup(THREE)
-    const place = () => q('.review__count-btn .review__place')
+    const place = () => q('.review__place')
     expect(place()?.textContent).toBe('0 / 3')
-    expect(q('.review__mode')?.textContent).toBe('All cards ▾')
+    expect(q('.review__filter-label')?.textContent).toBe('All cards')
     await h.click('Forgot')
     expect(place()?.querySelector('.session-count__misses')?.textContent).toBe('1')
     expect(place()?.querySelector('.session-count__done')?.textContent).toBe('1 / 4')
-    expect(h.button(/Choose what to review/)?.getAttribute('aria-label')).toBe('All cards, 1 missed, 1 of 4 done. Choose what to review')
+    expect(h.button(/Choose what to review/)?.getAttribute('aria-label')).toBe('All cards. Choose what to review')
+    expect(place()?.querySelector('.session-count')?.getAttribute('aria-label')).toBe('1 missed, 1 of 4 done')
   })
 
   it('YAZ-5676: the progress bar as Mochi`s: grey done ÷ total, then red for the misses waiting, both from the left', async () => {
@@ -189,12 +190,12 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     // Review rules v1, rule 7: MN-3 (new, Up next) is under Up next only; before, New cards said 2.
     expect(rows()).toEqual(['All cards3', 'Up next1', 'Due today1', 'New cards1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434); YAZ-5685: no "from" on the row */)
     await h.click(/^Due today$/)
-    expect(h.text()).toContain('Due today ▾')
+    expect(h.host.querySelector('.review__filter-label')?.textContent).toBe('Due today')
     expect(h.head()).toBe('MN-1')
     await h.click(/Choose what to review/)
     await h.click(/^New cards$/)
     // The new cards only: the Up next one is under Up next (rule 7).
-    expect(h.text()).toContain('New cards ▾')
+    expect(h.host.querySelector('.review__filter-label')?.textContent).toBe('New cards')
     expect(h.host.querySelector('.review__chip')?.textContent).toBe('New')
     expect(h.head()).toBe('MN-2')
     expect(h.text()).toContain('0 / 1')

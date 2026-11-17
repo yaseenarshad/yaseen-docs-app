@@ -47,7 +47,7 @@ import './review.css'
  * review RULES are the Mac's own hook (`useCardReview`, decision 3) with the phone's host (3C: it writes actions to the
  * answer list, never files); the card is the Mac's own drawing (`PhoneCard`). The mockup (version 9) is the spec.
  *
- *  - The top row: the filter "All cards ▾" (round 10, addition 1: All cards, Up next, Due today, New cards, with
+ *  - The top row: the filter "All cards" (left, YAZ-5698) (round 10, addition 1: All cards, Up next, Due today, New cards, with
  *    counts; its sheet ends with today's work, "Today: 2 learned · 31 reviews · 9 min") and Mochi's count, "✕ 2 · tray 4 / 6" (YAZ-5674,
  *    the Mac's `SessionCount`).
  *  - Above the card: its state ("Due today", "New card"); then the head, "Title · ID", with "in <page>"
@@ -579,26 +579,33 @@ function SessionScreen({
   const filter = session.filter
   // YAZ-5680 check 2: on every finish screen too, as Mochi ("Finished learning cards." with 4 / 4).
   const counted = session.progress.total > 0
-  const countButton = (
-    <button
-      type="button"
-      className="review__count-btn"
-      aria-haspopup="dialog"
-      aria-expanded={menu === 'filter'}
-      aria-label={`${filterLabel(session.filter)}${counted ? `, ${session.misses > 0 ? `${session.misses} missed, ` : ''}${session.progress.done} of ${session.progress.total} done` : ''}. Choose what to review`}
-      onClick={() => {
-        if (menu !== 'filter') firstAction()
-        setMenu(menu === 'filter' ? null : 'filter')
-      }}
-    >
-      <span className="review__mode">{filterLabel(session.filter)} ▾</span>
-      {/* YAZ-5674: Mochi's count, the Mac's piece; the list's glyph moves here, in front of "done / total" (once). YAZ-5691: the Mac's icon. */}
-      {counted && (
-        <span className="review__place">
-          <SessionCount session={session} icon={<FilterIcon filter={filter} />} />
+  // YAZ-5698 (Mochi's iPhone): two parts. LEFT the filter, its own button (its icon and its name; a tap opens the cards
+  // sheet). CENTRE the count (`SessionCount`), no button: it shows, it does nothing. The bar's box centres it on the
+  // screen (`styles.css`, `.topbar__review`); on a narrow phone the name drops under the icon's line (hidden), so the
+  // filter is the icon alone and nothing overlaps.
+  const top = (
+    <>
+      <button
+        type="button"
+        className="review__filter"
+        aria-haspopup="dialog"
+        aria-expanded={menu === 'filter'}
+        aria-label={`${filterLabel(filter)}. Choose what to review`}
+        onClick={() => {
+          if (menu !== 'filter') firstAction()
+          setMenu(menu === 'filter' ? null : 'filter')
+        }}
+      >
+        <span className="review__filter-ic" aria-hidden="true">
+          <FilterIcon filter={filter} />
         </span>
-      )}
-    </button>
+        <span className="review__filter-label" aria-hidden="true">
+          {filterLabel(filter)}
+        </span>
+      </button>
+      {/* YAZ-5674: Mochi's count, the Mac's piece; the list's glyph in front of "done / total". YAZ-5691: the Mac's icon. */}
+      <span className="review__place">{counted && <SessionCount session={session} icon={<FilterIcon filter={filter} />} />}</span>
+    </>
   )
   const topBox = useReviewTop()
   // During the review only (the sheet's line): the time as Settings › Review › Time so far says. The finish screens show it always.
@@ -625,7 +632,7 @@ function SessionScreen({
 
   return (
     <div className="review review--mochi" onClickCapture={onTap} onTouchStart={NO_OP}>
-      {topBox !== null && shown ? createPortal(countButton, topBox) : <div className="review__top">{countButton}</div>}
+      {topBox !== null && shown ? createPortal(top, topBox) : <div className="review__top">{top}</div>}
       <SessionBar session={session} className="review__progress" />
       {answers.lost.length > 0 && <LostAnswers answers={answers} link={link} />}
       {notice !== null && (
@@ -841,10 +848,10 @@ export const DONE_LOOK: DoneLook = { title: 'review__done-title', line: 'review_
 const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good: '✓', easy: '⇈' }
 
 /** What an open menu keeps for itself: the menus, and the buttons that open them (a second tap there closes it: YAZ-5539). */
-const MENU_OWN_TAPS = '.review__sheet, .review__menu, .review__count-btn, .review__more, .due-end__from'
+const MENU_OWN_TAPS = '.review__sheet, .review__menu, .review__filter, .review__more, .due-end__from'
 
-/** What a tap on the screen keeps for itself: every control (its own rule), and the open menus. */
-const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__last-mark, .review__last-text'
+/** What a tap on the screen keeps for itself: every control (its own rule), the open menus, and the count (YAZ-5698: it does nothing). */
+const SCREEN_OWN_TAPS = '.review__place, button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__last-mark, .review__last-text'
 
 const drawings = new WeakMap<object, string>()
 let drawingCount = 0
