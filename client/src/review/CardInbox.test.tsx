@@ -993,31 +993,29 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(long).toBe(`✓ Remembered · ${'A very long card title that goes on and'}… · back in 9 days`)
   })
 
-  it('YAZ-5017 round 2, YAZ-5132: the top row shows the CURRENT card`s place, vault › folders › page, the ONE breadcrumb, each part with its folder or page icon; it changes with the card; a folder opens through `openPlace`, the page as O does; the scope shows only when narrower than the vault', () => {
+  it('YAZ-5017 round 2, YAZ-5132: the top row shows the CURRENT card`s place, folders › page (YAZ-5682: no vault), the ONE breadcrumb, each part with its folder or page icon; it changes with the card; a folder opens through `openPlace`, the page as O does; the scope shows only when narrower than the vault', () => {
     mount(TWO_SIDES)
     const parts = () => [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__path-part')]
-    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'spanish-words', path: '/v/spanish-words' }, { kind: 'page', label: 'Verbs', path: PATH }] }
+    session = { ...session, place: [{ kind: 'folder', label: 'spanish-words', path: '/v/spanish-words' }, { kind: 'page', label: 'Verbs', path: PATH }] }
     render()
-    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'spanish-words', 'Verbs'])
-    // YAZ-5132: the tree's own icons (YAZ-5100), a folder's for the vault and the folders, a page's for the page.
-    expect(parts().map((p) => p.querySelector('.file-icon')?.classList.contains('file-icon--dir'))).toEqual([true, true, false])
-    expect(parts()[2].querySelector('.file-icon--file')).not.toBeNull()
-    expect(el.querySelector('.card-inbox__path')?.getAttribute('title')).toBe('Demo › spanish-words › Verbs')
+    expect(parts().map((p) => p.textContent)).toEqual(['spanish-words', 'Verbs'])
+    // YAZ-5132: the tree's own icons (YAZ-5100), a folder's for the folders, a page's for the page.
+    expect(parts().map((p) => p.querySelector('.file-icon')?.classList.contains('file-icon--dir'))).toEqual([true, false])
+    expect(parts()[1].querySelector('.file-icon--file')).not.toBeNull()
+    expect(el.querySelector('.card-inbox__path')?.getAttribute('title')).toBe('spanish-words › Verbs')
     // The head no longer says "in Verbs": one place, said once.
     expect(el.querySelector('.card-inbox__in')).toBeNull()
-    act(() => parts()[2].click())
+    act(() => parts()[1].click())
     expect(props.openPage).toHaveBeenLastCalledWith(PATH)
     expect(props.openPlace).not.toHaveBeenCalled()
     // The whole vault under review: no "· in …" (Yaseen: "isnt this redundant?").
     expect(el.querySelector('.card-inbox__from')).toBeNull()
-    act(() => parts()[1].click())
-    expect(props.openPlace).toHaveBeenLastCalledWith('/v/spanish-words')
     act(() => parts()[0].click())
-    expect(props.openPlace).toHaveBeenLastCalledWith('/v')
+    expect(props.openPlace).toHaveBeenLastCalledWith('/v/spanish-words')
     // The next card, in another folder: the path follows it.
-    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'Bio', path: '/v/Bio' }] }
+    session = { ...session, place: [{ kind: 'folder', label: 'Bio', path: '/v/Bio' }] }
     render()
-    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'Bio'])
+    expect(parts().map((p) => p.textContent)).toEqual(['Bio'])
     // A review of one page: the scope says it.
     session = { ...session, scope: 'page', from: ['Cells'] }
     render()
@@ -1128,7 +1126,7 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
 
   it('a card in a page: "WIKI-9", and "Capital of France" in the band, from the start, no "in Cards"; the breadcrumb`s page part and O open the page', () => {
     mount(PLAIN)
-    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'page', label: 'Cards', path: PATH }] }
+    session = { ...session, place: [{ kind: 'page', label: 'Cards', path: PATH }] }
     render()
     expect(headText()).toBe('WIKI-9 | Capital of France')
     expect(el.querySelector('.card-inbox__in')).toBeNull()
@@ -1150,7 +1148,7 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
   ] as const)('YAZ-5307: with "%s", O, the breadcrumb`s page part and ⋯ › Open card ask for %j; E is unchanged', (openAt, asked) => {
     mount(PLAIN)
     props = { ...props, openAt }
-    session = { ...session, card: { ...session.card!, index: 1 }, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'page', label: 'Cards', path: PATH }] }
+    session = { ...session, card: { ...session.card!, index: 1 }, place: [{ kind: 'page', label: 'Cards', path: PATH }] }
     render()
     press('o')
     expect(vi.mocked(props.openPage).mock.lastCall).toEqual(asked)

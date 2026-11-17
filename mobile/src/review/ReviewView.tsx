@@ -529,8 +529,8 @@ function SessionScreen({
 
   const headTitle = title.waits && !done ? '' : title.text
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
-  // The crumb (YAZ-5132's place, without the vault): "LEARNING / Memory", inside the card, on the chip's line.
-  const crumb = session.place.filter((p) => p.kind !== 'vault').map((p) => p.label)
+  // The crumb (YAZ-5132's place, from the first folder, YAZ-5682): "LEARNING / Memory", inside the card, on the chip's line.
+  const crumb = session.place.map((p) => p.label)
 
   // TAP ANYWHERE: a tap on the screen shows the next part — the card, the empty space, the hint line, the
   // crumb. Not: a button or a link (✕ ✓ ← → ⋯, Undo, the menus' rows), an open menu, and the card's own taps (a link,

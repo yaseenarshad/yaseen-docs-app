@@ -53,7 +53,8 @@ const FIRST_FRONT = 'Your body builds and repairs with {{protein}}.'
 const FIRST = { title: draftTitle(FIRST_FRONT), id: 'DEMO-10', text: `${FIRST_FRONT}\n---\nAn egg is mostly protein and fat.` }
 
 
-const PLACE = ['My vault', 'Course Cards']
+// The Inbox's breadcrumb starts at the folder (YAZ-5682).
+const PLACE = ['Course Cards']
 
 /** The Inbox's four cards today, in order. */
 const TODAY = [

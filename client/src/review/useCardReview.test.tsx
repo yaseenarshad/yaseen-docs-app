@@ -311,20 +311,16 @@ describe('useCardReview', () => {
       await mount()
       await act(async () => review.start())
       // WIKI-1 (Geo.md, due) first, then the new cards: WIKI-3 (Bio/Cells.md), WIKI-5 (Bio/Deep/More.md).
-      // A page at the vault's top: the vault alone.
-      expect(review.session?.place).toEqual([
-        { kind: 'vault', label: 'vault', path: ROOT },
-        { kind: 'page', label: 'Geo', path: `${ROOT}/Geo.md` },
-      ])
+      // YAZ-5682: the Inbox is one vault's, so the place starts at the first folder; a page at the vault's top is its name alone.
+      expect(review.session?.place).toEqual([{ kind: 'page', label: 'Geo', path: `${ROOT}/Geo.md` }])
       act(() => review.move(1))
       expect(review.session?.place.map((p) => [p.kind, p.label, p.path])).toEqual([
-        ['vault', 'vault', ROOT],
         ['folder', 'Bio', `${ROOT}/Bio`],
         ['page', 'Cells', `${ROOT}/Bio/Cells.md`],
       ])
       act(() => review.move(1))
-      expect(review.session?.place.map((p) => p.label)).toEqual(['vault', 'Bio', 'Deep down', 'More'])
-      expect(review.session?.place[2].path).toBe(`${ROOT}/Bio/Deep`)
+      expect(review.session?.place.map((p) => p.label)).toEqual(['Bio', 'Deep down', 'More'])
+      expect(review.session?.place[1].path).toBe(`${ROOT}/Bio/Deep`)
       // The scope stays what is under review, apart from the card's place.
       expect(review.session?.from).toEqual(['vault'])
     } finally {
@@ -335,12 +331,10 @@ describe('useCardReview', () => {
   it('YAZ-5132: a card FILE`s place is its folders only — its name is its title, which the head shows (and hides while `notitle` hides it)', () => {
     const file = { ...scan(`${ROOT}/Bio/Mitosis.md`, ''), kind: 'card' as const, title: 'Mitosis' }
     const pageRecord = scan(`${ROOT}/Bio/Cells.md`, '')
-    expect(cardPlace(ROOT, 'vault', [], [file, pageRecord], file.path).map((p) => [p.kind, p.label])).toEqual([
-      ['vault', 'vault'],
-      ['folder', 'Bio'],
-    ])
-    expect(cardPlace(ROOT, 'vault', [], [file, pageRecord], pageRecord.path).map((p) => [p.kind, p.label])).toEqual([
-      ['vault', 'vault'],
+    expect(cardPlace(ROOT, [], [file, pageRecord], file.path).map((p) => [p.kind, p.label])).toEqual([['folder', 'Bio']])
+    // YAZ-5682: a card file at the vault's top has no place: its title is in the head.
+    expect(cardPlace(ROOT, [], [{ ...file, path: `${ROOT}/Mitosis.md` }], `${ROOT}/Mitosis.md`)).toEqual([])
+    expect(cardPlace(ROOT, [], [file, pageRecord], pageRecord.path).map((p) => [p.kind, p.label])).toEqual([
       ['folder', 'Bio'],
       ['page', 'Cells'],
     ])

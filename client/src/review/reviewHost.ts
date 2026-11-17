@@ -47,7 +47,7 @@ export interface ReviewHost {
   /** Today's added numbers, set whole. */
   setCardsAdded(root: string, added: CardsAddedToday): void
   subscribeCardsAdded(listener: () => void): () => void
-  /** The name of vault `root`, as its sidebar shows it (the breadcrumb's first part, the done screen's scope). */
+  /** The name of vault `root`, as its sidebar shows it (the done screen's scope). */
   vaultName(root: string): string
   /**
    * Undo takes back an Archive card (YAZ-5078: the phone's decision; the mockup shows "Archived · Undo"). The phone's

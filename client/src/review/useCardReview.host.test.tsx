@@ -167,7 +167,6 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
     await shown('WIKI-30')
     expect(review.session?.card?.page).toMatchObject({ title: 'Mitosis', text: 'Cells {{split}}' })
     expect(review.session?.place.map((p) => [p.kind, p.label])).toEqual([
-      ['vault', 'Phone vault'],
       ['folder', 'Bio'],
     ])
     await answer('WIKI-30', 'good')
@@ -178,7 +177,6 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
     await shown('WIKI-31')
     expect(review.session?.card?.page).toMatchObject({ text: 'What is a {{cell}}?', title: '' })
     expect(review.session?.place.map((p) => [p.kind, p.label])).toEqual([
-      ['vault', 'Phone vault'],
       ['folder', 'Bio'],
       ['page', 'Cells'],
     ])

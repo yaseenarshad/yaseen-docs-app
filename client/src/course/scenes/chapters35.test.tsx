@@ -40,7 +40,7 @@ const pieces: [string, (b: Beat) => ReactElement][] = [
         beat={b}
         card={{ title: 'The Moon’s orbit', text: 'About {{27 days}}.\n---\nThe back.', shown: 1, sides: 2 }}
         answered={[false, true]}
-        place={['My vault', 'Course Cards']}
+        place={['Course Cards']}
         forgot={{ press: b.progress }}
         remembered={{ key: b.progress }}
         hover={{ on: 'remembered', text: 'Remembered · 9 days', p: b.progress }}

@@ -150,7 +150,7 @@ export interface CardReviewSession {
   counts: Record<CardFilter, number>
   /** Where the cards come from (YAZ-5017): the vault's name; the folder's parts; the page's name. Shown by the filter ("· in …"). */
   from: string[]
-  /** The card showing's place (YAZ-5017 round 2, YAZ-5132): vault › folders › page (a card file: its folders), each with what a click opens. Empty with no card. */
+  /** The card showing's place (YAZ-5017 round 2, YAZ-5132): folders › page, no vault (YAZ-5682; a card file: its folders), each with what a click opens. Empty with no card. */
   place: CardPlacePart[]
   /** Each answer of the session, in order (YAZ-5020): a Forgot ('again') or a Remembered (any other). */
   answered: CardRating[]
@@ -269,9 +269,9 @@ export interface CardReviewApi {
   goOn: () => void
 }
 
-/** One part of a card's place (YAZ-5017 round 2): its name, and the path a click opens (the vault's or a folder's page, or the page). */
+/** One part of a card's place (YAZ-5017 round 2): its name, and the path a click opens (a folder's page, or the page). */
 export interface CardPlacePart {
-  kind: 'vault' | 'folder' | 'page'
+  kind: 'folder' | 'page'
   label: string
   path: string
 }
@@ -707,19 +707,19 @@ const titleOf = (records: readonly IndexRecord[], path: string): string => recor
 
 /**
  * The place of the card at `path`, where it LIVES (YAZ-5017 round 2; YAZ-5132, Yaseen: "we should just have the
- * breadcrumb at the top"): the vault, each folder down to the file, then the page by its title — the ONE breadcrumb;
- * the head has no "in <page>". A CARD FILE (YAZ-5037) ends at its folder: its name is its title, which the head shows
- * (and keeps back while `notitle` hides it). An embed never shows here: the queue is the cards of each page's own
- * text (`cardRecords`), never a page's `![[…]]`.
+ * breadcrumb at the top"): each folder down to the file, then the page by its title — the ONE breadcrumb; the head
+ * has no "in <page>". No vault (YAZ-5682): a session is one vault's (`root`), named in the window title and the
+ * sidebar, so a page at the vault's top is its name alone. A CARD FILE (YAZ-5037) ends at its folder: its name is its
+ * title, which the head shows (and keeps back while `notitle` hides it). An embed never shows here: the queue is the
+ * cards of each page's own text (`cardRecords`), never a page's `![[…]]`.
  */
-export function cardPlace(root: string, vault: string, folders: readonly IndexRecord[], records: readonly IndexRecord[], path: string): CardPlacePart[] {
+export function cardPlace(root: string, folders: readonly IndexRecord[], records: readonly IndexRecord[], path: string): CardPlacePart[] {
   const dirs = (path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path).split('/').slice(0, -1)
   const inside = dirs.map((_, i): CardPlacePart => {
     const dir = `${root}/${dirs.slice(0, i + 1).join('/')}`
     return { kind: 'folder', label: folderTitle(folders, dir), path: dir }
   })
-  const top: CardPlacePart[] = [{ kind: 'vault', label: vault, path: root }, ...inside]
-  return records.find((r) => r.path === path)?.kind === 'card' ? top : [...top, { kind: 'page', label: titleOf(records, path), path }]
+  return records.find((r) => r.path === path)?.kind === 'card' ? inside : [...inside, { kind: 'page', label: titleOf(records, path), path }]
 }
 
 export function useCardReview(
@@ -1313,7 +1313,7 @@ export function useCardReview(
       filter,
       counts,
       from,
-      place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
+      place: shownCard === null || root === null ? [] : cardPlace(root, folders, records, shownCard.path),
       answered: session.answered.map((a) => a.rating),
       progress: filterCount(session.answered, queue, filter),
       // Mochi hides the ✕ in the missed pass (YAZ-5671 finding 9); its % screen still shows it.
