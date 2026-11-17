@@ -1147,6 +1147,13 @@ export interface ExcalidrawProps {
    * pick, while the selection tool hovers. Absent: on.
    */
   hoverOutline?: boolean;
+  /**
+   * Yaseen Docs (YAZ-5771): what a double click on the left or right edge of a
+   * selected free text does. "shrink": the box keeps its line breaks and
+   * becomes as wide as its widest line, never wider. "fit": the text
+   * auto-resizes (`actionTextAutoResize`). Absent: "shrink".
+   */
+  textEdgeDoubleClick?: "shrink" | "fit";
   /** Yaseen Docs (YAZ-4277 D14): the host's defaults for a new element's style. Keep it stable. */
   defaultItemStyle?: Partial<NewElementStyle>;
   /**

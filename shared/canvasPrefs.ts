@@ -31,7 +31,7 @@
  */
 
 import { isRecord } from './guards'
-import { DEFAULT_CANVAS_PREFS, NEW_ELEMENT_STYLE_MODES, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_MODES, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FOLD_ARROW_THICKNESSES, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowPrefs, type FoldArrowThickness, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign } from './types'
+import { DEFAULT_CANVAS_PREFS, NEW_ELEMENT_STYLE_MODES, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_MODES, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FOLD_ARROW_THICKNESSES, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, TEXT_EDGE_DOUBLE_CLICK_MODES, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowPrefs, type FoldArrowThickness, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign, type TextEdgeDoubleClickMode } from './types'
 
 /** Every pref key, in declaration order — the order `changedPrefKeys` reports in. */
 export const CANVAS_PREF_KEYS = Object.keys(DEFAULT_CANVAS_PREFS) as ReadonlyArray<keyof CanvasPrefs>
@@ -72,6 +72,7 @@ const FIELD_OK: { [K in keyof CanvasPrefs]: (v: unknown) => v is CanvasPrefs[K] 
   fillSetsTextColor: isBool,
   newShapesMatchZoom: isBool,
   hoverOutline: isBool,
+  textEdgeDoubleClick: (v): v is TextEdgeDoubleClickMode => typeof v === 'string' && (TEXT_EDGE_DOUBLE_CLICK_MODES as readonly string[]).includes(v),
 }
 
 /** Strict: every field present and valid — the IPC boundary's check. */
@@ -170,6 +171,8 @@ export function prefsToAppState(prefs: CanvasPrefs, keys: ReadonlyArray<keyof Ca
         break // the engine's `newShapesMatchZoom` prop, never appState (YAZ-4277 demo)
       case 'hoverOutline':
         break // the engine's `hoverOutline` prop, never appState (YAZ-4469 demo)
+      case 'textEdgeDoubleClick':
+        break // the engine's `textEdgeDoubleClick` prop, never appState (YAZ-5771)
       case 'defaultFontFamily':
         out.currentItemFontFamily = prefs.defaultFontFamily
         break
@@ -233,6 +236,7 @@ export function appStateToPrefs(appState: EngineAppStateSlice, fallback: CanvasP
     fillSetsTextColor: fallback.fillSetsTextColor,
     newShapesMatchZoom: fallback.newShapesMatchZoom,
     hoverOutline: fallback.hoverOutline,
+    textEdgeDoubleClick: fallback.textEdgeDoubleClick,
   }
 }
 
