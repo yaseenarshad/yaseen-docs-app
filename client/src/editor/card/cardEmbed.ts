@@ -34,7 +34,8 @@ import type { CardLink } from '@shared/cardLinks'
 import { BridgeRequestError, api } from '../../api'
 import { pageLabel, pathTitles } from '../../lib/pageLabel'
 import { changeCardLine, changeCardTextIn, cardInContent, type CardAtPage } from '../../review/cardFile'
-import { cardMarksOf, cardMenuRows } from '../../review/cardMenuView'
+import { loadCardMenu, withCardMenu } from '../../review/cardMenuLoad'
+import type { CardMenuDoors } from '../../review/cardMenuView'
 import type { CardMenuMarks } from '@shared/cardMenu'
 import type { MenuRow } from '../blockHandleMenu'
 import { scrollRootOf } from '../embed/hostWindow'
@@ -141,7 +142,7 @@ const button = (className: string, label: string): HTMLButtonElement => {
  * Reset history (they write the ORIGINAL, as a card in a page's do), Copy card ID. `marks`: the card as read, else its
  * index record's.
  */
-export function cardEmbedMenuRows(o: {
+export function cardEmbedMenuDoors(o: {
   card: CardLink
   marks: CardMenuMarks
   editable: boolean
@@ -153,10 +154,10 @@ export function cardEmbedMenuRows(o: {
   onNotice: (message: string) => void
   /** "Put back into this page" (YAZ-5037 phase 5): the card is in a card file, the embed stands alone on its line, and the page's door is there. Else null. */
   putBack?: (() => void) | null
-}): MenuRow[] {
+}): CardMenuDoors {
   const { card } = o
   const failed = (err: unknown) => o.onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`)
-  return cardMenuRows({
+  return {
     marks: o.marks,
     path: card.path,
     upNext: true,
@@ -169,7 +170,7 @@ export function cardEmbedMenuRows(o: {
     preview: o.preview ?? undefined,
     showAsLink: o.editable ? () => o.replace(`[[${o.target}]]`) : undefined,
     putBack: o.putBack ?? undefined,
-  })
+  }
 }
 
 /** Draws the card box of `host` into a new element (see the module doc). */
@@ -178,6 +179,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const onNotice = doors.onNotice ?? (() => {})
   const dom = document.createElement('div')
   dom.contentEditable = 'false'
+  // The ⋯'s code (the one card menu, a lazy chunk): ready before the first click.
+  void loadCardMenu()
   const head = document.createElement('div')
   head.className = 'card__head card-embed__head'
   const from = button('card-embed__from', 'Open the original')
@@ -227,8 +230,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const fix = (c: CardLink): boolean => (read?.id === c.id ? read.fix === true : recordAt(source.records, c.path)?.cards?.[c.index]?.fix === true)
   /** The ⋯'s marks (YAZ-5697 round 2): the card as read, else its index record's. */
   const marksOf = (c: CardLink): CardMenuMarks => {
-    if (read?.id === c.id) return cardMarksOf(read)!
-    const rec = recordAt(source.records, c.path)?.cards?.[c.index]
+    const rec = read?.id === c.id ? read : recordAt(source.records, c.path)?.cards?.[c.index]
     return { off: rec?.off === true, next: rec?.next === true, fix: rec?.fix === true, notitle: rec?.notitle === true, titleAt: rec?.notitle === true ? 'never' : (rec?.titleAt ?? 'default'), reviews: rec?.reviews.length ?? 0 }
   }
 
@@ -412,11 +414,14 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     // Put back: only a card file's card (a card in a page stays where it is), and only from an embed alone on its line.
     const place = doors.putBack !== undefined && recordAt(source.records, c.path)?.kind === 'card' ? host.place() : null
     const putBack = place === null ? null : () => doors.putBack!({ id: c.id, path: c.path }, place.inner, place.nth)
-    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, marks: marksOf(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack, preview: read === null ? null : previewRead }))
-    closeMenu = () => {
-      close()
-      closeMenu = null
-    }
+    withCardMenu(({ cardMenuRows }) => {
+      closeMenu?.()
+      const close = openMenuAt(host.menuParent(), x, y, cardMenuRows(cardEmbedMenuDoors({ card: c, marks: marksOf(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack, preview: read === null ? null : previewRead })))
+      closeMenu = () => {
+        close()
+        closeMenu = null
+      }
+    })
   }
 
   const onMouseDown = (event: MouseEvent): void => {

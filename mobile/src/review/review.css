@@ -39,40 +39,62 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* With no top bar (the screen alone): the count on a line of its own. */
+/* With no top bar (the screen alone): the filter and the count on a line of their own, the count centred. */
 .review__top {
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
 }
 
-.review__count-btn {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
+/*
+ * YAZ-5698: the filter, the left of the bar: its icon and its name, a 44 px tap. On a narrow phone with a long count the
+ * name does not fit beside the count: the button is one line (44 px) that wraps, so the name falls to a second line
+ * that is cut off, and the filter is its icon alone (its VoiceOver name stays).
+ */
+.review__filter {
+  justify-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  column-gap: 6px;
+  min-width: var(--tap);
   max-width: 100%;
-  min-height: var(--tap);
-  padding: 4px 10px;
+  height: var(--tap);
+  overflow: hidden;
+  padding: 0 10px;
   border: 0;
   border-radius: 12px;
   background: none;
-  color: var(--fg);
+  color: var(--fg-muted);
   font: inherit;
-  white-space: nowrap;
   cursor: pointer;
 }
-
-.review__count-btn[aria-expanded='true'],
-.review__count-btn:active {
-  background: var(--bg-side);
+.review__filter[aria-expanded='true'],
+.review__filter:active {
+  color: var(--fg);
+}
+.review__filter-ic,
+.review__filter-label {
+  display: inline-flex;
+  align-items: center;
+  height: var(--tap);
+}
+.review__filter-ic {
+  flex: none;
+}
+.review__filter-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.review__mode {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fg-muted);
+/* The count, the centre column: it shows, it does nothing. */
+.review__place {
+  grid-column: 2;
+  display: inline-flex;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 /* YAZ-5674: Mochi's count (`SessionCount`), a little larger on the phone. */
@@ -328,22 +350,30 @@
   color: var(--fg);
 }
 
-/* The ask in place (YAZ-5690 round 3, `AskInPlace`): the question, then Cancel and Add, 44 pt each. */
+/* The ask in place (YAZ-5690 round 3, `AskInPlace`; YAZ-5699 the finish screen's adds): the question, then Cancel and Add, 44 pt each. */
+.review__done-ask {
+  width: 100%;
+  text-align: center;
+}
+
 .review__sheet-settings .ask-in-place {
   flex: 1 1 auto;
   padding: 6px 0;
 }
-.review__sheet-settings .ask-in-place .confirm__text {
+.review .ask-in-place .confirm__text {
   margin: 0 0 8px;
   font-size: 14px;
   color: var(--fg);
 }
-.review__sheet-settings .ask-in-place .confirm__actions {
+.review .ask-in-place .confirm__actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
-.review__sheet-settings .ask-in-place .confirm__btn {
+.review .review__done-ask .confirm__actions {
+  justify-content: center;
+}
+.review .ask-in-place .confirm__btn {
   min-width: 72px;
   height: 44px;
   padding: 0 14px;
@@ -354,7 +384,7 @@
   font: inherit;
   font-size: 15px;
 }
-.review__sheet-settings .ask-in-place .confirm__btn + .confirm__btn {
+.review .ask-in-place .confirm__btn + .confirm__btn {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;

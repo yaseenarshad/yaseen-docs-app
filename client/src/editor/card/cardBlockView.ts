@@ -62,7 +62,8 @@ import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type
 import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
-import { cardMenuRows } from '../../review/cardMenuView'
+import { loadCardMenu, withCardMenu } from '../../review/cardMenuLoad'
+import type { CardMenuDoors } from '../../review/cardMenuView'
 import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleChoiceOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
@@ -70,7 +71,6 @@ import type { ReviewSettings } from '@shared/reviews'
 import { codeWidthSchema } from '../code/codeWidth'
 import { CARD_EDIT_KEYS, cardKeyRow, drawEditButton } from './cardEditKeys'
 import { copyText, openMenuAt } from '../linkMenu'
-import type { MenuRow } from '../blockHandleMenu'
 import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, cardLineStepAt, changeCardLineAt, isCardNode, CARD_LANGUAGE, cardLineOf } from './cardBlockLine'
@@ -282,6 +282,8 @@ export class CardBlockView implements NodeView {
   ) {
     this.dom = document.createElement('div')
     this.dom.className = 'card'
+    // The ⋯'s code (the one card menu, a lazy chunk): ready before the first click.
+    void loadCardMenu()
     // The page's own card, its ID on it (YAZ-5164): what Explore's page layer lands on (`pageCardIn`); an embed has neither.
     this.dom.dataset.pageCard = ''
     const head = document.createElement('div')
@@ -722,12 +724,12 @@ export class CardBlockView implements NodeView {
    * of it — Open card, Preview, Move to its own file (the host's convert door, a card with an ID), the review rows, Copy
    * card ID, Reset history. They change the card line in one undo step each (`change`); read only, through the file.
    */
-  menuRows(): MenuRow[] {
+  menuDoors(): CardMenuDoors {
     const line = cardLineOf(this.node)
     const id = cardIdOf(line)
     const convert = this.deps.host?.convert
     const pos = this.pos
-    return cardMenuRows({
+    return {
       marks: { off: isCardOff(line), next: isCardNext(line), fix: isCardFix(line), notitle: isCardNoTitle(line), titleAt: cardTitleChoiceOf(line), reviews: cardReviewsOf(line).length },
       upNext: true,
       path: this.path,
@@ -740,17 +742,21 @@ export class CardBlockView implements NodeView {
       preview: this.path === null ? undefined : () => this.preview(),
       // A card with no ID yet is not offered: its card file's name and its embed need the ID (the door gives it at once).
       moveOut: id !== null && pos !== null && convert?.canMove() === true ? () => convert.move(id, cardIndex(this.view.state.doc, pos)) : undefined,
-    })
+    }
   }
 
   private openMenu(): void {
     this.closeMenu?.()
     const rect = this.more.getBoundingClientRect()
-    const close = openMenuAt(this.view.dom.parentElement ?? document.body, rect.left, rect.bottom + 4, this.menuRows())
-    this.closeMenu = () => {
-      close()
-      this.closeMenu = null
-    }
+    withCardMenu(({ cardMenuRows }) => {
+      if (this.view.isDestroyed) return
+      this.closeMenu?.()
+      const close = openMenuAt(this.view.dom.parentElement ?? document.body, rect.left, rect.bottom + 4, cardMenuRows(this.menuDoors()))
+      this.closeMenu = () => {
+        close()
+        this.closeMenu = null
+      }
+    })
   }
 
   private onMouseDown = (event: MouseEvent): void => {

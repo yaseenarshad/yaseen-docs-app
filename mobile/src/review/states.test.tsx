@@ -26,7 +26,15 @@ describe('Review: done, and "Add more for today" (round 10, addition 2)', () => 
     expect(h.text()).toContain('Inbox complete')
     expect(h.text()).toContain('Today: 2 learned · 0 reviews')
     expect(h.text()).toContain('3 new cards wait for another day.')
+    // YAZ-5699: one tap never adds; it asks in place, Cancel first. Cancel changes nothing; Add adds.
     await h.click('Add 2 new cards')
+    expect(h.text()).toContain('Inbox complete')
+    expect(h.text()).toContain('Add 2 new cards to today?')
+    expect([...h.host.querySelectorAll('.ask-in-place button')].map((b) => b.textContent)).toEqual(['Cancel', 'Add'])
+    await h.click('Cancel')
+    expect(h.button('Add 2 new cards')).not.toBeNull()
+    await h.click('Add 2 new cards')
+    await h.click('Add')
     expect(h.head()).toBe('NW-3')
     expect(h.last()).toBe('Added 2 new cards for today · Undo')
     await h.click('Undo')
@@ -62,14 +70,14 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
     // Review rules v1, rule 7: DU-3 (new, Up next) is under Up next only; before, New cards said 2.
     expect(rows).toEqual(['All cards3', 'Up next1', 'Due today1', 'New cards1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434); YAZ-5685: no "from" on the row */)
     await h.click(/^Due today/)
-    expect(h.text()).toContain('Due today ▾')
+    expect(h.host.querySelector('.review__filter-label')?.textContent).toBe('Due today')
     expect(h.head()).toBe('DU-1')
     expect(h.text()).toContain('0 / 1')
     await h.click('Remembered')
     // YAZ-5495 (the Mac's YAZ-5043): "Due today is done." with "Learn new cards 1" in place of "No due cards left." (rule 7: DU-3 is Up next's).
     expect(h.text()).toContain('Finished reviewing.')
     await h.click('Learn new cards 1')
-    expect(h.text()).toContain('New cards ▾')
+    expect(h.host.querySelector('.review__filter-label')?.textContent).toBe('New cards')
     expect(h.button('Remembered')).not.toBeNull()
   })
 
@@ -80,7 +88,7 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
     expect(h.head()).toBe('DU-3')
     await h.click(/Choose what to review/)
     await h.click(/^New cards/)
-    expect(h.text()).toContain('New cards ▾')
+    expect(h.host.querySelector('.review__filter-label')?.textContent).toBe('New cards')
     // Rule 7: DU-2 alone (DU-3 is under Up next).
     expect(h.text()).toMatch(/0 \/ 1/)
   })

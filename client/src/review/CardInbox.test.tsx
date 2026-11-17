@@ -1869,15 +1869,31 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     render()
     expect(doneText()).toEqual(['Inbox complete.', '38 new cards and 3 Up next cards wait for another day.', 'Add[10]new cardsfrom All foldersAdd[2]Up next'])
     expect(pills().map(textOf)).toEqual(['Add[10]new cardsfrom All folders', 'Add[2]Up next'])
-    // A click on "Add" or the words adds the number shown.
+    // YAZ-5699 (Yaseen: "that should be a two click as well"): a click on "Add" or the words never adds; it asks in place.
+    const ask = () => el.querySelector<HTMLElement>('.card-inbox__done .ask-in-place')
+    const answer = (word: 'Cancel' | 'Add') => act(() => [...ask()!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === word)!.click())
     act(() => addButtons()[0].click())
+    expect(review.addCards).not.toHaveBeenCalled()
+    expect([ask()!.querySelector('.confirm__text')!.textContent, [...ask()!.querySelectorAll('button')].map((b) => b.textContent), document.activeElement?.textContent]).toEqual(['Add 10 new cards to today?', ['Cancel', 'Add'], 'Cancel'])
+    answer('Cancel')
+    expect([ask(), vi.mocked(review.addCards).mock.calls.length]).toEqual([null, 0])
+    act(() => addButtons()[0].click())
+    answer('Add')
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
     act(() => pills()[1].querySelectorAll<HTMLButtonElement>('.card-inbox__done-add-word')[1].click())
+    expect(ask()!.querySelector('.confirm__text')!.textContent).toBe('Add 2 Up next cards to today?')
+    // Esc cancels.
+    act(() => void document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect([ask(), vi.mocked(review.addCards).mock.calls.length]).toEqual([null, 1])
+    act(() => pills()[1].querySelectorAll<HTMLButtonElement>('.card-inbox__done-add-word')[1].click())
+    answer('Add')
     expect(review.addCards).toHaveBeenLastCalledWith('next', 2)
-    // The same field: type, then Enter (the Inbox's keys do not see it).
+    // The same field: type, then Enter asks (the Inbox's keys do not see it); Add adds the typed number.
     const input = pills()[0].querySelector('input')!
     typeIn(input, '25')
     key(input, 'Enter')
+    expect(vi.mocked(review.addCards).mock.calls.length).toBe(2)
+    answer('Add')
     expect(review.addCards).toHaveBeenLastCalledWith('new', 25)
     // Only one kind waits: its line and its button.
     session = { ...session, more: { new: 0, next: 3 }, adds: { new: 0, next: 2 } }
@@ -1919,7 +1935,10 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(doneText()).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 12', 'Add[10]new cardsfrom All folders'])
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!.click())
     expect(review.setFilter).toHaveBeenLastCalledWith('due')
+    // YAZ-5699: "Review cards 12" moves to the next list and changes nothing: one click. The add asks first.
     act(() => addButtons()[0].click())
+    expect(review.addCards).not.toHaveBeenCalled()
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__done .ask-in-place button')].find((b) => b.textContent === 'Add')!.click())
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
     session = { ...session, filter: 'next' }
     render()
