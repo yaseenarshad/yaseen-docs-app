@@ -236,3 +236,26 @@ describe('YAZ-5681: the ✕ and the red follow the open filter (differs from Moc
     expect(top()).toBe('✕ 3 · 3 / 9 | grey 33 red 67 | all 6 due 4 new 2')
   })
 })
+
+describe('YAZ-5680 check 3: today`s line follows the answers at once, also before the index has the write (the Mac`s index lags)', () => {
+  it('two answers with no index update: "2 cards"; ⌘Z with no index update: back to 1; the index catching up changes nothing', async () => {
+    dueCards(3)
+    await mount()
+    const today = () => [review.session!.today.cards, review.session!.today.reviews]
+    expect(today()).toEqual([0, 0])
+    // No reindex after each answer: the index has not caught up yet.
+    const raw = async (r: CardRating) => {
+      await shown(review.session!.card!.id)
+      await act(async () => void review.showAnswers())
+      vi.setSystemTime(Date.now() + 20_000)
+      await act(async () => void (await review.answer(r)))
+    }
+    await raw('good')
+    await raw('again')
+    expect(today()).toEqual([2, 2])
+    await act(async () => void (await review.undo()))
+    expect(today()).toEqual([1, 1])
+    await act(async () => reindex())
+    expect(today()).toEqual([1, 1])
+  })
+})
