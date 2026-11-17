@@ -59,10 +59,21 @@
   padding: 6px 12px 8px;
 }
 
-/* A note line wraps (YAZ-5717): its leading spaces (a nested bullet's indent) stay; a long word breaks. */
+/* A note line wraps (YAZ-5717): a long word breaks. Its lead (the indent and the marker, `cellNotePreview.ts`) is a
+   column of its own, so a wrapped row hangs under the text after the marker. */
 .cell-note-preview__line {
+  display: flex;
   min-height: 1.4em;
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.cell-note-preview__lead {
+  flex: none;
+  white-space: pre;
+}
+
+.cell-note-preview__line-text {
+  min-width: 0;
 }

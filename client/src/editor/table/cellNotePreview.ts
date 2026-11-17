@@ -83,6 +83,28 @@ export function cellNotePreviewLines(note: ProseNode, max: number): string[] {
 /** Is this cell's text cut (YAZ-4900)? A clipped cell has a line (any `p`: plain, bullet, sub-bullet, to-do) wider inside than out. */
 const isCut = (cell: HTMLElement): boolean => Array.from(cell.querySelectorAll('p')).some((line) => line.scrollWidth > line.clientWidth + 1)
 
+/** A preview line's lead: its indent, then a marker (`• `, `☐ `, `☑ `, `1. `) or the spaces of a later line in the same item. */
+const LEAD = /^ *(?:• |☐ |☑ |\d+\. )?/
+
+/** One note line. The lead is its own column, so a wrapped row starts under the text, not under the marker (YAZ-5717). */
+function noteLine(text: string): HTMLElement {
+  const line = document.createElement('div')
+  line.className = 'cell-note-preview__line'
+  const lead = LEAD.exec(text)![0]
+  if (lead === '') {
+    line.textContent = text
+    return line
+  }
+  const marker = document.createElement('span')
+  marker.className = 'cell-note-preview__lead'
+  marker.textContent = lead
+  const rest = document.createElement('span')
+  rest.className = 'cell-note-preview__line-text'
+  rest.textContent = text.slice(lead.length)
+  line.append(marker, rest)
+  return line
+}
+
 /** The note's part of a card: its title, the hint, and its first lines, then "…" when it has more (YAZ-5717). */
 function noteParts(view: EditorView, label: string, pos: number): HTMLElement[] {
   const header = document.createElement('div')
@@ -95,12 +117,7 @@ function noteParts(view: EditorView, label: string, pos: number): HTMLElement[] 
   body.className = 'cell-note-preview__body'
   // One line more than it shows: that one tells that the note goes on.
   const lines = cellNotePreviewLines(view.state.doc.nodeAt(pos)!, previewLines + 1)
-  for (const text of lines.length > previewLines ? [...lines.slice(0, previewLines), '…'] : lines) {
-    const line = document.createElement('div')
-    line.className = 'cell-note-preview__line'
-    line.textContent = text
-    body.appendChild(line)
-  }
+  for (const text of lines.length > previewLines ? [...lines.slice(0, previewLines), '…'] : lines) body.appendChild(noteLine(text))
   return [header, hint, body]
 }
 
@@ -118,7 +135,8 @@ function cellCard(view: EditorView, cell: HTMLElement): CellCard | null {
   const box = cardShell()
   if (cut) box.appendChild(textPart(cellNotePreviewLines(doc.nodeAt(cellPos)!, CARD_TEXT_LINES + 1)))
   if (pagePos !== null) box.append(...noteParts(view, label!, pagePos))
-  if (cut) return { box, dwell: CUT_CARD_DWELL_MS, under: true }
+  // A cut cell's card with a note fits its note lines too: the window can cut it as it cuts the box (YAZ-5746).
+  if (cut) return { box, dwell: CUT_CARD_DWELL_MS, under: true, ...(pagePos !== null && { fit: fitNoteLines }) }
   // The note's box: right of the corner, or left of it at the window's edge. `cellHoverCards` moves it up when its
   // bottom is below the window (YAZ-5717).
   const rect = cell.getBoundingClientRect()
