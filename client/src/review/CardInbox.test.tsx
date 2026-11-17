@@ -205,7 +205,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     const chip = el.querySelector('.card-inbox__head > .card__id + .card__next')!
     expect(chip.textContent).toBe('Up next×')
-    act(() => chip.querySelector<HTMLButtonElement>('[aria-label="Remove from top of Inbox"]')!.click())
+    act(() => chip.querySelector<HTMLButtonElement>('[aria-label="Remove from Up next"]')!.click())
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', false)
   })
 
@@ -669,7 +669,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(actions().map((b) => [b.textContent, b.disabled])).toEqual([
       ['Undo last review', true],
       ['Open card', false],
-      ['Put at top of Inbox', false],
+      ['Move to Up next', false],
       ['Archive card', false],
       ['Title in review', false],
     ])
@@ -690,7 +690,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await vi.waitFor(() => expect(el.querySelector('.ctx-menu__ask')?.textContent).toContain('Archive this card?'))
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click())
     expect(review.turnOff).toHaveBeenCalledOnce()
-    run('Put at top of Inbox')
+    run('Move to Up next')
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
     // YAZ-5145: Open card opens as O does: Explore's own layer.
     run('Open card')
@@ -1957,10 +1957,10 @@ describe('YAZ-5430: To fix never shows in the Inbox (Yaseen: "As long as to fix 
       press('Escape')
       return out
     }
-    expect(labels()).toEqual(['Undo last review', 'Open card', 'Put at top of Inbox', 'Archive card', 'Title in review'])
+    expect(labels()).toEqual(['Undo last review', 'Open card', 'Move to Up next', 'Archive card', 'Title in review'])
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, fix: true } } }
     render()
-    expect(labels()).toEqual(['Undo last review', 'Open card', 'Put at top of Inbox', 'Archive card', 'Title in review'])
+    expect(labels()).toEqual(['Undo last review', 'Open card', 'Move to Up next', 'Archive card', 'Title in review'])
   })
 })
 

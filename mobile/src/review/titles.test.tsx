@@ -101,7 +101,7 @@ describe('the answer list keeps the title part byte for byte (decision 2 with YA
     h = await reviewSetup(vault(cardBlock('Q?\n---\n{{A}}', `TI-9, ${TITLE}, 2026-11-01T09:00:00.000Z good`)))
     const line = async () => (await h!.answers.text('p.md'))!.split('\n').find((l) => l.startsWith('<!-- card: TI-9'))!
     const before = await line()
-    for (const name of ['Up next']) {
+    for (const name of ['Move to Up next']) {
       await h.click('More card actions')
       await h.click(name)
       expect((await line()).startsWith(`<!-- card: TI-9, ${TITLE}, `)).toBe(true)

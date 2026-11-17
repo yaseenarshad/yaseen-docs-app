@@ -197,7 +197,7 @@ card's title, on its card line, and \`--body\` (\`--body -\` for stdin) the card
 (\`<!-- card: <id>, title "<title>", notitle -->\`), and the title shows only once the whole card is shown. The
 part is the same for a card in a page and for a card file. Do not put the title in \`{{ }}\`. Use \`--hide-title\`.
 
-\`card next <id>\` puts a card at the top of the Inbox, as the app's "Put at top of Inbox" does: the card
+\`card next <id>\` puts a card at the top of the Inbox, as the app's "Move to Up next" does: the card
 line gets the part \`next\`, and the Inbox shows the card first, due or not and outside the new cards a
 day, until it is answered one time (the answer removes \`next\`). \`--off\` removes it ("Remove from top of
 Inbox"). The card is found by its id in the vault of \`<folder>\` (the current folder when none is given).
@@ -738,7 +738,7 @@ async function cardNew(dir: string, flags: Map<string, string | true>, io: Io, p
 
 /**
  * `card next` (YAZ-4999 D3): the card with ID `ref` in the vault of `from` up next, or no longer (`--off`) — the part
- * `next` on its card line, as the app's "Put at top of Inbox" writes it. The first page in path order that holds the
+ * `next` on its card line, as the app's "Move to Up next" writes it. The first page in path order that holds the
  * ID is the card's (the Inbox shows that one too). Written atomically; the same mark again writes nothing.
  */
 async function cardNext(ref: string, from: string, flags: Map<string, string | true>, io: Io): Promise<void> {

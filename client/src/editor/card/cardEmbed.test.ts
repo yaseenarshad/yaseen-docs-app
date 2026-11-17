@@ -367,7 +367,7 @@ describe('the ⋯ menu', () => {
     const { root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
     press(box.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
     menuItem('Archive card')!.click()
     await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
     await new Promise((r) => setTimeout(r, 20))
@@ -380,7 +380,7 @@ describe('the ⋯ menu', () => {
     const { crepe, root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
     press(box.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
     // Open card: the card window, through the one open hook.
     const opened: CardOpenRequest[] = []
     const listen = (e: Event) => opened.push((e as CustomEvent<CardOpenRequest>).detail)
@@ -404,7 +404,7 @@ describe('the ⋯ menu', () => {
     const { root, view } = await mount('![[GEO-2]]\n')
     view.setProps({ editable: () => false })
     press(boxes(root)[0]!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Put at top of Inbox', 'Unarchive card', 'Fix later', 'Title in review', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Move to Up next', 'Unarchive card', 'Fix later', 'Title in review', 'Copy card ID'])
   })
 
   it('YAZ-5097: Fix later writes `fix` on the ORIGINAL; a card marked in the index says "To fix" in the head and Remove Fix later', async () => {
@@ -480,7 +480,7 @@ describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back in
     const { root } = await mount('Intro.\n\n![[GEO-140]]\n\nMid ![[GEO-140]] text.\n\n- Item\n\n  ![[GEO-140]]\n', { cards: { path: PLAN, convert } })
     const [lone, inline, inList] = boxes(root)
     press(lone!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put back into this page', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put back into this page', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
     // YAZ-5697 round 2: it asks first ("Put this card back into this page?").
     menuItem('Put back into this page')!.click()
     expect(convert.putBack).not.toHaveBeenCalled()

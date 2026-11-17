@@ -40,7 +40,7 @@ async function setup(sent: Sent) {
 
 async function doMark(hh: ReviewHarness, mark: Mark) {
   await hh.click('More card actions')
-  await hh.click(mark === 'archive' ? 'Archive card' : 'Up next')
+  await hh.click(mark === 'archive' ? 'Archive card' : 'Move to Up next')
 }
 
 const LINES: string[] = []
@@ -101,7 +101,7 @@ describe('race: Undo of a mark while its save still runs', () => {
         return realAdd(...args)
       }
       await h.click('More card actions')
-      const b = h.button('Up next')!
+      const b = h.button('Move to Up next')!
       const { act } = await import('react')
       await act(async () => b.click())
       // Undo is on the screen at once; the person taps it.

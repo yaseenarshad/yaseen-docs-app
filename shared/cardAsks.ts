@@ -3,7 +3,7 @@
  * Same thing with title on front"): the rows of a card's ⋯ that change the card on one click ask in place first, with
  * Cancel first. The one card menu (`cardMenu.ts`: every card ⋯ on the Mac and the phone) says these words.
  *
- * Unarchive card does not ask: it only brings a card back. Put at top of Inbox and Fix later do not ask: each is taken
+ * Unarchive card does not ask: it only brings a card back. Move to Up next and Fix later do not ask: each is taken
  * back on the same row (and by Undo in the Inbox).
  */
 import type { CardTitleChoice } from './cardTitleAt'

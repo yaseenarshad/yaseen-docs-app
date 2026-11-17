@@ -5,8 +5,8 @@ import { CARD_TITLE_CHOICES, type CardTitleChoice } from '@shared/cardTitleAt'
 
 /**
  * THE CARD'S SETTINGS ON THE PHONE: the review rows of the ONE card menu (`shared/cardMenu.ts`, YAZ-5697 round 2), the
- * Mac's rows in the Mac's order, words and asks: Up next (the Mac's "Put at top of Inbox"; the phone's word, as Review's
- * ⋯ and filter say it), Archive card, Fix later, Title in review › (YAZ-5696: Default · At once · After the front ·
+ * Mac's rows in the Mac's order, words and asks: Move to Up next (YAZ-5697: one word on the Mac and the
+ * phone), Archive card, Fix later, Title in review › (YAZ-5696: Default · At once · After the front ·
  * With Side 2 · Never). Each changes the card line with the Mac's own change. Answering a card is not a setting: it
  * stays one tap.
  */
@@ -48,7 +48,7 @@ export interface CardAction {
 }
 
 const PHONE_WORDS: Record<'next' | 'off' | 'fix', (on: boolean) => { confirm: string; done: string }> = {
-  next: (on) => (on ? { confirm: 'Tap again to put it Up next', done: 'Marked: Up next' } : { confirm: 'Tap again to remove from Up next', done: 'Removed: Up next' }),
+  next: (on) => (on ? { confirm: 'Tap again to move it to Up next', done: 'Marked: Up next' } : { confirm: 'Tap again to remove from Up next', done: 'Removed: Up next' }),
   off: (on) => (on ? { confirm: 'Tap again to archive', done: 'Archived' } : { confirm: 'Tap again to unarchive', done: 'Unarchived' }),
   fix: (on) => (on ? { confirm: 'Tap again to mark Fix later', done: 'Marked: Fix later' } : { confirm: 'Tap again to remove Fix later', done: 'Removed: Fix later' }),
 }
@@ -59,7 +59,7 @@ const PHONE_WORDS: Record<'next' | 'off' | 'fix', (on: boolean) => { confirm: st
  */
 export function cardActions(marks: CardActionMarks, options: { upNext: boolean; fix?: boolean }): CardAction[] {
   const now: CardTitleChoice = marks.titleAt ?? (marks.notitle ? 'never' : 'default')
-  const items = cardMenu({ marks: { ...marks, titleAt: now, reviews: 0 }, upNext: options.upNext, fix: options.fix, upNextWord: true }).flat()
+  const items = cardMenu({ marks: { ...marks, titleAt: now, reviews: 0 }, upNext: options.upNext, fix: options.fix }).flat()
   return items.map((item): CardAction => {
     if (item.action === 'title') {
       const children = (item.children ?? []).map((c: CardMenuItem, i): CardAction => {

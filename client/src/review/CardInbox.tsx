@@ -62,7 +62,7 @@
  *    until the next one's text is ready, so the card never empties and nothing under it moves.
  *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens the
  *    ONE card menu (YAZ-5697 round 2, `cardMenuView.ts`): Undo last review (⌘Z), then the card's Inbox rows — Open card,
- *    Put at top of Inbox / Remove from top of Inbox, Archive card (YAZ-5046; it asks first), Title in review ›.
+ *    Move to Up next / Remove from Up next, Archive card (YAZ-5046; it asks first), Title in review ›.
  *  - THE LAST ANSWER'S LINE (YAZ-5025 round 2; no toast): one quiet line, centred under the answer buttons, "✓ Remembered ·
  *    DEMO-51 · back in 9 days · Undo ⌘Z" (YAZ-5433: the card's title alone, its ID with no title; all grey, a Forgot's ✕ only red), in the button hover's words. It stays until the next answer
  *    replaces it; its Undo is the hook's own undo, as ⌘Z; an undo clears it. It shows only once the session counts the

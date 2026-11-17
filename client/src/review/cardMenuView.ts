@@ -20,7 +20,7 @@ export function cardMarksOf(card: Pick<CardAtPage, 'id' | 'off' | 'next' | 'fix'
 export interface CardMenuDoors {
   /** The card's marks; null: no review rows (a card with no ID yet). */
   marks: CardMenuMarks | null
-  /** Put at top of Inbox: the vault reviews. */
+  /** Move to Up next: the vault reviews. */
   upNext: boolean
   /** Fix later (default true): never in the Inbox. */
   fix?: boolean

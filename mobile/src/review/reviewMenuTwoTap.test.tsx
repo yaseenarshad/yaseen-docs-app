@@ -42,7 +42,7 @@ describe("Review's ⋯ card actions (YAZ-5505)", () => {
   it("YAZ-5625: no Fix later in Review's ⋯, as the Mac's Inbox (YAZ-5430); a card marked Fix later shows none either", async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Q1?\n---\n{{w1}}', `TT-1, fix, ${OLD}`)) })
     await h.click('More card actions')
-    expect(rows(h)).toEqual(['Undo last answer', 'Up next', 'Archive card', 'Title in reviewDefault ›', 'Open page'])
+    expect(rows(h)).toEqual(['Undo last answer', 'Move to Up next', 'Archive card', 'Title in reviewDefault ›', 'Open page'])
     // The shared rows keep Fix later for a card's ⋯ in a page and the card view.
     const kinds = (fix?: boolean) => cardActions({ off: false, next: false, fix: false, notitle: false }, { upNext: true, fix }).map((r) => r.kind)
     expect(kinds()).toEqual(['next', 'off', 'fix', 'title'])

@@ -134,7 +134,7 @@ export function withCardOff(line: CardLine, off: boolean): CardLine {
 }
 
 /**
- * Up next on or off for the card (YAZ-4999 D3, the ⋯ menu's "Put at top of Inbox"): `next` goes right after the ID
+ * Up next on or off for the card (YAZ-4999 D3, the ⋯ menu's "Move to Up next"): `next` goes right after the ID
  * (and after an `off` there), or first; off removes every `next`. `at` puts it back at that part place instead: the
  * undo of an answer that removed it (`cardNextIndex` gave the place), so the line comes back byte for byte.
  */

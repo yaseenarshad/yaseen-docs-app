@@ -320,7 +320,7 @@ describe('the card in the page', () => {
   it('YAZ-5697 round 2: the ⋯ is the ONE card menu; one click on Archive card never archives: it asks in place, Cancel first', async () => {
     const { crepe, root } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
-    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Open card', 'Preview', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Reset history'])
+    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Open card', 'Preview', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Reset history'])
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
     ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].find((b) => b.textContent === 'Archive card')!.click()
     await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
@@ -435,7 +435,7 @@ describe('the card in the page', () => {
     expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, next, 2026-11-12T14:05:00.000Z good -->', true])
   })
 
-  it('YAZ-4999: ⋯ Put at top of Inbox and the chip`s × set and remove `next`, each in one undo step; read only, they write the FILE', async () => {
+  it('YAZ-4999: ⋯ Move to Up next and the chip`s × set and remove `next`, each in one undo step; read only, they write the FILE', async () => {
     const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     const rowOf = (label: string) => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
@@ -445,14 +445,14 @@ describe('the card in the page', () => {
     const chip = () => root.querySelector<HTMLElement>('.card__next')!
     const remove = () => chip().querySelector('.card__next-remove')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
     expect(chip().hidden).toBe(true)
-    rowOf('Put at top of Inbox')!.click()
+    rowOf('Move to Up next')!.click()
     expect(line()).toBe('<!-- card: WIKI-7, next, 2026-11-12T14:05:00.000Z good -->')
     expect([chip().hidden, chip().textContent]).toEqual([false, 'Up next×'])
-    expect(chip().querySelector('button')?.getAttribute('aria-label')).toBe('Remove from top of Inbox')
+    expect(chip().querySelector('button')?.getAttribute('aria-label')).toBe('Remove from Up next')
     undo(view.state, view.dispatch)
     expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', true])
-    rowOf('Put at top of Inbox')!.click()
-    expect(rowOf('Remove from top of Inbox')).toBeDefined()
+    rowOf('Move to Up next')!.click()
+    expect(rowOf('Remove from Up next')).toBeDefined()
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     remove()
     expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', true])

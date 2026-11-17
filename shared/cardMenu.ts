@@ -6,15 +6,15 @@
  *
  *   1. Open: Open card (a card in a page or an embed) or Open page / Open page in a new tab (the card window); Preview.
  *   2. The file: Show as link, Move to its own file, Put back into this page, Turn into a page.
- *   3. The review: Put at top of Inbox, Archive card, Fix later, Title in review › (YAZ-5696: Default · At once · After
+ *   3. The review: Move to Up next (YAZ-5697, Yaseen: one word, the Mac and the phone), Archive card, Fix later, Title in review › (YAZ-5696: Default · At once · After
  *      the front · With Side 2 · Never; the phone too).
  *   4. Copy card ID, Copy card link.
  *   5. Reset history, alone (it asks by typing, `askResetHistory`).
  *
  * THE ONE ASK RULE: a row that changes the card or its file, and that the same row does not take back, asks in place
  * first (`ask`, Cancel first). Archive card (only Unarchive takes it back), a Title in review choice, Move to its own file and
- * Put back into this page (two files change, no Undo), Turn into a page (the file is rewritten and renamed). Put at top
- * of Inbox and Fix later do not ask: the same row says "Remove …" and takes it back. Show as link does not ask: it only
+ * Put back into this page (two files change, no Undo), Turn into a page (the file is rewritten and renamed). Move to Up
+ * next and Fix later do not ask: the same row says "Remove …" and takes it back. Show as link does not ask: it only
  * changes the page's text, and ⌘Z takes it back. Unarchive card does not ask: it only brings a card back.
  *
  * The rows are data: the place runs a row by its `action` (its own writes: a page's transaction, the file, the Inbox's
@@ -85,7 +85,7 @@ export interface CardMenuPlace {
   toPage?: boolean
   /** The card's marks: the review rows (none for a card with no ID yet). */
   marks: CardMenuMarks | null
-  /** Put at top of Inbox: the vault reviews. */
+  /** Move to Up next: the vault reviews. */
   upNext?: boolean
   /** Fix later (default true): never in the Inbox (YAZ-5430, YAZ-5625). */
   fix?: boolean
@@ -100,8 +100,6 @@ export interface CardMenuPlace {
   reset?: boolean
   /** The vault's word for a page (YAZ-4938): "Open page", "Turn into a page". Default: the word "page". */
   unit?: (text: string) => string
-  /** The phone's word for Put at top of Inbox: "Up next" (its Review's filter and ⋯ say it). */
-  upNextWord?: boolean
 }
 
 const same = (text: string) => text
@@ -126,7 +124,7 @@ export function cardMenu(place: CardMenuPlace): CardMenuItem[][] {
     const disabled = place.locked === true ? true : undefined
     if (place.upNext === true) {
       const on = !m.next
-      const label = place.upNextWord === true ? (on ? 'Up next' : 'Remove from Up next') : on ? 'Put at top of Inbox' : 'Remove from top of Inbox'
+      const label = on ? 'Move to Up next' : 'Remove from Up next'
       review.push({ action: 'next', label, on, disabled, change: (l) => withCardNext(l, on) })
     }
     const off = !m.off

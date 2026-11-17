@@ -3,7 +3,7 @@
  *
  *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
  *    too —, ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
- *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Archive card / Unarchive card (YAZ-5046),
+ *    ⋯ menu: Open page, Open page in a new tab, Move to Up next / Remove from Up next, Archive card / Unarchive card (YAZ-5046),
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
  *  - The card's title band (YAZ-5308 A3, `CardBand`) at the card's top, as a card in a page has it: the title off its
  *    card line, a click renames it (YAZ-5164 part 3); a card with no title has no band, and the ID names it.

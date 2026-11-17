@@ -28,7 +28,7 @@ describe('the rule, pure', () => {
 describe('the rows: the Mac\'s card menu, its order and words', () => {
   it('Up next (with review on), Archive card, Fix later, Title in review › (hint: the choice now; YAZ-5697 round 2: the one card menu\'s rows)', () => {
     expect(cardActions(NONE, { upNext: true }).map((r) => [r.label, r.hint ?? ''])).toEqual([
-      ['Up next', ''],
+      ['Move to Up next', ''],
       ['Archive card', ''],
       ['Fix later', ''],
       ['Title in review', 'Default'],
@@ -135,10 +135,10 @@ describe('the rows on the screen', () => {
   it('two taps do it; the row is back to its words after', () => {
     draw()
     click(row('next'))
-    expect(row('next').textContent).toBe('Tap again to put it Up next')
+    expect(row('next').textContent).toBe('Tap again to move it to Up next')
     click(row('next'))
     expect(done.map((a) => [a.kind, a.on])).toEqual([['next', true]])
-    expect(row('next').textContent).toBe('Up next')
+    expect(row('next').textContent).toBe('Move to Up next')
     expect(live()).toBe('')
   })
 
@@ -160,7 +160,7 @@ describe('the rows on the screen', () => {
     draw()
     click(row('next'))
     click(row('fix'))
-    expect(row('next').textContent).toBe('Up next')
+    expect(row('next').textContent).toBe('Move to Up next')
     expect(row('fix').textContent).toBe('Tap again to mark Fix later')
     click(row('next'))
     expect(done).toEqual([]) // Up next was disarmed by the other row: this tap only arms it
@@ -179,7 +179,7 @@ describe('the rows on the screen', () => {
     click(row('next'))
     draw(NONE, false) // the menu closes
     draw()
-    expect(row('next').textContent).toBe('Up next')
+    expect(row('next').textContent).toBe('Move to Up next')
     click(row('next'))
     expect(done).toEqual([])
   })

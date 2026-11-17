@@ -129,7 +129,7 @@ describe('the Review screen: Open page and Back, double taps, Undo, lost answers
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Gone?\n---\n{{g}}', `GN-1, ${OLD}`), ...dueCards(1)) })
     // Two things done to one card: ⋯ › Up next, then ⋯ › Archive card. The Mac deletes the card before the send.
     await h.click('More card actions')
-    await h.click('Up next')
+    await h.click('Move to Up next')
     await h.click('More card actions')
     await h.click('Archive card')
     await h.s.git.push({ 'p.md': page('P', ...dueCards(1)) })

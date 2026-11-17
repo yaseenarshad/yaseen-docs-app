@@ -95,7 +95,7 @@ export function CardNextChip({ onRemove }: { onRemove?: () => void }) {
         <button
           type="button"
           className="card__next-remove"
-          aria-label="Remove from top of Inbox"
+          aria-label="Remove from Up next"
           onMouseDown={(e) => {
             e.preventDefault()
             e.stopPropagation()

@@ -188,13 +188,13 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(el.textContent).not.toContain('Open page')
   })
 
-  it('⋯ (the one card menu, YAZ-5697 round 2): Preview, Turn into a page, Put at top of Inbox, Archive card, Fix later, Title in review, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
+  it('⋯ (the one card menu, YAZ-5697 round 2): Preview, Turn into a page, Move to Up next, Archive card, Fix later, Title in review, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     await mount(FILE)
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     const rows = await menu()
-    expect(rows).toEqual(['Preview', 'Turn into a page', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Copy card link'])
+    expect(rows).toEqual(['Preview', 'Turn into a page', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Copy card link'])
     pick('Copy card link')
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })
@@ -220,7 +220,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await act(async () => undefined)
     expect(disk.files.get(PATH)).toBe(FILE)
     expect(converts.turnIntoPage).not.toHaveBeenCalled()
-    // Put at top of Inbox and Fix later stay one click: each is taken back on the same row (and Undo, in the Inbox).
+    // Move to Up next and Fix later stay one click: each is taken back on the same row (and Undo, in the Inbox).
     await menu()
     pick('Fix later')
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain(', fix -->'))
@@ -304,7 +304,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(el.querySelector('.card-reviews')).toBeNull()
     expect(el.textContent).not.toContain('Due')
     const rows = await menu()
-    expect(rows).not.toContain('Put at top of Inbox')
+    expect(rows).not.toContain('Move to Up next')
     expect(rows).toContain('Archive card')
   })
 
@@ -557,7 +557,7 @@ describe('the guided tour hears the card file tab (YAZ-5123)', () => {
     }
   })
 
-  it('the ⋯ rows Archive card and Copy card link are marks of the tour; once archived, the same row Unarchive card is (YAZ-5330); Put at top of Inbox is not', async () => {
+  it('the ⋯ rows Archive card and Copy card link are marks of the tour; once archived, the same row Unarchive card is (YAZ-5330); Move to Up next is not', async () => {
     await mount(FILE)
     await menu()
     const tours = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"][data-tour]')].map((item) => [item.textContent, item.dataset.tour])

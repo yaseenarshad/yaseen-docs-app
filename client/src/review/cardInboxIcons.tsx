@@ -16,7 +16,7 @@ export const InboxTrayIcon = () => glyph(<path d={INBOX_TRAY_PATH} />)
 /** An archive box: the Inbox ⋯'s Archive card glyph, and the course's Archived chip (YAZ-5046, YAZ-5330). */
 export const ARCHIVE_PATH = 'M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3'
 export const ArchiveIcon = () => glyph(<path d={ARCHIVE_PATH} />)
-/** Up next (YAZ-5028): the ⋯ row's "Put at top of Inbox" arrow, a line with an arrow up to it. */
+/** Up next (YAZ-5028): the ⋯ row's "Move to Up next" arrow, a line with an arrow up to it. */
 export const UpNextIcon = () => glyph(<path d="M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3" />)
 /** Due today: a circle with a check. */
 export const DueIcon = () =>

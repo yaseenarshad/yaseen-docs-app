@@ -67,7 +67,7 @@ describe('Review: a full session (decision 11)', () => {
     await h.click('More card actions')
     expect(h.button('Archive card')).not.toBeNull()
     expect(h.button('Open page')).not.toBeNull()
-    await h.click('Up next')
+    await h.click('Move to Up next')
     expect(ops()).toEqual(['review:DEMO-12:good', 'next:DEMO-13:true'])
     await h.click('More card actions')
     expect(h.button('Remove from Up next')).not.toBeNull()

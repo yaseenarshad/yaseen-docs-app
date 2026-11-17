@@ -2677,7 +2677,7 @@ describe('the card window (YAZ-4962)', () => {
     expect(files[PAGE]).toContain('<!-- card: WIKI-9 -->\n')
   })
 
-  it('YAZ-4999: ⋯ Put at top of Inbox writes `next` and shows the chip "Up next"; its × removes the mark', async () => {
+  it('YAZ-4999: ⋯ Move to Up next writes `next` and shows the chip "Up next"; its × removes the mark', async () => {
     files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->')
     writeFile.mockImplementation(async ({ path, content }) => {
       files[path] = content
@@ -2689,13 +2689,13 @@ describe('the card window (YAZ-4962)', () => {
     const chip = () => top().querySelector<HTMLElement>('.explore__head .card__next')
     expect(chip()).toBeNull()
     act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
-    const put = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Put at top of Inbox')
+    const put = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Move to Up next')
     act(() => put!.click())
     await flush()
     await flush()
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, next, 2026-01-02T09:00:00.000Z good -->')
     expect(chip()?.textContent).toBe('Up next×')
-    act(() => chip()!.querySelector<HTMLButtonElement>('[aria-label="Remove from top of Inbox"]')!.click())
+    act(() => chip()!.querySelector<HTMLButtonElement>('[aria-label="Remove from Up next"]')!.click())
     await flush()
     await flush()
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->')

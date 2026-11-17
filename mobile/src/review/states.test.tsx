@@ -102,7 +102,7 @@ describe('Review: no signal (decision 2; Turn 3: "offline should work")', () => 
     await h.click('Forgot')
     await h.click('Undo')
     await h.click('More card actions')
-    await h.click('Up next')
+    await h.click('Move to Up next')
     await h.click('More card actions')
     await h.click('Archive card')
     expect(h.head()).toBe('NW-3')

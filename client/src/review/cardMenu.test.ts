@@ -15,7 +15,7 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect(labels({ open: 'card', preview: true, moveOut: true, marks: NONE, upNext: true, copyId: 'DEMO-7', reset: true })).toEqual([
       ['Open card', 'Preview'],
       ['Move to its own file'],
-      ['Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review'],
+      ['Move to Up next', 'Archive card', 'Fix later', 'Title in review'],
       ['Copy card ID'],
       ['Reset history'],
     ])
@@ -23,7 +23,7 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect(labels({ open: 'card', preview: true, showAsLink: true, putBack: true, marks: NONE, upNext: true, copyId: 'DEMO-7', reset: true })).toEqual([
       ['Open card', 'Preview'],
       ['Show as link', 'Put back into this page'],
-      ['Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review'],
+      ['Move to Up next', 'Archive card', 'Fix later', 'Title in review'],
       ['Copy card ID'],
       ['Reset history'],
     ])
@@ -31,12 +31,12 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect(labels({ preview: true, toPage: true, marks: NONE, upNext: true, copyId: 'DEMO-7', copyLink: true, reset: true })).toEqual([
       ['Preview'],
       ['Turn into a page'],
-      ['Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review'],
+      ['Move to Up next', 'Archive card', 'Fix later', 'Title in review'],
       ['Copy card ID', 'Copy card link'],
       ['Reset history'],
     ])
     // The Inbox (Review): no Fix later (YAZ-5430).
-    expect(labels({ open: 'card', marks: NONE, upNext: true, fix: false })).toEqual([['Open card'], ['Put at top of Inbox', 'Archive card', 'Title in review']])
+    expect(labels({ open: 'card', marks: NONE, upNext: true, fix: false })).toEqual([['Open card'], ['Move to Up next', 'Archive card', 'Title in review']])
   })
 
   it('THE ONE ASK RULE: every row that changes the card or its file and that the same row does not take back asks', () => {
@@ -60,10 +60,11 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect(asks({ marks: { ...NONE, off: true } })).toEqual([])
   })
 
-  it('the vault\'s word for a page; the phone\'s Up next; a read-only page\'s rows wait; no marks, no review rows', () => {
+  it('the vault\'s word for a page; one Up next word; a read-only page\'s rows wait; no marks, no review rows', () => {
     const unit = (t: string) => t.replace('page', 'sheet')
     expect(labels({ open: 'page', toPage: true, marks: null, unit })).toEqual([['Open sheet', 'Open sheet in a new tab'], ['Turn into a sheet']])
-    expect(labels({ marks: { ...NONE, next: true }, upNext: true, upNextWord: true })[0][0]).toBe('Remove from Up next')
+    // YAZ-5697 (Yaseen): one word on the Mac and the phone, "Move to Up next" / "Remove from Up next", the old Inbox words gone.
+    expect(labels({ marks: { ...NONE, next: true }, upNext: true })[0][0]).toBe('Remove from Up next')
     expect(cardMenu({ marks: NONE, locked: true, reset: true }).flat().every((r) => r.disabled === true)).toBe(true)
   })
 })

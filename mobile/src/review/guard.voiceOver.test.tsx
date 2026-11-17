@@ -140,7 +140,7 @@ describe('the stuck guard, ways out', () => {
     await real(600)
     const tries: string[] = []
     await h.click('More card actions')
-    await h.click('Up next')
+    await h.click('Move to Up next')
     await real(600)
     tries.push(`Up next: guard ${guarded(h)} head ${h.head()}`)
     await h.click(/^All cards/)
@@ -197,7 +197,7 @@ describe('VoiceOver (YAZ-5229)', () => {
     await h.click('More card actions')
     const menu = [...h.host.querySelectorAll('[role="menu"] *, .review__menu button')].filter((e) => e.matches('button, [role="menuitem"]')).map((e) => `${e.getAttribute('role') ?? e.tagName.toLowerCase()}:${(e.getAttribute('aria-label') ?? e.textContent ?? '').trim()}`)
     const more = h.button('More card actions')
-    expect(menu).toEqual(['menuitem:Undo last answer', 'menuitem:Up next', 'menuitem:Archive card', 'menuitem:Title in reviewDefault ›', 'menuitem:Open page'])
+    expect(menu).toEqual(['menuitem:Undo last answer', 'menuitem:Move to Up next', 'menuitem:Archive card', 'menuitem:Title in reviewDefault ›', 'menuitem:Open page'])
     expect([more?.getAttribute('aria-expanded'), more?.getAttribute('aria-haspopup')]).toEqual(['true', 'menu'])
     await h.click('More card actions')
     await h.click('Remembered')

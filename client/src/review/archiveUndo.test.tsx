@@ -151,7 +151,7 @@ describe('YAZ-5621: Archive card has an Undo on the Mac, as on the phone', () =>
     await mount()
     const first = showing()!
     await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
-    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Undo last review', 'Open card', 'Put at top of Inbox', 'Archive card', 'Title in review'])
+    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Undo last review', 'Open card', 'Move to Up next', 'Archive card', 'Title in review'])
     await step(() => menuRow('Archive card')!.click())
     await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Archive this card?'))
     expect(showing()).toBe(first)

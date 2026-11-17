@@ -42,7 +42,7 @@
  * is the vault's `deleteReview` (`deps.reviews`): a write of the card line to the FILE, with Undo in its notice, as in
  * the card window, so it works read only and in Explore's read layer too.
  *
- * THE ⋯ MENU (D13): Put at top of Inbox / Remove from top of Inbox (`withCardNext`, YAZ-4999 D3), Archive card /
+ * THE ⋯ MENU (D13): Move to Up next / Remove from Up next (`withCardNext`, YAZ-4999 D3), Archive card /
  * Unarchive card (`withCardOff`, YAZ-5046: the line's `off`), Fix later / Remove Fix later (`withCardFix`, YAZ-5097: the
  * line's `fix`; the head says "To fix"), Reset history (`withoutCardReviews`), Copy card ID, Open card, and
  * with the host's convert door Move to its own file (YAZ-5037: a card file in the page's folder, `![[GEO-140]]` in its
@@ -299,7 +299,7 @@ export class CardBlockView implements NodeView {
     this.fix.textContent = 'To fix'
     this.next = document.createElement('span')
     this.next.className = 'card__next'
-    this.next.append('Up next', button('card__next-remove', 'Remove from top of Inbox', '×'))
+    this.next.append('Up next', button('card__next-remove', 'Remove from Up next', '×'))
     this.editButton = button('card__edit', 'Edit card', 'Edit card')
     // Preview (YAZ-5152): in Edit card's head, beside Done — the card as the Inbox shows it, with what is typed.
     this.previewButton = button('card__preview', 'Preview card', 'Preview')
