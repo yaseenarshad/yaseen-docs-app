@@ -161,6 +161,11 @@ export interface CardReviewSession {
   progress: FilterCount
   /** The top right's red ✕ K (YAZ-5674): the session's due cards back after a Forgot; 0 (hidden) in the missed pass. */
   misses: number
+  /**
+   * The last thing done was a Remembered that learned a new card (YAZ-5679, Mochi's "Added card to reviews · Undo"):
+   * one key per such answer, so the note shows for it; Undo (`undo`) takes that answer back. Null otherwise.
+   */
+  learned: string | null
   /** Today's review work across the vault, from the index (YAZ-5033): the top row's and the done screen's "Today: …". */
   today: ReviewedToday
   /** The scope's cards past today's number, of each kind (YAZ-5042): the menu's "38 more", the done screen's line. */
@@ -1319,6 +1324,7 @@ export function useCardReview(
       limited: { new: settings.newPerDay !== null, next: settings.upNextPerDay !== null },
       canReset: { new: (added.newCards > scopePlan.floor.new), next: (added.upNext > scopePlan.floor.next) },
       lastArchive: lastStep?.kind === 'archive' ? { id: lastStep.card.id } : null,
+      learned: lastStep?.kind === 'answer' && lastStep.card.isNew && lastStep.review.rating !== 'again' ? `${session.id}:${lastStep.card.path}\n${lastStep.card.id}:${lastStep.review.at}` : null,
       upNext,
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count, reset: false } : lastStep?.kind === 'reset' ? { kind: lastStep.what, count: lastStep.count, reset: true } : null,
       newFrom: settings.newFrom.map((folder) => ({ folder, label: folderLabelOf(folder) })),

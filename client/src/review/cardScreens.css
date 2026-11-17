@@ -640,6 +640,10 @@
 .card-inbox__tools:has(.card-inbox__focus[aria-pressed='true']) {
   opacity: 1;
 }
+/* YAZ-5679: the "Added card to reviews" note stays at the window's bottom right while the Inbox scrolls. */
+.card-inbox > .learned-note {
+  position: fixed;
+}
 /* The progress bar (YAZ-5676, Mochi's: `SessionBar`, `sessionCount.css`), under the row. */
 .card-inbox__progress {
   margin: 0 4px;

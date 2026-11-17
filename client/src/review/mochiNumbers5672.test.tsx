@@ -192,3 +192,28 @@ describe('YAZ-5675: what each answer does to the numbers (Mochi, YAZ-5671)', () 
     expect(top()).toBe('0 / 3 | grey 0 red 0 | all 3 due 3 new 0')
   })
 })
+
+describe('YAZ-5679: "Added card to reviews · Undo" when a new card is learned (Mochi, YAZ-5671 findings 11, 20)', () => {
+  it('a new card`s Remembered sets `learned`; its Forgot, a due card`s answer and ⌘Z do not; ⌘Z takes the answer back', async () => {
+    dueCards(1)
+    newCards(2)
+    await mount()
+    await act(async () => review.setFilter('new'))
+    expect(review.session?.learned).toBeNull()
+    await go('again')
+    expect(review.session?.learned).toBeNull()
+    await go('good')
+    const learned = review.session?.learned
+    expect(learned).toEqual(expect.any(String))
+    expect(top()).toBe('1 / 2 | grey 50 red 50 | all 3 due 2 new 1')
+    // Undo takes the answer back: the numbers too.
+    await step(() => review.undo())
+    expect(review.session?.learned).toBeNull()
+    expect(top()).toBe('0 / 2 | grey 0 red 0 | all 3 due 1 new 2')
+    await go('good')
+    expect(review.session?.learned).not.toBe(learned)
+    await act(async () => review.setFilter('due'))
+    await go('good')
+    expect(review.session?.learned).toBeNull()
+  })
+})

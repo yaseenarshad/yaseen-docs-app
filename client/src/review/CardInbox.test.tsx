@@ -60,7 +60,7 @@ let props: CardInboxProps
 const TITLE = 'Capital of France'
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, learned: null, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
 }
 
 function render() {
@@ -1424,6 +1424,37 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     work(12, 'pointerdown')
     act(() => buttons()[1].click())
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', 12)
+  })
+})
+
+describe('YAZ-5679: "Added card to reviews · Undo" (Mochi`s note) when a new card is learned', () => {
+  it('shows at the bottom right for about 3 s; its Undo takes the answer back; a new learned card shows it again', () => {
+    vi.useFakeTimers()
+    try {
+      mount(TWO_SIDES)
+      const note = () => el.querySelector('.card-inbox > .learned-note')
+      expect(note()).toBeNull()
+      session = { ...session, learned: 's1:a' }
+      render()
+      expect(note()?.textContent).toBe('Added card to reviews·Undo')
+      act(() => void vi.advanceTimersByTime(2900))
+      expect(note()).not.toBeNull()
+      act(() => void vi.advanceTimersByTime(200))
+      expect(note()).toBeNull()
+      session = { ...session, learned: 's1:b' }
+      render()
+      act(() => note()!.querySelector<HTMLButtonElement>('.learned-note__undo')!.click())
+      expect(review.undo).toHaveBeenCalledOnce()
+      expect(note()).toBeNull()
+      // The next answer (not a learned card): gone.
+      session = { ...session, learned: 's1:c' }
+      render()
+      session = { ...session, learned: null }
+      render()
+      expect(note()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

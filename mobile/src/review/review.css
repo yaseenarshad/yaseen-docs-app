@@ -80,6 +80,11 @@
   font-size: 14px;
 }
 
+/* YAZ-5679: the "Added card to reviews" note sits above the row of controls. */
+.review > .learned-note {
+  bottom: calc(var(--tap) + 28px);
+}
+
 /* The progress bar (YAZ-5676, Mochi's: `SessionBar`, `sessionCount.css`), under the top line. */
 .review__progress {
   margin: 0 10px;

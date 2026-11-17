@@ -132,6 +132,7 @@ import { newCardsFrom, useNewCardsPicker } from './NewCardsPicker'
 import { ChevronIcon } from './cardInboxIcons'
 import { useAnswerTimer } from './answerTimer'
 import { DoneScreen, type DoneLook } from './DoneScreen'
+import { LearnedNote } from './LearnedNote'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 import { tourEvent } from '../course/tourBus'
@@ -671,6 +672,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         <CardInboxHints hints={hints} />
         </div>
       </div>
+      {/* YAZ-5679: Mochi's "Added card to reviews · Undo" when a new card is learned. */}
+      <LearnedNote learned={session.learned} onUndo={() => void review.undo()} />
     </div>
   )
 }

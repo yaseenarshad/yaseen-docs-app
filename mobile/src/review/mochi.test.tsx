@@ -260,3 +260,19 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     expect(h.head()).toMatch(/^L[AE]-/)
   })
 })
+
+describe('YAZ-5679: the Mac`s note on the phone, "Added card to reviews · Undo"', () => {
+  it('a new card`s Remembered shows it above the controls; its Undo takes the answer back; a Forgot shows none', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('New?\n---\n{{n}}', 'LN-1'), cardBlock('Other?\n---\n{{o}}', 'LN-2')) })
+    const note = () => q('.review > .learned-note')
+    await h.click('Forgot')
+    expect(note()).toBeNull()
+    await h.click('Remembered')
+    expect(note()?.textContent).toBe('Added card to reviews·Undo')
+    expect(ids(h)).toEqual(['LN-1', 'LN-2'])
+    await act(async () => note()!.querySelector<HTMLButtonElement>('.learned-note__undo')!.click())
+    await h.settle()
+    expect(note()).toBeNull()
+    expect(ids(h)).toEqual(['LN-1'])
+  })
+})
