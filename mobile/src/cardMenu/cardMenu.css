@@ -92,3 +92,8 @@
 .card-actions__ask .confirm {
   margin: 2px 0;
 }
+
+/* Title in review's choices (YAZ-5696 on the phone, YAZ-5697 round 2): under it, set in, touch-sized as every row. */
+.card-actions__choice {
+  padding-left: 28px;
+}

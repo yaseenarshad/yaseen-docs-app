@@ -1,14 +1,16 @@
-import { ARCHIVE_ASK, titleFrontAsk, type CardAsk } from '@shared/cardAsks'
-import { withCardFix, withCardNext, withCardNoTitle, withCardOff, type CardLine } from '@shared/cardLine'
+import { cardMenu, type CardMenuItem } from '@shared/cardMenu'
+import type { CardAsk } from '@shared/cardAsks'
+import { withCardTitleChoice, type CardLine } from '@shared/cardLine'
+import { CARD_TITLE_CHOICES, type CardTitleChoice } from '@shared/cardTitleAt'
 
 /**
- * THE CARD'S SETTINGS ON THE PHONE: the rows of the Mac's card menu (`cardMenuSections`
- * in `client/src/review/cardPane.tsx`), in its order and with its words: Up next (the Mac's "Put at top of Inbox";
- * the phone's word, as Review's ⋯ and filter say it), Archive card, Fix later, Title on the front (Show / Hide: the
- * state now). Each one changes ONE word of the card line (`next`, `off`, `fix`, `notitle`), with the Mac's own change.
- * Answering a card is not a setting: it stays one tap.
+ * THE CARD'S SETTINGS ON THE PHONE: the review rows of the ONE card menu (`shared/cardMenu.ts`, YAZ-5697 round 2), the
+ * Mac's rows in the Mac's order, words and asks: Up next (the Mac's "Put at top of Inbox"; the phone's word, as Review's
+ * ⋯ and filter say it), Archive card, Fix later, Title in review › (YAZ-5696: Default · At once · After the front ·
+ * With Side 2 · Never). Each changes the card line with the Mac's own change. Answering a card is not a setting: it
+ * stays one tap.
  */
-export type CardActionKind = 'next' | 'off' | 'fix' | 'notitle'
+export type CardActionKind = 'next' | 'off' | 'fix' | 'title'
 
 /** The card's marks now (off its card line). */
 export interface CardActionMarks {
@@ -16,79 +18,59 @@ export interface CardActionMarks {
   next: boolean
   fix: boolean
   notitle: boolean
+  /** Title in review's choice now; absent: from `notitle` (Never, else Default). */
+  titleAt?: CardTitleChoice
 }
 
 export interface CardAction {
   kind: CardActionKind
+  /** The row's own key (`data-action`): the kind, or `title-<choice>` for a Title in review choice. */
+  key: string
   /** The mark after the action: true sets the word, false takes it out. */
   on: boolean
   /** The row's words. */
   label: string
-  /** The row's state word at the right (Title on the front: Show / Hide), as the Mac's hint. */
+  /** The row's word at the right: Title in review's choice now. */
   hint?: string
-  /** The armed row's words, also said by VoiceOver: "Tap again to archive". */
+  /** A row with no ask (Up next, Fix later, Unarchive card): the armed row's words, also said by VoiceOver: "Tap again to …". */
   confirm: string
-  /**
-   * The row asks in place instead of a second tap (YAZ-5697, the Mac's words: `shared/cardAsks.ts`): Archive card and
-   * Title on the front. Its question, Cancel first, then its answer.
-   */
+  /** It asks in place first (the one ask rule): Archive card, a Title in review choice. */
   ask?: CardAsk
   /** What the screen says once it is done ("Archived"). */
   done: string
   /** The change of the card line: the shared writer's (`shared/cardLine.ts`), the Mac's. */
   change: (line: CardLine) => CardLine
+  /** The change back (an Undo): a Title in review choice goes back to the choice before. */
+  undo: (line: CardLine) => CardLine
+  /** Title in review ›: its choices; `checked` the one now. */
+  children?: CardAction[]
+  checked?: boolean
+}
+
+const PHONE_WORDS: Record<'next' | 'off' | 'fix', (on: boolean) => { confirm: string; done: string }> = {
+  next: (on) => (on ? { confirm: 'Tap again to put it Up next', done: 'Marked: Up next' } : { confirm: 'Tap again to remove from Up next', done: 'Removed: Up next' }),
+  off: (on) => (on ? { confirm: 'Tap again to archive', done: 'Archived' } : { confirm: 'Tap again to unarchive', done: 'Unarchived' }),
+  fix: (on) => (on ? { confirm: 'Tap again to mark Fix later', done: 'Marked: Fix later' } : { confirm: 'Tap again to remove Fix later', done: 'Removed: Fix later' }),
 }
 
 /**
- * The rows for a card with these marks. `upNext`: the Up next row (the vault reviews; the Mac shows "Put at top of
- * Inbox" only then). `fix` (default true): the Fix later row. Review's ⋯ has none (YAZ-5625, Yaseen: "remove it, make
- * the mac match so they are the same"): the Mac's Inbox has no Fix later either (YAZ-5430); a card's ⋯ in a page and
- * the card view keep it.
+ * The rows for a card with these marks. `upNext`: the Up next row (the vault reviews). `fix` (default true): the Fix
+ * later row; Review's ⋯ has none (YAZ-5625), as the Mac's Inbox (YAZ-5430).
  */
 export function cardActions(marks: CardActionMarks, options: { upNext: boolean; fix?: boolean }): CardAction[] {
-  const rows: CardAction[] = []
-  if (options.upNext) {
-    const on = !marks.next
-    rows.push({
-      kind: 'next',
-      on,
-      label: on ? 'Up next' : 'Remove from Up next',
-      confirm: on ? 'Tap again to put it Up next' : 'Tap again to remove from Up next',
-      done: on ? 'Marked: Up next' : 'Removed: Up next',
-      change: (l) => withCardNext(l, on),
-    })
-  }
-  const off = !marks.off
-  rows.push({
-    kind: 'off',
-    on: off,
-    label: off ? 'Archive card' : 'Unarchive card',
-    confirm: off ? 'Tap again to archive' : 'Tap again to unarchive',
-    done: off ? 'Archived' : 'Unarchived',
-    ask: off ? ARCHIVE_ASK : undefined,
-    change: (l) => withCardOff(l, off),
+  const now: CardTitleChoice = marks.titleAt ?? (marks.notitle ? 'never' : 'default')
+  const items = cardMenu({ marks: { ...marks, titleAt: now, reviews: 0 }, upNext: options.upNext, fix: options.fix, upNextWord: true }).flat()
+  return items.map((item): CardAction => {
+    if (item.action === 'title') {
+      const children = (item.children ?? []).map((c: CardMenuItem, i): CardAction => {
+        const choice = CARD_TITLE_CHOICES[i].choice
+        return { kind: 'title', key: `title-${choice}`, on: true, label: c.label, confirm: '', ask: c.ask, checked: c.checked, done: `Title in review: ${c.label}`, change: c.change!, undo: (l) => withCardTitleChoice(l, now) }
+      })
+      return { kind: 'title', key: 'title', on: true, label: item.label, hint: item.hint, confirm: '', done: '', change: (l) => l, undo: (l) => l, children }
+    }
+    const kind = item.action as 'next' | 'off' | 'fix'
+    const on = item.on === true
+    const back = cardMenu({ marks: { ...marks, [kind]: on, titleAt: now, reviews: 0 }, upNext: true }).flat().find((r) => r.action === kind)!
+    return { kind, key: kind, on, label: item.label, ask: item.ask, ...PHONE_WORDS[kind](on), change: item.change!, undo: back.change! }
   })
-  const fix = !marks.fix
-  if (options.fix !== false)
-    rows.push({
-      kind: 'fix',
-      on: fix,
-      label: fix ? 'Fix later' : 'Remove Fix later',
-      confirm: fix ? 'Tap again to mark Fix later' : 'Tap again to remove Fix later',
-      done: fix ? 'Marked: Fix later' : 'Removed: Fix later',
-      change: (l) => withCardFix(l, fix),
-    })
-  // ONE toggle row (the Mac's YAZ-5030): the hint is the state now; the action turns it to the other.
-  const hide = !marks.notitle
-  rows.push({
-    kind: 'notitle',
-    on: hide,
-    label: 'Title on the front',
-    hint: marks.notitle ? 'Hide' : 'Show',
-    confirm: hide ? 'Tap again to hide the title' : 'Tap again to show the title',
-    done: hide ? 'Title on the front: Hide' : 'Title on the front: Show',
-    ask: titleFrontAsk(hide),
-    change: (l) => withCardNoTitle(l, hide),
-  })
-  return rows
 }

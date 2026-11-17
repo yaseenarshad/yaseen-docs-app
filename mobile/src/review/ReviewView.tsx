@@ -13,7 +13,7 @@ import type { AddKind } from '@shared/cardSchedule'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
-import { reviewTitleOf, withCardNoTitle, type CardRating } from '@shared/cardLine'
+import { reviewTitleOf, type CardRating } from '@shared/cardLine'
 import { titleShows } from '@shared/cardTitleShows'
 import { answerLabel, answerRatings } from '@shared/cardSchedule'
 import { cardPieces, cardSides, hiddenCount } from '@shared/cardText'
@@ -789,17 +789,17 @@ function SessionScreen({
               <button type="button" role="menuitem" className="review__menu-row" disabled={!canUndo} onClick={undo}>
                 Undo last answer
               </button>
-              {/* YAZ-5503/5505: the shared card actions (Up next, Archive card, Title on the front), two taps each. No Fix
+              {/* YAZ-5503/5505, YAZ-5697 round 2: the one card menu's rows (Up next, Archive card, Title in review ›). No Fix
                   later (YAZ-5625, Yaseen: "remove it, make the mac match so they are the same"): the Mac's Inbox has none. */}
               <CardActions
-                marks={page === null ? null : { off: false, next: page.next === true, fix: false, notitle: page.notitle === true }}
+                marks={page === null ? null : { off: false, next: page.next === true, fix: false, notitle: page.notitle === true, ...(page.titleAt !== undefined && { titleAt: page.notitle === true ? 'never' : page.titleAt }) }}
                 upNext
                 fix={false}
                 rowClassName="review__menu-row"
                 onAction={(a) => {
                   if (a.kind === 'off') return archive()
                   if (a.kind === 'next') return act(a.done, () => review.setNext(card.path, card.id, a.on), () => review.setNext(card.path, card.id, !a.on))
-                  act(a.done, () => host.changeCardLine(card.path, card.id, a.change), () => host.changeCardLine(card.path, card.id, (l) => withCardNoTitle(l, !a.on)))
+                  act(a.done, () => host.changeCardLine(card.path, card.id, a.change), () => host.changeCardLine(card.path, card.id, a.undo))
                 }}
               />
               <button

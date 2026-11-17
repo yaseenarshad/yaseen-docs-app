@@ -19,7 +19,7 @@ const block = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!--
 const RIVERS = `---\ntitle: Rivers\n---\n\n# Rivers\n\nTwo cards.\n\n${block('Which river runs through Madrid?\n---\nThe Manzanares', 'RV-1, title "River of Madrid"')}\n\n${block('Which river runs through Vienna?\n---\nThe Danube', 'RV-3, title "River of Vienna", notitle, off')}\n`
 const LIGHT = `---\nkind: card\n---\n\n${block('How fast is light?\n---\nVery', 'RV-17, title "Speed of light"')}\n`
 const FILES = { '.yaseendocs/review.json': '{"enabled": true}', '.yaseendocs/link-click.json': '{"click":"explore"}', 'Rivers.md': RIVERS, 'cards/speed-of-light-rv-17.md': LIGHT }
-const MAC_ORDER = ['Up next', 'Archive card', 'Fix later', 'Title on the frontShow']
+const MAC_ORDER = ['Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›']
 
 let h: Harness | null = null
 beforeEach(() => {
@@ -118,14 +118,15 @@ describe('a card in an Explore panel has the full page\'s card menu (YAZ-5548)',
     await waitFor(() => sheet()?.querySelectorAll('.reader__body .page-card .card__more').length === 2)
     const card = sheet()!.querySelector<HTMLElement>('[data-card-id="RV-3"]')!
     const menu = await openMenu(card)
-    expect(rows(menu)).toEqual(['Up next', 'Unarchive card', 'Fix later', 'Title on the frontHide'])
+    expect(rows(menu)).toEqual(['Up next', 'Unarchive card', 'Fix later', 'Title in reviewNever ›'])
     await act(async () => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     await h!.settle()
     expect(document.querySelector('.card-menu')).toBeNull()
     expect(document.querySelectorAll('.explore-sheet')).toHaveLength(1)
 
     const again = await openMenu(card)
-    await tap(row(again, 'notitle'))
+    await tap(row(again, 'title'))
+    await tap(row(again, 'title-default'))
     await act(async () => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
     await h!.settle()
     expect(document.querySelector('.card-menu')).toBeNull()

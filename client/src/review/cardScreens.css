@@ -994,32 +994,6 @@ body.card-inbox--sizing {
   position: relative;
   justify-self: end;
 }
-/* The ⋯ row: small icons over the ⋯ button, on the page colour, the Explore window's soft shadow. */
-.card-inbox__more-row {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
-  display: flex;
-  gap: 2px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-}
-.card-inbox__more-row .card-inbox__more-action {
-  display: inline-flex;
-  padding: 6px;
-  border-color: transparent;
-  color: var(--fg-muted);
-}
-.card-inbox__more-row .card-inbox__more-action:hover:not(:disabled) {
-  color: var(--fg);
-}
-.card-inbox__more-row .card-inbox__more-action:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
 .card-inbox__answers {
   display: flex;
   justify-content: center;

@@ -98,6 +98,15 @@ function cardPos(view: EditorView): number {
 
 const CARD = '```card\nWhat is the capital of {{France}}?\n---\nParis\n```\n'
 
+/** A row that asks in place (YAZ-5697): its answer, once the ask shows (the ask is a lazy chunk). */
+async function answerAsk(): Promise<void> {
+  await new Promise((r) => setTimeout(r, 0))
+  await vi.waitFor(() => void 0)
+  const ask = document.querySelector('.ctx-menu__ask')
+  if (ask === null) return
+  ;[...ask.querySelectorAll<HTMLButtonElement>('button')].at(-1)!.click()
+}
+
 describe('the "Card" slash row (D1, idea 9)', () => {
   it('/card and /card find one row in a vault with IDs; it inserts a card that starts with its title line and takes its ID at once, and one ⌘Z removes it', async () => {
     // The raw-text fallback (YAZ-5026: `setCardEditorKind('code')`); the page's editor is `cardEditor.test.ts`.
@@ -308,15 +317,31 @@ describe('the card in the page', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
+  it('YAZ-5697 round 2: the ⋯ is the ONE card menu; one click on Archive card never archives: it asks in place, Cancel first', async () => {
+    const { crepe, root } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
+    root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Open card', 'Preview', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Reset history'])
+    const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].find((b) => b.textContent === 'Archive card')!.click()
+    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
+    expect(line()).toBe('<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->')
+    const answers = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')]
+    expect(answers.map((b) => b.textContent)).toEqual(['Cancel', 'Archive'])
+    expect(document.activeElement).toBe(answers[0])
+    answers[1].click()
+    expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good -->')
+  })
+
   it('the ⋯ menu changes the card line in one undo step each; Copy card ID; Open card sends the one hook', async () => {
     const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good, kept -->\n`, { cards: { path: '/v/Page.md' } })
-    const run = (label: string) => {
+    const run = async (label: string) => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith(label))!
       row.click()
+      await answerAsk()
     }
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
-    run('Archive card')
+    await run('Archive card')
     expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good, kept -->')
     // YAZ-5046: an archived card says "Archived" in its head and looks muted.
     expect(root.querySelector('.card__state')?.textContent).toBe('Archived')
@@ -324,24 +349,24 @@ describe('the card in the page', () => {
     // YAZ-5376: Reset history is the menu's last row, after Copy card ID.
     root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
     expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].at(-1)?.textContent).toMatch(/^Reset history/)
-    run('Reset history')
+    await run('Reset history')
     // YAZ-5376: it asks first, by typing; nothing changes until then.
     expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good, kept -->')
     await confirmResetHistory()
     expect(line()).toBe('<!-- card: WIKI-7, off, kept -->')
     undo(view.state, view.dispatch)
     expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good, kept -->')
-    run('Unarchive card')
+    await run('Unarchive card')
     expect(line()).toBe('<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good, kept -->')
     expect(root.querySelector('.card__state')?.textContent).toBe('')
     expect(root.querySelector('.card')?.classList.contains('card--off')).toBe(false)
     const writeText = vi.fn(() => Promise.resolve())
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    run('Copy card ID')
+    await run('Copy card ID')
     expect(writeText).toHaveBeenCalledWith('WIKI-7')
     const opened: CardOpenRequest[] = []
     document.addEventListener(CARD_OPEN, (e) => opened.push((e as CustomEvent<CardOpenRequest>).detail), { once: true })
-    run('Open card')
+    await run('Open card')
     expect(opened).toEqual([{ path: '/v/Page.md', cardId: 'WIKI-7', index: 0 }])
   })
 
@@ -445,14 +470,15 @@ describe('the card in the page', () => {
     fileWrites.length = 0
     const { crepe, root } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     crepe.setReadonly(true)
-    const run = (label: string) => {
+    const run = async (label: string) => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith(label))!
       expect(row.disabled).toBe(false)
       row.click()
+      await answerAsk()
     }
-    run('Archive card')
-    run('Reset history')
+    await run('Archive card')
+    await run('Reset history')
     await confirmResetHistory()
     await tick()
     expect(fileWrites).toEqual([

@@ -62,17 +62,15 @@ import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type
 import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
-import { askResetHistory } from './askResetHistory'
-import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleChoiceOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardOff, withCardTitle, withCardTitleChoice, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
+import { loadCardMenu, withCardMenu } from '../../review/cardMenuLoad'
+import type { CardMenuDoors } from '../../review/cardMenuView'
+import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleChoiceOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
 import { codeWidthSchema } from '../code/codeWidth'
 import { CARD_EDIT_KEYS, cardKeyRow, drawEditButton } from './cardEditKeys'
 import { copyText, openMenuAt } from '../linkMenu'
-import type { MenuRow } from '../blockHandleMenu'
-import { titleChoiceAsk } from '@shared/cardAsks'
-import { CARD_TITLE_CHOICES, cardTitleChoiceLabel } from '@shared/cardTitleShows'
 import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, cardLineStepAt, changeCardLineAt, isCardNode, CARD_LANGUAGE, cardLineOf } from './cardBlockLine'
@@ -284,6 +282,8 @@ export class CardBlockView implements NodeView {
   ) {
     this.dom = document.createElement('div')
     this.dom.className = 'card'
+    // The ⋯'s code (the one card menu, a lazy chunk): ready before the first click.
+    void loadCardMenu()
     // The page's own card, its ID on it (YAZ-5164): what Explore's page layer lands on (`pageCardIn`); an embed has neither.
     this.dom.dataset.pageCard = ''
     const head = document.createElement('div')
@@ -719,61 +719,43 @@ export class CardBlockView implements NodeView {
     if (tr !== null) this.view.dispatch(tr.setMeta('addToHistory', false).setMeta(CARD_ID_META, true))
   }
 
-  /** "Title in review ›" (YAZ-5696): Default · At once · After the front · With Side 2 · Never, as the card window's (`cardPane.tsx`). */
-  private titleInReviewRow(line: CardLine, editable: boolean): MenuRow {
-    const now = cardTitleChoiceOf(line)
-    return {
-      label: 'Title in review',
-      hint: cardTitleChoiceLabel(now),
-      disabled: !editable,
-      run: () => {},
-      children: [
-        CARD_TITLE_CHOICES.map(({ choice, label }) => ({
-          label,
-          ...(choice === now ? { hint: '✓' } : { ask: titleChoiceAsk(choice) }),
-          disabled: !editable,
-          run: () => {
-            if (choice !== now) this.change((l) => withCardTitleChoice(l, choice))
-          },
-        })),
-      ],
-    }
-  }
-
-  /** The ⋯ menu's rows (D13). */
-  menuRows(): MenuRow[] {
+  /**
+   * The ⋯ menu's rows (D13): the ONE card menu (`review/cardMenuView.ts`, YAZ-5697 round 2), a card in a page's rows
+   * of it — Open card, Preview, Move to its own file (the host's convert door, a card with an ID), the review rows, Copy
+   * card ID, Reset history. They change the card line in one undo step each (`change`); read only, through the file.
+   */
+  menuDoors(): CardMenuDoors {
     const line = cardLineOf(this.node)
     const id = cardIdOf(line)
-    const editable = this.canChangeLine
-    const onNotice = this.deps.onNotice ?? (() => {})
     const convert = this.deps.host?.convert
     const pos = this.pos
-    // A card with no ID yet is not offered: its card file's name and its embed need the ID (the door gives it at once).
-    const move = id !== null && pos !== null && convert?.canMove() === true ? { label: 'Move to its own file', run: () => convert.move(id, cardIndex(this.view.state.doc, pos)) } : null
-    return [
-      { label: 'Open card', hint: '⌘↵', run: () => this.open() },
-      { label: 'Preview', hint: 'P', disabled: this.path === null, run: () => this.preview() },
-      ...(move === null ? [] : [move]),
-      { label: isCardNext(line) ? 'Remove from top of Inbox' : 'Put at top of Inbox', disabled: !editable, divider: true, run: () => this.change((l) => withCardNext(l, !isCardNext(l))) },
-      { label: isCardOff(line) ? 'Unarchive card' : 'Archive card', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
-      { label: isCardFix(line) ? 'Remove Fix later' : 'Fix later', disabled: !editable, run: () => this.change((l) => withCardFix(l, !isCardFix(l))) },
-      // YAZ-5696: Title in review › when the title shows in Review; the hint and the ✓ say the choice now, and a new one
-      // asks in place first (YAZ-5697), then writes the line in one undo step.
-      this.titleInReviewRow(line, editable),
-      { label: 'Copy card ID', disabled: id === null, divider: true, run: () => id !== null && copyText(id, 'card ID', onNotice, undefined, true) },
-      // LAST, alone (YAZ-5376): it asks by typing first, the card window's own box.
-      { label: 'Reset history', disabled: !editable || cardReviewsOf(line).length === 0, danger: true, divider: true, run: () => askResetHistory(id, () => this.change(withoutCardReviews)) },
-    ]
+    return {
+      marks: { off: isCardOff(line), next: isCardNext(line), fix: isCardFix(line), notitle: isCardNoTitle(line), titleAt: cardTitleChoiceOf(line), reviews: cardReviewsOf(line).length },
+      upNext: true,
+      locked: !this.canChangeLine,
+      copyId: id,
+      reset: true,
+      change: (change) => this.change(change),
+      onNotice: this.deps.onNotice ?? (() => {}),
+      openCard: () => this.open(),
+      preview: this.path === null ? undefined : () => this.preview(),
+      // A card with no ID yet is not offered: its card file's name and its embed need the ID (the door gives it at once).
+      moveOut: id !== null && pos !== null && convert?.canMove() === true ? () => convert.move(id, cardIndex(this.view.state.doc, pos)) : undefined,
+    }
   }
 
   private openMenu(): void {
     this.closeMenu?.()
     const rect = this.more.getBoundingClientRect()
-    const close = openMenuAt(this.view.dom.parentElement ?? document.body, rect.left, rect.bottom + 4, this.menuRows())
-    this.closeMenu = () => {
-      close()
-      this.closeMenu = null
-    }
+    withCardMenu(({ cardMenuRows }) => {
+      if (this.view.isDestroyed) return
+      this.closeMenu?.()
+      const close = openMenuAt(this.view.dom.parentElement ?? document.body, rect.left, rect.bottom + 4, cardMenuRows(this.menuDoors()))
+      this.closeMenu = () => {
+        close()
+        this.closeMenu = null
+      }
+    })
   }
 
   private onMouseDown = (event: MouseEvent): void => {

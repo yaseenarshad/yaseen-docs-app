@@ -39,13 +39,14 @@ import type { GestureAction } from '@shared/keys'
 import { withCardNext, withCardTitle } from '@shared/cardLine'
 import { readCardAt, type CardAtPage } from '../review/cardFile'
 import type { CardPlace } from '../editor/card/cardOpen'
-import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
+import { CardPane, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
 import { withKeys } from '@shared/keyLabel'
 import { CardBand, CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExplorePage'
 import { useUnit } from '../vault/unitWord'
+import { cardMarksOf, cardMenuSections } from '../review/cardMenuView'
 import { PageTitle } from '../editor/PageTitle'
 
 const NO_TITLES: ReadonlyMap<string, string> = new Map()
@@ -175,13 +176,21 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
         {/* ⋯ at every width (YAZ-4964 round 2, item 1): its rows are the card's own (D13), not only a narrow head's. */}
         <HeadMore
           always
-          sections={() => [
-            [
-              { id: 'open-page', label: unit('Open page'), onSelect: () => onOpenPage(card === null ? { id: cardId, index } : { id: card.id, index: card.index }) },
-              { id: 'open-tab', label: unit('Open page in a new tab'), hint: '⌘↵', onSelect: onOpenInTab },
-            ],
-            ...cardMenuSections(card, id, changeLine, onNotice, { inbox: true, link: false, preview }),
-          ]}
+          sections={() =>
+            // The one card menu (YAZ-5697 round 2): the window's rows of it.
+            cardMenuSections({
+              marks: cardMarksOf(card),
+              upNext: true,
+              copyId: id,
+              reset: true,
+              unit,
+              change: changeLine,
+              onNotice,
+              openPage: () => onOpenPage(card === null ? { id: cardId, index } : { id: card.id, index: card.index }),
+              openTab: onOpenInTab,
+              preview: card === null ? undefined : preview,
+            })
+          }
         />
         <HoverTip text="Close (Esc)">
           <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onClose} aria-label="Close this layer">

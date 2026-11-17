@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { Confirm } from '../screens/Confirm'
-import { cardActions, type CardAction, type CardActionKind, type CardActionMarks } from './cardActions'
+import { cardActions, type CardAction, type CardActionMarks } from './cardActions'
 import { useTwoTap } from './twoTap'
 import './cardMenu.css'
 
@@ -28,15 +28,19 @@ export interface CardActionRowsProps {
  * No wrapper: the rows are the host menu's own `menuitem`s; the live line (VoiceOver) goes first, so a host's
  * `:last-child` rule still finds its last row.
  *
- * A row with an `ask` (YAZ-5697: Archive card, Title on the front) asks in place instead, as the Mac's card menu does:
- * the first tap turns the row into the app's ask (`Confirm`: the question, Cancel first with the focus, then the answer,
- * touch-sized). It waits with no time limit; Cancel, a tap outside it, Escape or the menu closing run nothing.
+ * A row with an `ask` (YAZ-5697: Archive card, a Title in review choice) asks in place instead, as the Mac's card menu
+ * does: the first tap turns the row into the app's ask (`Confirm`: the question, Cancel first with the focus, then the
+ * answer, touch-sized). It waits with no time limit; Cancel, a tap outside it, Escape or the menu closing run nothing.
+ * Title in review › (YAZ-5696, YAZ-5697 round 2): a tap opens its choices under it, touch-sized, the one now with ✓.
  */
 export default function CardActionRows({ marks, upNext, fix = true, onAction, disabled = false, rowClassName = 'card-actions__row', ms }: CardActionRowsProps) {
   const group = useId()
   const { armed, tap, cancel } = useTwoTap({ ms })
-  const [asking, setAsking] = useState<CardActionKind | null>(null)
+  const [asking, setAsking] = useState<string | null>(null)
+  const [titleOpen, setTitleOpen] = useState(false)
   const rows = cardActions(marks ?? { off: false, next: false, fix: false, notitle: false }, { upNext, fix })
+  // The rows that show: Title in review's choices under it while it is open.
+  const shown = rows.flatMap((r) => (r.children !== undefined && titleOpen ? [r, ...r.children] : [r]))
   const wait = disabled || marks === null
   // An ask in place: a tap outside it cancels (Escape is the ask's own Cancel).
   useEffect(() => {
@@ -48,7 +52,7 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
     document.addEventListener('pointerdown', down, true)
     return () => document.removeEventListener('pointerdown', down, true)
   }, [asking, group])
-  const askRow = rows.find((r) => r.kind === asking && r.ask !== undefined) ?? null
+  const askRow = shown.find((r) => r.key === asking && r.ask !== undefined) ?? null
   useEffect(() => {
     if (asking !== null && (askRow === null || wait)) setAsking(null)
   }, [asking, askRow, wait])
@@ -68,20 +72,33 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
     }
   }, [armed, group, cancel])
   // A row the marks no longer offer (the card changed under the menu) cannot stay armed.
-  const armedRow = rows.find((r) => r.kind === armed) ?? null
+  const armedRow = shown.find((r) => r.key === armed) ?? null
   useEffect(() => {
     if (armed !== null && (armedRow === null || wait)) cancel()
   }, [armed, armedRow, wait, cancel])
+  const press = (row: CardAction): void => {
+    if (row.children !== undefined) {
+      cancel()
+      return setTitleOpen((open) => !open)
+    }
+    if (row.checked === true) return
+    if (row.ask === undefined) {
+      if (tap(row.key)) onAction(row)
+      return
+    }
+    cancel()
+    setAsking(row.key)
+  }
   return (
     <>
       <span className="sr-only" aria-live="assertive">
         {armedRow?.confirm ?? ''}
       </span>
-      {rows.map((row) => {
-        const on = armed === row.kind
+      {shown.map((row) => {
+        const on = armed === row.key
         if (row === askRow && row.ask !== undefined)
           return (
-            <div key={row.kind} className="card-actions__ask" data-two-tap={group} data-action={row.kind}>
+            <div key={row.key} className="card-actions__ask" data-two-tap={group} data-action={row.key}>
               <Confirm
                 question={row.ask.question}
                 yes={row.ask.yes}
@@ -96,29 +113,24 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
           )
         return (
           <button
-            key={row.kind}
+            key={row.key}
             type="button"
-            role="menuitem"
-            className={rowClassName}
+            role={row.key.startsWith('title-') ? 'menuitemradio' : 'menuitem'}
+            className={row.key.startsWith('title-') ? `${rowClassName} card-actions__choice` : rowClassName}
             data-two-tap={group}
-            data-action={row.kind}
+            data-action={row.key}
             data-armed={on ? '' : undefined}
+            aria-expanded={row.children !== undefined ? titleOpen : undefined}
+            aria-checked={row.key.startsWith('title-') ? row.checked === true : undefined}
             disabled={wait}
-            onClick={() => {
-              if (row.ask === undefined) {
-                if (tap(row.kind)) onAction(row)
-                return
-              }
-              cancel()
-              setAsking(row.kind)
-            }}
+            onClick={() => press(row)}
           >
             {on ? (
               <span className="card-actions__confirm">{row.confirm}</span>
             ) : (
               <>
                 <span>{row.label}</span>
-                {row.hint !== undefined && <span className="card-actions__hint">{row.hint}</span>}
+                {(row.hint !== undefined || row.checked === true) && <span className="card-actions__hint">{row.checked === true ? '✓' : `${row.hint} ›`}</span>}
               </>
             )}
           </button>
