@@ -9,7 +9,7 @@
 import { previewCard } from '../editor/card/cardOpen'
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { cardBlock, EMPTY_CARD_LINE, withCardFix, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { cardBlock, EMPTY_CARD_LINE, withCardFix, withCardNext, withCardOff, withCardTitle, withCardTitleChoice, withoutCardReviews, type CardReview, type CardTitleChoice } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -25,9 +25,10 @@ import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import { cardResolverOf, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
-import type { MenuSection } from '../sidebar/menuSections'
+import type { MenuParent, MenuSection } from '../sidebar/menuSections'
 import { askResetHistory } from '../editor/card/askResetHistory'
-import { ARCHIVE_ASK, titleFrontAsk } from '@shared/cardAsks'
+import { ARCHIVE_ASK, titleChoiceAsk } from '@shared/cardAsks'
+import { CARD_TITLE_CHOICES, cardTitleChoiceLabel } from '@shared/cardTitleShows'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
 import { CardBody, CardStrip, type CardLinkDoors, type CardStripPart } from './cardParts'
@@ -107,8 +108,33 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
 }
 
 /**
+ * "Title in review ›" (YAZ-5696, Design 2): when the card's title shows in Review — Default (Settings › Cards › Show
+ * card titles), At once, After the front, With Side 2, Never (`notitle`). The hint and the ✓ say the choice now; a
+ * new choice asks in place first (YAZ-5697), then writes the card line (`withCardTitleChoice`).
+ */
+function titleInReviewRow(card: CardAtPage, changeLine: (change: CardLineChange) => void): MenuParent {
+  const now: CardTitleChoice = card.notitle === true ? 'never' : (card.titleAt ?? 'default')
+  return {
+    id: 'title-review',
+    label: 'Title in review',
+    hint: cardTitleChoiceLabel(now),
+    children: [
+      CARD_TITLE_CHOICES.map(({ choice, label }) => ({
+        id: `title-${choice}`,
+        label,
+        radio: { group: 'title-review', on: choice === now },
+        ...(choice !== now && { ask: titleChoiceAsk(choice) }),
+        onSelect: () => {
+          if (choice !== now) changeLine((l) => withCardTitleChoice(l, choice))
+        },
+      })),
+    ],
+  }
+}
+
+/**
  * The card's own ⋯ rows (D13): Put at top of Inbox (with `inbox`: the vault reviews), Archive, Fix later (YAZ-5097),
- * Title on the front (Archive and Title on the front ask in place first, YAZ-5697: `shared/cardAsks.ts`); then Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037); then the caller's `more`
+ * Title in review › (YAZ-5696; Archive and a Title in review change ask in place first, YAZ-5697: `shared/cardAsks.ts`); then Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037); then the caller's `more`
  * (the card file tab's "Turn into a page"); and LAST, alone, Reset history (YAZ-5376), which asks by typing
  * (`askResetHistory`). None of them for a card with no ID yet, but its copy rows once it has one.
  */
@@ -124,7 +150,7 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
       { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', tour: card.off ? 'card-menu-unarchive' : 'card-menu-archive', ask: card.off ? undefined : ARCHIVE_ASK, onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
       { id: 'fix', label: card.fix === true ? 'Remove Fix later' : 'Fix later', onSelect: () => changeLine((l) => withCardFix(l, card.fix !== true)) },
       // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
-      { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', ask: titleFrontAsk(card.notitle !== true), onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
+      titleInReviewRow(card, changeLine),
     ])
   if (id !== null)
     rows.push([

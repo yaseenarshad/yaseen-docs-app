@@ -568,12 +568,21 @@ export function withCardNoTitle(line: CardLine, hide: boolean): CardLine {
  */
 export function withCardTitleChoice(line: CardLine, choice: CardTitleChoice): CardLine {
   if (cardTitleChoiceOf(line) === choice && line.parts.filter((p) => p.kind === 'notitle' || p.kind === 'titleat').length <= 1) return line
-  const bare: CardLine = { parts: line.parts.filter((p) => p.kind !== 'notitle' && p.kind !== 'titleat') }
+  const bare = withCardTitleAt(withCardNoTitle(line, false), null)
   if (choice === 'default') return bare
-  if (choice === 'never') return withCardNoTitle(bare, true)
+  return choice === 'never' ? withCardNoTitle(bare, true) : withCardTitleAt(bare, choice)
+}
+
+/**
+ * The card's own timing part alone (YAZ-5696): `at` in `notitle`'s place (after the head and any `off` / `next`), or
+ * none with null; `notitle` stays as it is. The page's undo step lays it on the line as it is then (`rebaseCardLine`).
+ */
+export function withCardTitleAt(line: CardLine, at: CardTitleAt | null): CardLine {
+  const bare: CardLine = { parts: line.parts.filter((p) => p.kind !== 'titleat') }
+  if (at === null) return bare.parts.length === line.parts.length ? line : bare
   let i = afterHead(bare)
-  while (bare.parts[i]?.kind === 'off' || bare.parts[i]?.kind === 'next') i++
-  return { parts: [...bare.parts.slice(0, i), { kind: 'titleat', at: choice }, ...bare.parts.slice(i)] }
+  while (bare.parts[i]?.kind === 'off' || bare.parts[i]?.kind === 'next' || bare.parts[i]?.kind === 'notitle') i++
+  return { parts: [...bare.parts.slice(0, i), { kind: 'titleat', at }, ...bare.parts.slice(i)] }
 }
 
 /**

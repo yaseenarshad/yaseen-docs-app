@@ -18,7 +18,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { AttrStep, Step, StepMap, StepResult, type Mappable } from '@milkdown/kit/prose/transform'
-import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, parseCardLine, renameCardProperty, withCardFix, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardProperty, withCardTitle, withoutCardProperty, type CardLine, type CardPart, type CardPropertyValue, type CardReview } from '@shared/cardLine'
+import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, cardTitleAtOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, parseCardLine, renameCardProperty, withCardFix, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardProperty, withCardTitle, withCardTitleAt, withoutCardProperty, type CardLine, type CardPart, type CardPropertyValue, type CardReview } from '@shared/cardLine'
 import { keyFold } from '@shared/propertyKeys'
 import type { Code, RootContent } from 'mdast'
 
@@ -88,7 +88,7 @@ function withReviewInOrder(line: CardLine, review: CardReview, place: number): C
 
 /**
  * The line `now` with the change from `before` to `after` laid on it: the ID, the title (YAZ-5308), `off`, `next`,
- * `notitle` (YAZ-5030) and `fix` (YAZ-5097) as `after` has them where they differ, each review `after` gained added,
+ * `notitle` (YAZ-5030), the title's timing (`title-front`…, YAZ-5696) and `fix` (YAZ-5097) as `after` has them where they differ, each review `after` gained added,
  * each review it lost removed, and each property (YAZ-5379) that `after` set, removed or renamed (YAZ-5383: a rename
  * keeps its place). Everything else of `now` stays.
  */
@@ -100,6 +100,7 @@ export function rebaseCardLine(now: CardLine, before: CardLine, after: CardLine)
   if (isCardOff(after) !== isCardOff(before)) line = withCardOff(line, isCardOff(after))
   if (isCardNext(after) !== isCardNext(before)) line = withCardNext(line, isCardNext(after), isCardNext(after) ? cardNextIndex(after) : undefined)
   if (isCardNoTitle(after) !== isCardNoTitle(before)) line = withCardNoTitle(line, isCardNoTitle(after))
+  if (cardTitleAtOf(after) !== cardTitleAtOf(before)) line = withCardTitleAt(line, cardTitleAtOf(after))
   if (isCardFix(after) !== isCardFix(before)) line = withCardFix(line, isCardFix(after))
   line = withPropertyChange(line, before, after)
   for (const gone of lessReviews(cardReviewsOf(before), cardReviewsOf(after))) {

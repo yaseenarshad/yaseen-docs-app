@@ -53,6 +53,11 @@ export interface MenuRow {
   /** The click or key that does it too, at the right edge (`data-hint`, drawn by CSS as the tab menu's are). */
   hint?: string
   /**
+   * The row asks in place first (YAZ-5696 with YAZ-5697, as ContextMenu's `ask`): the first click turns it into
+   * `question` with Cancel (first, focused) and `yes`; only `yes` runs it (`rowAskDom.ts`, a lazy chunk).
+   */
+  ask?: { question: string; yes: string; danger?: boolean }
+  /**
    * A parent row ("Open in ▸", YAZ-3901): its flyout's rows, in groups with a line between two. One level: a child
    * has no children. Hover, a click and ArrowRight open it; ArrowLeft and Escape close it; a child runs and closes
    * the whole menu. `run` is not called.
@@ -354,6 +359,8 @@ function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElemen
   return picker
 }
 
+const loadRowAsk = () => import('./rowAskDom')
+
 /** One row's button: a click runs it, then `close`; with `refresh` (a `stay` flyout's child), the menu is drawn again instead. */
 function rowButton(row: MenuRow, close: () => void, refresh?: (run: () => void) => void): HTMLButtonElement {
   const item = document.createElement('button')
@@ -370,7 +377,17 @@ function rowButton(row: MenuRow, close: () => void, refresh?: (run: () => void) 
   }
   if (row.hint !== undefined) item.dataset.hint = row.hint
   item.addEventListener('mousedown', (e) => e.preventDefault())
+  // A row that asks first (YAZ-5697): its chunk comes as the menu draws it, so the first click asks at once.
+  const ask = row.ask
+  if (ask !== undefined) void loadRowAsk()
   item.addEventListener('click', () => {
+    if (ask !== undefined)
+      return void loadRowAsk().then(({ askInPlace }) =>
+        askInPlace(item, ask, () => {
+          row.run()
+          close()
+        }),
+      )
     if (refresh !== undefined) return refresh(row.run)
     row.run()
     close()

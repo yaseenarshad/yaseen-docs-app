@@ -1,5 +1,5 @@
 import { hiddenCount } from './cardText'
-import type { CardTitleAt } from './cardLine'
+import type { CardTitleAt, CardTitleChoice } from './cardLine'
 
 /**
  * WHEN A CARD'S TITLE SHOWS IN REVIEW (YAZ-5696, Design 2): the one rule for a step, the Mac's Inbox and Preview and
@@ -25,3 +25,13 @@ export function titleShows(card: { title: string; at: CardTitleAt; counts: reado
   return open.filter((n) => n < front).length >= front
 }
 
+
+/** The ⋯ menu's "Title in review ›" choices (YAZ-5696), in order, with their words: the Mac's two card menus share them. */
+export const CARD_TITLE_CHOICES: readonly { choice: CardTitleChoice; label: string }[] = [
+  { choice: 'default', label: 'Default' },
+  { choice: 'once', label: 'At once' },
+  { choice: 'front', label: 'After the front' },
+  { choice: 'side2', label: 'With Side 2' },
+  { choice: 'never', label: 'Never' },
+]
+export const cardTitleChoiceLabel = (choice: CardTitleChoice): string => CARD_TITLE_CHOICES.find((c) => c.choice === choice)!.label

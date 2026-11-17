@@ -63,7 +63,7 @@ import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstr
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { askResetHistory } from './askResetHistory'
-import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
+import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleChoiceOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardOff, withCardTitle, withCardTitleChoice, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
@@ -71,6 +71,8 @@ import { codeWidthSchema } from '../code/codeWidth'
 import { CARD_EDIT_KEYS, cardKeyRow, drawEditButton } from './cardEditKeys'
 import { copyText, openMenuAt } from '../linkMenu'
 import type { MenuRow } from '../blockHandleMenu'
+import { titleChoiceAsk } from '@shared/cardAsks'
+import { CARD_TITLE_CHOICES, cardTitleChoiceLabel } from '@shared/cardTitleShows'
 import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, cardLineStepAt, changeCardLineAt, isCardNode, CARD_LANGUAGE, cardLineOf } from './cardBlockLine'
@@ -717,6 +719,27 @@ export class CardBlockView implements NodeView {
     if (tr !== null) this.view.dispatch(tr.setMeta('addToHistory', false).setMeta(CARD_ID_META, true))
   }
 
+  /** "Title in review ›" (YAZ-5696): Default · At once · After the front · With Side 2 · Never, as the card window's (`cardPane.tsx`). */
+  private titleInReviewRow(line: CardLine, editable: boolean): MenuRow {
+    const now = cardTitleChoiceOf(line)
+    return {
+      label: 'Title in review',
+      hint: cardTitleChoiceLabel(now),
+      disabled: !editable,
+      run: () => {},
+      children: [
+        CARD_TITLE_CHOICES.map(({ choice, label }) => ({
+          label,
+          ...(choice === now ? { hint: '✓' } : { ask: titleChoiceAsk(choice) }),
+          disabled: !editable,
+          run: () => {
+            if (choice !== now) this.change((l) => withCardTitleChoice(l, choice))
+          },
+        })),
+      ],
+    }
+  }
+
   /** The ⋯ menu's rows (D13). */
   menuRows(): MenuRow[] {
     const line = cardLineOf(this.node)
@@ -734,8 +757,9 @@ export class CardBlockView implements NodeView {
       { label: isCardNext(line) ? 'Remove from top of Inbox' : 'Put at top of Inbox', disabled: !editable, divider: true, run: () => this.change((l) => withCardNext(l, !isCardNext(l))) },
       { label: isCardOff(line) ? 'Unarchive card' : 'Archive card', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
       { label: isCardFix(line) ? 'Remove Fix later' : 'Fix later', disabled: !editable, run: () => this.change((l) => withCardFix(l, !isCardFix(l))) },
-      // ONE toggle row (YAZ-5030): its hint is the state now; a click turns it to the other.
-      { label: 'Title on the front', hint: isCardNoTitle(line) ? 'Hide' : 'Show', disabled: !editable, run: () => this.change((l) => withCardNoTitle(l, !isCardNoTitle(l))) },
+      // YAZ-5696: Title in review › when the title shows in Review; the hint and the ✓ say the choice now, and a new one
+      // asks in place first (YAZ-5697), then writes the line in one undo step.
+      this.titleInReviewRow(line, editable),
       { label: 'Copy card ID', disabled: id === null, divider: true, run: () => id !== null && copyText(id, 'card ID', onNotice, undefined, true) },
       // LAST, alone (YAZ-5376): it asks by typing first, the card window's own box.
       { label: 'Reset history', disabled: !editable || cardReviewsOf(line).length === 0, danger: true, divider: true, run: () => askResetHistory(id, () => this.change(withoutCardReviews)) },
