@@ -137,6 +137,8 @@ import { freePort } from './freePort'
  *    menu's Zoom at 400% and 50%, inside the screen, 44 px taps; the card's parts zoomed, a long word inside the card.
  *  - the Review top bar (`#fixture=review-mochi`, `review-mochi-more`, YAZ-5698), light and dark, at 320, 375 and 390 px:
  *    the filter on the left (a 44 px tap), the count in the true centre (1 px), the dot and the ⚙ right, no overlap.
+ *  - the card's crumb (`#fixture=review-crumb`, `-deep`, `-bubble`, `-search`, YAZ-5713, YAZ-5714), light and dark, at 320, 375
+ *    and 390 px: folded from the start, the page whole; the bubble inside the screen; Show in Search lands on the lit row.
  *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
  *    every bar and the full-screen table inside it, no install hint; a phone (upright and on its side) keeps the full
  *    width. The install hint of a phone's tab at 320 and 375 px: one block above the sign-in (its first button: Sign in
@@ -2686,6 +2688,70 @@ if (process.env.LAYOUT_REVIEW_ZOOM !== 'no') {
         if (!ok) failed++
         console.log(`${ok ? 'PASS' : 'FAIL'}  Review zoom ${want}% at ${w}, ${scheme}: ${m.error ?? `the row says ${m.percent}, the card's parts at zoom ${m.zoom}; the menu ${m.menuIn ? 'inside' : 'OFF SCREEN'}; ${bs.map((x) => `${x.z} ${x.w}x${x.h}${x.off ? ' off' : x.hit ? '' : ' TAP MISSES'}`).join(', ')}; a long word ${m.wordIn ? `inside the card (${m.wordLines} lines)` : 'PAST THE CARD'}; the card ${m.full} px wide, ${m.cardSideways ? `SCROLLS SIDEWAYS (${m.past.join(', ')})` : 'never sideways'}${m.sideways ? '; THE SCREEN SCROLLS SIDEWAYS' : ''}`}  ${menuShot} ${cardShot}`)
       }
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5713: the card's crumb folds from the START (`review-crumb`: Yaseen's screenshot's path; `-deep`: four folders),
+// light and dark, at 320, 375 and 390 px: the page's name whole at the crumb's end, the shown parts the last ones (a
+// "…" first when any folds), nothing over the chip or "Side 2 of 2", a 44 px tap, never sideways. `-bubble`: a tap on
+// it opens the bubble: inside the screen, the full path in it, Show in Search a 44 px tap its centre hits. YAZ-5714
+// (`review-crumb-search`): Show in Search lands on Search, the page's row lit and on the screen, its folders open.
+const REVIEW_CRUMB = `(() => {
+  const r = (el) => el ? el.getBoundingClientRect() : null
+  const W = window.innerWidth, H = window.innerHeight
+  const crumb = document.querySelector('.review__crumb')
+  if (!crumb) return { error: 'no crumb' }
+  const c = r(crumb)
+  const shown = [...crumb.children].filter((e) => getComputedStyle(e).display !== 'none')
+  const pageEl = crumb.querySelector('b')
+  const p = r(pageEl)
+  const chip = r(document.querySelector('.review__chip'))
+  const sides = r(document.querySelector('.review__sides'))
+  const bubble = document.querySelector('.place-bubble')
+  const go = bubble && bubble.querySelector('.place-bubble__go')
+  const b = r(bubble), g = r(go)
+  const hit = g ? document.elementFromPoint(g.left + g.width / 2, g.top + g.height / 2) : null
+  return {
+    W, text: shown.map((e) => e.textContent.trim()).join(' '),
+    pageWhole: p.right <= c.right + 0.5 && p.left >= c.left - 0.5,
+    clear: chip.right <= c.left + 0.5 && (!sides || c.right <= sides.left + 0.5),
+    tap: Math.round(c.height),
+    bubble: bubble ? { path: bubble.querySelector('.place-bubble__path').textContent, inside: b.left >= 0 && b.right <= W + 0.5 && b.bottom <= H, go: [Math.round(g.width), Math.round(g.height)], hits: hit === go || (hit && go.contains(hit)) } : null,
+    sideways: document.documentElement.scrollWidth > W,
+  }
+})()`
+const SEARCH_REVEAL = `(() => {
+  const r = (el) => el ? el.getBoundingClientRect() : null
+  const lit = document.querySelector('.tree__row--revealed')
+  if (!lit) return { error: 'no lit row; ' + (document.querySelector('.search') ? 'on Search' : 'NOT on Search') }
+  const l = r(lit), top = r(document.querySelector('.topbar')), tab = r(document.querySelector('.tabbar'))
+  const open = [...document.querySelectorAll('.tree [aria-expanded="true"] > .tree__row')].map((e) => e.dataset.path)
+  return { path: lit.dataset.path, label: lit.querySelector('.tree__label').textContent, onScreen: l.top >= top.bottom - 0.5 && l.bottom <= (tab ? tab.top : innerHeight) + 0.5, bg: getComputedStyle(lit).backgroundColor, open, sideways: document.documentElement.scrollWidth > innerWidth }
+})()`
+if (process.env.LAYOUT_CRUMB !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of SIZES) {
+      for (const name of ['review-crumb', 'review-crumb-deep', 'review-crumb-bubble', 'review-crumb-deep-bubble']) {
+        await open(name, w, h)
+        const m = await evaluate(REVIEW_CRUMB)
+        const file = join(out, `crumb-${name}-${w}-${scheme}.png`)
+        writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: w, height: name.endsWith('-bubble') ? 300 : 200, scale: 2 } }, page)).data, 'base64'))
+        const bubbled = name.endsWith('-bubble')
+        const full = name.includes('deep') ? 'School / Year two / Spring term / World history / History cards' : 'New cards test / History / History cards'
+        const ok = !m.error && m.text.endsWith('History cards') && m.pageWhole && m.clear && m.tap >= 44 && !m.sideways && (!bubbled || (m.bubble !== null && m.bubble.path === full && m.bubble.inside && m.bubble.go[1] >= 44 && m.bubble.hits))
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  Review crumb ${name} at ${w}, ${scheme}: ${m.error ?? `"${m.text}"; the page ${m.pageWhole ? 'whole' : 'CUT'}; ${m.clear ? 'clear of the chip and the sides' : 'OVERLAP'}; a ${m.tap} px tap${m.bubble ? `; the bubble "${m.bubble.path}" ${m.bubble.inside ? 'inside' : 'OFF SCREEN'}, Show in Search ${m.bubble.go.join('x')}${m.bubble.hits ? '' : ' TAP MISSES'}` : ''}${m.sideways ? '; SCROLLS SIDEWAYS' : ''}`}  ${file}`)
+      }
+      await open('review-crumb-search', w, h)
+      await wait(300)
+      const m = await evaluate(SEARCH_REVEAL)
+      const file = join(out, `crumb-search-${w}-${scheme}.png`)
+      writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const ok = !m.error && m.path === 'New cards test/History/history-cards.md' && m.onScreen && m.open.join('|') === 'New cards test|New cards test/History' && !m.sideways
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  Show in Search at ${w}, ${scheme}: ${m.error ?? `"${m.label}" lit (${m.bg}), ${m.onScreen ? 'on the screen' : 'OFF SCREEN'}; open ${m.open.join(', ')}${m.sideways ? '; SCROLLS SIDEWAYS' : ''}`}  ${file}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)

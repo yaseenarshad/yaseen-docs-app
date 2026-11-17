@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SearchCandidate } from '@client/search/searchCandidates'
 import type { Scope } from '../search/lists'
 import { useApp } from '../app/AppState'
@@ -141,6 +141,8 @@ export function Search() {
   }, [])
 
   const more = () => setShown((n) => n + STEP * 2)
+  // Show in Search (YAZ-5714): a row past "Show more" draws the rows down to it.
+  const reach = useCallback((rows: number) => setShown((n) => Math.max(n, rows + STEP)), [])
 
   return (
     <section className="search" aria-label="Search" ref={section}>
@@ -191,7 +193,7 @@ export function Search() {
       {data !== null && data.records.length === 0 && <p className="muted">{unit(synced ? 'No pages here.' : 'No pages yet. They come with the next sync.')}</p>}
       {tree && data !== null && data.records.length > 0 && (
         <Suspense fallback={null}>
-          <SearchTree data={data} cards={cards} shown={shown} onMore={more} scope={scope} />
+          <SearchTree data={data} cards={cards} shown={shown} onMore={more} onReach={reach} scope={scope} />
         </Suspense>
       )}
       {results !== null && data !== null && data.records.length > 0 && (

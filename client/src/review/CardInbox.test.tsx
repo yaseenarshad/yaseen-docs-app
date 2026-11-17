@@ -1031,6 +1031,56 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     expect(el.querySelector('.card-inbox__path')).toBeNull()
   })
+
+  it('YAZ-5713: a long place folds from the START, "… › History › History cards"; a click on "…" opens the bubble with the full path and Show in sidebar', () => {
+    // jsdom has no layout: each part 8 px a letter plus 20 px (its icon and separator); the box's room set here.
+    let room = 1000
+    const width = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const w = this.matches('[data-fold], [data-fold-more]') ? (this.textContent ?? '').length * 8 + 20 : 0
+      return { x: 0, y: 0, top: 0, left: 0, bottom: 0, right: w, width: w, height: 0, toJSON: () => ({}) } as DOMRect
+    })
+    const box = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('card-inbox__path') ? room : 0
+    })
+    try {
+      const place: CardReviewSession['place'] = [
+        { kind: 'folder', label: 'New cards test', path: '/v/New cards test' },
+        { kind: 'folder', label: 'History', path: '/v/New cards test/History' },
+        { kind: 'page', label: 'History cards', path: PATH },
+      ]
+      const drawAt = (px: number) => {
+        room = px
+        mount(TWO_SIDES)
+        props = { ...props, showInSidebar: vi.fn() }
+        session = { ...session, place }
+        render()
+      }
+      const shownParts = () => [...el.querySelectorAll<HTMLElement>('.card-inbox__path > *')].filter((p) => p.style.display !== 'none').map((p) => p.textContent)
+      drawAt(1000)
+      expect(shownParts()).toEqual(['New cards test›', 'History›', 'History cards'])
+      // 132 + 76 + 124 = 332 px: at 250 the first folder folds ("…›" 36 + 76 + 124 = 236).
+      drawAt(250)
+      expect(shownParts()).toEqual(['…›', 'History›', 'History cards'])
+      // Narrower: only "…" and the page.
+      drawAt(170)
+      expect(shownParts()).toEqual(['…›', 'History cards'])
+      // A click on "…": the bubble, the full path, one button.
+      act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-more')!.click())
+      const bubble = el.querySelector('.place-bubble')
+      expect(bubble?.querySelector('.place-bubble__path')?.textContent).toBe('New cards test / History / History cards')
+      expect([...bubble!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Show in sidebar'])
+      // A click outside closes it.
+      act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+      expect(el.querySelector('.place-bubble')).toBeNull()
+      act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-more')!.click())
+      act(() => el.querySelector<HTMLButtonElement>('.place-bubble__go')!.click())
+      expect(props.showInSidebar).toHaveBeenCalledWith(PATH)
+      expect(el.querySelector('.place-bubble')).toBeNull()
+    } finally {
+      width.mockRestore()
+      box.mockRestore()
+    }
+  })
 })
 
 describe('the guided tour hears the Inbox (YAZ-5123)', () => {

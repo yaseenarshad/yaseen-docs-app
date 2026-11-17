@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useApp } from '../app/AppState'
+import { revealInSearch } from '../search/searchState'
 import type { ReviewLink } from '../review/link'
 import type { ReviewTabProps } from '../review/ReviewTab'
 import { vaultName } from './Frame'
@@ -56,6 +57,11 @@ export function Review({ shown = true }: { shown?: boolean }) {
       // Open page and Open card ALWAYS open an Explore panel over Review (closed, the same card and step), whatever the
       // vault's "Clicking a link" says, as the Mac's Inbox opens Explore's layer (YAZ-5145). The panel's ⋯ has "Open
       // full page"; outside Review the setting works as before.
+      // YAZ-5714: the crumb bubble's Show in Search: the whole tree (no list, no text), open down to the page, its row lit.
+      showInSearch={(path) => {
+        revealInSearch(app.vaultKey, path)
+        app.go({ type: 'tab', tab: 'search' })
+      }}
       open={(to) => openFile(app, to.kind === 'card' ? { kind: 'card', path: to.path, id: to.id } : { kind: 'page', path: to.path, ...(to.at !== undefined && { at: to.at }) }, { from: 'inside', click: 'explore' })}
     />
   )

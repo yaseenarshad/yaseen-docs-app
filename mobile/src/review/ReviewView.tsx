@@ -41,6 +41,8 @@ import { ReviewSheet } from './ReviewSheet'
 import { DoneScreen, type DoneLook } from '@client/review/DoneScreen'
 import { SessionBar, SessionCount } from '@client/review/SessionCount'
 import { LearnedToast } from '@client/review/LearnedToast'
+import { foldStyle, usePlaceFold } from '@client/review/placeFold'
+import { PlaceBubble } from '@client/review/PlaceBubble'
 import { CardActions } from '../cardMenu/lazy'
 import { ZoomRow, useReviewZoom, zoomStyle } from './ReviewZoom'
 import { overlayCount } from '../app/browserHistory'
@@ -84,6 +86,8 @@ export interface ReviewViewProps {
   unit: UnitText
   /** "Open page" and "Open card", and a tap on a pill: 4C's read-only views. */
   open: (to: CardLinkOpen) => void
+  /** The crumb bubble's Show in Search (YAZ-5714): the Search tab, open at the card's page, its row glowing. */
+  showInSearch?: (path: string) => void
   /** The app's media (`useVaultMedia`). Absent: `link.media`, else the store alone. */
   media?: VaultMedia
   /**
@@ -161,7 +165,7 @@ type Step = Reveal & { key: string | null }
 /** `words` and `rating`: the hint line's "✓ Remembered · Capital of Spain · back in 9 days · Undo", right after the answer (the Mac's, YAZ-5693). */
 type Line = { kind: 'answer'; count: number; path: string; id: string; words: AnswerWords; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
-function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, order: firstOrder, shown = true }: ReviewViewProps & Setup) {
+function ReviewSession({ link, vault, vaultName, unit, open, showInSearch, source, host, media, pick: firstPick, order: firstOrder, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings: vaultSettings } = useSourceState(source)
   // Where new cards come from — the Mac's rule (`setNewFrom` → `saveSettings` → `newFrom`), this phone's pick.
   const [pick, setPick] = useState(firstPick)
@@ -234,13 +238,14 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
       </div>
     )
   if (session === null) return <Waiting />
-  return <SessionScreen {...{ link, unit, open, source, host, media, retry, review, session, answers, notice, setNotice, shown, cardLook }} />
+  return <SessionScreen {...{ link, unit, open, showInSearch, source, host, media, retry, review, session, answers, notice, setNotice, shown, cardLook }} />
 }
 
 function SessionScreen({
   link,
   unit,
   open,
+  showInSearch,
   source,
   host,
   media,
@@ -256,6 +261,7 @@ function SessionScreen({
   link: ReviewLink
   unit: UnitText
   open: (to: CardLinkOpen) => void
+  showInSearch?: (path: string) => void
   source: ReviewSource
   host: ReviewHost
   media: VaultMedia
@@ -423,7 +429,7 @@ function SessionScreen({
   }, [card, page, cardFile, link])
 
   // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards").
-  const [menu, setMenu] = useState<'filter' | 'from' | 'more' | null>(null)
+  const [menu, setMenu] = useState<'filter' | 'from' | 'more' | 'place' | null>(null)
   // YAZ-5706: the card's zoom (the ⋯ menu's Zoom row), kept on this phone.
   const [zoom, setZoom] = useReviewZoom()
   const [line, setLine] = useState<Line | null>(null)
@@ -566,11 +572,12 @@ function SessionScreen({
 
   const headTitle = titleShows({ title: titleText, at: titleAt, counts, sides: step.sides, open: step.open, titled: step.titled }) ? titleText : ''
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
-  // The crumb (YAZ-5132's place, from the first folder, YAZ-5682): "LEARNING / Memory", inside the card, on the chip's line.
+  // The crumb (YAZ-5132's place, from the first folder, YAZ-5682): "LEARNING / Memory", inside the card, on the chip's line;
+  // too long, it folds from the start (YAZ-5713, `ReviewCrumb`).
   const crumb = session.place.map((p) => p.label)
 
-  // TAP ANYWHERE: a tap on the screen shows the next part — the card, the empty space, the hint line, the
-  // crumb. Not: a button or a link (✕ ✓ ← → ⋯, Undo, the menus' rows), an open menu, and the card's own taps (a link,
+  // TAP ANYWHERE: a tap on the screen shows the next part — the card, the empty space, the hint line. Not: the
+  // crumb (YAZ-5713: it keeps its tap, as a link does), a button or a link (✕ ✓ ← → ⋯, Undo, the menus' rows), an open menu, and the card's own taps (a link,
   // a pill, a picture, a sound's Play: YAZ-5298). The CAPTURE phase: a sound player stops each click inside it (the
   // Mac's `cardMedia`), so a tap on its name or its empty part reaches here first.
   const onTap = (e: React.MouseEvent) => {
@@ -708,17 +715,18 @@ function SessionScreen({
                     {AGAIN_LABEL}
                   </span>
                 )}
-                {crumb.length > 0 && (
-                  <span className="review__crumb" title={crumb.join(' / ')}>
-                    {crumb.slice(0, -1).map((c) => (
-                      <span key={c} className="review__crumb-folder">
-                        {c} /{' '}
-                      </span>
-                    ))}
-                    <b>{crumb.at(-1)}</b>
-                  </span>
-                )}
+                {crumb.length > 0 && <ReviewCrumb parts={crumb} open={menu === 'place'} onTap={() => setMenu(menu === 'place' ? null : 'place')} />}
                 {counts.length > 1 && <span className="review__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</span>}
+                {menu === 'place' && crumb.length > 0 && (
+                  <PlaceBubble
+                    parts={crumb}
+                    action="Show in Search"
+                    onAction={() => {
+                      setMenu(null)
+                      showInSearch?.(card.path)
+                    }}
+                  />
+                )}
               </div>
               <p className="review__head">
                 {headTitle !== '' && (
@@ -893,6 +901,30 @@ function LastLine({ last, back, quiet, undo }: { last: { words: AnswerWords; rat
   )
 }
 
+/**
+ * The card's crumb (YAZ-5415, YAZ-5682): its folders, then the page in bold. Too long, it folds from the START, the Mac's
+ * rule (YAZ-5713, `usePlaceFold`): "… / HISTORY / History cards", the page always shown, cut with "…" only alone too
+ * long. A tap opens the bubble with the full path and Show in Search (YAZ-5713, YAZ-5714: `PlaceBubble`); it never answers.
+ */
+function ReviewCrumb({ parts, open, onTap }: { parts: string[]; open: boolean; onTap: () => void }) {
+  const box = useRef<HTMLButtonElement>(null)
+  const path = parts.join(' / ')
+  const folded = usePlaceFold(box, path)
+  return (
+    <button ref={box} type="button" className="review__crumb" title={path} aria-label={`${path}. Show the card's place`} aria-haspopup="dialog" aria-expanded={open} onClick={onTap}>
+      <span className="review__crumb-folder" data-fold-more="" style={folded === 0 ? { display: 'none' } : undefined}>
+        … /{' '}
+      </span>
+      {parts.slice(0, -1).map((c, i) => (
+        <span key={`${i}:${c}`} className="review__crumb-folder" data-fold="" style={foldStyle(i, folded)}>
+          {c} /{' '}
+        </span>
+      ))}
+      <b data-fold="">{parts.at(-1)}</b>
+    </button>
+  )
+}
+
 /** The finish screens' look on the phone (`DoneScreen`, YAZ-5665): its classes, and a lighter burst over the Review screen. */
 export const DONE_LOOK: DoneLook = { title: 'review__done-title', line: 'review__done-line', more: 'link-btn review__done-more', today: 'review__done-today', go: 'btn due-end__go', area: '.review', burst: { maxDpr: 2, pieces: 80 } }
 
@@ -900,10 +932,10 @@ export const DONE_LOOK: DoneLook = { title: 'review__done-title', line: 'review_
 const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good: '✓', easy: '⇈' }
 
 /** What an open menu keeps for itself: the menus, and the buttons that open them (a second tap there closes it: YAZ-5539). */
-const MENU_OWN_TAPS = '.review__sheet, .review__menu, .review__filter, .review__more, .due-end__from'
+const MENU_OWN_TAPS = '.review__sheet, .review__menu, .review__filter, .review__more, .due-end__from, .review__crumb, .place-bubble'
 
 /** What a tap on the screen keeps for itself: every control (its own rule), the open menus, and the count (YAZ-5698: it does nothing). */
-const SCREEN_OWN_TAPS = '.review__place, button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__last-mark, .review__last-text'
+const SCREEN_OWN_TAPS = '.review__place, .review__crumb, button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__last-mark, .review__last-text'
 
 const drawings = new WeakMap<object, string>()
 let drawingCount = 0

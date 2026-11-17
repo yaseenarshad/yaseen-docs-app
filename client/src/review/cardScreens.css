@@ -461,27 +461,45 @@
   opacity: 0.6;
 }
 /* The card's place (YAZ-5017 round 2; YAZ-5132 the Inbox's one breadcrumb; YAZ-5682 no vault): folder › page, each a quiet link
-   with its icon. YAZ-5687 gap 4: the crumb takes the room it has; the folders give way first ("…", they shrink 100 times
-   sooner), then the page's name. No percentage cap: on a shrink-to-fit row it cut a lone page to "T…". */
+   with its icon. YAZ-5713: the box takes the room it has (its width is the room `usePlaceFold` reads) and the path folds
+   from the START into "…" (a click: the bubble with the full path); the page always shows, cut with "…" only alone. */
+.card-inbox__path-box {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
 .card-inbox__path {
-  flex: 0 1 auto;
-  display: inline-flex;
+  flex: 1 1 0;
+  display: flex;
   align-items: center;
   gap: 3px;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
 }
+.card-inbox__path-item {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+.card-inbox__path-item[data-kind='page'] {
+  flex: 0 1 auto;
+  overflow: hidden;
+}
 .card-inbox__path-sep {
   flex: none;
   font-size: 11px;
   opacity: 0.6;
 }
-.card-inbox__path-part {
-  flex: 0 100 auto;
+.card-inbox__path-part,
+.card-inbox__path-more {
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
-  min-width: 1.8em;
+  min-width: 0;
   padding: 2px 4px;
   overflow: hidden;
   border: 0;
@@ -505,7 +523,9 @@
   flex: 0 1 auto;
   color: var(--fg);
 }
-.card-inbox__path-part:hover:not(:disabled) {
+.card-inbox__path-part:hover:not(:disabled),
+.card-inbox__path-more:hover,
+.card-inbox__path-more[aria-expanded='true'] {
   background: color-mix(in srgb, var(--fg) 7%, transparent);
   color: var(--fg);
 }

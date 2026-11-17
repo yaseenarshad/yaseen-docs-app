@@ -40,10 +40,15 @@ const real = (ms: number) => act(async () => void (await new Promise((r) => setT
 describe('tap anywhere (YAZ-5415, round 4)', () => {
   const ONE = { '.yaseendocs/review.json': '{}', 'p.md': page('Memory', cardBlock('{{Spaced}} repetition makes the next gap {{longer}}; a miss makes it {{short}}.', `MC-1, ${inOrder(OLD, 0)}`), cardBlock('Two?', `MC-2, ${inOrder(OLD, 1)}`)) }
 
-  it('the card, the empty space, the hint line and the crumb each show the next part', async () => {
+  it('the card, the empty space and the hint line each show the next part; the crumb keeps its tap (YAZ-5713: its bubble)', async () => {
     h = await reviewSetup(ONE)
     expect(hint()).toBe('Tap anywhere · 3 left')
     await tapOn(q('.review__crumb'))
+    expect(shownWords()).toEqual([])
+    expect(q('.place-bubble')).not.toBeNull()
+    await tapOn(q('.review__crumb'))
+    expect(q('.place-bubble')).toBeNull()
+    await tapOn(q('.phone-card__body'))
     expect(shownWords()).toEqual(['Spaced'])
     await tapOn(q('.review__hint-text'))
     expect(shownWords()).toEqual(['Spaced', 'longer'])

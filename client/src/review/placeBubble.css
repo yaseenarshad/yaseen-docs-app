@@ -1,0 +1,41 @@
+/* The card's place in full (YAZ-5713, `PlaceBubble`): a small bubble under the breadcrumb, the Mac's and the phone's. */
+.place-bubble {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 6px);
+  left: 0;
+  width: max-content;
+  max-width: min(320px, 100%);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  color: var(--fg);
+  cursor: default;
+  text-align: left;
+}
+.place-bubble__path {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.place-bubble__go {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-side);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.place-bubble__go:hover {
+  background: color-mix(in srgb, var(--fg) 7%, var(--bg-side));
+}
