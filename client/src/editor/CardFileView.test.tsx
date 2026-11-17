@@ -188,22 +188,21 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(el.textContent).not.toContain('Open page')
   })
 
-  it('⋯: Put at top of Inbox, Archive card, Fix later, Title on the front, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
+  it('⋯: Put at top of Inbox, Archive card, Fix later, Title in review, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     await mount(FILE)
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     const rows = await menu()
-    expect(rows).toEqual(['Preview', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title on the front', 'Copy card ID', 'Copy card link', 'Turn into a page'])
+    expect(rows).toEqual(['Preview', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Copy card link', 'Turn into a page'])
     pick('Copy card link')
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })
 
-  it('YAZ-5697: Archive card, Title on the front and Turn into a page ask in place first ("Archive this card?", Cancel first and focused); the first click writes nothing, Cancel leaves the card as it was', async () => {
+  it('YAZ-5697: Archive card and Turn into a page ask in place first ("Archive this card?", Cancel first and focused); the first click writes nothing, Cancel leaves the card as it was', async () => {
     await mount(FILE)
     for (const [row, question, yes] of [
       ['Archive card', 'Archive this card?', 'Archive'],
-      ['Title on the front', 'Hide the title on the front?', 'Hide'],
       ['Turn into a page', 'Turn this card into a page?', 'Turn into a page'],
     ]) {
       await menu()
@@ -225,6 +224,54 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await menu()
     pick('Fix later')
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain(', fix -->'))
+  })
+
+  it('YAZ-5696: ⋯ Title in review › Default · At once · After the front · With Side 2 · Never; a change asks in place first (YAZ-5697), then writes the card line', async () => {
+    await mount(FILE)
+    const line = () => disk.files.get(PATH)!.split('\n').find((l) => l.startsWith('<!-- card'))
+    const flyoutRows = () => [...document.querySelectorAll<HTMLElement>('.ctx-menu__sub [role="menuitem"]')]
+    const choices = () => flyoutRows().map((b) => [b.textContent, b.dataset.hint ?? ''])
+    const open = async () => {
+      await menu()
+      const parent = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) => b.textContent === 'Title in review')!
+      act(() => parent.click())
+      await vi.waitFor(() => expect(flyoutRows().length).toBe(5))
+      return parent
+    }
+    const parent = await open()
+    expect(parent.dataset.hint).toBe('Default')
+    expect(choices()).toEqual([['Default', '✓'], ['At once', ''], ['After the front', ''], ['With Side 2', ''], ['Never', '']])
+    // With Side 2: it asks first; Cancel writes nothing.
+    act(() => flyoutRows()[3].click())
+    await act(async () => undefined)
+    const ask = () => document.querySelector<HTMLElement>('.ctx-menu__ask')
+    expect(ask()?.textContent).toContain('Show the title with Side 2?')
+    const answers = () => [...ask()!.querySelectorAll<HTMLButtonElement>('button')]
+    expect(answers().map((b) => b.textContent)).toEqual(['Cancel', 'With Side 2'])
+    act(() => answers()[0].click())
+    await act(async () => undefined)
+    expect(disk.files.get(PATH)).toBe(FILE)
+    // Yes: the line takes `title-side2`.
+    act(() => flyoutRows()[3].click())
+    await act(async () => undefined)
+    act(() => answers()[1].click())
+    await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-9, title "Capital of France", title-side2 -->'))
+    act(() => document.querySelector<HTMLElement>('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    // The menu says the choice now; Never takes its place (`notitle`), Default takes both away.
+    expect((await open()).dataset.hint).toBe('With Side 2')
+    expect(choices()[3]).toEqual(['With Side 2', '✓'])
+    act(() => flyoutRows()[4].click())
+    await act(async () => undefined)
+    expect(ask()?.textContent).toContain('Never show the title in review?')
+    act(() => answers()[1].click())
+    await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-9, title "Capital of France", notitle -->'))
+    await vi.waitFor(() => expect(el.querySelector('.card__notitle')?.textContent).toBe('Title hidden in review'))
+    act(() => document.querySelector<HTMLElement>('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    await open()
+    act(() => flyoutRows()[0].click())
+    await act(async () => undefined)
+    act(() => answers()[1].click())
+    await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-9, title "Capital of France" -->'))
   })
 
   it('Archive card writes `off` on the card line once its ask says yes; the head then says "Archived"', async () => {

@@ -6,7 +6,8 @@
  * What each adds is its own: the Inbox its answers, its timer and its session; the Preview none of them.
  */
 import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
-import { reviewTitleOf } from '@shared/cardLine'
+import { reviewTitleOf, type CardTitleAt } from '@shared/cardLine'
+import { titleShows } from '@shared/cardTitleShows'
 import { cardSides, hiddenCount } from '@shared/cardText'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBody, type CardLinkDoors } from './cardParts'
@@ -26,6 +27,14 @@ export interface CardStep extends Reveal {
  */
 export function useCardFront(pageText: string | null, title: string, notitle: boolean): { text: string | null; title: string } {
   return { text: pageText, title: pageText === null ? '' : reviewTitleOf({ title, notitle }) }
+}
+
+/**
+ * The band's title at this step (YAZ-5696): `title` is Review's (`reviewTitleOf`: '' when hidden in review, no band);
+ * `waits` while `titleShows` says it is not time yet: the card's own choice (`own`), else the global `titleAt`.
+ */
+export function bandTitle(title: string, own: CardTitleAt | undefined, global: CardTitleAt, steps: Pick<CardSteps, 'counts' | 'step'>): { text: string; waits: boolean } {
+  return { text: title, waits: title !== '' && !titleShows({ title, at: own ?? global, counts: steps.counts, sides: steps.step.sides, open: steps.step.open }) }
 }
 
 export interface CardSteps {

@@ -345,27 +345,48 @@ describe('the card in the page', () => {
     expect(opened).toEqual([{ path: '/v/Page.md', cardId: 'WIKI-7', index: 0 }])
   })
 
-  it('YAZ-5030: ⋯ "Title on the front" Show / Hide sets and removes `notitle` in one undo step; the head says "Title hidden in review"; the card still shows its title', async () => {
+  it('YAZ-5030, YAZ-5696: ⋯ Title in review › Never asks in place first (YAZ-5697), then sets `notitle` in one undo step; With Side 2 writes `title-side2`; the head says "Title hidden in review"; the card still shows its title', async () => {
     const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
-    const rowOf = () => {
+    const parentOf = () => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
-      return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith('Title on the front'))!
+      return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent === 'Title in review')!
+    }
+    const choose = async (label: string) => {
+      parentOf().click()
+      const sub = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub button')]
+      expect(sub.map((b) => b.textContent)).toEqual(['Default', 'At once', 'After the front', 'With Side 2', 'Never'])
+      sub.find((b) => b.textContent === label)!.click()
+      await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
+      return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')]
     }
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
     const mark = () => root.querySelector<HTMLElement>('.card__notitle')!
     expect(mark().hidden).toBe(true)
-    const row = rowOf()
-    expect(row.dataset.hint).toBe('Show')
-    row.click()
+    expect(parentOf().dataset.hint).toBe('Default')
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    // Never: it asks first, Cancel first and focused; Cancel writes nothing.
+    let answers = await choose('Never')
+    expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Never show the title in review?')
+    expect(answers.map((b) => b.textContent)).toEqual(['Cancel', 'Never'])
+    expect(document.activeElement).toBe(answers[0])
+    answers[0].click()
+    expect(line()).toBe('<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->')
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    answers = await choose('Never')
+    answers[1].click()
     expect(line()).toBe('<!-- card: WIKI-7, notitle, 2026-11-12T14:05:00.000Z good -->')
     expect([mark().hidden, mark().textContent]).toEqual([false, 'Title hidden in review'])
     // The page shows the whole card, its first line too.
     expect(root.querySelector('.card__body')?.textContent).toContain('What is the capital of')
-    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    expect(rowOf().dataset.hint).toBe('Hide')
+    expect(parentOf().dataset.hint).toBe('Never')
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     undo(view.state, view.dispatch)
     expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', true])
+    const side2 = await choose('With Side 2')
+    expect(side2.map((b) => b.textContent)).toEqual(['Cancel', 'With Side 2'])
+    side2[1].click()
+    await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-7, title-side2, 2026-11-12T14:05:00.000Z good -->'))
+    expect(mark().hidden).toBe(true)
   })
 
   it('YAZ-5097: ⋯ Fix later sets `fix` in one undo step; the head says "To fix"; Remove Fix later takes it off', async () => {

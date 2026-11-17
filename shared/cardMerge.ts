@@ -1,4 +1,4 @@
-import { cardIdOf, cardReviewKey, cardReviewsOf, cardTitleOf, formatCardLine, formatCardReview, pageCards, rewritePageCards, withCardReviews, type CardBlock, type CardLine, type CardPart } from './cardLine'
+import { CARD_TITLE_AT_WORDS, cardIdOf, cardReviewKey, cardReviewsOf, cardTitleOf, formatCardLine, formatCardReview, pageCards, rewritePageCards, withCardReviews, type CardBlock, type CardLine, type CardPart } from './cardLine'
 import { keyFold } from './propertyKeys'
 
 /**
@@ -8,7 +8,7 @@ import { keyFold } from './propertyKeys'
  *  - the reviews: the union of both sides' reviews (but a review in the base that one side removed and the other left
  *    as it was stays removed, YAZ-5155), each one ONE time, in time order (`withCardReviews`: of one review
  *    with and without seconds, the timed one);
- *  - the marks (`off`, `next`, `notitle`, `fix`, and each part this app does not know yet): a three-way result
+ *  - the marks (`off`, `next`, `notitle`, `title-front` and its kin (YAZ-5696), `fix`, and each part this app does not know yet): a three-way result
  *    against the base. A mark that one side changed takes that change; a mark both sides left alone stays as it was.
  *  - the title (YAZ-5308: the `title` part, YAZ-5309): a three-way result against the base, as a mark's, by its text. A
  *    title one side changed (a rename on the Mac, while the phone answers) takes that change; both sides changed it,
@@ -82,7 +82,9 @@ const keyOf = (p: CardPart): string =>
           ? `review ${cardReviewKey(p.review)}`
           : p.kind === 'other'
             ? `mark ${p.text}`
-            : `mark ${p.kind}`
+            : p.kind === 'titleat'
+              ? `mark ${CARD_TITLE_AT_WORDS[p.at]}`
+              : `mark ${p.kind}`
 
 const marksOf = (line: CardLine | null): Set<string> => new Set((line?.parts ?? []).map(keyOf).filter((k) => k.startsWith('mark ')))
 
@@ -221,4 +223,4 @@ function removedReviews(base: CardLine | null, theirs: CardLine, mine: CardLine)
   return gone
 }
 
-const rank = (p: CardPart | undefined): number => (p?.kind === 'off' ? 1 : p?.kind === 'next' ? 2 : p?.kind === 'notitle' ? 3 : p?.kind === 'fix' ? 4 : 0)
+const rank = (p: CardPart | undefined): number => (p?.kind === 'off' ? 1 : p?.kind === 'next' ? 2 : p?.kind === 'notitle' || p?.kind === 'titleat' ? 3 : p?.kind === 'fix' ? 4 : 0)

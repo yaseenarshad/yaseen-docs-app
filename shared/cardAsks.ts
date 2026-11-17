@@ -7,6 +7,9 @@
  * Unarchive card does not ask: it only brings a card back. Put at top of Inbox and Fix later do not ask: each is taken
  * back on the same row (and by Undo in the Inbox).
  */
+import type { CardTitleChoice } from './cardTitleAt'
+import { cardTitleChoiceLabel } from './cardTitleShows'
+
 export interface CardAsk {
   question: string
   /** The answer's words, after Cancel. */
@@ -16,6 +19,21 @@ export interface CardAsk {
 }
 
 export const ARCHIVE_ASK: CardAsk = { question: 'Archive this card?', yes: 'Archive', danger: true }
+
+/**
+ * The ⋯ menu's "Title in review ›" ask (YAZ-5696, the YAZ-5697 step): a change of when the card's title shows in
+ * Review. The answer is the choice's own name.
+ */
+export function titleChoiceAsk(choice: CardTitleChoice): CardAsk {
+  const question: Record<CardTitleChoice, string> = {
+    default: 'Use the default from Settings › Cards?',
+    once: 'Show the title at once?',
+    front: 'Show the title after the front?',
+    side2: 'Show the title with Side 2?',
+    never: 'Never show the title in review?',
+  }
+  return { question: question[choice], yes: cardTitleChoiceLabel(choice) }
+}
 
 /** Title on the front's ask: `hide` when the click hides the title (the line takes `notitle`), else it shows it again. */
 export function titleFrontAsk(hide: boolean): CardAsk {
