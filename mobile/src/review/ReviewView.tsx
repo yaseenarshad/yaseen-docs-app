@@ -429,6 +429,7 @@ function SessionScreen({
   const [line, setLine] = useState<Line | null>(null)
   // The answer's "✓ Remembered · … · Undo" stays until the first thing done on the next card (a tap that
   // shows a part, ← or →, the deck drawer); then the hint line is the plain hint again. No timer. Undo stays in ⋯.
+  // On a finish screen (no next card) it stays, the deck drawer opened or not (YAZ-5710).
   const [putAway, setPutAway] = useState<Line | null>(null)
   const firstAction = () => void (line?.kind === 'answer' && putAway !== line && setPutAway(line))
   const ratings = answerRatings(review.settings)
@@ -621,7 +622,9 @@ function SessionScreen({
         aria-expanded={menu === 'filter'}
         aria-label={`${filterLabel(filter)}. Choose what to review`}
         onClick={() => {
-          if (menu !== 'filter') firstAction()
+          // A first action on a CARD puts the answer's line away. A finish screen has no card and no ⋯: the line, and
+          // its Undo, stay under the sheet (YAZ-5710, as the Mac's ⌘Z).
+          if (menu !== 'filter' && card !== null) firstAction()
           setMenu(menu === 'filter' ? null : 'filter')
         }}
       >
