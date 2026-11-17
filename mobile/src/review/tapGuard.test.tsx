@@ -135,7 +135,7 @@ describe('the guard on the screen (YAZ-5266)', () => {
     await press(h, 'Remembered')
     expect(reviews(h)).toEqual(['GD-1', 'GD-2'])
     // YAZ-5495 (the Mac's YAZ-5043): the last due card answered: "Due today is done.".
-    expect(h.text()).toContain('Due today is done.')
+    expect(h.text()).toContain('Finished reviewing.')
     expect(guarded(h)).toBe(false)
   })
 

@@ -501,14 +501,14 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(props.openPage).not.toHaveBeenCalled()
   })
 
-  it('the done screen of "Review this page" says the page is done, and "N more in the Inbox" starts the vault`s review', () => {
+  it('the done screen of "Review this page" says the page is done, then Mochi`s "You have cards due in other pages." · "Review cards 12", which starts the vault`s review (YAZ-5678)', () => {
     mount(TWO_SIDES)
     session = { ...session, label: 'Cards', scope: 'page', card: null }
     render()
     expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('This page is done.')
-    expect(el.querySelector('.card-inbox__done-line')).toBeNull()
-    const more = el.querySelector<HTMLButtonElement>('.card-inbox__done-more')!
-    expect(more.textContent).toBe('12 more in the Inbox')
+    expect(el.querySelector('.card-inbox__done-line')?.textContent).toBe('You have cards due in other pages.')
+    const more = el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!
+    expect(more.textContent).toBe('Review cards 12')
     act(() => more.click())
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
   })
@@ -721,9 +721,11 @@ describe('the Inbox screen (YAZ-4962)', () => {
     session = { ...session, filter: 'due', card: null, counts: { all: 3, next: 0, due: 0, new: 3 } }
     render()
     expect(el.querySelector('.card-inbox__filter')?.textContent).toBe('Due today')
-    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('No due cards left.')
-    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-more')!.click())
-    expect(review.setFilter).toHaveBeenLastCalledWith('all')
+    // YAZ-5678, Mochi's words: "Finished reviewing." / "How about learning some new cards?" · Learn new cards 3.
+    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Finished reviewing.')
+    expect(el.querySelector('.card-inbox__done-line')?.textContent).toBe('How about learning some new cards?')
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!.click())
+    expect(review.setFilter).toHaveBeenLastCalledWith('new')
   })
 
   it('YAZ-5028: the menu`s second row is Up next with its count in the chip`s colours (grey at 0); a pick sets the filter; its done screen leads back to All cards', () => {
@@ -1453,7 +1455,7 @@ describe("YAZ-5674: the top right as Mochi's — ✕ K, the filter's icon, done 
     expect(bar.querySelector('.card-inbox__today')).toBeNull()
     expect(bar.textContent).not.toMatch(/Today|\d+ of \d+/)
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(document.querySelector('.card-inbox__menu-today')?.textContent).toBe('Today: 31 cards · 9 min')
+    expect(document.querySelector('.card-inbox__menu-today')?.textContent).toBe('Today: 31 cards · 35 reviews · 9 min')
     // Nothing answered today: no line.
     session = { ...session, today: { cards: 0, reviews: 0, seconds: 0 } }
     render()
@@ -1466,11 +1468,11 @@ describe("YAZ-5674: the top right as Mochi's — ✕ K, the filter's icon, done 
     render()
     const done = el.querySelector('.card-inbox__done')!
     expect(done.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
-    expect(done.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 cards · 5 min')
+    expect(done.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 cards · 14 reviews · 5 min')
     // Still shown on a page's done screen.
     session = { ...session, scope: 'page' }
     render()
-    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 cards · 5 min')
+    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 cards · 14 reviews · 5 min')
   })
 })
 
@@ -1500,7 +1502,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     expect(review.settings.timeSoFar).toBe('hidden')
     session = { ...session, today }
     render()
-    expect(bar()?.textContent).toBe('Today: 31 cards · ')
+    expect(bar()?.textContent).toBe('Today: 31 cards · 35 reviews · ')
     expect(clock()?.querySelector('svg')).not.toBeNull()
     expect(clock()?.getAttribute('aria-label')).toBe('Time so far: 9 min')
     expect(tip()).toBeNull()
@@ -1513,7 +1515,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     // Round 3: one box only — no native tooltip on the clock or the line it sits in.
     expect(clock()!.closest('[title]:not([title=""])')).toBeNull()
     // Never on screen: the line keeps the clock.
-    expect(bar()?.textContent).toBe('Today: 31 cards · ')
+    expect(bar()?.textContent).toBe('Today: 31 cards · 35 reviews · ')
     unhover(clock()!)
     expect(tip()).toBeNull()
     // A click is no toggle: the line stays the same, and the press takes no focus (the keyboard stays in the Inbox).
@@ -1521,7 +1523,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     clock()!.dispatchEvent(down)
     expect(down.defaultPrevented).toBe(true)
     act(() => clock()!.click())
-    expect(bar()?.textContent).toBe('Today: 31 cards · ')
+    expect(bar()?.textContent).toBe('Today: 31 cards · 35 reviews · ')
     expect(tip()).toBeNull()
   })
 
@@ -1541,13 +1543,13 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     session = { ...session, card: null, today }
     render()
     const done = () => el.querySelector('.card-inbox__done-today')
-    expect(done()?.textContent).toBe('Today: 31 cards · 9 min')
+    expect(done()?.textContent).toBe('Today: 31 cards · 35 reviews · 9 min')
     expect(el.querySelector('.card-inbox__done .card-inbox__time')).toBeNull()
     // A page's, a filter's, and the Due today end too.
     for (const more of [{ scope: 'page' as const }, { filter: 'new' as const, counts: { ...session.counts, all: 3 } }]) {
       session = { ...session, ...more }
       render()
-      expect(done()?.textContent).toBe('Today: 31 cards · 9 min')
+      expect(done()?.textContent).toBe('Today: 31 cards · 35 reviews · 9 min')
     }
   })
 
@@ -1563,7 +1565,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, timeSoFar: 'off' })
     session = { ...session, today }
     render()
-    expect(bar()?.textContent).toBe('Today: 31 cards')
+    expect(bar()?.textContent).toBe('Today: 31 cards · 35 reviews')
     expect(document.querySelector('.card-inbox__time')).toBeNull()
     // The menu closed (the second click of its button), the keys answer again.
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
@@ -1573,7 +1575,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     session = { ...session, card: null }
     render()
     // YAZ-5665: the finish screen shows the time whatever the setting says.
-    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 31 cards · 9 min')
+    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 31 cards · 35 reviews · 9 min')
     expect(el.querySelector('.card-inbox__time')).toBeNull()
   })
 })
@@ -1718,7 +1720,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(doneText()).toEqual(['Inbox complete.', 'Nothing else is due today. Enjoy your day!'])
   })
 
-  it('YAZ-5623: the vault done while cards are still due (a new day began): "Review 3 more", the phone\'s words and rule', () => {
+  it('YAZ-5623: the vault done while cards are still due (a new day began): "Review cards 3" (YAZ-5678, Mochi`s words), both apps', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 } }
     // Nothing due in the vault: as before.
@@ -1728,8 +1730,8 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     // Midnight passed during the review: 3 cards are due now. The screen offers them, and the click starts the vault again.
     review = { ...review, dueCount: 3 }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', 'Review 3 more'])
-    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-more')!.click())
+    expect(doneText()).toEqual(['Inbox complete.', 'Review cards 3'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!.click())
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
     // Cards wait to be added: the adds, as on the phone (no "Review K more" beside them).
     session = { ...session, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
@@ -1737,11 +1739,13 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(doneText()).toEqual(['Inbox complete.', '5 new cards wait for another day.', 'Add[5]new cardsfrom All folders'])
   })
 
-  it('a filter done: "No new cards left." then its add and, quiet, "12 more in All cards"; Due today has no add', () => {
+  it('a filter done (YAZ-5678, Mochi`s words): "Finished learning cards." · Review cards 12, then its add; Up next`s "12 more in All cards"; Due today has no add', () => {
     mount(TWO_SIDES)
     session = { ...session, filter: 'new', card: null, counts: { all: 12, next: 0, due: 12, new: 0 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
     render()
-    expect(doneText()).toEqual(['No new cards left.', 'Add[10]new cardsfrom All folders', '12 more in All cards'])
+    expect(doneText()).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 12', 'Add[10]new cardsfrom All folders'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!.click())
+    expect(review.setFilter).toHaveBeenLastCalledWith('due')
     act(() => addButtons()[0].click())
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
     session = { ...session, filter: 'next' }
@@ -1749,14 +1753,14 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(doneText()).toEqual(['No Up next cards left.', 'Add[2]Up next', '12 more in All cards'])
     session = { ...session, filter: 'due' }
     render()
-    expect(doneText()).toEqual(['No due cards left.', '12 more in All cards'])
+    expect(doneText()).toEqual(['Finished reviewing.', '12 more in All cards'])
   })
 
   it('folder review done: "This folder is done." then that folder\'s waiting cards, then the way to the Inbox', () => {
     mount(TWO_SIDES)
     session = { ...session, label: 'Bio', scope: 'folder', card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
     render()
-    expect(doneText()).toEqual(['This folder is done.', '5 new cards wait for another day.', 'Add[5]new cardsfrom All folders', '12 more in the Inbox'])
+    expect(doneText()).toEqual(['This folder is done.', '5 new cards wait for another day.', 'Add[5]new cardsfrom All folders', 'You have cards due in other pages.', 'Review cards 12'])
   })
 })
 

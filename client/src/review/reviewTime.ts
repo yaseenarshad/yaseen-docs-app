@@ -16,13 +16,19 @@ export function reviewDuration(seconds: number | undefined): string {
 export const todayDuration = (seconds: number): string => (seconds < 60 ? `${seconds} s` : `${Math.round(seconds / 60)} min`)
 
 /**
- * "Today: 31 cards" (YAZ-5033); empty with no card today. The time, "9 min" (`todayDuration`), is its own part after
- * it (YAZ-5130): `TodayWork` shows it, hides it behind a click, or leaves it out, by Settings › Review › Time so far.
+ * "Today: 31 cards" (YAZ-5033); empty with no card today. YAZ-5678 (honest numbers; YAZ-5669, Yaseen: "is it true
+ * today i did 10 cards? … so 20 total?"): it counts different cards, so when a card was answered more than once the
+ * answers say so too, "Today: 10 cards · 17 reviews". The time, "9 min" (`todayDuration`), is its own part after it
+ * (YAZ-5130): `TodayWork` shows it, hides it behind a click, or leaves it out, by Settings › Review › Time so far.
  */
-export const todayCards = (today: ReviewedToday): string => (today.cards === 0 ? '' : `Today: ${today.cards} card${today.cards === 1 ? '' : 's'}`)
+export function todayCards(today: ReviewedToday): string {
+  if (today.cards === 0) return ''
+  const cards = `Today: ${today.cards} card${today.cards === 1 ? '' : 's'}`
+  return today.reviews > today.cards ? `${cards} · ${today.reviews} reviews` : cards
+}
 
 /**
- * A finish screen's "Today: 25 cards · 12 min" (YAZ-5665, Yaseen: "on the completion screen can we show it?"): the
+ * A finish screen's "Today: 25 cards · 31 reviews · 12 min" (YAZ-5665, Yaseen: "on the completion screen can we show it?"): the
  * time always, whatever Settings › Review › Time so far says (that setting is for DURING the review). No seconds today
  * (only old reviews): the cards alone. Empty with no card today.
  */

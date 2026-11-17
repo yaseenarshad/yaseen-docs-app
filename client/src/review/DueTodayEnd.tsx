@@ -1,22 +1,20 @@
 /**
- * THE END OF DUE TODAY (YAZ-5043, Option A, Yaseen's picks): the screen in place of the card when Due today stops
- * (`useCardReview`'s `end`). ONE screen for the Mac's Inbox, a page's or a folder's review (item 8), and the phone's
- * Review tab (YAZ-5665: the phone's own copy, `DueEnd.tsx`, is gone). Each app gives its look (`DoneLook`).
+ * THE END OF DUE TODAY'S FIRST PASS (YAZ-5043, Option A, Yaseen's picks): the screen in place of the card when the
+ * first pass of Due today stops with misses (`useCardReview`'s `end`, kind `missed`). ONE screen for the Mac's Inbox, a
+ * page's or a folder's review (item 8), and the phone's Review tab (YAZ-5665). Each app gives its look (`DoneLook`).
  *
- *  - After the first pass: the top bar's grey and red slide down into a small ring, which fills to the % (600 ms), and
- *    four small dots float out once. Mochi's words (YAZ-5677): "You remembered 93% of cards." / "Now let's review the
- *    cards you missed again." and ONE button, "Review missed cards 5" (item 7, and Yaseen on YAZ-5672: no Skip and finish).
- *  - Due today done: the ring closes in green and a ✓ pops in, with one burst of confetti (item 13, lazy:
- *    `confetti.ts` loads only here). "Due today is done." then "Learn new cards 11" with its "from Spanish ▾".
+ *  - The top bar's grey and red slide down into a small ring, which fills to the % (600 ms), and four small dots float
+ *    out once. Mochi's words (YAZ-5677): "You remembered 93% of cards." / "Now let's review the cards you missed
+ *    again." and ONE button, "Review missed cards 5" (item 7, and Yaseen on YAZ-5672: no Skip and finish).
+ *  - Due today DONE is a finish screen now (YAZ-5678, `DoneScreen`): Mochi's words with our 🎉, green ✓ and confetti.
  *  - Smooth on a phone (the phone's ring, YAZ-5665): the ring fills by turning two half rings (`transform`), every
  *    animation is `transform` or `opacity`.
- *  - Reduce motion (item 5): the ring full at once, no dots, no confetti.
+ *  - Reduce motion (item 5): the ring full at once, no dots.
  *  - It plays ONCE per stop, and only while it shows (item 16): behind a page tab, in a hidden window or app, it waits
- *    and plays when it shows. A stop seen already (focus mode, a tab back) shows still. The confetti stops if the tab or
- *    the app goes away.
+ *    and plays when it shows. A stop seen already (focus mode, a tab back) shows still.
  *  - Enter and Space do nothing new here (item 4).
  */
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import type { DueTodayEnd as End } from './useCardReview'
 import type { ConfettiOptions } from './confetti'
 import { reducedMotion, useInFront } from './DoneCheer'
@@ -28,11 +26,11 @@ export interface DoneLook {
   title: string
   /** A quiet line under it. */
   line: string
-  /** A way on: "3 more in All cards", "Review 12 more", "21 more in the Inbox". */
+  /** A way on: "3 more in All cards". */
   more: string
   /** "Today: 25 cards · 12 min". */
   today: string
-  /** "Review missed cards" / "Learn new cards". */
+  /** "Review missed cards" / "Learn new cards" / "Review cards". */
   go: string
   /** Where the confetti plays (a selector the screen is inside; default the window) and how (the phone's lighter burst). */
   area?: string
@@ -41,8 +39,6 @@ export interface DoneLook {
 
 /** The stops whose animation played (by `End.id`): each plays once, also when the screen draws again. */
 const played = new Set<string>()
-
-const cards = (n: number): string => `${n} card${n === 1 ? '' : 's'}`
 
 /** The fill (ms) and where it starts after the ring lands. */
 const FILL_MS = 600
@@ -68,36 +64,39 @@ export function ringTurns(green: number): CSSProperties {
 }
 
 // The icons size with the button's words (14 px on the Mac, 16 px on the phone).
-const RefreshIcon = () => (
+export const RefreshIcon = () => (
   <svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v3h-3" />
   </svg>
 )
-const NewIcon = () => (
+export const PlusIcon = () => (
   <svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true">
     <path d="M8 3.5v9M3.5 8h9" />
   </svg>
 )
+
+/** A finish screen's one way on, Mochi's: its icon, its words and its count ("Review missed cards 5", "Learn new cards 11"). */
+export function GoButton({ look, icon, words, count, onClick }: { look: DoneLook; icon: ReactNode; words: string; count: number; onClick: () => void }) {
+  return (
+    <button type="button" className={look.go} onMouseDown={(e) => e.preventDefault()} onClick={onClick}>
+      {icon}
+      {words}{' '}
+      <span className="due-end__count">{count}</span>
+    </button>
+  )
+}
 
 interface Props {
   end: End
   /** The screen's tab is the one on show. */
   shown: boolean
   look: DoneLook
-  /** "Review missed cards" / "Learn new cards". */
+  /** "Review missed cards". */
   onGoOn: () => void
-  /** The new cards' "from Spanish ▾" (YAZ-5322), after "Learn new cards". */
-  from?: ReactNode
-  /** The done screen with no new card left: what the screen says after (what waits, Add, the way on). */
-  children?: ReactNode
 }
 
-export function DueTodayEnd({ end, shown, look, onGoOn, from, children }: Props) {
+export function DueTodayEnd({ end, shown, look, onGoOn }: Props) {
   const inFront = useInFront(shown)
-  const front = useRef(inFront)
-  front.current = inFront
-  const ringRef = useRef<HTMLDivElement>(null)
-  const stopConfetti = useRef<(() => void) | null>(null)
   // 'wait' until in front; then 'play' once; 'still' when seen already or with Reduce motion.
   const still = () => played.has(end.id) || reducedMotion()
   const [motion, setMotion] = useState<'wait' | 'play' | 'still'>(() => (still() ? 'still' : 'wait'))
@@ -106,24 +105,7 @@ export function DueTodayEnd({ end, shown, look, onGoOn, from, children }: Props)
     if (motion !== 'wait' || !inFront) return
     played.add(end.id)
     setMotion('play')
-    if (end.kind !== 'done') return
-    // Due today done: the confetti as the ring closes, its code loaded only now (no eager weight). It ends by itself in 2 s.
-    const ring = ringRef.current
-    setTimeout(() => {
-      if (ring === null || !ring.isConnected || !front.current || reducedMotion()) return
-      void import('./confetti').then((m) => {
-        if (!ring.isConnected || !front.current) return
-        stopConfetti.current = m.confettiBurst(ring, { ...look.burst, within: look.area === undefined ? undefined : ring.closest(look.area) })
-      })
-    }, FILL_MS)
-  }, [motion, inFront, end.id, end.kind]) // eslint-disable-line react-hooks/exhaustive-deps
-  // The tab or the app goes away: the confetti stops (it never shows over another tab).
-  useEffect(() => {
-    if (inFront) return
-    stopConfetti.current?.()
-    stopConfetti.current = null
-  }, [inFront])
-  useEffect(() => () => stopConfetti.current?.(), [])
+  }, [motion, inFront, end.id])
   // Played: still from now on, so a tab hidden and shown again (its CSS animations would start over) shows the end.
   useEffect(() => {
     if (motion !== 'play') return
@@ -131,60 +113,28 @@ export function DueTodayEnd({ end, shown, look, onGoOn, from, children }: Props)
     return () => clearTimeout(timer)
   }, [motion])
 
-  const done = end.kind === 'done'
-  const green = done ? 100 : end.percent
-  const go = (icon: ReactNode, words: string, count: number) => (
-    <button type="button" className={look.go} onMouseDown={(e) => e.preventDefault()} onClick={onGoOn}>
-      {icon}
-      {words}{' '}
-      <span className="due-end__count">{count}</span>
-    </button>
-  )
   return (
-    <div className="due-end" data-kind={end.kind} data-motion={motion}>
-      <div ref={ringRef} className="due-end__ring" aria-hidden="true" style={ringTurns(green)}>
+    <div className="due-end" data-kind="missed" data-motion={motion}>
+      <div className="due-end__ring" aria-hidden="true" style={ringTurns(end.percent)}>
         <span className="due-end__track" />
-        {!done && green < 100 && <span className="due-end__missed" />}
+        {end.percent < 100 && <span className="due-end__missed" />}
         <span className="due-end__half" data-half="r">
           <span className="due-end__fill" />
         </span>
         <span className="due-end__half" data-half="l">
           <span className="due-end__fill" />
         </span>
-        {done && (
-          <svg className="due-end__check" viewBox="0 0 72 72" width={72} height={72}>
-            <path d="M25 37l7.5 7.5L48 29" />
-          </svg>
-        )}
-        {!done && <span className="due-end__pct">{end.percent}%</span>}
+        <span className="due-end__pct">{end.percent}%</span>
         {[0, 1, 2, 3].map((i) => (
           <span key={i} className="due-end__dot" data-dot={i} />
         ))}
       </div>
-      {done ? (
-        <>
-          <p className={look.title}>Due today is done.</p>
-          {end.count > 0 && <p className={look.line}>You remembered {end.percent}% of {cards(end.count)}.</p>}
-          {end.fresh > 0 ? (
-            <>
-              <p className={look.line}>Do you want to learn some new cards?</p>
-              <div className="due-end__actions">
-                {go(<NewIcon />, 'Learn new cards', end.fresh)}
-                {from}
-              </div>
-            </>
-          ) : (
-            children
-          )}
-        </>
-      ) : (
-        <>
-          {/* YAZ-5677: Mochi's words (YAZ-5671 findings 8, 15, 16); no Skip and finish (Yaseen, YAZ-5672). */}
-          <p className={look.title}>You remembered {end.percent}% of cards.</p>
-          <p className={look.line}>Now let&apos;s review the cards you missed again.</p>
-          <div className="due-end__actions">{go(<RefreshIcon />, 'Review missed cards', end.missed)}</div>
-        </>
-      )}
+      {/* YAZ-5677: Mochi's words (YAZ-5671 findings 8, 15, 16); no Skip and finish (Yaseen, YAZ-5672). */}
+      <p className={look.title}>You remembered {end.percent}% of cards.</p>
+      <p className={look.line}>Now let&apos;s review the cards you missed again.</p>
+      <div className="due-end__actions">
+        <GoButton look={look} icon={<RefreshIcon />} words="Review missed cards" count={end.missed} onClick={onGoOn} />
+      </div>
     </div>
   )
 }

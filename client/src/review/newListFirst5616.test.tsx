@@ -195,7 +195,8 @@ describe('YAZ-5616: new cards begun in the New cards list come back the same day
     await act(async () => review.setFilter('new'))
     await answer('good') // NEW-1's first ✓: it moves into Due today, out of this list
     await answer('good') // NEW-2's first ✓
-    expect((await look()).card).toBe('done: No new cards left.')
+    // YAZ-5678 (Mochi's words): the new cards learned wait under Due today.
+    expect((await look()).card).toBe('done: Finished learning cards.')
     await act(async () => review.setFilter('all'))
     expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'stop: done', 'NEW-1', 'NEW-2', 'done: Inbox complete.'])
     // YAZ-5675 (Mochi): All cards counts each new card's first ✓ and its second (the card came back today): 2 + 2 + 2.

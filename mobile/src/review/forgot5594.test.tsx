@@ -77,10 +77,10 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
     await h.tap()
     expect(hint()).not.toContain(BACK_LINE)
     expect(q('.review__again')).not.toBeNull()
-    // ✓ lets it go: Due today is done, and the new card comes next.
+    // ✓ lets it go: Due today is done ("Finished reviewing missed cards.", YAZ-5678), and the new card comes next.
     await h.click('Remembered')
     expect(showing()).toBeNull()
-    expect(q('.review__done-title')?.textContent).toBe('Due today is done.')
+    expect(q('.review__done-title')?.textContent).toBe('Finished reviewing missed cards.')
     await h.click('Learn new cards 1')
     expect(showing()).toBe('NC-207')
     expect(q('.review__card')?.dataset.back).toBeUndefined()
@@ -138,7 +138,7 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
     // The list's count: the one card left, not one per ✕.
     expect(await dueRow()).toBe('◷Due today1')
     await h.click('Remembered')
-    expect(q('.review__done-title')?.textContent).toBe('Due today is done.')
+    expect(q('.review__done-title')?.textContent).toBe('Finished reviewing missed cards.')
     expect(bar()).toEqual([100, 100, '3', '3'])
   })
 })
