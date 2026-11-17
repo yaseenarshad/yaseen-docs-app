@@ -66,7 +66,7 @@ export type CardPropertyScalar = string | number | boolean
 export type CardPropertyValue = CardPropertyScalar | CardPropertyScalar[]
 
 export { CARD_TITLE_AT, CARD_TITLE_SHOW, type CardTitleAt, type CardTitleChoice, type CardTitleShow } from './cardTitleAt'
-/** Each choice's word on the card line (YAZ-5696): `title-once`, `title-front`, `title-side2`. */
+/** Each choice's word on the card line (YAZ-5696 round 2): `title-always`, `title-click`, `title-side2`. */
 export const CARD_TITLE_AT_WORDS: Readonly<Record<CardTitleAt, string>> = { always: 'title-always', click: 'title-click', side2: 'title-side2' }
 /** Round 1's words, still read (`title-once`: Always, `title-front`: After the first click); a part keeps its bytes. */
 const OLD_TITLE_AT_WORDS: readonly string[] = Object.keys(OLD_TITLE_AT).map((w) => `title-${w}`)
@@ -117,7 +117,7 @@ export interface CardRecord {
   title?: string
   /** The title is hidden on the Inbox's front (the line's `notitle` part, YAZ-5030); absent: it shows. */
   notitle?: true
-  /** When the title shows in Review, the card's own choice (YAZ-5696, `title-front`…); absent: the global default. */
+  /** When the title shows in Review, the card's own choice (YAZ-5696, `title-click`…); absent: the global default. */
   titleAt?: CardTitleAt
   /** The card is marked "Fix later" (the line's `fix`, YAZ-5097): the Cards table's Card fix status; absent: no mark. */
   fix?: true

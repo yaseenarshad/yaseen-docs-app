@@ -22,7 +22,7 @@ export interface CardOnPage {
   next: boolean
   /** The title is hidden on the Inbox's front (YAZ-5030): the line's `notitle`. Absent: it shows. */
   notitle?: boolean
-  /** When its title shows in Review, its own choice (YAZ-5696: the line's `title-front`…). Absent: the global `titleAt`. */
+  /** When its title shows in Review, its own choice (YAZ-5696: the line's `title-click`…). Absent: the global `titleAt`. */
   titleAt?: CardTitleAt
   /** Marked "Fix later" (YAZ-5097): the line's `fix`. Absent: no mark. */
   fix?: true

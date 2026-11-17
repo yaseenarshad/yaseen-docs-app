@@ -2017,7 +2017,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(rowButtons(el, 'timeSoFar').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Hidden (click to see)', 'true'], ['Shown', 'false'], ['Off', 'false']])
     act(() => rowButtons(el, 'timeSoFar')[2].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, timeSoFar: 'off' })
-    // YAZ-5696: Show card titles — At once by default (no change for anyone), After the front, With Side 2; saved in
+    // YAZ-5696: Show card titles — Always by default (no change for anyone), After the first click, With Side 2; saved in
     // review.json, so the phone reads it too; the hint says a card's own choice wins.
     // Round 2 (Yaseen: "never, always, after the first click, and with side two"): Always by default; an eye explains each.
     const choices = () => [...row(el, 'cardTitleAt')!.querySelectorAll<HTMLButtonElement>('[aria-pressed]')]

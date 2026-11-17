@@ -475,7 +475,7 @@ describe('YAZ-5020: same-day steps — cards come back in the same session (Yase
 
 describe('the settings (D14)', () => {
   it('defaults to two buttons, 90%, 365 days, 10 new a day, fuzz on and the Mochi weights; each bad field falls back alone', () => {
-    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', newFrom: [], fuzz: true, pauseAfter: 60, timeSoFar: 'hidden', titleAt: 'once', weights: [...DEFAULT_CARD_WEIGHTS] })
+    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', newFrom: [], fuzz: true, pauseAfter: 60, timeSoFar: 'hidden', titleAt: 'always', weights: [...DEFAULT_CARD_WEIGHTS] })
     expect(DEFAULT_CARD_WEIGHTS).toHaveLength(21)
     const weights = Array.from({ length: 19 }, (_, i) => i / 10)
     expect(sanitizeReviewSettings({ enabled: false, buttons: 4, retention: 0.85, maxDays: 30, newPerDay: 0, fuzz: false, weights, algorithm: 'upkeep', baseDays: 3 })).toEqual({
@@ -490,7 +490,7 @@ describe('the settings (D14)', () => {
       fuzz: false,
       pauseAfter: 60,
       timeSoFar: 'hidden',
-      titleAt: 'once',
+      titleAt: 'always',
       weights,
     })
     // YAZ-5130: Time so far is hidden, shown or off; anything else is the default, hidden.
