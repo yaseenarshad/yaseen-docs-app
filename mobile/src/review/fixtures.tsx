@@ -78,6 +78,15 @@ const MOCHI: Record<string, string> = {
 }
 
 /**
+ * YAZ-5711: `#fixture=review-mochi-pill`: Review's first card holds a page pill ([[Plan]]); the proof taps it (an
+ * Explore panel over Review) and measures that the Review screen behind stays still.
+ */
+const MOCHI_PILL: Record<string, string> = {
+  ...MOCHI,
+  'learning/memory.md': page('Memory', block('How does a review plan keep a fact? See [[Plan]].\n---\nYou see the fact again just before you would {{forget}} it.', `MEM-1, ${DUE}`)),
+}
+
+/**
  * YAZ-5495 (the Mac's YAZ-5043): the end of Due today. Five made-up due cards and three new ones; `-clear` has no new
  * card. `#fixture=review-due-missed` (the % screen after one Forgot), `-done` (Due today is done, Learn new cards),
  * `-clear` (done, nothing new left).
@@ -131,7 +140,7 @@ const press = (name: string | RegExp) => {
 const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
-  const files = name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const files = name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name === 'review-mochi-pill' ? MOCHI_PILL : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
   // YAZ-5706: the zoom is kept on this phone; each fixture starts at 100% (one browser runs them all).
   writeReviewZoom(100)

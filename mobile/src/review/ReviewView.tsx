@@ -639,6 +639,9 @@ function SessionScreen({
       <span className="review__place">{counted && <SessionCount session={session} icon={<FilterIcon filter={filter} />} />}</span>
     </>
   )
+  // The top bar's box exists while Review is the tab on the screen, a panel over it or not (`reviewTop.ts`). YAZ-5711:
+  // the line goes there whenever the box is there, NOT only while `shown` (a panel over Review rests it, `shown` false):
+  // drawn in the screen instead, the line pushed the card 44 px down under the panel, and back up on its close.
   const topBox = useReviewTop()
   // YAZ-5699: the finish screen's add waiting for its second tap.
   const [addAsk, setAddAsk] = useState<AddKind | null>(null)
@@ -682,7 +685,7 @@ function SessionScreen({
 
   return (
     <div className="review review--mochi" onClickCapture={onTap} onTouchStart={NO_OP}>
-      {topBox !== null && shown ? createPortal(top, topBox) : <div className="review__top">{top}</div>}
+      {topBox !== null ? createPortal(top, topBox) : <div className="review__top">{top}</div>}
       <SessionBar session={session} className="review__progress" />
       {answers.lost.length > 0 && <LostAnswers answers={answers} link={link} />}
       {notice !== null && (

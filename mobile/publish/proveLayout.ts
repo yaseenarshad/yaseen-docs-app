@@ -2690,6 +2690,74 @@ if (process.env.LAYOUT_REVIEW_ZOOM !== 'no') {
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
+// YAZ-5711: a pill in a Review card (and ⋯ › Open page, and the ⋯ menu itself) opens over Review, and the Review
+// screen BEHIND stays still: the screen, the card and the bar at the same place before the tap, while the panel is open
+// and after it closes (within 0.5 px); the window never scrolls. Touch on, at 320, 375 and 390 px, light. Pictures of
+// before, while and after.
+const REVIEW_STILL = `(() => {
+  const r = (q) => { const el = document.querySelector(q); if (!el) return null; const b = el.getBoundingClientRect(); return Math.round(b.top * 10) / 10 }
+  return {
+    review: r('.review'), card: r('.review__card'), progress: r('.review__progress'), filter: r('.review__filter'),
+    scrollY: window.scrollY, viewport: Math.round((window.visualViewport?.offsetTop ?? 0) * 10) / 10,
+    doc: document.scrollingElement?.scrollTop ?? 0, panels: document.querySelectorAll('.explore-sheet').length,
+    menu: document.querySelector('.review__menu--more') !== null,
+  }
+})()`
+const tapAt = async (x: number, y: number) => {
+  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }, page)
+  await wait(40)
+  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, page)
+}
+const centreOf = async (q: string) => evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(q)})].find((e) => e.getBoundingClientRect().height > 0); if (!el) return null; const b = el.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] })()`)
+if (process.env.LAYOUT_REVIEW_STILL !== 'no') {
+  type Still = { review: number | null; card: number | null; progress: number | null; filter: number | null; scrollY: number; viewport: number; doc: number; panels: number; menu: boolean }
+  const same = (a: Still, b: Still) => (['review', 'card', 'progress'] as const).every((k) => a[k] !== null && b[k] !== null && Math.abs((a[k] as number) - (b[k] as number)) <= 0.5) && b.scrollY === 0 && b.viewport === 0 && b.doc === 0
+  const say = (m: Still) => `screen ${m.review}, card ${m.card}, bar ${m.progress}, filter ${m.filter}, scrollY ${m.scrollY}, viewport ${m.viewport}, document ${m.doc}`
+  const shoot = async (file: string) => writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+  for (const [w, h] of SIZES) {
+    for (const how of ['pill', 'open page', 'cards menu'] as const) {
+      await open('review-mochi-pill', w, h)
+      await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, page)
+      await wait(600) // past the tap guard (YAZ-5226)
+      const slug = how.replace(' ', '-')
+      const before = (await evaluate(REVIEW_STILL)) as Still
+      await shoot(join(out, `review-still-${slug}-${w}-1-before.png`))
+      if (how === 'pill') {
+        const at = await centreOf('.review__card [data-card-link]')
+        if (at) await tapAt(at[0], at[1])
+      } else {
+        const more = await centreOf('.review__more')
+        if (more) await tapAt(more[0], more[1])
+        await wait(200)
+        if (how === 'open page') {
+          const item = await evaluate(`(() => { const b = [...document.querySelectorAll('.review__menu--more button')].find((x) => /^Open (page|card)$/.test(x.textContent.trim())); if (!b) return null; const q = b.getBoundingClientRect(); return [q.left + q.width / 2, q.top + q.height / 2] })()`)
+          if (item) await tapAt(item[0], item[1])
+        }
+      }
+      await wait(700) // the panel has slid up
+      const during = (await evaluate(REVIEW_STILL)) as Still
+      const duringShot = join(out, `review-still-${slug}-${w}-2-open.png`)
+      await shoot(duringShot)
+      // The screen behind the panel, the panel hidden for this one picture.
+      await evaluate(`document.querySelector('.explore-layer')?.style.setProperty('visibility', 'hidden')`)
+      await shoot(join(out, `review-still-${slug}-${w}-2-behind.png`))
+      await evaluate(`document.querySelector('.explore-layer')?.style.removeProperty('visibility')`)
+      // Closed: a tap on the dim above the panel (the ⋯ menu: a tap on ⋯ again).
+      if (how === 'cards menu') {
+        const more = await centreOf('.review__more')
+        if (more) await tapAt(more[0], more[1])
+      } else await tapAt(w / 2, 4)
+      await wait(700)
+      const after = (await evaluate(REVIEW_STILL)) as Still
+      await shoot(join(out, `review-still-${slug}-${w}-3-after.png`))
+      await send('Emulation.setTouchEmulationEnabled', { enabled: false }, page)
+      const opened = how === 'cards menu' ? during.menu : during.panels > 0
+      const ok = opened && after.panels === 0 && !after.menu && same(before, during) && same(before, after)
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  Review stays still under the ${how} at ${w}x${h}: ${opened ? 'it opened' : 'NOTHING OPENED'}; before: ${say(before)}; open: ${say(during)}; closed: ${say(after)}${after.panels > 0 || after.menu ? '; NOT CLOSED' : ''}  ${duringShot}`)
+    }
+  }
+}
 chrome.kill()
 server.close()
 console.log(failed === 0 ? `\nAll layout checks pass. Pictures: ${out}` : `\n${failed} layout checks FAILED. Pictures: ${out}`)
