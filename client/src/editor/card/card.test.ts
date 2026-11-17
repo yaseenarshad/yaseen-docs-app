@@ -308,6 +308,21 @@ describe('the card in the page', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
+  it('YAZ-5697 round 2: the ⋯ is the ONE card menu; one click on Archive card never archives: it asks in place, Cancel first', async () => {
+    const { crepe, root } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
+    root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Open card', 'Preview', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title on the front', 'Copy card ID', 'Reset history'])
+    const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].find((b) => b.textContent === 'Archive card')!.click()
+    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
+    expect(line()).toBe('<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->')
+    const answers = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')]
+    expect(answers.map((b) => b.textContent)).toEqual(['Cancel', 'Archive'])
+    expect(document.activeElement).toBe(answers[0])
+    answers[1].click()
+    expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good -->')
+  })
+
   it('the ⋯ menu changes the card line in one undo step each; Copy card ID; Open card sends the one hook', async () => {
     const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good, kept -->\n`, { cards: { path: '/v/Page.md' } })
     const run = (label: string) => {

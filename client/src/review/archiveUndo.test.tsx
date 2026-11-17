@@ -117,10 +117,13 @@ const step = async (run: () => unknown): Promise<void> => {
 const showing = (): string | null => review.session?.card?.id ?? null
 /** The line under the buttons. */
 const lastText = (): string => el.querySelector('.card-inbox__last')?.textContent ?? ''
-/** ⋯, then its Archive card. */
+const menuRow = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === label)
+/** ⋯, then its Archive card, then the ask's Archive (YAZ-5697 round 2: the ONE card menu). */
 const archive = async (): Promise<void> => {
   await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
-  await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-action[aria-label="Archive card"]')!.click())
+  await step(() => menuRow('Archive card')!.click())
+  await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
+  await step(() => menuRow('Archive')!.click())
 }
 const cmdZ = async (): Promise<void> => {
   await step(() => void (el.querySelector('.card-inbox') ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true, cancelable: true })))
@@ -144,6 +147,20 @@ afterEach(() => {
 })
 
 describe('YAZ-5621: Archive card has an Undo on the Mac, as on the phone', () => {
+  it('YAZ-5697 round 2: the Inbox ⋯ is the ONE card menu (Undo last review, then the card\'s rows); one click on Archive card never archives', async () => {
+    await start()
+    const first = showing()!
+    await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Undo last review', 'Open card', 'Put at top of Inbox', 'Archive card', 'Title on the front'])
+    await step(() => menuRow('Archive card')!.click())
+    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Archive this card?'))
+    expect(showing()).toBe(first)
+    expect(lineOf(first)).not.toContain(', off')
+    await step(() => menuRow('Cancel')!.click())
+    expect(showing()).toBe(first)
+    expect(lineOf(first)).not.toContain(', off')
+  })
+
   it('archive, then the line\'s Undo: "Archived · Undo" shows for 4 seconds, and Undo puts the card back, its file byte for byte', async () => {
     await mount()
     const before = vault.get(PAGE)

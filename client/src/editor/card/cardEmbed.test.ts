@@ -358,6 +358,19 @@ describe('Edit card writes the original', () => {
 })
 
 describe('the ⋯ menu', () => {
+  it('YAZ-5697 round 2: the embed\'s ⋯ is the ONE card menu; one click on Archive card never archives', async () => {
+    const { root } = await mount('Plan ![[GEO-140]] end\n')
+    const box = boxes(root)[0]!
+    press(box.querySelector('.card__more'))
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title on the front', 'Copy card ID'])
+    menuItem('Archive card')!.click()
+    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
+    await new Promise((r) => setTimeout(r, 20))
+    expect(disk.files.get(CARD_FILE)).not.toContain(', off')
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click()
+    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, title "Capital of France", off -->'))
+  })
+
   it('Open card, Show as link, Archive card, Copy card ID; each does its one thing, on the original', async () => {
     const { crepe, root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
