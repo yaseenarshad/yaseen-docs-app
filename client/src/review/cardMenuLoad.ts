@@ -6,10 +6,22 @@ type CardMenuView = typeof import('./cardMenuView')
 
 let view: CardMenuView | null = null
 
-export const loadCardMenu = (): Promise<CardMenuView> => import('./cardMenuView').then((m) => (view = m))
+let loading: Promise<CardMenuView> | null = null
+
+/** One load for every card (a page of 50 cards asks 50 times); a failed load is forgotten so the next ask tries again,
+ * and it never rejects unheard — a card mounting only warms the chunk (YAZ-4965). */
+export const loadCardMenu = (): Promise<CardMenuView> => {
+  if (loading === null) {
+    loading = import('./cardMenuView').then((m) => (view = m))
+    loading.catch(() => {
+      loading = null
+    })
+  }
+  return loading
+}
 
 /** Runs `use` with the card menu's code: at once once it is loaded, else when it comes. */
 export function withCardMenu(use: (m: CardMenuView) => void): void {
   if (view !== null) return use(view)
-  void loadCardMenu().then(use)
+  loadCardMenu().then(use, () => undefined)
 }
