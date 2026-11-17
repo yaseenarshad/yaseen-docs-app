@@ -6319,6 +6319,39 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
 })
 
 /**
+ * YAZ-5664: Collapse all on Focus or Favorites closes the stack folders and the real folders inside them, and Expand
+ * all opens them. The tab shows two stack folders, `${ids[0]}` with `Projects` and `${ids[1]}` with `top.md`, and no
+ * top-level item. The test opens `Projects` in its stack folder first.
+ */
+async function stackFoldFlow(el: HTMLElement, v: string, ids: readonly [string, string]) {
+  const allButton = () => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__expand-all')
+  const stack = (id: string) => el.querySelector<HTMLButtonElement>(`[data-focus-folder="${id}"]`)
+  const projects = () => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${v}/Projects"]`)
+  const open = (row: Element | null) => row?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+  const key = (dir: string) => copyFoldKey(`${v}/Projects`, dir)
+  expect([open(stack(ids[0])), open(stack(ids[1]))]).toEqual(['true', 'true'])
+  // Before, the button read "Expand all" here: the stack folders were not in its count.
+  expect(allButton()?.getAttribute('aria-label')).toBe('Collapse all')
+  await act(async () => projects()?.click())
+  expect(open(projects())).toBe('true')
+  await act(async () => allButton()?.click())
+  expect([open(stack(ids[0])), open(stack(ids[1]))]).toEqual(['false', 'false'])
+  expect(storage.getExpanded(v)).not.toContain(key(`${v}/Projects`))
+  expect(allButton()?.getAttribute('aria-label')).toBe('Expand all')
+  await act(async () => allButton()?.click())
+  expect([open(stack(ids[0])), open(stack(ids[1]))]).toEqual(['true', 'true'])
+  expect(open(projects())).toBe('true')
+  expect(open(el.querySelector(`.tree__row[data-path="${v}/Projects/Alpha"]`))).toBe('true')
+  expect(storage.getExpanded(v)).toEqual(expect.arrayContaining([key(`${v}/Projects`), key(`${v}/Projects/Alpha`)]))
+  expect(allButton()?.getAttribute('aria-label')).toBe('Collapse all')
+}
+/** The two stack folders of `stackFoldFlow`, in the vault named `vault`. */
+const twoStacks = (vault: string, ids: readonly [string, string]): FocusFolder[] => [
+  { id: ids[0], name: 'Client work', created: 1, at: 1, items: [{ vault, path: 'Projects' }] },
+  { id: ids[1], name: 'Loose pages', created: 1, at: 1, items: [{ vault, path: 'top.md' }] },
+]
+
+/**
  * The Focus tab (YAZ-2619): the lens between Files and the heart, listing the files and folders the
  * user added from any row's menu, in the order added, each a full tree row (D2). The list is the
  * VAULT's, kept in the vault (YAZ-2702 Decision 1): read through `focus.get`, written through
@@ -6626,6 +6659,14 @@ describe('focus tab (YAZ-2619)', () => {
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
   })
 
+  it('YAZ-5664: Collapse all closes both stack folders and the real folder open inside one; Expand all opens them all again', async () => {
+    const ids = ['yaz5664-focus-a', 'yaz5664-focus-b'] as const
+    const { el, v } = await mountVault({ lens: 'focus' }, {}, (b) => {
+      b.focusFolders.get.mockImplementation(async (root: string, scope?: unknown) => (scope === 'vault' ? twoStacks(root.slice(1), ids) : []))
+    })
+    await stackFoldFlow(el, v, ids)
+  })
+
   it('S17, S21, R5, R10, R11: the bar names the list, no count (YAZ-4470); the chevrons act on the tab\'s folders only and are gone when it shows none; "Clear" empties the list and keeps the tab', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/top.md'] })
     expect(bridge.focus.set).not.toHaveBeenCalled() // a list that was read is never written back
@@ -6926,6 +6967,11 @@ describe('favorites (YAZ-1766)', () => {
     expect(bar()?.querySelector('span')?.textContent).toBe('Only Client files')
     await act(async () => [...(bar()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Show all')?.click())
     expect(props.onFocusOnly).toHaveBeenCalledExactlyOnceWith(null)
+  })
+  it('YAZ-5664: on Favorites too, Collapse all closes both stack folders and the real folder inside; Expand all opens them all again', async () => {
+    const ids = ['yaz5664-fav-a', 'yaz5664-fav-b'] as const
+    const { el, v } = await mountVault({ lens: 'favorites' }, { folders: (name) => twoStacks(name, ids) })
+    await stackFoldFlow(el, v, ids)
   })
   describe('a New … that stays on the tab (YAZ-4782)', () => {
     const field = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')

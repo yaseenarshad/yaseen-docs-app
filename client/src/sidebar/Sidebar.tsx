@@ -17,7 +17,7 @@ import { storage } from '../lib/storage'
 import { countLinkReferences, linkingPages } from '../links/renameLinks'
 import { addShortcut, removeShortcut, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
-import { ancestorDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
+import { ancestorDirs, copyDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { landOnCard } from '../editor/card/cardOpen'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
@@ -1000,8 +1000,22 @@ export function Sidebar({
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
   const nameOf = useCallback((path: string) => pageName(rootOf(path), path, titles), [rootOf, titles])
 
+  // The real folders inside the stack folders of Focus or Favorites (YAZ-5664), as their copies fold: a shut stack
+  // folder's too, so one Expand all opens both kinds. With a folder shown alone, its folders only.
+  const stackFolders = lens === 'focus' || lens === 'favorites' ? shownTab.folders : null
+  const stackDirs = useMemo(() => {
+    const shownStacks = stackFolders === null ? [] : onlyFolder === undefined ? stackFolders : [onlyFolder]
+    if (forest === null || shownStacks.length === 0) return NO_DIRS
+    const paths = shownStacks.flatMap((folder) => folder.items.flatMap((item) => {
+      const at = resolveItem(item, roots)
+      return 'path' in at ? [at.path] : []
+    }))
+    return copyDirs(favoriteRoots(forest, paths))
+  }, [forest, stackFolders, onlyFolder, roots])
+  const tabDirs = lens === 'favorites' ? favoriteDirs : focusDirs
+  const listDirs = useMemo(() => (stackDirs.length === 0 ? tabDirs : [...new Set([...tabDirs, ...stackDirs])]), [tabDirs, stackDirs])
   // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
-  const bodyDirs = lens === 'favorites' ? favoriteDirs : lens === 'focus' ? focusDirs : lens === 'sessions' || lens === 'recents' ? NO_DIRS : dirs
+  const bodyDirs = lens === 'favorites' || lens === 'focus' ? listDirs : lens === 'sessions' || lens === 'recents' ? NO_DIRS : dirs
   // Enter in the search bar, on a file: the highlighted row's page opens as a tab.
   // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
   // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
@@ -1239,12 +1253,15 @@ export function Sidebar({
   // persisted list, which would leave the button offering to collapse nothing.
   // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6).
   const foldVaults = multi && lens === 'files'
-  const anyExpanded = bodyDirs.some((d) => expanded.includes(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault)))
+  // The stack folders of Focus and Favorites fold with the real folders (YAZ-5664): one open of either kind reads "Collapse all".
+  const [stackFold, setStackFold] = useState<ListFold | null>(null)
+  const stacks = lens === 'focus' || lens === 'favorites' ? stackFold : null
+  const anyExpanded = bodyDirs.some((d) => expandedSet.has(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault))) || stacks?.open === true
   // The button is on every tab (YAZ-3511 D19): Search folds its own tree, Sessions and Recents their rows (`ListFold`).
   const [listFold, setListFold] = useState<ListFold | null>(null)
   const ownFold = searching ? searchFold : lens === 'sessions' || lens === 'recents' ? listFold : null
   const foldOpen = ownFold === null ? anyExpanded : ownFold.open
-  const foldDisabled = ownFold === null ? bodyDirs.length === 0 && !foldVaults : !ownFold.any
+  const foldDisabled = ownFold === null ? bodyDirs.length === 0 && !foldVaults && stacks?.any !== true : !ownFold.any
   const allLabel = foldOpen ? 'Collapse all' : 'Expand all'
   // The tab row (YAZ-3273 D8): like the sort, it keeps its identity while its value stays, so the memoised row draws nothing again on a broadcast.
   const storedTabs = settings.sidebarTabs
@@ -1260,8 +1277,10 @@ export function Sidebar({
   foldRef.current = () => {
     if (ownFold !== null) return ownFold.setAll(!ownFold.open)
     if (foldVaults) for (const vault of roots) onSetVaultOpen(vault, !anyExpanded)
+    stacks?.setAll(!anyExpanded)
     // Only the active lens' dirs move (YAZ-1605): a fold the tab does not show is exactly as it was.
-    dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
+    const moving = new Set(bodyDirs)
+    dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !moving.has(d)) : [...new Set([...expanded, ...bodyDirs])] })
   }
   const foldAll = useCallback(() => foldRef.current(), [])
   // A new tab row (YAZ-3279): one write, over the settings of the moment.
@@ -2177,6 +2196,7 @@ export function Sidebar({
             {lists.favoritesTab.folders.length > 0 && forest !== null && (
               <FocusFolderList
                 kind="favorites"
+                onFold={setStackFold}
                 folders={onlyFolder === undefined ? lists.favoritesTab.folders : [onlyFolder]}
                 only={onlyFolder?.id ?? null}
                 onHideOthers={(id) => onFocusOnly?.(id)}
@@ -2239,6 +2259,7 @@ export function Sidebar({
             {lists.focusTab.folders.length > 0 && forest !== null && (
               <FocusFolderList
                 kind="focus"
+                onFold={setStackFold}
                 folders={onlyFolder === undefined ? lists.focusTab.folders : [onlyFolder]}
                 only={onlyFolder?.id ?? null}
                 onHideOthers={(id) => onFocusOnly?.(id)}

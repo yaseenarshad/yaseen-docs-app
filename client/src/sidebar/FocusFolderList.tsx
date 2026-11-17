@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 import { useUnit } from '../vault/unitWord'
 import { createPortal } from 'react-dom'
 import { MAX_VAULT_NAME, cleanVaultName, type FocusFolder } from '@shared/types'
@@ -11,6 +11,7 @@ import { PlacedCreate, rowArrows, type PendingCreate } from './Tree'
 import type { EntryKind } from './createEntry'
 import { scopeGroup } from './menuSections'
 import { NewKindIcon } from './FileIcon'
+import type { OnListFold } from './listFold'
 
 /** Two clicks on a name inside this gap rename it, as on a session (YAZ-3147, YAZ-4460 F3). */
 const RENAME_CLICK_GAP_MS = 300
@@ -35,6 +36,22 @@ const StackIcon = () => (
 
 /** The folders folded shut, for each tab, for the session (YAZ-4470, 9): out here, so a tab switch's unmount keeps them. */
 const SHUT: Record<'focus' | 'favorites', ReadonlySet<string>> = { focus: new Set(), favorites: new Set() }
+/** The mounted lists that draw a set of `SHUT` (YAZ-5664): one for each list on screen, gone when it unmounts. */
+const shutListeners = new Set<() => void>()
+const subscribeShut = (listener: () => void) => {
+  shutListeners.add(listener)
+  return () => void shutListeners.delete(listener)
+}
+
+/** The ids of the stack folders folded shut on the Focus or the Favorites tab (YAZ-5664): a page tab saves them (YAZ-5701). */
+export const shutStackFolders = (kind: 'focus' | 'favorites'): ReadonlySet<string> => SHUT[kind]
+
+/** Replace the stack folders folded shut on a tab (YAZ-5664): a list on screen draws the new set at once. */
+export function setShutStackFolders(kind: 'focus' | 'favorites', shut: ReadonlySet<string>): void {
+  if (SHUT[kind] === shut) return
+  SHUT[kind] = shut
+  for (const listener of shutListeners) listener()
+}
 
 interface FocusFolderListProps {
   /** Whose folders: the Focus tab's, or the Favorites tab's (YAZ-4460 demo) — the words differ, nothing else. */
@@ -75,6 +92,11 @@ interface FocusFolderListProps {
   onNew?: (id: string, kind: EntryKind) => void
   /** The open name field of a New … (YAZ-4782): one placed first in a folder of this list (`place.after` null) shows there. */
   pending?: PendingCreate | null
+  /**
+   * The fold of the stack folders, for the tab row's Collapse all (YAZ-5664): reported after each change, `null` when the
+   * list goes. The folder shown alone ("Hide all others") is always open, so it is not in the report.
+   */
+  onFold?: OnListFold
 }
 
 /**
@@ -84,14 +106,26 @@ interface FocusFolderListProps {
  * to add their vault. A drop on a folder row puts the dragged item in it (`data-focus-folder`, read by the drag).
  * The folds last the session (YAZ-4470, 9): a tab switch keeps them, a relaunch opens every folder again.
  */
-export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only, scopesOf, onSetScope, scope, openableOf, onOpenAll, onReorderFolders, onNew, pending = null }: FocusFolderListProps) {
+export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only, scopesOf, onSetScope, scope, openableOf, onOpenAll, onReorderFolders, onNew, pending = null, onFold }: FocusFolderListProps) {
   const unit = useUnit()
-  const [shut, setShutHere] = useState<ReadonlySet<string>>(() => SHUT[kind])
-  const setShut = (next: (was: ReadonlySet<string>) => ReadonlySet<string>) =>
-    setShutHere((was) => {
-      SHUT[kind] = next(was)
-      return SHUT[kind]
-    })
+  const shut = useSyncExternalStore(subscribeShut, () => SHUT[kind])
+  const setShut = (next: (was: ReadonlySet<string>) => ReadonlySet<string>) => setShutStackFolders(kind, next(SHUT[kind]))
+  // The report to Collapse all (YAZ-5664), keyed on the ids: the Sidebar hands a new array while one folder shows alone.
+  const foldIds = folders.flatMap((folder) => (folder.id === only ? [] : [folder.id])).join('\n')
+  const ids = useMemo(() => (foldIds === '' ? [] : foldIds.split('\n')), [foldIds])
+  useEffect(() => {
+    if (onFold === undefined) return
+    const setAll = (open: boolean) => {
+      const next = new Set(SHUT[kind])
+      for (const id of ids) {
+        if (open) next.delete(id)
+        else next.add(id)
+      }
+      setShutStackFolders(kind, next)
+    }
+    onFold({ open: ids.some((id) => !shut.has(id)), any: ids.length > 0, setAll })
+  }, [onFold, kind, ids, shut])
+  useEffect(() => (onFold === undefined ? undefined : () => onFold(null)), [onFold])
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   // "Delete focus folder" asks first (YAZ-4460 demo): two clicks, as "Delete session".
   const [deleting, setDeleting] = useState<FocusFolder | null>(null)

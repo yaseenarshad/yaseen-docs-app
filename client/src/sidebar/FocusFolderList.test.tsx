@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FocusFolder } from '@shared/types'
-import { FocusFolderList } from './FocusFolderList'
+import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusFolderList'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -186,5 +186,30 @@ describe('FocusFolderList', () => {
     act(() => root?.unmount())
     mount({ kind: 'favorites', folders: [folder('Keep shut', [{ vault: 'Pages', path: 'a.md' }])] })
     expect(row('Keep shut').closest('li')?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('YAZ-5664: the list reports its fold to Collapse all, setAll(false) shuts each folder but the one shown alone, and the door sets the folds from outside', () => {
+    const onFold = vi.fn()
+    const two = [folder('Fold A', [{ vault: 'Pages', path: 'a.md' }]), folder('Fold B', [])]
+    mount({ folders: two, onFold })
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: true, any: true })
+    act(() => row('Fold A').click())
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: true })
+    act(() => row('Fold B').click())
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: false, any: true })
+    act(() => onFold.mock.lastCall?.[0].setAll(true))
+    expect([row('Fold A'), row('Fold B')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'true'])
+    act(() => root?.unmount())
+    // "Fold A" shows alone: it stays open, and it is not in the report.
+    mount({ folders: two, only: 'Fold A', onFold })
+    act(() => onFold.mock.lastCall?.[0].setAll(false))
+    expect([row('Fold A'), row('Fold B')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false'])
+    expect(['Fold A', 'Fold B'].map((id) => shutStackFolders('focus').has(id))).toEqual([false, true])
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: false, any: true })
+    act(() => setShutStackFolders('focus', new Set()))
+    expect(row('Fold B').getAttribute('aria-expanded')).toBe('true')
+    act(() => root?.unmount())
+    root = null
+    expect(onFold).toHaveBeenLastCalledWith(null)
   })
 })
