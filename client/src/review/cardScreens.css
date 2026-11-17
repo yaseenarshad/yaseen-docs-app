@@ -677,13 +677,6 @@ button.card-inbox__view-time:hover {
 .card-inbox__filter-item {
   grid-column: 1;
 }
-/* The count that adds: the hand, and the pill's edge on hover, so it reads as the place to click. */
-.card-inbox__count[data-add] {
-  cursor: pointer;
-}
-.card-inbox__count[data-add]:hover {
-  box-shadow: inset 0 0 0 1px currentColor;
-}
 /* "· Reset" (round 2): quiet, after the count, only once today has an add. */
 .card-inbox__reset {
   grid-column: 2;
@@ -705,20 +698,6 @@ button.card-inbox__view-time:hover {
   color: var(--fg);
   text-decoration: underline;
 }
-/* The row while you type (round 2): one line across the menu, the same height as a row. */
-.card-inbox__filter-row[data-adding] > .card-inbox__filter-item {
-  grid-column: 1 / -1;
-  cursor: default;
-}
-.card-inbox__filter-row[data-adding] > .card-inbox__filter-item:hover {
-  background: none;
-}
-.card-inbox__add-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
 .card-inbox__add-number {
   box-sizing: content-box;
   min-width: 2ch;
@@ -732,15 +711,6 @@ button.card-inbox__view-time:hover {
   text-align: right;
   font-variant-numeric: tabular-nums;
   outline: none;
-}
-.card-inbox__add-enter {
-  margin-left: 6px;
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--fg-muted);
-  font-size: 11px;
-  line-height: 16px;
 }
 .card-inbox__filter-name {
   display: inline-flex;
@@ -1448,7 +1418,7 @@ body.card-inbox--sizing {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-/* "Add today [10] Add" (YAZ-5690): the field of the done screen's pill, then a quiet "Add"; nothing waiting: both off. */
+/* "Add today [10] Add" (YAZ-5690): the field of the done screen's pill, then a quiet "Add"; only with something to add. */
 .card-inbox__add-setting {
   display: inline-flex;
   align-items: center;
@@ -1461,6 +1431,24 @@ body.card-inbox--sizing {
 .card-inbox__add-setting .card-inbox__add-number:focus {
   border-color: var(--accent);
 }
+/* The ask in place (round 3, `AskInPlace`): the question over Cancel and Add, in the row's own room. */
+.card-inbox__add-ask {
+  flex: 1 1 auto;
+  padding: 4px 0;
+}
+.card-inbox__add-ask .confirm__text {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.card-inbox__add-ask .confirm__actions {
+  justify-content: flex-end;
+}
+.card-inbox__add-none {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-align: right;
+}
 .card-inbox__add-go {
   padding: 1px 8px;
   border: 1px solid var(--border);
@@ -1471,16 +1459,12 @@ body.card-inbox--sizing {
   font-size: 12px;
   cursor: pointer;
 }
-.card-inbox__add-go:hover:not(:disabled) {
+.card-inbox__add-go:hover {
   background: color-mix(in srgb, var(--fg) 6%, var(--bg));
 }
 .card-inbox__add-go:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-.card-inbox__add-setting :disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 /* "New cards · Spanish": the pick, quiet, on the row; a long name gets "…" and never widens the menu much. */
 .card-inbox__filter-pick {

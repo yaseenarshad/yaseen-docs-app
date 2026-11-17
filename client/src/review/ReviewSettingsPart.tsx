@@ -32,6 +32,9 @@ export const newCardsSettings = (from: ReactNode, add?: ReactNode): ReviewSettin
   rows: [{ id: 'from', label: 'From', control: from }, ...(add === undefined ? [] : [{ id: 'add', label: 'Add today', control: add }])],
 })
 
+/** The Up next section (YAZ-5690 round 2, Yaseen: "Yes, under ⚙"): "Add today" and its number, the old click on Up next's count. */
+export const upNextSettings = (add: ReactNode): ReviewSettingsSection => ({ title: 'Up next', rows: [{ id: 'add', label: 'Add today', control: add }] })
+
 export function useSettingsFold(): { open: boolean; toggle: () => void; fold: () => void; id: string } {
   const [open, setOpen] = useState(false)
   return { open, toggle: () => setOpen((o) => !o), fold: () => setOpen(false), id: useId() }

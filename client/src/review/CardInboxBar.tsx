@@ -15,10 +15,10 @@
  *
  * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
  * total is? like / 5"): the Up next row reads "today / total" — "2 / 5" (New cards' count stands alone, YAZ-5434); the total is every
- * card of that kind and never changes with an add. With no limit the count stands alone, as before. A click on Up
- * next's count while cards wait turns the row into "Add [2] more Up next" (`AddMoreField`): Enter adds that many to
- * today, Esc goes back; the menu stays open, so the count changes before your eyes. New cards' add is the ⚙ part's
- * "Add today [10] Add" (YAZ-5690, Yaseen: "add new cards under the settings"): a click on its count picks the filter. After an add the row
+ * card of that kind and never changes with an add. With no limit the count stands alone, as before. A click on any
+ * count picks its filter. The adds are the ⚙ part's "Add today [10] Add" (`AddMoreField`), one under New cards
+ * (YAZ-5690, Yaseen: "add new cards under the settings") and one under Up next (round 2, "Yes, under ⚙"); the menu
+ * stays open, so the count changes before your eyes. After an add the row
  * says "22 / 48 · Reset": Reset sets today back to the Settings number, never below today's work. No pop-up: it
  * changes today only, and the line under the buttons (Undo, ⌘Z) takes back the last add or Reset.
  *
@@ -26,7 +26,9 @@
  * three even rows, "New cards  9" the same shape as the others (no second line under it). The Today line, the menu's
  * last, ends with a small ⚙ (`ReviewSettingsCog`): a click (Enter, Space) opens the settings part under it
  * (`ReviewSettingsPart`, shared with the phone's sheet): "New cards", then "From" and the folder picker's door
- * ("All folders ▾"; a click opens `NewCardsPicker` beside the menu), and "Add today [10] Add" (YAZ-5690). A click again, or closing the menu, folds it, so
+ * ("All folders ▾"; a click opens `NewCardsPicker` beside the menu), and "Add today [10] Add" (YAZ-5690); then, while
+ * Up next cards wait beyond today's limit, "Up next" and its own "Add today [2] Add"; no Up next waiting, no
+ * Up next group; no new card waiting, Add today says "No more new cards in Spanish" (`noMoreNew`). A click again, or closing the menu, folds it, so
  * it opens folded each time. While a folder is picked the New cards row says it quietly, "New cards · Spanish"
  * (`newRowPick`), and the chip "New cards: Spanish ×" sits by the filter; × goes back to All folders. The count follows
  * the pick (`cardPlan`).
@@ -43,8 +45,8 @@ import { todayStudied } from './reviewTime'
 import { AddMoreField } from './AddMoreField'
 import { SessionBar, SessionCount } from './SessionCount'
 import { useNewCardsPicker } from './NewCardsPicker'
-import { kindCount, kindCountText, newRowPick, pickLabel, showsFilter } from './inboxMenu'
-import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, useSettingsFold } from './ReviewSettingsPart'
+import { kindCount, kindCountText, newRowPick, noMoreNew, pickLabel, showsFilter } from './inboxMenu'
+import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, upNextSettings, useSettingsFold } from './ReviewSettingsPart'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
 const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
@@ -85,14 +87,11 @@ interface CardInboxBarProps {
 export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, pick, view }: CardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
-  // YAZ-5042 round 2: the row whose count turned into "Add [n] more"; it closes with the menu.
-  const [adding, setAdding] = useState<AddKind | null>(null)
   const picker = useNewCardsPicker(pick ?? NO_PICK, session)
   // YAZ-5685: the ⚙'s settings part, folded each time the menu opens.
   const settings = useSettingsFold()
   const closeMenu = () => {
     setMenu(null)
-    setAdding(null)
     picker.close()
     settings.fold()
   }
@@ -171,37 +170,14 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
         {menu !== null && (
           <ContextMenuSurface x={menu.x} y={menu.y} onClose={closeMenu} className="card-inbox__filter-menu">
             {inboxFilters(session).map((f) => {
-              // YAZ-5042: the two rows that have a number a day read "today / total" (round 2), and add on a click.
+              // YAZ-5042: the two rows that have a number a day read "today / total" (round 2); YAZ-5690 round 2: a click
+              // on any count only picks its filter (the adds are the ⚙ part's "Add today").
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
-              // YAZ-5690: New cards' add is the ⚙ part's "Add today"; only Up next's count still turns into its field.
-              const add = kind !== 'next' || addCards === undefined ? 0 : session.adds.next
               const count = session.counts[f.id]
               // YAZ-5434: New cards' count stands alone ("9", not "9 / 23"); only Up next keeps its total. The phone's rule too (`kindCount`, YAZ-5624).
               const counted = kind === null ? { count, total: null } : kindCount(session, kind)
               const reset = kind !== null && resetCards !== undefined && session.canReset[kind]
-              if (kind !== null && adding === kind && add > 0)
-                return (
-                  <div key={f.id} className="card-inbox__filter-row" role="none" data-adding="">
-                    <span className="ctx-menu__item card-inbox__filter-item card-inbox__filter-adding">
-                      <span className="card-inbox__filter-name">
-                        <f.icon />
-                        <AddMoreField
-                          kind={kind}
-                          look="menu"
-                          start={add}
-                          onAdd={(n) => {
-                            setAdding(null)
-                            addCards?.(kind, n)
-                          }}
-                          onCancel={() => setAdding(null)}
-                        />
-                      </span>
-                    </span>
-                  </div>
-                )
-              const choose = (e: MouseEvent) => {
-                // A click on a count while cards wait: "Add [n] more" (the menu stays open); elsewhere on the row: the filter.
-                if (kind !== null && add > 0 && e.target instanceof Element && e.target.closest('.card-inbox__count') !== null) return setAdding(kind)
+              const choose = () => {
                 closeMenu()
                 setFilter(f.id)
               }
@@ -217,8 +193,6 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                       className="card-inbox__count"
                       data-filter={f.id}
                       data-empty={count === 0 || undefined}
-                      data-add={add > 0 || undefined}
-                      title={kind !== null && add > 0 ? `${session.more[kind]} more wait. Click to add.` : undefined}
                     >
                     {kindCountText(counted)}
                   </span>
@@ -266,8 +240,10 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                       <span className="card-inbox__new-from-name">{picked === '' ? 'All folders' : picked}</span>
                       <ChevronIcon size={10} />
                     </button>,
-                    addCards === undefined ? undefined : <AddMoreField kind="new" look="setting" start={session.adds.new} disabled={session.adds.new === 0} onAdd={(n) => addCards('new', n)} />,
+                    // Nothing more to add (Yaseen): the row stays, a quiet line says why, as From says it.
+                    addCards === undefined ? undefined : session.adds.new === 0 ? <span className="card-inbox__add-none">{noMoreNew(session)}</span> : <AddMoreField kind="new" look="setting" start={session.adds.new} onAdd={(n) => addCards('new', n)} />,
                   ),
+                  ...(addCards !== undefined && session.adds.next > 0 ? [upNextSettings(<AddMoreField kind="next" look="setting" start={session.adds.next} onAdd={(n) => addCards('next', n)} />)] : []),
                 ]}
               />
             )}
