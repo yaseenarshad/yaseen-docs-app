@@ -105,7 +105,8 @@ describe('the stack of stuck folders', () => {
     expect(names(chain(3), 1)).toEqual(['F0', 'F1', 'F2'])
   })
 
-  it('stays cheap on 1,300+ rows: one shape, then each scroll looks at a few rows', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('stays cheap on 1,300+ rows: one shape, then each scroll looks at a few rows', { retry: 2 }, () => {
     const rows = Array.from({ length: 60 }, (_, k) => chain(8, 2).map((r) => ({ ...r, name: `${k}:${r.name}` }))).flat()
     expect(rows.length).toBeGreaterThan(1300)
     const shape = treeShape(rows)

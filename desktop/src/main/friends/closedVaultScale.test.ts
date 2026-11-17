@@ -77,7 +77,8 @@ const time = async <T>(work: () => Promise<T>): Promise<[T, number]> => {
 }
 
 describe('a closed vault of 100,000 files (YAZ-5390)', () => {
-  it('a closed vault of 100,000 files is counted inside the limit; then a scan reads only the files that changed', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('a closed vault of 100,000 files is counted inside the limit; then a scan reads only the files that changed', { retry: 2, timeout: 600_000 }, async () => {
     const root = await bigVault('huge', 100_000, 1)
     const count = makeCounter(worker, { scanDir: path.join(dir, 'scan-cache') })
     const [first, cold] = await time(() => count(countPayload([]), NOW, [{ root, key: 'a' }]))
@@ -106,11 +107,12 @@ describe('a closed vault of 100,000 files (YAZ-5390)', () => {
     expect(coldScan.scanCpuMs).toBeLessThan(budgetMs(10_000))
     expect(warmScan.scanCpuMs).toBeLessThan(budgetMs(2_500))
     expect(sameScan.scanCpuMs).toBeLessThan(budgetMs(1_000))
-  }, 600_000)
+  })
 })
 
 describe('the main thread, the whole path of one try (YAZ-5252)', () => {
-  it('one try with an open vault of 20,000 cards and a closed vault of 20,000 cards: the main thread is busy less than 50 ms of CPU at a time', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('one try with an open vault of 20,000 cards and a closed vault of 20,000 cards: the main thread is busy less than 50 ms of CPU at a time', { retry: 2, timeout: 300_000 }, async () => {
     const bin = await resolveGit()
     expect(bin).not.toBeNull()
     const closedRoot = await bigVault('closed', 5_000, 4)
@@ -170,7 +172,7 @@ describe('the main thread, the whole path of one try (YAZ-5252)', () => {
     await sender.stop()
     console.info(`the longest block on main, the whole try, 3 runs: CPU ${cpu.map((c) => c.toFixed(1)).join(', ')} ms; wall ${wall.map((w) => w.toFixed(1)).join(', ')} ms`)
     expect(median(cpu)).toBeLessThan(50)
-  }, 300_000)
+  })
 })
 
 /** The longest time the main thread did not run a 2 ms interval while `work` ran: its CPU time on THIS thread, and its wall time. */

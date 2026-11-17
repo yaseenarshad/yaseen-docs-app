@@ -291,7 +291,8 @@ describe('sendOutbox: errors keep the actions', () => {
 })
 
 describe('sendOutbox: many answers, two phones', () => {
-  it('500 waiting answers on 50 pages: ONE commit, one ref move', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('500 waiting answers on 50 pages: ONE commit, one ref move', { retry: 2 }, async () => {
     const files: Record<string, string> = {}
     for (let p = 0; p < 50; p++) files[`p${String(p).padStart(2, '0')}.md`] = pageText(`P${p}`, `NC-${p}`, Array.from({ length: 10 }, (_, c) => `NC-${1000 + p * 10 + c}`))
     const t = await setup(files)

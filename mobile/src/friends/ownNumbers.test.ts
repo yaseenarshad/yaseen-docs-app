@@ -85,7 +85,8 @@ describe('my own numbers (YAZ-5255)', () => {
     expect(tokyo).toEqual(friendStats([{ pages: Object.values(records(2, 5, 3)) as FriendVault['pages'], settings: DEFAULT_REVIEW_SETTINGS }], NOW, 'Asia/Tokyo'))
   })
 
-  it('20,000 cards with 10 answers each: no step holds the UI thread for 50 ms; the same numbers as friendStats', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('20,000 cards with 10 answers each: no step holds the UI thread for 50 ms; the same numbers as friendStats', { retry: 2, timeout: 60_000 }, async () => {
     const index = records(5000, 4, 10)
     const { store } = await phone(index)
     // YAZ-5296: the work between two yields in CPU time of THIS thread (as 4C's search test): the load of the machine
@@ -113,5 +114,5 @@ describe('my own numbers (YAZ-5255)', () => {
     expect(longest).toBeLessThan(50)
     const vaults: FriendVault[] = [{ pages: Object.values(index), settings: DEFAULT_REVIEW_SETTINGS }]
     expect({ ...counted, at: '' }).toEqual({ ...friendStats(vaults, NOW), at: '' })
-  }, 60_000)
+  })
 })

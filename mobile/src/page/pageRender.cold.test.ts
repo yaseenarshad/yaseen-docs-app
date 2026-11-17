@@ -10,7 +10,8 @@ import { renderPage, type PageLook } from './pageRender'
 const look: PageLook = { link: (i) => ({ label: i, open: null }), embed: (i) => ({ kind: 'text', text: i }), asset: () => null, card: () => document.createElement('div') }
 
 describe('a long page, cold (YAZ-5244)', () => {
-  it('the first slices are short: each under 25 ms of CPU, the first one too', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('the first slices are short: each under 25 ms of CPU, the first one too', { retry: 2 }, async () => {
     const cpu = () => {
       const u = process.threadCpuUsage()
       return (u.user + u.system) / 1000

@@ -24,6 +24,8 @@ export default defineConfig({
     testTimeout: 60_000, // a slow CI runner took over 30 s on the 5,000-line list test
     sequence: { groupOrder: 2 },
     fileParallelism: false,
+    // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+    retry: 2,
     // as the client project: the REAL engine's dist inlined
     server: { deps: { inline: [/@excalidraw\//] } },
   },

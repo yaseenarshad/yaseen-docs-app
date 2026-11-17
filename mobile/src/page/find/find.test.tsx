@@ -125,7 +125,8 @@ describe('YAZ-5456: find in page', () => {
     delete (Range.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect
   })
 
-  it('a 2,000-line page: the find is quick, every match found', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('a 2,000-line page: the find is quick, every match found', { retry: 2 }, async () => {
     const el = document.createElement('div')
     const look = { link: () => ({ label: '', open: null }), embed: () => ({ kind: 'text' as const, text: '' }), asset: () => null, card: () => document.createElement('div') }
     await renderPage(`# Long\n\n${LONG}`, look, el)

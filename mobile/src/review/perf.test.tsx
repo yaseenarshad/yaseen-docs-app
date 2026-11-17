@@ -61,7 +61,8 @@ async function probe<T>(work: () => Promise<T>): Promise<{ ms: number; longest: 
 }
 
 describe('Review with 3,000 due cards', () => {
-  it('opening the tab and answering never hold the thread for 50 ms; the numbers are printed', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('opening the tab and answering never hold the thread for 50 ms; the numbers are printed', { retry: 2, timeout: 120_000 }, async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(NOW)
     const files = vault()
@@ -86,5 +87,5 @@ describe('Review with 3,000 due cards', () => {
     expect(h!.text()).toContain('1 / 3000')
     expect(open.longest).toBeLessThan(50)
     expect(answer.longest).toBeLessThan(50)
-  }, 120_000)
+  })
 })

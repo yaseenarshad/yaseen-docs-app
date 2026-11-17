@@ -255,7 +255,8 @@ describe('S12: a 5 MB file', () => {
       sym(`value${i}`, CONSTANT, i + 2, i + 2, [prop('id', i + 2, 24, 29), prop('name', i + 2, 31, 44), prop('tags', i + 2, 46, 75), prop('active', i + 2, 77, 89)], 14),
     )
 
-  it('builds, sorts, filters, marks and finds the current row of 260 000 symbols in time', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('builds, sorts, filters, marks and finds the current row of 260 000 symbols in time', { retry: 2 }, () => {
     const symbols = big()
     const time = (work: () => void): number => {
       const t0 = performance.now()

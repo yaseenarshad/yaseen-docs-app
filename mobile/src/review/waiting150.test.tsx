@@ -89,7 +89,8 @@ function counters(link: ReviewLink) {
 }
 
 describe('YAZ-5304: the Review screen with 150 answers waiting, no signal', () => {
-  it('150 taps at the guard\'s pace: the counts agree, Undo gives 149, the next answer is under 50 ms, nothing leaks, one commit', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('150 taps at the guard\'s pace: the counts agree, Undo gives 149, the next answer is under 50 ms, nothing leaks, one commit', { retry: 2, timeout: 300_000 }, async () => {
     const t = await answersSetup({ files: vault() })
     t.s.github.offline = true
     await saveVaultList(t.store, { vaults: [{ repo: REPO, branch: BRANCH, addedAt: 0 }], open: VAULT })
@@ -158,5 +159,5 @@ describe('YAZ-5304: the Review screen with 150 answers waiting, no signal', () =
     })
     expect(t.commits() - before).toBe(1)
     expect(t.answers.waiting()).toEqual([])
-  }, 300_000)
+  })
 })

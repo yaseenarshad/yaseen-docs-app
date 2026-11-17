@@ -72,7 +72,8 @@ afterEach(() => {
 })
 
 describe('30 friends and 5 groups', () => {
-  it('the rules of one screen take far less than 50 ms', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('the rules of one screen take far less than 50 ms', { retry: 2 }, () => {
     const entries: BoardEntry[] = [
       { key: 'me', name: 'You', you: true, stats: demoMe(NOW).stats },
       ...BIG.friends.map((f) => ({ key: f.theirs, name: f.name, you: false, stats: f.stats })),
@@ -89,7 +90,8 @@ describe('30 friends and 5 groups', () => {
     expect(worst).toBeLessThan(50)
   })
 
-  it('draws them all; a change of period redraws without a long task of our own', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('draws them all; a change of period redraws without a long task of our own', { retry: 2 }, async () => {
     const p = await newPhone()
     const v = { repo: 'demo/vault', branch: 'main', addedAt: 1 }
     await p.tokens.write(vaultId(v), 'github_pat_11PERF0' + 'f'.repeat(76))

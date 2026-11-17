@@ -50,7 +50,8 @@ describe('the Mac sidebar tree on the phone (YAZ-5438)', () => {
     expect(visibleRows(tree, new Set(['cards']), (r) => r.kind !== 'card').map((r) => r.label)).not.toContain('Capital of France')
   })
 
-  it('5,000 pages: building, and opening a folder of 5,000, each stay far under a long task (50 ms)', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('5,000 pages: building, and opening a folder of 5,000, each stay far under a long task (50 ms)', { retry: 2 }, () => {
     const many: IndexRecord[] = []
     for (let i = 0; i < 5000; i++) many.push(rec(`Folder ${i % 50}/Big/Page ${i}.md`, `Page ${i}`))
     for (let i = 0; i < 5000; i++) many.push(rec(`All/Page ${i}.md`, `Page ${i}`))

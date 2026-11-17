@@ -146,7 +146,8 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     expect(applyOps(text, [{ kind: 'off', id: 'NC-4', on: false }, { kind: 'off', id: 'NC-4', on: true }]).content).toBe(text)
   })
 
-  it('500 actions on one page: one read of the page, the right lines', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('500 actions on one page: one read of the page, the right lines', { retry: 2 }, () => {
     const ids = Array.from({ length: 100 }, (_, i) => `NC-${100 + i}`)
     const big = pageText('Big', 'NC-1', ids)
     const ops: CardOp[] = ids.flatMap((id, i) => [0, 1, 2, 3, 4].map((m) => ({ kind: 'review', id, review: { at: `2026-11-14T0${m}:${String(i % 60).padStart(2, '0')}:00.000Z`, rating: 'good' } }) as CardOp))

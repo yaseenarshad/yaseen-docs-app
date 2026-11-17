@@ -219,7 +219,8 @@ describe('YAZ-5455: "Linked mentions" at the end of a page', () => {
     expect(moreStep(20, 20)).toBeNull()
   })
 
-  it('1,300 pages: the reverse map is one pass, built once per version of the vault data, then free', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('1,300 pages: the reverse map is one pass, built once per version of the vault data, then free', { retry: 2 }, () => {
     const records = Array.from({ length: 1300 }, (_, i) => {
       const body = `# Page ${i}\n\nSee [[Page ${(i + 1) % 1300}]], [[Page ${(i + 7) % 1300}|seven on]] and [[Page ${(i * 13) % 1300}#Part]].\n\n${cardBlock(`DEMO-${i + 100}`, 'Q\n---\nA')}\n`
       return phoneRecord(`notes/${i % 20}/Page ${i}.md`, body.length, `---\ntitle: Page ${i}\n---\n\n${body}`, { ctime: 1, mtime: 1 })

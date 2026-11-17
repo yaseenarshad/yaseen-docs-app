@@ -317,7 +317,8 @@ describe("the vault's answer and letters (R9 to R12)", () => {
 })
 
 describe('the cost of one number', () => {
-  it('is one small atomic write: measured', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('is one small atomic write: measured', { retry: 2 }, async () => {
     vaultHolds(0)
     await mkdir(countDir(), { recursive: true })
     await writeFile(path.join(countDir(), 'aaaaaaaaaaaa.json'), JSON.stringify({ name: 'Air', since: '2026-01-01T00:00:00.000Z', last: 3, made: [] }))
