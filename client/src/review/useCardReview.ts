@@ -8,7 +8,7 @@ import { folderTitle } from '../links/folderTitle'
 import { isCardGone, type CardOnPage } from './cardRead'
 import { useLocalDay } from './localDay'
 import type { ReviewHost } from './reviewHost'
-import { dueFirsts, earlierDone, filterCount, matchesFilter, type FilterCount, type SessionAnswer } from './sessionProgress'
+import { dueFirsts, earlierAnswers, filterCount, matchesFilter, missedToday, type FilterCount, type SessionAnswer } from './sessionProgress'
 import { tourEvent } from '../course/tourBus'
 
 /**
@@ -312,8 +312,8 @@ interface CachedCard {
 interface Session {
   /** YAZ-5707: each card's place in today's plan at the start (`cardPlan`): Due today's In order. */
   rank: ReadonlyMap<string, number>
-  /** YAZ-5707: All cards' "done" before this session: today's earlier work in the scope (`earlierDone`). */
-  earlier: number
+  /** YAZ-5707: All cards' "done" before this session: today's earlier answers on its cards (`earlierAnswers`). */
+  earlier: readonly SessionAnswer[]
   /** YAZ-5029: one per `start`: the card left on show while the next is read is only ever this session's. */
   id: number
   label: string
@@ -828,7 +828,7 @@ const dayStart = (now: number): string => {
  */
 const queuedCards = (records: readonly IndexRecord[], queue: readonly DueCard[]) => {
   const keys = new Set(queue.map(cardKey))
-  return records.flatMap((r) => (r.cards ?? []).filter((c) => c.id !== null && keys.has(`${r.path}\n${c.id}`)))
+  return records.flatMap((r) => (r.cards ?? []).flatMap((c) => (c.id !== null && keys.has(`${r.path}\n${c.id}`) ? [{ ...c, key: `${r.path}\n${c.id}` }] : [])))
 }
 
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
@@ -1064,8 +1064,14 @@ export function useCardReview(
       // YAZ-5707: the Order setting, once for the session (⌘Z and a filter switch never mix again).
       const plan = cardPlan(records, settings, now, scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : host.upNextTakenToday(root), root === null ? NO_ADDED : host.cardsAddedToday(root)).queue
       const rank = new Map(plan.map((c, i) => [cardKey(c), i]))
-      const queue = ordered(plan, 0, settings, rank)
-      const earlier = earlierDone(queuedCards(records, queue), dayStart(now), cardTime(now))
+      const cards = queuedCards(records, plan)
+      const from = dayStart(now)
+      const earlier = earlierAnswers(cards, from, cardTime(now))
+      // YAZ-5708: a miss of today waiting for its re-check stays one when the Inbox opens again (rules 7, 18): "Again",
+      // the red and the ✕ K, at the end of the run.
+      const missed = new Set(cards.filter((c) => !c.off && missedToday(c.reviews, from)).map((c) => c.key))
+      const marked = plan.map((c): QueueCard => (missed.has(cardKey(c)) && !c.isNew && !c.next ? { ...c, repeat: true, forgot: true } : c))
+      const queue = [...ordered(marked, 0, settings, rank).filter((c) => allPart(c) !== 2), ...marked.filter((c) => allPart(c) === 2)]
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020); a moved Inbox on its filter, at its
       // card when that is still in the queue, else on the filter's first card (YAZ-5054).
@@ -1460,7 +1466,7 @@ export function useCardReview(
     else if (shownCard !== null && page !== null) lastShown.current = { session: session.id, card: shownCard }
     const { filter, queue, scope } = session
     const counts = countOf(queue)
-    const progress = filterCount(session.answered, queue, filter, filter === 'all' ? session.earlier : 0)
+    const progress = filterCount(session.answered, queue, filter, filter === 'all' ? session.earlier : [])
     const lastStep = session.undo.at(-1)
     const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
