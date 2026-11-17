@@ -28,6 +28,8 @@ const MIN_WIDTH = 240
 const MAX_WIDTH = 420
 /** Between the cell and the card, in px. */
 const GAP = 4
+/** The note box keeps this much room from the bottom of the window, in px: its CSS `max-height` is the window less 2 × this (YAZ-5717). */
+const EDGE = 8
 
 /** How many cards were built: a test proves that a key or a caret move builds none. */
 export const cellHoverCardRuns = { builds: 0 }
@@ -117,7 +119,12 @@ export function cellHoverCards(build: (cell: HTMLElement) => CellCard | null): C
     timer = null
     if (card === null || current === null) return
     if (card.under) placeUnder(card.box, current)
-    else document.body.appendChild(card.box)
+    else {
+      // The host placed it beside the cell. A box below the window's bottom moves up (YAZ-5717): one read, on show only.
+      document.body.appendChild(card.box)
+      const rect = card.box.getBoundingClientRect()
+      if (rect.bottom > window.innerHeight - EDGE) card.box.style.top = `${Math.max(EDGE, window.innerHeight - EDGE - rect.height)}px`
+    }
     shown = card.box
     warm = true
   }

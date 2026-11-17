@@ -1,12 +1,14 @@
 /* A table cell's hover card (`cellHoverCard.ts`): the cell note's preview (YAZ-3818 D14, `cellNotePreview.ts`) and
    the cut cell's full text (YAZ-4901), in a page table and in a folder page table. The link hover card's look
    (`boardPreview.css` `.board-preview`), on the page's body. Read-only: the pointer goes through it. The note preview
-   is 260px wide beside the cell's corner; the full-text card is as wide as its text (`max-content`, inline), capped at
-   the cell's width clamped to 240–420 px (YAZ-4903). */
+   is 360px wide beside the cell's corner (YAZ-5717; `NOTE_BOX_WIDTH` in `cellNotePreview.ts`), never taller than the
+   window less 16px; the full-text card is as wide as its text (`max-content`, inline), capped at the cell's width
+   clamped to 240–420 px (YAZ-4903). */
 .cell-note-preview {
   position: fixed;
   z-index: 40;
-  width: 260px;
+  width: 360px;
+  max-height: calc(100vh - 16px);
   overflow: hidden;
   pointer-events: none;
   background: var(--bg);
@@ -57,10 +59,10 @@
   padding: 6px 12px 8px;
 }
 
+/* A note line wraps (YAZ-5717): its leading spaces (a nested bullet's indent) stay; a long word breaks. */
 .cell-note-preview__line {
   min-height: 1.4em;
   line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

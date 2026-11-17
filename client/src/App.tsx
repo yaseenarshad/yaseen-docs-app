@@ -68,6 +68,7 @@ import { appTableLook, tableLookSettings, type TableLookSettings } from '@shared
 import { folderPagesFor as folderPagesOver, type FolderPagesVault } from '@shared/folderPages'
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart } from './editor/table/cellNoteCard'
+import { setCellNotePreviewLines } from './editor/table/cellNotePreview'
 import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
 import type { ExploreRequest } from './explore/layers'
@@ -892,6 +893,8 @@ export function App() {
   useEffect(() => setCellNoteButtonSetting(settings.tableCellNoteButton), [settings.tableCellNoteButton])
   // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.
   useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
+  // How many lines a cell note's hover box shows (YAZ-5717): the next box reads it. Absent from an older main process.
+  useEffect(() => setCellNotePreviewLines(settings.tableCellNotePreviewLines ?? DEFAULT_SETTINGS.tableCellNotePreviewLines), [settings.tableCellNotePreviewLines])
   // Arrows while typing (YAZ-4273 D8): an open page reads it at its next keystroke. Absent from an older main process.
   useEffect(() => setTypingArrows(settings.typingArrows ?? true), [settings.typingArrows])
   // Enter keeps the text style (YAZ-3746 13AB): an open page or box reads it at its next Enter. Absent from an older main process.

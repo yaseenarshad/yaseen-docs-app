@@ -5,6 +5,8 @@
  * mark; ⌘. in a cell bullet zooms the bullet, and in a card is a no-op; Tab indents in the card; the table menu's cell
  * note rows; Backspace and Delete step over the mark; the one "Add cell note" button; the preview on the whole cell.
  */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
@@ -21,7 +23,7 @@ import { cellNoteButtonPlacements } from './cellNoteButton'
 import { setCellNoteButtonSetting } from './timeFormatSetting'
 import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, openCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
 import { cellHoverCardRuns } from './cellHoverCard'
-import { cellNotePreviewLines } from './cellNotePreview'
+import { cellNotePreviewLines, NOTE_BOX_WIDTH, setCellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
 import { cellPos } from './tableTestKit'
 
@@ -633,8 +635,10 @@ describe('the "Add cell note" button (D8, 5A-7)', () => {
 })
 
 describe('the preview (D14)', () => {
-  it('the first 6 lines as plain text, a bullet as "• "', () => {
-    const lines = (markdown: string) => mount(markdown).then(({ view }) => cellNotePreviewLines(view.state.doc.child(1)))
+  afterEach(() => setCellNotePreviewLines(20))
+
+  it('the first lines as plain text, a bullet as "• "', () => {
+    const lines = (markdown: string) => mount(markdown).then(({ view }) => cellNotePreviewLines(view.state.doc.child(1), 6))
     return Promise.all([
       lines('| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: * one\n    * two\n    * three\n').then((out) => expect(out).toEqual(['• one', '• two', '• three'])),
       lines('| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: Top\n\n    1. first\n       * kid\n    2. second\n\n    * [ ] todo\n    * x\n    * y\n').then((out) =>
@@ -673,6 +677,66 @@ describe('the preview (D14)', () => {
     inCell(view, 'mousemove', 1, 1, 150, 45)
     vi.advanceTimersByTime(400)
     expect(document.querySelector('.cell-note-preview')).toBeNull()
+  })
+
+  /** A table whose "x" cell has a note of `count` bullets: "• 1" to "• count". */
+  const longNote = (count: number) => `| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: ${Array.from({ length: count }, (_, i) => `* ${i + 1}`).join('\n    ')}\n`
+  const bullets = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => `• ${from + i}`)
+  /** The box's lines after a rest on the note's cell. */
+  const boxLines = async (view: EditorView) => {
+    inCell(view, 'mousemove', 1, 0, 150, 45)
+    vi.advanceTimersByTime(400)
+    const lines = [...document.querySelectorAll('.cell-note-preview .cell-note-preview__line')].map((el) => el.textContent)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    return lines
+  }
+
+  it('YAZ-5717: 20 lines then "…" when the note has more; the setting changes the count, clamped to 6–60', async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view: thirty } = await mount(longNote(30))
+    expect(await boxLines(thirty)).toEqual([...bullets(1, 20), '…'])
+    const { view: twenty } = await mount(longNote(20))
+    expect(await boxLines(twenty)).toEqual(bullets(1, 20))
+    setCellNotePreviewLines(6)
+    expect(await boxLines(thirty)).toEqual([...bullets(1, 6), '…'])
+    setCellNotePreviewLines(100)
+    const { view: seventy } = await mount(longNote(70))
+    expect(await boxLines(seventy)).toEqual([...bullets(1, 60), '…'])
+    setCellNotePreviewLines(2)
+    expect(await boxLines(seventy)).toEqual([...bullets(1, 6), '…'])
+  })
+
+  it('YAZ-5717: the box stays inside the window: left of the cell at the right edge, moved up at the bottom', async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view } = await mount(NOTES, zoomOpts())
+    // jsdom lays out nothing: the box is as tall as 300px wherever it is put.
+    const own = HTMLElement.prototype.getBoundingClientRect
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('cell-note-preview') ? new DOMRect(parseFloat(this.style.left), parseFloat(this.style.top), NOTE_BOX_WIDTH, 300) : own.call(this)
+    })
+    const cell = view.nodeDOM(cellPos(view, 1, 1)) as HTMLElement
+    // The cell's right edge at 900 of jsdom's 1024 × 768 window, its top at 700.
+    cell.getBoundingClientRect = () => new DOMRect(800, 700, 100, 30)
+    cell.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 850, clientY: 710 }))
+    vi.advanceTimersByTime(400)
+    const box = document.querySelector<HTMLElement>('.cell-note-preview')!
+    // 900 + 4 + 360 > 1024: left of the corner. 700 + 300 > 768 - 8: up, 8px from the bottom.
+    expect([box.style.left, box.style.top]).toEqual([`${900 - 4 - NOTE_BOX_WIDTH}px`, `${768 - 8 - 300}px`])
+    spy.mockRestore()
+  })
+
+  it('YAZ-5717: the CSS gives the note box 360px, at most the window less 16px, and lines that wrap', () => {
+    const css = readFileSync(resolve(__dirname, 'cellHoverCard.css'), 'utf8')
+    const rule = (selector: string) => css.match(new RegExp(`^${selector.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`, 'm'))?.[1] ?? ''
+    expect(NOTE_BOX_WIDTH).toBe(360)
+    expect(rule('.cell-note-preview')).toContain(`width: ${NOTE_BOX_WIDTH}px;`)
+    expect(rule('.cell-note-preview')).toContain('max-height: calc(100vh - 16px);')
+    expect(rule('.cell-note-preview__line')).toContain('white-space: pre-wrap;')
+    expect(rule('.cell-note-preview__line')).toContain('overflow-wrap: anywhere;')
+    // The title stays on one row with "…".
+    expect(rule('.cell-note-preview__header')).toContain('white-space: nowrap;')
   })
 })
 
