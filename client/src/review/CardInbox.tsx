@@ -26,8 +26,8 @@
  *    a card with no title has none. A click renames a card in a page; a card file's title (YAZ-5037) is a link, and it
  *    and O open it in Explore (YAZ-5145, "Open card").
  *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the title is on the card line (YAZ-5308), never in
- *    the text, so it is never a Space step. The band waits until the card is fully shown, then shows the title: which
- *    card it was.
+ *    the text, so it is never a Space step. YAZ-5695 (Yaseen: "it should never show up in reviews. Period."): no band
+ *    at any step, fully shown too, and the answer line names the card by its ID (`reviewTitleOf`).
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -101,7 +101,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { CourseOffer, type CourseOfferProps } from '../course/CourseOffer'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides } from '@shared/cardText'
-import { withCardTitle } from '@shared/cardLine'
+import { reviewTitleOf, withCardTitle } from '@shared/cardLine'
 import { PageTitle } from '../editor/PageTitle'
 import { DocumentZoom, savedZoom, saveZoom, zoomByKey } from '../editor/DocumentZoom'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
@@ -239,7 +239,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const pageText = card?.page?.text ?? null
   // The Inbox's card (YAZ-5152: shared with the Preview, `inboxCard.tsx`): the front, and the head's title off the card
   // line (YAZ-5308), which waits for the last step where it is hidden on the front (YAZ-5030).
-  const { text, title } = useCardFront(pageText, card?.page?.title ?? '', card?.page?.notitle === true)
+  const { text, title: headTitle } = useCardFront(pageText, card?.page?.title ?? '', card?.page?.notitle === true)
   // A card FILE (YAZ-5037): "Open card" in the key row, and no "in <page>". One look in the index the vault already holds.
   const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
   // A card that comes back (YAZ-5594: the same card again) is a new turn: the answers so far tell the two apart.
@@ -322,8 +322,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
     const { session, review, card, answerSeconds } = live.current
     // The answers as the hook fixed them (a digit can come before the buttons show: they are fixed now, as `answer` would).
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
-    // The card by its title (YAZ-5030), a title hidden in review too: the answer is given.
-    const title = card?.page?.title ?? ''
+    // The card by its title (YAZ-5030); a title hidden in review never shows (YAZ-5695): its ID.
+    const title = card?.page == null ? '' : reviewTitleOf(card.page)
     pendingLine.current = fixed === undefined || card === null ? null : { text: answerLine(rating, card.id, fixed.interval, fixed.inSteps, review.settings, title), rating, count: session.answered.length + 1 }
     void review.answer(rating, answerSeconds())
   }, [])
@@ -445,8 +445,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         {picker.picker}
       </div>
     )
-  // The band's title: once the card is fully shown where it waits (`notitle`).
-  const headTitle = title.waits && !done ? '' : title.text
   /** The band's rename (YAZ-5164 part 3): the title on the card's line (YAZ-5308), one write; the Inbox reads the card again. */
   const retitle = (path: string, id: string, next: string): void => {
     changeCardLine(path, id, (l) => withCardTitle(l, next)).catch((err: unknown) => onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`))

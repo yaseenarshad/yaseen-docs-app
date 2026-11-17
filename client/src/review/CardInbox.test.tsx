@@ -1068,7 +1068,7 @@ describe('the title on the front (YAZ-5030)', () => {
   const label = () => el.querySelector('.card-inbox__panel > .card-band .card-inbox__name')?.textContent ?? null
   const text = () => el.querySelector('.card-inbox__card')?.textContent ?? ''
 
-  it('Hide: the front draws no title, and the title is NEVER a Space step (its hidden word neither); no band until the card is fully shown, then the band with the title (YAZ-5308 A3)', async () => {
+  it('Hide (YAZ-5695, Yaseen: "it should never show up in reviews. Period."): no band and no title at ANY step — the front, each Space, Side 2, fully shown; the title is never a Space step either', async () => {
     withLine(true)
     await flush()
     expect(text()).not.toContain('Capital of France')
@@ -1083,11 +1083,11 @@ describe('the title on the front (YAZ-5030)', () => {
     expect(label()).toBeNull()
     press(' ')
     expect(shown()).toEqual(['France', 'Paris'])
-    // Fully shown: the band says which card it was; the card itself still has no title.
-    expect(label()).toBe('Capital of France')
+    // Fully shown: still no band; the head is the ID alone; the title is nowhere on the screen.
+    expect(label()).toBeNull()
     expect(el.querySelector('.card-inbox__head')!.textContent).toBe('WIKI-9')
     expect(el.querySelectorAll('.card-inbox__title')).toHaveLength(0)
-    expect(text()).not.toContain('Capital of France')
+    expect(el.textContent).not.toContain('Capital of France')
   })
 
   it('Show (no part): the band shows the title from the start; it is no part of the front, so never a Space step (YAZ-5308)', async () => {
@@ -1100,13 +1100,23 @@ describe('the title on the front (YAZ-5030)', () => {
     expect(shown()).toEqual(['France'])
   })
 
-  it('the answer line names the card by its title, a hidden title too (the answer is given)', async () => {
-    withLine(true)
+  it('the answer line names a card by its title; a title hidden in review never (YAZ-5695): its ID', async () => {
+    withLine(false)
     await flush()
     press('2')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France · back in 3 days · Undo (Cmd+Z)')
+  })
+
+  it('after an answer, a title hidden in review is still nowhere (YAZ-5695): the answer line names the card by its ID', async () => {
+    withLine(true)
+    await flush()
+    press('2')
+    session = { ...session, answered: ['good'], canUndo: true }
+    render()
+    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · WIKI-9 · back in 3 days · Undo (Cmd+Z)')
+    expect(el.textContent).not.toContain('Capital of France')
   })
 })
 
@@ -1203,7 +1213,7 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
     expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, null)
   })
 
-  it('a card file with `notitle`: no band until the card is fully shown, then the band with the title; O opens it all along', async () => {
+  it('a card file with `notitle` (DEMO-182, YAZ-5695): no band at any step, fully shown too; O opens it all along', async () => {
     mount(PLAIN)
     asCardFile()
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle: true } } }
@@ -1213,7 +1223,9 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
     press('o')
     expect(props.openPage).toHaveBeenCalledOnce()
     press(' ')
-    expect(headText()).toBe('WIKI-9 | Capital of France')
+    press(' ')
+    press(' ')
+    expect(headText()).toBe('WIKI-9 | ')
   })
 
   it('while the card`s page is still read: the ID, no title yet', () => {

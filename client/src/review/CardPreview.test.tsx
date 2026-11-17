@@ -30,7 +30,7 @@ afterEach(() => {
   el?.remove()
 })
 
-function mount(text = TEXT, title = '') {
+function mount(text = TEXT, title = '', notitle = false) {
   const wikilinks = createWikilinkResolveSource()
   const vault = { root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never, viewOnlyLinks: createViewOnlyLinkSource() }
   const onClose = vi.fn()
@@ -38,7 +38,7 @@ function mount(text = TEXT, title = '') {
   el = document.createElement('div')
   document.body.append(el)
   root = createRoot(el)
-  act(() => root?.render(<CardPreview card={{ path: PATH, id: 'WIKI-9', text, title, notitle: false, reviews: REVIEWS }} vault={vault} settings={DEFAULT_REVIEW_SETTINGS} doors={{ openLayer: vi.fn(), openTab: vi.fn(), onNotice: vi.fn() }} onNotice={vi.fn()} onClose={onClose} leaveOn=".tabbar-row, .sidebar" onLeave={onLeave} />))
+  act(() => root?.render(<CardPreview card={{ path: PATH, id: 'WIKI-9', text, title, notitle, reviews: REVIEWS }} vault={vault} settings={DEFAULT_REVIEW_SETTINGS} doors={{ openLayer: vi.fn(), openTab: vi.fn(), onNotice: vi.fn() }} onNotice={vi.fn()} onClose={onClose} leaveOn=".tabbar-row, .sidebar" onLeave={onLeave} />))
   return { onClose, onLeave }
 }
 const press = (key: string) => act(() => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
@@ -88,6 +88,20 @@ describe('Preview a card (YAZ-5152)', () => {
     root = null
     expect(document.activeElement).toBe(editor)
     editor.remove()
+  })
+
+  it('YAZ-5695: a title hidden in review is the Inbox\'s: no band and no title at any step, fully shown too; the bar names the card by its ID', () => {
+    mount(TEXT, 'Secret title', true)
+    const band = () => el.querySelector('.card-inbox__panel > .card-band')
+    expect(band()).toBeNull()
+    press(' ')
+    expect(band()).toBeNull()
+    press(' ')
+    expect(sides()).toBe(2)
+    press(' ')
+    expect(band()).toBeNull()
+    expect(el.querySelector('.card-preview__what')?.textContent).toBe('· WIKI-9 · nothing is saved')
+    expect(el.textContent).not.toContain('Secret title')
   })
 
   it('YAZ-5152 A: no title: the bar names the card by its ID', () => {
