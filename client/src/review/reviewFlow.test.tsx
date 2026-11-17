@@ -108,7 +108,8 @@ async function macDriver(vault: FlowVault): Promise<FlowDriver> {
     async view() {
       const s = api.session!
       const card = s.card === null || s.end !== null ? null : { id: s.card.id, isNew: s.card.isNew, again: showsAgain(s.card) }
-      return { filter: s.filter, card, menu: { ...s.counts }, ...readShared(box!, LOOK, card === null ? box!.querySelector('.flow-done') : null) }
+      const arrows = card === null ? null : { back: s.canBack, next: s.canNext }
+      return { filter: s.filter, card, menu: { ...s.counts }, arrows, ...readShared(box!, LOOK, card === null ? box!.querySelector('.flow-done') : null) }
     },
     async answer(rating: CardRating) {
       vi.setSystemTime(Date.now() + 4_000)
@@ -116,6 +117,8 @@ async function macDriver(vault: FlowVault): Promise<FlowDriver> {
       await step(() => api.answer(rating, 4))
     },
     undo: () => step(() => api.undo()),
+    // The Inbox's arrows and ← → keys move only while they are enabled (`CardInbox`).
+    move: (delta) => step(() => (delta < 0 ? api.session?.canBack : api.session?.canNext) && api.move(delta)),
     filter: (f) => step(() => api.setFilter(f)),
     async press(words) {
       const b = button(words)
