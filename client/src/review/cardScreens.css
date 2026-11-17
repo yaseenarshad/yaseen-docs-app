@@ -578,21 +578,26 @@
 .card-inbox__time:focus:not(:focus-visible) {
   outline: none;
 }
-/* The bar's own controls (YAZ-5372: the Inbox's zoom, the page zoom's pill), at its right end, after "4 / 6". Quiet:
-   faint until the bar is pointed at or a control has the keyboard. With no card (the done screen) it takes the push right. */
+/* The bar's own controls (YAZ-5372: the Inbox's zoom, the page zoom's pill; YAZ-5375: focus mode), at its right end,
+   after "4 / 6". With no card (the done screen) it takes the push right. YAZ-5686 (Yaseen: "completely make them fade
+   unless u mouse over to that area"): invisible until the pointer enters their own area (a few px of slack around
+   them), then a 150 ms fade in; a keyboard focus inside, or the zoom's menu open, shows them too — focus mode on as
+   well (F or Esc leave it). Opacity only: they keep their room, so nothing jumps. The ✕ and done / total count
+   (`.card-inbox__place`) never fades. */
 .card-inbox__tools {
   flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
-  opacity: 0.45;
-  transition: opacity 120ms ease-out;
+  margin: -6px 0 -6px auto;
+  padding: 6px 0 6px 8px;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
 }
 .card-inbox__bar > .card-inbox__place ~ .card-inbox__tools {
-  margin-left: 10px;
+  margin-left: 2px;
 }
-.card-inbox__bar:hover > .card-inbox__tools,
+.card-inbox__tools:hover,
 .card-inbox__tools:focus-within,
 .card-inbox__tools:has(.document-zoom__trigger[aria-expanded='true']) {
   opacity: 1;
@@ -600,7 +605,7 @@
 .card-inbox__tools .document-zoom {
   border-color: transparent;
 }
-.card-inbox__bar:hover .card-inbox__tools .document-zoom,
+.card-inbox__tools:hover .document-zoom,
 .card-inbox__tools:focus-within .document-zoom {
   border-color: var(--border);
 }
@@ -632,10 +637,6 @@
 .card-inbox__focus:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-/* Focus mode on, the button stays clear while the bar is not pointed at: it is the way back to the tab row. */
-.card-inbox__tools:has(.card-inbox__focus[aria-pressed='true']) {
-  opacity: 1;
 }
 /* YAZ-5679: the "Added card to reviews" note stays at the window's bottom right while the Inbox scrolls. */
 .card-inbox > .learned-note {

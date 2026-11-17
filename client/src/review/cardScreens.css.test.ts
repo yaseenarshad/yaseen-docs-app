@@ -73,3 +73,40 @@ describe('the last answer\'s line is quiet for every answer (YAZ-5433)', () => {
     expect(mark?.decls['color']).toBe('var(--danger)')
   })
 })
+
+/**
+ * YAZ-5686 (Yaseen: "maybe just completely make them fade unless u mouse over to that area"): the Review top bar's
+ * zoom (− 100% +) and full-screen button are invisible until the mouse enters THEIR area (not the whole bar), then fade
+ * in (150 ms); keyboard focus in them, or the zoom's menu open, shows them. Opacity only: they keep their room, so
+ * nothing jumps. Reduce motion: no fade. The ✕ and done / total count is never faded.
+ */
+describe('the zoom and full-screen controls fade in only on hover (YAZ-5686)', () => {
+  const all = rules(cards)
+  const opacityOne = all.filter((r) => r.decls['opacity'] === '1').flatMap((r) => r.selectors)
+
+  it('invisible by default, keeping their room; a 150 ms fade', () => {
+    // Outside the media queries (Reduce motion's own rule is its own test).
+    const tools = decls(cards.replace(/@media[^{]*\{[\s\S]*?\}\s*\}/g, ''), '.card-inbox__tools')
+    expect(tools['opacity']).toBe('0')
+    expect(tools['transition']).toBe('opacity 150ms ease-out')
+    for (const r of all.filter((r) => r.selectors.some((s) => s.includes('.card-inbox__tools')))) {
+      expect(r.decls['display']).not.toBe('none')
+      expect(r.decls['visibility']).toBeUndefined()
+    }
+  })
+
+  it('shown on the pointer over their own area, a keyboard focus inside, or the zoom menu open; not on the whole bar', () => {
+    expect(opacityOne).toEqual(expect.arrayContaining(['.card-inbox__tools:hover', '.card-inbox__tools:focus-within', ".card-inbox__tools:has(.document-zoom__trigger[aria-expanded='true'])"]))
+    expect(opacityOne.filter((s) => s.includes('.card-inbox__bar:hover'))).toEqual([])
+    expect(all.filter((r) => r.selectors.some((s) => s.startsWith('.card-inbox__bar:hover') && s.includes('.card-inbox__tools')))).toEqual([])
+  })
+
+  it('Reduce motion: shown and hidden at once', () => {
+    const raw = readFileSync(path.join(__dirname, 'cardScreens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(raw).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.card-inbox__tools \{\s*transition: none;\s*\}/)
+  })
+
+  it('the ✕ and done / total count is never faded', () => {
+    for (const r of all.filter((r) => r.selectors.some((s) => /\.card-inbox__place\b/.test(s) && !s.includes('__tools')))) expect(r.decls['opacity']).toBeUndefined()
+  })
+})
