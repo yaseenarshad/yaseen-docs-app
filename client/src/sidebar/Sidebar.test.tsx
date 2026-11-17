@@ -6667,6 +6667,77 @@ describe('focus tab (YAZ-2619)', () => {
     await stackFoldFlow(el, v, ids)
   })
 
+  describe('a sidebar place for each page tab (YAZ-5701)', () => {
+    const PER_TAB: SettingsState = { ...TEST_SETTINGS, sidebarPlace: 'tab' }
+    const stack: FocusFolder = { id: 'yaz5701-stack', name: 'Loose pages', created: 1, at: 1, items: [] }
+    const withStack = (b: ReturnType<typeof installBridge>) => b.focusFolders.get.mockImplementation(async (root: string, scope?: unknown) => (scope === 'vault' ? [{ ...stack, items: [{ vault: root.slice(1), path: 'top.md' }] }] : []))
+    const body = (el: HTMLElement) => el.querySelector<HTMLElement>('.sidebar__body')!
+    const stackOpen = (el: HTMLElement) => el.querySelector(`[data-focus-folder="${stack.id}"]`)?.getAttribute('aria-expanded')
+
+    it('"A place for each tab": a switch puts back each tab\'s sidebar tab, open folders, shut stack folders and scroll; a tab with no place keeps what is on screen; the open folders never go to the store, until "One place for the window" writes the ones on screen', async () => {
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      const { el, v, props, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-A', settings: PER_TAB }, { focus: ['/Projects'] }, withStack)
+      const at = (activeTab: string, lens?: SidebarTab) => rerender({ activeTab, settings: PER_TAB, ...(lens !== undefined && { lens }) })
+      // Tab A, on Focus: Projects open, the stack folder shut, scrolled down.
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      act(() => el.querySelector<HTMLButtonElement>(`[data-focus-folder="${stack.id}"]`)?.click())
+      body(el).scrollTop = 40
+      // Tab B has no place yet: the screen stays as it is.
+      await at('yaz5701-B')
+      expect(props.onLensChange).not.toHaveBeenCalled()
+      expect([isOpen(el, `${v}/Projects`), stackOpen(el), body(el).scrollTop]).toEqual(['true', 'false', 40])
+      // On B: Projects closed, the stack folder open, then Files at the top.
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      act(() => el.querySelector<HTMLButtonElement>(`[data-focus-folder="${stack.id}"]`)?.click())
+      await at('yaz5701-B', 'files')
+      body(el).scrollTop = 0
+      // Back to A: Focus, Projects open, the stack folder shut, the scroll at 40.
+      await at('yaz5701-A')
+      expect(props.onLensChange).toHaveBeenLastCalledWith('focus')
+      await at('yaz5701-A', 'focus')
+      expect([isOpen(el, `${v}/Projects`), stackOpen(el), body(el).scrollTop]).toEqual(['true', 'false', 40])
+      // To B again: Files at the top, and its Focus has Projects closed and the stack folder open.
+      await at('yaz5701-B')
+      expect(props.onLensChange).toHaveBeenLastCalledWith('files')
+      await at('yaz5701-B', 'files')
+      expect(body(el).scrollTop).toBe(0)
+      await at('yaz5701-B', 'focus')
+      expect([isOpen(el, `${v}/Projects`), stackOpen(el)]).toEqual(['false', 'true'])
+      expect(setExpanded).not.toHaveBeenCalled()
+      // "One place for the window": the folders on screen go to the store again.
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      await rerender({ activeTab: 'yaz5701-B', settings: TEST_SETTINGS })
+      expect(setExpanded).toHaveBeenLastCalledWith(v, [copyFoldKey(`${v}/Projects`, `${v}/Projects`)])
+      setExpanded.mockRestore()
+    })
+
+    it('"A place for each tab": the sidebar that is hidden and shown again puts back the place of the tab on show, and reads no open folders of the other windows', async () => {
+      const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-E', settings: PER_TAB }, { focus: ['/Projects'] })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      body(el).scrollTop = 40
+      // Another window opens Alpha in the shared list while this sidebar is hidden.
+      await act(async () => root?.render(<></>))
+      storage.setExpanded(v, [copyFoldKey(`${v}/Projects`, `${v}/Projects/Alpha`)])
+      await rerender({ activeTab: 'yaz5701-E', settings: PER_TAB })
+      expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Projects/Alpha`), body(el).scrollTop]).toEqual(['true', 'false', 40])
+    })
+
+    it('"One place for the window" (the default): a tab switch changes nothing, and the open folders go to the store as before', async () => {
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      const { el, v, props, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-C' }, { focus: ['/Projects'] })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      expect(setExpanded).toHaveBeenLastCalledWith(v, [copyFoldKey(`${v}/Projects`, `${v}/Projects`)])
+      body(el).scrollTop = 40
+      await rerender({ activeTab: 'yaz5701-D' })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      await rerender({ activeTab: 'yaz5701-C' })
+      expect(props.onLensChange).not.toHaveBeenCalled()
+      expect([isOpen(el, `${v}/Projects`), body(el).scrollTop]).toEqual(['false', 40])
+      expect(setExpanded).toHaveBeenLastCalledWith(v, [])
+      setExpanded.mockRestore()
+    })
+  })
+
   it('S17, S21, R5, R10, R11: the bar names the list, no count (YAZ-4470); the chevrons act on the tab\'s folders only and are gone when it shows none; "Clear" empties the list and keeps the tab', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/top.md'] })
     expect(bridge.focus.set).not.toHaveBeenCalled() // a list that was read is never written back

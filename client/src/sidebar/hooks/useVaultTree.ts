@@ -65,6 +65,8 @@ function withTime(trees: ReadonlyMap<string, TreeResponse>, vault: string, file:
   return next
 }
 
+const SHARED_FOLDERS = { shared: true, start: () => [] }
+
 export function useVaultTree(
   vaults: readonly SidebarVault[],
   closedVaults: readonly string[],
@@ -76,6 +78,11 @@ export function useVaultTree(
   lists: VaultListsHere,
   /** Something reads the file times (YAZ-3227 D2, YAZ-3511 D2): a Last updated sort, a tab's dates (D10) or a time filter (D14). Each save puts its file's time into the tree. */
   liveTimes = false,
+  /**
+   * The open folders of the windows on a vault (YAZ-5701): `shared` (the default) reads and writes them in the store.
+   * Off ("A place for each tab"), this window neither writes them nor takes them: it starts from `start`.
+   */
+  share: { shared: boolean; start: () => string[] } = SHARED_FOLDERS,
 ) {
   // The window's vaults (YAZ-2602 D1), in the window's order. `root` is the FIRST.
   const roots = useSameList(vaults.map((vault) => vault.root))
@@ -112,7 +119,9 @@ export function useVaultTree(
   // One list here, one list PER VAULT in the store (YAZ-2602 D3): the vaults never nest (R8), so
   // each folder is its own vault's, and the write-back below splits them again.
   // A NEW window starts with every folder closed (YAZ-3487): the vault's open folders are another window's.
-  const [expanded, dispatch] = useReducer(treeReducer, roots, (all) => (storage.isCollapsedStart() ? [] : all.flatMap(storage.getExpanded)))
+  // With a place for each tab (YAZ-5701), the start is the tab's own place, never the list of the other windows.
+  const shared = share.shared
+  const [expanded, dispatch] = useReducer(treeReducer, roots, (all) => (!shared ? share.start() : storage.isCollapsedStart() ? [] : all.flatMap(storage.getExpanded)))
   // A NEW window's closed tree is no choice of the user: it writes nothing until a folder opens or closes here, so the
   // vault keeps the list its other windows saved (bug YAZ-3513). The reducer answers a new list for each change.
   const startList = useRef(storage.isCollapsedStart() ? expanded : null)
@@ -256,7 +265,7 @@ export function useVaultTree(
     const joined = roots.filter((vault) => !before.includes(vault))
     const left = before.filter((vault) => !roots.includes(vault))
     if (joined.length > 0 || left.length > 0) {
-      const dirs = [...expanded.filter((dir) => rootOfPath(left, dir) === null), ...joined.flatMap(storage.getExpanded)]
+      const dirs = [...expanded.filter((dir) => rootOfPath(left, dir) === null), ...(shared ? joined.flatMap(storage.getExpanded) : [])]
       // A new window that the user has not touched stays untouched: a vault that joins or leaves is no open or close (YAZ-3513).
       if (expanded === startList.current) startList.current = dirs
       dispatch({ type: 'setAll', dirs })
@@ -264,6 +273,8 @@ export function useVaultTree(
     }
     if (expanded === startList.current) return
     startList.current = null
+    // A place for each tab (YAZ-5701): the tabs' folders stay in this window. Back on one place, the folders on screen are written.
+    if (!shared) return
     for (const vault of roots) {
       // The app's own vault keeps its open folders for the session only (YAZ-5108): nothing of it goes to the store.
       if (appRoots.includes(vault)) continue
@@ -274,7 +285,7 @@ export function useVaultTree(
       if (sameList(storage.getExpanded(vault), own)) continue
       storage.setExpanded(vault, own)
     }
-  }, [roots, appRoots, expanded])
+  }, [roots, appRoots, expanded, shared])
 
   // The file this mount woke up with is SHOWN, not revealed (YAZ-1642): a relaunch restores the
   // tab and leaves the tree collapsed. Any file opened after that still opens its folders.

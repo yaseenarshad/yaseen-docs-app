@@ -2428,6 +2428,13 @@ export interface SettingsState {
    * It travels with the settings folder.
    */
   sidebarRevealActive: boolean
+  /**
+   * What keeps the sidebar's place (YAZ-5701): `window`, one place for the window (the default, as before), or `tab`,
+   * a place for each page tab — its sidebar tab, open folders, shut focus and favorite folders and scroll — in the
+   * window's memory for the session. With `tab` the window neither writes nor reads the open folders that the windows
+   * on a vault share. It travels with the settings folder.
+   */
+  sidebarPlace: SidebarPlace
   /** The sidebar tree (YAZ-3440 D4): each kind's own icon colour, `#rrggbb`; a kind not in it has the built-in colour (`{}` = all built in). It travels with the settings folder, as a whole. */
   sidebarIconColors: SidebarIconColors
   /** The sidebar tree (YAZ-3440 D9): the name rules, `[{ match, kind, icon }]` (`shared/vaultIcons.ts`), the first that matches a row's name and kind naming its Material icon, after the row's own pick in its vault's `icons.json`. A personal preference: one list for every vault, and it travels with the settings folder. */
@@ -2859,6 +2866,10 @@ export const SIDEBAR_FOLDER_ICONS: readonly SidebarFolderIcons[] = ['plain', 'na
 export type SidebarArrowMotion = 'instant' | 'smooth'
 export const SIDEBAR_ARROW_MOTIONS: readonly SidebarArrowMotion[] = ['instant', 'smooth']
 
+/** What keeps the sidebar's place (YAZ-5701): the window, or each page tab. */
+export type SidebarPlace = 'window' | 'tab'
+export const SIDEBAR_PLACES: readonly SidebarPlace[] = ['window', 'tab']
+
 /**
  * The sidebar tree (YAZ-3440 D4): the kinds whose icon has a colour of its own, in the order Settings shows them. `page`
  * is a Markdown file's: grey with "Colour" until a colour is picked. `card` and `folder` (YAZ-5100 round 2) colour in both
@@ -3117,6 +3128,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarFolderIcons: 'plain',
   sidebarArrowMotion: 'instant',
   sidebarRevealActive: false,
+  sidebarPlace: 'window',
   sidebarIconColors: {},
   sidebarIconRules: [],
   canvas: DEFAULT_CANVAS_PREFS,

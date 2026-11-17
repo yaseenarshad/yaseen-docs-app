@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { useAllPathIds, type IdsInFiles, type IdsInSearch, type PathIdsSource } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
@@ -49,7 +49,8 @@ import { buildMenuSections, SCOPE_TIPS } from './menuSections'
 import { UnitContext, useVaultUnit, vaultUnit } from '../vault/unitWord'
 import type { ListFold } from './listFold'
 import { createPortal } from 'react-dom'
-import { FocusFolderList } from './FocusFolderList'
+import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusFolderList'
+import { lastPlace, readPlace, savePlace, type TabPlace } from './tabPlace'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
 import { RecentList } from './RecentList'
@@ -203,6 +204,11 @@ interface SidebarProps {
    * choice on every collapse/reopen and every root switch. Search is a tab too (YAZ-2638 D2): App's, and never stored.
    */
   lens: SidebarTab
+  /**
+   * The page tab on show (YAZ-5701): its id, `null` under the new tab page or the Inbox tab. With "Sidebar remembers"
+   * on "A place for each tab", each tab keeps its own place. Absent in a Files window, which has no page tabs.
+   */
+  activeTab?: string | null
   /** A tab was clicked; App writes a lens through to the window identity — never Search — and passes the new value back down. */
   onLensChange: (lens: SidebarTab) => void
   /** One reveal in Files; a request that arrives on another lens is dropped. */
@@ -719,6 +725,7 @@ export function Sidebar({
   onOpenVaultHere,
   onCollapse,
   lens,
+  activeTab,
   onLensChange,
   revealRequest,
   onRevealConsumed,
@@ -792,7 +799,19 @@ export function Sidebar({
   // The file times stay live (D2) while something reads them: the tab's Last updated sort, any tab's dates (D10), or a
   // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
   const liveTimes = sort?.by === 'updated' || Object.values(settings.rowDates).some(Boolean) || searchFilter.time !== 'any'
-  const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes)
+  // A place for each page tab (YAZ-5701): the window keeps its open folders to itself, and starts from the place of
+  // the tab on show; with none, from the open folders the sidebar last showed, in this window's vaults.
+  const perTab = settings.sidebarPlace === 'tab' && activeTab !== undefined
+  const folderShare = {
+    shared: !perTab,
+    start: (): string[] => {
+      const own = activeTab == null ? undefined : readPlace(activeTab)
+      if (own !== undefined) return [...own.expanded]
+      const here = vaults.map((vault) => vault.root)
+      return (lastPlace()?.expanded ?? []).filter((dir) => rootOfPath(here, dir) !== null)
+    },
+  }
+  const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes, folderShare)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** The person's own vaults: every vault of the window but the app's own (the card skill, YAZ-5108), which is last. */
@@ -1208,6 +1227,51 @@ export function Sidebar({
     const row = [...bodyRef.current.querySelectorAll<HTMLElement>('.tree__row[data-path]')].find((r) => r.dataset.path === path)
     row?.scrollIntoView?.({ block: 'nearest' })
   }, [searchCursor.paths])
+
+  // A place for each page tab (YAZ-5701, "Sidebar remembers"): a switch saves the place of the tab that goes and puts
+  // back the place of the tab that comes; a tab with no place keeps what is on screen. Declared before the reveal below,
+  // so "Reveal the open file" runs after the place is back. A switch costs one `setAll` and one scroll write.
+  const placeNow = useRef({ lens, expanded, perTab })
+  placeNow.current = { lens, expanded, perTab }
+  /** The tab whose place is on screen; `undefined` until the first effect. */
+  const placeTab = useRef<string | null | undefined>(undefined)
+  /** The scroll to put back once the place's folders are drawn (the layout effect below). */
+  const placeScroll = useRef<number | null>(null)
+  const placeHere = (body: HTMLElement | null): TabPlace => {
+    const now = placeNow.current
+    return { lens: now.lens === 'search' ? storage.getSidebarLens() : now.lens, expanded: now.expanded, shut: { focus: shutStackFolders('focus'), favorites: shutStackFolders('favorites') }, scrollTop: body?.scrollTop ?? 0 }
+  }
+  /** `folders` false at the mount: the tree started from the place's folders. */
+  const putBack = (place: TabPlace, folders: boolean): void => {
+    if (folders) dispatch({ type: 'setAll', dirs: [...place.expanded] })
+    setShutStackFolders('focus', place.shut.focus)
+    setShutStackFolders('favorites', place.shut.favorites)
+    if (place.lens !== placeNow.current.lens) onLensChange(place.lens)
+    placeScroll.current = place.scrollTop
+  }
+  useEffect(() => {
+    const from = placeTab.current
+    const to = activeTab ?? null
+    placeTab.current = to
+    if (!perTab || from === to) return
+    // The first run is the mount: its folders came from the tab's place already (`folderShare.start`).
+    if (from !== undefined && from !== null) savePlace(from, placeHere(bodyRef.current))
+    const place = to === null ? undefined : readPlace(to)
+    if (place !== undefined) putBack(place, from !== undefined)
+  }, [perTab, activeTab])
+  useLayoutEffect(() => {
+    if (placeScroll.current === null || bodyRef.current === null) return
+    bodyRef.current.scrollTop = placeScroll.current
+    placeScroll.current = null
+  })
+  // The sidebar goes (hidden, or a vault switch): the tab on show keeps the place it showed. Before the DOM goes, for the scroll.
+  useLayoutEffect(() => {
+    const body = bodyRef.current
+    return () => {
+      const tab = placeTab.current
+      if (placeNow.current.perTab && tab !== undefined && tab !== null) savePlace(tab, placeHere(body))
+    }
+  }, [])
 
   // Files follows the open tab (YAZ-3440 D13, `sidebarRevealActive`): a new active tab, or Files that shows
   // again, is a QUIET request on the one reveal path below (no flash, no focus, no notice). It is asked one

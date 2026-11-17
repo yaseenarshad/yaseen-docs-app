@@ -59,6 +59,7 @@ describe('settingCandidates', () => {
       'sidebarArrowMotion',
       'sidebarFolderIcons',
       'sidebarRevealActive',
+      'sidebarPlace',
       'sidebarIconSet',
       'sidebarFileIcons',
       // YAZ-5488: the colours and the rules are the vault's, each group with its Vault dropdown.
@@ -318,8 +319,8 @@ describe('searchSettings', () => {
   })
 
   it('the sidebar\'s level lines (YAZ-3309 D6, D7, D9, S12): "sidebar" finds the three rows of the group first; "folder", "tree" and "indent" find Show, not the TOC row; "thread" finds Style and Thread colour beside Bullet threading; "accent" finds the two colour pickers', () => {
-    // The hover preview's Sidebar row (YAZ-3403) is named "Sidebar" outright, so it leads.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 4)).toEqual(['hoverPreviewIn.sidebar', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+    // The hover preview's Sidebar row (YAZ-3403) and "Sidebar remembers" (YAZ-5701) start with "Sidebar", so they lead.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 5)).toEqual(['sidebarPlace', 'hoverPreviewIn.sidebar', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     for (const query of ['folder', 'tree', 'indent']) {
       expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('sidebarLines')
       expect(ids(searchSettings(settingCandidates(ctx()), query))).not.toContain('tocLines')

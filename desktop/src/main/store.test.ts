@@ -1148,6 +1148,14 @@ describe('createStore: loading', () => {
     expect(mergeFolderSettings(here, { sidebarIconColors: 'red' }).sidebarIconColors).toEqual(here.sidebarIconColors)
   })
 
+  it('sidebarPlace (YAZ-5701): default one place for the window; an older file without it loads the default; window and tab load; a bad value loads the default and fails the channel check', () => {
+    expect(DEFAULT_SETTINGS.sidebarPlace).toBe('window')
+    const { sidebarPlace: _place, ...legacy } = DEFAULT_SETTINGS
+    expect(sanitizeSettings(legacy).sidebarPlace).toBe('window')
+    for (const v of ['window', 'tab'] as const) expect([sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarPlace: v }).sidebarPlace, isSettings({ ...DEFAULT_SETTINGS, sidebarPlace: v })]).toEqual([v, true])
+    for (const v of ['tabs', true, null]) expect([sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarPlace: v }).sidebarPlace, isSettings({ ...DEFAULT_SETTINGS, sidebarPlace: v })]).toEqual(['window', false])
+  })
+
   it('sidebarRevealActive (YAZ-3440 D13): default off; an older file without it loads off; a bad value loads off and fails the channel check; it travels with the settings folder', () => {
     expect(DEFAULT_SETTINGS.sidebarRevealActive).toBe(false)
     const { sidebarRevealActive: _reveal, ...legacy } = DEFAULT_SETTINGS
