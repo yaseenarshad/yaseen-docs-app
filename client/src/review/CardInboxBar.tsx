@@ -4,7 +4,7 @@
  * is under review, quiet, by it ("· in spanish-words": "Folder / Sub", or the page) ONLY when the review is narrower than
  * the vault (Review this folder / page; YAZ-5017 round 2, Yaseen: "isnt this redundant?"); then the CURRENT card's place,
  * one card at a time, the Inbox's ONE breadcrumb (YAZ-5132, Yaseen: "we should just have the breadcrumb at the top"):
- * the vault, its folders and the page, "Cards Demo › spanish-words › Verbs", each with the tree's own icon (`FileIcon`:
+ * its folders and the page, "spanish-words › Verbs" (no vault, YAZ-5682: the Inbox is one vault's), each with the tree's own icon (`FileIcon`:
  * a folder's, a page's); a card file ends at its folder (its name is its title, the head's). Each part is a link: a
  * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
  * On the right Mochi's count (YAZ-5674, `SessionCount`): a red ✕ K (the misses waiting; none at 0 and in the missed

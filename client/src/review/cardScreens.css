@@ -475,7 +475,7 @@
 .card-inbox__from-sep {
   opacity: 0.6;
 }
-/* The card's place (YAZ-5017 round 2; YAZ-5132 the Inbox's one breadcrumb): vault › folder › page, each a quiet link
+/* The card's place (YAZ-5017 round 2; YAZ-5132 the Inbox's one breadcrumb; YAZ-5682 no vault): folder › page, each a quiet link
    with its icon; the middle parts give way first ("…"), the page keeps its name. */
 .card-inbox__path {
   flex: 0 1 auto;
@@ -514,9 +514,6 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.card-inbox__path-part[data-kind='vault'] {
-  flex-shrink: 0.4;
 }
 .card-inbox__path-part[data-kind='page'] {
   flex-shrink: 0;
