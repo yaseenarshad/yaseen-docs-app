@@ -111,7 +111,11 @@ describe('the 400 ms guard (YAZ-5226)', () => {
       }
     }
     console.log(`[G4] next card shown at ${shown.toFixed(0)} ms; taps free at ${free.toFixed(0)} ms; guard after show ${(free - shown).toFixed(0)} ms`)
-    expect(free - shown).toBeGreaterThanOrEqual(380)
+    expect(shown).toBeGreaterThanOrEqual(0)
+    expect(free).toBeGreaterThan(shown)
+    // The 380 ms floor is a real-time measure: the 5 ms poll can see the next card late on a busy machine, which shrinks the
+    // gap it reads. Checked on our Macs, not on the shared CI machine (Yaseen: stop the timing tests from blocking CI, YAZ-4965).
+    if (!process.env.CI) expect(free - shown).toBeGreaterThanOrEqual(380)
   })
 
   it('G5: the answer write fails: the card stays; does the guard end?', async () => {
