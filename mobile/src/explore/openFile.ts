@@ -12,13 +12,15 @@ import { isSheetRoute, openSheet } from './sheets'
  * THE RULE (Yaseen's, YAZ-5472 Q4 "the first open is a full page"):
  *  - `from: 'tab'`: the FIRST open from a tab screen ALWAYS opens a FULL PAGE (`go`), whatever `link-click.json` says:
  *    Search's tree and results (`SearchTree.tsx`), Favorites, Focus and Recent (`ListTree.tsx`), the Today button
- *    (`TodayTab.tsx`), Review's "Open page" and "Open card" (`Review.tsx`), a held folder's "Open folder page"
- *    (`holdFolder.tsx`). Back from that page goes back to the tab screen.
+ *    (`TodayTab.tsx`), a held folder's "Open folder page" (`holdFolder.tsx`). Back from that page goes back to the
+ *    tab screen.
  *  - `from: 'inside'`: a link or a row tapped INSIDE a page, a card view, a folder page or an Explore panel follows the
  *    vault (`.yaseendocs/link-click.json`, the Mac's "Clicking a link"): `"explore"` opens an Explore panel
  *    over where you are (`openSheet`; Back closes the panel); `"open"`, or no file, opens it full screen (`go`). That is
  *    every link of the reader through its own door (`page/openLink.ts`: a link, a pill, "Linked from", "Embedded
- *    from") and a folder page's rows (`FolderBody.tsx`, `FolderTable.tsx`, `FolderCards.tsx`).
+ *    from"), a folder page's rows (`FolderBody.tsx`, `FolderTable.tsx`, `FolderCards.tsx`), and Review's card
+ *    (`Review.tsx`, YAZ-5704: a pill in the card, ⋯'s "Open page" and "Open card"; the panel opens over Review, which
+ *    rests under it).
  * A screen that is not a file (Settings, a friend) always opens full screen.
  */
 

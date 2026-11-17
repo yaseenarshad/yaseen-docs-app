@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { answersSetup } from '../answers/testing'
-import { setLinkClick } from '../explore/openFile'
-import { closeAll, sheetStack } from '../explore/sheets'
 import { mount, type Harness } from '../screens/testing'
 import { saveVaultList } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
@@ -100,36 +98,4 @@ describe('the Review tab in the app shell', () => {
     expect(h.button('Remembered')).toBeNull()
   })
 })
-
-describe('YAZ-5472 Q4: with the vault on "explore", Review\'s Open page and Open card still open a FULL PAGE', () => {
-  const EXPLORE = { ...FILES, '.yaseendocs/link-click.json': '{"click":"explore"}' }
-  afterEach(() => closeAll())
-
-  it('Open page: full screen, no panel; Back comes back to the card', async () => {
-    await app(EXPLORE)
-    setLinkClick(VAULT, 'explore')
-    await h.click('More card actions')
-    await h.click('Open page')
-    for (let i = 0; i < 30 && !h.text().includes('Madrid'); i++) await h.settle()
-    expect(h.text()).toContain('Words for a trip to Madrid.')
-    expect(sheetStack()).toEqual([])
-    expect(document.querySelector('.explore-sheet')).toBeNull()
-    expect(h.button('Back')).not.toBeNull()
-    await h.click('Back')
-    for (let i = 0; i < 30 && !h.text().includes('TB-1'); i++) await h.settle()
-    expect(h.text()).toContain('Hola · TB-1')
-  })
-
-  it('Open card: full screen, no panel', async () => {
-    await app(EXPLORE)
-    setLinkClick(VAULT, 'explore')
-    await h.click('Remembered')
-    for (let i = 0; i < 30 && !h.text().includes('TB-2'); i++) await h.settle()
-    await h.click('More card actions')
-    await h.click('Open card')
-    for (let i = 0; i < 30 && !h.text().includes('How fast?'); i++) await h.settle()
-    expect(h.text()).toContain('How fast?')
-    expect(sheetStack()).toEqual([])
-    expect(h.button('Back')).not.toBeNull()
-  })
-})
+// YAZ-5704: with the vault on "explore", Open page and Open card open an Explore panel over Review: `reviewLinks5704.test.tsx`.
