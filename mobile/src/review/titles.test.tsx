@@ -68,7 +68,7 @@ describe('the Review head: the title off the card line', () => {
     expect(h.head()).toBe('TI-6')
     expect(h.text()).not.toContain('Rivers')
     await h.click('Remembered')
-    expect(h.text()).toContain('Last: TI-6 (Remembered)')
+    expect(h.text()).toContain('✓ Remembered · TI-6 · ') // YAZ-5693: the Mac's words
     expect(h.text()).not.toContain('Rivers')
   })
 })

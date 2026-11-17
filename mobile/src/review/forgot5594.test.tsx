@@ -62,8 +62,8 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
       expect(ends()).toEqual(bar)
       expect(bar[1]).toBeGreaterThan(bar[0])
       expect(place()).toEqual([at, of])
-      // ...and the screen says why, in place of "Last: NC-205 (Forgot)", with the Undo.
-      expect(hint()).toBe(`${BACK_LINE} · ↶ Undo`)
+      // ...and the screen says why, in place of the plain Forgot line, with the Undo.
+      expect(hint()).toBe(`${BACK_LINE} · Undo`)
       expect(hint()).not.toContain('Last:')
       expect(q('.review__again')?.textContent).toBe('Again')
       // From the front again, and it comes in again: a new animation name each time.
@@ -92,19 +92,19 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
     await h.click('Forgot')
     await h.click('Review missed cards 1')
     await h.click('Forgot')
-    expect(hint()).toBe(`${BACK_LINE} · ↶ Undo`)
+    expect(hint()).toBe(`${BACK_LINE} · Undo`)
     await h.click('Undo')
     expect(showing()).toBe('NC-205')
     expect(hint()).not.toContain(BACK_LINE)
     expect(q('.review__card')?.dataset.back).toBeUndefined()
   })
 
-  it('with another card still to come, ✕ moves on as ✓ does: the plain "Last: … (Forgot)" line, no animation', async () => {
+  it('with another card still to come, ✕ moves on as ✓ does: the plain "✕ Forgot · … · back later today" line (the Mac\'s, YAZ-5693), no animation', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 10}', 'Try/Cards in a page.md': page('Cards in a page', NC205, NC206, NC207) })
     expect(showing()).toBe('Good morning · NC-206')
     await h.click('Forgot')
     expect(showing()).toBe('NC-205')
-    expect(hint()).toBe('Last: Good morning (Forgot) · ↶ Undo')
+    expect(hint()).toBe('✕ Forgot · Good morning · back later today · Undo')
     expect(q('.review__card')?.dataset.back).toBeUndefined()
     expect(q('.review__again')).toBeNull()
   })
@@ -136,7 +136,7 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
     expect([place(), ...bar()]).toEqual([[3, 4], 75, 100, '3', '4'])
     await h.click('Forgot')
     // The list's count: the one card left, not one per ✕.
-    expect(await dueRow()).toBe('◷Due today1')
+    expect(await dueRow()).toBe('Due today1')
     await h.click('Remembered')
     expect(q('.review__done-title')?.textContent).toBe('Finished reviewing missed cards.')
     expect(bar()).toEqual([100, 100, '3', '3'])

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Suspense, createContext, lazy, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FlyoutParent, useFlyout } from '../components/Flyout'
 import { fitMenu } from '../lib/fitMenu'
 import type { MenuAction, MenuEntry, MenuParent, MenuStrip } from './menuSections'
@@ -55,6 +55,10 @@ const MenuHeading = ({ label, tip }: { label: string; tip?: string }) => (
   </div>
 )
 
+/** A row's ask in place (`ask`, YAZ-5697, `RowAsk.tsx`): its own chunk, fetched once a menu with an asking row opens (no eager weight). */
+const loadRowAsk = () => import('./RowAsk')
+const RowAsk = lazy(loadRowAsk)
+
 function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
   // The item's preview (YAZ-3091 D8): on while the pointer or the focus is on it, off when both leave or it unmounts.
   const previewing = useRef(false)
@@ -79,8 +83,37 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
   // A two-click check row (`twoClick`): armed, it says what the second click does — add (accent) or remove (red).
   const shown = armed && item.twoClick === true ? (checked ? 'Click again to remove' : 'Click again to add') : label
   const armedClass = !armed ? '' : item.twoClick === true && !checked ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
+  // An ask in place (`ask`, YAZ-5697): Cancel gives the keyboard back to the row.
+  const row = useRef<HTMLButtonElement>(null)
+  const refocus = useRef(false)
+  useLayoutEffect(() => {
+    if (armed || !refocus.current) return
+    refocus.current = false
+    row.current?.focus({ preventScroll: true })
+  }, [armed])
+  useEffect(() => {
+    if (item.ask !== undefined) void loadRowAsk()
+  }, [item.ask])
+  if (armed && item.ask !== undefined)
+    return (
+      <Suspense fallback={null}>
+        <RowAsk
+          ask={item.ask}
+          tour={item.tour}
+          onYes={() => {
+            item.onSelect()
+            onClose()
+          }}
+          onNo={() => {
+            refocus.current = document.activeElement instanceof Element && document.activeElement.closest('.ctx-menu__ask') !== null
+            setArmed(false)
+          }}
+        />
+      </Suspense>
+    )
   return (
     <button
+      ref={row}
       type="button"
       role="menuitem"
       className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}${armedClass}`}
@@ -94,17 +127,18 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
       }}
       onMouseLeave={() => {
         setPreview(false)
-        setArmed(false)
+        if (item.ask === undefined) setArmed(false)
       }}
       onFocus={() => setPreview(true)}
       onBlur={() => {
         setPreview(false)
-        setArmed(false)
+        // The row's ask takes the focus as it opens: that blur is not a leave.
+        if (item.ask === undefined) setArmed(false)
       }}
       // An item whose handler already closes the menu (the create group's inline input) just
       // sets the same null twice — harmless.
       onClick={() => {
-        if (item.confirm !== undefined && !armed) return setArmed(true)
+        if ((item.confirm !== undefined || item.ask !== undefined) && !armed) return setArmed(true)
         if (item.onToggle !== undefined) {
           if (item.twoClick === true && !armed) return setArmed(true)
           setArmed(false)

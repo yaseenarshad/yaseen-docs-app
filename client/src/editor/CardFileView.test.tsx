@@ -155,6 +155,11 @@ async function menu(): Promise<string[]> {
   return [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent ?? '')
 }
 const pick = (label: string) => act(() => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label)!.click())
+/** ⋯'s Archive card, then its ask's Archive (YAZ-5697). */
+const archive = () => {
+  pick('Archive card')
+  pick('Archive')
+}
 
 describe('the card file tab (YAZ-5037 phase 3)', () => {
   it('shows the path, the title, the ID, the state, the card, and the strip`s parts "Linked mentions 1" and "Embedded in 2" (YAZ-5382); no notice; no read of its own on open', async () => {
@@ -194,10 +199,38 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })
 
-  it('Archive card writes `off` on the card line; the head then says "Archived"', async () => {
+  it('YAZ-5697: Archive card, Title on the front and Turn into a page ask in place first ("Archive this card?", Cancel first and focused); the first click writes nothing, Cancel leaves the card as it was', async () => {
+    await mount(FILE)
+    for (const [row, question, yes] of [
+      ['Archive card', 'Archive this card?', 'Archive'],
+      ['Title on the front', 'Hide the title on the front?', 'Hide'],
+      ['Turn into a page', 'Turn this card into a page?', 'Turn into a page'],
+    ]) {
+      await menu()
+      pick(row)
+      await act(async () => undefined)
+      const ask = document.querySelector<HTMLElement>('.ctx-menu__ask')
+      expect(ask?.textContent, row).toContain(question)
+      const answers = [...ask!.querySelectorAll<HTMLButtonElement>('button')]
+      expect(answers.map((b) => b.textContent)).toEqual(['Cancel', yes])
+      expect(document.activeElement).toBe(answers[0])
+      act(() => answers[0].click())
+      expect(document.querySelector('.ctx-menu__ask')).toBeNull()
+      act(() => document.querySelector<HTMLElement>('.ctx-overlay')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    }
+    await act(async () => undefined)
+    expect(disk.files.get(PATH)).toBe(FILE)
+    expect(converts.turnIntoPage).not.toHaveBeenCalled()
+    // Put at top of Inbox and Fix later stay one click: each is taken back on the same row (and Undo, in the Inbox).
+    await menu()
+    pick('Fix later')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toContain(', fix -->'))
+  })
+
+  it('Archive card writes `off` on the card line once its ask says yes; the head then says "Archived"', async () => {
     await mount(FILE)
     await menu()
-    pick('Archive card')
+    archive()
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", off -->')))
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('Archived'))
   })
@@ -442,7 +475,7 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     key(el.querySelector('[data-card-file-body]')!, { key: 'e' })
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
     await menu()
-    pick('Archive card')
+    archive()
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('<!-- card: WIKI-9, title "Capital of France", off -->'))
   })
 })
@@ -485,7 +518,7 @@ describe('the guided tour hears the card file tab (YAZ-5123)', () => {
       ['Archive card', 'card-menu-archive'],
       ['Copy card link', 'card-copy-link'],
     ])
-    pick('Archive card')
+    archive()
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('Archived'))
     await vi.waitFor(() => expect(document.querySelector('[role="menuitem"]')).toBeNull())
     await menu()
@@ -764,6 +797,7 @@ describe('the convert actions (YAZ-5037 phase 5)', () => {
     const { onReread, onPage } = await mount(FILE)
     await menu()
     pick('Turn into a page')
+    pick('Turn into a page')
     await vi.waitFor(() => expect(onReread).toHaveBeenCalled())
     expect(converts.turnIntoPage).toHaveBeenCalledWith(PATH)
     // The index's next version reads a page now: this tab's own doing reads again, never the notice.
@@ -989,7 +1023,7 @@ describe('comments on a card file (YAZ-5466)', () => {
   it('⋯ › Archive card and Fix later keep the comments byte for byte', async () => {
     await mount(WITH, { comments: 'oldest' })
     await menu()
-    pick('Archive card')
+    archive()
     await vi.waitFor(() => expect(onDisk()).toBe(WITH.replace('title "Capital of France" -->', 'title "Capital of France", off -->')))
     await menu()
     pick('Fix later')

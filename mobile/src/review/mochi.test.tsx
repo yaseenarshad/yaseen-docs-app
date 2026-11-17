@@ -128,22 +128,22 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
     expect(h.button('Previous card')?.disabled).toBe(true)
   })
 
-  it('an answer before all parts show; "Last: … · ↶ Undo" in the hint line until the next card\'s first tap (it stays in ⋯)', async () => {
+  it('an answer before all parts show; the answer\'s line with its Undo in the hint line until the next card\'s first tap (it stays in ⋯)', async () => {
     h = await reviewSetup(THREE)
     expect(h.cardText()).toBe('A?')
     await h.click('Forgot')
     expect(ids(h)).toEqual(['AR-1'])
     // YAZ-5500: the answer in words, with its Undo, in the hint line's place (one thing, not two).
-    expect(hint()).toBe('Last: AR-1 (Forgot) · ↶ Undo')
+    expect(hint()).toBe('✕ Forgot · AR-1 · back later today · Undo')
     expect(q('.review__hint .review__undo')?.getAttribute('aria-label')).toBe('Undo')
-    expect(q('.review__last[role="status"] .review__lastanswer')).not.toBeNull()
+    expect(q('.review__last[role="status"] .review__last-mark')).not.toBeNull()
     await h.click('Undo')
     expect(h.head()).toBe('AR-1')
     expect(ids(h)).toEqual([])
     await h.click('Remembered')
     // No timer: it is still there after 4 s.
     await real(4_100)
-    expect(hint()).toBe('Last: AR-1 (Remembered) · ↶ Undo')
+    expect(hint()).toMatch(/^✓ Remembered · AR-1 · back (later today|today|in \d+ days?) · Undo$/)
     // The first tap on the next card puts it away: the plain hint again.
     await h.tap()
     expect(q('.review__hint .review__undo')).toBeNull()
@@ -157,11 +157,11 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
   it('YAZ-5674: the count as Mochi`s, the Mac`s piece — a red ✕ K, the open list`s glyph, "done / total"; the glyph once', async () => {
     h = await reviewSetup(THREE)
     const place = () => q('.review__count-btn .review__place')
-    expect(place()?.textContent).toBe('▣0 / 3')
+    expect(place()?.textContent).toBe('0 / 3')
     expect(q('.review__mode')?.textContent).toBe('All cards ▾')
     await h.click('Forgot')
     expect(place()?.querySelector('.session-count__misses')?.textContent).toBe('1')
-    expect(place()?.querySelector('.session-count__done')?.textContent).toBe('▣1 / 4')
+    expect(place()?.querySelector('.session-count__done')?.textContent).toBe('1 / 4')
     expect(h.button(/Choose what to review/)?.getAttribute('aria-label')).toBe('All cards, 1 missed, 1 of 4 done. Choose what to review')
   })
 
@@ -187,7 +187,7 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     await h.click(/Choose what to review/)
     const rows = () => [...h!.host.querySelectorAll('.review__sheet-row')].map((r) => (r.textContent ?? '').replace(/\s+/g, ' ').trim())
     // Review rules v1, rule 7: MN-3 (new, Up next) is under Up next only; before, New cards said 2.
-    expect(rows()).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cards1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434); YAZ-5685: no "from" on the row */)
+    expect(rows()).toEqual(['All cards3', 'Up next1', 'Due today1', 'New cards1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434); YAZ-5685: no "from" on the row */)
     await h.click(/^Due today$/)
     expect(h.text()).toContain('Due today ▾')
     expect(h.head()).toBe('MN-1')
@@ -266,7 +266,7 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
 describe('YAZ-5679: the Mac`s toast on the phone, "Added card to reviews · Undo"', () => {
   it('a new card`s Remembered shows it above the controls; its Undo takes the answer back; a Forgot shows none', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('New?\n---\n{{n}}', 'LN-1'), cardBlock('Other?\n---\n{{o}}', 'LN-2')) })
-    const toast = () => q('.review > .learned-toast')
+    const toast = () => q('.review__hint > .learned-toast') // YAZ-5692: the hint line's own
     await h.click('Forgot')
     expect(toast()).toBeNull()
     await h.click('Remembered')

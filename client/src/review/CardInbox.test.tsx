@@ -1118,6 +1118,22 @@ describe('the title on the front (YAZ-5030)', () => {
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · WIKI-9 · back in 3 days · Undo (Cmd+Z)')
     expect(el.textContent).not.toContain('Capital of France')
   })
+
+  it('YAZ-5694: on a finish screen the answer line`s Undo is the only one; the key row under it does not say it again', async () => {
+    withLine(false)
+    await flush()
+    press('2')
+    session = { ...session, answered: ['good'], canUndo: true }
+    render()
+    // The last card answered: the finish screen, the line still there with its Undo.
+    session = { ...session, card: null }
+    render()
+    expect(el.querySelector('.card-inbox__done-title')).not.toBeNull()
+    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France · back in 3 days · Undo (Cmd+Z)')
+    const undos = (el.querySelector('.card-inbox__dock')?.textContent ?? '').match(/Undo/g) ?? []
+    expect(undos).toHaveLength(1)
+    expect([...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)).toEqual([])
+  })
 })
 
 describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-5308 A3; YAZ-5132: the page is the breadcrumb`s last part), "Open card" for a card file', () => {

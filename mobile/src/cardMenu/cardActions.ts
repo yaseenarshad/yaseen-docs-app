@@ -1,3 +1,4 @@
+import { ARCHIVE_ASK, titleFrontAsk, type CardAsk } from '@shared/cardAsks'
 import { withCardFix, withCardNext, withCardNoTitle, withCardOff, type CardLine } from '@shared/cardLine'
 
 /**
@@ -27,6 +28,11 @@ export interface CardAction {
   hint?: string
   /** The armed row's words, also said by VoiceOver: "Tap again to archive". */
   confirm: string
+  /**
+   * The row asks in place instead of a second tap (YAZ-5697, the Mac's words: `shared/cardAsks.ts`): Archive card and
+   * Title on the front. Its question, Cancel first, then its answer.
+   */
+  ask?: CardAsk
   /** What the screen says once it is done ("Archived"). */
   done: string
   /** The change of the card line: the shared writer's (`shared/cardLine.ts`), the Mac's. */
@@ -59,6 +65,7 @@ export function cardActions(marks: CardActionMarks, options: { upNext: boolean; 
     label: off ? 'Archive card' : 'Unarchive card',
     confirm: off ? 'Tap again to archive' : 'Tap again to unarchive',
     done: off ? 'Archived' : 'Unarchived',
+    ask: off ? ARCHIVE_ASK : undefined,
     change: (l) => withCardOff(l, off),
   })
   const fix = !marks.fix
@@ -80,6 +87,7 @@ export function cardActions(marks: CardActionMarks, options: { upNext: boolean; 
     hint: marks.notitle ? 'Hide' : 'Show',
     confirm: hide ? 'Tap again to hide the title' : 'Tap again to show the title',
     done: hide ? 'Title on the front: Hide' : 'Title on the front: Show',
+    ask: titleFrontAsk(hide),
     change: (l) => withCardNoTitle(l, hide),
   })
   return rows
