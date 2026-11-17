@@ -67,6 +67,7 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
   /**
    * A tap on the button named `name`. The ⋯'s card actions (YAZ-5505) are a lazy chunk: it waits for them to draw.
    * A card action needs two taps (`data-two-tap`): `click` gives both, as a person who means it does; `once` only the first.
+   * A row that asks in place instead (YAZ-5697: Archive card, Title on the front): the second tap is its ask's answer.
    */
   const click = async (name: string | RegExp, options: { once?: boolean } = {}) => {
     // The answer buttons of a new card, and the screen after the last card (S5), take no tap for 400 ms.
@@ -78,7 +79,7 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
     await act(async () => b.click())
     await settle()
     if (action === undefined || options.once === true) return
-    const again = host.querySelector<HTMLButtonElement>(`[data-action="${action}"][data-armed]`)
+    const again = host.querySelector<HTMLButtonElement>(`[data-action="${action}"][data-armed]`) ?? host.querySelector<HTMLButtonElement>(`[data-action="${action}"] [role="alertdialog"] button:last-child`)
     if (again === null) throw new Error(`The row "${name}" did not arm on: ${host.textContent}`)
     await act(async () => again.click())
     await settle()

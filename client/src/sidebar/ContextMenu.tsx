@@ -55,6 +55,36 @@ const MenuHeading = ({ label, tip }: { label: string; tip?: string }) => (
   </div>
 )
 
+/**
+ * A row's ask in place (`ask`, YAZ-5697): its question, then Cancel (first, with the focus: a stray Enter runs nothing)
+ * and the answer, in the confirm sheet's buttons. The focus leaving it (a click elsewhere in the menu) is Cancel.
+ */
+function RowAsk({ ask, tour, onYes, onNo }: { ask: NonNullable<MenuAction['ask']>; tour?: string; onYes: () => void; onNo: () => void }) {
+  const cancel = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => cancel.current?.focus({ preventScroll: true }), [])
+  return (
+    <div
+      className="ctx-menu__ask"
+      role="group"
+      aria-label={ask.question}
+      data-tour={tour}
+      onBlur={(e) => {
+        if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) onNo()
+      }}
+    >
+      <p className="confirm__text">{ask.question}</p>
+      <div className="confirm__actions">
+        <button ref={cancel} type="button" role="menuitem" className="confirm__btn" onClick={onNo}>
+          Cancel
+        </button>
+        <button type="button" role="menuitem" className={ask.danger === true ? 'confirm__btn confirm__btn--danger' : 'confirm__btn'} onClick={onYes}>
+          {ask.yes}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
   // The item's preview (YAZ-3091 D8): on while the pointer or the focus is on it, off when both leave or it unmounts.
   const previewing = useRef(false)
@@ -79,8 +109,32 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
   // A two-click check row (`twoClick`): armed, it says what the second click does — add (accent) or remove (red).
   const shown = armed && item.twoClick === true ? (checked ? 'Click again to remove' : 'Click again to add') : label
   const armedClass = !armed ? '' : item.twoClick === true && !checked ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
+  // An ask in place (`ask`, YAZ-5697): Cancel gives the keyboard back to the row.
+  const row = useRef<HTMLButtonElement>(null)
+  const refocus = useRef(false)
+  useLayoutEffect(() => {
+    if (armed || !refocus.current) return
+    refocus.current = false
+    row.current?.focus({ preventScroll: true })
+  }, [armed])
+  if (armed && item.ask !== undefined)
+    return (
+      <RowAsk
+        ask={item.ask}
+        tour={item.tour}
+        onYes={() => {
+          item.onSelect()
+          onClose()
+        }}
+        onNo={() => {
+          refocus.current = document.activeElement instanceof Element && document.activeElement.closest('.ctx-menu__ask') !== null
+          setArmed(false)
+        }}
+      />
+    )
   return (
     <button
+      ref={row}
       type="button"
       role="menuitem"
       className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}${armedClass}`}
@@ -94,17 +148,18 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
       }}
       onMouseLeave={() => {
         setPreview(false)
-        setArmed(false)
+        if (item.ask === undefined) setArmed(false)
       }}
       onFocus={() => setPreview(true)}
       onBlur={() => {
         setPreview(false)
-        setArmed(false)
+        // The row's ask takes the focus as it opens: that blur is not a leave.
+        if (item.ask === undefined) setArmed(false)
       }}
       // An item whose handler already closes the menu (the create group's inline input) just
       // sets the same null twice — harmless.
       onClick={() => {
-        if (item.confirm !== undefined && !armed) return setArmed(true)
+        if ((item.confirm !== undefined || item.ask !== undefined) && !armed) return setArmed(true)
         if (item.onToggle !== undefined) {
           if (item.twoClick === true && !armed) return setArmed(true)
           setArmed(false)

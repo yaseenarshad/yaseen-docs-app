@@ -59,6 +59,12 @@ export interface MenuAction extends MenuItemBase {
    */
   confirm?: string
   /**
+   * A row that asks in place (YAZ-5697: the card ⋯'s Archive card, Title on the front, Turn into a page): the first
+   * click turns the row into `question` with Cancel (first, focused) and `yes`; only `yes` runs it. Cancel, the focus
+   * leaving the ask (a click elsewhere in the menu) or Escape run nothing.
+   */
+  ask?: { question: string; yes: string; danger?: boolean }
+  /**
    * A check row that keeps the menu open (YAZ-4460 demo: "Show it in"): its ✓ flips at the click, and `onToggle` gets
    * the new state; `onSelect` does not run.
    */

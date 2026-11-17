@@ -28,6 +28,7 @@ export function Confirm({
   onNo,
   busy = false,
   extra,
+  danger = true,
 }: {
   question: string | readonly string[]
   yes: string
@@ -35,6 +36,8 @@ export function Confirm({
   onNo: () => void
   busy?: boolean
   extra?: ReactNode
+  /** The answer in the danger colour, and the ask's red line (default). False: a quiet ask (YAZ-5697: Hide the title). */
+  danger?: boolean
 }) {
   const cancel = useRef<HTMLButtonElement>(null)
   const box = useRef<HTMLDivElement>(null)
@@ -63,7 +66,7 @@ export function Confirm({
   }, [onNo, busy])
   const parts = typeof question === 'string' ? [question] : question
   return (
-    <div ref={box} className="problem confirm" role="alertdialog" aria-label={yes} aria-describedby="confirm-question">
+    <div ref={box} className={danger ? 'problem confirm' : 'problem problem--quiet confirm'} role="alertdialog" aria-label={yes} aria-describedby="confirm-question">
       {/* When the question scrolls, it is a stop of its own for the keyboard, and a line under it shows that more is there. */}
       <div ref={words} id="confirm-question" className={scrolls ? 'confirm__question confirm__question--scrolls' : 'confirm__question'} tabIndex={scrolls ? 0 : undefined}>
         {parts.map((part, i) => (
@@ -75,7 +78,7 @@ export function Confirm({
         <button ref={cancel} type="button" className="btn btn--wide" onClick={onNo} disabled={busy}>
           Cancel
         </button>
-        <button type="button" className="btn btn--wide btn--danger" onClick={onYes} disabled={busy} aria-busy={busy}>
+        <button type="button" className={danger ? 'btn btn--wide btn--danger' : 'btn btn--wide'} onClick={onYes} disabled={busy} aria-busy={busy}>
           {busy ? 'Working…' : yes}
         </button>
       </div>

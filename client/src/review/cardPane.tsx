@@ -27,6 +27,7 @@ import type { ExploreVault } from '../explore/ExplorePage'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import type { MenuSection } from '../sidebar/menuSections'
 import { askResetHistory } from '../editor/card/askResetHistory'
+import { ARCHIVE_ASK, titleFrontAsk } from '@shared/cardAsks'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
 import { CardBody, CardStrip, type CardLinkDoors, type CardStripPart } from './cardParts'
@@ -107,7 +108,7 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
 
 /**
  * The card's own ⋯ rows (D13): Put at top of Inbox (with `inbox`: the vault reviews), Archive, Fix later (YAZ-5097),
- * Title on the front; then Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037); then the caller's `more`
+ * Title on the front (Archive and Title on the front ask in place first, YAZ-5697: `shared/cardAsks.ts`); then Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037); then the caller's `more`
  * (the card file tab's "Turn into a page"); and LAST, alone, Reset history (YAZ-5376), which asks by typing
  * (`askResetHistory`). None of them for a card with no ID yet, but its copy rows once it has one.
  */
@@ -119,10 +120,11 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
     rows.push([
       ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),
       // Chapter 11's tour (YAZ-5330): Archive card, then Unarchive card on the same row once the card is archived.
-      { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', tour: card.off ? 'card-menu-unarchive' : 'card-menu-archive', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
+      // YAZ-5697: Archive card and Title on the front ask in place first (Cancel first); Unarchive card only brings it back.
+      { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', tour: card.off ? 'card-menu-unarchive' : 'card-menu-archive', ask: card.off ? undefined : ARCHIVE_ASK, onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
       { id: 'fix', label: card.fix === true ? 'Remove Fix later' : 'Fix later', onSelect: () => changeLine((l) => withCardFix(l, card.fix !== true)) },
       // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
-      { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
+      { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', ask: titleFrontAsk(card.notitle !== true), onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
     ])
   if (id !== null)
     rows.push([

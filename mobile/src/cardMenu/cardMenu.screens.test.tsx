@@ -103,7 +103,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(h!.host.querySelector('[data-action]')).toBeNull()
   })
 
-  it('a card of a page, opened alone: the same ⋯; one tap only arms; two taps archive; the card shows Archived at once', async () => {
+  it('a card of a page, opened alone: the same ⋯; one tap only asks ("Archive this card?", YAZ-5697); its Archive archives; the card shows Archived at once', async () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
     const menu = await openMenu()
@@ -111,9 +111,9 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(h!.button(/Headings/)).toBeNull()
 
     await tap(row(menu, 'off'))
-    expect(row(menu, 'off').textContent).toBe('Tap again to archive')
+    expect(menu.querySelector('[role="alertdialog"]')?.textContent).toContain('Archive this card?')
     expect(t.answers.waiting()).toEqual([])
-    await tap(row(menu, 'off'))
+    await tap([...menu.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Archive')!)
     await waitFor(() => t.answers.waiting().length === 1)
     expect(t.answers.waiting().map((w) => [w.path, w.op])).toEqual([['Rivers.md', { kind: 'off', id: 'RV-1', on: true }]])
     // The menu closed; the card reads archived at once (before any send); the toast says so.
@@ -127,12 +127,12 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(rows(again)).toContain('Unarchive card')
   })
 
-  it('Title on the front: two taps hide it ("Title hidden in review"); a tap outside cancels the first', async () => {
+  it('Title on the front: its ask\'s Hide hides it ("Title hidden in review", YAZ-5697); a tap outside cancels the ask', async () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
     let menu = await openMenu()
     await tap(row(menu, 'notitle'))
-    expect(row(menu, 'notitle').textContent).toBe('Tap again to hide the title')
+    expect(menu.querySelector('[role="alertdialog"]')?.textContent).toContain('Hide the title on the front?')
     await act(async () => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
     await h!.settle()
     // The tap outside cancels and (the reader's rule) closes the menu: nothing was written.
@@ -141,7 +141,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     menu = await openMenu()
     expect(row(menu, 'notitle').textContent).toBe('Title on the frontShow')
     await tap(row(menu, 'notitle'))
-    await tap(row(menu, 'notitle'))
+    await tap([...menu.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Hide')!)
     await waitFor(() => t.answers.waiting().length === 1)
     expect(t.answers.waiting()[0].op).toEqual({ kind: 'notitle', id: 'RV-1', on: true })
     await waitFor(() => h!.host.querySelector('.card-view__card .card__notitle') !== null)
@@ -189,12 +189,12 @@ describe('a page card\'s ⋯ (YAZ-5504)', () => {
     await tap(cards[2].querySelector<HTMLElement>('.card__more')!)
     expect(h!.host.querySelector('.card-menu')).toBeNull()
 
-    // The second card: archive it with two taps; only RV-2 changes, at once.
+    // The second card: archive it through its ask (YAZ-5697); only RV-2 changes, at once.
     await tap(cards[1].querySelector<HTMLElement>('.card__more')!)
     await waitFor(() => cards[1].querySelector('[data-action="off"]') !== null && !row(cards[1], 'off').disabled)
     await tap(row(cards[1], 'off'))
     expect(t.answers.waiting()).toEqual([])
-    await tap(row(cards[1], 'off'))
+    await tap([...cards[1].querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Archive')!)
     await waitFor(() => t.answers.waiting().length === 1)
     expect(t.answers.waiting().map((w) => [w.path, w.op])).toEqual([['Rivers.md', { kind: 'off', id: 'RV-2', on: true }]])
     await waitFor(() => h!.host.querySelector('[data-card-id="RV-2"]')?.classList.contains('card--off') === true)

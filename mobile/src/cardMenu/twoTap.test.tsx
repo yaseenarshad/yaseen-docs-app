@@ -8,7 +8,7 @@ import { cardActions, type CardAction, type CardActionMarks } from './cardAction
 import { TWO_TAP_MS, UNARMED, twoTap } from './twoTap'
 
 /**
- * YAZ-5505: every card setting on the phone needs TWO taps. The first turns the row into "Tap again to …" in place;
+ * YAZ-5505: every card setting on the phone needs TWO taps. The first turns the row into "Tap again to …" in place (YAZ-5697: Archive card and Title on the front ask in place instead);
  * the second within about 3 s does it; anything else cancels. VoiceOver's double tap is ONE activation. Made-up data.
  */
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -81,25 +81,57 @@ describe('the rows on the screen', () => {
   const click = (el: Element) => act(() => (el as HTMLElement).click())
   const down = (el: Element) => act(() => void el.dispatchEvent(new Event('pointerdown', { bubbles: true })))
 
-  it('one tap does nothing but arm: the row says "Tap again to archive" in place, and VoiceOver hears it', () => {
+  it('YAZ-5697: Archive card and Title on the front ask in place instead (the Mac\'s words): Cancel first and focused, then the answer; no time limit; Cancel, a tap outside or Escape run nothing', () => {
     draw()
-    const archive = row('off')
-    click(archive)
+    const ask = () => host.querySelector<HTMLElement>('[role="alertdialog"]')
+    const answers = () => [...(ask()?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+    click(row('off'))
     expect(done).toEqual([])
-    expect(row('off')).toBe(archive) // the same element: focus stays
-    expect(archive.textContent).toBe('Tap again to archive')
-    expect(archive.hasAttribute('data-armed')).toBe(true)
-    expect(live()).toBe('Tap again to archive')
+    expect(ask()?.textContent).toContain('Archive this card?')
+    expect(answers().map((b) => b.textContent)).toEqual(['Cancel', 'Archive'])
+    expect(document.activeElement).toBe(answers()[0])
+    // Touch-sized: the phone's wide buttons.
+    expect(answers().every((b) => b.classList.contains('btn--wide'))).toBe(true)
+    act(() => void vi.advanceTimersByTime(TWO_TAP_MS * 3))
+    expect(ask()).not.toBeNull()
+    click(answers()[0])
+    expect(ask()).toBeNull()
+    expect(row('off').textContent).toBe('Archive card')
+    click(row('off'))
+    down(document.body)
+    expect(ask()).toBeNull()
+    click(row('notitle'))
+    expect(ask()?.textContent).toContain('Hide the title on the front?')
+    expect(answers().map((b) => b.textContent)).toEqual(['Cancel', 'Hide'])
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(ask()).toBeNull()
+    expect(done).toEqual([])
+    click(row('notitle'))
+    click(answers()[1])
+    click(row('off'))
+    click(answers()[1])
+    expect(done.map((a) => [a.kind, a.on])).toEqual([['notitle', true], ['off', true]])
+  })
+
+  it('one tap does nothing but arm: the row says "Tap again to mark Fix later" in place, and VoiceOver hears it', () => {
+    draw()
+    const fix = row('fix')
+    click(fix)
+    expect(done).toEqual([])
+    expect(row('fix')).toBe(fix) // the same element: focus stays
+    expect(fix.textContent).toBe('Tap again to mark Fix later')
+    expect(fix.hasAttribute('data-armed')).toBe(true)
+    expect(live()).toBe('Tap again to mark Fix later')
     expect(host.querySelectorAll('[role="dialog"], [role="alertdialog"]')).toHaveLength(0) // no pop-up
   })
 
   it('two taps do it; the row is back to its words after', () => {
     draw()
-    click(row('notitle'))
-    expect(row('notitle').textContent).toBe('Tap again to hide the title')
-    click(row('notitle'))
-    expect(done.map((a) => [a.kind, a.on])).toEqual([['notitle', true]])
-    expect(row('notitle').textContent).toBe('Title on the frontShow')
+    click(row('next'))
+    expect(row('next').textContent).toBe('Tap again to put it Up next')
+    click(row('next'))
+    expect(done.map((a) => [a.kind, a.on])).toEqual([['next', true]])
+    expect(row('next').textContent).toBe('Up next')
     expect(live()).toBe('')
   })
 
@@ -119,22 +151,22 @@ describe('the rows on the screen', () => {
 
   it('cancels: another row (which arms instead), a tap outside, Escape, and the menu closing', () => {
     draw()
-    click(row('off'))
+    click(row('next'))
     click(row('fix'))
-    expect(row('off').textContent).toBe('Archive card')
+    expect(row('next').textContent).toBe('Up next')
     expect(row('fix').textContent).toBe('Tap again to mark Fix later')
-    click(row('off'))
-    expect(done).toEqual([]) // Archive was disarmed by the other row: this tap only arms it
+    click(row('next'))
+    expect(done).toEqual([]) // Up next was disarmed by the other row: this tap only arms it
 
     down(document.body)
-    expect(row('off').textContent).toBe('Archive card')
-    click(row('off'))
+    expect(row('fix').textContent).toBe('Fix later')
+    click(row('fix'))
     expect(done).toEqual([])
     down(document.body)
-    click(row('off'))
+    click(row('fix'))
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
-    expect(row('off').textContent).toBe('Archive card')
-    click(row('off'))
+    expect(row('fix').textContent).toBe('Fix later')
+    click(row('fix'))
     expect(done).toEqual([])
 
     click(row('next'))
@@ -147,22 +179,22 @@ describe('the rows on the screen', () => {
 
   it('a tap on the armed row itself (its pointerdown) does not cancel it', () => {
     draw()
-    click(row('off'))
-    down(row('off').querySelector('span')!)
-    click(row('off'))
-    expect(done.map((a) => a.kind)).toEqual(['off'])
+    click(row('fix'))
+    down(row('fix').querySelector('span')!)
+    click(row('fix'))
+    expect(done.map((a) => a.kind)).toEqual(['fix'])
   })
 
   it('VoiceOver: its double tap is ONE activation (one click, or Enter), so a change needs two', () => {
     draw()
-    const archive = row('off')
-    archive.focus()
-    click(archive) // VoiceOver's first double tap
+    const fix = row('fix')
+    fix.focus()
+    click(fix) // VoiceOver's first double tap
     expect(done).toEqual([])
-    expect(document.activeElement).toBe(archive)
-    expect(live()).toBe('Tap again to archive')
-    click(archive) // the second
-    expect(done.map((a) => a.kind)).toEqual(['off'])
+    expect(document.activeElement).toBe(fix)
+    expect(live()).toBe('Tap again to mark Fix later')
+    click(fix) // the second
+    expect(done.map((a) => a.kind)).toEqual(['fix'])
   })
 
   it('while the marks are read, the rows wait (disabled)', () => {

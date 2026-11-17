@@ -136,7 +136,7 @@ const FIXTURES = [
   'page-properties-title',
   // YAZ-5458: the reading look, every block.
   'page-look',
-  // YAZ-5504: the card's ⋯ in the card view (a row armed: "Tap again to archive") and on a page card.
+  // YAZ-5504: the card's ⋯ in the card view (Archive card asking in place, YAZ-5697) and on a page card.
   'card-menu',
   'page-card-menu',
   // YAZ-5548: a card's ⋯ in an Explore panel, its menu open.

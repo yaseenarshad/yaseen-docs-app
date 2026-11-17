@@ -78,11 +78,11 @@ describe('a card in an Explore panel has the full page\'s card menu (YAZ-5548)',
     expect(menu.getAttribute('aria-label')).toBe('Card actions: RV-1')
     expect(rows(menu)).toEqual(MAC_ORDER)
 
-    // One tap only arms; the second archives.
+    // One tap only asks (YAZ-5697); its Archive archives.
     await tap(row(menu, 'off'))
-    expect(row(menu, 'off').textContent).toBe('Tap again to archive')
+    expect(menu.querySelector('[role="alertdialog"]')?.textContent).toContain('Archive this card?')
     expect(t.answers.waiting()).toEqual([])
-    await tap(row(menu, 'off'))
+    await tap([...menu.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Archive')!)
     await waitFor(() => t.answers.waiting().length === 1)
     expect(t.answers.waiting().map((w) => [w.path, w.op])).toEqual([['Rivers.md', { kind: 'off', id: 'RV-1', on: true }]])
     await waitFor(() => sheet()?.querySelector('[data-card-id="RV-1"]')?.classList.contains('card--off') === true)

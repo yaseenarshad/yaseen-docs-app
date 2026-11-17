@@ -1,5 +1,6 @@
-import { useEffect, useId } from 'react'
-import { cardActions, type CardAction, type CardActionMarks } from './cardActions'
+import { useEffect, useId, useState } from 'react'
+import { Confirm } from '../screens/Confirm'
+import { cardActions, type CardAction, type CardActionKind, type CardActionMarks } from './cardActions'
 import { useTwoTap } from './twoTap'
 import './cardMenu.css'
 
@@ -26,12 +27,31 @@ export interface CardActionRowsProps {
  * the second, within about 3 s, does it. A tap anywhere but this row, Escape, or the menu closing cancels.
  * No wrapper: the rows are the host menu's own `menuitem`s; the live line (VoiceOver) goes first, so a host's
  * `:last-child` rule still finds its last row.
+ *
+ * A row with an `ask` (YAZ-5697: Archive card, Title on the front) asks in place instead, as the Mac's card menu does:
+ * the first tap turns the row into the app's ask (`Confirm`: the question, Cancel first with the focus, then the answer,
+ * touch-sized). It waits with no time limit; Cancel, a tap outside it, Escape or the menu closing run nothing.
  */
 export default function CardActionRows({ marks, upNext, fix = true, onAction, disabled = false, rowClassName = 'card-actions__row', ms }: CardActionRowsProps) {
   const group = useId()
   const { armed, tap, cancel } = useTwoTap({ ms })
+  const [asking, setAsking] = useState<CardActionKind | null>(null)
   const rows = cardActions(marks ?? { off: false, next: false, fix: false, notitle: false }, { upNext, fix })
   const wait = disabled || marks === null
+  // An ask in place: a tap outside it cancels (Escape is the ask's own Cancel).
+  useEffect(() => {
+    if (asking === null) return
+    const down = (e: Event) => {
+      const at = e.target instanceof Element ? e.target.closest('[data-two-tap]') : null
+      if (at === null || at.getAttribute('data-two-tap') !== group || at.getAttribute('data-action') !== asking) setAsking(null)
+    }
+    document.addEventListener('pointerdown', down, true)
+    return () => document.removeEventListener('pointerdown', down, true)
+  }, [asking, group])
+  const askRow = rows.find((r) => r.kind === asking && r.ask !== undefined) ?? null
+  useEffect(() => {
+    if (asking !== null && (askRow === null || wait)) setAsking(null)
+  }, [asking, askRow, wait])
   // Anything else cancels: a tap outside these rows, or Escape.
   useEffect(() => {
     if (armed === null) return
@@ -59,6 +79,21 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
       </span>
       {rows.map((row) => {
         const on = armed === row.kind
+        if (row === askRow && row.ask !== undefined)
+          return (
+            <div key={row.kind} className="card-actions__ask" data-two-tap={group} data-action={row.kind}>
+              <Confirm
+                question={row.ask.question}
+                yes={row.ask.yes}
+                danger={row.ask.danger === true}
+                onNo={() => setAsking(null)}
+                onYes={() => {
+                  setAsking(null)
+                  onAction(row)
+                }}
+              />
+            </div>
+          )
         return (
           <button
             key={row.kind}
@@ -70,7 +105,12 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
             data-armed={on ? '' : undefined}
             disabled={wait}
             onClick={() => {
-              if (tap(row.kind)) onAction(row)
+              if (row.ask === undefined) {
+                if (tap(row.kind)) onAction(row)
+                return
+              }
+              cancel()
+              setAsking(row.kind)
             }}
           >
             {on ? (

@@ -67,7 +67,7 @@ import { openSheet } from '../explore/sheets'
  * YAZ-5597: `folder-calendar-month`, `-week`, `-rolling` the made-up `Events` calendar (`calendarFiles`) in each mode;
  * `folder-sheet` the page in a sheet over Search (the vault says "explore"), opened as a link in a page does (YAZ-5472 Q4).
  * YAZ-5504: `card-menu` a card file's view (YAZ-5527: River of Seville) with the card's own ⋯ (on its head) open, Archive
- * card tapped once ("Tap again to archive");
+ * card tapped once (its ask, "Archive this card?", YAZ-5697);
  * `page-card-menu` the page of three cards with the ⋯ of its first card open (a made-up answer list, `fixtureAnswers`).
  * YAZ-5548: `sheet-card-menu` the same page in an Explore panel over Search, its first card's ⋯ open, Archive card
  * tapped once.
@@ -773,7 +773,7 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       document.querySelector('.page-comments')?.scrollIntoView({ block: 'start' })
       break
     case 'card-menu':
-      // YAZ-5527: a card FILE's view: the card's own ⋯ at the right of its head opens the card actions; one tap arms Archive card.
+      // YAZ-5527: a card FILE's view: the card's own ⋯ at the right of its head opens the card actions; one tap opens Archive card's ask (YAZ-5697).
       await typed('seville')
       await open(/^River of Seville/, '.card-view__card .card__more')
       press('Card actions: River of Seville')

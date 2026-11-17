@@ -2656,6 +2656,11 @@ describe('the card window (YAZ-4962)', () => {
       await flush()
     }
     await pick('Archive card')
+    // YAZ-5697: the row asks in place first; the first click wrote nothing.
+    expect(files[PAGE]).not.toContain(', off,')
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click())
+    await flush()
+    await flush()
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, off, 2026-01-02T09:00:00.000Z good -->')
     expect(strip()).toContain('Archived')
     await pick('Unarchive card')
@@ -2737,6 +2742,11 @@ describe('the card window (YAZ-4962)', () => {
     const shown = row()
     expect(shown.dataset.hint ?? shown.textContent).toContain('Show')
     act(() => shown.click())
+    // YAZ-5697: it asks in place first ("Hide the title on the front?", Cancel first); the first click wrote nothing.
+    await flush()
+    expect(files[PAGE]).not.toContain('notitle')
+    expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Hide the title on the front?')
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Hide')!.click())
     await flush()
     await flush()
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, title "Capital of France", notitle -->')
