@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { PageSettings } from './PageSettings'
+import { UNIT_WORDS, UnitContext, unitTextOf } from '../vault/unitWord'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -90,5 +91,24 @@ describe('the cog’s block widths (YAZ-4783 layer 2)', () => {
     type(field('Code block width'), '')
     enter(field('Code block width'))
     expect(changed).toHaveBeenLastCalledWith(null)
+  })
+})
+
+describe('the cog’s "Page width" row (YAZ-5640)', () => {
+  it('YAZ-5753: the row says the vault’s word: "Note width" in a vault that calls a page a note, "Page width" by default', () => {
+    for (const [word, unit] of [['Page', undefined], ['Note', unitTextOf(UNIT_WORDS.note)]] as const) {
+      container = document.createElement('div')
+      document.body.append(container)
+      root = createRoot(container)
+      const menu = <PageSettings pageWidth={null} appContentWidth="narrow" onChangePageWidth={() => undefined} />
+      act(() => root.render(unit === undefined ? menu : <UnitContext.Provider value={unit}>{menu}</UnitContext.Provider>))
+      act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      const row = group(`${word} width`)
+      expect(row, word).not.toBeNull()
+      expect(row!.previousElementSibling?.textContent).toBe(`${word} width:`)
+      expect([...row!.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Default', 'Narrow', 'Medium', 'Full'])
+      act(() => root.unmount())
+      container.remove()
+    }
   })
 })

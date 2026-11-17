@@ -1341,7 +1341,7 @@ function CrepeHost({
   const changeCodeWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, CODE_WIDTH_KEY, width), 'Code block width')
   const changeTableWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, TABLE_WIDTH_KEY, width), 'Table width')
   /** The cog's "Page width" (YAZ-5640): this page's step, or null to follow Settings again. */
-  const changePageWidth = (width: ContentWidth | null) => void writeOwnKey((content) => writePageWidth(content, width), 'Page width')
+  const changePageWidth = (width: ContentWidth | null) => void writeOwnKey((content) => writePageWidth(content, width), unit('Page width'))
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.

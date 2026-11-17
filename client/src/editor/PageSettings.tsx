@@ -481,8 +481,8 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         {/* This page's widths, saved in the page: its own Content width (YAZ-5640), then its code blocks' and its tables' (YAZ-4783 layer 2). */}
         {(onChangePageWidth !== undefined || onChangeCodeWidth !== undefined || onChangeTableWidth !== undefined) && <div className="page-settings__divider" aria-hidden="true" />}
         {onChangePageWidth !== undefined && <>
-          <p className="page-settings__label">Page width:</p>
-          <div className="page-settings__choices" role="group" aria-label="Page width">
+          <p className="page-settings__label">{unit('Page width:')}</p>
+          <div className="page-settings__choices" role="group" aria-label={unit('Page width')}>
             <button type="button" aria-pressed={pageWidth === null} title={`Default follows Settings › Appearance › Content width: ${CONTENT_WIDTH_OPTIONS.find((option) => option.value === appContentWidth)?.label ?? 'Narrow'}`} onClick={() => onChangePageWidth(null)}>Default</button>
             {CONTENT_WIDTH_OPTIONS.map(({ label, value }) => (
               <button key={value} type="button" aria-pressed={value === pageWidth} onClick={() => onChangePageWidth(value)}>{label}</button>
