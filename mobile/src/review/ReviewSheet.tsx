@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
-import { kindCount, kindCountText, newCardsFrom, newRowPick, pickLabel, toggledPick, underFolder } from '@client/review/inboxMenu'
+import { kindCount, kindCountText, newCardsFrom, newRowPick, noMoreNew, pickLabel, toggledPick, underFolder } from '@client/review/inboxMenu'
 import { FilterIcon, inboxFilters } from '@client/review/cardFilters'
-import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, useSettingsFold } from '@client/review/ReviewSettingsPart'
+import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, upNextSettings, useSettingsFold } from '@client/review/ReviewSettingsPart'
 import { AddMoreField } from '@client/review/AddMoreField'
 import type { CardReviewApi, CardReviewSession, NewCardFolder } from '@client/review/useCardReview'
 import type { AddKind } from '@shared/cardSchedule'
@@ -16,8 +16,8 @@ import type { AddKind } from '@shared/cardSchedule'
  *  - Reset sets today's number of that kind back to the Settings number, never below today's work (`resetCards`); the
  *    hint line's Undo takes it back, as on the Mac.
  *  - Today's line ends with a ⚙ (YAZ-5685, the Mac's pieces, `ReviewSettingsPart`): a tap opens the settings under
- *    it, "New cards" · "From  All folders ›" · "Add today [10] Add" (YAZ-5690, the Mac's field, 44 pt here); a tap
- *    again folds it, and each new sheet opens folded.
+ *    it, "New cards" · "From  All folders ›" · "Add today [10] Add" (YAZ-5690, the Mac's field, 44 pt here), then
+ *    while Up next cards wait "Up next" · "Add today [2] Add" (round 2); no Up next waiting: no group; no new card waiting: "No more new cards in …"; a tap again folds it, and each new sheet opens folded.
  *  - "All folders ›" opens the folder page: All folders, then each folder with new cards, a tick box each; more than one
  *    may be ticked, a folder takes its subfolders (`toggledPick`). A change saves at once (`setNewFrom`).
  *  - Today's work ("Today: 21 cards · ⏱", YAZ-5690; the time as Time so far says) sits at the foot, the ⚙ at its right.
@@ -98,8 +98,10 @@ export function ReviewSheet({
             <button type="button" className="review__sheet-from" aria-label={`New cards from ${from}. Choose folders`} onClick={() => setFolders(review.newCardFolders())}>
               {from} ›
             </button>,
-            <AddMoreField kind="new" look="setting" start={session.adds.new} disabled={session.adds.new === 0} onAdd={(n) => review.addCards('new', n)} />,
+            // Nothing more to add (the Mac's rule): the row stays, a quiet line says why.
+            session.adds.new === 0 ? <span className="card-inbox__add-none">{noMoreNew(session)}</span> : <AddMoreField kind="new" look="setting" start={session.adds.new} onAdd={(n) => review.addCards('new', n)} />,
           ),
+          ...(session.adds.next > 0 ? [upNextSettings(<AddMoreField kind="next" look="setting" start={session.adds.next} onAdd={(n) => review.addCards('next', n)} />)] : []),
         ]}
       />
     </div>

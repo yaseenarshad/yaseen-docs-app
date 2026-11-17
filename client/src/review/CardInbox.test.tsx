@@ -1683,32 +1683,20 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2', 'Due today10', 'New cards10'])
   })
 
-  it('YAZ-5690: a click on New cards` count picks the filter (the add is in the ⚙ part); Up next`s count still turns into "Add [2] more Up next"; Enter adds, Esc goes back, the keys stay in the field', () => {
+  it('YAZ-5690 round 2 (Yaseen: "Yes, under ⚙"): a click on any count only picks its filter; no row turns into a field, no "Click to add"', () => {
     mount(TWO_SIDES)
     session = { ...session, ...WAITING }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
+    for (const r of rows()) expect([r.querySelector('.card-inbox__count')!.getAttribute('title'), r.querySelector('.card-inbox__count')!.hasAttribute('data-add')]).toEqual([null, false])
     act(() => rows()[1].querySelector<HTMLElement>('.card-inbox__count')!.click())
-    expect(field()?.value).toBe('2')
-    expect(rows()[1].textContent).toBe('Add  more Up nextEnter')
-    expect(document.activeElement).toBe(field())
-    key(field()!, ' ')
-    expect(review.answer).not.toHaveBeenCalled()
-    key(field()!, 'ArrowUp')
-    expect(field()?.value).toBe('3')
-    key(field()!, 'Escape')
     expect(field()).toBeNull()
-    expect(rows()).toHaveLength(4)
-    act(() => rows()[1].querySelector<HTMLElement>('.card-inbox__count')!.click())
-    typeIn(field()!, '4')
-    key(field()!, 'Enter')
-    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('next', 4)
-    expect(rows()).toHaveLength(4)
-    // New cards: no field in the row, no "Click to add"; the click picks the filter.
-    expect(rows()[3].querySelector('.card-inbox__count')!.getAttribute('title')).toBeNull()
+    expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('next')
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     act(() => rows()[3].querySelector<HTMLElement>('.card-inbox__count')!.click())
     expect(field()).toBeNull()
-    expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('new')
+    expect(review.setFilter).toHaveBeenLastCalledWith('new')
+    expect(review.addCards).not.toHaveBeenCalled()
   })
 
   it('round 2: after an add the row says "22 / 48 · Reset"; Reset calls the hook and the menu stays open', () => {
@@ -2341,7 +2329,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('new')
   })
 
-  it('YAZ-5690: the ⚙ part`s "Add today" — a number field at the Settings number and "Add" — adds that many new cards for today; Enter too; the menu stays open; nothing waiting: both off', () => {
+  it('YAZ-5690: the ⚙ part`s "Add today" — a number field at the Settings number and "Add" — adds that many new cards for today; Enter too; the menu stays open; nothing more to add: a quiet "No more new cards in …"', () => {
     mount(TWO_SIDES)
     session = { ...session, ...WAITING }
     render()
@@ -2357,15 +2345,65 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(number(), '12')
       number().dispatchEvent(new Event('input', { bubbles: true }))
     })
+    // YAZ-5690 round 3 (Yaseen: "too easy to click"): one click never adds; it asks in place, Cancel first and focused.
     act(() => add().click())
+    expect(review.addCards).not.toHaveBeenCalled()
+    const ask = () => row().querySelector<HTMLElement>('.ask-in-place')
+    expect([ask()!.querySelector('.confirm__text')!.textContent, [...ask()!.querySelectorAll('button')].map((b) => b.textContent)]).toEqual(['Add 12 new cards to today?', ['Cancel', 'Add']])
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    // Cancel: back to the field, nothing added.
+    act(() => ask()!.querySelector<HTMLButtonElement>('button')!.click())
+    expect([ask(), vi.mocked(review.addCards).mock.calls.length]).toEqual([null, 0])
+    // Esc cancels the ask alone: the menu stays open.
+    act(() => add().click())
+    act(() => void document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect([ask(), document.querySelector('.card-inbox__filter-menu') !== null, vi.mocked(review.addCards).mock.calls.length]).toEqual([null, true, 0])
+    // A click elsewhere (the focus leaves it) cancels.
+    act(() => add().click())
+    act(() => (document.activeElement as HTMLElement).blur())
+    expect([ask(), vi.mocked(review.addCards).mock.calls.length]).toEqual([null, 0])
+    // Two clicks add.
+    act(() => add().click())
+    act(() => ask()!.querySelectorAll<HTMLButtonElement>('button')[1]!.click())
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 12)
     expect(document.querySelector('.card-inbox__filter-menu')).not.toBeNull()
+    // Enter in the field asks too; it never adds on its own.
     act(() => void number().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    expect([ask() !== null, vi.mocked(review.addCards).mock.calls.length]).toEqual([true, 1])
+    act(() => ask()!.querySelectorAll<HTMLButtonElement>('button')[1]!.click())
     expect(review.addCards).toHaveBeenLastCalledWith('new', 12)
     expect(review.setFilter).not.toHaveBeenCalled()
+    // No more new cards to add (Yaseen): the row stays, a quiet line in place of the field, as From says.
     session = { ...session, more: { new: 0, next: 3 }, adds: { new: 0, next: 2 } }
     render()
-    expect([number().disabled, add().disabled]).toEqual([true, true])
+    expect([row().querySelector('input'), row().querySelector('button'), row().querySelector('.card-inbox__add-none')?.textContent]).toEqual([null, null, 'No more new cards in any folder'])
+    session = { ...session, newFrom: SPANISH }
+    render()
+    expect(row().querySelector('.card-inbox__add-none')?.textContent).toBe('No more new cards in Spanish')
+  })
+
+  it('YAZ-5690 round 2: the ⚙ part`s second group "Up next" — "Add today [2] Add" adds that many Up next cards; only while Up next cards wait beyond today`s limit', () => {
+    mount(TWO_SIDES)
+    session = { ...session, ...WAITING }
+    render()
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
+    openSettings()
+    expect([...part()!.querySelectorAll('section')].map((g) => [g.querySelector('h6')!.textContent, [...g.querySelectorAll('li')].map((li) => li.getAttribute('data-setting'))])).toEqual([
+      ['New cards', ['from', 'add']],
+      ['Up next', ['add']],
+    ])
+    const upNext = () => part()!.querySelectorAll('section')[1]!
+    const number = upNext().querySelector<HTMLInputElement>('input.card-inbox__add-number')!
+    expect([upNext().querySelector('li')!.firstElementChild!.textContent, number.value, number.getAttribute('aria-label')]).toEqual(['Add today', '2', 'How many Up next cards to add'])
+    act(() => upNext().querySelector<HTMLButtonElement>('button.card-inbox__add-go')!.click())
+    expect(review.addCards).not.toHaveBeenCalled()
+    expect(upNext().querySelector('.ask-in-place .confirm__text')!.textContent).toBe('Add 2 Up next cards to today?')
+    act(() => upNext().querySelectorAll<HTMLButtonElement>('.ask-in-place button')[1]!.click())
+    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('next', 2)
+    // No Up next card waiting beyond today's limit: no Up next group at all.
+    session = { ...session, more: { new: 38, next: 0 }, adds: { new: 10, next: 0 } }
+    render()
+    expect([...part()!.querySelectorAll('h6')].map((h) => h.textContent)).toEqual(['New cards'])
   })
 
   it('YAZ-5685: closing the menu folds the part — a click on the filter, Esc — so it opens folded each time; with nothing done today the ⚙ stays', () => {
