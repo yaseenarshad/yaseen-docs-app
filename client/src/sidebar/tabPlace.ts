@@ -46,7 +46,7 @@ export function prunePlaces(tabs: readonly string[]): void {
  * Sidebar's mount, so a Hide and Show sidebar or a vault switch keeps it.
  */
 let foldersChanged = false
-export const noteFoldersChanged = (): void => {
+export const markFoldersChanged = (): void => {
   foldersChanged = true
 }
 export const foldersChangedHere = (): boolean => foldersChanged

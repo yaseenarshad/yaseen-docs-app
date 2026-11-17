@@ -50,7 +50,7 @@ import { UnitContext, useVaultUnit, vaultUnit } from '../vault/unitWord'
 import type { ListFold } from './listFold'
 import { createPortal } from 'react-dom'
 import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusFolderList'
-import { foldersChangedHere, lastPlace, noteFoldersChanged, readPlace, savePlace, type TabPlace } from './tabPlace'
+import { foldersChangedHere, lastPlace, markFoldersChanged, readPlace, savePlace, type TabPlace } from './tabPlace'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
 import { RecentList } from './RecentList'
@@ -810,7 +810,7 @@ export function Sidebar({
       const here = vaults.map((vault) => vault.root)
       return (lastPlace()?.expanded ?? []).filter((dir) => rootOfPath(here, dir) !== null)
     },
-    touch: noteFoldersChanged,
+    touch: markFoldersChanged,
     touched: foldersChangedHere,
   }
   const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes, folderShare)
