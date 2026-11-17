@@ -531,12 +531,11 @@
   margin-left: auto;
   padding-right: 4px;
 }
-/* Today's work (YAZ-5033; YAZ-5674: the cards menu's last line, out of the top row), quiet, across both columns. */
+/* Today's work (YAZ-5033; YAZ-5674: the cards menu's last line, out of the top row), quiet, in the foot (YAZ-5685). */
 .card-inbox__menu-today {
-  grid-column: 1 / -1;
-  margin: 4px 0 0;
-  padding: 6px 10px 4px;
-  border-top: 1px solid var(--border);
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
   font-size: 12px;
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
@@ -581,8 +580,8 @@
 /* The bar's own controls (YAZ-5372: the Inbox's zoom, the page zoom's pill; YAZ-5375: focus mode), at its right end,
    after "4 / 6". With no card (the done screen) it takes the push right. YAZ-5686 (Yaseen: "completely make them fade
    unless u mouse over to that area"): invisible until the pointer enters their own area (a few px of slack around
-   them), then a 150 ms fade in; a keyboard focus inside, or the zoom's menu open, shows them too — focus mode on as
-   well (F or Esc leave it). Opacity only: they keep their room, so nothing jumps. The ✕ and done / total count
+   them), then a 150 ms fade in; a keyboard focus inside, or the zoom's menu open, shows them too. Focus mode on hides
+   them the same way (F or Esc leave it). Opacity only: they keep their room, so nothing jumps. The ✕ and done / total count
    (`.card-inbox__place`) never fades. */
 .card-inbox__tools {
   flex: none;
@@ -1332,37 +1331,79 @@ body.card-inbox--sizing {
 .card-preview__close:hover {
   background: var(--bg-hover);
 }
-/* YAZ-5322: where new cards come from; YAZ-5434 (A1, "tree corner line"): the pick on a second, small line under
-   New cards — a thin corner from under the New cards glyph bends into a 12px folder glyph, the name and a small ▾, in
-   the secondary text. `contain: inline-size` keeps the line out of the menu's width (the widest plain row sets it; a
-   long name gets "…"). One wash for the pointer over both lines; the line's own text darkens under the pointer. */
-.card-inbox__new-group {
-  grid-column: 1;
+/* YAZ-5685: the Today line is the menu's foot — its words, then a small quiet ⚙ at its right — across both columns. */
+.card-inbox__menu-foot {
+  grid-column: 1 / -1;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 4px 4px 2px 10px;
+  border-top: 1px solid var(--border);
+}
+.card-inbox__cog {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
   border-radius: 5px;
-}
-.card-inbox__new-group:hover {
-  background: var(--accent-soft);
-}
-.card-inbox__new-group > .card-inbox__filter-item:hover:not(:disabled) {
   background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
 }
-.card-inbox__filter-row[data-from] > .card-inbox__reset {
-  align-self: start;
-  margin-top: 6px;
-  line-height: 18px;
+.card-inbox__cog:hover,
+.card-inbox__cog[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
 }
+.card-inbox__cog:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* The settings part under the Today line: a small title per section, then its rows ("From  📁 All folders ▾"). */
+.card-inbox-settings {
+  grid-column: 1 / -1;
+  padding: 2px 4px 4px 10px;
+}
+.card-inbox-settings-title {
+  margin: 4px 0 2px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.card-inbox-settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.card-inbox-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+}
+.card-inbox-settings-label {
+  flex: none;
+  color: var(--fg-muted);
+}
+/* The folder picker's door (YAZ-5322), now the From row's control: a folder glyph, the pick and a small ▾. A long
+   name gets "…" (`contain: inline-size` keeps it out of the menu's width). */
 .card-inbox__new-from {
   contain: inline-size;
-  position: relative;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
-  /* The corner's foot (17px, the glyph's middle, + 9px) and a 3px gap before the folder glyph. */
-  padding: 0 10px 6px 30px;
+  padding: 2px 6px;
   border: 0;
+  border-radius: 5px;
   background: none;
   color: var(--fg-muted);
   font: inherit;
@@ -1371,19 +1412,6 @@ body.card-inbox--sizing {
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
-}
-/* The tree corner: 1px, from under the New cards glyph (its middle, 17px in) down to the folder glyph's middle. */
-.card-inbox__new-from::before {
-  content: '';
-  position: absolute;
-  left: 16.5px;
-  top: -6px;
-  width: 9px;
-  height: 14px;
-  border-left: 1px solid color-mix(in srgb, var(--fg-muted) 60%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--fg-muted) 60%, transparent);
-  border-bottom-left-radius: 4px;
-  pointer-events: none;
 }
 .card-inbox__new-from .card-inbox__glyph {
   flex: none;
@@ -1398,12 +1426,23 @@ body.card-inbox--sizing {
   font-weight: 500;
 }
 .card-inbox__new-from:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
   color: var(--fg);
 }
 .card-inbox__new-from:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
-  border-radius: 5px;
+}
+/* "New cards · Spanish": the pick, quiet, on the row; a long name gets "…" and never widens the menu much. */
+.card-inbox__filter-note {
+  min-width: 0;
+  max-width: 110px;
+  margin-left: -3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-weight: 400;
 }
 .card-inbox__pick-chip {
   flex: none;

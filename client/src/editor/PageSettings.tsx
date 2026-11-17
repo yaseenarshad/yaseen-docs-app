@@ -3,7 +3,7 @@ import { Dropdown } from '../views/view/Dropdown'
 import { createPortal } from 'react-dom'
 import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, type OutsideChangeGlow, type TocSource } from '@shared/types'
 import { OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
-import { CogIcon } from '../settings/SettingsButton'
+import { CogIcon } from '../components/CogIcon'
 import { useUnit } from '../vault/unitWord'
 
 /** "TOC made from" (YAZ-2700 D14): Auto is the absence of a choice, `null`, and stands first — it is what a page has until the reader chooses. */

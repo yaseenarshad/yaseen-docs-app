@@ -21,13 +21,14 @@
  * says "22 / 48 · Reset": Reset sets today back to the Settings number, never below today's work. No pop-up: it
  * changes today only, and the line under the buttons (Undo, ⌘Z) takes back the last add or Reset.
  *
- * Where new cards come from (YAZ-5322; YAZ-5434, Yaseen: "go with A one, tree corner line"): the New cards row reads
- * "New cards  9", the same shape as the others (no "/ 23": the total made the row long), so the menu is as wide as its
- * widest plain row and the counts stand in one column. Under it, indented, a second small line: a thin tree corner drops
- * from the New cards glyph into a folder glyph, the pick ("All folders", "Spanish") and a small ▾. The line never widens
- * the menu (a long name gets "…"). A click on it, or Enter, opens the folder picker (`NewCardsPicker`) beside the menu;
- * the first line is the filter, as before. The pointer's wash covers both lines. While a folder is picked, the chip
- * "New cards: Spanish ×" sits by the filter; × goes back to All folders. The count follows the pick (`cardPlan`).
+ * Where new cards come from (YAZ-5322; YAZ-5685, Yaseen: "how do i make it so that new cards is just even and smooth"):
+ * three even rows, "New cards  9" the same shape as the others (no second line under it). The Today line, the menu's
+ * last, ends with a small ⚙ (`ReviewSettingsCog`): a click (Enter, Space) opens the settings part under it
+ * (`ReviewSettingsPart`, shared with the phone's sheet): "New cards", then "From" and the folder picker's door
+ * ("All folders ▾"; a click opens `NewCardsPicker` beside the menu). A click again, or closing the menu, folds it, so
+ * it opens folded each time. While a folder is picked the New cards row says it quietly, "New cards · Spanish"
+ * (`newRowNote`), and the chip "New cards: Spanish ×" sits by the filter; × goes back to All folders. The count follows
+ * the pick (`cardPlan`).
  *
  * No Archived row (YAZ-5319, Yaseen: "there will be too many to review that way"): a folder page's table finds archived
  * cards (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
@@ -43,7 +44,8 @@ import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
 import { SessionBar, SessionCount } from './SessionCount'
 import { useNewCardsPicker } from './NewCardsPicker'
-import { kindCount, kindCountText, pickLabel, showsFilter } from './inboxMenu'
+import { kindCount, kindCountText, newRowNote, pickLabel, showsFilter } from './inboxMenu'
+import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, useSettingsFold } from './ReviewSettingsPart'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
 const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
@@ -89,12 +91,16 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
   // YAZ-5042 round 2: the row whose count turned into "Add [n] more"; it closes with the menu.
   const [adding, setAdding] = useState<AddKind | null>(null)
   const picker = useNewCardsPicker(pick ?? NO_PICK, session)
+  // YAZ-5685: the ⚙'s settings part, folded each time the menu opens.
+  const settings = useSettingsFold()
   const closeMenu = () => {
     setMenu(null)
     setAdding(null)
     picker.close()
+    settings.fold()
   }
   const picked = pickLabel(session.newFrom)
+  const note = newRowNote(session)
   const current = CARD_FILTERS.find((f) => f.id === session.filter) ?? CARD_FILTERS[0]
   const ScopeIcon = session.scope === 'page' ? PageIcon : session.scope === 'folder' ? FolderIcon : VaultIcon
   const toggle = () => {
@@ -203,6 +209,8 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                   <span className="card-inbox__filter-name">
                     <f.icon />
                     {f.label}
+                    {/* YAZ-5685: the pick, quietly; nothing for All folders. */}
+                    {f.id === 'new' && pick !== undefined && note !== '' && <span className="card-inbox__filter-note">· {note}</span>}
                   </span>
                   <span
                       className="card-inbox__count"
@@ -215,31 +223,9 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                   </span>
                 </button>
               )
-              // YAZ-5434: the pick on its own small line under New cards, joined to the row by a tree corner.
-              const from = f.id === 'new' && pick !== undefined
               return (
-                <div key={f.id} className="card-inbox__filter-row" role="none" data-from={from || undefined}>
-                  {from ? (
-                    <div className="card-inbox__new-group" role="none">
-                      {item}
-                      <button
-                        type="button"
-                        role="menuitem"
-                        aria-haspopup="dialog"
-                        className="card-inbox__new-from"
-                        data-on={picked !== '' || undefined}
-                        title={`New cards come from ${picked === '' ? 'All folders' : picked}`}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={(e) => picker.open(e.currentTarget, 'right')}
-                      >
-                        <FolderIcon size={12} />
-                        <span className="card-inbox__new-from-name">{picked === '' ? 'All folders' : picked}</span>
-                        <ChevronIcon size={10} />
-                      </button>
-                    </div>
-                  ) : (
-                    item
-                  )}
+                <div key={f.id} className="card-inbox__filter-row" role="none">
+                  {item}
                   {reset && (
                     <button type="button" role="menuitem" className="card-inbox__reset" data-kind={kind} aria-label={`Reset today's ${kind === 'new' ? 'new cards' : 'Up next cards'} to the Settings number`} onMouseDown={(e) => e.preventDefault()} onClick={() => resetCards?.(kind)}>
                       Reset
@@ -248,11 +234,40 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                 </div>
               )
             })}
-            {/* YAZ-5674: today's work, out of the top row (Mochi has none there); the phone's sheet ends the same way. */}
-            {todayCards(session.today) !== '' && (
-              <p className="card-inbox__menu-today" role="none">
-                <TodayWork today={session.today} time={time} />
-              </p>
+            {/* YAZ-5674: today's work, out of the top row (Mochi has none there); the phone's sheet ends the same way.
+                YAZ-5685: the ⚙ at its right opens the settings part under it. */}
+            {(todayCards(session.today) !== '' || pick !== undefined) && (
+              <div className="card-inbox__menu-foot" role="none">
+                {todayCards(session.today) !== '' && (
+                  <p className="card-inbox__menu-today" role="none">
+                    <TodayWork today={session.today} time={time} />
+                  </p>
+                )}
+                {pick !== undefined && <ReviewSettingsCog fold={settings} className="card-inbox__cog" />}
+              </div>
+            )}
+            {pick !== undefined && (
+              <ReviewSettingsPart
+                fold={settings}
+                look="card-inbox"
+                sections={[
+                  newCardsSettings(
+                    <button
+                      type="button"
+                      aria-haspopup="dialog"
+                      className="card-inbox__new-from"
+                      data-on={picked !== '' || undefined}
+                      title={`New cards come from ${picked === '' ? 'All folders' : picked}`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(e) => picker.open(e.currentTarget, 'right')}
+                    >
+                      <FolderIcon size={12} />
+                      <span className="card-inbox__new-from-name">{picked === '' ? 'All folders' : picked}</span>
+                      <ChevronIcon size={10} />
+                    </button>,
+                  ),
+                ]}
+              />
             )}
           </ContextMenuSurface>
         )}

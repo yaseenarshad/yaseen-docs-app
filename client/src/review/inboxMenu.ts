@@ -17,6 +17,12 @@ export const pickLabel = (picked: readonly Pick<NewCardFolder, 'label'>[]): stri
 /** Where today's new cards really come from (the coordinator note): the pick, or "All folders" with none or in the fallback. */
 export const newCardsFrom = (session: Pick<CardReviewSession, 'newFrom' | 'newFallback'>): string => (session.newFrom.length === 0 || session.newFallback ? 'All folders' : pickLabel(session.newFrom))
 
+/**
+ * The New cards row's quiet note (YAZ-5685): "New cards · Spanish" while a folder other than All folders gives today's
+ * new cards; empty for All folders and in the fallback (they come from All folders then).
+ */
+export const newRowNote = (session: Pick<CardReviewSession, 'newFrom' | 'newFallback'>): string => (session.newFrom.length === 0 || session.newFallback ? '' : pickLabel(session.newFrom))
+
 /** `folder` lies under `ancestor` (root-relative paths). */
 export const underFolder = (folder: string, ancestor: string): boolean => folder.startsWith(`${ancestor}/`)
 

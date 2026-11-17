@@ -1631,14 +1631,14 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     session = { ...session, ...WAITING }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 5', 'Due today10', 'New cards10All folders'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 5', 'Due today10', 'New cards10'])
     // The total is every card of the kind: nothing waits, it is today's count.
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
     render()
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 2', 'Due today10', 'New cards10All folders'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 2', 'Due today10', 'New cards10'])
     session = { ...session, limited: { new: false, next: false } }
     render()
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2', 'Due today10', 'New cards10All folders'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2', 'Due today10', 'New cards10'])
   })
 
   it('round 2: a click on the count turns the row into "Add [10] more new cards" (the Settings number, selected); Enter adds the typed number and the menu stays open; Esc goes back; the keys stay in the field', () => {
@@ -1688,7 +1688,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     session = { ...session, ...WAITING, counts: { all: 34, next: 2, due: 10, new: 22 }, more: { new: 26, next: 3 }, canReset: { new: true, next: false } }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards34', 'Up next2 / 5', 'Due today10', 'New cards22All foldersReset'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards34', 'Up next2 / 5', 'Due today10', 'New cards22Reset'])
     act(() => rows()[3].querySelector<HTMLButtonElement>('.card-inbox__reset')!.click())
     expect(review.resetCards).toHaveBeenCalledExactlyOnceWith('new')
     expect(review.setFilter).not.toHaveBeenCalled()
@@ -2179,14 +2179,22 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
   const doneText = () => [...el.querySelectorAll('.card-inbox__done > :not(.done-cheer__party)')].map(textOf)
   const WAITING = { counts: { all: 22, next: 2, due: 10, new: 10 }, more: { new: 14, next: 3 }, adds: { new: 10, next: 2 }, limited: { new: true, next: true } }
   const SPANISH = [{ folder: 'spanish', label: 'Spanish' }]
+  const cog = () => document.querySelector<HTMLButtonElement>('.card-inbox__menu-foot .card-inbox__cog')
+  const part = () => document.querySelector<HTMLElement>('.card-inbox__filter-menu .card-inbox-settings')
+  /** YAZ-5685: the ⚙ by the Today line opens the settings part; the open menu's part. */
+  const openSettings = () => {
+    act(() => cog()!.click())
+    return part()!
+  }
 
   it('the row reads "New cards  10", its line under it "All folders", grey; a click on the line opens the picker beside the menu, not the filter', () => {
     mount(TWO_SIDES)
     session = { ...session, ...WAITING }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    const from = rows()[3].querySelector<HTMLElement>('.card-inbox__new-from')!
-    expect(rows()[3].textContent).toBe('New cards10All folders')
+    expect(rows()[3].textContent).toBe('New cards10')
+    const from = openSettings().querySelector<HTMLElement>('.card-inbox__new-from')!
+    expect(from.textContent).toBe('All folders')
     expect(from.hasAttribute('data-on')).toBe(false)
     // No chip with All folders.
     expect(el.querySelector('.card-inbox__pick-chip')).toBeNull()
@@ -2207,9 +2215,11 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     render()
     expect(el.querySelector('.card-inbox__pick-chip')?.textContent).toBe('New cards: Spanish×')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(rows()[3].textContent).toBe('New cards10Spanish')
-    expect(rows()[3].querySelector('.card-inbox__new-from')!.hasAttribute('data-on')).toBe(true)
-    act(() => rows()[3].querySelector<HTMLElement>('.card-inbox__new-from')!.click())
+    // YAZ-5685: the row says the pick quietly, "New cards · Spanish".
+    expect(rows()[3].textContent).toBe('New cards· Spanish10')
+    const from = openSettings().querySelector<HTMLElement>('.card-inbox__new-from')!
+    expect(from.hasAttribute('data-on')).toBe(true)
+    act(() => from.click())
     const boxes = pickerRows().map((r) => r.querySelector('input')!)
     expect(boxes.map((b) => [b.checked, b.disabled])).toEqual([[false, false], [true, false], [true, true], [false, false]])
     expect(picker()!.textContent).toContain('Stays until you clear it.')
@@ -2246,41 +2256,96 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
   })
 
   /**
-   * YAZ-5434 (A1, "go with A one, tree corner line"): the New cards row is a plain row, "New cards  9", the same shape as
-   * the others; the pick sits on its own small line under it, outside the row's button, so it never pushes the counts.
+   * YAZ-5685 (Yaseen: "how do i make it so that new cards is just even and smooth… a small cog icon and that would then
+   * expand the bottom part"): three even rows, no line under New cards; the Today line ends with a ⚙ that opens the
+   * New cards settings under it ("From" and the same folder picker); a click again, or closing the menu, folds it.
    */
-  it('YAZ-5434: "New cards  10" has the same shape as the other rows; the pick is a line of its own under it (folder glyph, name, ▾) that opens the picker', () => {
+  it('YAZ-5685: three even rows (glyph, name, count; no line under New cards); the Today line ends with a quiet ⚙, folded', () => {
     mount(TWO_SIDES)
-    session = { ...session, ...WAITING, newFrom: SPANISH }
+    session = { ...session, ...WAITING, today: { cards: 15, reviews: 26, seconds: 0 } }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     const items = [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')]
-    // Each row's button: its glyph and name, then its count as its last part — one column of counts. No "/ total" on New cards.
     expect(items.map((b) => [b.children.length, b.lastElementChild!.className, b.lastElementChild!.textContent])).toEqual([
       [2, 'card-inbox__count', '22'],
       [2, 'card-inbox__count', '2 / 5'],
       [2, 'card-inbox__count', '10'],
       [2, 'card-inbox__count', '10'],
     ])
-    const line = rows()[3].querySelector<HTMLButtonElement>('.card-inbox__new-from')!
-    // The line is not inside the row's button: the row and the line share one group (one wash for both).
-    expect(line.closest('.card-inbox__filter-item')).toBeNull()
-    expect(line.parentElement!.className).toBe('card-inbox__new-group')
-    expect(line.parentElement!.firstElementChild).toBe(items[3])
-    // A folder glyph, the name, a small ▾; a button, so Tab reaches it and Enter opens it.
-    expect(line.tagName).toBe('BUTTON')
-    expect(line.getAttribute('aria-haspopup')).toBe('dialog')
-    expect([...line.children].map((c) => c.tagName.toLowerCase())).toEqual(['svg', 'span', 'svg'])
-    expect(line.querySelector('.card-inbox__new-from-name')!.textContent).toBe('Spanish')
-    expect(line.title).toBe('New cards come from Spanish')
-    // Only the New cards row has the line.
-    expect(document.querySelectorAll('.card-inbox__new-from')).toHaveLength(1)
-    act(() => line.click())
+    // Each row is its button alone: no second line, no group.
+    expect(rows().map((r) => r.children.length)).toEqual([1, 1, 1, 1])
+    expect(document.querySelector('.card-inbox__filter-menu .card-inbox__new-from')).toBeNull()
+    // The foot: the Today line, then the ⚙ at its right; the last thing in the menu while folded.
+    const foot = document.querySelector('.card-inbox__menu-foot')!
+    expect(foot.parentElement!.lastElementChild).toBe(foot)
+    expect([...foot.children].map((c) => c.className)).toEqual(['card-inbox__menu-today', 'card-inbox__cog'])
+    expect(foot.querySelector('.card-inbox__menu-today')!.textContent).toBe('Today: 15 cards · 26 reviews')
+    expect([cog()!.tagName, cog()!.type, cog()!.getAttribute('aria-label'), cog()!.getAttribute('aria-expanded'), cog()!.tabIndex]).toEqual(['BUTTON', 'button', 'Review settings', 'false', 0])
+    expect(cog()!.querySelector('svg')).not.toBeNull()
+    expect(part()).toBeNull()
+  })
+
+  it('YAZ-5685: ⚙ opens the part under the Today line — "New cards", a list with "From" and the folder picker (opens beside, not the filter); ⚙ again folds it', () => {
+    mount(TWO_SIDES)
+    session = { ...session, ...WAITING, newFrom: SPANISH }
+    render()
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
+    const settings = openSettings()
+    expect(cog()!.getAttribute('aria-expanded')).toBe('true')
+    expect(cog()!.getAttribute('aria-controls')).toBe(settings.id)
+    // Under the Today line, the menu's last part.
+    expect(settings.previousElementSibling!.className).toBe('card-inbox__menu-foot')
+    expect(settings.parentElement!.lastElementChild).toBe(settings)
+    expect(settings.querySelector('h6')!.textContent).toBe('New cards')
+    const list = settings.querySelector('ul')!
+    expect([...list.children].map((li) => [li.tagName, li.getAttribute('data-setting'), li.firstElementChild!.textContent])).toEqual([['LI', 'from', 'From']])
+    // The same control as before: a folder glyph, the pick, a small ▾; a button, so Tab reaches it.
+    const from = list.querySelector<HTMLButtonElement>('.card-inbox__new-from')!
+    expect([...from.children].map((c) => c.tagName.toLowerCase())).toEqual(['svg', 'span', 'svg'])
+    expect([from.tagName, from.getAttribute('aria-haspopup'), from.textContent, from.title]).toEqual(['BUTTON', 'dialog', 'Spanish', 'New cards come from Spanish'])
+    act(() => from.click())
     expect(review.setFilter).not.toHaveBeenCalled()
     expect(pickerRows().map((r) => r.textContent)).toEqual(['All folders38', 'Spanish24', 'Verbs4', 'Geography12'])
-    // The row itself is still the filter.
-    act(() => items[3].querySelector<HTMLElement>('.card-inbox__filter-name')!.click())
+    act(() => cog()!.click())
+    expect([part(), cog()!.getAttribute('aria-expanded')]).toEqual([null, 'false'])
+    // The rows are still the filter.
+    act(() => [...document.querySelectorAll<HTMLElement>('.card-inbox__filter-item')][3]!.click())
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('new')
+  })
+
+  it('YAZ-5685: closing the menu folds the part — a click on the filter, Esc — so it opens folded each time; with nothing done today the ⚙ stays', () => {
+    mount(TWO_SIDES)
+    session = { ...session, ...WAITING, today: { cards: 0, reviews: 0, seconds: 0 } }
+    render()
+    const filter = () => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!
+    act(() => filter().click())
+    // No Today words: the foot is the ⚙ alone.
+    expect(document.querySelector('.card-inbox__menu-today')).toBeNull()
+    openSettings()
+    act(() => filter().click())
+    expect(document.querySelector('.card-inbox__filter-menu')).toBeNull()
+    act(() => filter().click())
+    expect([part(), cog()!.getAttribute('aria-expanded')]).toEqual([null, 'false'])
+    openSettings()
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(document.querySelector('.card-inbox__filter-menu')).toBeNull()
+    act(() => filter().click())
+    expect(part()).toBeNull()
+  })
+
+  it('YAZ-5685: the New cards row says the pick quietly ("New cards · Spanish"), never All folders or the fallback', () => {
+    mount(TWO_SIDES)
+    session = { ...session, ...WAITING, newFrom: SPANISH }
+    render()
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
+    const note = () => rows()[3].querySelector('.card-inbox__filter-note')
+    expect([note()?.textContent, rows()[3].querySelector('.card-inbox__count')!.textContent]).toEqual(['· Spanish', '10'])
+    session = { ...session, newFrom: [] }
+    render()
+    expect(note()).toBeNull()
+    session = { ...session, newFrom: SPANISH, newFallback: true }
+    render()
+    expect(note()).toBeNull()
   })
 })
 

@@ -125,7 +125,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   min-height: 48px;
   padding: 0;
   border: 0;
@@ -135,7 +136,7 @@
   text-align: left;
 }
 
-/* The whole row picks; "from … ›" and Reset sit over it with their own taps. */
+/* The whole row picks; Reset sits over it with its own tap. */
 .review__sheet-pick::after {
   content: '';
   position: absolute;
@@ -251,6 +252,92 @@
 
 .review__sheet-today:empty {
   display: none;
+}
+
+/* YAZ-5685: the Today line ends with a small quiet ⚙ (the Mac's cards menu); a tap opens the settings under it. */
+.review__sheet-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.review__sheet-foot > .review__sheet-today {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.review__sheet-cog {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fg-muted);
+}
+
+.review__sheet-cog:active,
+.review__sheet-cog[aria-expanded='true'] {
+  background: var(--bg-side);
+  color: var(--fg);
+}
+
+.review__sheet-settings {
+  padding: 0 10px 4px;
+}
+
+.review__sheet-settings-title {
+  margin: 4px 0 2px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.review__sheet-settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review__sheet-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.review__sheet-settings-label {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.review__sheet-settings-row > .review__sheet-from {
+  color: var(--fg);
+}
+
+.review__sheet-pick > .review__sheet-name {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* "New cards · Spanish": the pick, quiet, on the row; a long name gets "…". */
+.review__sheet-note-from {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 400;
 }
 
 .review__today {

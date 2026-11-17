@@ -187,7 +187,7 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     await h.click(/Choose what to review/)
     const rows = () => [...h!.host.querySelectorAll('.review__sheet-row')].map((r) => (r.textContent ?? '').replace(/\s+/g, ' ').trim())
     // Review rules v1, rule 7: MN-3 (new, Up next) is under Up next only; before, New cards said 2.
-    expect(rows()).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434) */)
+    expect(rows()).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cards1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434); YAZ-5685: no "from" on the row */)
     await h.click(/^Due today$/)
     expect(h.text()).toContain('Due today ▾')
     expect(h.head()).toBe('MN-1')
@@ -239,6 +239,8 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
       'trip/lisbon.md': pageIn('Lisbon', 4, 'TR'),
     })
     await h.click(/Choose what to review/)
+    // YAZ-5685: the folder pick is in the ⚙'s part under the Today line.
+    await h.click('Review settings')
     await h.click(/^New cards from All folders/)
     const folders = () => [...h!.host.querySelectorAll('.review__sheet-folder')].map((r) => (r.textContent ?? '').replace(/\s+/g, ' ').trim())
     expect(folders()).toEqual(['All folders9', 'languages2', 'learning3', 'trip4'])
@@ -274,5 +276,39 @@ describe('YAZ-5679: the Mac`s note on the phone, "Added card to reviews · Undo"
     await h.settle()
     expect(note()).toBeNull()
     expect(ids(h)).toEqual(['LN-1'])
+  })
+})
+
+describe('the review sheet\'s ⚙ (YAZ-5685, the Mac\'s cards menu)', () => {
+  const FILES = { '.yaseendocs/review.json': '{"newPerDay": 10}', 'languages/urdu.md': page('Urdu', cardBlock('U?', 'LA-1'), cardBlock('V?', 'LA-2')), 'trip/lisbon.md': page('Lisbon', cardBlock('L?', 'TR-1')) }
+  const part = () => q('.review__sheet .review__sheet-settings')
+  const cog = () => h!.button('Review settings')!
+
+  it('the Today line ends with a ⚙ (folded); a tap opens "New cards" · "From  All folders ›" under it, a tap again folds it; a new sheet opens folded', async () => {
+    h = await reviewSetup(FILES)
+    await h.click(/Choose what to review/)
+    const foot = q('.review__sheet-foot')!
+    expect(foot.lastElementChild).toBe(cog())
+    expect([cog().getAttribute('aria-expanded'), part()]).toEqual(['false', null])
+    await h.click('Review settings')
+    expect(cog().getAttribute('aria-expanded')).toBe('true')
+    expect(part()!.previousElementSibling).toBe(foot)
+    expect(part()!.querySelector('h6')!.textContent).toBe('New cards')
+    expect([...part()!.querySelectorAll('li')].map((li) => (li.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual(['FromAll folders ›'])
+    await h.click('Review settings')
+    expect(part()).toBeNull()
+    await h.click('Review settings')
+    await h.click(/^New cards from All folders/)
+    const box = [...h.host.querySelectorAll<HTMLLabelElement>('.review__sheet-folder')].find((r) => r.textContent?.startsWith('trip'))!.querySelector('input')!
+    await tapOn(box)
+    await h.click(/New cards from…$/)
+    // Back from the folder page: the part is still open, and the row says the pick quietly.
+    expect(h.button(/^New cards from trip/)).not.toBeNull()
+    const newRow = [...h.host.querySelectorAll('.review__sheet-row')].find((r) => r.querySelector('[data-filter="new"]'))!
+    expect(newRow.querySelector('.review__sheet-note-from')?.textContent).toBe('· trip')
+    // Closed and opened again: folded.
+    await tapOn(q('.review__card'))
+    await h.click(/Choose what to review/)
+    expect([cog().getAttribute('aria-expanded'), part()]).toEqual(['false', null])
   })
 })
