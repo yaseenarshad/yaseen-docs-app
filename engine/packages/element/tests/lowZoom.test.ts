@@ -253,3 +253,34 @@ describe("YAZ-5739 cause 4: below 10% an arrow end must land within a fraction o
     },
   );
 });
+
+describe("YAZ-5739 polish: an arrow with only a start head gets the room of a head", () => {
+  const before = window.devicePixelRatio;
+  beforeEach(() => setPixelRatio(2));
+  afterEach(() => setPixelRatio(before));
+
+  // smooth, with a fixed seed: the same outline on every run
+  const arrow = (start: "arrow" | null, end: "arrow" | null) => ({
+    ...newArrowElement({
+      type: "arrow",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 0,
+      points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(200, 0)],
+      startArrowhead: start,
+      endArrowhead: end,
+      roughness: 0,
+    }),
+    seed: 1,
+  });
+
+  it("draws the same bitmap for a start head as for an end head", () => {
+    const [startOnly] = draw(arrow("arrow", null), 1);
+    const [endOnly] = draw(arrow(null, "arrow"), 1);
+    // the room on each side: the same width (200 px and twice the padding);
+    // the height and the position also follow the head's own outline
+    expect(startOnly.w).toBe(endOnly.w);
+    expect(Math.abs(startOnly.h - endOnly.h)).toBeLessThan(1);
+  });
+});

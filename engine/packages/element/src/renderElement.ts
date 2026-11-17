@@ -132,7 +132,9 @@ const getCanvasPaddingAtScale1 = (element: ExcalidrawElement) => {
     case "text":
       return element.fontSize / 2;
     case "arrow":
-      if (element.endArrowhead || element.endArrowhead) {
+      // YAZ-5739: a head at either end needs the room (upstream read
+      // `endArrowhead` twice, so a start head alone could be cut off)
+      if (element.startArrowhead || element.endArrowhead) {
         return 40;
       }
       return 20;
