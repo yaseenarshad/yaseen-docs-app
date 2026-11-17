@@ -124,3 +124,44 @@ describe('TextField commitOnEnter (YAZ-2602 S63)', () => {
     expect(onCommit).toHaveBeenCalledExactlyOnceWith('400')
   })
 })
+
+describe('TextField check (YAZ-5580: a title a file cannot be named)', () => {
+  function mountCheck() {
+    const onCommit = vi.fn()
+    const onDone = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<TextField aria-label="Title" value="Plan" check={(d) => (d.includes('/') ? 'no /' : null)} onCommit={onCommit} onDone={onDone} />))
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Title"]')
+    if (input === null) throw new Error('missing input')
+    return { el: container, input, onCommit, onDone }
+  }
+  const problem = (el: HTMLElement) => el.querySelector('.title-problem')?.textContent ?? null
+
+  it('a bad draft shows the message as typed; Enter and blur keep the text and commit nothing; fixed, it commits', () => {
+    const { el, input, onCommit, onDone } = mountCheck()
+    setValue(input, 'a/b')
+    expect(problem(el)).toBe('no /')
+    press(input, 'Enter')
+    blur(input)
+    expect(input.value).toBe('a/b')
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(onDone).not.toHaveBeenCalled()
+    setValue(input, 'a b')
+    expect(problem(el)).toBeNull()
+    press(input, 'Enter')
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith('a b')
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('Escape still restores the value', () => {
+    const { el, input, onCommit, onDone } = mountCheck()
+    setValue(input, 'a/b')
+    press(input, 'Escape')
+    expect(input.value).toBe('Plan')
+    expect(problem(el)).toBeNull()
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+})

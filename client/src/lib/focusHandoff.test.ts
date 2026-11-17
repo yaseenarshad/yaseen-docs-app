@@ -4,8 +4,8 @@
  * focus INTO the open document; `createCrepe`'s Escape hands it BACK. jsdom has no layout, so
  * `offsetParent` is stubbed exactly as the tree suites stub it.
  */
-import { afterEach, describe, expect, it } from 'vitest'
-import { focusOpenDocument, focusSidebar, namingTab } from './focusHandoff'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { focusOpenDocument, focusSidebar, giveFocusBack, namingTab } from './focusHandoff'
 
 /** An editor stand-in; `visible` models what `offsetParent` answers in a browser. */
 function editor(visible: boolean): HTMLElement {
@@ -65,8 +65,8 @@ describe('focusOpenDocument: into the text', () => {
     expect(document.activeElement).toBe(page)
   })
 
-  it('YAZ-2662 R4: the preview panel of the search is no page — its note is skipped for the open document, and with no page open the call declines', () => {
-    // The panel renders a note through the hover card's read-only renderer, which wears `.editor-instance`.
+  it('YAZ-2662 R4: the preview panel of the search is no page — its page is skipped for the open document, and with no page open the call declines', () => {
+    // The panel renders a page through the hover card's read-only renderer, which wears `.editor-instance`.
     const panel = document.createElement('div')
     panel.className = 'quicklook'
     document.body.appendChild(panel)
@@ -80,9 +80,9 @@ describe('focusOpenDocument: into the text', () => {
     expect(document.activeElement).toBe(page)
   })
 
-  it('YAZ-3075 C29: the sidebar`s hover preview is no page — the note in `.board-preview` is skipped for the open document', () => {
+  it('YAZ-3075 C29: the sidebar`s hover preview is no page — the page in `.board-preview` is skipped for the open document', () => {
     const panel = document.createElement('div')
-    panel.className = 'board-preview note-preview'
+    panel.className = 'board-preview page-preview'
     document.body.appendChild(panel)
     const hovered = editor(true)
     panel.appendChild(hovered.parentElement!)
@@ -145,5 +145,55 @@ describe('namingTab: a mount keeps out of the tab\'s name field (YAZ-3059)', () 
     field.className = 'tabbar__rename'
     const other = document.createElement('input')
     expect([namingTab(field), namingTab(other), namingTab(null)]).toEqual([true, false, false])
+  })
+})
+
+/**
+ * YAZ-4971: Esc after Explore jumped the page to its caret. App gave the keyboard back with a plain `focus()`, and a
+ * browser scrolls a focused editor to its caret. jsdom never scrolls, so the stand-in focus below does what Chromium
+ * does: without `preventScroll` it scrolls the page's scroller to the caret (here: to 900).
+ */
+describe('giveFocusBack: the keyboard goes back without a scroll (YAZ-4971)', () => {
+  function scrolledPage(): { scroller: HTMLElement; pm: HTMLElement } {
+    const scroller = document.createElement('div')
+    scroller.style.overflowY = 'auto'
+    document.body.appendChild(scroller)
+    const pm = editor(true)
+    scroller.appendChild(pm.parentElement!)
+    scroller.scrollTop = 120
+    const focus = HTMLElement.prototype.focus
+    vi.spyOn(pm, 'focus').mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+      focus.call(this, options)
+      if (options?.preventScroll !== true) scroller.scrollTop = 900
+    })
+    return { scroller, pm }
+  }
+  afterEach(() => vi.restoreAllMocks())
+
+  it('the element that had the keyboard (the page, its caret at the bottom, scrolled up) takes it back and the page stays where it was scrolled', () => {
+    const { scroller, pm } = scrolledPage()
+    giveFocusBack(pm)
+    expect(document.activeElement).toBe(pm)
+    expect(scroller.scrollTop).toBe(120)
+  })
+
+  it('with nothing to go back to (that element is gone), the open page takes it, in place too', () => {
+    const { scroller, pm } = scrolledPage()
+    giveFocusBack(null)
+    expect(document.activeElement).toBe(pm)
+    expect(scroller.scrollTop).toBe(120)
+  })
+
+  it('a scroll the focus makes anyway (a browser that ignores `preventScroll`) is put back', () => {
+    const scroller = document.createElement('div')
+    document.body.appendChild(scroller)
+    const pm = editor(true)
+    scroller.appendChild(pm.parentElement!)
+    scroller.scrollTop = 40
+    vi.spyOn(pm, 'focus').mockImplementation(() => {
+      scroller.scrollTop = 700
+    })
+    giveFocusBack(pm)
+    expect(scroller.scrollTop).toBe(40)
   })
 })

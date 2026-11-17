@@ -12,7 +12,7 @@ import type { FSWatcher as PollingWatcher } from 'chokidar'
  * (draw `df99b35`): one recursive `fs.watch` per watched folder — FSEvents on macOS — and a thin
  * layer that turns its raw "something happened at this path" into the events chokidar gave every
  * consumer: `add` / `change` (with stats), `unlink`, `addDir`, `unlinkDir`, `ready`, `error`.
- * chokidar 4 held one fd per file (2,080 at 2k notes) and delayed every event ≥ 200 ms; this holds
+ * chokidar 4 held one fd per file (2,080 at 2k pages) and delayed every event ≥ 200 ms; this holds
  * none and answers in about `SETTLE_MS`.
  * `watchConformance.ts` pins what consumers see, whichever engine runs underneath.
  *
@@ -27,7 +27,7 @@ import type { FSWatcher as PollingWatcher } from 'chokidar'
  *  - READY after one walk of what is already there (nothing is announced for it: `ignoreInitial`),
  *    so `add` and `change` can be told apart from the first event on. The walk runs at once, as
  *    chokidar's initial scan did; on macOS the stream only hears a while later (`probeStream`), so
- *    once it does, the tree is walked again and whatever moved in between is announced — a note
+ *    once it does, the tree is walked again and whatever moved in between is announced — a page
  *    created a moment after the vault opened is an `add`, never silently "initial" (YAZ-986's
  *    create race).
  *  - A FOLDER THAT DOES NOT EXIST YET (a vault's `.yaseendocs/`) is waited for from its nearest
@@ -374,7 +374,7 @@ class Engine extends EventEmitter implements TreeWatcher {
     else if (prior.mtimeMs !== st.mtimeMs || prior.size !== st.size || prior.ino !== st.ino) this.emit('change', p, st)
   }
 
-  /** On a case-insensitive volume `lstat("note.md")` answers for `Note.md`: when another spelling is known, the listing says which is there. */
+  /** On a case-insensitive volume `lstat("page.md")` answers for `Page.md`: when another spelling is known, the listing says which is there. */
   private async spelledSo(p: string, was: Known | undefined): Promise<boolean> {
     const variants = this.folded.get(p.toLowerCase())
     if (variants === undefined || (variants.size === 1 && was !== undefined)) return true

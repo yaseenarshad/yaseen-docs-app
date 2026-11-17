@@ -1,7 +1,7 @@
 /**
- * A read-only note in a folder's views (YAZ-3076 D6, cases S52-S58 on YAZ-3122): its cells show
+ * A read-only page in a folder's views (YAZ-3076 D6, cases S52-S58 on YAZ-3122): its cells show
  * their values and open no editor, its checkbox does not change, its card does not move between
- * groups, and every write the pane would make for it is refused. The other notes keep working.
+ * groups, and every write the pane would make for it is refused. The other pages keep working.
  * ViewsPane is mounted for real over `TEST_RECORDS`, the first of which ("Agentic Agency") says
  * `readonly: true` in its frontmatter, as the index hands it over.
  */
@@ -95,7 +95,7 @@ function doubleClick(el: Element): void {
   })
 }
 
-describe('a read-only note in a table (S52, S56)', () => {
+describe('a read-only page in a table (S52, S56)', () => {
   it('its cells show their values, a double-click or Enter opens no editor, and the cell says why', () => {
     const { el, writeValues } = mount(TABLE)
     const [, priority] = cellsOf(rowOf(el, 'Agentic Agency'))
@@ -126,7 +126,7 @@ describe('a read-only note in a table (S52, S56)', () => {
     expect(retitle).not.toHaveBeenCalled()
   })
 
-  it('an editable note beside it still edits', () => {
+  it('an editable page beside it still edits', () => {
     const { el } = mount(TABLE)
     const [, priority] = cellsOf(rowOf(el, 'The Levels of an Agency'))
     expect(priority.querySelector('[data-edit]')).not.toBeNull()
@@ -140,7 +140,7 @@ describe('a read-only note in a table (S52, S56)', () => {
   })
 })
 
-describe('a read-only note on a board (S53)', () => {
+describe('a read-only page on a board (S53)', () => {
   const card = (el: ParentNode, title: string) => [...el.querySelectorAll<HTMLElement>('.view-board__card')].find((c) => c.textContent?.includes(title))!
 
   it('its card does not drag to another column; an editable card still does', () => {
@@ -153,7 +153,7 @@ describe('a read-only note on a board (S53)', () => {
   })
 })
 
-describe('a read-only note in cards (S52)', () => {
+describe('a read-only page in cards (S52)', () => {
   it('its property chip opens no editor', () => {
     const { el } = mount(CARDS)
     const card = [...el.querySelectorAll<HTMLElement>('.view-card')].find((c) => c.textContent?.includes('Agentic Agency'))!
@@ -163,7 +163,7 @@ describe('a read-only note in cards (S52)', () => {
 })
 
 describe('the one guard in the pane (S54)', () => {
-  it('a write the pane is asked to make for a read-only note is refused with the tooltip’s words; another note’s goes through', async () => {
+  it('a write the pane is asked to make for a read-only page is refused with the tooltip’s words; another page’s goes through', async () => {
     const { writeValues } = mount(TABLE)
     const guarded = guardReadOnly(readOnlyPaths(lockedRecords()), writeValues)
     await expect(guarded(LOCKED, [{ key: 'priority', value: 9 }])).rejects.toThrow(readOnlyTip())
@@ -214,7 +214,7 @@ describe('a `readonly` column (YAZ-3122 nit, S16): the switch is a reserved key,
     groupBy:
       property: note.readonly
 `
-  it('its cells show the value and open no editor, on a locked note and on an editable one', () => {
+  it('its cells show the value and open no editor, on a locked page and on an editable one', () => {
     const { el, writeValues } = mount(READONLY_TABLE)
     for (const title of ['Agentic Agency', 'The Levels of an Agency']) {
       const cell = cellsOf(rowOf(el, title))[1]
@@ -232,7 +232,7 @@ describe('a `readonly` column (YAZ-3122 nit, S16): the switch is a reserved key,
   })
 })
 
-describe('a lock after a read-only note’s name in every folder view (YAZ-3126, D9: S59, S60, S62)', () => {
+describe('a lock after a read-only page’s name in every folder view (YAZ-3126, D9: S59, S60, S62)', () => {
   const LIST = `views:
   - type: list
     name: L
@@ -243,7 +243,7 @@ describe('a lock after a read-only note’s name in every folder view (YAZ-3126,
   const mark = (scope: Element | null) => scope?.querySelector('.view-read-only-mark') ?? null
   const byTitle = (el: ParentNode, sel: string, title: string) => [...el.querySelectorAll(sel)].find((n) => n.textContent?.startsWith(title)) ?? null
 
-  it('the table’s Name cell: a muted lock that says "Read only" on a hover; none on an editable note; the name’s text is unchanged', () => {
+  it('the table’s Name cell: a muted lock that says "Read only" on a hover; none on an editable page; the name’s text is unchanged', () => {
     const { el } = mount(TABLE)
     const locked = cellsOf(rowOf(el, 'Agentic Agency'))[0]
     expect(mark(locked)?.getAttribute('title')).toBe('Read only')
@@ -309,7 +309,7 @@ describe('the reserved `readonly` key is no auto-shown property (YAZ-3130 nit): 
     list: `views:\n  - type: list\n    name: L\n`,
   }
   for (const [type, text] of Object.entries(AUTO)) {
-    it(`${type}: one locked note in the folder adds no Readonly column or row`, () => {
+    it(`${type}: one locked page in the folder adds no Readonly column or row`, () => {
       const { el } = mount(text)
       expect(el.textContent ?? '').toContain('Agentic Agency')
       expect(el.textContent ?? '').not.toMatch(/Readonly/)

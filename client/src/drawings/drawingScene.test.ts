@@ -86,7 +86,7 @@ describe('openDrawing (YAZ-879)', () => {
 
 /**
  * A scene a drawing TAB saved is lean (YAZ-3028: its pictures in `assets/`); the embed reader fills
- * the pictures it names from the store, so a note preview and the modal never lose them.
+ * the pictures it names from the store, so a page preview and the modal never lose them.
  */
 describe('a lean scene gets its pictures from the store (YAZ-3028)', () => {
   const image = (fileId: string, over: Record<string, unknown> = {}) => ({ id: `el-${fileId}`, type: 'image', fileId, ...over })

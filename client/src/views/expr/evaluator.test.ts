@@ -4,10 +4,10 @@ import { parse } from './parser'
 import { DateValue, DurationValue, ErrorValue, FileValue, type FileRecordLike, LinkValue, type Scope, type Value } from './values'
 
 const record: FileRecordLike = {
-  path: 'Required Reading/Textbook Notes.md',
-  name: 'Textbook Notes.md',
-  basename: 'Textbook Notes',
-  title: 'Textbook Notes',
+  path: 'Required Reading/Textbook Pages.md',
+  name: 'Textbook Pages.md',
+  basename: 'Textbook Pages',
+  title: 'Textbook Pages',
   folder: 'Required Reading',
   ext: 'md',
   size: 1234,
@@ -20,8 +20,8 @@ const record: FileRecordLike = {
   embeds: ['cover.png'],
 }
 
-function scope(note: Record<string, unknown> = {}, extra: Partial<Scope> = {}): Scope {
-  return { note, file: new FileValue(record), formulas: {}, this: null, ...extra }
+function scope(page: Record<string, unknown> = {}, extra: Partial<Scope> = {}): Scope {
+  return { page, file: new FileValue(record), formulas: {}, this: null, ...extra }
 }
 
 const ev = (src: string, s: Scope = scope()): Value => evaluate(parse(src), s)
@@ -74,8 +74,8 @@ describe('literals and scope', () => {
   })
 
   it('file fields', () => {
-    expect(ev('file.name')).toBe('Textbook Notes')
-    expect(ev('file.basename')).toBe('Textbook Notes')
+    expect(ev('file.name')).toBe('Textbook Pages')
+    expect(ev('file.basename')).toBe('Textbook Pages')
     expect(ev('file.path')).toBe(record.path)
     expect(ev('file.folder')).toBe('Required Reading')
     expect(ev('file.ext')).toBe('md')
@@ -97,7 +97,7 @@ describe('literals and scope', () => {
     expect(ev('this')).toBe(null)
   })
 
-  it('a frontmatter property named file/note/this/today is shadowed by the builtin', () => {
+  it('a frontmatter property named file/page/this/today is shadowed by the builtin', () => {
     const s = scope({ file: 'x', today: 'y' })
     expect(ev('file', s)).toBeInstanceOf(FileValue)
     expect(ev('note.file', s)).toBe('x')
@@ -119,7 +119,7 @@ describe('formulas', () => {
         bad: '1 +',
       },
     })
-    Object.defineProperty(s.note, 'price', { get: () => (calls.n++, 10), enumerable: true })
+    Object.defineProperty(s.page, 'price', { get: () => (calls.n++, 10), enumerable: true })
     expect(ev('formula.quad', s)).toBe(40)
     expect(calls.n).toBe(1)
     expect(err(ev('formula.a', s))).toBe('formula cycle: a')
@@ -329,7 +329,7 @@ describe('global functions', () => {
   it('link, file, list, image, escapeHTML, random', () => {
     expect(ev('link("A")')).toEqual(new LinkValue('A'))
     expect(ev('link("A", "d")')).toEqual(new LinkValue('A', 'd'))
-    expect(ev('link(file)')).toEqual(new LinkValue('Textbook Notes'))
+    expect(ev('link(file)')).toEqual(new LinkValue('Textbook Pages'))
     expect(err(ev('file("A")'))).toMatch(/needs an index/)
     expect(ev('list(1)')).toEqual([1])
     expect(ev('list([1, 2])')).toEqual([1, 2])
@@ -529,8 +529,8 @@ describe('object methods', () => {
 
 describe('link and regex methods', () => {
   it('linksTo, asFile placeholder, matches', () => {
-    expect(ev('link("Textbook Notes").linksTo(file)')).toBe(true)
-    expect(ev('link("Required Reading/Textbook Notes.md").linksTo(file)')).toBe(true)
+    expect(ev('link("Textbook Pages").linksTo(file)')).toBe(true)
+    expect(ev('link("Required Reading/Textbook Pages.md").linksTo(file)')).toBe(true)
     expect(ev('link("Other").linksTo(file)')).toBe(false)
     expect(err(ev('link("A").asFile()'))).toMatch(/needs an index/)
     expect(ev('/^a.c$/.matches("abc")')).toBe(true)
@@ -583,11 +583,11 @@ describe('file methods', () => {
   it('hasProperty, asLink, equality', () => {
     expect(ev('file.hasProperty("status")')).toBe(true)
     expect(ev('file.hasProperty("zzz")')).toBe(false)
-    expect(ev('file.asLink()')).toEqual(new LinkValue('Textbook Notes'))
-    expect(ev('file.asLink("Book")')).toEqual(new LinkValue('Textbook Notes', 'Book'))
+    expect(ev('file.asLink()')).toEqual(new LinkValue('Textbook Pages'))
+    expect(ev('file.asLink("Book")')).toEqual(new LinkValue('Textbook Pages', 'Book'))
     expect(ev('file == file')).toBe(true)
     expect(ev('file == this', scope({}, { this: new FileValue({ ...record, path: 'x.md' }) }))).toBe(false)
-    expect(ev('file.toString()')).toBe('[[Textbook Notes]]')
+    expect(ev('file.toString()')).toBe('[[Textbook Pages]]')
   })
 })
 
@@ -623,12 +623,12 @@ describe('numeric list helpers (GRO-2132)', () => {
 })
 
 describe('scope.extra (GRO-2134)', () => {
-  it('extra identifiers win over note properties and read as bare names', () => {
-    const s = scope({ values: 'from-note' }, { extra: { values: [1, 2, 3] } })
+  it('extra identifiers win over page properties and read as bare names', () => {
+    const s = scope({ values: 'from-page' }, { extra: { values: [1, 2, 3] } })
     expect(ev('values.sum()', s)).toBe(6)
     expect(ev('values', s)).toEqual([1, 2, 3])
-    expect(ev('note.values', s)).toBe('from-note')
-    expect(ev('values', scope({ values: 'from-note' }))).toBe('from-note')
+    expect(ev('note.values', s)).toBe('from-page')
+    expect(ev('values', scope({ values: 'from-page' }))).toBe('from-page')
   })
 })
 
@@ -638,58 +638,58 @@ describe('file resolution (GRO-2132)', () => {
     const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
     return { ...record, path: `/v/${path}`, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder, links, tags: [], embeds: [] }
   }
-  const notes = [mk('A/Foo.md', ['Foo', 'B/Foo']), mk('B/Foo.md'), mk('Bar.md', ['A/Foo'])].map(r => new FileValue(r))
+  const pages = [mk('A/Foo.md', ['Foo', 'B/Foo']), mk('B/Foo.md'), mk('Bar.md', ['A/Foo'])].map(r => new FileValue(r))
   /** Minimal resolver: absolute path, root-relative (± .md), else first basename match. */
   const resolve = (target: string): FileValue | null => {
     const key = target.replace(/^\[\[|\]\]$/g, '').replace(/\.md$/, '').replace(/^\/+/, '')
     return (
-      notes.find(f => f.record.path === target) ??
-      notes.find(f => `${f.record.folder}/${f.record.basename}`.replace(/^\//, '') === key) ??
-      notes.find(f => f.record.basename === key) ??
+      pages.find(f => f.record.path === target) ??
+      pages.find(f => `${f.record.folder}/${f.record.basename}`.replace(/^\//, '') === key) ??
+      pages.find(f => f.record.basename === key) ??
       null
     )
   }
   const rs = (file: FileValue, extra: Partial<Scope> = {}): Scope => scope({}, { file, resolve, ...extra })
 
   it('file(path) and link.asFile() resolve through the scope resolver', () => {
-    expect(ev('file("A/Foo").name', rs(notes[2]))).toBe('Foo')
-    expect(ev('file("A/Foo.md").path', rs(notes[2]))).toBe('/v/A/Foo.md')
-    expect(ev('file("/v/B/Foo.md").folder', rs(notes[2]))).toBe('B')
-    expect(ev('file("Foo").path', rs(notes[2]))).toBe('/v/A/Foo.md')
-    expect(ev('file("Nope")', rs(notes[2]))).toBe(null)
-    expect(ev('file(link("Bar")).basename', rs(notes[2]))).toBe('Bar')
-    expect(ev('link("B/Foo").asFile().path', rs(notes[2]))).toBe('/v/B/Foo.md')
-    expect(ev('link("Nope").asFile()', rs(notes[2]))).toBe(null)
-    expect(ev('file("A/Foo") == file', rs(notes[0]))).toBe(true)
+    expect(ev('file("A/Foo").name', rs(pages[2]))).toBe('Foo')
+    expect(ev('file("A/Foo.md").path', rs(pages[2]))).toBe('/v/A/Foo.md')
+    expect(ev('file("/v/B/Foo.md").folder', rs(pages[2]))).toBe('B')
+    expect(ev('file("Foo").path', rs(pages[2]))).toBe('/v/A/Foo.md')
+    expect(ev('file("Nope")', rs(pages[2]))).toBe(null)
+    expect(ev('file(link("Bar")).basename', rs(pages[2]))).toBe('Bar')
+    expect(ev('link("B/Foo").asFile().path', rs(pages[2]))).toBe('/v/B/Foo.md')
+    expect(ev('link("Nope").asFile()', rs(pages[2]))).toBe(null)
+    expect(ev('file("A/Foo") == file', rs(pages[0]))).toBe(true)
     expect(err(ev('file("A/Foo")'))).toMatch(/needs an index/)
     expect(err(ev('link("A").asFile()'))).toMatch(/needs an index/)
   })
 
   it('hasLink / linksTo / link equality compare resolved paths, falling back to text when unresolved', () => {
     // A/Foo links to "Foo" (→ A/Foo itself) and "B/Foo"; textual matching would also accept "Other/Foo".
-    expect(ev('file.hasLink("B/Foo")', rs(notes[0]))).toBe(true)
-    expect(ev('file.hasLink("A/Foo")', rs(notes[0]))).toBe(true)
-    expect(ev('file.hasLink("Bar")', rs(notes[0]))).toBe(false)
-    expect(ev('file.hasLink("Other/Foo")', rs(notes[0]))).toBe(true) // unresolved target → textual fallback
-    expect(ev('file.hasLink(this)', rs(notes[0], { this: notes[1] }))).toBe(true)
-    expect(ev('file.hasLink(this)', rs(notes[2], { this: notes[1] }))).toBe(false) // Bar links A/Foo, not B/Foo
-    expect(ev('file.hasLink(this)', rs(notes[2], { this: notes[0] }))).toBe(true)
-    expect(ev('link("Foo").linksTo(this)', rs(notes[2], { this: notes[0] }))).toBe(true)
-    expect(ev('link("Foo").linksTo(this)', rs(notes[2], { this: notes[1] }))).toBe(false)
-    expect(ev('link("B/Foo").linksTo(this)', rs(notes[2], { this: notes[1] }))).toBe(true)
-    expect(ev('link("Foo") == link("A/Foo")', rs(notes[2]))).toBe(true)
-    expect(ev('link("Foo") == link("B/Foo")', rs(notes[2]))).toBe(false)
-    expect(ev('link("Foo") != link("B/Foo")', rs(notes[2]))).toBe(true)
+    expect(ev('file.hasLink("B/Foo")', rs(pages[0]))).toBe(true)
+    expect(ev('file.hasLink("A/Foo")', rs(pages[0]))).toBe(true)
+    expect(ev('file.hasLink("Bar")', rs(pages[0]))).toBe(false)
+    expect(ev('file.hasLink("Other/Foo")', rs(pages[0]))).toBe(true) // unresolved target → textual fallback
+    expect(ev('file.hasLink(this)', rs(pages[0], { this: pages[1] }))).toBe(true)
+    expect(ev('file.hasLink(this)', rs(pages[2], { this: pages[1] }))).toBe(false) // Bar links A/Foo, not B/Foo
+    expect(ev('file.hasLink(this)', rs(pages[2], { this: pages[0] }))).toBe(true)
+    expect(ev('link("Foo").linksTo(this)', rs(pages[2], { this: pages[0] }))).toBe(true)
+    expect(ev('link("Foo").linksTo(this)', rs(pages[2], { this: pages[1] }))).toBe(false)
+    expect(ev('link("B/Foo").linksTo(this)', rs(pages[2], { this: pages[1] }))).toBe(true)
+    expect(ev('link("Foo") == link("A/Foo")', rs(pages[2]))).toBe(true)
+    expect(ev('link("Foo") == link("B/Foo")', rs(pages[2]))).toBe(false)
+    expect(ev('link("Foo") != link("B/Foo")', rs(pages[2]))).toBe(true)
     // The list methods compare the same way `==` does (YAZ-1469): resolved paths first, text only as fallback.
-    expect(ev('[link("A/Foo")].contains(link("Foo"))', rs(notes[2]))).toBe(true)
-    expect(ev('[link("B/Foo")].contains(link("Foo"))', rs(notes[2]))).toBe(false)
-    expect(ev('[link("Foo")].containsAny(link("B/Foo"))', rs(notes[2]))).toBe(false)
-    expect(ev('[link("Foo")].containsAll(link("A/Foo"))', rs(notes[2]))).toBe(true)
-    expect(ev('link("B/Foo") == "B/Foo.md"', rs(notes[2]))).toBe(true)
-    expect(ev('link("Foo") == file', rs(notes[0]))).toBe(true)
-    expect(ev('link("Foo") == file', rs(notes[1]))).toBe(false)
-    expect(ev('link("Ghost") == "Ghost"', rs(notes[2]))).toBe(true) // neither side resolves → textual
+    expect(ev('[link("A/Foo")].contains(link("Foo"))', rs(pages[2]))).toBe(true)
+    expect(ev('[link("B/Foo")].contains(link("Foo"))', rs(pages[2]))).toBe(false)
+    expect(ev('[link("Foo")].containsAny(link("B/Foo"))', rs(pages[2]))).toBe(false)
+    expect(ev('[link("Foo")].containsAll(link("A/Foo"))', rs(pages[2]))).toBe(true)
+    expect(ev('link("B/Foo") == "B/Foo.md"', rs(pages[2]))).toBe(true)
+    expect(ev('link("Foo") == file', rs(pages[0]))).toBe(true)
+    expect(ev('link("Foo") == file', rs(pages[1]))).toBe(false)
+    expect(ev('link("Ghost") == "Ghost"', rs(pages[2]))).toBe(true) // neither side resolves → textual
     expect(ev('link("Foo") == "B/Foo"')).toBe(true) // no resolver → textual (bare basename matches a path)
-    expect(ev('link("Foo") == "B/Foo"', rs(notes[2]))).toBe(false) // resolver: A/Foo vs B/Foo
+    expect(ev('link("Foo") == "B/Foo"', rs(pages[2]))).toBe(false) // resolver: A/Foo vs B/Foo
   })
 })

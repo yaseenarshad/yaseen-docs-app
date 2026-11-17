@@ -278,7 +278,7 @@ describe('the header menu (YAZ-1513)', () => {
     const sheet = q<HTMLElement>(el, '.confirm[role="dialog"]')
     // TEST_RECORDS: five of the eight carry `status`
     expect(q(sheet, '.confirm__text').textContent).toBe('Delete the column "Status"? It goes from vault and every page under it.')
-    expect([...sheet.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(expect.arrayContaining(['Delete column and clear 5 values', 'Keep the values in the notes', 'Cancel']))
+    expect([...sheet.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(expect.arrayContaining(['Delete column and clear 5 values', 'Keep the values in the pages', 'Cancel']))
     expect(document.activeElement?.textContent).toBe('Cancel')
     click([...sheet.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!)
     expect(el.querySelector('.confirm')).toBeNull()
@@ -302,7 +302,7 @@ describe('the header menu (YAZ-1513)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
     rightClick(th(el, 1))
     click(item(el, 'Delete column…'))
-    click([...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Keep the values in the notes')!)
+    click([...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Keep the values in the pages')!)
     expect(deleteColumn).toHaveBeenLastCalledWith('note.status', false)
   })
 
@@ -532,7 +532,7 @@ describe('"Add column to the right…" takes any name (YAZ-4535)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('S1: a note property of the same name is shown right of this column — no twin, no declaration', () => {
+  it('S1: a page property of the same name is shown right of this column — no twin, no declaration', () => {
     const { el, onChange, setColumns, def } = mount(BASE, { records: [...TEST_RECORDS, DUE] })
     rightClick(th(el, 0))
     click(item(el, 'Add column to the right…'))
@@ -558,7 +558,7 @@ describe('"Add column to the right…" takes any name (YAZ-4535)', () => {
     expect(setColumns).not.toHaveBeenCalled()
   })
 
-  it('YAZ-4769: a hidden note property in other capitals is shown under its own spelling — no twin, no declaration', () => {
+  it('YAZ-4769: a hidden page property in other capitals is shown under its own spelling — no twin, no declaration', () => {
     const { el, setColumns, def } = mount(BASE, { records: [...TEST_RECORDS, DUE] })
     rightClick(th(el, 0))
     click(item(el, 'Add column to the right…'))

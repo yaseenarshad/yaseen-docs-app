@@ -11,6 +11,9 @@
  * gets `table-now-row` and `--table-now`, how far down the slot now is (0–1); `table.css` draws the line, the tint or
  * both, by `data-table-now` on the app root (D6). Each body row before it gets `table-past-row` (D14: grey text, by
  * `data-table-dim-past`). With no now row: before the first slot no row is past, after the last every row is.
+ * THE NEXT SLOT (YAZ-5541): the body row right after the now row (after its folded run; a run there gives it to its bar)
+ * gets `table-next-row`; `table.css` tints it only with Shade the next time slot on (`--table-next-shade`, the vault's).
+ * Before the first slot it is the first slot (the next to come); after the last, and with the now row the last, none.
  * A FOLDED RUN (YAZ-4165, `tableFold.ts`) that holds the now row gives the marks to its bar: the bar is the now row,
  * `--table-now` the place of now in the whole run, and it is not past; "Go to now" opens the run first.
  * Node decorations from the attributes and the text only, as `tableFreeze.ts`: typing only maps the set (a time
@@ -47,39 +50,21 @@ import type { Node as ProseNode, NodeType, Schema } from '@milkdown/kit/prose/mo
 import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
+import { minutesOf, nowPlace as placeAmong, rowTimes as timesOfTexts, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
+import { detectTimeFormat, formatTime } from '@shared/timeFormat'
 import { cellTextAt, rowNoDim, tableHasMerge } from './cells'
 import { foldRuns, runOf, unfoldRun } from './tableFold'
 import { tablerIcon } from './tableIcons'
 import { changedTables, typingOnly } from './tableStyle'
-import { calendarDaySetting, timeFormatSetting } from './timeFormatSetting'
+import { calendarDaySetting, onSlotTimeSetting, slotTimeSetting, timeFormatSetting } from './timeFormatSetting'
+import type { TableLookPlace } from './tableLook'
 import './tableCalendar.css'
 
-/** Minutes from midnight of `date`, local time. */
-export const minutesOf = (date: Date): number => date.getHours() * 60 + date.getMinutes()
+export { minutesOf, secondsOf, slotTimeLabel, type NowPlace }
 
-/** Where now is in a calendar table: its now row (an index of `table`'s rows) and how far down its slot, and the first row that is not past. */
-export interface NowPlace {
-  row: number | null
-  fraction: number
-  /** Body rows before this index are past. */
-  pastEnd: number
-}
-
-/** Now in `table` at `minutes` from midnight; `null` when it is no calendar table or holds no time. */
+/** Now in `table` at `minutes` from midnight (the one slot rule, `shared/tableSlots.ts`); `null` when it is no calendar table or holds no time. */
 export function nowPlace(table: ProseNode, minutes: number): NowPlace | null {
-  const slot = table.attrs.calendar as number
-  if (!(slot > 0)) return null
-  const starts = rowTimes(table).flatMap(({ time }, i) => (time === null ? [] : [{ row: i + 1, start: time }]))
-  if (starts.length === 0) return null
-  const slots = starts.map(({ row, start }, i) => ({ row, start, end: starts[i + 1]?.start ?? start + slot }))
-  // Today's minute first, then the same minute tomorrow (a row after midnight).
-  for (const at of [minutes, minutes + 1440]) {
-    const now = slots.find(({ start, end }) => start <= at && at < end)
-    if (now !== undefined) return { row: now.row, fraction: (at - now.start) / (now.end - now.start), pastEnd: now.row }
-  }
-  const next = slots.find(({ start }) => start > minutes)
-  return { row: null, fraction: 0, pastEnd: next?.row ?? table.childCount }
+  return placeAmong(columnATimes(table), table.attrs.calendar as number, minutes)
 }
 
 /** A body row and its time from the first day's midnight, or `null`. */
@@ -88,18 +73,19 @@ interface BodyRow {
   time: number | null
 }
 
+/** Each row's time (`shared/tableSlots.ts`), the header row's `null`: column A through the map (YAZ-4792), so a row a merged time cell covers has no time of its own. */
+function columnATimes(table: ProseNode): Array<number | null> {
+  const texts: Array<string | null> = []
+  table.forEach((_, __, r) => void texts.push(r === 0 ? null : cellTextAt(table, r, 0)))
+  return timesOfTexts(texts)
+}
+
 /** Each body row of `table` with its time from the first day's midnight (a time earlier than the one above is a day on), or `null`. */
 function rowTimes(table: ProseNode): BodyRow[] {
+  const times = columnATimes(table)
   const out: BodyRow[] = []
-  let day = 0
-  let last = -1
   table.forEach((row, _, r) => {
-    if (r === 0) return
-    // Column A through the map (YAZ-4792): a row a merged time cell covers has no time of its own.
-    const time = readTime(cellTextAt(table, r, 0))
-    if (time !== null && time < last) day += 1440
-    if (time !== null) last = time
-    out.push({ row, time: time === null ? null : time + day })
+    if (r > 0) out.push({ row, time: times[r] })
   })
   return out
 }
@@ -122,6 +108,7 @@ function nowChip(view: EditorView, getPos: () => number | undefined): HTMLElemen
   const dot = document.createElement('span')
   dot.className = 'table-now-chip__dot'
   const label = document.createElement('span')
+  label.className = 'table-now-chip__label'
   label.textContent = 'Now'
   chip.append(dot, label)
   drawChipArrow(chip, 'down')
@@ -145,8 +132,74 @@ function drawChipArrow(chip: HTMLElement, dir: 'up' | 'down'): void {
   chip.appendChild(tablerIcon(dir === 'up' ? 'arrowUp' : 'arrowDown')())
 }
 
-/** The decorations of one calendar table at `minutes`: its past rows, its now row and, with `chip`, the chip (none with `nonow`). */
-function calendarDecorations(table: ProseNode, pos: number, minutes: number, chip = false): Decoration[] {
+/* What the pill says, and its widest text: ONE copy for the Mac and the phone (`shared/tableSlots.ts`, YAZ-5606). */
+
+/** The text of the pill on the now line of a slot, at `date`, by the setting; `''` when it is Off. */
+function pillText(start: number, end: number, date = new Date(), at?: TableLookPlace): string {
+  const { mode, seconds } = slotTimeSetting(at)
+  return mode === 'off' ? '' : slotTimeLabel(mode, seconds, start, end, secondsOf(date))
+}
+
+/**
+ * The Time in slot pill (YAZ-5602, Option A): a widget at the start of the now row's last cell, out of the flow. Its
+ * anchor fills the cell; its track sits on the now line (`--table-now`), kept inside the row; the pill sticks to the
+ * right end of the visible part of the table (`tableCalendar.css`). The clock sets its text only (`CalendarClock`):
+ * no transaction each second. One key per slot, so a minute's rebuild keeps its DOM.
+ */
+function slotPill(start: number, end: number, at?: TableLookPlace): () => HTMLElement {
+  return () => {
+    const anchor = document.createElement('span')
+    anchor.className = 'table-slot-anchor'
+    anchor.contentEditable = 'false'
+    const track = document.createElement('span')
+    track.className = 'table-slot-track'
+    const pill = document.createElement('span')
+    pill.className = 'table-slot-pill'
+    pill.dataset.start = String(start)
+    pill.dataset.end = String(end)
+    pill.textContent = pillText(start, end, new Date(), at)
+    track.appendChild(pill)
+    anchor.appendChild(track)
+    return anchor
+  }
+}
+
+/**
+ * YAZ-5658: the pill's room in a last cell with text, on the pill's own lines only (`shared/slotRoom.ts`, the phone's
+ * rule too): a widget at the start of the cell's first paragraph, two floats (a gap, then the room) in a box that takes
+ * no box of its own (`display: contents`). The clock puts them on the now line after each draw (`CalendarClock`).
+ * Before, a right padding ran down the whole cell, and a narrow column read one letter per line.
+ */
+function slotRoom(chars: number): () => HTMLElement {
+  return () => {
+    const box = document.createElement('span')
+    box.className = 'table-slot-floats'
+    box.contentEditable = 'false'
+    box.style.display = 'contents'
+    // Styled here, not in the eager CSS: the gap (no width), then the room, as wide as the slot's widest text; with
+    // less than 4em beside it, the whole line. Their heights come from `placeSlotRooms` (`slotRooms.ts`).
+    const room = `${chars * 7 + 26}px`
+    for (const [name, width] of [['table-slot-gap', '0'], ['table-slot-room', `max(${room}, min(100%, calc((${room} + 4em - 100%) * 1000)))`]] as const) {
+      const el = document.createElement('span')
+      el.className = name
+      el.style.cssText = `float: right; clear: right; height: 0; width: ${width}`
+      box.appendChild(el)
+    }
+    return box
+  }
+}
+
+/** The widest text of the pill in a slot `start`–`end`, in characters: the room of a last cell with text. */
+function pillChars(start: number, end: number, at?: TableLookPlace): number {
+  const { mode, seconds } = slotTimeSetting(at)
+  return slotPillChars(mode, seconds, start, end)
+}
+
+/**
+ * The decorations of one calendar table at `minutes`: its past rows, its now row and, with `chip`, the chip (none with
+ * `nonow`). `at`: the editor, whose vault's Time in slot the pill follows (YAZ-5602 round 2); none, the app's look.
+ */
+function calendarDecorations(table: ProseNode, pos: number, minutes: number, chip = false, at?: TableLookPlace): Decoration[] {
   const place = nowPlace(table, minutes)
   if (place === null) return []
   // A folded run that holds the now row (or the first row that is not past) gives the marks to its bar (YAZ-4165).
@@ -155,6 +208,10 @@ function calendarDecorations(table: ProseNode, pos: number, minutes: number, chi
   const nowRow = nowRun?.from ?? place.row
   const fraction = nowRun === undefined ? place.fraction : (place.row! - nowRun.from + place.fraction) / (nowRun.to - nowRun.from + 1)
   const pastEnd = runOf(runs, place.pastEnd)?.from ?? place.pastEnd
+  // The next slot (YAZ-5541): the body row right after the now row (after its folded run, which is one row on the screen),
+  // a folded run's bar if it starts one; before the first slot, the first slot (the next one to come); none after the last.
+  const after = place.row === null ? place.pastEnd : (nowRun?.to ?? place.row) + 1
+  const nextRow = after < table.childCount ? (runOf(runs, after)?.from ?? after) : -1
   const out: Decoration[] = []
   if (chip && table.attrs.nowButton !== false) out.push(Decoration.widget(pos + table.nodeSize, nowChip, { calendar: true, nowChip: true, key: 'table-now-chip', side: -1, stopEvent: () => true, ignoreSelection: true }))
   table.forEach((row, offset, r) => {
@@ -164,7 +221,19 @@ function calendarDecorations(table: ProseNode, pos: number, minutes: number, chi
     if (r === nowRow) {
       const now = String(Math.round(fraction * 1000) / 1000)
       out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-now-row', style: `--table-now: ${now}` }, { calendar: true, nowRow: true }))
+      // Time in slot (YAZ-5602): the pill in the row's last cell, the note editor only; the now row's own slot, also on a folded run's bar.
+      const chars = chip && row.childCount > 0 ? pillChars(place.start, place.end, at) : 0
+      if (chars > 0) {
+        const cellFrom = from + 1 + row.content.size - row.lastChild!.nodeSize
+        const pad = filled(row.lastChild!) ? ' table-slot-pad' : ''
+        // A clipped cell's padding (`--table-clip-pad`: `table.css`, `tableCalendar.css`) as wide as the slot's widest text.
+        out.push(Decoration.node(cellFrom, cellFrom + row.lastChild!.nodeSize, { class: `table-slot-host${pad}`, style: `--table-slot-chars: ${chars}${pad === '' ? '' : `; --table-clip-pad: ${chars * 7 + 26}px`}` }, { calendar: true }))
+        out.push(Decoration.widget(cellFrom + 1, slotPill(place.start, place.end, at), { calendar: true, slotPill: true, key: `table-slot-${place.start}-${place.end}-${chars}`, side: -1, ignoreSelection: true }))
+        // YAZ-5658: the pill's room, at the start of the cell's first paragraph (its text wraps around it).
+        if (pad !== '' && row.lastChild!.firstChild?.isTextblock === true) out.push(Decoration.widget(cellFrom + 2, slotRoom(chars), { calendar: true, key: `table-slot-room-${chars}`, side: -1, ignoreSelection: true }))
+      }
     }
+    if (r === nextRow) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-next-row' }, { calendar: true }))
   })
   return out
 }
@@ -194,12 +263,12 @@ function calendarTables(doc: ProseNode): number[] {
   return out
 }
 
-const build = (doc: ProseNode, tables: number[], now: number, chip: boolean): DecorationSet =>
-  DecorationSet.create(doc, tables.flatMap((pos) => calendarDecorations(doc.nodeAt(pos)!, pos, now, chip)))
+const build = (doc: ProseNode, tables: number[], now: number, chip: boolean, at?: TableLookPlace): DecorationSet =>
+  DecorationSet.create(doc, tables.flatMap((pos) => calendarDecorations(doc.nodeAt(pos)!, pos, now, chip, at)))
 
-/** The tick (D2): the marks move to `minutes`, and the document does not change. */
-export function calendarTick(view: EditorView, minutes = minutesOf(new Date())): void {
-  view.dispatch(view.state.tr.setMeta(calendarKey, minutes).setMeta('addToHistory', false))
+/** The tick (D2): the marks move to `minutes`, and the document does not change. `force` draws them again at the same minute (a setting changed, YAZ-5602). */
+export function calendarTick(view: EditorView, minutes = minutesOf(new Date()), force = false): void {
+  view.dispatch(view.state.tr.setMeta(calendarKey, force ? { now: minutes, force } : minutes).setMeta('addToHistory', false))
 }
 
 /** One chip and what its observer last said of its table block and its now row. */
@@ -224,14 +293,24 @@ class CalendarClock {
   #chips: IntersectionObserver | null = null
   #watches: ChipWatch[] = []
   #generation = -1
+  /** Time in slot with seconds (YAZ-5602): a timer to the next whole second, which sets the pills' text only. */
+  #second: ReturnType<typeof setTimeout> | null = null
+  #textOn = false
+  #offSetting: () => void
 
   constructor(readonly view: EditorView) {
     document.addEventListener('visibilitychange', this.#shown)
+    // A change of Time in slot or Show seconds draws the marks again at once: the pill comes, goes or changes its width.
+    this.#offSetting = onSlotTimeSetting(() => {
+      if ((calendarKey.getState(this.view.state)?.tables.length ?? 0) > 0) calendarTick(this.view, minutesOf(new Date()), true)
+    })
     if (typeof IntersectionObserver !== 'undefined') {
       this.#observer = new IntersectionObserver((entries) => {
         const was = this.#onScreen
         this.#onScreen = entries.some((entry) => entry.isIntersecting)
         if (this.#onScreen && !was) this.#tick()
+        this.#text()
+        this.#seconds()
       })
       this.#observer.observe(view.dom)
       this.#chips = new IntersectionObserver(this.#seen)
@@ -247,6 +326,59 @@ class CalendarClock {
     if (state !== undefined && state.generation !== this.#generation) {
       this.#generation = state.generation
       this.#watchChips(state)
+    }
+    this.#text()
+    this.#seconds()
+    this.#rooms()
+  }
+
+  /** YAZ-5658: the pills' rooms on their now lines, in the next frame (after the draw); one frame for many updates. */
+  #roomFrame = 0
+  #rooms(): void {
+    if (this.#roomFrame !== 0 || typeof requestAnimationFrame === 'undefined' || this.view.dom.querySelector('.table-slot-floats') === null) return
+    this.#roomFrame = requestAnimationFrame(() => {
+      this.#roomFrame = 0
+      // Loaded on the first pill with room, not in the first load (YAZ-4965).
+      if (!this.view.isDestroyed) void import('./slotRooms').then(({ placeSlotRooms }) => this.view.isDestroyed || placeSlotRooms(this.view.dom))
+    })
+  }
+
+  /** Each second, while Time in slot counts seconds and the note shows a calendar table: not while hidden or off the screen. */
+  #seconds(): void {
+    const { mode, seconds } = slotTimeSetting(this.view)
+    const want = mode !== 'off' && seconds && !document.hidden && this.#onScreen && (calendarKey.getState(this.view.state)?.tables.length ?? 0) > 0
+    if (want && this.#second === null) this.#second = setTimeout(this.#everySecond, 1000 - (Date.now() % 1000) + 5)
+    else if (!want && this.#second !== null) {
+      clearTimeout(this.#second)
+      this.#second = null
+    }
+  }
+
+  #everySecond = (): void => {
+    this.#second = null
+    this.#text()
+    this.#seconds()
+  }
+
+  /**
+   * The pills' text at the clock's time, and each Now button's: "Now · 19:14 left" while its table has a pill (YAZ-5602).
+   * Text only, in widgets ProseMirror does not read: no transaction, no save, no undo step.
+   */
+  #text(): void {
+    // Off, and Off when last drawn: nothing to set (this runs on each update of the view).
+    const on = slotTimeSetting(this.view).mode !== 'off'
+    if (!on && !this.#textOn) return
+    this.#textOn = on
+    const date = new Date()
+    for (const pill of this.view.dom.querySelectorAll<HTMLElement>('.table-slot-pill')) {
+      const text = pillText(Number(pill.dataset.start), Number(pill.dataset.end), date, this.view)
+      if (pill.textContent !== text) pill.textContent = text
+    }
+    for (const watch of this.#watches) {
+      const label = watch.chip.querySelector('.table-now-chip__label')
+      const pill = watch.block.querySelector('.table-slot-pill')?.textContent ?? ''
+      const text = pill === '' ? 'Now' : `Now · ${pill}`
+      if (label !== null && label.textContent !== text) label.textContent = text
     }
   }
 
@@ -315,6 +447,8 @@ class CalendarClock {
 
   #shown = (): void => {
     if (!document.hidden) this.#tick()
+    this.#text()
+    this.#seconds()
   }
 
   /** Move the marks to the clock's minute: not while hidden or off the screen, and not when they show it already. */
@@ -328,6 +462,9 @@ class CalendarClock {
 
   destroy(): void {
     this.#stop()
+    if (this.#second !== null) clearTimeout(this.#second)
+    if (this.#roomFrame !== 0) cancelAnimationFrame(this.#roomFrame)
+    this.#offSetting()
     this.#observer?.disconnect()
     this.#chips?.disconnect()
     document.removeEventListener('visibilitychange', this.#shown)
@@ -336,21 +473,23 @@ class CalendarClock {
 
 /** The calendar marks; with `clock`, the minute timer too (the note editor, not a preview). */
 export function createTableCalendar(clock: boolean) {
-  return $prose(
-    () =>
-      new Plugin<CalendarState>({
+  return $prose(() => {
+    // The editor, once its view is made: the marks read its vault's Time in slot (YAZ-5602 round 2); before, the app's.
+    let at: EditorView | undefined
+    return new Plugin<CalendarState>({
         key: calendarKey,
         state: {
           init: (_, { doc }) => {
             const tables = calendarTables(doc)
             const now = minutesOf(new Date())
-            return { set: build(doc, tables, now, clock), tables, now, generation: 0 }
+            return { set: build(doc, tables, now, clock, at), tables, now, generation: 0 }
           },
           apply: (tr: Transaction, value) => {
-            const tick = tr.getMeta(calendarKey) as number | undefined
+            const meta = tr.getMeta(calendarKey) as number | { now: number; force: boolean } | undefined
+            const tick = typeof meta === 'object' ? meta.now : meta
             if (!tr.docChanged) {
-              if (tick === undefined || tick === value.now) return value
-              return { set: build(tr.doc, value.tables, tick, clock), tables: value.tables, now: tick, generation: value.generation + 1 }
+              if (tick === undefined || (tick === value.now && typeof meta !== 'object')) return value
+              return { set: build(tr.doc, value.tables, tick, clock, at), tables: value.tables, now: tick, generation: value.generation + 1 }
             }
             let set = value.set.map(tr.mapping, tr.doc)
             const mapped = value.tables.map((pos) => tr.mapping.map(pos))
@@ -362,7 +501,7 @@ export function createTableCalendar(clock: boolean) {
               // The table's own: a chip at `pos` is the table's before it.
               const stale = set.find(pos, end, (spec) => spec.calendar === true).filter((deco) => deco.from > pos)
               if (stale.length > 0) set = set.remove(stale)
-              const fresh = calendarDecorations(node, pos, value.now, clock)
+              const fresh = calendarDecorations(node, pos, value.now, clock, at)
               if (fresh.length > 0) set = set.add(tr.doc, fresh)
             }
             const tables = [...new Set([...mapped, ...changed.keys()])].filter((pos) => isCalendar(tr.doc.nodeAt(pos))).sort((a, b) => a - b)
@@ -373,9 +512,16 @@ export function createTableCalendar(clock: boolean) {
           },
         },
         props: { decorations: (state) => calendarKey.getState(state)!.set },
-        view: (view) => (clock ? new CalendarClock(view) : {}),
-      }),
-  )
+        view: (view) => {
+          at = view
+          // The marks drawn before the view was there read the app's look: draw again if its vault's differs.
+          const tables = calendarKey.getState(view.state)?.tables.length ?? 0
+          const differs = (a: ReturnType<typeof slotTimeSetting>, b: ReturnType<typeof slotTimeSetting>) => a.mode !== b.mode || a.seconds !== b.seconds
+          if (clock && tables > 0 && differs(slotTimeSetting(view), slotTimeSetting())) queueMicrotask(() => calendarTick(view, minutesOf(new Date()), true))
+          return clock ? new CalendarClock(view) : {}
+        },
+      })
+  })
 }
 
 /** A cell of `type` holding `text` (none when empty), with `attrs`. */
@@ -391,10 +537,11 @@ const filled = (cell: ProseNode): boolean => cell.childCount > 1 || (cell.firstC
  * `calendar 30m`, compact rows, the header row and column A frozen, and column A's body cells vertically in the
  * middle (YAZ-4166), so a time sits level with a two-line plan.
  */
-export function calendarTableNode(schema: Schema, format = timeFormatSetting()): ProseNode {
+export function calendarTableNode(schema: Schema, own?: string, at?: TableLookPlace): ProseNode {
+  const format = own ?? timeFormatSetting(at)
   const { table, table_header_row: headerRow, table_row: row, table_header: header, table_cell: cell } = schema.nodes
   const rows = [headerRow!.create(null, [cellNode(schema, header!, 'Time'), cellNode(schema, header!, 'Plan 1')])]
-  const { start, end } = calendarDaySetting()
+  const { start, end } = calendarDaySetting(at)
   for (let t = start; t <= end; t += 30) rows.push(row!.create(null, [cellNode(schema, cell!, formatTime(format, t), { valign: 'middle' }), cellNode(schema, cell!, '')]))
   return table!.create({ calendar: 30, height: 'compact', freezeRows: 1, freezeCols: 1 }, rows)
 }
@@ -452,13 +599,13 @@ function emptyRowAt(schema: Schema, template: ProseNode, format: string, time: n
 }
 
 /** The slot times of the Calendar day setting that the calendar `table` has no row for; none for another table. */
-export function missingDayTimes(table: ProseNode): number[] {
+export function missingDayTimes(table: ProseNode, at?: TableLookPlace): number[] {
   const slot = table.attrs.calendar as number
   // A merged cell (YAZ-4792): the rows cannot be built again, so nothing is missing.
   if (!(slot > 0) || table.childCount < 2 || tableHasMerge(table)) return []
   const body = rowTimes(table)
   const have = new Set(body.flatMap(({ time }) => (time === null ? [] : [time % 1440])))
-  const { start, end } = calendarDaySetting()
+  const { start, end } = calendarDaySetting(at)
   const out: number[] = []
   for (let t = Math.ceil(start / slot) * slot; t <= end; t += slot) if (!have.has(t)) out.push(t)
   return out
@@ -468,10 +615,10 @@ export function missingDayTimes(table: ProseNode): number[] {
 export function fillCalendarDay(view: EditorView, pos: number): boolean {
   const table = view.state.doc.nodeAt(pos)
   if (table?.type.name !== 'table') return false
-  const missing = missingDayTimes(table)
+  const missing = missingDayTimes(table, view)
   if (missing.length === 0) return false
   const body = rowTimes(table)
-  const format = detectTimeFormat(body.map((_, i) => cellTextAt(table, i + 1, 0))) ?? timeFormatSetting()
+  const format = detectTimeFormat(body.map((_, i) => cellTextAt(table, i + 1, 0))) ?? timeFormatSetting(view)
   const rows = withNewRows(view.state.schema, body, () => true, missing, format)
   view.dispatch(closeHistory(view.state.tr).replaceWith(pos, pos + table.nodeSize, table.type.create(table.attrs, [table.firstChild!, ...rows])))
   return true
@@ -481,8 +628,8 @@ export function fillCalendarDay(view: EditorView, pos: number): boolean {
  * The table with a "Time" column before column A, a time in each body row from the Calendar day's start, `slot` apart
  * (D7); its body cells vertically in the middle, as "/Calendar table" makes them (YAZ-4166, YAZ-4176).
  */
-function withTimeColumn(table: ProseNode, slot: number, schema: Schema, format: string): ProseNode {
-  const { start } = calendarDaySetting()
+function withTimeColumn(table: ProseNode, slot: number, schema: Schema, format: string, at?: TableLookPlace): ProseNode {
+  const { start } = calendarDaySetting(at)
   const rows: ProseNode[] = []
   table.forEach((row, _, r) => {
     const type = row.firstChild!.type
@@ -504,7 +651,7 @@ export function setTimeSlots(view: EditorView, pos: number, slot: number): void 
   if (slot === 0) tr.setNodeMarkup(pos, undefined, { ...table.attrs, calendar: 0 })
   else {
     const hasTimes = rowTimes(table).some(({ time }) => time !== null)
-    const next = hasTimes ? slotTimes(table, slot, view.state.schema) : withTimeColumn(table, slot, view.state.schema, timeFormatSetting())
+    const next = hasTimes ? slotTimes(table, slot, view.state.schema, timeFormatSetting(view)) : withTimeColumn(table, slot, view.state.schema, timeFormatSetting(view), view)
     tr.replaceWith(pos, pos + table.nodeSize, next)
   }
   view.dispatch(tr)
@@ -515,7 +662,7 @@ export function setTimeSlots(view: EditorView, pos: number, slot: number): void 
  * calendar table when absent); a row with no empty cell takes it at the end of its first cell after the time. The row
  * scrolls to the middle of the screen (the YAZ-4163 demo: "into view" left it at an edge, or under a pinned header). `false`, and no caret move, when there is no calendar table or no row holds the current minute.
  * A now row in a folded run opens the run in the same step (YAZ-4165), so the caret is never in a hidden row. A
- * read-only note never changes (YAZ-4176): its run stays folded, the caret does not move, and its bar scrolls to the middle.
+ * read-only page never changes (YAZ-4176): its run stays folded, the caret does not move, and its bar scrolls to the middle.
  */
 export function goToNow(view: EditorView, at?: number): boolean {
   const { doc } = view.state

@@ -63,8 +63,8 @@ const lockNow = () => container.querySelector<HTMLButtonElement>('.read-only-chi
 const box = () => container.querySelector<HTMLElement>('.read-only-chip__ask')
 const button = (name: string) => [...(box()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === name)!
 const click = (element: Element) => act(() => void element.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-const press = (element: Element, key: string) => {
-  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+const press = (element: Element, key: string, init: KeyboardEventInit = {}) => {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
   act(() => void element.dispatchEvent(event))
   return event
 }
@@ -102,6 +102,43 @@ describe('ReadOnlyChip', () => {
     mount()
     click(chip()!)
     expect(document.activeElement).toBe(button('Allow edits for 1 minute'))
+  })
+
+  it('YAZ-4989: ↓ ↑ Tab ⇧Tab move through every choice, Cancel included, round at both ends; the page never hears them', () => {
+    mount()
+    click(chip()!)
+    const beyond = vi.fn()
+    document.addEventListener('keydown', beyond)
+    const at = () => (document.activeElement as HTMLElement).textContent
+    const seen: (string | null)[] = []
+    for (let i = 0; i < 5; i++) {
+      press(document.activeElement!, 'ArrowDown')
+      seen.push(at())
+    }
+    expect(seen).toEqual(['10 minutes', 'Until I close this tab', 'Turn Read only off', 'Cancel', 'Allow edits for 1 minute'])
+    press(document.activeElement!, 'ArrowUp')
+    expect(at()).toBe('Cancel')
+    press(document.activeElement!, 'Tab')
+    expect(at()).toBe('Allow edits for 1 minute')
+    press(document.activeElement!, 'Tab', { shiftKey: true })
+    expect(at()).toBe('Cancel')
+    document.removeEventListener('keydown', beyond)
+    expect(beyond).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4989: Enter picks the focused choice, not always 1 minute; on Cancel it cancels', () => {
+    mount()
+    click(chip()!)
+    press(document.activeElement!, 'ArrowDown')
+    press(document.activeElement!, 'Enter')
+    expect(allowed).toHaveBeenCalledExactlyOnceWith('ten')
+    act(() => lockNow()!.click())
+    click(chip()!)
+    press(document.activeElement!, 'ArrowUp')
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    press(document.activeElement!, 'Enter')
+    expect(box()).toBeNull()
+    expect(allowed).toHaveBeenCalledOnce()
   })
 
   it('S46: Esc cancels, keeps the key from the page, and puts the focus on the chip', () => {
@@ -262,9 +299,66 @@ describe('the edit-attempt message (YAZ-4446)', () => {
   const card = (id: string) => pane(id).querySelector<HTMLElement>('.read-only-message__card')
   const status = (id: string) => pane(id).querySelector<HTMLElement>('[role="status"]')
   const paneChip = (id: string) => pane(id).querySelector<HTMLButtonElement>('.read-only-chip__button')!
-  const attempt = (selector: string, what: 'note' | 'drawing' = 'note') => act(() => tellReadOnlyEdit(container.querySelector(selector)!, what))
+  const attempt = (selector: string, what: 'page' | 'drawing' = 'page') => act(() => tellReadOnlyEdit(container.querySelector(selector)!, what))
 
   afterEach(() => vi.useRealTimers())
+
+  describe('YAZ-5145 round 2: unlock, then continue', () => {
+    const tellWith = (selector: string, resume?: () => void) => act(() => tellReadOnlyEdit(container.querySelector(selector)!, 'card', resume))
+    const pick = (label: string) => act(() => [...pane('a').querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === label)!.click())
+    const settle = () => act(() => void vi.runAllTimers())
+
+    it('a refused action runs ONCE after a choice in the box, with no second key; the card says "This card is Read only."', () => {
+      vi.useFakeTimers()
+      mountPanes()
+      const resume = vi.fn()
+      tellWith('[data-body="a"]', resume)
+      expect(card('a')?.textContent).toBe('This card is Read only.Press Enter to allow edits.')
+      act(() => paneChip('a').click())
+      expect(resume).not.toHaveBeenCalled()
+      pick('Allow edits for 1 minute')
+      settle()
+      expect(resume).toHaveBeenCalledOnce()
+      // Asked again later with no new attempt: nothing runs again.
+      act(() => paneChip('a').click())
+      pick('10 minutes')
+      settle()
+      expect(resume).toHaveBeenCalledOnce()
+    })
+
+    it.each(['Cancel', 'Esc', 'a press outside'])('nothing runs after %s', (way) => {
+      vi.useFakeTimers()
+      mountPanes()
+      const resume = vi.fn()
+      tellWith('[data-body="a"]', resume)
+      act(() => paneChip('a').click())
+      if (way === 'Cancel') pick('Cancel')
+      else if (way === 'Esc') act(() => void pane('a').querySelector('.read-only-chip__allow')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+      else act(() => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+      settle()
+      expect(pane('a').querySelector('.read-only-chip__ask')).toBeNull()
+      // The next unlock, asked for itself, runs nothing either.
+      act(() => paneChip('a').click())
+      pick('Allow edits for 1 minute')
+      settle()
+      expect(resume).not.toHaveBeenCalled()
+    })
+
+    it('a newer attempt with nothing to carry (typing) drops the older one; another pane\'s attempt is not this chip\'s', () => {
+      vi.useFakeTimers()
+      mountPanes()
+      const resume = vi.fn()
+      const other = vi.fn()
+      tellWith('[data-body="a"]', resume)
+      tellWith('[data-body="b"]', other)
+      attempt('[data-body="a"]')
+      act(() => paneChip('a').click())
+      pick('Allow edits for 1 minute')
+      settle()
+      expect(resume).not.toHaveBeenCalled()
+      expect(other).not.toHaveBeenCalled()
+    })
+  })
 
   it('an attempt shows the card in plain words, as a status, under the chip; the chip pulses', () => {
     vi.useFakeTimers()
@@ -272,7 +366,7 @@ describe('the edit-attempt message (YAZ-4446)', () => {
     expect(card('a')).toBeNull()
     expect(paneChip('a').classList.contains('read-only-chip__button--pulse')).toBe(false)
     attempt('[data-body="a"]')
-    expect(card('a')?.textContent).toBe('This note is Read only.Click Read only to allow edits.')
+    expect(card('a')?.textContent).toBe('This page is Read only.Press Enter to allow edits.')
     expect(status('a')?.contains(card('a'))).toBe(true)
     expect(card('a')?.querySelector('.read-only-message__arrow svg')).not.toBeNull()
     expect(paneChip('a').classList.contains('read-only-chip__button--pulse')).toBe(true)
@@ -280,7 +374,49 @@ describe('the edit-attempt message (YAZ-4446)', () => {
     expect(pane('a').querySelector('.read-only-chip')?.contains(card('a'))).toBe(true)
   })
 
-  it('the vault\'s word for a note (YAZ-4938): in a vault of cards the card says "This card is Read only."', () => {
+  it('YAZ-4997: while the card shows, Enter in its page opens the "Allow edits?" box at once; the page never hears it (no new line); Enter again takes 1 minute', () => {
+    vi.useFakeTimers()
+    mountPanes()
+    const body = container.querySelector<HTMLElement>('[data-body="a"]')!
+    body.tabIndex = -1
+    const heard = vi.fn()
+    body.addEventListener('keydown', heard)
+    // No card yet: Enter is the page's own (its guard shows the card).
+    const first = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    act(() => void body.dispatchEvent(first))
+    expect([first.defaultPrevented, heard.mock.calls.length, pane('a').querySelector('.read-only-chip__ask')]).toEqual([false, 1, null])
+    attempt('[data-body="a"]')
+    // A held Enter's repeat opens nothing.
+    const held = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })
+    act(() => void body.dispatchEvent(held))
+    expect([held.defaultPrevented, pane('a').querySelector('.read-only-chip__ask')]).toEqual([true, null])
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    act(() => void body.dispatchEvent(enter))
+    expect(enter.defaultPrevented).toBe(true)
+    expect(heard).toHaveBeenCalledTimes(1) // the page heard the first Enter only
+    expect(pane('a').querySelector('.read-only-chip__ask')).not.toBeNull()
+    expect(card('a')).toBeNull()
+    expect(card('b')).toBeNull()
+    expect(pane('b').querySelector('.read-only-chip__ask')).toBeNull() // the other pane's chip does not answer
+    expect(document.activeElement?.textContent).toBe('Allow edits for 1 minute')
+    // A held Enter on the box picks nothing.
+    const repeat = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })
+    act(() => void document.activeElement?.dispatchEvent(repeat))
+    expect([repeat.defaultPrevented, pane('a').querySelector('.read-only-chip__ask') !== null]).toEqual([true, true])
+  })
+
+  it('YAZ-4997: an Enter in a field or on a button of the page is theirs, card or not', () => {
+    vi.useFakeTimers()
+    mountPanes()
+    const field = document.createElement('input')
+    pane('a').append(field)
+    attempt('[data-body="a"]')
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    act(() => void field.dispatchEvent(enter))
+    expect([enter.defaultPrevented, pane('a').querySelector('.read-only-chip__ask')]).toEqual([false, null])
+  })
+
+  it('the vault\'s word for a page (YAZ-4938): in a vault of cards the card says "This card is Read only."', () => {
     vi.useFakeTimers()
     container = document.createElement('div')
     document.body.append(container)

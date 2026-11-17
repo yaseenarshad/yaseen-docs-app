@@ -126,8 +126,8 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   key('textItalic', 'Italic', ['CmdOrCtrl+I'], 'A selected text; while you type, ⌘I stays'),
   key('textUnderline', 'Underline', ['CmdOrCtrl+U'], 'A selected text; while you type, ⌘U stays'),
   key('textStrikethrough', 'Strikethrough', ['CmdOrCtrl+Shift+X'], 'A selected text; while you type, ⌘⇧X stays'),
-  // YAZ-4102 3E: highlight letters, as in a note (the note's ⌘⇧H); the text editor hears the changed key too.
-  key('textHighlight', 'Highlight the selected letters', ['CmdOrCtrl+Shift+H'], 'While you type a text, as in a note; the toolbar has the other colours'),
+  // YAZ-4102 3E: highlight letters, as in a page (the page's ⌘⇧H); the text editor hears the changed key too.
+  key('textHighlight', 'Highlight the selected letters', ['CmdOrCtrl+Shift+H'], 'While you type a text, as in a page; the toolbar has the other colours'),
   key('clearTextFormatting', 'Reset to default style', ['CmdOrCtrl+\\'], 'Every selected shape and text: black line, no fill, the Settings › Drawings and diagrams defaults; keeps place, size and words'),
   key('decreaseFontSize', 'Smaller text', ['CmdOrCtrl+Shift+,'], 'While you type, ⌘⇧< stays'),
   key('increaseFontSize', 'Larger text', ['CmdOrCtrl+Shift+.'], 'While you type, ⌘⇧> stays'),

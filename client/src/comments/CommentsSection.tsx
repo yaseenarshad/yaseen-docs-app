@@ -1,8 +1,8 @@
 /**
- * The comment stream (YAZ-1472) — a Linear-style block of the note's own, INSIDE the editor's
- * scroller after the note's body, or a folder's views, and before "Linked mentions" (🔒 D4). Always
+ * The comment stream (YAZ-1472) — a Linear-style block of the page's own, INSIDE the editor's
+ * scroller after the page's body, or a folder's views, and before "Linked mentions" (🔒 D4). Always
  * rendered, unlike the backlinks: the composer is the door to the first comment. Storage is the
- * note's frontmatter (`shared/comments.ts`, 🔒 D1), so this block is a VIEW over the same disk
+ * page's frontmatter (`shared/comments.ts`, 🔒 D1), so this block is a VIEW over the same disk
  * truth the properties panel reads — `file.content` is CrepeHost's `disk` — with no watcher of
  * its own.
  *
@@ -11,7 +11,7 @@
  * exactly the bytes that landed. The watcher then echoes the write back through the Editor's
  * `absorbFrontmatterOnly` → `setDisk`, which the snapshot below recognises as the same content.
  *
- * Shapes (`commentsShape`): a note whose `comments` is a value of the user's own, or whose block
+ * Shapes (`commentsShape`): a page whose `comments` is a value of the user's own, or whose block
  * does not parse, gets the header and one line saying why — no composer, nothing overwritten.
  * Threads are one level deep; an orphaned reply shows at top level (`threadsOf`).
  *
@@ -49,16 +49,17 @@ import { Avatar, type AvatarTone } from './Avatar'
 import { ConfirmDeleteComment } from './ConfirmDeleteComment'
 import { commentHtml, commentInlineHtml, commentSplit } from './markdown'
 import { CommentPrefsContext, saveCard, usePeople } from './usePeople'
+import { KeyLabel } from '../keys/KeyLabel'
 import './comments.css'
 
 export interface CommentsSectionProps {
-  /** The open note as the Editor last saw it on disk — the block's truth until its own write moves it. */
+  /** The open page as the Editor last saw it on disk — the block's truth until its own write moves it. */
   file: Pick<FileResponse, 'path' | 'content'>
   /** How the stream READS (YAZ-1515): a global setting handed down as a prop, never read from storage here. */
   order: CommentsOrder
   /** The header's Oldest/Newest toggle writes the setting through this; the block holds no order of its own. */
   onChangeOrder: (order: CommentsOrder) => void
-  /** The vault the note is in (YAZ-4615 D1): whose people file names the writers. Null shows handles only. */
+  /** The vault the page is in (YAZ-4615 D1): whose people file names the writers. Null shows handles only. */
   root?: string | null
 }
 
@@ -98,7 +99,7 @@ export const UNDO_MS = 5000
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 const NOTICE = {
-  foreign: "This note's comments property isn't a comment list, so nothing can be added here.",
+  foreign: "This page's comments property isn't a comment list, so nothing can be added here.",
   invalid: "The properties block doesn't parse. Fix it in Properties to comment here.",
 } as const
 
@@ -190,6 +191,8 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   const [justResolved, setJustResolved] = useState<{ id: string; label: string | null } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const groupRef = useRef<HTMLDivElement>(null)
+  /** The frame that brings the Resolved group into view; cancelled on unmount (YAZ-4965 CI). */
+  const scrollFrame = useRef<number | null>(null)
   const [inline, setInline] = useState<Inline>(null)
   const [confirming, setConfirming] = useState<PendingDelete | null>(null)
   const [saving, setSaving] = useState(false)
@@ -197,6 +200,7 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   const now = useClock()
   useEffect(() => () => {
     if (undoTimer.current !== null) clearTimeout(undoTimer.current)
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current)
   }, [])
 
   // Item 12: the comment list is read ONCE for each content, not on every render (a fold, the clock).
@@ -276,7 +280,12 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   const showResolved = (): void => {
     setExpanded(true)
     setResolvedOpen(true)
-    requestAnimationFrame(() => groupRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+    // jsdom has no scrollIntoView — hence the `?.()` (the TabBar idiom); one frame at a time.
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current)
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null
+      groupRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+    })
   }
 
   const closeInline = (): void => {
@@ -756,14 +765,13 @@ function Composer({
                 <span>{me.name}</span>
               </button>
             ))}
-          <span className="comments__hint">⌘ Enter</span>
           {onCancel !== undefined && (
             <button type="button" className="btn comments__btn" disabled={saving} onClick={onCancel}>
               Cancel
             </button>
           )}
           <button type="button" className="btn btn--primary comments__btn" disabled={!ready} onClick={() => void submit()}>
-            {submitLabel}
+            <KeyLabel action={submitLabel} keys="⌘↵" />
           </button>
         </div>
       )}

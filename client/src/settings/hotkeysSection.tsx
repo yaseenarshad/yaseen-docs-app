@@ -20,11 +20,11 @@
  *   "Reset all hotkeys" at the end of the page asks in a sheet that lists every change. With no change
  *   neither is there.
  * - ONE CARD PER CLICK OR DRAG (YAZ-3936, demo round 1 C4 of YAZ-3879), hotkey first like the keys: "Click", "⌘-click",
- *   "⇧-click", "Drag"… Two places are the user's to change (`shared/keys/gestures.ts`): "Links in a note" and "Bullet
+ *   "⇧-click", "Drag"… Two places are the user's to change (`shared/keys/gestures.ts`): "Links in a page" and "Bullet
  *   dots", each with Open in this tab / a new tab / a background tab. Their box is a click recorder: click it, then hold
  *   the keys and click it again (⌫ or "No gesture" removes it); the same pop-up, Reset and "Move it here" as a key, and
  *   the change is a `settings.hotkeys` entry by row id. The other clicks are built in (`hotkeys.ts`), in the same boxes.
- *   A row's search text is its action, its gesture and its place ("links in a note").
+ *   A row's search text is its action, its gesture and its place ("links in a page").
  * - The page's own search bar (D5, `KeySearch`): "Search hotkeys…" filters the page to the rows that match
  *   ("file window" → New Files window), and "Press keys to search" records one key, puts it in that box and
  *   says who owns it.
@@ -120,7 +120,7 @@ function useKeyRecorder(active: boolean, inside: RefObject<HTMLElement | null>, 
 // ---------- one changeable row ----------
 
 /** Where a row's key works, as the page names it (YAZ-3564 K7): the group titles and "Blocked: App › …". */
-export const SCOPE_TITLES: Record<KeyScope, string> = { app: 'App', note: 'Note', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views', explore: 'Explore' }
+export const SCOPE_TITLES: Record<KeyScope, string> = { app: 'App', page: 'Page', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views', explore: 'Explore' }
 const owned = (row: KeyRow): string => `${SCOPE_TITLES[row.scope]} › ${row.label}`
 
 /** The App command of an App row, for its Mac-standard default and its hint (YAZ-3397). */
@@ -167,7 +167,7 @@ function blockedLines(key: string, blocked: readonly KeyRow[], overrides: Hotkey
   const shownKey = toDisplay(key)
   const lines: string[] = []
   const all: KeyRow[] = []
-  for (const scope of ['note', 'drawing', 'diagram', 'code', 'views', 'explore'] as const) {
+  for (const scope of ['page', 'drawing', 'diagram', 'code', 'views', 'explore'] as const) {
     const rows = blocked.filter((o) => o.scope === scope)
     if (rows.length === 0) continue
     if (rows.length === 1) {
@@ -483,7 +483,7 @@ function inFilter(row: KeyRow, ctx: SettingsCtx): boolean {
 }
 
 // "Clicks" (YAZ-3747 demo): only the click and drag cards. "Press keys to search" hears keys only.
-const CHIPS: readonly HotkeyFilter['scope'][] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views', 'explore', 'clicks']
+const CHIPS: readonly HotkeyFilter['scope'][] = ['all', 'app', 'page', 'drawing', 'diagram', 'code', 'views', 'explore', 'clicks']
 
 /** The group chips and the two switches at the top of the page (K7). */
 function FilterBar({ filter, onFilter }: { filter: HotkeyFilter; onFilter: (next: HotkeyFilter) => void }) {
@@ -587,7 +587,7 @@ export function KeySearch({ ctx, query, answering, onQuery, filter = NO_FILTER, 
 /** The other words a place goes by in the search (D5): its engine's name. */
 const SCOPE_WORDS: Partial<Record<KeyScope, readonly string[]>> = { drawing: ['excalidraw', 'canvas'], diagram: ['draw.io'], code: ['monaco'] }
 
-/** A row's DOM-safe id part: 'note.bold' → 'note-bold'; an App command keeps its bare id ('search'), as before YAZ-3564. */
+/** A row's DOM-safe id part: 'page.bold' → 'page-bold'; an App command keeps its bare id ('search'), as before YAZ-3564. */
 const rowDomId = (row: KeyRow): string => (row.scope === 'app' && commandOf(row) !== undefined ? row.id.slice(4) : row.id.replace(/\./g, '-'))
 
 /** A stable id part from a label (never the key, which can change): 'Zoom into that bullet' → 'zoom-into-that-bullet'. */
@@ -613,8 +613,8 @@ const keysText = (keys: readonly string[]): string => {
 }
 
 /** One row of the page: a button for a changeable key, muted text for a built-in one. Its search text is its label, its keys now and its hint (D5). */
-/** The key row that Daily notes gates (YAZ-3607 D11). */
-const DAILY_NOTE_ROW = appKeyId('dailyNote')
+/** The key row that Daily pages gates (YAZ-3607 D11). */
+const DAILY_PAGE_ROW = appKeyId('dailyPage')
 
 const rowItem = (row: KeyRow): SettingDef => ({
   id: `hotkey-${rowDomId(row)}`,
@@ -622,8 +622,8 @@ const rowItem = (row: KeyRow): SettingDef => ({
   hint: ({ settings }) => [keysText(keysOf(row, settings.hotkeys)) || 'No key', row.hint].filter(Boolean).join(' '),
   keywords: [SCOPE_TITLES[row.scope].toLowerCase(), ...(SCOPE_WORDS[row.scope] ?? []), ...ROW_KEYWORDS],
   bare: true,
-  // "Open today's daily note" is a row only while Daily notes is on (YAZ-3607 D11), as its File menu item is.
-  available: (ctx) => inFilter(row, ctx) && (row.id !== DAILY_NOTE_ROW || ctx.settings.dailyNotes),
+  // "Open today's daily page" is a row only while Daily pages is on (YAZ-3607 D11), as its File menu item is.
+  available: (ctx) => inFilter(row, ctx) && (row.id !== DAILY_PAGE_ROW || ctx.settings.dailyPages),
   render: (ctx) => {
     if (row.changeable) return <HotkeyRow row={row} ctx={ctx} />
     const blocker = blockersOf(row, ctx.settings.hotkeys, ctx.settings.hotkeysAside)[0]
@@ -680,7 +680,7 @@ const normal = (key: string): string => key.split(' ').map((step) => normalizeKe
 /**
  * One card per key as the keys are now: the rows whose first key it is, App rows first. Shared: an App row and a
  * row of a tab on one key (⌘D), or an App key that starts a tab's two-step keys (⌘K); App: an App key alone; Tab:
- * one or more tabs' own key (⌘B is Bold in notes and in diagrams), no App key.
+ * one or more tabs' own key (⌘B is Bold in pages and in diagrams), no App key.
  */
 interface KeyCard {
   key: string
@@ -690,7 +690,7 @@ interface KeyCard {
   picks: number
 }
 
-const ORDER: readonly KeyScope[] = ['app', 'note', 'drawing', 'diagram', 'code', 'views', 'explore']
+const ORDER: readonly KeyScope[] = ['app', 'page', 'drawing', 'diagram', 'code', 'views', 'explore']
 const KIND_ORDER = { shared: 0, app: 1, tab: 2 } as const
 
 /** The tabs where an App command's key can go either way (K9): the rows of each that have it, or begin with it. */
@@ -745,7 +745,7 @@ const keyText = (key: string): string => key.split(' ').map(toDisplay).join(' ')
 /** A card's DOM id, for a link to it. */
 const cardAnchor = (key: string): string => `hotkeys-key-${normal(key).replace(/[^A-Za-z0-9]/g, (c) => `_${c.charCodeAt(0).toString(16)}`)}`
 
-const PLACE_WORDS: Record<KeyScope, string> = { app: 'every tab', note: 'notes', drawing: 'drawings', diagram: 'diagrams', code: 'code', views: 'folder views', explore: 'the explore stack' }
+const PLACE_WORDS: Record<KeyScope, string> = { app: 'every tab', page: 'pages', drawing: 'drawings', diagram: 'diagrams', code: 'code', views: 'folder views', explore: 'the explore stack' }
 
 /** Under a row whose key an App key always takes in its tab: what the key does there, and a link to the card that decides it. */
 function LostLine({ row, blocker, overrides }: { row: KeyRow; blocker: KeyRow; overrides: HotkeyOverrides }) {
@@ -819,11 +819,11 @@ function TabPick({ app, place, own, ctx }: { app: KeyRow; place: AsidePlace; own
 }
 
 const TAB_TITLES: Record<AsidePlace, string> = { drawing: 'Drawings', diagram: 'Diagrams', code: 'Code' }
-/** Where an App action works now, as its box's title: 'Every tab', or 'Notes · Folder views · Code' while some tabs keep their own. */
+/** Where an App action works now, as its box's title: 'Every tab', or 'Pages · Folder views · Code' while some tabs keep their own. */
 function appWhere(row: KeyRow, overrides: HotkeyOverrides, aside: HotkeyAside): string {
   const fought = contested(row, overrides)
   const kept = ASIDE_PLACES.filter((p) => fought.has(p) && stepsAside(row, p, aside))
-  return kept.length === 0 ? 'Every tab' : ['Notes', 'Folder views', ...ASIDE_PLACES.filter((p) => !kept.includes(p)).map((p) => TAB_TITLES[p])].join(' · ')
+  return kept.length === 0 ? 'Every tab' : ['Pages', 'Folder views', ...ASIDE_PLACES.filter((p) => !kept.includes(p)).map((p) => TAB_TITLES[p])].join(' · ')
 }
 
 /** A tab's box on a shared key whose own actions are on other cards (code's two-step keys on ⌘K): just the pick. */
@@ -867,7 +867,7 @@ const legendItem: SettingDef = {
   available: (ctx) => !isFiltered(ctx),
   render: () => (
     <p className="hotkeys__line">
-      One card per key, one box per tab. Where tabs share a key, each tab's box picks what the key does there. A note or a diagram reads a change when it opens.
+      One card per key, one box per tab. Where tabs share a key, each tab's box picks what the key does there. A page or a diagram reads a change when it opens.
     </p>
   ),
 }
@@ -897,7 +897,7 @@ function cardGroups(ctx: SettingsCtx): SettingsGroup[] {
 
 // ---------- the clicks and drags (YAZ-3936: one card per gesture) ----------
 
-/** "Links in a note › Open in this tab": a gesture row as the pop-up and the Reset list name it. */
+/** "Links in a page › Open in this tab": a gesture row as the pop-up and the Reset list name it. */
 const clickOwned = (row: GestureRow): string => `${GESTURE_PLACE_TITLES[row.place]} › ${row.label}`
 const shownClick = (gesture: string | null): string => (gesture === null ? 'No gesture' : gestureDisplay(gesture))
 const clickChanged = (row: GestureRow, overrides: HotkeyOverrides): boolean => overrides[row.id] !== undefined
@@ -1098,7 +1098,7 @@ function clickInFilter(ctx: SettingsCtx, changed: boolean): boolean {
 /** The changed click rows the page shows now: "Reset all" lists them with the keys. */
 const changedClicks = (ctx: SettingsCtx): GestureRow[] => GESTURE_ROWS.filter((r) => clickChanged(r, ctx.settings.hotkeys) && clickInFilter(ctx, true))
 
-/** A changeable click's row (YAZ-3936). Its search text is its action, its gesture now, its hint and its place ("links in a note"). */
+/** A changeable click's row (YAZ-3936). Its search text is its action, its gesture now, its hint and its place ("links in a page"). */
 const gestureItem = (row: GestureRow): SettingDef => ({
   id: `hotkey-${row.id.replace('.', '-')}`,
   label: row.label,
@@ -1167,7 +1167,7 @@ const clickLegendItem: SettingDef = {
   keywords: ['mouse', 'click', 'drag', 'gesture', ...ROW_KEYWORDS],
   bare: true,
   available: (ctx) => !isFiltered(ctx) || clicksOnly(ctx),
-  render: () => <p className="hotkeys__line">One card per click or drag, one box per place. Links in a note, Bullet dots and Files in lists are yours to change: click the box, then hold the keys and click it again.</p>,
+  render: () => <p className="hotkeys__line">One card per click or drag, one box per place. Links in a page, Bullet dots and Files in lists are yours to change: click the box, then hold the keys and click it again.</p>,
 }
 
 /** The clicks' groups (YAZ-3936): the legend, one card per gesture, then the clicks with no gesture. */

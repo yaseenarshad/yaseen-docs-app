@@ -78,10 +78,10 @@ describe('loadExcalidraw', () => {
 })
 
 describe('warmEngineFor (Draw\'s YAZ-2073 4B; YAZ-3044 A39)', () => {
-  it('loads nothing for a window with no file open, a note, or a draw.io diagram in front', async () => {
+  it('loads nothing for a window with no file open, a page, or a draw.io diagram in front', async () => {
     const { warmEngineFor } = await freshEngine()
     warmEngineFor(null)
-    warmEngineFor('/vault/Note.md')
+    warmEngineFor('/vault/Page.md')
     warmEngineFor('/vault/flow.drawio')
     await new Promise((r) => setTimeout(r, 0))
     expect(imported).toEqual({ engine: 0, css: 0 })

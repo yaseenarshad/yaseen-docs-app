@@ -71,7 +71,7 @@ describe('embed options (YAZ-4820 1A)', () => {
     expect(isBoardTarget('a/B.DRAWIO')).toBe(true)
     expect(isBoardTarget('Sketch.excalidraw')).toBe(true)
     expect(isBoardTarget('photo.png')).toBe(false)
-    expect(isBoardTarget('Note')).toBe(false)
+    expect(isBoardTarget('Page')).toBe(false)
   })
 
   it('writes only after a real move: more than 4 px or 2% zoom (item 18)', () => {

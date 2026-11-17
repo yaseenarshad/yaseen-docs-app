@@ -31,7 +31,7 @@
  * - Clear cells is prosemirror-tables' `deleteCellSelection` (Delete's own): the text goes, the
  *   cells keep their attributes.
  *
- * Hidden on a single caret or one cell, in a read-only note (R3), when the editor has no focus,
+ * Hidden on a single caret or one cell, in a read-only page (R3), when the editor has no focus,
  * and while a mouse drag is selecting: a mousedown in the editor hides it, the mouseup shows it.
  * Also while the table menu is open (a right-click, or a handle's `TABLE_HANDLE_MENU`), so the two
  * never overlap; the next click in the editor shows it again.

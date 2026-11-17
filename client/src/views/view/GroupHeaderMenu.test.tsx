@@ -1,7 +1,7 @@
 /**
  * The group header's right-click menu (YAZ-4604, D55): a right-click on a group header never shows the system menu; it
  * opens the app's menu, whose one item collapses or expands only that group (the chevron's stored key) and whose "New
- * note in this group" is the header's "+". Table, Board, List and Cards, at every level. ViewsPane mounted in jsdom.
+ * page in this group" is the header's "+". Table, Board, List and Cards, at every level. ViewsPane mounted in jsdom.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane } from '../ViewsPane'
-import type { NewNoteSeed } from '../newNote'
+import type { NewPageSeed } from '../newPage'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import { dropAllHistories } from './valueHistory'
@@ -28,7 +28,7 @@ vi.mock('../../lib/storage', () => ({
 }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
 
-const create = vi.fn<(seed: NewNoteSeed, name?: string) => Promise<string>>()
+const create = vi.fn<(seed: NewPageSeed, name?: string) => Promise<string>>()
 const SEP = '\u001f'
 
 const viewOf = (type: string) => `views:
@@ -113,7 +113,7 @@ function rightClick(target: Element): MouseEvent {
 
 const menu = (): HTMLElement | null => document.querySelector<HTMLElement>('.ctx-menu')
 const items = (): string[] => [...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent ?? '')
-/** The header's own group: "New note in this group", then its toggle. With two levels a second group follows, the level steps (YAZ-3746 13AT). */
+/** The header's own group: "New page in this group", then its toggle. With two levels a second group follows, the level steps (YAZ-3746 13AT). */
 const ownItems = (): string[] => [...document.querySelectorAll('.ctx-menu .ctx-menu__group:first-child [role="menuitem"]')].map((b) => b.textContent ?? '')
 function pick(name: string): void {
   const item = [...document.querySelectorAll<HTMLElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === name)
@@ -130,7 +130,7 @@ describe('group header right-click (YAZ-4604, D55)', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(menu()).not.toBeNull()
     // The edit first (YAZ-4608 C8); the view has two levels, so the level steps follow (YAZ-3746 13AT).
-    expect(items()).toEqual(['New note in this group', 'Collapse this group', 'Collapse one level', 'Expand one level'])
+    expect(items()).toEqual(['New page in this group', 'Collapse this group', 'Collapse one level', 'Expand one level'])
   })
 
   it('a right-click on the empty part of a table group row opens the same menu (not the system one)', () => {
@@ -138,7 +138,7 @@ describe('group header right-click (YAZ-4604, D55)', () => {
     const cell = headersOf(el, 'A')[0].closest<HTMLElement>('td.view-table__group-cell')!
     const event = rightClick(cell)
     expect(event.defaultPrevented).toBe(true)
-    expect(ownItems()).toEqual(['New note in this group', 'Collapse this group']) // the edit first (YAZ-4608 C8)
+    expect(ownItems()).toEqual(['New page in this group', 'Collapse this group']) // the edit first (YAZ-4608 C8)
     pick('Collapse this group')
     expect(expanded(headersOf(el, 'A')[0])).toBe('false')
   })
@@ -161,21 +161,21 @@ describe('group header right-click (YAZ-4604, D55)', () => {
     expect(expanded(headersOf(el, 'p1')[1])).toBe('true')
   })
 
-  it('"New note in this group" seeds that group, as its "+" does', () => {
+  it('"New page in this group" seeds that group, as its "+" does', () => {
     const el = mount(viewOf('table'))
     rightClick(headersOf(el, 'p1')[1]) // B's p1
-    pick('New note in this group')
+    pick('New page in this group')
     expect(menu()).toBeNull()
     expect(create.mock.calls[0][0].properties).toEqual({ proc: 'p1', dept: 'B' })
   })
 
-  it('a level without a "+" offers no New note item', () => {
+  it('a level without a "+" offers no New page item', () => {
     const el = mount(`formulas:\n  top: dept\n${viewOf('table').replace('- property: note.dept', '- property: formula.top')}`)
     const outer = el.querySelector<HTMLElement>('.view-group')!
     expect(outer.querySelector('.view-group__new')).toBeNull()
     rightClick(outer)
     expect(ownItems()).toEqual(['Collapse this group'])
-    expect(items()).not.toContain('New note in this group')
+    expect(items()).not.toContain('New page in this group')
   })
 
   it('Esc and a press outside close it', () => {
@@ -220,7 +220,7 @@ describe('group header right-click (YAZ-4604, D55)', () => {
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::V', ['v:A', `v:B${SEP}v:p1`])
 
     rightClick(headersOf(el, 'B')[0])
-    pick('New note in this group')
+    pick('New page in this group')
     expect(create.mock.calls[0][0].properties).toEqual({ dept: 'B' })
   })
 })
@@ -231,7 +231,7 @@ describe('a nested Folder group header: Expand all and Collapse all (YAZ-4928)',
     const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
     return { ...TEST_RECORDS[0], path: `/vault/${path}`, name: `${basename}.md`, basename, title: basename, folder: path.slice(0, path.lastIndexOf('/')), properties: {} }
   }
-  const TREE = [at('wiki/cloud/Cloud note.md'), at('wiki/cloud/aws/S3.md'), at('wiki/cloud/aws/lambda/Cold starts.md'), at('wiki/cloud/aws/lambda/tuning/Memory.md'), at('wiki/cloud/costs/Reserved.md'), at('wiki/habits/Reading.md')]
+  const TREE = [at('wiki/cloud/Cloud page.md'), at('wiki/cloud/aws/S3.md'), at('wiki/cloud/aws/lambda/Cold starts.md'), at('wiki/cloud/aws/lambda/tuning/Memory.md'), at('wiki/cloud/costs/Reserved.md'), at('wiki/habits/Reading.md')]
   const folderView = (depth: string) => `views:
   - type: table
     name: V
@@ -241,7 +241,7 @@ describe('a nested Folder group header: Expand all and Collapse all (YAZ-4928)',
       - property: file.folder
         depth: ${depth}
 `
-  /** `locked`: a read-only folder page — the host refuses every settings write and every note is read only (YAZ-4939). */
+  /** `locked`: a read-only folder page — the host refuses every settings write and every page is read only (YAZ-4939). */
   const onChange = vi.fn()
   const writeValues = vi.fn()
   function mountFolder(text: string, locked = false) {
@@ -269,7 +269,7 @@ describe('a nested Folder group header: Expand all and Collapse all (YAZ-4928)',
     const pane = mountFolder(folderView('all'))
     expect(headersOf(pane, 'aws')).toHaveLength(1)
     rightClick(headersOf(pane, 'cloud')[0])
-    expect(items()).toEqual(['New note in this group', 'Collapse this group', 'Expand all', 'Collapse all', 'Collapse one level', 'Expand one level'])
+    expect(items()).toEqual(['New page in this group', 'Collapse this group', 'Expand all', 'Collapse all', 'Collapse one level', 'Expand one level'])
     expect(groupOf('Expand all')).toEqual(['Expand all (off)', 'Collapse all'])
     pick('Collapse all')
     expect(menu()).toBeNull()
@@ -304,7 +304,7 @@ describe('a nested Folder group header: Expand all and Collapse all (YAZ-4928)',
     container?.remove()
     const flat = mountFolder(folderView('1').replace('        depth: 1\n', ''))
     rightClick(headersOf(flat, 'cloud')[0])
-    expect(items()).toEqual(['New note in this group', 'Collapse this group'])
+    expect(items()).toEqual(['New page in this group', 'Collapse this group'])
   })
 
   describe('one ⌘Z undoes each, ⇧⌘Z redoes it', () => {

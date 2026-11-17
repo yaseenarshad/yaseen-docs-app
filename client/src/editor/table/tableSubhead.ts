@@ -56,14 +56,14 @@ import { moveRowCommand } from '@milkdown/kit/preset/gfm'
 import { $shortcut } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { verticalScrollParent, watchNear } from '../../lib/pinnedHeader'
-import { rowShortcuts } from '../noteKeys'
+import { rowShortcuts } from '../pageKeys'
 import { VIEW_ONLY_CHANGE } from '../readOnlyEdit'
 import { beforeTableEditing } from './beforeTableEditing'
 import { bodySpansRows, rowFolded, rowSubhead, sectionEnd, subheadOf, tableHasSubheads } from './cells'
 import { keepingScroll } from './tableFold'
 import { TABLE_HANDLE_PLACE, frozenRowCount } from './tableFreeze'
 import { changedTables, typingOnly } from './tableStyle'
-import { onStickySubheadersSetting, stickySubheadersSetting } from './timeFormatSetting'
+import { onStickySubheadersSetting, stickyHeaderSetting, stickySubheadersSetting } from './timeFormatSetting'
 
 /** Dispatch a collapse; in a view that is not editable, as a view change (YAZ-4939, `VIEW_ONLY_CHANGE`): out of the history, and the host told. */
 function dispatchCollapse(view: EditorView, tr: Transaction): void {
@@ -245,7 +245,7 @@ function subheadDecorations(table: ProseNode, pos: number): Decoration[] {
   return out
 }
 
-/** A mousedown on a chevron: toggle its section, with ⌥ every section of the table; in a read-only note too (YAZ-4939). */
+/** A mousedown on a chevron: toggle its section, with ⌥ every section of the table; in a read-only page too (YAZ-4939). */
 function onChevron(view: EditorView, event: MouseEvent): boolean {
   if (event.button !== 0 || !(event.target instanceof Element)) return false
   const chevron = event.target.closest('.table-subhead-chevron')
@@ -356,7 +356,7 @@ class SubheadPinner {
     const naturalTop = (r: number): number => rows[r]!.getBoundingClientRect().top - (pinned !== null && pinned.row === rows[r] ? pinned.offset * zoom : 0)
     const scrollerTop = scroller.getBoundingClientRect().top + scroller.clientTop * zoom
     // Under the frozen rows (`tableFreeze.ts`): their height ends at the last frozen row shown.
-    const frozen = Math.min(frozenRowCount(node), rows.length)
+    const frozen = Math.min(frozenRowCount(node, stickyHeaderSetting(parts.table)), rows.length)
     let frozenHeight = 0
     if (frozen > 0) {
       let last = frozen - 1
@@ -400,7 +400,7 @@ class SubheadPinner {
 }
 
 /** Sticky on for the table: its own choice, else Settings › Tables › Sticky subheaders. */
-export const stickyOn = (table: ProseNode): boolean => (table.attrs.stickySubheaders as boolean | null) ?? stickySubheadersSetting()
+export const stickyOn = (table: ProseNode, sticky = stickySubheadersSetting()): boolean => (table.attrs.stickySubheaders as boolean | null) ?? sticky
 
 class SubheadView {
   #tables = new Map<HTMLElement, SubheadPinner>()
@@ -420,9 +420,11 @@ class SubheadView {
   #sync(view: EditorView): void {
     const state = subheadKey.getState(view.state)!
     const live = new Map<HTMLElement, ProseNode>()
+    // YAZ-5487: this editor's vault's default.
+    const sticky = stickySubheadersSetting(view)
     for (const deco of state.set.find(undefined, undefined, (spec) => spec.subhead === true)) {
       const node = view.state.doc.nodeAt(deco.from)
-      if (node?.type.name !== 'table' || deco.to !== deco.from + node.nodeSize || !stickyOn(node)) continue
+      if (node?.type.name !== 'table' || deco.to !== deco.from + node.nodeSize || !stickyOn(node, sticky)) continue
       const dom = view.nodeDOM(deco.from)
       if (dom instanceof HTMLElement) live.set(dom, node)
     }
@@ -507,10 +509,10 @@ const allSections =
 const PRIORITY = 110
 
 const subheadKeys = $shortcut((ctx) => ({
-  ...rowShortcuts(ctx, 'note.foldHere', 'CollapseSubheadSection', { priority: PRIORITY, onRun: () => sectionHere(true) }),
-  ...rowShortcuts(ctx, 'note.unfoldHere', 'ExpandSubheadSection', { priority: PRIORITY, onRun: () => sectionHere(false) }),
-  ...rowShortcuts(ctx, 'note.foldAll', 'CollapseAllSubheads', { priority: PRIORITY, onRun: () => allSections(true) }),
-  ...rowShortcuts(ctx, 'note.unfoldAll', 'ExpandAllSubheads', { priority: PRIORITY, onRun: () => allSections(false) }),
+  ...rowShortcuts(ctx, 'page.foldHere', 'CollapseSubheadSection', { priority: PRIORITY, onRun: () => sectionHere(true) }),
+  ...rowShortcuts(ctx, 'page.unfoldHere', 'ExpandSubheadSection', { priority: PRIORITY, onRun: () => sectionHere(false) }),
+  ...rowShortcuts(ctx, 'page.foldAll', 'CollapseAllSubheads', { priority: PRIORITY, onRun: () => allSections(true) }),
+  ...rowShortcuts(ctx, 'page.unfoldAll', 'ExpandAllSubheads', { priority: PRIORITY, onRun: () => allSections(false) }),
 }))
 
 /**

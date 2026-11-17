@@ -1,6 +1,6 @@
 /**
  * The `[[` link picker (Links B, GRO-2191): typing `[[` in the editor opens a suggestion popup
- * over every markdown note in the vault; typing filters, ↑/↓ navigate, Enter/click INSERTS THE
+ * over every markdown page in the vault; typing filters, ↑/↓ navigate, Enter/click INSERTS THE
  * PLAIN TEXT `[[name]]` (the A- decorations restyle it on their next pass — never a schema or
  * doc-structure change, so round-trip stays byte-identical), Esc dismisses leaving the typed
  * text as-is.
@@ -36,11 +36,11 @@
  * What the row inserts does not change.
  *
  * Matching is the shared `links/completion.ts` (one matcher with the Bases cell editors —
- * locked ruling): case-insensitive, by text and then by words (YAZ-3748 D1), cap 8. A note
+ * locked ruling): case-insensitive, by text and then by words (YAZ-3748 D1), cap 8; a page's ID first (YAZ-4992). A page
  * with frontmatter aliases (E2, GRO-2214) is offered twice — under its name (inserting
  * `[[Name]]`) and under each alias, which READS `CAC — Customer Acquisition Cost` and INSERTS
- * the piped `[[Customer Acquisition Cost|CAC]]`, so the link targets the note and displays the
- * alias. A note with a frontmatter `id` (YAZ-2293, 🔒) is offered under the same rows but every
+ * the piped `[[Customer Acquisition Cost|CAC]]`, so the link targets the page and displays the
+ * alias. A page with a frontmatter `id` (YAZ-2293, 🔒) is offered under the same rows but every
  * one of them inserts the plain `[[id]]`. When no row's name is the non-empty fragment
  * (YAZ-3748 B1: it was when nothing matched), a "Create" row below the matches creates the page
  * (YAZ-1357, 🔒 D3 revised — through Links C's own `createFromLink`, staying put; see
@@ -62,11 +62,12 @@ import { splitLink } from '@shared/linkParts'
 import { basename } from '@shared/types'
 import { api } from '../../api'
 import { fileLabel } from '../../lib/pageLabel'
-import { matchLinkCandidates, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
+import { matchLinks, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
 import { createFromLink } from './createFromLink'
 import type { WikilinkNav } from './wikilinkClick'
 import { linkPageName, type LinkLook, type WikilinkResolveSource } from './wikilinkPlugin'
 import './wikilinkPicker.css'
+import { tourCardsFirst, tourEvent } from '../../course/tourBus'
 
 export const WIKILINK_PICKER_CLASS = 'wikilink-picker'
 export const WIKILINK_PICKER_ITEM_CLASS = 'wikilink-picker__item'
@@ -106,8 +107,8 @@ export function createWikilinkCandidateSource(): MutableWikilinkCandidateSource 
 }
 
 /**
- * One popup row: shows `label`, inserts `[[insert]]` — the two differ for every row of a note
- * with an id (it inserts the id, YAZ-2293) and for an id-less note's alias row, which reads
+ * One popup row: shows `label`, inserts `[[insert]]` — the two differ for every row of a page
+ * with an id (it inserts the id, YAZ-2293) and for an id-less page's alias row, which reads
  * `CAC — Customer Acquisition Cost` and inserts the piped `[[Customer Acquisition Cost|CAC]]`
  * (E2, GRO-2214). `create` rows show as Create "…" (no row has the typed name, B1) and make the
  * page — `insert` is then its typed NAME, and the link goes in by the new page's id (`insertRow`).
@@ -118,6 +119,8 @@ export interface PickerRow {
   create: boolean
   /** The page the row names (`LinkCandidate.path`): its icon. */
   path?: string
+  /** A card's row (YAZ-5030): the card icon, not its page's. */
+  card?: true
 }
 
 interface PickerSession {
@@ -173,16 +176,20 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
 
 /**
  * Matches through the shared matcher, then Create for a non-empty fragment that no matched row is NAMED (trimmed, any
- * case; YAZ-3748 B1). The word tiers find more rows than the text did, so "nothing matched" no longer means "no page has
- * this name": `q4 meeting notes` finds `Meeting notes Q4` and still offers to create its own page. An exact name ranks
+ * case; YAZ-3748 B1). A page is found by its ID too (YAZ-4992, `matchLinks`): `[[40` lists WIKI-40 first, read
+ * `WIKI-40 — Redis`; `was` is the vault's ID letters, so an old one (`OLD-40`) finds it as the search box does. The word tiers find more rows than the text did, so "nothing matched" no longer means "no page has
+ * this name": `q4 meeting pages` finds `Meeting pages Q4` and still offers to create its own page. An exact name ranks
  * first (tier 0), so it is among the matches whenever one exists.
  */
-export function rowsFor(fragment: string, candidates: readonly LinkCandidate[]): PickerRow[] {
-  const matches = matchLinkCandidates(candidates, fragment)
+export function rowsFor(fragment: string, candidates: readonly LinkCandidate[], was?: readonly string[], cardsFirst = false): PickerRow[] {
+  // Cards first (YAZ-5407, the course's step on card links): within each rank a card comes before a page.
+  const ordered = cardsFirst ? [...candidates.filter((c) => c.card === true), ...candidates.filter((c) => c.card !== true)] : candidates
+  const matches = matchLinks(ordered, fragment, was)
   // A view-only file reads as the sidebar names it (YAZ-3778 S14): `LN Scenarios Diagram.drawio` → `LN Scenarios Diagram`.
-  const rows = matches.map(({ label, insert, path }): PickerRow => ({ label: isViewOnly(insert) ? fileLabel(label) : label, insert, create: false, path }))
+  const rows = matches.map(({ label, insert, path, card }): PickerRow => ({ label: isViewOnly(insert) ? fileLabel(label) : label, insert, create: false, path, ...(card === true && { card }) }))
   const typed = fragment.trim().toLowerCase()
-  if (typed === '' || matches.some((m) => (m.lower ?? m.name.toLowerCase()) === typed)) return rows
+  // A card of that title is no PAGE of that name (YAZ-5030): Create still makes the page.
+  if (typed === '' || matches.some((m) => m.card !== true && (m.lower ?? m.name.toLowerCase()) === typed)) return rows
   return [...rows, { label: fragment, insert: fragment, create: true }]
 }
 
@@ -199,12 +206,12 @@ function waitingAfter(prev: readonly Waiting[], tr: Transaction | null, meta: Pi
   return waiting
 }
 
-function compute(state: EditorState, prev: PickerState | null, tr: Transaction | null, source: WikilinkCandidateSource): PickerState {
+function compute(state: EditorState, prev: PickerState | null, tr: Transaction | null, source: WikilinkCandidateSource, links: WikilinkResolveSource): PickerState {
   const meta = tr?.getMeta(pickerKey) as PickerMeta | undefined
-  return { ...session(state, prev, tr, meta, source), waiting: waitingAfter(prev?.waiting ?? NO_WAITING, tr, meta) }
+  return { ...session(state, prev, tr, meta, source, links), waiting: waitingAfter(prev?.waiting ?? NO_WAITING, tr, meta) }
 }
 
-function session(state: EditorState, prev: PickerState | null, tr: Transaction | null, meta: PickerMeta | undefined, source: WikilinkCandidateSource): Pick<PickerState, 'session' | 'dismissed'> {
+function session(state: EditorState, prev: PickerState | null, tr: Transaction | null, meta: PickerMeta | undefined, source: WikilinkCandidateSource, links: WikilinkResolveSource): Pick<PickerState, 'session' | 'dismissed'> {
   let dismissed = prev === null || prev.dismissed === null ? null : tr?.docChanged ? tr.mapping.map(prev.dismissed) : prev.dismissed
   if (meta?.type === 'dismiss' && prev?.session != null) dismissed = prev.session.from
   const ctx = findContext(state)
@@ -215,7 +222,7 @@ function session(state: EditorState, prev: PickerState | null, tr: Transaction |
   // passes anyway, and when it did not the positions are already comparable.
   const sameOpen = prev?.session != null && prev.session.from === ctx.from
   if (!sameOpen && tr?.docChanged !== true) return { session: null, dismissed }
-  const rows = rowsFor(ctx.fragment, source.candidates)
+  const rows = rowsFor(ctx.fragment, source.candidates, links.letters, tourCardsFirst())
   if (rows.length === 0) return { session: null, dismissed }
   const held =
     prev?.session != null && tr !== null && !tr.docChanged && prev.session.from === ctx.from && prev.session.fragment === ctx.fragment
@@ -233,10 +240,10 @@ function session(state: EditorState, prev: PickerState | null, tr: Transaction |
  * Without a nav there is no vault to create in, so the row only inserts.
  *
  * 🔒 Where the vault uses IDs the order is fixed (YAZ-2677 S35): the NUMBER first, from the door
- * (`fs:mint-note-id`); then the link, `[[id]]` where the typed name stands (`wait`, the key of its
- * place); then the note, born WITH that id. Each step that fails leaves a link that reads: no
+ * (`fs:mint-page-id`); then the link, `[[id]]` where the typed name stands (`wait`, the key of its
+ * place); then the page, born WITH that id. Each step that fails leaves a link that reads: no
  * number, and the link stays the typed name; a name the user changed during the wait stays as
- * they left it, and the note is still made; no note, and nothing carries the id, so the id goes
+ * they left it, and the page is still made; no page, and nothing carries the id, so the id goes
  * back to the typed name — found by its text, which an id makes unique in the document, wherever
  * typing has since pushed it.
  *
@@ -245,12 +252,14 @@ function session(state: EditorState, prev: PickerState | null, tr: Transaction |
  */
 async function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, ids: boolean, wait?: number): Promise<void> {
   const page = name.split('#', 1)[0]
-  /** The id the note is born with, and the id the LINK holds: a note that is not born gives the link its typed name back. */
+  // A read-only vault asks before the page is made (YAZ-4985): a Cancel leaves the link as it was typed, with no page.
+  if (nav.allowFileAction !== undefined && !(await nav.allowFileAction(nav.root))) return
+  /** The id the page is born with, and the id the LINK holds: a page that is not born gives the link its typed name back. */
   let id: string | undefined
   let linked: string | undefined
   let numbered = ids
   if (wait !== undefined) {
-    const given = await api.mintNoteId(nav.root).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+    const given = await api.mintPageId(nav.root).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
     const placed = placeId(view, wait, page, typeof given === 'string' ? given : undefined)
     if (given instanceof Error) return nav.onNotice(`Can't create "${linkPageName(name)}": ${given.message}`)
     // `null`: the vault stopped using IDs after the pick. The page is made the plain way, and the link holds its name.
@@ -308,6 +317,7 @@ function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | u
     const wait = born && links.ids && linkPageName(row.insert) !== '' ? ++waits : undefined
     if (wait !== undefined) tr.setMeta(pickerKey, { type: 'wait', key: wait, from: session.from + 2, to: session.from + 2 + row.insert.split('#', 1)[0].length } satisfies PickerMeta)
     dispatch(tr.scrollIntoView())
+    if (row.card === true) tourEvent('card-link-added')
     if (born) void createPage(view, nav, row.insert, links.ids, wait)
   }
   return true
@@ -374,12 +384,22 @@ export function addRowIcon(item: HTMLElement, path: string, look: LinkLook): voi
   }
 }
 
+/** A card's row (YAZ-5030): the card pill's icon before its title. */
+function addCardIcon(item: HTMLElement): void {
+  const icon = document.createElement('span')
+  icon.className = 'wikilink-picker__card-icon'
+  icon.setAttribute('aria-hidden', 'true')
+  item.prepend(icon)
+  item.dataset.card = 'true'
+}
+
 /** The popup element + its rows; mousedown-preventDefault so picking never blurs the editor. */
 function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: WikilinkNav, look?: LinkLook): { element: HTMLElement; render: (session: PickerSession | null) => void } {
   const element = document.createElement('div')
   element.className = WIKILINK_PICKER_CLASS
   element.setAttribute('role', 'listbox')
   element.setAttribute('aria-label', 'Link suggestions')
+  element.dataset.tour = 'link-picker'
   let last: PickerSession | null = null
   const render = (session: PickerSession | null) => {
     if (session === last) return
@@ -393,7 +413,8 @@ function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: Wikili
       item.className = row.create ? `${WIKILINK_PICKER_ITEM_CLASS} ${WIKILINK_PICKER_CREATE_CLASS}` : WIKILINK_PICKER_ITEM_CLASS
       item.setAttribute('aria-selected', String(i === session.selected))
       item.textContent = row.create ? `Create "${row.label}"` : row.label
-      if (!row.create && row.path !== undefined && look !== undefined) addRowIcon(item, row.path, look)
+      if (row.card === true) addCardIcon(item)
+      else if (!row.create && row.path !== undefined && look !== undefined) addRowIcon(item, row.path, look)
       item.addEventListener('mousedown', (e) => e.preventDefault())
       item.addEventListener('click', () => {
         // Re-read the live session: the state may have moved between render and click.
@@ -416,9 +437,9 @@ export function createWikilinkPicker(source: WikilinkCandidateSource, links: Wik
       new Plugin<PickerState>({
         key: pickerKey,
         state: {
-          init: (_, state) => compute(state, null, null, source),
+          init: (_, state) => compute(state, null, null, source, links),
           apply: (tr, value, _old, state) =>
-            tr.docChanged || tr.selectionSet || tr.getMeta(pickerKey) !== undefined ? compute(state, value, tr, source) : value,
+            tr.docChanged || tr.selectionSet || tr.getMeta(pickerKey) !== undefined ? compute(state, value, tr, source, links) : value,
         },
         view: (editorView) => {
           const popup = buildPopup(editorView, links, nav, look)
@@ -437,6 +458,7 @@ export function createWikilinkPicker(source: WikilinkCandidateSource, links: Wik
           return {
             update: (view, prevState) => {
               const session = pickerKey.getState(view.state)?.session ?? null
+              if (session !== null && (pickerKey.getState(prevState)?.session ?? null) === null) tourEvent('link-picker-open')
               popup.render(session)
               // hide() directly when closed: the provider's own update skips meta-only
               // transactions (same doc + selection — exactly what Esc's dismiss is).

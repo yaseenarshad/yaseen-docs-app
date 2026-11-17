@@ -1,6 +1,6 @@
 /**
  * A code block's own width in the file (YAZ-4783): the `<!-- code: … -->` comment on its own, then real editors
- * (`createCrepe`) that load a note, save it, and load the save again; the box's decoration; one transaction per change
+ * (`createCrepe`) that load a page, save it, and load the save again; the box's decoration; one transaction per change
  * and one undo; the line numbers. The drag itself needs a real layout and is checked by hand in the app.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,7 +12,7 @@ import { mount, unmountAll } from '../marks/markTestKit'
 import { blockLines } from '../lineNumbers/blockLines'
 import { fileLines } from '../lineNumbers/fileLines'
 import { showLineNumbers } from '../lineNumbers/lineNumbers'
-import { CODE_WIDTH_ATTR, codeBlockCount, codeWidthsToNote, formatCodeComment, parseCodeComment, PLAIN_CODE } from './codeWidth'
+import { CODE_WIDTH_ATTR, codeBlockCount, codeWidthsToPage, formatCodeComment, parseCodeComment, PLAIN_CODE } from './codeWidth'
 
 afterEach(unmountAll)
 
@@ -65,7 +65,7 @@ describe('the code comment', () => {
     expect(formatCodeComment({ ...look, width: 500 })).toBe('<!-- code: width 500 -->')
   })
 
-  it.each(['<!-- code: -->', '<!-- code -->', '<!-- codes: width 900 -->', '<!-- code: width 900,, x -->', '<!-- code:\nwidth 900 -->', '<!-- note -->'])(
+  it.each(['<!-- code: -->', '<!-- code -->', '<!-- codes: width 900 -->', '<!-- code: width 900,, x -->', '<!-- code:\nwidth 900 -->', '<!-- page -->'])(
     '%j is not ours',
     (comment) => expect(parseCodeComment(comment)).toBeNull(),
   )
@@ -73,13 +73,13 @@ describe('the code comment', () => {
 
 describe('the code block in the file', () => {
   it('a code block with a width loads into the attribute and saves the same bytes, the comment under the fence', async () => {
-    const note = `${CODE}<!-- code: width 900 -->\n\nAfter\n`
-    const { view } = await mount(note)
+    const page = `${CODE}<!-- code: width 900 -->\n\nAfter\n`
+    const { view } = await mount(page)
     const [{ node }] = codeBlocks(view.state.doc)
     expect(node.attrs).toMatchObject({ language: 'js', width: 900, unknownParts: null })
     expect(node.textContent).toBe('const a = 1\nconst b = 2')
     expect(htmlValues(view.state.doc)).toEqual([])
-    expect(await save(note)).toBe(note)
+    expect(await save(page)).toBe(page)
   })
 
   it('a code block with no width saves with no comment, the bytes of before', async () => {
@@ -88,20 +88,20 @@ describe('the code block in the file', () => {
   })
 
   it('unknown words survive, in their places', async () => {
-    const note = `${CODE}<!-- code: wrap, width 900, theme dark -->\n`
-    const { view } = await mount(note)
+    const page = `${CODE}<!-- code: wrap, width 900, theme dark -->\n`
+    const { view } = await mount(page)
     expect(codeBlocks(view.state.doc)[0].node.attrs.width).toBe(900)
-    expect(await save(note)).toBe(note)
+    expect(await save(page)).toBe(page)
   })
 
   it('a code block in a tight bullet keeps its comment inside the bullet, indented, and the next bullet stays a sibling', async () => {
-    const note = '* item\n  ```\n  x\n  ```\n  <!-- code: width 900 -->\n* next\n'
-    const { view } = await mount(note)
+    const page = '* item\n  ```\n  x\n  ```\n  <!-- code: width 900 -->\n* next\n'
+    const { view } = await mount(page)
     const list = view.state.doc.child(0)
     expect(list.childCount).toBe(2)
     expect(list.child(0).child(1).attrs.width).toBe(900)
     expect(htmlValues(view.state.doc)).toEqual([])
-    expect(await save(note)).toBe(note)
+    expect(await save(page)).toBe(page)
   })
 
   it('a comment after a blank line is read too, and saves on the line under the fence', async () => {
@@ -110,20 +110,20 @@ describe('the code block in the file', () => {
     expect(getMarkdownForSave(crepe)).toBe(`${CODE}<!-- code: width 900 -->\n`)
   })
 
-  it.each(['<!-- code: -->', '<!-- codes: width 900 -->', '<!-- note -->'])('a comment that is not ours, %s, stays an HTML block with its text', async (comment) => {
-    const note = `${CODE}\n${comment}\n`
-    const { view } = await mount(note)
+  it.each(['<!-- code: -->', '<!-- codes: width 900 -->', '<!-- page -->'])('a comment that is not ours, %s, stays an HTML block with its text', async (comment) => {
+    const page = `${CODE}\n${comment}\n`
+    const { view } = await mount(page)
     expect(codeBlocks(view.state.doc)[0].node.attrs.width).toBeNull()
     expect(htmlValues(view.state.doc)).toEqual([comment])
-    expect(await save(note)).toBe(note)
+    expect(await save(page)).toBe(page)
   })
 
   it('a comment that is not right after a code block stays a normal comment', async () => {
-    const note = `${CODE}\ntext\n\n<!-- code: width 900 -->\n`
-    const { view } = await mount(note)
+    const page = `${CODE}\ntext\n\n<!-- code: width 900 -->\n`
+    const { view } = await mount(page)
     expect(codeBlocks(view.state.doc)[0].node.attrs.width).toBeNull()
     expect(htmlValues(view.state.doc)).toEqual(['<!-- code: width 900 -->'])
-    expect(await save(note)).toBe(note)
+    expect(await save(page)).toBe(page)
   })
 })
 
@@ -159,15 +159,15 @@ describe('the width on the page', () => {
   })
 })
 
-describe('"Use 900 px for all code blocks in this note" (YAZ-4783 layer 2)', () => {
+describe('"Use 900 px for all code blocks in this page" (YAZ-4783 layer 2)', () => {
   const NESTED = '* item\n\n  ```py\n  x = 1\n  ```\n  <!-- code: wrap, width 700 -->\n'
 
   it('ONE transaction takes every block\'s own width away, its other parts and its code kept; one undo puts them all back', async () => {
-    const note = `${CODE}<!-- code: width 900 -->\n\n${CODE}\n${CODE}<!-- code: width 1300 -->\n\n${NESTED}`
-    const { view, crepe } = await mount(note)
+    const page = `${CODE}<!-- code: width 900 -->\n\n${CODE}\n${CODE}<!-- code: width 1300 -->\n\n${NESTED}`
+    const { view, crepe } = await mount(page)
     const before = getMarkdownForSave(crepe)
     expect(codeBlockCount(view.state.doc)).toBe(4)
-    const tr = codeWidthsToNote(view.state)!
+    const tr = codeWidthsToPage(view.state)!
     view.dispatch(tr)
     expect(codeBlocks(view.state.doc).map(({ node }) => node.attrs.width)).toEqual([null, null, null, null])
     expect([...view.dom.querySelectorAll('.milkdown-code-block')].some((el) => el.hasAttribute(CODE_WIDTH_ATTR))).toBe(false)
@@ -180,10 +180,10 @@ describe('"Use 900 px for all code blocks in this note" (YAZ-4783 layer 2)', () 
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
-  it('a note whose blocks have no width of their own gets no transaction', async () => {
+  it('a page whose blocks have no width of their own gets no transaction', async () => {
     const { view } = await mount(`${CODE}\n${CODE}`)
     expect(codeBlockCount(view.state.doc)).toBe(2)
-    expect(codeWidthsToNote(view.state)).toBeNull()
+    expect(codeWidthsToPage(view.state)).toBeNull()
   })
 })
 
@@ -196,9 +196,9 @@ describe('line numbers', () => {
   })
 
   it('the code block still counts its code lines in lines of the file', async () => {
-    const note = `Intro\n\n${CODE}<!-- code: width 900 -->\n\nAfter\n`
-    const { crepe, view } = await mount(note)
-    const { text, toFileLine } = fileLines('', note)
+    const page = `Intro\n\n${CODE}<!-- code: width 900 -->\n\nAfter\n`
+    const { crepe, view } = await mount(page)
+    const { text, toFileLine } = fileLines('', page)
     const { lines, ends, kinds } = blockLines(text)
     showLineNumbers(crepe, { lines: lines.map(toFileLine), ends: ends.map(toFileLine), kinds })
     const code = box(view)

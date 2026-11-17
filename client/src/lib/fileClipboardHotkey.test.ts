@@ -58,10 +58,10 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     expect(fileClipboardVerb(event(document.body, { key: 'z' }))).toBeNull()
   })
 
-  it('⌘Z and ⌘⇧Z stay with every page, also where its own history is empty and it lets the key pass: a note page, a drawing, a diagram (audit 22)', () => {
+  it('⌘Z and ⌘⇧Z stay with every page, also where its own history is empty and it lets the key pass: a page page, a drawing, a diagram (audit 22)', () => {
     const pages = ['data-page', 'editor--drawing', 'editor--diagram'].map((kind) => {
       const page = document.createElement('section')
-      if (kind === 'data-page') page.setAttribute('data-page', 'note')
+      if (kind === 'data-page') page.setAttribute('data-page', 'page')
       else page.className = `editor ${kind}`
       const inside = document.createElement('canvas') // the drawing's canvas, a page's margin: focusable, not editable
       inside.tabIndex = 0
@@ -87,14 +87,14 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     expect(fileClipboardVerb(event(document.body, { key: 'Backspace', repeat: true }))).toBeNull() // a held ⌘⌫ asks once
   })
 
-  it('⌘⌫ stays with the editor, a field, an open sheet, a note page, a drawing and a diagram (S69)', () => {
+  it('⌘⌫ stays with the editor, a field, an open sheet, a page page, a drawing and a diagram (S69)', () => {
     const editor = document.createElement('div')
     editor.setAttribute('contenteditable', 'true')
     const input = document.createElement('input')
     document.body.append(editor, input)
     const pages = ['data-page', 'editor--drawing', 'editor--diagram'].map((kind) => {
       const page = document.createElement('section')
-      if (kind === 'data-page') page.setAttribute('data-page', 'note')
+      if (kind === 'data-page') page.setAttribute('data-page', 'page')
       else page.className = `editor ${kind}`
       const inside = document.createElement('canvas')
       inside.tabIndex = 0
@@ -122,12 +122,12 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     expect(fileClipboardVerb(event(container, { key: 'v' }))).toBeNull()
   })
 
-  it('a board and a diagram keep ⌘C, ⌘X and ⌘V; a sidebar row and ordinary chrome still get them; a note page keeps today\u2019s rules (YAZ-4372)', () => {
+  it('a board and a diagram keep ⌘C, ⌘X and ⌘V; a sidebar row and ordinary chrome still get them; a page page keeps today\u2019s rules (YAZ-4372)', () => {
     const inside = (kind: string): HTMLElement => {
       const page = document.createElement('section')
-      if (kind === 'data-page') page.setAttribute('data-page', 'note')
+      if (kind === 'data-page') page.setAttribute('data-page', 'page')
       else page.className = `editor ${kind}`
-      const el = document.createElement('div') // focusable, not editable: the engine's container, the diagram's host, a note page's margin
+      const el = document.createElement('div') // focusable, not editable: the engine's container, the diagram's host, a page page's margin
       el.tabIndex = 0
       page.append(el)
       document.body.append(page)
@@ -135,7 +135,7 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     }
     const board = inside('editor--drawing')
     const diagram = inside('editor--diagram')
-    const noteMargin = inside('data-page')
+    const pageMargin = inside('data-page')
     const row = document.createElement('button')
     row.className = 'tree__row'
     document.body.append(row)
@@ -144,8 +144,8 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
       expect(fileClipboardVerb(event(diagram, { key })), `diagram ${key}`).toBeNull()
       expect(fileClipboardVerb(event(row, { key })), `row ${key}`).toBe(verb)
       expect(fileClipboardVerb(event(document.body, { key })), `body ${key}`).toBe(verb)
-      // Today's rule for a note page: a focused margin with no text selection in it is no page text, so the sidebar keeps the chord (D6, YAZ-3140).
-      expect(fileClipboardVerb(event(noteMargin, { key })), `note ${key}`).toBe(verb)
+      // Today's rule for a page page: a focused margin with no text selection in it is no page text, so the sidebar keeps the chord (D6, YAZ-3140).
+      expect(fileClipboardVerb(event(pageMargin, { key })), `page ${key}`).toBe(verb)
     }
   })
 
@@ -165,8 +165,8 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     expect(fileClipboardVerb(event(input))).toBeNull()
   })
 
-  describe('a read-only note (YAZ-3127, D8): its body keeps ⌘C / ⌘X / ⌘V — never the FILE clipboard', () => {
-    /** A read-only note body as ProseMirror draws it: `contenteditable="false"`, with a text node. */
+  describe('a read-only page (YAZ-3127, D8): its body keeps ⌘C / ⌘X / ⌘V — never the FILE clipboard', () => {
+    /** A read-only page body as ProseMirror draws it: `contenteditable="false"`, with a text node. */
     function readOnlyBody(parent: HTMLElement = document.body): { body: HTMLElement; text: Text } {
       const body = document.createElement('div')
       body.className = 'ProseMirror'
@@ -179,20 +179,20 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     }
     afterEach(() => document.getSelection()?.removeAllRanges())
 
-    it('the focus in the read-only body: ⌘C, ⌘X and ⌘V are the note\u2019s', () => {
+    it('the focus in the read-only body: ⌘C, ⌘X and ⌘V are the page\u2019s', () => {
       const { body } = readOnlyBody()
       for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(body, { key })), key).toBeNull()
     })
 
-    it('the focus on <body> with the reader\u2019s selection in a visible read-only body they clicked in: still the note\u2019s', () => {
+    it('the focus on <body> with the reader\u2019s selection in a visible read-only body they clicked in: still the page\u2019s', () => {
       const page = document.createElement('div')
-      page.dataset.page = 'note'
+      page.dataset.page = 'page'
       document.body.append(page)
       const { body, text } = readOnlyBody(page)
       body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
       document.getSelection()!.setBaseAndExtent(text, 0, text, 4)
       for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(document.body, { key })), key).toBeNull()
-      // YAZ-3145: a press on blank sidebar space ends the note's claim — ⌘V pastes the copied FILE, as on main.
+      // YAZ-3145: a press on blank sidebar space ends the page's claim — ⌘V pastes the copied FILE, as on main.
       document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
       expect(fileClipboardVerb(event(document.body, { key: 'v' }))).toBe('paste')
     })
@@ -207,11 +207,11 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     })
   })
 
-  describe('a page holds the keys (YAZ-3140): the focus on <body>, the selection in a read-only note’s TITLE', () => {
+  describe('a page holds the keys (YAZ-3140): the focus on <body>, the selection in a read-only page’s TITLE', () => {
     function titled(): { title: Text } {
       const host = document.createElement('div')
       host.className = 'editor-host'
-      host.dataset.page = 'note'
+      host.dataset.page = 'page'
       host.dataset.readOnly = 'true'
       const title = document.createElement('div')
       title.className = 'page-title'

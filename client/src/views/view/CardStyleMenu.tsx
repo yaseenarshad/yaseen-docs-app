@@ -9,7 +9,7 @@ export interface CardStyleWrite {
 
 /**
  * "Card style ›" in a card's right-click menu (YAZ-4906 round 2; Yaseen: "model how we have it for headers in tables"):
- * the style panel (`StylePanel.tsx`, the table's "Header row ›" panel) on a note's three properties, `color`,
+ * the style panel (`StylePanel.tsx`, the table's "Header row ›" panel) on a page's three properties, `color`,
  * `text_color` and `weight` (`CARD_STYLE_KEYS`). A card has no Align. Off removes the fill; a colour at Off is Medium.
  * "Plain, like any card" removes the three in one write. `onPick` writes them, one step of ⌘Z each.
  */

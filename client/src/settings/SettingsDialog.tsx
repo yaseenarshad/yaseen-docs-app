@@ -153,21 +153,21 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     </SettingRow>
   )
   /** A per-vault page says which vault it acts on (YAZ-2602 R10), where App names one: a window with two or more. */
-  const vaultLine = (className: string) => ctx.vaultName !== undefined && <p className={className}>Vault: {ctx.vaultName}</p>
+  const vaultLine = (className: string, of?: (ctx: SettingsCtx) => string | undefined) => ctx.vaultName !== undefined && <p className={className}>Vault: {of?.(ctx) ?? ctx.vaultName}</p>
   /** `titled` is false under a search breadcrumb, which already names the group. A group with no row to show is not there. */
   const group = (g: SettingsGroup, items: readonly SettingDef[], key: number | string, titled = true, index?: number) => items.length > 0 && (
     <div key={key} className="settings-group" {...(g.anchor === undefined ? {} : { id: g.anchor })} data-group-index={index} data-group-title={resolveGroupTitle(g, ctx)}>
       {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{resolveGroupTitle(g, ctx)}</h3>}
-      {g.vault === true && vaultLine('settings-group__hint')}
+      {g.vault === true && vaultLine('settings-group__hint', g.vaultOf)}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}
       <div className={`settings-group__card${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{items.map(row)}</div>
     </div>
   )
   const section = (s: SettingsSection) => (
-    <section key={s.id} id={`settings-${s.id}`} data-section={s.id} className="settings-section">
+    <section key={s.id} id={`settings-${s.id}`} data-section={s.id} className="settings-section" data-tour={s.id === 'cards' ? 'settings-cards-section' : undefined}>
       <h2 className="settings-section__title">{s.title}</h2>
       {s.vault === true && vaultLine('settings-section__note')}
-      {s.note !== undefined && <p className="settings-section__note">{s.note}</p>}
+      {s.page !== undefined && <p className="settings-section__note">{s.page}</p>}
       {groupsOf(s, ctx).map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx)), g.anchor ?? i, true, i))}
     </section>
   )
@@ -228,7 +228,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
             )}
           </div>
           {settingsPages.map((s) => (
-            <button key={s.id} type="button" className="settings-nav__item" aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
+            <button key={s.id} type="button" className="settings-nav__item" data-tour={s.id === 'cards' ? 'settings-review' : undefined} aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
               {s.title}
             </button>
           ))}

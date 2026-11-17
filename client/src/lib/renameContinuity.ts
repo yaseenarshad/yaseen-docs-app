@@ -175,7 +175,7 @@ export function takeRenameBuffer(path: string): RenameBuffer | null {
  *
  * Why this matters: closing a tab unmounts its editor, and `useAutosave`'s unmount cleanup
  * flushes the live buffer to disk — recreating the file the delete just trashed. `retire()`
- * makes that flush a no-op and clears the pending debounce. See the residual-race note in this
+ * makes that flush a no-op and clears the pending debounce. See the residual-race page in this
  * module's header: an in-flight save, and another WINDOW's pending debounce, are still out of
  * reach — the same limits rename has always had.
  */

@@ -179,7 +179,7 @@
   color: var(--fg);
 }
 
-/* The one section-level note (Sync: these settings travel with the vault, not the app). */
+/* The one section-level page (Sync: these settings travel with the vault, not the app). */
 .settings-section__note {
   margin: -6px 0 14px;
   font-size: 13px;
@@ -390,6 +390,23 @@
 
 .settings__input--error {
   border-color: var(--danger);
+}
+
+/* A review list (the FSRS weights, YAZ-4946): the whole list shows, wrapped; no second gap under the hint. The box
+   grows to its text (`field-sizing: content`, YAZ-4964): 21 numbers take 3 lines at 960 px, more in a narrow window,
+   and a fixed `rows` cut the last line. Its width stays the row's (`.settings__input`'s 100%), so it never runs past
+   the panel's side. */
+.settings__input--list {
+  margin-top: 0;
+  field-sizing: content;
+  max-width: 100%;
+  /* A floor of 3 lines (with the field's padding and border); the text grows it past that. */
+  min-height: calc(3lh + 14px);
+  resize: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 /* A review number (YAZ-2322): the same field, a few digits wide, on the row beside its unit. */
@@ -1711,8 +1728,8 @@
   text-decoration: underline;
 }
 
-/* The live preview (YAZ-4794): a sample note table header row and one row under it, the `table.css` variables painted
-   as a note table paints them. Fixed layout at the card's width, so it never widens the dialog. */
+/* The live preview (YAZ-4794): a sample page table header row and one row under it, the `table.css` variables painted
+   as a page table paints them. Fixed layout at the card's width, so it never widens the dialog. */
 .header-row-preview {
   grid-column: 1 / -1;
   width: 100%;
@@ -1916,8 +1933,8 @@
 }
 
 /* Settings › Link pills (YAZ-4924, `LinkPillsControl.tsx`): one row — the format box with its chips and the ready
-   formats, the vault rule, the preview (a "Preview" label and ONE sample pill; it wears the vault's look as a note
-   does, in the note's text size) and, under it, the toolbar of the part clicked. */
+   formats, the vault rule, the preview (a "Preview" label and ONE sample pill; it wears the vault's look as a page
+   does, in the page's text size) and, under it, the toolbar of the part clicked. */
 .link-pills-row {
   display: flex;
   flex-direction: column;
@@ -2055,5 +2072,44 @@
 }
 .pill-toolbar .pill-toolbar__close {
   margin-left: auto;
+  color: var(--fg-muted);
+}
+
+/* Settings › Review › How cards come back (YAZ-5020): a quiet line that opens; small, muted text. */
+.review-how {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+.review-how > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  width: max-content;
+}
+.review-how > summary:hover {
+  color: var(--fg);
+}
+.review-how ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.review-how li + li {
+  margin-top: 2px;
+}
+.review-how b {
+  font-weight: 600;
+  color: var(--fg);
+}
+.review-how p {
+  margin: 6px 0 0;
+}
+
+
+/* Settings › Cards › Friends (YAZ-5098): how to make a GitHub token, shown only while none is saved. */
+.settings__steps {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--fg-muted);
 }

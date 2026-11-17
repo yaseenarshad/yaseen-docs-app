@@ -289,7 +289,7 @@ describe('board drag between columns', () => {
     expect(err.title).toBe('disk on fire')
   })
 
-  it('cards are not draggable when the grouping is not a note property', () => {
+  it('cards are not draggable when the grouping is not a page property', () => {
     const { el } = mount(FOLDER_BOARD)
     expect(cardOf(el, 'VSL-v1').getAttribute('draggable')).not.toBe('true')
     fire(cardOf(el, 'VSL-v1'), 'dragstart')

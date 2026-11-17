@@ -27,8 +27,8 @@ it('exports reusable page actions through PageContextMenu', () => {
       <PageContextMenu
         x={12}
         y={34}
-        path="/vault/note.md"
-        title="note"
+        path="/vault/page.md"
+        title="page"
         onOpenRight={onOpenRight}
         onOpenBackground={onOpenBackground}
         onClose={onClose}
@@ -41,19 +41,19 @@ it('exports reusable page actions through PageContextMenu', () => {
   const flyout = openIn(host)
   expect(flyout.map((item) => item.textContent)).toEqual(['Right panel', 'Reveal in Finder'])
   act(() => flyout[0].click())
-  expect(onOpenRight).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+  expect(onOpenRight).toHaveBeenCalledExactlyOnceWith('/vault/page.md')
   expect(onOpenBackground).not.toHaveBeenCalled()
   expect(onClose).toHaveBeenCalledOnce()
 
   act(() => {
     root.render(
-      <PageContextMenu x={12} y={34} path="/vault/note.md" title="note" onOpenBackground={onOpenBackground} onClose={onClose} />,
+      <PageContextMenu x={12} y={34} path="/vault/page.md" title="page" onOpenBackground={onOpenBackground} onClose={onClose} />,
     )
   })
   expect(mainItems(host)).toEqual(['Open in new tab', 'Open in', 'Copy path'])
   expect(openIn(host).map((item) => item.textContent)).toEqual(['Reveal in Finder']) // no right panel handed: none offered
   act(() => (host.querySelector('[role="menuitem"]') as HTMLButtonElement).click())
-  expect(onOpenBackground).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+  expect(onOpenBackground).toHaveBeenCalledExactlyOnceWith('/vault/page.md')
   expect(onClose).toHaveBeenCalledTimes(2)
 
   act(() => root.unmount())
@@ -66,11 +66,11 @@ it('"Open" leads the menu of a surface that hands one: it opens the page in the 
   const root = createRoot(host)
   const onOpen = vi.fn()
   const onClose = vi.fn()
-  act(() => root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" title="note" onOpen={onOpen} onOpenBackground={vi.fn()} onClose={onClose} />))
+  act(() => root.render(<PageContextMenu x={12} y={34} path="/vault/page.md" title="page" onOpen={onOpen} onOpenBackground={vi.fn()} onClose={onClose} />))
   const items = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
   expect(items.map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Open in', 'Copy path'])
   act(() => items[0].click())
-  expect(onOpen).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith('/vault/page.md')
   expect(onClose).toHaveBeenCalledOnce()
   act(() => root.unmount())
   host.remove()
@@ -82,7 +82,7 @@ it('`danger` is the LAST group, after the surface\'s own groups (YAZ-4608 C8)', 
   const root = createRoot(host)
   const danger = (
     <button type="button" role="menuitem" className="ctx-menu__item ctx-menu__item--danger">
-      Delete note…
+      Delete page…
     </button>
   )
   const extra = [
@@ -90,10 +90,10 @@ it('`danger` is the LAST group, after the surface\'s own groups (YAZ-4608 C8)', 
       Fill cell
     </button>,
   ]
-  act(() => root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" title="note" onOpenBackground={vi.fn()} onClose={vi.fn()} extra={extra} danger={danger} />))
+  act(() => root.render(<PageContextMenu x={12} y={34} path="/vault/page.md" title="page" onOpenBackground={vi.fn()} onClose={vi.fn()} extra={extra} danger={danger} />))
   const groups = [...host.querySelectorAll('.ctx-menu__group')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent))
   // The open group, the surface's group, the page's own group (Copy path, YAZ-3746 13AW), then the destructive one.
-  expect(groups).toEqual([['Open in new tab', 'Open in'], ['Fill cell'], ['Copy path'], ['Delete note…']])
+  expect(groups).toEqual([['Open in new tab', 'Open in'], ['Fill cell'], ['Copy path'], ['Delete page…']])
   act(() => root.unmount())
   host.remove()
 })
@@ -110,13 +110,13 @@ it('reports a clipboard rejection passively without leaving an unhandled promise
 
   try {
     act(() => {
-      root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" title="note" onNotice={onNotice} onClose={onClose} />)
+      root.render(<PageContextMenu x={12} y={34} path="/vault/page.md" title="page" onNotice={onNotice} onClose={onClose} />)
     })
     const copy = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Copy path')
     act(() => copy?.click())
     await act(async () => Promise.resolve())
 
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/vault/page.md')
     expect(onClose).toHaveBeenCalledOnce()
     expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't copy path: clipboard permission denied")
   } finally {

@@ -28,12 +28,12 @@ describe('basename', () => {
 
 describe('stripExt', () => {
   it('strips markdown extensions, case-insensitive', () => {
-    expect(stripExt('note.md')).toBe('note')
-    expect(stripExt('note.MARKDOWN')).toBe('note')
+    expect(stripExt('page.md')).toBe('page')
+    expect(stripExt('page.MARKDOWN')).toBe('page')
   })
 
   it('leaves other names alone', () => {
-    expect(stripExt('notes.txt')).toBe('notes.txt')
+    expect(stripExt('pages.txt')).toBe('pages.txt')
     expect(stripExt('Tasks.base')).toBe('Tasks.base') // not a vault extension since YAZ-844
     expect(stripExt('database')).toBe('database')
   })

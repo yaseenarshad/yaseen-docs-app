@@ -58,20 +58,20 @@ describe('runView: a shortcut in each of its folders when grouped by Folder (YAZ
     expect(r.groups!.every((g) => g.nested === true)).toBe(true)
   })
 
-  it('a note with no shortcut groups as before', () => {
+  it('a page with no shortcut groups as before', () => {
     const r = T({ property: 'file.folder' })
     expect(r.groups!.filter((g) => names(g.rows).includes('Express')).map((g) => g.label)).toEqual(['4) App'])
   })
 })
 
-/** YAZ-4799 option parents: grouped Layer › Sub-layer, a note joins only the sub-layer groups whose parent is its layer group. */
+/** YAZ-4799 option parents: grouped Layer › Sub-layer, a page joins only the sub-layer groups whose parent is its layer group. */
 describe('runView: option parents keep a two-column grouping paired (YAZ-4799)', () => {
-  const note = (name: string, properties: Record<string, unknown>) =>
+  const page = (name: string, properties: Record<string, unknown>) =>
     ({ ...TEST_RECORDS[0], path: `/vault/db/${name}.md`, basename: name, title: name, folder: 'db', properties }) as IndexRecord
   const recs = [
-    note('Next.js', { Layer: ['1) Clients', '4) App'], 'Sub-layer': ['1) Web browser', '2) API'] }),
-    note('React', { Layer: ['1) Clients'], 'Sub-layer': ['1) Web browser'] }),
-    note('Odd', { Layer: ['1) Clients'], 'Sub-layer': ['2) API'] }),
+    page('Next.js', { Layer: ['1) Clients', '4) App'], 'Sub-layer': ['1) Web browser', '2) API'] }),
+    page('React', { Layer: ['1) Clients'], 'Sub-layer': ['1) Web browser'] }),
+    page('Odd', { Layer: ['1) Clients'], 'Sub-layer': ['2) API'] }),
   ]
   const of: Record<string, string> = { '1) Web browser': '1) Clients', '2) API': '4) App' }
   const optionParent = (key: string) => (key === 'Sub-layer' ? { column: 'Layer', of } : undefined)
@@ -87,7 +87,7 @@ describe('runView: option parents keep a two-column grouping paired (YAZ-4799)',
     expect(pairs(run(false))).toContain('1) Clients › 2) API: Next.js, Odd')
   })
 
-  it('with parents only the right pairs; a note whose sub-layer belongs elsewhere sits directly under its layer, never lost', () => {
+  it('with parents only the right pairs; a page whose sub-layer belongs elsewhere sits directly under its layer, never lost', () => {
     expect(pairs(run(true))).toEqual(['1) Clients › 1) Web browser: Next.js, React', '1) Clients (direct): Odd', '4) App › 2) API: Next.js'])
   })
 })

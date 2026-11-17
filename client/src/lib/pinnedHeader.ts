@@ -1,6 +1,6 @@
 /**
  * Rows that stay at the top of the scroller while a long table scrolls past (the folder page's
- * header, GRO-2136; a note table's frozen rows, YAZ-3769 S3). Native `position: sticky` cannot do it:
+ * header, GRO-2136; a page table's frozen rows, YAZ-3769 S3). Native `position: sticky` cannot do it:
  * the table sits in a sideways scroll box, which is the sticky rows' scroll container. So the rows
  * are moved down by a counter-scroll offset instead (`translateY`), and that offset stops at the
  * table's end.

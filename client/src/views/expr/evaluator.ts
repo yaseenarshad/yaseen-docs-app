@@ -74,7 +74,7 @@ class Evaluator {
   }
 
   private prop(name: string): Value {
-    return fromYaml(hasOwn(this.scope.note, name) ? this.scope.note[name] : undefined)
+    return fromYaml(hasOwn(this.scope.page, name) ? this.scope.page[name] : undefined)
   }
 
   private ident(name: string, locals: Locals): Value {
@@ -82,16 +82,18 @@ class Evaluator {
     switch (name) {
       case 'file': return this.scope.file
       case 'this': return this.scope.this
-      case 'note': return fromYaml(this.scope.note)
+      case 'note': return fromYaml(this.scope.page)
       case 'formula': return new ErrorValue('formula needs a name: formula.<name>')
     }
+    // A card row's columns (YAZ-5319): `card.status`; on a page's row `card` stays the page's property of that name.
+    if (name === 'card' && this.scope.card !== undefined) return this.scope.card
     const extra = this.scope.extra
     if (extra && hasOwn(extra, name)) return extra[name]
     if (hasFunction(name)) return new ErrorValue(`${name} is a function; call it as ${name}()`)
     return this.prop(name)
   }
 
-  /** `note` / `formula` as the object of a member or index are namespaces, not values. */
+  /** `page` / `formula` as the object of a member or index are namespaces, not values. */
   private namespace(e: Expr, locals: Locals): 'note' | 'formula' | null {
     if (e.type !== 'ident' || (locals && hasOwn(locals, e.name))) return null
     return e.name === 'note' || e.name === 'formula' ? e.name : null

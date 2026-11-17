@@ -1,9 +1,9 @@
 /**
  * The folder page's value history (YAZ-4612 S41) as a list: a toast's Undo moves its step to the redo list exactly as
- * ⌘Z does (YAZ-4637 T9e), and the notes a step writes follow a rename and retire on a delete (T3).
+ * ⌘Z does (YAZ-4637 T9e), and the pages a step writes follow a rename and retire on a delete (T3).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { dropAllHistories, dropHistoryPaths, noteRef, renameHistoryPaths, valueHistory } from './valueHistory'
+import { dropAllHistories, dropHistoryPaths, pageRef, renameHistoryPaths, valueHistory } from './valueHistory'
 
 beforeEach(() => dropAllHistories())
 
@@ -36,12 +36,12 @@ describe('undoStep (YAZ-4637 T9e)', () => {
   })
 })
 
-describe('the notes of a step follow a rename and retire on a delete (YAZ-4637 T3)', () => {
+describe('the pages of a step follow a rename and retire on a delete (YAZ-4637 T3)', () => {
   it('a file rename moves the exact path; a folder rename moves every path under it; the rest stay', () => {
     const history = valueHistory('/p')
-    const [a, b, c] = [noteRef('/v/f/a.md'), noteRef('/v/f/sub/b.md'), noteRef('/v/g/c.md')]
-    history.push({ undo: vi.fn(), notes: [a, b] })
-    history.push({ undo: vi.fn(), redo: vi.fn(), notes: [c] })
+    const [a, b, c] = [pageRef('/v/f/a.md'), pageRef('/v/f/sub/b.md'), pageRef('/v/g/c.md')]
+    history.push({ undo: vi.fn(), pages: [a, b] })
+    history.push({ undo: vi.fn(), redo: vi.fn(), pages: [c] })
     renameHistoryPaths('/v/f/a.md', '/v/f/Title.md')
     expect(a.path).toBe('/v/f/Title.md')
     renameHistoryPaths('/v/f', '/v/F2')
@@ -50,10 +50,10 @@ describe('the notes of a step follow a rename and retire on a delete (YAZ-4637 T
 
   it('a delete retires the path (null), in the redo list too, so an Undo or Redo writes nothing there', () => {
     const history = valueHistory('/p')
-    const a = noteRef('/v/f/a.md')
-    const b = noteRef('/v/f/b.md')
-    history.push({ undo: vi.fn(), notes: [a] })
-    history.push({ undo: vi.fn(), redo: vi.fn(), notes: [b] })
+    const a = pageRef('/v/f/a.md')
+    const b = pageRef('/v/f/b.md')
+    history.push({ undo: vi.fn(), pages: [a] })
+    history.push({ undo: vi.fn(), redo: vi.fn(), pages: [b] })
     history.undo() // b to the redo list; a stays in the past
     dropHistoryPaths('/v/f')
     expect([a.path, b.path]).toEqual([null, null])

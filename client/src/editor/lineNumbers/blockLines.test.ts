@@ -57,7 +57,7 @@ describe('blockLines: one entry per leaf block, in order', () => {
   })
 
   it('reads a raw HTML block and a `<br />` line as one paragraph each (S39)', () => {
-    expect(index('<div>', 'raw', '</div>', '', '<br />', '', '<!-- note -->')).toEqual({ lines: [1, 5, 7], kinds: 'ppp' })
+    expect(index('<div>', 'raw', '</div>', '', '<br />', '', '<!-- page -->')).toEqual({ lines: [1, 5, 7], kinds: 'ppp' })
   })
 
   it('gives each bullet the line of its own first block, at every depth and for every marker (S34, S41)', () => {
@@ -99,7 +99,7 @@ describe('blockLines: one entry per leaf block, in order', () => {
 
   it('has no entry for a link reference definition; a footnote definition gives its paragraph (S46)', () => {
     expect(index('text [ref]', '', '[ref]: https://example.com', '', 'after')).toEqual({ lines: [1, 5], kinds: 'pp' })
-    expect(index('text[^1]', '', '[^1]: the note', '', 'after')).toEqual({ lines: [1, 3, 5], kinds: 'ppp' })
+    expect(index('text[^1]', '', '[^1]: the page', '', 'after')).toEqual({ lines: [1, 3, 5], kinds: 'ppp' })
   })
 
   it('a footnote definition with no block is one empty paragraph on its line; one that starts with a list is not (YAZ-3818)', () => {
@@ -182,7 +182,7 @@ describe('blockLines: the line where each block ends (D7)', () => {
   })
 
   it('a raw HTML block ends on its last line (S70)', () => {
-    expect(ranges('<div>', 'raw', '</div>', '', '<br />', '', '<!-- note', 'more -->', 'after')).toEqual(['1–3', '5', '7–8', '9'])
+    expect(ranges('<div>', 'raw', '</div>', '', '<br />', '', '<!-- page', 'more -->', 'after')).toEqual(['1–3', '5', '7–8', '9'])
     expect(ranges('<pre>', '', 'raw', '</pre>', 'x')).toEqual(['1–4', '5'])
   })
 
@@ -279,5 +279,17 @@ describe('a table with settings (YAZ-3758, rule 41a)', () => {
     expect(blockLines('<!-- table: stripes -->\n\n| a |\n| - |\n| 1 |\n').kinds).toBe('pt')
     expect(blockLines('| a |\n| - |\n| 1 |\n\n<!-- line: darkness 50% -->\n').kinds).toBe('tp')
     expect(blockLines('***\n\n<!-- table: stripes -->\n').kinds).toBe('rp')
+  })
+})
+
+describe('blockLines: a card (YAZ-4960, idea 29)', () => {
+  it('reads the card line as the card block\'s own comment: no block of its own, and every line number after it stays', () => {
+    const card = ['```card', 'Front {{word}}', '---', 'Back', '```', '<!-- card: WIKI-512, 2026-11-12T14:05:00.000Z good -->', '', 'After.']
+    expect(ranges(...card)).toEqual(['1–6', '8'])
+    expect(index(...card).kinds).toBe('cp')
+    // In a bullet, as the editor writes it there.
+    expect(ranges('- item', '  ```card', '  Front', '  ```', '  <!-- card: WIKI-1 -->', '- next')).toEqual(['1', '2–5', '6'])
+    // A card line under another language's block is that block's no comment: an HTML block of its own.
+    expect(ranges('```js', 'x', '```', '<!-- card: WIKI-1 -->')).toEqual(['1–3', '4'])
   })
 })

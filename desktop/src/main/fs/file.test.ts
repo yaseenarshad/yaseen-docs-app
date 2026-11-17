@@ -23,7 +23,7 @@ describe('readFile', () => {
     const cases = [
       ['data.json', '{\r\n  "message": "Hello 🌍"\r\n}\r\n'],
       ['script.py', 'print("Ünicode")\n'],
-      ['notes.txt', '\ufefffirst\r\nsecond\r\n'],
+      ['pages.txt', '\ufefffirst\r\nsecond\r\n'],
     ] as const
 
     for (const [name, content] of cases) {

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { cssZoom } from '../lib/cssZoom'
+import { fitMenu } from '../lib/fitMenu'
 
 interface ContextMenuSurfaceProps {
   x: number
@@ -15,9 +15,6 @@ interface ContextMenuSurfaceProps {
   /** What the surface announces: a `menu` by default; the Info popover is a `dialog` (Draw's 🔒 YAZ-1835 D6). */
   role?: 'menu' | 'dialog'
 }
-
-/** The gap a menu keeps from the window's top and bottom edges when it has to move or scroll to fit (13AO). */
-const MENU_EDGE = 8
 
 /** Action-free context-menu mechanics shared by menus whose commands stay domain-owned. */
 export function ContextMenuSurface({ x, y, onClose, children, minWidth, className, width, role = 'menu' }: ContextMenuSurfaceProps) {
@@ -59,21 +56,9 @@ export function ContextMenuSurface({ x, y, onClose, children, minWidth, classNam
     const menu = menuRef.current
     if (menu === null) return
     const place = () => {
-      // Taller than the window (a long row menu at a high zoom, YAZ-3746 13AO): it fits the window and scrolls.
-      menu.style.maxHeight = ''
-      menu.style.overflowY = ''
-      let bounds = menu.getBoundingClientRect()
-      const room = window.innerHeight - 2 * MENU_EDGE
-      if (bounds.height > room) {
-        menu.style.maxHeight = `${room / cssZoom(menu)}px`
-        menu.style.overflowY = 'auto'
-        bounds = menu.getBoundingClientRect()
-      }
-      // `x`, `y` and the window are screen px; the menu's `left` and `top` are its own (YAZ-3746 13AM): inside a zoomed
-      // folder page they are scaled by the zoom, so a menu there opened right of and below the click.
-      const z = cssZoom(menu)
-      const left = Math.max(0, Math.min(x, window.innerWidth - bounds.width)) / z
-      const top = Math.max(MENU_EDGE, Math.min(y, window.innerHeight - MENU_EDGE - bounds.height)) / z
+      // Taller than the window (a long row menu at a high zoom, YAZ-3746 13AO): it fits the window and scrolls; `x`, `y`
+      // and the window are screen px, the menu's `left` and `top` its own (YAZ-3746 13AM). The one rule: `lib/fitMenu.ts`.
+      const { left, top } = fitMenu(menu, x, y)
       setPosition((at) => (at.left === left && at.top === top ? at : { left, top }))
     }
     place()

@@ -5,7 +5,7 @@ import { requireRequest, str } from './validate'
 /**
  * An Image cell's "Paste a link" (YAZ-4802): one picture off the web, downloaded ONCE, so the cell links a file in the
  * vault and never a web address that may go away. Main fetches because the renderer is sandboxed; it writes nothing —
- * the renderer saves the bytes through `writeAsset` into `assets/images/`, the door pasted note images use (never over
+ * the renderer saves the bytes through `writeAsset` into `assets/images/`, the door pasted page images use (never over
  * a file, `-2`, `-3`). The guards: `http:` and `https:` only (after redirects too), an `image/*` answer only, at most
  * `MAX_FILE_BYTES` (what `writeAsset` takes; counted on what arrives, `Content-Length` is a claim), within `TIMEOUT_MS`.
  *

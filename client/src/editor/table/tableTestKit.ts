@@ -1,5 +1,5 @@
 /**
- * Test helpers for note tables on the real editor in jsdom (YAZ-3696: the `table/` suites and `tableZoom.test.ts`).
+ * Test helpers for page tables on the real editor in jsdom (YAZ-3696: the `table/` suites and `tableZoom.test.ts`).
  * jsdom has no layout, so the helpers give each cell a box: 100 × 30 layout px, times the document zoom on screen.
  */
 import type { Crepe } from '@milkdown/crepe'
@@ -11,7 +11,7 @@ export const TABLE = '| h1 | h2 |\n| --- | --- |\n| a | b |\n| c | d |\n'
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
 /** Mount a note (the note editor's table zoom pills too); `zoom` is the document zoom on `.ProseMirror` (app.css `--document-zoom`). Undo with `unmountAll`. */
-export async function mountNote(markdown = TABLE, zoom = 1): Promise<{ crepe: Crepe; view: EditorView }> {
+export async function mountPage(markdown = TABLE, zoom = 1): Promise<{ crepe: Crepe; view: EditorView }> {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const crepe = createCrepe({ root, defaultValue: markdown, tableZoomPill: true })
@@ -34,7 +34,7 @@ export async function mountNote(markdown = TABLE, zoom = 1): Promise<{ crepe: Cr
   return { crepe, view }
 }
 
-export const mountTable = async (markdown = TABLE, zoom = 1): Promise<EditorView> => (await mountNote(markdown, zoom)).view
+export const mountTable = async (markdown = TABLE, zoom = 1): Promise<EditorView> => (await mountPage(markdown, zoom)).view
 
 export async function unmountAll() {
   for (const m of mounted.splice(0)) {

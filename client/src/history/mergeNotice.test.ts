@@ -26,16 +26,16 @@ describe('mergeNotice (YAZ-1897 D4, YAZ-3039)', () => {
       { path: 'b.excalidraw', author: 'Ana', clashes: 0 },
     ]).text).toBe("Merged the other computer's changes into 2 drawings.")
   })
-  it('names a merged note by its title, not its ID-vault file name, in each line (YAZ-4615)', () => {
+  it('names a merged page by its title, not its ID-vault file name, in each line (YAZ-4615)', () => {
     expect(mergeNotice([
-      { path: 'Plans/plan-yaz-12.md', author: 'Sam', clashes: 0, kind: 'note', title: 'Launch plan', renumbered: [{ from: '#2', to: '#3' }] },
+      { path: 'Plans/plan-yaz-12.md', author: 'Sam', clashes: 0, kind: 'page', title: 'Launch plan', renumbered: [{ from: '#2', to: '#3' }] },
     ]).text).toBe("Merged Sam's comments into “Launch plan”. Your comment #2 on “Launch plan” is now #3.")
     expect(mergeNotice([
-      { path: 'Plans/.folder.md', author: 'Sam', clashes: 0, kind: 'note', title: 'Plans', copy: 'Plans/folder (conflict, 2026-11-08).md' },
+      { path: 'Plans/.folder.md', author: 'Sam', clashes: 0, kind: 'page', title: 'Plans', copy: 'Plans/folder (conflict, 2026-11-08).md' },
     ]).text).toBe('“Plans” changed on both computers — your copy is saved as “folder (conflict, 2026-11-08)”.')
   })
 
   it('falls back to the file name when sync sent no title', () => {
-    expect(mergeNotice([{ path: 'plan.md', author: 'Sam', clashes: 0, kind: 'note' }]).text).toBe("Merged Sam's comments into “plan”.")
+    expect(mergeNotice([{ path: 'plan.md', author: 'Sam', clashes: 0, kind: 'page' }]).text).toBe("Merged Sam's comments into “plan”.")
   })
 })

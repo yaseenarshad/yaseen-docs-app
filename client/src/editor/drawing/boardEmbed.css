@@ -1,5 +1,5 @@
 /*
- * Board embeds in the note (YAZ-4827) — classes applied by boardEmbed.ts. The window inside the box is 1B's
+ * Board embeds in the page (YAZ-4827) — classes applied by boardEmbed.ts. The window inside the box is 1B's
  * (`embed/boardWindow.ts`) and draws itself; this file only hides the embed's text and places the box.
  *
  * Every rule is scoped under `.milkdown` on purpose: Crepe's reset carries `.milkdown * { margin: 0; padding: 0 }` at

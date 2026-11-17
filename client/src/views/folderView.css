@@ -1,7 +1,7 @@
 /*
  * The folder view (YAZ-2290) — owned by FolderView.tsx (the feature-CSS convention). It sits in
  * the tab's own scroller under the folder's name, and repeats `.editor-instance`'s content column
- * (backlinks.css's rule, byte for byte) so the table lines up with a note's text. It has no chrome
+ * (backlinks.css's rule, byte for byte) so the table lines up with a page's text. It has no chrome
  * of its own: no hairline, no chip.
  */
 
@@ -34,8 +34,8 @@
  */
 
 /*
- * The Page tab (YAZ-4584 D38): the note editor's mount in the view body. The Crepe instance wears
- * `.editor-instance`, so every note stylesheet applies unchanged. Only the note's page furniture is
+ * The Page tab (YAZ-4584 D38): the page editor's mount in the view body. The Crepe instance wears
+ * `.editor-instance`, so every page stylesheet applies unchanged. Only the page's page furniture is
  * undone: `.editor-instance` is app.css's centred content COLUMN (max-width + 48px sides), and
  * `.folder-view` above already gives the page that column.
  */
@@ -51,9 +51,9 @@
 }
 
 /* Line numbers on the Page (YAZ-3746 10D): the lane is the Page's own. The folder page's scroller does not take the
-   note's 64px (app.css `.editor-host[data-line-numbers]`), so the title, the tabs and the tray stay where they are; the
+   page's 64px (app.css `.editor-host[data-line-numbers]`), so the title, the tabs and the tray stay where they are; the
    Page body takes the 64px instead, 64px on screen at every zoom (the views pane is zoomed). */
-.editor-host[data-line-numbers]:not([data-page='note']) {
+.editor-host[data-line-numbers]:not([data-page='page']) {
   padding-left: 0;
 }
 

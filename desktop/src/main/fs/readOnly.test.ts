@@ -1,64 +1,64 @@
 import { describe, expect, it } from 'vitest'
 import { BOARD_META_KEY, parseBoardMetaBlock, serializeBoard, stampBoardMetaScene } from '@shared/drawingAssets'
 import { DIAGRAM_CREATED_ATTR, DIAGRAM_UPDATED_ATTR, diagramDocumentError, parseDiagramMetaAttrs, stampDiagramMeta } from '@shared/diagramFile'
-import { DIAGRAM_HOVER_LINKS_ATTR, DIAGRAM_READ_ONLY_ATTR, isDiagramHoverLinksOff, isDiagramReadOnly, isDrawingReadOnly, isNoteReadOnly, READ_ONLY_KEY, setDiagramHoverLinksOff, setDiagramReadOnly, setNoteReadOnly, withDrawingReadOnly } from '@shared/readOnly'
+import { DIAGRAM_HOVER_LINKS_ATTR, DIAGRAM_READ_ONLY_ATTR, isDiagramHoverLinksOff, isDiagramReadOnly, isDrawingReadOnly, isPageReadOnly, READ_ONLY_KEY, setDiagramHoverLinksOff, setDiagramReadOnly, setPageReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 
 /**
  * The read-only switch IN the file (YAZ-3076 D1), for the three formats: set, clear, read, and a
  * file with no entry. The cases are YAZ-3113's S1-S8 and S11; the door around them is `boardReadOnly.test.ts`.
  */
 
-describe('a note: `readonly: true` in the frontmatter', () => {
-  const NOTE = '---\n# the owner\'s comment\ntags: [a, b]\nstatus: "draft"\n---\n# Body\n\ntext\n'
+describe('a page: `readonly: true` in the frontmatter', () => {
+  const PAGE = '---\n# the owner\'s comment\ntags: [a, b]\nstatus: "draft"\n---\n# Body\n\ntext\n'
 
   it('S1: no frontmatter, no key, or no block at all is editable', () => {
-    expect(isNoteReadOnly('# Body\n')).toBe(false)
-    expect(isNoteReadOnly(NOTE)).toBe(false)
-    expect(isNoteReadOnly('---\n---\nbody')).toBe(false)
-    expect(isNoteReadOnly('')).toBe(false)
+    expect(isPageReadOnly('# Body\n')).toBe(false)
+    expect(isPageReadOnly(PAGE)).toBe(false)
+    expect(isPageReadOnly('---\n---\nbody')).toBe(false)
+    expect(isPageReadOnly('')).toBe(false)
   })
 
   it('S8: only the value `true` counts', () => {
-    expect(isNoteReadOnly('---\nreadonly: true\n---\n')).toBe(true)
-    for (const value of ['"yes"', '1', '"true"', 'false', 'yes', '']) expect(isNoteReadOnly(`---\nreadonly: ${value}\n---\n`), value).toBe(false)
+    expect(isPageReadOnly('---\nreadonly: true\n---\n')).toBe(true)
+    for (const value of ['"yes"', '1', '"true"', 'false', 'yes', '']) expect(isPageReadOnly(`---\nreadonly: ${value}\n---\n`), value).toBe(false)
     // The word in the body, or under another key, is not the switch.
-    expect(isNoteReadOnly('---\nnote: readonly\n---\nreadonly: true\n')).toBe(false)
+    expect(isPageReadOnly('---\npage: readonly\n---\nreadonly: true\n')).toBe(false)
     // A block that does not parse is editable: the switch is never guessed.
-    expect(isNoteReadOnly('---\nreadonly: true\n  bad: [\n---\n')).toBe(false)
+    expect(isPageReadOnly('---\nreadonly: true\n  bad: [\n---\n')).toBe(false)
   })
 
   it('S2: on writes the key; every other key, the order, the comment and the body stay byte for byte', () => {
-    const on = setNoteReadOnly(NOTE, true)
+    const on = setPageReadOnly(PAGE, true)
     expect(on).toBe('---\n# the owner\'s comment\ntags: [a, b]\nstatus: "draft"\nreadonly: true\n---\n# Body\n\ntext\n')
-    expect(isNoteReadOnly(on)).toBe(true)
+    expect(isPageReadOnly(on)).toBe(true)
   })
 
   it('S3: off removes the key and never writes `false`', () => {
-    const off = setNoteReadOnly(setNoteReadOnly(NOTE, true), false)
-    expect(off).toBe(NOTE)
+    const off = setPageReadOnly(setPageReadOnly(PAGE, true), false)
+    expect(off).toBe(PAGE)
     expect(off).not.toContain(READ_ONLY_KEY)
   })
 
-  it('S4: a note with no frontmatter grows a block of only the switch, and off gives back the same bytes', () => {
+  it('S4: a page with no frontmatter grows a block of only the switch, and off gives back the same bytes', () => {
     const plain = '# Body\n\ntext\n'
-    const on = setNoteReadOnly(plain, true)
+    const on = setPageReadOnly(plain, true)
     expect(on).toBe('---\nreadonly: true\n---\n# Body\n\ntext\n')
-    expect(setNoteReadOnly(on, false)).toBe(plain)
+    expect(setPageReadOnly(on, false)).toBe(plain)
     // CRLF and a `...` terminator keep their frame.
     const crlf = '---\r\na: 1\r\n...\r\nbody'
-    expect(setNoteReadOnly(setNoteReadOnly(crlf, true), false)).toBe(crlf)
+    expect(setPageReadOnly(setPageReadOnly(crlf, true), false)).toBe(crlf)
   })
 
   it('S8: on over a wrong value writes the correct one; off removes a wrong one too', () => {
-    expect(setNoteReadOnly('---\nreadonly: "yes"\n---\nx', true)).toBe('---\nreadonly: true\n---\nx')
-    expect(setNoteReadOnly('---\na: 1\nreadonly: 1\n---\nx', false)).toBe('---\na: 1\n---\nx')
+    expect(setPageReadOnly('---\nreadonly: "yes"\n---\nx', true)).toBe('---\nreadonly: true\n---\nx')
+    expect(setPageReadOnly('---\na: 1\nreadonly: 1\n---\nx', false)).toBe('---\na: 1\n---\nx')
   })
 
   it('S11: the same value again returns the SAME string, so `transformFile` writes nothing', () => {
-    const on = setNoteReadOnly(NOTE, true)
-    expect(setNoteReadOnly(on, true)).toBe(on)
-    expect(setNoteReadOnly(NOTE, false)).toBe(NOTE)
-    expect(setNoteReadOnly('# no block\n', false)).toBe('# no block\n')
+    const on = setPageReadOnly(PAGE, true)
+    expect(setPageReadOnly(on, true)).toBe(on)
+    expect(setPageReadOnly(PAGE, false)).toBe(PAGE)
+    expect(setPageReadOnly('# no block\n', false)).toBe('# no block\n')
   })
 })
 
@@ -269,8 +269,8 @@ describe('YAZ-4748 D10: a diagram\'s `yaseendraw-hoverlinks="0"` on `<mxfile>`',
   })
 })
 
-describe('a note as the index holds it: its parsed properties (YAZ-3076 D6, S57)', () => {
-  it('only `readonly: true` counts, the rule of `isNoteReadOnly`', async () => {
+describe('a page as the index holds it: its parsed properties (YAZ-3076 D6, S57)', () => {
+  it('only `readonly: true` counts, the rule of `isPageReadOnly`', async () => {
     const { isReadOnlyProperties } = await import('@shared/readOnly')
     expect(isReadOnlyProperties({ readonly: true })).toBe(true)
     for (const value of ['yes', 1, 'true', false, null, undefined]) expect(isReadOnlyProperties({ readonly: value }), String(value)).toBe(false)

@@ -35,8 +35,8 @@ test.afterAll(async () => {
 })
 
 test('right-click a tab › Duplicate tab: a copy with its own folds, and text typed in the source is in the copy', async () => {
-  const notePath = path.join(vault, SEED_FILE)
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  const pagePath = path.join(vault, SEED_FILE)
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(tabsOf(win)).toHaveText([NAME])
   await expect(editorOf(win).getByText(CHILD_BULLET)).toBeVisible()
@@ -76,7 +76,7 @@ test('right-click a tab › Duplicate tab: a copy with its own folds, and text t
   await expect(layer(win).locator('[data-outline-folded="true"]').first()).toBeAttached()
   await expect(win.locator('.conflict-bar')).toHaveCount(0)
   await shoot(win, 'duplicate-3-copy-synced')
-  expect(await readFile(notePath, 'utf8')).toContain(marker)
+  expect(await readFile(pagePath, 'utf8')).toContain(marker)
 
   // The source is still unfolded, with the text.
   await tabsOf(win).nth(0).click()

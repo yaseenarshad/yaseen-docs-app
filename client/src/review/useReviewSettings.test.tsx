@@ -1,14 +1,14 @@
 /**
- * `useReviewSettings` (YAZ-2322 🔒 D7): a vault's `.yaseendocs/review.json`, read once per root,
+ * `useReviewSettings` (YAZ-4959 D14, YAZ-4967): a vault's `.yaseendocs/review.json`, read once per root,
  * re-read on that file's change broadcast, sanitised on the way in. The bridge is mocked; the
  * change listeners are captured so a test can push a broadcast.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE } from '@shared/reviews'
+import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, REVIEW_SETTINGS_KEYS, type ReviewSettings } from '@shared/reviews'
 import type { VaultConfigChange } from '@shared/types'
-import { useReviewSettings, type ReviewSettingsState } from './useReviewSettings'
+import { useReviewOnRoots, useReviewSettings, useVaultReviewSettings, type ReviewSettingsState } from './useReviewSettings'
 
 let listeners: Array<(c: VaultConfigChange) => void> = []
 
@@ -36,15 +36,21 @@ const notice = vi.fn()
 
 let root: Root | null = null
 let state: ReviewSettingsState
+let seen: ReviewSettings | undefined
 
-function Probe({ vault }: { vault: string | null }) {
-  state = useReviewSettings(vault, notice)
+let onRoots: ReadonlySet<string> = new Set()
+const ROOTS = ['/vault', '/other']
+
+function Probe({ vault, idsOff = false }: { vault: string | null; idsOff?: boolean }) {
+  state = useReviewSettings(vault, notice, idsOff)
+  seen = useVaultReviewSettings('/vault')
+  onRoots = useReviewOnRoots(ROOTS)
   return null
 }
 
-async function mount(vault: string | null): Promise<void> {
+async function mount(vault: string | null, idsOff = false): Promise<void> {
   root = createRoot(document.createElement('div'))
-  await act(async () => root?.render(<Probe vault={vault} />))
+  await act(async () => root?.render(<Probe vault={vault} idsOff={idsOff} />))
 }
 
 beforeEach(() => {
@@ -60,81 +66,102 @@ afterEach(() => {
 })
 
 describe('useReviewSettings', () => {
-  it('a vault with no review.json: upkeep is off and nothing is written; no call at all with no vault open', async () => {
+  const D = DEFAULT_REVIEW_SETTINGS
+  const changed = (r = '/vault', name = REVIEW_SETTINGS_FILE) => act(async () => listeners.forEach((l) => l({ root: r, name })))
+
+  it('a vault with no review.json has the defaults — review on — and nothing is written; no call at all with no vault open', async () => {
     await mount('/vault')
     expect(read).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE)
-    expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
-    expect(state.settings.enabled).toBe(false)
+    expect(state.settings).toEqual(D)
+    expect(state.settings.enabled).toBe(true)
     expect(write).not.toHaveBeenCalled()
     act(() => root?.unmount())
     read.mockClear()
     await mount(null)
     expect(read).not.toHaveBeenCalled()
-    expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
+    expect(state.settings).toEqual(D)
   })
 
-  it('sanitises what the file holds', async () => {
-    read.mockResolvedValue({ baseDays: 7, growth: 'fast' })
+  it('sanitises what the file holds, field by field, and re-reads on a change to this vault\'s file only', async () => {
+    read.mockResolvedValue({ buttons: 4, retention: 2, newPerDay: 5 })
     await mount('/vault')
-    expect(state.settings).toEqual({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 7 })
-  })
-
-  it('turned on: the file says so, and a change broadcast turns it on or off in place', async () => {
-    read.mockResolvedValue({ enabled: true })
-    await mount('/vault')
-    expect(state.settings).toEqual({ ...DEFAULT_REVIEW_SETTINGS, enabled: true })
+    expect(state.settings).toEqual({ ...D, buttons: 4, newPerDay: 5 })
     read.mockResolvedValue({ enabled: false })
-    await act(async () => listeners.forEach((l) => l({ root: '/vault', name: REVIEW_SETTINGS_FILE })))
+    await changed('/other')
+    await changed('/vault', 'github.json')
+    expect(state.settings.enabled).toBe(true)
+    await changed()
     expect(state.settings.enabled).toBe(false)
   })
 
-  it('re-reads on a change to this vault\'s file only', async () => {
+  it('save shows the new settings at once, and writes only what changed over the file as read: a key this build does not know stays, a default never set stays out', async () => {
+    read.mockResolvedValue({ later: 'kept', newPerDay: 3 })
     await mount('/vault')
-    read.mockResolvedValue({ baseDays: 14 })
-    await act(async () => listeners.forEach((l) => l({ root: '/other', name: REVIEW_SETTINGS_FILE })))
-    await act(async () => listeners.forEach((l) => l({ root: '/vault', name: 'github.json' })))
-    expect(state.settings.baseDays).toBe(30)
-    await act(async () => listeners.forEach((l) => l({ root: '/vault', name: REVIEW_SETTINGS_FILE })))
-    expect(state.settings.baseDays).toBe(14)
-  })
-
-  it('save shows the new settings at once and writes only the settings file', async () => {
-    await mount('/vault')
-    const next = { ...DEFAULT_REVIEW_SETTINGS, baseDays: 10 }
+    const next = { ...state.settings, maxDays: 90 }
     await act(async () => state.save(next))
     expect(state.settings).toEqual(next)
-    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, next)
+    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', newPerDay: 3, maxDays: 90 }, REVIEW_SETTINGS_KEYS)
+    // YAZ-4999 D1: an emptied "New cards a day" is written as null (no limit), and stays null once read back.
+    await act(async () => state.save({ ...state.settings, newPerDay: null }))
+    expect(write).toHaveBeenLastCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', newPerDay: null, maxDays: 90 }, REVIEW_SETTINGS_KEYS)
+    expect(state.settings.newPerDay).toBeNull()
   })
 
-  it('save sanitises, so the file never holds a longest wait under the first', async () => {
+  it('publishes the settings by root for the folder tables, and takes them back when the vault closes', async () => {
+    read.mockResolvedValue({ newPerDay: 4 })
     await mount('/vault')
-    await act(async () => state.save({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 400 }))
-    expect(state.settings.maxDays).toBe(400)
-    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { ...DEFAULT_REVIEW_SETTINGS, baseDays: 400, maxDays: 400 })
+    expect(seen).toBe(state.settings)
+    act(() => root?.unmount())
+    root = null
+    await mount(null)
+    expect(seen).toBeUndefined()
   })
 
-  it('a review.json that stops being valid JSON mid-session: the settings stay as they were and a save is refused with a notice, until the file parses again', async () => {
-    const on = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
-    const changed = () => act(async () => listeners.forEach((l) => l({ root: '/vault', name: REVIEW_SETTINGS_FILE })))
+  it('YAZ-5037: `useReviewOnRoots` names the vaults whose Review is on — the search lists their cards — and keeps the same Set while that stays', async () => {
+    read.mockResolvedValue({ enabled: false })
+    await mount('/vault')
+    expect([...onRoots]).toEqual([])
     read.mockResolvedValue({ enabled: true })
+    await changed()
+    const held = onRoots
+    expect([...held]).toEqual(['/vault'])
+    await act(async () => state.save({ ...state.settings, newPerDay: 7 }))
+    expect(onRoots).toBe(held)
+  })
+
+  it('YAZ-5154: a vault whose index says IDs off publishes Cards off — no card in search, no Card type, no card tools — whatever review.json says; the file is not written', async () => {
+    read.mockResolvedValue({ enabled: true })
+    await mount('/vault', true)
+    expect(state.settings.enabled).toBe(true)
+    expect(seen?.enabled).toBe(false)
+    expect([...onRoots]).toEqual([])
+    expect(write).not.toHaveBeenCalled()
+    await act(async () => root?.render(<Probe vault="/vault" />))
+    expect(seen?.enabled).toBe(true)
+    expect([...onRoots]).toEqual(['/vault'])
+  })
+
+  it('a review.json that stops being valid JSON mid-session: the settings stay and a save is refused with a notice, until the file parses again', async () => {
+    read.mockResolvedValue({ buttons: 4 })
     await mount('/vault')
+    const on = state.settings
     read.mockRejectedValue(new BridgeRequestError('INVALID_CONFIG', 'review.json is not valid JSON'))
     await changed()
     expect(state.settings).toEqual(on)
-    await act(async () => state.save({ ...on, baseDays: 10 }))
+    await act(async () => state.save({ ...on, maxDays: 10 }))
     expect(state.settings).toEqual(on)
     expect(write).not.toHaveBeenCalled()
     expect(notice).toHaveBeenCalledExactlyOnceWith("Can't save the review settings: review.json is not valid JSON", 'error')
-    read.mockResolvedValue({ enabled: true, baseDays: 7 })
+    read.mockResolvedValue({ buttons: 4 })
     await changed()
-    await act(async () => state.save({ ...on, baseDays: 10 }))
-    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', REVIEW_SETTINGS_FILE, { ...on, baseDays: 10 })
+    await act(async () => state.save({ ...on, maxDays: 10 }))
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', REVIEW_SETTINGS_FILE, { buttons: 4, maxDays: 10 }, REVIEW_SETTINGS_KEYS)
   })
 
   it('a save that fails falls back to what the file holds', async () => {
     await mount('/vault')
     write.mockRejectedValue(new Error('read-only'))
-    await act(async () => state.save({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 10 }))
-    expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
+    await act(async () => state.save({ ...D, maxDays: 10 }))
+    expect(state.settings).toEqual(D)
   })
 })

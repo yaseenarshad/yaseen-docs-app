@@ -91,11 +91,11 @@ describe('which windows a layout takes', () => {
   // Back to front: s1, n1, b1, s2, n2, n3 (n3 in front).
   const layers = [
     { id: 1, kind: 'search' },
-    { id: 2, kind: 'note' },
+    { id: 2, kind: 'page' },
     { id: 3, kind: 'board' },
     { id: 4, kind: 'search' },
-    { id: 5, kind: 'note' },
-    { id: 6, kind: 'note' },
+    { id: 5, kind: 'page' },
+    { id: 6, kind: 'page' },
   ] as const
 
   it('the most recently used first (the front order), searches left out unless asked; at most the places', () => {

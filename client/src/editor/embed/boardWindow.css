@@ -178,7 +178,7 @@
   flex: none;
 }
 
-/* Resting (D9): a quiet note on hover; one click wakes the window. */
+/* Resting (D9): a quiet page on hover; one click wakes the window. */
 :is(.milkdown, .board-window-overlay, .explore__board) .board-window__rest {
   position: absolute;
   top: 50%;
@@ -268,7 +268,7 @@
   border-color: var(--accent);
 }
 
-/* ── View full size (item 4): the same window over the whole note. ── */
+/* ── View full size (item 4): the same window over the whole page. ── */
 
 .board-window-overlay {
   position: fixed;

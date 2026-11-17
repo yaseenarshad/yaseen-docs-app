@@ -1,6 +1,6 @@
 /**
  * Go to now (YAZ-4164, YAZ-4159 D11 / D12): the caret in the first empty cell of the now row of a calendar table, the
- * request a host makes for a note it opens (the daily-note button, ⌘D), "Go to now" in the six-dot menu, and the
+ * request a host makes for a note it opens (the daily-page button, ⌘D), "Go to now" in the six-dot menu, and the
  * "Now" chip.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -101,7 +101,7 @@ describe('goToNow (D11)', () => {
     }
   })
 
-  it('a read-only note: the document does not change; a now row in a folded run scrolls its bar to the middle (YAZ-4176)', async () => {
+  it('a read-only page: the document does not change; a now row in a folded run scrolls its bar to the middle (YAZ-4176)', async () => {
     const seen: Array<[Element, unknown]> = []
     const was = Element.prototype.scrollIntoView
     Element.prototype.scrollIntoView = function (this: Element, arg?: unknown) {
@@ -252,7 +252,7 @@ describe('the "Now" chip (D12, D22)', () => {
     expect(off?.body).toMatch(/display:\s*none/)
   })
 
-  it('a read-only note shows no chip, as it shows no zoom pill (YAZ-4176) — a preview, and a note editor that keeps its caret (`data-read-only`, YAZ-4433)', () => {
+  it('a read-only page shows no chip, as it shows no zoom pill (YAZ-4176) — a preview, and a note editor that keeps its caret (`data-read-only`, YAZ-4433)', () => {
     const rules = [...tableCalendarCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }))
     const off = rules.find(({ selector }) => selector.includes(".ProseMirror:is([contenteditable='false'], [data-read-only]) .table-now-chip-anchor"))
     expect(off?.body).toMatch(/display:\s*none/)

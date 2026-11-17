@@ -18,8 +18,8 @@ import { activeTab, appWindow, buildFixtureVault, clickMenuItem, copyVault, edit
 const IDEAS_BODY = 'synthetic-idea-body'
 const MINUTE = 60_000
 /** A name with more letters than a narrow row has room for beside a whole vault tag, and the name that tag shows (YAZ-2740 S9). */
-const LONG_NAME = 'Notes of the weekly meeting'
-const LONG_VAULT_NAME = 'Vault of the weekly meeting notes'
+const LONG_NAME = 'Pages of the weekly meeting'
+const LONG_VAULT_NAME = 'Vault of the weekly meeting pages'
 
 let userData: string
 let vaultSrc: string
@@ -53,7 +53,7 @@ test('⌘T, →, ↓, Enter: a recent page opens from the new tab page with no m
   state.folders[vault].opens = { [roadmap]: { score: 1, last: seededAt - MINUTE }, [ideas]: { score: 1, last: seededAt - 2 * MINUTE } }
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
-  await expect(tabsOf(win)).toHaveText(['Welcome note'])
+  await expect(tabsOf(win)).toHaveText(['Welcome page'])
 
   // ⌘T — File › New Tab, by its menu id: the page shows under "New tab", and the caret is in the empty search bar.
   await clickMenuItem(app, 'menu.file.new-tab', 'w1')
@@ -75,7 +75,7 @@ test('⌘T, →, ↓, Enter: a recent page opens from the new tab page with no m
 
   // Enter fills the blank tab (S38): ONE kept tab, and the page is gone.
   await win.keyboard.press('Enter')
-  await expect(tabsOf(win)).toHaveText(['Welcome note', 'Ideas'])
+  await expect(tabsOf(win)).toHaveText(['Welcome page', 'Ideas'])
   await expect(activeTab(win)).toHaveText('Ideas')
   await expect(previewTab(win)).toHaveCount(0)
   await expect(editorOf(win)).toContainText(IDEAS_BODY)
@@ -94,8 +94,8 @@ test('⌘T, →, ↓, Enter: a recent page opens from the new tab page with no m
 test('a narrow window with two vaults: the long name of a recent page shows in full, and the vault tag gave way (YAZ-2740 S9)', async () => {
   // This test stands by itself: the app of the test above is gone, also when that test stopped before its quit.
   await app?.close().catch(() => undefined)
-  const note = path.join(vault, `${LONG_NAME}.md`)
-  await writeFile(note, `# ${LONG_NAME}\n`)
+  const page = path.join(vault, `${LONG_NAME}.md`)
+  await writeFile(page, `# ${LONG_NAME}\n`)
   // ONE window on two vaults (`twoVaultState` of sidebarOrder.spec.ts). The page is in the first one, under a display name longer than the folder's.
   const seededAt = Date.now()
   const state = seededState(vault, path.join(vault, SEED_FILE))
@@ -103,12 +103,12 @@ test('a narrow window with two vaults: the long name of a recent page shows in f
   state.recents.push({ path: vault2, lastOpened: seededAt - MINUTE })
   state.folders[vault2] = defaultFolderState()
   state.folders[vault].name = LONG_VAULT_NAME
-  state.folders[vault].opens = { [note]: { score: 1, last: seededAt - MINUTE } }
+  state.folders[vault].opens = { [page]: { score: 1, last: seededAt - MINUTE } }
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
   // The page listens for the menu once its tab shows: ⌘T before that is lost. (The old focus step of `clickMenuItem`
   // waited about 3 s by chance; the hidden run has none since YAZ-3343.)
-  await expect(activeTab(win)).toHaveText('Welcome note')
+  await expect(activeTab(win)).toHaveText('Welcome page')
   await clickMenuItem(app, 'menu.file.new-tab', 'w1')
   await expect(recent(win).locator('.start__name')).toHaveText([LONG_NAME])
   await expect(recent(win).locator('.tree__vault')).toHaveText([LONG_VAULT_NAME])

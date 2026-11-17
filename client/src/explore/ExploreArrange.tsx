@@ -6,10 +6,12 @@
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { TILE_PLACES, type ArrangeLayout, type TileLayout } from './tile'
+import { withKeys } from '@shared/keyLabel'
+import { KeyLabel } from '../keys/KeyLabel'
 
 export interface ArrangeWindow {
   id: number
-  kind: 'search' | 'note' | 'board'
+  kind: 'search' | 'page' | 'board' | 'card'
   name: string
 }
 
@@ -90,7 +92,7 @@ export function ExploreArrange({ windows, initial, onApply, onClose }: ExploreAr
       <div className="explore__arrange-title">Arrange</div>
       <div className="explore__layouts" role="group" aria-label="Layouts">
         {LAYOUTS.map((l) => (
-          <button key={l.layout} type="button" className="explore__layout" aria-pressed={layout === l.layout} title={`${l.label} (${l.key})`} onClick={() => pick(l.layout)} onDoubleClick={() => onApply(l.layout, l.layout === 'stack' ? [] : defaultChecks(windows, TILE_PLACES[l.layout as TileLayout], searches))}>
+          <button key={l.layout} type="button" className="explore__layout" aria-pressed={layout === l.layout} title={withKeys(l.label, l.key)} onClick={() => pick(l.layout)} onDoubleClick={() => onApply(l.layout, l.layout === 'stack' ? [] : defaultChecks(windows, TILE_PLACES[l.layout as TileLayout], searches))}>
             <svg viewBox="0 0 36 24" width="54" height="36" aria-hidden="true">
               {l.cells.map(([x, y, w, h], i) => (
                 <rect key={i} x={x} y={y} width={w} height={h} rx={1.5} />
@@ -118,7 +120,7 @@ export function ExploreArrange({ windows, initial, onApply, onClose }: ExploreAr
                   <label className={`explore__arrange-row${!on && ids.length >= places ? ' explore__arrange-row--full' : ''}`}>
                     <input type="checkbox" checked={on} disabled={!on && ids.length >= places} onChange={() => toggle(w.id)} />
                     <span className="explore__arrange-name">{w.name}</span>
-                    {w.kind !== 'note' && <span className="explore__arrange-kind">{w.kind === 'search' ? 'Search' : 'Board'}</span>}
+                    {w.kind !== 'page' && <span className="explore__arrange-kind">{w.kind === 'search' ? 'Search' : w.kind === 'card' ? 'Card' : 'Board'}</span>}
                   </label>
                 </li>
               )
@@ -129,7 +131,7 @@ export function ExploreArrange({ windows, initial, onApply, onClose }: ExploreAr
       <div className="explore__arrange-foot">
         <span className="explore__arrange-hint">{layout === 'stack' ? 'Every window back to its place' : `The first ${places} checked fill the layout`}</span>
         <button type="button" className="explore__arrange-apply" disabled={!ready} onClick={apply}>
-          Arrange <kbd>↵</kbd>
+          <KeyLabel action="Arrange" keys="↵" />
         </button>
       </div>
     </div>

@@ -27,11 +27,11 @@ import { activeTab, appWindow, dirRow, expandDirs, launchApp, menuItem, quitApp,
 
 test.describe.configure({ mode: 'serial' })
 
-/** The long folder, inside its parent: 120 notes, far more than the list shows. */
+/** The long folder, inside its parent: 120 pages, far more than the list shows. */
 const PARENT = 'Parent'
 const LONG = path.join(PARENT, 'Long')
-const NOTES = 120
-const name = (k: number) => `Note ${String(k).padStart(3, '0')}`
+const PAGES = 120
+const name = (k: number) => `Page ${String(k).padStart(3, '0')}`
 
 let userData: string
 let vault: string
@@ -59,8 +59,8 @@ async function rects(): Promise<{ list: number; listBottom: number; scrollTop: n
   )
 }
 
-/** Scrolls the list so the note `k` of the long folder stands in the middle of it, and waits two frames. */
-async function scrollToNote(k: number): Promise<void> {
+/** Scrolls the list so the page `k` of the long folder stands in the middle of it, and waits two frames. */
+async function scrollToPage(k: number): Promise<void> {
   await win.evaluate((label) => {
     const body = document.querySelector('.sidebar__body') as HTMLElement
     const row = Array.from(body.querySelectorAll('.tree__row--file')).find((r) => r.textContent === label) as HTMLElement
@@ -72,25 +72,25 @@ async function scrollToNote(k: number): Promise<void> {
 /** Within 1px: the list's scroll offset snaps to whole px, and a row is 25.5px tall at 100%. */
 const near = (a: number, b: number) => Math.abs(a - b) <= 1
 
-/** Where note `k`'s row is (screen px), and whether it has the keyboard focus. */
-const noteAt = (k: number): Promise<{ top: number; focused: boolean }> =>
+/** Where page `k`'s row is (screen px), and whether it has the keyboard focus. */
+const pageAt = (k: number): Promise<{ top: number; focused: boolean }> =>
   win.evaluate((label) => {
     const row = Array.from(document.querySelectorAll<HTMLElement>('.sidebar__body .tree__row--file')).find((r) => r.textContent === label) as HTMLElement
     return { top: row.getBoundingClientRect().top, focused: document.activeElement === row }
   }, name(k))
 
-/** Both folders are stuck, and note `k`'s row stands right below the stack: not under it, and not lower. */
+/** Both folders are stuck, and page `k`'s row stands right below the stack: not under it, and not lower. */
 async function landsBelowStack(k: number): Promise<boolean> {
-  const [r, note] = [await rects(), await noteAt(k)]
+  const [r, page] = [await rects(), await pageAt(k)]
   const stuck = r.parent.item < r.parent.row - 1 && r.long.item < r.long.row - 1
-  return stuck && near(note.top, r.long.row + r.long.height)
+  return stuck && near(page.top, r.long.row + r.long.height)
 }
 
 async function buildVault(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'yaz3469-vault-'))
   await mkdir(path.join(root, LONG), { recursive: true })
   await writeFile(path.join(root, 'Intro.md'), '# Intro\n\nsticky-intro-body\n')
-  await Promise.all(Array.from({ length: NOTES }, (_, k) => writeFile(path.join(root, LONG, `${name(k + 1)}.md`), `# ${name(k + 1)}\n\nsticky-note-${k + 1}\n`)))
+  await Promise.all(Array.from({ length: PAGES }, (_, k) => writeFile(path.join(root, LONG, `${name(k + 1)}.md`), `# ${name(k + 1)}\n\nsticky-page-${k + 1}\n`)))
   await Promise.all(['After one', 'After two'].map((n) => writeFile(path.join(root, PARENT, `${n}.md`), `# ${n}\n`)))
   return root
 }
@@ -113,11 +113,11 @@ test('step 1 — in the middle of a long open folder, its folder and the parent 
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Intro.md')) })
   win = await appWindow(app, 'w1')
   await expandDirs(win, [path.join(vault, PARENT), path.join(vault, LONG)])
-  await expect(win.locator('.tree__row--file').filter({ hasText: new RegExp(`^${name(NOTES)}$`) })).toHaveCount(1)
+  await expect(win.locator('.tree__row--file').filter({ hasText: new RegExp(`^${name(PAGES)}$`) })).toHaveCount(1)
   // D2: the cap is on the list. A 750px window holds 7 levels in 40% of its list: the setting's 7.
   await expect(win.locator('.sidebar__body')).toHaveAttribute('data-sticky-levels', '7')
 
-  await scrollToNote(60)
+  await scrollToPage(60)
   await expect.poll(async () => (await rects()).scrollTop).toBeGreaterThan(0)
   await expect
     .poll(async () => {
@@ -151,7 +151,7 @@ test("step 2 — a click on the stuck folder row's name scrolls the list to that
 // ---------------------------------------------------------------- D3: the arrow
 
 test('step 3 — a click on the stuck folder row’s arrow folds the folder, and the folder stays in view (D3)', async () => {
-  await scrollToNote(90)
+  await scrollToPage(90)
   await expect.poll(async () => {
     const r = await rects()
     return r.long.item < r.long.row - 1
@@ -173,19 +173,19 @@ test('step 3 — a click on the stuck folder row’s arrow folds the folder, and
 test('step 4 — ↑ to a row behind the stuck rows: Chromium scrolls it into view right below them, never under them (D1, D12)', async () => {
   await dirRow(win, 'Long').locator('.tree__chevron').click()
   await expect(itemOf(LONG)).toHaveAttribute('aria-expanded', 'true')
-  await scrollToNote(60)
-  // The first note row that shows below the stack: the keys start there.
+  await scrollToPage(60)
+  // The first page row that shows below the stack: the keys start there.
   const first = await win.evaluate(() => {
     const body = document.querySelector('.sidebar__body') as HTMLElement
     const stack = Array.from(body.querySelectorAll<HTMLElement>('.tree__row--dir')).reduce((bottom, row) => Math.max(bottom, row.getBoundingClientRect().bottom), 0)
     const row = Array.from(body.querySelectorAll<HTMLElement>('.tree__row--file')).find((r) => r.getBoundingClientRect().top >= stack - 1) as HTMLElement
     row.focus({ preventScroll: true })
-    return Number(row.textContent?.replace('Note ', ''))
+    return Number(row.textContent?.replace('Page ', ''))
   })
   // Each ↑ moves the focus to the row before, which stands behind the stuck rows until the focus scrolls it.
   for (const k of [first - 1, first - 2, first - 3]) {
     await win.keyboard.press('ArrowUp')
-    await expect.poll(async () => (await noteAt(k)).focused).toBe(true)
+    await expect.poll(async () => (await pageAt(k)).focused).toBe(true)
     await expect.poll(() => landsBelowStack(k)).toBe(true)
   }
   await shoot(win, 'sticky-4-key-focus')
@@ -193,13 +193,13 @@ test('step 4 — ↑ to a row behind the stuck rows: Chromium scrolls it into vi
 
 // ---------------------------------------------------------------- D1: "Show in sidebar"
 
-test('step 5 — "Show in sidebar" on the tab of a note far above: its row lands right below the stuck rows (D1)', async () => {
-  await scrollToNote(40)
+test('step 5 — "Show in sidebar" on the tab of a page far above: its row lands right below the stuck rows (D1)', async () => {
+  await scrollToPage(40)
   await win.locator('.tree__row--file').filter({ hasText: new RegExp(`^${name(40)}$`) }).click()
   await expect(activeTab(win)).toContainText(name(40))
-  // Far down: note 40 is out of view above the list.
-  await scrollToNote(100)
-  await expect.poll(async () => (await noteAt(40)).top < (await rects()).list).toBe(true)
+  // Far down: page 40 is out of view above the list.
+  await scrollToPage(100)
+  await expect.poll(async () => (await pageAt(40)).top < (await rects()).list).toBe(true)
   await activeTab(win).click({ button: 'right' })
   await menuItem(win, 'Show in sidebar').click()
   await expect.poll(() => landsBelowStack(40)).toBe(true)

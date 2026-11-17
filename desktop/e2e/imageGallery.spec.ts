@@ -3,7 +3,7 @@
  *
  * WHAT IT PROVES: the node view walks the DOCUMENT at double-click time and hands the modal every
  * image on the page in order plus the index of the one clicked (rule 30, LIGHTBOX) — no registry,
- * so what the gallery pages through is exactly what the note holds. `ImageModal.test.tsx` pins the
+ * so what the gallery pages through is exactly what the page holds. `ImageModal.test.tsx` pins the
  * cursor arithmetic over a hand-made list; this pins that the list is the page's, built from a
  * real ProseMirror document behind a real double-click, and that the keys and the focus hand-off
  * work with a real window's focus.
@@ -15,7 +15,7 @@
  *  4 the bottom bar's own Next button pages to "2 / 3" without closing the overlay — a click in
  *    the bar is never a backdrop click — then Escape closes it and FOCUS COMES BACK to the editor
  *    (rule 30: the next keystroke must reach the caret, not `<body>`).
- *  5 a note with ONE image is the old lightbox exactly: no bar, no counter, arrows do nothing.
+ *  5 a page with ONE image is the old lightbox exactly: no bar, no counter, arrows do nothing.
  *
  * Same harness as imageRender.spec.ts: temp `--user-data-dir`, a COPY of a generated fixture
  * vault, one `test.describe`, serial, `imageGallery-` screenshots; PNGs from `imageFixtures.ts`.
@@ -36,14 +36,14 @@ const IMAGES_DIR = path.join('assets', 'images')
  */
 const GALLERY = {
   rel: 'Gallery.md',
-  body: 'gallery-note-body',
+  body: 'gallery-page-body',
   images: [
     { alt: 'one', file: 'one.png', bytes: pngBytes(240, 160, 11) },
     { alt: 'two', file: 'two.png', bytes: pngBytes(320, 200, 29) },
     { alt: 'three', file: 'three.png', bytes: pngBytes(200, 240, 47) },
   ],
 } as const
-const SINGLE = { rel: 'Single.md', body: 'single-note-body', image: { alt: 'solo', file: 'solo.png', bytes: pngBytes(260, 180, 83) } } as const
+const SINGLE = { rel: 'Single.md', body: 'single-page-body', image: { alt: 'solo', file: 'solo.png', bytes: pngBytes(260, 180, 83) } } as const
 
 const imageLine = (alt: string, file: string) => `![${alt}](${IMAGES_DIR}/${file})`
 const GALLERY_TEXT = [GALLERY.body, ...GALLERY.images.map((i) => imageLine(i.alt, i.file))].join('\n\n') + '\n'

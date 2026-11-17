@@ -157,7 +157,7 @@ describe('PageSettings', () => {
     expect(menu()!.textContent).toContain(`${(6020).toLocaleString()} characters`)
   })
 
-  it('shows zero for an empty note (S20)', () => {
+  it('shows zero for an empty page (S20)', () => {
     mount('')
     click(cog())
     expect(menu()!.textContent).toContain('0 words')
@@ -213,7 +213,7 @@ describe('PageSettings: TOC made from', () => {
     expect(menu()!.querySelector('.page-settings__choices')).toBeNull()
   })
 
-  it('shows a label and three choices in one group, after "Table of contents" and above the counts; Auto is pressed for a note with no choice', () => {
+  it('shows a label and three choices in one group, after "Table of contents" and above the counts; Auto is pressed for a page with no choice', () => {
     mountWith(null)
     expect(menu()!.querySelector('.page-settings__label')?.textContent).toBe('TOC made from:')
     expect(pressed()).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
@@ -359,7 +359,7 @@ describe('PageSettings: Heading levels and Table of contents', () => {
     expect(menu()).not.toBeNull()
   })
 
-  it('a host that hands no handler for "Table of contents" gets no row for it: a board, a drawing and a diagram have no table of contents (YAZ-3558 D1: a note always hands one)', () => {
+  it('a host that hands no handler for "Table of contents" gets no row for it: a board, a drawing and a diagram have no table of contents (YAZ-3558 D1: a page always hands one)', () => {
     mountSwitches(false)
     expect(state()).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false'])
   })
@@ -391,7 +391,7 @@ describe('PageSettings: Read only', () => {
     click(cog())
   }
 
-  it('S41: "Read only" is the first row of a note\u2019s menu', () => {
+  it('S41: "Read only" is the first row of a page\u2019s menu', () => {
     mountReadOnly()
     expect(menu()!.querySelector('button')?.textContent).toBe('Read only')
   })
@@ -445,7 +445,7 @@ describe('PageSettings: Read only', () => {
     expect(menu()!.lastElementChild!.textContent).toBe('Table of contents\u2713')
   })
 
-  it('YAZ-3746 D35: with a heading, "Read only" stands first IN the group (a folder page\'s "This folder page"), and the note rows follow the line', () => {
+  it('YAZ-3746 D35: with a heading, "Read only" stands first IN the group (a folder page\'s "This folder page"), and the page rows follow the line', () => {
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
@@ -483,7 +483,7 @@ describe('PageSettings: Read only', () => {
     expect(menu()).toBeNull()
   })
 
-  it('S42: a board\u2019s cog opens, closes on a second click and on Esc, as a note\u2019s does', () => {
+  it('S42: a board\u2019s cog opens, closes on a second click and on Esc, as a page\u2019s does', () => {
     mountReadOnly({ board: true })
     click(cog())
     expect(menu()).toBeNull()

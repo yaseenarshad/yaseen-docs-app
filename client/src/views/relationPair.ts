@@ -1,9 +1,9 @@
 /**
- * Two-way relations for link columns (YAZ-4781). A link is stored in ONE note: the link column's field of the linking
- * note. "Both ways" (R1) adds the other side's column on the folder the Relation names: a Linked mentions column tied to
+ * Two-way relations for link columns (YAZ-4781). A link is stored in ONE page: the link column's field of the linking
+ * page. "Both ways" (R1) adds the other side's column on the folder the Relation names: a Linked mentions column tied to
  * the link column (`pair: true`, `from: { column, folder }`), worked out from the snapshot's one mentions map. Its cells
- * edit from that side (R2): a row's new list becomes writes of the link column's field in the notes added to the list
- * or taken out of it. The row's own note is never written, and a toggle never changes a note value.
+ * edit from that side (R2): a row's new list becomes writes of the link column's field in the pages added to the list
+ * or taken out of it. The row's own page is never written, and a toggle never changes a page value.
  */
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { isRecord } from '@shared/guards'
@@ -43,7 +43,7 @@ export function addTiedColumn(path: string, key: string, decl: ColumnDecl, ids: 
 
 /**
  * R1 One way: the tied column goes from the `.folder.md` at `path` — the views' references and its label, then the
- * declaration. No note changes. Resolves with the Undo: the declaration back before `before` (the column after it), and
+ * declaration. No page changes. Resolves with the Undo: the declaration back before `before` (the column after it), and
  * the references laid back onto the views as they are then.
  */
 export async function removeTiedColumn(path: string, key: string, decl: ColumnDecl, before: string | null): Promise<() => Promise<void>> {
@@ -75,7 +75,7 @@ export function pairPlan(before: unknown, next: unknown, resolve: ResolveLink): 
 }
 
 /**
- * R2: a linking note's link-column value with the link to `page` added (`link`, in the app's form for that column) or
+ * R2: a linking page's link-column value with the link to `page` added (`link`, in the app's form for that column) or
  * taken out. `multi` (Multi-link): add appends, remove filters it out. A one-value Link: add sets it, remove clears the
  * field. The same value back when nothing changes.
  */
@@ -94,9 +94,9 @@ export function replacedLink(value: unknown, page: string, resolve: ResolveLink)
 }
 
 /** R2: the ask before a replace (ConfirmSheet): "Chocolate cake pairs with Lemon tart. Replace it with Apple pie?" */
-export const replaceAsk = (note: string, column: string, held: string, row: string): string => `${note} ${column.charAt(0).toLowerCase()}${column.slice(1)} ${held}. Replace it with ${row}?`
+export const replaceAsk = (page: string, column: string, held: string, row: string): string => `${page} ${column.charAt(0).toLowerCase()}${column.slice(1)} ${held}. Replace it with ${row}?`
 
-/** What a host's write of a tied cell resolves with (R2): the Undo of exactly the notes it wrote, each field back as it was. */
+/** What a host's write of a tied cell resolves with (R2): the Undo of exactly the pages it wrote, each field back as it was. */
 export interface PairWritten {
   undoPair: () => Promise<void>
 }
@@ -104,9 +104,9 @@ export interface PairWritten {
 export const isPairWritten = (result: unknown): result is PairWritten => isRecord(result) && typeof result.undoPair === 'function'
 
 export interface TiedCellWrite {
-  /** The row whose tied cell is written (a note, or a folder row): the page the links point to. */
+  /** The row whose tied cell is written (a page, or a folder row): the page the links point to. */
   row: IndexRecord
-  /** The link to the row's page, as the link column holds it (`noteLinkOf`: an ID link where the vault uses IDs, else a path link). */
+  /** The link to the row's page, as the link column holds it (`pageLinkOf`: an ID link where the vault uses IDs, else a path link). */
   rowLink: string
   /** The link column's key, and the absolute directory of its folder with that folder's name. */
   column: string
@@ -116,20 +116,20 @@ export interface TiedCellWrite {
   before: unknown
   next: unknown
   resolve: ResolveLink
-  /** The snapshot's record of a page (a note, or a folder's settings record). */
+  /** The snapshot's record of a page (a page, or a folder's settings record). */
   recordOf: (page: string) => IndexRecord | undefined
   /** The replace ask; false cancels the whole write. */
   ask: (text: string) => Promise<boolean>
   /** The record's title as the UI shows it. */
   titleOf: (link: string) => string
-  /** The vault's word for a note (YAZ-4938), for the refusal of a read-only note. */
+  /** The vault's word for a page (YAZ-4938), for the refusal of a read-only page. */
   unit?: UnitText
 }
 
 /**
- * R2: a tied cell's write, as writes of the link column in the linking notes — never in the row's note. Every note is
+ * R2: a tied cell's write, as writes of the link column in the linking pages — never in the row's page. Every page is
  * checked first (under the link column's folder, not read only), and a one-value Link that holds another link asks
- * before it is replaced; Cancel writes nothing. Resolves with the Undo: each written note's field back as it was.
+ * before it is replaced; Cancel writes nothing. Resolves with the Undo: each written page's field back as it was.
  */
 export async function writeTiedCell(w: TiedCellWrite): Promise<PairWritten> {
   const { add, remove } = pairPlan(w.before, w.next, w.resolve)

@@ -50,7 +50,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { gestureAction } from '@shared/keys'
-import { rowShortcuts } from '../noteKeys'
+import { rowShortcuts } from '../pageKeys'
 import { openCellNote, canOpenCellNote } from '../table/cellNoteCard'
 import { cellNoteAround } from '../table/cellNotes'
 import { boardCheckOf } from '../drawing/boardEmbedScan'
@@ -62,7 +62,7 @@ import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 export interface ZoomOptions {
   /** The page's title (YAZ-2420 🔒 D14), read as the breadcrumb is drawn: the first crumb; clicking it zooms out fully. */
   title: () => string
-  /** A bullet's text as its labels show it (YAZ-3744 D6): each `[[link]]` as the note shows it. Absent: as written. */
+  /** A bullet's text as its labels show it (YAZ-3744 D6): each `[[link]]` as the page shows it. Absent: as written. */
   linkText?: (text: string) => string
   /** The zoom key to start drilled into (YAZ-2951 D1): a copied page view's `zoomKey`. Absent, null or not found = zoomed out. */
   startKey?: string | null
@@ -509,12 +509,12 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
 
 /**
  * Keymap: `Mod-.` / `Mod-Shift-.` / `Mod-z` (zoom panic-undo) plus the escape guard; register with `editor.use(zoomKeymap)`.
- * The chords are the rows' (`shared/keys/note.ts`, YAZ-3564 K4): the guard follows Outdent's key.
+ * The chords are the rows' (`shared/keys/page.ts`, YAZ-3564 K4): the guard follows Outdent's key.
  */
 export const zoomKeymap = $shortcut((ctx: Ctx) => ({
-  ...rowShortcuts(ctx, 'note.zoomIn', 'ZoomIn', { priority: PRIORITY, onRun: () => zoomIntoSelection }),
-  ...rowShortcuts(ctx, 'note.undo', 'UndoZoom', { priority: PRIORITY, onRun: () => undoLastZoom }),
-  ...rowShortcuts(ctx, 'note.zoomOut', 'ZoomOut', { priority: PRIORITY, onRun: () => zoomOutOneLevel }),
+  ...rowShortcuts(ctx, 'page.zoomIn', 'ZoomIn', { priority: PRIORITY, onRun: () => zoomIntoSelection }),
+  ...rowShortcuts(ctx, 'page.undo', 'UndoZoom', { priority: PRIORITY, onRun: () => undoLastZoom }),
+  ...rowShortcuts(ctx, 'page.zoomOut', 'ZoomOut', { priority: PRIORITY, onRun: () => zoomOutOneLevel }),
   ZoomLiftGuardTab: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => blockEscapingLift },
-  ...rowShortcuts(ctx, 'note.outdent', 'ZoomLiftGuardBracket', { priority: PRIORITY, onRun: () => blockEscapingLift }),
+  ...rowShortcuts(ctx, 'page.outdent', 'ZoomLiftGuardBracket', { priority: PRIORITY, onRun: () => blockEscapingLift }),
 }))

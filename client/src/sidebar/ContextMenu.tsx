@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Suspense, createContext, lazy, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FlyoutParent, useFlyout } from '../components/Flyout'
+import { fitMenu } from '../lib/fitMenu'
 import type { MenuAction, MenuEntry, MenuParent, MenuStrip } from './menuSections'
 
 export { SWITCH_MS } from '../components/Flyout'
@@ -54,6 +55,10 @@ const MenuHeading = ({ label, tip }: { label: string; tip?: string }) => (
   </div>
 )
 
+/** A row's ask in place (`ask`, YAZ-5697, `RowAsk.tsx`): its own chunk, fetched once a menu with an asking row opens (no eager weight). */
+const loadRowAsk = () => import('./RowAsk')
+const RowAsk = lazy(loadRowAsk)
+
 function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
   // The item's preview (YAZ-3091 D8): on while the pointer or the focus is on it, off when both leave or it unmounts.
   const previewing = useRef(false)
@@ -78,13 +83,43 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
   // A two-click check row (`twoClick`): armed, it says what the second click does — add (accent) or remove (red).
   const shown = armed && item.twoClick === true ? (checked ? 'Click again to remove' : 'Click again to add') : label
   const armedClass = !armed ? '' : item.twoClick === true && !checked ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
+  // An ask in place (`ask`, YAZ-5697): Cancel gives the keyboard back to the row.
+  const row = useRef<HTMLButtonElement>(null)
+  const refocus = useRef(false)
+  useLayoutEffect(() => {
+    if (armed || !refocus.current) return
+    refocus.current = false
+    row.current?.focus({ preventScroll: true })
+  }, [armed])
+  useEffect(() => {
+    if (item.ask !== undefined) void loadRowAsk()
+  }, [item.ask])
+  if (armed && item.ask !== undefined)
+    return (
+      <Suspense fallback={null}>
+        <RowAsk
+          ask={item.ask}
+          tour={item.tour}
+          onYes={() => {
+            item.onSelect()
+            onClose()
+          }}
+          onNo={() => {
+            refocus.current = document.activeElement instanceof Element && document.activeElement.closest('.ctx-menu__ask') !== null
+            setArmed(false)
+          }}
+        />
+      </Suspense>
+    )
   return (
     <button
+      ref={row}
       type="button"
       role="menuitem"
       className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}${armedClass}`}
       disabled={item.disabled}
       data-hint={armed ? undefined : hint}
+      data-tour={item.tour}
       title={item.tip}
       onMouseEnter={() => {
         onMouseEnter?.()
@@ -92,17 +127,18 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
       }}
       onMouseLeave={() => {
         setPreview(false)
-        setArmed(false)
+        if (item.ask === undefined) setArmed(false)
       }}
       onFocus={() => setPreview(true)}
       onBlur={() => {
         setPreview(false)
-        setArmed(false)
+        // The row's ask takes the focus as it opens: that blur is not a leave.
+        if (item.ask === undefined) setArmed(false)
       }}
       // An item whose handler already closes the menu (the create group's inline input) just
       // sets the same null twice — harmless.
       onClick={() => {
-        if (item.confirm !== undefined && !armed) return setArmed(true)
+        if ((item.confirm !== undefined || item.ask !== undefined) && !armed) return setArmed(true)
         if (item.onToggle !== undefined) {
           if (item.twoClick === true && !armed) return setArmed(true)
           setArmed(false)
@@ -157,7 +193,7 @@ function StripButtons({ item, onClose, onMouseEnter }: { item: MenuStrip; onClos
 
 /**
  * A parent ("Open in ▸", D7 amended, YAZ-1674): the app's one flyout row (`components/Flyout.tsx`, YAZ-4544 4F), its
- * flyout drawn by the SAME group renderer, one level deep. A parent WITH a default (YAZ-3085 D1, "New note ▸") runs
+ * flyout drawn by the SAME group renderer, one level deep. A parent WITH a default (YAZ-3085 D1, "New page ▸") runs
  * it on a click or Enter and closes the menu, as a leaf does; only hover and ArrowRight open its flyout. The flyout
  * stays while the pointer is inside the row or the flyout — there is no leave rule — and closes when the pointer
  * enters a DIFFERENT top-level item, after the root's hover wait (D4).
@@ -231,15 +267,25 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
   }, [onClose, openId, openNow])
 
   // Viewport clamping (GRO-2204): render at the cursor, then measure and pull the menu back
-  // inside the window instead of spilling off an edge.
+  // inside the window instead of spilling off an edge. YAZ-4970: a menu taller than the window (the table's row menu)
+  // was only moved to the top, its last rows below the window and out of reach; now it fits the window and scrolls,
+  // as `ContextMenuSurface` does (`lib/fitMenu.ts`).
   const menuRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ left: x, top: y })
 
   useLayoutEffect(() => {
     const el = menuRef.current
     if (el === null) return
-    const r = el.getBoundingClientRect()
-    setPos({ left: Math.max(0, Math.min(x, window.innerWidth - r.width)), top: Math.max(0, Math.min(y, window.innerHeight - r.height)) })
+    const place = () => {
+      const at = fitMenu(el, x, y)
+      setPos((was) => (was.left === at.left && was.top === at.top ? was : at))
+    }
+    place()
+    // A menu whose rows change while it is open is placed again; the observer fires only on a change of its own size.
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(place)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [x, y])
 
   return (
@@ -251,7 +297,17 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
         onClose()
       }}
     >
-      <div ref={menuRef} className={`ctx-menu${glyphs ? ' ctx-menu--glyphs' : ''}`} style={{ left: pos.left, top: pos.top }} onMouseDown={(e) => e.stopPropagation()} role="menu">
+      <div
+        ref={menuRef}
+        className={`ctx-menu${glyphs ? ' ctx-menu--glyphs' : ''}`}
+        style={{ left: pos.left, top: pos.top }}
+        onMouseDown={(e) => e.stopPropagation()}
+        // A flyout stands beside the row it opened from; the menu scrolled under it (YAZ-4970) would leave it astray.
+        onScroll={(e) => {
+          if (e.target === e.currentTarget && openId !== null) openNow(null)
+        }}
+        role="menu"
+      >
         <Groups
           sections={sections}
           render={(item) =>

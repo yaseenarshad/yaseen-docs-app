@@ -113,7 +113,7 @@ export const addLineKeymap = $shortcut(() => ({
 }))
 
 /**
- * The note editor of a DOM node (YAZ-4800 demo): a code block's CodeMirror keymap runs on CodeMirror's own view, and
+ * The page editor of a DOM node (YAZ-4800 demo): a code block's CodeMirror keymap runs on CodeMirror's own view, and
  * Crepe's code block stops every event before ProseMirror, so the keys find their editor here.
  */
 const views = new WeakMap<Element, EditorView>()

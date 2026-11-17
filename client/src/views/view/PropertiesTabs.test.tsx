@@ -126,7 +126,7 @@ describe('each view type shows its settings only (D59)', () => {
   // Frozen columns and rows live only on the header and row right-clicks (the View tab's Frozen section went in the YAZ-3746 demo).
   const TABLE = ['Row height', 'Text in cells', 'Row numbers', 'Subfolders', 'Column type icons', 'Header row style']
   const BOARD = ['Column width in pixels', 'Subfolders']
-  const CALENDAR = ['Start date', 'End date', 'Opens in', 'Card titles', 'Hide weekends', 'Header row style', 'Between weeks thickness', 'Between weeks colour', 'Between days thickness', 'Between days colour', 'Cross out when', 'Subfolders']
+  const CALENDAR = ['Start date', 'End date', 'Opens in', 'Card titles', 'Hide weekends', 'Fold long days', 'Header row style', 'Between weeks thickness', 'Between weeks colour', 'Between days thickness', 'Between days colour', 'Cross out when', 'Subfolders']
   const LIST = ['Marker style', 'Indent properties', 'Property separator', 'Subfolders']
   const ALL = [...new Set([...TABLE, ...BOARD, ...CALENDAR, ...LIST, 'Group indent', 'Frozen columns', 'Frozen rows', 'Default view'])]
 
@@ -167,7 +167,7 @@ describe('each view type shows its settings only (D59)', () => {
     expect(pop.textContent).toContain('Show empty columns')
   })
 
-  it('Calendar (YAZ-4864 sections): Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends), Lines (YAZ-4878), Cross out, then Folder', () => {
+  it('Calendar (YAZ-4864 sections): Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends, Fold long days), Lines (YAZ-4878), Cross out, then Folder', () => {
     const pop = openProperties(mount(view('calendar')).el)
     toTab(pop, 'View')
     expectOnly(pop, CALENDAR)
@@ -266,7 +266,7 @@ describe('the controls D60 moved here keep "from Settings" and Reset', () => {
     expect(yaml()).not.toContain('groupIndent')
   })
 
-  it('View › Rows › Subfolders: each mode writes; Their notes, Settings’ value, removes the key', () => {
+  it('View › Rows › Subfolders: each mode writes; Their pages, Settings’ value, removes the key', () => {
     const { el, yaml } = mount(view('table'))
     const pop = openProperties(el)
     toTab(pop, 'View')
@@ -274,7 +274,7 @@ describe('the controls D60 moved here keep "from Settings" and Reset', () => {
     expect(follows(select().closest('label')!.querySelector('.view-from-settings'))).toBe(true)
     choose(select(), 'both')
     expect(yaml()).toContain('subfolders: both')
-    choose(select(), 'notes')
+    choose(select(), 'pages')
     expect(yaml()).not.toContain('subfolders')
   })
 })

@@ -4,7 +4,7 @@
  * picture page loads it after draw.io's viewer (`yaseen-render.html`). Not draw.io code: it patches draw.io's public
  * prototypes, as PostConfig.js does.
  *
- * D1: a link is plain `[[inner]]` text in a label, as in a note and on a board, and the file keeps that text. In an
+ * D1: a link is plain `[[inner]]` text in a label, as in a page and on a board, and the file keeps that text. In an
  * HTML label (draw.io's default for every new shape and text) it DRAWS as a pill: the page's file icon and its name.
  * D3: the host says what each pill shows (`setLooks`); the editor asks for the links it draws, once per batch.
  *
@@ -18,7 +18,7 @@
 
 	/**
 	 * What each link shows, as the host said: `{ label, missing?, icon? }`, or null for a link that stays raw text
-	 * (`[[Note|]]`). `icon`: a data URL; null, no icon; absent, the icon is not drawn yet (an empty box holds its place).
+	 * (`[[Page|]]`). `icon`: a data URL; null, no icon; absent, the icon is not drawn yet (an empty box holds its place).
 	 * Emptied before an answer would pass MAX_LOOKS: the host is asked again for what is on screen.
 	 */
 	var looks = {};
@@ -738,7 +738,7 @@
 				root.contains(selection.getRangeAt(0).commonAncestorContainer)) ? selection : null;
 		}
 
-		/** A pill copied out of a label is its `[[inner]]` text, so it is a pill again in a note or a board. */
+		/** A pill copied out of a label is its `[[inner]]` text, so it is a pill again in a page or a board. */
 		function onCopy(evt)
 		{
 			var root = textarea();

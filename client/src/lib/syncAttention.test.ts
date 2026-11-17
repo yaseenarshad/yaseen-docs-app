@@ -89,12 +89,12 @@ const REASONS: GithubSyncAttention[] = ['no-git', 'no-identity', 'auth', 'confli
 
 describe('buildSetupPrompt', () => {
   it.each(REASONS)('%s names the folder and lists all four checks in order', (reason) => {
-    const prompt = buildSetupPrompt('/Users/me/Notes', reason)
-    expect(prompt).toContain('My notes folder is: /Users/me/Notes.')
+    const prompt = buildSetupPrompt('/Users/me/Pages', reason)
+    expect(prompt).toContain('My pages folder is: /Users/me/Pages.')
     expect(prompt).toContain('(1) git installed at /usr/bin/git or /opt/homebrew/bin/git')
     expect(prompt).toContain('(2) `git config --global user.name` and `user.email` set')
     expect(prompt).toContain('(3) GitHub authentication working for HTTPS')
-    expect(prompt).toContain('(4) a test `git push` from my notes folder succeeds')
+    expect(prompt).toContain('(4) a test `git push` from my pages folder succeeds')
     // Ordering matters: the assistant on the other end should diagnose top-down, not guess.
     expect(prompt.indexOf('(1)')).toBeLessThan(prompt.indexOf('(2)'))
     expect(prompt.indexOf('(2)')).toBeLessThan(prompt.indexOf('(3)'))
@@ -112,16 +112,16 @@ describe('buildSetupPrompt', () => {
   })
 
   it('opens by explaining the situation, so the prompt stands alone in a fresh chat', () => {
-    expect(buildSetupPrompt('/vault', 'auth')).toMatch(/^I'm using a Mac desktop app that syncs a folder of markdown notes to GitHub using my computer's own git\./)
+    expect(buildSetupPrompt('/vault', 'auth')).toMatch(/^I'm using a Mac desktop app that syncs a folder of markdown pages to GitHub using my computer's own git\./)
   })
 
   it('names Windows and Git for Windows on a Windows platform, so the assistant never sends a PC to Homebrew', () => {
-    const prompt = buildSetupPrompt('C:\\Users\\me\\Notes', 'no-git', 'Win32')
+    const prompt = buildSetupPrompt('C:\\Users\\me\\Pages', 'no-git', 'Win32')
     expect(prompt).toMatch(/^I'm using a Windows desktop app/)
     expect(prompt).toContain('(1) Git for Windows installed (C:\\Program Files\\Git\\cmd\\git.exe')
     expect(prompt).toContain('https://git-scm.com/download/win')
     expect(prompt).not.toContain('/opt/homebrew')
-    expect(prompt).toContain('My notes folder is: C:\\Users\\me\\Notes.')
+    expect(prompt).toContain('My pages folder is: C:\\Users\\me\\Pages.')
   })
 
   it('treats anything that is neither Mac nor Windows as Linux', () => {

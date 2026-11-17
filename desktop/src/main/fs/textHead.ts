@@ -21,7 +21,7 @@ export function cutCharBytes(bytes: Uint8Array): number {
  * THE TOP OF A CODE FILE (YAZ-3508), for its hover card: `TEXT_HEAD_READ_BYTES` off the start at most, whatever
  * the file's size, so a rest on a 5 MB file sends a few KB over IPC. A file the code tab could not open is refused
  * the same way here (`readFile`'s rules): over `MAX_FILE_BYTES` → `TOO_LARGE`; bytes that are not UTF-8, or a NUL,
- * in the part read → `IO_ERROR`. Only a `text` kind file: a note has `readHeads`.
+ * in the part read → `IO_ERROR`. Only a `text` kind file: a page has `readHeads`.
  */
 export async function readTextHead(raw: unknown): Promise<TextHead> {
   const p = requireAbsPath(raw, 'path')

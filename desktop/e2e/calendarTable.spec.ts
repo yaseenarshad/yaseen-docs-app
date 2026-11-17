@@ -1,9 +1,9 @@
 /**
  * Calendar tables (YAZ-4158: YAZ-4162, YAZ-4163, YAZ-4164; D2, D7, D11 on the working log YAZ-4159) against the REAL
- * app, the user flow: Daily notes on, today's note made from the folder's template; in it "/Calendar table" + Enter
+ * app, the user flow: Daily pages on, today's page made from the folder's template; in it "/Calendar table" + Enter
  * inserts the day's table (the Calendar day setting, 5:00 am to 10:00 pm by default, D19; the default time format
  * `h:mm a`; `calendar 30m`; column A in the middle, YAZ-4166), a plan typed in a row saves with the table; the row
- * that holds the current time shows the marker; another note in front, then the daily-note button opens today's note
+ * that holds the current time shows the marker; another page in front, then the daily-page button opens today's page
  * at now: the caret in the now row's first empty cell.
  * The run is the person's choice (it opens a window): `npm run e2e:only -- calendarTable`.
  */
@@ -47,12 +47,12 @@ const slashMenu = (w: Page) => w.locator('.milkdown-slash-menu[data-show="true"]
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'calendar-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'calendar-vault-'))
-  await writeFile(path.join(vault, 'Other.md'), 'Another note\n')
+  await writeFile(path.join(vault, 'Other.md'), 'Another page\n')
   await mkdir(path.join(vault, 'Daily'))
   await writeFile(path.join(vault, 'Daily', '.template.md'), '## Today\n\nPlan\n')
   const state = seededState(vault, path.join(vault, 'Other.md'))
-  // "The button opens" is "The note at now" by default (D11).
-  state.settings = { ...state.settings, dailyNotes: true, dailyNoteFolder: 'Daily' }
+  // "The button opens" is "The page at now" by default (D11).
+  state.settings = { ...state.settings, dailyPages: true, dailyPageFolder: 'Daily' }
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
   await expect(fileRow(win, 'Other')).toBeVisible()
@@ -63,7 +63,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('"/Calendar table" + Enter in today\'s note inserts the day\'s table, and a plan typed in it saves', async () => {
+test('"/Calendar table" + Enter in today\'s page inserts the day\'s table, and a plan typed in it saves', async () => {
   await win.locator('.sidebar__daily').click()
   await expect(activeTab(win)).toHaveText(new RegExp(today))
   await editorOf(win).locator('p', { hasText: /^Plan$/ }).click()
@@ -102,7 +102,7 @@ test('the row that holds the current time shows the marker', async () => {
   await shoot(win, 'calendar-02-marker')
 })
 
-test('from another note, the daily-note button opens today\'s note at now: the caret in the now row\'s first empty cell', async () => {
+test('from another page, the daily-page button opens today\'s page at now: the caret in the now row\'s first empty cell', async () => {
   const time = nowRowTime()
   test.skip(time === null, SKIP)
   await fileRow(win, 'Other').click()

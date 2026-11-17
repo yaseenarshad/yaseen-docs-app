@@ -482,9 +482,9 @@ describe('automatic rich paste spacing', () => {
 })
 
 describe('image bytes on the clipboard (YAZ-1656 / YAZ-1662)', () => {
-  const IMAGE: ImageOptions = { root: '/v', notePath: '/v/notes/n.md' }
+  const IMAGE: ImageOptions = { root: '/v', pagePath: '/v/pages/n.md' }
   const PNG = new File([new Uint8Array([1, 2, 3])], 'clip.png', { type: 'image/png' })
-  /** The written name is `<note>-<stamp>.png`; the clock is the code's, so only its shape is pinned. */
+  /** The written name is `<page>-<stamp>.png`; the clock is the code's, so only its shape is pinned. */
   const IMG = String.raw`!\[n-\d{8}-\d{6}\]\(assets/images/n-\d{8}-\d{6}\.png\)`
   /** A ClipboardEvent / DragEvent stand-in: jsdom has no DataTransfer, and the two lists are all the code reads. */
   const withFiles = (files: File[], data: Record<string, string> = {}) => {

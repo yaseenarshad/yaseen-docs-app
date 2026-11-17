@@ -365,7 +365,7 @@ describe('the window', () => {
     expect(onOptions).toHaveBeenCalledTimes(1) // the wheel's own view write, nothing for the mount
   })
 
-  it('read only and Explore (YAZ-2571 round 7): every embed shows locked, whatever the note saved; an unlock is this view`s only, never written', async () => {
+  it('read only and Explore (YAZ-2571 round 7): every embed shows locked, whatever the page saved; an unlock is this view`s only, never written', async () => {
     const { win, onOptions } = mount({ editable: false, options: opts({ locked: false }) })
     await settle()
     const lock = win.dom.querySelector<HTMLButtonElement>('.board-window__lock')!
@@ -374,7 +374,7 @@ describe('the window', () => {
     lock.click()
     expect(win.dom.classList.contains('board-window--locked')).toBe(false)
     expect(wheel(win, { deltaY: 30 }).defaultPrevented).toBe(true)
-    // The note's text changes meanwhile (an outside edit): the view keeps its own lock.
+    // The page's text changes meanwhile (an outside edit): the view keeps its own lock.
     win.update({ options: opts({ width: 500, locked: true }) })
     vi.advanceTimersByTime(2000)
     expect(win.dom.style.width).toBe('500px')
@@ -382,7 +382,7 @@ describe('the window', () => {
     expect(onOptions).not.toHaveBeenCalled()
   })
 
-  it('a note that turns read only locks its windows; editable again, the saved lock comes back and nothing is written', async () => {
+  it('a page that turns read only locks its windows; editable again, the saved lock comes back and nothing is written', async () => {
     const open = mount({ options: opts({ locked: false }) })
     const shut = mount({ options: opts({ locked: true }) })
     await settle()
@@ -400,20 +400,20 @@ describe('the window', () => {
     expect(shut.onOptions).not.toHaveBeenCalled()
   })
 
-  it('YAZ-4942: a pan in a read-only note is never written, also when the note turns editable before its 800 ms write; a later write keeps the saved view', async () => {
+  it('YAZ-4942: a pan in a read-only page is never written, also when the page turns editable before its 800 ms write; a later write keeps the saved view', async () => {
     const saved = { x: 0, y: 0, zoom: 1 }
     const { win, onOptions } = mount({ editable: false, options: opts({ view: saved }) })
     await settle()
     const lock = () => win.dom.querySelector<HTMLButtonElement>('.board-window__lock')!
     lock().click() // this view's own unlock: never written
     expect(wheel(win, { deltaX: 120, deltaY: 300 }).defaultPrevented).toBe(true)
-    // The note turns editable while the pan's write still waits.
+    // The page turns editable while the pan's write still waits.
     vi.advanceTimersByTime(WRITE_DELAY_MS - 100)
     win.update({ editable: true })
     vi.advanceTimersByTime(WRITE_DELAY_MS * 3)
     win.flush()
     expect(onOptions).not.toHaveBeenCalled()
-    // A write the editable note makes later (the lock) carries the saved view, not the read-only pan.
+    // A write the editable page makes later (the lock) carries the saved view, not the read-only pan.
     lock().click()
     expect(onOptions).toHaveBeenCalledTimes(1)
     expect(onOptions).toHaveBeenLastCalledWith(expect.objectContaining({ locked: true, view: saved }))
@@ -435,7 +435,7 @@ describe('the window', () => {
     inner.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
   })
 
-  it('keys while selected: ⌘+ ⌘− ⌘0 Shift+1 act and stop; not selected, ⌘+ stays the note`s; the host owns Escape (item 20)', async () => {
+  it('keys while selected: ⌘+ ⌘− ⌘0 Shift+1 act and stop; not selected, ⌘+ stays the page`s; the host owns Escape (item 20)', async () => {
     const { win, onOptions } = mount({ options: opts({ view: { x: 0, y: 0, zoom: 1 } }) })
     await settle()
     const key = (init: KeyboardEventInit) => {
@@ -455,7 +455,7 @@ describe('the window', () => {
     // A fit writes no view: the text says "fit".
     expect(onOptions.mock.calls[2][0].view).toBeNull()
     expect(key({ key: 'a' }).defaultPrevented).toBe(false)
-    // In a note the editor keeps the focus and hands the keys over (`handleKey`); Escape is the host's (it deselects).
+    // In a page the editor keeps the focus and hands the keys over (`handleKey`); Escape is the host's (it deselects).
     expect(win.handleKey(new KeyboardEvent('keydown', { key: '-', metaKey: true }))).toBe(true)
     expect(win.handleKey(new KeyboardEvent('keydown', { key: 'x' }))).toBe(false)
     expect(key({ key: 'Escape' }).defaultPrevented).toBe(false)
@@ -568,7 +568,7 @@ describe('the window', () => {
     expect(onOptions).toHaveBeenLastCalledWith(expect.objectContaining({ view: { x: 90, y: 90, zoom: 1 } })) // the frame, with the fit`s 10 px around
   })
 
-  it('View full size (item 4): a second window over the note at the same view; Esc closes it and focus comes back', async () => {
+  it('View full size (item 4): a second window over the page at the same view; Esc closes it and focus comes back', async () => {
     const { win } = mount({ options: opts({ view: { x: 0, y: 0, zoom: 1 } }) })
     await settle()
     win.setSelected(true)
@@ -635,7 +635,7 @@ describe('the window', () => {
     expect(onOptions).toHaveBeenCalledTimes(1)
   })
 
-  it('A3: a press in a note never takes the focus (the editor keeps the caret); the full-size window does', async () => {
+  it('A3: a press in a page never takes the focus (the editor keeps the caret); the full-size window does', async () => {
     const editor = document.createElement('div')
     editor.tabIndex = 0
     document.body.appendChild(editor)
@@ -693,7 +693,7 @@ describe('the window', () => {
     expect(dropPicturesExcept).toHaveBeenLastCalledWith(new Set(['k1']))
   })
 
-  it('YAZ-4862: the observer`s root is the note`s scroll container: one observer per root, ended with its last window', async () => {
+  it('YAZ-4862: the observer`s root is the page`s scroll container: one observer per root, ended with its last window', async () => {
     const scroller = document.createElement('div')
     const a = mount({ scrollRoot: scroller }, false).win
     const b = mount({ scrollRoot: scroller }, false).win

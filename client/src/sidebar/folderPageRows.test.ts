@@ -21,15 +21,15 @@ const folderRecord = (folder: string, properties: Record<string, unknown> = {}):
 })
 
 describe('folderPageRows: which folders show their page file row (YAZ-4587, D37)', () => {
-  const folders = [folderRecord('Areas'), folderRecord('Projects'), folderRecord('Projects/Alpha'), folderRecord('Projects/Alpha/Notes')]
+  const folders = [folderRecord('Areas'), folderRecord('Projects'), folderRecord('Projects/Alpha'), folderRecord('Projects/Alpha/Pages')]
 
   it('global off: no rows', () => {
     expect([...folderPageRows('/v', folders, false)]).toEqual([])
   })
 
   it('global on: a row for every folder with a page file, by its absolute path — the vault root\'s as the root itself (YAZ-4921); a trailing slash on the root changes nothing', () => {
-    for (const root of ['/v', '/v/']) expect([...folderPageRows(root, [folderRecord(''), ...folders], true)]).toEqual(['/v', '/v/Areas', '/v/Projects', '/v/Projects/Alpha', '/v/Projects/Alpha/Notes'])
-    expect([...folderPageRows('/v', folders, true)]).toEqual(['/v/Areas', '/v/Projects', '/v/Projects/Alpha', '/v/Projects/Alpha/Notes'])
+    for (const root of ['/v', '/v/']) expect([...folderPageRows(root, [folderRecord(''), ...folders], true)]).toEqual(['/v', '/v/Areas', '/v/Projects', '/v/Projects/Alpha', '/v/Projects/Alpha/Pages'])
+    expect([...folderPageRows('/v', folders, true)]).toEqual(['/v/Areas', '/v/Projects', '/v/Projects/Alpha', '/v/Projects/Alpha/Pages'])
   })
 
   it("the root's own `show_page_file` rules its row and, as the top rule, every folder below with no nearer rule (YAZ-4921)", () => {
@@ -38,16 +38,16 @@ describe('folderPageRows: which folders show their page file row (YAZ-4587, D37)
   })
 
   it("a folder's override on covers that folder and every folder below it, with the global off", () => {
-    const on = [folderRecord('Areas'), folderRecord('Projects', { show_page_file: true }), folderRecord('Projects/Alpha'), folderRecord('Projects/Alpha/Notes')]
-    expect([...folderPageRows('/v', on, false)]).toEqual(['/v/Projects', '/v/Projects/Alpha', '/v/Projects/Alpha/Notes'])
+    const on = [folderRecord('Areas'), folderRecord('Projects', { show_page_file: true }), folderRecord('Projects/Alpha'), folderRecord('Projects/Alpha/Pages')]
+    expect([...folderPageRows('/v', on, false)]).toEqual(['/v/Projects', '/v/Projects/Alpha', '/v/Projects/Alpha/Pages'])
   })
 
   it('a nested override off wins inside it: the nearest rule wins', () => {
-    const mixed = [folderRecord('Areas'), folderRecord('Projects', { show_page_file: true }), folderRecord('Projects/Alpha', { show_page_file: false }), folderRecord('Projects/Alpha/Notes')]
+    const mixed = [folderRecord('Areas'), folderRecord('Projects', { show_page_file: true }), folderRecord('Projects/Alpha', { show_page_file: false }), folderRecord('Projects/Alpha/Pages')]
     expect([...folderPageRows('/v', mixed, false)]).toEqual(['/v/Projects'])
     // And on again below an off.
-    const back = [...mixed.slice(0, 3), folderRecord('Projects/Alpha/Notes', { show_page_file: true })]
-    expect([...folderPageRows('/v', back, false)]).toEqual(['/v/Projects', '/v/Projects/Alpha/Notes'])
+    const back = [...mixed.slice(0, 3), folderRecord('Projects/Alpha/Pages', { show_page_file: true })]
+    expect([...folderPageRows('/v', back, false)]).toEqual(['/v/Projects', '/v/Projects/Alpha/Pages'])
   })
 
   it("an override off covers a folder with the global on; the root's own override covers the whole vault", () => {

@@ -2,7 +2,8 @@
  * A search layer of the explore stack (YAZ-2571): the input, its ranked rows (`exploreRows`) and a footer of keys.
  * With no text it lists two sections (YAZ-4945, `recentSections.ts`): the files you Opened and the files you Edited. The layer owns its query, highlight and
  * list scroll, so it reads the same when a child closes over it; the rows come from the stack's ONE candidate feed.
- * Each row: its file icon, its title with the matched part marked, its folder, and a text row's snippet.
+ * Each row: its file icon, its title with the matched part marked, its folder, and a text row's snippet. A card inside a
+ * page (YAZ-5164): the card icon, its title, and its page where the folder stands.
  */
 import { useVaultUnit } from '../vault/unitWord'
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
@@ -12,31 +13,33 @@ import { relTo, dirname } from '../lib/paths'
 import { idNeedle, marked } from '../search/marked'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
+import { PlaceName } from '../sidebar/PlaceName'
 import { useResultKeys } from '../sidebar/hooks/useSidebarSearch'
 import { FolderIcon } from '../views/view/icons'
 import { exploreRows } from './exploreRows'
 import { shownId, type IdsInSearch } from '../search/showIds'
 import { movedOpens, onExploreMove } from './exploreRecents'
 import { ago, type RecentSections } from './recentSections'
+import { KeyLabel } from '../keys/KeyLabel'
 
 /**
- * The stack's side of a search layer (round 3): the layer writes its rows here at each render, so the note layer
+ * The stack's side of a search layer (round 3): the layer writes its rows here at each render, so the page layer
  * over it steps through them (‹ ›) without a render of the search. One object per search layer, held by the stack.
  */
 export interface SearchLink {
   rows: readonly SearchCandidate[]
-  /** The rows changed while a note from this search is open (YAZ-2571 bug): the stack draws that note's ‹ n/m › again. */
+  /** The rows changed while a page from this search is open (YAZ-2571 bug): the stack draws that page's ‹ n/m › again. */
   changed?: () => void
 }
 
 interface ExploreSearchProps {
   candidates: readonly SearchCandidate[]
   link: SearchLink
-  /** The note over this layer that came from it (round 3): its path and its place in the rows. The row is marked and scrolled into view, so Esc returns to it. */
+  /** The page over this layer that came from it (round 3): its path and its place in the rows. The row is marked and scrolled into view, so Esc returns to it. */
   markedRow: { path: string; at: number } | null
   /**
-   * The notes opened most recently, newest first: the list with no text. The layer keeps the list it showed when it
-   * opened (YAZ-2571 bug: an open and a step put their note first, so the list moved under ‹ ›); a rename or a delete
+   * The pages opened most recently, newest first: the list with no text. The layer keeps the list it showed when it
+   * opened (YAZ-2571 bug: an open and a step put their page first, so the list moved under ‹ ›); a rename or a delete
    * still changes its row, and clearing the text reads the list again.
    */
   recent: RecentSections
@@ -45,9 +48,11 @@ interface ExploreSearchProps {
   /** The window's vault roots: a recent row's folder is read against its vault. */
   roots: readonly string[]
   nameOf: (path: string) => string
-  /** Enter or a click on a row: a note opens over this layer, with the row's place for ‹ ›; a folder or another file opens in a tab. */
+  /** Enter or a click on a row: a page opens over this layer, with the row's place for ‹ ›; a folder or another file opens in a tab. */
   onOpen: (row: SearchCandidate, at: number) => void
-  /** A right-click on a row (round 1, item 6): the note menu for it, at the pointer. */
+  /** ⌘↵ on the highlighted row (YAZ-4984): that row in a tab, and the stack closes. */
+  onOpenInTab: (row: SearchCandidate) => void
+  /** A right-click on a row (round 1, item 6): the page menu for it, at the pointer. */
   onRowMenu: (row: SearchCandidate, x: number, y: number) => void
   /** The vault's "Show IDs in search" for a row's path (YAZ-4940): Always, or only on a row found by its ID. */
   idsInSearch: (path: string) => IdsInSearch
@@ -55,7 +60,10 @@ interface ExploreSearchProps {
   active: boolean
 }
 
-export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, roots, nameOf, onOpen, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
+/** A row's identity: its file, and its name (a text row of the same file is its own row). */
+const rowKey = (row: SearchCandidate): string => `${row.path}␟${row.name}`
+
+export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, roots, nameOf, onOpen, onOpenInTab, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
   const unit = useVaultUnit(roots[0] ?? null)
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -91,23 +99,24 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
   const rows = useMemo(() => (typed ? exploreRows(candidates, query) : recentRows), [candidates, query, typed, recentRows])
   const needle = useMemo(() => (typed ? readNeedle(query) : undefined), [query, typed])
   link.rows = rows
-  // The stack read these rows in its render, before this one wrote them: a note over this search counts again (YAZ-2571 bug).
-  const noteOver = useRef(false)
-  noteOver.current = markedRow !== null
+  // The stack read these rows in its render, before this one wrote them: a page over this search counts again (YAZ-2571 bug).
+  const pageOver = useRef(false)
+  pageOver.current = markedRow !== null
   const firstRows = useRef(true)
   useEffect(() => {
     if (firstRows.current) {
       firstRows.current = false
       return
     }
-    if (noteOver.current) link.changed?.()
+    if (pageOver.current) link.changed?.()
   }, [rows, link])
-  const { sel, setSelected, onKeys } = useResultKeys(rows, (row) => onOpen(row, rows.indexOf(row)))
+  // The highlight follows its row's page (YAZ-4990): a page added or deleted above it does not move it to another page.
+  const { sel, setSelected, onKeys } = useResultKeys(rows, (row) => onOpen(row, rows.indexOf(row)), rowKey)
   const selectedRow = useRef<HTMLLIElement | null>(null)
   useEffect(() => {
     selectedRow.current?.scrollIntoView?.({ block: 'nearest' })
   }, [sel])
-  // The note over this layer stepped (round 3): its row is the selected one, so Esc comes back to it.
+  // The page over this layer stepped (round 3): its row is the selected one, so Esc comes back to it.
   const markedPath = markedRow?.path ?? null
   const markedAt = markedRow?.at ?? -1
   useEffect(() => {
@@ -121,8 +130,16 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
   }, [active])
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
-    // ⌘↵ is the stack's (open in a tab): it goes up.
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) return
+    // ⌘↵ (YAZ-4984): the highlighted row in a tab, as the footer says (the same as ↵, then ⌘↵). With no row it goes up:
+    // the stack opens the page under this search.
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      const row = rows[sel]
+      if (row === undefined || e.altKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      onOpenInTab(row)
+      return
+    }
     onKeys(e)
   }
 
@@ -138,7 +155,7 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
         spellCheck={false}
         value={query}
         onChange={(e) => {
-          // Back to no text: the notes opened most recently, as they are now.
+          // Back to no text: the pages opened most recently, as they are now.
           if (e.target.value.trim() === '' && typed) setShownRecent(recentNow.current)
           setQuery(e.target.value)
           setSelected(0)
@@ -147,7 +164,7 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
       />
       <div className="explore__results">
         {rows.length === 0 ? (
-          <p className="explore__empty">{typed ? 'No matches found' : unit('Type to search the vault. The notes you open show here.')}</p>
+          <p className="explore__empty">{typed ? 'No matches found' : unit('Type to search the vault. The pages you open show here.')}</p>
         ) : (
           <ul className="search-results" role="listbox" aria-label="Explore results">
             {rows.map((r, i) => {
@@ -171,7 +188,7 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
                 aria-selected={i === sel}
                 aria-label={`Explore result ${r.label}${r.kind === 'dir' ? ', folder' : ''}`}
                 className={`search-results__row${i === sel ? ' search-results__row--active' : ''}${r.kind === 'dir' ? ' search-results__row--dir' : ''}${at !== undefined ? ' explore__row--timed' : ''}`}
-                title={r.path}
+                title={r.page ?? r.path}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   setSelected(i)
@@ -186,17 +203,20 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
                 <span className="search-results__label">
                   {/* The name is cut with "…" on its own, so a long one never hides the ID after it (round 5). */}
                   <span className="explore__name">
-                    <FileIcon path={r.path} folder={r.kind === 'dir'} />
+                    <FileIcon path={r.path} folder={r.kind === 'dir'} card={r.card === true} />
                     {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
                     {marked(label, needle)}
-                    {r.kind === 'file' && <NameEnding path={r.path} />}
+                    {r.kind === 'file' && r.page === undefined && <NameEnding path={r.path} />}
                   </span>
-                  {/* The note's or folder's id, in an ID vault (YAZ-2571 round 1): small and muted after the title; a vault without IDs has none. Found by its ID, the matched digits are marked (round 5). */}
+                  {/* The page's or folder's id, in an ID vault (YAZ-2571 round 1): small and muted after the title; a vault without IDs has none. Found by its ID, the matched digits are marked (round 5). */}
                   {id !== null && <span className="explore__id">{marked(id, idNeedle(r, query))}</span>}
                 </span>
                 {r.snippet !== undefined && <span className="explore__snippet">{marked(r.snippet, needle)}</span>}
-                {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
-                {r.folder === '' && r.kind === 'file' && <span className="search-results__folder">{basename(r.path) === r.label ? '' : 'Vault root'}</span>}
+                {/* A card inside a page (YAZ-5164): its page, quietly, where a page's folder stands. YAZ-5402: the icon says
+                    which the slot holds, the page's or the folder's (the vault's top too). */}
+                {r.page !== undefined && <PlaceName className="search-results__folder" path={r.page} kind="page" label={rowOf?.(r.page)?.label ?? nameOf(r.page)} />}
+                {r.page === undefined && r.folder !== '' && <PlaceName className="search-results__folder" path={dirname(r.path)} kind="folder" label={r.folder} />}
+                {r.page === undefined && r.folder === '' && r.kind === 'file' && basename(r.path) !== r.label && <PlaceName className="search-results__folder" path={dirname(r.path)} kind="folder" label="Vault root" />}
                 {at !== undefined && <span className="explore__time">{ago(at, now)}</span>}
               </li>
               </Fragment>
@@ -207,16 +227,16 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
       </div>
       <div className="explore__foot">
         <span>
-          <kbd>↑</kbd> <kbd>↓</kbd> select
+          <KeyLabel action="Select" keys="↑ / ↓" />
         </span>
         <span>
-          <kbd>↵</kbd> open
+          <KeyLabel action="Open" keys="↵" />
         </span>
         <span>
-          <kbd>⌘↵</kbd> open in a tab
+          <KeyLabel action="Open in a tab" keys="⌘↵" />
         </span>
         <span>
-          <kbd>esc</kbd> back
+          <KeyLabel action="Back" keys="esc" />
         </span>
       </div>
     </>

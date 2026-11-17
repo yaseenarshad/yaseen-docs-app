@@ -25,7 +25,7 @@ import { newEmbed } from '@shared/embedOptions'
 
 /** How the menu items reach the host's file layer (App/Editor own the root and the notice). */
 export interface DrawingCreator {
-  /** Creates one empty board of `kind` for the note and resolves the embed's target (`drawings/createDrawing.ts`). */
+  /** Creates one empty board of `kind` for the page and resolves the embed's target (`drawings/createDrawing.ts`). */
   create: (kind: 'drawing' | 'diagram') => Promise<string>
   /** Create failure: the passive in-window notice, never a dialog. Absent → failures are silent. */
   onNotice?: (message: string) => void
@@ -42,7 +42,7 @@ export interface SlashMenuBuilder {
   }
 }
 
-/** The embed a new board leaves in the note (Obsidian's embed syntax): its window (YAZ-4827), its view locked (YAZ-2571 round 7). */
+/** The embed a new board leaves in the page (Obsidian's embed syntax): its window (YAZ-4827), its view locked (YAZ-2571 round 7). */
 export const drawingEmbed = (name: string) => newEmbed(name)
 
 /** Pencil-on-a-square, drawn to match the stock 24px items (Crepe renders the string as-is). */

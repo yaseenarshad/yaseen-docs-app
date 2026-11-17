@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_FOLDER_PAGES, type IndexRecord, readColorStrength, writeColorStrength } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { addDays, bucketByDay, calLineColor, calLineCss, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
+import { addDays, bucketByDay, calLineColor, calLineCss, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, spanDays, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -275,7 +275,7 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(spanOf({}, 'due', 'end')).toBeNull()
   })
 
-  it('bucketByDay: a span goes to `multi`, an end-only note on its end day, and a preview moves one card', () => {
+  it('bucketByDay: a span goes to `multi`, an end-only page on its end day, and a preview moves one card', () => {
     const rows = [row('Trip', { due: '2026-12-03', end: '2026-12-05' }), row('After', { end: '2026-12-07' }), row('One', { due: '2026-12-04' }), row('None', {})]
     const { days, multi, undated } = bucketByDay(rows, 'due', 'end')
     expect(multi.map((m) => [m.row.record.title, m.start, m.end])).toEqual([['Trip', '2026-12-03', '2026-12-05']])
@@ -303,6 +303,31 @@ describe('cards over several days (YAZ-4858)', () => {
       ['Edge', 5, 2, 0, false, true],
     ])
     expect(lanes).toBe(2)
+  })
+
+  it('layoutWeek, sorted (YAZ-5603): the bars placed in the rows\' order, each in the highest lane free over all its days; read by column, then lane', () => {
+    // The rows come in the view's sort: "First" (the lower Order) sorts before "Sarmad", which starts the same day and is longer.
+    const sorted = [span('First', '2026-12-07', '2026-12-08'), span('Sarmad', '2026-12-04', '2026-12-09'), span('Gap', '2026-12-10', '2026-12-11'), span('Wide', '2026-12-08', '2026-12-12')]
+    const { bars, lanes } = layoutWeek(WEEK, sorted, true)
+    expect(placed(bars)).toEqual([
+      ['First', 0, 2, 0, false, false],
+      ['Sarmad', 0, 3, 1, true, false],
+      // Free in no lane over all of Tue … Sat: a new lane.
+      ['Wide', 1, 5, 2, false, false],
+      // A later bar takes a gap an earlier one left, when the gap is free over all its days.
+      ['Gap', 3, 2, 0, false, false],
+    ])
+    expect(lanes).toBe(3)
+    // Never two bars on one lane's day.
+    for (const a of bars) for (const b of bars) if (a !== b && a.lane === b.lane) expect(a.col + a.cols <= b.col || b.col + b.cols <= a.col).toBe(true)
+  })
+
+  it('layoutWeek, no sort: start, then the longer one, whatever the rows\' order', () => {
+    const rows = [span('First', '2026-12-07', '2026-12-08'), span('Sarmad', '2026-12-04', '2026-12-09')]
+    expect(placed(layoutWeek(WEEK, rows).bars).map(([name, , , lane]) => [name, lane])).toEqual([
+      ['Sarmad', 0],
+      ['First', 1],
+    ])
   })
 
   it('layoutWeek: a bar from an earlier week is cut at the start; one off the row is left out', () => {
@@ -336,6 +361,11 @@ describe('cards over several days (YAZ-4858)', () => {
       expect(spanLabel('2026-12-30', '2027-01-02')).toBe('Dec 30, 2026 – Jan 2, 2027')
       vi.setSystemTime(new Date(2025, 5, 1, 12, 0))
       expect(spanLabel('2026-12-03', '2026-12-05')).toBe('Dec 3 – Dec 5, 2026')
+      // A bar's hover (YAZ-5604 item 8): the days and how many, both ends counted.
+      vi.setSystemTime(new Date(2026, 10, 10, 12, 0))
+      expect(spanDays('2026-11-12', '2026-11-15')).toBe('Nov 12 – Nov 15 · 4 days')
+      expect(spanDays('2026-12-30', '2027-01-02')).toBe('Dec 30, 2026 – Jan 2, 2027 · 4 days')
+      expect(spanDays('2026-11-12', '2026-11-12')).toBe('Nov 12, 2026 · 1 day')
     } finally {
       vi.useRealTimers()
     }

@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react'
+import { useContext, type ReactNode } from 'react'
 import { useUnit } from '../../vault/unitWord'
 import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, showsFolderRows, shownGroupLevels } from '../viewSchema'
 import { TextField } from './TextField'
 import { cardWidth } from './cardWidth'
 import { type ColorStrengthValue, calLine, writeColorStrength } from '@shared/types'
-import { calLineColor, hideWeekendsDefault, hidesWeekends } from '../calendar'
+import { CALENDAR_SCALES, calLineColor, calendarScaleOf, hideWeekendsDefault, hidesWeekends, monthLineColorOf, monthLineOf } from '../calendar'
 import { CalLineControls } from './CalendarLineControls'
 import { markerStyleOf } from './ListView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
@@ -12,6 +12,8 @@ import { GroupGuideSettings, HeaderRowStyleRow, TableLookSettings } from './Tabl
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 import { ChoiceSeg, RowLabel } from './settingRow'
 import { CalendarEndBy, CalendarShowBy } from './CalendarView'
+import { CardRows } from './cardRowsContext'
+import { cardRowsOf } from '../cardRows'
 
 export interface ViewSettingsProps {
   def: ViewSet
@@ -43,7 +45,7 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
  * (Group indent, D60, where the view indents its groups; Show empty groups), then the type's own sections ("Default
  * view" is the folder's, in its ⚙ since YAZ-4909). YAZ-4864 (Yaseen: "sections of the view settings bc there are starting to become a lot of them"): one
  * tab, small headings with a little room above each, the same words in every type — a Board's and a List's own rows
- * are Layout; a calendar's are Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends), Lines
+ * are Layout; a calendar's are Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends, Fold long days), Lines
  * (YAZ-4878) and Cross out (its rules); a Table's are Rows (Row height, Text in cells, Row numbers, Subfolders) and
  * Header row (Column type icons and the row's look, YAZ-4908). Frozen columns and rows live only on the header and row right-clicks, and a
  * calendar's Start date and End date only here, first in Dates (YAZ-3746 13AD: off the toolbar, over C3 and D11). Each row: an icon and label, then a segmented choice, a switch or a quiet select; a Settings ›
@@ -52,6 +54,7 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
  */
 export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns, crossOut }: ViewSettingsProps) {
   const unit = useUnit()
+  const cardRows = useContext(CardRows)
   const defaults = useViewDefaults()
   const table = view.type === 'table'
   // A calendar's days are its groups (YAZ-4540 D4) and a Board does not indent its groups (YAZ-4544): Table, List
@@ -81,6 +84,23 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           </label>
         </>
       )}
+      {/* "Show cards as rows" (YAZ-5319): a Table lists its pages or its cards; offered only while the vault has Cards and IDs on. */}
+      {table && cardRows?.offered === true && (
+        <div className="view-settings-row">
+          <RowLabel icon="cardRows">Show as rows</RowLabel>
+          <ChoiceSeg
+            label="Show cards as rows"
+            value={cardRowsOf(view) ? 'cards' : 'pages'}
+            options={[['pages', unit('Pages')], ['cards', 'Cards']]}
+            onChange={(rows) =>
+              onUpdate((d) => {
+                if (rows === 'cards') d.views[viewIndex].rows = 'cards'
+                else delete d.views[viewIndex].rows
+              })
+            }
+          />
+        </div>
+      )}
       {/* Every view type (YAZ-4579 D30): the one Subfolders switch, in View › Rows since D60. */}
       <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
       {/* YAZ-4848: what a subfolder's row shows beside its title, in every view that shows folder rows. A calendar shows no count. */}
@@ -93,8 +113,8 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           </label>
           {view.type !== 'calendar' && (
             <label className="view-settings-row">
-              <RowLabel icon="folderCounts">{unit('Notes inside count')}</RowLabel>
-              <input type="checkbox" role="switch" aria-label={unit('Notes inside count')} checked={view.folderCounts !== false} onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'folderCounts', e.target.checked, defaults))} />
+              <RowLabel icon="folderCounts">{unit('Pages inside count')}</RowLabel>
+              <input type="checkbox" role="switch" aria-label={unit('Pages inside count')} checked={view.folderCounts !== false} onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'folderCounts', e.target.checked, defaults))} />
               <FromSettings own={own} viewKey="folderCounts" viewIndex={viewIndex} onUpdate={onUpdate} />
             </label>
           )}
@@ -168,11 +188,12 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
               <span>px</span>
             </span>
           </label>
+          <CardClickRow own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
         </>
       )}
       {view.type === 'calendar' && (
         <>
-          {/* Start date, once Show by (YAZ-3746 13AD, YAZ-4858): the date column the calendar places notes on; only here, not on the toolbar. */}
+          {/* Start date, once Show by (YAZ-3746 13AD, YAZ-4858): the date column the calendar places pages on; only here, not on the toolbar. */}
           {(dateColumns.length > 0 || typeof view.dateProperty === 'string') && (
             <>
               <p className="view-menu__label">Dates</p>
@@ -188,13 +209,13 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             </>
           )}
           <p className="view-menu__label">Layout</p>
-          {/* The toolbar's Month / Week switch as a setting (D59): the same write as `ViewsPane`'s `onScale`. */}
+          {/* The toolbar's Month / Week / Rolling switch as a setting (D59): the same write as `ViewsPane`'s `onScale`. */}
           <div className="view-settings-row">
             <RowLabel icon="opensIn">Opens in</RowLabel>
             <ChoiceSeg
               label="Opens in"
-              value={view.calendarScale === 'week' ? 'week' : 'month'}
-              options={[['month', 'Month'], ['week', 'Week']] as const}
+              value={calendarScaleOf(view)}
+              options={CALENDAR_SCALES}
               // Settings' scale removes the key (YAZ-4558 D22, YAZ-4585): Month, unless Settings › Folder pages says Week.
               onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarScale', next, defaults))}
             />
@@ -226,13 +247,45 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="hideWeekends" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
+          {/* Fold long days (YAZ-5586): On folds a busy Month day to "+N more"; Off writes `foldDays: false` and the day shows everything. */}
+          <div className="view-settings-row">
+            <RowLabel icon="foldDays">Fold long days</RowLabel>
+            <ChoiceSeg
+              label="Fold long days"
+              value={view.foldDays === false ? 'off' : 'on'}
+              options={[['on', 'On'], ['off', 'Off']] as const}
+              onChange={(next) =>
+                onUpdate((d) => {
+                  if (next === 'off') d.views[viewIndex].foldDays = false
+                  else delete d.views[viewIndex].foldDays
+                })
+              }
+            />
+          </div>
+          <CardClickRow own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           {/* The day names' look (YAZ-4864 round 3): the Table view's header row, the same keys and Settings default. */}
           <HeaderRowStyleRow label="Header row" own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           {/* The grid's lines (YAZ-4878): each a width (1–4 px, or a custom whole number up to 12) and a colour with a strength. */}
           <p className="view-menu__label">Lines</p>
           <CalendarLineRow label="Between weeks" widthKey="weekLine" colorKey="weekLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           <CalendarLineRow label="Between days" widthKey="dayLine" colorKey="dayLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
-          {/* Cross out when (YAZ-4864): a card whose note matches these rows is crossed out whole. */}
+          {/* Tell months apart (YAZ-5608): Rolling shades every other month (On by default), and a stepped line can go round each month. */}
+          <div className="view-settings-row">
+            <RowLabel icon="monthShade">Shade every other month</RowLabel>
+            <ChoiceSeg
+              label="Shade every other month"
+              value={view.monthShade === false ? 'off' : 'on'}
+              options={[['on', 'On'], ['off', 'Off']] as const}
+              onChange={(next) =>
+                onUpdate((d) => {
+                  if (next === 'off') d.views[viewIndex].monthShade = false
+                  else delete d.views[viewIndex].monthShade
+                })
+              }
+            />
+          </div>
+          <MonthLineRow view={view} viewIndex={viewIndex} onUpdate={onUpdate} />
+          {/* Cross out when (YAZ-4864): a card whose page matches these rows is crossed out whole. */}
           {crossOut !== undefined && (
             <>
               <p className="view-menu__label">Cross out</p>
@@ -316,6 +369,67 @@ function CalendarLineRow({ label, widthKey, colorKey, view, own, viewIndex, onUp
         onColor={(next: ColorStrengthValue) => onUpdate((d) => chooseOwn(d.views[viewIndex], colorKey, writeColorStrength(next), defaults))}
       />
       <FromSettings own={own} viewKey={widthKey} also={colorKey} viewIndex={viewIndex} onUpdate={onUpdate} />
+    </div>
+  )
+}
+
+/**
+ * "Between months" (YAZ-5608): Off (no key), or a width and a colour with the "Between weeks" controls. Saved with the
+ * view alone: Settings › Folder pages has no default for it.
+ */
+function MonthLineRow({ view, viewIndex, onUpdate }: { view: ViewDef; viewIndex: number; onUpdate: Mutate }) {
+  return (
+    <div className="view-settings-row">
+      <RowLabel icon="lineWidth">Between months</RowLabel>
+      <CalLineControls
+        label="Between months"
+        offable
+        width={monthLineOf(view)}
+        color={monthLineColorOf(view)}
+        onWidth={(px) =>
+          onUpdate((d) => {
+            if (px === 0) {
+              delete d.views[viewIndex].monthLine
+              delete d.views[viewIndex].monthLineColor
+            } else d.views[viewIndex].monthLine = px
+          })
+        }
+        onColor={(next: ColorStrengthValue) =>
+          onUpdate((d) => {
+            d.views[viewIndex].monthLineColor = writeColorStrength(next)
+          })
+        }
+      />
+      <span className="view-from-settings" aria-hidden="true" />
+    </div>
+  )
+}
+
+/** YAZ-5582: "Clicking a card opens" on a Calendar or a Board. Same as Settings writes no key; the other two are the view's own. */
+const CARD_CLICK_CHOICES = [['settings', 'Same as Settings'], ['window', 'Mini window'], ['background', 'Background tab']] as const
+
+/**
+ * A Calendar's or Board's "Clicking a card opens" (YAZ-5582): Same as Settings (no `clickOpens` key: Settings › Folder
+ * pages decides), Mini window or Background tab, saved with the view. Its own three choices say where it comes from,
+ * so the slot after it stays empty (no ↺).
+ */
+function CardClickRow({ own, viewIndex, onUpdate }: { own: ViewDef; viewIndex: number; onUpdate: Mutate }) {
+  const value = own.clickOpens === 'window' || own.clickOpens === 'background' ? own.clickOpens : 'settings'
+  return (
+    <div className="view-settings-row">
+      <RowLabel icon="clickOpens">Clicking a card opens</RowLabel>
+      <ChoiceSeg
+        label="Clicking a card opens"
+        value={value}
+        options={CARD_CLICK_CHOICES}
+        onChange={(next) =>
+          onUpdate((d) => {
+            if (next === 'settings') delete d.views[viewIndex].clickOpens
+            else d.views[viewIndex].clickOpens = next
+          })
+        }
+      />
+      <span className="view-from-settings" aria-hidden="true" />
     </div>
   )
 }

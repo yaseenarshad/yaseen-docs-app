@@ -1,7 +1,7 @@
 /**
- * YAZ-4103 3F: copy and paste keep the letter styles between a note and a drawing's text box, checked against a real
- * note: the note's copy HTML read by the engine's paste (`parseStyledHtml`), and the engine's copy HTML (`getStyledHtml`)
- * pasted into a note and saved. The text editor's own paste and copy events are the engine's
+ * YAZ-4103 3F: copy and paste keep the letter styles between a page and a drawing's text box, checked against a real
+ * page: the page's copy HTML read by the engine's paste (`parseStyledHtml`), and the engine's copy HTML (`getStyledHtml`)
+ * pasted into a page and saved. The text editor's own paste and copy events are the engine's
  * `wysiwyg/textWysiwyg.test.tsx`.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -21,7 +21,7 @@ afterEach(async () => {
   }
 })
 
-async function note(markdown: string): Promise<{ view: EditorView; crepe: Crepe }> {
+async function page(markdown: string): Promise<{ view: EditorView; crepe: Crepe }> {
   const root = document.createElement('div')
   document.body.append(root)
   const crepe = createCrepe({ root, defaultValue: markdown })
@@ -34,9 +34,9 @@ async function note(markdown: string): Promise<{ view: EditorView; crepe: Crepe 
 
 const STYLED = '**b** *i* <u>u</u> ~~s~~ ==h== <mark class="highlight-green">g</mark> [[YAS-1]]'
 
-describe('YAZ-4103 3F: styles between a note and a drawing', () => {
-  it('note → drawing: each style of a note copy becomes a run, and the [[link]] stays as written', async () => {
-    const { view } = await note(STYLED)
+describe('YAZ-4103 3F: styles between a page and a drawing', () => {
+  it('page → drawing: each style of a page copy becomes a run, and the [[link]] stays as written', async () => {
+    const { view } = await page(STYLED)
     view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
     const html = view.serializeForClipboard(view.state.selection.content()).dom.innerHTML
     const { parseStyledHtml } = await engine()
@@ -53,7 +53,7 @@ describe('YAZ-4103 3F: styles between a note and a drawing', () => {
     })
   })
 
-  it('drawing → note: the note saves the Markdown marks; the text color has no mark and is dropped', async () => {
+  it('drawing → page: the page saves the Markdown marks; the text color has no mark and is dropped', async () => {
     const { getStyledHtml } = await engine()
     const html = getStyledHtml(
       'b i u s h g c [[YAS-1]]',
@@ -69,7 +69,7 @@ describe('YAZ-4103 3F: styles between a note and a drawing', () => {
       0,
       23,
     )!
-    const { view, crepe } = await note('')
+    const { view, crepe } = await page('')
     view.pasteHTML(html, { clipboardData: { getData: (type: string) => (type === 'text/html' ? html : '') }, preventDefault() {} } as unknown as ClipboardEvent)
     expect(getMarkdownForSave(crepe).trim()).toBe('**b** *i* <u>u</u> ~~s~~ ==h== <mark class="highlight-green">g</mark> c [[YAS-1]]')
   })

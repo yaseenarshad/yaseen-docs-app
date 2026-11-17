@@ -13,6 +13,8 @@ const ICONS = {
   folderCounts: <><path d="M2 5a1 1 0 0 1 1-1h3l1.2 1.4H9M2 5v7a1 1 0 0 0 1 1h5" /><path d="M11.2 8.5h3M11.2 11h3M12 7.5l-.6 4.5M13.6 7.5 13 12" /></>,
   columnTypeIcons: <><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" /><path d="M5 6.5h1.5M8.5 6.5H11M5 9.5h1.5M8.5 9.5H11" /></>,
   headerRow: <><rect x="2.5" y="3" width="11" height="10" rx="1.5" /><path d="M2.5 6.5h11M3.5 4.75h9" /></>,
+  // YAZ-5319: two cards, one over the other (Show cards as rows).
+  cardRows: <><rect x="2.5" y="3.5" width="9" height="7" rx="1.2" /><path d="M5 12.5h7.3a1.2 1.2 0 0 0 1.2-1.2V6" /></>,
   subfolders: <path d="M2.5 2.5v8.5h3M2.5 5.5h3M7 8.6a.8.8 0 0 1 .8-.8h2l1 1h2.9a.8.8 0 0 1 .8.8v3.1a.8.8 0 0 1-.8.8H7.8a.8.8 0 0 1-.8-.8zM7 3.6a.8.8 0 0 1 .8-.8h2l1 1h2.9a.8.8 0 0 1 .8.8" />,
   groupIndent: <path d="M2 3h12M7 7.5h7M7 12h7M2 6.5l2.5 2.5L2 11.5" />,
   emptyGroups: <rect x="2.5" y="3" width="11" height="10" rx="1.5" strokeDasharray="2 2" />,
@@ -20,12 +22,17 @@ const ICONS = {
   stickyGroups: <><rect x="2.5" y="2.5" width="11" height="3.5" rx="1" /><path d="M4.5 9h9M4.5 12.5h9" /></>,
   groupLines: <path d="M2.5 3h6M4 4.5v9M6.5 8h7M6.5 12h7" />,
   // YAZ-4878: a thin and a thick line, the calendar grid's line widths.
+  // YAZ-5608: a calendar page with every other row shaded.
+  monthShade: <><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M2.5 6.2h11M2.5 9.8h11" /><path d="M3.5 7h9v2h-9z" fill="currentColor" stroke="none" opacity=".35" /></>,
   lineWidth: <><path d="M2.5 4.5h11" /><path d="M2.5 10.5h11" strokeWidth="3" /></>,
   groupLineStyle: <path d="M2.5 3h6M4 4.5v4.5a3 3 0 0 0 3 3h6.5M8 8h5.5" />,
   columnWidth: <path d="M3 8h10M5 6 3 8l2 2M11 6l2 2-2 2M1.5 3v10M14.5 3v10" />,
+  // YAZ-5582: a pointer over a card (Clicking a card opens).
+  clickOpens: <><rect x="2" y="2.5" width="9" height="6.5" rx="1.2" /><path d="M8 7.5l5.5 2-2.3.9 1.8 2.3-1 .8-1.8-2.3-1.4 2z" /></>,
   opensIn: <path d="M2.5 3.5h11v10h-11zM2.5 7h11M6.2 7v6.5M9.8 7v6.5" />,
   cardTitles: <><rect x="2" y="4" width="12" height="8" rx="1.5" /><path d="M4.5 7h7M4.5 9.5h4" /></>,
   hideWeekends: <><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M5 11l6-5" /></>,
+  foldDays: <><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M5 5.5h6M5 8h6M6 11l2-1.5 2 1.5" /></>,
   markerStyle: <><path d="M6 4h8M6 8h8M6 12h8" /><circle cx="3" cy="4" r=".9" /><circle cx="3" cy="8" r=".9" /><circle cx="3" cy="12" r=".9" /></>,
   indentProperties: <path d="M2 3.5h12M6 8h8M6 12.5h8M2 7v6" />,
   separator: <><circle cx="7.5" cy="8.5" r="1" /><path d="M8.5 9v1.5c0 1-.7 2-1.7 2.5" /></>,

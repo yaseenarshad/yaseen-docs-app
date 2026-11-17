@@ -24,12 +24,12 @@ describe('folderShortcuts: the shortcut rows (YAZ-2290 D2)', () => {
   const folders = [{ ...record('Projects', '.folder'), id }]
   const row = (folder: string, basename: string) => ({ type: 'file', name: `${basename}.md`, path: `/v/${folder}/${basename}.md`, size: 1, mtime: 1, kind: 'markdown' })
 
-  it("each folder's shortcuts as file rows, keyed by its absolute path — the notes it shows that live elsewhere, in index order; a trailing slash on the root changes nothing", () => {
+  it("each folder's shortcuts as file rows, keyed by its absolute path — the pages it shows that live elsewhere, in index order; a trailing slash on the root changes nothing", () => {
     const records = [record('Areas', 'health', { also_in: [id] }), record('Projects', 'a', { also_in: [id] }), record('Zebra', 'z', { also_in: id })]
     for (const root of ['/v', '/v/']) expect([...folderShortcuts(root, records, folders)]).toEqual([['/v/Projects', [row('Areas', 'health'), row('Zebra', 'z')]]])
   })
 
-  it('the shortcut rows the tree draws under a folder: only notes whose `also_in` names THAT folder and that do not live under it', () => {
+  it('the shortcut rows the tree draws under a folder: only pages whose `also_in` names THAT folder and that do not live under it', () => {
     const alpha = 'z8y7x6w5v4t3'
     const nested = [...folders, { ...record('Projects/Alpha', '.folder'), id: alpha }]
     const records = [
@@ -37,7 +37,7 @@ describe('folderShortcuts: the shortcut rows (YAZ-2290 D2)', () => {
       record('Areas', 'wealth', { also_in: [id] }),
       record('Projects', 'a', { also_in: [alpha] }), // lives in Projects, a shortcut in Alpha
       record('Projects/Alpha', 'c', { also_in: [id] }), // lives under Projects: no shortcut row there
-      record('Projects/Alpha', 'd'), // a subfolder's note is no shortcut row of the parent
+      record('Projects/Alpha', 'd'), // a subfolder's page is no shortcut row of the parent
     ]
     expect(folderShortcuts('/v', records, nested)).toEqual(
       new Map([

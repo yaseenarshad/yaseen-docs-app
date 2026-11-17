@@ -22,7 +22,7 @@
  * that chip is the chevron's toggle. Same plugin state, same meta-only transactions, same keys —
  * the image node view knows nothing about folding (decorations first, rule 5 / rule 30).
  * Board embed bullets (YAZ-4830 D13): a list_item holding a `![[x.drawio]]` in its own text blocks is foldable the
- * same way (`findOwnEmbeds`). The embed's window shows the fold and reads it through `embedFolds` (the note's text is
+ * same way (`findOwnEmbeds`). The embed's window shows the fold and reads it through `embedFolds` (the page's text is
  * under decorations, so there is no node to stamp). A board image node is an image: its node view reads the spec of
  * the image's node decoration (`foldableImage`, `folded`).
  */
@@ -170,7 +170,7 @@ export const embedFolds = (state: EditorState): ReadonlyMap<number, EmbedFold> =
     const folded = foldingState.collapsedItemPositions.has(itemPos)
     for (const { from } of embedRanges) map.set(from, { itemPos, folded })
   }
-  // No embed on a bullet (A9): the one empty map, so a key in such a note never looks new to the embed host.
+  // No embed on a bullet (A9): the one empty map, so a key in such a page never looks new to the embed host.
   const out = map.size === 0 ? NO_EMBED_FOLDS : map
   embedFoldCache.set(foldingState, out)
   return out
@@ -276,7 +276,7 @@ const itemLevel = (doc: ProseNode, itemPos: number): number => {
 
 /**
  * Collapse this level / Expand this level (YAZ-4786), from a bullet's menu: the level is the bullet's depth, across the
- * whole note. Collapse folds every foldable bullet at that level and opens every one above it, so they all show.
+ * whole page. Collapse folds every foldable bullet at that level and opens every one above it, so they all show.
  * Expand opens every foldable bullet at that level and above; deeper bullets keep their folds. One user fold: one ⌘Z.
  * With no dispatch, says whether the bullet's level has a foldable bullet at all.
  */

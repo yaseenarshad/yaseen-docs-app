@@ -149,7 +149,7 @@ export function createMediaStore(initialFolder: string, deps: MediaStoreDeps): M
       await makeLibraryDir(dir)
       return atomicWrite(p, `${JSON.stringify(lib, null, 2)}\n`)
     })
-    watched.noteOwnWrite(p, mtime)
+    watched.recordOwnWrite(p, mtime)
     notify()
   }
 

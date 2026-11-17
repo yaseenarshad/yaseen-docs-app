@@ -109,7 +109,7 @@ export function buildMonacoTheme(theme: AppTheme, read: ReadToken): editor.IStan
   return {
     base: theme === 'dark' ? 'vs-dark' : 'vs',
     inherit: true,
-    // The same token-to-colour map as the note code blocks (`editor/codeTheme.ts`), in Monaco's token names.
+    // The same token-to-colour map as the page code blocks (`editor/codeTheme.ts`), in Monaco's token names.
     rules: [
       rule('', '--fg'),
       rule('keyword', '--code-keyword'),

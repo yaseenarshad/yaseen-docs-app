@@ -1,5 +1,5 @@
 /**
- * The folder page's toolbar and cog (YAZ-3746 D35, D36, D37): the note page's chips on a folder page, and the
+ * The folder page's toolbar and cog (YAZ-3746 D35, D36, D37): the page page's chips on a folder page, and the
  * cog's "This folder page" group — "Read only" (`readonly: true`) and "Show folder page file" (`show_page_file`),
  * both in the folder's `.folder.md`. Mounted as `FolderView.page.test.tsx` is: the `api` mock sits under the real
  * `writeProperty` over a tiny in-memory disk.
@@ -44,7 +44,7 @@ let source: MutableWikilinkResolveSource
 let disk: Map<string, { content: string; mtime: number }>
 let clock = 100
 
-/** The index's snapshot of the disk: the note, and the settings file's record when the file exists. */
+/** The index's snapshot of the disk: the page, and the settings file's record when the file exists. */
 function feed(): void {
   const records = [rec(LEAD)]
   const settings = disk.get(SETTINGS_FILE)
@@ -338,7 +338,8 @@ folder_settings:
     expect(el.querySelector('.read-only-chip')).not.toBeNull()
   })
 
-  it('a folder whose `.folder.md` says `readonly: true` refuses a content write — a column rename — with the notice, and writes nothing', async () => {
+  // YAZ-5411: it asks the chip's "Allow edits?" first, where it showed a red line after the fact.
+  it('a folder whose `.folder.md` says `readonly: true` asks "Allow edits?" before a content write — a column rename; Cancel writes nothing and says nothing', async () => {
     disk.set(SETTINGS_FILE, { content: LOCKED_TWO, mtime: 50 })
     const el = await mount()
     rightClick(header(el, 'Priority'))
@@ -347,8 +348,11 @@ folder_settings:
     setValue(field, 'Importance')
     press(field, 'Enter')
     await flush()
+    const cancel = [...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Cancel')!
+    click(cancel)
+    await flush()
     expect(writeFile).not.toHaveBeenCalled()
-    expect(errorLine(el)).toBe('Could not update the folder: This folder page is read only')
+    expect(errorLine(el)).toBeNull()
     expect(header(el, 'Importance')).toBeUndefined()
   })
 
@@ -459,7 +463,7 @@ describe('the hook for the Page tab (10D): `FolderPageTab` through the toolbar s
 
   // YAZ-3746 13BM PS2: the folder ⚙ holds the folder page's own group only. The Page tab's text switches, handed through
   // the same store, are on the Page's own settings button in its view toolbar (PS1; `Editor.test.tsx`, the folder Page tab).
-  it('the note\'s page switches stay out of the folder ⚙, and the save chip shows the worse of the two saves', () => {
+  it('the page\'s page switches stay out of the folder ⚙, and the save chip shows the worse of the two saves', () => {
     const store = createStore<FolderChipsState>({ save: 'saved', page: null, readOnly: false })
     container = document.createElement('div')
     document.body.append(container)

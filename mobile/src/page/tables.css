@@ -1,0 +1,844 @@
+/* Tables on the phone: a page's tables, a card's tables in a page, the card view and Review, and the full-screen
+   view. The widths come from `tableLayout.ts`; the marks (`data-wide`, `data-more-left`, `data-more-right`) from `useTables.ts`. */
+:root {
+  /* The lines between rows: light. The header: a soft shade, solid, so a sticky cell hides what scrolls under it. */
+  --table-row-line: color-mix(in srgb, var(--fg) 10%, var(--bg));
+  --table-head-line: color-mix(in srgb, var(--fg) 18%, var(--bg));
+  --table-head-bg: color-mix(in srgb, var(--fg) 5%, var(--bg));
+  --table-edge-shadow: rgba(0, 0, 0, 0.14);
+}
+:root:where([data-scheme='dark']) {
+  --table-row-line: color-mix(in srgb, var(--fg) 14%, var(--bg));
+  --table-head-line: color-mix(in srgb, var(--fg) 24%, var(--bg));
+  --table-head-bg: color-mix(in srgb, var(--fg) 7%, var(--bg));
+  --table-edge-shadow: rgba(0, 0, 0, 0.5);
+}
+
+/* The box: as wide as the text column; its width is what the columns share (a container query unit, `100cqw`). */
+.page-table-box {
+  margin: 0.8em 0;
+  container-type: inline-size;
+}
+/* The frame: hugs the table, never wider than the screen; the shadows at its sides. */
+.page-table-frame {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--table-row-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+/* The scroll box: the table scrolls sideways in it; the screen does not. A card's table (`.card__table`) is its own. */
+.page-table-box .page-table-frame .page-table {
+  max-width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* The cell look: one step smaller than the text, comfortable padding, a bold header on a soft shade, light row lines,
+   no column lines. The same in a card (`.card__table`, the Mac's `card.css` and `table.css`) and in Review. */
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875em;
+  line-height: 1.4;
+}
+/* Each column at its own width (a GROW column's from `col`, a FIT column's text): the table is never squeezed to fit
+   the box, where a column would shrink to a letter. A wider table scrolls. */
+.page-table-box .page-table-frame .page-table table {
+  width: max-content;
+  margin: 0;
+  table-layout: auto;
+}
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table :is(th, td) {
+  padding: 0.5em 0.75em;
+  border: 0;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: var(--table-row-line);
+  text-align: start;
+  vertical-align: top;
+  /* A word breaks only when it is longer than its column (a long address); the column is never narrower than its min. */
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: none;
+}
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table th {
+  border-bottom-color: var(--table-head-line);
+  background-color: var(--table-head-bg);
+  font-weight: 600;
+  vertical-align: bottom;
+}
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table tr:last-child > td {
+  border-bottom: 0;
+}
+/* Markdown's own alignment (`:--:`, `--:`) wins. */
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table :is(th, td)[align='center'] {
+  text-align: center;
+}
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table :is(th, td)[align='right'] {
+  text-align: end;
+}
+/* THE FILE'S LOOK, translated for the phone (`tableFile.ts` reads the table comment with the Mac's parser).
+   A cell's tint (its fill, or a stripe) is a layer over its own colour (the page, or the header's shade, solid under a
+   frozen cell), so a frozen cell keeps its fill and still hides what passes under it. The colours are the Mac's ten
+   (`client/src/editor/table/table.css`), each with its light and its dark shade; set on the root, so the full-screen
+   view has them too. */
+:root {
+  --table-fill-red: rgba(255, 90, 80, 0.35);
+  --table-fill-orange: rgba(255, 150, 50, 0.35);
+  --table-fill-yellow: rgba(255, 213, 0, 0.4);
+  --table-fill-green: rgba(80, 200, 120, 0.35);
+  --table-fill-teal: rgba(40, 190, 180, 0.35);
+  --table-fill-blue: rgba(80, 160, 255, 0.35);
+  --table-fill-purple: rgba(160, 110, 255, 0.35);
+  --table-fill-pink: rgba(255, 120, 180, 0.35);
+  --table-fill-grey: rgba(150, 150, 150, 0.35);
+  --table-fill-brown: rgba(170, 120, 70, 0.35);
+  --table-text-red: #c0392b;
+  --table-text-orange: #b45309;
+  --table-text-yellow: #a16207;
+  --table-text-green: #2e7d32;
+  --table-text-teal: #0f766e;
+  --table-text-blue: #1d5fbf;
+  --table-text-purple: #7b3fbf;
+  --table-text-pink: #c2185b;
+  --table-text-grey: #6b6b6b;
+  --table-text-brown: #8b5a2b;
+  --table-fill-solid-red: rgb(255, 90, 80);
+  --table-fill-solid-orange: rgb(255, 150, 50);
+  --table-fill-solid-yellow: rgb(255, 213, 0);
+  --table-fill-solid-green: rgb(80, 200, 120);
+  --table-fill-solid-teal: rgb(40, 190, 180);
+  --table-fill-solid-blue: rgb(80, 160, 255);
+  --table-fill-solid-purple: rgb(160, 110, 255);
+  --table-fill-solid-pink: rgb(255, 120, 180);
+  --table-fill-solid-black: rgb(18, 18, 18);
+  /* The Mac's band colours grey and brown (Row band colour). */
+  --table-fill-solid-grey: rgb(150, 150, 150);
+  --table-fill-solid-brown: rgb(170, 120, 70);
+  /* The Mac's outline colour (`table.css` `--table-outline`), for a table with its own border. */
+  --table-file-outline: #a8a8a8;
+}
+:root:where([data-scheme='dark']) {
+  --table-fill-red: rgba(255, 90, 80, 0.3);
+  --table-fill-orange: rgba(255, 150, 50, 0.3);
+  --table-fill-yellow: rgba(255, 213, 0, 0.3);
+  --table-fill-green: rgba(80, 200, 120, 0.3);
+  --table-fill-teal: rgba(40, 190, 180, 0.3);
+  --table-fill-blue: rgba(80, 160, 255, 0.3);
+  --table-fill-purple: rgba(160, 110, 255, 0.3);
+  --table-fill-pink: rgba(255, 120, 180, 0.3);
+  --table-fill-grey: rgba(150, 150, 150, 0.3);
+  --table-fill-brown: rgba(170, 120, 70, 0.3);
+  --table-text-red: #ff7b72;
+  --table-text-orange: #f0a35e;
+  --table-text-yellow: #e3c04a;
+  --table-text-green: #6fd47f;
+  --table-text-teal: #4fd1c5;
+  --table-text-blue: #79b8ff;
+  --table-text-purple: #c39bff;
+  --table-text-pink: #ff8fc0;
+  --table-text-grey: #a0a0a0;
+  --table-text-brown: #c99a6e;
+  --table-file-outline: #757575;
+}
+.page-table-box .page-table-frame .page-table table :is(th, td) {
+  background-image: linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
+}
+/* SUBHEADER ROWS (YAZ-5567, `tableSubheads.ts`; the Mac's `table.css`): the table's own parts (`data-subheader-*`, from
+   its comment), else the vault's (`table-look.json`, set on the table by `tableLook.ts`), else the Mac's defaults:
+   grey at Medium (12% of the text colour), bold, the text's full colour, the column's alignment. The same scale as the
+   header's: a colour is its fill at 2.5 times the strength, Black 5 times. Before the stripes and the fills: a cell's
+   own fill and text colour still win. */
+.page-table-box table[data-subheader-color='gray'] { --sub-hue: var(--fg); --sub-scale: 1; }
+.page-table-box table[data-subheader-color='red'] { --sub-hue: var(--table-fill-solid-red); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='orange'] { --sub-hue: var(--table-fill-solid-orange); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='yellow'] { --sub-hue: var(--table-fill-solid-yellow); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='green'] { --sub-hue: var(--table-fill-solid-green); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='teal'] { --sub-hue: var(--table-fill-solid-teal); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='blue'] { --sub-hue: var(--table-fill-solid-blue); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='purple'] { --sub-hue: var(--table-fill-solid-purple); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='pink'] { --sub-hue: var(--table-fill-solid-pink); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='black'] { --sub-hue: var(--table-fill-solid-black); --sub-scale: 5; }
+.page-table-box table[data-subheader-strength='off'] { --sub-strength: 0; }
+.page-table-box table[data-subheader-strength='light'] { --sub-strength: 6; }
+.page-table-box table[data-subheader-strength='medium'] { --sub-strength: 12; }
+.page-table-box table[data-subheader-strength='strong'] { --sub-strength: 20; }
+.page-table-box .page-table-frame .page-table table td[data-subhead] {
+  --cell-tint: color-mix(in srgb, var(--sub-hue, var(--fg)) calc(min(100, var(--sub-strength, 12) * var(--sub-scale, 1)) * 1%), transparent);
+  font-weight: 700;
+}
+/* White text on a coloured subheader: the colour deepened toward black, as the header's (4.5:1 under white). */
+.page-table-box .page-table-frame .page-table table[data-subheader-text='white'][data-subheader-color] td[data-subhead] {
+  --cell-tint: color-mix(in srgb, var(--sub-hue) 55%, #000);
+}
+.page-table-box .page-table-frame .page-table table[data-subheader-weight='regular'] td[data-subhead] { font-weight: 400; }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='muted'] td[data-subhead] { color: var(--fg-muted); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='white'] td[data-subhead] { color: #fff; }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='red'] td[data-subhead] { color: var(--table-text-red); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='orange'] td[data-subhead] { color: var(--table-text-orange); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='yellow'] td[data-subhead] { color: var(--table-text-yellow); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='green'] td[data-subhead] { color: var(--table-text-green); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='teal'] td[data-subhead] { color: var(--table-text-teal); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='blue'] td[data-subhead] { color: var(--table-text-blue); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='purple'] td[data-subhead] { color: var(--table-text-purple); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='pink'] td[data-subhead] { color: var(--table-text-pink); }
+.page-table-box .page-table-frame .page-table table[data-subheader-align='left'] td[data-subhead] { text-align: left !important; }
+.page-table-box .page-table-frame .page-table table[data-subheader-align='center'] td[data-subhead] { text-align: center !important; }
+.page-table-box .page-table-frame .page-table table[data-subheader-align='right'] td[data-subhead] { text-align: right !important; }
+/* Stripes: every second body row, as the Mac's. With subheader rows they start again after each one (`data-stripe`,
+   YAZ-5567, `tableSubheads.ts`). */
+.page-table-box .page-table-frame .page-table table[data-stripes]:not([data-subheads]) tbody tr:nth-child(even) > td,
+.page-table-box .page-table-frame .page-table table[data-stripes][data-subheads] tr[data-stripe] > td {
+  --cell-tint: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='red'] { --cell-tint: var(--table-fill-red); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='orange'] { --cell-tint: var(--table-fill-orange); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='yellow'] { --cell-tint: var(--table-fill-yellow); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='green'] { --cell-tint: var(--table-fill-green); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='teal'] { --cell-tint: var(--table-fill-teal); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='blue'] { --cell-tint: var(--table-fill-blue); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='purple'] { --cell-tint: var(--table-fill-purple); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='pink'] { --cell-tint: var(--table-fill-pink); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='grey'] { --cell-tint: var(--table-fill-grey); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='brown'] { --cell-tint: var(--table-fill-brown); }
+/* A custom fill: the Mac's wash of it (35%, both themes). */
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill^='#'] { --cell-tint: color-mix(in srgb, var(--table-fill-custom) 35%, transparent); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='red'] { color: var(--table-text-red); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='green'] { color: var(--table-text-green); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='teal'] { color: var(--table-text-teal); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='purple'] { color: var(--table-text-purple); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='pink'] { color: var(--table-text-pink); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
+/* A custom text colour: made readable on each theme's page (`tableFile.ts` `readableInk`). */
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-light); }
+:where([data-scheme='dark']) .page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-dark); }
+
+/* The header row's own look (`header …`): a colour at the Mac's strengths (Light 6%, Medium 12%, Strong 20% of the text
+   colour; a colour 2.5 times that, Black 5 times), mixed into the page's colour so it stays solid when it sticks. Plain
+   (strength off) is no shade. Its weight, text colour and alignment. */
+.page-table-box table[data-header-color='gray'] { --th-hue: var(--fg); --th-scale: 1; }
+.page-table-box table[data-header-color='red'] { --th-hue: var(--table-fill-solid-red); --th-scale: 2.5; }
+.page-table-box table[data-header-color='orange'] { --th-hue: var(--table-fill-solid-orange); --th-scale: 2.5; }
+.page-table-box table[data-header-color='yellow'] { --th-hue: var(--table-fill-solid-yellow); --th-scale: 2.5; }
+.page-table-box table[data-header-color='green'] { --th-hue: var(--table-fill-solid-green); --th-scale: 2.5; }
+.page-table-box table[data-header-color='teal'] { --th-hue: var(--table-fill-solid-teal); --th-scale: 2.5; }
+.page-table-box table[data-header-color='blue'] { --th-hue: var(--table-fill-solid-blue); --th-scale: 2.5; }
+.page-table-box table[data-header-color='purple'] { --th-hue: var(--table-fill-solid-purple); --th-scale: 2.5; }
+.page-table-box table[data-header-color='pink'] { --th-hue: var(--table-fill-solid-pink); --th-scale: 2.5; }
+.page-table-box table[data-header-color='black'] { --th-hue: var(--table-fill-solid-black); --th-scale: 5; }
+.page-table-box table[data-header-strength='off'] { --th-strength: 0; }
+.page-table-box table[data-header-strength='light'] { --th-strength: 6; }
+.page-table-box table[data-header-strength='medium'] { --th-strength: 12; }
+.page-table-box table[data-header-strength='strong'] { --th-strength: 20; }
+.page-table-box table:is([data-header-color], [data-header-strength]) {
+  --table-head-bg: color-mix(in srgb, var(--th-hue, var(--fg)) calc(min(100, var(--th-strength, 6) * var(--th-scale, 1)) * 1%), var(--bg));
+}
+/* White text on a coloured header (the Mac's choice for a dark header): the colour deepened toward black, so the white
+   reads in both themes (a Strong red is pink on a light page, and white on it is not read: 2.4:1). 55% of each colour
+   with black is 4.5:1 or more under white. */
+.page-table-box table[data-header-text='white'][data-header-color] {
+  --table-head-bg: color-mix(in srgb, var(--th-hue) 55%, #000);
+}
+.page-table-box .page-table-frame .page-table table[data-header-weight='regular'] th { font-weight: 400; }
+.page-table-box .page-table-frame .page-table table[data-header-text='muted'] th { color: var(--fg-muted); }
+.page-table-box .page-table-frame .page-table table[data-header-text='full'] th { color: var(--fg); }
+.page-table-box .page-table-frame .page-table table[data-header-text='white'] th { color: #fff; }
+.page-table-box .page-table-frame .page-table table[data-header-text='red'] th { color: var(--table-text-red); }
+.page-table-box .page-table-frame .page-table table[data-header-text='orange'] th { color: var(--table-text-orange); }
+.page-table-box .page-table-frame .page-table table[data-header-text='yellow'] th { color: var(--table-text-yellow); }
+.page-table-box .page-table-frame .page-table table[data-header-text='green'] th { color: var(--table-text-green); }
+.page-table-box .page-table-frame .page-table table[data-header-text='teal'] th { color: var(--table-text-teal); }
+.page-table-box .page-table-frame .page-table table[data-header-text='blue'] th { color: var(--table-text-blue); }
+.page-table-box .page-table-frame .page-table table[data-header-text='purple'] th { color: var(--table-text-purple); }
+.page-table-box .page-table-frame .page-table table[data-header-text='pink'] th { color: var(--table-text-pink); }
+.page-table-box .page-table-frame .page-table table[data-header-align='left'] th { text-align: left !important; }
+.page-table-box .page-table-frame .page-table table[data-header-align='center'] th { text-align: center !important; }
+.page-table-box .page-table-frame .page-table table[data-header-align='right'] th { text-align: right !important; }
+
+/* The table's vertical alignment (a cell's own is in its style, so it wins). */
+.page-table-box .page-table-frame .page-table table[data-valign='middle'] :is(th, td) { vertical-align: middle; }
+.page-table-box .page-table-frame .page-table table[data-valign='bottom'] :is(th, td) { vertical-align: bottom; }
+/* Row height: the phone's padding is the Mac's normal; compact and tall in step with it. */
+.page-table-box .page-table-frame .page-table table[data-height='compact'] :is(th, td) { padding-block: 0.2em; }
+.page-table-box .page-table-frame .page-table table[data-height='tall'] :is(th, td) { padding-block: 0.85em; }
+/* The table's own border: lines between the columns too, as the Mac draws them, at its thickness (at most 2 px on a
+   phone) and darkness of the Mac's outline colour. The frame is the outside edge. */
+.page-table-box .page-table-frame .page-table table[data-border] :is(th, td) {
+  border-bottom: var(--table-border-px, 1px) solid color-mix(in srgb, var(--table-file-outline) var(--table-border-dark, 20%), transparent);
+  border-right: var(--table-border-px, 1px) solid color-mix(in srgb, var(--table-file-outline) var(--table-border-dark, 20%), transparent);
+}
+.page-table-box .page-table-frame .page-table table[data-border] tr > :last-child:not([rowspan]) {
+  border-right: 0;
+}
+/* A merged cell's text sits at its top, as any cell's; a tall merged cell in a column of a few rows reads as one. */
+.page-table-box .page-table-frame .page-table table [data-merged] {
+  overflow-wrap: break-word;
+}
+/* Clip (one line, cut with "…"): in the page; the full-screen view shows the whole text. */
+.page-table__clip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.table-view .page-table__clip {
+  max-width: none !important;
+  white-space: normal;
+}
+
+/* Review has no widths from `tableLayout.ts`: a word stays whole there; the card scrolls sideways when it must. A table
+   the Mac sized (`data-sized`, a fixed layout) breaks a word longer than its column instead (`card.css`, YAZ-5683). */
+.review__card .card__sides .card__table table:not([data-sized]) :is(th, td) {
+  overflow-wrap: normal;
+}
+.review__card .card__sides .card__table {
+  border: 1px solid var(--table-row-line);
+  border-radius: 10px;
+}
+.review__card .card__sides .card__table table {
+  margin: 0;
+}
+
+/* A short column (numbers, dates, check marks, a word or two) never wraps; numbers align right in even digits. */
+.page-table-box .page-table-frame .page-table table td[data-fit] {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-num] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+/* A longer column: its width from its text, between its min and max, sharing the box by weight. YAZ-5658 Wide tables
+   (`tableLayout.ts` `columnWidths`, the same rule in px): Same as Desktop (the default), never under a readable line
+   (`READ_WIDTH`, 13.5em) unless its widest is less, or the box has less beside the short columns (a table of one long
+   column still fits a narrow phone); a wider table scrolls, its first column in place. */
+.page-table-box col.page-table__grow {
+  width: var(--col-max);
+  width: clamp(var(--col-min), max(min(13.5em, calc(100cqw - var(--table-fixed, 0em) - 2px)), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-weight, 1))), var(--col-max));
+}
+/* Same as Desktop: a column the file saved a width for (short ones too) takes it, scaled to the phone's text size
+   (`--col-desk`); never squeezed to fit. */
+.page-table-box col[data-desk] {
+  width: var(--col-desk);
+}
+/* Fit Screen: the saved widths do not count; the longer columns share what the short ones leave by how much text each
+   holds (`--col-share`), each at least `FIT_MIN` (9em) and its longest word (`--col-hold`): no side scroll unless those
+   do not fit. */
+[data-wide-tables='fit'] .page-table-box col[data-desk]:not(.page-table__grow) {
+  width: auto;
+}
+[data-wide-tables='fit'] .page-table-box col.page-table__grow {
+  width: max(9em, var(--col-hold, 0em), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-share, 1)));
+}
+/* Code in a cell: a little smaller, so a column of names stays narrow; a short one (a command) on one line. */
+.page-table-box .page-table-frame .page-table table code {
+  font-size: 0.85em;
+}
+.page-table-box .page-table-frame .page-table table code[data-whole] {
+  white-space: nowrap;
+}
+.page-table-box .page-table-frame .page-table table :is(p, ul, ol) {
+  margin: 0;
+}
+
+/* The frozen columns stay at the left while the table scrolls sideways: the first column of a table of
+   three columns or more, or the file's `freeze N cols` (`tableLayout.ts`: `markFrozen`). Each at its column's offset,
+   which `useTables` measures (`--freeze-x-<n>`). Columns that would cover most of the box do not stay (`data-pin-cols-off`). */
+.page-table-box .page-table-frame .page-table table:not([data-pin-cols-off]) :is(th, td)[data-pin-col] {
+  position: sticky;
+  left: var(--pin-left, 0px);
+  z-index: 1;
+  background-color: var(--bg);
+}
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-col][data-pin-row] {
+  z-index: 3;
+}
+.page-table-box .page-table-frame .page-table table:not([data-pin-cols-off]) th[data-pin-col] {
+  background-color: var(--table-head-bg);
+}
+.page-table-frame[data-more-left] .page-table table:not([data-pin-cols-off]) [data-pin-col-end] {
+  box-shadow: 6px 0 8px -6px var(--table-edge-shadow);
+}
+
+/* The frozen rows stay at the top while the page scrolls down through the table: the file's `freeze N rows`,
+   else the header row (the Mac's Sticky header row, on by default). The table box scrolls sideways, so `position:
+   sticky` cannot reach the page's scroll: each frozen cell moves down with a scroll-driven animation instead, on the
+   frame's view timeline (its top crossing the screen's top: `view-timeline-inset` makes the screen one line at its
+   top). The browser runs it while it scrolls: no script, transform only. It moves by the scroll, from the frame's top
+   at the screen's top, and stops `--pin-run` later, with the frozen rows at the table's end (`useTables` measures it).
+   A browser without scroll-driven animations gets the same transform from `useTables`, once a frame. */
+.page-table-frame {
+  view-timeline: --page-table-y block;
+  view-timeline-inset: 0px 100%;
+}
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-row] {
+  position: relative;
+  z-index: 2;
+  background-color: var(--bg);
+}
+.page-table-box .page-table-frame .page-table table th[data-pin-row] {
+  background-color: var(--table-head-bg);
+}
+.page-table-box .page-table-frame .page-table table td[data-pin-row-end] {
+  border-bottom-color: var(--table-head-line);
+}
+/* Over the screen's top edge, a strip of the header's shade: the part of a pixel between the edge and the pinned row
+   would show the rows passing under it. Outside the table it is cut off by the box. */
+.page-table-box .page-table-frame .page-table table tr:first-child > th[data-pin-row] {
+  box-shadow: 0 -3px 0 var(--table-head-bg);
+}
+.page-table-frame[data-more-left] .page-table table:not([data-pin-cols-off]) tr:first-child > th[data-pin-row][data-pin-col-end] {
+  box-shadow: 0 -3px 0 var(--table-head-bg), 6px 0 8px -6px var(--table-edge-shadow);
+}
+@keyframes page-table-pin {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateY(var(--pin-run, 0px));
+  }
+}
+@supports (animation-timeline: view()) {
+  .page-table-box .page-table-frame .page-table table:not([data-pin-rows-off]) [data-pin-row] {
+    animation: page-table-pin linear both;
+    animation-timeline: --page-table-y;
+    animation-range: cover 0px cover var(--pin-run, 0px);
+  }
+}
+/* A sticky subheader row (YAZ-5567; the Mac's `tableSubhead.ts`): while its section is at the top of the screen it moves
+   down under the frozen rows, and the next subheader row (or the table's end) pushes it up. The same scroll-driven
+   animation as the frozen rows, on the frame's timeline, from `--sub-from` (its place less the frozen rows' height) for
+   `--pin-run` (to the next subheader row): `useTables` measures both, only for a sticky one (`data-sub-pin`). Its cells
+   paint their tint over the page's colour, as a frozen row does, under the frozen rows (z-index 2). The table's own
+   choice, else the vault's (`data-sticky-subheaders`), else the Mac's default: on. */
+.page-table-box .page-table-frame .page-table table td[data-subhead] {
+  position: relative;
+  z-index: 1;
+}
+.page-table-box .page-table-frame .page-table table:not([data-sticky-subheaders='off']) td[data-subhead] {
+  background-color: var(--bg);
+}
+.page-table-box .page-table-frame .page-table table:not([data-pin-cols-off]) td[data-subhead][data-pin-col] {
+  z-index: 2;
+}
+@supports (animation-timeline: view()) {
+  .page-table-box .page-table-frame .page-table table:not([data-sticky-subheaders='off']) tr[data-sub-pin] > td {
+    animation: page-table-pin linear both;
+    animation-timeline: --page-table-y;
+    animation-range: cover var(--sub-from, 0px) cover calc(var(--sub-from, 0px) + var(--pin-run, 0px));
+  }
+  /* The full-screen copy has no page to scroll down: its subheader rows stay in place. */
+  .table-view .page-table-box .page-table-frame .page-table table tr[data-sub-pin] > td {
+    animation: none;
+  }
+}
+/* Bullets in a cell (YAZ-5567; the Mac's `table.css`): compact, a level's step the vault's Bullet indent in cells
+   (`--cell-bullet-indent`, 20px) and the dot's gap its Bullet gap in cells (`--cell-bullet-gap`, 4px), the dot's column
+   a fixed 16px, so the dots, the guide lines and the text move together (`reader.css` reads the three). A card's read
+   table keeps the card's own, as on the Mac. */
+.reader .page-table-box:not(.card .page-table-box) table :is(th, td) {
+  --list-label-gap: var(--cell-bullet-gap, 4px);
+  --list-indent: var(--cell-bullet-indent, 20px);
+  --list-gutter: 16px;
+}
+.reader .page-table-box:not(.card .page-table-box) table li :is(ul, ol) {
+  margin-left: calc(var(--list-indent) - var(--list-gutter) - var(--list-label-gap));
+}
+/* A task in a cell (YAZ-5618; `cellTasks.ts`): the page's box and look (`reader.css`). Its tap area is 44 px wide and
+   as tall as a line of the cell's list (the items of a cell list sit closer than a page's: a taller area would cover the
+   next box). */
+.reader__body table li > .page-task[data-task]:first-child::before {
+  height: 2em;
+}
+/* Table position (YAZ-5567; the Mac's one rule from one variable): Centre is `--page-table-inline: auto` (the vault's,
+   `tableLookVars`); a card reads its own Card tables first (`card.css`: `--table-inline`). Left is 0. A table wider than
+   the column fills it, so it gets no margin and scrolls in its box as before. */
+.reader :is(.reader__body, .card-view__card) .page-table-frame {
+  margin-inline: var(--table-inline, var(--page-table-inline, 0));
+}
+/* The soft shadows at a side with more to see. */
+.page-table-frame::before,
+.page-table-frame::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.page-table-frame::before {
+  left: 0;
+  background: linear-gradient(to right, var(--table-edge-shadow), transparent);
+}
+.page-table-frame::after {
+  right: 0;
+  background: linear-gradient(to left, var(--table-edge-shadow), transparent);
+}
+.page-table-frame[data-more-left]:not(:has(table[data-sticky]:not([data-pin-cols-off])))::before,
+.page-table-frame[data-more-right]::after {
+  opacity: 1;
+}
+
+/* ⤢ at the top right of a table wider than the screen, above its frame, so it never covers the sticky first
+   column or the header text: it opens the table full screen. 44 px to tap. */
+.page-table__bar {
+  display: none;
+  justify-content: flex-end;
+  margin-bottom: 2px;
+}
+.page-table-box[data-wide] .page-table__bar {
+  display: flex;
+}
+.page-table__open {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.page-table__open:active {
+  background: var(--bg-side);
+}
+
+/* The full-screen view (`tableView.ts`): the whole table, pinch to zoom, drag to move; it turns with the phone. */
+.table-view {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+}
+.table-view__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 4px) calc(env(safe-area-inset-right) + 8px) 4px calc(env(safe-area-inset-left) + 16px);
+  border-bottom: 1px solid var(--border);
+}
+.table-view__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.table-view__close {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+}
+.table-view__pane {
+  flex: 1;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+.table-view__sizer {
+  position: relative;
+  margin: 12px calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 12px) calc(env(safe-area-inset-left) + 12px);
+}
+.table-view__content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  overflow-wrap: anywhere;
+}
+/* In the view every column is at its widest. */
+.table-view .page-table-box {
+  margin: 0;
+  container-type: normal;
+}
+.table-view .page-table-frame,
+.table-view .page-table-box .page-table-frame .page-table {
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+}
+.table-view .page-table-box col.page-table__grow {
+  width: var(--col-max);
+}
+.table-view .page-table-box col[data-desk]:not(.page-table__grow) {
+  width: auto;
+}
+/* In the view, the frozen rows and columns stay too, each moved by the pane's own scroll (a scroll-driven
+   animation on the pane's timelines; the table is scaled, so `tableView.ts` sets the ranges and runs for the scale:
+   `--tv-y-from`, `--tv-y-to`, `--tv-y-run`, and the same for x). Rows move with `transform`, columns with `translate`,
+   so a cell of both moves both ways. */
+.table-view__pane {
+  scroll-timeline: --tv-y block, --tv-x inline;
+}
+.table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-col] {
+  position: relative;
+  left: auto;
+  box-shadow: none;
+}
+/* The frozen column's edge, and a strip of the header's shade over the pane's top (a part of a pixel shows the row under). */
+.table-view .page-table-box .page-table-frame .page-table table [data-pin-col-end] {
+  box-shadow: 6px 0 8px -6px var(--table-edge-shadow);
+}
+.table-view .page-table-box .page-table-frame .page-table table tr:first-child > [data-pin-row] {
+  box-shadow: 0 -3px 0 var(--table-head-bg);
+}
+.table-view .page-table-box .page-table-frame .page-table table tr:first-child > [data-pin-row][data-pin-col-end] {
+  box-shadow: 0 -3px 0 var(--table-head-bg), 6px 0 8px -6px var(--table-edge-shadow);
+}
+.table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-row] {
+  animation: none;
+}
+@keyframes table-view-pin-y {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateY(var(--tv-y-run, 0px));
+  }
+}
+@keyframes table-view-pin-x {
+  from {
+    translate: none;
+  }
+  to {
+    translate: var(--tv-x-run, 0px) 0;
+  }
+}
+@supports (animation-timeline: scroll()) {
+  .table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-row] {
+    animation: table-view-pin-y linear both;
+    animation-timeline: --tv-y;
+    animation-range: var(--tv-y-from, 0px) var(--tv-y-to, 0px);
+  }
+  .table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-col] {
+    animation: table-view-pin-x linear both;
+    animation-timeline: --tv-x;
+    animation-range: var(--tv-x-from, 0px) var(--tv-x-to, 0px);
+  }
+  .table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-row][data-pin-col] {
+    animation: table-view-pin-y linear both, table-view-pin-x linear both;
+    animation-timeline: --tv-y, --tv-x;
+    animation-range: var(--tv-y-from, 0px) var(--tv-y-to, 0px), var(--tv-x-from, 0px) var(--tv-x-to, 0px);
+  }
+}
+.table-view .page-table__bar {
+  display: none;
+}
+
+/* Calendar tables (`tableCalendar.ts`), as the Mac's (`table.css`, YAZ-4162 D2 / D6 / D14). The now row
+   carries `--table-now` (0..1, how far down its slot now is). The line is 2px red across the row, with a dot in column A:
+   each cell's `::after` (and column A's `::before`, the dot) is as tall as the cell and moves down by `transform` only,
+   so a tick once a minute changes one custom property and lays nothing out. `data-now-mark` (the Mac's Mark the current
+   time: line, tint or both) and `data-dim-past` (Dim past rows: off, text or shade) come from `calendarLook.ts`. */
+/* Each cell its own stacking context (a frozen cell's z-index wins), so the line and the dot sit under its text. */
+.page-table-box .page-table .table-now-row > :is(th, td) {
+  position: relative;
+  z-index: 0;
+}
+.page-table-box .page-table .table-now-row > :is(th, td)::after,
+.page-table-box .page-table .table-now-row > :first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  transform: translateY(calc(var(--table-now, 0) * 100%));
+}
+.page-table-box .page-table .table-now-row > :is(th, td)::after {
+  top: -1px;
+  border-top: 2px solid var(--table-text-red);
+}
+.page-table-box .page-table .table-now-row > :first-child::before {
+  top: -4px;
+  background: radial-gradient(circle 4px at 4px 4px, var(--table-text-red) 3.5px, transparent 4px);
+}
+.page-table-box .page-table table[data-now-mark='tint'] .table-now-row > :is(th, td)::after,
+.page-table-box .page-table table[data-now-mark='tint'] .table-now-row > :first-child::before {
+  content: none;
+}
+.page-table-box .page-table-frame .page-table table:is([data-now-mark='tint'], [data-now-mark='both']) .table-now-row > :is(th, td) {
+  background-image: linear-gradient(color-mix(in srgb, var(--table-text-red) 12%, transparent), color-mix(in srgb, var(--table-text-red) 12%, transparent)), linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
+}
+/* The next time slot (the Mac's `table-next-row`): the now tint's 12%, in `--table-next-colour` (the vault's;
+   the now mark's red by default). Only with the vault's Shade the next time slot on (`tableCalendar.ts` sets the class). */
+.page-table-box .page-table-frame .page-table table .table-next-row > :is(th, td) {
+  background-image: linear-gradient(color-mix(in srgb, var(--table-next-colour, var(--table-text-red)) 12%, transparent), color-mix(in srgb, var(--table-next-colour, var(--table-text-red)) 12%, transparent)), linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
+}
+/* Past rows: grey text over a cell's own text colour (links keep theirs); `shade` also lays a light shade of the text
+   colour (`--table-past-shade`, the Mac's Shade darkness) over the cell's fill. */
+.page-table-box .page-table-frame .page-table table:is([data-dim-past='text'], [data-dim-past='shade']) .table-past-row > :is(th, td) {
+  color: var(--fg-muted);
+}
+.page-table-box .page-table-frame .page-table table[data-dim-past='shade'] .table-past-row > :is(th, td) {
+  background-image: linear-gradient(color-mix(in srgb, var(--fg) var(--table-past-shade, 6%), transparent), color-mix(in srgb, var(--fg) var(--table-past-shade, 6%), transparent)), linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
+}
+
+/* Time in slot (YAZ-5606, the Mac's YAZ-5602 `tableCalendar.css`; `drawSlotPill` in `tableCalendar.ts`): a pill at the
+   right end of the now line, the Now pill's shape in the line's red. Its anchor fills the now row's last cell (already
+   its own positioned box, above) and runs leftwards across the row (`100vw`), so on a table wider than its box the pill
+   sticks to the box's visible right edge at any sideways scroll, even when only a sliver of the last column shows.
+   YAZ-5700: there it may lie over the cut text (seeing the pill wins); its own background keeps it readable. Its track
+   rides the line (`--table-now`) and stays inside the row. Out of the flow, tabular digits: its text never moves the
+   table. YAZ-5658: a last cell with text keeps room for the pill ON ITS LINE only: two floats at the cell's top
+   (`placeSlotRoom`, the Mac's rule too: `shared/slotRoom.ts`), a gap down to the text lines the pill crosses, then the
+   room, as wide as the slot's widest text (`--table-slot-chars`) and as tall as those lines (both heights set there). The text wraps around the room there and runs full
+   width on every other line (a padding down the whole cell left a narrow column one letter per line). When the line
+   beside the room would hold less than 4em, the room takes the whole line: no letters squeezed beside the pill. */
+.page-table-box .page-table .table-slot-gap {
+  float: right;
+  width: 0;
+  height: 0;
+}
+.page-table-box .page-table .table-slot-room {
+  --slot-room: calc(var(--table-slot-chars, 10) * 7px + 26px - 0.75em);
+  float: right;
+  clear: right;
+  width: max(var(--slot-room), min(100%, calc((var(--slot-room) + 4em - 100%) * 1000)));
+  height: 1.4em;
+}
+.page-table-box .page-table .table-slot-anchor {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: -100vw;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.page-table-box .page-table .table-slot-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: clamp(0px, calc(var(--table-now, 0) * 100% - 10px), calc(100% - 20px));
+  display: flex;
+  justify-content: flex-end;
+  height: 20px;
+}
+.page-table-box .page-table .table-slot-pill {
+  position: sticky;
+  right: 6px;
+  margin-right: 6px;
+  box-sizing: border-box;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--table-text-red);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--table-text-red);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.page-table-box .page-table .table-slot-pill:empty {
+  display: none;
+}
+
+/* Go to now (the Mac's "Now" chip): a pill in a zero-height anchor after the table's frame, stuck to the bottom of the
+   screen while the table is in view; shown only while the now row is not (`tableCalendar.ts`). Its tap area is 44px
+   tall; the pill itself stays small. Not in the full-screen view (a copy). */
+.page-table__now-anchor {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  height: 0;
+  pointer-events: none;
+}
+.page-table__now {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transform: translateX(-50%);
+  padding: 5px 11px 5px 10px;
+  border: 1px solid var(--table-head-line);
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.14);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  /* "Now · 19:14 left" (Time in slot) ticks without the pill changing width each second. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.page-table__now::before {
+  content: '';
+  position: absolute;
+  inset: -8px -6px;
+}
+.page-table__now[hidden],
+.table-view .page-table__now-anchor {
+  display: none;
+}
+.page-table__now-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--table-text-red);
+}
+.page-table__now > svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The finger band (`rowBand.ts`): the row a finger touches, in the Mac's row band (`table.css` `--table-band-on`,
+   `views.css`' folder hover band): the band colour (`--table-band-colour`, the accent by default) at its strength
+   (`--table-band-strength`, 10%), the vault's `table-look.json` set on the row when it differs. Painted as the cell's own
+   colour, the band over the page mixed solid, so a frozen cell (solid, to hide what passes under it) bands too and still
+   hides the rest; a cell's fill and the past and now marks are layers over it. Every cell of the row, the frozen ones
+   included. The doubled attribute wins over the frozen cells' `--bg`. Light and dark: the page's own `--bg`. */
+.page-table-box .page-table-frame .page-table table tr[data-band][data-band] > :is(th, td) {
+  background-color: color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), var(--bg));
+}
+/* Copying: a long press on a cell's text selects in THAT cell (the phone's own selection, with Copy), never
+   the whole screen: the table between the cells takes no selection, each cell's content does. Scoped to the tables'
+   cells: the UI rows and controls of the app take none (`fix/yaz-hold-select`), and a table's cells must stay
+   selectable. No grey tap flash over the band. */
+.page-table-box .page-table-frame .page-table table {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.page-table-box .page-table-frame .page-table table :is(th, td) {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}

@@ -1,0 +1,248 @@
+/*
+ * The table look that reaches a table OUTSIDE the editor: a card's read table (`cardRender.ts`: the Inbox, Explore,
+ * the card file tab, the card window, and the phone's Review), and the variables a folder table, a calendar and the
+ * header row preview read. A rule that a page table and a card share is ONE rule here, never a copy.
+ *
+ * The Mac loads it just BEFORE `table.css` (`tableStyle.ts`), so every rule keeps its place against the editor's own
+ * rules; the phone loads only this file. `table.css` holds the rules that match only inside the editor.
+ */
+
+/* The ten cell colours (YAZ-3817), each in light and dark. Fills are see-through washes, so the
+   text stays readable; in light, yellow, green, blue, pink, orange, purple, red and grey are the
+   highlight washes (YAZ-1480, YAZ-4366, app.css `--mark-bg*`). Text colours are darker shades in light and lighter in dark.
+   `clipboardCopyOut.ts` holds the light shades as they show over white (a copy to Docs).
+   `--table-fill-wash` is a custom fill's strength, in both themes: `colours.ts` `FILL_WASH` for a copy. */
+:root {
+  --table-fill-wash: 35%;
+  --table-fill-red: var(--mark-bg-red);
+  --table-fill-orange: var(--mark-bg-orange);
+  --table-fill-yellow: var(--mark-bg);
+  --table-fill-green: var(--mark-bg-green);
+  --table-fill-teal: rgba(40, 190, 180, 0.35);
+  --table-fill-blue: var(--mark-bg-blue);
+  --table-fill-purple: var(--mark-bg-purple);
+  --table-fill-pink: var(--mark-bg-pink);
+  --table-fill-grey: var(--mark-bg-gray);
+  --table-fill-brown: rgba(170, 120, 70, 0.35);
+  --table-text-red: #c0392b;
+  --table-text-orange: #b45309;
+  --table-text-yellow: #a16207;
+  --table-text-green: #2e7d32;
+  --table-text-teal: #0f766e;
+  --table-text-blue: #1d5fbf;
+  --table-text-purple: #7b3fbf;
+  --table-text-pink: #c2185b;
+  --table-text-grey: #6b6b6b;
+  --table-text-brown: #8b5a2b;
+}
+
+/* Table position (YAZ-5136 rounds 2 and 3): ONE rule, from ONE variable, `--table-inline`: a page table's block (for a
+   block with Settings' Width), its table (for one with dragged columns) and a card's read table. A page reads
+   Settings › Tables › Table position (`--page-table-inline: auto` for Centre, on `.app`); a card, read or in Edit card,
+   reads Card look › Card tables (`--card-table-inline`), else the pages'. Left is 0, the look before. A wider table
+   gets no margin and scrolls in its box as before. */
+.app :is(.milkdown-table-block, .milkdown-table-block table, .card__table > table) {
+  margin-inline: var(--table-inline, var(--page-table-inline, 0));
+}
+.card {
+  --table-inline: var(--card-table-inline, var(--page-table-inline, 0));
+}
+
+/* Crepe's outline colour (its frame and frame-dark themes, `crepeTheme.ts`), for a table that Crepe's theme does not
+   reach: a card's table read in the Inbox, Explore, the card file tab and the card window (YAZ-5136). In a page,
+   Crepe's own `--crepe-color-outline` wins. `cardTable.test.ts` checks both against Crepe's files. */
+:root {
+  --table-outline: #a8a8a8;
+}
+[data-theme='dark'] {
+  --table-outline: #757575;
+}
+
+/* The palette's fill swatches (YAZ-3803, decision 12): each colour at full strength, so a swatch
+   reads as its colour in light and dark. The cells keep the wash. */
+:root {
+  --table-fill-solid-red: rgb(255, 90, 80);
+  --table-fill-solid-orange: rgb(255, 150, 50);
+  --table-fill-solid-yellow: rgb(255, 213, 0);
+  --table-fill-solid-green: rgb(80, 200, 120);
+  --table-fill-solid-teal: rgb(40, 190, 180);
+  --table-fill-solid-blue: rgb(80, 160, 255);
+  --table-fill-solid-purple: rgb(160, 110, 255);
+  --table-fill-solid-pink: rgb(255, 120, 180);
+  --table-fill-solid-grey: rgb(150, 150, 150);
+  --table-fill-solid-brown: rgb(170, 120, 70);
+  /* The header row's Black fill and White text (YAZ-4794 demo), as swatches and as the header's colours. */
+  --table-fill-solid-black: rgb(18, 18, 18);
+  --table-fill-solid-white: rgb(255, 255, 255);
+}
+
+[data-theme='dark'] {
+  --table-fill-red: rgba(255, 90, 80, 0.3);
+  --table-fill-orange: rgba(255, 150, 50, 0.3);
+  --table-fill-yellow: rgba(255, 213, 0, 0.3);
+  --table-fill-green: rgba(80, 200, 120, 0.3);
+  --table-fill-teal: rgba(40, 190, 180, 0.3);
+  --table-fill-blue: rgba(80, 160, 255, 0.3);
+  --table-fill-purple: rgba(160, 110, 255, 0.3);
+  --table-fill-pink: rgba(255, 120, 180, 0.3);
+  --table-fill-grey: rgba(150, 150, 150, 0.3);
+  --table-fill-brown: rgba(170, 120, 70, 0.3);
+  --table-text-red: #ff7b72;
+  --table-text-orange: #f0a35e;
+  --table-text-yellow: #e3c04a;
+  --table-text-green: #6fd47f;
+  --table-text-teal: #4fd1c5;
+  --table-text-blue: #79b8ff;
+  --table-text-purple: #c39bff;
+  --table-text-pink: #ff8fc0;
+  --table-text-grey: #a0a0a0;
+  --table-text-brown: #c99a6e;
+}
+
+/* Border: Crepe's look (1px, 20% of the outline colour) unless the table sets its own. A card's table, read
+   (YAZ-5136, `cardRender.ts`), takes the same rules as a page's here and below: border, header row, Align. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td),
+.card__sides .card__side :is(th, td) {
+  border-style: solid;
+  border-width: var(--table-border-width, 1px);
+  border-color: color-mix(in srgb, var(--crepe-color-outline, var(--table-outline)) var(--table-border-darkness, 20%), transparent);
+}
+
+/* Each cell's tint: the header shade, the stripes and the fills set `--table-cell-tint`, and this one
+   rule paints it. A frozen cell paints it over a solid page colour instead (below). The row band
+   (`--table-band`, YAZ-4167, below) is a layer over it, so the fill shows under the band. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td),
+.card__sides .card__side :is(th, td) {
+  background-color: var(--table-cell-tint, transparent);
+  background-image: var(--table-page-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none);
+}
+
+/* Inline code in a cell (YAZ-5683): inline, not Crepe's `inline-block` (`.milkdown .ProseMirror code`), whose box was as
+   wide as its longest unbreakable run: a path with no spaces ran over the next column. Inline, it breaks as the cell's
+   text does (at a space, then a word that does not fit, ProseMirror's `break-word`), and its background and rounded
+   ends go with it on each line. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td) code,
+.card__sides .card__side :is(th, td) code {
+  display: inline;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* Header row (YAZ-4774): Settings › Tables › Header row on `.app`, a page table's own parts on its block, a folder
+   table's on its `.view-table` (`views.css`), a calendar's day names on its `.view-cal__week`, the "Aa" chip on its
+   `.view-style__chip` (YAZ-4834 P1) and a Super table view's on its `.super-view` (P21), each as `data-table-header-*`;
+   the nearest one sets each variable. Gray
+   (and Bold) unset theirs, so each kind of table keeps its own text colour (and bold). A colour is its fill swatch at
+   2.5 times the strength: Light is 6% of the text colour, the look of before, or 15% of the colour. Muted is 1. */
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='gray'] { --table-header-hue: initial; --table-header-scale: 1; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='red'] { --table-header-hue: var(--table-fill-solid-red); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='orange'] { --table-header-hue: var(--table-fill-solid-orange); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='yellow'] { --table-header-hue: var(--table-fill-solid-yellow); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='green'] { --table-header-hue: var(--table-fill-solid-green); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='teal'] { --table-header-hue: var(--table-fill-solid-teal); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='blue'] { --table-header-hue: var(--table-fill-solid-blue); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='purple'] { --table-header-hue: var(--table-fill-solid-purple); --table-header-scale: 2.5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='pink'] { --table-header-hue: var(--table-fill-solid-pink); --table-header-scale: 2.5; }
+/* Black (YAZ-4794 demo) at 5 times the strength: Light 30%, Medium 60%, Strong solid black. */
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-color='black'] { --table-header-hue: var(--table-fill-solid-black); --table-header-scale: 5; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-strength='off'] { --table-header-strength: 0; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-strength='light'] { --table-header-strength: 6; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-strength='medium'] { --table-header-strength: 12; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-strength='strong'] { --table-header-strength: 20; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-weight='bold'] { --table-header-weight: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-weight='regular'] { --table-header-weight: 400; }
+/* Text colour (YAZ-4794): Muted and Full unset `--table-header-ink`, so a nearer Muted or Full beats a colour from
+   further out; a colour is its cell text colour (above, darker in light and lighter in dark), which wins over the mute. */
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='muted'] { --table-header-mute: 1; --table-header-ink: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='full'] { --table-header-mute: 0; --table-header-ink: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='white'] { --table-header-ink: #fff; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='red'] { --table-header-ink: var(--table-text-red); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='orange'] { --table-header-ink: var(--table-text-orange); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='yellow'] { --table-header-ink: var(--table-text-yellow); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='green'] { --table-header-ink: var(--table-text-green); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='teal'] { --table-header-ink: var(--table-text-teal); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='blue'] { --table-header-ink: var(--table-text-blue); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='purple'] { --table-header-ink: var(--table-text-purple); }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-text='pink'] { --table-header-ink: var(--table-text-pink); }
+/* Align (YAZ-4794): Follow column unsets it. The rules that use it (below, `views.css`) apply only where the nearest
+   `data-table-header-align` is not `follow`, so a header cell keeps its column's own alignment until someone picks. */
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='follow'] { --table-header-align: initial; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='left'] { --table-header-align: left; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='center'] { --table-header-align: center; }
+:is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='right'] { --table-header-align: right; }
+
+/* A page table's header row: bold in the text colour by default. A cell's own fill and text colour still win (below).
+   A card's header row too (YAZ-5136), with Settings › Tables › Header row on `.app`. */
+.milkdown .ProseMirror .milkdown-table-block th,
+.card__sides .card__side th {
+  --table-cell-tint: color-mix(in srgb, var(--table-header-hue, var(--crepe-color-on-background, var(--fg))) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), transparent);
+  font-weight: var(--table-header-weight, bold);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), currentColor));
+}
+@container style(--table-header-aligned: on) {
+  .milkdown .ProseMirror .milkdown-table-block:not([data-table-header-align]) th,
+  .card__sides .card__side th {
+    text-align: var(--table-header-align) !important;
+  }
+}
+
+/* Subheader rows (YAZ-4899, `tableSubhead.ts`): the header row's parts again, as `data-table-subheader-*` on `.app`
+   (Settings › Tables › Subheader row) and a page table's block (its own `subheader` part); each subheader cell carries
+   `data-subhead`. The same scale as the header's: Gray is the text colour, a colour the cell fill colour. */
+:is(.app, .milkdown-table-block)[data-table-subheader-color='gray'] { --table-subheader-hue: initial; --table-subheader-scale: 1; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='red'] { --table-subheader-hue: var(--table-fill-solid-red); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='orange'] { --table-subheader-hue: var(--table-fill-solid-orange); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='yellow'] { --table-subheader-hue: var(--table-fill-solid-yellow); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='green'] { --table-subheader-hue: var(--table-fill-solid-green); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='teal'] { --table-subheader-hue: var(--table-fill-solid-teal); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='blue'] { --table-subheader-hue: var(--table-fill-solid-blue); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='purple'] { --table-subheader-hue: var(--table-fill-solid-purple); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='pink'] { --table-subheader-hue: var(--table-fill-solid-pink); --table-subheader-scale: 2.5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-color='black'] { --table-subheader-hue: var(--table-fill-solid-black); --table-subheader-scale: 5; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='off'] { --table-subheader-strength: 0; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='light'] { --table-subheader-strength: 6; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='medium'] { --table-subheader-strength: 12; }
+:is(.app, .milkdown-table-block)[data-table-subheader-strength='strong'] { --table-subheader-strength: 20; }
+:is(.app, .milkdown-table-block)[data-table-subheader-weight='bold'] { --table-subheader-weight: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-weight='regular'] { --table-subheader-weight: 400; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='muted'] { --table-subheader-mute: 1; --table-subheader-ink: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='full'] { --table-subheader-mute: 0; --table-subheader-ink: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='white'] { --table-subheader-ink: #fff; }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='red'] { --table-subheader-ink: var(--table-text-red); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='orange'] { --table-subheader-ink: var(--table-text-orange); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='yellow'] { --table-subheader-ink: var(--table-text-yellow); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='green'] { --table-subheader-ink: var(--table-text-green); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='teal'] { --table-subheader-ink: var(--table-text-teal); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='blue'] { --table-subheader-ink: var(--table-text-blue); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='purple'] { --table-subheader-ink: var(--table-text-purple); }
+:is(.app, .milkdown-table-block)[data-table-subheader-text='pink'] { --table-subheader-ink: var(--table-text-pink); }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='follow'] { --table-subheader-align: initial; }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='left'] { --table-subheader-align: left; }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='center'] { --table-subheader-align: center; }
+:is(.app, .milkdown-table-block)[data-table-subheader-align='right'] { --table-subheader-align: right; }
+
+/* The freeze line (YAZ-3804): a thicker border after the last frozen row and the last frozen column, the
+   border colour 40% darker. The cells draw their own bottom and right borders (above), so the line moves
+   with the frozen rows and sticks with the frozen columns. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] .table-frozen-row-end > *,
+.card__sides .card__side thead th {
+  border-bottom-width: 3px;
+  border-bottom-color: color-mix(in srgb, var(--crepe-color-outline, var(--table-outline)) min(100%, calc(var(--table-border-darkness, 20%) + 40%)), transparent);
+}
+
+/* A cell note's mark (YAZ-3818 D8): a small triangle in the cell's top-right corner, as in Google Sheets. The label
+   never shows: the `sup` keeps its place in the line at font size 0, so the caret moves as before. The triangle is a
+   background on the cell itself (`has-cell-note`, from the cell note plugin's state, 5A-18): the same corner in every
+   cell, one that starts with a list too, at any padding. The cell's `::before` and `::after` are the fill handle's and
+   the selection's. It is ONE MORE LAYER of the cells' background lists (`--table-page-mark`, the top one in each rule
+   above), so the row band, past rows, the now mark and a frozen cell's tint still show under it (the YAZ-3818 demo):
+   a full-size gradient at 225° that paints only the corner's 8 px triangle (5.66 px = 8 / √2 along the gradient line),
+   so no rule needs a size or position list. A click on the corner opens the cell note (`cellNoteCard.ts`), a rest of
+   the pointer on the cell shows its first lines (`cellNotePreview.ts`). */
+:root {
+  --table-cell-note-mark: #e8a317;
+}
+
+[data-theme='dark'] {
+  --table-cell-note-mark: #f2c14e;
+}

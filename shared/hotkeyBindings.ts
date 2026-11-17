@@ -1,7 +1,7 @@
 /**
  * THE KEY TABLE (YAZ-3397 D2): the app-wide commands whose key the user can change, and the one way an
  * accelerator is read, compared and shown. Only the GLOBAL commands are here (D1): a key that means
- * something only on a drawing, in a note or in a review stays built in, and so do the Mac's own roles.
+ * something only on a drawing, in a page or in a review stays built in, and so do the Mac's own roles.
  *
  * Keys are Electron accelerators ('CmdOrCtrl+Shift+W'), because the menu (`desktop/src/main/menu.ts`) is
  * where most of them are registered. `SettingsState.hotkeys` keeps ONLY the user's changes (`HotkeyOverrides`):
@@ -13,6 +13,8 @@
  * and the tests read it alike.
  */
 
+import { keyText, labelWith } from './keyLabel'
+
 /** The changeable commands (YAZ-3397 D1), in the order Settings › Hotkeys lists them. */
 export type HotkeyId =
   | 'newTab'
@@ -20,7 +22,7 @@ export type HotkeyId =
   | 'newFilesWindow'
   | 'newItem'
   | 'goTo'
-  | 'dailyNote'
+  | 'dailyPage'
   | 'closeTab'
   | 'closeWindow'
   | 'switchVault'
@@ -64,21 +66,22 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   { id: 'newFilesWindow', label: 'New Files window', hint: 'The sidebar on its own, beside your windows', key: 'CmdOrCtrl+Shift+W' },
   // YAZ-3556 D1: the New… box (⌘N, the Mac's own New) and the jump to the place set in Settings › Sidebar (⌘D). Drawings,
   // diagrams and code keep their own ⌘D (Duplicate, Add next match) by default (YAZ-3564 K9).
-  { id: 'newItem', label: 'New note, drawing or diagram…', hint: 'Pick the kind and the folder, then name it in the sidebar', key: 'CmdOrCtrl+N', macStandard: true },
-  { id: 'goTo', label: 'Show in sidebar', hint: 'The tab, folder or file set in Settings › Sidebar › Show in sidebar, or today\'s daily note', key: 'CmdOrCtrl+D', stepsAsideIn: ['drawing', 'diagram', 'code'] },
-  // YAZ-3607 D11: today's daily note on its own key, for a ⌘D set to another place. No key by default: ⌘D on "Today's
-  // daily note" and the footer button reach it. It shows only while Daily notes is on (Settings › Files & Links).
-  { id: 'dailyNote', label: "Open today's daily note", hint: 'Makes it first when today has none', key: null },
+  { id: 'newItem', label: 'New page, drawing or diagram…', hint: 'Pick the kind and the folder, then name it in the sidebar', key: 'CmdOrCtrl+N', macStandard: true },
+  { id: 'goTo', label: 'Show in sidebar', hint: 'The tab, folder or file set in Settings › Sidebar › Show in sidebar, or today\'s daily page', key: 'CmdOrCtrl+D', stepsAsideIn: ['drawing', 'diagram', 'code'] },
+  // YAZ-3607 D11: today's daily page on its own key, for a ⌘D set to another place. No key by default: ⌘D on "Today's
+  // daily page" and the footer button reach it. It shows only while Daily pages is on (Settings › Files & Links).
+  { id: 'dailyPage', label: "Open today's daily page", hint: 'Makes it first when today has none', key: null },
   { id: 'closeTab', label: 'Close tab', hint: 'On the last tab it empties the window, then closes it', key: 'CmdOrCtrl+W', macStandard: true },
   { id: 'closeWindow', label: 'Close window', key: null },
   { id: 'switchVault', label: 'Switch vault', hint: 'Type to filter, ⏎ brings it to the front or opens a new window, ⇧⏎ opens it in this window', key: 'CmdOrCtrl+O', macStandard: true },
   { id: 'openFolder', label: 'Open folder…', key: 'CmdOrCtrl+Shift+O' },
-  { id: 'search', label: 'Search the vault', key: 'CmdOrCtrl+K' },
+  // YAZ-4994: the key toggles. Again, with the keyboard in the search, it goes back to the page, the sidebar as it was.
+  { id: 'search', label: 'Search the vault', hint: 'In the sidebar; the same key goes back to the page', key: 'CmdOrCtrl+K' },
   // YAZ-2571: the explore stack. ⌘⇧F is also draw.io's To front; the menu takes it on a diagram too (Yaseen: explore has priority), and the K9 switch can hand it back.
-  { id: 'explore', label: 'Explore the vault', hint: 'A search in the middle of the window; ⏎ opens the note over it, Esc goes back one layer', key: 'CmdOrCtrl+Shift+F' },
+  { id: 'explore', label: 'Explore the vault', hint: 'A search in the middle of the window; ⏎ opens the page over it, Esc goes back one layer', key: 'CmdOrCtrl+Shift+F' },
   { id: 'settings', label: 'Settings', key: 'CmdOrCtrl+,', macStandard: true },
-  // A menu key since YAZ-3564 D10 (it was the renderer's ⌘B, which a note kept for Bold): it fires in a note too.
-  { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'In a note, a drawing, a diagram and code too', key: 'CmdOrCtrl+Shift+B' },
+  // A menu key since YAZ-3564 D10 (it was the renderer's ⌘B, which a page kept for Bold): it fires in a page too.
+  { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'In a page, a drawing, a diagram and code too', key: 'CmdOrCtrl+Shift+B' },
   { id: 'copyPath', label: 'Copy path', hint: 'The row of the new tab page that the keyboard is on, else the sidebar selection when one is standing, else the open file', key: 'CmdOrCtrl+Shift+C', rendererOwned: true },
   { id: 'tabOverview', label: 'Tab overview', hint: 'The same key opens it and closes it', key: 'CmdOrCtrl+Shift+M' },
   { id: 'nextTab', label: 'Next tab', key: 'Control+Tab' },
@@ -90,11 +93,11 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   { id: 'backNewTab', label: 'Open Back in a new tab', hint: 'The page before, in a tab behind this one, as a ⌘-click on ←', key: null },
   { id: 'forwardNewTab', label: 'Open Forward in a new tab', hint: 'The page after, in a tab behind this one, as a ⌘-click on →', key: null },
   // YAZ-3564 K11: no key by default, since every free key is some editor's; Help › Keys of This Tab… and ? on a drawing open it too.
-  { id: 'keySheet', label: 'Keys of this tab', hint: 'The keys of the note, drawing, diagram or code in front, with your changes', key: null },
+  { id: 'keySheet', label: 'Keys of this tab', hint: 'The keys of the page, drawing, diagram or code in front, with your changes', key: null },
 ]
 
 /**
- * Only the user's changes (D2), for every key of the app (YAZ-3564 K2): by `<scope>.<name>` ('app.newTab', 'note.bold');
+ * Only the user's changes (D2), for every key of the app (YAZ-3564 K2): by `<scope>.<name>` ('app.newTab', 'page.bold');
  * null = "No key". An id with no scope is an App command from before YAZ-3564 ('newTab'): it reads as 'app.newTab'.
  */
 export type HotkeyOverrides = Partial<Record<string, string | null>>
@@ -247,6 +250,19 @@ export function toDisplay(accelerator: string | null): string {
   return `${chord.ctrl ? '⌃' : ''}${chord.alt ? '⌥' : ''}${chord.cmd ? '⌘' : ''}${chord.shift ? '⇧' : ''}${KEY_DISPLAY[chord.key] ?? chord.key}`
 }
 
+/**
+ * A key as a label says it (YAZ-5332, `keyLabel.ts`): 'CmdOrCtrl+Shift+W' → 'Cmd+Shift+W'; a two-step key
+ * ('CmdOrCtrl+K CmdOrCtrl+0', Settings' form) step by step. '' for no key.
+ */
+export const keyInWords = (key: string | null): string =>
+  key === null
+    ? ''
+    : key
+        .split(' ')
+        .filter((step) => step !== '')
+        .map((step) => keyText(toDisplay(step)))
+        .join(' ')
+
 /** A menu item's hint (YAZ-3410): the command's key as it is NOW, or undefined — no hint — with "No key". */
 export function keyHint(id: HotkeyId, overrides: HotkeyOverrides | undefined): string | undefined {
   const key = toDisplay(keyFor(id, overrides))
@@ -255,8 +271,7 @@ export function keyHint(id: HotkeyId, overrides: HotkeyOverrides | undefined): s
 
 /** A tooltip that names the command's key as it is NOW (YAZ-3410): 'New tab (⌘T)'; the bare text with "No key". */
 export function titleWithKey(text: string, id: HotkeyId, overrides: HotkeyOverrides | undefined): string {
-  const key = keyHint(id, overrides)
-  return key === undefined ? text : `${text} (${key})`
+  return labelWith(text, keyInWords(keyFor(id, overrides)))
 }
 
 // ---------- recording one ----------

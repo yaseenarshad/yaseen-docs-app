@@ -8,14 +8,14 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { readComments } from '@shared/comments'
-import { IDS_FILE, isNoteId } from '@shared/noteId'
-import { addReview } from '@shared/reviews'
+import { IDS_FILE, isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { createStore } from '../main/store'
+import { duplicateCardSkill } from '../main/cardSkillDuplicate'
 import { sweepIds } from '../main/vaultIndex/idSweep'
 import { macId } from '../main/vaultIndex/mint'
 import { scanFile } from '../main/vaultIndex/scan'
-import { dailyNoteName } from '@shared/dailyNote'
+import { dailyPageName } from '@shared/dailyPage'
 import { settingsFileText } from '@shared/settingsSync'
 import type { SettingsState } from '@shared/types'
 import { HELP, USAGE, dayOf, find, label, main, transformOnDisk } from './cli'
@@ -50,7 +50,7 @@ async function page(name: string, content: string): Promise<string> {
 
 /**
  * A vault under the temp dir (`.yaseendocs/` exists) holding `files`, keyed by vault-relative path.
- * It gives its notes IDs unless `ids` says no (false) or leaves the question unanswered (null).
+ * It gives its pages IDs unless `ids` says no (false) or leaves the question unanswered (null).
  */
 async function vault(name: string, files: Record<string, string>, ids: boolean | null = true): Promise<string> {
   const root = path.join(dir, name)
@@ -97,7 +97,7 @@ describe('help and usage', () => {
   })
 
   it('the contract names every verb and both rules an agent must know', () => {
-    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs mentions ', 'yaseendocs due ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
+    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs mentions ', 'yaseendocs due ', 'yaseendocs card add ', 'yaseendocs card next ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
       expect(HELP).toContain(word)
     }
   })
@@ -224,7 +224,7 @@ describe('comment', () => {
   })
 
   it('a page that is not markdown is refused by EVERY verb before any I/O; a missing page with exit 1', async () => {
-    const txt = await page('notes.txt', 'hi')
+    const txt = await page('pages.txt', 'hi')
     for (const argv of [['comment', txt, '--body', 'x'], ['comments', txt], ['edit', txt, '#1', '--body', 'x'], ['delete', txt, '#1'], ['id', txt], ['links', txt]]) {
       const r = await run(argv)
       expect(r.code, argv[0]).toBe(1)
@@ -320,7 +320,7 @@ describe('edit and delete (🔒 D4: only what an agent wrote)', () => {
 })
 
 describe('id (YAZ-2293)', () => {
-  it('a page that has an id, in a vault that gives its notes IDs: prints it and writes nothing — bytes and mtime as they were', async () => {
+  it('a page that has an id, in a vault that gives its pages IDs: prints it and writes nothing — bytes and mtime as they were', async () => {
     const content = '---\nid: k3m9x2pq7abc\n---\n# Has one\n'
     const p = path.join(await vault('ids', { 'has.md': content }), 'has.md')
     const before = (await stat(p)).mtimeMs
@@ -333,15 +333,15 @@ describe('id (YAZ-2293)', () => {
     const root = await vault('outer', { 'Inner/a.md': '# A\n', 'Inner/.yaseendocs/favorites.json': '[]\n' })
     const r = await run(['id', path.join(root, 'Inner', 'a.md')])
     expect(r.code).toBe(0)
-    expect(isNoteId(r.out.trim())).toBe(true)
+    expect(isPageId(r.out.trim())).toBe(true)
   })
 
-  it('a page whose vault does not give its notes IDs — it said no, it has not answered, or there is no vault above — is refused whether or not it holds an `id`: exit 1, nothing written (YAZ-2523)', async () => {
+  it('a page whose vault does not give its pages IDs — it said no, it has not answered, or there is no vault above — is refused whether or not it holds an `id`: exit 1, nothing written (YAZ-2523)', async () => {
     for (const content of ['---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n', '---\nid: k3m9x2pq7abc\n---\n# Has one\n']) {
       const said = await vault('no', { 'Kickoff.md': content, 'Projects/a.png': 'png' }, false)
       const pages = [path.join(said, 'Kickoff.md'), path.join(await vault('unanswered', { 'Kickoff.md': content }, null), 'Kickoff.md'), await page('Kickoff.md', content)]
       for (const p of pages) {
-        expect(await run(['id', p])).toEqual({ code: 1, out: '', err: `${p}'s vault does not give its notes IDs (turn on "Give this vault's notes IDs" in the app's Settings)\n` })
+        expect(await run(['id', p])).toEqual({ code: 1, out: '', err: `${p}'s vault does not give its pages IDs (turn on "Give this vault's pages IDs" in the app's Settings)\n` })
         expect(await readFile(p, 'utf8')).toBe(content)
       }
       // A folder is given no settings file there either.
@@ -350,7 +350,7 @@ describe('id (YAZ-2293)', () => {
     }
   })
 
-  it('a page with no id, in a vault that gives its notes IDs: is given the vault\'s next number, and no other byte changes (YAZ-2677 S40)', async () => {
+  it('a page with no id, in a vault that gives its pages IDs: is given the vault\'s next number, and no other byte changes (YAZ-2677 S40)', async () => {
     const content = '---\ntitle: Kickoff # kept\n---\n# Kickoff\n'
     const p = path.join(await vault('mine', { 'Projects/Kickoff.md': content }), 'Projects/Kickoff.md')
     expect(await run(['id', p])).toEqual({ code: 0, out: 'YAZ-1\n', err: '' })
@@ -363,7 +363,7 @@ describe('id (YAZ-2293)', () => {
   it('R20, S40: the command gives the number the app would give — the highest number in the vault plus 1 — and uses the one count file of this Mac, as the app does', async () => {
     const root = await vault('shared', { 'held.md': '---\nid: YAZ-41\n---\n', 'old.md': '---\nid: k3m9x2pq7abc\n---\n', 'by-command.md': '# A\n', 'by-app.md': '# B\n', 'by-command-2.md': '# C\n' })
     expect((await run(['id', path.join(root, 'by-command.md')])).out).toBe('YAZ-42\n')
-    // The app, on this Mac, meets another note of the same vault: its sweep takes the next number from the same door.
+    // The app, on this Mac, meets another page of the same vault: its sweep takes the next number from the same door.
     const file = path.join(root, 'by-app.md')
     const records = new Map<string, IndexRecord>()
     for (const name of ['held.md', 'old.md', 'by-command.md', 'by-app.md']) records.set(path.join(root, name), await scanFile(root, path.join(root, name)))
@@ -378,7 +378,7 @@ describe('id (YAZ-2293)', () => {
     expect(count.made.map(({ from, to }) => [from, to])).toEqual([[42, 42], [43, 43], [44, 44]])
   })
 
-  it('S28: a number that a deleted note had is not given again by the command', async () => {
+  it('S28: a number that a deleted page had is not given again by the command', async () => {
     const root = await vault('gone', { 'a.md': '# A\n', 'b.md': '# B\n' })
     expect((await run(['id', path.join(root, 'a.md')])).out).toBe('YAZ-1\n')
     await rm(path.join(root, 'a.md'))
@@ -410,7 +410,7 @@ describe('id (YAZ-2293)', () => {
     expect(await run(['id', path.join(root, 'Gone', FOLDER_SETTINGS_FILE)])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
   })
 
-  it("a page whose `id` is another tool's (`id: 42`, or another vault's letters), in a vault that gives its notes IDs: the vault's next number is written over it, and printed (YAZ-2420 D30, YAZ-2677 R7)", async () => {
+  it("a page whose `id` is another tool's (`id: 42`, or another vault's letters), in a vault that gives its pages IDs: the vault's next number is written over it, and printed (YAZ-2420 D30, YAZ-2677 R7)", async () => {
     const root = await vault('mine', { 'Projects/Kickoff.md': '---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n', 'moved-in.md': '---\nid: BUS-12\n---\n' })
     const p = path.join(root, 'Projects/Kickoff.md')
     expect(await run(['id', p])).toEqual({ code: 0, out: 'YAZ-1\n', err: '' })
@@ -428,13 +428,13 @@ describe('id (YAZ-2293)', () => {
 })
 
 describe('links (YAZ-2293)', () => {
-  const NOTE = 'k3m9x2pq7abc'
+  const PAGE = 'k3m9x2pq7abc'
   const FOLDER = 'f7d2m4n8q1rs'
   const DEAD = 'z9z9z9z9z9z9'
   const mine = () =>
     vault('mine', {
-      'Home.md': `---\nalso_in:\n  - ${FOLDER}\n  - 7\n---\nSee [[${NOTE}]], [[${NOTE}|the kickoff]], [[Some Title]] and [[${DEAD}]].\n`,
-      'Projects/Alpha/Kickoff notes.md': `---\nid: ${NOTE}\n---\n# Kickoff\n`,
+      'Home.md': `---\nalso_in:\n  - ${FOLDER}\n  - 7\n---\nSee [[${PAGE}]], [[${PAGE}|the kickoff]], [[Some Title]] and [[${DEAD}]].\n`,
+      'Projects/Alpha/Kickoff pages.md': `---\nid: ${PAGE}\n---\n# Kickoff\n`,
       [`Areas/${FOLDER_SETTINGS_FILE}`]: `---\nid: ${FOLDER}\n---\n`,
       // What the app's index never sees does not carry an id: a dot-folder, node_modules.
       '.trash/Old.md': `---\nid: ${DEAD}\n---\n`,
@@ -448,25 +448,25 @@ describe('links (YAZ-2293)', () => {
     expect(await run(['links', home])).toEqual({
       code: 0,
       err: '',
-      out: `${NOTE}  Kickoff notes  Projects/Alpha/Kickoff notes.md\n${DEAD}  (missing)\n${FOLDER}  Areas  Areas/  (also in)\n`,
+      out: `${PAGE}  Kickoff pages  Projects/Alpha/Kickoff pages.md\n${DEAD}  (missing)\n${FOLDER}  Areas  Areas/  (also in)\n`,
     })
   })
 
   it('S92: lists number IDs and old IDs, each with the title and path it names now; a number ID is read in any case and with letters the vault had before, and other LETTERS-NUMBER text is a name (YAZ-2677 R5, R6)', async () => {
     const root = await vault('numbers', {
-      'Home.md': `---\nalso_in:\n  - yaz-3\n---\nSee [[YAZ-12]], [[yaz-12|again]], [[OLD-7]], [[${NOTE}]], [[GPT-4]], [[BUS-12]] and [[YAZ-99]].\n`,
+      'Home.md': `---\nalso_in:\n  - yaz-3\n---\nSee [[YAZ-12]], [[yaz-12|again]], [[OLD-7]], [[${PAGE}]], [[GPT-4]], [[BUS-12]] and [[YAZ-99]].\n`,
       'plan-yaz-12.md': '---\nid: YAZ-12\ntitle: Plan\n---\n',
       'before.md': '---\nid: OLD-7\ntitle: Before\n---\n',
-      'Projects/Alpha/Kickoff notes.md': `---\nid: ${NOTE}\n---\n`,
+      'Projects/Alpha/Kickoff pages.md': `---\nid: ${PAGE}\n---\n`,
       [`Areas/${FOLDER_SETTINGS_FILE}`]: '---\nid: YAZ-3\n---\n',
-      // A note NAMED like an ID of another vault: `[[GPT-4]]` is a name link to it, never an ID.
+      // A page NAMED like an ID of another vault: `[[GPT-4]]` is a name link to it, never an ID.
       'GPT-4.md': '---\nid: YAZ-4\n---\n',
     })
     await writeFile(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), JSON.stringify({ enabled: true, letters: 'YAZ', was: ['OLD'] }))
     expect(await run(['links', path.join(root, 'Home.md')])).toEqual({
       code: 0,
       err: '',
-      out: `YAZ-12  Plan  plan-yaz-12.md\nYAZ-7  Before  before.md\n${NOTE}  Kickoff notes  Projects/Alpha/Kickoff notes.md\nYAZ-99  (missing)\nYAZ-3  Areas  Areas/  (also in)\n`,
+      out: `YAZ-12  Plan  plan-yaz-12.md\nYAZ-7  Before  before.md\n${PAGE}  Kickoff pages  Projects/Alpha/Kickoff pages.md\nYAZ-99  (missing)\nYAZ-3  Areas  Areas/  (also in)\n`,
     })
   })
 
@@ -475,7 +475,7 @@ describe('links (YAZ-2293)', () => {
     const r = await run(['links', path.join(root, 'Home.md'), '--json'])
     expect(JSON.parse(r.out)).toEqual({
       links: [
-        { id: NOTE, kind: 'note', title: 'Kickoff notes', path: 'Projects/Alpha/Kickoff notes.md' },
+        { id: PAGE, kind: 'page', title: 'Kickoff pages', path: 'Projects/Alpha/Kickoff pages.md' },
         { id: DEAD, kind: 'missing' },
         { id: FOLDER, kind: 'folder', title: 'Areas', path: 'Areas' },
       ],
@@ -487,19 +487,19 @@ describe('links (YAZ-2293)', () => {
     expect(JSON.parse((await run(['links', plain, '--json'])).out)).toEqual({ links: [], in: [] })
   })
 
-  it('also lists the folders of the note’s `in:` block, each by id and current name, in a group of their own (and under `in` in --json); a block whose id no folder has is listed by id with no name', async () => {
+  it('also lists the folders of the page’s `in:` block, each by id and current name, in a group of their own (and under `in` in --json); a block whose id no folder has is listed by id with no name', async () => {
     const root = await mine()
     const held = path.join(root, 'Held.md')
-    // A link in a folder's value is a link of the page; a note's id names no folder.
-    await writeFile(held, `---\nin:\n  ${FOLDER}:\n    Status: Interview\n    owner: "[[${NOTE}]]"\n  ${DEAD}:\n    Status: Old\n  ${NOTE}:\n    Status: x\n---\n`, 'utf8')
+    // A link in a folder's value is a link of the page; a page's id names no folder.
+    await writeFile(held, `---\nin:\n  ${FOLDER}:\n    Status: Interview\n    owner: "[[${PAGE}]]"\n  ${DEAD}:\n    Status: Old\n  ${PAGE}:\n    Status: x\n---\n`, 'utf8')
     expect(await run(['links', held])).toEqual({
       code: 0,
       err: '',
-      out: `${NOTE}  Kickoff notes  Projects/Alpha/Kickoff notes.md\n\nin:\n${FOLDER}  Areas  Areas/\n${DEAD}\n${NOTE}\n`,
+      out: `${PAGE}  Kickoff pages  Projects/Alpha/Kickoff pages.md\n\nin:\n${FOLDER}  Areas  Areas/\n${DEAD}\n${PAGE}\n`,
     })
     expect(JSON.parse((await run(['links', held, '--json'])).out)).toEqual({
-      links: [{ id: NOTE, kind: 'note', title: 'Kickoff notes', path: 'Projects/Alpha/Kickoff notes.md' }],
-      in: [{ id: FOLDER, title: 'Areas', path: 'Areas' }, { id: DEAD }, { id: NOTE }],
+      links: [{ id: PAGE, kind: 'page', title: 'Kickoff pages', path: 'Projects/Alpha/Kickoff pages.md' }],
+      in: [{ id: FOLDER, title: 'Areas', path: 'Areas' }, { id: DEAD }, { id: PAGE }],
     })
     // Values and no ids: the links say so, and the folders are still listed.
     const only = path.join(root, 'Only.md')
@@ -507,19 +507,19 @@ describe('links (YAZ-2293)', () => {
     expect((await run(['links', only])).out).toBe(`no ids on ${only}\n\nin:\n${FOLDER}  Areas  Areas/\n`)
   })
 
-  it('E: each id is followed by the title of the note or folder it names now, then its path — in the `in:` group too, and as `title` in --json (YAZ-2420 D14)', async () => {
+  it('E: each id is followed by the title of the page or folder it names now, then its path — in the `in:` group too, and as `title` in --json (YAZ-2420 D14)', async () => {
     const root = await vault('titled', {
-      'Home.md': `---\nalso_in:\n  - ${FOLDER}\nin:\n  ${FOLDER}:\n    Status: Interview\n---\nSee [[${NOTE}]] and [[${DEAD}]].\n`,
-      [`candidates/up-001-abdul-${NOTE}.md`]: `---\nid: ${NOTE}\ntitle: UP-001 - Abdul\n---\n`,
+      'Home.md': `---\nalso_in:\n  - ${FOLDER}\nin:\n  ${FOLDER}:\n    Status: Interview\n---\nSee [[${PAGE}]] and [[${DEAD}]].\n`,
+      [`candidates/up-001-abdul-${PAGE}.md`]: `---\nid: ${PAGE}\ntitle: UP-001 - Abdul\n---\n`,
       [`upwork-2026/${FOLDER_SETTINGS_FILE}`]: `---\nid: ${FOLDER}\ntitle: Upwork 2026\n---\n`,
     })
     const home = path.join(root, 'Home.md')
     expect((await run(['links', home])).out).toBe(
-      `${NOTE}  UP-001 - Abdul  candidates/up-001-abdul-${NOTE}.md\n${DEAD}  (missing)\n${FOLDER}  Upwork 2026  upwork-2026/  (also in)\n\nin:\n${FOLDER}  Upwork 2026  upwork-2026/\n`,
+      `${PAGE}  UP-001 - Abdul  candidates/up-001-abdul-${PAGE}.md\n${DEAD}  (missing)\n${FOLDER}  Upwork 2026  upwork-2026/  (also in)\n\nin:\n${FOLDER}  Upwork 2026  upwork-2026/\n`,
     )
     expect(JSON.parse((await run(['links', home, '--json'])).out)).toEqual({
       links: [
-        { id: NOTE, kind: 'note', title: 'UP-001 - Abdul', path: `candidates/up-001-abdul-${NOTE}.md` },
+        { id: PAGE, kind: 'page', title: 'UP-001 - Abdul', path: `candidates/up-001-abdul-${PAGE}.md` },
         { id: DEAD, kind: 'missing' },
         { id: FOLDER, kind: 'folder', title: 'Upwork 2026', path: 'upwork-2026' },
       ],
@@ -533,7 +533,7 @@ describe('links (YAZ-2293)', () => {
   })
 
   it('a page whose vault does not use IDs — it said no, it has not answered, or there is no vault above — has no ID links to list: exit 1 (YAZ-2523)', async () => {
-    const content = `[[${NOTE}]]\n`
+    const content = `[[${PAGE}]]\n`
     for (const p of [path.join(await vault('no', { 'loose.md': content }, false), 'loose.md'), path.join(await vault('unanswered', { 'loose.md': content }, null), 'loose.md'), await page('loose.md', content)]) {
       expect(await run(['links', p])).toEqual({ code: 1, out: '', err: `${p}'s vault does not use IDs, so there are no ID links to list\n` })
     }
@@ -545,7 +545,7 @@ describe('links (YAZ-2293)', () => {
  * app's own shared code (`@shared/linkResolver`, `@shared/mentions`) — the map the app's section and column read.
  */
 describe('mentions (YAZ-4740)', () => {
-  /** The app's map over the same files: the index's split of notes and folders, its resolver, its one pass. */
+  /** The app's map over the same files: the index's split of pages and folders, its resolver, its one pass. */
   const appMap = async (root: string, page: string, letters?: readonly string[]): Promise<string[]> => {
     const { makeResolver } = await import('@shared/linkResolver')
     const { mentionsOf } = await import('@shared/mentions')
@@ -560,7 +560,7 @@ describe('mentions (YAZ-4740)', () => {
     return (mentionsOf(records, folders, (t) => resolve(t)?.record.path ?? null).get(page) ?? []).map((r) => r.path)
   }
 
-  it('a vault with IDs: every note and folder linking to the page — by id, title or alias, body or properties, embeds too — once each, path-sorted', async () => {
+  it('a vault with IDs: every page and folder linking to the page — by id, title or alias, body or properties, embeds too — once each, path-sorted', async () => {
     const root = await vault('ids', {
       'Schema/total-yaz-1.md': '---\nid: YAZ-1\ntitle: Orders total\naliases: [total]\n---\n',
       'API/post-orders-yaz-2.md': '---\nid: YAZ-2\ntitle: POST orders\nreads_writes:\n  - "[[YAZ-1]]"\n---\nWrites [[YAZ-1]] and [[Orders total]].\n',
@@ -573,15 +573,15 @@ describe('mentions (YAZ-4740)', () => {
     const json = JSON.parse((await run(['mentions', page, '--json'])).out) as { title: string; path: string; kind: string }[]
     expect(json).toEqual([
       { title: 'API', path: 'API', kind: 'folder' },
-      { title: 'POST orders', path: 'API/post-orders-yaz-2.md', kind: 'note' },
-      { title: 'useOrders', path: 'Web/use-orders-yaz-3.md', kind: 'note' },
+      { title: 'POST orders', path: 'API/post-orders-yaz-2.md', kind: 'page' },
+      { title: 'useOrders', path: 'Web/use-orders-yaz-3.md', kind: 'page' },
     ])
     // The app's map over the same vault answers the same pages.
     expect(json.map((r) => path.join(root, r.kind === 'folder' ? `${r.path}/${FOLDER_SETTINGS_FILE}` : r.path))).toEqual(await appMap(root, page, ['YAZ']))
     expect(await run(['mentions', path.join(root, 'Web/other-yaz-4.md')])).toEqual({ code: 0, err: '', out: `nothing links to ${path.join(root, 'Web/other-yaz-4.md')}\n` })
   })
 
-  it('a vault without IDs: a name link resolves as the app resolves it — the shallowest of two notes of one name — and an `id:` is no id', async () => {
+  it('a vault without IDs: a name link resolves as the app resolves it — the shallowest of two pages of one name — and an `id:` is no id', async () => {
     const root = await vault('plain', {
       'Total.md': '---\nid: YAZ-1\n---\n',
       'Deep/Total.md': '',
@@ -594,23 +594,23 @@ describe('mentions (YAZ-4740)', () => {
     expect([path.join(root, 'A.md')]).toEqual(await appMap(root, page))
   })
 
-  it('YAZ-4954: words that only LOOK like an ID — the left side wins when it is a note, in the body and a property; the other order and a vault with only one side', async () => {
+  it('YAZ-4954: words that only LOOK like an ID — the left side wins when it is a page, in the body and a property; the other order and a vault with only one side', async () => {
     const root = await vault('covid', {
-      'Covid notes.md': '',
+      'Covid pages.md': '',
       'COVID-19.md': '',
-      'A.md': 'See [[Covid notes|COVID-19]].\n',
-      'B.md': 'See [[COVID-19|Covid notes]].\n',
-      'C.md': '---\nrelated: "[[Covid notes|COVID-19]]"\n---\n',
+      'A.md': 'See [[Covid pages|COVID-19]].\n',
+      'B.md': 'See [[COVID-19|Covid pages]].\n',
+      'C.md': '---\nrelated: "[[Covid pages|COVID-19]]"\n---\n',
     }, false)
-    expect((await run(['mentions', path.join(root, 'Covid notes.md')])).out).toBe('A  A.md\nC  C.md\n')
+    expect((await run(['mentions', path.join(root, 'Covid pages.md')])).out).toBe('A  A.md\nC  C.md\n')
     expect((await run(['mentions', path.join(root, 'COVID-19.md')])).out).toBe('B  B.md\n')
-    expect(await appMap(root, path.join(root, 'Covid notes.md'))).toEqual([path.join(root, 'A.md'), path.join(root, 'C.md')])
-    // Only the ID side is a note: the right side is the page.
-    const lone = await vault('only-id', { 'COVID-19.md': '', 'A.md': 'See [[Covid notes|COVID-19]].\n' }, false)
+    expect(await appMap(root, path.join(root, 'Covid pages.md'))).toEqual([path.join(root, 'A.md'), path.join(root, 'C.md')])
+    // Only the ID side is a page: the right side is the page.
+    const lone = await vault('only-id', { 'COVID-19.md': '', 'A.md': 'See [[Covid pages|COVID-19]].\n' }, false)
     expect((await run(['mentions', path.join(lone, 'COVID-19.md')])).out).toBe('A  A.md\n')
-    // Only the words side is a note: the left side is the page.
-    const named = await vault('only-name', { 'Covid notes.md': '', 'A.md': 'See [[Covid notes|COVID-19]].\n' }, false)
-    expect((await run(['mentions', path.join(named, 'Covid notes.md')])).out).toBe('A  A.md\n')
+    // Only the words side is a page: the left side is the page.
+    const named = await vault('only-name', { 'Covid pages.md': '', 'A.md': 'See [[Covid pages|COVID-19]].\n' }, false)
+    expect((await run(['mentions', path.join(named, 'Covid pages.md')])).out).toBe('A  A.md\n')
   })
 
   it('a page in no vault is refused: exit 1', async () => {
@@ -671,109 +671,286 @@ describe('label and find', () => {
   })
 })
 
-describe('due (YAZ-2322)', () => {
+describe('cards: due and card add (YAZ-4963)', () => {
   const DAY = 86_400_000
   const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA')
-  /** A note last changed `daysOld` days ago. */
-  async function aged(name: string, daysOld: number, content = `Body of ${name}.\n`): Promise<{ file: string; changed: number }> {
-    const file = path.join(dir, name)
-    await mkdir(path.dirname(file), { recursive: true })
-    await writeFile(file, content, 'utf8')
-    const changed = Math.floor((Date.now() - daysOld * DAY) / 1000) * 1000 // whole seconds, so the file's mtime is exactly this
-    await utimes(file, changed / 1000, changed / 1000)
-    return { file, changed }
-  }
+  const minute = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}:00.000Z`
+  const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+  /** A card line with `title` on it, right after the ID (YAZ-5308). */
+  const titled = (title: string, line: string) => line.replace(/^([^,]+)/, `$1, title "${title}"`)
 
-  async function reviewJson(settings: Record<string, unknown>): Promise<void> {
-    await mkdir(path.join(dir, VAULT_CONFIG_DIR), { recursive: true })
-    await writeFile(path.join(dir, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify(settings))
-  }
-  /** The vault's `review.json` turns upkeep on, and says whatever else a test sets. */
-  const upkeepOn = (settings: Record<string, unknown> = {}): Promise<void> => reviewJson({ enabled: true, ...settings })
-
-  it('a page: prints the date it is next due, from the defaults for what the vault\'s settings do not say', async () => {
-    await upkeepOn()
-    const { file, changed } = await aged('fresh.md', 2)
-    expect(await run(['due', file])).toEqual({ code: 0, out: `${day(changed + 30 * DAY)}  fresh  ${file}\n`, err: '' })
+  it('due lists the cards due now and the new ones, not one that is not due nor one turned off; a page lists each card with its day', async () => {
+    const long = minute(Date.now() - 400 * DAY)
+    const long2 = minute(Date.now() - 400 * DAY + 60_000)
+    const now = minute(Date.now() - 60_000)
+    // YAZ-5702: YAZ-11's second Remembered gave days; YAZ-15, a known card Forgot a minute ago, comes back today.
+    const root = await vault('cards', {
+      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('**Overdue** {{word}}', titled('Overdue word', `YAZ-10, ${long} good, ${long2} good`))}\n${card('Just learned', titled('Just learned', `YAZ-11, ${now} good, ${now} good`))}\n${card('Brand new', titled('Brand new', 'YAZ-12'))}\n${card('Turned off', titled('Turned off', `YAZ-13, off, ${long} good`))}\n${card('Forgot again', titled('Forgot again', `YAZ-15, ${long} good, ${long2} good, ${now} again`))}`,
+      'sub/other.md': `---\nid: YAZ-2\n---\n${card('In a subfolder', titled('In a subfolder', 'YAZ-14'))}`,
+    })
+    const deck = path.join(root, 'deck.md')
+    const other = path.join(root, 'sub', 'other.md')
+    const listed = await run(['due', root])
+    expect(listed.code).toBe(0)
+    const lines = listed.out.trimEnd().split('\n')
+    expect(lines).toHaveLength(4)
+    expect(lines[0]).toMatch(new RegExp(`^\\d{4}-\\d{2}-\\d{2}  YAZ-10  Overdue word  ${deck}$`))
+    expect(lines.slice(1)).toEqual([`back        YAZ-15  Forgot again  ${deck}`, `new         YAZ-12  Brand new  ${deck}`, `new         YAZ-14  In a subfolder  ${other}`])
+    const json = JSON.parse((await run(['due', root, '--json'])).out) as { id: string; page: string; title: string; due: string; isNew: boolean; comesBack: boolean }[]
+    expect(json.map(({ id, page, title, isNew, comesBack }) => ({ id, page, title, isNew, comesBack }))).toEqual([
+      { id: 'YAZ-10', page: deck, title: 'Overdue word', isNew: false, comesBack: false },
+      { id: 'YAZ-15', page: deck, title: 'Forgot again', isNew: false, comesBack: true },
+      { id: 'YAZ-12', page: deck, title: 'Brand new', isNew: true, comesBack: false },
+      { id: 'YAZ-14', page: other, title: 'In a subfolder', isNew: true, comesBack: false },
+    ])
+    // A Forgot comes back today (YAZ-5702): due at the Forgot's own time.
+    expect(Date.parse(json[1].due)).toBe(Date.parse(now))
+    expect(Date.parse(json[0].due)).toBeLessThan(Date.now())
+    // A folder keeps its own cards; the vault's "new cards a day" counts the whole vault (YAZ-11 began today).
+    expect(JSON.parse((await run(['due', path.join(root, 'sub'), '--json'])).out).map((r: { id: string }) => r.id)).toEqual(['YAZ-14'])
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ newPerDay: 2 }))
+    expect(JSON.parse((await run(['due', root, '--json'])).out).map((r: { id: string }) => r.id)).toEqual(['YAZ-10', 'YAZ-15', 'YAZ-12'])
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ enabled: false }))
+    expect((await run(['due', root])).out).toBe(`cards are off for this vault (Settings › Cards › Use cards in this vault): no card is due\n`)
+    // One page with review off for the vault: one line says so; `off` stays the card's own.
+    const offPage = await run(['due', deck])
+    expect(offPage.err).toBe('cards are off for this vault (Settings › Cards › Use cards in this vault): no card is due\n')
+    expect(offPage.out.trimEnd().split('\n').map((l) => l.slice(0, 10).trim())).toEqual([expect.stringMatching(/^\d{4}-/), expect.stringMatching(/^\d{4}-/), 'new', 'off', 'back'])
+    await rm(path.join(root, VAULT_CONFIG_DIR, 'review.json'))
+    // One page: every card, with its day, new or off.
+    const page = (await run(['due', deck])).out.trimEnd().split('\n')
+    expect(page.map((l) => l.replace(/^\d{4}-\d{2}-\d{2}/, 'DAY'))).toEqual(['DAY  YAZ-10  Overdue word', 'DAY  YAZ-11  Just learned', 'new         YAZ-12  Brand new', 'off         YAZ-13  Turned off', 'back        YAZ-15  Forgot again'])
+    expect(day(Date.parse((JSON.parse((await run(['due', deck, '--json'])).out) as { due: string }[])[1].due))).not.toBe(day(Date.now()))
   })
 
-  it('upkeep off: `due <page>` and `due <folder>` report nothing due — no review.json, one with no `enabled` or a bad one, one that says false', async () => {
-    const { file } = await aged('old.md', 90)
-    const kept = await aged('sub/kept.md', 400, '---\nreview: true\n---\nKept.\n')
-    const nothing = async (): Promise<void> => {
-      for (const [title, page] of [['old', file], ['kept', kept.file]]) {
-        expect(await run(['due', page])).toEqual({ code: 0, out: `${title}  ${page} is not in review\n`, err: '' })
-        expect(JSON.parse((await run(['due', page, '--json'])).out)).toEqual({ title, path: page, inReview: false, due: null })
-      }
-      expect(await run(['due', dir])).toEqual({ code: 0, out: `nothing is due under ${dir}\n`, err: '' })
-      expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([])
+  it('YAZ-5097: a page`s list shows Fix later where it shows off: "fix" after the title, and `fix: true` in --json', async () => {
+    const root = await vault('cards', { 'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('Q1', 'YAZ-10, title "Typo in carf", fix')}\n${card('Q2', 'YAZ-11, title "Fine"')}\n${card('Q3', 'YAZ-12, title "Both", off, fix')}` })
+    const deck = path.join(root, 'deck.md')
+    expect((await run(['due', deck])).out).toBe('new         YAZ-10  Typo in carf  fix\nnew         YAZ-11  Fine\noff         YAZ-12  Both  fix\n')
+    const json = JSON.parse((await run(['due', deck, '--json'])).out) as { id: string; fix?: boolean }[]
+    expect(json.map((r) => [r.id, r.fix])).toEqual([['YAZ-10', true], ['YAZ-11', undefined], ['YAZ-12', true]])
+  })
+
+  it('card add writes a card with the next number of the vault counter, at the end of the heading\'s section, in order, atomically', async () => {
+    const root = await vault('cards', {
+      'geo.md': '---\nid: YAZ-5\n---\n# Geography\n\n## Cards\n\nIntro.\n\n## Later\n\nText.\n',
+      'other.md': `---\nid: YAZ-6\n---\n${card('Held', 'YAZ-20')}`,
+    })
+    const geo = path.join(root, 'geo.md')
+    expect(await run(['card', 'add', geo, '--after', 'cards', '--body', '-'], 'The capital of {{France}}\n---\nParis\n')).toEqual({ code: 0, out: `added YAZ-21 to ${geo}\n`, err: '' })
+    const second = await run(['card', 'add', geo, '--after', '## Cards', '--body', 'Code inside:\n```js\nx\n```', '--json'])
+    // No --title: the card has none; no line of its text is read as one (YAZ-5308).
+    expect(JSON.parse(second.out)).toEqual({ id: 'YAZ-22', page: geo, title: '' })
+    expect(await readFile(geo, 'utf8')).toBe(
+      '---\nid: YAZ-5\n---\n# Geography\n\n## Cards\n\nIntro.\n\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-21 -->\n\n````card\nCode inside:\n```js\nx\n```\n````\n<!-- card: YAZ-22 -->\n\n## Later\n\nText.\n',
+    )
+    // No --after: the end of the page. The app's scanner reads each card, and `due` shows them as new.
+    await run(['card', 'add', geo, '--body', 'Last'])
+    expect((await scanFile(root, geo)).cards?.map((c) => c.id)).toEqual(['YAZ-21', 'YAZ-22', 'YAZ-23'])
+    expect((await readFile(geo, 'utf8')).endsWith('Text.\n\n```card\nLast\n```\n<!-- card: YAZ-23 -->\n')).toBe(true)
+    expect(JSON.parse((await run(['due', geo, '--json'])).out).map((r: { id: string; isNew: boolean }) => [r.id, r.isNew])).toEqual([['YAZ-21', true], ['YAZ-22', true], ['YAZ-23', true]])
+  })
+
+  it('YAZ-5146: card add on a page with Windows line ends gives a number no card holds, and the page stays all \\r\\n', async () => {
+    const crlf = (text: string) => text.replace(/\n/g, '\r\n')
+    const root = await vault('cards', { 'win.md': crlf(`---\nid: YAZ-5\n---\n# Deck\n\n## Cards\n\n${card('Nine', 'YAZ-9')}\n${card('Ten', 'YAZ-10')}\n## Later\n\nText.\n`) })
+    const win = path.join(root, 'win.md')
+    // The vault's counter sees the cards of the \r\n page: YAZ-9 and YAZ-10 are held.
+    expect(await run(['card', 'add', win, '--after', 'Cards', '--title', 'Eleven', '--body', 'Front\n---\nBack'])).toEqual({ code: 0, out: `added YAZ-11 to ${win}\n`, err: '' })
+    const after = await readFile(win, 'utf8')
+    expect(/(^|[^\r])\n/.test(after)).toBe(false)
+    expect(after).toBe(crlf(`---\nid: YAZ-5\n---\n# Deck\n\n## Cards\n\n${card('Nine', 'YAZ-9')}\n${card('Ten', 'YAZ-10')}\n${card('Front\n---\nBack', 'YAZ-11, title "Eleven"')}\n## Later\n\nText.\n`))
+    expect((await scanFile(root, win)).cards?.map((c) => [c.id, c.title])).toEqual([['YAZ-9', undefined], ['YAZ-10', undefined], ['YAZ-11', 'Eleven']])
+    // card next on the \r\n page finds the card and keeps the line ends.
+    expect((await run(['card', 'next', 'YAZ-10', root])).code).toBe(0)
+    expect(await readFile(win, 'utf8')).toBe(after.replace('<!-- card: YAZ-10 -->', '<!-- card: YAZ-10, next -->'))
+  })
+
+  it('YAZ-5308: card add --title writes the title on the card line, never in its text; due --json gives it as the title', async () => {
+    const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geography\n' })
+    const geo = path.join(root, 'geo.md')
+    const added = await run(['card', 'add', geo, '--title', 'Capital of France', '--body', 'The capital of {{France}}\n---\nParis', '--json'])
+    expect(JSON.parse(added.out)).toEqual({ id: 'YAZ-6', page: geo, title: 'Capital of France' })
+    expect(await readFile(geo, 'utf8')).toBe('---\nid: YAZ-5\n---\n# Geography\n\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-6, title "Capital of France" -->\n')
+    // The index holds the title (YAZ-5030): what a `[[YAZ-6]]` link shows.
+    expect((await scanFile(root, geo)).cards?.[0]).toMatchObject({ id: 'YAZ-6', title: 'Capital of France' })
+    expect(JSON.parse((await run(['due', geo, '--json'])).out).map((r: { id: string; title: string }) => [r.id, r.title])).toEqual([['YAZ-6', 'Capital of France']])
+    expect(JSON.parse((await run(['due', root, '--json'])).out).map((r: { id: string; title: string }) => [r.id, r.title])).toEqual([['YAZ-6', 'Capital of France']])
+    // One line, with text: a refusal takes no number.
+    expect((await run(['card', 'add', geo, '--title', 'Two\nlines', '--body', 'x'])).code).toBe(2)
+    expect((await run(['card', 'add', geo, '--title', ' ', '--body', 'x'])).code).toBe(2)
+    expect((await scanFile(root, geo)).cards?.map((c) => c.id)).toEqual(['YAZ-6'])
+  })
+
+  it('YAZ-5386: card add and card new --prop name=value write the card`s properties on its card line; a name twice is a list; a bad one is refused before a number is taken', async () => {
+    const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geography\n', 'Cards/.keep': '' })
+    const geo = path.join(root, 'geo.md')
+    const added = await run(['card', 'add', geo, '--title', 'Capital of France', '--prop', 'tags=europe', '--prop', 'tags=capitals', '--prop', 'level=A2', '--prop', 'count=3', '--prop', 'Due Date=2026-11-20', '--body', 'The capital of {{France}}\n---\nParis', '--json'])
+    expect(JSON.parse(added.out)).toEqual({ id: 'YAZ-6', page: geo, title: 'Capital of France', properties: { tags: ['europe', 'capitals'], level: 'A2', count: 3, 'Due Date': '2026-11-20' } })
+    expect(await readFile(geo, 'utf8')).toContain('<!-- card: YAZ-6, title "Capital of France", tags "europe" "capitals", level "A2", count 3, "Due Date" "2026-11-20" -->')
+    expect((await scanFile(root, geo)).cards?.[0].properties).toEqual({ tags: ['europe', 'capitals'], level: 'A2', count: 3, 'Due Date': '2026-11-20' })
+    // A card file: the properties are on its card line too, never in its front matter (YAZ-5349 option A).
+    const made = JSON.parse((await run(['card', 'new', path.join(root, 'Cards'), '--title', 'Longest river', '--prop', 'tags=rivers', '--json'])).out) as { path: string }
+    const file = await readFile(made.path, 'utf8')
+    expect(file.startsWith('---\nkind: card\n---\n')).toBe(true)
+    // One value is that value; a list is the name given twice.
+    expect(file).toContain('<!-- card: YAZ-7, title "Longest river", tags "rivers" -->')
+    // Refused, and no number spent: no `=`, no name, a card line word.
+    for (const bad of ['level', '=A2', 'next=1', 'title=x']) expect((await run(['card', 'add', geo, '--prop', bad, '--body', 'x'])).code).toBe(2)
+    expect((await scanFile(root, geo)).cards?.map((c) => c.id)).toEqual(['YAZ-6'])
+    // The help says so.
+    expect((await run(['--help'])).out).toContain('--prop <name>=<value>')
+  })
+
+  it('YAZ-4999: card next writes the part `next` (--off removes it); due lists the card first and marks it', async () => {
+    const now = minute(Date.now() - 60_000)
+    const root = await vault('cards', {
+      'deck.md': `---\nid: YAZ-1\n---\n${card('Brand new', 'YAZ-12')}\n${card('Just learned', titled('Just learned', `YAZ-11, ${now} good`))}`,
+    })
+    const deck = path.join(root, 'deck.md')
+    const before = await readFile(deck, 'utf8')
+    expect(await run(['card', 'next', 'yaz-11', root])).toEqual({ code: 0, out: `YAZ-11 is up next (${deck})\n`, err: '' })
+    expect(await readFile(deck, 'utf8')).toContain(`<!-- card: YAZ-11, title "Just learned", next, ${now} good -->`)
+    // Not due, but up next: first, marked `next`; `--json` says so.
+    expect((await run(['due', root])).out.split('\n')[0]).toBe(`next        YAZ-11  Just learned  ${deck}`)
+    const json = JSON.parse((await run(['due', root, '--json'])).out) as { id: string; next: boolean }[]
+    expect(json.map((r) => [r.id, r.next])).toEqual([['YAZ-11', true], ['YAZ-12', false]])
+    expect((await run(['due', deck])).out.split('\n').map((l) => l.slice(0, 10).trim())).toEqual(['new', 'next', ''])
+    expect(JSON.parse((await run(['card', 'next', 'YAZ-11', root, '--off', '--json'])).out)).toEqual({ id: 'YAZ-11', page: deck, next: false })
+    expect(await readFile(deck, 'utf8')).toBe(before)
+    expect(await run(['card', 'next', 'YAZ-99', root])).toMatchObject({ code: 1, err: `no card YAZ-99 in ${root}\n` })
+    expect((await run(['card', 'next', 'nope', root])).code).toBe(2)
+    expect((await run(['card', 'next'])).code).toBe(2)
+  })
+
+  it('refuses in a vault without IDs, for a heading the page does not have (no number taken), and for bad usage', async () => {
+    const plain = await vault('plain', { 'a.md': 'Text.\n' }, false)
+    const a = path.join(plain, 'a.md')
+    for (const argv of [['card', 'add', a, '--body', 'x'], ['due', plain], ['due', a]]) {
+      const refused = await run(argv)
+      expect(refused.code).toBe(1)
+      expect(refused.err).toMatch(/does not give its pages IDs, so it has no cards/)
     }
-    await nothing()
-    for (const settings of [{ baseDays: 7 }, { enabled: 'yes', baseDays: 7 }, { enabled: false }]) {
-      await reviewJson(settings)
-      await nothing()
-    }
-    await upkeepOn()
-    expect((await run(['due', dir])).out).toContain(`  ${file}\n`)
-  })
-
-  it('a page: a review on the same text pushes the date out from the review', async () => {
-    await upkeepOn()
-    const reviewedAt = '2026-01-10T12:00:00Z'
-    const { file } = await aged('kept.md', 1, addReview('Kept.\n', reviewedAt))
-    expect((await run(['due', file])).out).toBe(`${day(Date.parse(reviewedAt) + 60 * DAY)}  kept  ${file}\n`)
-  })
-
-  it('a page: uses the settings of the vault it is in', async () => {
-    await upkeepOn({ baseDays: 7 })
-    const { file, changed } = await aged('notes/deep/quick.md', 2)
-    expect((await run(['due', file])).out).toBe(`${day(changed + 7 * DAY)}  quick  ${file}\n`)
-  })
-
-  it('a page that is not in review says so; --json gives the raw shape', async () => {
-    await upkeepOn()
-    const { file } = await aged('off.md', 90, '---\nreview: false\n---\nOff.\n')
-    expect((await run(['due', file])).out).toBe(`off  ${file} is not in review\n`)
-    expect(JSON.parse((await run(['due', file, '--json'])).out)).toEqual({ title: 'off', path: file, inReview: false, due: null })
-    const on = await aged('on.md', 2)
-    expect(JSON.parse((await run(['due', on.file, '--json'])).out)).toEqual({ title: 'on', path: on.file, inReview: true, due: new Date(on.changed + 30 * DAY).toISOString() })
-  })
-
-  it('E: a page is printed by its title, then its path, and --json carries `title` (YAZ-2420 D14)', async () => {
-    await upkeepOn()
-    const abdul = await aged('up-001-abdul-k3m9x2pq7abc.md', 2, '---\ntitle: UP-001 - Abdul\n---\nBody.\n')
-    expect((await run(['due', abdul.file])).out).toBe(`${day(abdul.changed + 30 * DAY)}  UP-001 - Abdul  ${abdul.file}\n`)
-    expect(JSON.parse((await run(['due', abdul.file, '--json'])).out)).toEqual({ title: 'UP-001 - Abdul', path: abdul.file, inReview: true, due: new Date(abdul.changed + 30 * DAY).toISOString() })
-  })
-
-  it('a folder: lists what is due now under it, most overdue first', async () => {
-    await upkeepOn()
-    const old = await aged('old.md', 90)
-    const older = await aged('sub/older.md', 120)
-    await aged('fresh.md', 2)
-    await aged('off.md', 200, '---\nreview: false\n---\nOff.\n')
-    await aged('sub/.folder.md', 300, '---\nviews: []\n---\n') // a folder's settings file is never a note
-    expect((await run(['due', dir])).out).toBe(`${day(older.changed + 30 * DAY)}  older  ${older.file}\n${day(old.changed + 30 * DAY)}  old  ${old.file}\n`)
-    expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([{ title: 'older', path: older.file, due: new Date(older.changed + 30 * DAY).toISOString() }])
-  })
-
-  it('E: a folder: each page is listed by its title, then its path, and --json carries `title` (YAZ-2420 D14)', async () => {
-    await upkeepOn()
-    const abdul = await aged('candidates/up-001-abdul-k3m9x2pq7abc.md', 120, '---\ntitle: UP-001 - Abdul\n---\nBody.\n')
-    expect((await run(['due', dir])).out).toBe(`${day(abdul.changed + 30 * DAY)}  UP-001 - Abdul  ${abdul.file}\n`)
-    expect(JSON.parse((await run(['due', dir, '--json'])).out)).toEqual([{ title: 'UP-001 - Abdul', path: abdul.file, due: new Date(abdul.changed + 30 * DAY).toISOString() }])
-  })
-
-  it('a folder with nothing due says so', async () => {
-    await upkeepOn()
-    await aged('fresh.md', 2)
-    expect((await run(['due', dir])).out).toBe(`nothing is due under ${dir}\n`)
-  })
-
-  it('refuses a missing path and a file that is not Markdown', async () => {
-    expect((await run(['due', path.join(dir, 'nope.md')])).code).toBe(1)
-    expect((await run(['due', await page('notes.txt', 'x')])).code).toBe(1)
+    expect(await readFile(a, 'utf8')).toBe('Text.\n')
+    const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geo\n' })
+    const geo = path.join(root, 'geo.md')
+    expect(await run(['card', 'add', geo, '--after', 'Nope', '--body', 'x'])).toMatchObject({ code: 1, err: 'no heading "Nope" on the page\n' })
+    expect(await readdir(path.join(root, VAULT_CONFIG_DIR))).not.toContain('ids')
+    expect((await run(['card', 'add', geo, '--body', '  \n'])).code).toBe(2)
+    expect((await run(['card', 'add', geo])).code).toBe(2)
+    expect((await run(['card', 'add'])).code).toBe(2)
+    expect((await run(['card', 'remove', geo])).code).toBe(2)
+    // `--title` is card add's own (YAZ-5030); another command's flag is refused.
+    expect((await run(['card', 'add', geo, '--body', 'x', '--reply-to', 'y'])).code).toBe(2)
+    expect((await run(['due', path.join(root, 'nope.md')])).code).toBe(1)
     expect((await run(['due'])).code).toBe(2)
+    expect(await readFile(geo, 'utf8')).toBe('---\nid: YAZ-5\n---\n# Geo\n')
+  })
+})
+
+/**
+ * YAZ-5037 card files: a card on its own, `kind: card` in its properties and one card in its body. `card new` makes one
+ * with the vault's next number; `card add` refuses one; `due`, `links` and `mentions` say what is a card.
+ */
+describe('card files (YAZ-5037)', () => {
+  const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+
+  it('card new writes a card file: kind: card, one card holding the body with the title on its card line (YAZ-5308); the next number; named <kebab-title>-<id>.md', async () => {
+    const root = await vault('cards', { 'geo/deck.md': `---\nid: YAZ-5\n---\n${card('In a page', 'YAZ-9')}` })
+    const geo = path.join(root, 'geo')
+    const made = await run(['card', 'new', geo, '--title', 'Capital of France', '--body', '-'], 'The capital of {{France}}\n---\nParis\n')
+    const file = path.join(geo, 'capital-of-france-yaz-10.md')
+    expect(made).toEqual({ code: 0, out: `made ${file}\n`, err: '' })
+    expect(await readFile(file, 'utf8')).toBe('---\nkind: card\n---\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-10, title "Capital of France" -->\n')
+    // The index reads it as a card file: no page id, the card's title, its card.
+    expect(await scanFile(root, file)).toMatchObject({ kind: 'card', title: 'Capital of France', cards: [expect.objectContaining({ id: 'YAZ-10' })] })
+    expect((await scanFile(root, file)).id).toBeUndefined()
+    // No --body: an empty card. --json gives the id, the path and the title.
+    const json = await run(['card', 'new', geo, '--title', 'Lone', '--json'])
+    expect(JSON.parse(json.out)).toEqual({ id: 'YAZ-11', path: path.join(geo, 'lone-yaz-11.md'), title: 'Lone' })
+    expect(await readFile(path.join(geo, 'lone-yaz-11.md'), 'utf8')).toBe('---\nkind: card\n---\n```card\n\n```\n<!-- card: YAZ-11, title "Lone" -->\n')
+    // The placeholder title of a new card keeps the `<id>.md` name, as the app's New card does.
+    expect(JSON.parse((await run(['card', 'new', geo, '--title', 'Title', '--json'])).out).path).toBe(path.join(geo, 'yaz-12.md'))
+  })
+
+  it('card new refuses a vault without IDs, a folder that is not there, a file, a folder the vault does not show, a name that is taken, and bad usage; nothing is written', async () => {
+    const plain = await vault('plain', { 'a.md': 'Text.\n' }, false)
+    const refused = await run(['card', 'new', plain, '--title', 'X'])
+    expect(refused.code).toBe(1)
+    expect(refused.err).toMatch(/does not give its pages IDs, so it has no cards/)
+    expect(await readdir(plain)).toEqual(expect.arrayContaining(['a.md', VAULT_CONFIG_DIR]))
+    expect(await readdir(plain)).toHaveLength(2)
+    const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geo\n', '.trash/old.md': '', 'taken-yaz-6.md': 'Mine.\n' })
+    expect(await run(['card', 'new', path.join(root, 'nope'), '--title', 'X'])).toMatchObject({ code: 1, err: `no folder ${path.join(root, 'nope')}\n` })
+    expect(await run(['card', 'new', path.join(root, 'geo.md'), '--title', 'X'])).toMatchObject({ code: 1, err: `${path.join(root, 'geo.md')} is not a folder\n` })
+    for (const hidden of [path.join(root, '.trash'), path.join(root, VAULT_CONFIG_DIR)]) {
+      expect(await run(['card', 'new', hidden, '--title', 'X'])).toMatchObject({ code: 1, err: `${hidden} is not a folder the vault shows\n` })
+    }
+    // The name the title and the new number give is there already: refused, and the file is kept (the number is spent).
+    expect(await run(['card', 'new', root, '--title', 'Taken', '--body', '{{x}}'])).toEqual({ code: 1, out: '', err: `${path.join(root, 'taken-yaz-6.md')} is already there\n` })
+    expect(await readFile(path.join(root, 'taken-yaz-6.md'), 'utf8')).toBe('Mine.\n')
+    for (const argv of [
+      ['card', 'new'],
+      ['card', 'new', root],
+      ['card', 'new', root, '--title', ' '],
+      ['card', 'new', root, '--title', 'Two\nlines'],
+      ['card', 'new', root, '--title', 'X', '--after', 'Cards'],
+    ]) expect((await run(argv)).code, argv.join(' ')).toBe(2)
+    expect((await readdir(root)).sort()).toEqual(['.trash', VAULT_CONFIG_DIR, 'geo.md', 'taken-yaz-6.md'].sort())
+  })
+
+  it('card add refuses a card file: "This is a card file. Use `card new`." and nothing is written', async () => {
+    const root = await vault('cards', { 'one-yaz-3.md': `---\nkind: Card\n---\n${card('One', 'YAZ-3')}` })
+    const file = path.join(root, 'one-yaz-3.md')
+    const before = await readFile(file, 'utf8')
+    expect(await run(['card', 'add', file, '--body', 'Two'])).toEqual({ code: 1, out: '', err: 'This is a card file. Use `card new`.\n' })
+    expect(await readFile(file, 'utf8')).toBe(before)
+    // No number was taken: the next card gets the next one.
+    expect(JSON.parse((await run(['card', 'new', root, '--title', 'Next', '--json'])).out).id).toBe('YAZ-4')
+  })
+
+  it('due --json marks a card that lives in a card file `cardFile: true`, for a folder and for the file; a card in a page has no such key', async () => {
+    const root = await vault('cards', {
+      'deck.md': `---\nid: YAZ-1\n---\n${card('In a page', 'YAZ-2')}`,
+      'own-yaz-3.md': `---\nkind: card\n---\n${card('Own', 'YAZ-3, title "Own"')}`,
+    })
+    const rows = JSON.parse((await run(['due', root, '--json'])).out) as Record<string, unknown>[]
+    expect(rows.map((r) => [r.id, r.cardFile])).toEqual([['YAZ-2', undefined], ['YAZ-3', true]])
+    expect(rows[0]).not.toHaveProperty('cardFile')
+    expect(JSON.parse((await run(['due', path.join(root, 'own-yaz-3.md'), '--json'])).out)).toEqual([expect.objectContaining({ id: 'YAZ-3', title: 'Own', cardFile: true })])
+    expect(JSON.parse((await run(['due', path.join(root, 'deck.md'), '--json'])).out)[0]).not.toHaveProperty('cardFile')
+  })
+
+  it('links names a card by its id — in a card file or in a page — as kind `card`, with its title and the path of its file; mentions gives a card file kind `card`', async () => {
+    const root = await vault('cards', {
+      'home.md': '---\nid: YAZ-1\n---\nSee [[YAZ-3]], [[yaz-2|the card]], [[YAZ-4]] and [[YAZ-99]].\n',
+      'Decks/deck-yaz-4.md': `---\nid: YAZ-4\ntitle: Deck\n---\n${card('In a page', 'YAZ-2, title "In a page"')}`,
+      'Decks/own-yaz-3.md': `---\nkind: card\n---\n${card('Own card\nback [[YAZ-4]]', 'YAZ-3, title "Own card"')}`,
+    })
+    const home = path.join(root, 'home.md')
+    expect(await run(['links', home])).toEqual({
+      code: 0,
+      err: '',
+      out: 'YAZ-3  Own card  Decks/own-yaz-3.md\nYAZ-2  In a page  Decks/deck-yaz-4.md\nYAZ-4  Deck  Decks/deck-yaz-4.md\nYAZ-99  (missing)\n',
+    })
+    expect(JSON.parse((await run(['links', home, '--json'])).out).links).toEqual([
+      { id: 'YAZ-3', kind: 'card', title: 'Own card', path: 'Decks/own-yaz-3.md' },
+      { id: 'YAZ-2', kind: 'card', title: 'In a page', path: 'Decks/deck-yaz-4.md' },
+      { id: 'YAZ-4', kind: 'page', title: 'Deck', path: 'Decks/deck-yaz-4.md' },
+      { id: 'YAZ-99', kind: 'missing' },
+    ])
+    // The card file links to the deck: a mention of kind `card`. The home page links to the card file's card: a mention of it.
+    expect(JSON.parse((await run(['mentions', path.join(root, 'Decks/deck-yaz-4.md'), '--json'])).out)).toEqual([
+      { title: 'Own card', path: 'Decks/own-yaz-3.md', kind: 'card' },
+      { title: 'home', path: 'home.md', kind: 'page' },
+    ])
+    expect((await run(['mentions', path.join(root, 'Decks/deck-yaz-4.md')])).out).toBe('Own card  Decks/own-yaz-3.md\nhome  home.md\n')
+    expect(JSON.parse((await run(['mentions', path.join(root, 'Decks/own-yaz-3.md'), '--json'])).out)).toEqual([{ title: 'home', path: 'home.md', kind: 'page' }])
+  })
+
+  it('the contract names `card new`, the card file, `cardFile` and the kind `card`', () => {
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const said of ['yaseendocs card new <folder> --title <text> [--body <text | ->] [--prop <name>=<value> ...] [--hide-title] [--json]', '`kind: card`', 'This is a card file. Use `card new`.', '`cardFile: true`', '(`page`, `card` or `folder`;', '`kind` is `page`, `card`, `folder` or `missing`']) expect(help).toContain(said)
   })
 })
 
@@ -790,25 +967,25 @@ describe('vaults (YAZ-2556 D2)', () => {
 
   /**
    * A state file as the APP writes it — through the real store: two recent vaults (`/v/wiki` used
-   * last), a window on `/v/notes` and one on `/v/old` (open, not among the recents), `/v/notes`
-   * renamed "Notes ✎" with number 1, and `/v/archive` with number 7 and nothing else.
+   * last), a window on `/v/pages` and one on `/v/old` (open, not among the recents), `/v/pages`
+   * renamed "Pages ✎" with number 1, and `/v/archive` with number 7 and nothing else.
    */
   async function seedState(file = stateFile): Promise<void> {
     const store = createStore(file)
     const win = (id: string, root: string | null) => ({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, bounds: { x: 0, y: 0, width: 800, height: 600 } })
-    store.pushRecent('/v/notes', 1000)
+    store.pushRecent('/v/pages', 1000)
     store.pushRecent('/v/wiki', 2000)
-    store.upsertWindow(win('w1', '/v/notes'))
+    store.upsertWindow(win('w1', '/v/pages'))
     store.upsertWindow(win('w2', '/v/old'))
     store.upsertWindow(win('w3', null))
-    store.setFolder('/v/notes', { name: 'Notes ✎', key: 1 })
+    store.setFolder('/v/pages', { name: 'Pages ✎', key: 1 })
     store.setFolder('/v/archive', { key: 7 })
     await store.flush()
   }
 
   const ROWS = [
     { path: '/v/wiki', name: 'wiki', key: null, open: false, lastUsed: 2000 },
-    { path: '/v/notes', name: 'Notes ✎', key: 1, open: true, lastUsed: 1000 },
+    { path: '/v/pages', name: 'Pages ✎', key: 1, open: true, lastUsed: 1000 },
     { path: '/v/old', name: 'old', key: null, open: true, lastUsed: null },
     { path: '/v/archive', name: 'archive', key: 7, open: false, lastUsed: null },
   ]
@@ -823,7 +1000,7 @@ describe('vaults (YAZ-2556 D2)', () => {
 
   it('S10: without `--json`, one line per vault: its name and folder, then its number and `(open)`', async () => {
     await seedState()
-    expect(await run(['vaults'])).toEqual({ code: 0, out: 'wiki  /v/wiki\nNotes ✎  /v/notes  ⌘1  (open)\nold  /v/old  (open)\narchive  /v/archive  ⌘7\n', err: '' })
+    expect(await run(['vaults'])).toEqual({ code: 0, out: 'wiki  /v/wiki\nPages ✎  /v/pages  ⌘1  (open)\nold  /v/old  (open)\narchive  /v/archive  ⌘7\n', err: '' })
   })
 
   it('S11: no state file (the app never ran) is no vaults, exit 0 — and none is made', async () => {
@@ -896,7 +1073,7 @@ describe('YAZ-4615: signed comments, resolve, open comments under a folder', () 
     expect(await run(['resolve', p])).toMatchObject({ code: 2 })
   })
 
-  it('item 6: comments --open drops a resolved comment and the replies of a resolved parent; a folder lists each note with comments', async () => {
+  it('item 6: comments --open drops a resolved comment and the replies of a resolved parent; a folder lists each page with comments', async () => {
     const root = await vault('v', { 'a/one.md': SIGNED, 'a/two.md': '---\ntitle: Two\n---\nNo comments\n' })
     await run(['resolve', path.join(root, 'a/one.md'), '#1'])
     const open = await run(['comments', path.join(root, 'a/one.md'), '--open', '--json'])
@@ -910,7 +1087,7 @@ describe('YAZ-4615: signed comments, resolve, open comments under a folder', () 
 describe('daily and new (YAZ-4269)', () => {
   const TUE = new Date(2026, 10, 3)
   // The comment hint (YAZ-4615 D10) is off here, so these keep to the bytes they always pinned; its own test turns it on.
-  const DAILY = { dailyNotes: true, dailyNoteFolder: 'daily', dailyNoteFormat: 'MM_DD- ddd', dailyNoteDayFolder: false, commentsHint: false }
+  const DAILY = { dailyPages: true, dailyPageFolder: 'daily', dailyPageFormat: 'MM_DD- ddd', dailyPageDayFolder: false, commentsHint: false }
   beforeEach(() => {
     // The app's profile in the temp dir: its state file, this Mac's ID and the locks (S13).
     vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', dir)
@@ -919,30 +1096,30 @@ describe('daily and new (YAZ-4269)', () => {
     vi.unstubAllEnvs()
   })
 
-  /** The app's state file as the app writes it, with the Daily notes settings `daily`, and a settings folder when given. */
+  /** The app's state file as the app writes it, with the Daily pages settings `daily`, and a settings folder when given. */
   async function settings(daily: Partial<SettingsState> = DAILY, folder?: string): Promise<void> {
     const store = createStore(path.join(dir, 'yaseendocs.json'))
     store.setSettings({ ...store.get().settings, ...daily }, 1000)
     if (folder !== undefined) store.setSettingsFolder(folder, 1000)
     await store.flush()
   }
-  const today = () => dailyNoteName(DAILY.dailyNoteFormat, new Date())
-  const notes = async (folder: string) => (await readdir(folder)).filter((name) => name.endsWith('.md') && !name.startsWith('.')).sort()
+  const today = () => dailyPageName(DAILY.dailyPageFormat, new Date())
+  const pages = async (folder: string) => (await readdir(folder)).filter((name) => name.endsWith('.md') && !name.startsWith('.')).sort()
 
-  it('daily makes today\'s note by the app\'s settings and its template, then finds it: `made`, then `found`, the same path', async () => {
+  it('daily makes today\'s page by the app\'s settings and its template, then finds it: `made`, then `found`, the same path', async () => {
     await settings()
     const root = await vault('v', { 'daily/.template.md': 'PLAN\n' })
 
     const made = await run(['daily', root])
     const again = await run(['daily', root])
 
-    const [name] = await notes(path.join(root, 'daily'))
+    const [name] = await pages(path.join(root, 'daily'))
     expect(made).toEqual({ code: 0, out: `made ${path.join(root, 'daily', name)}\n`, err: '' })
     expect(again).toEqual({ code: 0, out: `found ${path.join(root, 'daily', name)}\n`, err: '' })
     expect(await readFile(path.join(root, 'daily', name), 'utf8')).toMatch(new RegExp(`^---\\ntitle: ${today()}\\nid: YAZ-\\d+\\n---\\nPLAN\\n$`))
   })
 
-  it('five runs at one moment make ONE note (D2)', async () => {
+  it('five runs at one moment make ONE page (D2)', async () => {
     await settings()
     const root = await vault('v', { 'daily/.keep.md': '' })
 
@@ -951,7 +1128,7 @@ describe('daily and new (YAZ-4269)', () => {
     expect(all.map((r) => r.code)).toEqual([0, 0, 0, 0, 0])
     const answers = all.map((r) => JSON.parse(r.out) as { path: string; created: boolean })
     expect(answers.filter((a) => a.created)).toHaveLength(1)
-    expect(await notes(path.join(root, 'daily'))).toEqual([path.basename(answers[0].path)])
+    expect(await pages(path.join(root, 'daily'))).toEqual([path.basename(answers[0].path)])
     expect(answers[0]).toMatchObject({ title: '11_03- Tue', others: [] })
   })
 
@@ -966,16 +1143,16 @@ describe('daily and new (YAZ-4269)', () => {
     for (const bad of ['2026-02-30', '0099-01-01', '11/03', 'next week']) expect((await run(['daily', root, '--date', bad])).code).toBe(2)
   })
 
-  it('--find only finds: no note is exit 1 with the title it looked for, and nothing is made (D6)', async () => {
+  it('--find only finds: no page is exit 1 with the title it looked for, and nothing is made (D6)', async () => {
     await settings()
     const root = await vault('v', { 'daily/11-02-mon-yaz-9.md': '---\ntitle: 11_02- Mon\nid: YAZ-9\n---\n' })
 
     expect(await run(['daily', root, '--date', '2026-11-02', '--find'])).toEqual({ code: 0, out: `found ${path.join(root, 'daily', '11-02-mon-yaz-9.md')}\n`, err: '' })
-    expect(await run(['daily', root, '--date', '2026-11-03', '--find'])).toEqual({ code: 1, out: '', err: `no daily note "11_03- Tue" in ${root}\n` })
-    expect(await notes(path.join(root, 'daily'))).toEqual(['11-02-mon-yaz-9.md'])
+    expect(await run(['daily', root, '--date', '2026-11-03', '--find'])).toEqual({ code: 1, out: '', err: `no daily page "11_03- Tue" in ${root}\n` })
+    expect(await pages(path.join(root, 'daily'))).toEqual(['11-02-mon-yaz-9.md'])
   })
 
-  it('two notes of the day: the first is the answer, each other is a warning, and `others` in --json (D8)', async () => {
+  it('two pages of the day: the first is the answer, each other is a warning, and `others` in --json (D8)', async () => {
     await settings()
     const a = '---\ntitle: 11_03- Tue\nid: YAZ-1\n---\n'
     const root = await vault('v', { 'daily/a-yaz-1.md': a, 'daily/11-03-tue/b-yaz-2.md': a.replace('YAZ-1', 'YAZ-2') })
@@ -987,10 +1164,18 @@ describe('daily and new (YAZ-4269)', () => {
     expect(JSON.parse(json.out)).toEqual({ path: path.join(root, 'daily', 'a-yaz-1.md'), title: '11_03- Tue', id: 'YAZ-1', created: false, others: [path.join(root, 'daily', '11-03-tue', 'b-yaz-2.md')] })
   })
 
-  it('refused with the setting to change: Daily notes off, or no daily notes folder', async () => {
+  it("YAZ-5491: the vault's daily-pages.json wins over the app's settings", async () => {
+    await settings({ ...DAILY, dailyPages: false })
+    const root = await vault('v', { 'journal/.template.md': 'PLAN\n', '.yaseendocs/daily-pages.json': JSON.stringify({ version: 1, enabled: true, folder: 'journal', format: 'MM_DD- ddd', dayFolder: false }) })
+    const made = await run(['daily', root, '--date', '2026-11-03'])
+    expect(made.code).toBe(0)
+    expect(made.out).toMatch(new RegExp(`^made ${path.join(root, 'journal')}`.replaceAll('/', '\\/')))
+  })
+
+  it('refused with the setting to change: Daily pages off, or no daily pages folder', async () => {
     const root = await vault('v', {})
-    await settings({ ...DAILY, dailyNotes: false })
-    expect(await run(['daily', root])).toMatchObject({ code: 1, err: 'Daily notes are off. Turn them on in Settings › Files & Links › Daily notes\n' })
+    await settings({ ...DAILY, dailyPages: false })
+    expect(await run(['daily', root])).toMatchObject({ code: 1, err: 'Daily pages are off in this vault. Turn them on in Settings › Files & Links › Daily pages\n' })
     await settings()
     expect((await run(['daily', root])).err).toMatch(/has no folder "daily"/)
     expect((await run(['daily'])).code).toBe(2)
@@ -1004,7 +1189,7 @@ describe('daily and new (YAZ-4269)', () => {
     const sync = path.join(dir, 'sync')
     await mkdir(sync)
     await settings(DAILY, sync)
-    await writeFile(path.join(sync, 'settings-aaaaaaaaaaaa.json'), settingsFileText('Other Mac', 5000, { ...createStore(path.join(dir, 'yaseendocs.json')).get().settings, dailyNoteFolder: 'journal' }))
+    await writeFile(path.join(sync, 'settings-aaaaaaaaaaaa.json'), settingsFileText('Other Mac', 5000, { ...createStore(path.join(dir, 'yaseendocs.json')).get().settings, dailyPageFolder: 'journal' }))
     const root = await vault('v', { 'journal/.keep.md': '' })
 
     const made = await run(['daily', root, '--date', '2026-11-03'])
@@ -1012,7 +1197,7 @@ describe('daily and new (YAZ-4269)', () => {
     expect(made.out).toMatch(new RegExp(`^made ${root}/journal/11-03-tue-yaz-\\d+\\.md\\n$`))
   })
 
-  it('--open hands the note\'s yaseendocs:// link to the system after the note is ready (D10)', async () => {
+  it('--open hands the page\'s yaseendocs:// link to the system after the page is ready (D10)', async () => {
     await settings()
     const root = await vault('v', { 'daily/my plan #1-yaz-4.md': '---\ntitle: 11_03- Tue\nid: YAZ-4\n---\n' })
     const opened: string[] = []
@@ -1025,7 +1210,7 @@ describe('daily and new (YAZ-4269)', () => {
     expect(out).toBe(`found ${path.join(root, 'daily', 'my plan #1-yaz-4.md')}\n`)
   })
 
-  it('new makes a note as New note does: the template, the title, an id; --body - takes the template body\'s place, its properties go over the template\'s (D4)', async () => {
+  it('new makes a page as New page does: the template, the title, an id; --body - takes the template body\'s place, its properties go over the template\'s (D4)', async () => {
     await settings()
     const root = await vault('v', { 'projects/.template.md': '---\nstatus: todo\nowner: me\n---\n## Template body\n' })
 
@@ -1036,17 +1221,23 @@ describe('daily and new (YAZ-4269)', () => {
     expect(await readFile(answer.path, 'utf8')).toBe(`---\nstatus: doing\nowner: me\ntitle: Gym plan\nid: ${answer.id}\n---\n## Plan\n- Gym\n`)
   })
 
-  it('YAZ-4615 D10: with the comment hint on (the default), a new note carries it as the first line of its frontmatter — in both kinds of vault', async () => {
+  it('YAZ-4615 D10: with the comment hint on (the default), a new page carries it as the first line of its frontmatter — in both kinds of vault', async () => {
     const ids = await vault('v', { 'projects/.keep.md': '' })
     await run(['new', path.join(ids, 'projects'), '--title', 'Gym plan'])
-    const made = (await notes(path.join(ids, 'projects'))).find((n) => n.startsWith('gym-plan'))
+    const made = (await pages(path.join(ids, 'projects'))).find((n) => n.startsWith('gym-plan'))
     expect(await readFile(path.join(ids, 'projects', made ?? ''), 'utf8')).toMatch(/^---\n# comments: - \{by: <name>, body: <text>\}\n(?:title|id): /)
     const plain = await vault('plain', { 'projects/.keep.md': '' }, false)
     await run(['new', path.join(plain, 'projects'), '--title', 'Gym plan', '--body', 'Hello'])
     expect(await readFile(path.join(plain, 'projects', 'Gym plan.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\n---\nHello')
   })
 
-  it('new again with the same title finds the note and makes nothing; --body is then not written, and says so (D7)', async () => {
+  it("YAZ-5490: the folder's vault's new-places.json turns the comment hint off over the app's setting", async () => {
+    const plain = await vault('plain', { 'projects/.keep.md': '', '.yaseendocs/new-places.json': JSON.stringify({ version: 1, places: [null, null, null], commentsHint: false }) }, false)
+    await run(['new', path.join(plain, 'projects'), '--title', 'Gym plan', '--body', 'Hello'])
+    expect(await readFile(path.join(plain, 'projects', 'Gym plan.md'), 'utf8')).toBe('Hello')
+  })
+
+  it('new again with the same title finds the page and makes nothing; --body is then not written, and says so (D7)', async () => {
     const root = await vault('v', { 'projects/.keep.md': '' })
 
     const first = await run(['new', path.join(root, 'projects'), '--title', 'Gym plan'])
@@ -1056,7 +1247,7 @@ describe('daily and new (YAZ-4269)', () => {
     const made = first.out.replace(/^made /, '').trim()
     expect(again).toEqual({ code: 0, out: `found ${made}\n`, err: `warning: --body was not written: ${made} was already there\n` })
     expect(both.map((r) => r.out.split(' ')[0]).sort()).toEqual(['found', 'made'])
-    expect(await notes(path.join(root, 'projects'))).toHaveLength(2)
+    expect(await pages(path.join(root, 'projects'))).toHaveLength(2)
   })
 
   it('new in a vault without IDs: the file is the title, and a properties block that does not parse is refused with nothing made', async () => {
@@ -1066,9 +1257,210 @@ describe('daily and new (YAZ-4269)', () => {
     expect(await run(['new', path.join(root, 'projects'), '--title', 'Gym plan', '--json'])).toMatchObject({ code: 0, out: expect.stringContaining('"id": null') })
     expect(await readFile(path.join(root, 'projects', 'Gym plan.md'), 'utf8')).toBe('---\nstatus: todo\n---\nBody\n')
     expect(await run(['new', path.join(root, 'projects'), '--title', 'Bad', '--body', '---\n: [\n---\n'])).toEqual({ code: 1, out: '', err: 'the properties block of --body does not parse\n' })
-    expect(await notes(path.join(root, 'projects'))).toEqual(['Gym plan.md'])
+    expect(await pages(path.join(root, 'projects'))).toEqual(['Gym plan.md'])
     expect((await run(['new', path.join(root, 'projects')])).code).toBe(2)
     expect((await run(['new', path.join(root, 'projects', 'Gym plan.md'), '--title', 'X'])).err).toMatch(/is not a folder/)
     expect((await run(['new', path.join(root, 'gone'), '--title', 'X'])).err).toBe(`no folder ${path.join(root, 'gone')}\n`)
+  })
+})
+
+describe('card guide (YAZ-5110)', () => {
+  /** The app's profile in the temp dir (S13): its copy of the card skill is `<profile>/card-skill`. */
+  let profile: string
+  let cwd: string
+  beforeEach(async () => {
+    profile = path.join(dir, 'profile')
+    await mkdir(profile)
+    vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', profile)
+    cwd = process.cwd()
+  })
+  afterEach(() => {
+    process.chdir(cwd)
+    vi.unstubAllEnvs()
+  })
+
+  /** The app's copy, as the app makes it at its start: the start page and the folder's two vault files. */
+  async function appCopy(start = '# Start here\n\nThe app copy.\n'): Promise<string> {
+    const copy = path.join(profile, 'card-skill')
+    await mkdir(path.join(copy, VAULT_CONFIG_DIR), { recursive: true })
+    await writeFile(path.join(copy, 'Start here.md'), start)
+    await writeFile(path.join(copy, VAULT_CONFIG_DIR, IDS_FILE), '{"enabled":false}')
+    return copy
+  }
+
+  it("prints the app copy's start page outside a vault", async () => {
+    await appCopy()
+    process.chdir(dir)
+    expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nThe app copy.\n', err: '' })
+  })
+
+  it('--path prints the folder in double quotes (the path has a space on macOS)', async () => {
+    const copy = await appCopy()
+    process.chdir(dir)
+    expect(await run(['card', 'guide', '--path'])).toEqual({ code: 0, out: `"${copy}"\n`, err: '' })
+  })
+
+  it("inside a vault with a `Card skill` folder, the user's duplicate wins, from any folder of the vault", async () => {
+    await appCopy()
+    const root = await vault('v', { 'Card skill/Start here.md': '# Start here\n\nMy own version.\n', 'pages/deep/a.md': '' })
+    process.chdir(path.join(root, 'pages', 'deep'))
+    expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nMy own version.\n', err: '' })
+    expect(await run(['card', 'guide', '--path'])).toEqual({ code: 0, out: `"${path.join(root, 'Card skill')}"\n`, err: '' })
+  })
+
+  it('YAZ-5109 done when: after "Duplicate into <vault>…" and an edit of a page, `card guide` prints the edited text', async () => {
+    const copy = await appCopy()
+    const root = await vault('v', { 'a.md': '' })
+    const { made } = (await duplicateCardSkill(copy, root)) as { made: string }
+    await writeFile(path.join(made, 'Start here.md'), '# Start here\n\nMy edit.\n')
+    process.chdir(root)
+    expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nMy edit.\n', err: '' })
+    expect(await readFile(path.join(copy, 'Start here.md'), 'utf8')).toBe('# Start here\n\nThe app copy.\n')
+  })
+
+  it("inside a vault without a `Card skill` folder, the app's copy", async () => {
+    const copy = await appCopy()
+    const root = await vault('v', { 'a.md': '' })
+    process.chdir(root)
+    expect((await run(['card', 'guide', '--path'])).out).toBe(`"${copy}"\n`)
+  })
+
+  it('no copy yet (the app never started): one line, exit 1', async () => {
+    process.chdir(dir)
+    const copy = path.join(profile, 'card-skill')
+    for (const argv of [['card', 'guide'], ['card', 'guide', '--path']]) {
+      expect(await run(argv)).toEqual({ code: 1, out: '', err: `The card skill is not there yet: start Yaseen Docs once to make ${copy}\n` })
+    }
+  })
+
+  it('a folder with no start page is refused, exit 1', async () => {
+    const copy = await appCopy()
+    await rm(path.join(copy, 'Start here.md'))
+    process.chdir(dir)
+    expect(await run(['card', 'guide'])).toEqual({ code: 1, out: '', err: `no Start here.md in ${copy}\n` })
+  })
+
+  it('takes no other flag and no argument', async () => {
+    await appCopy()
+    process.chdir(dir)
+    expect(await run(['card', 'guide', '--json'])).toEqual({ code: 2, out: '', err: `card guide does not take --json\n${USAGE}\n` })
+    expect(await run(['card', 'guide', 'x'])).toEqual({ code: 2, out: '', err: `card guide takes no argument\n${USAGE}\n` })
+  })
+
+  it('the help lists the verb and tells an agent to run it first', () => {
+    expect(USAGE).toContain('yaseendocs card guide [--path]')
+    expect(USAGE.indexOf('yaseendocs card guide')).toBe(USAGE.indexOf('\n', USAGE.indexOf('yaseendocs card next')) + 3)
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const said of ['Run `yaseendocs card guide` before you add or change a card.', '`--path`', 'Card skill']) expect(help).toContain(said)
+    expect(help).not.toMatch(/note card guide/) // rename-note-to-page: keep (the old name stays out of the help)
+  })
+})
+
+describe('--hide-title (YAZ-5135)', () => {
+  const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+
+  it('card add --hide-title writes `notitle` on the new card line; without it, no `notitle`', async () => {
+    const root = await vault('cards', { 'deck.md': '---\nid: YAZ-5\n---\n# Deck\n' })
+    const deck = path.join(root, 'deck.md')
+    expect((await run(['card', 'add', deck, '--title', 'Capital of France', '--body', 'The capital is {{Paris}}', '--hide-title'])).code).toBe(0)
+    expect(await run(['card', 'add', deck, '--title', 'Shown', '--body', '{{Rome}}'])).toMatchObject({ code: 0 })
+    // No --title: the card has none (YAZ-5308: no line of --body is ever its title), and the flag still applies.
+    expect(JSON.parse((await run(['card', 'add', deck, '--body', 'Body line\n{{x}}', '--hide-title', '--json'])).out)).toEqual({ id: 'YAZ-8', page: deck, title: '' })
+    const content = await readFile(deck, 'utf8')
+    // The title is on the card line, right after the ID; `notitle` comes after it (YAZ-5308).
+    expect(content).toContain(card('The capital is {{Paris}}', 'YAZ-6, title "Capital of France", notitle'))
+    expect(content).toContain(card('{{Rome}}', 'YAZ-7, title "Shown"'))
+    expect(content).toContain(card('Body line\n{{x}}', 'YAZ-8, notitle'))
+  })
+
+  it('card new --hide-title writes `notitle` on the card file\'s line; without it, no `notitle`', async () => {
+    const root = await vault('cards', { 'geo/a.md': '' })
+    const geo = path.join(root, 'geo')
+    expect((await run(['card', 'new', geo, '--title', 'Capital of France', '--body', '{{Paris}}', '--hide-title'])).code).toBe(0)
+    // Front matter holds only `kind: card`; the title is on the card line, `notitle` after it (YAZ-5308).
+    expect(await readFile(path.join(geo, 'capital-of-france-yaz-1.md'), 'utf8')).toBe(`---\nkind: card\n---\n${card('{{Paris}}', 'YAZ-1, title "Capital of France", notitle')}`)
+    expect((await run(['card', 'new', geo, '--title', 'Shown'])).code).toBe(0)
+    expect(await readFile(path.join(geo, 'shown-yaz-2.md'), 'utf8')).toBe(`---\nkind: card\n---\n${card('', 'YAZ-2, title "Shown"')}`)
+  })
+
+  it('the help lists the flag on both commands and says not to hide the title in {{ }}', () => {
+    expect(USAGE).toMatch(/yaseendocs card add <page\.md> [^\n]*\[--hide-title\]/)
+    expect(USAGE).toMatch(/yaseendocs card new <folder> [^\n]*\[--hide-title\]/)
+    expect(HELP.replace(/\s+/g, ' ')).toContain('Do not put the title in `{{ }}`. Use `--hide-title`.')
+  })
+})
+
+describe('no card check (YAZ-5116: removed)', () => {
+  const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+
+  it('`card check` answers as any unknown card command, and `--strict` as any unknown flag; the help names neither', async () => {
+    const root = await vault('cards', { 'deck.md': `---\nid: YAZ-1\n---\n${card('Title\nIt is {{}}', 'YAZ-2')}`, 'geo/a.md': '' })
+    const deck = path.join(root, 'deck.md')
+    const before = await readFile(deck, 'utf8')
+    expect(await run(['card', 'check', deck])).toEqual({ code: 2, out: '', err: `unknown card command: check\n${USAGE}\n` })
+    expect(await run(['card', 'check', deck, '--json'])).toEqual({ code: 2, out: '', err: `unknown card command: check\n${USAGE}\n` })
+    expect(await run(['card', 'add', deck, '--body', 'It is {{}}', '--strict'])).toEqual({ code: 2, out: '', err: `unknown flag: --strict\n${USAGE}\n` })
+    expect(await run(['card', 'new', path.join(root, 'geo'), '--title', 'Title', '--strict'])).toEqual({ code: 2, out: '', err: `unknown flag: --strict\n${USAGE}\n` })
+    expect(await readFile(deck, 'utf8')).toBe(before)
+    expect(await readdir(path.join(root, 'geo'))).toEqual(['a.md'])
+    expect((await run(['card'])).err).toBe(`card needs add, new, next or guide\n${USAGE}\n`)
+    for (const text of [USAGE, HELP]) {
+      expect(text).not.toContain('card check')
+      expect(text).not.toContain('--strict')
+    }
+  })
+
+  it('card add and card new write the card as it is: no warning, whatever the card says', async () => {
+    const root = await vault('cards', { 'deck.md': '---\nid: YAZ-5\n---\n# Deck\n', 'geo/a.md': '' })
+    const deck = path.join(root, 'deck.md')
+    expect(await run(['card', 'add', deck, '--title', 'Title', '--body', 'It is {{Rome'])).toEqual({ code: 0, out: `added YAZ-6 to ${deck}\n`, err: '' })
+    expect(await readFile(deck, 'utf8')).toContain(card('It is {{Rome', 'YAZ-6, title "Title"'))
+    expect(await run(['card', 'new', path.join(root, 'geo'), '--title', 'Plain fact', '--body', 'Paris is in France.'])).toMatchObject({ code: 0, err: '' })
+  })
+
+  it('YAZ-5146: due reads a page with Windows line ends as its \\n twin, and a \\r\\n card file\'s title off its card line (YAZ-5308)', async () => {
+    const page = `# CRLF\n\n${card('What is it?\n---\nParis', 'YAZ-9, title "Capital of France"')}\n${card('It is {{x}}.', 'YAZ-10, title "Title"')}`
+    const file = `---\nkind: card\n---\n${card('It is {{Rome}}.', 'YAZ-11, title "Capital of Italy"')}`
+    const root = await vault('cards', { 'crlf.md': page.replace(/\n/g, '\r\n'), 'lf.md': page, 'capital-of-italy-yaz-11.md': file.replace(/\n/g, '\r\n') })
+    const rows = async (name: string) => JSON.parse((await run(['due', path.join(root, name), '--json'])).out).map((r: { id: string; title: string }) => [r.id, r.title])
+    expect(await rows('crlf.md')).toEqual([['YAZ-9', 'Capital of France'], ['YAZ-10', 'Title']])
+    expect(await rows('crlf.md')).toEqual(await rows('lf.md'))
+    expect(await rows('capital-of-italy-yaz-11.md')).toEqual([['YAZ-11', 'Capital of Italy']])
+  })
+})
+
+/** YAZ-5466: comments on a card file, from the CLI: the file's front matter, the card block and line byte for byte. */
+describe('comments on a card file (YAZ-5466)', () => {
+  it('card new --prop, then comment, reply, edit and delete: the card part stays byte for byte; `card add` still refuses it', async () => {
+    const root = await vault('cards', { 'Cards/.keep': '' })
+    const made = JSON.parse((await run(['card', 'new', path.join(root, 'Cards'), '--title', 'Rivers, of Seville', '--prop', 'tags=rivers', '--prop', 'source=Atlas, 2nd ed.', '--body', 'Q\n---\nA', '--json'])).out) as { path: string }
+    const before = await readFile(made.path, 'utf8')
+    const card = before.slice(before.indexOf('```card'))
+    expect((await run(['comment', made.path, '--body', 'Is this right?'])).out).toBe(`#1 added to ${made.path}\n`)
+    expect((await run(['comment', made.path, '--reply-to', '1', '--body', 'Yes, it is.'])).code).toBe(0)
+    expect((await run(['edit', made.path, '#1', '--body', 'Is this right, really?'])).code).toBe(0)
+    let after = await readFile(made.path, 'utf8')
+    expect(after.startsWith('---\nkind: card\ncomments:\n')).toBe(true)
+    expect(after.slice(after.indexOf('```card'))).toBe(card)
+    expect(readComments(after).map((c) => c.body)).toEqual(['Is this right, really?', 'Yes, it is.'])
+    // Never a card property, in the index.
+    const record = await scanFile(root, made.path)
+    expect(record.kind).toBe('card')
+    expect(record.properties).not.toHaveProperty('comments')
+    expect(record.cards?.[0].properties).toEqual({ tags: 'rivers', source: 'Atlas, 2nd ed.' })
+    expect((await run(['delete', made.path, '#1'])).code).toBe(0)
+    after = await readFile(made.path, 'utf8')
+    expect(readComments(after)).toEqual([])
+    expect(after.slice(after.indexOf('```card'))).toBe(card)
+    expect((await run(['card', 'add', made.path, '--body', 'x'])).code).not.toBe(0)
+  })
+
+  it('a Windows (CRLF) card file keeps its line ends and its card part through a CLI comment', async () => {
+    const root = await vault('crlf', { 'river.md': '---\r\nkind: card\r\n---\r\n```card\r\nQ\r\n---\r\nA\r\n```\r\n<!-- card: YAZ-3, title "River" -->\r\n' })
+    const p = path.join(root, 'river.md')
+    expect((await run(['comment', p, '--body', 'From Windows'])).code).toBe(0)
+    const after = await readFile(p, 'utf8')
+    expect(after.replace(/\r\n/g, '')).not.toContain('\n')
+    expect(after.endsWith('```card\r\nQ\r\n---\r\nA\r\n```\r\n<!-- card: YAZ-3, title "River" -->\r\n')).toBe(true)
   })
 })

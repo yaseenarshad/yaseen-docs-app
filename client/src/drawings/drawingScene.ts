@@ -1,5 +1,5 @@
 /**
- * Reading a drawing back off disk: the note embed's sidecar (YAZ-878) and, since YAZ-3028, the
+ * Reading a drawing back off disk: the page embed's sidecar (YAZ-878) and, since YAZ-3028, the
  * scene text a drawing TAB loads through `drawing:load` (`parseSceneText`, `openViewport`, ported
  * from Draw's `drawingScene.ts`).
  *
@@ -13,46 +13,17 @@
  * popup's ONE error line (never a crash). No repair, no
  * partial render: a half-parsed scene would be a lie about what the file holds.
  */
-import type { DrawingFileEntry, FoldArrowMode } from '@shared/types'
-import { BOARD_META_KEY, boardFoldArrowsOf, boardHoverOutlineOf, hoverLinksOff, picturesFolderOf, picturesOut, referencedFileIds } from '@shared/drawingAssets'
+import type { DrawingFileEntry } from '@shared/types'
+import { referencedFileIds } from '@shared/drawingAssets'
 import { isDrawing } from '@shared/fileKind'
 import { isRecord } from '@shared/guards'
-import { isDrawingReadOnly } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
-import { visibleElements } from '../lib/scenePreview'
+import { restoreForPicture } from './drawingPicture'
 import { loadExcalidraw, type ExcalidrawModule } from './engine'
+import { parseSceneText, readOnlyOf, type DrawingScene } from './sceneText'
 
-/** The scene shape a preview needs; deliberately loose — the file is user data, not our type. */
-export interface DrawingScene {
-  /** Excalidraw elements exactly as the file holds them; validated only as "an array". */
-  readonly elements: readonly unknown[]
-  /** Optional in the file (YAZ-877 writes `{}`); missing = Excalidraw's own defaults. */
-  readonly appState: Record<string, unknown>
-  /** The binary-asset map; `null` when the file has none, which is what exportToSvg wants. */
-  readonly files: Record<string, unknown> | null
-  /** The file's read-only switch (YAZ-3076 D1, `isDrawingReadOnly`), read in the same parse; absent = editable. */
-  readonly readOnly?: boolean
-  /** `"pictures": "assets"` in the block (YAZ-3943 D5), read in the same parse; absent = the pictures are inside. */
-  readonly picturesOut?: boolean
-  /** The board's own pictures folder (`picturesFolder`, YAZ-3943 demo round 3), vault-relative, when the block names a valid one. */
-  readonly picturesFolder?: string
-  /** `"hoverLinks": false` in the block (YAZ-3943 demo 2): the board's link preview on hover is off; absent = on. */
-  readonly hoverLinksOff?: boolean
-  /** `"foldArrows"` in the block (YAZ-4277 D5): the board's own fold arrow mode; absent = the app setting. */
-  readonly foldArrows?: FoldArrowMode
-  /** `"hoverOutline"` in the block (YAZ-4469 demo): the board's own hover outline; absent = the app setting. */
-  readonly hoverOutline?: boolean
-}
-
-/** The scene's switches, each present only when it is not the default: a plain scene keeps the shape it always had. */
-const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true; picturesFolder?: string; hoverLinksOff?: true; foldArrows?: FoldArrowMode; hoverOutline?: boolean } => ({
-  ...(isDrawingReadOnly(scene) ? { readOnly: true } : {}),
-  ...(picturesOut(scene[BOARD_META_KEY]) ? { picturesOut: true } : {}),
-  ...(picturesFolderOf(scene[BOARD_META_KEY]) === null ? {} : { picturesFolder: picturesFolderOf(scene[BOARD_META_KEY]) as string }),
-  ...(hoverLinksOff(scene[BOARD_META_KEY]) ? { hoverLinksOff: true } : {}),
-  ...(boardFoldArrowsOf(scene[BOARD_META_KEY]) === null ? {} : { foldArrows: boardFoldArrowsOf(scene[BOARD_META_KEY]) as FoldArrowMode }),
-  ...(boardHoverOutlineOf(scene[BOARD_META_KEY]) === null ? {} : { hoverOutline: boardHoverOutlineOf(scene[BOARD_META_KEY]) as boolean }),
-})
+// YAZ-5440: the scene text's parse is the phone's too, so it lives in `sceneText.ts` (no bridge); its name stays here.
+export { parseSceneText, type DrawingScene }
 
 /** base64 → the UTF-8 text it carries (scene JSON is text, and text can hold non-ASCII). */
 function decodeBase64(data: string): string {
@@ -145,18 +116,6 @@ async function withStoredFiles(root: string, path: string, scene: DrawingScene):
 }
 
 /**
- * A drawing TAB's scene text (`drawing:load`'s `json`, Draw's 🔒 YAZ-1810) → the canvas's opening
- * scene; throws on anything that is not one, which the tab shows as its ONE readable error pane.
- */
-export function parseSceneText(text: string): DrawingScene {
-  const parsed: unknown = JSON.parse(text)
-  if (!isRecord(parsed)) throw new Error('not an Excalidraw scene')
-  if (!Array.isArray(parsed.elements)) throw new Error('not an Excalidraw scene: no elements')
-  // The same `isRecord` the whole scene got: a file whose `appState` is an ARRAY carries no prefs, not a list.
-  return { elements: parsed.elements, appState: isRecord(parsed.appState) ? parsed.appState : {}, files: isRecord(parsed.files) ? parsed.files : {}, ...readOnlyOf(parsed) }
-}
-
-/**
  * The view a drawing OPENS on (Draw's 🔒 YAZ-1855 D1, fit-on-open): the engine's
  * `initialState.viewport`, fitting every live element and never zooming past 100% (`scale-down`;
  * the engine floors it at 10%). An empty drawing has nothing to fit, so `undefined` leaves the
@@ -182,7 +141,7 @@ export interface DrawingForPicture {
 export async function readDrawingForPicture(root: string, path: string, imageMaxPx: number): Promise<DrawingForPicture> {
   const [res, engine] = await Promise.all([api.drawing.load({ root, path, imageMaxPx }), loadExcalidraw()])
   const parsed = parseSceneText(res.json)
-  const elements = visibleElements(engine.restoreElements(parsed.elements as never, null) as unknown[])
+  const elements = restoreForPicture(engine, parsed.elements)
   const files: Record<string, unknown> = {}
   const created = Date.now()
   for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }

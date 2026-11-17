@@ -26,12 +26,12 @@ vi.mock('../lib/scenePreview', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/scenePreview')>()),
   createScenePreviewPng: vi.fn(async () => 'data:image/png;base64,eA=='),
 }))
-vi.mock('../share/liveShare', () => ({ noteBoardSaved: vi.fn() }))
+vi.mock('../share/liveShare', () => ({ pageBoardSaved: vi.fn() }))
 
 import { api } from '../api'
 import { renderDiagramPreview } from '../diagrams/renderDiagram'
 import { createScenePreviewPng } from '../lib/scenePreview'
-import { noteBoardSaved } from '../share/liveShare'
+import { pageBoardSaved } from '../share/liveShare'
 import { VersionHistory } from './VersionHistory'
 
 const github = vi.mocked(api.github)
@@ -54,7 +54,7 @@ beforeEach(() => {
   vi.mocked(api.drawing.load).mockReset().mockResolvedValue({ path: P, json: scene(['x', 'y']), mtime: 1, size: 1, files: {}, stored: [] })
   vi.mocked(createScenePreviewPng).mockClear()
   vi.mocked(renderDiagramPreview).mockClear()
-  vi.mocked(noteBoardSaved).mockClear()
+  vi.mocked(pageBoardSaved).mockClear()
 })
 afterEach(() => {
   act(() => root?.unmount())
@@ -153,7 +153,7 @@ describe('VersionHistory', () => {
     act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
     await flush()
     expect(github.restore).toHaveBeenCalledWith(ROOT, P, VERSIONS[1].ref)
-    expect(noteBoardSaved).toHaveBeenCalledWith(ROOT, P)
+    expect(pageBoardSaved).toHaveBeenCalledWith(ROOT, P)
     expect(d.onNotice).toHaveBeenCalledWith('Restored “Roadmap” to the version from 2 minutes ago.')
     expect(d.onClose).toHaveBeenCalled()
   })
@@ -227,7 +227,7 @@ describe('VersionHistory', () => {
       act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
       await flush()
       expect(github.restore).toHaveBeenCalledWith(ROOT, FLOW, FLOW_VERSIONS[1].ref)
-      expect(noteBoardSaved).toHaveBeenCalledWith(ROOT, FLOW)
+      expect(pageBoardSaved).toHaveBeenCalledWith(ROOT, FLOW)
       expect(d.onClose).toHaveBeenCalled()
     })
   })

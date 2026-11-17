@@ -240,7 +240,7 @@ describe('a line in a table cell (YAZ-3818)', () => {
 })
 
 describe('a hidden cell note (YAZ-3818 D4)', () => {
-  /** A note the file holds away from its table: the load leaves it where it is, between two lines. */
+  /** A page the file holds away from its table: the load leaves it where it is, between two lines. */
   const BETWEEN = '| a          |\n| ---------- |\n| b[^cell-1] |\n\nOne.\n\n[^cell-1]: secret\n\nTwo.\n'
 
   it('⇧↓ and ⇧↑ step over it; with no mark it shows, and ⇧↓ lands in it', async () => {

@@ -30,7 +30,7 @@ const TABLE = `views:
     groupBy:
       property: note.status
     fills:
-      - note: "[[Attribution]]"
+      - page: "[[Attribution]]"
         fill: pink
   - type: board
     name: B

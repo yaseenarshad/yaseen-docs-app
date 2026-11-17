@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fileKind } from '@shared/fileKind'
-import { IDS_FILE } from '@shared/noteId'
+import { IDS_FILE } from '@shared/pageId'
 import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
 import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
@@ -13,7 +13,7 @@ export interface IndexState {
   records: IndexRecord[]
   /** The same snapshot's folder settings records (YAZ-2290 D8); `[]` whenever `records` is. */
   folders: IndexRecord[]
-  /** Does this vault give its notes IDs (YAZ-2523 🔒 V5)? false until the first fetch resolves. */
+  /** Does this vault give its pages IDs (YAZ-2523 🔒 V5)? false until the first fetch resolves. */
   ids: boolean
   /** The vault's ID letters (`IndexResponse.letters`, YAZ-2677 R5): the same array until they change; none where the vault does not use IDs. */
   letters: readonly string[]
@@ -44,11 +44,11 @@ const REFETCH_DEBOUNCE_MS = 300
 /** The first read's short wait: a move's unlink and add come in one burst, so the read sees both, never the gap. */
 const LEADING_MS = 30
 
-/** Could this watch event change what the index holds? Markdown notes are the only records. */
+/** Could this watch event change what the index holds? Markdown pages are the only records. */
 function touchesIndex(ev: WatchEvent): boolean {
   switch (ev.type) {
     case 'ready': // late join / (re)connect: refetch what may have been missed
-    case 'unlinkDir': // a removed directory may have held notes
+    case 'unlinkDir': // a removed directory may have held pages
       return true
     case 'add':
     case 'change':
@@ -63,7 +63,7 @@ function touchesIndex(ev: WatchEvent): boolean {
  * The vault index behind every view (GRO-2129): one `api.index(root)` fetch per root
  * over the bridge, kept fresh by the shared watch fan-out. Refetches keep the previous
  * records on screen (`status` stays 'ready') until the new snapshot lands. A change to the
- * vault's `ids.json` refetches at once: the same notes are handed out as the other kind of vault.
+ * vault's `ids.json` refetches at once: the same pages are handed out as the other kind of vault.
  */
 export function useIndex(root: string, watch: WatchSource): IndexState {
   const [status, setStatus] = useState<IndexStatus>('pending')
@@ -146,7 +146,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     const unsubscribeIds = api.vaultConfig.onChange((c) => {
       if (c.root === root && c.name === IDS_FILE) refresh()
     })
-    // "Change letters" and "Give old IDs numbers" renamed many notes: read now, not when the events settle (YAZ-3102).
+    // "Change letters" and "Give old IDs numbers" renamed many pages: read now, not when the events settle (YAZ-3102).
     // So does a board that took an ID, or one with an ID that came, went or moved (YAZ-3943 4C).
     const unsubscribeChange = api.ids.onChanged((c) => {
       if (c.root === root) refresh()

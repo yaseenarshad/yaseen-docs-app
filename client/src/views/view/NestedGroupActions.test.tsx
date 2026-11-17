@@ -3,7 +3,7 @@
  * work at whichever level the user acts on, and a row always LANDS WHERE IT WAS DROPPED —
  * the 🔒 decision: a drop into an inner group under a DIFFERENT outer writes BOTH properties
  * from the target group; the seed of an inner "+" carries both for the same reason. A level
- * whose property is not `note.*` (a formula outer) shows summaries but disables its own
+ * whose property is not `page.*` (a formula outer) shows summaries but disables its own
  * "+"/drag while the other level's actions keep working. Fan-out D3/D4 hold at the inner
  * level. `writeProperty` mocked, the folder host's `create` spied, per the sibling files.
  */
@@ -13,7 +13,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import type { NewNoteSeed } from '../newNote'
+import type { NewPageSeed } from '../newPage'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
@@ -24,7 +24,7 @@ import { writeProperties, writeProperty } from '../writeProperty'
 
 const write = vi.mocked(writeProperty)
 const writeMany = vi.mocked(writeProperties)
-const create = vi.fn<(seed: NewNoteSeed, name?: string) => Promise<string>>()
+const create = vi.fn<(seed: NewPageSeed, name?: string) => Promise<string>>()
 const seed = (n = 0): Record<string, unknown> => create.mock.calls[n][0].properties
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -249,16 +249,16 @@ describe('drag at each level (YAZ-1101)', () => {
 describe('the header "+" at each level (YAZ-1101)', () => {
   it('a Board inner "+" seeds BOTH properties through the same level-aware create contract', () => {
     const { el } = mount(NESTED_BOARD)
-    const plus = [...el.querySelectorAll<HTMLElement>('[aria-label="New note in group p1"]')]
+    const plus = [...el.querySelectorAll<HTMLElement>('[aria-label="New page in group p1"]')]
     expect(plus).toHaveLength(2)
     act(() => plus[1].click()) // B's p1
     draw()
     expect(seed()).toEqual({ proc: 'p1', dept: 'B' })
   })
 
-  it('an inner "+" seeds BOTH properties so the note lands where the user clicked', () => {
+  it('an inner "+" seeds BOTH properties so the page lands where the user clicked', () => {
     const { el } = mount(NESTED_TABLE)
-    const plus = [...el.querySelectorAll<HTMLElement>('[aria-label="New note in group p1"]')]
+    const plus = [...el.querySelectorAll<HTMLElement>('[aria-label="New page in group p1"]')]
     expect(plus).toHaveLength(2)
     act(() => plus[1].click()) // B's p1
     draw()
@@ -267,7 +267,7 @@ describe('the header "+" at each level (YAZ-1101)', () => {
 
   it('an outer "+" seeds the outer property only', () => {
     const { el } = mount(NESTED_TABLE)
-    act(() => q<HTMLElement>(el, '[aria-label="New note in group A"]').click())
+    act(() => q<HTMLElement>(el, '[aria-label="New page in group A"]').click())
     draw()
     expect(seed()).toEqual({ dept: 'A' })
   })
@@ -275,7 +275,7 @@ describe('the header "+" at each level (YAZ-1101)', () => {
   it('inner fan-out keeps D4: the inner seed is that group\'s own element, plus the outer', () => {
     const records = [rec('both', { dept: 'A', proc: ['p1', 'p2'] })]
     const { el } = mount(NESTED_TABLE, { records })
-    act(() => q<HTMLElement>(el, '[aria-label="New note in group p2"]').click())
+    act(() => q<HTMLElement>(el, '[aria-label="New page in group p2"]').click())
     draw()
     expect(seed()).toEqual({ proc: ['p2'], dept: 'A' })
   })
@@ -288,8 +288,8 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
       (header) => header.querySelector('.view-group__value')?.textContent === 'A',
     )
     if (outerA === undefined) throw new Error('missing outer A')
-    expect(outerA.querySelector('[aria-label^="New note"]')).toBeNull()
-    expect(el.querySelector('.view-board__subgroup [aria-label="New note in group p1"]')).not.toBeNull()
+    expect(outerA.querySelector('[aria-label^="New page"]')).toBeNull()
+    expect(el.querySelector('.view-board__subgroup [aria-label="New page in group p1"]')).not.toBeNull()
 
     fire(cardOf(el, 'alpha2'), 'dragstart')
     fire(cardOf(el, 'beta1'), 'drop')
@@ -298,7 +298,7 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
 
   it.each(['list', 'cards'])('%s: a formula outer has no "+", and its writable inner level keeps it, as in Table and Board (YAZ-4544)', (type) => {
     const { el } = mount(FORMULA_OUTER_TABLE.replace('type: table', `type: ${type}`))
-    const plus = (label: string) => el.querySelector(`[aria-label="New note in group ${label}"]`)
+    const plus = (label: string) => el.querySelector(`[aria-label="New page in group ${label}"]`)
     expect(plus('A')).toBeNull()
     expect(plus('B')).toBeNull()
     expect(plus('p1')).not.toBeNull()
@@ -310,8 +310,8 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
   it('the outer has no "+" and rejects drops; inner drag still writes, without the outer', () => {
     const { el } = mount(FORMULA_OUTER_TABLE)
     // outer headers (A, B) carry no "+"; inner headers (p1, p2) keep theirs
-    expect(headersOf(el, 'A')[0].querySelector('[aria-label^="New note"]')).toBeNull()
-    expect(headersOf(el, 'p1')[0].querySelector('[aria-label^="New note"]')).not.toBeNull()
+    expect(headersOf(el, 'A')[0].querySelector('[aria-label^="New page"]')).toBeNull()
+    expect(headersOf(el, 'p1')[0].querySelector('[aria-label^="New page"]')).not.toBeNull()
 
     fire(gripOf(el, 'beta1'), 'dragstart')
     fire(headersOf(el, 'A')[0], 'drop')
@@ -325,7 +325,7 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
 
   it('an inner "+" under a formula outer seeds the inner property alone', () => {
     const { el } = mount(FORMULA_OUTER_TABLE)
-    act(() => q<HTMLElement>(el, '[aria-label="New note in group p2"]').click())
+    act(() => q<HTMLElement>(el, '[aria-label="New page in group p2"]').click())
     draw()
     expect(seed()).toEqual({ proc: 'p2' })
   })
@@ -383,7 +383,7 @@ describe('three levels (YAZ-4531)', () => {
     for (const text of [THREE_TABLE, THREE_BOARD]) {
       create.mockClear()
       const { el } = mount(text, { records: THREE_RECORDS })
-      act(() => q<HTMLElement>(el, '[aria-label="New note in group s3"]').click())
+      act(() => q<HTMLElement>(el, '[aria-label="New page in group s3"]').click())
       draw()
       expect(seed()).toEqual({ dept: 'B', proc: 'p3', step: 's3' })
       act(() => root?.unmount())

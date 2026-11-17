@@ -1,5 +1,5 @@
 /**
- * CMD+F find in the open note (YAZ-968) — the engine behind `FindChannel`.
+ * CMD+F find in the open page (YAZ-968) — the engine behind `FindChannel`.
  *
  * Design, the fold plugin's (outlineFolding.ts): the whole search lives in plugin state (query,
  * matches, active index, the items this search revealed — every position mapped through every
@@ -25,19 +25,26 @@
  * The thread (YAZ-3166): after a query or a step, bullet threading and section indent point at the
  * active match instead of the caret (`findThreadAnchor`); a caret move or an edit gives them back.
  *
- * Cell notes (YAZ-3818 D19): in the note view, the matches in the hidden cell notes count. When the active match is in
- * one, find opens that note as a card beside its cell (`table/cellNoteCard.ts`; the caret stays), and keeps a record
- * of it, as it does of the folds it opened. When the active match moves out of that note, find closes the card.
- * `close()` on a match in the note leaves the card open with the caret in it.
+ * Cell notes (YAZ-3818 D19): in the page view, the matches in the hidden cell notes count. When the active match is in
+ * one, find opens that cell note as a card beside its cell (`table/cellNoteCard.ts`; the caret stays), and keeps a record
+ * of it, as it does of the folds it opened. When the active match moves out of that cell note, find closes the card.
+ * `close()` on a match in the cell note leaves the card open with the caret in it.
  *
- * Pills (YAZ-3744 S9): a `[[link]]` the note draws as a pill (`pillLinks`, the wikilink plugin's own drawing) hides
+ * Pills (YAZ-3744 S9): a `[[link]]` the page draws as a pill (`pillLinks`, the wikilink plugin's own drawing) hides
  * text. The matches that touch its hidden text (an ID, `.drawio`, folders, the brackets) are together ONE match, and each
  * match in the title an ID link shows is one. Each marks the whole pill: its shown text, and its title widget (a widget takes no
  * decoration, so the plugin view puts the classes on it). Such a match starts at the link's start, so `close()` lands
  * the caret on the link's edge, where an ID link keeps its title (D1, S17). A link the selection opens is plain text.
+ *
+ * Cards (YAZ-5378): a card in the page and a card embed (`![[ID]]`) draw their own text, so find reads them AS DRAWN
+ * (`cardFind.ts`: the title band and the sides, hidden words too), never their Markdown. The view scans the cards on a
+ * query and after any change in them (an edit, Done, an embed that read its card), and hands the state each card's
+ * place and count (`CardSpot`); the state puts that many matches at the card's place, in page order with the text, and
+ * drops the card block's raw text. A card edited in the raw-text fallback is a code block (its CodeMirror is find's).
+ * Their paint is the shared highlight (`paintFindRanges`); the folds, the step, the count and the landing are the page's.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { type EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding, hasHeadingFoldMeta, setHeadingFoldSet } from '../outline/headingFolding'
@@ -55,13 +62,15 @@ import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { FindChannel, FindController, FindResult } from './findChannel'
 import type { EditorView as CodeMirrorView } from '@codemirror/view'
 import { paintCodeBlocks, scrollCodeMatch } from './codeBlockFind'
+import { CARD_FIND_READ, cardMatches, paintFindRanges, scrollToRange } from './cardFind'
+import { isCardNode } from '../card/cardBlockLine'
 
 export const FIND_MATCH_CLASS = 'find-match'
 /** The active match carries this IN ADDITION to `FIND_MATCH_CLASS`. */
 export const FIND_ACTIVE_CLASS = 'find-match--active'
 
 /** The cell note find opened as a card (D19): its position, mapped through every change. */
-type OpenedNote = number
+type OpenedCellNote = number
 
 /** An absolute document range: one match, or the zoomed subtree. */
 interface Match {
@@ -69,9 +78,17 @@ interface Match {
   to: number
   /** A match that marks a whole pill (S9): the link is `from`..`to`. */
   pill?: PillLink
+  /** A match in a card's drawn text (YAZ-5378): the card's place, and which of its matches (`from` = `to` = `pos`). */
+  card?: { pos: number; nth: number }
 }
 
-/** The links find reads as the note draws them (YAZ-3744 S9): the editor's own sources. */
+/** A card the page draws (YAZ-5378): its place (the card block's start, or the embed's) and its matches' count. */
+interface CardSpot {
+  pos: number
+  count: number
+}
+
+/** The links find reads as the page draws them (YAZ-3744 S9): the editor's own sources. */
 export interface FindLinks {
   wikilinks: WikilinkResolveSource
   viewOnly?: ViewOnlyLinkSource
@@ -87,28 +104,32 @@ interface FindState {
   /** The same, for heading sections (YAZ-1140) — kept apart: the two plugins own different positions. */
   revealedHeadings: ReadonlySet<number>
   /** The cell note THIS search opened, or null (D19). */
-  opened: OpenedNote | null
+  opened: OpenedCellNote | null
   /**
    * The thread points at the active match (YAZ-3166): true after a query or a step. False once the
-   * caret moves, the doc is edited, or a click or a key lands in the note (YAZ-3200). A doc change
+   * caret moves, the doc is edited, or a click or a key lands in the page (YAZ-3200). A doc change
    * that another plugin appends to find's own transaction keeps it.
    */
   onMatch: boolean
+  /** The cards the view scanned for this query (YAZ-5378), their places mapped through every change. */
+  cards: readonly CardSpot[]
 }
 
 type FindMeta =
-  | { type: 'query'; query: string }
+  | { type: 'query'; query: string; cards?: readonly CardSpot[] }
+  /** The view counted the cards again (a card changed under an open search). */
+  | { type: 'cards'; cards: readonly CardSpot[] }
   | { type: 'step'; delta: 1 | -1 }
   | { type: 'revealed'; revealed: ReadonlySet<number>; revealedHeadings: ReadonlySet<number> }
-  | { type: 'opened'; opened: OpenedNote | null }
+  | { type: 'opened'; opened: OpenedCellNote | null }
   | { type: 'clear' }
-  /** A click or a key in the note that sent no transaction of its own: the thread goes back to the caret (YAZ-3200). */
+  /** A click or a key in the page that sent no transaction of its own: the thread goes back to the caret (YAZ-3200). */
   | { type: 'release' }
 
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const findKey = new PluginKey<FindState>('mdapp-find-in-page')
 
-const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: new Set(), revealedHeadings: new Set(), opened: null, onMatch: false }
+const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: new Set(), revealedHeadings: new Set(), opened: null, onMatch: false, cards: [] }
 
 /** Where the thread points while you step through the matches (YAZ-3166): the active match's start, else null (the caret). */
 export const findThreadAnchor = (state: EditorState): number | null => {
@@ -147,7 +168,7 @@ const occurrences = (haystack: string, needle: string): number[] => {
 /**
  * One textblock's matches (S9): a match that touches a pill's hidden text marks the pill; a title's matches too. A pill
  * counts once for its hidden text, however many matches that text holds, and not at all when its title counts it: the
- * title of a missing note shows the ID it hides (S10). Each match in a title counts, as in any text.
+ * title of a missing page shows the ID it hides (S10). Each match in a title counts, as in any text.
  */
 const blockMatches = (node: ProseNode, pos: number, needle: string, pills: readonly PillLink[]): Match[] => {
   const matches: Match[] = []
@@ -179,26 +200,87 @@ const blockMatches = (node: ProseNode, pos: number, needle: string, pills: reado
 const shows = (state: EditorState, pos: number): boolean => collapsedItemsHiding(state, pos).length === 0 && collapsedHeadingsHiding(state, pos).length === 0
 
 /** Every case-insensitive literal occurrence of `query`, in document order; `zoom` filters to the zoomed subtree, `shownOnly` to what no fold hides. */
-const findMatches = (state: EditorState, query: string, zoom: Match | null, links: FindLinks | undefined, shownOnly = false): Match[] => {
+const findMatches = (state: EditorState, query: string, zoom: Match | null, links: FindLinks | undefined, shownOnly = false, cards: readonly CardSpot[] = []): Match[] => {
   const needle = query.toLowerCase()
   if (needle === '') return []
   const matches: Match[] = []
+  const counts = (pos: number): boolean => (zoom === null || (pos >= zoom.from && pos < zoom.to)) && (!shownOnly || shows(state, pos))
+  // A drawn card's text is the view's count (YAZ-5378); its block's Markdown is no match.
+  const drawn = new Set(cards.map((card) => card.pos))
   // What the board embeds hide, by the host's own scan and reveal rule; nothing in an editor without the host. Its
   // plugin, not its state: find's state is built first, before the host's for the same transaction.
   const host = boardEmbedKey.get(state) !== undefined
   const isBoard = boardCheckOf(state)
   state.doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
+    if (drawn.has(pos) && isCardNode(node)) return false
     const pills = links === undefined || node.type.spec.code === true ? [] : pillLinks(node, pos, state.selection, links.wikilinks, links.viewOnly)
     // A board embed's text is under its window (YAZ-4827 item 15): none of it is a match, unless "Edit link" opened it.
     const embeds = host ? boardEmbedsIn(node, pos, isBoard).filter((embed) => !embedRevealed(state.selection, embed.from, embed.to)) : []
     for (const match of blockMatches(node, pos, needle, pills)) {
       if (embeds.some((embed) => match.from < embed.to && match.to > embed.from)) continue
-      if ((zoom === null || (match.from >= zoom.from && match.from < zoom.to)) && (!shownOnly || shows(state, match.from))) matches.push(match)
+      if (counts(match.from)) matches.push(match)
     }
     return false
   })
-  return matches
+  const inCards = cards.filter((card) => card.count > 0 && counts(card.pos))
+  if (inCards.length === 0) return matches
+  for (const card of inCards) for (let nth = 0; nth < card.count; nth++) matches.push({ from: card.pos, to: card.pos, card: { pos: card.pos, nth } })
+  // Stable: a card's matches keep their order, and sit where the card stands among the page's.
+  return matches.sort((a, b) => a.from - b.from)
+}
+
+/** The cards across a transaction: freshly scanned, else the old ones mapped; a card whose place went is gone. */
+const carryCards = (transaction: Transaction, meta: FindMeta | undefined, previous: readonly CardSpot[]): readonly CardSpot[] => {
+  if ((meta?.type === 'query' || meta?.type === 'cards') && meta.cards !== undefined) return meta.cards
+  if (meta?.type === 'query') return []
+  if (!transaction.docChanged) return previous
+  return previous.flatMap((card) => {
+    const mapped = transaction.mapping.mapResult(card.pos, 1)
+    return mapped.deletedAfter ? [] : [{ pos: mapped.pos, count: card.count }]
+  })
+}
+
+const sameCards = (a: readonly CardSpot[], b: readonly CardSpot[]): boolean =>
+  a.length === b.length && a.every((card, i) => card.pos === b[i].pos && card.count === b[i].count)
+
+/** A card the view scanned: its place and its matches as drawn. */
+interface ScannedCard extends CardSpot {
+  ranges: Range[]
+}
+
+/** The cards the page draws (YAZ-5378): its cards not edited in the raw-text fallback, and its card embeds. */
+const drawnCards = (view: EditorView): Element[] =>
+  [...view.dom.querySelectorAll('.card[data-page-card], .card-embed')].filter((el) => el.querySelector('.cm-content') === null && el.parentElement?.closest('.card__editor') == null)
+
+/** A drawn card's place: the card block's start, or the embed widget's place in its text. */
+const cardPlace = (view: EditorView, el: Element): number | null => {
+  let pos: number
+  try {
+    pos = view.posAtDOM(el, 0)
+  } catch {
+    return null
+  }
+  const doc = view.state.doc
+  if (pos < 0 || pos > doc.content.size) return null
+  if (el.classList.contains('card-embed')) return pos
+  if (isCardNode(doc.nodeAt(pos))) return pos
+  const $pos = doc.resolve(pos)
+  return $pos.depth > 0 && isCardNode($pos.parent) ? $pos.before() : null
+}
+
+/** Every drawn card's matches of `query`, in page order. An embed that has not read its card yet is asked to. */
+const scanCards = (view: EditorView, query: string): ScannedCard[] => {
+  if (query === '') return []
+  const scanned: ScannedCard[] = []
+  for (const el of drawnCards(view)) {
+    const pos = cardPlace(view, el)
+    if (pos === null) continue
+    if (el.classList.contains('card-embed') && el.querySelector('.card__body')?.hasChildNodes() !== true) el.dispatchEvent(new Event(CARD_FIND_READ))
+    const ranges = cardMatches(el, query)
+    scanned.push({ pos, count: ranges.length, ranges })
+  }
+  return scanned.sort((a, b) => a.pos - b.pos)
 }
 
 /** What a pill match paints (S9): the pill's shown text, the link minus what it hides. The title widget is the view's. */
@@ -246,22 +328,33 @@ const nextActive = (previous: FindState, meta: FindMeta | undefined, matches: re
 const carryRevealed = (transaction: Transaction, reported: ReadonlySet<number> | undefined, previous: ReadonlySet<number>): ReadonlySet<number> =>
   reported ?? (transaction.docChanged ? new Set([...previous].map((pos) => transaction.mapping.map(pos, 1))) : previous)
 
-/** The opened note across a transaction: the freshly reported one, else the old one mapped; null once the note is gone. */
-const carryOpened = (transaction: Transaction, meta: FindMeta | undefined, previous: OpenedNote | null): OpenedNote | null => {
+/** The opened cell note across a transaction: the freshly reported one, else the old one mapped; null once the cell note is gone. */
+const carryOpened = (transaction: Transaction, meta: FindMeta | undefined, previous: OpenedCellNote | null): OpenedCellNote | null => {
   if (meta?.type === 'opened') return meta.opened
   if (previous === null || !transaction.docChanged) return previous
-  const note = transaction.mapping.mapResult(previous, 1)
-  return note.deleted ? null : note.pos
+  const cellNote = transaction.mapping.mapResult(previous, 1)
+  return cellNote.deleted ? null : cellNote.pos
 }
 
 /** The hidden cell note that holds `pos`, or null (D19). */
-const hiddenNoteAt = (state: EditorState, pos: number): number | null => {
-  const note = cellNoteAround(state.doc.resolve(pos))
-  return note !== null && isCellNoteHidden(state, note) ? note : null
+const hiddenCellNoteAt = (state: EditorState, pos: number): number | null => {
+  const cellNote = cellNoteAround(state.doc.resolve(pos))
+  return cellNote !== null && isCellNoteHidden(state, cellNote) ? cellNote : null
 }
 
 /** The engine behind the channel's commands. Every step is metadata-only, and synchronous. */
-const createController = (view: EditorView, channel: FindChannel): FindController => {
+/** What the view scanned of the cards last (YAZ-5378): the controller and the view share it. */
+interface CardScan {
+  scanned: ScannedCard[]
+}
+
+const spotsOf = (scanned: readonly ScannedCard[]): CardSpot[] => scanned.map(({ pos, count }) => ({ pos, count }))
+
+/** A card match's text as drawn, from the last scan. */
+const rangeOf = (scan: CardScan, match: Match | undefined): Range | null =>
+  match?.card === undefined ? null : (scan.scanned.find((card) => card.pos === match.card!.pos)?.ranges[match.card.nth] ?? null)
+
+const createController = (view: EditorView, channel: FindChannel, scan: CardScan): FindController => {
   const findState = (): FindState => findKey.getState(view.state) ?? EMPTY
   const result = (): FindResult => {
     const { matches, activeIndex } = findState()
@@ -315,7 +408,7 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
     if (differs(revealed, previous.revealed) || differs(revealedHeadings, previous.revealedHeadings))
       dispatchMeta({ type: 'revealed', revealed, revealedHeadings })
     if (folds !== 'keep' && active !== null) openTableRun(active.from)
-    followNotes()
+    followCellNotes()
   }
   /**
    * A match in a folded table row (a collapsed subheader section, YAZ-4899 item 20, or a "Fold N rows" run) opens the
@@ -335,20 +428,20 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
    * D19: the card find opened closes when the active match is not in it; the hidden cell note that holds the active
    * match opens as a card. A card the reader closed meanwhile is no longer find's.
    */
-  const followNotes = (): void => {
+  const followCellNotes = (): void => {
     let { opened } = findState()
     const match = activeMatch()
     if (opened !== null && cellNoteCardKey.getState(view.state)?.pos !== opened) opened = null
     if (opened !== null) {
-      const note = view.state.doc.nodeAt(opened)!
-      if (match === null || match.from < opened || match.from >= opened + note.nodeSize) {
+      const cellNote = view.state.doc.nodeAt(opened)!
+      if (match === null || match.from < opened || match.from >= opened + cellNote.nodeSize) {
         closeCellNote(view, false)
         opened = null
       }
     }
-    const hidden = match === null ? null : hiddenNoteAt(view.state, match.from)
+    const hidden = match === null ? null : hiddenCellNoteAt(view.state, match.from)
     if (hidden !== null) {
-      // The note's cell: the one that holds its mark.
+      // The cell note's cell: the one that holds its mark.
       const mark = markPosOf(view.state.doc, view.state.doc.nodeAt(hidden)!.attrs.label as string)
       const cell = mark === null ? null : cellPosAround(view.state.doc.resolve(mark))
       if (cell !== null && openCellNote(view, cell, false)) opened = cellNoteCardKey.getState(view.state)?.pos ?? null
@@ -364,6 +457,12 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
   const scrollToActive = (): void => {
     const match = activeMatch()
     if (match === null) return
+    // A match in a card's drawn text (YAZ-5378): its text, as the page centres a highlight.
+    if (match.card !== undefined) {
+      const range = rangeOf(scan, match)
+      if (range !== null) scrollToRange(range)
+      return
+    }
     // A match in a code block (YAZ-4787 demo): CodeMirror draws only the lines on screen, so it scrolls there itself.
     if (scrollCodeMatch(view, match)) return
     const { node } = view.domAtPos(match.from)
@@ -379,7 +478,8 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
   }
   return {
     search: (query) => {
-      dispatchMeta({ type: 'query', query })
+      scan.scanned = scanCards(view, query)
+      dispatchMeta({ type: 'query', query, cards: spotsOf(scan.scanned) })
       reveal()
       scrollToActive()
       return result()
@@ -401,18 +501,22 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
         foldHeadings([...headingHiders([match.from])], false)
       }
       const transaction = view.state.tr.setMeta(findKey, { type: 'clear' } satisfies FindMeta)
-      if (match !== null) transaction.setSelection(TextSelection.create(transaction.doc, match.from))
+      // A card's match lands on the card, selected whole, as a click on it does.
+      if (match !== null)
+        transaction.setSelection(
+          match.card !== undefined && isCardNode(transaction.doc.nodeAt(match.from)) ? NodeSelection.create(transaction.doc, match.from) : TextSelection.create(transaction.doc, match.from),
+        )
       view.dispatch(transaction)
       view.focus()
     },
   }
 }
 
-/** A modifier alone is not a key in the note: ⌘ on its way to a shortcut must not move the thread. */
+/** A modifier alone is not a key in the page: ⌘ on its way to a shortcut must not move the thread. */
 const MODIFIER_KEYS = new Set(['Shift', 'Meta', 'Alt', 'Control', 'CapsLock'])
 
 /**
- * A click or a key in the note gives the thread back to the caret (YAZ-3200), also when the caret
+ * A click or a key in the page gives the thread back to the caret (YAZ-3200), also when the caret
  * stays where it is and ProseMirror sends no transaction: a click on the caret's own spot, or an
  * arrow key at the end of the doc. A real caret move or edit clears it in `apply` anyway.
  */
@@ -437,6 +541,7 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
             const shownOnly = channel.getState().folds === 'keep'
             const recompute =
               meta?.type === 'query' ||
+              meta?.type === 'cards' ||
               (query !== '' && (transaction.docChanged || (shownOnly && (hasOutlineFoldMeta(transaction) || hasHeadingFoldMeta(transaction)))))
             const revealed = carryRevealed(transaction, meta?.type === 'revealed' ? meta.revealed : undefined, previous.revealed)
             const revealedHeadings = carryRevealed(
@@ -445,6 +550,7 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
               previous.revealedHeadings,
             )
             const opened = carryOpened(transaction, meta, previous.opened)
+            const cards = carryCards(transaction, meta, previous.cards)
             // A reveal (fold) transaction is metadata-only and keeps it; `close()` lands the caret on the match.
             // An APPENDED doc change keeps it too: a real edit is the root transaction and clears it first, but
             // Milkdown's trailing paragraph can ride on find's own query, the first transaction after mount.
@@ -460,11 +566,12 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
               onMatch === previous.onMatch &&
               revealed === previous.revealed &&
               revealedHeadings === previous.revealedHeadings &&
-              opened === previous.opened
+              opened === previous.opened &&
+              cards === previous.cards
             )
               return previous
-            const matches = recompute ? findMatches(newState, query, zoomedRange(transaction, oldState, newState), links, shownOnly) : previous.matches
-            return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings, opened, onMatch }
+            const matches = recompute ? findMatches(newState, query, zoomedRange(transaction, oldState, newState), links, shownOnly, cards) : previous.matches
+            return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings, opened, onMatch, cards }
           },
         },
         props: {
@@ -478,6 +585,8 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
             return DecorationSet.create(
               state.doc,
               matches.flatMap((match, index) => {
+                // A card's match is painted in the card's own drawing (YAZ-5378), not by a decoration.
+                if (match.card !== undefined) return []
                 const attrs = { class: index === activeIndex ? `${FIND_MATCH_CLASS} ${FIND_ACTIVE_CLASS}` : FIND_MATCH_CLASS }
                 const ranges = match.pill === undefined ? [[match.from, match.to]] : shownRanges(match.pill)
                 return ranges.map(([from, to]) => Decoration.inline(from, to, attrs))
@@ -486,7 +595,48 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
           },
         },
         view: (editorView) => {
-          const unbind = channel.bind(createController(editorView, channel))
+          const scan: CardScan = { scanned: [] }
+          const unbind = channel.bind(createController(editorView, channel, scan))
+          /** This view's card paint (YAZ-5378): the scanned ranges of the matches the state holds. */
+          const owner = {}
+          let destroyed = false
+          const paintCards = () => {
+            const { matches, activeIndex } = findKey.getState(editorView.state) ?? EMPTY
+            const ranges = matches.flatMap((match) => rangeOf(scan, match) ?? [])
+            paintFindRanges(owner, ranges, rangeOf(scan, matches[activeIndex]))
+          }
+          /** The cards counted again; a count or a place that changed goes to the state, which paints through `sync`. */
+          const rescan = () => {
+            const find = findKey.getState(editorView.state) ?? EMPTY
+            scan.scanned = scanCards(editorView, find.query)
+            const spots = spotsOf(scan.scanned)
+            if (sameCards(spots, find.cards)) return paintCards()
+            // Not inside the view's own update: the state takes the new count one task later.
+            queueMicrotask(() => {
+              if (destroyed || (findKey.getState(editorView.state) ?? EMPTY).query !== find.query) return
+              editorView.dispatch(editorView.state.tr.setMeta(findKey, { type: 'cards', cards: spots } satisfies FindMeta))
+            })
+          }
+          /** While a search is open, a change in a card's drawing (Done, an embed that read its card, a title) counts again. */
+          let observer: MutationObserver | null = null
+          let pending = false
+          const watch = (on: boolean) => {
+            if (on === (observer !== null) || typeof MutationObserver === 'undefined') return
+            if (!on) {
+              observer?.disconnect()
+              observer = null
+              return
+            }
+            observer = new MutationObserver((records) => {
+              if (pending || !records.some((r) => (r.target instanceof Element ? r.target : r.target.parentElement)?.closest('.card, .card-embed') != null)) return
+              pending = true
+              queueMicrotask(() => {
+                pending = false
+                if (!destroyed) rescan()
+              })
+            })
+            observer.observe(editorView.dom, { childList: true, subtree: true, characterData: true })
+          }
           /**
            * The title widgets this search marked (S9). Marked again when the find state or the doc changed, or when a redraw
            * took a marked widget away (a new one has no classes); not on each caret move (YAZ-3910 A12). ProseMirror ignores
@@ -515,6 +665,10 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
             const find = findKey.getState(editorView.state) ?? EMPTY
             const { matches, activeIndex } = find
             const changed = find !== findKey.getState(prevState) || editorView.state.doc !== prevState.doc
+            // The cards are counted on the query (`search`); an edit may change them: counted again then.
+            if (find.query !== '' && editorView.state.doc !== prevState.doc) rescan()
+            else if (changed) paintCards()
+            watch(find.query !== '')
             if (changed || marked.some((el) => !el.isConnected)) markTitles(matches, activeIndex)
             // A code block drawn after the search (a fold opened, a block drawn again) has no marks yet: while there are
             // matches, a change in the page's code blocks paints again. No search: nothing is counted (typing stays light).
@@ -525,7 +679,15 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
             }
             channel.sync({ total: matches.length, activeIndex })
           }
-          return { update: sync, destroy: unbind }
+          return {
+            update: sync,
+            destroy: () => {
+              destroyed = true
+              watch(false)
+              paintFindRanges(owner, [], null)
+              unbind()
+            },
+          }
         },
       }),
   )

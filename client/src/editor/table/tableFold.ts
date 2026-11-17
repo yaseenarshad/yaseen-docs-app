@@ -16,7 +16,7 @@
  * holds. A calendar table's now row in a run puts the marker on the bar (`tableCalendar.ts`, `runOf`).
  *
  * A MOUSEDOWN on the bar opens the run: one transaction with the history closed (one undo step). It goes before
- * `tableEditing`, so the click starts no cell selection. A read-only note keeps the run folded. ↑ / ↓ at the edge of
+ * `tableEditing`, so the click starts no cell selection. A read-only page keeps the run folded. ↑ / ↓ at the edge of
  * a cell's text step over a run, to the row past it (or out of the table below a run at its end): `tableEditing`
  * would put the caret in the run's hidden cells. "Fold N rows" is in
  * the table menu (`tableMenu.ts`, `foldRows`). Fill down and a paste never write a folded row (`unfoldedRows`).

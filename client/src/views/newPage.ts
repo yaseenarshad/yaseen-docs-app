@@ -1,0 +1,71 @@
+import type { ViewSet, ViewDef, FilterNode } from './viewSchema'
+import { type Expr, compile } from './expr'
+
+/**
+ * The toolbar's "New" (5D, GRO-2144): a page pre-filled so it satisfies the current view.
+ * `deriveSeed` is pure over the filter ASTs (def + view): equality filters `note.x == <literal>`
+ * seed `x` with the literal's YAML type, and `file.hasTag("t")` seeds the page's own tag `t`. Only
+ * and-reachable rules count — seeding an `or`/`not` branch would not (or would anti-) satisfy the
+ * view. Non-equality rules are ignored by design (locked kickoff decision on the issue).
+ */
+
+export interface NewPageSeed {
+  /** Bare keys → raw YAML values: the values the VIEW's rows are read by, so the host's to place (`FolderHost.create`). */
+  properties: Record<string, unknown>
+  /** The page's own tags (`file.hasTag`): a tag is the page's, whichever folder shows it. */
+  tags?: string[]
+  /** The folder of the group whose "+" was pressed, when the view is grouped by Folder: root-relative. */
+  folder?: string
+}
+
+const SCOPE_IDENTS = new Set(['note', 'file', 'formula', 'this'])
+
+/** Bare frontmatter key of a `note.x` / `note["x"]` / bare-`x` accessor; null for anything else. */
+function pageKeyOf(e: Expr): string | null {
+  if (e.type === 'member' && e.object.type === 'ident' && e.object.name === 'note') return e.name
+  if (e.type === 'index' && e.object.type === 'ident' && e.object.name === 'note' && e.index.type === 'str') return e.index.value
+  if (e.type === 'ident' && !SCOPE_IDENTS.has(e.name)) return e.name
+  return null
+}
+
+/** The YAML value of a literal operand (string / number / boolean, negatives included); undefined otherwise. */
+function literalOf(e: Expr): string | number | boolean | undefined {
+  if (e.type === 'str' || e.type === 'num' || e.type === 'bool') return e.value
+  if (e.type === 'unary' && e.op === '-' && e.operand.type === 'num') return -e.operand.value
+  return undefined
+}
+
+/** And-reachable leaf expressions of a filter tree (`or`/`not` subtrees skipped entirely). */
+function andLeaves(node: FilterNode | undefined, out: string[]): void {
+  if (node === undefined || node === null) return
+  if (typeof node === 'string') {
+    out.push(node)
+    return
+  }
+  if ('and' in node && Array.isArray(node.and)) for (const child of node.and) andLeaves(child, out)
+}
+
+/** Seed properties for one view (see module doc). */
+export function deriveSeed(def: ViewSet, view: ViewDef): NewPageSeed {
+  const leaves: string[] = []
+  andLeaves(def.filters, leaves)
+  andLeaves(view.filters, leaves)
+
+  const properties: Record<string, unknown> = {}
+  const tags: string[] = []
+
+  for (const src of leaves) {
+    const e = compile(src).expr
+    if (e === undefined) continue
+    if (e.type === 'binary' && e.op === '==') {
+      const key = pageKeyOf(e.left)
+      const value = literalOf(e.right)
+      if (key !== null && value !== undefined) properties[key] = value
+    } else if (e.type === 'method' && e.object.type === 'ident' && e.object.name === 'file' && e.name === 'hasTag' && e.args.length === 1 && e.args[0].type === 'str') {
+      tags.push(e.args[0].value)
+    }
+  }
+
+  return tags.length > 0 ? { properties, tags } : { properties }
+}
+

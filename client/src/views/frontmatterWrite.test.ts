@@ -6,8 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import { buildFrontmatter, FrontmatterWriteError, parseFrontmatter, replaceFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 
-const NOTE = `---
-# how this note is filed
+const PAGE = `---
+# how this page is filed
 title: "Deep Work"
 status: draft
 rating: 5
@@ -25,13 +25,13 @@ A horizontal rule above, and a stray \`---\` line inside the body.
 
 describe('setFrontmatterProperty', () => {
   it('keeps an existing comment', () => {
-    expect(setFrontmatterProperty(NOTE, 'status', 'done')).toContain('# how this note is filed')
+    expect(setFrontmatterProperty(PAGE, 'status', 'done')).toContain('# how this page is filed')
   })
 
   it('preserves key order when changing a middle key', () => {
-    const out = splitFrontmatter(setFrontmatterProperty(NOTE, 'status', 'done')).frontmatter
+    const out = splitFrontmatter(setFrontmatterProperty(PAGE, 'status', 'done')).frontmatter
     expect(out).toBe(`---
-# how this note is filed
+# how this page is filed
 title: "Deep Work"
 status: done
 rating: 5
@@ -41,9 +41,9 @@ tags: [focus, books]
   })
 
   it('appends a new key inside the block', () => {
-    const out = splitFrontmatter(setFrontmatterProperty(NOTE, 'author', 'Cal Newport')).frontmatter
+    const out = splitFrontmatter(setFrontmatterProperty(PAGE, 'author', 'Cal Newport')).frontmatter
     expect(out).toBe(`---
-# how this note is filed
+# how this page is filed
 title: "Deep Work"
 status: draft
 rating: 5
@@ -54,35 +54,35 @@ author: Cal Newport
   })
 
   it('preserves the quoting style of untouched values', () => {
-    expect(setFrontmatterProperty(NOTE, 'rating', 4)).toContain('title: "Deep Work"')
+    expect(setFrontmatterProperty(PAGE, 'rating', 4)).toContain('title: "Deep Work"')
   })
 
   it('writes a list value', () => {
-    const out = splitFrontmatter(setFrontmatterProperty(NOTE, 'tags', ['focus', 'books', 'habits'])).frontmatter
+    const out = splitFrontmatter(setFrontmatterProperty(PAGE, 'tags', ['focus', 'books', 'habits'])).frontmatter
     expect(out).toContain('tags:\n  - focus\n  - books\n  - habits\n')
   })
 
   it('distinguishes numbers from strings', () => {
-    expect(setFrontmatterProperty(NOTE, 'rating', 4)).toContain('rating: 4\n')
-    expect(setFrontmatterProperty(NOTE, 'rating', '4')).toContain('rating: "4"\n')
-    expect(setFrontmatterProperty(NOTE, 'rating', true)).toContain('rating: true\n')
+    expect(setFrontmatterProperty(PAGE, 'rating', 4)).toContain('rating: 4\n')
+    expect(setFrontmatterProperty(PAGE, 'rating', '4')).toContain('rating: "4"\n')
+    expect(setFrontmatterProperty(PAGE, 'rating', true)).toContain('rating: true\n')
     // A null is Obsidian's empty property, `key:` with no value (YAZ-4551), as `buildFrontmatter` writes it.
-    expect(setFrontmatterProperty(NOTE, 'rating', null)).toContain('rating:\n')
-    expect(setFrontmatterProperty(NOTE, 'rating', 'null')).toContain('rating: "null"\n')
+    expect(setFrontmatterProperty(PAGE, 'rating', null)).toContain('rating:\n')
+    expect(setFrontmatterProperty(PAGE, 'rating', 'null')).toContain('rating: "null"\n')
   })
 
-  it('a null is written as `key:` everywhere: a new key, a replaced value, a new nested map, and a note with no block (YAZ-4551)', () => {
-    expect(splitFrontmatter(setFrontmatterProperty(NOTE, 'due', null)).frontmatter).toMatch(/\ndue:\n---\n$/)
-    expect(setFrontmatterProperty(NOTE, 'rating', null)).not.toContain('null')
+  it('a null is written as `key:` everywhere: a new key, a replaced value, a new nested map, and a page with no block (YAZ-4551)', () => {
+    expect(splitFrontmatter(setFrontmatterProperty(PAGE, 'due', null)).frontmatter).toMatch(/\ndue:\n---\n$/)
+    expect(setFrontmatterProperty(PAGE, 'rating', null)).not.toContain('null')
     expect(setFrontmatterIn('---\na: 1\n---\n', ['in', 'f1', 'Due Date'], null)).toBe('---\na: 1\nin:\n  f1:\n    Due Date:\n---\n')
     expect(setFrontmatterProperty('Body\n', 'due', null)).toBe('---\ndue:\n---\nBody\n')
-    expect(parseFrontmatter(splitFrontmatter(setFrontmatterProperty(NOTE, 'due', null)).frontmatter).properties.due).toBeNull()
+    expect(parseFrontmatter(splitFrontmatter(setFrontmatterProperty(PAGE, 'due', null)).frontmatter).properties.due).toBeNull()
   })
 
   it('deletes a key', () => {
-    const out = splitFrontmatter(setFrontmatterProperty(NOTE, 'status', undefined)).frontmatter
+    const out = splitFrontmatter(setFrontmatterProperty(PAGE, 'status', undefined)).frontmatter
     expect(out).toBe(`---
-# how this note is filed
+# how this page is filed
 title: "Deep Work"
 rating: 5
 tags: [focus, books]
@@ -91,7 +91,7 @@ tags: [focus, books]
   })
 
   it('leaves an empty block when the last key is deleted', () => {
-    // Deliberate: the fences stay, so the note still reads as "has frontmatter" in Obsidian.
+    // Deliberate: the fences stay, so the page still reads as "has frontmatter" in Obsidian.
     expect(setFrontmatterProperty('---\nstatus: draft\n---\nBody\n', 'status', undefined)).toBe('---\n---\nBody\n')
   })
 
@@ -118,7 +118,7 @@ tags: [focus, books]
   })
 
   it('leaves the file unchanged when deleting a key that is not there', () => {
-    expect(setFrontmatterProperty(NOTE, 'missing', undefined)).toBe(NOTE)
+    expect(setFrontmatterProperty(PAGE, 'missing', undefined)).toBe(PAGE)
   })
 
   it('keeps a CRLF file on CRLF', () => {
@@ -136,10 +136,10 @@ tags: [focus, books]
   })
 
   it('leaves the body byte-identical, `---` rule included', () => {
-    const body = splitFrontmatter(NOTE).body
-    expect(splitFrontmatter(setFrontmatterProperty(NOTE, 'status', 'done')).body).toBe(body)
-    expect(splitFrontmatter(setFrontmatterProperty(NOTE, 'author', 'Cal')).body).toBe(body)
-    expect(splitFrontmatter(setFrontmatterProperty(NOTE, 'title', undefined)).body).toBe(body)
+    const body = splitFrontmatter(PAGE).body
+    expect(splitFrontmatter(setFrontmatterProperty(PAGE, 'status', 'done')).body).toBe(body)
+    expect(splitFrontmatter(setFrontmatterProperty(PAGE, 'author', 'Cal')).body).toBe(body)
+    expect(splitFrontmatter(setFrontmatterProperty(PAGE, 'title', undefined)).body).toBe(body)
   })
 
   it('throws FrontmatterWriteError on invalid YAML and touches nothing', () => {

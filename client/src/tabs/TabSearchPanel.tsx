@@ -50,7 +50,7 @@ export function TabSearchPanel({ places, label, at, watchOf, onPick, onClose }: 
   useEffect(() => {
     for (const root of roots) fetchTree(root).catch(() => undefined)
   }, [roots])
-  // A folder of a vault: the search cuts the vault's notes to it (`folder`), and its other files are cut here.
+  // A folder of a vault: the search cuts the vault's pages to it (`folder`), and its other files are cut here.
   const vaults: SearchVault[] = useMemo(
     () =>
       places.map(({ root, folder }, i) => {

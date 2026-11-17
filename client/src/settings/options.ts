@@ -2,10 +2,11 @@
  * The option vocabularies behind the settings rows (YAZ-1679 D2): label + value pairs the
  * registry hands to `Segmented`, in the order the controls show them. Every list mirrors a type
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
- * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
+ * resolution, the folder for a new page). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
 import type { UnitText } from '../vault/unitWord'
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TablePosition, type CardTablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import type { TableSlotTime } from '@shared/tableLook'
 
 export interface Option<T> {
   label: string
@@ -41,9 +42,9 @@ export const EMBED_REST_OPTIONS: readonly Option<EmbedRestSeconds>[] = [
   { label: 'Never', value: 0 },
 ]
 
-/** YAZ-4820 item 3: where "/drawing" and "/diagram" put a new board made from a note. */
+/** YAZ-4820 item 3: where "/drawing" and "/diagram" put a new board made from a page. */
 export const newBoardFolderOptions = (unit: UnitText): readonly Option<NewBoardFolder>[] => [
-  { label: unit("The note's folder"), value: 'note' },
+  { label: unit("The page's folder"), value: 'page' },
   { label: 'assets/drawings', value: 'assets' },
 ]
 
@@ -60,7 +61,7 @@ export const COMMENTS_RESOLVED_OPTIONS: readonly Option<CommentsResolvedPlace>[]
 ]
 
 /**
- * "Pin default" (YAZ-2700; YAZ-3558 D2a): On keeps the names of a note's rows (headings, or bullets)
+ * "Pin default" (YAZ-2700; YAZ-3558 D2a): On keeps the names of a page's rows (headings, or bullets)
  * open beside the text; Off shows them when the window has room for them. The editor owns what
  * "room" means (`namesShow`, editor/toc). On or off for the page itself is "Table of contents default".
  */
@@ -79,7 +80,7 @@ export const STARTUP_WINDOWS_OPTIONS: readonly Option<StartupWindows>[] = [
 /** Settings › General › When a vault opens › Open on (YAZ-3487 D15): every vault open reads it. */
 export const vaultOpensOnOptions = (unit: UnitText): readonly Option<VaultOpensOn>[] => [
   { label: 'A blank tab', value: 'blank' },
-  { label: unit('Its last note'), value: 'last' },
+  { label: unit('Its last page'), value: 'last' },
 ]
 
 /** Settings › Memory › Sleep unseen tabs after (YAZ-3737 D10): 30 min is the default. */
@@ -112,9 +113,19 @@ export const BLOCK_GAP_PRESETS: readonly Option<number>[] = [
   { label: 'Relaxed', value: 8 },
   { label: 'Spacious', value: 12 },
 ]
+/** Card spacing › Space between bullets (YAZ-5050 round 3): px per side; Tight is Mochi's, Default the pages'. */
+export const BULLET_SPACE_PRESETS: readonly Option<number>[] = [
+  { label: 'Tight', value: 0 },
+  { label: 'Compact', value: 2 },
+  { label: 'Default', value: 4 },
+  { label: 'Relaxed', value: 8 },
+]
 
 /** Thread line width presets, like logseq-bullet-threading (GRO-2109); `THREAD_WIDTHS` validates the field. */
 export const THREAD_WIDTH_OPTIONS: readonly Option<number>[] = THREAD_WIDTHS.map((value) => ({ label: `${value}px`, value }))
+
+/** The next hidden word's default colour in the picker (YAZ-5053 round 3): `--next-hidden` of the light theme, `app.css`. */
+export const NEXT_HIDDEN_SWATCH = '#2a8bd1'
 
 /** Shown in the colour swatch while the thread uses the app accent (`--accent` in app.css). */
 export const DEFAULT_THREAD_SWATCH = '#5b6cff'
@@ -135,13 +146,43 @@ export const GUIDE_LINE_DARKNESS_PRESETS: readonly Option<number>[] = [
   { label: 'Strong', value: 35 },
 ]
 
+/** A card's shown hidden word (YAZ-5005; the vault's since YAZ-5484): the card CSS reads it as `--shown-hidden-words`. */
+export const SHOWN_HIDDEN_WORDS_OPTIONS: readonly Option<ShownHiddenWords>[] = [
+  { label: 'Highlight', value: 'highlight' },
+  { label: 'Underline', value: 'underline' },
+  // YAZ-5053: Mochi's look — a grey box while hidden, the word in a light grey box once shown.
+  { label: 'Box', value: 'box' },
+]
+
+/**
+ * Settings › Review › Card width (YAZ-5144 round 2): the pages' Content width, or Custom px; Card spacing's words.
+ * Card text size (YAZ-5387) is the same choice: the pages' Text size, or Custom px.
+ */
+export const cardPagesOrCustomOptions = (unit: UnitText): readonly Option<BlockWidthMode>[] => [
+  { label: unit('Same as pages'), value: 'column' },
+  { label: 'Custom', value: 'px' },
+]
+
+/** Card look › Card title size (YAZ-5387 round 2): Default (the card's text × 1.125) · Custom px, Card text size's shape. */
+export const CARD_TITLE_SIZE_OPTIONS: readonly Option<BlockWidthMode>[] = [
+  { label: 'Default', value: 'column' },
+  { label: 'Custom', value: 'px' },
+]
+
+/** Settings › Review › Card spacing (YAZ-5050): the pages' spacing, or the card's own. */
+export const cardSpacingOptions = (unit: UnitText): readonly Option<CardSpacing>[] => [
+  { label: unit('Same as pages'), value: 'pages' },
+  { label: 'Clean', value: 'clean' },
+  { label: 'Custom', value: 'custom' },
+]
+
 /** Section indent (YAZ-2709): when the grey section lines show; the editor reads it as `data-section-lines` on `.app`. */
 export const SECTION_LINES_OPTIONS: readonly Option<SectionLines>[] = [
   { label: 'Always show', value: 'always' },
   { label: 'Only near the mouse', value: 'hover' },
 ]
 
-/** Outside changes (YAZ-3704 D5): how long changed words glow; the change list in the open note reads it. */
+/** Outside changes (YAZ-3704 D5): how long changed words glow; the change list in the open page reads it. */
 /** Settings › Editor › Find › Folded bullets (YAZ-4787), in the find bar's order. */
 export const FIND_FOLDS_OPTIONS: readonly Option<FindFolds>[] = [
   { label: 'Open the one you are on', value: 'current' },
@@ -170,10 +211,10 @@ export const ALL_NOTES_OPENS_AT_OPTIONS: readonly Option<AllNotesOpensAt>[] = [
   { label: 'Now', value: 'now' },
 ]
 
-/** Daily notes (YAZ-4164 D11): what the button opens. */
-export const DAILY_NOTE_OPENS_OPTIONS: readonly Option<DailyNoteOpens>[] = [
-  { label: 'The note', value: 'note' },
-  { label: 'The note at now', value: 'now' },
+/** Daily pages (YAZ-4164 D11): what the button opens. */
+export const DAILY_PAGE_OPENS_OPTIONS: readonly Option<DailyPageOpens>[] = [
+  { label: 'The page', value: 'page' },
+  { label: 'The page at now', value: 'now' },
 ]
 
 /** Tables (YAZ-4167 D16): where the row band shows; table.css reads it as `data-table-row-band` on `.app`. */
@@ -190,6 +231,15 @@ export const TABLE_NEW_STYLE_OPTIONS: readonly Option<TableNewStyle>[] = [
 ]
 
 /** Settings › Tables › All tables › Text in cells (YAZ-4900); table.css reads it as `data-table-text` on `.app`. */
+/** Settings › Tables › Table position (YAZ-5136 round 2). */
+export const TABLE_POSITION_OPTIONS: readonly Option<TablePosition>[] = [
+  { label: 'Left', value: 'left' },
+  { label: 'Centre', value: 'center' },
+]
+
+/** Settings › Review › Card look › Card tables (YAZ-5136 round 3): the pages' Table position, or the cards' own. */
+export const cardTablePositionOptions = (unit: UnitText): readonly Option<CardTablePosition>[] => [{ label: unit('Same as pages'), value: 'pages' }, ...TABLE_POSITION_OPTIONS]
+
 export const TABLE_TEXT_IN_CELLS_OPTIONS: readonly Option<TableTextInCells>[] = [
   { label: 'Wrap', value: 'wrap' },
   { label: 'Clip', value: 'clip' },
@@ -207,6 +257,13 @@ export const TABLE_NOW_MARK_OPTIONS: readonly Option<TableNowMark>[] = [
   { label: 'Line', value: 'line' },
   { label: 'Tint', value: 'tint' },
   { label: 'Both', value: 'both' },
+]
+
+/** Calendar tables (YAZ-5602): what the pill on the now line says; the vault's `look.slotTime` (table-look.json). */
+export const TABLE_SLOT_TIME_OPTIONS: readonly Option<TableSlotTime>[] = [
+  { label: 'Off', value: 'off' },
+  { label: 'Count down', value: 'down' },
+  { label: 'Count up', value: 'up' },
 ]
 
 /** Calendar tables (YAZ-4162 D14, the YAZ-4163 demo): how the past rows look; table.css reads it as `data-table-dim-past` on `.app`. */
@@ -244,12 +301,12 @@ export const SIDEBAR_ARROW_MOTION_OPTIONS: readonly Option<SidebarArrowMotion>[]
 ]
 
 /** Each kind's built-in icon colour (YAZ-3440 D4), the light theme's (app.css `--kind-<kind>`): the picker's swatch when the theme's own cannot be read. */
-export const SIDEBAR_ICON_SWATCHES: Record<SidebarIconKind, string> = { note: '#3d8fb8', text: '#3a7fc2', pdf: '#d64545', image: '#1d9e75', drawing: '#c08410', diagram: '#e0682c' }
+export const SIDEBAR_ICON_SWATCHES: Record<SidebarIconKind, string> = { page: '#3d8fb8', card: '#8a63c9', drawing: '#c08410', diagram: '#e0682c', folder: '#7a7a7a', text: '#3a7fc2', pdf: '#d64545', image: '#1d9e75' }
 
 /** The name of each kind on its colour row (YAZ-3440 D4). */
-const SIDEBAR_ICON_KIND_LABELS: Record<Exclude<SidebarIconKind, 'note'>, string> = { text: 'Text file', pdf: 'PDF', image: 'Image', drawing: 'Drawing', diagram: 'Diagram' }
-/** A note's row is named by the vault's word (YAZ-4938). */
-export const sidebarIconKindLabel = (kind: SidebarIconKind, unit: UnitText): string => (kind === 'note' ? unit('Note') : SIDEBAR_ICON_KIND_LABELS[kind])
+const SIDEBAR_ICON_KIND_LABELS: Record<Exclude<SidebarIconKind, 'page'>, string> = { card: 'Card', drawing: 'Drawing', diagram: 'Diagram', folder: 'Folder', text: 'Text file', pdf: 'PDF', image: 'Image' }
+/** A page's row is named by the vault's word (YAZ-4938). */
+export const sidebarIconKindLabel = (kind: SidebarIconKind, unit: UnitText): string => (kind === 'page' ? unit('Page') : SIDEBAR_ICON_KIND_LABELS[kind])
 
 /** The sidebar's icon set (YAZ-3440 D4): Material Icon Theme's, the default, or the app's own line glyphs. */
 export const SIDEBAR_ICON_SET_OPTIONS: readonly Option<SidebarIconSet>[] = [
@@ -257,7 +314,7 @@ export const SIDEBAR_ICON_SET_OPTIONS: readonly Option<SidebarIconSet>[] = [
   { label: 'Line', value: 'line' },
 ]
 
-/** The sidebar's file icons (YAZ-3440 D4, D7): "Colour" keeps notes grey, "All colour" colours them too. */
+/** The sidebar's file icons (YAZ-3440 D4, D7): "Colour" keeps pages grey, "All colour" colours them too. */
 export const SIDEBAR_FILE_ICONS_OPTIONS: readonly Option<SidebarFileIcons>[] = [
   { label: 'Colour', value: 'quiet' },
   { label: 'All colour', value: 'color' },
@@ -278,12 +335,18 @@ export const ON_OFF_OPTIONS: readonly Option<boolean>[] = [
   { label: 'Off', value: false },
 ]
 
+/** Show · Hide, for a thing the app shows or not (YAZ-5108: the card skill in the sidebar). */
+export const SHOW_HIDE_OPTIONS: readonly Option<boolean>[] = [
+  { label: 'Show', value: true },
+  { label: 'Hide', value: false },
+]
+
 /**
- * Obsidian's "Default location for new notes" options and order (Files & Links, Links C2- —
+ * Obsidian's "Default location for new pages" options and order (Files & Links, Links C2- —
  * GRO-2240): drives where clicking a bare unresolved [[link]] creates its page. The labels
  * are sentences, so they go in a dropdown (`Select`) rather than a segmented row.
  */
-export const NEW_NOTE_LOCATION_OPTIONS: readonly Option<NewNoteLocation>[] = [
+export const NEW_PAGE_LOCATION_OPTIONS: readonly Option<NewPageLocation>[] = [
   { label: 'Vault folder', value: 'root' },
   { label: 'Same folder as current file', value: 'current' },
   { label: 'In the folder specified below', value: 'folder' },

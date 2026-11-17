@@ -1,0 +1,1604 @@
+/*
+ * The card window and the Inbox (YAZ-4962): the card as the page draws it (`card.css`), its strip, its Reviews
+ * table, and the Inbox's calm panel in the Explore window's look (`explore.css`). Light and dark from the app's tokens.
+ */
+
+/* The card, read-only, outside the page: the page's card frame, no head. Its text at the page's size, as Edit card's
+   editor has it (YAZ-5164: one card frame in read and in Edit card), or Card text size's Custom px. */
+.card-screen {
+  margin: 0;
+  width: 100%;
+}
+.card.card-screen {
+  font-size: var(--card-text-size, var(--text-size, 16px));
+}
+
+/* The strip (D13; YAZ-5032, Yaseen's pick, round 2's words): the page's name, then one calm line of words — "Due in
+   183 days (Apr 28, 2027) · 99% chance you remember it". The values emphasised, the words muted. */
+.card-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 10px 2px 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.card-strip__page {
+  min-width: 0;
+  max-width: 40ch;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.card-strip__page:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+.card-strip__page + .card-strip__line {
+  margin-left: auto;
+}
+.card-strip__fact {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.card-strip__line {
+  flex-wrap: wrap;
+}
+.card-strip__value {
+  font-weight: 600;
+  color: var(--fg);
+}
+.card-strip__dot {
+  white-space: pre;
+  opacity: 0.6;
+}
+.card-strip__next[data-overdue],
+.card-strip__next[data-overdue] .card-strip__value {
+  color: var(--danger);
+}
+/* The recall chance's one help (YAZ-5032; round 2: the app's own tip, `InfoTip`, as a native title shows nothing). */
+.card-strip__info {
+  display: inline-flex;
+  margin-left: 3px;
+}
+.card-strip__info .info-tip__button {
+  border-radius: 50%;
+  opacity: 0.75;
+}
+.card-strip__info .info-tip__button:hover,
+.card-strip__info .info-tip__button[aria-expanded='true'] {
+  color: var(--fg);
+  opacity: 1;
+}
+
+/* An answer's glyph (YAZ-5032): ✓ green-ish, ✕ red-ish (four buttons: ↺ red, ~ amber, ✓ ⇈ green); the word is the hover. */
+.card-answer {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ok);
+}
+.card-answer[data-rating='again'] {
+  color: var(--danger);
+}
+.card-answer[data-rating='hard'] {
+  color: var(--warn);
+}
+
+/* THE REVIEWS STRIP (YAZ-5032; YAZ-5105 rounds 2 and 4), as Mochi's bottom strip: ONE look wherever a card's reviews
+   show — the Inbox, the card file tab, the card window, a card in a page and a card embed (`CardReviews`). A slim band
+   tucked under the card's text: its top hidden under the text's lower edge, its own lower corners round; "✓ 4 Reviews"
+   on its left (a page's card and an embed add the card's facts on its right); the table opens inside it.
+   Round 4 (Yaseen: "it just seems to merge … i dont want to make it too much stand out but a bit"): one step darker
+   than what it sits on, in light and dark — a tint of the text colour over the side colour, and a hairline edge. */
+.card-reviews {
+  --strip-fill: color-mix(in srgb, var(--fg) 6%, var(--bg-side));
+  --strip-edge: color-mix(in srgb, var(--fg) 16%, var(--bg));
+}
+.card-reviews--strip {
+  position: relative;
+  margin: -12px 0 0;
+  padding: 12px 8px 0;
+  border: 1px solid var(--strip-edge);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: var(--strip-fill);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  user-select: none;
+}
+/* What the strip tucks under sits over it: the Inbox's card, the card file tab's and the card window's card. */
+:is(.card-inbox__panel, .card-screen, .card-pane__editor):has(+ .card-reviews--strip) {
+  position: relative;
+  z-index: 1;
+}
+/* In a page's card and an embed the card's frame is the strip's frame: the strip fills its bottom, and the card's text
+   is the box it tucks under — the same rounded lower edge and hairline as the Inbox's card over it. */
+.card > .card__reviews {
+  display: contents;
+}
+.card > .card__reviews > .card-reviews--strip {
+  margin: -12px 0 0;
+  padding: 12px 8px 0;
+  border: 0;
+  border-radius: 0 0 7px 7px;
+  box-shadow: none;
+}
+.card > .card__body:has(+ .card__reviews) {
+  position: relative;
+  z-index: 1;
+  border-radius: 0 0 12px 12px;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--strip-edge, color-mix(in srgb, var(--fg) 16%, var(--bg))), 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.card--editing .card-reviews {
+  display: none;
+}
+.card-reviews__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  min-height: 36px;
+}
+.card-reviews .card-reviews__toggle {
+  flex: none;
+  width: auto;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.card-reviews .card-reviews__toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.card-reviews .card-reviews__toggle[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+.card-reviews__toggle .backlinks__title {
+  font-weight: 500;
+}
+/* YAZ-5380: each part's toggle is one of the bar's parts; its count quiet beside its words. A part with 0 is dimmed
+   and still opens. */
+.card-reviews .card-reviews__toggle[data-empty] {
+  opacity: 0.6;
+}
+.card-reviews .card-reviews__toggle[data-empty][aria-expanded='true'] {
+  opacity: 1;
+}
+.card-strip__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+.card-strip__part {
+  padding: 2px 4px 12px;
+  user-select: text;
+}
+.card-strip__none {
+  margin: 4px 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.card-reviews--strip .card-reviews__scroll {
+  padding: 2px 4px 12px;
+}
+/* The strip's Linked mentions and Embedded in (YAZ-5030, YAZ-5037; YAZ-5382: parts of the strip): one page a row, its
+   name on the left and its folder on the right. */
+.card-backlinks__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.card-backlinks__list .card-backlinks__page {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  max-width: none;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--fg);
+  text-align: left;
+}
+.card-backlinks__list .card-backlinks__page:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+.card-backlinks__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-backlinks__folder {
+  flex: none;
+  color: var(--fg-muted);
+}
+/* The table (Mochi's): small caps head, soft alternating rounded rows, the review to come muted. Its columns size to
+   their words. In a page the table sits inside the editor, and ProseMirror's own table rule reaches it
+   (`.ProseMirror table`: a fixed layout, equal columns, clipped) with the editor's `word-wrap: break-word`: the cells
+   then ran into each other and a head word broke ("REVIEWE D ON", YAZ-5032 round 2). The two classes win over it. */
+.card-reviews__scroll {
+  /* The last fold (round 2): a card narrower than the table's words scrolls the table sideways; nothing overlaps. */
+  overflow-x: auto;
+  container-type: inline-size;
+}
+.card-reviews .card-reviews__table {
+  table-layout: auto;
+  overflow: visible;
+}
+.card-reviews__table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: separate;
+  border-spacing: 0 2px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.card-reviews__table th {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  padding: 2px 12px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.card-reviews__table td {
+  padding: 5px 12px;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  font-variant-numeric: tabular-nums;
+}
+.card-reviews__table tbody tr:nth-child(odd) td {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.card-reviews__table td:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.card-reviews__table td:last-child {
+  width: 1%;
+  border-radius: 0 6px 6px 0;
+  text-align: right;
+}
+.card-reviews__answer .card-answer {
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+.card-reviews__num {
+  font-weight: 600;
+}
+.card-reviews__unit {
+  color: var(--fg-muted);
+}
+/* The Time column (YAZ-5033): "13 s"; "—" for an older review. */
+.card-reviews__table td.card-reviews__time {
+  color: var(--fg-muted);
+}
+.card-reviews__next td,
+.card-reviews__next .card-reviews__unit {
+  color: var(--fg-muted);
+}
+/* YAZ-5381: the table's last line, due on the left and the recall chance on the right; a narrow table puts the chance
+   on its own line, still on the right. */
+.card-reviews__next-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px 16px;
+}
+.card-reviews__chance {
+  margin-left: auto;
+}
+.card-reviews__delete {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-muted);
+  opacity: 0.6;
+  cursor: pointer;
+}
+.card-reviews__delete:hover {
+  background: var(--bg-hover);
+  color: var(--danger);
+  opacity: 1;
+}
+/* A narrow card (round 2, Yaseen: "when screen size is small this is what happens"): the table folds by the room it
+   has, in this order: tighter cells; then no Time column (the least read); then the answer as its glyph alone (✓ ✕,
+   its word stays the glyph's label). Past that the box scrolls sideways. */
+@container (max-width: 540px) {
+  .card-reviews__table th,
+  .card-reviews__table td {
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+}
+@container (max-width: 470px) {
+  .card-reviews__table :is(th, td):nth-child(4):not([colspan]) {
+    display: none;
+  }
+}
+@container (max-width: 400px) {
+  .card-reviews__answer .card-reviews__word {
+    display: none;
+  }
+  .card-reviews__answer .card-answer {
+    margin-right: 0;
+  }
+}
+.card-strip__line > * {
+  white-space: nowrap;
+}
+
+/* ---------- the card window (an Explore layer) ---------- */
+.explore__body--card {
+  padding-top: 16px;
+}
+/* Card width (YAZ-5144): the card, its strips and its mentions, as wide as `card.css`'s Card width rule lets them,
+   centred in a wider window. */
+.explore__body--card > :not(.find-bar-dock--page) {
+  margin-inline: auto;
+}
+/* Edit card in the card window (YAZ-5003): the page card's editor; the window's head has the ID, so the card's head
+   keeps only "Done esc ⌘↵". */
+.explore-card__edit .card .card__id,
+.explore-card__edit .card .card__state,
+.explore-card__edit .card .card__next,
+.explore-card__edit .card .card__more {
+  display: none;
+}
+.explore-card__edit .milkdown .card {
+  margin: 0;
+}
+/* ONE CARD FRAME (YAZ-5164 Option A, Yaseen: "the size of the card changes left to right"): Edit card's editor adds no
+   sides and no room above or below the card, so the card stands where the read card stood, as wide, in the card file
+   tab, Explore's card file and the card window alike. */
+.explore-card__edit > .editor-instance {
+  max-width: none;
+  padding: 0;
+}
+.explore-card__edit > .editor-instance > .milkdown > .ProseMirror {
+  padding: 0;
+}
+
+/* ---------- the Inbox ---------- */
+/* Over the tab stack: the page under it stays mounted and still. */
+.card-inbox {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* No bottom padding (YAZ-5431): the dock's own 16 px is the gap, so a short card's dock and a long card's stuck dock
+     end on the same line, the view's bottom edge. */
+  padding: 0 16px;
+  overflow: auto;
+  background: var(--bg-side);
+  outline: none;
+}
+/* The top (YAZ-5017, YAZ-5020): the row, then the progress bar; it stays on top. */
+.card-inbox__top {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex: none;
+  align-self: stretch;
+  background: var(--bg-side);
+}
+/* The top row (YAZ-5017, as Mochi's): the filter, the scope's path, and Mochi's "✕ 2 · 4 / 6" on the right (YAZ-5674). */
+.card-inbox__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  /* Compact (YAZ-5375 A): 6 / 6, the progress a line on the bar's bottom edge, so the card starts higher. */
+  padding: 6px 4px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.card-inbox__glyph {
+  flex: none;
+}
+.card-inbox__filter {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.card-inbox__filter:hover,
+.card-inbox__filter[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+}
+.card-inbox__filter > .card-inbox__glyph:last-child {
+  color: var(--fg-muted);
+}
+/* What is under review (YAZ-5017 round 2): quiet, right by the filter, "· in spanish-words". */
+.card-inbox__from {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 30%;
+  margin-left: -4px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.card-inbox__from-part {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-inbox__from-sep {
+  opacity: 0.6;
+}
+/* The card's place (YAZ-5017 round 2; YAZ-5132 the Inbox's one breadcrumb; YAZ-5682 no vault): folder › page, each a quiet link
+   with its icon. YAZ-5713: the box takes the room it has (its width is the room `usePlaceFold` reads) and the path folds
+   from the START into "…" (a click: the bubble with the full path); the page always shows, cut with "…" only alone. */
+.card-inbox__path-box {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.card-inbox__path {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.card-inbox__path-item {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+.card-inbox__path-item[data-kind='page'] {
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+.card-inbox__path-sep {
+  flex: none;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.card-inbox__path-part,
+.card-inbox__path-more {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 2px 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+/* YAZ-5132: each part's icon (the tree's own, `FileIcon`), then its name, which ends in "…" when room runs out. */
+.card-inbox__path-part > .file-icon {
+  display: inline-flex;
+  flex: none;
+}
+.card-inbox__path-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-inbox__path-part[data-kind='page'] {
+  flex: 0 1 auto;
+  color: var(--fg);
+}
+.card-inbox__path-part:hover:not(:disabled),
+.card-inbox__path-more:hover,
+.card-inbox__path-more[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.card-inbox__path-part:disabled {
+  cursor: default;
+}
+.card-inbox__bar > .card-inbox__place {
+  margin-left: auto;
+  padding-right: 4px;
+}
+/* Today's work (YAZ-5033; YAZ-5674: the cards menu's last line, out of the top row), quiet, in the foot (YAZ-5685). */
+.card-inbox__menu-today {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The top row's View (YAZ-5689, Yaseen: "should we make it behind one icon click?"): at rest the row's right end is the
+   count and ONE quiet icon, the page header's sliders; a click opens the panel (Time, Zoom, Focus mode). YAZ-5686's
+   hover fade is gone with the controls it hid. Away from 100% the icon wears a small accent dot. */
+.card-inbox__view {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.card-inbox__place ~ .card-inbox__view {
+  margin-left: 2px;
+}
+.card-inbox__view:hover,
+.card-inbox__view[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.card-inbox__view:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.card-inbox__view[data-zoomed]::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--bg-side);
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* The panel: a short list, a label on the left and its control on the right of each row. */
+.card-inbox__view-panel {
+  padding: 6px;
+}
+.card-inbox__view-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.card-inbox__view-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 4px 0 8px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.card-inbox__view-label {
+  flex: 1 1 auto;
+}
+.card-inbox__view-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+button.card-inbox__view-time {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button.card-inbox__view-time:hover {
+  color: var(--fg);
+}
+.card-inbox__view-key {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+/* Focus mode (YAZ-5375 C): a quiet icon button, the View panel's Focus mode row (YAZ-5689); pressed while the tab row is hidden. */
+.card-inbox__focus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+}
+.card-inbox__focus:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.card-inbox__focus[aria-pressed='true'] {
+  color: var(--accent);
+}
+.card-inbox__focus:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* YAZ-5679: the "Added card to reviews" toast stays at the window's bottom right while the Inbox scrolls. YAZ-5680
+   check 4: above the key row (the dock's 16 px and the row), never over it; it stays on the finish screen as Mochi's. */
+.card-inbox > .learned-toast {
+  position: fixed;
+  bottom: 60px;
+}
+/* The progress bar (YAZ-5676, Mochi's: `SessionBar`, `sessionCount.css`), under the row. */
+.card-inbox__progress {
+  margin: 0 4px;
+}
+/* The filter menu: the app's menu, each row its glyph, its name and a small count pill. YAZ-5042 round 2: a grid of two
+   columns, so the count pills line up whether a row has "· Reset" after it or not. The Up next and New cards pills read
+   "today / total"; while cards wait, a click on the pill turns the row into "Add [10] more new cards". */
+.card-inbox__filter-menu {
+  display: grid;
+  grid-template-columns: minmax(182px, auto) auto;
+  align-items: center;
+  min-width: 190px;
+}
+.card-inbox__filter-row {
+  display: contents;
+}
+.card-inbox__filter-item {
+  grid-column: 1;
+}
+/* "· Reset" (round 2): quiet, after the count, only once today has an add. */
+.card-inbox__reset {
+  grid-column: 2;
+  margin-right: 6px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.card-inbox__reset::before {
+  content: '·';
+  margin-right: 6px;
+}
+.card-inbox__reset:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+.card-inbox__add-number {
+  box-sizing: content-box;
+  min-width: 2ch;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  line-height: 18px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.card-inbox__filter-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-inbox__filter-item[aria-checked='true'] {
+  font-weight: 600;
+}
+.card-inbox__count {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* Up next's count (YAZ-5028) in the Up next chip's colours; any count of 0 grey and faint. */
+.card-inbox__count[data-filter='next'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.card-inbox__count[data-empty] {
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  opacity: 0.6;
+}
+/* The Inbox tab behind a page tab (YAZ-5011): mounted, so it keeps its card and step, but not drawn. */
+.card-inbox[hidden] {
+  display: none;
+}
+/* The card's panel, then under it, outside its frame (YAZ-5002, as in Mochi): the Space hint, the buttons, the keys.
+   YAZ-5049 round 2 (Yaseen: "with mochi, they dont have a scroll bar, they move the entire thing up and down it becomes
+   a long page"): the column is as tall as its card — it does not shrink to the window — so the Inbox's own view
+   scrolls the whole card as one page, and the card has no scroll bar of its own.
+   YAZ-5431 (as Mochi): it is at least as tall as the view, so a short card leaves the room under it and the dock sits at
+   the view's bottom; a long card makes it taller and the view scrolls. */
+.card-inbox__column {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* Settings › Review › Card width (YAZ-5144): the card's text at most `--card-text-width`, with the card's own sides.
+     A drag of its edge sets the width for this run (`inboxCardWidth.ts`, inline). The Inbox zoom (YAZ-5372) widens it
+     as a page's zoom widens its column, up to the window's edge: the card's frame inside is zoomed by app.css's page rule. */
+  width: min(calc((var(--card-text-width) + 2 * var(--inbox-card-pad, 28px)) * var(--document-zoom, 1)), 100%);
+  /* YAZ-5375 A: 12 px under the bar (it was 5vh), as close as the card's head row allows. */
+  margin-top: 12px;
+}
+/* YAZ-5027: the row above the card holds the state chip, on the card's left edge. Its fixed height keeps the card in
+   place between cards, also with no chip. YAZ-5051: the page name and the ID follow the chip here, quiet; "Side 1 of 2"
+   (YAZ-5048) sits on the right. */
+.card-inbox__above {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  height: 20px;
+  min-width: 0;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+/* The title in the card's band (YAZ-5308 A3, `.card-band`): a card file's (YAZ-5037) is a link to its tab, in the
+   same look. */
+.card-inbox__name {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+}
+.card-inbox__name--link {
+  cursor: pointer;
+}
+.card-inbox__name--link:hover {
+  text-decoration: underline;
+}
+/* The band at the top of the card's frame: the card's own sides. */
+.card-inbox__panel > .card-band {
+  padding: 12px var(--inbox-card-pad, 28px);
+  /* Card title size (YAZ-5387): Custom's px, else Default, 1.125× the card's text: the card beside it (above), not this frame. */
+  font-size: var(--card-title-size, calc(var(--card-text-size, 1.05em) * 1.125));
+}
+.card-inbox__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 10px 30px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+/* The card's edges (YAZ-5019): a thin strip on each side drags the width; a faint line shows on hover and while it drags. */
+.card-inbox__edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.card-inbox__edge[data-side='left'] {
+  left: 0;
+}
+.card-inbox__edge[data-side='right'] {
+  right: 0;
+}
+.card-inbox__edge::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.card-inbox__edge[data-side='left']::after {
+  left: 2px;
+}
+.card-inbox__edge[data-side='right']::after {
+  right: 2px;
+}
+.card-inbox__edge:hover::after,
+.card-inbox--sizing .card-inbox__edge::after {
+  opacity: 0.5;
+}
+body.card-inbox--sizing {
+  cursor: ew-resize;
+  user-select: none;
+}
+/* YAZ-5051, YAZ-5044: the head, "Title · ID in <page>", out of the card frame, in the row above it after the state chip. */
+.card-inbox__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+/* YAZ-5048: where you are in a card of more than one side, on the row's right: quiet, as "4 / 6" in the top row. */
+.card-inbox__sides {
+  flex: none;
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The state chip (YAZ-5018, as Mochi's): small capitals in a quiet pill, its glyph before. */
+.card-inbox__state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 16px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* YAZ-5626 (the phone's YAZ-5594 "Again"): beside the state chip, the same quiet pill with no glyph, for a card put back
+   by a Forgot (it comes back until you remember it). */
+.card-inbox__again {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 16px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.card-inbox__place {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.card-inbox__body {
+  flex: none;
+  padding: 24px var(--inbox-card-pad, 28px) 28px;
+}
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card (`--inbox-card-pad: 44px`), set by
+   the card look's variables (YAZ-5484, `review/cardLook.ts`) with the vault's look. Its short line is Card width now
+   (YAZ-5144): Clean sets it to Custom 520 px, Mochi's line, so one rule sets a card's line. */
+/* The buttons, their line and the key row (YAZ-5049 round 2, YAZ-5431): ONE band at the bottom of the view for every
+   card. A short card: the column fills the view and the band is pushed to its end (`margin-top: auto`). A long card:
+   the band sticks at the same bottom edge while the card scrolls under it, and at the scroll's end it sits right under
+   the card, so the card's last line is never under it. The page colour, fading in at the top, hides the card's text
+   under it. */
+.card-inbox__dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: auto;
+  padding-bottom: 16px;
+}
+/* Its page colour reaches over the card's shadow (into the view's side padding), and fades out at its ends, so the
+   card goes under it with no hard edge. */
+.card-inbox__dock::before {
+  content: '';
+  position: absolute;
+  inset: 0 -16px;
+  z-index: -1;
+  background: linear-gradient(to bottom, transparent, var(--bg-side) 22px);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  pointer-events: none;
+}
+/* The card: no frame of its own inside the panel, a little larger. */
+.card-inbox__card {
+  border: 0;
+  box-shadow: none;
+  cursor: default;
+}
+/* Its text (YAZ-5387): Card text size's Custom px, else the screen's own, a little larger. Two classes, over `.card`'s. */
+.card.card-inbox__card {
+  font-size: var(--card-text-size, 1.05em);
+}
+.card-inbox__card .card__body {
+  padding: 4px 0;
+}
+/* The line between two sides (YAZ-5051): across the whole card, edge to edge, as Mochi's, with room on each side. */
+.card-inbox__card .card__rule {
+  margin: 22px calc(-1 * var(--inbox-card-pad, 28px));
+}
+/* YAZ-5103: no "Side 2" on the line here: "Side 1 of 2" above the card says it. */
+.card-inbox__card .card__rule::before {
+  content: none;
+}
+/* The buttons row (YAZ-5004, as in Mochi): ← → on the left, the answers in the middle, ⋯ on the right. */
+.card-inbox__actions {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+.card-inbox__moves {
+  display: flex;
+  gap: 4px;
+  justify-self: start;
+}
+.card-inbox__actions .card-inbox__move,
+.card-inbox__actions .card-inbox__more-button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 999px;
+  color: var(--fg-muted);
+}
+.card-inbox__actions .card-inbox__move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.card-inbox__more {
+  position: relative;
+  justify-self: end;
+}
+.card-inbox__answers {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+/* Round pills, as Mochi's (YAZ-5018): the glyph, the word, the digit quiet after it; the page colour on the Inbox's
+   side colour, the card's border and a soft shadow (light and dark tokens). */
+.card-inbox__answers .card-inbox__answer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 132px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.card-inbox__answers .card-inbox__answer:hover {
+  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+}
+/* THE END's cue (YAZ-5049 round 3): one more Space when nothing is left gives the buttons one soft ring, then it
+   fades. A ring, no movement, so it stays with Reduce motion. Two names, so each new Space plays it again. */
+.card-inbox__answers[data-nudge='a'] .card-inbox__answer {
+  animation: card-inbox-nudge-a 700ms ease-out;
+}
+.card-inbox__answers[data-nudge='b'] .card-inbox__answer {
+  animation: card-inbox-nudge-b 700ms ease-out;
+}
+@keyframes card-inbox-nudge-a {
+  from {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+}
+@keyframes card-inbox-nudge-b {
+  from {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+}
+/* YAZ-5716 (Yaseen: no colour on remembered or forgotten, "it'll keep the eyes focused"): the glyph is the word's own
+   text colour, as the phone's neutral ✕ ✓; the glyph and the word tell them apart. */
+.card-inbox__answer-icon {
+  flex: none;
+}
+/* The last answer's line (YAZ-5025 round 2): one quiet line, centred under the buttons, grey for every answer; only its mark has the answer's colour (YAZ-5433). The row keeps
+   its height when empty, so nothing under it moves (YAZ-5029). */
+.card-inbox__last {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  margin-top: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.card-inbox__last-mark {
+  flex: none;
+  margin-right: 1px;
+  color: var(--ok);
+}
+.card-inbox__last[data-rating='hard'] .card-inbox__last-mark {
+  color: var(--warn);
+}
+/* YAZ-5433 (Yaseen: "it turns red and it becomes a little bit too noisy"): a Forgot line is the line's own grey, as a
+   Remembered one; only its small mark is red, as the ✓ is green. */
+.card-inbox__last[data-rating='again'] .card-inbox__last-mark {
+  color: var(--danger);
+}
+/* The add's line (YAZ-5042): quiet, its "+" in the line's own grey. */
+.card-inbox__last[data-kind='add'] .card-inbox__last-mark {
+  color: inherit;
+}
+.card-inbox__last-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+.card-inbox__last-undo {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.card-inbox__last-undo:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.card-inbox__last-undo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.card-inbox__done {
+  padding: 48px 0 40px;
+  text-align: center;
+}
+.card-inbox__done-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.card-inbox__done-line {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+/* What waits past today's number (YAZ-5042): one button for each kind, side by side; on two lines when narrow. */
+.card-inbox__done-adds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px 0 6px;
+}
+.card-inbox__done-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+}
+.card-inbox__done-add:hover {
+  background: var(--bg-hover);
+}
+/* "Add" and the words add the number shown; the number is a field, quiet until you click it (round 2). */
+.card-inbox__done-add-word {
+  padding: 3px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.card-inbox__done-add .card-inbox__add-number {
+  border-color: var(--border);
+}
+.card-inbox__done-add .card-inbox__add-number:focus {
+  border-color: var(--accent);
+}
+@media (max-width: 560px) {
+  .card-inbox__done-adds {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+/* The Due today end's button on the Mac (`DueTodayEnd`, YAZ-5043): a quiet pill. */
+.card-inbox__done .due-end__go {
+  padding: 6px 8px 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.card-inbox__done .due-end__go:hover {
+  background: var(--bg-hover);
+}
+.card-inbox__done .due-end__go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.card-inbox__done-today {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.card-inbox__done-more {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.card-inbox__done-more:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+/* ONE line at any width (YAZ-5024): no wrap; a key that does not fit folds (`CardInboxHints`), laid out off the
+   row so it can still be measured. */
+.card-inbox__hints {
+  position: relative;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 16px;
+  /* In the bottom band (YAZ-5431): a little closer to the buttons, so the band takes less of a short window. */
+  margin-top: 14px;
+  overflow: hidden;
+  border-top: 0;
+  white-space: nowrap;
+}
+.card-inbox__hints > span {
+  flex: none;
+}
+.card-inbox__hints > span[data-folded] {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* PREVIEW A CARD (YAZ-5152, option A): the Inbox's screen in the page area, as the Inbox tab draws — over the tab
+   stack, beside the sidebar, under the tab row — with its card as the Inbox draws it. Its own: a quiet bar on top,
+   "Preview · <the card> · nothing is saved" and Close (Esc). A Files window has no page area: there it covers the window. */
+.card-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-side);
+}
+.card-preview--window {
+  position: fixed;
+  z-index: calc(var(--z-explore) + 1);
+}
+.card-preview > .card-inbox {
+  position: relative;
+  inset: auto;
+  flex: 1;
+  min-height: 0;
+  /* No answer band here (nothing is saved): the view keeps its own 16 px under the card's end. */
+  padding-top: 24px;
+  padding-bottom: 16px;
+}
+.card-preview__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.card-preview__bar > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+.card-preview__label {
+  color: var(--fg);
+  font-weight: 600;
+}
+.card-preview__what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-preview__close {
+  flex: none;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.card-preview__close:hover {
+  background: var(--bg-hover);
+}
+/* YAZ-5685: the Today line is the menu's foot — its words, then a small quiet ⚙ at its right — across both columns. */
+.card-inbox__menu-foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 4px 4px 2px 10px;
+  border-top: 1px solid var(--border);
+}
+.card-inbox__cog {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.card-inbox__cog:hover,
+.card-inbox__cog[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.card-inbox__cog:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* The settings part under the Today line: a small title per section, then its rows ("From  📁 All folders ▾"). */
+.card-inbox-settings {
+  grid-column: 1 / -1;
+  padding: 2px 4px 4px 10px;
+}
+.card-inbox-settings-title {
+  margin: 4px 0 2px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.card-inbox-settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.card-inbox-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+}
+.card-inbox-settings-label {
+  flex: none;
+  color: var(--fg-muted);
+}
+/* YAZ-5707: "Order  Due first · Shuffle": two quiet choices, the picked one marked as the cog's open state is. */
+.card-inbox-settings-choices {
+  display: flex;
+  gap: 2px;
+}
+.card-inbox-settings-choice {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.card-inbox-settings-choice:hover {
+  color: var(--fg);
+}
+.card-inbox-settings-choice[aria-checked='true'] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.card-inbox-settings-choice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* The folder picker's door (YAZ-5322), now the From row's control: a folder glyph, the pick and a small ▾. A long
+   name gets "…" (`contain: inline-size` keeps it out of the menu's width). */
+.card-inbox__new-from {
+  contain: inline-size;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.card-inbox__new-from .card-inbox__glyph {
+  flex: none;
+}
+.card-inbox__new-from-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-inbox__new-from[data-on] .card-inbox__new-from-name {
+  color: var(--fg);
+  font-weight: 500;
+}
+.card-inbox__new-from:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.card-inbox__new-from:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* "Add today [10] Add" (YAZ-5690): the field of the done screen's pill, then a quiet "Add"; only with something to add. */
+.card-inbox__add-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.card-inbox__add-setting .card-inbox__add-number {
+  border-color: var(--border);
+}
+.card-inbox__add-setting .card-inbox__add-number:focus {
+  border-color: var(--accent);
+}
+/* The ask in place (round 3, `AskInPlace`): the question over Cancel and Add, in the row's own room. YAZ-5699: the
+   done screen's pill asks the same, centred where the pill was. */
+.card-inbox__done-ask .confirm__text {
+  margin: 0 0 8px;
+  text-align: center;
+}
+.card-inbox__done-ask .confirm__actions {
+  justify-content: center;
+}
+.card-inbox__add-ask {
+  flex: 1 1 auto;
+  padding: 4px 0;
+}
+.card-inbox__add-ask .confirm__text {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.card-inbox__add-ask .confirm__actions {
+  justify-content: flex-end;
+}
+.card-inbox__add-none {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-align: right;
+}
+.card-inbox__add-go {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.card-inbox__add-go:hover {
+  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+}
+.card-inbox__add-go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* "New cards · Spanish": the pick, quiet, on the row; a long name gets "…" and never widens the menu much. */
+.card-inbox__filter-pick {
+  min-width: 0;
+  max-width: 110px;
+  margin-left: -3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+.card-inbox__pick-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  gap: 2px;
+  padding: 2px 4px 2px 9px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--fg);
+  font-size: 12px;
+}
+.card-inbox__pick-chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-inbox__pick-chip-x {
+  padding: 0 4px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.card-inbox__pick-chip-x:hover {
+  color: var(--fg);
+}
+/* The picker: All folders, then each folder with a tick box and its new cards; a subfolder indented under its parent. */
+.card-inbox__picker {
+  min-width: 220px;
+  max-width: 320px;
+}
+.card-inbox__picker-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.card-inbox__picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.card-inbox__picker-row:hover,
+.card-inbox__picker-row[data-on] {
+  background: var(--bg-hover);
+}
+.card-inbox__picker-row input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.card-inbox__picker-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-inbox__picker-count {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.card-inbox__picker-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+.card-inbox__picker-note {
+  margin: 4px 8px 4px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+/* The done pill's "from [Spanish ▾]": a quiet box inside the pill, the same picker. */
+.card-inbox__done-from {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.card-inbox__done-from-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 3px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.card-inbox__done-from-name {
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-inbox__done-from:hover .card-inbox__done-from-box {
+  background: var(--bg-hover);
+}
+.card-done__fallback {
+  color: var(--fg);
+}
+
+/* The card on its way in (YAZ-5164): Edit card while it builds, the read card while it draws. No height and see-through,
+   so the card on show stays at its spot until the other is ready (`useCardSwap`, cardPane.tsx). Opacity, not
+   visibility: the editor takes the caret. */
+.card-pane__incoming {
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}

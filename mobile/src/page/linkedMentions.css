@@ -1,0 +1,93 @@
+/*
+ * "Linked mentions": the Mac's (`backlinks.css`) on the phone's tokens, at the end of a page, on the
+ * full page and in an Explore panel. In the page's column, so it scrolls with it; as the Mac, no hairline of its own.
+ */
+.linked-mentions {
+  margin: 28px 0 8px;
+}
+.linked-mentions__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: var(--tap, 44px);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.linked-mentions__chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+.linked-mentions__header[aria-expanded='false'] .linked-mentions__chevron {
+  transform: rotate(-90deg);
+}
+.linked-mentions__title {
+  font-weight: 600;
+}
+.linked-mentions__count {
+  font-weight: 400;
+}
+.linked-mentions__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 4px 0 0 20px;
+  list-style: none;
+}
+.linked-mentions__entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.linked-mentions__page {
+  min-height: 36px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.linked-mentions__line {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.linked-mentions__more {
+  min-height: var(--tap, 44px);
+  margin: 4px 0 0 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.linked-mentions__match {
+  background: var(--accent-soft);
+  color: var(--fg);
+  border-radius: 3px;
+}
+.linked-mentions__wait {
+  width: 60%;
+  height: 12px;
+  margin: 4px 0;
+  border-radius: 4px;
+  background: var(--bg-side);
+}

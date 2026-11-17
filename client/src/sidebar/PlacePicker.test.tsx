@@ -18,15 +18,15 @@ vi.mock('../lib/treeFeed', () => ({
   fetchTree: async () => ({ root: '', tree: [], generatedAt: 1 }),
 }))
 
-const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+const page = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
 const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 trees.set('/v', [
-  note('/v/top.md'),
-  folder('/v/Projects', [folder('/v/Projects/Alpha', [note('/v/Projects/Alpha/plan.md')]), folder('/v/Projects/Beta', [])]),
+  page('/v/top.md'),
+  folder('/v/Projects', [folder('/v/Projects/Alpha', [page('/v/Projects/Alpha/plan.md')]), folder('/v/Projects/Beta', [])]),
   folder('/v/Areas', [folder('/v/Areas/Health', [])]),
 ])
 trees.set('/w', [folder('/w/Work', [])])
-const V: PlaceVault = { root: '/v', name: 'Notes' }
+const V: PlaceVault = { root: '/v', name: 'Pages' }
 const W: PlaceVault = { root: '/w', name: 'Work vault' }
 
 let root: Root | null = null
@@ -65,22 +65,22 @@ describe('PlacePicker (YAZ-3556 D6)', () => {
   it('opens on the vault folder: "Choose this folder", then its folders by name, no files; a folder row goes in, the path bar goes back, Choose picks', () => {
     const { onPick } = render()
     expect(names()).toEqual(['Choose this folder', 'Areas', 'Projects'])
-    expect(crumbs().map((c) => c.textContent)).toEqual(['Notes'])
+    expect(crumbs().map((c) => c.textContent)).toEqual(['Pages'])
     click(rowNamed('Projects'))
     expect(names()).toEqual(['Choose this folder', 'Alpha', 'Beta'])
-    expect(crumbs().map((c) => c.textContent)).toEqual(['Notes', 'Projects'])
+    expect(crumbs().map((c) => c.textContent)).toEqual(['Pages', 'Projects'])
     click(rowNamed('Alpha'))
     expect(names()).toEqual(['Choose this folder'])
     // The bar goes back to any folder above.
     click(crumbs()[1])
-    expect(crumbs().map((c) => c.textContent)).toEqual(['Notes', 'Projects'])
+    expect(crumbs().map((c) => c.textContent)).toEqual(['Pages', 'Projects'])
     click(rowNamed('Choose this folder'))
     expect(onPick).toHaveBeenCalledExactlyOnceWith('/v/Projects', '/v')
   })
 
   it('opens on `start`; typing filters every folder of that vault, name matches first, with the folder above; a click picks the match', () => {
     const { onPick } = render({ start: '/v/Projects/Alpha' })
-    expect(crumbs().map((c) => c.textContent)).toEqual(['Notes', 'Projects', 'Alpha'])
+    expect(crumbs().map((c) => c.textContent)).toEqual(['Pages', 'Projects', 'Alpha'])
     type('a')
     // "Alpha" and "Areas" start with "a", "Beta" and "Health" have one inside, each in the tree's order; "Projects" has none.
     expect(names()).toEqual(['Alpha', 'Areas', 'Beta', 'Health'])
@@ -96,9 +96,9 @@ describe('PlacePicker (YAZ-3556 D6)', () => {
     const { onPick, onClose } = render()
     press('ArrowDown') // Areas
     press('Enter')
-    expect(crumbs().map((c) => c.textContent)).toEqual(['Notes', 'Areas'])
+    expect(crumbs().map((c) => c.textContent)).toEqual(['Pages', 'Areas'])
     press('Backspace')
-    expect(crumbs().map((c) => c.textContent)).toEqual(['Notes'])
+    expect(crumbs().map((c) => c.textContent)).toEqual(['Pages'])
     press('Enter')
     expect(onPick).toHaveBeenCalledExactlyOnceWith('/v', '/v')
     type('x')
@@ -126,8 +126,8 @@ describe('PlacePicker (YAZ-3556 D6)', () => {
     expect(crumbs().map((c) => c.textContent)).toEqual(['Vaults', 'Work vault'])
     expect(names()).toEqual(['Choose this folder', 'Work'])
     click(crumbs()[0])
-    expect(names()).toEqual(['Work vault', 'Notes'])
-    click(rowNamed('Notes'))
+    expect(names()).toEqual(['Work vault', 'Pages'])
+    click(rowNamed('Pages'))
     click(rowNamed('Choose this folder'))
     expect(onPick).toHaveBeenCalledExactlyOnceWith('/v', '/v')
   })

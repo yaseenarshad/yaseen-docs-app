@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defaultCourseState } from '@shared/courseState'
 import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -137,6 +138,35 @@ describe('a folder of a vault (YAZ-4922 D3): `FolderState.in`', () => {
   })
 })
 
+describe('"Up next a day" (YAZ-5028): `FolderState.upNext`, the day\'s taken marks in the app state', () => {
+  it('is merged whole by setFolder, kept over a reload, and a junk value changes nothing or is dropped on load', async () => {
+    const store = createStore(file)
+    store.setFolder('/v', { upNext: { day: '2026-11-13', cards: ['DEMO-1', 'DEMO-1', 'DEMO-2'] } })
+    expect(store.get().folders['/v'].upNext).toEqual({ day: '2026-11-13', cards: ['DEMO-1', 'DEMO-2'] })
+    store.setFolder('/v', { upNext: { day: 'today', cards: [] } as never })
+    expect(store.get().folders['/v'].upNext).toEqual({ day: '2026-11-13', cards: ['DEMO-1', 'DEMO-2'] })
+    await store.flush()
+    expect(createStore(file).get().folders['/v'].upNext).toEqual({ day: '2026-11-13', cards: ['DEMO-1', 'DEMO-2'] })
+    await seed(valid({ folders: { '/w': { lastFile: null, upNext: { day: 3, cards: 'x' } } } }))
+    expect(createStore(file).get().folders['/w'].upNext).toBeUndefined()
+  })
+})
+
+describe('"Add more for today" (YAZ-5042): `FolderState.added`, the day\'s added numbers in the app state', () => {
+  it('is merged whole by setFolder, kept over a reload, and a junk value changes nothing or is dropped on load', async () => {
+    const store = createStore(file)
+    store.setFolder('/v', { added: { day: '2026-11-13', newCards: 10, upNext: 2 } })
+    expect(store.get().folders['/v'].added).toEqual({ day: '2026-11-13', newCards: 10, upNext: 2 })
+    store.setFolder('/v', { added: { day: '2026-11-13', newCards: -1, upNext: 2 } as never })
+    store.setFolder('/v', { added: { day: 'today', newCards: 1, upNext: 0 } as never })
+    expect(store.get().folders['/v'].added).toEqual({ day: '2026-11-13', newCards: 10, upNext: 2 })
+    await store.flush()
+    expect(createStore(file).get().folders['/v'].added).toEqual({ day: '2026-11-13', newCards: 10, upNext: 2 })
+    await seed(valid({ folders: { '/w': { lastFile: null, added: { day: '2026-11-13', newCards: 1.5, upNext: 'x' } } } }))
+    expect(createStore(file).get().folders['/w'].added).toBeUndefined()
+  })
+})
+
 describe('createStore: loading', () => {
   it('a missing file yields the defaults and creates nothing until the first change', () => {
     const store = createStore(file)
@@ -160,9 +190,24 @@ describe('createStore: loading', () => {
       settingsFolder: '/Sync/yaseen-docs-settings',
       settingsSavedAt: 42,
       tabCanvas: { allWindows: true, snap: true, cards: [{ win: 'w1', path: '/v/a.md', copy: 0, by: 'folder', x: 10, y: -20.5 }], frames: [] },
+      course: { chapter: 'inbox', clip: 'c3-04', finished: ['why', 'first-card'], done: false, dismissed: true, offered: true, muted: true, speed: 1.25, made: [], toured: ['first-card'], vault: '/v', dock: 'side', dockCorner: 'top-left', dockSide: 0.4 },
     }
     await seed(state)
     expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null, key: null } } })
+  })
+
+  it('YAZ-5120 the card course: absent is the default; each bad field reads its default; setCourse commits only a change', async () => {
+    await seed(valid({}))
+    expect(createStore(file).get().course).toEqual(defaultCourseState())
+    await seed(valid({ course: { chapter: 'inbox', clip: 'bad id!', finished: ['why', 'why', 3], muted: 'yes', speed: 2, extra: 1 } }))
+    expect(createStore(file).get().course).toEqual({ ...defaultCourseState(), chapter: 'inbox', finished: ['why'] })
+    const store = createStore(file)
+    const seen: unknown[] = []
+    store.onChange((s) => seen.push(s.course))
+    store.setCourse({ clip: 'c3-02', speed: 1.5 })
+    store.setCourse({ clip: 'c3-02' })
+    expect(store.get().course).toMatchObject({ chapter: 'inbox', clip: 'c3-02', speed: 1.5 })
+    expect(seen).toHaveLength(1)
   })
 
   it('settings fall back field by field (partial shapes, junk types, width/colour ranges)', async () => {
@@ -237,6 +282,39 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, codeWrap: false })).toBe(true)
   })
 
+  it('Settings › Review › Shown hidden words (YAZ-5005, YAZ-5053) and Card spacing (YAZ-5050): Box survives a restart; a file from before them reads Highlight and Same as pages; a wrong value falls back field by field', async () => {
+    const { cardSpacing: _a, cardLineSpacing: _b, cardBlockGap: _c, cardBulletIndent: _d, cardBulletGap: _e, cardBulletSpace: _f, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    // Round 3: the card's own values default to Custom's start (Mochi's), the look stays Same as pages.
+    expect(createStore(file).get().settings).toMatchObject({ shownHiddenWords: 'highlight', cardSpacing: 'pages', cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
+    const custom = { shownHiddenWords: 'box', cardSpacing: 'custom', cardLineSpacing: 2, cardBlockGap: 4, cardBulletIndent: 40, cardBulletGap: 14, cardBulletSpace: 2 } as const
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, ...custom } }))
+    expect(createStore(file).get().settings).toMatchObject(custom)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, shownHiddenWords: 'boxes', cardSpacing: 'mine', cardLineSpacing: -1, cardBlockGap: 'x', cardBulletIndent: 9999, cardBulletGap: 1.5, cardBulletSpace: -2 })).toMatchObject({ shownHiddenWords: 'highlight', cardSpacing: 'pages', cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
+    expect(isSettings({ ...DEFAULT_SETTINGS, shownHiddenWords: 'box' })).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardSpacing: 'custom', cardLineSpacing: 1.15 })).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardSpacing: 'other' })).toBe(false)
+    // YAZ-5050 round 4: Clean.
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardSpacing: 'clean' })).toBe(true)
+    // YAZ-5053 round 3: Mark the next hidden word (On by default) and its colour (null: the default; else a hex colour).
+    expect(sanitizeSettings({})).toMatchObject({ markNextHidden: true, nextHiddenColour: null })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, markNextHidden: false, nextHiddenColour: '#aa3399' })).toMatchObject({ markNextHidden: false, nextHiddenColour: '#aa3399' })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, markNextHidden: 'yes', nextHiddenColour: 'blue' })).toMatchObject({ markNextHidden: true, nextHiddenColour: null })
+  })
+
+  it('Card tips (YAZ-5114): On by default, also in a file from before it; Off survives a restart; a wrong value reads On', async () => {
+    expect(DEFAULT_SETTINGS.cardTips).toBe(true)
+    const { cardTips: _gone, ...older } = DEFAULT_SETTINGS
+    await seed(valid({ settings: older }))
+    expect(createStore(file).get().settings.cardTips).toBe(true)
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, cardTips: false })
+    await store.flush()
+    expect(createStore(file).get().settings.cardTips).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardTips: 'off' })).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, cardTips: 'off' })).toMatchObject({ cardTips: true })
+  })
+
   it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {
     const { codeLanguageHelpers: _a, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.codeLanguageHelpers).toBe(false)
@@ -274,22 +352,22 @@ describe('createStore: loading', () => {
     expect(mergeFolderSettings(here, { goTo: { kind: 'tab', tab: 'nowhere' } }).goTo).toStrictEqual(here.goTo)
   })
 
-  it('Daily notes (YAZ-3607 D2, D4, D12): a file from before them reads off, the vault folder, YYYY-MM-DD and no day folders; each survives a restart; a wrong value reads its default; they travel', async () => {
-    const { dailyNotes: _a, dailyNoteFolder: _b, dailyNoteFormat: _c, dailyNoteDayFolder: _d, ...legacySettings } = DEFAULT_SETTINGS
+  it('Daily pages (YAZ-3607 D2, D4, D12): a file from before them reads off, the vault folder, YYYY-MM-DD and no day folders; each survives a restart; a wrong value reads its default; they travel', async () => {
+    const { dailyPages: _a, dailyPageFolder: _b, dailyPageFormat: _c, dailyPageDayFolder: _d, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))
     const before = createStore(file).get().settings
-    expect([before.dailyNotes, before.dailyNoteFolder, before.dailyNoteFormat, before.dailyNoteDayFolder]).toEqual([false, '', 'YYYY-MM-DD', false])
-    const set = { dailyNotes: true, dailyNoteFolder: 'Journal/Daily', dailyNoteFormat: 'MM_DD- ddd', dailyNoteDayFolder: true }
+    expect([before.dailyPages, before.dailyPageFolder, before.dailyPageFormat, before.dailyPageDayFolder]).toEqual([false, '', 'YYYY-MM-DD', false])
+    const set = { dailyPages: true, dailyPageFolder: 'Journal/Daily', dailyPageFormat: 'MM_DD- ddd', dailyPageDayFolder: true }
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, ...set } }))
     expect(createStore(file).get().settings).toMatchObject(set)
     // A hidden or absolute folder; a style with no day, with a "/", or hidden; a switch that is not a boolean.
-    for (const wrong of [{ dailyNoteFolder: '.trash' }, { dailyNoteFolder: '/Users/x' }, { dailyNoteFormat: 'YYYY-MM' }, { dailyNoteFormat: 'YYYY/MM/DD' }, { dailyNoteFormat: '[.]DD' }, { dailyNotes: 'yes' }, { dailyNoteDayFolder: 1 }]) {
+    for (const wrong of [{ dailyPageFolder: '.trash' }, { dailyPageFolder: '/Users/x' }, { dailyPageFormat: 'YYYY-MM' }, { dailyPageFormat: 'YYYY/MM/DD' }, { dailyPageFormat: '[.]DD' }, { dailyPages: 'yes' }, { dailyPageDayFolder: 1 }]) {
       await seed(valid({ settings: { ...DEFAULT_SETTINGS, ...wrong } }))
       const [key] = Object.keys(wrong) as (keyof typeof DEFAULT_SETTINGS)[]
       expect(createStore(file).get().settings[key], JSON.stringify(wrong)).toEqual(DEFAULT_SETTINGS[key])
       expect(isSettings({ ...DEFAULT_SETTINGS, ...wrong })).toBe(false)
     }
-    for (const key of ['dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder'] as const) expect(LOCAL_SETTINGS).not.toContain(key)
+    for (const key of ['dailyPages', 'dailyPageFolder', 'dailyPageFormat', 'dailyPageDayFolder'] as const) expect(LOCAL_SETTINGS).not.toContain(key)
   })
 
   it('Settings › Memory (YAZ-3737 D10): a file from before it reads 30 min and reload on; each survives a restart; a wrong value reads its default; they travel', async () => {
@@ -610,8 +688,8 @@ describe('createStore: loading', () => {
     const junk: Record<string, unknown[]> = {
       tableCellBulletIndent: [7, 33, 20.5, '20', NaN],
       tableCellBulletGap: [1, 13, 4.5, null],
-      noteBulletIndent: [7, 49, 34.5, '34'],
-      noteBulletGap: [1, 21, 10.5, true],
+      pageBulletIndent: [7, 49, 34.5, '34'],
+      pageBulletGap: [1, 21, 10.5, true],
       tableCellNoteTemplate: ['x'.repeat(2001), 3, null],
       tableCellNotePinned: ['yes', 1],
       typingArrows: ['on', 0],
@@ -620,7 +698,7 @@ describe('createStore: loading', () => {
       tableBandStrength: [0, 61, 10.5, '10', Infinity],
       tableBandRows: ['row', '', 2],
       tableBandBold: ['true', 0],
-      newNoteTitleTemplate: ['{MM}/{DD}', 'x'.repeat(201), 5],
+      newPageTitleTemplate: ['{MM}/{DD}', 'x'.repeat(201), 5],
     }
     for (const [field, values] of Object.entries(junk)) {
       for (const value of values) {
@@ -764,7 +842,7 @@ describe('createStore: loading', () => {
     // An old change that is the default now goes (YAZ-3564 D10: Toggle sidebar's ⌘⇧B), so the page shows no Reset for it.
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { toggleSidebar: 'CmdOrCtrl+Shift+B', search: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Alt+J' })
     // The tabs' picks (YAZ-3564): per tab; an old one-switch entry becomes its tabs; an unknown row, tab or value goes. The IPC boundary takes only the per-tab form.
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo': false, 'app.search@code': true, 'app.nope@code': true, 'app.search@note': true, 'app.goTo@drawing': 'no' } as never }).hotkeysAside).toEqual({ 'app.goTo@drawing': false, 'app.goTo@diagram': false, 'app.goTo@code': false, 'app.search@code': true })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo': false, 'app.search@code': true, 'app.nope@code': true, 'app.search@page': true, 'app.goTo@drawing': 'no' } as never }).hotkeysAside).toEqual({ 'app.goTo@drawing': false, 'app.goTo@diagram': false, 'app.goTo@code': false, 'app.search@code': true })
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo@drawing': false } })).toBe(true)
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo': false } })).toBe(false)
     // Dropping one change can uncover the next clash: Tab overview's ⌘⇧M comes back, so Search the vault's ⌘⇧M goes too.
@@ -780,9 +858,9 @@ describe('createStore: loading', () => {
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: stored }).hotkeys).toEqual(stored)
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: stored })).toBe(true)
     // The default (⌘-click is Links › Open in a background tab's) is no change; a key is no gesture; a gesture is no key; an id no row has goes.
-    const junk = { 'links.backgroundTab': 'Command+Click', 'links.newTab': 'CmdOrCtrl+K', 'note.bold': 'CmdOrCtrl+Click', 'links.window': 'Click', 'bullets.newTab': 'Alt+Click' }
+    const junk = { 'links.backgroundTab': 'Command+Click', 'links.newTab': 'CmdOrCtrl+K', 'page.bold': 'CmdOrCtrl+Click', 'links.window': 'Click', 'bullets.newTab': 'Alt+Click' }
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: junk }).hotkeys).toEqual({ 'bullets.newTab': 'Alt+Click' })
-    for (const bad of [{ 'links.newTab': 'CmdOrCtrl+K' }, { 'note.bold': 'CmdOrCtrl+Click' }, { 'links.window': 'Click' }, { 'links.newTab': 3 }]) expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: bad }), JSON.stringify(bad)).toBe(false)
+    for (const bad of [{ 'links.newTab': 'CmdOrCtrl+K' }, { 'page.bold': 'CmdOrCtrl+Click' }, { 'links.window': 'Click' }, { 'links.newTab': 3 }]) expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: bad }), JSON.stringify(bad)).toBe(false)
   })
 
   it('sidebarZoom (YAZ-3389): an older file without the key loads at 100; junk loads at 100; an off-step number inside 50–200 is kept (D7), one outside is clamped; the channel takes 50–200 only', async () => {
@@ -875,15 +953,15 @@ describe('createStore: loading', () => {
   it('folderPages (YAZ-4585, D34): every row is valid, each default is the look before, and a broken part costs that part only', async () => {
     const fp = DEFAULT_SETTINGS.folderPages
     // Sunday first and Show empty groups on (YAZ-3746 demo round 2), Confirm changes on (13AN).
-    // The folder icon on and the notes inside count off (YAZ-4848). Column type icons on (YAZ-4779), sticky group headers, group lines on hover and plain (YAZ-4798), the "+ New" buttons on (YAZ-3746 demo).
-    // The calendar's lines 1 px and Gray (YAZ-4878).
-    expect(fp).toEqual({ weekStartsOn: 'sunday', rowBand: null, keepWindowPinned: null, rowHeight: 'short', rowNumbers: true, columnTypeIcons: true, textInCells: 'kind', groupIndent: 'medium', stickyGroups: true, groupLines: 'hover', groupLineStyle: 'plain', showEmptyGroups: true, showEmptyColumns: false, subfolders: 'notes', foldersFirst: true, folderIcons: true, folderCounts: false, calendarScale: 'month', cardTitles: 'clip', hideWeekends: false, weekLine: 1, dayLine: 1, weekLineColor: 'gray', dayLineColor: 'gray', showFolderPageFiles: false, askBeforeDelete: true, confirmChanges: true, showNewButtons: true, showOtherFiles: true, inheritColumns: true, columnMarks: 'icon' })
+    // The folder icon on and the pages inside count off (YAZ-4848). Column type icons on (YAZ-4779), sticky group headers, group lines on hover and plain (YAZ-4798), the "+ New" buttons on (YAZ-3746 demo).
+    // The calendar's lines 1 px and Gray (YAZ-4878). A click on a Calendar or Board card opens a background tab (YAZ-5582).
+    expect(fp).toEqual({ weekStartsOn: 'sunday', rowBand: null, keepWindowPinned: null, rowHeight: 'short', rowNumbers: true, columnTypeIcons: true, textInCells: 'kind', groupIndent: 'medium', stickyGroups: true, groupLines: 'hover', groupLineStyle: 'plain', showEmptyGroups: true, showEmptyColumns: false, subfolders: 'pages', foldersFirst: true, folderIcons: true, folderCounts: false, calendarScale: 'month', cardTitles: 'clip', hideWeekends: false, weekLine: 1, dayLine: 1, weekLineColor: 'gray', dayLineColor: 'gray', showFolderPageFiles: false, askBeforeDelete: true, confirmChanges: true, showNewButtons: true, showOtherFiles: true, inheritColumns: true, columnMarks: 'icon', cardClickOpens: 'background' })
     // Each value a Settings row writes is accepted by the channel.
-    const written = { weekStartsOn: 'monday', rowBand: false, keepWindowPinned: true, rowHeight: 'tall', rowNumbers: false, columnTypeIcons: false, textInCells: 'clip', groupIndent: 'large', stickyGroups: false, groupLines: 'always', groupLineStyle: 'thread', showEmptyGroups: false, showEmptyColumns: false, subfolders: 'both', foldersFirst: false, folderIcons: false, folderCounts: true, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true, weekLine: 12, dayLine: 3, weekLineColor: 'blue strong', dayLineColor: 'black light', showFolderPageFiles: true, askBeforeDelete: false, confirmChanges: false, showNewButtons: false, showOtherFiles: false, inheritColumns: false, columnMarks: 'off' }
+    const written = { weekStartsOn: 'monday', rowBand: false, keepWindowPinned: true, rowHeight: 'tall', rowNumbers: false, columnTypeIcons: false, textInCells: 'clip', groupIndent: 'large', stickyGroups: false, groupLines: 'always', groupLineStyle: 'thread', showEmptyGroups: false, showEmptyColumns: false, subfolders: 'both', foldersFirst: false, folderIcons: false, folderCounts: true, calendarScale: 'week', cardTitles: 'wrap', hideWeekends: true, weekLine: 12, dayLine: 3, weekLineColor: 'blue strong', dayLineColor: 'black light', showFolderPageFiles: true, askBeforeDelete: false, confirmChanges: false, showNewButtons: false, showOtherFiles: false, inheritColumns: false, columnMarks: 'off', cardClickOpens: 'window' }
     expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: written })).toBe(true)
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: written }).folderPages).toEqual(written)
     // YAZ-4878: a width off 1–12 or not whole, and a colour the app cannot read, are broken parts.
-    for (const bad of [{ ...fp, weekStartsOn: 'friday' }, { ...fp, rowBand: 'on' }, { ...fp, subfolders: false }, { ...fp, hideWeekends: 'yes' }, { ...fp, weekLine: 0 }, { ...fp, dayLine: 13 }, { ...fp, dayLine: 2.5 }, { ...fp, weekLineColor: 'turquoise' }, { ...fp, dayLineColor: 'blue bold' }, { ...fp, askBeforeDelete: null }, { ...fp, showOtherFiles: 'on' }, { ...fp, columnMarks: true }, { ...fp, folderCounts: 'on' }, (({ showFolderPageFiles: _gone, ...rest }) => rest)(fp), 'on', undefined]) {
+    for (const bad of [{ ...fp, weekStartsOn: 'friday' }, { ...fp, rowBand: 'on' }, { ...fp, subfolders: false }, { ...fp, hideWeekends: 'yes' }, { ...fp, weekLine: 0 }, { ...fp, dayLine: 13 }, { ...fp, dayLine: 2.5 }, { ...fp, weekLineColor: 'turquoise' }, { ...fp, dayLineColor: 'blue bold' }, { ...fp, askBeforeDelete: null }, { ...fp, showOtherFiles: 'on' }, { ...fp, columnMarks: true }, { ...fp, folderCounts: 'on' }, { ...fp, cardClickOpens: 'peek' }, (({ showFolderPageFiles: _gone, ...rest }) => rest)(fp), 'on', undefined]) {
       expect(isSettings({ ...DEFAULT_SETTINGS, folderPages: bad })).toBe(false)
     }
     // A file from before the page reads the defaults; a broken part reads its default and the others keep their values.
@@ -1062,8 +1140,8 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, ...good })).toBe(true)
     const bad = { sidebarStickyLevels: 4, sidebarIconSet: 'emoji', sidebarFileIcons: 'loud', sidebarFolderIcons: 'yes', sidebarArrowMotion: 'slow' }
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, ...bad })).toEqual(DEFAULT_SETTINGS)
-    for (const [key, value] of Object.entries({ ...bad, sidebarIconColors: { note: 'blue' } })) expect(isSettings({ ...DEFAULT_SETTINGS, [key]: value }), key).toBe(false)
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarIconColors: { note: 'blue', text: '#00aa55', nope: '#000000' } }).sidebarIconColors).toEqual({ text: '#00aa55' })
+    for (const [key, value] of Object.entries({ ...bad, sidebarIconColors: { page: 'blue' } })) expect(isSettings({ ...DEFAULT_SETTINGS, [key]: value }), key).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarIconColors: { page: 'blue', text: '#00aa55', nope: '#000000' } }).sidebarIconColors).toEqual({ text: '#00aa55' })
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarIconColors: ['#000000'] }).sidebarIconColors).toEqual({})
     const here = { ...DEFAULT_SETTINGS, sidebarIconColors: { pdf: '#112233', image: '#445566' } }
     expect(mergeFolderSettings(here, { sidebarIconColors: { pdf: '#112233' } }).sidebarIconColors).toEqual({ pdf: '#112233' })
@@ -1085,7 +1163,7 @@ describe('createStore: loading', () => {
     const { sidebarIconRules: _rules, ...legacy } = DEFAULT_SETTINGS
     expect(sanitizeSettings(legacy).sidebarIconRules).toEqual([])
     const good = [{ match: '*.gif', kind: 'file', icon: 'image' }, { match: 'src', kind: 'folder', icon: 'folder-src' }]
-    const raw = [...good, { match: '', kind: 'file', icon: 'image' }, { match: '*.x', kind: 'note', icon: 'image' }, { match: '*.y', kind: 'file', icon: 'not an id' }, 'nope']
+    const raw = [...good, { match: '', kind: 'file', icon: 'image' }, { match: '*.x', kind: 'page', icon: 'image' }, { match: '*.y', kind: 'file', icon: 'not an id' }, 'nope']
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarIconRules: raw }).sidebarIconRules).toEqual(good)
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarIconRules: { a: 1 } }).sidebarIconRules).toEqual([])
     expect(isSettings({ ...DEFAULT_SETTINGS, sidebarIconRules: good })).toBe(true)
@@ -1221,19 +1299,19 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().approvedPictureFolders).toEqual([])
   })
 
-  it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to the defaults (current + "", YAZ-1643); junk falls back (GRO-2240)', async () => {
+  it('newPageLocation/newPageFolder: a pre-C2 file without the keys sanitizes to the defaults (current + "", YAZ-1643); junk falls back (GRO-2240)', async () => {
     // A pre-C2 yaseendocs.json: every field but the Files & Links pair — missing fields just gain their defaults.
-    const { newNoteLocation: _loc, newNoteFolder: _folder, ...preC2Settings } = DEFAULT_SETTINGS
+    const { newPageLocation: _loc, newPageFolder: _folder, ...preC2Settings } = DEFAULT_SETTINGS
     await seed(valid({ settings: preC2Settings }))
     expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
-    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Notes/Inbox' } }))
-    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Notes/Inbox' })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newPageLocation: 'folder', newPageFolder: 'Pages/Inbox' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, newPageLocation: 'folder', newPageFolder: 'Pages/Inbox' })
     // Junk location, absolute / dot-dot / trailing-slash folders: each field falls back alone.
-    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newNoteLocation: 'desktop', newNoteFolder: 5 } }))
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newPageLocation: 'desktop', newPageFolder: 5 } }))
     expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
-    for (const bad of ['/abs', 'a/../b', 'a//b', 'Notes/']) {
-      await seed(valid({ settings: { ...DEFAULT_SETTINGS, newNoteFolder: bad } }))
-      expect(createStore(file).get().settings.newNoteFolder).toBe('')
+    for (const bad of ['/abs', 'a/../b', 'a//b', 'Pages/']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, newPageFolder: bad } }))
+      expect(createStore(file).get().settings.newPageFolder).toBe('')
     }
   })
 
@@ -1597,6 +1675,19 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().vaultSets.map((s) => s.id)).toEqual(Array.from({ length: MAX_VAULT_SETS }, (_, i) => `s${i}`))
   })
 
+  it('YAZ-5491 seededVaultConfig: the marks load and save; junk roots and names drop; none is no key', async () => {
+    await seed(valid({ seededVaultConfig: { '/v': ['daily-pages.json', 'new-places.json#newPage', 'a/b.json', 7], rel: ['x.json'], '/w': 'x' } }))
+    const store = createStore(file)
+    expect(store.get().seededVaultConfig).toEqual({ '/v': ['daily-pages.json', 'new-places.json#newPage'] })
+    expect(store.seededConfig('/v', 'daily-pages.json')).toBe(true)
+    expect(store.seededConfig('/w', 'daily-pages.json')).toBe(false)
+    store.markSeededConfig('/w', 'daily-pages.json')
+    store.markSeededConfig('/w', 'daily-pages.json')
+    expect(store.get().seededVaultConfig?.['/w']).toEqual(['daily-pages.json'])
+    await store.flush()
+    expect(createStore(file).seededConfig('/w', 'daily-pages.json')).toBe(true)
+  })
+
   it('unknown top-level keys are dropped', async () => {
     await seed(valid({ extra: 1 }))
     expect(createStore(file).get()).toEqual(defaultAppState())
@@ -1738,13 +1829,13 @@ describe('createStore: mutations', () => {
     expect(seen).toHaveBeenCalledTimes(4)
     store.setTocSource('/r1', '/r1/a.md', 'headings')
     store.setTocSource('/r1', '/r1/never.md', null)
-    store.setTocSource('/r3', '/r3/a.md', null) // Auto on a note of a vault with no state: no bucket is made for it
+    store.setTocSource('/r3', '/r3/a.md', null) // Auto on a page of a vault with no state: no bucket is made for it
     expect(seen).toHaveBeenCalledTimes(4)
     expect(store.get().folders['/r3']).toBeUndefined()
     store.setTocSource('/r1', '/r1/a.md', null)
     store.setTocSource('/r1', '/r1/b.md', null)
     expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null })
-    // What is written holds no `auto` and no `null`: only the notes with a choice.
+    // What is written holds no `auto` and no `null`: only the pages with a choice.
     await store.flush()
     expect((await onDisk()).folders).toEqual({ '/r1': { lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }, '/r2': { lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: { '/r2/a.md': 'headings' }, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } })
     expect(createStore(file).get().folders['/r2'].tocSources).toEqual({ '/r2/a.md': 'headings' })
@@ -1838,7 +1929,7 @@ describe('createStore: mutations', () => {
     store.setTocFolds('/r2', '/r2/a.md', ['1:Intro#0'])
     store.setTocFolds('/r1', '/r1/a.md', ['3:Keys#0']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].tocFolds).toEqual({ '/r1/a.md': ['3:Keys#0'] })
-    expect(store.get().folders['/r1'].folds).toEqual({}) // apart from the note's own folds
+    expect(store.get().folders['/r1'].folds).toEqual({}) // apart from the page's own folds
     store.setTocFolds('/r1', '/r1/a.md', [])
     expect(store.get().folders['/r1'].tocFolds).toEqual({})
     store.setTocFolds('/r2', '/r2/a.md', Array.from({ length: MAX_FOLD_KEYS_PER_FILE + 50 }, (_, i) => `2:k${i}#0`))
@@ -1957,7 +2048,7 @@ describe('createStore: mutations', () => {
       expect(store.get().folders['/v'].baseGroups).toEqual({ '/v/U.md::Table': ['g1'] })
     })
 
-    it('the table of contents source follows its renamed note, and no other note\'s moves (YAZ-2700 D14)', () => {
+    it('the table of contents source follows its renamed page, and no other page\'s moves (YAZ-2700 D14)', () => {
       const store = createStore(file)
       store.setTocSource('/v', OLD, 'bullets')
       store.setTocSource('/v', '/v/x.md', 'headings')
@@ -1965,7 +2056,7 @@ describe('createStore: mutations', () => {
       expect(store.get().folders['/v'].tocSources).toEqual({ [NEW]: 'bullets', '/v/x.md': 'headings' })
     })
 
-    it('the folded rows of the table of contents follow their renamed note, and no other note\'s move (YAZ-3939 D1)', () => {
+    it('the folded rows of the table of contents follow their renamed page, and no other page\'s move (YAZ-3939 D1)', () => {
       const store = createStore(file)
       store.setTocFolds('/v', OLD, ['2:Design#0'])
       store.setTocFolds('/v', '/v/x.md', ['1:Intro#0'])
@@ -1974,7 +2065,7 @@ describe('createStore: mutations', () => {
     })
 
 
-    it('the table of contents switch follows its renamed note, on or off, and no other note\'s moves (YAZ-2950)', () => {
+    it('the table of contents switch follows its renamed page, on or off, and no other page\'s moves (YAZ-2950)', () => {
       const store = createStore(file)
       store.setTocSwitch('/v', OLD, false)
       store.setTocSwitch('/v', '/v/x.md', true)
@@ -2104,12 +2195,12 @@ describe('createStore: mutations', () => {
       store.setTocFolds('/v', '/v/x.md', ['1:Intro#0'])
       store.removePath(GONE)
       expect(store.get().folders['/v'].lastFile).toBeNull()
-      // The folded rows of the table of contents go with their note (YAZ-3939 D1); another note's stay.
+      // The folded rows of the table of contents go with their page (YAZ-3939 D1); another page's stay.
       expect(store.get().folders['/v'].tocFolds).toEqual({ '/v/x.md': ['1:Intro#0'] })
       expect(store.get().folders['/v'].folds).toEqual({ '/v/x.md': ['k2'] })
-      // The source goes with its note (YAZ-2700 D14); another note's stays.
+      // The source goes with its page (YAZ-2700 D14); another page's stays.
       expect(store.get().folders['/v'].tocSources).toEqual({ '/v/x.md': 'headings' })
-      // And so does the section indent switch (YAZ-2709 D2): a deleted note leaves no entry, another note's stays, off as it was.
+      // And so does the section indent switch (YAZ-2709 D2): a deleted page leaves no entry, another page's stays, off as it was.
       // And the table of contents switch (YAZ-2950), on the same terms.
       expect(store.get().folders['/v'].tocSwitches).toEqual({ '/v/x.md': false })
       store.removePath('/v/Old')
@@ -2237,9 +2328,9 @@ describe('createStore: mutations', () => {
 
     it('a renamed vault ROOT keeps its display name and its number under the new key (YAZ-1974 D3, YAZ-2555 S20); a deleted one loses both', () => {
       const store = createStore(file)
-      store.setFolder(OLD, { name: 'Old Notes', key: 4 })
+      store.setFolder(OLD, { name: 'Old Pages', key: 4 })
       store.renamePath(OLD, NEW)
-      expect(store.get().folders[NEW]).toMatchObject({ name: 'Old Notes', key: 4 })
+      expect(store.get().folders[NEW]).toMatchObject({ name: 'Old Pages', key: 4 })
       expect(store.get().folders[OLD]).toBeUndefined()
       store.removePath(NEW)
       expect(store.get().folders[NEW]).toBeUndefined()
@@ -2639,7 +2730,7 @@ describe('vaultSets (YAZ-2602 D8)', () => {
     expect(seen).toHaveLength(3)
     // A deleted FILE inside a vault is not a vault: no set moves.
     const kept = store.get().vaultSets
-    store.removePath('/w/c/note.md')
+    store.removePath('/w/c/page.md')
     expect(store.get().vaultSets).toEqual(kept)
     expect(seen).toHaveLength(3)
     store.removePath('/w/c')
@@ -3106,16 +3197,16 @@ describe('the save log (YAZ-3235 D1)', () => {
 describe('the tab board canvas and window names (YAZ-3343 D1, D14)', () => {
   it('YAZ-3343 D28: a stored card whose tab left its window is PRUNED when that window\'s tabs change — from the demo\'s state: two stale cards sharing cells with live ones; idempotent', async () => {
     const strip = (paths: string[]) => paths.map((path) => ({ path }))
-    const roadmap: WindowEntry = { ...win('demo-a'), root: '/v', roots: ['/v'], file: '/v/Roadmap.md', tabs: ['/v/Roadmap.md', '/v/Note 08.md', '/v/Wireframe.md'], tabStrip: [{ path: '/v/Roadmap.md', name: 'Plan' }, ...strip(['/v/Note 08.md', '/v/Wireframe.md'])] }
+    const roadmap: WindowEntry = { ...win('demo-a'), root: '/v', roots: ['/v'], file: '/v/Roadmap.md', tabs: ['/v/Roadmap.md', '/v/Page 08.md', '/v/Wireframe.md'], tabStrip: [{ path: '/v/Roadmap.md', name: 'Plan' }, ...strip(['/v/Page 08.md', '/v/Wireframe.md'])] }
     const card = (path: string, copy: number, x: number, y: number): CanvasCard => ({ win: 'demo-a', path, copy, by: 'window', x, y })
     await seed(valid({
       windows: [roadmap],
-      tabCanvas: { allWindows: true, cards: [card('/v/Note 08.md', 0, 1266, 142), card('/v/Roadmap.md', 1, 1266, 142), card('/v/Wireframe.md', 0, 1266, 248), card('/v/Note 03.md', 0, 1266, 248), card('/v/Roadmap.md', 0, 1036, 142)] },
+      tabCanvas: { allWindows: true, cards: [card('/v/Page 08.md', 0, 1266, 142), card('/v/Roadmap.md', 1, 1266, 142), card('/v/Wireframe.md', 0, 1266, 248), card('/v/Page 03.md', 0, 1266, 248), card('/v/Roadmap.md', 0, 1036, 142)] },
     }))
     const store = createStore(file)
-    // The window writes its tabs (unchanged): the two cards of tabs it no longer has go — a second copy of Roadmap, and Note 03.
+    // The window writes its tabs (unchanged): the two cards of tabs it no longer has go — a second copy of Roadmap, and Page 03.
     store.upsertWindow({ ...roadmap })
-    expect(store.get().tabCanvas.cards.map((c) => [c.path, c.copy])).toEqual([['/v/Note 08.md', 0], ['/v/Wireframe.md', 0], ['/v/Roadmap.md', 0]])
+    expect(store.get().tabCanvas.cards.map((c) => [c.path, c.copy])).toEqual([['/v/Page 08.md', 0], ['/v/Wireframe.md', 0], ['/v/Roadmap.md', 0]])
     const held = store.get().tabCanvas
     store.upsertWindow({ ...roadmap })
     expect(store.get().tabCanvas).toBe(held)
@@ -3257,7 +3348,7 @@ describe('Files windows (YAZ-3357 D1)', () => {
   })
 })
 
-describe('the closed notes (YAZ-3487 D9, "Recently closed")', () => {
+describe('the closed pages (YAZ-3487 D9, "Recently closed")', () => {
   const T = 1_700_000_000_000
 
   it('S31, S40: addClosed sets each file\'s time, newest wins; past MAX_CLOSED (50) the oldest go; it is pure', () => {
@@ -3295,7 +3386,7 @@ describe('the closed notes (YAZ-3487 D9, "Recently closed")', () => {
     expect(createStore(file).get().folders['/v'].closed).toEqual({ '/v/a.md': T })
   })
 
-  it('D14: forgetClosed drops the files named, or with null every closed note of the roots\' vaults, in ONE commit; other vaults keep theirs', () => {
+  it('D14: forgetClosed drops the files named, or with null every closed page of the roots\' vaults, in ONE commit; other vaults keep theirs', () => {
     const store = createStore(file)
     store.addClosed(['/v', '/w', '/u'], ['/v/a.md', '/v/b.md', '/w/c.md', '/u/d.md'], T)
     const seen: AppState[] = []
@@ -3309,7 +3400,7 @@ describe('the closed notes (YAZ-3487 D9, "Recently closed")', () => {
     expect(seen).toHaveLength(2)
   })
 
-  it('S38, S39: a renamed note keeps its entry under the new path; a deleted note drops it', () => {
+  it('S38, S39: a renamed page keeps its entry under the new path; a deleted page drops it', () => {
     const store = createStore(file)
     store.addClosed(['/v'], ['/v/a.md', '/v/docs/b.md'], T)
     store.renamePath('/v/a.md', '/v/a2.md')
@@ -3334,5 +3425,44 @@ describe('Settings › Tables › Header row (YAZ-4794): text colour and align',
     expect(isSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { ...DEFAULT_SETTINGS.tableHeaderRow, text: 'gray' } })).toBe(false)
     const { align: _, ...noAlign } = DEFAULT_SETTINGS.tableHeaderRow
     expect(isSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: noAlign })).toBe(false)
+  })
+})
+
+
+describe('Time in slot and Show seconds left the app settings (YAZ-5602 round 2: table-look.json)', () => {
+  it('no app setting any more; a value an older build of today saved is read once at start, for the move into the vaults', async () => {
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })).not.toHaveProperty('tableSlotTime')
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })).not.toHaveProperty('tableSlotSeconds')
+    await writeFile(file, JSON.stringify({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false } }))
+    expect(createStore(file).slotTimeToMove()).toEqual({ tableSlotTime: 'down', tableSlotSeconds: false })
+    await writeFile(file, JSON.stringify({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tableSlotTime: 'sideways', tableSlotSeconds: 'yes' } }))
+    expect(createStore(file).slotTimeToMove()).toEqual({})
+    expect(createStore(path.join(path.dirname(file), 'none.json')).slotTimeToMove()).toEqual({})
+  })
+
+  // YAZ-5649 item 1: the first write of the state file dropped the value, so a launch where the move did not run
+  // (offline, no pull yet, the vault not open) lost it for ever.
+  it('a write keeps the value in the state file until every known vault has the slot mark, then drops it', async () => {
+    const old = { tableSlotTime: 'down', tableSlotSeconds: false } as const
+    await writeFile(file, JSON.stringify({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, ...old } }))
+    const first = createStore(file)
+    first.setSettings({ ...first.get().settings, lineSpacing: 1.6 })
+    await first.flush()
+    const second = createStore(file)
+    expect(second.slotTimeToMove()).toEqual(old)
+    second.pushRecent('/v1')
+    second.pushRecent('/v2')
+    second.markSeededConfig('/v1', 'table-look.json#slot')
+    await second.flush()
+    const third = createStore(file)
+    expect(third.slotTimeToMove()).toEqual(old)
+    third.markSeededConfig('/v2', 'table-look.json')
+    await third.flush()
+    expect(createStore(file).slotTimeToMove()).toEqual(old)
+    const fourth = createStore(file)
+    fourth.markSeededConfig('/v2', 'table-look.json#slot')
+    await fourth.flush()
+    expect(createStore(file).slotTimeToMove()).toEqual({})
+    expect(JSON.parse(await readFile(file, 'utf8')).settings).not.toHaveProperty('tableSlotTime')
   })
 })

@@ -147,7 +147,7 @@ describe('useExternalRenames — the while-running feed', () => {
   it.each([
     [false, { properties: { title: 'deploy' } }, '/v/deploy.md|/v/release.md|1'],
     [true, { properties: { title: 'deploy' }, title: 'deploy' }, null],
-  ])('a renamed note holding `title: deploy`, with IDs %s: `[[deploy]]` is a link by file name only where the vault does not use IDs (YAZ-2523 🔒 V12)', async (ids, titled, shown) => {
+  ])('a renamed page holding `title: deploy`, with IDs %s: `[[deploy]]` is a link by file name only where the vault does not use IDs (YAZ-2523 🔒 V12)', async (ids, titled, shown) => {
     const linker = rec('/v/A.md', { links: ['deploy'], size: 20, mtime: 5 })
     await mount()
     await snapshot([linker, rec('/v/deploy.md', titled)], [], ids)
@@ -195,11 +195,11 @@ describe('useExternalRenames — the while-running feed', () => {
     expect(banner()).toBeNull()
   })
 
-  it('suppress (an in-app DIR rename) covers every moved note by prefix mapping', async () => {
+  it('suppress (an in-app DIR rename) covers every moved page by prefix mapping', async () => {
     await mount()
     await snapshot([rec('/v/A.md', { links: ['Docs/N'], size: 20, mtime: 5 }), rec('/v/Docs/N.md')])
-    act(() => captured.ext?.suppress('/v/Docs', '/v/Notes', 'dir'))
-    await snapshot([rec('/v/A.md', { links: ['Docs/N'], size: 20, mtime: 5 }), rec('/v/Notes/N.md')])
+    act(() => captured.ext?.suppress('/v/Docs', '/v/Pages', 'dir'))
+    await snapshot([rec('/v/A.md', { links: ['Docs/N'], size: 20, mtime: 5 }), rec('/v/Pages/N.md')])
     expect(banner()).toBeNull()
   })
 
@@ -255,7 +255,7 @@ describe('useExternalRenames — the while-running feed', () => {
 describe('useExternalRenames — Update (confirm-first, the ONLY path to any rewrite)', () => {
   const preRename = [rec('/v/A.md', { links: ['B'], size: 20, mtime: 5 }), rec('/v/B.md')]
 
-  it('Update repairs the app, rewrites the referencing note through the engine and shows the summary notice', async () => {
+  it('Update repairs the app, rewrites the referencing page through the engine and shows the summary notice', async () => {
     const { bridge, files } = await mount()
     files['/v/A.md'] = { content: 'See [[B]] and [[B|Bee]].\n', mtime: 1 }
     bridge.index.mockResolvedValue({ root: '/v', records: postRename, folders: [], generatedAt: 2, ids: true })
@@ -266,7 +266,7 @@ describe('useExternalRenames — Update (confirm-first, the ONLY path to any rew
     await act(async () => {})
     expect(bridge.file.repairRename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
     expect(files['/v/A.md'].content).toBe('See [[B2]] and [[B2|Bee]].\n')
-    expect(notices).toEqual(['Updated links in 1 note'])
+    expect(notices).toEqual(['Updated links in 1 page'])
     expect(banner()).toBeNull()
     // The handled pair is never re-offered either.
     await snapshot(preRename)
@@ -287,7 +287,7 @@ describe('useExternalRenames — Update (confirm-first, the ONLY path to any rew
     act(() => captured.ext?.update())
     await act(async () => {})
     expect(files[settings.path].content).toContain('"[[B2]]"')
-    expect(notices).toEqual(['Updated links in 1 note'])
+    expect(notices).toEqual(['Updated links in 1 page'])
   })
 
   it('a stale hypothesis (repair refused by main) surfaces a passive notice and rewrites NOTHING', async () => {

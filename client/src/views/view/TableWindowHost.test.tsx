@@ -12,7 +12,7 @@ import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
-import type { NewNoteSeed } from '../newNote'
+import type { NewPageSeed } from '../newPage'
 import { FIND_DEBOUNCE_MS } from './viewFind'
 import { dropAllHistories } from './valueHistory'
 
@@ -38,8 +38,8 @@ const HOST_H = 20 * ROW_H
 const TABLE_AT = 100
 const LINES = 1000
 
-const note = (i: number): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/f/n${String(i).padStart(4, '0')}.md`, basename: `n${i}`, name: `n${i}.md`, title: `n${String(i).padStart(4, '0')}`, folder: 'f', properties: { rank: i * 2 } })
-const MANY = Array.from({ length: LINES }, (_, i) => note(i))
+const page = (i: number): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/f/n${String(i).padStart(4, '0')}.md`, basename: `n${i}`, name: `n${i}.md`, title: `n${String(i).padStart(4, '0')}`, folder: 'f', properties: { rank: i * 2 } })
+const MANY = Array.from({ length: LINES }, (_, i) => page(i))
 const TABLE = `views:
   - type: table
     name: T
@@ -77,8 +77,8 @@ afterEach(() => {
 function mount(records = MANY) {
   let parsed = parseViews(TABLE)
   let shown = records
-  const seeds: NewNoteSeed[] = []
-  const create = vi.fn(async (seed: NewNoteSeed) => {
+  const seeds: NewPageSeed[] = []
+  const create = vi.fn(async (seed: NewPageSeed) => {
     seeds.push(seed)
     return '/vault/f/Untitled.md'
   })
@@ -129,9 +129,9 @@ function mount(records = MANY) {
       act(() => void el.dispatchEvent(new Event('scroll')))
       flushFrames()
     },
-    /** The index brings the new note, with its seed. */
+    /** The index brings the new page, with its seed. */
     arrive: () => {
-      shown = [...shown, { ...note(0), path: '/vault/f/Untitled.md', basename: 'Untitled', name: 'Untitled.md', title: 'Untitled', properties: seeds.at(-1)!.properties }]
+      shown = [...shown, { ...page(0), path: '/vault/f/Untitled.md', basename: 'Untitled', name: 'Untitled.md', title: 'Untitled', properties: seeds.at(-1)!.properties }]
       draw()
     },
   }

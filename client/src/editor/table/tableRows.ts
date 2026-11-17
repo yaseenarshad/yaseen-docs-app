@@ -28,7 +28,7 @@
  * the cells' own alignment (YAZ-3819) in the same step. Its value
  * is the alignment all columns share; mixed columns light no button. While any cell has its own
  * alignment it reads "Mixed": no button is lit, so a pick of the shown value clears them too. "Fit
- * columns to the page" clears every cell's `colwidth`, and is disabled while no column has a width. A read-only note
+ * columns to the page" clears every cell's `colwidth`, and is disabled while no column has a width. A read-only page
  * shows no rows (R3).
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
@@ -123,13 +123,13 @@ export const swatchIcon = (background: string) => (): SVGElement => {
 /**
  * "Header row ›" (YAZ-4774) and "Subheader row ›" (YAZ-4899): "Plain, like any row", the Sticky switch, then each part's
  * choices in the Fill · Text · Style tabs, a ✓ at what the table shows: its own part, else Settings' (no Text colour in
- * Settings is Full, a note table's look). A pick that equals Settings removes the part. YAZ-4794: Text colour (Muted,
+ * Settings is Full, a page table's look). A pick that equals Settings removes the part. YAZ-4794: Text colour (Muted,
  * Full, the eight colours) and Align (Follow column, Left, Center, Right) are parts too. The cell's right-click menu draws
  * the same row as its "Header row style ›" / "Subheader row style ›" panel (`tableMenu.ts`, YAZ-4899).
  */
 export function headerRowParent(view: EditorView, pos: number, kind: 'header' | 'subheader'): MenuRow {
   const own = (view.state.doc.nodeAt(pos)?.attrs[kind] ?? {}) as HeaderRowOwn
-  const settings = kind === 'header' ? headerRowSetting() : subheaderRowSetting()
+  const settings = kind === 'header' ? headerRowSetting(view) : subheaderRowSetting(view)
   const fallback: Required<HeaderRowOwn> = { ...settings, text: settings.text ?? 'full' }
   const shown = { ...fallback, ...headerRowOwn(own) }
   const set = (next: HeaderRowOwn) => {
@@ -165,7 +165,7 @@ export function headerRowParent(view: EditorView, pos: number, kind: 'header' | 
   // (`stickySubheaders`, `tableSubhead.ts`); Default is Settings › Tables' (On by default), and a pick of it saves no part.
   const attr = kind === 'header' ? 'stickyHeader' : 'stickySubheaders'
   const ownSticky = view.state.doc.nodeAt(pos)?.attrs[attr] as boolean | null
-  const stickyDefault = kind === 'header' ? stickyHeaderSetting() : stickySubheadersSetting()
+  const stickyDefault = kind === 'header' ? stickyHeaderSetting(view) : stickySubheadersSetting(view)
   const sticky: MenuRow[] = ([null, true, false] as const).map((value) => ({
     label: value === null ? `Default (${stickyDefault ? 'On' : 'Off'})` : value ? 'On' : 'Off',
     hint: ownSticky === value ? '✓' : undefined,
@@ -214,7 +214,7 @@ export const tableRows: RowProvider = (view, target) => {
   const { pos } = table
   const attrs = table.node.attrs as TableAttrs
   const noteDefault = cellNoteButtonSetting() ? 'on' : 'off'
-  const textDefault = textInCellsSetting()
+  const textDefault = textInCellsSetting(view)
   const current = attrs.border ?? BORDER_DEFAULT
   const cells = cellsOf(table.node)
   // No alignment on every cell (GFM's `---`) is the default; so are mixed columns. A cell's own
@@ -331,9 +331,9 @@ export const tableRows: RowProvider = (view, target) => {
     items.push(choice('Now button', attrs.nowButton ? 'on' : 'off', 'on', [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) => setTable(view, pos, { nowButton: on === 'on' })))
     items.push({ label: 'Go to now', disabled: nowPlace(table.node, minutesOf(new Date()))?.row == null, run: () => void goToNow(view, pos) })
     // The YAZ-4163 demo: the rows of Settings › Calendar tables › Calendar day that the table does not have yet.
-    const { start, end } = calendarDaySetting()
-    const format = timeFormatSetting()
-    items.push({ label: `Fill the calendar day (${formatTime(format, start)} – ${formatTime(format, end)})`, disabled: missingDayTimes(table.node).length === 0, run: () => void fillCalendarDay(view, pos) })
+    const { start, end } = calendarDaySetting(view)
+    const format = timeFormatSetting(view)
+    items.push({ label: `Fill the calendar day (${formatTime(format, start)} – ${formatTime(format, end)})`, disabled: missingDayTimes(table.node, view).length === 0, run: () => void fillCalendarDay(view, pos) })
   }
   return items
 }

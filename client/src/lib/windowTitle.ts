@@ -9,12 +9,14 @@ export const APP_NAME = 'Yaseen Docs'
  * macOS cuts a long title at the end, and with many vaults open the vault is the part you look
  * for in ⌘`, the Window menu and the Dock list. `vault` is the vault's NAME — its display name or
  * folder name (YAZ-1974 D4), never its path. `name` is the window's own name (YAZ-3343 D14), when it has one:
- * it stands where the vault stands. The Welcome screen keeps the app name.
+ * it stands where the vault stands. The Welcome screen keeps the app name. `tab` is the label of a tab that is no page
+ * (YAZ-5038: the Inbox tab, while it shows): `<vault> — Inbox`, as a page's tab is `<vault> — <page>`.
  */
-export function windowTitle(vault: string | null, file: string | null, titles: PathTitles, folder = false, name?: string): string {
+export function windowTitle(vault: string | null, file: string | null, titles: PathTitles, folder = false, name?: string, tab?: string): string {
   if (vault === null) return APP_NAME
   // A named window (YAZ-3343 D14) leads with its name in the vault's place: the name is what the user picks it by.
   const lead = name ?? vault
+  if (tab !== undefined) return `${lead} — ${tab}`
   if (file === null) return lead
   return `${lead} — ${pageLabel(file, folder, titles)}`
 }

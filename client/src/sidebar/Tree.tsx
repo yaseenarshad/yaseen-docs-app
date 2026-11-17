@@ -1,28 +1,32 @@
-import { memo, type CSSProperties } from 'react'
+import { Fragment, memo, useSyncExternalStore, type CSSProperties, type ReactElement } from 'react'
 import type { TabSort, TreeNode } from '@shared/types'
 import type { Needle } from '../links/completion'
 import { marked } from '../search/marked'
+import { CardIcon } from '../search/CardIcon'
+import type { SearchCandidate } from '../search/searchCandidates'
 import type { PathIds } from '../search/showIds'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
-import type { EntryKind, MenuRow } from './createEntry'
+import type { CreateKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { hasHoverPreview } from './hoverPreviewKinds'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
-import { CloudOffIcon, LinkIcon, ShortcutIcon } from '../views/view/icons'
+import { CloudOffIcon, LinkIcon, LockIcon, ShortcutIcon } from '../views/view/icons'
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
 import { iconVars } from './materialIcons'
-import { NameEnding } from './FileIcon'
+import { CARD_KIND_ICON, NameEnding } from './FileIcon'
+import { NO_CARD_FILES } from './cardFiles'
 import { iconsChangedBelow, rowIcon, type RowIcons } from './rowIcons'
-import { keepsOrder, shownLabel, sortLevel, timeOf } from './treeSort'
+import { NO_APP_ROWS, appRowsLast, keepsOrder, shownLabel, sortLevel, timeOf } from './treeSort'
 import { shortRelativeTime } from '../lib/relativeTime'
 import { formatDateTime } from '../lib/format'
 import { newWindowClick } from '../lib/newWindowClick'
+import { subscribeTourPlaces, tourPlaces } from '../course/tourBus'
 
-/** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
+/** Inline "New page" / "New folder" input pending inside the tree (GRO-2022). */
 export interface PendingCreate {
-  kind: EntryKind
+  kind: CreateKind
   seed: string
   /** Absolute path of the directory the entry is created in. */
   parentDir: string
@@ -45,7 +49,7 @@ export interface PendingCreate {
 /**
  * Where a New … picked on the Focus or the Favorites tab goes in that tab's list (YAZ-4782), and where its name field
  * shows — on the tab, never in Files:
- * - `after` set (a pinned note or file): right under that row, and the item goes right after it, in its focus folder or at the top level;
+ * - `after` set (a pinned page or file): right under that row, and the item goes right after it, in its focus folder or at the top level;
  * - `after` null and `folder` set (a focus folder's own menu; blank space while "Hide all others" shows one folder):
  *   first inside that folder, and the item goes last in it;
  * - both null (blank space): after the top level's last row, and the item goes last there.
@@ -58,7 +62,7 @@ export interface CreatePlace {
   after: string | null
 }
 
-/** A placed create's name field (YAZ-4782), at the tree's `level`: a note's, a drawing's and a diagram's one step in, as a file row's label. */
+/** A placed create's name field (YAZ-4782), at the tree's `level`: a page's, a drawing's and a diagram's one step in, as a file row's label. */
 export function PlacedCreate({ pending, level }: { pending: PendingCreate; level: number }) {
   return <CreateInline kind={pending.kind} seed={pending.seed} indent={8 + level * 14 + (pending.kind === 'dir' ? 0 : 14)} onSubmit={pending.onSubmit} onCancel={pending.onCancel} />
 }
@@ -69,7 +73,7 @@ export interface PendingRename {
   path: string
   /** As `PendingCreate.top` (YAZ-2845 D1): the box replaces the label of the right-clicked copy alone. */
   top: string | null
-  /** A note's or a folder's box edits a TITLE: the vault uses IDs. Where it does not (YAZ-2523 🔒 V3) it edits a file name, held to the name rules. */
+  /** A page's or a folder's box edits a TITLE: the vault uses IDs. Where it does not (YAZ-2523 🔒 V3) it edits a file name, held to the name rules. */
   title: boolean
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
@@ -227,7 +231,7 @@ export interface TreeSelection {
 export interface TreeMarks {
   hits: ReadonlySet<string>
   needle: Needle
-  /** The rows found by their ID, each with its full ID (YAZ-2677 S70): shown in front of the title, which tells note 12 of two vaults apart. */
+  /** The rows found by their ID, each with its full ID (YAZ-2677 S70): shown in front of the title, which tells page 12 of two vaults apart. */
   ids?: ReadonlyMap<string, string>
   /** The digits to mark in the ID of each row found by its ID (YAZ-2571 round 5, `idNeedle`). */
   idMarks?: ReadonlyMap<string, Needle>
@@ -244,6 +248,11 @@ interface TreeProps {
    * A top row that is NOT one — a file or a folder of the Focus tab or of the Favorites tab (YAZ-2631 D4) — shows the name of the vault that holds it.
    */
   vaultRows: ReadonlyMap<string, string>
+  /**
+   * The vault rows that are the app's own (the card skill, YAZ-5108): last at the top whatever the sort, a lock after
+   * the name, never dragged. They are in `vaultRows` too. Absent: none.
+   */
+  appRows?: ReadonlySet<string>
   expanded: ReadonlySet<string>
   /**
    * The rows are copies (YAZ-3131 Decision 2): Focus and Favorites can draw one folder under two top
@@ -279,11 +288,11 @@ interface TreeProps {
   /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Favorites tab. The search tree hands in its one highlighted match in this shape instead (YAZ-2620). */
   selection: TreeSelection
   /**
-   * Each folder's SHORTCUTS, by its path (YAZ-2290 D2): notes that live elsewhere, drawn as
-   * file rows among the folder's own files, marked. The row IS the note — it opens it, and
+   * Each folder's SHORTCUTS, by its path (YAZ-2290 D2): pages that live elsewhere, drawn as
+   * file rows among the folder's own files, marked. The row IS the page — it opens it, and
    * selection and the active highlight follow its path, so it lights with its real row (🔒 D3's
    * rule for a favorite on two rows) — but it is no file of this folder: it never drags, and a
-   * click on it selects nothing, so ⌘C / ⌘X / ⌘V never act on the note from here.
+   * click on it selects nothing, so ⌘C / ⌘X / ⌘V never act on the page from here.
    */
   shortcuts: ReadonlyMap<string, readonly TreeNode[]>
   /**
@@ -296,7 +305,7 @@ interface TreeProps {
   onOpenPage?: (dir: string, top?: string) => void
   /** What each row is labelled with (YAZ-2420 🔒 D15): its title; a row the index does not hold shows its file name. Name sorts by this label (YAZ-3227 D8). */
   titles: PathTitles
-  /** Each note row ends with its ID (YAZ-4940 "In the files list"), from the vaults that chose it; a folder row shows none. Absent: no row does. A stable Map. */
+  /** Each page row ends with its ID (YAZ-4940 "In the files list"), from the vaults that chose it; a folder row shows none. Absent: no row does. A stable Map. */
   ids?: PathIds
   /** A tab whose top rows reorder (YAZ-2631 D3): they drag along the list instead of moving on disk. Without it no row reorders. The top level alone gets it, so a drag's line draws no level below again. */
   reorder?: TreeReorder
@@ -314,13 +323,20 @@ interface TreeProps {
    * matched folder — is drawn dim. Without it a tree draws, and re-renders, exactly as before.
    */
   marks?: TreeMarks
+  /**
+   * Search only (YAZ-5037): the cards inside pages that the search found, by the page's path. Each is a row right under
+   * its page, one level in, with the card icon: no row on disk (no drag, no menu); a click opens the page at the card
+   * (`onOpenCard`, ⌘ in a background tab). Its highlight is the search's, by the card row's own path (`cardRowPath`).
+   */
+  cardRows?: ReadonlyMap<string, readonly SearchCandidate[]>
+  onOpenCard?: (row: SearchCandidate, background: boolean) => void
   /** The way to the new tab page from a row of Files, Focus or Favorites (YAZ-2663 D8): → on a file row asks it. An open folder's → goes to its first row since YAZ-3440 D12. The top level's alone. */
   onLeaveToPage?: () => boolean
   /** The top row this level stands under (YAZ-2845 D1); none at the top level. It tells the copies of a row that shows twice apart. */
   top?: string
   /**
-   * The pointer or the focus rests on a drawing, diagram or note row, or left it (null): the hover
-   * preview's dwell (YAZ-3028 D11; notes since YAZ-3075 D4). Absent → no row reports it. A text, PDF
+   * The pointer or the focus rests on a drawing, diagram or page row, or left it (null): the hover
+   * preview's dwell (YAZ-3028 D11; pages since YAZ-3075 D4). Absent → no row reports it. A text, PDF
    * or image row never does.
    */
   onHoverFile?: (node: { path: string } | null) => void
@@ -334,6 +350,11 @@ interface TreeProps {
    * only where it draws that row; a change of rules re-renders every level.
    */
   icons?: RowIcons
+  /**
+   * The window's card files (YAZ-5037, `useCardFiles`): their rows are the kind `card`, with the card icon, from the
+   * index and not from their names. `sameLevel` re-renders a level only for a card file it draws.
+   */
+  cardFiles?: ReadonlySet<string>
   depth?: number
   /**
    * The levels this tree sits under that are not its own (YAZ-4450 demo): 1 for the items of a focus or favorite
@@ -361,6 +382,7 @@ function TreeLevel({
   nodes,
   dirPath,
   vaultRows,
+  appRows = NO_APP_ROWS,
   expanded,
   copies = false,
   activeFile,
@@ -386,18 +408,23 @@ function TreeLevel({
   scores,
   keepTop,
   marks,
+  cardRows,
+  onOpenCard,
   onLeaveToPage,
   top,
   onHoverFile,
   tooLarge,
   shareBadges,
   icons,
+  cardFiles,
   depth = 0,
   shift = 0,
 }: TreeProps) {
   const level = depth + shift
-  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
-  /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
+  // The course's guided tour (YAZ-5123) marks its Course Cards folder and Course page; null outside a tour.
+  const tour = useSyncExternalStore(subscribeTourPlaces, tourPlaces)
+  const recurse = { shift, vaultRows, appRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, cardRows, onOpenCard, onHoverFile, tooLarge, shareBadges, icons, cardFiles, sort, dates, scores }
+  /** A board or page row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
           // A pointer that comes in with a button down is in a press or a reorder, not a hover (YAZ-3467, audit 4).
@@ -408,8 +435,9 @@ function TreeLevel({
   // This folder's shortcuts stand among its FILES (YAZ-2290), and the tab's sort orders the level (YAZ-3227 D7).
   // The top rows of a Manual list, the vault rows and the search's pinned items keep their own order; with no sort a level stands as it came.
   const here = shortcuts.get(dirPath)
-  const keep = sort === undefined ? here === undefined : keepsOrder(depth, sort, { keepTop, copies, vaults: vaultRows.size > 0 })
-  const rows = keep ? nodes : sortLevel(here === undefined ? nodes : [...nodes, ...here], sort, shownLabel(titles), scores)
+  // The app's own vault row (YAZ-5108) is no vault of the person: with one vault of theirs the level sorts as before, the row last.
+  const keep = sort === undefined ? here === undefined : keepsOrder(depth, sort, { keepTop, copies, vaults: vaultRows.size > appRows.size })
+  const rows = appRowsLast(nodes, depth, appRows, (level) => (keep ? level : sortLevel(here === undefined ? level : [...level, ...here], sort, shownLabel(titles), scores)))
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
   // The top row a row stands under (YAZ-2845 D1): a top row is its own. It tells the copies of a row
   // that shows twice apart, and a right-click hands it to the menu, so an input mounts in that copy alone.
@@ -422,7 +450,7 @@ function TreeLevel({
   /** The copy a click picks in (YAZ-3131): only a tree of copies records one. */
   const copyOf = (node: TreeNode): string | undefined => (copies ? topOf(node) : undefined)
   // A path lights in ONE copy (YAZ-3131 Decision 3): the copy it was picked in; with none, every copy, as before.
-  // A note's SHORTCUT row is no copy (YAZ-3142, S18): it lights with its real row wherever that one
+  // A page's SHORTCUT row is no copy (YAZ-3142, S18): it lights with its real row wherever that one
   // stands, as YAZ-2290 🔒 D3 has it.
   const isActive = (node: TreeNode): boolean => node.path === activeFile && (activeTop == null || isShortcutRow(node) || activeTop === topOf(node))
   const isSelected = (node: TreeNode): boolean => selection.paths.has(node.path) && (isShortcutRow(node) || (selection.copies?.get(node.path) ?? topOf(node)) === topOf(node))
@@ -443,7 +471,7 @@ function TreeLevel({
   // A top row of a SORTED Focus or Favorites list does not drag at all (YAZ-3227 D6): its drag would reorder, and
   // the order is the sort's — it must not turn into a move on disk. A shortcut row never drags (YAZ-2290 D2), and
   // a vault row moves nothing on disk (YAZ-3251 S8): it drags only where its tree reorders.
-  const noDrag = (node: TreeNode): boolean => isShortcutRow(node) || (copies && depth === 0 && rowReorder === null) || (vaultRows.has(node.path) && rowReorder === null)
+  const noDrag = (node: TreeNode): boolean => isShortcutRow(node) || (copies && depth === 0 && rowReorder === null) || (vaultRows.has(node.path) && rowReorder === null) || appRows.has(node.path)
   /**
    * A row drag begins: the move or the reorder takes it (YAZ-3251 D5). The page's own drag stops
    * here for both, and `start` arms the row: it lifts LIFT_PX from the press (YAZ-3467 D1, D2). A
@@ -473,12 +501,49 @@ function TreeLevel({
   const iconProps = (node: TreeNode, paddingLeft: number): { style: CSSProperties; 'data-icon'?: string; 'data-icon-custom'?: '' } => {
     if (node.type === 'dir' && vaultRows.has(node.path)) return { style: { paddingLeft } }
     const { id, custom } = rowIcon(icons, node.path, node.name, node.type === 'dir' ? 'folder' : 'file', node.type === 'dir' && expanded.has(foldOf(node)))
+    // A card file (YAZ-5037) has no Material icon: app.css draws the card icon by its kind (`fileKindOf`).
+    if (!custom && isCardFile(node)) return { style: { paddingLeft } }
     return { style: { paddingLeft, ...(iconVars(id) as CSSProperties) }, 'data-icon': id, ...(custom ? { 'data-icon-custom': '' as const } : {}) }
   }
+  /** One Set lookup per file row (YAZ-5037). */
+  const isCardFile = (node: TreeNode): boolean => node.type === 'file' && cardFiles?.has(node.path) === true
+  /** A file row's kind for the Line set: a card file is `card`, a file with no viewer in the app `other`. */
+  const fileKindOf = (node: Extract<TreeNode, { type: 'file' }>): string => (isCardFile(node) ? CARD_KIND_ICON : (node.kind ?? 'other'))
   /** `YAZ-12 — ` in front of the row of an ID match (YAZ-2677 S70); nothing for any other row. */
   const idFor = (path: string) => {
     const id = marks?.ids?.get(path)
     return id === undefined ? null : <>{marked(id, marks?.idMarks?.get(path))} — </>
+  }
+  /** A page row and, right under it, the rows of its cards that Search found (YAZ-5037, `cardRows`); any other row as it is. */
+  const withCards = (node: TreeNode, row: ReactElement): ReactElement => {
+    const cards = node.type === 'file' ? cardRows?.get(node.path) : undefined
+    if (cards === undefined) return row
+    return (
+      <Fragment key={node.path}>
+        {row}
+        {cards.map((card) => (
+          <li key={card.path} role="treeitem" aria-selected={selection.paths.has(card.path)}>
+            <button
+              type="button"
+              className={`tree__row tree__row--file tree__row--card${selection.paths.has(card.path) ? ' tree__row--selected' : ''}`}
+              style={{ paddingLeft: 8 + level * 14 + 28 }}
+              title={card.name}
+              onClick={(e) => {
+                selection.set(card.path)
+                onOpenCard?.(card, e.metaKey)
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <span className="tree__label">
+                <CardIcon />
+                {idFor(card.path)}
+                {marked(card.name, needleFor(card.path))}
+              </span>
+            </button>
+          </li>
+        ))}
+      </Fragment>
+    )
   }
   return (
     // The arrows, Home and End are the whole tree's, taken once at its top (YAZ-2662 D11, YAZ-3440 D12) — not a search tree's, whose keys are the search bar's.
@@ -514,7 +579,7 @@ function TreeLevel({
         </li>
       )}
       {rows.map((node) =>
-        node.type === 'dir' ? (
+        withCards(node, node.type === 'dir' ? (
           // `data-renaming`: the row is the input, so app.css draws no coloured chevron on it (YAZ-3309 D7, bug YAZ-3342).
           <li key={node.path} role="treeitem" aria-expanded={expanded.has(foldOf(node))} aria-selected={isActive(node) || isSelected(node)} data-renaming={renamesHere(node) ? '' : undefined}>
             {renaming !== null && renaming.path === node.path && inCopy(renaming.top, node) ? (
@@ -534,6 +599,8 @@ function TreeLevel({
                 data-path={node.path}
                 data-fold={foldOf(node)}
                 data-kind={vaultRows.has(node.path) ? undefined : 'folder'}
+                // The card skill's row (YAZ-5108) is a target of the course's guided tour (YAZ-5059 decision 13).
+                data-tour={appRows.has(node.path) ? 'card-skill-row' : node.path === tour.folder ? 'sidebar-course-cards' : undefined}
                 {...iconProps(node, 8 + level * 14)}
                 // Shift is the SELECTION gesture everywhere (YAZ-1340) and a folder joins the
                 // selection like a file (YAZ-1578, 🔒 D1) — so shift toggles and never folds. A
@@ -597,6 +664,12 @@ function TreeLevel({
                   {idFor(node.path)}
                   {vaultRows.has(node.path) ? node.name : marked(pageLabel(node.path, true, titles), needleFor(node.path))}
                 </span>
+                {/* The app's own vault is read only (YAZ-5108): a lock after its name. Inline style: no new CSS in the eager sheet. */}
+                {appRows.has(node.path) && (
+                  <span title="Read only: duplicate it into your vault to change it" aria-label="Read only" role="img" style={{ display: 'inline-flex', marginLeft: 6, opacity: 0.6 }}>
+                    <LockIcon size={12} />
+                  </span>
+                )}
                 {vaultTag(node.path)}
                 {dates === true && !vaultRows.has(node.path) && <RowDate node={node} />}
               </button>
@@ -604,9 +677,9 @@ function TreeLevel({
             {expanded.has(foldOf(node)) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} top={topOf(node)} {...recurse} />}
           </li>
         ) : renaming !== null && renaming.path === node.path && !isShortcutRow(node) && inCopy(renaming.top, node) ? (
-          // Inline rename (Links E1, GRO-2194): a note's box edits its TITLE (YAZ-2420 🔒 D16);
+          // Inline rename (Links E1, GRO-2194): a page's box edits its TITLE (YAZ-2420 🔒 D16);
           // view-only files show the full filename so their extension stays explicit.
-          // The REAL row only: a second input on the note's shortcut row would take the focus,
+          // The REAL row only: a second input on the page's shortcut row would take the focus,
           // and the first one's blur is its commit (YAZ-1553).
           <li key={node.path} role="treeitem">
             <RenameInline initial={pageLabel(node.path, false, titles)} title={renaming.title && node.kind === 'markdown'} indent={8 + level * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
@@ -639,14 +712,14 @@ function TreeLevel({
                 // First activation previews, second commits (YAZ-921): opening keeps focus on the
                 // row, re-activating the open page enters its text.
                 // The commit is KEYBOARD-only since D11 (YAZ-1674): Enter on the open row takes the
-                // caret in (a keyboard click has `detail === 0`); a MOUSE click on the open note
+                // caret in (a keyboard click has `detail === 0`); a MOUSE click on the open page
                 // just selects it, so click-then-⌘C works on every row instead of handing the key
                 // to the editor.
                 // The open row asks for its page too: the workspace changes nothing for the page
                 // it already shows, and App closes the tab board over it (YAZ-2648 S46).
                 if (e.metaKey) onOpenFileBackground(node.path)
                 else {
-                  // A shortcut row hands no copy (YAZ-3142): its note lights where the note itself stands.
+                  // A shortcut row hands no copy (YAZ-3142): its page lights where the page itself stands.
                   onOpenFile(node.path, isShortcutRow(node) ? undefined : copyOf(node))
                   if (node.path === activeFile && e.detail === 0) focusOpenDocument() // YAZ-961: the VISIBLE one
                 }
@@ -659,13 +732,14 @@ function TreeLevel({
               onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath, top: topOf(node) } : { ...node, top: topOf(node) }, e)}
               title={node.path}
               data-path={node.path}
+              data-tour={node.path === tour.page ? 'course-page' : undefined}
               // The file's icon before the name (YAZ-3440 D4), which took the place of the diagram's mark after it: its
               // kind for the Line set (a file with no viewer in the app is `other`), its Material icon by name (`data-icon`
               // and the inline `--icon`). app.css draws the one the icon set asks for on the label: no node more.
-              data-kind={node.kind ?? 'other'}
+              data-kind={fileKindOf(node)}
               {...iconProps(node, 8 + level * 14 + 14)}
               {...hoverOf(node.path)}
-              // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
+              // A shortcut row never drags (YAZ-2290 D2): the drag would move the page out of the folder it lives in.
               draggable={!noDrag(node)}
               onDragStart={noDrag(node) ? undefined : dragStart(node)}
               data-reorder={rowReorder === null ? undefined : ''}
@@ -699,7 +773,7 @@ function TreeLevel({
             {/* A New … picked on this pinned row (YAZ-4782): its name field right under it, where the item will stand. */}
             {pending !== null && placedUnder(node) && <PlacedCreate pending={pending} level={level} />}
           </li>
-        ),
+        )),
       )}
     </ul>
   )
@@ -726,14 +800,18 @@ function changedBelow(a: ReadonlySet<string>, b: ReadonlySet<string>, drawn: (pa
 function sameLevel(prev: TreeProps, next: TreeProps): boolean {
   const keys = new Set([...Object.keys(prev), ...Object.keys(next)] as (keyof TreeProps)[])
   for (const key of keys) {
-    if (key === 'expanded' || key === 'activeFile' || key === 'activeTop' || key === 'selection' || key === 'icons') continue
+    if (key === 'expanded' || key === 'activeFile' || key === 'activeTop' || key === 'selection' || key === 'icons' || key === 'cardFiles') continue
     if (!Object.is(prev[key], next[key])) return false
   }
   const dir = next.dirPath
+  // The top level of a window with one vault draws the app's own vault row too (the card skill, YAZ-5108): its row and
+  // what it nests are this level's, though they are not below the vault's folder.
+  const apps = (next.depth ?? 0) === 0 ? [...(next.appRows ?? NO_APP_ROWS)] : []
+  const under = (path: string | null): boolean => below(path, dir) || (path !== null && apps.some((row) => path === row || below(path, row)))
   /** The shortcut rows this level and the levels it nests draw; walked once per compare, and only if asked. */
   let elsewhere: Set<string> | undefined
   const drawn = (path: string | null): boolean => {
-    if (path === null || below(path, dir)) return path !== null
+    if (path === null || under(path)) return path !== null
     elsewhere ??= new Set([...next.shortcuts].flatMap(([folder, rows]) => (folder === dir || below(folder, dir) ? rows.map((row) => row.path) : [])))
     return elsewhere.has(path)
   }
@@ -744,8 +822,10 @@ function sameLevel(prev: TreeProps, next: TreeProps): boolean {
   if (prev.selection.copies !== next.selection.copies && [...next.selection.paths].some(drawn)) return false
   // A vault's own icons (YAZ-3440 D8, D9): a pick re-renders the levels that draw its row, a rule change every level.
   if (iconsChangedBelow(prev.icons, next.icons, drawn)) return false
+  // The card files (YAZ-5037): a file that became one, or stopped being one, re-renders the levels that draw its row.
+  if (changedBelow(prev.cardFiles ?? NO_CARD_FILES, next.cardFiles ?? NO_CARD_FILES, drawn)) return false
   // A copy's fold key (YAZ-3131) is drawn where its PATH half is.
-  return !changedBelow(prev.expanded, next.expanded, (key) => below(copyFoldParts(key)?.[1] ?? key, dir)) && !changedBelow(prev.selection.paths, next.selection.paths, drawn)
+  return !changedBelow(prev.expanded, next.expanded, (key) => under(copyFoldParts(key)?.[1] ?? key)) && !changedBelow(prev.selection.paths, next.selection.paths, drawn)
 }
 
 export const Tree = memo(TreeLevel, sameLevel)

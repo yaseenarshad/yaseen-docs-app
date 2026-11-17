@@ -20,7 +20,7 @@ vi.mock('../editor/createCrepe', async (load) => {
 afterEach(unmountAll)
 
 /**
- * The keys of a text box (YAZ-4277 1D parity rows 9, 18, 20, 23, 24): the notes engine's own keys, on the box's
+ * The keys of a text box (YAZ-4277 1D parity rows 9, 18, 20, 23, 24): the pages engine's own keys, on the box's
  * text and runs. They were the textarea's (`textWysiwyg.test.tsx`), and live in the box editor now.
  */
 
@@ -140,7 +140,7 @@ describe('the keys of a text box (YAZ-4277 1D)', () => {
     expect(box(view)).toEqual({ text: '• one\n    ○ bold', textRuns: [{ start: 12, end: 16, bold: true }] })
   })
 
-  it('a paste from a note keeps its letter styles (row 26)', async () => {
+  it('a paste from a page keeps its letter styles (row 26)', async () => {
     ;(globalThis as { ClipboardEvent?: unknown }).ClipboardEvent ??= class extends Event {
       clipboardData = null
     }
@@ -159,7 +159,7 @@ describe('the keys of a text box (YAZ-4277 1D)', () => {
     })
   })
 
-  it('a copy goes to a note with its tags (row 27)', async () => {
+  it('a copy goes to a page with its tags (row 27)', async () => {
     const { view } = await mountBox('bold plain', [{ start: 0, end: 4, bold: true }])
     select(view, 0, 10)
     const data = new Map<string, string>()
@@ -172,9 +172,9 @@ describe('the keys of a text box (YAZ-4277 1D)', () => {
     expect(data.get('text/plain')).toContain('bold plain')
   })
 
-  it("takes the user's note keys from Settings › Hotkeys (row 18)", async () => {
+  it("takes the user's page keys from Settings › Hotkeys (row 18)", async () => {
     const { storage } = await import('../lib/storage')
-    const spy = vi.spyOn(storage, 'getSettings').mockReturnValue({ ...storage.getSettings(), hotkeys: { 'note.highlight': 'CmdOrCtrl+Alt+H' } } as ReturnType<typeof storage.getSettings>)
+    const spy = vi.spyOn(storage, 'getSettings').mockReturnValue({ ...storage.getSettings(), hotkeys: { 'page.highlight': 'CmdOrCtrl+Alt+H' } } as ReturnType<typeof storage.getSettings>)
     try {
       const { view } = await mountBox('word')
       select(view, 0, 4)
@@ -205,7 +205,7 @@ describe('the keys of a text box (YAZ-4277 1D)', () => {
   })
 })
 
-/** YAZ-4420: the note's ⌘\ command also clears a text box's own letter color (the `text_color` mark), and keeps its bullets. */
+/** YAZ-4420: the page's ⌘\ command also clears a text box's own letter color (the `text_color` mark), and keeps its bullets. */
 describe('clearFormatting on a text box (YAZ-4420)', () => {
   it('removes the color, bold and highlight runs; the bullet lines stay', async () => {
     const { clearFormatting } = await import('../editor/marks/clearFormatting')

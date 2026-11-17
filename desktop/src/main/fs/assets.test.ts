@@ -94,16 +94,16 @@ describe('readAsset resolution', () => {
 
 /**
  * `resolveAsset(root, target, from?)` (YAZ-1658, YAZ-1656 D1): the resolution order `readAsset` and the
- * `app://vault` image protocol share — note-relative (`from`) → root-relative → shortest-path
+ * `app://vault` image protocol share — page-relative (`from`) → root-relative → shortest-path
  * basename. Pure "where does this name land": no extension policy, null for a miss, and the
  * vault edge on the two path steps so an escape can only fall through to the walk.
  */
 describe('resolveAsset', () => {
-  it('a note-relative hit wins over a root-relative one and over the basename walk', async () => {
+  it('a page-relative hit wins over a root-relative one and over the basename walk', async () => {
     // `dup.png` sits in both aa/ and bb/; the walk would pick aa/ (sorted first), root-relative misses.
     expect(await resolveAsset(root, 'dup.png', 'bb')).toBe(path.join(root, 'bb', 'dup.png'))
     expect(await resolveAsset(root, './dup.png', 'bb')).toBe(path.join(root, 'bb', 'dup.png'))
-    // `../` from the note's own folder is still note-relative, and still inside the vault.
+    // `../` from the page's own folder is still page-relative, and still inside the vault.
     expect(await resolveAsset(root, '../bb/dup.png', 'aa')).toBe(path.join(root, 'bb', 'dup.png'))
   })
 
@@ -111,7 +111,7 @@ describe('resolveAsset', () => {
     expect(await resolveAsset(root, 'bb/dup.png')).toBe(path.join(root, 'bb', 'dup.png'))
     // `from` given but missing there: root-relative is next, before the walk.
     expect(await resolveAsset(root, 'aa/dup.png', 'bb')).toBe(path.join(root, 'aa', 'dup.png'))
-    // An empty `from` (a note at the root) is the root-relative step itself.
+    // An empty `from` (a page at the root) is the root-relative step itself.
     expect(await resolveAsset(root, 'bb/dup.png', '')).toBe(path.join(root, 'bb', 'dup.png'))
   })
 
@@ -256,7 +256,7 @@ describe('writeAsset', () => {
   })
 
   it('a STRING body is a drawing: UNSUPPORTED_EXTENSION on anything else, images included', async () => {
-    expect(await code(writeAsset({ root: vault, path: rel('note.md'), content: '# no' }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(writeAsset({ root: vault, path: rel('page.md'), content: '# no' }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(writeAsset({ root: vault, path: rel('pic.png'), content: 'x' }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(writeAsset({ root: vault, path: rel('scene'), content: 'x' }))).toBe('UNSUPPORTED_EXTENSION')
   })
@@ -323,7 +323,7 @@ describe('writeAsset image bytes', () => {
 
   it('a BYTE body is an image: UNSUPPORTED_EXTENSION on a drawing or any other path', async () => {
     expect(await code(writeAsset({ root: vault, path: rel('scene.excalidraw'), content: new Uint8Array(PNG) }))).toBe('UNSUPPORTED_EXTENSION')
-    expect(await code(writeAsset({ root: vault, path: rel('note.md'), content: new Uint8Array(PNG) }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(writeAsset({ root: vault, path: rel('page.md'), content: new Uint8Array(PNG) }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(writeAsset({ root: vault, path: rel('pic'), content: new Uint8Array(PNG) }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await stat(path.join(vault, 'assets', 'scene.excalidraw')).catch(() => null)).toBeNull()
   })

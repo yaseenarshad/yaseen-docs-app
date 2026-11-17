@@ -85,7 +85,7 @@ export function describeWatchConformance(engine: string, { quietMs = QUIET_MS } 
   const shape = (events: readonly WatchEvent[]) => events.map((e) => `${e.type} ${'path' in e ? path.relative(root, e.path) : ''}`).sort()
 
   describe(`watcher conformance, ${engine}: the vault watcher`, { timeout: CASE_TIMEOUT_MS }, () => {
-    it("an atomic save over an existing note is exactly ONE `change`, carrying the file's final mtime; the tmp file is silent", async () => {
+    it("an atomic save over an existing page is exactly ONE `change`, carrying the file's final mtime; the tmp file is silent", async () => {
       const file = at('alpha', 'a.md')
       const w = await watching()
       const { mtime } = await atomicWrite(file, '# saved\n')
@@ -124,7 +124,7 @@ export function describeWatchConformance(engine: string, { quietMs = QUIET_MS } 
       expect(w.events.slice(0, 2).every((e) => 'mtime' in e && typeof e.mtime === 'number')).toBe(true)
     })
 
-    it('a burst of saves to one note collapses to ONE `change` with the last mtime', async () => {
+    it('a burst of saves to one page collapses to ONE `change` with the last mtime', async () => {
       const file = at('alpha', 'a.md')
       const w = await watching()
       const pauses = await paced(5, 10, (i) => writeFile(file, `save ${i}`))
@@ -248,7 +248,7 @@ export function describeWatchConformance(engine: string, { quietMs = QUIET_MS } 
 
     it('an outside atomic save of a config file is ONE notification naming it; its tmp file is silent', async () => {
       const w = await watchingConfig(root)
-      await atomicWrite(at('.yaseendocs', 'favorites.json'), '["Notes"]')
+      await atomicWrite(at('.yaseendocs', 'favorites.json'), '["Pages"]')
       expect(await w.settled()).toEqual([{ root, name: 'favorites.json' }])
     })
 
@@ -276,12 +276,12 @@ export function describeWatchConformance(engine: string, { quietMs = QUIET_MS } 
 
     it('only `.json` files directly in the folder notify', async () => {
       const w = await watchingConfig(root)
-      await writeFile(at('.yaseendocs', 'notes.txt'), 'x')
+      await writeFile(at('.yaseendocs', 'pages.txt'), 'x')
       await mkdir(at('.yaseendocs', 'sub'), { recursive: true })
       await writeFile(at('.yaseendocs', 'sub', 'deep.json'), '{}')
       expect(await w.settled()).toEqual([])
       await rm(at('.yaseendocs', 'sub'), { recursive: true })
-      await rm(at('.yaseendocs', 'notes.txt'))
+      await rm(at('.yaseendocs', 'pages.txt'))
     })
   })
 }

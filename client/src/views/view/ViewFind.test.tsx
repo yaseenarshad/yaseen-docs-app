@@ -1,5 +1,5 @@
 /**
- * ⌘F on a folder page (YAZ-4613, D64): the note's find bar over the view's rows, in every view. ViewsPane mounted with
+ * ⌘F on a folder page (YAZ-4613, D64): the page's find bar over the view's rows, in every view. ViewsPane mounted with
  * react-dom in jsdom; the bar's debounce runs on fake timers, and a mount's marks land in a mutation observer's
  * microtask, so each step awaits `settle`.
  */
@@ -41,10 +41,10 @@ const rec = (name: string, properties: Record<string, unknown>): IndexRecord => 
 })
 
 const FRUIT = [
-  rec('Apple', { status: 'todo', note: 'red fruit' }),
-  rec('Banana', { status: 'todo', note: 'yellow' }),
-  rec('Cherry', { status: 'done', note: 'red berry' }),
-  rec('Date', { status: 'done', note: 'brown' }),
+  rec('Apple', { status: 'todo', page: 'red fruit' }),
+  rec('Banana', { status: 'todo', page: 'yellow' }),
+  rec('Cherry', { status: 'done', page: 'red berry' }),
+  rec('Date', { status: 'done', page: 'brown' }),
 ]
 
 const view = (type: string, extra = '') => `views:
@@ -53,7 +53,7 @@ const view = (type: string, extra = '') => `views:
     order:
       - file.name
       - note.status
-      - note.note
+      - note.page
 ${extra}`
 const GROUPED = '    groupBy:\n      property: note.status\n'
 
@@ -141,7 +141,7 @@ describe('⌘F on a folder page (YAZ-4613)', () => {
     expect(input(el)).toBeNull()
     const box = await find(el, 'red')
     expect(document.activeElement).toBe(box)
-    // Apple's and Cherry's Note cells.
+    // Apple's and Cherry's Page cells.
     expect(count(el)).toBe('1 of 2')
   })
 
@@ -240,7 +240,7 @@ describe('⌘F on a folder page (YAZ-4613)', () => {
 
   it('a search renders no cell: typing and stepping only mark the DOM', async () => {
     const el = mount(view('table'))
-    // The counter sees the table's cells: 4 notes × Status and Note.
+    // The counter sees the table's cells: 4 pages × Status and Page.
     expect(cellRenders.n).toBe(8)
     cellRenders.n = 0
     const box = await find(el, 'r')
@@ -252,23 +252,23 @@ describe('⌘F on a folder page (YAZ-4613)', () => {
     expect(cellRenders.n).toBe(0)
   })
 
-  it('⌘F in the views beats the find of a note showing beside them, which still answers from its own note', async () => {
+  it('⌘F in the views beats the find of a page showing beside them, which still answers from its own page', async () => {
     const el = mount(view('table'))
-    // A note in the right panel: its own `note` bar, its editor shown.
-    const note = document.createElement('div')
-    note.innerHTML = '<div class="editor-mount"><div class="ProseMirror" tabindex="0"></div></div>'
-    document.body.appendChild(note)
+    // A page in the right panel: its own `page` bar, its editor shown.
+    const page = document.createElement('div')
+    page.innerHTML = '<div class="editor-mount"><div class="ProseMirror" tabindex="0"></div></div>'
+    document.body.appendChild(page)
     const channel = createFindChannel()
-    const noteRoot = createRoot(document.body.appendChild(document.createElement('div')))
-    act(() => noteRoot.render(<FindBar channel={channel} scope="note" hostRef={{ current: note }} />))
+    const pageRoot = createRoot(document.body.appendChild(document.createElement('div')))
+    act(() => pageRoot.render(<FindBar channel={channel} scope="page" hostRef={{ current: page }} />))
     await find(el, 'red')
     expect(count(el)).toBe('1 of 2')
     expect(channel.getState().open).toBe(false)
-    const editor = note.querySelector<HTMLElement>('.ProseMirror')!
+    const editor = page.querySelector<HTMLElement>('.ProseMirror')!
     act(() => editor.focus())
     cmdF(editor)
     expect(channel.getState().open).toBe(true)
-    act(() => noteRoot.unmount())
-    note.remove()
+    act(() => pageRoot.unmount())
+    page.remove()
   })
 })

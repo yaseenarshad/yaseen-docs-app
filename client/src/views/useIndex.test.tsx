@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { IDS_FILE } from '@shared/noteId'
+import { IDS_FILE } from '@shared/pageId'
 import type { IndexRecord, IndexResponse, VaultConfigChange, WatchEvent } from '@shared/types'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { useIndex, type IndexState } from './useIndex'
@@ -183,7 +183,7 @@ describe('useIndex', () => {
     expect(indexFn).toHaveBeenCalledTimes(1)
   })
 
-  it('unlinkDir and ready refetch (a removed dir may have held notes; ready = missed events)', async () => {
+  it('unlinkDir and ready refetch (a removed dir may have held pages; ready = missed events)', async () => {
     mount()
     await flush()
     await emit({ type: 'unlinkDir', path: '/vault/old' })
@@ -231,11 +231,11 @@ describe('useIndex', () => {
   })
 
   it('exposes the vault’s kind from the snapshot: `ids`, and `ask` while the vault has not answered; no IDs and nothing to ask until the first one lands (YAZ-2523)', async () => {
-    indexFn.mockResolvedValue({ ...response('/vault', '/vault/a.md'), ids: false, ask: { notes: 1, folders: 2, foreign: 0 } })
+    indexFn.mockResolvedValue({ ...response('/vault', '/vault/a.md'), ids: false, ask: { pages: 1, folders: 2, foreign: 0 } })
     mount()
     expect(state).toMatchObject({ ids: false, ask: undefined })
     await flush()
-    expect(state).toMatchObject({ ids: false, ask: { notes: 1, folders: 2, foreign: 0 } })
+    expect(state).toMatchObject({ ids: false, ask: { pages: 1, folders: 2, foreign: 0 } })
     indexFn.mockResolvedValue(response('/vault', '/vault/a.md'))
     await act(async () => {
       state.refresh()

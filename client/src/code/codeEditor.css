@@ -2,7 +2,7 @@
  * The code tab (YAZ-3448) — classes applied by CodeEditor.tsx.
  *
  * The host is `.drawio-editor`'s shape: a flex column inside `section.editor`, the chips row (the
- * note's `.status-chips`, top right), the conflict bar when there is one, then Monaco taking every
+ * page's `.status-chips`, top right), the conflict bar when there is one, then Monaco taking every
  * remaining pixel. Monaco measures its parent (`automaticLayout`), so `min-height: 0` matters.
  */
 

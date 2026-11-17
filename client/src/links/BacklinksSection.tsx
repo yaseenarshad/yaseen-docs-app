@@ -1,11 +1,11 @@
 /**
  * "Linked mentions" — the backlinks section (Links D, GRO-2193; placement LOCKED): a collapsible
- * block at the END of the note's own scrollable content, so it scrolls WITH the note, exactly
+ * block at the END of the page's own scrollable content, so it scrolls WITH the page, exactly
  * like Obsidian's in-document backlinks. No right panel, no sidebar section, one per tab.
  *
  * Behaviour, all locked:
  *  - COLLAPSED by default; the count N is always on the header ("Linked mentions (3)").
- *  - N === 0 renders NOTHING at all — a note nobody links to shows no chrome (quiet over
+ *  - N === 0 renders NOTHING at all — a page nobody links to shows no chrome (quiet over
  *    complete; Obsidian's in-document mode keeps an empty section, we do not).
  *  - Context snippets are read ON DEMAND: an entry only mounts while the section is EXPANDED,
  *    and its `fs:read` runs from that mount — collapsed costs zero reads. A skeleton line shows
@@ -15,15 +15,15 @@
  *    tab (`openCurrent` / `openBackground`, the window's tabs API threaded down from App).
  *  - Collapse state is per-component and in-memory: because every visited tab keeps its editor
  *    layer mounted (Editor rule 4), it is effectively per tab for the session. Never persisted —
- *    an open backlinks block is not part of a note's identity.
+ *    an open backlinks block is not part of a page's identity.
  *
  * Feed: the window's ONE `WikilinkResolveSource` (App-owned, fed by `WikilinkIndexBridge`), which
  * carries the resolver AND the snapshot it was built from. A refetched snapshot pokes the source,
  * N recomputes live, and an entry re-reads its snippets when its own record's mtime moved — so a
  * link added or removed on disk lands here without a watcher or an IPC call of our own.
  *
- * Hover (YAZ-3403): resting on an entry's title or one of its lines shows the LINKING note in the sidebar's hover
- * panel, right of the note's text column and level with the row (left of it when the window has no room there).
+ * Hover (YAZ-3403): resting on an entry's title or one of its lines shows the LINKING page in the sidebar's hover
+ * panel, right of the page's text column and level with the row (left of it when the window has no room there).
  */
 import { useEffect, useRef, useState } from 'react'
 import { splitFrontmatter } from '@shared/frontmatter'
@@ -40,7 +40,7 @@ import { newWindowClick } from '../lib/newWindowClick'
 import './backlinks.css'
 
 export interface BacklinksSectionProps {
-  /** The open note (absolute path) or folder (its directory): mentions OF this page are what the section lists. */
+  /** The open page (absolute path) or folder (its directory): mentions OF this page are what the section lists. */
   path: string
   /** The window's link index feed — resolver + the snapshot it came from. */
   source: WikilinkResolveSource
@@ -55,7 +55,7 @@ export interface BacklinksSectionProps {
   diagramDarkColors?: DiagramDarkColors
 }
 
-/** An entry's hover handlers (YAZ-3403): `id` names the hovered button, `page` the note it previews. */
+/** An entry's hover handlers (YAZ-3403): `id` names the hovered button, `page` the page it previews. */
 type HoverOf = (id: string, page: string) => { 'data-preview': string; onMouseEnter: () => void; onMouseLeave: () => void }
 
 const NONE: readonly IndexRecord[] = []
@@ -68,7 +68,7 @@ export function BacklinksSection({ path, source, openCurrent, openBackground, ho
   const sectionRef = useRef<HTMLElement>(null)
   const preview = useCardPreview(hoverPreview, (id) => sectionRef.current?.querySelector<HTMLElement>(`[data-preview="${CSS.escape(id)}"]`) ?? null)
   const hoverOf: HoverOf = (id, page) => ({ 'data-preview': id, onMouseEnter: () => preview.hoverCard(id, page), onMouseLeave: () => preview.leaveCard(id) })
-  // Read only while a panel shows: the linking note's name, as the entry shows it.
+  // Read only while a panel shows: the linking page's name, as the entry shows it.
   const previewCard = (_: string, page: string) => ({ root: null, name: pageLabel(page, false, pathTitles(feed.records, feed.folders)) })
 
   const entries = feed.resolve === null ? NONE : backlinksFor(path, feed.records, feed.resolve, feed.folders)
@@ -104,7 +104,7 @@ export function BacklinksSection({ path, source, openCurrent, openBackground, ho
 }
 
 /**
- * One referencing note: its title, then its mention lines — read from disk on mount (= on expand).
+ * One referencing page: its title, then its mention lines — read from disk on mount (= on expand).
  * A referencing FOLDER (`record` is its settings file's) reads as the folder's title, opens the
  * folder's page, and shows the lines of its Page — the `.folder.md` body, never its settings (YAZ-4584 D40).
  */
@@ -129,7 +129,7 @@ function BacklinkEntry({
   /** null = the read is in flight (skeleton); [] = read failed, or nothing left to show. */
   const [snippets, setSnippets] = useState<MentionSnippet[] | null>(null)
   // Ref-backed so a new resolver (any vault change re-swaps one) never re-reads the file; the
-  // record's own mtime is what says this note's mentions may have moved.
+  // record's own mtime is what says this page's mentions may have moved.
   const resolveRef = useRef(resolve)
   resolveRef.current = resolve
   const titlesRef = useRef(titles)
@@ -154,7 +154,7 @@ function BacklinkEntry({
   }, [folder, record.path, record.mtime, target])
 
   const open = (event: React.MouseEvent): void => {
-    // ⇧⌘-click opens the note in a new window (YAZ-4444 D32); a folder's page has none.
+    // ⇧⌘-click opens the page in a new window (YAZ-4444 D32); a folder's page has none.
     if (!folder && newWindowClick(event, page)) return
     if (event.metaKey && openBackground !== undefined) openBackground(page)
     else openCurrent(page)
@@ -162,7 +162,7 @@ function BacklinkEntry({
 
   return (
     <li className="backlinks__entry">
-      <button type="button" className="backlinks__note" title={page} onClick={open} {...hoverOf(`${page}\n-1`, page)}>
+      <button type="button" className="backlinks__page" title={page} onClick={open} {...hoverOf(`${page}\n-1`, page)}>
         {record.title}
       </button>
       {snippets === null ? (
@@ -170,7 +170,7 @@ function BacklinkEntry({
       ) : (
         snippets.map((snippet, i) => (
           <button key={i} type="button" className="backlinks__snippet" title={page} onClick={(event) => {
-            // A line in a cell note (YAZ-3818): the note opens with that cell note's card.
+            // A line in a cell note (YAZ-3818): the page opens with that cell note's card.
             if (snippet.cellNote !== undefined && !event.metaKey) requestCellNote(page, snippet.cellNote)
             open(event)
           }} {...hoverOf(`${page}\n${i}`, page)}>

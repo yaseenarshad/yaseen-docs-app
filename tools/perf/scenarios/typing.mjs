@@ -1,11 +1,11 @@
 /**
  * typing: keydown → next presented frame, per key, typing 40 characters 90 ms apart at the end of a
- * 5k- and a 20k-line bullet note and a 5k-line prose note (restored as the active tab). p50 / p95 /
- * max over the keys. A note that is not painted within PAINT_TIMEOUT_MS (20k on v0.9.27) reports null.
+ * 5k- and a 20k-line bullet page and a 5k-line prose page (restored as the active tab). p50 / p95 /
+ * max over the keys. A page that is not painted within PAINT_TIMEOUT_MS (20k on v0.9.27) reports null.
  *
- * The prose note is typed into twice, with "Section indent" off and on (YAZ-2724). That feature
- * marks every top-level block of a section (YAZ-2709), and the prose note is made of them: about
- * 1,800 in its 5,000 lines, a heading every 11, against about 600 in the bullet note of that
+ * The prose page is typed into twice, with "Section indent" off and on (YAZ-2724). That feature
+ * marks every top-level block of a section (YAZ-2709), and the prose page is made of them: about
+ * 1,800 in its 5,000 lines, a heading every 11, against about 600 in the bullet page of that
  * length. `prose5kIndent` against `prose5k` is the cost of the feature per key. A build with no
  * such switch reports null for it.
  *
@@ -14,14 +14,14 @@
  * `npm run desktop:build && npm run perf -- typing --runs 5`.
  */
 import path from 'node:path'
-import { sentinel, writeNote } from '../genVault.mjs'
+import { sentinel, writePageFile } from '../genVault.mjs'
 import { sleep } from '../lib/app.mjs'
 import { ACTIVE, js, session } from '../lib/session.mjs'
 import { quantiles } from '../lib/stats.mjs'
 
 const PAINT_TIMEOUT_MS = 90_000
-/** key, note, body (genVault.mjs), lines, and whether the note's "Section indent" is turned on before the typing. */
-export const NOTES = [
+/** key, page, body (genVault.mjs), lines, and whether the page's "Section indent" is turned on before the typing. */
+export const PAGES = [
   ['bullets5k', 'Bullets 5k', 'bullets', 5000],
   ['bullets20k', 'Bullets 20k', 'bullets', 20000],
   ['prose5k', 'Prose 5k', 'prose', 5000],
@@ -33,7 +33,7 @@ const TEXT = 'the quick brown fox jumps over the lazy d'
 const KEY_PROBE = `window.__keys = [], window.addEventListener('keydown', (e) => requestAnimationFrame(() => setTimeout(() => __keys.push(performance.now() - e.timeStamp))), true), true`
 
 /**
- * In the page: turn the note's "Section indent" on by the clicks a user makes: the page cog, its
+ * In the page: turn the page's "Section indent" on by the clicks a user makes: the page cog, its
  * switch, the cog again to close the menu. The window has one tab, so one cog. False on a build
  * with no cog or no such switch (one from before YAZ-2709 under `--vs`).
  */
@@ -49,7 +49,7 @@ const INDENT_ON = `(async () => {
   return item !== undefined
 })()`
 
-/** True once a top-level block of the note in front carries its depth: the indent is drawn. */
+/** True once a top-level block of the page in front carries its depth: the indent is drawn. */
 const INDENTED = `document.querySelector('${ACTIVE} > [data-sd]') !== null`
 
 export function setup(dir) {
@@ -58,8 +58,8 @@ export function setup(dir) {
 
 export async function run(app, { dir, vault }) {
   const out = {}
-  for (const [key, name, kind, lines, indent = false] of NOTES) {
-    const file = writeNote(vault, name, kind, lines) // afresh: the last run typed into it
+  for (const [key, name, kind, lines, indent = false] of PAGES) {
+    const file = writePageFile(vault, name, kind, lines) // afresh: the last run typed into it
     const keys = await session(app, { profile: path.join(dir, `profile-${key}`), wins: [{ id: 'w1', root: vault, tabs: [file] }], doc: name, timeoutMs: PAINT_TIMEOUT_MS }, async ({ page }) => {
       // Before the caret: the indent moves the last line, and the click below is measured from where it stands.
       if (indent) {

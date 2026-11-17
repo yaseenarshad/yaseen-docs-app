@@ -146,8 +146,8 @@ describe('yaseen-links.js: a label draws its links as pills (D1, D3)', () => {
 
   it('keeps raw text for a link with nothing to show, a plain-text label, a wrapped label with no html=1, and a label with no link', () => {
     const { env, cell, label } = load()
-    env.yaseenLinks.setLooks({ 'Note|': null, 'YAZ-1': LOOK })
-    expect(label(cell('a', 'x [[Note|]] y'))).toBe('x [[Note|]] y')
+    env.yaseenLinks.setLooks({ 'Page|': null, 'YAZ-1': LOOK })
+    expect(label(cell('a', 'x [[Page|]] y'))).toBe('x [[Page|]] y')
     expect(label(cell('b', 'See [[YAZ-1]]', false))).toBe('See [[YAZ-1]]')
     // draw.io calls it an HTML label, but its cell renderer escapes it: a pill would show as its markup.
     expect(label(cell('w', 'See [[YAZ-1]]', 'wrap'))).toBe('See [[YAZ-1]]')

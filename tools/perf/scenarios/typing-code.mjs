@@ -12,7 +12,7 @@
  * `npm run desktop:build && npm run perf -- typing-code --runs 5`.
  */
 import path from 'node:path'
-import { writeNote } from '../genVault.mjs'
+import { writePageFile } from '../genVault.mjs'
 import { sleep } from '../lib/app.mjs'
 import { js, painted, row, session } from '../lib/session.mjs'
 import { quantiles } from '../lib/stats.mjs'
@@ -26,7 +26,7 @@ const KEY_PROBE = `window.__keys = [], window.addEventListener('keydown', (e) =>
 
 export function setup(dir) {
   const vault = path.join(dir, 'vault')
-  return { profile: path.join(dir, 'profile'), vault, small: writeNote(vault, 'Small', 'bullets', 20), big: path.join(vault, 'big-5mb.ts') }
+  return { profile: path.join(dir, 'profile'), vault, small: writePageFile(vault, 'Small', 'bullets', 20), big: path.join(vault, 'big-5mb.ts') }
 }
 
 export async function run(app, { profile, vault, small }) {

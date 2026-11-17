@@ -1,5 +1,5 @@
 /**
- * The note's own colour box (YAZ-4388): the highlight panel's, right under its Hex code field, and the table cells'
+ * The page's own colour box (YAZ-4388): the highlight panel's, right under its Hex code field, and the table cells'
  * (YAZ-4366), under a palette's "Custom colour…" (`table/colours.ts`, `cellToolbar.ts`). It replaces Chromium's
  * `<input type="color">` popup, which Electron opened at the window's top left whatever the input's place. The look
  * is that popup's: a saturation/brightness square with a round handle, an eyedropper, the colour, a hue slider, and
@@ -8,7 +8,7 @@
  * The box only chooses; what holds it applies. A drag in the square or the slider previews (the handles, the fields,
  * the panel's hex); one finished pick — the pointer up, Enter in a field, the eyedropper's colour — calls `pick` once,
  * so it is one undo step (and, for a highlight, one use). The square and the slider cancel their mousedown, so the
- * note's selection and focus stay; only the R G B fields take the focus, to be typed in.
+ * page's selection and focus stay; only the R G B fields take the focus, to be typed in.
  *
  * Smoothness: a drag draws at most once a frame (the latest pointer wins), reads the layout before it writes, moves
  * the handles with `transform` only, and writes only what changed.

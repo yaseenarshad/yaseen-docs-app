@@ -2,10 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { textFingerprint } from '@shared/reviews'
 import { MAX_FILE_BYTES, VAULT_CONFIG_DIR } from '@shared/types'
 import { makeViewsFixture } from '../fs/viewsFixture'
-import { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './index'
+import { scanFile } from './index'
 
 describe('parseFrontmatter', () => {
   it('parses a YAML map; core schema keeps dates as strings', () => {
@@ -35,137 +34,17 @@ describe('parseFrontmatter', () => {
   })
 })
 
-describe('extractTags', () => {
-  it('frontmatter list / string / `tag` key; leading # stripped; non-strings ignored', () => {
-    expect(extractTags({ tags: ['a', '#b', 3, null] }, '')).toEqual(['a', 'b'])
-    expect(extractTags({ tags: 'x, y  z' }, '')).toEqual(['x', 'y', 'z'])
-    expect(extractTags({ tag: 'solo' }, '')).toEqual(['solo'])
-    expect(extractTags({ tags: 42 }, '')).toEqual([])
-  })
-
-  it('inline tags: prefix rules, nested kept, digits-only ignored, case preserved', () => {
-    expect(extractTags({}, 'a #One (#two) [#three] x,#four;#five\n#six')).toEqual([
-      'One',
-      'two',
-      'three',
-      'four',
-      'five',
-      'six',
-    ])
-    expect(extractTags({}, '#first on the first char')).toEqual(['first'])
-    expect(extractTags({}, 'see #a/b and #123 and #1a')).toEqual(['a/b', '1a'])
-    expect(extractTags({}, 'not#tag and # heading')).toEqual([])
-  })
-
-  it('skips fenced code, inline code and URLs', () => {
-    expect(extractTags({}, '```\n#fenced\n```\n~~~\n#tilde\n~~~\n#kept')).toEqual(['kept'])
-    expect(extractTags({}, '```js\n#fenced\n```')).toEqual([])
-    expect(extractTags({}, 'x `#inline` y ``#double`` #kept')).toEqual(['kept'])
-    expect(extractTags({}, 'https://x.com/#frag http://y.com/a#b #kept')).toEqual(['kept'])
-  })
-
-  it('de-duplicates: frontmatter first, then first appearance', () => {
-    expect(extractTags({ tags: ['b'] }, '#a #b #a')).toEqual(['b', 'a'])
-  })
-})
-
-describe('extractAliases (GRO-2214)', () => {
-  it('list items are trimmed; empties and non-strings dropped; de-duplicated', () => {
-    expect(extractAliases({ aliases: [' CAC ', '', 'Acquisition Cost', 7, null, 'CAC'] })).toEqual(['CAC', 'Acquisition Cost'])
-  })
-
-  it('a scalar string is ONE alias — never comma-split, unlike `tags`', () => {
-    expect(extractAliases({ aliases: 'Customer Acquisition Cost, CAC' })).toEqual(['Customer Acquisition Cost, CAC'])
-    expect(extractAliases({ aliases: '  CAC  ' })).toEqual(['CAC'])
-  })
-
-  it('absent, empty or non-string `aliases` → []; only that key is read', () => {
-    expect(extractAliases({})).toEqual([])
-    expect(extractAliases({ aliases: [] })).toEqual([])
-    expect(extractAliases({ aliases: 42 })).toEqual([])
-    expect(extractAliases({ alias: 'CAC' })).toEqual([]) // `alias` singular is not the key (Obsidian's is `aliases`)
-  })
-})
-
-describe('extractLinks / extractEmbeds', () => {
-  it('strips alias, heading and block refs; trims', () => {
-    expect(extractLinks({}, '[[A|alias]] [[B#Heading]] [[C#^blk]] [[ D ]]')).toEqual(['A', 'B', 'C', 'D'])
-  })
-
-  it('YAZ-4935: the page is the one side that is an ID, in either order — so Linked mentions find both', () => {
-    // Words first keeps both sides (YAZ-4954): the resolver picks the right side when the left side is no page.
-    expect(extractLinks({}, '[[WIKI-116|staging]] and [[staging|WIKI-116]]')).toEqual(['WIKI-116', 'staging|WIKI-116'])
-    expect(extractLinks({}, '[[staging|WIKI-116#Intro]] [[WIKI-116#Intro|staging]]')).toEqual(['staging|WIKI-116', 'WIKI-116'])
-    expect(extractLinks({}, '[[the plan|k3m9x2pq7abc]]')).toEqual(['the plan|k3m9x2pq7abc'])
-    expect(extractLinks({}, '[[|WIKI-116]]')).toEqual(['WIKI-116'])
-    expect(extractLinks({}, '[[Postgres|database]] [[WIKI-116|WIKI-117]]')).toEqual(['Postgres', 'WIKI-116'])
-    expect(extractLinks({ related: '[[staging|WIKI-116]]' }, '')).toEqual(['staging|WIKI-116'])
-    expect(extractEmbeds('![[EMB-40|640x360 view=120,-40,0.8]]')).toEqual(['EMB-40'])
-  })
-
-  it('YAZ-4954: words that LOOK like an ID keep both sides, in the body, the frontmatter and embeds; the other order keeps one', () => {
-    expect(extractLinks({}, '[[Covid notes|COVID-19]] and [[COVID-19|Covid notes]]')).toEqual(['Covid notes|COVID-19', 'COVID-19'])
-    expect(extractLinks({ related: '[[Covid notes|COVID-19]]', list: ['[[Covid notes#Intro|COVID-19]]'] }, '')).toEqual(['Covid notes|COVID-19'])
-    expect(extractEmbeds('![[Covid notes|COVID-19]]')).toEqual(['Covid notes|COVID-19'])
-  })
-
-  it('YAZ-4954 part 2: an embed of a file keeps the file when its words look like an ID', () => {
-    expect(extractEmbeds('![[photo.png|FIG-1]] ![[FIG-2|chart.pdf]] ![[x.drawio|700x394 locked]]')).toEqual(['photo.png', 'chart.pdf', 'x.drawio'])
-    expect(extractLinks({ cover: '[[photo.png|FIG-1]]' }, '[[photo.png|FIG-1]] [[FIG-1|photo.png]]')).toEqual(['photo.png'])
-  })
-
-  it('embeds are not links and vice versa', () => {
-    const body = '![[img.png]] [[Note]] ![[Other#sec|x]]'
-    expect(extractLinks({}, body)).toEqual(['Note'])
-    expect(extractEmbeds(body)).toEqual(['img.png', 'Other'])
-  })
-
-  it('frontmatter string values (top-level and in lists) matching exactly [[…]] count as links', () => {
-    expect(extractLinks({ related: '[[X]]', list: ['[[Y|y]]', 'plain', 7], note: 'see [[Z]]' }, '')).toEqual(['X', 'Y'])
-  })
-
-  it('`aliases` values are NEVER links, whatever they look like (GRO-2214)', () => {
-    // A `[[X]]`-shaped alias stays an alias literally named `[[X]]` (extractAliases strips
-    // nothing) — it just never becomes an outgoing link of this note.
-    expect(extractLinks({ aliases: ['[[X]]', 'CAC'], related: '[[Y]]' }, '')).toEqual(['Y'])
-    expect(extractLinks({ aliases: '[[X]]' }, '')).toEqual([])
-    expect(extractAliases({ aliases: ['[[X]]'] })).toEqual(['[[X]]'])
-  })
-
-  it('a link in a folder’s value (`[[id]]`, `[[Name]]`, or a list of them) is in the note’s links, exactly as a top-level whole-value link is', () => {
-    const props = { related: '[[Top]]', in: { '3y7505rsr6fd': { owner: '[[k3m9x2pq7abc]]', Status: 'Interview', team: ['[[Sam|S]]', 'plain', 7] }, mzf9cjhn02vm: { lead: '[[Road#Scope]]' } } }
-    expect(extractLinks(props, '[[Body]]')).toEqual(['Top', 'k3m9x2pq7abc', 'Sam', 'Road', 'Body'])
-  })
-
-  it('a non-link string in a folder’s value that merely contains `[[x]]` inside other text is not a link', () => {
-    expect(extractLinks({ in: { '3y7505rsr6fd': { note: 'see [[x]] later', list: ['ask [[y]]'] } } }, '')).toEqual([])
-    // A block that is no map holds no values.
-    expect(extractLinks({ in: { '3y7505rsr6fd': '[[x]]' } }, '')).toEqual([])
-  })
-
-  it('de-duplicates: frontmatter first, then first appearance', () => {
-    expect(extractLinks({ a: '[[B]]' }, '[[A]] [[B]] [[A]]')).toEqual(['B', 'A'])
-    expect(extractEmbeds('![[a]] ![[b]] ![[a]]')).toEqual(['a', 'b'])
-  })
-
-  it('skips fenced code blocks and inline code spans, like tags; the line after a fence still counts', () => {
-    const body = '```\n[[Hidden]] ![[x.png]]\n```\n[[After]]\n~~~\n[[Tilde]]\n~~~\nsee `[[Inline]]` and ![[real.png]]'
-    expect(extractLinks({}, body)).toEqual(['After'])
-    expect(extractEmbeds(body)).toEqual(['real.png'])
-  })
-})
-
 describe('scanFile', () => {
   let root: string
   let cleanup: () => Promise<void>
   beforeAll(async () => ({ root, cleanup } = await makeViewsFixture()))
   afterAll(() => cleanup())
-  const note = (...p: string[]) => path.join(root, 'Content Pillars', ...p)
+  const page = (...p: string[]) => path.join(root, 'Content Pillars', ...p)
 
   it('identity + stat fields', async () => {
-    const r = await scanFile(root, note('1. Agentic Agency', 'Agentic Agency.md'))
+    const r = await scanFile(root, page('1. Agentic Agency', 'Agentic Agency.md'))
     expect(r).toMatchObject({
-      path: note('1. Agentic Agency', 'Agentic Agency.md'),
+      path: page('1. Agentic Agency', 'Agentic Agency.md'),
       name: 'Agentic Agency.md',
       basename: 'Agentic Agency',
       title: 'Agentic Agency',
@@ -182,7 +61,7 @@ describe('scanFile', () => {
     expect(r.frontmatterError).toBeUndefined()
   })
 
-  it('a note at the root has folder ""; `pillar: null` is present', async () => {
+  it('a page at the root has folder ""; `pillar: null` is present', async () => {
     const r = await scanFile(root, path.join(root, 'VSL-v1.md'))
     expect(r.folder).toBe('')
     expect(r.basename).toBe('VSL-v1')
@@ -191,20 +70,20 @@ describe('scanFile', () => {
   })
 
   it('invalid frontmatter → frontmatterError set and properties {}', async () => {
-    const r = await scanFile(root, note('4. Tech & Silicon Valley', 'Tech & Silicon Valley.md'))
+    const r = await scanFile(root, page('4. Tech & Silicon Valley', 'Tech & Silicon Valley.md'))
     expect(r.properties).toEqual({})
     expect(r.frontmatterError).toMatch(/\S/)
   })
 
   it('frontmatter wikilinks count as links; nested tag kept', async () => {
-    const r = await scanFile(root, note('1. Agentic Agency', 'The Levels of an Agency.md'))
+    const r = await scanFile(root, page('1. Agentic Agency', 'The Levels of an Agency.md'))
     expect(r.tags).toEqual(['agentic/levels'])
     expect(r.links).toEqual(['levels.png', 'Agentic Agency'])
     expect(r.embeds).toEqual([])
   })
 
   it('no frontmatter: tag inside the fenced block ignored, embed collected', async () => {
-    const r = await scanFile(root, note('3. Trust Economy & Paid Ads', 'Attribution.md'))
+    const r = await scanFile(root, page('3. Trust Economy & Paid Ads', 'Attribution.md'))
     expect(r.properties).toEqual({})
     expect(r.frontmatterError).toBeUndefined()
     expect(r.tags).toEqual(['attribution'])
@@ -212,7 +91,7 @@ describe('scanFile', () => {
     expect(r.embeds).toEqual(['chart.png'])
   })
 
-  it('`id` is the frontmatter id when it has the note-id shape, else absent (YAZ-2293 D1)', async () => {
+  it('`id` is the frontmatter id when it has the page-id shape, else absent (YAZ-2293 D1)', async () => {
     const withId = path.join(root, 'With id.md')
     const foreign = path.join(root, 'Foreign id.md')
     await writeFile(withId, '---\nid: k3m9x2pq7abc\n---\nbody\n')
@@ -255,7 +134,7 @@ describe('scanFile', () => {
   })
 
   it('string `tags:` is split', async () => {
-    const r = await scanFile(root, note('2. Creator Economy', 'The Gold In Your Archive.md'))
+    const r = await scanFile(root, page('2. Creator Economy', 'The Gold In Your Archive.md'))
     expect(r.tags).toEqual(['creator'])
   })
 
@@ -267,7 +146,7 @@ describe('scanFile', () => {
     expect(r.links).toEqual(['Attribution', 'Ideas'])
   })
 
-  it('frontmatter `comments` are the note\'s own, never a property; the other keys stay (YAZ-1472)', async () => {
+  it('frontmatter `comments` are the page\'s own, never a property; the other keys stay (YAZ-1472)', async () => {
     const commented = path.join(root, 'commented.md')
     await writeFile(
       commented,
@@ -279,7 +158,7 @@ describe('scanFile', () => {
     expect(r.links).toEqual([])
   })
 
-  it('indexing a note never removes a block of `in`: the record carries every folder’s values as written, their links counted, and the file is left byte for byte', async () => {
+  it('indexing a page never removes a block of `in`: the record carries every folder’s values as written, their links counted, and the file is left byte for byte', async () => {
     const held = path.join(root, 'held.md')
     const content = '---\nin:\n  3y7505rsr6fd:\n    owner: "[[Sam]]"\n  mzf9cjhn02vm:\n    Status: 2-Todo\n---\nbody\n'
     await writeFile(held, content)
@@ -289,42 +168,95 @@ describe('scanFile', () => {
     expect(await readFile(held, 'utf8')).toBe(content)
   })
 
-  it('frontmatter `reviews` land on the record in time order and are never a property (YAZ-2322)', async () => {
-    const reviewed = path.join(root, 'reviewed.md')
-    await writeFile(reviewed, '---\nstatus: draft\nreview: false\nreviews:\n  - {at: 2026-11-03T09:00:00Z, rating: keep, text: 9f3a1c2e}\n  - {at: 2026-10-04T14:02:11Z, rating: keep, text: 9f3a1c2e}\n---\nBody.\n')
-    const r = await scanFile(root, reviewed)
-    expect(r.properties).toEqual({ status: 'draft', review: false })
-    expect(r.reviews?.map((e) => e.at)).toEqual(['2026-10-04T14:02:11Z', '2026-11-03T09:00:00Z'])
+  it('cards land on the record in page order: ID, off and reviews off each card line, and the title (YAZ-5030), no other card text; `reviews` is a property like any other (YAZ-4960 D4, D6)', async () => {
+    const file = path.join(root, 'cards.md')
+    const bytes = [
+      '---',
+      'reviews: [old]',
+      '---',
+      '```card',
+      'Capital of {{France}}?',
+      '---',
+      'Paris',
+      '```',
+      '<!-- card: WIKI-512, title "Capital of France?", 2026-11-12T14:05:00.000Z good, mochi abc, 2026-11-20T09:00:00.000Z again -->',
+      '',
+      '- in a list',
+      '  ```card',
+      '  No ID yet',
+      '  ```',
+      '',
+      '```markdown',
+      '```card',
+      'inside another block: no card',
+      '```',
+      '',
+      '```card',
+      'Off',
+      '```',
+      '<!-- card: WIKI-7, off -->',
+      '',
+    ].join('\n')
+    await writeFile(file, bytes)
+    const r = await scanFile(root, file)
+    expect(r.cards).toEqual([
+      { id: 'WIKI-512', off: false, next: false, reviews: [{ at: '2026-11-12T14:05:00.000Z', rating: 'good' }, { at: '2026-11-20T09:00:00.000Z', rating: 'again' }], title: 'Capital of France?' },
+      { id: null, off: false, next: false, reviews: [] },
+      { id: 'WIKI-7', off: true, next: false, reviews: [] },
+    ])
+    expect(r.properties).toEqual({ reviews: ['old'] })
+    expect(await readFile(file, 'utf8')).toBe(bytes)
+    await writeFile(file, 'No cards.\n')
+    expect((await scanFile(root, file)).cards).toBeUndefined()
   })
 
-  it('upkeep off: the index is unchanged — the record still carries the review log and the body fingerprint, `reviews` is never a property, and the note is left byte for byte', async () => {
-    const reviewed = path.join(root, 'reviewed-off.md')
-    const bytes = '---\nreview: true\nreviews:\n  - {at: 2026-10-04T14:02:11Z, rating: keep, text: 9f3a1c2e}\n---\nBody.\n'
-    await writeFile(reviewed, bytes)
-    // No review.json, one that says off, one that says on: the same record each time.
-    const records = [await scanFile(root, reviewed)]
-    await mkdir(path.join(root, VAULT_CONFIG_DIR))
-    for (const enabled of [false, true]) {
-      await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ enabled }))
-      records.push(await scanFile(root, reviewed))
-    }
-    await rm(path.join(root, VAULT_CONFIG_DIR), { recursive: true }) // the fixture is a folder that has not said yes to IDs
-    expect(records[0]).toMatchObject({ properties: { review: true }, reviews: [{ at: '2026-10-04T14:02:11Z', rating: 'keep', text: '9f3a1c2e' }], text: textFingerprint('Body.\n') })
-    expect(records[1]).toEqual(records[0])
-    expect(records[2]).toEqual(records[0])
-    expect(await readFile(reviewed, 'utf8')).toBe(bytes)
+  it('a link in a card counts (D17); a link in a code block or a code span INSIDE the card does not (audit 7)', async () => {
+    const file = path.join(root, 'linked.md')
+    await writeFile(file, ['````card', 'See [[Paris]] #geo and `[[Span]]`', '```sh', 'echo [[Code]] #nope', '```', '````', '<!-- card: WIKI-3 -->', ''].join('\n'))
+    const r = await scanFile(root, file)
+    expect(r.links).toEqual(['Paris'])
+    expect(r.tags).toEqual(['geo'])
   })
 
-  it('`text` is the fingerprint of the body alone: a frontmatter change leaves it, a body change moves it (YAZ-2322)', async () => {
-    const file = path.join(root, 'fingerprinted.md')
-    await writeFile(file, '---\nstatus: draft\n---\nBody.\n')
-    const first = await scanFile(root, file)
-    expect(first.text).toBe(textFingerprint('Body.\n'))
-    expect(first.reviews).toBeUndefined()
-    await writeFile(file, '---\nstatus: done\ncomments:\n  - {id: a, at: 2026-09-11T18:22:31Z, body: hi}\n---\nBody.\n')
-    expect((await scanFile(root, file)).text).toBe(first.text)
-    await writeFile(file, '---\nstatus: done\n---\nBody, edited.\n')
-    expect((await scanFile(root, file)).text).not.toBe(first.text)
+  it('YAZ-5037: a card file (`kind: card`, any case) has kind card, its card\'s title, and its card\'s ID only — no page ID', async () => {
+    const file = path.join(root, 'capital-of-france-geo-140.md')
+    await writeFile(file, ['---', 'kind: " CARD "', 'tags: [geo]', '---', '```card', '###### Capital of **France**?', '---', 'Paris', '```', '<!-- card: GEO-140, title "Capital of France?", 2026-11-10T09:12:00.000Z good 12s -->', ''].join('\n'))
+    const r = await scanFile(root, file)
+    expect(r.kind).toBe('card')
+    expect(r.title).toBe('Capital of France?')
+    expect(r.id).toBeUndefined()
+    expect(r.cards).toEqual([{ id: 'GEO-140', off: false, next: false, reviews: [{ at: '2026-11-10T09:12:00.000Z', rating: 'good', seconds: 12 }], title: 'Capital of France?' }])
+    expect(r.properties).toEqual({ kind: ' CARD ', tags: ['geo'] })
+  })
+
+  it('YAZ-5308 decision D: a card file`s title is its card`s, off its card line, never a `title` property nor a line of its text', async () => {
+    const file = path.join(root, 'capital-of-france-geo-150.md')
+    await writeFile(file, ['---', 'kind: card', 'title: Not this', '---', '```card', 'Which city?', '---', 'Paris', '```', '<!-- card: GEO-150, title "Capital of France" -->', '', '```card', 'Second', '```', '<!-- card: GEO-151 -->', ''].join('\n'))
+    const r = await scanFile(root, file)
+    expect(r.title).toBe('Capital of France')
+    expect(r.cards?.map((c) => c.title)).toEqual(['Capital of France', undefined])
+  })
+
+  it('YAZ-5037: a card file with 2 cards stays a card file, and both cards stay in review; one with no card is titled by its name', async () => {
+    const two = path.join(root, 'two-cards.md')
+    await writeFile(two, ['---', 'kind: card', '---', '```card', 'First', '```', '<!-- card: GEO-141, title "First" -->', '', '```card', 'Second', '```', '<!-- card: GEO-142 -->', ''].join('\n'))
+    const r = await scanFile(root, two)
+    expect(r.kind).toBe('card')
+    expect(r.title).toBe('First')
+    expect(r.cards?.map((c) => c.id)).toEqual(['GEO-141', 'GEO-142'])
+    const none = path.join(root, 'no-card.md')
+    await writeFile(none, '---\nkind: card\n---\nJust text.\n')
+    expect(await scanFile(root, none)).toMatchObject({ kind: 'card', title: 'no-card' })
+  })
+
+  it('YAZ-5037: another `kind` value, or `type: card`, is an ordinary property — the file is a page', async () => {
+    const book = path.join(root, 'book.md')
+    await writeFile(book, '---\nkind: book\ntitle: A book\n---\n```card\nQ\n```\n')
+    expect(await scanFile(root, book)).toMatchObject({ title: 'A book', properties: { kind: 'book' } })
+    expect((await scanFile(root, book)).kind).toBeUndefined()
+    const typed = path.join(root, 'typed.md')
+    await writeFile(typed, '---\ntype: card\n---\nText\n')
+    expect((await scanFile(root, typed)).kind).toBeUndefined()
   })
 
   it('files over MAX_FILE_BYTES → metadata only', async () => {
@@ -333,7 +265,6 @@ describe('scanFile', () => {
     const r = await scanFile(root, big)
     expect(r.size).toBeGreaterThan(MAX_FILE_BYTES)
     expect(r).toMatchObject({ name: 'big.md', properties: {}, aliases: [], tags: [], links: [], embeds: [] })
-    expect(r.text).toBeUndefined() // not read, so never a review card
   })
 
   it('missing file → BridgeFailure NOT_FOUND', async () => {

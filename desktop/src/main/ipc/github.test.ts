@@ -115,7 +115,7 @@ describe('registerGithubIpc', () => {
     expect(await registered(CONTRACT.github.history.channel)({ sender }, 'rel', 'b.excalidraw')).toEqual(bad('NOT_ABSOLUTE'))
     expect(await registered(CONTRACT.github.version.channel)({ sender }, vault, '../b.excalidraw', 'x')).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.github.restore.channel)({ sender }, vault, 'b.excalidraw', 'HEAD:b.excalidraw')).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.github.history.channel)({ sender }, vault, 'note.md')).toEqual(bad('UNSUPPORTED_EXTENSION'))
+    expect(await registered(CONTRACT.github.history.channel)({ sender }, vault, 'page.md')).toEqual(bad('UNSUPPORTED_EXTENSION'))
   })
 
   it('rejects a root that is not an absolute path, and a non-boolean flag, before any git work happens', async () => {

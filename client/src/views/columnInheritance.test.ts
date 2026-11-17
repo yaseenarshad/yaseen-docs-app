@@ -48,7 +48,7 @@ describe('columns flow down (YAZ-4713 C2)', () => {
   })
 
   it('a folder with no `.folder.md`, or none saved, adds nothing (C5)', () => {
-    expect(pageColumns({}, 'notes/a', byFolder([folderMd('notes')]), true, true)).toEqual({})
+    expect(pageColumns({}, 'pages/a', byFolder([folderMd('pages')]), true, true)).toEqual({})
   })
 
   it('folderName: the owner’s title; the vault’s name at the root', () => {

@@ -88,7 +88,7 @@ describe('drawing:load', () => {
 
   it('refuses a path that escapes the vault, a non-drawing extension, and a missing `path`', async () => {
     expect((await failure(loadDrawing({ root, path: '../outside.excalidraw' }))).code).toBe('BAD_REQUEST')
-    expect((await failure(loadDrawing({ root, path: 'notes.txt' }))).code).toBe('UNSUPPORTED_EXTENSION')
+    expect((await failure(loadDrawing({ root, path: 'pages.txt' }))).code).toBe('UNSUPPORTED_EXTENSION')
     expect((await failure(loadDrawing({ root, path: '  ' } as never))).code).toBe('BAD_REQUEST')
     expect((await failure(loadDrawing({ root: 'relative', path: 'a.excalidraw' }))).code).toBe('NOT_ABSOLUTE')
   })
@@ -174,7 +174,7 @@ describe('drawing:save', () => {
       [{ root, path: file, json: scene(), expectedMtime: 'soon', newFiles: [] }, 'BAD_REQUEST'],
       [{ root, path: file, json: '{ not json', newFiles: [] }, 'BAD_REQUEST'],
       [{ root, path: '../escape.excalidraw', json: scene(), newFiles: [] }, 'BAD_REQUEST'],
-      [{ root, path: 'notes.txt', json: scene(), newFiles: [] }, 'UNSUPPORTED_EXTENSION'],
+      [{ root, path: 'pages.txt', json: scene(), newFiles: [] }, 'UNSUPPORTED_EXTENSION'],
     ]
     for (const [req, code] of bad) {
       expect((await failure(saveDrawing(req as never))).code, JSON.stringify(req.path)).toBe(code)
@@ -293,9 +293,9 @@ describe('🔒 YAZ-1775 D3 — the image store on load', () => {
   })
 
   it('ignores a foreign file in assets/ and reads `jpeg` as well as `jpg`', async () => {
-    await seedAsset('notes.txt', 'nope')
+    await seedAsset('pages.txt', 'nope')
     await seedAsset('photo.jpeg', 'jj')
-    await seed('Board.excalidraw', scene([imageEl('photo'), imageEl('notes')]))
+    await seed('Board.excalidraw', scene([imageEl('photo'), imageEl('pages')]))
     const res = await loadDrawing({ root, path: 'Board.excalidraw' })
     expect(res.stored).toEqual(['photo'])
     expect(res.files.photo.mimeType).toBe('image/jpeg')

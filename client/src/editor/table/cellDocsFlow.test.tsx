@@ -1,6 +1,6 @@
 /**
  * The one end-to-end flow of YAZ-3818's verification plan (YAZ-4262), on ONE real editor (`createCrepe`) with the
- * note's own menu host (`NoteMenu`) mounted for the sheets, as `cellNoteGuard.test.tsx` does. Each step checks the
+ * page's own menu host (`PageMenu`) mounted for the sheets, as `cellNoteGuard.test.tsx` does. Each step checks the
  * saved Markdown or the doc: `- ` in a cell makes a bullet; Tab makes it a child; a fold; a reload (`setMarkdown`, the
  * outside-change path) keeps the fold; a cell note gets bullets in its card; closing hides it; a reload keeps it under
  * its table and its mark in the cell; ⌘F on a word in it opens its card; Duplicate row › Copy with notes gives a new
@@ -17,7 +17,7 @@ import type { MenuAction, MenuItem } from '../../sidebar/menuSections'
 import { getMarkdownForSave, setMarkdown } from '../createCrepe'
 import { createFindChannel } from '../find/findChannel'
 import { mount, pressKey, typeText, unmountAll } from '../marks/markTestKit'
-import { NoteMenu, noteMenuSections } from '../noteMenu'
+import { PageMenu, pageMenuSections } from '../pageMenu'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from '../outline/outlineFolding'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
@@ -59,14 +59,14 @@ const sheetText = () => document.querySelector('.confirm .confirm__text')?.textC
 const press = (label: string) => act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === label)!.click())
 const menu = (view: EditorView, r: number, c: number, id: string) =>
   act(() =>
-    noteMenuSections(view, null, () => {}, cellPos(view, r, c) + 2)
+    pageMenuSections(view, null, () => {}, cellPos(view, r, c) + 2)
       .flat()
       .flatMap((item: MenuItem): MenuAction[] => (item.children === undefined ? [item] : item.children.flat()))
       .find((item) => item.id === `table-${id}`)!
       .onSelect(),
   )
 /** The cell note's position in the doc, or -1. */
-const notePos = (view: EditorView, label: string) => {
+const pagePos = (view: EditorView, label: string) => {
   let pos = -1
   view.state.doc.forEach((node, at) => {
     if (node.type.name === 'cell_note' && node.attrs.label === label) pos = at
@@ -87,7 +87,7 @@ it('a cell doc and a cell note from start to end: bullet, child, fold, reload, n
     const el = document.createElement('div')
     document.body.append(el)
     root = createRoot(el)
-    root.render(<NoteMenu view={view} />)
+    root.render(<PageMenu view={view} />)
   })
 
   // 1. `- ` at the start of a cell makes a bullet; Enter a second one; Tab makes it a child.
@@ -119,7 +119,7 @@ it('a cell doc and a cell note from start to end: bullet, child, fold, reload, n
   type(crepe, view, 'passport')
   expect(pressKey(crepe, 'Escape')).toBe(true)
   expect(openCellNoteLabel(view.state)).toBeNull()
-  expect(isCellNoteHidden(view.state, notePos(view, 'cell-1'))).toBe(true)
+  expect(isCellNoteHidden(view.state, pagePos(view, 'cell-1'))).toBe(true)
   saved = getMarkdownForSave(crepe)
   expect(saved).toContain('| Monday[^cell-1] |')
   // The note right under its table, before the next block.
@@ -130,7 +130,7 @@ it('a cell doc and a cell note from start to end: bullet, child, fold, reload, n
   // 4. A reload keeps the note, hidden, its mark, and the fold.
   setMarkdown(crepe, saved)
   expect(getMarkdownForSave(crepe)).toBe(saved)
-  expect(isCellNoteHidden(view.state, notePos(view, 'cell-1'))).toBe(true)
+  expect(isCellNoteHidden(view.state, pagePos(view, 'cell-1'))).toBe(true)
   expect(folded(host)).toBe(1)
 
   // 5. ⌘F on a word in the note: the step onto it opens the card; closing find leaves the caret in it.

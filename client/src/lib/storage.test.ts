@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defaultCourseState } from '@shared/courseState'
 import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, defaultFolderState, defaultRightPanelIdentity, listVaults, openVaultRoots, type AppState, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { storage } from './storage'
 import { hashFilePath } from './urlHash'
@@ -23,6 +24,7 @@ function installBridge(state: AppState, identity: IdentityFixture) {
       setTocSwitch: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       setTabCanvas: vi.fn(async () => undefined),
+      setCourse: vi.fn(async () => undefined),
       onChange: vi.fn((l: (s: AppState) => void) => {
         listener = l
         return () => {
@@ -136,6 +138,25 @@ describe('storage.getVaultSets (YAZ-2602 D8)', () => {
     b.emit({ ...defaultAppState(), vaultSets: [reading] })
     expect(storage.getVaultSets()).toEqual([reading])
     expect(woke).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the card course (YAZ-5120)', () => {
+  it('getCourse is the default without one; setCourse applies main`s rule in the cache at once and sends the patch; a no-op sends nothing; a broadcast of the same course keeps the snapshot', async () => {
+    b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    await storage.init()
+    expect(storage.getCourse()).toEqual(defaultCourseState())
+    const woke = vi.fn()
+    storage.subscribe(woke)
+    storage.setCourse({ chapter: 'inbox', clip: 'c3-02', muted: true })
+    expect(storage.getCourse()).toMatchObject({ chapter: 'inbox', clip: 'c3-02', muted: true })
+    expect(b.bridge.state.setCourse).toHaveBeenCalledExactlyOnceWith({ chapter: 'inbox', clip: 'c3-02', muted: true })
+    expect(woke).toHaveBeenCalledTimes(1)
+    storage.setCourse({ muted: true })
+    expect(b.bridge.state.setCourse).toHaveBeenCalledOnce()
+    const snapshot = storage.getCourse()
+    b.emit({ ...defaultAppState(), course: { ...snapshot, finished: [] } })
+    expect(storage.getCourse()).toBe(snapshot)
   })
 })
 
@@ -308,14 +329,14 @@ describe('storage.init', () => {
 describe('storage', () => {
   it('root is the window identity; changing it clears the file AND tabs in one write, re-setting it keeps them', () => {
     expect(storage.getRoot()).toBeNull()
-    storage.setRoot('/notes')
-    expect(storage.getRoot()).toBe('/notes')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
-    storage.setWorkspace('/notes', [{ path: '/notes/a.md' }], '/notes/a.md', defaultRightPanelIdentity())
-    storage.setRoot('/notes')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes' })
-    expect(storage.getFile()).toBe('/notes/a.md')
-    expect(storage.getTabs()).toEqual(['/notes/a.md'])
+    storage.setRoot('/pages')
+    expect(storage.getRoot()).toBe('/pages')
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/pages', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
+    storage.setWorkspace('/pages', [{ path: '/pages/a.md' }], '/pages/a.md', defaultRightPanelIdentity())
+    storage.setRoot('/pages')
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/pages' })
+    expect(storage.getFile()).toBe('/pages/a.md')
+    expect(storage.getTabs()).toEqual(['/pages/a.md'])
     storage.setRoot(null)
     expect(storage.getRoot()).toBeNull()
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
@@ -514,7 +535,7 @@ describe('storage', () => {
     expect(storage.getTocSource('/r2', '/r1/a.md')).toBeNull()
     expect(b.bridge.state.setTocSource).toHaveBeenCalledWith('/r1', '/r1/a.md', 'bullets')
     expect(b.bridge.state.setTocSource).toHaveBeenCalledTimes(2)
-    // The same choice again, and Auto on a note that is on Auto: no write.
+    // The same choice again, and Auto on a page that is on Auto: no write.
     storage.setTocSource('/r1', '/r1/a.md', 'bullets')
     storage.setTocSource('/r1', '/r1/never.md', null)
     expect(b.bridge.state.setTocSource).toHaveBeenCalledTimes(2)
@@ -529,7 +550,7 @@ describe('storage', () => {
     expect(storage.getTocSource('/r1', '/r1/b.md')).toBeNull()
   })
 
-  it('the table of contents switch is keyed by root then file; a note with no entry made no choice (`undefined`: the setting decides, YAZ-3558 D1); on AND off are sent, and the same value again writes nothing (YAZ-2950)', () => {
+  it('the table of contents switch is keyed by root then file; a page with no entry made no choice (`undefined`: the setting decides, YAZ-3558 D1); on AND off are sent, and the same value again writes nothing (YAZ-2950)', () => {
     expect(storage.getTocSwitch('/r1', '/r1/a.md')).toBeUndefined()
     storage.setTocSwitch('/r1', '/r1/a.md', false)
     expect(storage.getTocSwitch('/r1', '/r1/a.md')).toBe(false)
@@ -697,10 +718,33 @@ describe('storage', () => {
 
   it('a failed bridge write is logged once and the optimistic cache value stays', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    b.bridge.state.setSettings.mockRejectedValueOnce({ code: 'BAD_REQUEST', message: 'nope' })
-    storage.setSettings({ ...DEFAULT_SETTINGS, blockGap: 2 })
+    b.bridge.window.setIdentity.mockRejectedValueOnce({ code: 'BAD_REQUEST', message: 'nope' })
+    storage.setSidebarCollapsed(true)
     await flushMicrotasks()
     expect(error).toHaveBeenCalledTimes(1)
-    expect(storage.getSettings().blockGap).toBe(2)
+    expect(storage.getSidebarCollapsed()).toBe(true)
+  })
+
+  it('YAZ-5053 round 4: a settings save that main refuses goes back to main\'s settings, and the listeners wake, so no row shows a choice that was not saved', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const seen = vi.fn()
+    storage.subscribe(seen)
+    b.bridge.state.setSettings.mockRejectedValueOnce({ code: 'BAD_REQUEST', message: "'settings' must be a complete SettingsState" })
+    storage.setSettings({ ...DEFAULT_SETTINGS, markNextHidden: false })
+    expect(storage.getSettings().markNextHidden).toBe(false)
+    await flushMicrotasks()
+    expect(storage.getSettings().markNextHidden).toBe(true)
+    expect(seen).toHaveBeenCalled()
+  })
+
+  it('YAZ-5053 round 4: settings from a main process older than a field (the app not restarted) read that field\'s default, so its row shows the choice in use', async () => {
+    const { markNextHidden: _gone, cardSpacing: _gone2, ...older } = DEFAULT_SETTINGS
+    b = installBridge({ ...defaultAppState(), settings: { ...older, shownHiddenWords: 'box' } as typeof DEFAULT_SETTINGS }, { id: 'w1', root: null, file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, shownHiddenWords: 'box' })
+    // The same at a broadcast: main drops a field it does not know, and the row shows the default again.
+    b.emit({ ...defaultAppState(), settings: older as typeof DEFAULT_SETTINGS })
+    expect(storage.getSettings().markNextHidden).toBe(DEFAULT_SETTINGS.markNextHidden)
+    expect(storage.getSettings().cardSpacing).toBe(DEFAULT_SETTINGS.cardSpacing)
   })
 })

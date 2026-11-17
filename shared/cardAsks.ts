@@ -1,0 +1,36 @@
+/**
+ * THE CARD MENU'S ASKS (YAZ-5697, Yaseen: "how come archive is so easily clicked and there's no double confirmation?
+ * Same thing with title on front"): the rows of a card's ⋯ that change the card on one click ask in place first, with
+ * Cancel first. The one card menu (`cardMenu.ts`: every card ⋯ on the Mac and the phone) says these words.
+ *
+ * Unarchive card does not ask: it only brings a card back. Move to Up next and Fix later do not ask: each is taken
+ * back on the same row (and by Undo in the Inbox).
+ */
+import type { CardTitleChoice } from './cardTitleAt'
+import { cardTitleChoiceLabel } from './cardTitleAt'
+
+export interface CardAsk {
+  question: string
+  /** The answer's words, after Cancel. */
+  yes: string
+  /** The answer in the danger colour (Archive). */
+  danger?: boolean
+}
+
+export const ARCHIVE_ASK: CardAsk = { question: 'Archive this card?', yes: 'Archive', danger: true }
+
+/**
+ * The ⋯ menu's "Title in review ›" ask (YAZ-5696, the YAZ-5697 step): a change of when the card's title shows in
+ * Review. The answer is the choice's own name.
+ */
+export function titleChoiceAsk(choice: CardTitleChoice): CardAsk {
+  const question: Record<CardTitleChoice, string> = {
+    default: 'Use the default from Settings › Cards?',
+    never: 'Never show the title in review?',
+    always: 'Always show the title?',
+    click: 'Show the title after the first click?',
+    side2: 'Show the title before Side 2?',
+  }
+  // The answer is the choice's bare name: "Default", not "Default (Always)".
+  return { question: question[choice], yes: choice === 'default' ? 'Default' : cardTitleChoiceLabel(choice, 'always') }
+}

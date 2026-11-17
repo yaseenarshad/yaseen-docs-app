@@ -4,7 +4,7 @@ import type { GroupBySpec } from '../viewSchema'
 import { groupValueLook } from './GroupHeader'
 
 type Colour = keyof typeof HIGHLIGHT_HEX
-/** None, then the 8 highlight colours in the note toolbar's order (yellow first). */
+/** None, then the 8 highlight colours in the page toolbar's order (yellow first). */
 const COLOURS = Object.keys(HIGHLIGHT_HEX) as Colour[]
 
 /** `spec` with a new header style. None and Large off delete their keys, so the YAML lines go (YAZ-3742). */

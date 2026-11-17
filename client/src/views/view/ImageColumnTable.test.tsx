@@ -16,12 +16,12 @@ import type { FolderSettings } from '../folderSettings'
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const note = (name: string, properties: Record<string, unknown>): IndexRecord =>
+const page = (name: string, properties: Record<string, unknown>): IndexRecord =>
   ({ ...TEST_RECORDS[0], path: `/vault/Tools/${name}.md`, name: `${name}.md`, basename: name, title: name, folder: 'Tools', properties }) as IndexRecord
 const RECORDS = [
-  note('React', { Logo: '[[assets/images/react.png]]', status: 'live' }),
-  note('Vercel', { Logo: '[[assets/images/vercel.svg]]', status: 'live' }),
-  note('Cloudflare', { status: 'idea' }),
+  page('React', { Logo: '[[assets/images/react.png]]', status: 'live' }),
+  page('Vercel', { Logo: '[[assets/images/vercel.svg]]', status: 'live' }),
+  page('Cloudflare', { status: 'idea' }),
 ]
 
 let root: Root | null = null

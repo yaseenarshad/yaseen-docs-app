@@ -3,7 +3,7 @@ import type { IndexRecord } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import type { TreeNode } from '@shared/types'
 import { buildViewOnlyCatalog } from './viewOnlyCatalog'
-import { maskCode, rewriteBodyLinks, rewriteInner, rewriteNoteLinks } from '@shared/linkRewrite'
+import { maskCode, rewriteBodyLinks, rewriteInner, rewritePageLinks } from '@shared/linkRewrite'
 import { countLinkReferences, linkedBasenames, renamedTarget, renameNotice, updateLinksAfterRename } from './renameLinks'
 
 const resolvesB = (t: string) => t.replace(/\.(md|markdown)$/i, '').replace(/^.*\//, '').toLowerCase() === 'b'
@@ -43,11 +43,11 @@ describe('rewriteInner / renamedTarget (form + suffix + alias preservation)', ()
     expect(rewriteBodyLinks('See [[staging|WIKI-116]] and ![[EMB-40|640x360]]', resolvesId, toNext)).toBe('See [[staging|WIKI-200]] and ![[EMB-40|640x360]]')
   })
 
-  it('YAZ-4935 round 2: words that only look like an ID — the left side is the renamed note, so the left side is rewritten', () => {
-    const resolvesCovid = (t: string) => t === 'Covid notes'
-    const toNext = (t: string) => (t === 'Covid notes' ? 'Covid 2020' : t)
-    expect(rewriteInner('Covid notes|COVID-19', resolvesCovid, toNext)).toBe('Covid 2020|COVID-19')
-    expect(rewriteBodyLinks('See [[Covid notes|COVID-19]].', resolvesCovid, toNext)).toBe('See [[Covid 2020|COVID-19]].')
+  it('YAZ-4935 round 2: words that only look like an ID — the left side is the renamed page, so the left side is rewritten', () => {
+    const resolvesCovid = (t: string) => t === 'Covid pages'
+    const toNext = (t: string) => (t === 'Covid pages' ? 'Covid 2020' : t)
+    expect(rewriteInner('Covid pages|COVID-19', resolvesCovid, toNext)).toBe('Covid 2020|COVID-19')
+    expect(rewriteBodyLinks('See [[Covid pages|COVID-19]].', resolvesCovid, toNext)).toBe('See [[Covid 2020|COVID-19]].')
   })
 
   it('a match whose target text would not change is left untouched — byte-identical, padding included (E1b pin)', () => {
@@ -75,21 +75,21 @@ describe('rewriteBodyLinks', () => {
   })
 })
 
-describe('rewriteNoteLinks', () => {
+describe('rewritePageLinks', () => {
   it('rewrites whole-value frontmatter links (top-level and inside lists) plus the body; everything else survives', () => {
-    const content = '---\npillar: "[[B]]"\nrelated:\n  - "[[B|Bee]]"\n  - "[[A]]"\nnote: see [[B]] inline\n---\n\nBody [[B]].\n'
-    expect(rewriteNoteLinks(content, resolvesB, toC)).toBe(
-      '---\npillar: "[[C]]"\nrelated:\n  - "[[C|Bee]]"\n  - "[[A]]"\nnote: see [[B]] inline\n---\n\nBody [[C]].\n',
+    const content = '---\npillar: "[[B]]"\nrelated:\n  - "[[B|Bee]]"\n  - "[[A]]"\npage: see [[B]] inline\n---\n\nBody [[B]].\n'
+    expect(rewritePageLinks(content, resolvesB, toC)).toBe(
+      '---\npillar: "[[C]]"\nrelated:\n  - "[[C|Bee]]"\n  - "[[A]]"\npage: see [[B]] inline\n---\n\nBody [[C]].\n',
     )
   })
 
   it('null when nothing references the renamed file (the caller never writes)', () => {
-    expect(rewriteNoteLinks('---\nk: 1\n---\n\n[[A]]\n', resolvesB, toC)).toBeNull()
+    expect(rewritePageLinks('---\nk: 1\n---\n\n[[A]]\n', resolvesB, toC)).toBeNull()
   })
 })
 
-describe('rewriteNoteLinks inside a folder’s values (`in`, D19)', () => {
-  const NOTE = [
+describe('rewritePageLinks inside a folder’s values (`in`, D19)', () => {
+  const PAGE = [
     '---',
     '# who this is',
     'id: n0tead000001',
@@ -103,7 +103,7 @@ describe('rewriteNoteLinks inside a folder’s values (`in`, D19)', () => {
     '      - "[[Sub/B#Scope]]"',
     '      - "[[A]]"',
     '    ref: "[[k3m9x2pq7abc]]"',
-    '    note: see [[B]] inline',
+    '    page: see [[B]] inline',
     '  mzf9cjhn02vm:',
     '    Status: 2-Todo',
     '    lead: "[[A]]"',
@@ -115,32 +115,32 @@ describe('rewriteNoteLinks inside a folder’s values (`in`, D19)', () => {
   ].join('\n')
 
   it('renaming the target of a NAME link held in a folder’s value rewrites it there by the top-level rules; an ID link and every other byte, the other blocks included, stay', () => {
-    expect(rewriteNoteLinks(NOTE, resolvesB, toC)).toBe(
-      NOTE.replace('owner: "[[B]]"', 'owner: "[[C]]"').replace('"[[B|Bee]]"', '"[[C|Bee]]"').replace('"[[Sub/B#Scope]]"', '"[[Sub/C#Scope]]"'),
+    expect(rewritePageLinks(PAGE, resolvesB, toC)).toBe(
+      PAGE.replace('owner: "[[B]]"', 'owner: "[[C]]"').replace('"[[B|Bee]]"', '"[[C|Bee]]"').replace('"[[Sub/B#Scope]]"', '"[[Sub/C#Scope]]"'),
     )
   })
 
   it('only the link’s own line changes: the block’s other fields keep their quoting and layout', () => {
-    const note = '---\nin:\n  3y7505rsr6fd:\n    Status: "Interview" # by Sam\n    on: \'2026-09-07\'\n    owner: "[[B]]"\n  mzf9cjhn02vm:\n    tags: [a, "b"]\n---\n'
-    expect(rewriteNoteLinks(note, resolvesB, toC)).toBe(note.replace('"[[B]]"', '"[[C]]"'))
+    const page = '---\nin:\n  3y7505rsr6fd:\n    Status: "Interview" # by Sam\n    on: \'2026-09-07\'\n    owner: "[[B]]"\n  mzf9cjhn02vm:\n    tags: [a, "b"]\n---\n'
+    expect(rewritePageLinks(page, resolvesB, toC)).toBe(page.replace('"[[B]]"', '"[[C]]"'))
   })
 
   it('a non-link string in a folder’s value that merely contains `[[x]]` inside other text is not a link: nothing to write', () => {
-    expect(rewriteNoteLinks('---\nin:\n  3y7505rsr6fd:\n    note: see [[B]] inline\n---\n', resolvesB, toC)).toBeNull()
+    expect(rewritePageLinks('---\nin:\n  3y7505rsr6fd:\n    page: see [[B]] inline\n---\n', resolvesB, toC)).toBeNull()
   })
 
-  it('a note whose folder values name nobody renamed is null — `in` is never re-serialised for nothing', () => {
-    expect(rewriteNoteLinks('---\nin: {3y7505rsr6fd: {owner: "[[A]]"}}\n---\n', resolvesB, toC)).toBeNull()
+  it('a page whose folder values name nobody renamed is null — `in` is never re-serialised for nothing', () => {
+    expect(rewritePageLinks('---\nin: {3y7505rsr6fd: {owner: "[[A]]"}}\n---\n', resolvesB, toC)).toBeNull()
   })
 })
 
 // ---------- YAZ-864: the ONE reserved key is walked INTO ----------
 
-describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
+describe('rewritePageLinks inside folder_settings (YAZ-864)', () => {
   it('rewrites an outline `order` entry, keeping every other key and the body byte-for-byte', () => {
     const content =
       '---\nstatus: idea\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n    - type: table\n      name: Table\n---\n\n# Home\n'
-    const out = rewriteNoteLinks(content, resolvesB, toC)
+    const out = rewritePageLinks(content, resolvesB, toC)
     expect(out).toContain('- "[[C]]"')
     expect(out).toContain('- "[[A]]"') // the sibling entry is untouched
     expect(out).toContain('status: idea')
@@ -150,8 +150,8 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
 
   it('rewrites a column `target`, leaving the column\u2019s other keys and the sibling columns alone', () => {
     const content =
-      '---\nfolder_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n      required: true\n    owner:\n      kind: link\n      target: "[[A]]"\n    note:\n      kind: text\n  folder: roles\n---\n\nbody\n'
-    const out = rewriteNoteLinks(content, resolvesB, toC)
+      '---\nfolder_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n      required: true\n    owner:\n      kind: link\n      target: "[[A]]"\n    page:\n      kind: text\n  folder: roles\n---\n\nbody\n'
+    const out = rewritePageLinks(content, resolvesB, toC)
     expect(out).toContain('target: "[[C]]"')
     expect(out).toContain('kind: multi-link')
     expect(out).toContain('required: true')
@@ -162,39 +162,39 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
 
   it('rewrites a Linked mentions column\u2019s `from.folder` (YAZ-4739), and leaves its `from.column`, a field name, alone', () => {
     const content = '---\nfolder_settings:\n  columns:\n    used_by:\n      kind: mentions\n      from:\n        column: B\n        folder: "[[B]]"\n---\n'
-    expect(rewriteNoteLinks(content, resolvesB, toC)).toBe('---\nfolder_settings:\n  columns:\n    used_by:\n      kind: mentions\n      from:\n        column: B\n        folder: "[[C]]"\n---\n')
+    expect(rewritePageLinks(content, resolvesB, toC)).toBe('---\nfolder_settings:\n  columns:\n    used_by:\n      kind: mentions\n      from:\n        column: B\n        folder: "[[C]]"\n---\n')
   })
 
   it('the spelling rules are the top level\u2019s, not a second set: alias, heading and pathed forms all follow', () => {
     const content =
       '---\nfolder_settings:\n  columns:\n    a:\n      kind: link\n      target: "[[Sub/B|Bee]]"\n  views:\n    - type: outline\n      order:\n        - "[[ B #H]]"\n---\n\nbody\n'
-    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    const out = rewritePageLinks(content, resolvesB, toC) ?? ''
     expect(out).toContain('target: "[[Sub/C|Bee]]"') // pathed stays pathed
     expect(out).toContain('"[[C#H]]"') // heading rides along, padding normalised as everywhere else
   })
 
   it('a STALE entry that never resolved to the renamed page stays exactly as written', () => {
     const content =
-      '---\nfolder_settings:\n  views:\n    - type: outline\n      order:\n        - "[[Gone]]"\n        - not a link at all\n        - 7\n      order_note: "[[B]] in an unknown key"\n---\n\nbody [[B]]\n'
-    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+      '---\nfolder_settings:\n  views:\n    - type: outline\n      order:\n        - "[[Gone]]"\n        - not a link at all\n        - 7\n      order_page: "[[B]] in an unknown key"\n---\n\nbody [[B]]\n'
+    const out = rewritePageLinks(content, resolvesB, toC) ?? ''
     expect(out).toContain('- "[[Gone]]"')
     expect(out).toContain('- not a link at all')
     expect(out).toContain('- 7')
-    expect(out).toContain('order_note: "[[B]] in an unknown key"') // not a leaf, and not whole-value
+    expect(out).toContain('order_page: "[[B]] in an unknown key"') // not a leaf, and not whole-value
     expect(out).toContain('body [[C]]\n') // the body still rewrote, so the file WAS written
   })
 
-  it('rewrites a view’s `fills[].note`, leaving the fill’s column and colour and the other fills alone (YAZ-4536)', () => {
+  it('rewrites a view’s `fills[].page`, leaving the fill’s column and colour and the other fills alone (YAZ-4536)', () => {
     const content =
-      '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n      fills:\n        - note: "[[B]]"\n          column: note.status\n          fill: red\n        - note: "[[A]]"\n          fill: "#00ff00"\n        - 7\n---\n\nbody\n'
-    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+      '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n      fills:\n        - page: "[[B]]"\n          column: note.status\n          fill: red\n        - page: "[[A]]"\n          fill: "#00ff00"\n        - 7\n---\n\nbody\n'
+    const out = rewritePageLinks(content, resolvesB, toC) ?? ''
     const views = (parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_settings as { views: { fills: unknown[] }[] }).views
-    expect(views[0].fills).toEqual([{ note: '[[C]]', column: 'note.status', fill: 'red' }, { note: '[[A]]', fill: '#00ff00' }, 7])
+    expect(views[0].fills).toEqual([{ page: '[[C]]', column: 'note.status', fill: 'red' }, { page: '[[A]]', fill: '#00ff00' }, 7])
   })
 
   it('rewrites an `other_files` entry, leaving the other entries alone (YAZ-4597 D44)', () => {
     const content = '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n  other_files:\n    - "[[A]]"\n    - "[[B]]"\n    - 7\n---\n\nbody\n'
-    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    const out = rewritePageLinks(content, resolvesB, toC) ?? ''
     const settings = parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_settings as { other_files: unknown[] }
     expect(settings.other_files).toEqual(['[[A]]', '[[C]]', 7])
   })
@@ -202,13 +202,13 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
   it('a page with settings but no reference to the renamed file is null — never written, byte-for-byte safe', () => {
     const content =
       '---\nstatus: idea\nfolder_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n  views:\n    - type: outline\n      order: ["[[A]]"]\n---\n\n# Not about B\n'
-    expect(rewriteNoteLinks(content, resolvesB, toC)).toBeNull()
+    expect(rewritePageLinks(content, resolvesB, toC)).toBeNull()
   })
 
-  it('an old Outline string is no link place (YAZ-4584 D40): a `.folder.md` body — its Page — is rewritten as a note\'s body is', () => {
+  it('an old Outline string is no link place (YAZ-4584 D40): a `.folder.md` body — its Page — is rewritten as a page\'s body is', () => {
     const content =
       '---\nfolder_settings:\n  views:\n    - type: page\n      name: Page\n      outline: |-\n        - [[B]]\n---\n- [[A]]\n    * [[B]]\n- see [[B]] inline\n'
-    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    const out = rewritePageLinks(content, resolvesB, toC) ?? ''
     const views = (parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_settings as { views: { outline: string }[] }).views
     expect(views[0].outline).toBe('- [[B]]')
     expect(splitFrontmatter(out).body).toBe('- [[A]]\n    * [[C]]\n- see [[C]] inline\n')
@@ -216,7 +216,7 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
 
   it('a non-string outline rides along untouched — the raw value is never normalised', () => {
     const content = '---\nfolder_settings:\n  views:\n    - type: outline\n      outline: 7\n      order: ["[[B]]"]\n---\n\nbody\n'
-    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    const out = rewritePageLinks(content, resolvesB, toC) ?? ''
     expect(out).toContain('outline: 7')
     expect(out).toContain('"[[C]]"')
   })
@@ -224,7 +224,7 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
   it('an unusable settings shape is not normalised away — the raw value rides along, only the leaf moves', () => {
     const content =
       '---\nfolder_settings:\n  columns:\n    broken:\n      kind: not-a-kind\n      target: "[[B]]"\n    alsoBroken: 7\n  views: {}\n  stray: keep me\n---\n\nbody\n'
-    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    const out = rewritePageLinks(content, resolvesB, toC) ?? ''
     expect(out).toContain('kind: not-a-kind') // the tolerant READ would drop this column entirely
     expect(out).toContain('target: "[[C]]"')
     expect(out).toContain('alsoBroken: 7')
@@ -235,8 +235,8 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
 
 describe('renameNotice', () => {
   it('one summary line, pluralised, with the skipped tail only when needed', () => {
-    expect(renameNotice({ updated: 1, skipped: 0 })).toBe('Updated links in 1 note')
-    expect(renameNotice({ updated: 3, skipped: 2 })).toBe('Updated links in 3 notes; 2 skipped (unsaved changes)')
+    expect(renameNotice({ updated: 1, skipped: 0 })).toBe('Updated links in 1 page')
+    expect(renameNotice({ updated: 3, skipped: 2 })).toBe('Updated links in 3 pages; 2 skipped (unsaved changes)')
   })
 })
 
@@ -276,7 +276,7 @@ describe('updateLinksAfterRename', () => {
   const oldPath = '/v/B.md'
   const newPath = '/v/C.md'
 
-  it('rewrites exactly the referencing notes (links AND embeds, via the shared resolver) and counts them', async () => {
+  it('rewrites exactly the referencing pages (links AND embeds, via the shared resolver) and counts them', async () => {
     const files = {
       '/v/A.md': { content: 'See [[B]] and [[B|Bee]].\n', mtime: 10 },
       '/v/E.md': { content: '![[B]]\n', mtime: 20 },
@@ -295,11 +295,11 @@ describe('updateLinksAfterRename', () => {
     expect(files['/v/E.md'].content).toBe('![[C]]\n')
     expect(files['/v/N.md'].content).toBe('nothing\n')
     expect(bridge.writeFile).toHaveBeenCalledTimes(2)
-    // A link rewrite is quiet (YAZ-3235 D1): the save log does not list the notes it touched.
+    // A link rewrite is quiet (YAZ-3235 D1): the save log does not list the pages it touched.
     expect(bridge.writeFile.mock.calls.every(([req]) => (req as { quiet?: boolean }).quiet === true)).toBe(true)
   })
 
-  it("a folder's Page links the renamed note: its `.folder.md` body is rewritten, its settings kept (YAZ-4584 D40)", async () => {
+  it("a folder's Page links the renamed page: its `.folder.md` body is rewritten, its settings kept (YAZ-4584 D40)", async () => {
     const page = '---\nfolder_settings:\n  views:\n    - type: page\n      name: Page\n---\nSee [[B]] here.\n'
     const files = { '/v/Team/.folder.md': { content: page, mtime: 10 } }
     installBridge(files)
@@ -309,12 +309,12 @@ describe('updateLinksAfterRename', () => {
     expect(files['/v/Team/.folder.md'].content).toBe(page.replace('[[B]]', '[[C]]'))
   })
 
-  it('YAZ-4954: the index keeps both sides of `[[Covid notes|COVID-19]]`; renaming "Covid notes" finds and rewrites the link', async () => {
-    const files = { '/v/A.md': { content: 'See [[Covid notes|COVID-19]].\n', mtime: 10 } }
+  it('YAZ-4954: the index keeps both sides of `[[Covid pages|COVID-19]]`; renaming "Covid pages" finds and rewrites the link', async () => {
+    const files = { '/v/A.md': { content: 'See [[Covid pages|COVID-19]].\n', mtime: 10 } }
     installBridge(files)
-    const records = [rec('/v/A.md', { links: ['Covid notes|COVID-19'] }), rec('/v/Covid notes.md'), rec('/v/COVID-19.md')]
-    expect([...linkedBasenames(records)].sort()).toEqual(['covid notes', 'covid-19'])
-    const move = { ids: true, root, oldPath: '/v/Covid notes.md', newPath: '/v/Covid 2020.md', records }
+    const records = [rec('/v/A.md', { links: ['Covid pages|COVID-19'] }), rec('/v/Covid pages.md'), rec('/v/COVID-19.md')]
+    expect([...linkedBasenames(records)].sort()).toEqual(['covid pages', 'covid-19'])
+    const move = { ids: true, root, oldPath: '/v/Covid pages.md', newPath: '/v/Covid 2020.md', records }
     expect(await countLinkReferences(move)).toBe(1)
     expect(await updateLinksAfterRename(move)).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('See [[Covid 2020|COVID-19]].\n')
@@ -336,7 +336,7 @@ describe('updateLinksAfterRename', () => {
     expect(files2['/v/A.md'].content).toBe('[[B]]\n')
   })
 
-  it('a SELF-link follows the file: the renamed note is read and rewritten at its NEW path', async () => {
+  it('a SELF-link follows the file: the renamed page is read and rewritten at its NEW path', async () => {
     const files = { '/v/C.md': { content: 'I link [[B|myself]].\n', mtime: 5 } }
     installBridge(files)
     const records = [rec('/v/B.md', { links: ['B'] })]
@@ -369,7 +369,7 @@ describe('updateLinksAfterRename', () => {
     expect(files['/v/A.md'].content).toBe('See [[CAC]] and [[ CAC |shown]] and [[C]].\n')
   })
 
-  it('a note referencing the renamed file ONLY by alias is not in the referencing set at all (no read, no write)', async () => {
+  it('a page referencing the renamed file ONLY by alias is not in the referencing set at all (no read, no write)', async () => {
     const files = { '/v/A.md': { content: 'Only [[CAC]].\n', mtime: 1 } }
     const bridge = installBridge(files)
     const records = [rec('/v/A.md', { links: ['CAC'] }), rec('/v/B.md', { aliases: ['CAC'] })]
@@ -394,14 +394,14 @@ describe('updateLinksAfterRename', () => {
   })
 })
 
-describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_settings (YAZ-864)', () => {
+describe('updateLinksAfterRename reaches pages referenced ONLY inside folder_settings (YAZ-864)', () => {
   const root = '/v'
   const oldPath = '/v/B.md'
   const newPath = '/v/C.md'
   /** Home names B in its outline `order`; Cols names it as a column target. Neither has a `links` entry. */
   const HOME = '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n---\n'
   const COLS = '---\nfolder_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n---\n'
-  /** A folder's settings record, as the index hands it over beside the notes. */
+  /** A folder's settings record, as the index hands it over beside the pages. */
   const settings = (folder: string, raw: string) => rec(`/v/${folder}/.folder.md`, { folder, properties: parseFrontmatter(splitFrontmatter(raw).frontmatter).properties })
 
   it('counts them in the banner N and rewrites both leaves on disk; a settings file naming nobody is never read', async () => {
@@ -461,7 +461,7 @@ describe('updateLinksAfterRename with kind: dir (folder rename, E1b)', () => {
     expect(files['/v/A.md'].content).toBe('See [[New/B]] and [[ B ]] and [[B|Bee]] and ![[New/B]].\n')
   })
 
-  it('records under the folder RELOCATE: a referencing note inside the renamed folder is read/written at its NEW path', async () => {
+  it('records under the folder RELOCATE: a referencing page inside the renamed folder is read/written at its NEW path', async () => {
     const files = { '/v/New/inner.md': { content: 'link [[Old/B]]\n', mtime: 1 } }
     installBridge(files)
     const records = [
@@ -495,7 +495,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
   const settingsOf = (raw: string) => parseFrontmatter(splitFrontmatter(raw).frontmatter).properties.folder_settings
   const team = () => rec('/v/Team/.folder.md', { properties: { folder_settings: settingsOf(TEAM) }, links: ['Projects', 'Projects'] })
 
-  it('a rename rewrites bare `[[Projects]]` to the new name — in a note and in another folder\u2019s Page — and the count is those two files', async () => {
+  it('a rename rewrites bare `[[Projects]]` to the new name — in a page and in another folder\u2019s Page — and the count is those two files', async () => {
     const A = `See [[Projects]], [[projects|the work]] and [[Projects#Scope]]; not [[Sub]], [[${FOLDER_ID}]] or \`[[Projects]]\`.\n`
     const files = { '/v/A.md': { content: A, mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 }, '/v/N.md': { content: 'nothing\n', mtime: 1 } }
     const bridge = installBridge(files)
@@ -506,7 +506,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
     // A bare link to a folder INSIDE the renamed one keeps resolving (LOCKED E1b); an id link names no place.
     expect(files['/v/A.md'].content).toBe(`See [[Work]], [[Work|the work]] and [[Work#Scope]]; not [[Sub]], [[${FOLDER_ID}]] or \`[[Projects]]\`.\n`)
     expect(files['/v/Team/.folder.md'].content).toContain('- [[Work]]')
-    expect(files['/v/Team/.folder.md'].content).toContain('- prose about [[Work]]') // a Page body is a note's: prose links follow too
+    expect(files['/v/Team/.folder.md'].content).toContain('- prose about [[Work]]') // a Page body is a page's: prose links follow too
     expect(files['/v/Team/.folder.md'].content).toContain('target: "[[Work]]"')
     expect(bridge.readFile).not.toHaveBeenCalledWith('/v/N.md')
   })
@@ -530,8 +530,8 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
   })
 
   it.each([
-    ['a note NAMED Projects', rec('/v/Notes/Projects.md')],
-    ['a note ALIASED Projects', rec('/v/Roadmap.md', { aliases: ['Projects'] })],
+    ['a page NAMED Projects', rec('/v/Pages/Projects.md')],
+    ['a page ALIASED Projects', rec('/v/Roadmap.md', { aliases: ['Projects'] })],
   ])('%s holds the link: the folder\u2019s rename counts and touches nothing', async (_name, holder) => {
     const files = { '/v/A.md': { content: '[[Projects]]\n', mtime: 1 } }
     const bridge = installBridge(files)
@@ -541,7 +541,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
     expect(bridge.readFile).not.toHaveBeenCalled()
   })
 
-  it('a folder\u2019s own settings file is read and rewritten at its NEW path, like any note inside it', async () => {
+  it('a folder\u2019s own settings file is read and rewritten at its NEW path, like any page inside it', async () => {
     const files = { '/v/Work/.folder.md': { content: TEAM, mtime: 1 } }
     installBridge(files)
     const own = rec('/v/Projects/.folder.md', { properties: { folder_settings: settingsOf(TEAM) } })
@@ -640,7 +640,7 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
   const root = '/v'
   const B = rec('/v/B.md', { id: 'k3m9x2pq7abc' })
 
-  it('a note linking only by id is not a reference: the count is 0 and nothing is read or written', async () => {
+  it('a page linking only by id is not a reference: the count is 0 and nothing is read or written', async () => {
     const records = [rec('/v/A.md', { links: ['k3m9x2pq7abc'] }), B]
     const { readFile, writeFile } = installBridge({ '/v/A.md': { content: 'see [[k3m9x2pq7abc]]\n', mtime: 1 } })
     expect(countLinkReferences({ ids: true, root, oldPath: '/v/B.md', records })).toBe(0)
@@ -649,7 +649,7 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it('in a note linking by name AND by id, the name is rewritten and the id is left byte-identical', async () => {
+  it('in a page linking by name AND by id, the name is rewritten and the id is left byte-identical', async () => {
     const records = [rec('/v/A.md', { links: ['B', 'k3m9x2pq7abc'] }), B]
     const files = { '/v/A.md': { content: '[[B]] and [[k3m9x2pq7abc]] and [[k3m9x2pq7abc|label]]\n', mtime: 1 } }
     installBridge(files)
@@ -657,7 +657,7 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
     expect(files['/v/A.md'].content).toBe('[[C]] and [[k3m9x2pq7abc]] and [[k3m9x2pq7abc|label]]\n')
   })
 
-  it('one rename, two linkers: the note linking by NAME is the whole count and the only file touched — the note linking by ID (body and property) and the renamed note itself are never read or written (scenario C1, D15)', async () => {
+  it('one rename, two linkers: the page linking by NAME is the whole count and the only file touched — the page linking by ID (body and property) and the renamed page itself are never read or written (scenario C1, D15)', async () => {
     const records = [rec('/v/ById.md', { links: ['k3m9x2pq7abc'] }), rec('/v/ByName.md', { links: ['B'] }), B]
     const byId = '---\nparent: "[[k3m9x2pq7abc]]"\n---\nsee [[k3m9x2pq7abc]] and [[k3m9x2pq7abc#Scope]]\n'
     const renamed = '---\nid: k3m9x2pq7abc\n---\nbody\n'
@@ -676,7 +676,7 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
     expect(files['/v/C.md']).toEqual({ content: renamed, mtime: 1 })
   })
 
-  it('a NAME link held in a folder’s value is rewritten on disk; the note holding only an ID link there is never read (D19)', async () => {
+  it('a NAME link held in a folder’s value is rewritten on disk; the page holding only an ID link there is never read (D19)', async () => {
     const byName = '---\nin:\n  3y7505rsr6fd:\n    owner: "[[B]]"\n---\n'
     const byId = '---\nin:\n  3y7505rsr6fd:\n    owner: "[[k3m9x2pq7abc]]"\n---\n'
     const records = [rec('/v/ById.md', { links: ['k3m9x2pq7abc'] }), rec('/v/ByName.md', { links: ['B'] }), B]
@@ -688,7 +688,7 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
     expect(files['/v/ById.md']).toEqual({ content: byId, mtime: 1 })
   })
 
-  it('a FOLDER move leaves the id links to the notes inside it alone too, while a pathed name link is rewritten', async () => {
+  it('a FOLDER move leaves the id links to the pages inside it alone too, while a pathed name link is rewritten', async () => {
     const records = [rec('/v/A.md', { links: ['k3m9x2pq7abc', 'Dir/B'] }), rec('/v/ById.md', { links: ['k3m9x2pq7abc'] }), rec('/v/Dir/B.md', { folder: 'Dir', id: 'k3m9x2pq7abc' })]
     const files = { '/v/A.md': { content: '[[k3m9x2pq7abc]] and [[Dir/B]]\n', mtime: 1 }, '/v/ById.md': { content: '[[k3m9x2pq7abc]]\n', mtime: 1 } }
     const { writeFile } = installBridge(files)
@@ -705,7 +705,7 @@ describe('a link that spells a title (YAZ-2420 D17)', () => {
   const ABDUL = '/v/candidates/up-001-abdul-k3m9x2pq7abc.md'
   const abdul = rec(ABDUL, { title: 'UP-001 - Abdul', properties: { title: 'UP-001 - Abdul' } })
 
-  it('E: renaming or moving a note with a title leaves `[[Its Title]]` as written and out of the count; a link spelling its file name is rewritten', async () => {
+  it('E: renaming or moving a page with a title leaves `[[Its Title]]` as written and out of the count; a link spelling its file name is rewritten', async () => {
     const records = [rec('/v/ByFile.md', { links: ['up-001-abdul-k3m9x2pq7abc'] }), rec('/v/ByTitle.md', { links: ['UP-001 - Abdul'] }), abdul]
     const files = {
       '/v/ByFile.md': { content: '[[up-001-abdul-k3m9x2pq7abc]]\n', mtime: 1 },
@@ -719,7 +719,7 @@ describe('a link that spells a title (YAZ-2420 D17)', () => {
     expect(readFile).not.toHaveBeenCalledWith('/v/ByTitle.md')
   })
 
-  it('a note with no title is renamed as before, and its new file name is its title from then on: `[[Old]]` becomes a bare `[[New]]` beside a deeper note titled New', async () => {
+  it('a page with no title is renamed as before, and its new file name is its title from then on: `[[Old]]` becomes a bare `[[New]]` beside a deeper page titled New', async () => {
     const records = [rec('/v/A.md', { links: ['Old'] }), rec('/v/Sub/Old.md'), rec('/v/x/y/z/new-7tq2m8vd4xhn.md', { title: 'New', properties: { title: 'New' } })]
     const files = { '/v/A.md': { content: '[[Old]]\n', mtime: 1 } }
     installBridge(files)
@@ -729,7 +729,7 @@ describe('a link that spells a title (YAZ-2420 D17)', () => {
   })
 })
 
-describe('a note that holds its own `title:` line, renamed (YAZ-2523 🔒 V12)', () => {
+describe('a page that holds its own `title:` line, renamed (YAZ-2523 🔒 V12)', () => {
   const root = '/v'
   const OLD = '/v/docs/deploy.md'
   const NEW = '/v/docs/release.md'
@@ -745,7 +745,7 @@ describe('a note that holds its own `title:` line, renamed (YAZ-2523 🔒 V12)',
     expect(files['/v/P.md'].content).toBe('[[docs/release]]\n')
   })
 
-  it.each(TITLES)('where the vault uses IDs, a link that spells `title: %s` travels with the note: left as written, not counted', async (title) => {
+  it.each(TITLES)('where the vault uses IDs, a link that spells `title: %s` travels with the page: left as written, not counted', async (title) => {
     const records = [rec('/v/A.md', { links: [title, title] }), rec(OLD, { title, properties: { title } })]
     const content = `---\nnext: "[[${title}]]"\n---\n\n[[${title}]]\n`
     const files = { '/v/A.md': { content, mtime: 1 } }
@@ -755,7 +755,7 @@ describe('a note that holds its own `title:` line, renamed (YAZ-2523 🔒 V12)',
     expect(files['/v/A.md'].content).toBe(content)
   })
 
-  it('where the vault does not use IDs, the note is titled by its new file name afterwards: a bare link stays bare beside a deeper note of that name', async () => {
+  it('where the vault does not use IDs, the page is titled by its new file name afterwards: a bare link stays bare beside a deeper page of that name', async () => {
     const records = [rec('/v/A.md', { links: ['deploy'] }), rec(OLD, { properties: { title: 'Deploy checklist' } }), rec('/v/x/y/z/release.md')]
     const files = { '/v/A.md': { content: '[[deploy]]\n', mtime: 1 } }
     installBridge(files)
@@ -794,7 +794,7 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     expect(files['/v/A.md'].content).toBe('[[Abdul!]]\n')
   })
 
-  it('a note with no `title:` is titled by its file name: its first title edit turns `[[Plan]]` into `[[Big Plan]]`', async () => {
+  it('a page with no `title:` is titled by its file name: its first title edit turns `[[Plan]]` into `[[Big Plan]]`', async () => {
     const records = [rec('/v/A.md', { links: ['Plan'] }), rec('/v/Plan.md', { id: ID })]
     const files = { '/v/A.md': { content: '[[Plan]]\n', mtime: 1 } }
     installBridge(files)
@@ -803,7 +803,7 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     expect(files['/v/A.md'].content).toBe('[[Big Plan]]\n')
   })
 
-  it('a new title a link cannot spell (`A | B`) is linked by the note\u2019s id instead, its `|label` and `#heading` kept (YAZ-2478)', async () => {
+  it('a new title a link cannot spell (`A | B`) is linked by the page\u2019s id instead, its `|label` and `#heading` kept (YAZ-2478)', async () => {
     const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul]
     const files = { '/v/A.md': { content: '[[Abdul]], [[Abdul|him]] and [[Abdul#Rates]]\n', mtime: 1 } }
     installBridge(files)
@@ -811,7 +811,7 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     expect(files['/v/A.md'].content).toBe(`[[${ID}]], [[${ID}|him]] and [[${ID}#Rates]]\n`)
   })
 
-  it('a new title another note already has is linked by the note\u2019s id instead (YAZ-2478)', async () => {
+  it('a new title another page already has is linked by the page\u2019s id instead (YAZ-2478)', async () => {
     const other = rec('/v/ali-7tq2m8vd4xhn.md', { id: '7tq2m8vd4xhn', title: 'Ali', properties: { title: 'Ali' } })
     const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul, other]
     const files = { '/v/A.md': { content: '[[Abdul]]\n', mtime: 1 } }
@@ -820,7 +820,7 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     expect(files['/v/A.md'].content).toBe(`[[${ID}]]\n`)
   })
 
-  it('a note with no id is still linked by its new file name when the new title cannot be spelled', async () => {
+  it('a page with no id is still linked by its new file name when the new title cannot be spelled', async () => {
     const records = [rec('/v/A.md', { links: ['Plan'] }), rec('/v/Plan.md')]
     const files = { '/v/A.md': { content: '[[Plan]]\n', mtime: 1 } }
     installBridge(files)
@@ -828,14 +828,14 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     expect(files['/v/A.md'].content).toBe(`[[a-b-${ID}]]\n`)
   })
 
-  it('a typed path of titles that reached the note (`[[Candidates/Abdul]]`) is counted and rewritten to its id, on its own title edit and on its folder\u2019s (YAZ-2478)', async () => {
+  it('a typed path of titles that reached the page (`[[Candidates/Abdul]]`) is counted and rewritten to its id, on its own title edit and on its folder\u2019s (YAZ-2478)', async () => {
     const folders = [rec('/v/candidates/.folder.md', { title: 'Candidates', properties: { title: 'Candidates' } })]
     const records = [rec('/v/A.md', { links: ['Candidates/Abdul'] }), abdul]
     const files = { '/v/A.md': { content: '[[Candidates/Abdul]] and [[candidates/abdul|him]]\n', mtime: 1 } }
     installBridge(files)
-    const note = { ids: true, root, oldPath: OLD, newPath: NEW, records, folders, title: 'UP-001 - Abdul' }
-    expect(countLinkReferences(note)).toBe(1)
-    expect(await updateLinksAfterRename(note)).toEqual({ updated: 1, skipped: 0 })
+    const page = { ids: true, root, oldPath: OLD, newPath: NEW, records, folders, title: 'UP-001 - Abdul' }
+    expect(countLinkReferences(page)).toBe(1)
+    expect(await updateLinksAfterRename(page)).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[${ID}]] and [[${ID}|him]]\n`)
 
     files['/v/A.md'] = { content: '[[Candidates/Abdul]]\n', mtime: 1 }
@@ -845,7 +845,7 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     expect(files['/v/A.md'].content).toBe(`[[${ID}]]\n`)
   })
 
-  it('a title edit of one note leaves a link that spells ANOTHER note\u2019s title alone', async () => {
+  it('a title edit of one page leaves a link that spells ANOTHER page\u2019s title alone', async () => {
     const other = rec('/v/other-7tq2m8vd4xhn.md', { title: 'Other', properties: { title: 'Other' } })
     const records = [rec('/v/A.md', { links: ['Other'] }), abdul, other]
     const { readFile } = installBridge({ '/v/A.md': { content: '[[Other]]\n', mtime: 1 } })
@@ -871,7 +871,7 @@ describe('links to a folder by its TITLE (YAZ-2420 D17)', () => {
     expect(readFile).not.toHaveBeenCalledWith('/v/ById.md')
   })
 
-  it('a folder\u2019s new title a link cannot spell, or that a note already has, is linked by the folder\u2019s id instead; a folder with no id by its new name (YAZ-2478)', async () => {
+  it('a folder\u2019s new title a link cannot spell, or that a page already has, is linked by the folder\u2019s id instead; a folder with no id by its new name (YAZ-2478)', async () => {
     const files = { '/v/A.md': { content: '[[Upwork]] and [[Upwork|jobs]]\n', mtime: 1 } }
     installBridge(files)
     const opts = { ids: true, root, oldPath: '/v/upwork', newPath: '/v/a-b', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Upwork'] }), rec('/v/Jobs.md')], folders: [upwork], dirs: ['/v/upwork'] }

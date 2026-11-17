@@ -10,7 +10,7 @@ interface GroupHeaderMenuProps {
   y: number
   collapsed: boolean
   onToggle: () => void
-  /** The header's "+" (5D); absent → no "New note in this group". */
+  /** The header's "+" (5D); absent → no "New page in this group". */
   onNew?: () => void
   /** A Folder group of a subfolder directly under the page (YAZ-4747 OF1): "Move Desserts (folder) to Other files". */
   moveFolder?: { name: string; run: () => void }
@@ -59,7 +59,7 @@ export function GroupHeaderMenu({ x, y, collapsed, onToggle, onNew, moveFolder, 
               onNew()
             }}
           >
-            <span className="ctx-menu__label"><PlusIcon />{unit('New note in this group')}</span>
+            <span className="ctx-menu__label"><PlusIcon />{unit('New page in this group')}</span>
           </button>
         )}
         <button

@@ -13,9 +13,11 @@ import { ipcMain, ipcRenderer } from 'electron'
 import { CONTRACT, leaves, SPECIAL } from '@shared/ipc'
 import { registerIpc } from './main/ipc'
 import { registerClipboardIpc } from './main/ipc/clipboard'
+import { registerFriendsIpc } from './main/ipc/friends'
 import { registerUpdateIpc } from './main/ipc/update'
 import { registerMemoryIpc } from './main/ipc/memory'
 import { registerSpellerIpc } from './main/ipc/speller'
+import { registerCourseAudioIpc } from './main/ipc/courseAudio'
 import { LIBRARY_MARKER_FILE } from './main/library/copyLibrary'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
@@ -52,11 +54,14 @@ afterAll(async () => {
 })
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
-  // The four registrations `main/index.ts` makes on `ready`.
+  // The five registrations `main/index.ts` makes on `ready`, besides `registerIpc`. The course sound (YAZ-5159) fetches nothing here.
+  registerCourseAudioIpc({ userData: dir, isPackaged: true, fetchImpl: vi.fn() })
   registerMemoryIpc({ report: vi.fn() })
   registerSpellerIpc({ guesses: vi.fn() })
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', checks: true, releases: [] }), check: async () => ({ kind: 'idle' }), checks: true }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), write: vi.fn(), readText: vi.fn(), readHTML: vi.fn(), revealImage: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
+  // The Mac's send of the numbers (YAZ-5086): its status door, registered on `ready` after `registerIpc`.
+  registerFriendsIpc(vi.fn())
   registered = registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true, macId: async () => 'contracttest' }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)
   expect(vi.mocked(ipcMain.on).mock.calls.map(([ch]) => ch).sort()).toEqual(SENDS)

@@ -4,12 +4,12 @@
  * lists them (`settings/ToolbarArrange.tsx`).
  *
  * Crepe's own buttons (Bold, Italic, Strikethrough, code, link) keep Crepe's icons, which `@milkdown/crepe` does not
- * export: `noteCrepeIcons` copies them here from Crepe's items each time a toolbar builds, so Settings shows the same
- * icons and the bundle holds them once. Before any note has opened, Settings shows those rows by name only. The list
+ * export: `recordCrepeIcons` copies them here from Crepe's items each time a toolbar builds, so Settings shows the same
+ * icons and the bundle holds them once. Before any page has opened, Settings shows those rows by name only. The list
  * icons are Crepe's (`crepe/src/icons`), drawn by the app's own buttons.
  *
  * 🔒 No value import from the editor here: `settings/registry.tsx` imports this file, and the editor modules import
- * each other in a ring (`marks/highlight.ts` → `lineSelection.ts` → … → `noteKeys.ts` → `highlightKeymap`) that
+ * each other in a ring (`marks/highlight.ts` → `lineSelection.ts` → … → `pageKeys.ts` → `highlightKeymap`) that
  * Settings must not enter first.
  */
 import type { ToolbarButtonId, ToolbarGroupId } from '@shared/types'
@@ -38,7 +38,7 @@ export const moreIcon = '<span class="swatch-more">▾</span>'
 /** A highlight button (YAZ-4348 demo round 2): a dark "A" on the mark's wash token. */
 const highlightIcon = (color: HighlightName | null): string => swatchTile('on-color', `var(${color ? `--mark-bg-${color}` : '--mark-bg'})`)
 
-/** The app's own buttons' icons, and Crepe's once a toolbar has built (`noteCrepeIcons`). */
+/** The app's own buttons' icons, and Crepe's once a toolbar has built (`recordCrepeIcons`). */
 export const TOOLBAR_ICONS: Partial<Record<ToolbarButtonId, string>> = {
   h1: glyphIcon('H1'),
   h2: glyphIcon('H2'),
@@ -58,7 +58,7 @@ export const TOOLBAR_ICONS: Partial<Record<ToolbarButtonId, string>> = {
 export const ownIcon = (id: ToolbarButtonId): string => TOOLBAR_ICONS[id]!
 
 /** Keep the icons of Crepe's own buttons, from a toolbar's items, for Settings. */
-export function noteCrepeIcons(groups: readonly { items: readonly { key: string; icon?: string }[] }[]): void {
+export function recordCrepeIcons(groups: readonly { items: readonly { key: string; icon?: string }[] }[]): void {
   for (const { items } of groups) for (const { key, icon } of items) if (key in TOOLBAR_LABELS && icon !== undefined) TOOLBAR_ICONS[key as ToolbarButtonId] ??= icon
 }
 

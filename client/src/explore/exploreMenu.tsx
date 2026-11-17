@@ -1,6 +1,6 @@
 /**
- * The note menu of the explore stack (YAZ-2571 round 1, items 6 and 7; Yaseen's list): a right-click on a search
- * result, on a note layer's head, or in a reading note's text (after the text menu). Its rows are the sidebar's and
+ * The page menu of the explore stack (YAZ-2571 round 1, items 6 and 7; Yaseen's list): a right-click on a search
+ * result, on a page layer's head, or in a reading page's text (after the text menu). Its rows are the sidebar's and
  * the tab menu's own, built here from the same doors (`LinkActions`, App's rename), so they stay the same:
  *
  *   Open in new tab · Open in new window · Open in mini window
@@ -15,7 +15,7 @@ import type { LinkActions } from '../editor/linkMenu'
 import { copyText } from '../editor/linkMenu'
 import { focusPlaces, scopeGroup, type MenuItem, type MenuSection } from '../sidebar/menuSections'
 import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
-import { requestNoteWindow } from '../views/noteWindowRequest'
+import { requestPageWindow } from '../views/pageWindowRequest'
 
 export interface ExploreMenuDoors {
   /** A new tab (App's `openNewTabPage`). */
@@ -32,8 +32,8 @@ export interface ExploreMenuDoors {
 /** Said when no folder page is on screen to hold the mini window. */
 export const NO_FOLDER_PAGE_NOTICE = 'Open a folder page first: the mini window is its card.'
 
-/** The note menu's sections for `path`, in Yaseen's order. */
-export function exploreNoteSections(path: string, doors: ExploreMenuDoors): MenuSection[] {
+/** The page menu's sections for `path`, in Yaseen's order. */
+export function explorePageSections(path: string, doors: ExploreMenuDoors): MenuSection[] {
   const a = doors.linkActions ?? {}
   const lists = a.listState?.(path) ?? null
   const then = (run: () => void): (() => void) => () => {
@@ -80,7 +80,7 @@ export function exploreNoteSections(path: string, doors: ExploreMenuDoors): Menu
         onSelect: () => {
           // The stack goes first: the folder page under it takes the card.
           doors.closeStack()
-          if (!requestNoteWindow(path)) doors.onNotice(NO_FOLDER_PAGE_NOTICE)
+          if (!requestPageWindow(path)) doors.onNotice(NO_FOLDER_PAGE_NOTICE)
         },
       },
     ],

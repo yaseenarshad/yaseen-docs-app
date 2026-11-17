@@ -1,6 +1,6 @@
 /**
  * Collapse all and Expand all (YAZ-3727 D23): on a line that folds — a bullet with children, or a heading of a level
- * that starts a section, with something in its section — the line's menu carries the note's ⌘⇧U and ⌘⇧I, every bullet and heading at once, one ⌘Z
+ * that starts a section, with something in its section — the line's menu carries the page's ⌘⇧U and ⌘⇧I, every bullet and heading at once, one ⌘Z
  * (`setAllDocumentFolds`). It is the one menu of the dot, the text and the fold chevron, so the rows sit with the
  * children rows, not in a menu of their own (demo feedback).
  */
@@ -38,7 +38,7 @@ export const foldAllRows: RowProvider = (view, target) => {
     toggleFoldLock(target.inside)(view.state, view.dispatch)
     view.focus()
   }
-  // This bullet's level across the note (YAZ-4786): only when a bullet at that level folds.
+  // This bullet's level across the page (YAZ-4786): only when a bullet at that level folds.
   const level = (collapsed: boolean) => () => {
     setOutlineFoldLevel(target.inside, collapsed)(view.state, view.dispatch)
     view.focus()
@@ -50,8 +50,8 @@ export const foldAllRows: RowProvider = (view, target) => {
       ]
     : []
   return [
-    { label: 'Collapse all', hint: hintOf('note.foldAll'), group: 'children', run: fold(true) },
-    { label: 'Expand all', hint: hintOf('note.unfoldAll'), group: 'children', run: fold(false) },
+    { label: 'Collapse all', hint: hintOf('page.foldAll'), group: 'children', run: fold(true) },
+    { label: 'Expand all', hint: hintOf('page.unfoldAll'), group: 'children', run: fold(false) },
     ...levelRows,
     { label: isFoldLocked(view.state, target.inside) ? 'Unlock' : 'Lock open', group: 'children', run: lock },
   ]

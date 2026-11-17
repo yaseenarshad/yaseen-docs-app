@@ -10,7 +10,16 @@ import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { copyLibrary, followLibraryMoves, type LibraryMoves } from '../library/copyLibrary'
 import { libraryFolderOf } from '../library/folder'
+import { DAILY_PAGES_MOVE } from '../dailyPagesVaultFile'
+import { PAGE_SPACING_MOVE } from '../textFormattingMove'
+import { ICON_LOOK_MOVE } from '../icons'
+import { CARD_LOOK_MOVE } from '../cardLookMove'
+import { tableLookMoves } from '../tableLookMove'
+import { FOLDER_PAGES_MOVE } from '../folderPagesMove'
+import { NEW_PLACES_MOVE } from '../newPlaces'
+import { moveSettingsIntoVaults, type VaultMove } from '../vaultSettingsMove'
 import { registerBoardIpc } from './board'
+import { registerCardSkillIpc } from './cardSkill'
 import { registerComponentsIpc } from './components'
 import { registerDialogIpc } from './dialog'
 import { handle } from './envelope'
@@ -22,6 +31,7 @@ import { registerFocusFoldersIpc } from './focusFolders'
 import { registerFsIpc } from './fs'
 import { registerGithubIpc } from './github'
 import { registerHomeIpc } from './home'
+import { registerCardFormatsIpc } from './cardFormats'
 import { registerLspIpc } from './lsp'
 import { registerMediaLibraryIpc } from './mediaLibrary'
 import { registerMediaStudioIpc } from './mediaStudio'
@@ -60,6 +70,7 @@ export type IpcPlaces = ShareIpcPlaces & {
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
   const { userData } = places
   registerFsIpc(store, windows)
+  registerCardSkillIpc(store, windows)
   // The folder window's pick of an outside pictures folder is what lets the app write there (YAZ-3943 demo round 3).
   // Settings' pick is approved at once; the cog's waits here until its move is confirmed (YAZ-4074 6A item 3).
   const pickedPictureFolders = new Set<string>()
@@ -79,6 +90,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
+  registerCardFormatsIpc(userData)
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1
@@ -111,5 +123,23 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
   // `libraryMoves.settled()`: the launch's copy and its marker write are done — what a caller waits on before it lets go of `userData`.
-  return { sync: registerGithubIpc(store), secrets, lsp, libraryMoves }
+  // YAZ-5491: the one-time move of Settings › Daily pages into the vault that holds the daily folder
+  // (`.yaseendocs/daily-pages.json`, the one source since). A vault that has none gets one only after its first pull
+  // (its pass ended `synced`), or when its sync is off. YAZ-5485: the page spacing, into each vault's text-formatting.json.
+  // YAZ-5486: where new pages and boards go, into each vault's new-places.json (a folder only where the vault has it).
+  // YAZ-5488: the icon rules and colours into each vault's icons.json. YAZ-5484: the card look into each card-look.json.
+  // YAZ-5487: the table look into each table-look.json (YAZ-5602 round 2: with the Time in slot this Mac set before).
+  const pulled = new Set<string>()
+  let moves: VaultMove | null = null
+  const sync = registerGithubIpc(store, (status) => {
+    if (status.state !== 'synced' || pulled.has(status.root)) return
+    pulled.add(status.root)
+    moves?.pulled(status.root)
+  })
+  moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE, ...tableLookMoves(store.slotTimeToMove()), FOLDER_PAGES_MOVE], async (root) => {
+    if (pulled.has(root)) return true
+    const status = await sync.status(root)
+    return status.enabled !== true || status.state === 'off' || status.state === 'synced'
+  })
+  return { sync, secrets, lsp, libraryMoves }
 }

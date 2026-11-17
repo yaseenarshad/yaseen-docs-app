@@ -32,9 +32,9 @@ import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, quitApp, 
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Engine.md'
-/** Already in remark's normalised form — the note must stay byte-identical through everything. */
-const noteBody = () => `# Engine\n\nengine-note-body\n\n![[${STYLED}]]\n\n![[${PLAIN}]]\n`
+const PAGE = 'Engine.md'
+/** Already in remark's normalised form — the page must stay byte-identical through everything. */
+const pageBody = () => `# Engine\n\nengine-page-body\n\n![[${STYLED}]]\n\n![[${PLAIN}]]\n`
 const DRAWINGS_DIR = path.join('assets', 'drawings')
 const STYLED = 'styled.excalidraw'
 const PLAIN = 'plain.excalidraw'
@@ -109,7 +109,7 @@ const modalCanvas = (w: Page) => modal(w).locator('.drawing-modal__canvas')
 const saveLabel = (w: Page) => modal(w).locator('.drawing-modal__bar .save-indicator')
 const closeModal = (w: Page) => modal(w).getByRole('button', { name: 'Close drawing' }).click()
 
-const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
+const readPageFile = () => readFile(path.join(vault, PAGE), 'utf8')
 const readSidecar = (name: string) => readFile(path.join(vault, DRAWINGS_DIR, name), 'utf8')
 
 /** Watch every window request; anything that leaves for the network breaks the 🔒 offline rule. */
@@ -128,7 +128,7 @@ test.beforeAll(async () => {
   await mkdir(path.join(vault, DRAWINGS_DIR), { recursive: true })
   await writeFile(path.join(vault, DRAWINGS_DIR, STYLED), styledScene())
   await writeFile(path.join(vault, DRAWINGS_DIR, PLAIN), plainScene())
-  await writeFile(path.join(vault, NOTE), noteBody())
+  await writeFile(path.join(vault, PAGE), pageBody())
 })
 
 test.afterAll(async () => {
@@ -137,10 +137,10 @@ test.afterAll(async () => {
 })
 
 test('step 1 — fork formatting metadata renders as real bold + underline SVG, offline', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, NOTE)) })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, PAGE)) })
   win = await appWindow(app, 'w1')
   const external = watchExternal(win)
-  await expect(editorOf(win)).toContainText('engine-note-body')
+  await expect(editorOf(win)).toContainText('engine-page-body')
 
   await expect(rendered(win)).toHaveCount(2)
   // The styled line came out styled: these attributes are what the fork's SVG exporter emits for
@@ -155,11 +155,11 @@ test('step 1 — fork formatting metadata renders as real bold + underline SVG, 
   await shoot(win, 'yaseendraw-01-styled-preview')
 
   expect(external).toEqual([])
-  expect(await readNote()).toBe(noteBody())
+  expect(await readPageFile()).toBe(pageBody())
 })
 
 test('step 2 — Cmd+B in the modal round-trips: `"fontWeight": "bold"` lands in the sidecar and the preview goes bold', async () => {
-  const beforeNote = await readNote()
+  const beforePage = await readPageFile()
 
   await openModal(win, PLAIN)
   await expect(modal(win)).toBeVisible()
@@ -185,8 +185,8 @@ test('step 2 — Cmd+B in the modal round-trips: `"fontWeight": "bold"` lands in
   await expect.poll(() => pictureOf(win, PLAIN)).toContain('font-weight="bold"')
   await shoot(win, 'yaseendraw-03-preview-bold')
 
-  // The note itself never moved: formatting lives in the sidecar, exactly like every other edit.
-  expect(await readNote()).toBe(beforeNote)
+  // The page itself never moved: formatting lives in the sidecar, exactly like every other edit.
+  expect(await readPageFile()).toBe(beforePage)
 })
 
 test('step 3 — a stock-authored scene opens clean: nothing to save, disk untouched', async () => {

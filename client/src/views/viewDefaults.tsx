@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import { DEFAULT_FOLDER_PAGES, type FolderPagesSettings } from '@shared/types'
+import type { CardClick } from '../lib/openGesture'
 import type { Mutate, ViewDef } from './viewSchema'
 
 /**
@@ -67,7 +68,7 @@ const ABSENT: { readonly [K in DefaultedKey]: unknown } = {
   groupLines: 'off',
   groupLineStyle: 'plain',
   showEmptyColumns: false,
-  subfolders: 'notes',
+  subfolders: 'pages',
   foldersFirst: true,
   calendarScale: 'month',
   cardTitles: 'clip',
@@ -93,6 +94,10 @@ export function withDefaults(view: ViewDef, defaults: FolderPagesSettings): View
   }
   return out ?? view
 }
+
+/** What a plain click on this Calendar's or Board's card opens (YAZ-5582): the view's own choice, else Settings › Folder pages. */
+export const cardClickOf = (view: Pick<ViewDef, 'clickOpens'>, defaults: Pick<FolderPagesSettings, 'cardClickOpens'>): CardClick =>
+  view.clickOpens === 'window' || view.clickOpens === 'background' ? view.clickOpens : defaults.cardClickOpens
 
 /** A menu's choice for `key`: the view's own value, or no key when it equals Settings. */
 export function chooseOwn<K extends DefaultedKey>(view: ViewDef, key: K, value: NonNullable<ViewDef[K]>, defaults: FolderPagesSettings): void {

@@ -1,7 +1,7 @@
 /**
  * The block menu's strip (YAZ-3727 D13, D14, D18): Bullet list, Numbered list, Checklist and Text, the selection toolbar's
  * list buttons and T (`listButtons.ts`, YAZ-3806) as one row of icon buttons, from a right-click on a line's handle or
- * dot, or on its text (D15, in the note's own menu: `blockMenuItems`), for those who find the bullet easier to reach than a selection. The same commands, so the same rule: one
+ * dot, or on its text (D15, in the page's own menu: `blockMenuItems`), for those who find the bullet easier to reach than a selection. The same commands, so the same rule: one
  * transaction, folds and zoom kept, the lit list button takes the lines out of their list, and Text only makes each line a
  * paragraph in place, so on a list it keeps the list (YAZ-4369). The most used first (D18); T is last: the least used.
  *
@@ -11,7 +11,7 @@
  *  - else, on an item line: the whole list it is in, one level (its siblings; their children keep their kind). The
  *    zoomed bullet's own line asks for itself: its siblings are hidden;
  *  - else (a paragraph, a heading, an item's later block): that line.
- * A note that cannot change has no strip.
+ * A page that cannot change has no strip.
  */
 import { TextSelection, type Command, type EditorState, type Selection } from '@milkdown/kit/prose/state'
 import type { Node } from '@milkdown/kit/prose/model'

@@ -94,7 +94,7 @@ afterEach(() => {
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
 })
 
-/** A vault that gives IDs, where `Plans` holds `Taken.md` and a `Trip` folder; Finder holds a note, a folder with a note inside, `.DS_Store` and `Taken.md`. */
+/** A vault that gives IDs, where `Plans` holds `Taken.md` and a `Trip` folder; Finder holds a page, a folder with a page inside, `.DS_Store` and `Taken.md`. */
 async function layout() {
   const at = await mkdtemp(path.join(base, 'case-'))
   vault = path.join(at, 'vault')
@@ -106,7 +106,7 @@ async function layout() {
     writeFile(path.join(vault, '.yaseendocs', 'ids.json'), '{"enabled":true}'),
     writeFile(path.join(vault, 'Plans', 'Taken.md'), 'in the vault'),
     writeFile(path.join(vault, 'report.pdf'), 'pdf'),
-    writeFile(path.join(finder, 'Note.md'), '# from finder\n'),
+    writeFile(path.join(finder, 'Page.md'), '# from finder\n'),
     writeFile(path.join(finder, 'Trip', 'Days', 'one.md'), 'day one'),
     writeFile(path.join(finder, '.DS_Store'), 'hidden'),
     writeFile(path.join(finder, 'Taken.md'), 'from finder'),
@@ -137,8 +137,8 @@ describe('copy and paste with Finder (YAZ-3265 D13, D14)', () => {
   it("S48, S44, S52: a Finder Copy after the app's is the newer: clip-state counts its files (a hidden item is not one); ⌘V copies them with their own names, a folder with its contents; Finder keeps them", async () => {
     await layout()
     await clip('copy', path.join(vault, 'report.pdf'))
-    finderCopies(path.join(finder, 'Note.md'), path.join(finder, 'Trip'), path.join(finder, '.DS_Store'))
-    const files = [path.join(finder, 'Note.md'), path.join(finder, 'Trip')]
+    finderCopies(path.join(finder, 'Page.md'), path.join(finder, 'Trip'), path.join(finder, '.DS_Store'))
+    const files = [path.join(finder, 'Page.md'), path.join(finder, 'Trip')]
     expect(await clipState()).toEqual({ ok: true, value: { count: 2, op: 'copy', paths: files } })
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
@@ -148,16 +148,16 @@ describe('copy and paste with Finder (YAZ-3265 D13, D14)', () => {
       ok: true,
       value: {
         pasted: [
-          // Its own name, in a vault that gives IDs: no built note name, no " copy" title (D14).
-          { from: files[0], to: path.join(target, 'Note.md'), kind: 'file' },
+          // Its own name, in a vault that gives IDs: no built page name, no " copy" title (D14).
+          { from: files[0], to: path.join(target, 'Page.md'), kind: 'file' },
           { from: files[1], to: path.join(target, 'Trip'), kind: 'dir' },
         ],
         failed: [],
       },
     })
-    expect(await readFile(path.join(target, 'Note.md'), 'utf8')).toBe('# from finder\n') // the same bytes
+    expect(await readFile(path.join(target, 'Page.md'), 'utf8')).toBe('# from finder\n') // the same bytes
     expect(await readFile(path.join(target, 'Trip', 'Days', 'one.md'), 'utf8')).toBe('day one')
-    expect((await readdir(finder)).sort()).toEqual(['.DS_Store', 'Note.md', 'Taken.md', 'Trip']) // Finder keeps them
+    expect((await readdir(finder)).sort()).toEqual(['.DS_Store', 'Page.md', 'Taken.md', 'Trip']) // Finder keeps them
     expect(await readdir(target)).not.toContain('.DS_Store')
     // A copy: nothing to remap and nothing pushed; the app's own clip is untouched.
     expect(w.webContents.send).not.toHaveBeenCalled()
@@ -187,7 +187,7 @@ describe('copy and paste with Finder (YAZ-3265 D13, D14)', () => {
 
   it("S47: the app's Copy after Finder's is the newer: its own clip pastes", async () => {
     await layout()
-    finderCopies(path.join(finder, 'Note.md'))
+    finderCopies(path.join(finder, 'Page.md'))
     const pdf = path.join(vault, 'report.pdf')
     await clip('copy', pdf)
     expect(await clipState()).toEqual({ ok: true, value: { count: 1, op: 'copy', paths: [pdf] } })
@@ -289,22 +289,22 @@ describe('YAZ-3266 (checker 2C1): the window is not told when the clipboard chan
     const pdf = path.join(vault, 'report.pdf')
     await clip('cut', pdf)
     vi.mocked(w.webContents.send).mockClear()
-    finderCopies(path.join(finder, 'Note.md'))
+    finderCopies(path.join(finder, 'Page.md'))
     // The window comes back from Finder: its focus read caches this answer.
     const shown = await clipState()
-    expect(shown).toEqual({ ok: true, value: { count: 1, op: 'copy', paths: [path.join(finder, 'Note.md')] } })
+    expect(shown).toEqual({ ok: true, value: { count: 1, op: 'copy', paths: [path.join(finder, 'Page.md')] } })
     // Text copied in the app's own editor: no focus event, and main pushes nothing.
     textCopied()
     const pushed = vi.mocked(w.webContents.send).mock.calls.length
     // A paste that names what the window showed (YAZ-3266: `expect`, as a window that did not read again would send it).
-    const res = await pasteAs(path.join(vault, 'Plans'), { op: 'copy', paths: [path.join(finder, 'Note.md')] })
-    // The window shows a COPY of Note.md. It must not get a MOVE of report.pdf without being told.
+    const res = await pasteAs(path.join(vault, 'Plans'), { op: 'copy', paths: [path.join(finder, 'Page.md')] })
+    // The window shows a COPY of Page.md. It must not get a MOVE of report.pdf without being told.
     const movedPdf = JSON.stringify(res).includes('report.pdf')
     expect({ pushed, movedPdf }).not.toEqual({ pushed: 0, movedPdf: true })
     // Nothing pasted: main says the clipboard changed, and report.pdf stays where it was.
     expect(res).toEqual({ ok: false, error: { code: 'CONFLICT', message: 'The clipboard changed. Paste again.' } })
     expect(await readdir(vault)).toContain('report.pdf')
-    expect(await readdir(path.join(vault, 'Plans'))).not.toContain('Note.md')
+    expect(await readdir(path.join(vault, 'Plans'))).not.toContain('Page.md')
     // The window reads again at paste time. The text is the newest copy, so the app's cut is stale too (YAZ-4372):
     // main answers null, and a paste of that cut moves nothing.
     expect(await clipState()).toEqual({ ok: true, value: null })
@@ -331,12 +331,12 @@ describe('the paste target (checker nit, YAZ-3248 rulings): a paste writes only 
     await layout()
     const outside = await mkdtemp(path.join(base, 'outside-'))
     // Finder's files, into a folder of no vault, and into Finder's own folder.
-    finderCopies(path.join(finder, 'Note.md'))
+    finderCopies(path.join(finder, 'Page.md'))
     for (const target of [outside, finder]) {
       expect(await paste(target)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST', path: target } })
     }
     expect(await readdir(outside)).toEqual([])
-    expect((await readdir(finder)).sort()).toEqual(['.DS_Store', 'Note.md', 'Taken.md', 'Trip'])
+    expect((await readdir(finder)).sort()).toEqual(['.DS_Store', 'Page.md', 'Taken.md', 'Trip'])
     // The app's own Copy and Cut, into the same folder.
     const pdf = path.join(vault, 'report.pdf')
     for (const op of ['copy', 'cut'] as const) {
@@ -364,9 +364,9 @@ describe('the paste target (checker nit, YAZ-3248 rulings): a paste writes only 
     await layout()
     const second = await mkdtemp(path.join(base, 'second-'))
     store.upsertWindow({ ...entry, id: 'w-this', root: vault, roots: [vault, second] })
-    finderCopies(path.join(finder, 'Note.md'))
+    finderCopies(path.join(finder, 'Page.md'))
     for (const target of [vault, path.join(vault, 'Plans'), second]) {
-      expect(await paste(target)).toMatchObject({ ok: true, value: { pasted: [{ to: path.join(target, 'Note.md') }], failed: [] } })
+      expect(await paste(target)).toMatchObject({ ok: true, value: { pasted: [{ to: path.join(target, 'Page.md') }], failed: [] } })
     }
     await clip('cut', path.join(vault, 'report.pdf'))
     expect(await paste(path.join(vault, 'Plans', 'Trip'))).toMatchObject({ ok: true, value: { pasted: [{ to: path.join(vault, 'Plans', 'Trip', 'report.pdf') }] } })

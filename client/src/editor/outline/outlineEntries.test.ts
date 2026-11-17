@@ -58,7 +58,7 @@ afterEach(async () => {
 async function mount() {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: DOC, image: { root: '/v', notePath: '/v/n.md' } })
+  const crepe = createCrepe({ root, defaultValue: DOC, image: { root: '/v', pagePath: '/v/n.md' } })
   await crepe.create()
   mounted.push({ crepe, root })
   const view = crepe.editor.ctx.get(editorViewCtx)

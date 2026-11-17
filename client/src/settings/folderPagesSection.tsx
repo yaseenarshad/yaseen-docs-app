@@ -2,19 +2,26 @@
  * SETTINGS › FOLDER PAGES (YAZ-4585, D34 of YAZ-4501): the global side of a folder page. Each setting has one home
  * besides Settings, and no setting lives on both the page and a view.
  *
+ * YAZ-5489 REPLACES D34's "global side": the view and page defaults (and Confirm changes, 27 parts in all) are the
+ * VAULT's, in its `.yaseendocs/folder-pages.json` (`shared/folderPages.ts`): each of those rows edits the picked vault's
+ * file (`ctx.folderPages`, with the Vault dropdown where the window has two or more), and the phone reads it too. The
+ * personal rows stay this Mac's: week start, row band, the page window's pin, Ask before deleting pages, and Preview on
+ * hover.
+ *
  * - Personal, here only: the week start, the folder views' "Preview on hover" (moved from Files & Links, the same
- *   `hoverPreviewIn.folderViews`), the table row band and the note window's pin. The last two follow the table block's
- *   settings (`folderRowBandOn`, `folderWindowPinned`) until they are set. "Ask before deleting notes" (YAZ-4592 S26)
- *   is the row menu's Delete note…, separate from the sidebar's Confirm before deleting.
+ *   `hoverPreviewIn.folderViews`), the table row band and the page window's pin. The last two follow the table block's
+ *   settings (`folderRowBandOn`, `folderWindowPinned`) until they are set. "Ask before deleting pages" (YAZ-4592 S26)
+ *   is the row menu's Delete page…, separate from the sidebar's Confirm before deleting.
  * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`); its menus say "from Settings".
  * - Page defaults: the sidebar's folder page file rows (D37) and the Other files tray (YAZ-4597, D43); a folder's ⚙ beats them.
  *
  * Every row writes one part of `settings.folderPages`. Every default is the look before the page existed.
  */
 import { calLine, folderRowBandOn, folderWindowPinned, type FolderPagesSettings, writeColorStrength } from '@shared/types'
+import { FOLDER_PAGES_VAULT_PARTS } from '@shared/folderPages'
 import { calLineColor } from '../views/calendar'
 import { CalLineControls } from '../views/view/CalendarLineControls'
-import { Segmented } from './controls'
+import { Segmented, Select } from './controls'
 import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsCtx, SettingsSection } from './registry'
 import { unit } from './unitLabel'
@@ -59,7 +66,7 @@ const GROUP_LINE_STYLE_OPTIONS: readonly Option<FolderPagesSettings['groupLineSt
   { label: 'Thread', value: 'thread' },
 ]
 const subfoldersOptions = (unit: UnitText): readonly Option<FolderPagesSettings['subfolders']>[] => [
-  { label: unit('Their notes'), value: 'notes' },
+  { label: unit('Their pages'), value: 'pages' },
   { label: 'As rows', value: 'rows' },
   { label: 'Both', value: 'both' },
   { label: 'Hide', value: 'hide' },
@@ -67,6 +74,12 @@ const subfoldersOptions = (unit: UnitText): readonly Option<FolderPagesSettings[
 const CALENDAR_SCALE_OPTIONS: readonly Option<FolderPagesSettings['calendarScale']>[] = [
   { label: 'Month', value: 'month' },
   { label: 'Week', value: 'week' },
+  { label: 'Rolling', value: 'rolling' },
+]
+/** YAZ-5582: a plain click on a Calendar or Board card. */
+const CARD_CLICK_OPTIONS: readonly Option<FolderPagesSettings['cardClickOpens']>[] = [
+  { label: 'Mini window', value: 'window' },
+  { label: 'Background tab', value: 'background' },
 ]
 const CARD_TITLES_OPTIONS: readonly Option<FolderPagesSettings['cardTitles']>[] = [
   { label: 'Clip', value: 'clip' },
@@ -74,6 +87,18 @@ const CARD_TITLES_OPTIONS: readonly Option<FolderPagesSettings['cardTitles']>[] 
 ]
 
 const WORDS = ['folder', 'folder page', 'views', 'table', 'board', 'calendar', 'cards', 'list']
+
+/**
+ * A vault part's row (YAZ-5489): reads and writes the picked vault's folder-pages.json (`ctx.folderPages`; the app's
+ * values until the vault has a file) through a ctx whose `settings.folderPages` carry those parts and whose `onChange`
+ * saves them into the vault. With no vault in the window, the app's settings, as before.
+ */
+const VAULT_PARTS: ReadonlySet<string> = new Set(FOLDER_PAGES_VAULT_PARTS)
+function folderPagesCtx(ctx: SettingsCtx, part: keyof FolderPagesSettings): SettingsCtx {
+  const vault = ctx.folderPages
+  if (vault === undefined || !VAULT_PARTS.has(part)) return ctx
+  return { ...ctx, settings: { ...ctx.settings, folderPages: { ...ctx.settings.folderPages, ...vault.value } }, onChange: (next) => vault.save(next.folderPages) }
+}
 
 /** One row that writes `folderPages[part]`; `shown` reads what the control shows, for the two that follow another setting. */
 function row<K extends keyof FolderPagesSettings>(
@@ -88,7 +113,8 @@ function row<K extends keyof FolderPagesSettings>(
     label: (ctx) => unit(ctx, label),
     hint: more.hint,
     keywords: [...WORDS, ...(more.keywords ?? [])],
-    render: (ctx) => {
+    render: (outer) => {
+      const ctx = folderPagesCtx(outer, part)
       const { settings, onChange } = ctx
       const value = more.shown?.(ctx) ?? (settings.folderPages[part] as NonNullable<FolderPagesSettings[K]>)
       return <Segmented options={typeof options === 'function' ? options((text) => unit(ctx, text)) : options} value={value} onChange={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [part]: next } })} ariaLabel={unit(ctx, label)} />
@@ -103,7 +129,9 @@ function lineRow(widthPart: 'weekLine' | 'dayLine', colorPart: 'weekLineColor' |
     label,
     hint,
     keywords: [...WORDS, 'calendar', 'lines', 'thickness', 'width', 'colour', 'color', 'px'],
-    render: ({ settings, onChange }) => (
+    render: (ctx) => {
+      const { settings, onChange } = folderPagesCtx(ctx, widthPart)
+      return (
       <CalLineControls
         label={label}
         width={calLine(settings.folderPages[widthPart])}
@@ -111,7 +139,8 @@ function lineRow(widthPart: 'weekLine' | 'dayLine', colorPart: 'weekLineColor' |
         onWidth={(px) => onChange({ ...settings, folderPages: { ...settings.folderPages, [widthPart]: px } })}
         onColor={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [colorPart]: writeColorStrength(next) } })}
       />
-    ),
+      )
+    },
   }
 }
 
@@ -138,7 +167,7 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         {
           id: 'hoverPreviewIn.folderLinks',
           label: 'Preview links on hover',
-          hint: 'Rest the mouse on a link pill in a cell to see the linked note. The main Preview on hover switch turns every place off.',
+          hint: 'Rest the mouse on a link pill in a cell to see the linked page. The main Preview on hover switch turns every place off.',
           keywords: [...WORDS, 'hover', 'preview', 'mouse', 'links', 'pill'],
           render: ({ settings, onChange }) => (
             <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreviewIn.folderLinks} onChange={(on) => onChange({ ...settings, hoverPreviewIn: { ...settings.hoverPreviewIn, folderLinks: on } })} ariaLabel="Preview links on hover: Folder pages" />
@@ -146,22 +175,30 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         },
         // The hints' "›" stays with the word after it: a no-break space, so the arrow never ends a line (YAZ-4643 S7).
         row('rowBand', 'Row band on hover', ON_OFF_OPTIONS, { hint: 'A band on the table row under the mouse. Until you set it, it follows Tables ›\u00a0All tables ›\u00a0Row band.', keywords: ['band', 'highlight', 'hover', 'row'], shown: ({ settings }) => folderRowBandOn(settings) }),
-        row('keepWindowPinned', 'Keep the mini window pinned', ON_OFF_OPTIONS, { hint: 'The mini window of a row stays open on a click outside it. Until you set it, it follows Tables ›\u00a0Cell notes ›\u00a0Keep cell notes open.', keywords: ['mini window', 'note window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
+        row('keepWindowPinned', 'Keep the mini window pinned', ON_OFF_OPTIONS, { hint: 'The mini window of a row stays open on a click outside it. Until you set it, it follows Tables ›\u00a0Cell notes ›\u00a0Keep cell notes open.', keywords: ['mini window', 'page window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
         // Its own switch (YAZ-4592 S26): the sidebar's Confirm before deleting does not turn it off.
-        row('askBeforeDelete', 'Ask before deleting notes', ON_OFF_OPTIONS, { hint: 'Delete note… in a row’s menu asks first. The note moves to the Trash. The sidebar’s Confirm before deleting does not change this.', keywords: ['delete', 'confirm', 'trash', 'ask'] }),
-        // YAZ-3746 13AN: on by default, so a stray key in a cell never changes a note unasked.
-        row('confirmChanges', 'Confirm changes', ON_OFF_OPTIONS, { hint: 'A change to a note from a folder page (a typed cell, Delete, Paste, a drag to another group or day, a rename) asks first. The ask can pause for a few minutes. A folder’s ⚙ can say otherwise.', keywords: ['confirm', 'changes', 'ask', 'edit', 'lock', 'accident', 'safe', 'double'] }),
+        row('askBeforeDelete', 'Ask before deleting pages', ON_OFF_OPTIONS, { hint: 'Delete page… in a row’s menu asks first. The page moves to the Trash. The sidebar’s Confirm before deleting does not change this.', keywords: ['delete', 'confirm', 'trash', 'ask'] }),
+        // YAZ-3746 13AN: on by default, so a stray key in a cell never changes a page unasked.
+        row('confirmChanges', 'Confirm changes', ON_OFF_OPTIONS, { hint: 'A change to a page from a folder page (a typed cell, Delete, Paste, a drag to another group or day, a rename) asks first. The ask can pause for a few minutes. A folder’s ⚙ can say otherwise.', keywords: ['confirm', 'changes', 'ask', 'edit', 'lock', 'accident', 'safe', 'double'] }),
       ],
     },
     {
       title: 'View defaults',
-      hint: 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them.',
+      hint: 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them. Saved in the vault\'s folder-pages.json, with the Page group and Confirm changes: each vault has its own, on this Mac and on the phone.',
       items: [
+        {
+          // YAZ-5489: the vault whose folder-pages.json the vault rows edit.
+          id: 'folderPagesVault',
+          label: 'Vault',
+          keywords: [...WORDS, 'vault'],
+          available: (ctx) => (ctx.folderPages?.vaults.length ?? 0) > 1,
+          render: ({ folderPages }) => folderPages && <Select options={folderPages.vaults.map((v) => ({ label: v.name, value: v.root }))} value={folderPages.root} onChange={folderPages.choose} ariaLabel="Vault" />,
+        },
         row('rowHeight', 'Row height', ROW_HEIGHT_OPTIONS, { keywords: ['row', 'height', 'short', 'tall'] }),
         row('rowNumbers', 'Row numbers', ON_OFF_OPTIONS, { keywords: ['row numbers', 'gutter', '#'] }),
         row('columnTypeIcons', 'Column type icons', ON_OFF_OPTIONS, { hint: "A table header shows each column's type icon before its name. A table's View settings can say otherwise.", keywords: ['icon', 'type', 'column', 'header', 'kind'] }),
-        // YAZ-3746 13BL: off leaves the right-click doors (New row below, New note in this group) and the group header "+".
-        row('showNewButtons', 'Show New buttons', ON_OFF_OPTIONS, { hint: 'The + New at the top right, the + New rows, + New card, and the + on group headers. Off: right-click a row for New row below, or a group header for New note in this group. An empty view still shows + New. A folder’s ⚙ can say otherwise.', keywords: ['new', 'add', 'plus', 'button', 'row', 'card', 'hide'] }),
+        // YAZ-3746 13BL: off leaves the right-click doors (New row below, New page in this group) and the group header "+".
+        row('showNewButtons', 'Show New buttons', ON_OFF_OPTIONS, { hint: 'The + New at the top right, the + New rows, + New card, and the + on group headers. Off: right-click a row for New row below, or a group header for New page in this group. An empty view still shows + New. A folder’s ⚙ can say otherwise.', keywords: ['new', 'add', 'plus', 'button', 'row', 'card', 'hide'] }),
         row('textInCells', 'Text in cells', TEXT_IN_CELLS_OPTIONS, { hint: 'By kind: lists, links and selects wrap; text, numbers and dates are one line. A column can say otherwise.', keywords: ['wrap', 'clip', 'cells', 'text'] }),
         row('groupIndent', 'Group indent', GROUP_INDENT_OPTIONS, { keywords: ['group', 'indent', 'nested'] }),
         // YAZ-4798: where you are in a long grouped table, as the sidebar shows it (sticky folders, level lines, thread).
@@ -169,16 +206,18 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('groupLines', 'Group lines', GROUP_LINES_OPTIONS, { hint: "In a grouped table, a thin line from each open group's header down to its last row. On hover shows them while the mouse is over the table.", keywords: ['group', 'lines', 'guide', 'indent', 'nested', 'hover', 'tree'] }),
         row('groupLineStyle', 'Group line style', GROUP_LINE_STYLE_OPTIONS, { hint: 'Thread colours the lines and the headers of the groups that hold the row under the mouse, as the sidebar’s Thread to the row.', keywords: ['group', 'thread', 'bullet threading', 'path', 'lines'] }),
         // Two switches, not one (YAZ-4608 C2): a Table's empty groups and a Board's empty columns are separate things.
-        row('showEmptyGroups', 'Show empty groups', ON_OFF_OPTIONS, { hint: 'In a table: the options of the grouping column that no note has yet.', keywords: ['empty', 'groups', 'table'] }),
-        row('showEmptyColumns', 'Show empty columns', ON_OFF_OPTIONS, { hint: 'On a board: a column for each option that no note has yet.', keywords: ['empty', 'columns', 'board'] }),
+        row('showEmptyGroups', 'Show empty groups', ON_OFF_OPTIONS, { hint: 'In a table: the options of the grouping column that no page has yet.', keywords: ['empty', 'groups', 'table'] }),
+        row('showEmptyColumns', 'Show empty columns', ON_OFF_OPTIONS, { hint: 'On a board: a column for each option that no page has yet.', keywords: ['empty', 'columns', 'board'] }),
         row('subfolders', 'Subfolders', subfoldersOptions, { keywords: ['subfolders', 'rows', 'hide'] }),
-        row('foldersFirst', 'Folders first', ON_OFF_OPTIONS, { hint: 'Subfolder rows before the notes.', keywords: ['folders', 'first', 'sort'] }),
+        row('foldersFirst', 'Folders first', ON_OFF_OPTIONS, { hint: 'Subfolder rows before the pages.', keywords: ['folders', 'first', 'sort'] }),
         // YAZ-4848: what a subfolder's row shows beside its title, in every view.
         row('folderIcons', 'Folder icon', ON_OFF_OPTIONS, { hint: "A subfolder's row shows the folder icon before its title. A view's settings can say otherwise.", keywords: ['folder', 'icon', 'subfolder', 'row'] }),
-        row('folderCounts', 'Notes inside count', ON_OFF_OPTIONS, { hint: 'A subfolder\'s row shows how many notes its page holds, as "2 inside". A view\'s settings can say otherwise.', keywords: ['folder', 'count', 'inside', 'notes', 'number', 'subfolder', 'row'] }),
-        row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week'] }),
+        row('folderCounts', 'Pages inside count', ON_OFF_OPTIONS, { hint: 'A subfolder\'s row shows how many pages its page holds, as "2 inside". A view\'s settings can say otherwise.', keywords: ['folder', 'count', 'inside', 'pages', 'number', 'subfolder', 'row'] }),
+        // YAZ-5582: a Calendar's or Board's View settings can say otherwise ("Same as Settings" follows this).
+        row('cardClickOpens', 'Clicking a card opens', CARD_CLICK_OPTIONS, { hint: 'A click on a card in a Calendar or a Board. ⌘-click still opens a background tab, ⌥-click the right panel, ⇧↩ the mini window. A view’s settings can say otherwise.', keywords: ['click', 'card', 'open', 'mini window', 'background tab', 'tab', 'calendar', 'board'] }),
+        row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week', 'rolling', 'scroll'] }),
         row('cardTitles', 'Calendar card titles', CARD_TITLES_OPTIONS, { keywords: ['calendar', 'card', 'titles', 'wrap', 'clip'] }),
-        row('hideWeekends', 'Calendar hides weekends', ON_OFF_OPTIONS, { hint: 'Monday to Friday only. A weekend note shows on the Friday before.', keywords: ['calendar', 'weekends', 'saturday', 'sunday', 'hide'] }),
+        row('hideWeekends', 'Calendar hides weekends', ON_OFF_OPTIONS, { hint: 'Monday to Friday only. A weekend page shows on the Friday before.', keywords: ['calendar', 'weekends', 'saturday', 'sunday', 'hide'] }),
         // YAZ-4878: the grid's lines, a thickness and a colour each; a calendar's View tab can say otherwise.
         lineRow('weekLine', 'weekLineColor', 'Calendar line between weeks', 'Its thickness and colour. A calendar’s View tab can say otherwise.'),
         lineRow('dayLine', 'dayLineColor', 'Calendar line between days', 'Its thickness and colour. A calendar’s View tab can say otherwise.'),
@@ -188,9 +227,9 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
       title: 'Page',
       items: [
         row('showFolderPageFiles', 'Show folder page files', ON_OFF_OPTIONS, { hint: "Each folder's page file in the sidebar, first under its folder. A folder's ⚙ can say otherwise.", keywords: ['sidebar', 'page file', '.folder.md'] }),
-        row('showOtherFiles', 'Show Other files', ON_OFF_OPTIONS, { hint: "A tray at the foot of each folder page: the folder's files that are not notes, and the notes moved out of its views. A folder's ⚙ can say otherwise.", keywords: ['other files', 'tray', 'pdf', 'image', 'drawing'] }),
+        row('showOtherFiles', 'Show Other files', ON_OFF_OPTIONS, { hint: "A tray at the foot of each folder page: the folder's files that are not pages, and the pages moved out of its views. A folder's ⚙ can say otherwise.", keywords: ['other files', 'tray', 'pdf', 'image', 'drawing'] }),
         row('inheritColumns', "Show parent folders' columns", ON_OFF_OPTIONS, { hint: "A folder page shows the columns of the folders above it too. A folder's ⚙ can say otherwise.", keywords: ['columns', 'parent', 'inherit', 'properties', 'schema'] }),
-        row('columnMarks', 'Show where columns come from', COLUMN_MARKS_OPTIONS, { hint: "A tiny mark after a column's name: ↳ when a parent folder defines it, ↑ when a subfolder does, a lock when the folder keeps its own value, ◌ when it is only a field in the notes. A folder's ⚙ can say otherwise.", keywords: ['columns', 'icon', 'parent', 'subfolder', 'inherit', 'lock', 'separate'] }),
+        row('columnMarks', 'Show where columns come from', COLUMN_MARKS_OPTIONS, { hint: "A tiny mark after a column's name: ↳ when a parent folder defines it, ↑ when a subfolder does, a lock when the folder keeps its own value, ◌ when it is only a field in the pages. A folder's ⚙ can say otherwise.", keywords: ['columns', 'icon', 'parent', 'subfolder', 'inherit', 'lock', 'separate'] }),
       ],
     },
   ],

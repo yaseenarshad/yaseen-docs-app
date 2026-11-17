@@ -1,3 +1,4 @@
+// rename-note-to-page: skip-file (its test vaults are named "Notes": a user's folder name, not the word)
 /**
  * The tab board's arithmetic (YAZ-2648, YAZ-3343): the islands and their labels, the canvas layout
  * (folder and window layouts, stored places), the drop rule, the arrow keys' geometry, and the title a

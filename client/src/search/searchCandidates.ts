@@ -1,34 +1,35 @@
 /**
  * Title search candidates (YAZ-802): the rows the search box matches a query against, ranked by
  * the ONE completion matcher (`links/completion.ts`) so search ranks exactly like `[[`
- * completion does. 🔒 D3 on YAZ-739: the query matches the note's TITLE (YAZ-2420 🔒 D14) and its
+ * completion does. 🔒 D3 on YAZ-739: the query matches the page's TITLE (YAZ-2420 🔒 D14) and its
  * frontmatter ALIASES only — `folder` rides along as the row's display label and is never matched.
- * Amended by 🔒 D2 on YAZ-1491: a note STILL never matches on its folder; the folder itself is one
+ * Amended by 🔒 D2 on YAZ-1491: a page STILL never matches on its folder; the folder itself is one
  * row (`folderCandidates`, fed from the tree the Sidebar already holds — 🔒 D1), matched by its own
  * title through the same matcher, in the same ranking. Amended again by 🔒 D3 on YAZ-2620: the
- * search finds each row the tree shows, so a tree file that is no note is one row too
- * (`fileCandidates`), matched by its file name. Amended by B4 on YAZ-3748: a note whose file name was given by hand is
+ * search finds each row the tree shows, so a tree file that is no page is one row too
+ * (`fileCandidates`), matched by its file name. Amended by B4 on YAZ-3748: a page whose file name was given by hand is
  * one more row, matched by that file name (`ownFileName`). The sidebar draws the ranked rows as a tree
- * (`searchTree`); the shortcut picker, over notes alone, as the flat list.
+ * (`searchTree`); the shortcut picker, over pages alone, as the flat list.
  *
  * Deliberately NOT `linkCandidates`: a link candidate must insert text that resolves back to its
  * own record, so duplicate basenames there are folder-disambiguated and only the shallowest keeps
- * the bare name. Search opens `path` directly, so there is nothing to disambiguate — every note
+ * the bare name. Search opens `path` directly, so there is nothing to disambiguate — every page
  * gets a row under its own title, and duplicates are told apart by the folder they stand in.
  */
+import { cardsWithIds } from '@shared/cardsWithIds'
 import { boardBaseName } from '@shared/fileKind'
-import { holdsId } from '@shared/noteId'
-import { kebabTitle } from '@shared/noteName'
+import { holdsId } from '@shared/pageId'
+import { kebabTitle } from '@shared/pageName'
 import type { IndexRecord } from '@shared/types'
 import { basename, relTo } from '../lib/paths'
 import { matchLinkCandidates } from '../links/completion'
-import { foldersByDir } from '../links/shortcuts'
+import { foldersByDir } from '../links/folderTitle'
 
 /** One search row: what the query matches, what it reads as, what activating it targets. */
 export interface SearchCandidate {
-  /** What the row is: a note or another file (`file`), or a folder (`dir`). Enter OPENS a file's page and shows a folder in Files (YAZ-2662 D1). */
+  /** What the row is: a page or another file (`file`), or a folder (`dir`). Enter OPENS a file's page and shows a folder in Files (YAZ-2662 D1). */
   kind: 'file' | 'dir'
-  /** The text the query matches: the note's title, one of its aliases, its file name given by hand (YAZ-3748 B4), the folder's title, or another file's name. */
+  /** The text the query matches: the page's title, one of its aliases, its file name given by hand (YAZ-3748 B4), the folder's title, or another file's name. */
   name: string
   /** `name.toLowerCase()`, precomputed so the ranking scan (GRO-2197) allocates nothing per keystroke. */
   lower: string
@@ -38,13 +39,25 @@ export interface SearchCandidate {
   path: string
   /** Root-relative folder for the row's secondary label ('' at the vault root). */
   folder: string
-  /** The note's or folder's id, on the row of its title: what `searchRows` finds it by (YAZ-2420 🔒 D32). */
+  /** The page's or folder's id, on the row of its title: what `searchRows` finds it by (YAZ-2420 🔒 D32). */
   id?: string
   /** The ID letters its vault had before (YAZ-2677 R9), only where there are some: `OLD-12` finds `YAZ-12` (S77). */
   was?: readonly string[]
   /** A text row of the explore search (YAZ-2571, `explore/exploreRows.ts`): the matched tag or frontmatter value, shown under the title. */
   snippet?: string
+  /** A card (YAZ-5037): a card file's row, or a card's in a page, while its vault's Review is on. The Cards type (`typeOf`) and the card icon read it. */
+  card?: true
+  /**
+   * A card inside a page (YAZ-5037): the page's absolute path. Its row's own `path` is `cardRowPath(page, id)`, so each
+   * row keyed by path stays one; it opens the page at the card, and it stands under its page in the search tree.
+   */
+  page?: string
+  /** A card inside a page: its place among the page's cards (`pageCards` order, 0 first), where Explore's page layer lands (YAZ-5164). */
+  index?: number
 }
+
+/** A card-in-a-page row's own path (YAZ-5037): its page's, `#`, its ID. No file has it: it keys the row, never a read. */
+export const cardRowPath = (page: string, id: string): string => `${page}#${id}`
 
 /** Result cap for title search — scrollable results, not the `[[` picker's MAX_SUGGESTIONS popup. The sidebar says so when it is reached (🔒 D6, YAZ-2620). */
 export const SEARCH_CAP = 50
@@ -54,36 +67,54 @@ export const SEARCH_CAP = 50
  * title, followed by one row per frontmatter alias. An alias equal to its own title
  * (case-insensitively) is SKIPPED — it would only duplicate the row above it (mirrors
  * `linkCandidates`' degenerate-alias skip). Then one row for the FILE NAME, read `basename — Title` as an alias row
- * is, when the note was named by hand (`ownFileName`, YAZ-3748 B4): `2026-10-28` finds `2026-10-28-sync.md` titled
+ * is, when the page was named by hand (`ownFileName`, YAZ-3748 B4): `2026-10-28` finds `2026-10-28-sync.md` titled
  * "Weekly sync". `linkCandidates` gets no such row. `letters` are the vault's ID letters
  * (`IndexResponse.letters`): the ones it had before ride on each row that has an id.
+ *
+ * `cards`: the vault's Review is on (YAZ-5037). A card file's row is then a card (`card`), and its card's ID finds it,
+ * the file's ID; with Review off it is a page's row, as before. One row either way. And each card INSIDE a page that
+ * has an ID is one more row (YAZ-5047 pick 3), off the index's `cards` (its title and ID, no file read; `cardsWithIds`,
+ * the folder tables' card rows' source too, YAZ-5319): found by its title, or by its exact ID; a card with no title reads as its ID.
  */
-export function searchCandidates(records: readonly IndexRecord[], letters: readonly string[] = []): SearchCandidate[] {
+export function searchCandidates(records: readonly IndexRecord[], letters: readonly string[] = [], cards = false): SearchCandidate[] {
   const was = lettersBefore(letters)
   return records.flatMap((r) => {
     const row = (name: string, label: string): SearchCandidate => ({ kind: 'file', name, lower: name.toLowerCase(), label, path: r.path, folder: r.folder })
     const aliases = r.aliases.filter((alias) => alias.toLowerCase() !== r.title.toLowerCase())
-    const rows = [{ ...row(r.title, r.title), id: r.id, ...was }, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
+    const card = cards && r.kind === 'card'
+    const head = card ? { ...row(r.title, r.title), id: cardFileId(r) ?? r.id, ...was, card: true as const } : { ...row(r.title, r.title), id: r.id, ...was }
+    const rows = [head, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
     if (ownFileName(r)) rows.push(row(r.basename, `${r.basename} — ${r.title}`))
+    if (cards && !card) {
+      for (const { card: c, id, index } of cardsWithIds(r.cards)) {
+        const name = c.title ?? id
+        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: cardRowPath(r.path, id), folder: r.folder, id, ...was, card: true, page: r.path, index })
+      }
+    }
     return rows
   })
 }
 
 /**
- * True when a note's file name says something its title and aliases do not (YAZ-3748 B4, as the lead narrowed it, and
- * 4A finding 5): the basename is, in any case, neither the title nor an alias; for a note with an id, it is not the id
- * and does not end with `-<id>`; for a note without one, it is not `kebabTitle(title)`. An ID vault names each file
+ * True when a page's file name says something its title and aliases do not (YAZ-3748 B4, as the lead narrowed it, and
+ * 4A finding 5): the basename is, in any case, neither the title nor an alias; for a page with an id, it is not the id
+ * and does not end with `-<id>`; for a page without one, it is not `kebabTitle(title)`. An ID vault names each file
  * from its title and id (`working-log-k3m9x2pq.md`), and a name it built for an older title keeps the id too: the id
- * already finds that note (`holdsId`), so a row would only double every row. `kebabTitle` runs only for a note without
+ * already finds that page (`holdsId`), so a row would only double every row. `kebabTitle` runs only for a page without
  * an id. Read once per index snapshot.
  */
 function ownFileName(r: IndexRecord): boolean {
   const file = r.basename.toLowerCase()
   if (file === r.title.toLowerCase() || r.aliases.some((alias) => alias.toLowerCase() === file)) return false
-  if (r.id === undefined) return file !== kebabTitle(r.title).toLowerCase()
-  const id = r.id.toLowerCase()
+  // A card file is named from its card's ID (YAZ-5037, `cardFileName`): that ID is the one its name holds.
+  const held = cardFileId(r) ?? r.id
+  if (held === undefined) return file !== kebabTitle(r.title).toLowerCase()
+  const id = held.toLowerCase()
   return file !== id && !file.endsWith(`-${id}`)
 }
+
+/** A card file's ID (YAZ-5037): its card's, which its name holds; undefined for a page, or before the sweep gave one. */
+const cardFileId = (r: IndexRecord): string | undefined => (r.kind === 'card' ? (r.cards?.[0]?.id ?? undefined) : undefined)
 
 /** The letters a vault had before, as a candidate carries them: one shared list, and no key at all for a vault that had none. */
 const lettersBefore = (letters: readonly string[]): { was?: readonly string[] } => (letters.length > 1 ? { was: letters.slice(1) } : {})
@@ -92,7 +123,7 @@ const lettersBefore = (letters: readonly string[]): { was?: readonly string[] } 
  * One row per folder in the loaded tree (🔒 D1, YAZ-1491): matched by its own title (YAZ-2420
  * 🔒 D14; its directory's name when it has none), labelled by its parent. `dirs` are
  * ABSOLUTE paths in tree order (`allDirs`, treeState.ts), so a folder's row sits above its
- * children's — and, spliced ahead of `searchCandidates`, above any note that ties with it in a
+ * children's — and, spliced ahead of `searchCandidates`, above any page that ties with it in a
  * rank bucket. `folder` follows `IndexRecord.folder`: root-relative, `/`
  * separated, `''` directly under the root. A folder's title and id are its settings record's (`folders`).
  */
@@ -109,10 +140,10 @@ export function folderCandidates(root: string, dirs: readonly string[], folders:
 }
 
 /**
- * One row per tree file that is not a note (🔒 D3, YAZ-2620) — a script, a PDF, an image — matched
+ * One row per tree file that is not a page (🔒 D3, YAZ-2620) — a script, a PDF, an image — matched
  * by its file name, extension included. `files` are ABSOLUTE paths in tree order (`otherFiles`,
  * treeState.ts), off the tree the Sidebar already holds: no index read, no disk read. Spliced
- * BEHIND `searchCandidates`, so a tie in a rank bucket reads folder, note, other file.
+ * BEHIND `searchCandidates`, so a tie in a rank bucket reads folder, page, other file.
  */
 export function fileCandidates(root: string, files: readonly string[]): SearchCandidate[] {
   return files.map((path) => {
@@ -147,14 +178,14 @@ export function searchTitles(candidates: readonly SearchCandidate[], query: stri
 }
 
 /**
- * What the search box shows for `query` (YAZ-2420 🔒 D32, YAZ-2677 🔒 D9): the notes and folders
+ * What the search box shows for `query` (YAZ-2420 🔒 D32, YAZ-2677 🔒 D9): the pages and folders
  * whose id the text holds come FIRST, then the title matches for the same text (`searchTitles`),
  * no row twice, capped at SEARCH_CAP. What "holds" means is `holdsId`'s to say: a pasted id, an
  * `[[id]]` link, a file name or a whole path; `YAZ-12` typed as `yaz-12`, `yaz12` or `yaz 12`;
  * and a bare number, which finds that number in each vault of the window (S70). An id is held
  * whole or not at all: no part of one matches.
  *
- * The row of a number ID reads `YAZ-12 — Title`: the full id, which tells two vaults' note 12
+ * The row of a number ID reads `YAZ-12 — Title`: the full id, which tells two vaults' page 12
  * apart. The row of an old ID reads as its title, as it always did.
  *
  * The rows of `first` lead in each of the two parts (YAZ-2662 D4, S25): the pinned ID matches
@@ -172,11 +203,14 @@ export function searchRows(candidates: readonly SearchCandidate[], query: string
   const holds = holdsId(query)
   if (holds === null) return searchTitles(candidates, query, first)
   const held: SearchCandidate[] = []
-  for (const c of candidates) if (c.id !== undefined && holds(c.id, c.was)) held.push(c.id.includes('-') ? { ...c, label: `${c.id} — ${c.label}` } : c)
+  for (const c of candidates) if (c.id !== undefined && holds(c.id, c.was)) held.push(c.id.includes('-') ? { ...c, label: idLabel(c.id, c.label) } : c)
   if (held.length === 0) return searchTitles(candidates, query, first)
   const shown = new Set(held.map((c) => c.path))
   return [...firstRows(held, first), ...searchTitles(candidates, query, first).filter((c) => !shown.has(c.path))].slice(0, SEARCH_CAP)
 }
+
+/** A row found by its ID: `ID — label`; a card with no title (YAZ-5308) is named by its ID already, so it says it one time (YAZ-5309). */
+const idLabel = (id: string, label: string): string => (label === id ? id : `${id} — ${label}`)
 
 /** The number a search by ID asks for (YAZ-2571 round 5): `#5` → `5`, `#` and digits alone; any other text → null. */
 export function idQuery(query: string): string | null {
@@ -201,7 +235,7 @@ export function numberRows(candidates: readonly SearchCandidate[], digits: strin
     any = true
     const id = c.id as string
     if (!id.startsWith(digits, dash + 1)) continue
-    const row = { ...c, label: `${id} — ${c.label}` }
+    const row = { ...c, label: idLabel(id, c.label) }
     if (id.length - dash - 1 === digits.length) exact.push(row)
     else longer.push({ row, number: Number(id.slice(dash + 1)) })
   }

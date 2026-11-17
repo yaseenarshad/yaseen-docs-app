@@ -12,8 +12,8 @@
      dot's column to the text. The dot's column, `--list-gutter`, is fixed: today's 24.4px (2.15em less the 10px gap),
      which holds a to-do's box and a "10.". A line's dot starts at level × indent, its text at that + gutter + gap; a
      nested list makes up the difference with its own margin (below), 0 at the defaults. */
-  --list-label-gap: var(--note-bullet-gap, 10px);
-  --list-indent: var(--note-bullet-indent, 2.15em);
+  --list-label-gap: var(--page-bullet-gap, 10px);
+  --list-indent: var(--page-bullet-indent, 2.15em);
   --list-gutter: calc(2.15em - 10px);
   /* Gap between the label gutter and the item content (Crepe: 24px gutter + 10px gap). The guide
      line strip (guideLines.css) reuses this as its width — the strip only centres under the glyph

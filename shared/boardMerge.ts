@@ -1,5 +1,5 @@
 import { BOARD_ID_KEY, BOARD_META_KEY, boardIdOf, FOLD_ARROWS_KEY, FORMER_IDS_KEY, formerBoardIdsOf, HOVER_LINKS_KEY, HOVER_OUTLINE_KEY, PICTURES_FOLDER_KEY, PICTURES_KEY, SWITCHED_KEY } from './drawingAssets'
-import { canonicalNoteId, noteIdNumber } from './noteId'
+import { canonicalPageId, pageIdNumber } from './pageId'
 import { READ_ONLY_KEY } from './readOnly'
 import { isFiniteNumber, isRecord } from './guards'
 
@@ -207,7 +207,7 @@ function mergeMeta(theirs: unknown, mine: unknown): Record<string, unknown> | nu
   // other goes to `formerIds`, with every ID either side held before, so a link to any of them still opens the board.
   const [t, m] = [boardIdOf(theirs), boardIdOf(mine)]
   const former = new Set([...formerBoardIdsOf(theirs), ...formerBoardIdsOf(mine)])
-  if (t !== undefined && m !== undefined && canonicalNoteId(t) !== canonicalNoteId(m)) {
+  if (t !== undefined && m !== undefined && canonicalPageId(t) !== canonicalPageId(m)) {
     const [keep, lose] = idOrder(t, m) <= 0 ? [t, m] : [m, t]
     meta[BOARD_ID_KEY] = keep
     former.add(lose)
@@ -220,6 +220,6 @@ function mergeMeta(theirs: unknown, mine: unknown): Record<string, unknown> | nu
 
 /** The order of two board IDs: the lower number first; IDs with no number (another tool's), or one number, by their text. */
 function idOrder(a: string, b: string): number {
-  const [x, y] = [noteIdNumber(a) ?? Infinity, noteIdNumber(b) ?? Infinity]
+  const [x, y] = [pageIdNumber(a) ?? Infinity, pageIdNumber(b) ?? Infinity]
   return x !== y ? x - y : a < b ? -1 : a > b ? 1 : 0
 }

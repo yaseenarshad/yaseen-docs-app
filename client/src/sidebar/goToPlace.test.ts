@@ -1,14 +1,14 @@
 /**
  * ⌘D's place and the New… box's folder against one vault's tree (YAZ-3556 D3, D9): each kind of place, a path the
- * vault does not have, and "Default location for new notes" with its folder missing.
+ * vault does not have, and "Default location for new pages" with its folder missing.
  */
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type TreeNode } from '@shared/types'
 import { newItemFolder, placeRel, resolveGoTo } from './goToPlace'
 
-const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+const page = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
 const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
-const TREE = [folder('/v/Projects', [folder('/v/Projects/Alpha', [note('/v/Projects/Alpha/plan.md')])]), note('/v/top.md')]
+const TREE = [folder('/v/Projects', [folder('/v/Projects/Alpha', [page('/v/Projects/Alpha/plan.md')])]), page('/v/top.md')]
 
 describe('resolveGoTo (YAZ-3556 D9)', () => {
   it('a tab is the tab; a folder and a file are their paths in the vault; the root is a folder', () => {
@@ -27,9 +27,9 @@ describe('resolveGoTo (YAZ-3556 D9)', () => {
 })
 
 describe('newItemFolder (YAZ-3556 D3)', () => {
-  const at = (newNoteLocation: 'root' | 'current' | 'folder', newNoteFolder = '') => ({ ...DEFAULT_SETTINGS, newNoteLocation, newNoteFolder })
+  const at = (newPageLocation: 'root' | 'current' | 'folder', newPageFolder = '') => ({ ...DEFAULT_SETTINGS, newPageLocation, newPageFolder })
 
-  it('"Default location for new notes": the vault folder, the folder of the page on show, or the folder set', () => {
+  it('"Default location for new pages": the vault folder, the folder of the page on show, or the folder set', () => {
     expect(newItemFolder(at('root'), '/v', '/v/Projects/Alpha/plan.md', TREE)).toEqual({ dir: '/v', missing: null })
     expect(newItemFolder(at('current'), '/v', '/v/Projects/Alpha/plan.md', TREE)).toEqual({ dir: '/v/Projects/Alpha', missing: null })
     // No page on show (the blank tab), or a page of another vault: the root.

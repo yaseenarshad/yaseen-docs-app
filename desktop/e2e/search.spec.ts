@@ -3,10 +3,10 @@
  * tab (YAZ-2638 D2: the second tab of the sidebar, and the only one with the search bar of
  * YAZ-801), the search TREE that is its body while text is typed (YAZ-2620: the Files tree cut
  * down to the matches and their parent folders) and the title/alias ranking behind it (YAZ-802),
- * over a COPY of the committed encyclopedia fixture (`fixtures/bible-vault`) plus ONE seeded note
+ * over a COPY of the committed encyclopedia fixture (`fixtures/bible-vault`) plus ONE seeded page
  * that makes the ranking and the alias deterministic.
  *
- * That seeded note is `Nurture.md` at the vault root, aliased `Zephyr Codename`. It turns the
+ * That seeded page is `Nurture.md` at the vault root, aliased `Zephyr Codename`. It turns the
  * query "Nurture" into one match of each rank bucket — exact `Nurture`, prefix `Nurture
  * Sequencing`, substring `Lead Nurture` — in three places of the tree: the root, `Problems/` and
  * `Funnel Stages/`. The tree draws the exact match LAST, which is the only way this fixture can
@@ -49,7 +49,7 @@ test.describe.configure({ mode: 'serial' })
 /** The committed encyclopedia — copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 
-/** The seeded note (see the module doc): the exact hit for "Nurture", and the ONE alias in the vault. */
+/** The seeded page (see the module doc): the exact hit for "Nurture", and the ONE alias in the vault. */
 const SEEDED = 'Nurture.md'
 const SEEDED_BODY = 'search-seeded-nurture-body'
 const ALIAS = 'Zephyr Codename'
@@ -88,7 +88,7 @@ const parentLabels = (w: Page) => w.locator('.sidebar__body .tree__row--context 
 /** The typed text, bold where it sits in a match. */
 const marks = (w: Page) => w.locator('.sidebar__body .tree__mark')
 /** What the keys of the search do, as the empty Search tab lists them below its line (YAZ-2662 D10). */
-const keyHints = (w: Page) => w.locator('.sidebar__body .sidebar__keys dd')
+const keyHints = (w: Page) => w.locator('.sidebar__body .sidebar__keys li')
 /** The labels of the search's two groups (YAZ-2662 D2): "Favorites and focus", then "Everything else". */
 const groupLabels = (w: Page) => w.locator('.sidebar__body > p.sidebar__group')
 /** The trees of the search, in the order drawn: with a pinned match the top group's is first. */
@@ -204,12 +204,20 @@ test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the ke
   await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(win)).toBeFocused()
   // With no text the body is one line and no tree (S7), and the `esc` keycap is in the bar already (S13).
-  await expect(bodyMsg(win)).toHaveText('Type to search every note and folder.')
+  await expect(bodyMsg(win)).toHaveText('Type to search every page and folder.')
   await expect(treeRows(win)).toHaveCount(0)
   await expect(keycap(win)).toBeVisible()
-  // Below the line, the keys of the search (YAZ-2662 S59): seven rows, each key in a keycap.
-  await expect(keyHints(win)).toHaveText(['Move', 'Open', 'Open in a background tab', 'Show in Files', 'Preview a file or open a folder, after ↑ or ↓', 'Open or close a folder, after ↑ or ↓', 'Back to the page'])
-  await expect(win.locator('.sidebar__body .sidebar__keys kbd')).toHaveText(['↑', '↓', '↵', '⌘↵', '⇧↵', 'space', '→', '←', 'esc'])
+  // Below the line, the keys of the search (YAZ-2662 S59): seven rows, each the action, then its keys in words in
+  // brackets (one hotkey label, YAZ-5332).
+  await expect(keyHints(win)).toHaveText([
+    'Move (Up / Down)',
+    'Open (Enter)',
+    'Open in a background tab (Cmd+Enter)',
+    'Show in Files (Shift+Enter)',
+    'Preview a file or open a folder, after Up or Down (Space)',
+    'Open or close a folder, after Up or Down (Right / Left)',
+    'Back to the page (Esc)',
+  ])
   await shoot(win, 'search-00-empty-tab')
 
   // Each match keeps its place: below its folder, which is open and dim. Nothing else shows —
@@ -228,7 +236,7 @@ test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the ke
   await shoot(win, 'search-01-tree')
 
   // Enter opens the highlight by the preview rule (YAZ-2648 D1, S28): a NEW tab at the end, italic,
-  // and the launch's tab — a kept tab — stays. Before YAZ-2648 the note took that tab's place.
+  // and the launch's tab — a kept tab — stays. Before YAZ-2648 the page took that tab's place.
   await searchBar(win).press('Enter')
   await expect(activeTab(win)).toHaveText('Nurture')
   await expect(editorOf(win)).toContainText(SEEDED_BODY)
@@ -251,7 +259,7 @@ test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the ke
   await expect(matchLabels(win)).toHaveText(NURTURE)
 })
 
-test('step 2 — a frontmatter alias finds its note: ONE row, under its title, with nothing bold', async () => {
+test('step 2 — a frontmatter alias finds its page: ONE row, under its title, with nothing bold', async () => {
   await reset(win)
   // Nothing in the vault is CALLED Zephyr: the only way to this row is through the alias.
   await search(win, 'Zephyr', ['Nurture'])
@@ -338,7 +346,7 @@ test('step 5 — a fold in the search lasts as long as its query; a matched fold
   // Esc goes back to the lens the window last showed — Files — and the text STAYS (YAZ-2638 S12;
   // before, Esc emptied the query). The Files tree is there with its own folds: the swap is a
   // conditional render, never a teardown. The caret leaves the bar with the tab (YAZ-2662 D9: it
-  // goes into the open page; step 9 reads it on a note).
+  // goes into the open page; step 9 reads it on a page).
   await searchBar(win).press('Escape')
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(win)).toHaveCount(0)
@@ -397,10 +405,11 @@ test('step 7 — ⌘K, a query, a right-click on a result: "Show in sidebar" is 
   await expect(searchBar(win)).toBeFocused()
   await search(win, 'Nurture', NURTURE)
 
-  // A right-click on a result: the item leads its menu, before the focus toggle (S26, S27).
+  // A right-click on a result: the item leads its menu (S26), before the open items and the focus toggle (S27).
   await fileRow(win, 'Nurture Sequencing').click({ button: 'right' })
   await expect(rowMenuItems(win).first()).toHaveText('Show in sidebar')
-  await expect(rowMenuItems(win).nth(1)).toHaveText('Add to focus')
+  await expect(rowMenuItems(win).nth(1)).toHaveText('Open in new tab')
+  await expect(menuItem(win, 'Add to focus')).toBeVisible()
   await shoot(win, 'search-07-show-in-sidebar-menu')
   await menuItem(win, 'Show in sidebar').click()
 
@@ -460,7 +469,8 @@ test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the S
   await expect(topLabels(win)).toHaveText(['Nurture Sequencing'])
   await fileRow(win, 'Nurture Sequencing').click({ button: 'right' })
   await expect(rowMenuItems(win).first()).toHaveText('Show in sidebar')
-  await expect(rowMenuItems(win).nth(1)).toHaveText('Remove from focus')
+  await expect(rowMenuItems(win).nth(1)).toHaveText('Open in new tab') // then the open items (S27)
+  await expect(menuItem(win, 'Remove from focus')).toBeVisible()
   await shoot(win, 'search-09-focus-row-menu')
   await menuItem(win, 'Show in sidebar').click()
   // The row shows in Files, and the focus list is as it was (S36).
@@ -519,7 +529,7 @@ test('step 9 — ⌘K, a query: the match of a pinned folder shows FIRST, under 
   await expect(dirRow(win, 'Funnel Stages')).toBeVisible()
   await expect(dirItem(win, funnel)).toHaveAttribute('aria-expanded', 'false')
 
-  // ⌘K, then the query. "Stage" finds the folder `Funnel Stages`, which CONTAINS it, and the note
+  // ⌘K, then the query. "Stage" finds the folder `Funnel Stages`, which CONTAINS it, and the page
   // `Stage Accuracy` in `Problems/`, which STARTS with it — the better rank.
   await clickMenuItem(app, 'menu.file.search', 'w1')
   await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')
@@ -616,9 +626,9 @@ test('step 9 — ⌘K, a query: the match of a pinned folder shows FIRST, under 
   await expect(groupLabels(win)).toHaveText(['Favorites and focus', 'Everything else'])
   await expect(fileRow(win, 'Lead Gen')).toHaveClass(/tree__row--context/)
   // Esc with no panel on show (D9, S56): back to the lens the window last showed, Files, and the
-  // caret is in the open page — before YAZ-2662 the focus was given up.
+  // keyboard on a row there (YAZ-4995: the open page's, else the selected, else the first; the next Esc closes the sidebar).
   await searchBar(win).press('Escape')
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(win)).toHaveCount(0)
-  await expect(editorOf(win)).toBeFocused()
+  await expect(win.locator('.sidebar__body .tree__row:focus')).toHaveCount(1)
 })

@@ -2,7 +2,7 @@
  * The explore stack's search (YAZ-2571): the sidebar search's own rows and ranking (`searchRows`: ids first, then
  * exact → prefix → substring → word → joined, over titles, aliases, file names and folder names), then two more:
  *
- * 1. TEXT rows (`textCandidates`): one row per tag and per frontmatter string value of a note, built once per index
+ * 1. TEXT rows (`textCandidates`): one row per tag and per frontmatter string value of a page, built once per index
  *    snapshot as the alias rows are. The matched tag or value is the row's `snippet`. The index holds no body text
  *    (the decision on YAZ-2571), so a body search is not here.
  * 2. A TYPO pass (`fuzzyRows`): rows the exact pass missed whose name holds the typed text within one edit (two
@@ -10,18 +10,18 @@
  *    pass found fewer than `FUZZY_WHEN` rows, so a query with plain matches costs the one scan it always cost.
  *
  * Every pass is one scan of the rows in memory: no read, no second index, no work off the index (the guard in
- * `exploreRows.test.ts` counts it on a 5,000-note index).
+ * `exploreRows.test.ts` counts it on a 5,000-page index).
  */
 import type { IndexRecord } from '@shared/types'
 import { readNeedle } from '../links/completion'
 import { idQuery, numberRows, SEARCH_CAP, searchRows, type SearchCandidate } from '../search/searchCandidates'
 
-/** Frontmatter keys that are no text of the note: the app's own, and the ones other rows already match. */
+/** Frontmatter keys that are no text of the page: the app's own, and the ones other rows already match. */
 const NOT_TEXT = new Set(['id', 'title', 'aliases', 'alias', 'tags', 'tag', 'readonly', 'created', 'updated', 'date'])
 /** The longest value that is a snippet: a longer one is a document, not a line. */
 const MAX_SNIPPET = 80
 
-/** One row per tag (`#tag`) and per frontmatter string value (`key: value`) of each note, labelled by the note's title. */
+/** One row per tag (`#tag`) and per frontmatter string value (`key: value`) of each page, labelled by the page's title. */
 export function textCandidates(records: readonly IndexRecord[]): SearchCandidate[] {
   const rows: SearchCandidate[] = []
   for (const r of records) {
@@ -95,21 +95,21 @@ export function fuzzyRows(candidates: readonly SearchCandidate[], query: string,
   return tiers.flat().slice(0, cap)
 }
 
-/** What the explore search shows for `query`: the sidebar search's rows (a note's text row only when no named row found it), then the typo matches, capped at `SEARCH_CAP`. */
+/** What the explore search shows for `query`: the sidebar search's rows (a page's text row only when no named row found it), then the typo matches, capped at `SEARCH_CAP`. */
 export function exploreRows(candidates: readonly SearchCandidate[], query: string, stats?: SearchStats): SearchCandidate[] {
   // `#5` searches by the ID number alone (YAZ-2571 round 5): no text row, no typo pass. In a vault without IDs it is text.
   const digits = idQuery(query)
   const byNumber = digits === null ? null : numberRows(candidates, digits)
   if (byNumber !== null) return byNumber
   const ranked = searchRows(candidates, query)
-  // A note found by its title, alias or file name shows that row alone: its text rows add nothing.
+  // A page found by its title, alias or file name shows that row alone: its text rows add nothing.
   const named = new Set(ranked.flatMap((c) => (c.snippet === undefined ? [c.path] : [])))
   const exact = ranked.filter((c) => c.snippet === undefined || !named.has(c.path))
   if (exact.length >= FUZZY_WHEN) return exact
   const shown = new Set(exact.map((c) => c.path))
   const fuzzy = fuzzyRows(candidates, query, shown, SEARCH_CAP - exact.length, stats)
   if (fuzzy.length === 0) return exact
-  // One row per note from the typo pass: its first row (the title's, then an alias's) says enough.
+  // One row per page from the typo pass: its first row (the title's, then an alias's) says enough.
   const seen = new Set<string>()
   return [...exact, ...fuzzy.filter((c) => !seen.has(c.path) && seen.add(c.path) !== undefined)]
 }

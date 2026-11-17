@@ -1,6 +1,6 @@
 /**
  * Two-way relations (YAZ-4781 R1, R2): the tied column's declaration, and a tied cell's write turned into the link
- * column's writes in the linking notes — never the row's own note — with the replace ask and an exact Undo.
+ * column's writes in the linking pages — never the row's own page — with the replace ask and an exact Undo.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
@@ -151,7 +151,7 @@ describe('a tied cell write (YAZ-4781 R2)', () => {
     expect(fieldOf(lemon.path, 'Pairs with')).toEqual(['[[Chocolate cake]]', '[[Apple pie]]'])
   })
 
-  it('a note outside the link column\'s folder, or a read-only one, refuses the whole write before any note changes', async () => {
+  it('a page outside the link column\'s folder, or a read-only one, refuses the whole write before any page changes', async () => {
     const { choc, write } = vault(true)
     const before = disk.get(choc.path)
     await expect(writeTiedCell(write({ next: ['[[DEMO-1001]]', '[[DEMO-1020]]'] }))).rejects.toThrow('Soup is not in Recipes')
@@ -161,11 +161,11 @@ describe('a tied cell write (YAZ-4781 R2)', () => {
 })
 
 describe('a tied cell with words that only LOOK like an ID (YAZ-4954 part 2)', () => {
-  const notes = [rec('/vault/Other/Covid notes.md'), rec('/vault/Other/COVID-19.md')]
-  const resolve = linkResolver(notes, '/vault', DIRS, [])
+  const pages = [rec('/vault/Other/Covid pages.md'), rec('/vault/Other/COVID-19.md')]
+  const resolve = linkResolver(pages, '/vault', DIRS, [])
 
   it('pairPlan reads the page the editor opens: the left side when it is a page, in both orders', () => {
-    expect(pairPlan([], ['[[Covid notes|COVID-19]]'], resolve)).toEqual({ add: ['/vault/Other/Covid notes.md'], remove: [] })
-    expect(pairPlan([], ['[[COVID-19|Covid notes]]'], resolve)).toEqual({ add: ['/vault/Other/COVID-19.md'], remove: [] })
+    expect(pairPlan([], ['[[Covid pages|COVID-19]]'], resolve)).toEqual({ add: ['/vault/Other/Covid pages.md'], remove: [] })
+    expect(pairPlan([], ['[[COVID-19|Covid pages]]'], resolve)).toEqual({ add: ['/vault/Other/COVID-19.md'], remove: [] })
   })
 })

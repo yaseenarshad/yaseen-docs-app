@@ -17,8 +17,8 @@
  * Each tab follows them live. "Allow edits" on the chip unlocks this tab until it closes; the setting going
  * on again locks it again. ⌥Z flips this tab's wrap and saves nothing; a change of the setting overrides it.
  *
- * A NOTE TAB'S FEATURES (YAZ-3451, D7): Monaco's find box (⌘F, ⌘⌥F); folds remembered by the text of
- * their first line (`codeFolds.ts`); the note's text size (⌘+ / ⌘− / ⌘0, the zoom pill), per tab, never
+ * A PAGE TAB'S FEATURES (YAZ-3451, D7): Monaco's find box (⌘F, ⌘⌥F); folds remembered by the text of
+ * their first line (`codeFolds.ts`); the page's text size (⌘+ / ⌘− / ⌘0, the zoom pill), per tab, never
  * stored; "Duplicate tab" reads folds, scroll and text size through `registerPageView`. An outside
  * reload is ONE undoable edit over the part that changed (`reloadEdit.ts`): ⌘Z still works after it.
  * Scroll and cursor survive a tab switch because the tab stays mounted (a hidden layer sends Monaco's
@@ -32,18 +32,18 @@
  * goes on to Monaco. Save now (⌘S, the row `code.save`) saves at once, as on a drawing.
  *
  * THE CODE KEYS (YAZ-3564 K4) are Monaco's, as the key list and the user's changes say (`codeKeys.ts`): one rule
- * set for the window, live. The note's fold keys are code rows there too (YAZ-3478): ⌘⇧U folds every block, ⌘⇧I
+ * set for the window, live. The page's fold keys are code rows there too (YAZ-3478): ⌘⇧U folds every block, ⌘⇧I
  * unfolds every block, ⌘↑ / ⌘↓ fold / unfold the block at the cursor, each a rule on Monaco's own fold action, so
  * the folds are remembered as any fold is. While the suggest list is open they step aside, and ⌘↑ / ⌘↓ move in the
  * list (K14). On a Mac ⌘↑ / ⌘↓ therefore do not go to the top / bottom of the file: ⌘Home / ⌘End do (with ⇧,
  * they select). A right-click on a fold chevron opens the app's menu: "Collapse all", "Expand all", with the keys
  * as they are now.
  *
- * THE TABLE OF CONTENTS (YAZ-3486; called so since YAZ-3506): VS Code's Outline in the note table of
+ * THE TABLE OF CONTENTS (YAZ-3486; called so since YAZ-3506): VS Code's Outline in the page table of
  * contents' place and frame (`outline/CodeOutline.tsx`), on the same setting and width. Its feed
  * (`outline/outlineFeed.ts`) is made with the editor and goes with it. The cog's "Table of contents" row
  * turns it off for this file only, saved for the file in the app state (`tocSwitches`, `usePageSwitch`): a code file
- * has no frontmatter, so it cannot hold the switch as a note does (`toc`, YAZ-4094 G4).
+ * has no frontmatter, so it cannot hold the switch as a page does (`toc`, YAZ-4094 G4).
  */
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
@@ -93,7 +93,7 @@ export interface CodeEditorProps extends DocumentHostProps {
   codeMinimap?: boolean
   /** The cog's rows and the Outline's "…" menu write these settings for every code file; absent = no cog. */
   onChangeCodeSettings?: (patch: CodeSettingsPatch) => void
-  /** The Outline (YAZ-3486) on the note's setting (Settings › "Pin default") and width; absent = off. */
+  /** The Outline (YAZ-3486) on the page's setting (Settings › "Pin default") and width; absent = off. */
   tableOfContents?: TableOfContentsMode
   /** Settings › "Table of contents default" (YAZ-3558): for a file that made no choice in its cog. Absent = the default, on. */
   tocOnByDefault?: boolean
@@ -230,7 +230,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   // This file's "Table of contents" row (YAZ-3506): Settings › "Table of contents default" until this file makes its own
-  // choice, which wins, also over Off (YAZ-3558 D1). Saved with the file in the app state, as a note's is.
+  // choice, which wins, also over Off (YAZ-3558 D1). Saved with the file in the app state, as a page's is.
   const [tocOn, toggleToc] = usePageSwitch(root, path, storage.getTocSwitch, storage.setTocSwitch, tocOnByDefault)
   const tocMode: TableOfContentsMode = tocOn ? tableOfContents : 'off'
   /** The values the editor is born with; the effects below follow every change after. */
@@ -450,7 +450,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
     editorRef.current?.updateOptions({ minimap: { enabled: codeMinimap } })
   }, [codeMinimap])
 
-  // The text size (YAZ-3451): the note's keys and pill. ⌘+ / ⌘− / ⌘0 bubble from the focus to this
+  // The text size (YAZ-3451): the page's keys and pill. ⌘+ / ⌘− / ⌘0 bubble from the focus to this
   // tab's section as `ZOOM_EVENT` (`zoomRequest.ts`), and this tab claims them; ⌘0 is 100 %.
   useEffect(() => {
     const section = doc.hostRef.current?.closest('.editor')

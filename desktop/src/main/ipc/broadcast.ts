@@ -18,7 +18,7 @@ export function broadcastAll(channel: string, ...args: unknown[]): void {
 /**
  * The vaults the window that sent `e` shows (YAZ-2602 D1); none for Welcome or an unknown sender. A window that is
  * "a folder of" a vault shows that vault (YAZ-4922 🔒 D3, `placeVault`): what it reads and writes is the vault's, so a
- * note it makes gets the vault's next ID, and its own folder never takes a `.yaseendocs`.
+ * page it makes gets the vault's next ID, and its own folder never takes a `.yaseendocs`.
  */
 export function senderRoots(store: Pick<Store, 'get'>, windows: Pick<WindowManager, 'idFor'>, e: IpcMainInvokeEvent): readonly string[] {
   const state = store.get()

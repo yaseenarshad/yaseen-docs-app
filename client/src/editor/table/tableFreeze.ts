@@ -1,5 +1,5 @@
 /**
- * Frozen rows and columns of a note table (YAZ-3769, YAZ-3696 🔒 S3): `freezeRows` rows from the
+ * Frozen rows and columns of a page table (YAZ-3769, YAZ-3696 🔒 S3): `freezeRows` rows from the
  * top and `freezeCols` columns from the left (`tableStyle.ts`), set from the right-click menu
  * (`tableMenu.ts`).
  *
@@ -59,15 +59,15 @@ import { changedTables, typingOnly } from './tableStyle'
 import { onStickyHeaderSetting, stickyHeaderSetting } from './timeFormatSetting'
 
 /** The header row sticks (YAZ-4899 round 2): the table's own choice (`stickyHeader`), else Settings › Tables › Sticky header row. */
-export const stickyHeaderOn = (table: ProseNode): boolean => (table.attrs.stickyHeader as boolean | null) ?? stickyHeaderSetting()
+export const stickyHeaderOn = (table: ProseNode, sticky = stickyHeaderSetting()): boolean => (table.attrs.stickyHeader as boolean | null) ?? sticky
 
 /**
  * The rows frozen from the top, inside the table: the table's own freeze (`freezeRows`, which wins), else one row for a
  * sticky header row (YAZ-4899 round 2). The subheader pinner sits under them (`tableSubhead.ts`).
  */
-export const frozenRowCount = (table: ProseNode): number => {
+export const frozenRowCount = (table: ProseNode, sticky = stickyHeaderSetting()): number => {
   const own = table.attrs.freezeRows as number
-  return Math.max(0, Math.min(own > 0 ? own : stickyHeaderOn(table) ? 1 : 0, table.childCount))
+  return Math.max(0, Math.min(own > 0 ? own : stickyHeaderOn(table, sticky) ? 1 : 0, table.childCount))
 }
 
 /** A change of Settings › Tables › Sticky header row: the plugin draws every table's frozen rows again. */
@@ -77,9 +77,9 @@ const FREEZE_REFRESH = 'mdapp-table-freeze-refresh'
 const widthOf = (table: ProseNode): number => TableMap.get(table).width
 
 /** A table's frozen counts, inside the table: the rows with a sticky header row counted in (`frozenRowCount`). */
-function counts(table: ProseNode): { rows: number; cols: number } {
+function counts(table: ProseNode, sticky: boolean): { rows: number; cols: number } {
   const cols = Math.min(table.attrs.freezeCols as number, widthOf(table))
-  return { rows: frozenRowCount(table), cols: Math.max(0, cols) }
+  return { rows: frozenRowCount(table, sticky), cols: Math.max(0, cols) }
 }
 
 /** The table's OWN counts clamped inside it (the file's, a sticky header row not counted). */
@@ -95,19 +95,19 @@ const overCounts = (table: ProseNode): boolean => {
 }
 
 /** Every table's decorations in `doc`. */
-function allDecorations(doc: ProseNode): Decoration[] {
+function allDecorations(doc: ProseNode, sticky: boolean): Decoration[] {
   const decorations: Decoration[] = []
   doc.descendants((node, pos) => {
     if (node.type.name !== 'table') return !node.isTextblock
-    decorations.push(...frozenDecorations(node, pos))
+    decorations.push(...frozenDecorations(node, pos, sticky))
     return false
   })
   return decorations
 }
 
 /** What the decorations of a table depend on, besides its positions: the counts, rows and columns. */
-const shapeOf = (table: ProseNode): string => {
-  const { rows, cols } = counts(table)
+const shapeOf = (table: ProseNode, sticky: boolean): string => {
+  const { rows, cols } = counts(table, sticky)
   return `${rows} ${cols} ${table.childCount} ${widthOf(table)}`
 }
 
@@ -129,17 +129,17 @@ function frozenCells(table: ProseNode, cols: number): Array<{ pos: number; cell:
 }
 
 /** How many decorations `frozenDecorations` gives the table. */
-function decorationCount(table: ProseNode): number {
-  const { rows, cols } = counts(table)
+function decorationCount(table: ProseNode, sticky: boolean): number {
+  const { rows, cols } = counts(table, sticky)
   if (rows === 0 && cols === 0) return 0
   return 1 + rows + (cols > 0 ? frozenCells(table, cols).length : 0)
 }
 
 /** The decorations of one table: none when nothing is frozen. */
-function frozenDecorations(table: ProseNode, pos: number): Decoration[] {
-  const { rows, cols } = counts(table)
+function frozenDecorations(table: ProseNode, pos: number, sticky: boolean): Decoration[] {
+  const { rows, cols } = counts(table, sticky)
   if (rows === 0 && cols === 0) return []
-  const out = [Decoration.node(pos, pos + table.nodeSize, { 'data-table-frozen': '' }, { frozenTable: true, shape: shapeOf(table) })]
+  const out = [Decoration.node(pos, pos + table.nodeSize, { 'data-table-frozen': '' }, { frozenTable: true, shape: shapeOf(table, sticky) })]
   table.forEach((row, rowOffset, r) => {
     const rowPos = pos + 1 + rowOffset
     if (r < rows) out.push(Decoration.node(rowPos, rowPos + row.nodeSize, { class: r === rows - 1 ? 'table-frozen-row table-frozen-row-end' : 'table-frozen-row' }))
@@ -159,6 +159,8 @@ interface FreezeState {
   over: number[]
   /** Counts each transaction that is not typing: the view runs only when it moves. */
   generation: number
+  /** Sticky header row's default for this editor (YAZ-5487): its vault's (`stickyHeaderSetting(view)`), the app's at first. */
+  sticky: boolean
 }
 
 const freezeKey = new PluginKey<FreezeState>('mdapp-table-freeze')
@@ -197,7 +199,8 @@ class Freezer {
     if (node === this.node) return
     const old = this.node
     this.node = node
-    const { rows, cols } = counts(node)
+    const sticky = stickyHeaderSetting(this.block)
+    const { rows, cols } = counts(node, sticky)
     for (let c = cols; c < this.#cols; c++) this.block.style.removeProperty(`--table-frozen-x-${c}`)
     if (this.#observer === null) {
       this.#observer = new ResizeObserver(this.#relayout)
@@ -216,7 +219,7 @@ class Freezer {
     this.#rows = rows
     this.#cols = cols
     // The column widths are the first row's (`colwidth`); a row's new height resizes the table (the observer).
-    if (old === null || shapeOf(old) !== shapeOf(node) || old.firstChild !== node.firstChild) this.#relayout()
+    if (old === null || shapeOf(old, sticky) !== shapeOf(node, sticky) || old.firstChild !== node.firstChild) this.#relayout()
     // The editor may have drawn a frozen row again (a sort, a paste): the new <tr> has no animation yet.
     else if (rows > 0) this.#schedule()
   }
@@ -360,10 +363,15 @@ export const tableFreeze = $prose(
     new Plugin<FreezeState>({
       key: freezeKey,
       state: {
-        init: (_, { doc }) => ({ set: DecorationSet.create(doc, allDecorations(doc)), over: [], generation: 0 }),
+        init: (_, { doc }) => {
+          const sticky = stickyHeaderSetting()
+          return { set: DecorationSet.create(doc, allDecorations(doc, sticky)), over: [], generation: 0, sticky }
+        },
         apply: (tr: Transaction, value) => {
-          // The Settings default changed (YAZ-4899 round 2): every table's frozen rows, drawn again from the new default.
-          if (tr.getMeta(FREEZE_REFRESH) === true) return { set: DecorationSet.create(tr.doc, allDecorations(tr.doc)), over: value.over, generation: value.generation + 1 }
+          // The Settings default changed (YAZ-4899 round 2), or this editor's vault's (YAZ-5487): every table's frozen
+          // rows, drawn again from the new default.
+          const refresh = tr.getMeta(FREEZE_REFRESH) as boolean | undefined
+          if (typeof refresh === 'boolean') return { set: DecorationSet.create(tr.doc, allDecorations(tr.doc, refresh)), over: value.over, generation: value.generation + 1, sticky: refresh }
           if (!tr.docChanged) return value
           let set = value.set.map(tr.mapping, tr.doc)
           if (value.over.length === 0 && typingOnly(tr)) return { ...value, set }
@@ -373,16 +381,16 @@ export const tableFreeze = $prose(
             const end = pos + node.nodeSize
             const old = set.find(pos, end).filter((deco) => deco.from >= pos && deco.to <= end)
             const outer = old.find((deco) => deco.from === pos && deco.to === end)
-            if (old.length === decorationCount(node) && (old.length === 0 || outer?.spec.shape === shapeOf(node))) continue
+            if (old.length === decorationCount(node, value.sticky) && (old.length === 0 || outer?.spec.shape === shapeOf(node, value.sticky))) continue
             if (old.length > 0) set = set.remove(old)
-            const fresh = frozenDecorations(node, pos)
+            const fresh = frozenDecorations(node, pos, value.sticky)
             if (fresh.length > 0) set = set.add(tr.doc, fresh)
           }
           const over = [...new Set([...value.over.map((pos) => tr.mapping.map(pos)), ...tables.keys()])].filter((pos) => {
             const node = tr.doc.nodeAt(pos)
             return node?.type.name === 'table' && overCounts(node)
           })
-          return { set, over, generation: value.generation + 1 }
+          return { set, over, generation: value.generation + 1, sticky: value.sticky }
         },
       },
       appendTransaction: (_trs, _old, state) => {
@@ -399,10 +407,20 @@ export const tableFreeze = $prose(
       props: { decorations: (state) => freezeKey.getState(state)!.set },
       view: (view) => {
         const freezer = new FreezeView(view)
-        const unsubscribe = onStickyHeaderSetting(() => view.dispatch(view.state.tr.setMeta(FREEZE_REFRESH, true)))
+        // The default of THIS editor's vault (YAZ-5487, `tableLookAt`): read once its DOM is in its surface, and again
+        // on each change of a sticky default; a refresh only when it differs from the one drawn.
+        let live = true
+        const refresh = (): void => {
+          if (!live) return
+          const sticky = stickyHeaderSetting(view)
+          if (freezeKey.getState(view.state)?.sticky !== sticky) view.dispatch(view.state.tr.setMeta(FREEZE_REFRESH, sticky))
+        }
+        queueMicrotask(refresh)
+        const unsubscribe = onStickyHeaderSetting(refresh)
         return {
           update: (v, prev) => freezer.update(v, prev),
           destroy: () => {
+            live = false
             unsubscribe()
             freezer.destroy()
           },

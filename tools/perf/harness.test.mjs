@@ -3,14 +3,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { noisePng, sentinel, writeCode, writeDrawing, writeGifDrawing, writeNote } from './genVault.mjs'
+import { noisePng, sentinel, writeCode, writeDrawing, writeGifDrawing, writePageFile } from './genVault.mjs'
 import { abba, loadSensitive, overCeilings, slope, summarizeRuns } from './lib/stats.mjs'
 import * as longDay from './scenarios/long-day.mjs'
 import { flowDiagram } from './scenarios/drawio.mjs'
 import { claimWorkDir, writeState } from './lib/work.mjs'
 import { parseFootprint } from './lib/app.mjs'
 import { RING, crosses, seedVaults } from './scenarios/multi-vault.mjs'
-import { NOTES } from './scenarios/typing.mjs'
+import { PAGES } from './scenarios/typing.mjs'
 import { BIG_CODE_LINES, bigCodeText, writeBigCode } from './scenarios/bigCode.mjs'
 
 const made = []
@@ -97,17 +97,17 @@ describe('the work dir', () => {
   it('refuses a dir outside the temp roots (the real profile, a real vault) and a foreign non-empty one', () => {
     expect(() => claimWorkDir(path.join(os.homedir(), 'Library/Application Support/Yaseen Docs'))).toThrow(/must be under/)
     const foreign = tmp()
-    fs.writeFileSync(path.join(foreign, 'note.md'), '# mine\n')
+    fs.writeFileSync(path.join(foreign, 'page.md'), '# mine\n')
     expect(() => claimWorkDir(foreign)).toThrow(/not made by this harness/)
-    expect(fs.readFileSync(path.join(foreign, 'note.md'), 'utf8')).toBe('# mine\n')
+    expect(fs.readFileSync(path.join(foreign, 'page.md'), 'utf8')).toBe('# mine\n')
   })
 })
 
 describe('fixtures', () => {
-  it('writes the same big note every time, ending in its sentinel', () => {
+  it('writes the same big page every time, ending in its sentinel', () => {
     const [a, b] = [tmp(), tmp()]
-    const fa = writeNote(a, 'Bullets 1k', 'bullets', 1000)
-    const fb = writeNote(b, 'Bullets 1k', 'bullets', 1000)
+    const fa = writePageFile(a, 'Bullets 1k', 'bullets', 1000)
+    const fb = writePageFile(b, 'Bullets 1k', 'bullets', 1000)
     const text = fs.readFileSync(fa, 'utf8')
     expect(text).toBe(fs.readFileSync(fb, 'utf8'))
     expect(text.trimEnd().split('\n').at(-1)).toBe(sentinel('Bullets 1k'))
@@ -138,18 +138,18 @@ describe('fixtures', () => {
     expect(s.windows[0].tabs).toEqual(['/a/1.md', '/a/2.md', '/b/1.md', '/b/2.md'])
   })
 
-  it('typing has the prose note twice, and the two rows differ by the Section indent switch alone (YAZ-2724)', () => {
-    const rows = Object.fromEntries(NOTES.map(([key, ...note]) => [key, note]))
+  it('typing has the prose page twice, and the two rows differ by the Section indent switch alone (YAZ-2724)', () => {
+    const rows = Object.fromEntries(PAGES.map(([key, ...page]) => [key, page]))
     expect(rows.prose5k).toEqual(['Prose 5k', 'prose', 5000])
     expect(rows.prose5kIndent).toEqual([...rows.prose5k, true])
     // The rows from before it keep their keys, so their numbers still line up with baseline.json.
-    expect(NOTES.slice(0, 2).map(([key, , kind]) => [key, kind])).toEqual([['bullets5k', 'bullets'], ['bullets20k', 'bullets']])
+    expect(PAGES.slice(0, 2).map(([key, , kind]) => [key, kind])).toEqual([['bullets5k', 'bullets'], ['bullets20k', 'bullets']])
   })
 
-  it('the prose note is the one made of top-level blocks: three times the bullet note of its length (YAZ-2724)', () => {
+  it('the prose page is the one made of top-level blocks: three times the bullet page of its length (YAZ-2724)', () => {
     const dir = tmp()
     // A block is a run of lines between blank lines; a list is one.
-    const blocks = (name, kind) => fs.readFileSync(writeNote(dir, name, kind, 5000), 'utf8').split(/\n{2,}/).filter((part) => part.trim() !== '').length
+    const blocks = (name, kind) => fs.readFileSync(writePageFile(dir, name, kind, 5000), 'utf8').split(/\n{2,}/).filter((part) => part.trim() !== '').length
     expect([blocks('Prose 5k', 'prose'), blocks('Bullets 5k', 'bullets')]).toEqual([1821, 596])
   })
 
@@ -215,7 +215,7 @@ describe('long-day (YAZ-3861, YAZ-3737 D7)', () => {
     expect(fx.files).toHaveLength(21)
     expect(new Set(fx.files.map((f) => f.file)).size).toBe(21)
     const count = (kind) => fx.files.filter((f) => f.kind === kind).length
-    expect([count('note'), count('diagram'), count('drawing'), count('gifs'), count('code'), count('bigCode')]).toEqual([15, 1, 1, 1, 2, 1])
+    expect([count('page'), count('diagram'), count('drawing'), count('gifs'), count('code'), count('bigCode')]).toEqual([15, 1, 1, 1, 2, 1])
     expect(fx.files.map((f) => path.basename(f.file)).filter((b) => !b.endsWith('.md'))).toEqual(['Flow.drawio', 'Sketch.excalidraw', 'GIFs.excalidraw', 'Small TS.ts', 'Small PY.py', 'big-5mb.ts'])
     expect(fx.files.every((f) => f.file.startsWith(fx.vault + path.sep) && fs.existsSync(f.file))).toBe(true)
     expect(fs.readdirSync(fx.emptyVault)).toEqual([])

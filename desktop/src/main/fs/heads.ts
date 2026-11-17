@@ -9,18 +9,18 @@ import { requireStringArray } from './validate'
 /** More paths than a window can have tabs; the rest of a longer list is answered `null`. */
 const MAX_HEADS = 256
 
-// Not fatal: the bytes read may end inside a character, and a note with one bad byte still has a head.
+// Not fatal: the bytes read may end inside a character, and a page with one bad byte still has a head.
 const utf8 = new TextDecoder('utf-8')
 
-/** The top of one note: `HEAD_READ_BYTES` off the start of the file at most, whatever its size. */
+/** The top of one page: `HEAD_READ_BYTES` off the start of the file at most, whatever its size. */
 async function readHead(raw: string): Promise<FileHead | null> {
   const p = requireAbsPath(raw, 'path')
-  // A page of the tab board shows the first lines of a NOTE (D6): a PDF, an image and view-only text have none.
+  // A page of the tab board shows the first lines of a PAGE (D6): a PDF, an image and view-only text have none.
   if (!isMarkdown(p)) return null
   const handle = await open(p, 'r')
   try {
     const st = await handle.stat()
-    // A folder may be named `Notes.md` (YAZ-2290).
+    // A folder may be named `Pages.md` (YAZ-2290).
     if (!st.isFile()) return null
     const buffer = Buffer.allocUnsafe(Math.min(st.size, HEAD_READ_BYTES))
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
@@ -40,10 +40,10 @@ async function readHead(raw: string): Promise<FileHead | null> {
 }
 
 /**
- * `window.yaseenDocs.readHeads(paths)` (YAZ-2648 D6): the top of every open tab's note in ONE
- * call, in the order asked. A path that fails — a deleted file, a folder, a file that is no note —
+ * `window.yaseenDocs.readHeads(paths)` (YAZ-2648 D6): the top of every open tab's page in ONE
+ * call, in the order asked. A path that fails — a deleted file, a folder, a file that is no page —
  * answers `null` and never fails the rest. Only the head of each file is read, so the answer
- * stays small whatever the notes weigh.
+ * stays small whatever the pages weigh.
  */
 export async function readHeads(paths: unknown): Promise<(FileHead | null)[]> {
   const list = requireStringArray(paths, 'paths')

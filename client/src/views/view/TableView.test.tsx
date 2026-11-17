@@ -17,6 +17,7 @@ import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugi
 import { TEST_RECORDS } from '../testRecords'
 import { HOVER_PREVIEW_DWELL_MS } from '../../sidebar/HoverPreviewHost'
 import { spacePanel } from '../../tabs/cardPreview'
+import { TitleIsName } from '../../lib/titleRule'
 
 /** No store behind this mount: collapse state stays in the pane. */
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
@@ -43,8 +44,8 @@ vi.mock('../../editor/createCrepe', () => ({
   }),
 }))
 
-// The sidebar's note panel (YAZ-3403, the folder views' shared hover): a stand-in that says which note it shows.
-vi.mock('../../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
+// The sidebar's page panel (YAZ-3403, the folder views' shared hover): a stand-in that says which page it shows.
+vi.mock('../../sidebar/PagePreview', () => ({ default: ({ name }: { name: string }) => <div className="page-preview" aria-label={`Preview of ${name}`} /> }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -68,7 +69,7 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 let draw: () => void = () => {}
 
-function mount(text: string, props: Partial<ViewsPaneProps> = {}, options: { editorHost?: boolean } = {}) {
+function mount(text: string, props: Partial<ViewsPaneProps> = {}, options: { editorHost?: boolean; titleIsName?: boolean } = {}) {
   let parsed = parseViews(text)
   const onOpenFile = vi.fn()
   const onChange = vi.fn((next: ParsedViews) => {
@@ -95,7 +96,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}, options: { edi
           {...props}
         />
       )
-      root?.render(options.editorHost === true ? <div className="folder-view">{pane}</div> : pane)
+      const drawn = options.editorHost === true ? <div className="folder-view">{pane}</div> : pane
+      // App's title rule (YAZ-5580): whether the vault's titles are its files' names (no IDs).
+      root?.render(options.titleIsName === undefined ? drawn : <TitleIsName.Provider value={() => options.titleIsName === true}>{drawn}</TitleIsName.Provider>)
     })
   draw()
   const el = container
@@ -201,7 +204,7 @@ function pinningHarness({ tableTop = -80, tableHeight = 600, frameId = 1, zoom =
   }
 }
 
-/** 600 empty notes for the windowing tests. */
+/** 600 empty pages for the windowing tests. */
 function manyRecords(n = 600): IndexRecord[] {
   return Array.from({ length: n }, (_, i) => {
     const basename = `n${String(i).padStart(3, '0')}`
@@ -246,7 +249,7 @@ describe('table structure', () => {
 })
 
 describe('the title (YAZ-2420 D14)', () => {
-  it('E: a table\'s Name cell shows the note\'s title, not its file name; a note with none shows its file name', () => {
+  it('E: a table\'s Name cell shows the page\'s title, not its file name; a page with none shows its file name', () => {
     const { el } = mount(TYPED_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
     const titles = [...el.querySelectorAll('.view-table__name')].map((b) => b.textContent)
     expect(titles).toContain('UP-001 - Abdul')
@@ -254,7 +257,7 @@ describe('the title (YAZ-2420 D14)', () => {
     expect(titles).toContain('Attribution')
   })
 
-  it('E: a link chip and a file chip show the title of the note they name', () => {
+  it('E: a link chip and a file chip show the title of the page they name', () => {
     const ID = 'k3m9x2pq7abc'
     const records = TEST_RECORDS.map((r, i) => ({ ...r, ...(i === 0 ? { id: ID, title: 'UP-001 - Abdul' } : {}), properties: { ...r.properties, related: `[[${ID}]]` } }))
     const { el } = mount(`formulas:\n  me: file\nviews:\n  - type: table\n    name: T\n    order: [note.related, formula.me]\n`, { records, folder: testFolderHost({ vaultRecords: records }) })
@@ -263,7 +266,7 @@ describe('the title (YAZ-2420 D14)', () => {
     expect(chips).toContain('Attribution')
   })
 
-  it('E: the placeholder list of an unknown view type names each note by its title', () => {
+  it('E: the placeholder list of an unknown view type names each page by its title', () => {
     const { el } = mount('views:\n  - type: bogus\n    name: L\n', { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
     expect([...el.querySelectorAll('.view-row__link')].map((row) => row.textContent).slice(0, 2)).toEqual(['UP-001 - Abdul', 'The Levels of an Agency'])
   })
@@ -298,11 +301,11 @@ describe('cells by type', () => {
     expect(err.textContent).toBe('#ERROR')
     expect(err.title).toBe('unknown formula nope')
 
-    // missing value renders empty (related is unset on the first note)
+    // missing value renders empty (related is unset on the first page)
     expect(cells(agentic)[4].textContent).toBe('Empty')
   })
 
-  it('an id link reads as the title of the note it names; a label, an unknown id and a name link read as written (YAZ-2293 D8)', () => {
+  it('an id link reads as the title of the page it names; a label, an unknown id and a name link read as written (YAZ-2293 D8)', () => {
     const ID = 'k3m9x2pq7abc'
     const related = (i: number, value: unknown): IndexRecord => ({ ...TEST_RECORDS[i], properties: { ...TEST_RECORDS[i].properties, related: value } })
     const records = [
@@ -363,7 +366,7 @@ describe('the Name cell (YAZ-2420 D26, table F)', () => {
     press(input, key)
   }
 
-  it('F: a click on a Name cell selects the cell, as with any other cell: it is plain text and no longer opens the note', () => {
+  it('F: a click on a Name cell selects the cell, as with any other cell: it is plain text and no longer opens the page', () => {
     const { el, onOpenFile, onChange } = mount(TYPED_BASE)
     expect(nameCell(el).textContent).toBe('Agentic Agency')
     expect(nameCell(el).querySelector('button')).toBeNull()
@@ -373,7 +376,7 @@ describe('the Name cell (YAZ-2420 D26, table F)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('F: ⌘-click on a Name cell opens the note in a background tab, ⌥-click to the right; ⇧-click opens nothing; ⇧⌘-click a new window (YAZ-4444 D32)', () => {
+  it('F: ⌘-click on a Name cell opens the page in a background tab, ⌥-click to the right; ⇧-click opens nothing; ⇧⌘-click a new window (YAZ-4444 D32)', () => {
     const openRight = vi.fn()
     const openBackground = vi.fn()
     vi.mocked(api.window.open).mockClear()
@@ -402,6 +405,34 @@ describe('the Name cell (YAZ-2420 D26, table F)', () => {
     // It was the Name cell itself; Enter now moves on, as after any cell's edit (S43).
     expect(document.activeElement).toBe(el.querySelector('td[data-cell="1:0"]'))
     expect(onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('a vault without IDs: a "/" is said under the cell as typed; Enter and leaving keep the text and rename nothing; fixed, it renames (YAZ-5580)', () => {
+    const retitle = vi.fn()
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ retitle }) }, { titleIsName: true })
+    doubleClick(nameCell(el))
+    typeTitle(nameCell(el), 'Agentic/2026')
+    const input = byLabel<HTMLInputElement>(nameCell(el), 'Edit title')
+    expect(nameCell(el).querySelector('.title-problem')?.textContent).toBe("A title can't contain / — remove it to save")
+    act(() => {
+      input.focus()
+      input.blur()
+    })
+    expect(input.isConnected).toBe(true)
+    expect(input.value).toBe('Agentic/2026')
+    expect(retitle).not.toHaveBeenCalled()
+    typeTitle(nameCell(el), 'Agentic 2026')
+    expect(retitle).toHaveBeenCalledExactlyOnceWith(agentic, 'Agentic 2026')
+  })
+
+  it('a vault with IDs: the Name cell takes "/" with no message (YAZ-5580)', () => {
+    const retitle = vi.fn()
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ retitle }) }, { titleIsName: false })
+    doubleClick(nameCell(el))
+    typeTitle(nameCell(el), 'Agentic/2026', 'Tab')
+    expect(nameCell(el).querySelector('.title-problem')).toBeNull()
+    typeTitle(nameCell(el), 'Agentic/2026')
+    expect(retitle).toHaveBeenCalledExactlyOnceWith(agentic, 'Agentic/2026')
   })
 
   it('Escape discards the edit, and an empty title or the title it has commits nothing', () => {
@@ -497,7 +528,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('a row whose note has an id offers "Copy path" and no "Copy ID" (YAZ-2420 D31, table F)', () => {
+  it('a row whose page has an id offers "Copy path" and no "Copy ID" (YAZ-2420 D31, table F)', () => {
     const records = TEST_RECORDS.map((r) => (r.path === expectedPath ? { ...r, id: 'k3m9x2pq7abc' } : r))
     const { el } = mount(TYPED_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
     rightClick(q(el, '[data-cell="0:1"]'))
@@ -691,7 +722,7 @@ describe('column resize', () => {
 })
 
 describe('vertical header pinning', () => {
-  it('counter-scrolls the existing header against the outer note scroller', () => {
+  it('counter-scrolls the existing header against the outer page scroller', () => {
     const pinning = pinningHarness()
 
     pinning.scroll()
@@ -865,7 +896,7 @@ views:
 })
 
 describe('keyboard navigation', () => {
-  it('arrow keys move the focused cell; Enter on a file.name cell opens the note', () => {
+  it('arrow keys move the focused cell; Enter on a file.name cell opens the page', () => {
     const { el, onOpenFile } = mount(TYPED_BASE)
     const cell = (r: number, c: number) => q<HTMLElement>(el, `[data-cell="${r}:${c}"]`)
     act(() => cell(0, 0).focus())
@@ -945,7 +976,7 @@ describe('windowing', () => {
     expect(links(el).length).toBeGreaterThan(0)
   })
 
-  // 499 notes and the "+ New" row (YAZ-4539) are 500 lines: windowing counts the row.
+  // 499 pages and the "+ New" row (YAZ-4539) are 500 lines: windowing counts the row.
   it('500 lines or fewer render in full, no spacers', () => {
     const { el } = mount('views:\n  - type: table\n    name: T\n', { records: manyRecords(499) })
     expect(bodyRows(el)).toHaveLength(499)
@@ -966,7 +997,7 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
     if (row === null) throw new Error('no data row')
     return row
   }
-  const notePanel = () => document.body.querySelector('.note-preview')
+  const pagePanel = () => document.body.querySelector('.page-preview')
   const on = { hoverPreview: true, previewScope: () => ({ root: '/vault', wikilinks: createWikilinkResolveSource(), textVars: {} }) }
   const TABLE = 'views:\n  - type: table\n    name: T\n    order:\n      - file.name\n'
   const unmount = () => {
@@ -985,7 +1016,7 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
       const { el } = mount(text, on)
       hover(item(el))
       await settle(HOVER_PREVIEW_DWELL_MS + 50)
-      expect(notePanel(), text).not.toBeNull()
+      expect(pagePanel(), text).not.toBeNull()
       unmount()
     }
   })
@@ -994,7 +1025,7 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
     const { el } = mount(TABLE, { ...on, hoverPreview: false })
     hover(firstRow(el))
     await settle(HOVER_PREVIEW_DWELL_MS + 50)
-    expect(notePanel()).toBeNull()
+    expect(pagePanel()).toBeNull()
   })
 
   it('YAZ-3743 D1, D2: no folder view has an eye, and an old `preview: true` key opens the shared panel, never a second card', async () => {
@@ -1006,8 +1037,8 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
     const { el } = mount(TABLE.replace('    order:', '    preview: true\n    order:'), on)
     hover(firstRow(el))
     await settle(HOVER_PREVIEW_DWELL_MS + 50)
-    expect(notePanel()).not.toBeNull()
-    expect(document.body.querySelectorAll('.note-preview')).toHaveLength(1)
+    expect(pagePanel()).not.toBeNull()
+    expect(document.body.querySelectorAll('.page-preview')).toHaveLength(1)
   })
 
   it('YAZ-3403 S32, S33: no panel opens while the Space panel shows', async () => {
@@ -1016,7 +1047,7 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
     try {
       hover(firstRow(el))
       await settle(HOVER_PREVIEW_DWELL_MS + 50)
-      expect(notePanel()).toBeNull()
+      expect(pagePanel()).toBeNull()
     } finally {
       spacePanel.shown = false
     }
@@ -1028,12 +1059,12 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
     const target = firstRow(el)
     hover(target)
     await settle(HOVER_PREVIEW_DWELL_MS + 50)
-    expect(notePanel()).not.toBeNull()
+    expect(pagePanel()).not.toBeNull()
 
     const cell = q(target, 'td[data-cell]')
     act(() => void cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 2 })))
     rightClick(cell)
-    expect(notePanel()).toBeNull()
+    expect(pagePanel()).toBeNull()
     expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Open in', 'Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below', 'Filter', 'Freeze up to this row', 'Copy path'])
     click([...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Open in new tab')!)
     expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')

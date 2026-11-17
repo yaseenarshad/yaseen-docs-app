@@ -1,8 +1,8 @@
 /**
- * The Table part of a note's right-click menu (YAZ-3769, YAZ-3696 🔒 D5 / S3), after the paste
- * rows, when the right-click is in a cell of an editable note (R3). It is the ONE table menu
- * (YAZ-3820): a row or column handle opens the same note menu, on the cells it selected
- * (`noteMenu.tsx`). Six groups:
+ * The Table part of a page's right-click menu (YAZ-3769, YAZ-3696 🔒 D5 / S3), after the paste
+ * rows, when the right-click is in a cell of an editable page (R3). It is the ONE table menu
+ * (YAZ-3820): a row or column handle opens the same page menu, on the cells it selected
+ * (`pageMenu.tsx`). Six groups:
  * - the clicked cell's note (YAZ-3818 D8): "Add cell note" on a cell with none; "Open cell note" and
  *   "Delete cell note" on a cell with one. Delete asks nothing; ⌘Z brings the note and its mark back;
  * - Insert row above / below, Insert column left / right, Duplicate row, Duplicate column (YAZ-4168);
@@ -46,7 +46,7 @@
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import { EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { EditorState, type Selection, type Transaction } from '@milkdown/kit/prose/state'
 import {
   CellSelection,
   TableMap,
@@ -61,14 +61,14 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createElement } from 'react'
 import type { MenuAction, MenuItem, MenuParent, MenuSection } from '../../sidebar/menuSections'
-import { fillFlyout } from '../blockHandleMenu'
+import { fillFlyout, type MenuRow } from '../blockHandleMenu'
 import { canMoveToCellNote, moveToCellNote, openCellNote } from './cellNoteCard'
 import { deleteText, deleteWithNotes, duplicateWithNotes, type DeleteKind } from './cellNoteGuard'
 import { cellNoteLabelsIn, cellNoteOf, removeCellNote, tableAround } from './cellNotes'
 import { bodySpansRows, cellAt, isMerged, mergeCrosses, rectHasMerge, rowFolded, rowNoDim, rowSubhead, setCellsAlign, setCellsAttr, setCellsValign, typedValue, wholeColumns, wholeRows } from './cells'
 import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
 import { foldRows, keepingScroll, unfoldRun } from './tableFold'
-import { headerRowParent } from './tableRows'
+import { headerRowParent, swatchIcon } from './tableRows'
 import { setAllSections, setSubhead } from './tableSubhead'
 import { mergeCells, mergeRect, unmergeCells } from './tableMerge'
 import { CELL_ALIGNS, TABLE_COLORS, VALIGNS, cellText, type CellAlign, type CellText, type TableColor, type Valign } from './tableStyle'
@@ -152,7 +152,7 @@ function duplicateOn(view: EditorView, pointer: number, kind: 'rows' | 'columns'
 
 /**
  * As many body rows as the rect holds, at index `at` of its table, each cell with its column's alignment:
- * a copy of Milkdown's `addRowWithAlignment`, which needs the editor's `ctx`; the note menu has the view only.
+ * a copy of Milkdown's `addRowWithAlignment`, which needs the editor's `ctx`; the page menu has the view only.
  * Each cell also takes the `valign` of the cell above it (YAZ-4166); above the first body row, that row's own, not the
  * header's (YAZ-4173 12C). A merged cell that spans the place (YAZ-4792) grows by the rows, as prosemirror-tables'
  * `addRow` does, and the new rows have no cell of their own under it.
@@ -424,12 +424,15 @@ function customColour(view: EditorView, pointer: number, attr: 'fill' | 'color')
 
 /**
  * The vendored table block's ask for the table menu (YAZ-3820): `{ x, y, pos }` in `detail`. The
- * package sends its own copy of this name (`operation.ts`); `noteMenu.test.tsx` clicks a real handle.
+ * package sends its own copy of this name (`operation.ts`); `pageMenu.test.tsx` clicks a real handle.
  */
 export const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
 
 /** A colour's swatch before its label, as the cell toolbar's palette draws it. */
 const swatch = (background: string) => createElement('span', { className: 'table-menu-swatch', style: { background } })
+
+/** Each palette row's swatch colour (YAZ-4970): the Format panel draws it as the six-dot menu's swatch. */
+const swatches = new WeakMap<MenuAction, string>()
 
 /**
  * "Header row style ›" (item 3) and "Subheader row style ›" (YAZ-4899 demo: "why is subheader row formatting in one
@@ -459,8 +462,48 @@ function rowLookParent(view: EditorView, pos: number, kind: 'header' | 'subheade
   }
 }
 
-/** The Table part's six groups, or none: no cell at `pointer`, or a read-only note. */
-export function tableMenuSections(view: EditorView, pointer: number | null): MenuSection[] {
+/**
+ * What a right-click opened the table menu on (YAZ-4970): cells (a right-click in a cell), or a row or column handle
+ * (`pageMenu.tsx` reads it from the handle's selection, `handleKind`).
+ */
+export type TableMenuKind = 'cells' | 'row' | 'column'
+
+/** What a table handle selected, as the handle's menu reads it (YAZ-4970): whole columns, whole body rows, or neither. */
+export function handleKind(selection: Selection): TableMenuKind {
+  if (!(selection instanceof CellSelection)) return 'cells'
+  return selection.isColSelection() ? 'column' : selection.isRowSelection() ? 'row' : 'cells'
+}
+
+/**
+ * "Format ›" (YAZ-4970): Align, Fill, Text colour and "Text in this column" as one row, its flyout the six-dot menu's
+ * tabbed panel (`fillFlyout`, as "Header row style ›"). `children` holds the same rows as data, so a search of the menu's
+ * rows finds them; the panel draws them. A pick runs and closes the menu, as the old flyouts' did.
+ */
+function formatParent(align: MenuAction[][], fill: MenuParent, color: MenuParent, text: MenuParent | null): MenuParent {
+  const row = (action: MenuAction): MenuRow => ({
+    label: action.label,
+    disabled: action.disabled,
+    hint: action.radio !== undefined ? (action.radio.on ? '✓' : undefined) : action.hint,
+    icon: swatches.has(action) ? swatchIcon(swatches.get(action)!) : undefined,
+    run: action.onSelect,
+  })
+  const rowsOf = (groups: readonly MenuAction[][]) => groups.map((group) => group.map(row))
+  const tabs: NonNullable<MenuRow['tabs']> = [
+    { label: 'Align', children: rowsOf(align) },
+    { label: 'Fill', children: rowsOf(fill.children) },
+    { label: 'Text colour', children: rowsOf(color.children) },
+    ...(text === null ? [] : [{ label: 'Wrap', headings: [text.label], children: rowsOf(text.children) }]),
+  ]
+  return {
+    id: 'table-format',
+    label: 'Format',
+    children: [...align, ...fill.children, ...color.children, ...(text?.children ?? [])],
+    panel: (host, close) => fillFlyout(host, { label: 'Format', run: () => {}, tabs }, close),
+  }
+}
+
+/** The Table part's groups for `kind` (YAZ-4970), or none: no cell at `pointer`, or a read-only page. */
+export function tableMenuSections(view: EditorView, pointer: number | null, kind: TableMenuKind = 'cells'): MenuSection[] {
   if (!view.editable || pointer === null) return []
   const cell = clickedCell(view.state.doc, pointer)
   if (cell === null) return []
@@ -510,7 +553,11 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
     label,
     children: [
       [item(`${attr}-none`, clear, run(cellsAttr(attr, null)))],
-      TABLE_COLORS.map((c) => ({ ...item(`${attr}-${c}`, capital(c), run(cellsAttr(attr, c))), icon: swatch(color(c)) })),
+      TABLE_COLORS.map((c) => {
+        const row: MenuAction = { ...item(`${attr}-${c}`, capital(c), run(cellsAttr(attr, c))), icon: swatch(color(c)) }
+        swatches.set(row, color(c))
+        return row
+      }),
       [item(`${attr}-custom`, 'Custom colour…', () => customColour(view, pointer, attr))],
     ],
   })
@@ -526,69 +573,91 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
   const note = cellNoteOf(view.state.doc, cell.pos)
   // The YAZ-3818 demo: a cell with some text moves all of it into its cell note.
   const move = canMoveToCellNote(view, cell.pos) ? [item('move-to-note', 'Move to cell note', () => moveToCellNote(view, cell.pos))] : []
-  return [
+  const noteItems: MenuItem[] =
     note === null
       ? [item('add-note', 'Add cell note', () => openCellNote(view, cell.pos)), ...move]
       : [
           item('open-note', 'Open cell note', () => openCellNote(view, cell.pos)),
           ...move,
           item('delete-note', 'Delete cell note', () => view.dispatch(closeHistory(removeCellNote(view.state.tr, note)))),
-        ],
-    [
-      item('insert-row-above', counted(rows, 'Insert row above', 'Insert N rows above'), run(rowsAbove), top === 0),
-      item('insert-row-below', counted(rows, 'Insert row below', 'Insert N rows below'), run(rowsBelow)),
-      item('insert-col-left', counted(cols, 'Insert column left', 'Insert N columns left'), run(columns('left'))),
-      item('insert-col-right', counted(cols, 'Insert column right', 'Insert N columns right'), run(columns('right'))),
-      // YAZ-4792: a merged cell across the rows' edge, or in the columns, would be copied twice or left out.
-      item('duplicate-rows', counted(rows, 'Duplicate row', 'Duplicate N rows'), () => duplicateOn(view, pointer, 'rows'), top === 0 || mergeCrosses(wholeRows(rect, top, bottom))),
-      item('duplicate-cols', counted(cols, 'Duplicate column', 'Duplicate N columns'), () => duplicateOn(view, pointer, 'columns'), rectHasMerge(wholeColumns(rect, left, right))),
+        ]
+  const insertRowAbove = item('insert-row-above', counted(rows, 'Insert row above', 'Insert N rows above'), run(rowsAbove), top === 0)
+  const insertRowBelow = item('insert-row-below', counted(rows, 'Insert row below', 'Insert N rows below'), run(rowsBelow))
+  const insertColLeft = item('insert-col-left', counted(cols, 'Insert column left', 'Insert N columns left'), run(columns('left')))
+  const insertColRight = item('insert-col-right', counted(cols, 'Insert column right', 'Insert N columns right'), run(columns('right')))
+  // YAZ-4792: a merged cell across the rows' edge, or in the columns, would be copied twice or left out.
+  const duplicateRow = item('duplicate-rows', counted(rows, 'Duplicate row', 'Duplicate N rows'), () => duplicateOn(view, pointer, 'rows'), top === 0 || mergeCrosses(wholeRows(rect, top, bottom)))
+  const duplicateCol = item('duplicate-cols', counted(cols, 'Duplicate column', 'Duplicate N columns'), () => duplicateOn(view, pointer, 'columns'), rectHasMerge(wholeColumns(rect, left, right)))
+  // YAZ-4206 D16: each asks first when it would take a cell note.
+  const deleteRowItem = item('delete-row', counted(rows, 'Delete row', 'Delete N rows'), () => deleteOn(view, pointer, deleteRow, 'row', rows), top === 0 || rows >= map.height - 1)
+  const deleteColItem = item('delete-col', counted(cols, 'Delete column', 'Delete N columns'), () => deleteOn(view, pointer, deleteColumn, 'column', cols), cols >= map.width)
+  const clearMerge: MenuItem[] = [
+    item('clear', 'Clear cells', () => deleteOn(view, pointer, deleteCellSelection, 'cells', rows * cols)),
+    // YAZ-4792: the target cells as one; a merged cell's right-click also takes it apart again.
+    item('merge', 'Merge cells', run(mergeCells), mergeRect(target) === null),
+    ...(isMerged(view.state.doc.nodeAt(cell.pos)!) ? [item('unmerge', 'Unmerge cells', () => unmergeOn(view, cell.pos))] : []),
+  ]
+  const align: MenuAction[][] = [CELL_ALIGNS.map((a) => item(`align-${a}`, capital(a), run(cellsAlign(a)))), VALIGNS.map((v) => item(`align-${v}`, capital(v), run(cellsValign(v))))]
+  // YAZ-4970: Format › holds Align, Fill, Text colour and, but on a row, "Text in this column" (Wrap · Clip).
+  const format = formatParent(align, palette('fill', 'Fill', 'No fill', fillSwatch), palette('color', 'Text colour', 'Default colour', textSwatch), kind === 'row' ? null : textParent)
+  // YAZ-4792: a body cell that spans rows keeps the rows where they are.
+  const sort: MenuParent = {
+    id: 'table-sort',
+    label: 'Sort',
+    children: [[item('sort-asc', 'Sort A to Z', run(sortRows(1)), bodySpansRows(rect.table)), item('sort-desc', 'Sort Z to A', run(sortRows(-1)), bodySpansRows(rect.table))]],
+  }
+  // Item 3: the header row's look from its cells too (the six-dot menu's "Header row ›").
+  const headerStyle: MenuItem[] = cell.row === 0 ? [rowLookParent(view, tablePos, 'header')] : []
+  // The rows' own state: Fold, subheader rows, the dimming of a calendar table's rows.
+  const rowState: MenuItem[] = [
+    ...(folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
+    ...subheadItems,
+    ...sectionItems,
+    // YAZ-4796: a calendar table's body row can stay out of the past rows' dimming (a to-do row, say).
+    ...(calendar && bottom > 1
+      ? [
+          undimmed
+            ? item('dim', counted(Math.max(bottom - Math.max(top, 1), 1), 'Dim this row again', 'Dim N rows again'), () => setNoDim(view, cell.table, cell.tableStart, top, bottom, false))
+            : item('nodim', counted(Math.max(bottom - Math.max(top, 1), 1), "Don't dim this row", "Don't dim N rows"), () => setNoDim(view, cell.table, cell.tableStart, top, bottom, true)),
+        ]
+      : []),
+  ]
+  const freeze: MenuParent = {
+    id: 'table-freeze',
+    label: 'Freeze',
+    children: [
+      [
+        freezeRows === cell.row + 1
+          ? item('freeze-rows', '✓ Frozen up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', 0))
+          : item('freeze-rows', 'Freeze up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', cell.row + 1)),
+        freezeCols === cell.col + 1
+          ? item('freeze-cols', '✓ Frozen up to this column', () => setFreeze(view, cell.tableStart, 'freezeCols', 0))
+          : item('freeze-cols', 'Freeze up to this column', () => setFreeze(view, cell.tableStart, 'freezeCols', cell.col + 1)),
+      ],
+      [
+        item('unfreeze-rows', 'Unfreeze rows', () => setFreeze(view, cell.tableStart, 'freezeRows', 0), freezeRows === 0),
+        item('unfreeze-cols', 'Unfreeze columns', () => setFreeze(view, cell.tableStart, 'freezeCols', 0), freezeCols === 0),
+      ],
     ],
+  }
+  // YAZ-4970 (Yaseen: "option 1, shorter and fits"): each menu shows what applies to what was right-clicked.
+  if (kind === 'row') return [[insertRowAbove, insertRowBelow, duplicateRow], [deleteRowItem, ...clearMerge], [format], rowState, [freeze]]
+  if (kind === 'column') return [[insertColLeft, insertColRight, duplicateCol], [deleteColItem, ...clearMerge], [format, sort, ...headerStyle], [freeze]]
+  const parent = (id: string, label: string, children: MenuAction[][]): MenuParent => ({ id: `table-${id}`, label, children })
+  return [
     [
-      // YAZ-4206 D16: each asks first when it would take a cell note.
-      item('delete-row', counted(rows, 'Delete row', 'Delete N rows'), () => deleteOn(view, pointer, deleteRow, 'row', rows), top === 0 || rows >= map.height - 1),
-      item('delete-col', counted(cols, 'Delete column', 'Delete N columns'), () => deleteOn(view, pointer, deleteColumn, 'column', cols), cols >= map.width),
-      item('clear', 'Clear cells', () => deleteOn(view, pointer, deleteCellSelection, 'cells', rows * cols)),
-      // YAZ-4792: the target cells as one; a merged cell's right-click also takes it apart again.
-      item('merge', 'Merge cells', run(mergeCells), mergeRect(target) === null),
-      ...(isMerged(view.state.doc.nodeAt(cell.pos)!) ? [item('unmerge', 'Unmerge cells', () => unmergeOn(view, cell.pos))] : []),
+      parent('insert', 'Insert', [
+        [insertRowAbove, insertRowBelow],
+        [insertColLeft, insertColRight],
+      ]),
+      parent('duplicate', 'Duplicate', [[duplicateRow, duplicateCol]]),
+      parent('delete', 'Delete', [[deleteRowItem, deleteColItem]]),
+      ...clearMerge,
     ],
-    [
-      {
-        id: 'table-align',
-        label: 'Align',
-        children: [CELL_ALIGNS.map((a) => item(`align-${a}`, capital(a), run(cellsAlign(a)))), VALIGNS.map((v) => item(`align-${v}`, capital(v), run(cellsValign(v))))],
-      },
-      palette('fill', 'Fill', 'No fill', fillSwatch),
-      palette('color', 'Text colour', 'Default colour', textSwatch),
-      textParent,
-    ],
-    [
-      // YAZ-4792: a body cell that spans rows keeps the rows where they are.
-      item('sort-asc', 'Sort A to Z', run(sortRows(1)), bodySpansRows(rect.table)),
-      item('sort-desc', 'Sort Z to A', run(sortRows(-1)), bodySpansRows(rect.table)),
-      ...(folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
-      ...subheadItems,
-      ...sectionItems,
-      // Item 3: the header row's look from its cells too (the six-dot menu's "Header row ›").
-      ...(cell.row === 0 ? [rowLookParent(view, tablePos, 'header')] : []),
-      // YAZ-4796: a calendar table's body row can stay out of the past rows' dimming (a to-do row, say).
-      ...(calendar && bottom > 1
-        ? [
-            undimmed
-              ? item('dim', counted(Math.max(bottom - Math.max(top, 1), 1), 'Dim this row again', 'Dim N rows again'), () => setNoDim(view, cell.table, cell.tableStart, top, bottom, false))
-              : item('nodim', counted(Math.max(bottom - Math.max(top, 1), 1), "Don't dim this row", "Don't dim N rows"), () => setNoDim(view, cell.table, cell.tableStart, top, bottom, true)),
-          ]
-        : []),
-    ],
-    [
-      freezeRows === cell.row + 1
-        ? item('freeze-rows', '✓ Frozen up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', 0))
-        : item('freeze-rows', 'Freeze up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', cell.row + 1)),
-      freezeCols === cell.col + 1
-        ? item('freeze-cols', '✓ Frozen up to this column', () => setFreeze(view, cell.tableStart, 'freezeCols', 0))
-        : item('freeze-cols', 'Freeze up to this column', () => setFreeze(view, cell.tableStart, 'freezeCols', cell.col + 1)),
-      item('unfreeze-rows', 'Unfreeze rows', () => setFreeze(view, cell.tableStart, 'freezeRows', 0), freezeRows === 0),
-      item('unfreeze-cols', 'Unfreeze columns', () => setFreeze(view, cell.tableStart, 'freezeCols', 0), freezeCols === 0),
-    ],
+    noteItems,
+    // Sort is a column action the cell's menu keeps, as Insert ›, Duplicate › and Delete › keep theirs.
+    [format, sort],
+    [...rowState, ...headerStyle],
+    [freeze],
   ]
 }

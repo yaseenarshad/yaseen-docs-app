@@ -21,10 +21,13 @@ vi.mock('../calendar', async (load) => {
 })
 import { bucketByDay, dateColumns } from '../calendar'
 import viewsCss from '../views.css?inline'
-import tableCss from '../../editor/table/table.css?inline'
+import cardTableCss from '../../editor/table/cardTable.css?inline'
+import editorTableCss from '../../editor/table/table.css?inline'
 import { setHeaderRowSetting } from '../../editor/table/timeFormatSetting'
 import { DEFAULT_HEADER_ROW } from '@shared/types'
 import { writeProperties, writeProperty } from '../writeProperty'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 const write = vi.mocked(writeProperty)
 
@@ -57,14 +60,14 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 let draw: () => void = () => {}
 
-function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
+function mount(text: string, props: Partial<ViewsPaneProps> = {}, host: HTMLElement = document.body) {
   let parsed = parseViews(text)
   const onOpenFile = vi.fn()
   const onChange = vi.fn((next: ParsedViews) => {
     parsed = next
   })
   container = document.createElement('div')
-  document.body.appendChild(container)
+  host.appendChild(container)
   root = createRoot(container)
   draw = () =>
     act(() =>
@@ -139,7 +142,7 @@ describe('calendar grid (YAZ-4540 D11)', () => {
 
   it('a card goes on the date part as written: a time zone does not move it (S3)', () => {
     const { el } = mount(CALENDAR)
-    // Both stay on Dec 3; the timed one comes first, as in Week (YAZ-4558 D22, so the note window steps as the day shows).
+    // Both stay on Dec 3; the timed one comes first, as in Week (YAZ-4558 D22, so the page window steps as the day shows).
     expect(titlesIn(day(el, '2026-12-03'))).toEqual(['Late zone', 'Bare'])
     expect(titlesIn(day(el, '2026-12-04'))).toEqual(['Timed'])
   })
@@ -172,7 +175,7 @@ describe('calendar grid (YAZ-4540 D11)', () => {
     expect(titlesIn(q(el, '.view-cal__tray'))).toEqual(['Nothing', 'Odd'])
   })
 
-  it('a note with no date sits in the "No date" tray below the grid', () => {
+  it('a page with no date sits in the "No date" tray below the grid', () => {
     const { el } = mount(CALENDAR)
     expect(titlesIn(q(el, '.view-cal__tray'))).toEqual(['Nothing'])
   })
@@ -239,7 +242,7 @@ describe('calendar moves (YAZ-4540 D4)', () => {
     expect(cardOf(el, 'Bare').querySelector('[role="alert"]')?.textContent).toBe('Move failed')
   })
 
-  it('a read-only note does not drag', () => {
+  it('a read-only page does not drag', () => {
     const { el } = mount(CALENDAR, { readOnly: new Set(['/vault/Locked.md']) })
     expect(cardOf(el, 'Locked').getAttribute('draggable')).toBeNull()
     expect(cardOf(el, 'Bare').getAttribute('draggable')).toBe('true')
@@ -249,10 +252,10 @@ describe('calendar moves (YAZ-4540 D4)', () => {
 })
 
 describe('calendar "+" on a day (YAZ-4540 S10) and "Show by"', () => {
-  it('"+" on a day makes a new note with that date', async () => {
+  it('"+" on a day makes a new page with that date', async () => {
     const create = vi.fn(() => Promise.resolve('/vault/Untitled.md'))
     const { el, onOpenFile } = mount(CALENDAR, { folder: testFolderHost({ create }) })
-    click(q(day(el, '2026-12-09'), '[aria-label="New note on 2026-12-09"]'))
+    click(q(day(el, '2026-12-09'), '[aria-label="New page on 2026-12-09"]'))
     await flush()
     expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { due: '2026-12-09' } }, undefined)
     expect(onOpenFile).toHaveBeenCalledWith('/vault/Untitled.md')
@@ -309,15 +312,15 @@ describe('Back returns to the view tab it left (YAZ-4544, finding 24)', () => {
     return mount(TWO, props)
   }
 
-  it('"+" on a calendar day opens the new note; the folder page that mounts again on that Back step shows the Calendar', async () => {
+  it('"+" on a calendar day opens the new page; the folder page that mounts again on that Back step shows the Calendar', async () => {
     const create = vi.fn(async () => '/vault/Tasks/Untitled.md')
     const { el, onOpenFile } = mount(TWO, { viewKey: 'step-1', folder: testFolderHost({ create }) })
     expect(activeTab(el)).toBe('Table')
     act(() => [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'Calendar')!.click())
     draw()
-    await act(async () => q<HTMLButtonElement>(el, '[aria-label="New note on 2026-12-03"]').click())
+    await act(async () => q<HTMLButtonElement>(el, '[aria-label="New page on 2026-12-03"]').click())
     expect(onOpenFile).toHaveBeenCalledWith('/vault/Tasks/Untitled.md')
-    // The tab moves on to the note: this page unmounts. Back mounts it again under the same step.
+    // The tab moves on to the page: this page unmounts. Back mounts it again under the same step.
     expect(activeTab(remount({ viewKey: 'step-1' }).el)).toBe('Calendar')
     // A new step (the folder opened again from the sidebar) starts on the saved start, as before.
     expect(activeTab(remount({ viewKey: 'step-2' }).el)).toBe('Table')
@@ -413,7 +416,7 @@ describe('calendar week view (YAZ-4558 D22)', () => {
     expect(el.querySelector('.view-cal__grid .view-cal__more')).toBeNull()
   })
 
-  it('a drag to a day writes it and keeps the time; "+" on a day makes a note with that date', async () => {
+  it('a drag to a day writes it and keeps the time; "+" on a day makes a page with that date', async () => {
     const create = vi.fn(() => Promise.resolve('/vault/Untitled.md'))
     const { el } = mount(WEEK, { folder: testFolderHost({ create }) })
     click(q(el, '[aria-label="Previous week"]'))
@@ -421,7 +424,7 @@ describe('calendar week view (YAZ-4558 D22)', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Timed.md', 'due', '2026-12-01 10:30')
     expect(titlesIn(day(el, '2026-12-01'))).toEqual(['Timed'])
     await flush()
-    click(q(day(el, '2026-12-02'), '[aria-label="New note on 2026-12-02"]'))
+    click(q(day(el, '2026-12-02'), '[aria-label="New page on 2026-12-02"]'))
     await flush()
     expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { due: '2026-12-02' } }, undefined)
   })
@@ -488,7 +491,7 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     draw()
   }
 
-  it('Month shows Monday to Friday only; a weekend note sits on the Friday before, marked Sat or Sun', () => {
+  it('Month shows Monday to Friday only; a weekend page sits on the Friday before, marked Sat or Sun', () => {
     const { el } = mount(HIDE, { records })
     expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
     expect(shownDays(el)).toHaveLength(25)
@@ -520,10 +523,11 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     expect(mark(el, 'Sunday')).toBe('Sun')
   })
 
-  it('a weekend card dropped on its Friday keeps its date; dropped on another day it moves there and keeps its time', () => {
+  it('a weekend card dropped on its Friday moves to that Friday (YAZ-5604 item 2); dropped on another day it moves there; both keep its time', () => {
     const { el } = mount(HIDE, { records })
     drag(cardOf(el, 'Sunday'), day(el, '2026-12-04'))
-    expect(write).not.toHaveBeenCalled()
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Sunday.md', 'due', '2026-12-04 09:00')
+    write.mockClear()
     drag(cardOf(el, 'Sunday'), day(el, '2026-12-02'))
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Sunday.md', 'due', '2026-12-02 09:00')
     expect(mark(el, 'Sunday')).toBeNull()
@@ -544,9 +548,9 @@ describe('hide weekends (YAZ-4595 S33)', () => {
       expect(mark(el, 'First Sunday')).toBe('Sun')
       expect(titlesIn(day(el, '2026-11-06'))).toEqual(['Saturday', 'Sunday'])
       expect(titlesIn(q(el, '.view-cal__tray'))).toEqual([])
-      // A drop on its Monday is a drop on its own day: no write.
+      // A drop on its Monday moves it to that Monday (YAZ-5604 item 2): its real day is the Sunday.
       drag(cardOf(el, 'First Sunday'), day(el, '2026-11-02'))
-      expect(write).not.toHaveBeenCalled()
+      expect(write).toHaveBeenCalledExactlyOnceWith('/vault/First Sunday.md', 'due', '2026-11-02')
     })
 
     it('Month, Monday first: the same Sunday goes to the Friday before it, on the grid\'s first row', () => {
@@ -606,6 +610,62 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     toggle(hideBox(el))
     expect(yaml()).not.toContain('hideWeekends')
     expect(weekdays(el)).toHaveLength(5)
+  })
+})
+
+describe('"Fold long days" On · Off (YAZ-5586)', () => {
+  const SPAN = `views:\n  - type: calendar\n    name: C\n    endDateProperty: note.end\n`
+  const many = [...RECORDS, ...['W', 'X', 'Y', 'Z'].map((n) => rec(`Span ${n}`, { due: '2026-12-14', end: '2026-12-16' }))]
+  const foldSeg = (el: ParentNode) => [...el.querySelectorAll<HTMLButtonElement>('.view-popover--properties [role="group"][aria-label="Fold long days"] button')]
+  const pressedFold = (el: ParentNode) => foldSeg(el).find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent
+  const openViewTab = (el: ParentNode) => {
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+  }
+
+  it('On by default: a busy day folds to "+N more" as before', () => {
+    const { el } = mount(CALENDAR)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C'])
+    expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('+2 more')
+  })
+
+  it('Off: every card and every bar shows, the row takes every lane, and no day has "+N more" or "Show less"', () => {
+    const { el } = mount(`${SPAN}    foldDays: false\n`, { records: many })
+    expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(4)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D', 'Busy E'])
+    expect(el.querySelector('.view-cal__grid .view-cal__more')).toBeNull()
+    const row = day(el, '2026-12-15').parentElement as HTMLElement
+    expect(row.style.gridTemplateRows).toBe('auto repeat(4, auto) 1fr')
+  })
+
+  it('Off leaves the "No date" tray its own fold', () => {
+    const undated = Array.from({ length: 25 }, (_, i) => rec(`Loose ${i}`, {}))
+    const { el } = mount(`${CALENDAR}    foldDays: false\n`, { records: [...RECORDS, ...undated] })
+    expect(q(q(el, '.view-cal__tray'), '.view-cal__more').textContent).toBe('+6 more')
+  })
+
+  it('the View tab writes foldDays: false for Off and removes the key for On; another view keeps its own', () => {
+    const TWO = `views:\n  - type: calendar\n    name: C\n  - type: calendar\n    name: D\n`
+    const { el, yaml } = mount(TWO)
+    openViewTab(el)
+    expect(foldSeg(el).map((b) => b.textContent)).toEqual(['On', 'Off'])
+    expect(pressedFold(el)).toBe('On')
+    click(foldSeg(el).find((b) => b.textContent === 'Off')!)
+    expect(yaml()).toMatch(/name: C\n\s+foldDays: false\n/)
+    expect(yaml().match(/foldDays/g)).toHaveLength(1)
+    expect(el.querySelector('.view-cal__grid .view-cal__more')).toBeNull()
+    click(foldSeg(el).find((b) => b.textContent === 'On')!)
+    expect(yaml()).not.toContain('foldDays')
+    expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('+2 more')
+  })
+
+  it('Off: a card dragged out of a busy day moves it, and the day it left still shows all the others', async () => {
+    const { el } = mount(`${CALENDAR}    foldDays: false\n`)
+    drag(cardOf(el, 'Busy E'), day(el, '2026-12-17'))
+    expect(write).toHaveBeenCalledWith('/vault/Busy E.md', 'due', '2026-12-17')
+    expect(titlesIn(day(el, '2026-12-17'))).toEqual(['Busy E'])
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D'])
+    await flush()
   })
 })
 
@@ -718,7 +778,7 @@ describe('"Cross out when" (YAZ-4864)', () => {
     return q<HTMLElement>(el, '.view-popover--properties [aria-label="Cross out when"]')
   }
 
-  it('a card whose note matches has its name struck through; the others do not', () => {
+  it('a card whose page matches has its name struck through; the others do not', () => {
     const { el } = mount(CROSS('note.done == true'), { records })
     expect(crossed(el)).toEqual(['Done task'])
     // The whole card is crossed out, its column lines too (YAZ-4864, demo request); a folder row's icon stays outside the name.
@@ -806,6 +866,16 @@ describe('cards over several days (YAZ-4858)', () => {
     }
   }
 
+  it('the bars follow the view\'s sort (YAZ-5603): a shorter bar that sorts first takes the top lane; no sort, the longer one does', () => {
+    const bars = [rec('Long', { due: '2026-12-14', end: '2026-12-17', order: 9 }), rec('Short', { due: '2026-12-14', end: '2026-12-15', order: 1 })]
+    const laneOf = (el: ParentNode, title: string) => barsOf(el, title)[0].style.gridRow
+    const sortedView = mount(`${SPAN}    sort:\n      - property: note.order\n        direction: ASC\n`, { records: bars })
+    expect([laneOf(sortedView.el, 'Short'), laneOf(sortedView.el, 'Long')]).toEqual(['2', '3'])
+    act(() => root?.unmount())
+    const plain = mount(SPAN, { records: bars })
+    expect([laneOf(plain.el, 'Long'), laneOf(plain.el, 'Short')]).toEqual(['2', '3'])
+  })
+
   it('a card that ends after its start is one bar over its days, in the week row, not in a day', () => {
     const { el } = mount(SPAN, { records })
     const [bar] = barsOf(el, 'Trip')
@@ -828,7 +898,7 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(pieces[1].querySelector('.view-cal__edge--start')).toBeNull()
   })
 
-  it('a note with an end and no start goes on its end day (item 5); with no End date chosen, every card is on its start', () => {
+  it('a page with an end and no start goes on its end day (item 5); with no End date chosen, every card is on its start', () => {
     const { el } = mount(SPAN, { records })
     expect(titlesIn(day(el, '2026-12-17'))).toEqual(['Ends only'])
     act(() => root?.unmount())
@@ -842,9 +912,10 @@ describe('cards over several days (YAZ-4858)', () => {
   it('Month: the bars on a day count in its 3 cards, and "+N more" counts the rest; Week shows them all', () => {
     const many = [...RECORDS, ...['W', 'X', 'Y', 'Z'].map((n) => rec(`Span ${n}`, { due: '2026-12-14', end: '2026-12-16' }))]
     const { el } = mount(SPAN, { records: many })
-    // Four bars over Dec 14–16 in four lanes: Month shows three, so Dec 15 shows no one-day card and "+6 more" (5 cards, 1 bar).
-    expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(3)
-    expect(titlesIn(day(el, '2026-12-15'))).toEqual([])
+    // Four bars over Dec 14–16 in four lanes: Month shows two (YAZ-5604 item 7), so Dec 15 shows one one-day card and
+    // "+6 more" (4 cards, 2 bars).
+    expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(2)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A'])
     expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('+6 more')
     click(q(day(el, '2026-12-15'), '.view-cal__more'))
     expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(4)
@@ -933,7 +1004,7 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(titlesIn(day(el, '2026-12-22'))).toEqual(['One day'])
   })
 
-  it('a read-only note has no edges', () => {
+  it('a read-only page has no edges', () => {
     const { el } = mount(SPAN, { records, readOnly: new Set(['/vault/Trip.md']) })
     expect(barsOf(el, 'Trip')[0].querySelector('.view-cal__edge')).toBeNull()
     expect(cardOf(el, 'Bare').querySelector('.view-cal__edge')).not.toBeNull()
@@ -1014,6 +1085,32 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(bucket.mock.calls.length - start).toBe(2)
     mouse(window, 'mouseup')
     at.mockRestore()
+  })
+
+  it('Card titles: Wrap wraps every bar piece too (YAZ-5600): Month, Week and Rolling, fold On and Off, a cut piece and a one-day-wide piece; Clip keeps one line and a tooltip', () => {
+    const LONG = 'A long trip title that will not fit on one line of its bar'
+    const long = [...records, rec(LONG, { due: '2026-12-12', end: '2026-12-15' })]
+    const isWrap = (b: HTMLElement) => b.classList.contains('view-cal__card--wrap')
+    for (const scale of ['', '    calendarScale: week\n', '    calendarScale: rolling\n'])
+      for (const fold of ['', '    foldDays: false\n']) {
+        const wrapped = mount(`${SPAN}${scale}${fold}    cardTitles: wrap\n`, { records: long })
+        if (scale.includes('week')) click(q(wrapped.el, '[aria-label="Next week"]'))
+        const bars = [...wrapped.el.querySelectorAll<HTMLElement>('.view-cal__bar')]
+        expect(bars.length).toBeGreaterThan(0)
+        for (const bar of bars) expect(isWrap(bar)).toBe(true)
+        // Sat 12 is a one-day-wide piece that ends at the week's edge; Sun 13–Tue 15 goes on in the next row.
+        if (!scale.includes('week')) expect(barsOf(wrapped.el, LONG).map((b) => b.dataset.barDays)).toEqual(['2026-12-12', '2026-12-13 2026-12-14 2026-12-15'])
+        for (const bar of barsOf(wrapped.el, LONG)) expect(q(bar, '.view-cal__card-title').getAttribute('title')).toBeNull()
+        act(() => root?.unmount())
+        container?.remove()
+        const clipped = mount(`${SPAN}${scale}${fold}`, { records: long })
+        if (scale.includes('week')) click(q(clipped.el, '[aria-label="Next week"]'))
+        for (const bar of clipped.el.querySelectorAll<HTMLElement>('.view-cal__bar')) expect(isWrap(bar)).toBe(false)
+        // The bar's own hover (YAZ-5604 item 8) names it and its days; its title span adds none of its own.
+        for (const bar of barsOf(clipped.el, LONG)) expect(bar.getAttribute('title')).toBe(`${LONG} · Dec 12 – Dec 15 · 4 days`)
+        act(() => root?.unmount())
+        container?.remove()
+      }
   })
 
   it('hide weekends: a bar over Saturday and Sunday alone is a one-day card on the Friday, marked Sat', () => {
@@ -1205,7 +1302,7 @@ describe("a card styled by hand (YAZ-4906): \"Card style ›\", the table's Head
     expect(attrs(el, 'Bare')).toEqual({ 'data-color': 'green', 'data-color-strength': 'medium' })
   })
 
-  it('⌘Z on a card writes the value the note had back, one step per pick; ⇧⌘Z the pick again', async () => {
+  it('⌘Z on a card writes the value the page had back, one step per pick; ⇧⌘Z the pick again', async () => {
     const { el } = mount(CALENDAR)
     openStyle(el, 'Bare')
     click(menuItem('Green'))
@@ -1222,7 +1319,7 @@ describe("a card styled by hand (YAZ-4906): \"Card style ›\", the table's Head
     expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', 'green')
   })
 
-  it('a stored style the app reads dresses the card; a crossed-out card keeps it; a value it cannot read gives none; a read-only note has no Card style item', () => {
+  it('a stored style the app reads dresses the card; a crossed-out card keeps it; a value it cannot read gives none; a read-only page has no Card style item', () => {
     const records = [rec('Tinted', { due: '2026-12-03', color: 'Purple strong', text_color: 'White', weight: 'Bold' }), rec('Odd', { due: '2026-12-03', color: 'turquoise', text_color: 'neon', weight: 'heavy' }), rec('Sealed', { due: '2026-12-04', color: 'red' })]
     const { el } = mount(`${CALENDAR}    crossOut:\n      and:\n        - note.weight == "Bold"\n`, { records, readOnly: new Set(['/vault/Sealed.md']) })
     expect(attrs(el, 'Tinted')).toEqual({ 'data-color': 'purple', 'data-color-strength': 'strong', 'data-text': 'white', 'data-weight': 'bold' })
@@ -1311,5 +1408,638 @@ describe('the day names\' header row (YAZ-4864 round 3): the Table view\'s heade
     expect(ruleOf('text', 'muted')?.body).toContain('--table-header-ink: initial')
     expect(ruleOf('align', 'follow')?.body).toContain('--table-header-align: initial')
     expect(ruleOf('color', 'blue')?.body).toContain('--table-header-hue: var(--table-fill-solid-blue)')
+  })
+})
+
+describe('calendar Rolling scale (YAZ-5588; round 3: it scrolls with the page)', () => {
+  const ROLLING = `${CALENDAR}    calendarScale: rolling\n`
+  const weeksIn = (el: ParentNode) => [...el.querySelectorAll<HTMLElement>('[data-week]')].map((r) => r.dataset.week)
+  const grid = (el: ParentNode) => q<HTMLElement>(el, '.view-cal__grid')
+  const title = (el: ParentNode) => q(el, '.view-cal__month').textContent
+  /** The tab's scroller, as `.editor-host`: the only box that scrolls. */
+  let page: HTMLElement
+  /**
+   * A laid-out folder page in a 600 px tall page scroller, moved up by ITS scrollTop: the calendar's bar 100 px down
+   * the page (36 px tall), the day names under it (30 px), then each week row 100 px tall. The bar sticks at the top
+   * and the day names under it, as views.css says, so a load above moves the rows by its own height unless the place
+   * rule holds them.
+   */
+  const box = (top: number, height: number) => ({ top, bottom: top + height, left: 0, right: 700, width: 700, height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+  beforeEach(() => {
+    page = document.createElement('div')
+    page.style.overflowY = 'auto'
+    document.body.appendChild(page)
+    Object.defineProperty(page, 'clientHeight', { value: 600, configurable: true })
+    Object.defineProperty(page, 'scrollHeight', { value: 100000, configurable: true })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const st = page.scrollTop
+      if (this === page) return box(0, 600)
+      if (this.classList.contains('view-cal__nav')) return box(Math.max(100 - st, 0), 36)
+      const g = this.closest<HTMLElement>('.view-cal__grid')
+      if (g === null) return box(0, 0)
+      const rows = [...g.querySelectorAll('[data-week]')]
+      if (this === g) return box(144 - st, 30 + rows.length * 100)
+      if (this.dataset.week !== undefined) return box(174 + rows.indexOf(this) * 100 - st, 100)
+      if (this.classList.contains('view-cal__week')) return box(Math.max(144 - st, 36), 30)
+      return box(0, 0)
+    })
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    page.remove()
+  })
+  /**
+   * Rolling has ends (YAZ-5609): 3 months before the first dated card and after the last. Two far cards put them at
+   * 23 Feb 2025 and 27 Feb 2028, far from this week, so the loads at each end show here; the ends' own tests are below.
+   */
+  const FAR = [...RECORDS, rec('Far past', { due: '2025-06-01' }), rec('Far future', { due: '2027-12-01' })]
+  const open = (text = ROLLING, records: IndexRecord[] = FAR) => mount(text, { records }, page)
+  /** The page scrolls (not the calendar): its scroll event is what Rolling hears. */
+  const scrollTo = (top: number) => {
+    page.scrollTop = top
+    fire(page, 'scroll')
+  }
+  const rowTop = (el: ParentNode, week: string) => q<HTMLElement>(el, `[data-week="${week}"]`).getBoundingClientRect().top
+  /** Scrolls the page down until the last row is half under the window's bottom (550…650), as a scroll down the page goes. */
+  const toBottom = (el: ParentNode) => scrollTo(174 + (weeksIn(el).length - 1) * 100 - 550)
+
+  // views.css's rules, read as text, against the real elements: the last value a rule that matches gives `prop`.
+  const cssRules = [...viewsCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ selector: sel.trim(), body }))
+  const cssOf = (node: Element, prop: string) =>
+    cssRules
+      .filter(({ selector, body }) => new RegExp(`(^|[;\\s])${prop}:`).test(body) && node.matches(selector))
+      .map(({ body }) => body.match(new RegExp(`(?:^|[;\\s])${prop}:([^;]+);`))![1]!.trim())
+      .at(-1)
+
+  it('the switch says Month · Week · Rolling and saves calendarScale: rolling for the view; Settings › Folder pages can open it', () => {
+    const { el, yaml } = mount(CALENDAR)
+    expect([...el.querySelectorAll('[aria-label="Calendar scale"] button')].map((b) => b.textContent)).toEqual(['Month', 'Week', 'Rolling'])
+    click(q(el, '[aria-label="Calendar scale"] [data-scale="rolling"]'))
+    expect(yaml()).toContain('calendarScale: rolling')
+    expect(grid(el).classList.contains('view-cal__grid--rolling')).toBe(true)
+    act(() => root?.unmount())
+    container?.remove()
+    const opened = mount(CALENDAR, { folderPages: { ...DEFAULT_FOLDER_PAGES, calendarScale: 'rolling' } })
+    expect(grid(opened.el).classList.contains('view-cal__grid--rolling')).toBe(true)
+    expect(opened.yaml()).not.toContain('calendarScale')
+  })
+
+  it('has no scroller of its own: neither the calendar nor its grid scrolls (one scroll bar, the page\'s), and the grid clips its corners without one', () => {
+    const { el } = open()
+    for (const node of [q(el, '.view-cal'), grid(el)]) expect(['auto', 'scroll', 'hidden', 'hidden auto', 'auto hidden', 'overlay']).not.toContain(cssOf(node, 'overflow') ?? 'visible')
+    expect(cssOf(grid(el), 'overflow')).toBe('clip')
+    expect(cssOf(grid(el), 'flex')).toBe('none')
+  })
+
+  it('the month bar sticks at the top of the page, and the day names right under it', () => {
+    const { el } = open()
+    const bar = q(el, '.view-cal__nav')
+    const names = grid(el).firstElementChild!
+    // Under the view's toolbar, which sticks too (YAZ-5609): `--cal-top` is its height, 0 without one.
+    expect([cssOf(bar, 'position'), cssOf(bar, 'top'), cssOf(bar, 'height')]).toEqual(['sticky', 'var(--cal-top, 0px)', 'var(--cal-bar-height)'])
+    expect([cssOf(names, 'position'), cssOf(names, 'top')]).toEqual(['sticky', 'calc(var(--cal-top, 0px) + var(--cal-bar-height))'])
+    expect(cssOf(q(el, '.view-cal'), '--cal-bar-height')).toBe('36px')
+  })
+
+  it('opens on this week where the page is: the page does not move, about 3 months (13 week rows) drawn, no other-month days, a 1st says its month', () => {
+    const { el } = open()
+    expect(page.scrollTop).toBe(0)
+    expect(weeksIn(el)).toHaveLength(13)
+    expect(weeksIn(el)[0]).toBe('2026-12-06')
+    expect(title(el)).toBe('December 2026')
+    expect(el.querySelectorAll('.view-cal__day--other')).toHaveLength(0)
+    expect(q(el, '[data-day="2027-01-01"] .view-cal__date').textContent).toBe('Jan 1')
+  })
+
+  it('the PAGE scroller moves it: a page scroll into the calendar loads 4 weeks above without a jump (the week at the top stays put)', () => {
+    const { el } = open()
+    // 150 px down: the day names stick at 36…66 and the 6 Dec row is half under them (24…124).
+    scrollTo(150)
+    expect(weeksIn(el)[0]).toBe('2026-11-08')
+    // The 6 rows in view and a step of 4 at each end: more than 13, so a load at one end never shows the other.
+    expect(weeksIn(el)).toHaveLength(14)
+    expect(rowTop(el, '2026-12-06')).toBe(24)
+    expect(page.scrollTop).toBe(550)
+  })
+
+  it('at the page\'s top nothing loads above (the calendar\'s top shows), so the title and tabs stay in reach', () => {
+    const { el } = open()
+    scrollTo(0)
+    scrollTo(60)
+    expect(weeksIn(el)[0]).toBe('2026-12-06')
+  })
+
+  it('weeks load at the bottom as the page nears the last row; not once the calendar\'s bottom shows (the "No date" tray in view)', () => {
+    const { el } = open()
+    // The last row straddles the window's bottom at 600.
+    toBottom(el)
+    expect(weeksIn(el)[0]).toBe('2027-01-03')
+    expect(weeksIn(el)).toHaveLength(14)
+    act(() => root?.unmount())
+    container?.remove()
+    const again = open()
+    // The calendar ends at 474: its bottom shows, so the page reaches what is under it.
+    scrollTo(1000)
+    expect(weeksIn(again.el)[0]).toBe('2026-12-06')
+  })
+
+  it('the DOM stays bounded: as many week rows as the window shows and a step at each end, however far the page scrolls up or down (to its ends)', () => {
+    const { el } = open()
+    for (let i = 0; i < 40; i++) scrollTo(150)
+    expect(weeksIn(el)).toHaveLength(14)
+    expect(weeksIn(el)[0]).toBe('2025-02-23')
+    expect(el.querySelectorAll('.view-cal__day')).toHaveLength(98)
+    for (let i = 0; i < 60; i++) toBottom(el)
+    expect(weeksIn(el)).toHaveLength(14)
+    expect(weeksIn(el).at(-1)).toBe('2028-02-27')
+    expect(el.querySelectorAll('.view-cal__day')).toHaveLength(98)
+  })
+
+  it('YAZ-5608: the title names the month that fills most of the window, not the week at the top', () => {
+    const { el } = open()
+    scrollTo(100)
+    expect(title(el)).toBe('December 2026')
+    // 400 px down: 8 px of the 20 Dec row under the day names, then 27 Dec – 2 Jan, then four weeks of January.
+    scrollTo(400)
+    expect(weeksIn(el).find((w) => rowTop(el, w!) + 100 > 66)).toBe('2026-12-20')
+    expect(title(el)).toBe('January 2027')
+  })
+
+  describe('YAZ-5609: Rolling has ends, and the view toolbar stays in view', () => {
+    it('it loads from 3 months before the first dated card to 3 months after the last, and no further either way', () => {
+      // The cards are on 3 to 15 Dec 2026: from 3 Sep (its week, 30 Aug) to 15 Mar 2027 (its week, 14 Mar).
+      const { el } = open(ROLLING, RECORDS)
+      for (let i = 0; i < 20; i++) scrollTo(150)
+      expect(weeksIn(el)[0]).toBe('2026-08-30')
+      // At the first week nothing more loads: the page scrolls on to the title and the tabs above.
+      const at = page.scrollTop
+      scrollTo(150)
+      expect(weeksIn(el)[0]).toBe('2026-08-30')
+      expect(page.scrollTop).toBe(150)
+      expect(at).toBeGreaterThan(0)
+      for (let i = 0; i < 20; i++) toBottom(el)
+      expect(weeksIn(el).at(-1)).toBe('2027-03-14')
+      const rows = weeksIn(el)
+      toBottom(el)
+      expect(weeksIn(el)).toEqual(rows)
+    })
+
+    it('with no dated card shown (a filter hides them): 12 months either side of today', () => {
+      const { el } = open(`${ROLLING}    filters:\n      and:\n        - file.name == "Nothing"\n`, RECORDS)
+      expect(titlesIn(q(el, '.view-cal__grid'))).toEqual([])
+      for (let i = 0; i < 40; i++) scrollTo(150)
+      expect(weeksIn(el)[0]).toBe('2025-12-07')
+      for (let i = 0; i < 40; i++) toBottom(el)
+      expect(weeksIn(el).at(-1)).toBe('2027-12-05')
+    })
+
+    it('today is always in: cards only long ago still reach this week; Today and ‹ › never go past an end', () => {
+      // 3 months before 3 Jun 2025 is Mon 3 Mar (its week, 2 Mar); 3 months after is long before today.
+      const { el } = open(ROLLING, [rec('Old', { due: '2025-06-03' })])
+      for (let i = 0; i < 40; i++) toBottom(el)
+      expect(weeksIn(el).at(-1)).toBe('2026-12-06')
+      click(q(el, '[aria-label="Today"]'))
+      expect(weeksIn(el)).toContain('2026-12-06')
+      click(q(el, '[aria-label="Next week"]'))
+      click(q(el, '[aria-label="Next week"]'))
+      expect(weeksIn(el).at(-1)).toBe('2026-12-06')
+      expect(title(el)).toBe('December 2026')
+      for (let i = 0; i < 30; i++) scrollTo(150)
+      expect(weeksIn(el)[0]).toBe('2025-03-02')
+    })
+
+    it('Month and Week open at the month in view, never a far-off one', () => {
+      const { el } = open()
+      scrollTo(400)
+      expect(title(el)).toBe('January 2027')
+      click(q(el, '[aria-label="Calendar scale"] [data-scale="month"]'))
+      expect(title(el)).toBe('January 2027')
+      expect(el.querySelector('[data-day="2027-01-15"]')).not.toBeNull()
+      click(q(el, '[aria-label="Calendar scale"] [data-scale="week"]'))
+      expect(el.querySelector('[data-day="2027-01-01"]')).not.toBeNull()
+    })
+
+    it('the view toolbar (view tabs, sort, filter, settings, + New, count) sticks at the top with the month bar and day names; not in Month', () => {
+      const { el } = open()
+      const bar = q(el, '.views-pane > .view-toolbar')
+      expect([cssOf(bar, 'position'), cssOf(bar, 'top')]).toEqual(['sticky', '0'])
+      expect(Number(cssOf(bar, 'z-index'))).toBeGreaterThan(Number(cssOf(q(el, '.view-cal__nav'), 'z-index')))
+      expect(cssOf(bar, 'background')).toBe('var(--bg)')
+      act(() => root?.unmount())
+      container?.remove()
+      const month = mount(CALENDAR)
+      expect(cssOf(q(month.el, '.views-pane > .view-toolbar'), 'position')).toBeUndefined()
+    })
+
+    it('a jump puts its week under the toolbar too: the bar sticks at the toolbar\'s height, and Today scrolls the week under the toolbar, the bar and the day names', () => {
+      const laid = vi.mocked(HTMLElement.prototype.getBoundingClientRect).getMockImplementation()!
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('view-toolbar') ? box(0, 40) : laid.call(this)
+      })
+      const { el } = open()
+      expect(q<HTMLElement>(el, '.view-cal').style.getPropertyValue('--cal-top')).toBe('40px')
+      for (let i = 0; i < 10; i++) scrollTo(150)
+      click(q(el, '[aria-label="Today"]'))
+      expect(rowTop(el, '2026-12-06')).toBe(40 + 36 + 30)
+    })
+  })
+
+  it('Hide weekends: five days a row, still this week first', () => {
+    const { el } = open(`${ROLLING}    hideWeekends: true\n`)
+    expect(el.querySelectorAll('[data-week="2026-12-06"] .view-cal__day')).toHaveLength(5)
+    expect(weeksIn(el)[0]).toBe('2026-12-06')
+  })
+
+  it('Today scrolls the page back to this week, under the bar and the day names; ‹ › put the week before or after there', () => {
+    const { el } = open()
+    for (let i = 0; i < 10; i++) scrollTo(150)
+    expect(weeksIn(el)).not.toContain('2026-12-06')
+    click(q(el, '[aria-label="Today"]'))
+    expect(rowTop(el, '2026-12-06')).toBe(66)
+    expect(weeksIn(el)[0]).toBe('2026-11-08')
+    expect(title(el)).toBe('December 2026')
+    click(q(el, '[aria-label="Next week"]'))
+    expect(rowTop(el, '2026-12-13')).toBe(66)
+    click(q(el, '[aria-label="Previous week"]'))
+    click(q(el, '[aria-label="Previous week"]'))
+    expect(rowTop(el, '2026-11-29')).toBe(66)
+    expect(title(el)).toBe('December 2026')
+  })
+
+  it('a card drags to a day of another week; a drag held near the window\'s bottom scrolls the page', () => {
+    let frame: FrameRequestCallback | null = null
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frame = cb
+      return 1
+    })
+    const { el } = open()
+    drag(cardOf(el, 'Busy A'), day(el, '2026-12-23'))
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Busy A.md', 'due', '2026-12-23')
+    fire(cardOf(el, 'Busy B'), 'dragstart')
+    act(() => void day(el, '2026-12-20').dispatchEvent(new MouseEvent('dragover', { bubbles: true, cancelable: true, clientY: 595 })))
+    expect(frame).not.toBeNull()
+    act(() => frame!(performance.now()))
+    expect(page.scrollTop).toBeGreaterThan(0)
+    expect(grid(el).scrollTop).toBe(0)
+    fire(day(el, '2026-12-20'), 'drop')
+    expect(write).toHaveBeenLastCalledWith('/vault/Busy B.md', 'due', '2026-12-20')
+  })
+
+  it('YAZ-5604 item 4: a stretch held near the window\'s bottom scrolls the page as a card drag does, and the day under the still pointer follows the scroll', () => {
+    let frame: FrameRequestCallback | null = null
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frame = cb
+      return 1
+    })
+    const { el } = open(`${ROLLING}    endDateProperty: note.end\n`)
+    const at = vi.spyOn(document, 'elementFromPoint').mockReturnValue(day(el, '2026-12-20'))
+    act(() => void q(cardOf(el, 'Busy A'), '.view-cal__edge--end').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })))
+    draw()
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 1, clientY: 595 })))
+    draw()
+    expect(frame).not.toBeNull()
+    // The page scrolls; the pointer does not move, so the day under it is the scroll's.
+    at.mockReturnValue(day(el, '2026-12-27'))
+    act(() => frame!(performance.now()))
+    draw()
+    expect(page.scrollTop).toBeGreaterThan(0)
+    fire(page, 'scroll')
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 })))
+    draw()
+    at.mockRestore()
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Busy A.md', 'end', '2026-12-27')
+  })
+})
+
+describe('a week row is the same in Month and Rolling, and grows to its tallest day (YAZ-5588 round 2)', () => {
+  const ROLLING = `${CALENDAR}    calendarScale: rolling\n`
+  const WEEK = '2026-12-13'
+  const rowOf = (el: ParentNode, d: string) => day(el, d).parentElement as HTMLElement
+  const rows = (text: string) => {
+    const { el } = mount(text)
+    const html = rowOf(el, '2026-12-15').innerHTML
+    const style = rowOf(el, '2026-12-15').style.gridTemplateRows
+    act(() => root?.unmount())
+    container?.remove()
+    return { html, style }
+  }
+
+  it('Fold long days On: Rolling folds a busy day to "+N more" and opens it with Show less, as Month', () => {
+    const { el } = mount(ROLLING)
+    expect(rowOf(el, '2026-12-15').dataset.week).toBe(WEEK)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C'])
+    click(q(day(el, '2026-12-15'), '.view-cal__more'))
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D', 'Busy E'])
+    expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('Show less')
+  })
+
+  it('Fold long days Off: Rolling shows every card of the day, no "+N more"', () => {
+    const { el } = mount(`${ROLLING}    foldDays: false\n`)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D', 'Busy E'])
+    expect(el.querySelector('.view-cal__grid .view-cal__more')).toBeNull()
+  })
+
+  it('one week-row renderer: the same week draws the same row in Month and Rolling, fold On or Off, clip or wrap', () => {
+    for (const extra of ['', '    foldDays: false\n', '    cardTitles: wrap\n', '    foldDays: false\n    cardTitles: wrap\n']) {
+      const month = rows(`${CALENDAR}${extra}`)
+      // Rolling's own month shade (YAZ-5608) off: the row is otherwise the same.
+      const rolling = rows(`${ROLLING}    monthShade: false\n${extra}`)
+      expect(rolling).toEqual(month)
+    }
+  })
+
+  // views.css's rules, read as text, against the real elements: the last rule that sets `flex` on it.
+  const cssRules = [...viewsCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ selector: sel.trim(), body }))
+  const flexOf = (node: Element) => cssRules.filter(({ selector, body }) => /(^|[;\s])flex:/.test(body) && node.matches(selector)).map(({ body }) => body.match(/(?:^|[;\s])flex:([^;]+);/)![1]!.trim()).at(-1)
+
+  it('a week row never shrinks below its cards (a squeezed row spilled them into the next week): Month and Rolling, fold Off, wrap', () => {
+    for (const text of [CALENDAR, ROLLING, `${CALENDAR}    foldDays: false\n    cardTitles: wrap\n`, `${ROLLING}    foldDays: false\n    cardTitles: wrap\n`]) {
+      const { el } = mount(text)
+      const weekRows = [...el.querySelectorAll('.view-cal__week')]
+      expect(weekRows.length).toBeGreaterThan(4)
+      for (const row of weekRows) expect(flexOf(row)).toBe('none')
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
+
+  it('Month\'s grid never shrinks either, nor Rolling\'s (round 3: the page scrolls both)', () => {
+    const month = mount(CALENDAR)
+    expect(flexOf(q(month.el, '.view-cal__grid'))).toBe('none')
+    act(() => root?.unmount())
+    container?.remove()
+    const rolling = mount(ROLLING)
+    expect(flexOf(q(rolling.el, '.view-cal__grid'))).toBe('none')
+  })
+
+  it('a row\'s height is its content: its lanes and its cards row are auto, no fixed height, with fold Off and wrap', () => {
+    const { el } = mount(`${ROLLING}    foldDays: false\n    cardTitles: wrap\n`)
+    for (const row of el.querySelectorAll<HTMLElement>('.view-cal__week--days')) {
+      expect(row.style.height).toBe('')
+      expect(row.style.gridTemplateRows).toMatch(/^auto( repeat\(\d+, auto\))? 1fr$/)
+    }
+    expect(cardOf(el, 'Busy E').classList.contains('view-cal__card--wrap')).toBe(true)
+  })
+})
+
+describe('the calendar audit (YAZ-5604)', () => {
+  const SPAN = `views:\n  - type: calendar\n    name: C\n    endDateProperty: note.end\n`
+  const mondayFirst = { folderPages: { ...DEFAULT_FOLDER_PAGES, weekStartsOn: 'monday' as const } }
+  const barsOf = (el: ParentNode, title: string) => [...el.querySelectorAll<HTMLElement>('.view-cal__bar')].filter((b) => b.querySelector('.view-cal__card-name')?.textContent === title)
+  const title = (el: ParentNode) => q(el, '.view-cal__month').textContent
+  const isToday = (el: ParentNode, key: string) => day(el, key).classList.contains('view-cal__day--today')
+
+  describe('item 1: the today ring moves at midnight', () => {
+    beforeEach(() => {
+      vi.useRealTimers()
+      vi.useFakeTimers()
+    })
+
+    it('with no click, the ring goes to the new day at midnight', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 23, 59))
+      const { el } = mount(CALENDAR)
+      expect(isToday(el, '2026-12-10')).toBe(true)
+      act(() => void vi.advanceTimersByTime(2 * 60_000))
+      expect(isToday(el, '2026-12-11')).toBe(true)
+      expect(isToday(el, '2026-12-10')).toBe(false)
+      expect(el.querySelectorAll('.view-cal__day--today')).toHaveLength(1)
+    })
+
+    it('a window that comes back after a sleep (no timer ran) moves the ring on focus and on visibility', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 12, 0))
+      const { el } = mount(CALENDAR)
+      // A sleep: the clock jumps two days and no timer fires.
+      vi.setSystemTime(new Date(2026, 11, 12, 8, 0))
+      act(() => void window.dispatchEvent(new Event('focus')))
+      expect(isToday(el, '2026-12-12')).toBe(true)
+      vi.setSystemTime(new Date(2026, 11, 13, 8, 0))
+      act(() => void document.dispatchEvent(new Event('visibilitychange')))
+      expect(isToday(el, '2026-12-13')).toBe(true)
+    })
+  })
+
+  it('item 2: with Hide weekends, a Saturday card shown on its Friday drops on that Friday and moves there', () => {
+    const records = [...RECORDS, rec('Saturday job', { due: '2026-12-05' }), rec('Sunday trip', { due: '2026-12-06', end: '2026-12-07' })]
+    const { el } = mount(`${CALENDAR}    hideWeekends: true\n`, { records, ...mondayFirst })
+    expect(titlesIn(day(el, '2026-12-04'))).toContain('Saturday job')
+    drag(cardOf(el, 'Saturday job'), day(el, '2026-12-04'))
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Saturday job.md', 'due', '2026-12-04')
+    // A card on its own shown day still writes nothing on a drop there.
+    write.mockClear()
+    drag(cardOf(el, 'Bare'), day(el, '2026-12-03'))
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  describe('item 7: Fold long days On keeps room for the one-day cards', () => {
+    it('Month: bars take at most 2 lanes; the third bar and up go into "+N more", and the day shows its one-day card', () => {
+      const bars = ['L1', 'L2', 'L3'].map((n) => rec(`Bar ${n}`, { due: '2026-12-14', end: '2026-12-18' }))
+      const { el } = mount(SPAN, { records: [...RECORDS, ...bars, rec('Daily log', { due: '2026-12-16' })] })
+      expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(2)
+      expect(titlesIn(day(el, '2026-12-16'))).toEqual(['Daily log'])
+      expect(q(day(el, '2026-12-16'), '.view-cal__more').textContent).toBe('+1 more')
+      const row = day(el, '2026-12-16').parentElement as HTMLElement
+      expect(row.style.gridTemplateRows).toBe('auto repeat(2, auto) 1fr')
+      // "+1 more" opens the day: every bar shows.
+      click(q(day(el, '2026-12-16'), '.view-cal__more'))
+      expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(3)
+    })
+
+    it('Off still shows every bar (no cap)', () => {
+      const bars = ['L1', 'L2', 'L3'].map((n) => rec(`Bar ${n}`, { due: '2026-12-14', end: '2026-12-18' }))
+      const { el } = mount(`${SPAN}    foldDays: false\n`, { records: [...RECORDS, ...bars] })
+      expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(3)
+    })
+  })
+
+  it('item 8: a bar\'s hover says its days, the whole span on each piece', () => {
+    const { el } = mount(SPAN, { records: [...RECORDS, rec('Trip', { due: '2026-12-12 09:00', end: '2026-12-15' })] })
+    const pieces = barsOf(el, 'Trip')
+    expect(pieces).toHaveLength(2)
+    for (const piece of pieces) expect(piece.getAttribute('title')).toBe('Trip · Dec 12 – Dec 15 · 4 days')
+    // A one-day card keeps its own tooltip (the title alone).
+    expect(cardOf(el, 'Bare').getAttribute('title')).toBeNull()
+  })
+
+  describe('item 13: hold a card or a stretch over ‹ or › to turn the month or the week', () => {
+    beforeEach(() => {
+      vi.useRealTimers()
+      vi.useFakeTimers()
+    })
+    const hold = (el: Element) => {
+      act(() => void el.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true })))
+      draw()
+    }
+
+    it('Month: a card held over › turns to the next month, and it drops on a day there', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 12, 0))
+      const { el } = mount(CALENDAR)
+      fire(cardOf(el, 'Busy A'), 'dragstart')
+      hold(q(el, '[aria-label="Next month"]'))
+      expect(title(el)).toBe('December 2026')
+      act(() => void vi.advanceTimersByTime(800))
+      expect(title(el)).toBe('January 2027')
+      // Still held: it turns on again.
+      act(() => void vi.advanceTimersByTime(800))
+      expect(title(el)).toBe('February 2027')
+      // Off the button, it stops.
+      fire(q(el, '[aria-label="Next month"]'), 'dragleave')
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(title(el)).toBe('February 2027')
+      hold(q(el, '[aria-label="Previous month"]'))
+      act(() => void vi.advanceTimersByTime(800))
+      expect(title(el)).toBe('January 2027')
+      fire(q(el, '[aria-label="Previous month"]'), 'dragleave')
+      // The card left the grid with December; its drag goes on, and the drop on a January day writes it.
+      fire(day(el, '2027-01-20'), 'dragover')
+      fire(day(el, '2027-01-20'), 'drop')
+      expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Busy A.md', 'due', '2027-01-20')
+    })
+
+    it('a pass over › that does not stay turns nothing; with no drag, nothing turns', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 12, 0))
+      const { el } = mount(CALENDAR)
+      hold(q(el, '[aria-label="Next month"]'))
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(title(el)).toBe('December 2026')
+      fire(cardOf(el, 'Busy A'), 'dragstart')
+      hold(q(el, '[aria-label="Next month"]'))
+      act(() => void vi.advanceTimersByTime(300))
+      fire(q(el, '[aria-label="Next month"]'), 'dragleave')
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(title(el)).toBe('December 2026')
+    })
+
+    it('Week: a stretch held over › turns to the next week, and the release writes the day there', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 12, 0))
+      const { el } = mount(`${SPAN}    calendarScale: week\n`, { records: [...RECORDS, rec('Thu job', { due: '2026-12-10' })] })
+      const at = vi.spyOn(document, 'elementFromPoint')
+      const mouse = (target: EventTarget, type: string) => {
+        act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 1, clientY: 1 })))
+        draw()
+      }
+      mouse(q(cardOf(el, 'Thu job'), '.view-cal__edge--end'), 'mousedown')
+      at.mockReturnValue(q(el, '[aria-label="Next week"]'))
+      mouse(window, 'mousemove')
+      act(() => void vi.advanceTimersByTime(800))
+      expect(day(el, '2026-12-16')).not.toBeNull()
+      at.mockReturnValue(day(el, '2026-12-16'))
+      mouse(window, 'mousemove')
+      expect(barsOf(el, 'Thu job')[0].dataset.barDays).toBe('2026-12-13 2026-12-14 2026-12-15 2026-12-16')
+      mouse(window, 'mouseup')
+      at.mockRestore()
+      expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Thu job.md', 'end', '2026-12-16')
+    })
+  })
+})
+
+describe('tell months apart (YAZ-5608): Shade every other month, and a line Between months', () => {
+  const ROLLING = `${CALENDAR}    calendarScale: rolling\n`
+  const shaded = (el: ParentNode) => [...el.querySelectorAll<HTMLElement>('.view-cal__day--shade')].map((d) => d.dataset.day)
+  const edges = (el: ParentNode, key: string) => {
+    const c = day(el, key).classList
+    return [c.contains('view-cal__day--month-top') && 'top', c.contains('view-cal__day--month-left') && 'left'].filter(Boolean)
+  }
+  const openView = (el: ParentNode) => {
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+  }
+  const seg = (el: ParentNode, label: string) => [...el.querySelectorAll<HTMLButtonElement>(`.view-popover--properties [role="group"][aria-label="${label}"] button`)]
+  const trigger = (el: ParentNode, label: string) => q<HTMLButtonElement>(el, `.view-popover--properties [aria-label="${label}"]`)
+  const pickIn = (el: ParentNode, label: string, text: string) => {
+    if (trigger(el, label).getAttribute('aria-expanded') !== 'true') click(trigger(el, label))
+    const panel = q<HTMLElement>(document.body, `.cal-line__panel[aria-label="${label}"]`)
+    click(panel.querySelector(`button[aria-label="${text}"]`) ?? byText(panel, 'button', text))
+  }
+
+  it('Rolling shades every other month by default: December, not January; the 1st says its month in the accent colour', () => {
+    const { el } = mount(ROLLING)
+    const days = shaded(el)
+    expect(days.length).toBeGreaterThan(0)
+    expect(days.every((d) => d!.startsWith('2026-12') || d!.startsWith('2027-02'))).toBe(true)
+    expect(days).toContain('2026-12-31')
+    expect(days).not.toContain('2027-01-01')
+    expect(q(day(el, '2027-01-01'), '.view-cal__date-month').textContent).toBe('Jan')
+    expect(q(day(el, '2027-01-01'), '.view-cal__date').textContent).toBe('Jan 1')
+  })
+
+  it('Off shades nothing; Month and Week never shade (Month keeps its grey other-month days)', () => {
+    expect(shaded(mount(`${ROLLING}    monthShade: false\n`).el)).toEqual([])
+    act(() => root?.unmount())
+    container?.remove()
+    const month = mount(CALENDAR)
+    expect(shaded(month.el)).toEqual([])
+    expect(month.el.querySelectorAll('.view-cal__day--other').length).toBeGreaterThan(0)
+    // Every scale says a month's 1st: Month's own "Dec 1" and the next month's "Jan 1".
+    expect(q(day(month.el, '2026-12-01'), '.view-cal__date').textContent).toBe('Dec 1')
+    expect(q(day(month.el, '2027-01-01'), '.view-cal__date-month').textContent).toBe('Jan')
+  })
+
+  it('Between months is Off by default: no edge and no width on the grid', () => {
+    const { el } = mount(ROLLING)
+    expect(el.querySelector('.view-cal__day--month-top, .view-cal__day--month-left')).toBeNull()
+    expect(q<HTMLElement>(el, '.view-cal__grid').style.getPropertyValue('--cal-month-line')).toBe('')
+  })
+
+  it('Rolling: a stepped line round January (Fri 1 Jan 2027): the top of 1–2 Jan, the left of 1 Jan, the top of 3–7 Jan', () => {
+    const { el } = mount(`${ROLLING}    monthLine: 3\n    monthLineColor: red\n`)
+    const g = q<HTMLElement>(el, '.view-cal__grid')
+    expect(g.style.getPropertyValue('--cal-month-line')).toBe('3px')
+    expect(g.style.getPropertyValue('--cal-month-line-color')).toContain('--table-fill-solid-red')
+    expect(edges(el, '2026-12-31')).toEqual([])
+    expect(edges(el, '2027-01-01')).toEqual(['top', 'left'])
+    expect(edges(el, '2027-01-02')).toEqual(['top'])
+    for (const d of ['2027-01-03', '2027-01-04', '2027-01-05', '2027-01-06', '2027-01-07']) expect(edges(el, d)).toEqual(['top'])
+    expect(edges(el, '2027-01-08')).toEqual([])
+    expect(edges(el, '2027-01-15')).toEqual([])
+  })
+
+  it('Month: the edge between the month and the greyed days of the months either side; none on the first row (no week above it there); Week: none', () => {
+    const { el } = mount(`${CALENDAR}    monthLine: 2\n`)
+    // December 2026 starts on a Tuesday: 29 and 30 Nov before it on the first row.
+    expect(edges(el, '2026-11-30')).toEqual([])
+    expect(edges(el, '2026-12-01')).toEqual(['left'])
+    expect(edges(el, '2026-12-02')).toEqual([])
+    expect(edges(el, '2026-12-06')).toEqual(['top'])
+    expect(edges(el, '2026-12-07')).toEqual(['top'])
+    expect(edges(el, '2026-12-08')).toEqual([])
+    expect(edges(el, '2027-01-01')).toEqual(['top', 'left'])
+    act(() => root?.unmount())
+    container?.remove()
+    const week = mount(`${CALENDAR}    calendarScale: week\n    monthLine: 2\n`)
+    expect(week.el.querySelector('.view-cal__day--month-top, .view-cal__day--month-left')).toBeNull()
+  })
+
+  it('Hide weekends: the left neighbour is the shown day before (Mon 1 Feb 2027 is the first column: no left line)', () => {
+    const { el } = mount(`${ROLLING}    hideWeekends: true\n    monthLine: 2\n`)
+    expect(edges(el, '2027-01-01')).toEqual(['top', 'left'])
+    expect(edges(el, '2027-02-01')).toEqual(['top'])
+  })
+
+  it('the line draws over the grid lines, so nothing moves: an absolute pseudo-element on the day, no border or margin', () => {
+    const rules = [...viewsCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{([^{}]*)\}/g)].filter(([, sel]) => sel.includes('--month-'))
+    expect(rules.length).toBeGreaterThan(0)
+    for (const [, , body] of rules) expect(body).not.toMatch(/(^|[;\s])(border|margin|padding)[\w-]*:/)
+    expect(rules.some(([, , body]) => /position:\s*absolute/.test(body))).toBe(true)
+  })
+
+  it('the View tab › Lines: Shade every other month On · Off writes monthShade: false; Between months Off · px · colour writes monthLine and monthLineColor, Off removes both', () => {
+    const { el, yaml } = mount(ROLLING)
+    openView(el)
+    expect(seg(el, 'Shade every other month').map((b) => b.textContent)).toEqual(['On', 'Off'])
+    click(seg(el, 'Shade every other month').find((b) => b.textContent === 'Off')!)
+    expect(yaml()).toContain('monthShade: false')
+    expect(shaded(el)).toEqual([])
+    click(seg(el, 'Shade every other month').find((b) => b.textContent === 'On')!)
+    expect(yaml()).not.toContain('monthShade')
+    expect(trigger(el, 'Between months thickness').textContent).toBe('Off')
+    expect(el.querySelector('.view-popover--properties [aria-label="Between months colour"]')).toBeNull()
+    pickIn(el, 'Between months thickness', '2 px')
+    expect(yaml()).toContain('monthLine: 2')
+    expect(edges(el, '2027-01-01')).toEqual(['top', 'left'])
+    pickIn(el, 'Between months colour', 'Green')
+    expect(yaml()).toContain('monthLineColor: green')
+    pickIn(el, 'Between months thickness', 'Off')
+    expect(yaml()).not.toContain('monthLine')
+    expect(el.querySelector('.view-cal__day--month-top')).toBeNull()
   })
 })

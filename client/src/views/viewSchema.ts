@@ -1,6 +1,7 @@
 import { type Document, isMap, parseDocument } from 'yaml'
 import { isRecord } from '@shared/guards'
 import { headerRowOwn, type HeaderRowOwn } from '@shared/types'
+import type { CardTable } from './cardView'
 
 /**
  * The Obsidian Bases view-schema model — the shape a folder's `views` block round-trips
@@ -61,7 +62,7 @@ export interface ViewDef {
   columnTypeIcons?: boolean
   /** "Folder icon" (YAZ-4848): a subfolder's row shows the folder icon. Absent = Settings › Folder pages (on). */
   folderIcons?: boolean
-  /** "Notes inside count" (YAZ-4848): a subfolder's row shows "N inside". Absent = Settings › Folder pages (off). */
+  /** "Pages inside count" (YAZ-4848): a subfolder's row shows "N inside". Absent = Settings › Folder pages (off). */
   folderCounts?: boolean
   /** The header row's own parts (YAZ-4774): color, strength, weight, text. An absent part = Settings › Tables › Header row. */
   headerRow?: HeaderRowOwn
@@ -78,7 +79,7 @@ export interface ViewDef {
   groupLineStyle?: 'plain' | 'thread'
   /**
    * The Folder column (YAZ-4801): absent, the path from this page, the page first; `full` the path from the vault's top;
-   * `last` only the note's own folder.
+   * `last` only the page's own folder.
    */
   folderColumn?: 'last' | 'full'
   image?: string
@@ -90,16 +91,20 @@ export interface ViewDef {
   propertySeparator?: string
   /** Board card styling (YAZ-1206, reshaped by YAZ-1217): per canonical property key — bold/underline the value's row, hide its label, or `join` it onto the row being built instead of starting a new one. */
   cardStyle?: Record<string, { bold?: boolean; underline?: boolean; hideLabel?: boolean; join?: boolean }>
-  /** A calendar's "Start date", once "Show by" (YAZ-4540 D4): the canonical date column it places notes on. Absent = the first date column. */
+  /** A calendar's "Start date", once "Show by" (YAZ-4540 D4): the canonical date column it places pages on. Absent = the first date column. */
   dateProperty?: string
   /** A calendar's "End date" (YAZ-4858): the canonical date column a card ends on; a later end makes it a bar over its days. Absent = none. */
   endDateProperty?: string
-  /** A calendar's scale (YAZ-4558 D22): `week` = 7 tall day columns. Absent = month. */
-  calendarScale?: 'month' | 'week'
+  /** A calendar's scale (YAZ-4558 D22): `week` = 7 tall day columns; `rolling` (YAZ-5588) = week rows that scroll with no month breaks. Absent = month. */
+  calendarScale?: 'month' | 'week' | 'rolling'
   /** A calendar's card titles (YAZ-4558 D23): `wrap` = the full title on more lines. Absent = clip, one line with "…". */
   cardTitles?: 'clip' | 'wrap'
+  /** A Calendar's or Board's "Clicking a card opens" (YAZ-5582): a plain click's `window` or `background` tab. Absent = Same as Settings. */
+  clickOpens?: 'window' | 'background'
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. Absent = the Settings › Folder pages default. */
   hideWeekends?: boolean
+  /** A calendar's "Fold long days" (YAZ-5586): `false` = Month shows every card and bar of each day, no "+N more". Absent = On. */
+  foldDays?: boolean
   /** A calendar's line between weeks (YAZ-4878): whole px, 1–12. Absent = the Settings › Folder pages default. */
   weekLine?: number
   /** A calendar's line between days (YAZ-4878): whole px, 1–12. Absent = the Settings › Folder pages default. */
@@ -107,31 +112,49 @@ export interface ViewDef {
   /** The lines' colours (YAZ-4878): `gray` / `blue light` (`readColorStrength`). Absent = the Settings › Folder pages default (Gray, Medium). */
   weekLineColor?: string
   dayLineColor?: string
-  /** A calendar's "Cross out when" (YAZ-4864): the Filter menu's conditions; a card whose note matches is crossed out whole, its columns too. Absent = none. */
+  /** A calendar's "Shade every other month" (YAZ-5608): `false` = Off. Absent = On (Rolling shades every second month). */
+  monthShade?: boolean
+  /** A calendar's line "Between months" (YAZ-5608): whole px, 1–12, a stepped line round each month. Absent = Off. */
+  monthLine?: number
+  /** Its colour (`readColorStrength`, as `weekLineColor`). Absent = Blue, Medium. */
+  monthLineColor?: string
+  /** A calendar's "Cross out when" (YAZ-4864): the Filter menu's conditions; a card whose page matches is crossed out whole, its columns too. Absent = none. */
   crossOut?: FilterNode
   /**
    * "Subfolders" (YAZ-4579 D30, replacing YAZ-4564 D25's boolean): `rows` = a row per direct subfolder plus the
-   * folder's own notes and shortcuts; `both` = the subfolder rows plus every note below; `hide` = the own notes
-   * and shortcuts alone. Absent = "Their notes", every note below and no subfolder row. A stored `false` reads as `hide`.
-   * `notes` is written only where Settings › Folder pages says otherwise (YAZ-4585): absent then follows Settings.
+   * folder's own pages and shortcuts; `both` = the subfolder rows plus every page below; `hide` = the own pages
+   * and shortcuts alone. Absent = "Their pages", every page below and no subfolder row. A stored `false` reads as `hide`.
+   * `pages` is written only where Settings › Folder pages says otherwise (YAZ-4585): absent then follows Settings.
    */
-  subfolders?: 'notes' | 'rows' | 'both' | 'hide' | false
-  /** "Folders first" (YAZ-4579 D33): `false` = the subfolder rows sort among the notes. Absent = folder rows first. */
+  subfolders?: 'pages' | 'rows' | 'both' | 'hide' | false
+  /** "Folders first" (YAZ-4579 D33): `false` = the subfolder rows sort among the pages. Absent = folder rows first. */
   foldersFirst?: boolean
+  /**
+   * "Show cards as rows" (YAZ-5319): `cards` lists one row per card under the folder (`cardRows.ts`), no page. On the
+   * view, so a Board or a Calendar can read it later; a Table reads it now. Absent = pages. Read only while the vault
+   * has Cards and IDs on.
+   */
+  rows?: 'pages' | 'cards'
+  /**
+   * The view's table of cards (YAZ-5349 follow-up, `cardView.ts`): while it lists cards, its columns, their types and
+   * labels, sorts, filters, groups, widths … are these, and its own keys above are its pages' table, untouched.
+   * A YAZ-5319 view's `cardOrder` reads as this table's `order` until the next write moves it here.
+   */
+  cardView?: CardTable
   [extra: string]: unknown
 }
 
-/** A view's "Subfolders" switch (YAZ-4579 D30): `notes` (absent, or a value the app does not know) is "Their notes". */
-export type SubfoldersMode = 'notes' | 'rows' | 'both' | 'hide'
+/** A view's "Subfolders" switch (YAZ-4579 D30): `pages` (absent, or a value the app does not know) is "Their pages". */
+export type SubfoldersMode = 'pages' | 'rows' | 'both' | 'hide'
 
 export const subfoldersOf = (view: ViewDef): SubfoldersMode =>
-  view.subfolders === false || view.subfolders === 'hide' ? 'hide' : view.subfolders === 'rows' || view.subfolders === 'both' ? view.subfolders : 'notes'
+  view.subfolders === false || view.subfolders === 'hide' ? 'hide' : view.subfolders === 'rows' || view.subfolders === 'both' ? view.subfolders : 'pages'
 
 /** Whether the view shows a row per direct subfolder (YAZ-4579 D31). */
 export const showsFolderRows = (view: ViewDef): boolean => subfoldersOf(view) === 'rows' || subfoldersOf(view) === 'both'
 
-/** Whether the view keeps only the notes directly in the folder and its shortcuts (YAZ-4564 D25): the notes in subfolders are hidden. */
-export const hidesSubfolderNotes = (view: ViewDef): boolean => subfoldersOf(view) === 'rows' || subfoldersOf(view) === 'hide'
+/** Whether the view keeps only the pages directly in the folder and its shortcuts (YAZ-4564 D25): the pages in subfolders are hidden. */
+export const hidesSubfolderPages = (view: ViewDef): boolean => subfoldersOf(view) === 'rows' || subfoldersOf(view) === 'hide'
 
 /** A view's grouping levels, outer first, whichever form `groupBy` is written in. */
 export const groupByLevels = (view: ViewDef): GroupBySpec[] =>

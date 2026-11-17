@@ -1,0 +1,133 @@
+/* The page arrows and the page ID chip: option A of the approved mockup, on the phone's tokens. */
+
+/* A thin bar over the tabs: "‹ page before" on the left, "page after ›" on the right; a long title ends in "…". */
+.page-arrows {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 13px;
+}
+
+.page-arrows__go {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: none;
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.page-arrows__go--after {
+  text-align: right;
+}
+
+/* The first or the last: that side is dim and does nothing. */
+.page-arrows__go:disabled {
+  color: var(--fg-muted);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.page-arrows__place {
+  flex: none;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The ID chip in the top bar: a small pill; its box is 44 pt tall to tap. YAZ-5519 S3: the dot and the ⚙ never leave
+   the screen. The page's title gives room first (cut with "…", down to 2.5em, 2em at 320 px), then the chip: its
+   letters (`__prefix`, "DEMO-") shrink and go; its number is cut only when nothing else is left. */
+.page-id {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.page-id__pill {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 12px/1 ui-monospace, 'SF Mono', Menlo, monospace;
+  white-space: nowrap;
+}
+
+/* The letters give way long before the number (a shrink 1000 times the number's). */
+.page-id__prefix {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-id__number {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar:has(.page-id) .topbar__title {
+  min-width: 2.5em;
+}
+
+/* An iPhone SE or mini in Zoomed display (320 px): the bar's gaps and the pill's sides a little tighter. */
+@media (max-width: 359px) {
+  .topbar:has(.page-id) {
+    gap: 4px;
+  }
+  .topbar:has(.page-id) .topbar__title {
+    min-width: 2em;
+  }
+  .page-id__pill {
+    padding: 6px;
+  }
+}
+
+/* YAZ-5522 N14: under 400 px the chip shows only its number, "#1": the title gets the room. A tap still copies the
+   path, and VoiceOver still says the whole ID (the button's name). 400 px and wider: unchanged. */
+@media (max-width: 399.98px) {
+  .page-id__prefix {
+    display: none;
+  }
+  .page-id__number::before {
+    content: '#';
+  }
+}
+
+/* Dark: the accent on its soft fill is under 4.5:1; the text takes the page's colour. */
+:where([data-scheme='dark']) .page-id__pill {
+  color: var(--fg);
+}
+
+/* The kind glyph before a title, very small; the Mac's glyph (`styles.css`) scaled down. */
+.page-arrows__kind {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  mask-size: 11px 11px;
+  -webkit-mask-size: 11px 11px;
+}

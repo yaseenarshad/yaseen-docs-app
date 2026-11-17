@@ -25,7 +25,7 @@ const NO_BEST: ReadonlyMap<string, number> = new Map()
 
 /** The groups of a level (D7): folders, then files. */
 const typeRank = (node: TreeNode): number => (node.type === 'dir' ? 0 : 1)
-/** The groups under Kind first (YAZ-4614 D66): folders, notes, drawings, diagrams, PDFs, images, text files, other files. */
+/** The groups under Kind first (YAZ-4614 D66): folders, pages, drawings, diagrams, PDFs, images, text files, other files. */
 const KIND_RANK: Record<FileKind, number> = { markdown: 1, drawing: 2, diagram: 3, pdf: 4, image: 5, text: 6 }
 const OTHER_RANK = 7
 const kindRank = (node: TreeNode): number => (node.type === 'dir' ? 0 : node.kind === null ? OTHER_RANK : KIND_RANK[node.kind])
@@ -62,6 +62,19 @@ export const shownLabel = (titles: PathTitles) => (node: TreeNode): string => pa
  */
 export function keepsOrder(depth: number, sort: TabSort, at: { keepTop?: boolean; copies?: boolean; vaults: boolean }): boolean {
   return depth === 0 && (at.keepTop === true || (at.copies === true ? sort.by === 'manual' : at.vaults))
+}
+
+/** No app vault rows: a Tree with none (every tab but the Files tree and its search). */
+export const NO_APP_ROWS: ReadonlySet<string> = new Set()
+
+/**
+ * A level as it is drawn, with the app's own vault rows (the card skill, YAZ-5108) LAST at the top: they never sort
+ * among the person's rows, and `order` (the tab's sort, or none) orders the others as it would without them.
+ */
+export function appRowsLast(nodes: readonly TreeNode[], depth: number, appRows: ReadonlySet<string>, order: (nodes: readonly TreeNode[]) => readonly TreeNode[]): readonly TreeNode[] {
+  if (depth !== 0 || appRows.size === 0) return order(nodes)
+  const own = nodes.filter((node) => !appRows.has(node.path))
+  return own.length === nodes.length ? order(nodes) : [...order(own), ...nodes.filter((node) => appRows.has(node.path))]
 }
 
 const swap = (nodes: TreeNode[], at: number, node: TreeNode): TreeNode[] => nodes.map((n, i) => (i === at ? node : n))

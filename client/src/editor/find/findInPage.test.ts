@@ -208,7 +208,7 @@ describe('the thread anchor', () => {
     expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'apple one'))
   })
 
-  it('a click or a key in the note gives it back, also when the caret does not move (YAZ-3200)', async () => {
+  it('a click or a key in the page gives it back, also when the caret does not move (YAZ-3200)', async () => {
     const { view, channel } = await mountFind('apple one apple two')
     channel.open()
     channel.setQuery('apple')
@@ -218,7 +218,7 @@ describe('the thread anchor', () => {
     expect(findThreadAnchor(view.state)).toBeNull()
     channel.next()
     expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple two'))
-    // A modifier alone is not a key in the note; an arrow key at the end of the doc moves nothing.
+    // A modifier alone is not a key in the page; an arrow key at the end of the doc moves nothing.
     view.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Shift' }))
     expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple two'))
     view.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }))
@@ -368,7 +368,7 @@ describe('zoom', () => {
 * Beta
   * apple outside
 `
-    const { view, channel } = await mountFind(doc, { zoom: { title: () => 'Notes' } })
+    const { view, channel } = await mountFind(doc, { zoom: { title: () => 'Pages' } })
     channel.open()
     channel.setQuery('apple')
     expect(channel.getState().total).toBe(2)
@@ -381,21 +381,21 @@ describe('zoom', () => {
 })
 
 describe('cell notes (YAZ-3818 D19)', () => {
-  const NOTE = `Intro apple
+  const PAGE = `Intro apple
 
 | Day | Plan |
 | --- | --- |
 | Mon | x[^cell-1] |
 
-[^cell-1]: note apple
+[^cell-1]: page apple
 
 Outro apple
 `
   const openType = (view: EditorView) => (openCellNoteLabel(view.state) === null ? null : 'cell_note')
 
-  it('in the note view a match in a cell note counts; a step onto it opens the note\'s card, the next step closes it', async () => {
+  it('in the page view a match in a cell note counts; a step onto it opens the page\'s card, the next step closes it', async () => {
     const onZoom = vi.fn()
-    const { view, channel } = await mountFind(NOTE, { zoom: { title: () => 'Notes', onZoom } })
+    const { view, channel } = await mountFind(PAGE, { zoom: { title: () => 'Pages', onZoom } })
     channel.open()
     channel.setQuery('apple')
     expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 0 })
@@ -404,8 +404,8 @@ Outro apple
     expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 1 })
     expect(openType(view)).toBe('cell_note')
     expect(getZoomedItemPos(view.state)).toBeNull()
-    // An edit in the opened note: the count is still the whole note's.
-    view.dispatch(view.state.tr.insertText('!', posOfText(view.state.doc, 'note apple')))
+    // An edit in the opened page: the count is still the whole page's.
+    view.dispatch(view.state.tr.insertText('!', posOfText(view.state.doc, 'page apple')))
     expect(channel.getState().total).toBe(3)
     channel.next()
     expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 2 })
@@ -414,15 +414,15 @@ Outro apple
     expect(onZoom).not.toHaveBeenCalled()
   })
 
-  it('close on a match in the note: the card stays open with the caret in the note', async () => {
+  it('close on a match in the page: the card stays open with the caret in the page', async () => {
     const onZoom = vi.fn()
-    const { view, channel } = await mountFind(NOTE, { zoom: { title: () => 'Notes', onZoom } })
+    const { view, channel } = await mountFind(PAGE, { zoom: { title: () => 'Pages', onZoom } })
     channel.open()
     channel.setQuery('apple')
     channel.next()
     channel.close()
     expect(openType(view)).toBe('cell_note')
-    expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'note apple') + 5)
+    expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'page apple') + 5)
     expect(view.state.selection.$from.node(1).type.name).toBe('cell_note')
     expect(onZoom).not.toHaveBeenCalled()
   })
@@ -467,7 +467,7 @@ describe('pills (YAZ-3744 S9, S17)', () => {
 
   async function mountPills(markdown = LINE) {
     const wikilinks = createWikilinkResolveSource()
-    // A vault with IDs (`YAS`): an ID no note has is a missing note (S10).
+    // A vault with IDs (`YAS`): an ID no page has is a missing page (S10).
     wikilinks.update((target) => PATHS[target] ?? null, [], [], true, ['YAS'])
     const viewOnlyLinks = createViewOnlyLinkSource()
     viewOnlyLinks.update(buildViewOnlyCatalogFromEntries('/v', [
@@ -512,9 +512,9 @@ describe('pills (YAZ-3744 S9, S17)', () => {
     expect(matchEls(root).map((el) => el.textContent).join('')).toBe('Named')
   })
 
-  it('a missing note (S10): its ID marks the "Missing note" widget, one match (YAZ-3910 A1)', async () => {
+  it('a missing page (S10): its ID marks the "Missing page" widget, one match (YAZ-3910 A1)', async () => {
     const { root, channel } = await mountPills('pad [[YAS-999]] tail\n')
-    expect(titleEl(root).textContent).toBe('Missing note · YAS-999')
+    expect(titleEl(root).textContent).toBe('Missing page · YAS-999')
     channel.open()
     channel.setQuery('YAS-999') // in the widget's text and in the hidden ID: one pill, one match
     expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })

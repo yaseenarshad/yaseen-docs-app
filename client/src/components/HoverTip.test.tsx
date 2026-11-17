@@ -2,7 +2,7 @@
  * The app's own hover box (YAZ-4772 demo: "tool tip on column hover?"; then "when you have the tool tip hover then right
  * click the tool tip shows up messed up"): after a short wait on hover a box shows in a portal on the page; leaving,
  * a press, a right-click or a scroll anywhere closes it at once, and a press before it shows cancels it.
- * And the shortcut ↗ after a row's title (YAZ-4797 demo) says where the note lives in that box.
+ * And the shortcut ↗ after a row's title (YAZ-4797 demo) says where the page lives in that box.
  */
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -84,7 +84,7 @@ describe('YAZ-4772 demo: HoverTip', () => {
   })
 })
 
-describe('YAZ-4797 demo: the shortcut ↗ says where the note lives', () => {
+describe('YAZ-4797 demo: the shortcut ↗ says where the page lives', () => {
   const row = (folder: string): Row => ({ record: { ...TEST_RECORDS[0], folder, title: 'Tiramisu', name: 'Tiramisu.md' } as IndexRecord, values: {} }) as unknown as Row
 
   it('YAZ-4797 demo: on Party menu, Tiramisu (in Recipes/Desserts) shows ↗ whose box reads "Shortcut. Lives in Recipes › Desserts"', () => {
@@ -96,7 +96,7 @@ describe('YAZ-4797 demo: the shortcut ↗ says where the note lives', () => {
     expect(box()?.textContent).toBe('Shortcut. Lives in Recipes › Desserts')
   })
 
-  it('YAZ-4797 demo: a note at the vault top says "the vault"; a note that lives here has no ↗', () => {
+  it('YAZ-4797 demo: a page at the vault top says "the vault"; a page that lives here has no ↗', () => {
     render(<ViewFolder.Provider value="Recipes/Party menu">{rowTitle(row(''))}</ViewFolder.Provider>)
     enter(host!.querySelector('.view-shortcut-tip')!)
     wait(400)
@@ -105,5 +105,80 @@ describe('YAZ-4797 demo: the shortcut ↗ says where the note lives', () => {
     host!.remove()
     render(<ViewFolder.Provider value="Recipes/Party menu">{rowTitle(row('Recipes/Party menu'))}</ViewFolder.Provider>)
     expect(host!.querySelector('.view-shortcut-tip')).toBeNull()
+  })
+})
+
+describe('YAZ-5130 round 2 (Yaseen: "why is the tool tip so far away?"): the box sits right under its mark', () => {
+  /** The mark's place on screen, and the box's real width (jsdom lays out nothing). */
+  function place(markLeft: number, boxWidth: number) {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('mark') ? ({ left: markLeft, right: markLeft + 16, top: 20, bottom: 38, width: 16, height: 18, x: markLeft, y: 20 } as DOMRect) : ({ left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 } as DOMRect)
+    })
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('hover-tip') ? boxWidth : 0
+    })
+  }
+  afterEach(() => vi.restoreAllMocks())
+
+  it('a short box near the window`s right edge starts at its mark, not 268 px from the edge', () => {
+    render(<HoverTip className="mark" text="Today: 9 min">◷</HoverTip>)
+    place(window.innerWidth - 120, 110)
+    enter(target())
+    wait(400)
+    expect(box()?.style.left).toBe(`${window.innerWidth - 120}px`)
+    expect(box()?.style.top).toBe('44px')
+  })
+
+  it('a box too wide for the room after its mark moves left only as far as it must, 8 px from the edge', () => {
+    render(<HoverTip className="mark" text="A long hint">◷</HoverTip>)
+    place(window.innerWidth - 120, 250)
+    enter(target())
+    wait(400)
+    expect(box()?.style.left).toBe(`${window.innerWidth - 258}px`)
+    // Far from the edge: at its mark, as before.
+    leave(target())
+    place(40, 250)
+    enter(target())
+    wait(400)
+    expect(box()?.style.left).toBe('40px')
+  })
+
+  it('`focus`: a keyboard focus on the mark shows the box at once; the blur hides it', () => {
+    render(
+      <HoverTip className="mark" text="Today: 9 min" focus>
+        <span className="clock" tabIndex={0}>
+          ◷
+        </span>
+      </HoverTip>,
+    )
+    act(() => host!.querySelector<HTMLElement>('.clock')!.focus())
+    expect(box()?.textContent).toBe('Today: 9 min')
+    act(() => host!.querySelector<HTMLElement>('.clock')!.blur())
+    expect(box()).toBeNull()
+  })
+
+  it('without `focus`, a focus shows nothing (the other boxes stay hover-only)', () => {
+    render(
+      <HoverTip className="mark" text="From Recipes">
+        <button type="button">↳</button>
+      </HoverTip>,
+    )
+    act(() => host!.querySelector('button')!.focus())
+    wait(1000)
+    expect(box()).toBeNull()
+  })
+})
+
+describe('YAZ-5130 round 3 (Yaseen: "im getting a macos tool tip also?"): one box, never the native tooltip too', () => {
+  it('the mark carries an empty `title`, so no native tooltip shows over it — not even an ancestor`s', () => {
+    render(
+      <div title="Reviewed today in this vault">
+        <HoverTip className="mark" text="Time so far">
+          ◷
+        </HoverTip>
+      </div>,
+    )
+    // An empty title is "no advisory information" for the mark and all inside it: the ancestor's stops here.
+    expect(target().getAttribute('title')).toBe('')
   })
 })

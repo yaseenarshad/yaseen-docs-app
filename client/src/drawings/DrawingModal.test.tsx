@@ -1,6 +1,6 @@
 /**
  * The drawing modal (YAZ-879): open → edit → the modal AUTOSAVES the sidecar (YAZ-3528) → close
- * closes; a note's board windows refresh from the file watcher (YAZ-4820 D5).
+ * closes; a page's board windows refresh from the file watcher (YAZ-4820 D5).
  *
  * The ENGINE is mocked and nothing else is: `ExcalidrawSurface` — the ONE seam that owns the
  * canvas — stands in as a component that hands its props back, so every rule pinned here is the
@@ -174,7 +174,7 @@ describe('opening', () => {
     expect(container?.querySelector('.fake-surface')).not.toBeNull()
   })
 
-  it('YAZ-3564 K9, K11: while open, the drawing is in front of the note — main is told, and the key sheet lists drawing keys', async () => {
+  it('YAZ-3564 K9, K11: while open, the drawing is in front of the page — main is told, and the key sheet lists drawing keys', async () => {
     await open()
     expect(api.hotkeys.drawingInFront).toHaveBeenLastCalledWith(true)
     expect(placeOverTab()).toBe('drawing')
@@ -687,7 +687,7 @@ describe('the engine seam (🔒 one file, YAZ-868 swaps it)', () => {
   })
 })
 
-/** YAZ-4436 (3A1): the Settings › Drawings rows reach the note embed's popup, as they reach a drawing tab. */
+/** YAZ-4436 (3A1): the Settings › Drawings rows reach the page embed's popup, as they reach a drawing tab. */
 describe('the app drawing settings in the popup', () => {
   it('hands the canvas the canvas prefs (fold arrows Off, fill and zoom rows, new shapes) and the door that writes them', async () => {
     const canvasPrefs: CanvasPrefs = { ...DEFAULT_CANVAS_PREFS, foldArrowsOpen: 'off', foldArrowSize: 150, foldArrowThickness: 'thin', foldArrowMinSize: 20, newElementStyle: 'keep', fillSetsTextColor: false, newShapesMatchZoom: false }
@@ -701,7 +701,7 @@ describe('the app drawing settings in the popup', () => {
   })
 })
 
-/** YAZ-4039: the note embed's popup has the page links a drawing tab has (pills, hover, clicks, menu, picker, paste). */
+/** YAZ-4039: the page embed's popup has the page links a drawing tab has (pills, hover, clicks, menu, picker, paste). */
 describe('page links in the popup', () => {
   const linkSource = () => {
     const source = createWikilinkResolveSource()

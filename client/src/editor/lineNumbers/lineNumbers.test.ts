@@ -373,7 +373,7 @@ describe('line numbers: shapes where the page and the file could disagree', () =
   })
 
   it('a paragraph that holds a wiki link, an image or a drawing shows its own line (S42)', async () => {
-    const { root } = await open(['See [[Other note]] here.', '', '![alt|300](a.png)', '', '![[sketch.excalidraw]]', '', 'End.', ''].join('\n'))
+    const { root } = await open(['See [[Other page]] here.', '', '![alt|300](a.png)', '', '![[sketch.excalidraw]]', '', 'End.', ''].join('\n'))
     expect(numbers(root)).toEqual([1, 3, 5, 7])
     expect(numbered(root).every((el) => el.tagName === 'P')).toBe(true)
   })
@@ -389,7 +389,7 @@ describe('line numbers: shapes where the page and the file could disagree', () =
   })
 
   it('a footnote definition holds blocks: the numbers go on through it (S45, S46; YAZ-3818)', async () => {
-    const file = ['Text[^1].', '', '[^1]: The note.', '', '    * a bullet', '', 'After.', ''].join('\n')
+    const file = ['Text[^1].', '', '[^1]: The page.', '', '    * a bullet', '', 'After.', ''].join('\n')
     const { root } = await open(file)
     expect(words(root)).toEqual(['1:Text1.', '3:The', '5:a', '7:After.'])
     expectWordsOnTheirLines(root, file)

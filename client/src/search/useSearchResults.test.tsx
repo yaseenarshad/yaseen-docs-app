@@ -17,7 +17,7 @@ import type { WatchSource } from '../hooks/useWatch'
  * What the hook asks of `searchCandidates.ts`, counted (YAZ-2602 R2): the REAL functions behind
  * recording wrappers, so a test can say what a keystroke, a snapshot and a tree each cost.
  */
-const asked = vi.hoisted(() => ({ ranked: [] as number[], first: [] as (ReadonlySet<string> | undefined)[], notes: [] as unknown[], folders: [] as string[], files: [] as string[] }))
+const asked = vi.hoisted(() => ({ ranked: [] as number[], first: [] as (ReadonlySet<string> | undefined)[], pages: [] as unknown[], folders: [] as string[], files: [] as string[] }))
 vi.mock('./searchCandidates', async (importOriginal) => {
   const real = await importOriginal<typeof import('./searchCandidates')>()
   const searchRows: typeof real.searchRows = (candidates, query, first) => {
@@ -26,7 +26,7 @@ vi.mock('./searchCandidates', async (importOriginal) => {
     return real.searchRows(candidates, query, first)
   }
   const searchCandidates: typeof real.searchCandidates = (records) => {
-    asked.notes.push(records)
+    asked.pages.push(records)
     return real.searchCandidates(records)
   }
   const folderCandidates: typeof real.folderCandidates = (root, dirs, folders) => {
@@ -74,7 +74,7 @@ const labels = () => (container?.textContent === '' ? [] : (container?.textConte
 
 /** The Sidebar's own `dirs` (🔒 D1, YAZ-1491): folder rows need no index read at all. */
 const NO_DIRS: readonly string[] = []
-/** The Sidebar's own `files` (🔒 D3, YAZ-2620): the tree's files that are no notes, and no index read either. */
+/** The Sidebar's own `files` (🔒 D3, YAZ-2620): the tree's files that are no pages, and no index read either. */
 const NO_FILES: readonly string[] = []
 /** No pinned item (YAZ-2662 D4): the ranking of before. */
 const NO_PINNED: ReadonlySet<string> = new Set()
@@ -119,7 +119,7 @@ afterEach(() => {
 })
 
 describe('a window that is "a folder of" the vault (YAZ-4922 D3)', () => {
-  it('reads the VAULT\'s index, and finds only the notes and folder pages under the folder', async () => {
+  it('reads the VAULT\'s index, and finds only the pages and folder pages under the folder', async () => {
     const bridge = installBridge([rec('Hooks', 'Wiki'), rec('Hooks list'), rec('React hooks', 'Wiki/React'), rec('Hooks elsewhere', 'Wikipedia')], [rec('.folder', 'Wiki/React'), rec('.folder', 'Other')])
     const watch: WatchSource = { subscribe: () => () => undefined }
     container = document.createElement('div')
@@ -133,9 +133,9 @@ describe('a window that is "a folder of" the vault (YAZ-4922 D3)', () => {
 
 describe('useSearchResults (YAZ-803)', () => {
   it('reads the index for a query it already has and ranks it against that query', async () => {
-    const { bridge } = await mount([rec('Meeting notes'), rec('Other')], 'meet')
+    const { bridge } = await mount([rec('Meeting pages'), rec('Other')], 'meet')
     expect(bridge.index).toHaveBeenCalledWith('/v')
-    expect(labels()).toEqual(['Meeting notes'])
+    expect(labels()).toEqual(['Meeting pages'])
   })
 
   it('an untouched bar reads NO index and subscribes to NOTHING; the first non-empty query does both (YAZ-808)', async () => {
@@ -228,13 +228,13 @@ describe('useSearchResults (YAZ-803)', () => {
     expect(labels()).toEqual(['Alpha', 'Beta'])
   })
 
-  it('the tree\'s folders are rows too, ahead of a same-rank note (🔒 D1, YAZ-1491)', async () => {
+  it('the tree\'s folders are rows too, ahead of a same-rank page (🔒 D1, YAZ-1491)', async () => {
     await mount([rec('Archive'), rec('Archived plan')], 'archive', undefined, ['/v/Archive', '/v/Archive/Old'])
-    // Exact bucket: the folder sits above the note; prefix bucket: the note; `Old` never matches.
+    // Exact bucket: the folder sits above the page; prefix bucket: the page; `Old` never matches.
     expect(labels()).toEqual(['📁Archive', 'Archive', 'Archived plan'])
   })
 
-  it("D: an id in the bar is that note alone, and a folder's id that folder, read off the index's folder records (YAZ-2420 D32)", async () => {
+  it("D: an id in the bar is that page alone, and a folder's id that folder, read off the index's folder records (YAZ-2420 D32)", async () => {
     const records = [{ ...rec('up-001-abdul-k3m9x2pq7abc'), title: 'UP-001 - Abdul', id: 'k3m9x2pq7abc' }, rec('Archive')]
     const folders = [{ ...rec('.folder', 'Archive'), title: 'Archive', id: 'f7n2w8rt4xyz' }]
     const { rerender } = await mount(records, '[[k3m9x2pq7abc]]', undefined, ['/v/Archive'], folders)
@@ -248,18 +248,18 @@ describe('useSearchResults (YAZ-803)', () => {
     expect(labels()).toEqual(['📁Archive'])
   })
 
-  it('S12: the tree\'s files that are no notes are rows too, by file name — behind a folder and a note of the same rank (🔒 D3, YAZ-2620)', async () => {
+  it('S12: the tree\'s files that are no pages are rows too, by file name — behind a folder and a page of the same rank (🔒 D3, YAZ-2620)', async () => {
     await mount([rec('Transcript')], 'transcript', undefined, ['/v/transcript'], [], ['/v/skills/transcript', '/v/skills/get-transcript.py'])
-    // Exact bucket: folder, note, then the file with no extension; substring bucket: the script.
+    // Exact bucket: folder, page, then the file with no extension; substring bucket: the script.
     expect(labels()).toEqual(['📁transcript', 'Transcript', 'transcript', 'get-transcript.py'])
   })
 
-  it('S35: folders and files that are no notes survive an index that is not loaded or cannot be read — both come from the tree; the notes arrive with the index', async () => {
-    const { bridge, fire } = await mount([rec('Archive notes')], 'arch', (b) => b.index.mockRejectedValue(new Error('no index')), ['/v/Archive'], [], ['/v/archive.zip'])
+  it('S35: folders and files that are no pages survive an index that is not loaded or cannot be read — both come from the tree; the pages arrive with the index', async () => {
+    const { bridge, fire } = await mount([rec('Archive pages')], 'arch', (b) => b.index.mockRejectedValue(new Error('no index')), ['/v/Archive'], [], ['/v/archive.zip'])
     expect(labels()).toEqual(['📁Archive', 'archive.zip'])
-    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Archive notes')], folders: [], generatedAt: 2, ids: true })
-    await fire({ type: 'add', path: '/v/Archive notes.md', mtime: 1 })
-    expect(labels()).toEqual(['📁Archive', 'Archive notes', 'archive.zip'])
+    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Archive pages')], folders: [], generatedAt: 2, ids: true })
+    await fire({ type: 'add', path: '/v/Archive pages.md', mtime: 1 })
+    expect(labels()).toEqual(['📁Archive', 'Archive pages', 'archive.zip'])
   })
 
   it('an unreadable index leaves search empty rather than throwing or surfacing anything', async () => {
@@ -291,7 +291,7 @@ describe('useSearchResults with pinned items (YAZ-2662 D4, R1)', () => {
     const folder = new Set(['/v/Pinned'])
     await render('plan', folder)
     expect(labels()).toEqual(['Plan deep', 'Old plan', 'Plan']) // `Plan` is the exact name, and is not pinned
-    // The rows of the top group: the pinned folder, and each folder and note inside it.
+    // The rows of the top group: the pinned folder, and each folder and page inside it.
     const first = asked.first.at(-1)
     expect(first).toEqual(new Set(['/v/Pinned', '/v/Pinned/Sub', '/v/Pinned/Old plan.md', '/v/Pinned/Sub/Plan deep.md']))
     asked.first.length = 0
@@ -343,34 +343,34 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
   }
   const forget = () => {
     asked.ranked.length = 0
-    asked.notes.length = 0
+    asked.pages.length = 0
     asked.folders.length = 0
     asked.files.length = 0
   }
   const afterQuiet = () => act(() => new Promise<void>((r) => setTimeout(r, 150)))
 
-  it('one ranked list over every vault: a better match of a later vault leads, and a folder leads a note it ties with inside its own vault', async () => {
+  it('one ranked list over every vault: a better match of a later vault leads, and a folder leads a page it ties with inside its own vault', async () => {
     const [a, b] = [vault('/a', ['/a/Plan']), vault('/b')]
     await mountMany({ '/a': [at('/a', 'Old plan'), at('/a', 'Plan')], '/b': [at('/b', 'Plan B')] }, [only(a), only(b)], 'plan')
     expect(labels()).toEqual(['📁/a/Plan', '/a/Plan.md', '/b/Plan B.md', '/a/Old plan.md'])
   })
 
   it('a keystroke is ONE ranking of ONE list, with one vault and with three: it reads no index and rebuilds no row; the list is the sum of the vaults\' rows', async () => {
-    const notes = (root: string) => [at(root, 'Alpha'), at(root, 'Beta')]
+    const pages = (root: string) => [at(root, 'Alpha'), at(root, 'Beta')]
     const one = [only(vault('/a', ['/a/dir']))]
-    const single = await mountMany({ '/a': notes('/a') }, one, 'a')
+    const single = await mountMany({ '/a': pages('/a') }, one, 'a')
     forget()
     single.bridge.index.mockClear()
     await single.render(one, 'al')
-    const perKey = { ranked: [...asked.ranked], rebuilt: asked.notes.length + asked.folders.length, read: single.bridge.index.mock.calls.length }
+    const perKey = { ranked: [...asked.ranked], rebuilt: asked.pages.length + asked.folders.length, read: single.bridge.index.mock.calls.length }
     expect(perKey.rebuilt).toBe(0)
     expect(perKey.read).toBe(0)
-    expect(new Set(perKey.ranked)).toEqual(new Set([3])) // the vault's one folder and two notes
+    expect(new Set(perKey.ranked)).toEqual(new Set([3])) // the vault's one folder and two pages
     act(() => reactRoot?.unmount())
     container?.remove()
 
     const three = [only(vault('/a', ['/a/dir'])), only(vault('/b', ['/b/dir'])), only(vault('/c', ['/c/dir']))]
-    const many = await mountMany({ '/a': notes('/a'), '/b': notes('/b'), '/c': notes('/c') }, three, 'a')
+    const many = await mountMany({ '/a': pages('/a'), '/b': pages('/b'), '/c': pages('/c') }, three, 'a')
     expect(many.bridge.index.mock.calls.map(([root]) => root).sort()).toEqual(['/a', '/b', '/c'])
     forget()
     many.bridge.index.mockClear()
@@ -378,7 +378,7 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
     // The same number of rankings as with one vault, each over the one list of all three.
     expect(asked.ranked).toHaveLength(perKey.ranked.length)
     expect(new Set(asked.ranked)).toEqual(new Set([9]))
-    expect(asked.notes.length + asked.folders.length).toBe(0)
+    expect(asked.pages.length + asked.folders.length).toBe(0)
     expect(many.bridge.index).not.toHaveBeenCalled()
     expect(labels()).toEqual(['/a/Alpha.md', '/b/Alpha.md', '/c/Alpha.md'])
   })
@@ -397,7 +397,7 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
     await afterQuiet()
     expect(new Set(bridge.index.mock.calls.map(([root]) => root))).toEqual(new Set(['/b']))
     // A snapshot brings new records and new folder records, as it does with one vault: `/b`'s rows, and no row of `/a`.
-    expect(new Set(asked.notes)).toEqual(new Set([next]))
+    expect(new Set(asked.pages)).toEqual(new Set([next]))
     expect(new Set(asked.folders)).toEqual(new Set(['/b']))
     expect(labels()).toEqual(['/a/Alpha.md', '/b/Beta.md', '/b/Banana.md'])
 
@@ -406,17 +406,17 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
     // The Sidebar's list after a tree of `/a` landed: a new list, `/a` with new folders, `/b` as it was.
     await render([{ ...only(a), dirs: ['/a/dir', '/a/arch'] }, list[1]], 'a')
     expect(new Set(asked.folders)).toEqual(new Set(['/a']))
-    expect(asked.notes).toEqual([])
+    expect(asked.pages).toEqual([])
     expect(bridge.index).not.toHaveBeenCalled()
     expect([a.counts, b.counts]).toEqual([{ subscribed: 1, ended: 0 }, { subscribed: 1, ended: 0 }])
     expect(labels()).toEqual(['📁/a/arch', '/a/Alpha.md', '/b/Beta.md', '/b/Banana.md'])
   })
 
-  it('the files that are no notes are rows of their own vault, behind its notes, in the one ranking; a keystroke rebuilds none of them, and a tree that changed one vault\'s files rebuilds that vault\'s file rows alone (YAZ-2620 D3, A9)', async () => {
+  it('the files that are no pages are rows of their own vault, behind its pages, in the one ranking; a keystroke rebuilds none of them, and a tree that changed one vault\'s files rebuilds that vault\'s file rows alone (YAZ-2620 D3, A9)', async () => {
     const [a, b] = [vault('/a', ['/a/plan'], ['/a/plan', '/a/sub/plan.pdf']), vault('/b', NO_DIRS, ['/b/Plan'])]
     const list = [only(a), only(b)]
     const { bridge, render } = await mountMany({ '/a': [at('/a', 'Plan')], '/b': [at('/b', 'Plan B')] }, list, 'plan')
-    // Exact names first — folder, note, other file inside a vault, then the next vault's — then the names that start with the text.
+    // Exact names first — folder, page, other file inside a vault, then the next vault's — then the names that start with the text.
     expect(labels()).toEqual(['📁/a/plan', '/a/Plan.md', '/a/plan', '/b/Plan', '/a/sub/plan.pdf', '/b/Plan B.md'])
     forget()
     bridge.index.mockClear()
@@ -424,13 +424,13 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
     await render(list, 'n.p')
     expect(labels()).toEqual(['/a/sub/plan.pdf'])
     expect(asked.ranked.length).toBeGreaterThan(0)
-    expect(new Set(asked.ranked)).toEqual(new Set([6])) // one list: 1 folder, 2 notes, 3 other files
-    expect(asked.files.length + asked.notes.length + asked.folders.length).toBe(0)
+    expect(new Set(asked.ranked)).toEqual(new Set([6])) // one list: 1 folder, 2 pages, 3 other files
+    expect(asked.files.length + asked.pages.length + asked.folders.length).toBe(0)
 
     // The Sidebar's list after a tree of `/b` landed with a new file: `/b`'s file rows, no row of `/a`, no read.
     await render([list[0], { ...only(b), files: ['/b/Plan', '/b/plan.png'] }], 'n.p')
     expect(new Set(asked.files)).toEqual(new Set(['/b']))
-    expect(asked.notes.length + asked.folders.length).toBe(0)
+    expect(asked.pages.length + asked.folders.length).toBe(0)
     expect(bridge.index).not.toHaveBeenCalled()
     expect(labels()).toEqual(['/a/sub/plan.pdf', '/b/plan.png'])
   })

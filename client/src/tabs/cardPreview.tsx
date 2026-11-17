@@ -1,10 +1,10 @@
 /**
  * THE CARD PREVIEW (YAZ-3343 D18): the sidebar's
- * own hover panel (`PreviewPanel`: a note's top, a board's picture, nothing for anything else) beside a card of the
+ * own hover panel (`PreviewPanel`: a page's top, a board's picture, nothing for anything else) beside a card of the
  * tab board. Resting the pointer on a card for the sidebar's dwell opens it, while Settings › Preview on hover is on;
  * holding Space opens it at once for the highlighted card, whatever the setting — it is an explicit key.
  * The new tab page uses it too, beside a row (YAZ-3403): a row is its "card", with no Space of its own here. So do
- * the tab strip (below a tab), the linked mentions, a note's [[links]] and the folder views (YAZ-3403).
+ * the tab strip (below a tab), the linked mentions, a page's [[links]] and the folder views (YAZ-3403).
  *
  * Isolated as the sidebar's is: the card lives in a tiny store the board writes and only the panel reads, so a
  * pointer crossing cards re-renders the panel and nothing else — never the board or a card.
@@ -29,7 +29,7 @@ export interface CardPreviewState {
 }
 
 const NONE: CardPreviewState = { id: null, path: null, shown: false, rect: null, by: null }
-/** A note, a board, a code file (YAZ-3508), a picture or a PDF (YAZ-3746 13R): `hasHoverPreview`. */
+/** A page, a board, a code file (YAZ-3508), a picture or a PDF (YAZ-3746 13R): `hasHoverPreview`. */
 const previews = hasHoverPreview
 
 /**
@@ -47,7 +47,7 @@ const holds = (box: AnchorRect, rect: AnchorRect): boolean => {
 
 /**
  * The board's half: the store, the dwell, and every close. `find` gives a card's element by card id, or the box the
- * panel sits beside where no one element is it (a linked mention's row, a [[link]] in a note — YAZ-3403).
+ * panel sits beside where no one element is it (a linked mention's row, a [[link]] in a page — YAZ-3403).
  */
 export function useCardPreview(hoverOn: boolean, find: (id: string) => HTMLElement | AnchorRect | null) {
   const [store] = useState(() => createStore<CardPreviewState>({ ...NONE }))
@@ -76,7 +76,7 @@ export function useCardPreview(hoverOn: boolean, find: (id: string) => HTMLEleme
       if (!live.current.hoverOn || spacePanel.shown || !previews(path)) return
       const ask = request.current
       store.set({ id, path, shown: false, rect: null, by: 'hover' })
-      // A note's or a code file's chunk starts loading with the dwell, as in the sidebar.
+      // A page's or a code file's chunk starts loading with the dwell, as in the sidebar.
       preloadPreview(path)
       timer.current = setTimeout(() => {
         timer.current = null

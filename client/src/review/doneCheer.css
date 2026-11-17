@@ -1,0 +1,43 @@
+/* THE DONE SCREEN'S CHEER (YAZ-5662; `DoneCheer.tsx`): a big 🎉 above the title, a green ✓ in front of it (`--ok`, the
+   Due today ring's green). The 🎉 pops in once (`transform` and `opacity` only); Reduce motion: still. The phone sets
+   its own size (`--done-cheer-size`). */
+.done-cheer__party {
+  font-size: var(--done-cheer-size, 48px);
+  line-height: 1.15;
+  margin: 0 auto 10px;
+  user-select: none;
+}
+.done-cheer__party[data-motion='play'] {
+  animation: done-cheer-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes done-cheer-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(-14deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* The ✓: decoration only (its alt text empty), so the title says and reads just "Inbox complete.". */
+.done-cheer__title::before {
+  content: '✓' / '';
+  color: var(--ok);
+  margin-right: 0.35em;
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .done-cheer__party[data-motion] {
+    animation: none;
+  }
+}
+
+/* The confetti's canvas (`confetti.ts`), for the 🎉 and the Due today ring, on the Mac and the phone: over the screen
+   only, never the whole window, and never in the way of a click or a tap. Above the Inbox's own layer (`.card-inbox`,
+   z-index 30, cardScreens.css; YAZ-5662): at 20 it drew under it, unseen. */
+.due-end-confetti {
+  position: fixed;
+  pointer-events: none;
+  z-index: 31;
+}

@@ -15,16 +15,16 @@ import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, se
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Numbered.md'
+const PAGE = 'Numbered.md'
 // The fixture includes legacy explicit escapes; YAZ-1329 canonicalizes them away when the row is
 // saved as a bullet, while preserving the visible `1) x` text and preventing CommonMark nesting.
-const NOTE_BODY = '# Numbered\n\n* Fundamentals\n  * 1\\) Setup\n    * deep\n  * 2\\) VS Code\n  * 3\\) WisprFlow\n'
+const PAGE_BODY = '# Numbered\n\n* Fundamentals\n  * 1\\) Setup\n    * deep\n  * 2\\) VS Code\n  * 3\\) WisprFlow\n'
 const CHILDREN = ['1) Setup', '2) VS Code', '3) WisprFlow']
 
 let userData: string
 let vaultSrc: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
@@ -38,12 +38,15 @@ const rowOf = (w: Page, text: string): Locator =>
 const paraOf = (row: Locator) => row.locator(PARA)
 const labelOf = (row: Locator) => row.locator('xpath=./div[contains(@class,"label-wrapper")]//*[contains(@class,"label")]').first()
 const menu = (w: Page) => w.locator('.ctx-menu--editor')
-/** Every row of the bullet's menu: "Open in new tab", then "Number children" (YAZ-3646 D9). */
+/** Every row of the bullet's menu: "Open in new tab", then "Number children" (YAZ-3646 D9), then the fold rows. */
 const menuRows = (w: Page) => menu(w).locator('.ctx-menu__item')
-/** The "Number children" ↔ "Bullet children" row: the LAST row, after "Open in new tab" and its line. */
-const menuRow = (w: Page) => menuRows(w).last()
-/** The two groups of the menu, a line between them (D9), as the tab menu draws its groups. */
-const groupLine = (w: Page) => menu(w).locator('.ctx-menu__item + .document-zoom__divider + .ctx-menu__item')
+/** The menu of a bullet with children: its two rows, then the fold rows. */
+const PARENT_MENU = ['Open in new tab', 'Number children', 'Collapse all', 'Expand all', 'Collapse this level', 'Expand this level', 'Lock open']
+/** The "Number children" ↔ "Bullet children" row, after "Open in new tab" and its line. */
+const menuRow = (w: Page) => menuRows(w).filter({ hasText: /^(Number|Bullet) children$/ })
+/** The menu as drawn, top to bottom: each row's text, and '—' for each line between groups (D9). */
+const menuShape = (w: Page): Promise<string[]> =>
+  menu(w).evaluate((el) => Array.from(el.querySelectorAll('.ctx-menu__item, .document-zoom__divider')).map((n) => (n.classList.contains('document-zoom__divider') ? '—' : (n.textContent ?? ''))))
 /** The bullet's own dot (its `.label-wrapper`): a right-click there opens the same menu (YAZ-3646 D8). */
 const dotOf = (row: Locator) => row.locator('xpath=./div[contains(@class,"label-wrapper")]')
 const crumbs = (w: Page) => editorOf(w).locator('nav[aria-label="Zoom breadcrumbs"] .outline-zoom-crumb')
@@ -81,22 +84,22 @@ async function openHandleMenu(w: Page, text: string): Promise<void> {
     // mousemove is the first thing to feel it. Raised again with 6B-'s `topics.spec.ts` (since
     // deleted, YAZ-2290), and again with 8H-'s outline spec (`folderOutline.spec.ts` today), which
     // sorts ahead of this file and drives a second Milkdown instance. Healthy runs pass on the FIRST attempt and never spend any of this — the
-    // budget only buys retries. NOTE the budget is only spendable because the steps that call this
+    // budget only buys retries. PAGE the budget is only spendable because the steps that call this
     // raise their OWN timeout past it: a 30s probe inside a 30s test can never retry at all.
   }).toPass({ timeout: 30_000 })
   await handle.locator('.operation-item').last().click({ button: 'right' })
   await expect(menu(w)).toBeVisible()
 }
 
-const diskHasNumbers = async () => /^ *1\. 1\\\) Setup$/m.test(await readFile(notePath, 'utf8'))
+const diskHasNumbers = async () => /^ *1\. 1\\\) Setup$/m.test(await readFile(pagePath, 'utf8'))
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'numbered-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, NOTE_BODY)
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, PAGE_BODY)
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText('WisprFlow')
 })
@@ -110,9 +113,15 @@ test('step 1 — right-click on the handle of "Fundamentals" offers "Open in new
   test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   for (const text of CHILDREN) await expect(labelOf(rowOf(win, text))).toHaveClass(/\bbullet\b/)
   await openHandleMenu(win, 'Fundamentals')
-  await expect(menuRows(win)).toHaveText(['Open in new tab', 'Number children'])
-  await expect(menuRows(win).first()).toHaveAttribute('data-hint', '⇧-click')
-  await expect(groupLine(win)).toHaveCount(1)
+  // The fold rows of a bullet with children follow (Collapse all … Lock open).
+  await expect(menuRows(win)).toHaveText(PARENT_MENU)
+  // No "⇧-click" hint on the row (D20): it made the menu wider than its strip.
+  await expect(menuRows(win).first()).not.toHaveAttribute('data-hint')
+  // A line under "Open in new tab", and one above "Number children": a group of its own (a strip of the menu's buttons
+  // may stand between them).
+  const shape = await menuShape(win)
+  expect(shape.slice(0, 2)).toEqual(['Open in new tab', '—'])
+  expect(shape[shape.indexOf('Number children') - 1]).toBe('—')
   await expect(menuRow(win)).toHaveText('Number children')
   await expect(menuRow(win)).toBeEnabled()
   await shoot(win, 'numbered-menu')
@@ -130,7 +139,7 @@ test('step 2 — Number children: 1. 2. 3. labels, grandchild stays a bullet, te
   await expect(editorOf(win)).toContainText('1) Setup') // D2: the hand-typed prefix is never touched
   await shoot(win, 'numbered-after')
   await expect.poll(diskHasNumbers, { timeout: 10_000 }).toBe(true)
-  const md = await readFile(notePath, 'utf8')
+  const md = await readFile(pagePath, 'utf8')
   expect(md).toMatch(/^ *2\. 2\\\) VS Code$/m)
   expect(md).toMatch(/^ *3\. 3\\\) WisprFlow$/m)
   expect(md).toMatch(/^ *\* deep$/m)
@@ -161,7 +170,7 @@ test('step 4 — one undo restores the bullets in the GUI and on disk', async ()
   await win.keyboard.press('ControlOrMeta+z')
   for (const text of CHILDREN) await expect(labelOf(rowOf(win, text))).toHaveClass(/\bbullet\b/)
   await expect.poll(diskHasNumbers, { timeout: 10_000 }).toBe(false)
-  expect(await readFile(notePath, 'utf8')).toMatch(/^ *\* 1\) Setup$/m)
+  expect(await readFile(pagePath, 'utf8')).toMatch(/^ *\* 1\) Setup$/m)
 })
 
 test('step 5 — re-number, then the row reads "Bullet children" and flips back', async () => {
@@ -179,14 +188,14 @@ test('step 5 — re-number, then the row reads "Bullet children" and flips back'
   await expect.poll(diskHasNumbers, { timeout: 10_000 }).toBe(false)
 })
 
-test('step 6 — a leaf ("deep") still shows the row, disabled', async () => {
+test('step 6 — a leaf ("deep") has no numbering row: it has no children to number', async () => {
   test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   await openHandleMenu(win, 'deep')
-  // A leaf is a bullet too: "Open in new tab" stays first and works; only "Number children" is grey.
-  await expect(menuRows(win)).toHaveText(['Open in new tab', 'Number children'])
+  // A leaf is a bullet too: "Open in new tab" stays first and works; the numbering row is only where there are children.
+  await expect(menuRows(win).first()).toHaveText('Open in new tab')
   await expect(menuRows(win).first()).toBeEnabled()
-  await expect(menuRow(win)).toBeDisabled()
-  await shoot(win, 'numbered-leaf-disabled')
+  await expect(menuRow(win)).toHaveCount(0)
+  await shoot(win, 'numbered-leaf-no-row')
   await win.keyboard.press('Escape')
   await expect(menu(win)).toBeHidden()
 })
@@ -195,7 +204,7 @@ test('step 7 — right-click on the DOT of "Fundamentals" opens the same menu; "
   await expect(tabsOf(win)).toHaveText(['Numbered'])
   await dotOf(rowOf(win, 'Fundamentals')).click({ button: 'right' })
   await expect(menu(win)).toBeVisible()
-  await expect(menuRows(win)).toHaveText(['Open in new tab', 'Number children'])
+  await expect(menuRows(win)).toHaveText(PARENT_MENU)
   await shoot(win, 'numbered-dot-menu')
   await menuRows(win).first().click()
   await expect(menu(win)).toBeHidden()

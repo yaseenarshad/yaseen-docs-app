@@ -6,25 +6,25 @@
  *  - the scan lists H1-H5 outside lists (YAZ-3051: H4 and H5 are rows, H6 never), walks a
  *    blockquote, names an empty heading `Untitled heading`, and keeps a heading with nothing
  *    under it; Auto counts H1-H5 when it asks for two headings;
- *  - a note with fewer than two such headings is read by its BULLETS instead: every labelled item
+ *  - a page with fewer than two such headings is read by its BULLETS instead: every labelled item
  *    of the document's own lists (bulleted or numbered), three levels deep, the level its depth
- *    and the text its label; a note with two headings or more never has its bullets read;
- *  - a note with two headings or more outside lists lists the headings inside its bullets too
+ *    and the text its label; a page with two headings or more never has its bullets read;
+ *  - a page with two headings or more outside lists lists the headings inside its bullets too
  *    (YAZ-4094 4E); a heading inside a bullet is one level under the nearest heading that holds
  *    it — a heading-labelled bullet above it, or the section its list is in — at most H5's level;
- *  - the reader may choose the source for one note (D14, the channel's `setSource`): `headings` is
- *    every H1-H5 of the note, the ones inside bullets at any depth too, and no bullet; `bullets`
+ *  - the reader may choose the source for one page (D14, the channel's `setSource`): `headings` is
+ *    every H1-H5 of the page, the ones inside bullets at any depth too, and no bullet; `bullets`
  *    is the bullets whatever headings there are; a chosen source with under two rows publishes
  *    those and never falls back; the choice is scanned at once, and one set before the editor
  *    exists is what the FIRST scan goes by;
  *  - it runs once at view creation and then 150 ms after the LAST document change — a keystroke
  *    only restarts the timer, a caret move starts none;
  *  - the channel says zoomed while a bullet zoom is active; the rows are then the zoom's own (4D)
- *    when it has two or more, else the note's, with the section that holds the zoom current, and
+ *    when it has two or more, else the page's, with the section that holds the zoom current, and
  *    a jump to a row outside the zoom ends the zoom first (4C);
  *  - a jump unfolds what hides its row (an H4 or H5 row too, which has no fold of its own) and the
  *    row's own fold, puts the caret at the start of its
- *    text, focuses the note, glides to the row and lands it 24px under the scroller's edge — and
+ *    text, focuses the page, glides to the row and lands it 24px under the scroller's edge — and
  *    never reaches `markdownUpdated`;
  *  - the scroll spy: the last shown row at or above the scroller's top + 40px, the first when
  *    none is, the last one in view at the very bottom; a row inside a fold is skipped, and a
@@ -45,7 +45,7 @@ import { createTocChannel, type TocChannel } from './tocChannel'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { boardCheckOf } from '../drawing/boardEmbedScan'
 import type { BoardWindowHandle } from '../embed/types'
-import { SCAN_DELAY_MS, scanAllHeadings, scanBullets, scanHeadings, scanNote, scanZoom } from './tocPlugin'
+import { SCAN_DELAY_MS, scanAllHeadings, scanBullets, scanHeadings, scanPage, scanZoom } from './tocPlugin'
 
 // A board embed's window (YAZ-4920's test below): a handle that does nothing, so the host mounts without the real chunk.
 vi.mock('../embed/types', async (original) => ({
@@ -119,7 +119,7 @@ Beta body.
 Closing.
 `
 
-/** A bullet note: one list, no headings. "Too deep" is a fourth level. */
+/** A bullet page: one list, no headings. "Too deep" is a fourth level. */
 const BULLETS = `* Alpha
   * Alpha one
     * Alpha one deep
@@ -167,11 +167,11 @@ describe('the heading scan', () => {
     for (const heading of found) expect(view.state.doc.nodeAt(heading.pos)?.type.name).toBe('heading')
   })
 
-  it('Auto counts H1-H5 for its two headings: a note whose only headings are two H4s shows them, not its bullets (YAZ-3051)', async () => {
+  it('Auto counts H1-H5 for its two headings: a page whose only headings are two H4s shows them, not its bullets (YAZ-3051)', async () => {
     const { view, channel } = await mountToc(`#### First\n\n* Alpha\n* Beta\n* Gamma\n\n#### Second\n\n###### Six\n`)
-    expect(scanNote(view.state.doc)).toEqual({ bullets: false, rows: scanHeadings(view.state.doc) })
+    expect(scanPage(view.state.doc)).toEqual({ bullets: false, rows: scanHeadings(view.state.doc) })
     expect(texts(channel.getState().rows)).toEqual(['4 First', '4 Second'])
-    // Two H6s are no headings to it: that note shows its bullets.
+    // Two H6s are no headings to it: that page shows its bullets.
     const six = await mountToc(`###### First\n\n* Alpha\n* Beta\n\n###### Second\n`)
     expect(texts(six.channel.getState().rows)).toEqual(['1 Alpha', '1 Beta'])
   })
@@ -183,26 +183,26 @@ describe('the heading scan', () => {
 })
 
 describe('the bullet scan', () => {
-  it('a note with no headings is read by its bullets: levels 1-3 by depth, nothing deeper, each with the position of its list item', async () => {
+  it('a page with no headings is read by its bullets: levels 1-3 by depth, nothing deeper, each with the position of its list item', async () => {
     const { view } = await mountToc(BULLETS)
-    const note = scanNote(view.state.doc)
-    expect(note.bullets).toBe(true)
-    expect(texts(note.rows)).toEqual(BULLET_ROWS)
-    for (const row of note.rows) expect(view.state.doc.nodeAt(row.pos)?.type.name).toBe('list_item')
+    const page = scanPage(view.state.doc)
+    expect(page.bullets).toBe(true)
+    expect(texts(page.rows)).toEqual(BULLET_ROWS)
+    for (const row of page.rows) expect(view.state.doc.nodeAt(row.pos)?.type.name).toBe('list_item')
   })
 
   it('one heading is not a structure: the bullets under it are the rows', async () => {
     const { view } = await mountToc(`# Title\n\n* Alpha\n  * Child\n* Beta\n`)
-    const note = scanNote(view.state.doc)
-    expect(note.bullets).toBe(true)
-    expect(texts(note.rows)).toEqual(['1 Alpha', '2 Child', '1 Beta'])
+    const page = scanPage(view.state.doc)
+    expect(page.bullets).toBe(true)
+    expect(texts(page.rows)).toEqual(['1 Alpha', '2 Child', '1 Beta'])
   })
 
-  it('two headings are: the bullets of such a note are not rows at all', async () => {
+  it('two headings are: the bullets of such a page are not rows at all', async () => {
     const { view } = await mountToc(`# Top\n\n* Alpha\n  * Child\n* Beta\n\n## After\n\n* Gamma\n`)
-    const note = scanNote(view.state.doc)
-    expect(note.bullets).toBe(false)
-    expect(texts(note.rows)).toEqual(['1 Top', '2 After'])
+    const page = scanPage(view.state.doc)
+    expect(page.bullets).toBe(false)
+    expect(texts(page.rows)).toEqual(['1 Top', '2 After'])
   })
 
   it('a numbered list counts, and its numbered children', async () => {
@@ -212,14 +212,14 @@ describe('the bullet scan', () => {
 
   it('two top-level lists are both read, in document order', async () => {
     const { view } = await mountToc(`* Alpha\n  * Child\n\nBetween.\n\n1. First\n2. Second\n`)
-    expect(texts(scanNote(view.state.doc).rows)).toEqual(['1 Alpha', '2 Child', '1 First', '1 Second'])
+    expect(texts(scanPage(view.state.doc).rows)).toEqual(['1 Alpha', '2 Child', '1 First', '1 Second'])
   })
 
   it('a bullet whose first block is a heading is a row with that text, at its bullet depth and not its heading level', async () => {
     const { view } = await mountToc(`* ### Topic\n  * # Under\n* Plain\n`)
-    const note = scanNote(view.state.doc)
-    expect(note.bullets).toBe(true)
-    expect(texts(note.rows)).toEqual(['1 Topic', '2 Under', '1 Plain'])
+    const page = scanPage(view.state.doc)
+    expect(page.bullets).toBe(true)
+    expect(texts(page.rows)).toEqual(['1 Topic', '2 Under', '1 Plain'])
   })
 
   it('a bullet with no label is no row; its children are, at their own depth', async () => {
@@ -234,19 +234,19 @@ describe('the bullet scan', () => {
 
   it('a list inside a blockquote does not count', async () => {
     const { view } = await mountToc(`> * Quoted\n> * Also quoted\n\n* Alpha\n* Beta\n`)
-    expect(texts(scanNote(view.state.doc).rows)).toEqual(['1 Alpha', '1 Beta'])
+    expect(texts(scanPage(view.state.doc).rows)).toEqual(['1 Alpha', '1 Beta'])
   })
 
   it('neither gives two rows: what the headings gave, one or none', async () => {
     const one = await mountToc(`# Title\n\n* Only bullet\n`)
-    expect(scanNote(one.view.state.doc)).toEqual({ bullets: false, rows: [{ level: 1, text: 'Title', pos: 0 }] })
+    expect(scanPage(one.view.state.doc)).toEqual({ bullets: false, rows: [{ level: 1, text: 'Title', pos: 0 }] })
     const none = await mountToc(`Words.\n\n* Only bullet\n`)
-    expect(scanNote(none.view.state.doc)).toEqual({ bullets: false, rows: [] })
+    expect(scanPage(none.view.state.doc)).toEqual({ bullets: false, rows: [] })
   })
 })
 
 describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
-  /** A note of both kinds: headings outside lists (so Auto is headings), headings inside bullets at three depths, one in a blockquote, plain bullets. */
+  /** A page of both kinds: headings outside lists (so Auto is headings), headings inside bullets at three depths, one in a blockquote, plain bullets. */
   const MIXED = `# Top
 
 * # In a bullet
@@ -279,19 +279,19 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
     // "Four" and "Five" are labels of bullets four deep: no bullet row, but rows under Headings (YAZ-3051), at H5's level at most.
     expect(texts(found)).toEqual(['1 Top', '2 In a bullet', '3 Deeper', '4 Deepest', '5 Four', '5 Five', '2 Quoted', '2 After'])
     for (const heading of found) expect(view.state.doc.nodeAt(heading.pos)?.type.name).toBe('heading')
-    expect(scanNote(view.state.doc, 'headings')).toEqual({ bullets: false, rows: found })
-    // Auto on the same note: it has headings outside lists, so the ones in its bullets are rows too.
-    expect(scanNote(view.state.doc)).toEqual({ bullets: false, rows: found })
+    expect(scanPage(view.state.doc, 'headings')).toEqual({ bullets: false, rows: found })
+    // Auto on the same page: it has headings outside lists, so the ones in its bullets are rows too.
+    expect(scanPage(view.state.doc)).toEqual({ bullets: false, rows: found })
   })
 
-  it('Auto (YAZ-4094 4E): the heading in a bullet that note 14 lost is a row, under the heading-labelled bullet that holds it; a note of bullets stays bullets', async () => {
+  it('Auto (YAZ-4094 4E): the heading in a bullet that page 14 lost is a row, under the heading-labelled bullet that holds it; a page of bullets stays bullets', async () => {
     const { view } = await mountToc(`# Weekly planning\n\n* ### Lookback\n  * What did we say last week?\n    * # test\n* Product planning\n\n## Other section\n`)
-    expect(texts(scanNote(view.state.doc).rows)).toEqual(['1 Weekly planning', '2 Lookback', '3 test', '2 Other section'])
+    expect(texts(scanPage(view.state.doc).rows)).toEqual(['1 Weekly planning', '2 Lookback', '3 test', '2 Other section'])
     const topics = await mountToc(TOPICS)
-    expect(scanNote(topics.view.state.doc).bullets).toBe(true)
+    expect(scanPage(topics.view.state.doc).bullets).toBe(true)
   })
 
-  it('Headings on a note that is all bullets: exactly the bullets the reader made into headings', async () => {
+  it('Headings on a page that is all bullets: exactly the bullets the reader made into headings', async () => {
     const { channel } = await mountToc(TOPICS, {}, from('headings'))
     // No heading holds either one, so both are top rows (YAZ-4094 4E).
     expect(channel.getState().rows).toEqual([
@@ -300,14 +300,14 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
     ])
   })
 
-  it('Bullets: the bullets of the note, though it has two headings and more', async () => {
+  it('Bullets: the bullets of the page, though it has two headings and more', async () => {
     const { view, channel } = await mountToc(MIXED, {}, from('bullets'))
-    expect(scanNote(view.state.doc, 'bullets').bullets).toBe(true)
+    expect(scanPage(view.state.doc, 'bullets').bullets).toBe(true)
     expect(texts(channel.getState().rows)).toEqual(['1 In a bullet', '2 Plain child', '2 Deeper', '3 Deepest', '1 Plain bullet'])
   })
 
   it('a chosen source with under two rows publishes those: it never falls back to the other', async () => {
-    // Auto would give this note its seven bullets.
+    // Auto would give this page its seven bullets.
     const noHeadings = await mountToc(BULLETS, {}, from('headings'))
     expect(noHeadings.channel.getState().rows).toEqual([])
     // Auto would give this one its five headings.
@@ -339,7 +339,7 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
     expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 In a bullet', '3 Deeper', '4 Deepest', '5 Four', '5 Five', '2 Quoted', '2 After'])
     channel.setSource(null)
     expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 In a bullet', '3 Deeper', '4 Deepest', '5 Four', '5 Five', '2 Quoted', '2 After'])
-    // Auto gives this note the same rows as Headings (4E): the channel publishes them, and the rows are equal.
+    // Auto gives this page the same rows as Headings (4E): the channel publishes them, and the rows are equal.
     expect(publish).toHaveBeenCalledTimes(3)
     channel.setSource(null)
     expect(publish).toHaveBeenCalledTimes(3)
@@ -463,7 +463,7 @@ describe('when it scans', () => {
     ])
   })
 
-  it('publishes a bullet note in the same shape: nothing in it says the rows are bullets', async () => {
+  it('publishes a bullet page in the same shape: nothing in it says the rows are bullets', async () => {
     const { channel } = await mountToc(`* Alpha\n  * # Child\n* Beta\n`)
     expect(channel.getState().rows).toEqual([
       { level: 1, text: 'Alpha' },
@@ -472,7 +472,7 @@ describe('when it scans', () => {
     ])
   })
 
-  it('a second heading turns a bullet note into a note of headings, 150 ms after it', async () => {
+  it('a second heading turns a bullet page into a page of headings, 150 ms after it', async () => {
     const { view, channel } = await mountToc(`# Title\n\n* Alpha\n* Beta\n`)
     expect(texts(channel.getState().rows)).toEqual(['1 Alpha', '1 Beta'])
     vi.useFakeTimers()
@@ -549,13 +549,13 @@ describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
   }
 
   it('says zoomed when the zoom starts, and not when it ends', async () => {
-    const { view, channel } = await mountToc(`# Top\n\n## Under\n\n* Bullet\n  * Child\n`, { zoom: { title: () => 'Notes' } })
+    const { view, channel } = await mountToc(`# Top\n\n## Under\n\n* Bullet\n  * Child\n`, { zoom: { title: () => 'Pages' } })
     expect(channel.getState().zoomed).toBe(false)
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, 'Bullet') + 1)))
     pressZoom(view)
     expect(getZoomedItemPos(view.state)).not.toBeNull()
     expect(channel.getState().zoomed).toBe(true)
-    // The headings are still the note's: only the flag moved.
+    // The headings are still the page's: only the flag moved.
     expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
     pressZoom(view, true)
     expect(getZoomedItemPos(view.state)).toBeNull()
@@ -565,7 +565,7 @@ describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
   /** "Bullet" holds three bullet rows; "Small" holds one. */
   const ZOOMS = `# Top\n\n## Under\n\n* Bullet\n  * Child one\n  * Child two\n    * Grand\n* Small\n  * Only child\n`
   const zoomInto = async (label: string, opts: Parameters<typeof mountToc>[1] = {}) => {
-    const mounted = await mountToc(ZOOMS, { zoom: { title: () => 'Notes' }, ...opts })
+    const mounted = await mountToc(ZOOMS, { zoom: { title: () => 'Pages' }, ...opts })
     const { view } = mounted
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, label) + 1)))
     pressZoom(view)
@@ -573,7 +573,7 @@ describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
     return mounted
   }
 
-  it('4D: a zoom with two rows or more lists its own rows, at once; out of the zoom the note’s rows come back at once', async () => {
+  it('4D: a zoom with two rows or more lists its own rows, at once; out of the zoom the page’s rows come back at once', async () => {
     vi.useFakeTimers()
     const { view, channel } = await zoomInto('Bullet')
     expect(texts(channel.getState().rows)).toEqual(['1 Child one', '1 Child two', '2 Grand'])
@@ -582,7 +582,7 @@ describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
     expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
   })
 
-  it('4D: under the Headings source, the headings inside the zoom, raised so the top one is level 1; under two rows the note’s list stays', async () => {
+  it('4D: under the Headings source, the headings inside the zoom, raised so the top one is level 1; under two rows the page’s list stays', async () => {
     const { view } = await mountToc(`# Top\n\n## Under\n\n* Bullet\n  * ## Inside one\n    * ### Inside two\n* Small\n  * ## Lone\n`)
     const zoomAt = (label: string): number => view.state.doc.resolve(posOfText(view.state.doc, label)).before(2)
     expect(texts(scanZoom(view.state.doc, zoomAt('Bullet'), 'headings')?.rows ?? [])).toEqual(['1 Inside one', '2 Inside two'])
@@ -590,7 +590,7 @@ describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
     expect(scanZoom(view.state.doc, zoomAt('Small'))).toBeNull()
   })
 
-  it('4C: a zoom with under two rows keeps the note’s rows; with none on screen, the section that holds the zoom is current', async () => {
+  it('4C: a zoom with under two rows keeps the page’s rows; with none on screen, the section that holds the zoom is current', async () => {
     const { channel } = await zoomInto('Small')
     expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
     const scroller = document.createElement('div')
@@ -600,11 +600,11 @@ describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
   })
 
   it('4C1: the section that holds the zoom is current, not a heading inside an earlier bullet (YAZ-4094)', async () => {
-    const mounted = await mountToc(`# Trip\n\n## In Lisbon\n\n* Day 1\n  * ### Morning\n  * ### Afternoon\n* Day 2\n  * Walk\n`, { zoom: { title: () => 'Notes' } })
+    const mounted = await mountToc(`# Trip\n\n## In Lisbon\n\n* Day 1\n  * ### Morning\n  * ### Afternoon\n* Day 2\n  * Walk\n`, { zoom: { title: () => 'Pages' } })
     const { view, channel } = mounted
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, 'Day 2') + 1)))
     pressZoom(view)
-    // "Day 2" has one row inside, so the note's rows stay.
+    // "Day 2" has one row inside, so the page's rows stay.
     expect(texts(channel.getState().rows)).toEqual(['1 Trip', '2 In Lisbon', '3 Morning', '3 Afternoon'])
     const scroller = document.createElement('div')
     scroller.getBoundingClientRect = () => new DOMRect(0, 0, 800, 500)
@@ -638,7 +638,7 @@ describe('the jump', () => {
     }
   }
 
-  it('puts the caret at the start of the heading text, focuses the note and flashes the heading once', async () => {
+  it('puts the caret at the start of the heading text, focuses the page and flashes the heading once', async () => {
     const { view, channel } = await mountToc(DOC)
     const landing = stubLanding()
     try {
@@ -742,8 +742,8 @@ describe('the jump', () => {
   })
 
   it('two headings with the same name are two rows, and each goes to its own heading', async () => {
-    const { view, channel } = await mountToc(`# Notes\n\nFirst.\n\n# Notes\n\nSecond.\n`)
-    expect(texts(channel.getState().rows)).toEqual(['1 Notes', '1 Notes'])
+    const { view, channel } = await mountToc(`# Pages\n\nFirst.\n\n# Pages\n\nSecond.\n`)
+    expect(texts(channel.getState().rows)).toEqual(['1 Pages', '1 Pages'])
     const [first, second] = scanHeadings(view.state.doc).map(({ pos }) => pos)
     expect(second).toBeGreaterThan(first)
     channel.jump(1)
@@ -885,8 +885,8 @@ describe('the jump', () => {
 
   describe('the glide', () => {
     /**
-     * The note's own scroller, 500px tall with its top edge at y=100, and the frames in the test's
-     * hand. Each heading is given a place in the note (`tops`, px from the note's start), and its
+     * The page's own scroller, 500px tall with its top edge at y=100, and the frames in the test's
+     * hand. Each heading is given a place in the page (`tops`, px from the page's start), and its
      * box follows the scroller as a laid-out one does: the engine measures the row when the glide
      * starts and once more when it lands.
      */
@@ -916,7 +916,7 @@ describe('the jump', () => {
         },
       }
     }
-    /** Part 1, Section A, Deep dive, Section B, Part 2: where each stands in the note. */
+    /** Part 1, Section A, Deep dive, Section B, Part 2: where each stands in the page. */
     const TOPS = [24, 224, 424, 624, 724]
 
     it('takes 420 ms for a row far off and for one close by, leaves and settles gently, and lands 24px under the edge with its one flash at the end', async () => {
@@ -963,7 +963,7 @@ describe('the jump', () => {
       try {
         const frames = glideHost(view, root, [24, 224, 424, 624, 2424], 5000)
         channel.jump(4)
-        // 2400px to go and a window of 500: the note stands 1500px short of the row before a frame is painted.
+        // 2400px to go and a window of 500: the page stands 1500px short of the row before a frame is painted.
         expect(root.scrollTop).toBe(900)
         frames.after(210)
         expect(root.scrollTop).toBe(1650)
@@ -979,7 +979,7 @@ describe('the jump', () => {
       }
     })
 
-    it.each(['wheel', 'pointerdown', 'keydown'])('the reader’s own %s in the note stops it where it is: no landing, no flash', async (type) => {
+    it.each(['wheel', 'pointerdown', 'keydown'])('the reader’s own %s in the page stops it where it is: no landing, no flash', async (type) => {
       const { view, root, channel } = await mountToc(DOC)
       const landing = stubLanding()
       try {
@@ -1031,8 +1031,8 @@ describe('the jump', () => {
     })
   })
 
-  describe('in a bullet note', () => {
-    it('puts the caret at the start of the bullet label, focuses the note and flashes the list item once', async () => {
+  describe('in a bullet page', () => {
+    it('puts the caret at the start of the bullet label, focuses the page and flashes the list item once', async () => {
       const { view, channel } = await mountToc(BULLETS)
       const landing = stubLanding()
       try {
@@ -1090,7 +1090,7 @@ describe('the jump', () => {
       expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'Gamma'))
     })
 
-    it('lands 24px below the edge of the note’s own scroller, by the engine’s own arithmetic', async () => {
+    it('lands 24px below the edge of the page’s own scroller, by the engine’s own arithmetic', async () => {
       const { view, root, channel } = await mountToc(BULLETS)
       const landing = stubLanding()
       // Reduced motion: the landing without the glide's frames.
@@ -1129,7 +1129,7 @@ describe('the jump', () => {
 describe('the scroll spy', () => {
   /** jsdom lays nothing out, so each row is given the box the test wants: its top, or null for one inside a fold. */
   const layOut = (view: EditorView, tops: readonly (number | null)[]) => {
-    scanNote(view.state.doc).rows.forEach(({ pos }, i) => {
+    scanPage(view.state.doc).rows.forEach(({ pos }, i) => {
       const element = view.nodeDOM(pos) as HTMLElement
       const top = tops[i]
       Object.defineProperty(element, 'offsetParent', { configurable: true, get: () => (top === null ? null : document.body) })
@@ -1178,13 +1178,13 @@ describe('the scroll spy', () => {
     expect(channel.current(ALL, scrollerAt(2400))).toBe(2)
   })
 
-  it('a note too short to scroll is at its top, not its bottom', async () => {
+  it('a page too short to scroll is at its top, not its bottom', async () => {
     const { view, channel } = await mountToc(DOC)
     layOut(view, [120, 200, 280, 360, 440])
     expect(channel.current(ALL, scrollerAt(0, 500))).toBe(0)
   })
 
-  it('answers in rows of the list it was asked about, not in headings of the note', async () => {
+  it('answers in rows of the list it was asked about, not in headings of the page', async () => {
     const { view, channel } = await mountToc(DOC)
     layOut(view, [-400, -50, 140, 141, 900])
     // H1 and H2 only: "Deep dive" (index 2) is not shown, so Section A (row 1) is the last above the line.
@@ -1224,7 +1224,7 @@ describe('the scroll spy', () => {
     expect(texts(channel.getState().rows)).toEqual(['1 Part 1', '2 Section A', '2 Section B', '1 Part 2'])
   })
 
-  describe('in a bullet note', () => {
+  describe('in a bullet page', () => {
     const ROWS = [0, 1, 2, 3, 4, 5, 6]
 
     it('a list item’s node is the element Crepe’s node view made for it, the `<li>` its child', async () => {
@@ -1277,7 +1277,7 @@ describe('the scroll spy', () => {
       expect(channel.current(ROWS, scrollerAt(700))).toBe(2)
     })
 
-    it('a heading’s element is not a bullet’s: a note that turned into headings stops trusting list items at once', async () => {
+    it('a heading’s element is not a bullet’s: a page that turned into headings stops trusting list items at once', async () => {
       const { view, channel } = await mountToc(`# Title\n\n* Alpha\n* Beta\n`)
       layOut(view, [-50, 300])
       expect(channel.current([0, 1], scrollerAt(700))).toBe(0)
@@ -1292,7 +1292,7 @@ describe('the scroll spy', () => {
   })
 })
 
-describe('a row names its links as the note shows them (YAZ-3744 D6)', () => {
+describe('a row names its links as the page shows them (YAZ-3744 D6)', () => {
   const ID = 'k3m9x2pq7abc'
 
   it('an ID link reads as its title, a name link without brackets; an index change renames the row', async () => {
@@ -1314,7 +1314,7 @@ describe('YAZ-4920: a bullet that is an id embed of a board', () => {
     const { view } = await mountToc('* ![[EMB-40|640x360 view=1,2,0.5]]\n* Beta\n')
     expect(texts(scanBullets(view.state.doc, isBoard))).toEqual(['1 ![[EMB-40]]', '1 Beta'])
     expect(texts(scanBullets(view.state.doc))).toEqual(['1 ![[EMB-40|640x360 view=1,2,0.5]]', '1 Beta'])
-    expect(texts(scanNote(view.state.doc, 'bullets', isBoard).rows)).toEqual(['1 ![[EMB-40]]', '1 Beta'])
+    expect(texts(scanPage(view.state.doc, 'bullets', isBoard).rows)).toEqual(['1 ![[EMB-40]]', '1 Beta'])
   })
 
   it('with the host and a resolver that says EMB-40 is a board, the published row is the board\'s name', async () => {

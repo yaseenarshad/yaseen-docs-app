@@ -12,7 +12,7 @@ afterEach(() => {
   root = null
 })
 
-const at = (over: Partial<TabMenuAt> = {}): TabMenuAt => ({ x: 0, y: 0, id: 't1', path: '/v/a.md', review: false, named: false, ...over })
+const at = (over: Partial<TabMenuAt> = {}): TabMenuAt => ({ x: 0, y: 0, id: 't1', path: '/v/a.md', named: false, ...over })
 const all = (over: Partial<TabMenuProps> = {}): TabMenuProps => ({
   menu: at(),
   label: 'A',
@@ -23,7 +23,6 @@ const all = (over: Partial<TabMenuProps> = {}): TabMenuProps => ({
   onRename: vi.fn(),
   onResetName: vi.fn(),
   onShowInSidebar: vi.fn(),
-  onSetReview: vi.fn(),
   ...over,
 })
 function mount(props: TabMenuProps): HTMLElement {
@@ -40,15 +39,15 @@ describe('TabMenu (YAZ-2949 D6)', () => {
     expect(groups(mount(all()))).toEqual([
       ['Move to new window', 'Duplicate tab', 'Move to'],
       ['Show in sidebar', 'Copy path'],
-      ['Set display name', 'Turn review on'],
+      ['Set display name'],
       ['Reveal in Finder', 'Open in VS Code'],
     ])
     act(() => root?.unmount())
-    expect(groups(mount(all({ menu: at({ named: true, review: true }) })))[2]).toEqual(['Set display name', 'Reset to page name', 'Turn review off'])
+    expect(groups(mount(all({ menu: at({ named: true }) })))[2]).toEqual(['Set display name', 'Reset to page name'])
   })
 
-  it('S27-S29: a group with nothing in it draws no group — a folder tab with upkeep off and no move doors keeps three', () => {
-    const el = mount({ menu: at({ review: null }), label: 'A', onClose: vi.fn() })
+  it('S27-S29: a group with nothing in it draws no group — a tab with no rename and no move doors keeps two', () => {
+    const el = mount({ menu: at(), label: 'A', onClose: vi.fn() })
     expect(groups(el)).toEqual([['Show in sidebar', 'Copy path'], ['Reveal in Finder', 'Open in VS Code']])
   })
 
@@ -72,7 +71,7 @@ describe('TabMenu "Rename file" (YAZ-4248)', () => {
     expect(groups(el)).toEqual([
       ['Move to new window', 'Duplicate tab', 'Move to'],
       ['Show in sidebar', 'Copy path'],
-      ['Set display name', 'Turn review on'],
+      ['Set display name'],
       ['Rename file'],
       ['Reveal in Finder', 'Open in VS Code'],
     ])
@@ -80,13 +79,13 @@ describe('TabMenu "Rename file" (YAZ-4248)', () => {
     expect(props.onRenameFile).toHaveBeenCalledWith('/v/a.md')
     expect(props.onClose).toHaveBeenCalledTimes(1)
     act(() => root?.unmount())
-    el = mount(all({ onRenameFile: vi.fn(), menu: at({ path: '/v/Folder', review: null }) }))
+    el = mount(all({ onRenameFile: vi.fn(), menu: at({ path: '/v/Folder' }) }))
     expect(item(el, 'Rename file')?.disabled).toBe(true)
   })
 })
 
 describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
-  const TARGETS = [{ id: 'w2', label: 'Work — Meeting notes · 2 tabs' }, { id: 'w3', label: 'Work · 0 tabs' }]
+  const TARGETS = [{ id: 'w2', label: 'Work — Meeting pages · 2 tabs' }, { id: 'w3', label: 'Work · 0 tabs' }]
   /** The flyout's groups, after a click on "Move to" opens it. */
   const flyout = (el: HTMLElement) => {
     act(() => item(el, 'Move to')?.click())
@@ -98,7 +97,7 @@ describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
     const el = mount(props)
     const parent = item(el, 'Move to')
     expect(parent?.getAttribute('aria-haspopup')).toBe('menu')
-    expect(flyout(el)).toEqual([['Work — Meeting notes · 2 tabs', 'Work · 0 tabs'], ['Right panel']])
+    expect(flyout(el)).toEqual([['Work — Meeting pages · 2 tabs', 'Work · 0 tabs'], ['Right panel']])
     act(() => item(el, 'Work · 0 tabs')?.click())
     expect(props.onMoveToWindow).toHaveBeenCalledWith('w3', '/v/a.md', 't1')
     expect(props.onMoveToRight).not.toHaveBeenCalled()
@@ -118,7 +117,7 @@ describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
 
   it('an empty group is left out, and with no group there is no "Move to" item', () => {
     let el = mount(all({ onMoveToRight: undefined, moveTargets: TARGETS, onMoveToWindow: vi.fn() }))
-    expect(flyout(el)).toEqual([['Work — Meeting notes · 2 tabs', 'Work · 0 tabs']])
+    expect(flyout(el)).toEqual([['Work — Meeting pages · 2 tabs', 'Work · 0 tabs']])
     act(() => root?.unmount())
     el = mount(all({ onMoveToRight: undefined, moveTargets: [], onMoveToWindow: vi.fn() }))
     expect(groups(el)[0]).toEqual(['Move to new window', 'Duplicate tab'])
@@ -136,7 +135,7 @@ describe('TabMenu Focus and Favorites (YAZ-3264 D2)', () => {
     expect(groups(mount(lists()))).toEqual([
       ['Move to new window', 'Duplicate tab', 'Move to'],
       ['Show in sidebar', 'Add to focus', 'Copy path'],
-      ['Set display name', 'Turn review on'],
+      ['Set display name'],
       ['Add to favorites', 'Reveal in Finder', 'Open in VS Code'],
     ])
   })

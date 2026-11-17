@@ -2,7 +2,7 @@
  * A FILES WINDOW'S FLOATING PREVIEW (YAZ-3357 D9). A Files window is only the sidebar, so there is no room beside it
  * for the hover preview. Instead it opens ONE popup — `window.open('about:blank', FILES_PREVIEW_FRAME)`, the one popup
  * main allows, from a Files window only (`windowOpenPolicy.ts`) — with no frame, a clear background, no focus and no
- * mouse. The window's own React tree draws the usual panel (`NotePreview` / `BoardPreview`) into it with a portal, so
+ * mouse. The window's own React tree draws the usual panel (`PagePreview` / `BoardPreview`) into it with a portal, so
  * there is no second vault index and no second app; main places the popup beside the Files window, on the hovered
  * row's height, and shows it inactive (`window:files-preview`). It is made once and kept: hidden between previews.
  *
@@ -62,7 +62,7 @@ function syncLook(): void {
     doc.head.appendChild(clone)
   }
   const html = doc.documentElement
-  // The guide-line, folding and threading defaults sit on <html> too (YAZ-4094, YAZ-4432, App.tsx): a preview's note reads them.
+  // The guide-line, folding and threading defaults sit on <html> too (YAZ-4094, YAZ-4432, App.tsx): a preview's page reads them.
   for (const name of ['data-theme', 'data-guide-lines', 'data-guide-lines-show', 'data-folding', 'data-threading', 'style', 'class']) {
     const value = document.documentElement.getAttribute(name)
     if (value === null) html.removeAttribute(name)
@@ -74,7 +74,7 @@ function syncLook(): void {
     el.style.setProperty('margin', '0')
     el.style.setProperty('overflow', 'hidden')
   }
-  // The settings variables (line height, block gap…) live on `.app`; a note's panel reads some of them.
+  // The settings variables (line height, block gap…) live on `.app`; a page's panel reads some of them.
   const app = document.querySelector('.app')
   for (const attr of [...root.attributes]) if (attr.name !== 'class') root.removeAttribute(attr.name)
   for (const attr of app === null ? [] : [...app.attributes]) if (attr.name === 'style' || attr.name.startsWith('data-')) root.setAttribute(attr.name, attr.value)

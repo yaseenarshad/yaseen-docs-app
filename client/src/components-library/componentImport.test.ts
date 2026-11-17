@@ -90,7 +90,7 @@ describe('parseImportedComponentJson', () => {
   })
 
   it('keeps the size ceiling on the ELEMENTS', () => {
-    const fat = [rect('a', { note: 'x'.repeat(MAX_COMPONENT_ELEMENTS_BYTES) })]
+    const fat = [rect('a', { page: 'x'.repeat(MAX_COMPONENT_ELEMENTS_BYTES) })]
     expect(() => parseImportedComponentJson(engine(), scene(fat))).toThrow(/bytes or smaller/)
   })
 })

@@ -25,7 +25,7 @@ function mount(onSubmit: (name: string) => Promise<void> = () => Promise.resolve
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<RenameInline initial="Old Note" title={title} indent={0} onSubmit={submit} onCancel={onCancel} />))
+  act(() => root?.render(<RenameInline initial="Old Page" title={title} indent={0} onSubmit={submit} onCancel={onCancel} />))
   const field = container.querySelector<HTMLInputElement>('.create-inline__input')
   if (field === null) throw new Error('the rename input did not mount')
   return { el: container, field, onSubmit: submit, onCancel }
@@ -35,29 +35,35 @@ const error = (el: HTMLElement) => el.querySelector('.create-inline__error')?.te
 const press = (field: HTMLInputElement, key: string) => act(() => void field.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
 const leave = (field: HTMLInputElement) => act(() => void field.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
 const flush = () => act(async () => {})
+/** Types `value` as a person does: React hears the input event. */
+const typeLive = (field: HTMLInputElement, value: string) =>
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(field, value)
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  })
 
 describe('RenameInline (YAZ-1553)', () => {
   it('mounts focused with the current name selected', () => {
     const { field } = mount()
     expect(document.activeElement).toBe(field)
-    expect(field.value).toBe('Old Note')
+    expect(field.value).toBe('Old Page')
   })
 
   it('Enter commits through the one door: focus leaves, the trimmed name is submitted', async () => {
     const { field, onSubmit } = mount()
-    field.value = '  New Note  '
+    field.value = '  New Page  '
     press(field, 'Enter')
     await flush()
-    expect(onSubmit).toHaveBeenCalledWith('New Note')
+    expect(onSubmit).toHaveBeenCalledWith('New Page')
     expect(document.activeElement).not.toBe(field)
   })
 
   it('click-away commits the changed name', async () => {
     const { field, onSubmit, onCancel } = mount()
-    field.value = 'New Note'
+    field.value = 'New Page'
     leave(field)
     await flush()
-    expect(onSubmit).toHaveBeenCalledWith('New Note')
+    expect(onSubmit).toHaveBeenCalledWith('New Page')
     expect(onCancel).not.toHaveBeenCalled()
   })
 
@@ -94,8 +100,33 @@ describe('RenameInline (YAZ-1553)', () => {
     await flush()
     expect(onSubmit).not.toHaveBeenCalled()
     expect(onCancel).not.toHaveBeenCalled()
-    expect(error(el)).toBe('Name cannot contain "/"')
+    expect(error(el)).toBe("A title can't contain / — remove it to save")
     expect(field.isConnected).toBe(true)
+  })
+
+  it('a "/" typed is said under the box at once, before Enter (YAZ-5580); fixed, the message goes and the name submits', async () => {
+    const { el, field, onSubmit } = mount()
+    typeLive(field, 'Q3/Q4')
+    expect(error(el)).toBe("A title can't contain / — remove it to save")
+    press(field, 'Enter')
+    await flush()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(field.value).toBe('Q3/Q4')
+    expect(error(el)).toBe("A title can't contain / — remove it to save")
+    typeLive(field, 'Q3 and Q4')
+    expect(error(el)).toBeNull()
+    press(field, 'Enter')
+    await flush()
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith('Q3 and Q4')
+  })
+
+  it('a TITLE (a vault with IDs) takes "/": no message, and it submits (YAZ-5580)', async () => {
+    const { el, field, onSubmit } = mount(undefined, true)
+    typeLive(field, 'Q3/Q4')
+    expect(error(el)).toBeNull()
+    press(field, 'Enter')
+    await flush()
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith('Q3/Q4')
   })
 
   it('Escape discards, and the trailing blur Chromium fires on removal submits nothing', async () => {
@@ -124,7 +155,7 @@ describe('RenameInline (YAZ-1553)', () => {
   it('a rejected submit shows its message and keeps the box open; leaving again retries', async () => {
     let calls = 0
     const { el, field, onSubmit } = mount(() => (++calls === 1 ? Promise.reject(new Error('Taken')) : Promise.resolve()))
-    field.value = 'New Note'
+    field.value = 'New Page'
     leave(field)
     await flush()
     expect(error(el)).toBe('Taken')

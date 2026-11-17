@@ -14,8 +14,8 @@ import { ConfirmSheet } from '../components/ConfirmSheet'
 
 /** The LOCKED copy (⚡ YAZ-888): both spellings, the honest count, and no promise about nothing. A title edit counts no id link (none is rewritten), so its zero says only that. */
 export function renameConfirmMessage(oldName: string, newName: string, count: number, titleEdit: boolean, unit: UnitText = SAME_WORD): string {
-  const none = titleEdit ? 'No links need updating.' : unit('No other notes link to it.')
-  const links = count === 0 ? none : unit(`Links in ${count} ${count === 1 ? 'note' : 'notes'} will be updated.`)
+  const none = titleEdit ? 'No links need updating.' : unit('No other pages link to it.')
+  const links = count === 0 ? none : unit(`Links in ${count} ${count === 1 ? 'page' : 'pages'} will be updated.`)
   return `Rename '${oldName}' to '${newName}'? ${links}`
 }
 
@@ -36,9 +36,9 @@ export type RenameTo = { newPath: string; title?: never } | { title: string; new
 type ConfirmRenameProps = {
   /** The page as it stands; only its NAME reaches the copy. */
   oldPath: string
-  /** A folder is named whole: `Notes.md` may be one (YAZ-2290). */
+  /** A folder is named whole: `Pages.md` may be one (YAZ-2290). */
   kind: 'file' | 'dir'
-  /** The file's vault's word for a note (YAZ-4938). */
+  /** The file's vault's word for a page (YAZ-4938). */
   unit?: UnitText
   /** The honest N: `countLinkReferences` over the window's own index snapshot. */
   count: number
@@ -68,11 +68,14 @@ type ConfirmRenameProps = {
  */
 export function ConfirmRename({ oldPath, kind, count, titles, unit, onConfirm, onCancel, ...to }: ConfirmRenameProps) {
   const dontAskRef = useRef<HTMLInputElement>(null)
+  // A title already in (a card file's Done wrote it on its card line, YAZ-5037): what changes is the file's name, so it is named.
+  const shown = pageLabel(oldPath, kind === 'dir', titles)
+  const from = to.title !== undefined && shown === to.title ? basename(oldPath) : shown
   const confirm = useCallback(() => onConfirm(dontAskRef.current?.checked === true), [onConfirm])
   return (
     <ConfirmSheet
       labelId="confirm-rename-text"
-      text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir', titles), to.title ?? pageLabel(to.newPath, kind === 'dir', titles), count, to.title !== undefined, unit)}
+      text={renameConfirmMessage(from, to.title ?? pageLabel(to.newPath, kind === 'dir', titles), count, to.title !== undefined, unit)}
       confirmLabel="Rename"
       keys="sheet"
       focusConfirm

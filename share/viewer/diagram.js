@@ -6,7 +6,7 @@
  * pages; dragging or scrolling pans. Everything it fetches, the library shapes' stencils included,
  * comes from this Worker's `/assets/drawio/`.
  */
-import { board, loadBoard, note, wireDownload } from './board.js'
+import { board, loadBoard, page, wireDownload } from './board.js'
 
 /**
  * 🔒 YAZ-1802 D5 (YAZ-1973): draw.io's stencil sets ship as ONE file, the editor's own
@@ -38,7 +38,7 @@ async function main() {
   if (board.allowDownload) wireDownload(document.getElementById('dl-drawio'), 'drawio', 'diagram')
   const doc = mxUtils.parseXml(xml)
   if (usesLibraryShapes(doc, xml)) await loadScript('/assets/drawio/js/stencils.min.js')
-  note.remove()
+  page.remove()
   // GraphViewer keeps its container's size only when it is set inline; any other container is
   // resized to the diagram, so this one fills the area below the bar.
   const container = document.createElement('div')

@@ -1,9 +1,9 @@
 /**
  * Settings › Editor › Selection toolbar (YAZ-3806 T7, redrawn in the demo as 4B, YAZ-3856): a live PREVIEW of the
- * strip, drawn as a note draws it, and under it a row of SQUARES for each group. A click on a square hides or shows
+ * strip, drawn as a page draws it, and under it a row of SQUARES for each group. A click on a square hides or shows
  * its button (a hidden square is dimmed and struck through); a drag moves it inside its group; a group's handle drags
  * the whole group. "Reset to default" brings back the default strip. Each change is one write of
- * `settings.selectionToolbar`, and every open note's toolbar follows it at once (`editor/toolbarPrefs.ts`).
+ * `settings.selectionToolbar`, and every open page's toolbar follows it at once (`editor/toolbarPrefs.ts`).
  *
  * The drag is the tab strip's (`tabs/tabs.css`, YAZ-3637, Yaseen's ask): pointer events, nothing moves while the
  * drag goes on, the grabbed square or group dims, and a 3px accent line marks the slot it lands in — between squares
@@ -43,7 +43,7 @@ export const toggleButton = (prefs: ToolbarPrefs, button: ToolbarButtonId): Tool
 /** A move of less than this many px is a press, not a drag. */
 const LIFT_PX = 3
 
-/** A button's icon; Crepe's own buttons have theirs once a note's toolbar has built, their name's first letters before. */
+/** A button's icon; Crepe's own buttons have theirs once a page's toolbar has built, their name's first letters before. */
 function ButtonIcon({ button }: { button: ToolbarButtonId }) {
   const icon = TOOLBAR_ICONS[button]
   return icon === undefined ? <span className="toolbar-arrange__glyph">{TOOLBAR_LABELS[button].slice(0, 2)}</span> : <span className="toolbar-arrange__svg" dangerouslySetInnerHTML={{ __html: icon }} />

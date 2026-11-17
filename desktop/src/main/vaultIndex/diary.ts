@@ -6,7 +6,7 @@ import { folderSettingsLinks } from '@shared/folderSettingsLinks'
 import { isRecord } from '@shared/guards'
 import { splitLink } from '@shared/linkParts'
 import { exactLinkTarget } from '@shared/linkRewrite'
-import { canonicalNoteId, isNumberId, noteIdNumber, vaultNoteId } from '@shared/noteId'
+import { canonicalPageId, isNumberId, pageIdNumber, vaultPageId } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
 import { atomicWrite } from '../fs/fsUtils'
 import { MADE_DAYS, appDataDir, countsOf, madeBy, vaultIds, type Counts } from './mint'
@@ -17,12 +17,12 @@ import { MADE_DAYS, appDataDir, countsOf, madeBy, vaultIds, type Counts } from '
  * Mac reads it.
  *
  *  - `links`: each file where this Mac's index first saw a link, or an `also_in` entry, to an ID
- *    this Mac made, with the time. When that ID turns out to be on two notes and this Mac's note
- *    must take a new number, the links first seen well before the other note arrived are the
- *    links that meant this Mac's note: they follow it (R28).
- *  - `clashes`: for each ID that two notes held, the path of the note this Mac's index held with
+ *    this Mac made, with the time. When that ID turns out to be on two pages and this Mac's page
+ *    must take a new number, the links first seen well before the other page arrived are the
+ *    links that meant this Mac's page: they follow it (R28).
+ *  - `clashes`: for each ID that two pages held, the path of the page this Mac's index held with
  *    it BEFORE the other arrived (R25, R30), and how far a fix got. After the first sweep the
- *    index holds both notes and cannot tell them apart any more — and a number that waits for the
+ *    index holds both pages and cannot tell them apart any more — and a number that waits for the
  *    vault's first Mac is given ten minutes later; and a fix that stops halfway must continue with
  *    the number it already took, never take a second one.
  *
@@ -39,22 +39,22 @@ const DIARY_DIR = 'id-diary'
 const DIARY_VERSION = 1
 /** Link entries kept for one vault; one past it is not recorded, and its link is then listed and not changed. */
 export const LINKS_MAX = 20_000
-/** Pairs kept for one vault; past it the ones seen longest ago leave first. A folder of many notes duplicated in Finder is one pair for each note. */
+/** Pairs kept for one vault; past it the ones seen longest ago leave first. A folder of many pages duplicated in Finder is one pair for each page. */
 export const CLASHES_MAX = 5000
 /** The diary is written this long after its first change. */
 const SAVE_MS = 2000
 
-/** One ID that two notes held, as this Mac saw it: a clash, or a copy. */
+/** One ID that two pages held, as this Mac saw it: a clash, or a copy. */
 export interface Clash {
-  /** The path of the note this Mac's index held with the ID before the other arrived (R25, R30); '' when it could not tell (R29). */
+  /** The path of the page this Mac's index held with the ID before the other arrived (R25, R30); '' when it could not tell (R29). */
   mine: string
-  /** When the other note arrived here (ms): a link first seen `LINK_GRACE_MS` before this meant this Mac's note (R28). */
+  /** When the other page arrived here (ms): a link first seen `LINK_GRACE_MS` before this meant this Mac's page (R28). */
   at: number
-  /** The number the door gave this Mac's note, saved BEFORE anything in the vault changes: a fix that stops continues with it. */
+  /** The number the door gave this Mac's page, saved BEFORE anything in the vault changes: a fix that stops continues with it. */
   to?: string
   /** Links changed so far, across each run of the fix. */
   links?: number
-  /** This Mac's note left the ID: any note that holds it from now on is a copy. */
+  /** This Mac's page left the ID: any page that holds it from now on is a copy. */
   done?: true
 }
 
@@ -125,7 +125,7 @@ function stateOf(root: string): State {
 export function namedIds(record: IndexRecord): string[] {
   const ids = new Set<string>()
   const take = (target: string | null): void => {
-    if (target !== null && isNumberId(target)) ids.add(canonicalNoteId(target))
+    if (target !== null && isNumberId(target)) ids.add(canonicalPageId(target))
   }
   // A target that keeps both sides (`staging|YAZ-12`, YAZ-4954) names the ID on its right side, as the shape reads it.
   const kept = (target: string): void => take(target.includes('|') ? splitLink(target).page : target)
@@ -140,7 +140,7 @@ export function namedIds(record: IndexRecord): string[] {
 }
 
 /**
- * The index read `record` at `at` (R27). Cheap, and no file is touched: a note that names no
+ * The index read `record` at `at` (R27). Cheap, and no file is touched: a page that names no
  * number ID — almost every one — is not kept at all. Whose IDs the others are is said later.
  */
 export function see(root: string, record: IndexRecord, at: number): void {
@@ -181,10 +181,10 @@ export async function openDiary(root: string, counts: Counts, letters: readonly 
   const state = stateOf(root)
   const book = await state.book
   const mine = counts.files.get(counts.me)
-  const made = (id: string | undefined): id is string => id !== undefined && madeBy(mine, noteIdNumber(id) ?? 0, now)
+  const made = (id: string | undefined): id is string => id !== undefined && madeBy(mine, pageIdNumber(id) ?? 0, now)
   // What left `made` leaves the diary (R21); an ID written with letters the vault had before is kept under its letters of now.
   for (const [key, files] of [...book.links]) {
-    const id = vaultNoteId(key, letters)
+    const id = vaultPageId(key, letters)
     if (id === key && made(id)) continue
     book.links.delete(key)
     book.dirty = true
@@ -205,7 +205,7 @@ export async function openDiary(root: string, counts: Counts, letters: readonly 
   for (const files of book.links.values()) size += files.size
   for (const { path: file, at, ids } of state.pending.splice(0)) {
     for (const written of ids) {
-      const id = vaultNoteId(written, letters)
+      const id = vaultPageId(written, letters)
       if (!made(id)) continue
       let files = book.links.get(id)
       if (files?.has(file) === true || size >= LINKS_MAX) continue

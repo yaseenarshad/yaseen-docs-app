@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { lineEndOf, withLf, withLineEnd, type LineEnd } from '@shared/lineEnds'
 import { api, BridgeRequestError } from '../api'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 import { registerRenameContinuity } from '../lib/renameContinuity'
@@ -12,7 +13,10 @@ export interface AutosaveHandle {
   /**
    * Start autosaving; returns the Autosave controller. `getContent` returns the current body
    * markdown (without frontmatter) and is re-read on every flush so nothing in flight is lost.
-   * `diskBody` is the body as it sits on disk (raw bytes, frontmatter stripped).
+   * `diskBody` is the body as it sits on disk (raw bytes, frontmatter stripped). The page's line end is read from
+   * `frontmatter + diskBody` and every save writes it (YAZ-5150);
+   * the editor holds the body with `\n` alone (`withLf`), since the parser keeps a `\r` inside a code or card block
+   * while it writes every other line with `\n`.
    */
   attach: (getContent: () => string, mtime: number, frontmatter: string, diskBody: string) => Autosave
   /** Overwrite the on-disk version with the editor content. */
@@ -28,7 +32,7 @@ export interface AutosaveHandle {
    * body edits) stays untouched. Returns false when the body changed (GRO-2186).
    */
   absorbFrontmatterOnly: (diskContent: string, diskMtime: number) => boolean
-  /** The file as it sits on disk now, in the two parts it was read or written in: what a line number counts in (YAZ-2643). */
+  /** The file as it sits on disk now, in the two parts it was read or written in: what a line number counts in (YAZ-2643). The body with `\n` alone, as the editor holds it (YAZ-5150). */
   diskParts: () => { frontmatter: string; body: string }
   /**
    * Who hears a save the disk refused (YAZ-3704 D1): the editor tries its merge first and shows the
@@ -39,7 +43,7 @@ export interface AutosaveHandle {
   /** Save now, with the live content (YAZ-4939: a timed "Allow edits" saves at zero, then locks). A retired editor does nothing. */
   flushNow: () => void
   /**
-   * The live content counts as saved (YAZ-4939: a table section collapsed in a read-only note is a view change), so no
+   * The live content counts as saved (YAZ-4939: a table section collapsed in a read-only page is a view change), so no
    * flush writes it; the next edit's save writes it with the edit. Nothing happens while an edit is still unsaved.
    */
   keepAsSaved: () => void
@@ -58,8 +62,16 @@ export function useAutosave(path: string): AutosaveHandle {
   const ref = useRef<{ autosave: Autosave; getContent: () => string } | null>(null)
   /** Raw frontmatter block re-prepended on every save; updated when the file is reloaded from disk. */
   const frontmatterRef = useRef('')
-  /** Body bytes as last read from / written to disk — the comparison key for frontmatter-only changes (GRO-2186). */
+  /** The body as last read from / written to disk, with `\n` alone (YAZ-5150) — the comparison key for frontmatter-only changes (GRO-2186). */
   const diskBodyRef = useRef('')
+  /** The page's own line end, read when it was loaded (YAZ-5150): every save writes the whole file with it. */
+  const lineEndRef = useRef<LineEnd>('\n')
+  /** Takes the page as read from disk: its block, its body with `\n` alone, its line end. */
+  const holdDisk = useCallback((frontmatter: string, diskBody: string) => {
+    frontmatterRef.current = frontmatter
+    diskBodyRef.current = withLf(diskBody)
+    lineEndRef.current = lineEndOf(frontmatter + diskBody)
+  }, [])
   /**
    * `path` was renamed away under this editor (Links E1, GRO-2194): a retired controller
    * never writes again — the unmount/close flushes become no-ops, so the buffer captured by
@@ -71,8 +83,7 @@ export function useAutosave(path: string): AutosaveHandle {
 
   const attach = useCallback(
     (getContent: () => string, mtime: number, frontmatter: string, diskBody: string) => {
-      frontmatterRef.current = frontmatter
-      diskBodyRef.current = diskBody
+      holdDisk(frontmatter, diskBody)
       const autosave = new Autosave({
         content: getContent(),
         mtime,
@@ -81,7 +92,9 @@ export function useAutosave(path: string): AutosaveHandle {
           let expected = expectedMtime
           for (let retried = false; ; retried = true) {
             try {
-              const res = await api.writeFile({ path, content: frontmatterRef.current + content, expectedMtime: expected })
+              // A `\n` page is written as the editor gave it, byte for byte; a `\r\n` page gets `\r\n` on every line (YAZ-5150).
+              const page = frontmatterRef.current + content
+              const res = await api.writeFile({ path, content: lineEndRef.current === '\n' ? page : withLineEnd(page, '\r\n'), expectedMtime: expected })
               diskBodyRef.current = content
               // Copies of this file in this window hear the save at once (YAZ-2940 D4, S23). It runs
               // before `save` returns, so this editor's own echo check sees the new mtime (twinEditors.ts).
@@ -95,7 +108,7 @@ export function useAutosave(path: string): AutosaveHandle {
               // rule `transformFile` follows. A body that moved is a real conflict: the bar.
               const fresh = retried ? null : await api.readFile(path).catch(() => null)
               const split = fresh === null ? null : splitFrontmatter(fresh.content)
-              if (fresh === null || split?.body !== diskBodyRef.current) throw new SaveConflict(err.mtime)
+              if (fresh === null || split === null || withLf(split.body) !== diskBodyRef.current) throw new SaveConflict(err.mtime)
               frontmatterRef.current = split.frontmatter
               expected = fresh.mtime
             }
@@ -109,7 +122,7 @@ export function useAutosave(path: string): AutosaveHandle {
       setConflictMtime(null)
       return autosave
     },
-    [path, setConflictMtime],
+    [path, setConflictMtime, holdDisk],
   )
 
   const flushNow = useCallback(() => {
@@ -128,7 +141,7 @@ export function useAutosave(path: string): AutosaveHandle {
 
   useEffect(() => {
     // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
-    // It answers whether this note is clean (YAZ-3737 D2); a retired editor handed its text on, so it is.
+    // It answers whether this page is clean (YAZ-3737 D2); a retired editor handed its text on, so it is.
     const offFlush = api.window.onFlush(async () => {
       const s = ref.current
       if (s === null || retiredRef.current) return true
@@ -183,21 +196,20 @@ export function useAutosave(path: string): AutosaveHandle {
   }, [conflictMtime, setConflictMtime])
 
   const markReloaded = useCallback((getContent: () => string, mtime: number, frontmatter: string, diskBody: string) => {
-    frontmatterRef.current = frontmatter
-    diskBodyRef.current = diskBody
+    holdDisk(frontmatter, diskBody)
     ref.current?.autosave.reset(getContent(), mtime)
     setConflictMtime(null)
-  }, [setConflictMtime])
+  }, [setConflictMtime, holdDisk])
 
   const absorbFrontmatterOnly = useCallback((diskContent: string, diskMtime: number): boolean => {
     const s = ref.current
     if (s === null) return false
     const { frontmatter, body } = splitFrontmatter(diskContent)
-    if (body !== diskBodyRef.current) return false
-    frontmatterRef.current = frontmatter
+    if (withLf(body) !== diskBodyRef.current) return false
+    holdDisk(frontmatter, body)
     s.autosave.mtime = diskMtime
     return true
-  }, [])
+  }, [holdDisk])
 
   const diskParts = useCallback(() => ({ frontmatter: frontmatterRef.current, body: diskBodyRef.current }), [])
 

@@ -65,7 +65,7 @@ const h = vi.hoisted(() => {
     check: vi.fn(async (): Promise<{ kind: string }> => ({ kind: 'idle' })),
     checks: true,
     state: vi.fn(() => ({ kind: updater.kind })),
-    notes: vi.fn(async () => []),
+    pages: vi.fn(async () => []),
     installOnExit: vi.fn((reopen: boolean) => void s.order.push(`installOnExit:${String(reopen)}`)),
   }
   const gitSync = { notifyFocus: vi.fn(), notifyWake: vi.fn(), flushForQuit: vi.fn(async (): Promise<void> => void s.order.push('gitSync.flushForQuit')) }
@@ -88,6 +88,9 @@ const h = vi.hoisted(() => {
     registerClipboardIpc: vi.fn(log('registerClipboardIpc')),
     /** The Draw import's wiring (YAZ-3028 D6); `drawImport.test.ts` tests the import itself. */
     startDrawImport: vi.fn((_deps: Record<string, unknown>) => void s.order.push('startDrawImport')),
+    /** The card skill's copy (YAZ-5107); `cardSkill.test.ts` tests the copy itself. A real copy reads the disk, which ends after `settle` (YAZ-5149). */
+    ensureCardSkill: vi.fn(async (userData: string, _shipped: string, _version: string): Promise<string> => (s.order.push('ensureCardSkill'), `${userData}/card-skill`)),
+    cardSkillStamp: vi.fn(async (_shipped: string, version: string): Promise<string> => `${version}+dev.stub`),
   }
 })
 
@@ -119,21 +122,34 @@ vi.mock('./settingsFolder', () => ({ followSettingsFolder: () => h.settingsFolde
 vi.mock('./library/folder', () => ({ ensureLibraryFolder: vi.fn(async () => '/userData/library') }))
 vi.mock('./updater', async (importOriginal) => ({ shortVersion: (await importOriginal<typeof import('./updater')>()).shortVersion, createUpdater: h.createUpdater, runFile: vi.fn(), spawnDetached: vi.fn(), RELEASES_PAGE: 'https://github.com/yaseenarshad/yaseen-docs-app/releases/latest' }))
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))
+// The Mac's send of the numbers (YAZ-5086) has its own tests (`friends/`): here it is a stub, with no watcher and no call.
+const friendsStub = vi.hoisted(() => ({ on: false, start: vi.fn() }))
+vi.mock('./friends', () => ({ startFriendsSend: friendsStub.start.mockImplementation(() => ({ look: vi.fn(async () => ({ status: 'idle' })), tokenChanged: vi.fn(), stop: vi.fn(async () => undefined) })) }))
+// YAZ-5652: the Friends switch, as `index.ts` reads it on ready.
+vi.mock('@shared/features', () => ({
+  get FRIENDS_ENABLED() {
+    return friendsStub.on
+  },
+}))
 vi.mock('./drawImport', async (importOriginal) => ({ ...(await importOriginal<typeof import('./drawImport')>()), startDrawImport: h.startDrawImport }))
+vi.mock('./cardSkill', async (importOriginal) => ({ ...(await importOriginal<typeof import('./cardSkill')>()), ensureCardSkill: h.ensureCardSkill, cardSkillStamp: h.cardSkillStamp }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
 vi.mock('./appZoom', () => ({ subscribeAppZoom: vi.fn(), appZoomFactor: () => 1 }))
+// YAZ-5491: main's watch of the vaults' daily-pages.json, for the menu.
+vi.mock('./dailyPagesVaultFile', () => ({ watchDailyPages: vi.fn(() => ({ on: () => false, stop: () => undefined })) }))
 vi.mock('./menu', () => ({
   buildContextMenuTemplate: vi.fn(),
   buildMenuTemplate: vi.fn(() => []),
   createMenuHandlers: vi.fn(() => ({})),
   gateOnBoardKind: vi.fn((_kind: unknown, apply: () => void) => ({ apply, applyIfMoved: apply })),
   menuKeyedVaults: vi.fn(() => []),
+  menuKindsInFront: vi.fn(() => ({ activeKind: null, frontKind: null })),
   pickMenuTargetWindow: vi.fn(),
   subscribeMenuRebuild: vi.fn(),
   subscribeMenuRebuildOnActiveFile: vi.fn(),
 }))
 
-const NOTE = '/vault/Plans/Roadmap.md'
+const PAGE = '/vault/Plans/Roadmap.md'
 const event = () => ({ preventDefault: vi.fn() })
 /** Lets `whenReady().then(…)` and a `.then` chain run to their ends. */
 const settle = () => new Promise((r) => setTimeout(r, 0))
@@ -146,6 +162,7 @@ function gate(): { promise: Promise<void>; open: () => void } {
 
 beforeEach(async () => {
   vi.clearAllMocks()
+  friendsStub.on = false
   Object.assign(h.s, { order: [], on: new Map(), windows: [], stored: [] })
   h.handles.clear()
   h.updater.kind = 'idle'
@@ -170,8 +187,8 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.app.setAsDefaultProtocolClient).not.toHaveBeenCalled()
   })
 
-  it('registers app:// with exactly standard + secure + fetch + code cache, before ready', () => {
-    expect(h.protocol.registerSchemesAsPrivileged).toHaveBeenCalledExactlyOnceWith([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } }])
+  it('registers app:// with exactly standard + secure + fetch + code cache + stream (YAZ-5014: a card`s sound), before ready', () => {
+    expect(h.protocol.registerSchemesAsPrivileged).toHaveBeenCalledExactlyOnceWith([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true, stream: true } }])
     expect(h.s.order).not.toContain('ready')
   })
 
@@ -179,7 +196,7 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.s.order).toEqual(expect.arrayContaining(['on:second-instance', 'on:open-url', 'on:open-file']))
     expect(h.s.order).not.toContain('ready')
     const e = event()
-    h.s.on.get('open-file')!(e, NOTE)
+    h.s.on.get('open-file')!(e, PAGE)
     expect(e.preventDefault).toHaveBeenCalled()
     expect(h.manager.routeToFile).not.toHaveBeenCalled()
     h.s.ready()
@@ -187,10 +204,10 @@ describe('main startup order (YAZ-2172)', () => {
     // Every door registered before the windows restore; the cold-start link routes only after them.
     const at = (entry: string) => h.s.order.indexOf(entry)
     for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeGreaterThan(at('ready'))
-    for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeLessThan(at(`restore:root-of:${NOTE}`))
-    expect(at(`route:${NOTE}`)).toBeGreaterThan(at(`restore:root-of:${NOTE}`))
-    expect(h.manager.rootFor).toHaveBeenCalledExactlyOnceWith(NOTE, null)
-    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith([`root-of:${NOTE}`])
+    for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeLessThan(at(`restore:root-of:${PAGE}`))
+    expect(at(`route:${PAGE}`)).toBeGreaterThan(at(`restore:root-of:${PAGE}`))
+    expect(h.manager.rootFor).toHaveBeenCalledExactlyOnceWith(PAGE, null)
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith([`root-of:${PAGE}`])
   })
 
   it('a launch with two waiting links asks for both vaults; a link that cannot be read and a path that cannot open ask for nothing, and are handled all the same (YAZ-2589 S6, S7, A6)', async () => {
@@ -228,8 +245,8 @@ describe('main startup order (YAZ-2172)', () => {
   it('after ready a link routes at once, and a bad one gets the notice instead of a route', async () => {
     h.s.ready()
     await settle()
-    h.s.on.get('open-url')!(event(), fileLink(NOTE))
-    expect(h.manager.routeToFile).toHaveBeenCalledWith(NOTE, null)
+    h.s.on.get('open-url')!(event(), fileLink(PAGE))
+    expect(h.manager.routeToFile).toHaveBeenCalledWith(PAGE, null)
     h.s.on.get('open-url')!(event(), 'https://example.com')
     expect(h.manager.linkNotice).toHaveBeenCalledWith("Can't open link: https://example.com")
   })
@@ -239,8 +256,8 @@ describe('main startup order (YAZ-2172)', () => {
     await settle()
     const win = { isDestroyed: () => false, isMinimized: () => true, restore: vi.fn(), focus: vi.fn() }
     h.s.windows = [win]
-    h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', fileLink(NOTE)])
-    expect(h.manager.routeToFile).toHaveBeenCalledWith(NOTE, null)
+    h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', fileLink(PAGE)])
+    expect(h.manager.routeToFile).toHaveBeenCalledWith(PAGE, null)
     expect(win.focus).not.toHaveBeenCalled()
     // Draw's scheme rides the same door (YAZ-3028 D7).
     h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', 'yaseendraw:///vault/Board%20one.excalidraw'])
@@ -265,13 +282,30 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.startDrawImport.mock.calls[0]![0]).toMatchObject({ drawDir: '/profile/Yaseen Draw', userData: '/profile', appData: false })
     expect(h.s.order.indexOf('startDrawImport')).toBeLessThan(h.s.order.findIndex((e) => e.startsWith('restore:')))
   })
+
+  it('copies the card skill into the profile before the windows restore, stamped with the app version (YAZ-5107, YAZ-5149)', async () => {
+    h.s.ready()
+    await settle()
+    expect(h.ensureCardSkill).toHaveBeenCalledExactlyOnceWith('/profile', '/Applications/Yaseen Docs.app/Contents/Resources/card-skill', '1.0.12')
+    expect(h.s.order.indexOf('ensureCardSkill')).toBeLessThan(h.s.order.indexOf('restore:none'))
+  })
+
+  it('a failed card skill copy is logged, and the windows restore all the same (YAZ-5149)', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    h.ensureCardSkill.mockRejectedValueOnce(new Error('EACCES'))
+    h.s.ready()
+    await settle()
+    expect(logged).toHaveBeenCalledWith('[cardSkill] the copy failed: Error: EACCES')
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith('none')
+    logged.mockRestore()
+  })
 })
 
 describe('a window focus is a pull trigger (YAZ-1081 D2)', () => {
   it('asks the sync manager to pull EVERY vault the focused window shows, and no vault of another window; a Welcome window or an unknown one asks for none (YAZ-2602 S43)', async () => {
     h.s.ready()
     await settle() // `whenReady` ran: registerIpc handed back the sync manager (and the one secrets instance)
-    h.s.stored = [{ id: 'w1', roots: ['/notes', '/work'] }, { id: 'w2', roots: ['/other'] }, { id: 'w3', roots: [] }]
+    h.s.stored = [{ id: 'w1', roots: ['/pages', '/work'] }, { id: 'w2', roots: ['/other'] }, { id: 'w3', roots: [] }]
     const focus = (id: string | undefined) => {
       const webContents = { id: 7 }
       h.manager.idFor.mockReturnValue(id)
@@ -280,7 +314,7 @@ describe('a window focus is a pull trigger (YAZ-1081 D2)', () => {
       expect(h.manager.idFor).toHaveBeenLastCalledWith(webContents)
       return h.gitSync.notifyFocus.mock.calls
     }
-    expect(focus('w1')).toEqual([['/notes'], ['/work']])
+    expect(focus('w1')).toEqual([['/pages'], ['/work']])
     expect(focus('w2')).toEqual([['/other']])
     expect(focus('w3')).toEqual([])
     expect(focus(undefined)).toEqual([])
@@ -354,10 +388,40 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['course-audio:chapter', 'course-audio:chapter-starting', 'course-audio:open', 'memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })
+  })
+
+  it('YAZ-5652: with Friends off, the friends sender never starts and `friends:status` is not there', async () => {
+    h.s.ready()
+    await settle()
+    expect(friendsStub.start).not.toHaveBeenCalled()
+    expect(h.handles.has('friends:status')).toBe(false)
+  })
+
+  it("YAZ-5652: with Friends on, today's start: the sender starts once and `friends:status` answers its look", async () => {
+    vi.clearAllMocks()
+    friendsStub.on = true
+    h.handles.clear()
+    vi.resetModules()
+    await import('./index')
+    h.s.ready()
+    await settle()
+    await settle()
+    expect(friendsStub.start).toHaveBeenCalledOnce()
+    await expect(invoke('friends:status')).resolves.toEqual({ ok: true, value: { status: 'idle' } })
+  })
+
+  it('the course sound (YAZ-5159): its doors are there at start, and nothing downloads at app start', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no network in this test'))
+    h.s.ready()
+    await settle()
+    expect(h.handles.has('course-audio:chapter-starting')).toBe(true)
+    await expect(h.handles.get('course-audio:chapter')!({}, 'why')).resolves.toEqual({ ok: true, value: null })
+    await settle()
+    expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('course-audio'))).toEqual([])
   })
 
   it('restart: manual opens the release page (S13, D3); ready quits, and the swap then reopens the app (S21); any other state does nothing', async () => {

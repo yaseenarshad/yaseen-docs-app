@@ -1,5 +1,5 @@
 /**
- * Super tables (YAZ-4869, S1–S5; CONTRACTS rule 41a): a note table whose views show as tabs over it. The table stays
+ * Super tables (YAZ-4869, S1–S5; CONTRACTS rule 41a): a page table whose views show as tabs over it. The table stays
  * the source: tab "Table" is the table itself, as before, and each other tab is a VIEW of the same rows, drawn by the
  * zoom pill's anchor (`tableZoomPill.tsx`, the lazy `SuperTable.tsx`). The views live in the table comment
  * (`viewGrammar.ts`); a plain table costs nothing.
@@ -24,6 +24,7 @@ import { TableMap } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { storage } from '../../../lib/storage'
+import { tableLookAt, type TableLookPlace } from '../tableLook'
 import { findThreadAnchor } from '../../find/findInPage'
 import { bodySpansRows, cellStartsAt } from '../cells'
 import { changedTables, typingOnly, type TableAttrs } from '../tableStyle'
@@ -35,7 +36,7 @@ export const SUPER_HIDDEN_CLASS = 'table-super-hidden'
 /** Where the note is, for what this Mac remembers of its tables (the active tab, the collapsed groups). */
 export interface SuperPlace {
   root: string
-  notePath: string
+  pagePath: string
 }
 
 /** A table anchor's doors (`tableZoomPill.tsx`): draw the pill again, draw the Super table again (debounced while typing), and show a found row. */
@@ -102,8 +103,11 @@ export function setViews(view: EditorView, pos: number, views: readonly TableVie
 }
 
 /** A new table as Settings › Tables › New tables start as says (item 22): the slash menu's "Table" row. */
-export function newTableNode(table: ProseNode): ProseNode {
-  return storage.getSettings().tableNewStyle === 'super' ? table.type.create({ ...table.attrs, superTable: true }, table.content) : table
+export function newTableNode(table: ProseNode, at?: TableLookPlace): ProseNode {
+  // YAZ-5487: the vault's (`table-look.json`) of the editor that makes it; the app's with no file. A main process older
+  // than the vault file: the app's setting, as before.
+  const style = at === undefined ? storage.getSettings().tableNewStyle : tableLookAt(at).tableNewStyle
+  return style === 'super' ? table.type.create({ ...table.attrs, superTable: true }, table.content) : table
 }
 
 // ---------- where a table is ----------
@@ -143,7 +147,7 @@ export function headerKeys(table: ProseNode): string[] {
 const memory = new Map<string, string[]>()
 
 /** The key of one table's remembered list: `<note>::table:<index>::<what>`. */
-const memoryKey = (place: SuperPlace | null, index: number, what: string): string => `${place?.notePath ?? ''}::table:${index}::${what}`
+const memoryKey = (place: SuperPlace | null, index: number, what: string): string => `${place?.pagePath ?? ''}::table:${index}::${what}`
 
 export function remembered(place: SuperPlace | null, index: number, what: string): string[] {
   const key = memoryKey(place, index, what)

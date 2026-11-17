@@ -36,13 +36,13 @@ async function actAs(root: string, id: string): Promise<void> {
   _actAs(root, appData)
 }
 
-/** A vault of Mac A with `Notes/n.md`, `Projects/Alpha/deep.md`, `Projects/p.md`, `top.md`. */
+/** A vault of Mac A with `Pages/n.md`, `Projects/Alpha/deep.md`, `Projects/p.md`, `top.md`. */
 async function makeVault(name = 'vault'): Promise<string> {
   const root = path.join(base, name)
-  await mkdir(path.join(root, 'Notes'), { recursive: true })
+  await mkdir(path.join(root, 'Pages'), { recursive: true })
   await mkdir(path.join(root, 'Projects', 'Alpha'), { recursive: true })
   await Promise.all([
-    writeFile(path.join(root, 'Notes', 'n.md'), '# n\n'),
+    writeFile(path.join(root, 'Pages', 'n.md'), '# n\n'),
     writeFile(path.join(root, 'Projects', 'Alpha', 'deep.md'), '# deep\n'),
     writeFile(path.join(root, 'Projects', 'p.md'), '# p\n'),
     writeFile(path.join(root, 'top.md'), '# top\n'),
@@ -71,7 +71,7 @@ describe('getFocus / setFocus', () => {
     _actAs(root, appData) // a Mac that has no ID yet
     expect(await getFocus(root)).toEqual([])
     await renamePath([root], path.join(root, 'top.md'), path.join(root, 'x.md'))
-    await removePath([root], path.join(root, 'Notes'))
+    await removePath([root], path.join(root, 'Pages'))
     await setFocus(root, []) // an empty list over no list is no change (R8)
     expect(await readdir(root)).not.toContain(VAULT_CONFIG_DIR)
     expect(await readdir(base)).not.toContain('app-data-fresh')
@@ -79,12 +79,12 @@ describe('getFocus / setFocus', () => {
 
   it('the first write creates .yaseendocs/focus.<mac id>.json with RELATIVE POSIX entries in order, an ISO `at`, pretty JSON; get round-trips to absolute', async () => {
     const root = await makeVault()
-    const abs = [path.join(root, 'Projects', 'p.md'), path.join(root, 'Notes'), path.join(root, 'top.md')]
+    const abs = [path.join(root, 'Projects', 'p.md'), path.join(root, 'Pages'), path.join(root, 'top.md')]
     const t0 = Date.now()
     await setFocus(root, abs)
     expect(await names(root)).toEqual([focusFile(A)])
     const held = await onDisk(root, A)
-    expect(held).toEqual({ version: 1, at: expect.any(String), focus: ['Projects/p.md', 'Notes', 'top.md'] })
+    expect(held).toEqual({ version: 1, at: expect.any(String), focus: ['Projects/p.md', 'Pages', 'top.md'] })
     expect(new Date(held.at).toISOString()).toBe(held.at)
     expect(Date.parse(held.at)).toBeGreaterThanOrEqual(t0)
     expect(await bytes(root, A)).toBe(`${JSON.stringify(held, null, 2)}\n`)
@@ -93,14 +93,14 @@ describe('getFocus / setFocus', () => {
 
   it('two Macs: the newest file is the list, and a Mac writes only its own file (R1, R2)', async () => {
     const root = await makeVault()
-    const [top, notes, p] = [path.join(root, 'top.md'), path.join(root, 'Notes'), path.join(root, 'Projects', 'p.md')]
+    const [top, pages, p] = [path.join(root, 'top.md'), path.join(root, 'Pages'), path.join(root, 'Projects', 'p.md')]
     await setFocus(root, [top])
     const first = await bytes(root, A)
 
     await actAs(root, B)
-    await setFocus(root, [notes, top])
+    await setFocus(root, [pages, top])
     expect((await names(root)).sort()).toEqual([focusFile(A), focusFile(B)])
-    expect(await getFocus(root)).toEqual([notes, top])
+    expect(await getFocus(root)).toEqual([pages, top])
     expect(await bytes(root, A)).toBe(first) // Mac B never touched Mac A's file
     const second = await bytes(root, B)
 
@@ -113,8 +113,8 @@ describe('getFocus / setFocus', () => {
 
   it('a Mac whose clock is behind still makes the newest file: its `at` is later than every file it read (R4)', async () => {
     const root = await makeVault()
-    await seed(root, focusFile(B), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['Notes'] })
-    expect(await getFocus(root)).toEqual([path.join(root, 'Notes')])
+    await seed(root, focusFile(B), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['Pages'] })
+    expect(await getFocus(root)).toEqual([path.join(root, 'Pages')])
     await setFocus(root, [path.join(root, 'top.md')])
     expect((await onDisk(root, A)).at).toBe('2099-01-01T00:00:00.001Z')
     expect(await getFocus(root)).toEqual([path.join(root, 'top.md')])
@@ -126,18 +126,18 @@ describe('getFocus / setFocus', () => {
   it('of two files with one `at` the later name is the list (R1)', async () => {
     const root = await makeVault()
     const at = '2026-10-12T10:00:00.000Z'
-    await seed(root, focusFile(C), { version: 1, at, focus: ['Notes'] })
+    await seed(root, focusFile(C), { version: 1, at, focus: ['Pages'] })
     await seed(root, focusFile(B), { version: 1, at, focus: ['top.md'] })
-    expect(await getFocus(root)).toEqual([path.join(root, 'Notes')])
+    expect(await getFocus(root)).toEqual([path.join(root, 'Pages')])
     // Times are compared, not strings: 11:59 at +02:00 is the EARLIER time, and the later text.
     await seed(root, focusFile('dddddddddddd'), { version: 1, at: '2026-10-12T11:59:59.000+02:00', focus: ['top.md'] })
-    expect(await getFocus(root)).toEqual([path.join(root, 'Notes')])
+    expect(await getFocus(root)).toEqual([path.join(root, 'Pages')])
   })
 
   it('a file that is not valid is passed over on a read, and this Mac\'s write replaces its own (R3)', async () => {
     const root = await makeVault()
     const future = '2099-01-01T00:00:00.000Z'
-    await seed(root, focusFile(B), { version: 1, at: '2026-01-01T00:00:00.000Z', focus: ['Notes'] }) // the one valid file, and the oldest
+    await seed(root, focusFile(B), { version: 1, at: '2026-01-01T00:00:00.000Z', focus: ['Pages'] }) // the one valid file, and the oldest
     await seed(root, focusFile(A), '{not json')
     await seed(root, focusFile(C), { version: 2, at: future, focus: ['top.md'] })
     await seed(root, focusFile('dddddddddddd'), { version: 1, focus: ['top.md'] })
@@ -149,7 +149,7 @@ describe('getFocus / setFocus', () => {
     await seed(root, 'focus.json', { version: 1, at: future, focus: ['top.md'] })
     await seed(root, 'focus.SHORT.json', { version: 1, at: future, focus: ['top.md'] })
     await seed(root, path.join('sub', focusFile(C)), { version: 1, at: future, focus: ['top.md'] })
-    expect(await getFocus(root)).toEqual([path.join(root, 'Notes')])
+    expect(await getFocus(root)).toEqual([path.join(root, 'Pages')])
 
     await setFocus(root, [path.join(root, 'top.md')])
     expect((await onDisk(root, A)).focus).toEqual(['top.md'])
@@ -159,26 +159,26 @@ describe('getFocus / setFocus', () => {
 
   it('a write that does not change the list writes nothing and tells nobody (R8)', async () => {
     const root = await makeVault()
-    const [top, notes] = [path.join(root, 'top.md'), path.join(root, 'Notes')]
+    const [top, pages] = [path.join(root, 'top.md'), path.join(root, 'Pages')]
     const heard = vi.fn()
     const off = subscribeFocus(root, heard)
     try {
-      await setFocus(root, [top, notes])
+      await setFocus(root, [top, pages])
       expect(heard).toHaveBeenCalledTimes(1)
       const [before, mtime] = [await bytes(root, A), await mtimeOf(root, A)]
       await sleep(20)
-      await setFocus(root, [top, notes])
-      await setFocus(root, [top, notes, top, path.join(root, 'gone.md')]) // the same list once it is cleaned
+      await setFocus(root, [top, pages])
+      await setFocus(root, [top, pages, top, path.join(root, 'gone.md')]) // the same list once it is cleaned
       expect(await bytes(root, A)).toBe(before)
       expect(await mtimeOf(root, A)).toBe(mtime)
       // The list is another Mac's file: this Mac asking for that same list makes no file of its own.
       await actAs(root, B)
-      await setFocus(root, [top, notes])
+      await setFocus(root, [top, pages])
       expect(await names(root)).toEqual([focusFile(A)])
       expect(heard).toHaveBeenCalledTimes(1)
-      await setFocus(root, [notes, top]) // a new ORDER is a change
+      await setFocus(root, [pages, top]) // a new ORDER is a change
       expect(heard).toHaveBeenCalledTimes(2)
-      expect(await getFocus(root)).toEqual([notes, top])
+      expect(await getFocus(root)).toEqual([pages, top])
     } finally {
       off()
     }
@@ -212,8 +212,8 @@ describe('getFocus / setFocus', () => {
   it('a write drops entries whose path is gone from disk, de-duplicates and caps at MAX_FOCUS (R5, R7)', async () => {
     const root = await makeVault()
     const top = path.join(root, 'top.md')
-    await setFocus(root, [path.join(root, 'Notes'), path.join(root, 'gone.md'), top, path.join(root, 'Projects', 'Alpha', 'missing'), top])
-    expect((await onDisk(root, A)).focus).toEqual(['Notes', 'top.md'])
+    await setFocus(root, [path.join(root, 'Pages'), path.join(root, 'gone.md'), top, path.join(root, 'Projects', 'Alpha', 'missing'), top])
+    expect((await onDisk(root, A)).focus).toEqual(['Pages', 'top.md'])
     // The cap: MAX_FOCUS + 5 existing entries (dirs are cheaper to make than files here).
     const dirs = Array.from({ length: MAX_FOCUS + 5 }, (_, i) => path.join(root, 'many', `d${i}`))
     await Promise.all(dirs.map((d) => mkdir(d, { recursive: true })))
@@ -227,30 +227,30 @@ describe('renamePath / removePath repair (R10)', () => {
     const root = await makeVault()
     await mkdir(path.join(root, 'Projects2'))
     await setFocus(root, [path.join(root, 'Projects'), path.join(root, 'Projects', 'Alpha', 'deep.md'), path.join(root, 'Projects', 'p.md'), path.join(root, 'top.md'), path.join(root, 'Projects2')])
-    await renamePath([root], path.join(root, 'top.md'), path.join(root, 'Notes', 'moved.md'))
+    await renamePath([root], path.join(root, 'top.md'), path.join(root, 'Pages', 'moved.md'))
     await renamePath([root], path.join(root, 'Projects'), path.join(root, 'Work'))
-    expect((await onDisk(root, A)).focus).toEqual(['Work', 'Work/Alpha/deep.md', 'Work/p.md', 'Notes/moved.md', 'Projects2'])
+    expect((await onDisk(root, A)).focus).toEqual(['Work', 'Work/Alpha/deep.md', 'Work/p.md', 'Pages/moved.md', 'Projects2'])
   })
 
   it('removePath drops a deleted file, and a deleted dir with everything under it; an item moved OUT of the vault is dropped', async () => {
     const root = await makeVault()
-    await setFocus(root, [path.join(root, 'top.md'), path.join(root, 'Projects'), path.join(root, 'Projects', 'p.md'), path.join(root, 'Notes'), path.join(root, 'Notes', 'n.md')])
+    await setFocus(root, [path.join(root, 'top.md'), path.join(root, 'Projects'), path.join(root, 'Projects', 'p.md'), path.join(root, 'Pages'), path.join(root, 'Pages', 'n.md')])
     await removePath([root], path.join(root, 'top.md'))
-    expect((await onDisk(root, A)).focus).toEqual(['Projects', 'Projects/p.md', 'Notes', 'Notes/n.md'])
+    expect((await onDisk(root, A)).focus).toEqual(['Projects', 'Projects/p.md', 'Pages', 'Pages/n.md'])
     await removePath([root], path.join(root, 'Projects'))
-    expect((await onDisk(root, A)).focus).toEqual(['Notes', 'Notes/n.md'])
-    await renamePath([root], path.join(root, 'Notes'), '/elsewhere/Notes')
+    expect((await onDisk(root, A)).focus).toEqual(['Pages', 'Pages/n.md'])
+    await renamePath([root], path.join(root, 'Pages'), '/elsewhere/Pages')
     expect((await onDisk(root, A)).focus).toEqual([])
   })
 
   it('a repair of a list another Mac wrote goes into THIS Mac\'s file, newer than theirs, and theirs is not touched (R2, R4)', async () => {
     const root = await makeVault()
-    await seed(root, focusFile(B), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['top.md', 'Notes'] })
+    await seed(root, focusFile(B), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['top.md', 'Pages'] })
     const theirs = await bytes(root, B)
     await renamePath([root], path.join(root, 'top.md'), path.join(root, 'renamed.md'))
-    expect(await onDisk(root, A)).toEqual({ version: 1, at: '2099-01-01T00:00:00.001Z', focus: ['renamed.md', 'Notes'] })
+    expect(await onDisk(root, A)).toEqual({ version: 1, at: '2099-01-01T00:00:00.001Z', focus: ['renamed.md', 'Pages'] })
     expect(await bytes(root, B)).toBe(theirs)
-    expect(await getFocus(root)).toEqual([path.join(root, 'renamed.md'), path.join(root, 'Notes')])
+    expect(await getFocus(root)).toEqual([path.join(root, 'renamed.md'), path.join(root, 'Pages')])
   })
 
   it('an unrelated rename or delete, and a path under no open root, write nothing (mtime and bytes unchanged)', async () => {
@@ -258,7 +258,7 @@ describe('renamePath / removePath repair (R10)', () => {
     await setFocus(root, [path.join(root, 'top.md')])
     const [before, mtime] = [await bytes(root, A), await mtimeOf(root, A)]
     await sleep(20)
-    await renamePath([root], path.join(root, 'Notes', 'n.md'), path.join(root, 'Notes', 'm.md'))
+    await renamePath([root], path.join(root, 'Pages', 'n.md'), path.join(root, 'Pages', 'm.md'))
     await removePath([root], path.join(root, 'Projects'))
     await renamePath([], path.join(root, 'top.md'), path.join(root, 'x.md'))
     await removePath(['/some/other/vault'], path.join(root, 'top.md'))
@@ -291,10 +291,10 @@ describe('subscribeFocus (R12)', () => {
       await seed(root, 'focus.json', { version: 1, at: '2099-01-01T00:00:00.000Z', focus: [] })
       await sleep(400) // far past the watcher's debounce: neither is a focus file
       expect(heard).toHaveBeenCalledTimes(1)
-      await seed(root, focusFile(B), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['Notes'] })
+      await seed(root, focusFile(B), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['Pages'] })
       await vi.waitFor(() => expect(heard.mock.calls.length).toBeGreaterThan(1), { timeout: 3000 })
       expect(heard).toHaveBeenLastCalledWith({ root, scope: 'vault' })
-      expect(await getFocus(root)).toEqual([path.join(root, 'Notes')])
+      expect(await getFocus(root)).toEqual([path.join(root, 'Pages')])
     } finally {
       off()
     }
@@ -304,14 +304,14 @@ describe('subscribeFocus (R12)', () => {
 describe('the workspace list (YAZ-4450 D1, D3)', () => {
   it('each list reads and writes only its own file; no workspace file is an EMPTY list, never the vault\'s own (D3)', async () => {
     const root = await makeVault()
-    const [top, notes] = [path.join(root, 'top.md'), path.join(root, 'Notes')]
+    const [top, pages] = [path.join(root, 'top.md'), path.join(root, 'Pages')]
     await setFocus(root, [top])
     expect(await getFocus(root, 'workspace')).toEqual([])
-    await setFocus(root, [notes], 'workspace')
+    await setFocus(root, [pages], 'workspace')
     expect((await names(root)).sort()).toEqual([focusFile(A, 'workspace'), focusFile(A)].sort())
     expect(focusFile(A, 'workspace')).toBe(`focus-workspace.${A}.json`)
     expect(await getFocus(root)).toEqual([top])
-    expect(await getFocus(root, 'workspace')).toEqual([notes])
+    expect(await getFocus(root, 'workspace')).toEqual([pages])
     const own = await bytes(root, A)
     await setFocus(root, [], 'workspace')
     expect(await getFocus(root, 'workspace')).toEqual([])
@@ -320,9 +320,9 @@ describe('the workspace list (YAZ-4450 D1, D3)', () => {
 
   it('a workspace file never counts as the vault\'s own list: an old build\'s read sees only focus.<mac id>.json', async () => {
     const root = await makeVault()
-    await seed(root, focusFile(B, 'workspace'), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['Notes'] })
+    await seed(root, focusFile(B, 'workspace'), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['Pages'] })
     expect(await getFocus(root)).toEqual([])
-    expect(await getFocus(root, 'workspace')).toEqual([path.join(root, 'Notes')])
+    expect(await getFocus(root, 'workspace')).toEqual([path.join(root, 'Pages')])
   })
 
   it('a rename and a delete repair BOTH lists of the vault, each written only when it changed', async () => {

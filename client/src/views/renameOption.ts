@@ -1,10 +1,10 @@
 /**
- * Renaming a Select or Multi-select option rewrites the notes that hold it (YAZ-4591 S24). The
- * declaration lands first (`FolderHost.setColumn`); then each indexed note holding the old label is
- * ONE guarded `transformFile` against its fresh bytes: the value is read again there, so a note
- * edited since the index saw it is renamed as it is now, and a note that no longer holds the label is
+ * Renaming a Select or Multi-select option rewrites the pages that hold it (YAZ-4591 S24). The
+ * declaration lands first (`FolderHost.setColumn`); then each indexed page holding the old label is
+ * ONE guarded `transformFile` against its fresh bytes: the value is read again there, so a page
+ * edited since the index saw it is renamed as it is now, and a page that no longer holds the label is
  * not written. Where the vault uses IDs the value is this folder's block (D19, `shared/folderValues.ts`);
- * where it does not, the note's own top-level key. Nothing else in a note moves. A read-only note
+ * where it does not, the page's own top-level key. Nothing else in a page moves. A read-only page
  * is never written (YAZ-3076 D6): it is counted as kept.
  */
 import { folderValues } from '@shared/folderValues'
@@ -36,24 +36,24 @@ export function renamedValue(value: unknown, from: string, to: string): unknown 
 
 const holds = (value: unknown, label: string): value is unknown[] => Array.isArray(value) && value.includes(label)
 
-/** Where a folder keeps a note's values: its block of `in`, by the folder's id, or (null) the note's top level. */
+/** Where a folder keeps a page's values: its block of `in`, by the folder's id, or (null) the page's top level. */
 export type ValueHome = { block: string } | null
 
 const valuesOf = (properties: Record<string, unknown>, home: ValueHome): Record<string, unknown> => (home === null ? properties : folderValues(properties, home.block))
 
-/** A note's value of `key` where `home` says, in any capitals (YAZ-4769). */
+/** A page's value of `key` where `home` says, in any capitals (YAZ-4769). */
 const valueOf = (properties: Record<string, unknown>, home: ValueHome, key: string): unknown => foldedValue(valuesOf(properties, home), key)
 
 /**
- * `key`'s value put where `home` says, under `key`'s spelling: the note's other spellings of it go in the same write
+ * `key`'s value put where `home` says, under `key`'s spelling: the page's other spellings of it go in the same write
  * (YAZ-4769), the app's keys never.
  */
 const putValue = (content: string, home: ValueHome, key: string, value: unknown): string =>
   home === null ? setOneSpelling(content, key, value, reservedKeys(true)) : setFolderValueOneSpelling(content, home.block, key, value)
 
 /**
- * One note's bytes with the rename applied to `key`, and the value it held, or the same bytes when the note does not
- * hold `from` — or is read only on disk (YAZ-4637 M6): a `readonly: true` note is never written, wherever it is.
+ * One page's bytes with the rename applied to `key`, and the value it held, or the same bytes when the page does not
+ * hold `from` — or is read only on disk (YAZ-4637 M6): a `readonly: true` page is never written, wherever it is.
  */
 export function renameInContent(content: string, home: ValueHome, key: string, from: string, to: string): { content: string; before?: unknown } {
   const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
@@ -65,42 +65,42 @@ export function renameInContent(content: string, home: ValueHome, key: string, f
   return { content: putValue(content, home, key, next), before }
 }
 
-/** A note the rename changed, with the exact value it held before (YAZ-4637 M5): what Undo puts back. */
-export interface ChangedNote {
+/** A page the rename changed, with the exact value it held before (YAZ-4637 M5): what Undo puts back. */
+export interface ChangedPage {
   path: string
   before: unknown
 }
 
 export interface RenameResult {
-  /** The notes rewritten: Undo restores these alone, each to its `before`. */
-  changed: ChangedNote[]
-  /** Notes holding the label that were not rewritten: read only, or the write failed. */
+  /** The pages rewritten: Undo restores these alone, each to its `before`. */
+  changed: ChangedPage[]
+  /** Pages holding the label that were not rewritten: read only, or the write failed. */
   kept: number
 }
 
-/** The indexed notes holding `from` under `key`, as `home` keeps them. */
-export const notesWithOption = (records: readonly IndexRecord[], home: ValueHome, key: string, from: string): IndexRecord[] =>
+/** The indexed pages holding `from` under `key`, as `home` keeps them. */
+export const pagesWithOption = (records: readonly IndexRecord[], home: ValueHome, key: string, from: string): IndexRecord[] =>
   records.filter((record) => {
     const value = valueOf(record.properties, home, key)
     return value === from || holds(value, from)
   })
 
-/** Rename `from` to `to` under `key` in every note of `records` holding it: one guarded write per note, all at once. */
-export async function renameOptionInNotes(records: readonly IndexRecord[], home: ValueHome, key: string, from: string, to: string, locked: ReadonlySet<string>): Promise<RenameResult> {
-  const holders = notesWithOption(records, home, key, from)
+/** Rename `from` to `to` under `key` in every page of `records` holding it: one guarded write per page, all at once. */
+export async function renameOptionInPages(records: readonly IndexRecord[], home: ValueHome, key: string, from: string, to: string, locked: ReadonlySet<string>): Promise<RenameResult> {
+  const holders = pagesWithOption(records, home, key, from)
   const writable = holders.filter((record) => !locked.has(record.path)).map((record) => record.path)
   const { changed } = await renameInPaths(writable, home, key, from, to)
   // Every holder not rewritten: locked, read only on disk (M6), or a failed write.
   return { changed, kept: holders.length - changed.length }
 }
 
-/** The writes themselves, over the given notes, each with the value it held before (M5). */
-export async function renameInPaths(paths: readonly string[], home: ValueHome, key: string, from: string, to: string): Promise<{ changed: ChangedNote[]; failed: number }> {
+/** The writes themselves, over the given pages, each with the value it held before (M5). */
+export async function renameInPaths(paths: readonly string[], home: ValueHome, key: string, from: string, to: string): Promise<{ changed: ChangedPage[]; failed: number }> {
   const wrote = new Map<string, unknown>()
   const results = await Promise.allSettled(
     paths.map((path) =>
       transformFile(path, (content) => {
-        // A conflict retry runs this again on fresher bytes: the last run says whether the note changed, and what it held.
+        // A conflict retry runs this again on fresher bytes: the last run says whether the page changed, and what it held.
         const next = renameInContent(content, home, key, from, to)
         if (next.content !== content) wrote.set(path, next.before)
         else wrote.delete(path)
@@ -115,10 +115,10 @@ export async function renameInPaths(paths: readonly string[], home: ValueHome, k
 }
 
 /**
- * Undo's door (YAZ-4637 M5): each changed note gets back the exact value it held — not a reverse rename, which would
- * leave a list that held both labels one short. A note that went read only since is not written.
+ * Undo's door (YAZ-4637 M5): each changed page gets back the exact value it held — not a reverse rename, which would
+ * leave a list that held both labels one short. A page that went read only since is not written.
  */
-export async function restoreInPaths(changed: readonly ChangedNote[], home: ValueHome, key: string): Promise<void> {
+export async function restoreInPaths(changed: readonly ChangedPage[], home: ValueHome, key: string): Promise<void> {
   await Promise.allSettled(
     changed.map(({ path, before }) =>
       transformFile(path, (content) => {
@@ -150,8 +150,8 @@ function renameInFilter(node: FilterNode, key: string, from: string, to: string)
 
 /**
  * The views' filters that compare the column to the old label, renamed with it (YAZ-4637 M5): `status == "A"` reads
- * `"B"` once A is B, so the renamed notes stay in their filtered views; a calendar's "Cross out when" (`crossOut`,
- * YAZ-4864) is a filter tree too, so the renamed notes stay crossed out (YAZ-4834 P2). Runs over the raw `views` of the
+ * `"B"` once A is B, so the renamed pages stay in their filtered views; a calendar's "Cross out when" (`crossOut`,
+ * YAZ-4864) is a filter tree too, so the renamed pages stay crossed out (YAZ-4834 P2). Runs over the raw `views` of the
  * settings block, in the declaration's own write; the same list comes back when nothing changed.
  */
 export function renameOptionInFilters(views: unknown, key: string, from: string, to: string): unknown {
@@ -172,8 +172,8 @@ export function renameOptionInFilters(views: unknown, key: string, from: string,
   return changed ? out : views
 }
 
-/** The toast's words: what was renamed, in how many notes, and how many kept the old label. */
+/** The toast's words: what was renamed, in how many pages, and how many kept the old label. */
 export function renameNotice(from: string, to: string, { changed, kept }: RenameResult): string {
-  const notes = (n: number) => `${n} ${n === 1 ? 'note' : 'notes'}`
-  return `Renamed “${from}” to “${to}” in ${notes(changed.length)}${kept > 0 ? ` · ${notes(kept)} not changed` : ''}`
+  const pages = (n: number) => `${n} ${n === 1 ? 'page' : 'pages'}`
+  return `Renamed “${from}” to “${to}” in ${pages(changed.length)}${kept > 0 ? ` · ${pages(kept)} not changed` : ''}`
 }

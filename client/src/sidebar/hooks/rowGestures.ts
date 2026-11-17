@@ -6,9 +6,10 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { isMarkdown, isSkipped } from '@shared/fileKind'
-import { BETWEEN_VAULTS, CLIP_CHANGED, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
+import { BETWEEN_VAULTS, CLIP_CHANGED, rootOfPath, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { playGestureSound } from '../../lib/gestureSound'
+import { storage } from '../../lib/storage'
 import type { MovedGesture } from '../../lib/moveHistory'
 import { gestureNotice, namedItems, onDisk, unlessFailed, type NoticeKind, type NoticeType } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
@@ -16,9 +17,10 @@ import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
 import { findDirNode, treeHasPath } from '../../lib/treeState'
 import type { Move } from '../../links/shortcuts'
-import { createNote, folderPath } from '../../views/scaffold'
+import { createPage, folderPath } from '../../views/scaffold'
 import { setSidebarDrag } from '../sidebarDrag'
-import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
+import { boardPath, renamedPath, targetDirFor, untitledNames, type CreateKind } from '../createEntry'
+import { createCardFile } from '../../review/newCardFile'
 import { dragPill, pillLabel } from '../dragPill'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { CreatePlace, PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
@@ -26,7 +28,7 @@ import type { CreatePlace, PendingCreate, PendingRename, ReorderOver, TreeFileMo
 /**
  * A new board (YAZ-3028 D9): name first, then birth. `fs:create-board` writes the empty scene or the
  * empty diagram and never over a file. What was typed is the file NAME — a board has no title and no
- * note ID. An EMPTY name (`''`, the box's seed alone) is `Untitled`, then `Untitled 2`, …: only that
+ * page ID. An EMPTY name (`''`, the box's seed alone) is `Untitled`, then `Untitled 2`, …: only that
  * case steps past a name that is taken; a typed name that is taken is refused, and the box says so.
  */
 async function createBoardFile(vault: string, parentDir: string, typed: string, kind: 'drawing' | 'diagram', seed: string): Promise<string> {
@@ -97,7 +99,7 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
    * The whole selection as a list, ordered by the PANEL (YAZ-1337, as ⚡ YAZ-1338 rules it): the
    * rows on screen first, in the order the eye reads them — never click order, which is not an
    * order the user can see — and every still-selected path with no row appended after them, so
-   * collapsing a folder over a selected note hides the row and keeps the note. The one rule lives
+   * collapsing a folder over a selected page hides the row and keeps the page. The one rule lives
    * in `orderedSelection`, which ⌘⇧C reads too: the menu and the chord cannot spell one selection
    * two ways.
    */
@@ -627,7 +629,7 @@ export function useFileClipboard(
    * idiom `startCreate` uses) and the tree refreshes EXPLICITLY: a copy moves nothing, so no
    * `fileRenamed` broadcast repairs it, and the watcher's add echo is a courtesy, not a contract
    * (`refresh` is idempotent). A CUT is a move, and a COPY lands as main wrote it: neither removes a
-   * value from a note (YAZ-4713 C9 — a value no page shows is listed in the note's properties, with Clear).
+   * value from a page (YAZ-4713 C9 — a value no page shows is listed in the page's properties, with Clear).
    * The vault is the one `dir` is in (YAZ-2602 S46): a paste from another vault of this window is
    * judged as a paste from another window is.
    */
@@ -674,12 +676,13 @@ export function useFileClipboard(
   /**
    * Paste's one door, the menu's and ⌘V's: it pastes at once — a paste clears no value (YAZ-4713 C9), so D21's sheet is gone.
    * The clip is read FRESH first (YAZ-3266), never taken from the window's cached `clip`: the system clipboard can change
-   * with no event (text copied in a note), and main pastes what it holds at paste time. That one answer decides the
+   * with no event (text copied in a page), and main pastes what it holds at paste time. That one answer decides the
    * undo record and the sound, and the paste carries it, so main runs that clip or nothing.
    */
   const pasteInto = useCallback(
     async (dir: string, top?: string) => {
-      if (allowFileAction !== undefined && !(await allowFileAction(vaultOf(dir).root))) return
+      const target = vaultOf(dir).root
+      if (allowFileAction !== undefined && !(await allowFileAction(target))) return
       let now: FileClipState
       try {
         now = await readClip()
@@ -687,6 +690,18 @@ export function useFileClipboard(
         return onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
       if (now === null) return onNotice('Nothing to paste', 'info')
+      // A paste of a CUT moves the items out of their vault (YAZ-4985): each other vault they leave asks too — one of this
+      // window, or one the app knows that only ANOTHER window shows (the cut was made there). App's door reads that vault's
+      // own Read only. A path in no vault the app knows is no vault's file.
+      if (allowFileAction !== undefined && now.op === 'cut') {
+        const known = storage.listVaults().map((vault) => vault.path)
+        const from = new Set(now.paths.flatMap((path) => {
+          const here = vaultOf(path).root
+          const vault = path.startsWith(`${here}/`) ? here : rootOfPath(known, path)
+          return vault !== null && vault !== target ? [vault] : []
+        }))
+        for (const vault of from) if (!(await allowFileAction(vault))) return
+      }
       await runPaste(dir, now, top)
     },
     [runPaste, readClip, onNotice, vaultOf, allowFileAction],
@@ -694,7 +709,7 @@ export function useFileClipboard(
 
   /**
    * ⌘V's target (D6, YAZ-1674): beside the FIRST ordered selected row — a dir → into it, a file →
-   * its parent (the "New note" rule, `targetDirFor`) — or the vault root with no selection at all.
+   * its parent (the "New page" rule, `targetDirFor`) — or the vault root with no selection at all.
    * With two or more vaults no selection names no vault (YAZ-2602 S10): null, and nothing is pasted.
    */
   const pasteTargetDir = useCallback((): string | null => {
@@ -793,7 +808,7 @@ export function useFileClipboard(
 export function useInlineEdits(
   /** The top of a list tab, in a window with one vault: its root. Null with two or more, where no one folder stands above the rows. */
   root: string | null,
-  /** The vault that holds a path (YAZ-2602 R4): a new note is made as the vault it is made in makes one. */
+  /** The vault that holds a path (YAZ-2602 R4): a new page is made as the vault it is made in makes one. */
   vaultOf: (path: string) => SidebarVault,
   menu: MenuTargets | null,
   setMenu: (menu: MenuTargets | null) => void,
@@ -810,7 +825,7 @@ export function useInlineEdits(
   /** A New … in a read-only vault asks first (YAZ-4939), before the name field opens: App's sheet, true = go on. Absent: the field opens at once. */
   allowFileAction?: (root: string) => Promise<boolean>,
 ) {
-  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null; place?: CreatePlace } | null>(null)
+  const [creating, setCreating] = useState<{ kind: CreateKind; seed: string; parentDir: string; top: string | null; place?: CreatePlace } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
 
   /**
@@ -818,7 +833,7 @@ export function useInlineEdits(
    * (⌘N, YAZ-3556 D4), which asks for it in Files with no menu open.
    */
   const startCreateNow = useCallback(
-    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
+    (kind: CreateKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
       const menu = at
       // A New … on the Focus or the Favorites tab with a place in its list (YAZ-4782: a pinned file row, a focus folder,
       // blank space): the field opens there, on the tab, and the item joins the list there (`submitCreate`). The tab
@@ -831,7 +846,7 @@ export function useInlineEdits(
       // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
       // mount, so the create moves to Files, where the `openTo` below opens that dir.
       // A FOLDER made at the root goes there too: it is no item of the list, so the tab would never
-      // show it. A note made there opens as a tab, so it stays (YAZ-2619 R18, YAZ-2845 D2).
+      // show it. A page made there opens as a tab, so it stays (YAZ-2619 R18, YAZ-2845 D2).
       // The reveal hop's rule (D10), applied to the other gesture that needs a row. With two or more
       // vaults a vault's root is held only as its row (YAZ-2602), and neither tab has that row (YAZ-2631 D1).
       const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
@@ -852,7 +867,7 @@ export function useInlineEdits(
 
   /** The door every New … takes (YAZ-4939): a read-only vault asks first, then the field opens. */
   const startCreateAt = useCallback(
-    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
+    (kind: CreateKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
       if (allowFileAction === undefined) startCreateNow(kind, seed, at)
       else void allowFileAction(vaultOf(at.targetDir).root).then((ok) => ok && startCreateNow(kind, seed, at))
     },
@@ -860,7 +875,7 @@ export function useInlineEdits(
   )
 
   const startCreate = useCallback(
-    (kind: EntryKind, seed = '') => {
+    (kind: CreateKind, seed = '') => {
       if (menu === null || menu.targetDir === null) return
       startCreateAt(kind, seed, { targetDir: menu.targetDir, lens: menu.lens, top: menu.top, place: menu.place })
       setMenu(null)
@@ -885,17 +900,20 @@ export function useInlineEdits(
       if (index.resolve === null) throw new Error('Vault index is still loading — try again in a moment')
       // What was typed is the TITLE (YAZ-2420 🔒 D6, D20): the name on disk is built from it.
       // In a vault that does not use IDs it is the name itself (YAZ-2523 🔒 V3).
-      let note: string | null = null
+      let page: string | null = null
       let made: string
-      if (creating.kind === 'dir') {
+      // A card file (YAZ-5101): what was typed is its title, on its card line (YAZ-5308), and the file is named
+      // after it (`cardFileName`). Its tab opens in Edit card, on the empty card.
+      if (creating.kind === 'card') made = page = await createCardFile(creating.parentDir, name)
+      else if (creating.kind === 'dir') {
         made = folderPath(creating.parentDir, name, index.ids)
         await api.createDir({ path: made, ...(index.ids && { title: name }) })
-      } else made = note = await createNote(creating.parentDir, name, index.ids)
+      } else made = page = await createPage(creating.parentDir, name, index.ids)
       setCreating(null)
       refresh(vault)
-      // In the list where the New … was picked (YAZ-4782), before the note opens, so its tab lights the new row.
+      // In the list where the New … was picked (YAZ-4782), before the page opens, so its tab lights the new row.
       if (creating.place !== undefined) onPlace?.(creating.place, made)
-      if (note !== null) onOpenFile(note)
+      if (page !== null) onOpenFile(page)
     },
     [creating, refresh, onOpenFile, vaultOf, onPlace],
   )
@@ -908,7 +926,7 @@ export function useInlineEdits(
       const { path, kind } = renamingEntry
       setRenamingEntry(null)
       // App owns the whole flow (and routes failures to the passive notice — never a dialog);
-      // the tree row follows via the watcher's unlink+add refresh. What was typed for a note or
+      // the tree row follows via the watcher's unlink+add refresh. What was typed for a page or
       // a folder is its TITLE (YAZ-2420 🔒 D16); for any other file, its name.
       if (kind === 'dir' || isMarkdown(path)) return onRetitle(path, name, kind)
       const target = renamedPath(path, name)

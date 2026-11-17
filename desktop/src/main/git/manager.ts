@@ -21,7 +21,7 @@ import type { RemoteLook } from './sync'
  *   - LIST FILES count as edits (YAZ-2702, Decision 5). A change of a config file in
  *     `.yaseendocs/` — a favorite, a focus item — marks the root `pending` and arms the same
  *     debounce. The vault watcher skips every dot-entry, so before this a list changed on one Mac
- *     reached GitHub only with the next note edit. `github.json` is the one exception: it is the
+ *     reached GitHub only with the next page edit. `github.json` is the one exception: it is the
  *     switch, and a change of it only re-reads the switch.
  *   - OFFLINE waits patiently. A pass that comes back `pending` arms exactly one retry
  *     (`retryMs`, default 2 min). No backoff ladder, no jitter: this is a text editor, not a
@@ -30,7 +30,7 @@ import type { RemoteLook } from './sync'
  *   - FOCUS and WAKE pull, behind a short cooldown, so alt-tabbing between two machines converges
  *     without turning window focus into a git spam button.
  *   - IDLE pulls too (YAZ-1897 D6 in Draw, YAZ-3039 here — it also covers YAZ-1087): a vault whose
- *     last pass ended `synced` runs a QUIET pass every `pollMs` (default 60 s), so a note or a board
+ *     last pass ended `synced` runs a QUIET pass every `pollMs` (default 60 s), so a page or a board
  *     someone is only looking at still receives the other machine's changes. Never while edits are
  *     settling (the debounce's pass is coming anyway), never while `pending` (the retry owns it) or
  *     `attention` (the next edit or focus does). Quiet means no `syncing` flash on the chip every
@@ -55,7 +55,8 @@ const DEFAULT_POLL_MS = 60_000
 
 export interface GitSyncHost {
   readConfig(root: string, name: string): Promise<unknown>
-  writeConfig(root: string, name: string, value: unknown): Promise<void>
+  /** `known`: the keys this writer owns; every other key of the file stays (YAZ-5483, `vaultConfig.writeConfig`). */
+  writeConfig(root: string, name: string, value: unknown, known?: readonly string[]): Promise<void>
   subscribeVault(root: string, listener: (ev: WatchEvent) => void): () => void
   subscribeConfig(root: string, listener: (change: VaultConfigChange) => void): () => void
   onStatus(status: GithubSyncStatus): void
@@ -328,7 +329,7 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
 
   /**
    * Something in the vault changed and is not on GitHub yet: say so now, commit after the quiet
-   * period. The one road for a note edit and for a list file (YAZ-2702). An unmanaged root has no
+   * period. The one road for a page edit and for a list file (YAZ-2702). An unmanaged root has no
    * entry, so a vault with sync off stays silent here too.
    */
   function markPending(root: string): void {
@@ -416,7 +417,7 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
     },
 
     async setEnabled(root, enabled) {
-      await host.writeConfig(root, GITHUB_SYNC_FILE, { enabled } satisfies { enabled: boolean })
+      await host.writeConfig(root, GITHUB_SYNC_FILE, { enabled } satisfies { enabled: boolean }, ['enabled'])
       if (!enabled) {
         drop(root)
         const off: GithubSyncStatus = { root, state: 'off', enabled: false }

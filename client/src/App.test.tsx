@@ -4,14 +4,24 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
+import { FORMATS_CHAPTER_TITLE, requestCourse } from './course/openCourse'
+import { showTourPlace } from './course/tourBus'
+import { COURSE_NOTICE } from './course/courseFacts'
+import { COURSE } from './course/script'
+import { cardSkillReadOnlyVault } from './vault/cardSkill'
+import { CARD_FORMATS_OPEN } from './editor/card/cardFormatHint'
+import { defaultCourseState } from '@shared/courseState'
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { StrictMode, act } from 'react'
+import { StrictMode, act, useContext } from 'react'
+import { TitleIsName } from './lib/titleRule'
 import { createRoot, type Root } from 'react-dom/client'
-import { dailyNoteName } from '@shared/dailyNote'
-import { IDS_FILE } from '@shared/noteId'
-import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FocusFolder, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { dailyPageName } from '@shared/dailyPage'
+import { IDS_FILE } from '@shared/pageId'
+import { TEXT_FORMATTING_FILE, TEXT_FORMATTING_KEYS } from '@shared/textFormatting'
+import { REVIEW_SETTINGS_KEYS } from '@shared/reviews'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FolderPagesSettings, type FocusFolder, type InboxCarry, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { FOLDER_PAGES_VAULT_PARTS } from '@shared/folderPages'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -27,7 +37,11 @@ interface SidebarStubProps {
   /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
-  vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
+  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; unlockedUntil?: number | null; app?: true }[]
+  /** "Hide card skill" on the card skill's row (YAZ-5108). */
+  onHideCardSkill?: () => void
+  /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109). */
+  onDuplicateCardSkill?: (vault: string) => void
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
@@ -71,7 +85,12 @@ interface SidebarStubProps {
   onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[] }, text: string, skipped: boolean) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
-  onDeleteEntries: (paths: string[]) => Promise<void>
+  onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
+  /** App's read-only door (YAZ-4939, YAZ-4985): true = go on. */
+  onFileAction?: (root: string) => Promise<boolean>
+  /** The vault lock's choices (YAZ-4985). */
+  onUnlockVault?: (root: string, choice: 'ten' | 'hour' | 'until') => void
+  onLockVault?: (root: string) => void
   onDraggedOut: (paths: string[]) => void
   pendingSearchFocus: boolean
   pendingSearchClear: boolean
@@ -112,19 +131,20 @@ interface SidebarStubProps {
   onNotice: (message: string, icon?: NoticeKind, type?: NoticeType) => void
   /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
   clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean; delete: () => boolean } | null }
-  /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): the Inbox row and "Review this folder" exist only then. */
-  upkeep: boolean
-  /** The Inbox row (YAZ-2322): App counts what is due and owns the one review session. */
+  /** Whether this vault has card review on (YAZ-4967): the Inbox row and the review items exist only then. */
+  review: boolean
+  /** The Inbox row (YAZ-4967): App counts the cards due and owns the one review session. */
   dueCount: number
   reviewing: boolean
   onOpenInbox: () => void
   /** An Inbox row's click (YAZ-2602 R5): the vault whose row it is. */
   onInbox: (root: string) => void
+  // YAZ-5054: an Inbox row's "Open in new window".
+  onInboxNewWindow?: (root: string) => void
   /** "Review this folder" (YAZ-2322): the sidebar hands the folder's ABSOLUTE path. */
   onReviewFolder: (dirPath: string) => void
-  /** The row menu's review toggle (YAZ-2322): the hook's lookup and its write, straight through. */
-  reviewState: (path: string) => boolean | null
-  onSetReview: (path: string, on: boolean) => void
+  /** "Review this page" (YAZ-4967): the page's absolute path. */
+  onReviewPage: (path: string) => void
   /** The vault menu's "Open in this window" (YAZ-1798 D11): the one in-place switch. */
   onOpenVaultHere: (path: string) => Promise<boolean>
   /** The Sessions tab's doors (YAZ-3147 D3, D5): App restores, saves and updates; the new row's name field is App's request. */
@@ -134,7 +154,7 @@ interface SidebarStubProps {
   sessionNameRequest: string | null
   onSessionNameConsumed: () => void
   /** The footer's calendar button (YAZ-3607 D7): a background tab on ⌘-click (YAZ-3776). */
-  onOpenDailyNote?: (background: boolean) => void
+  onOpenDailyPage?: (background: boolean) => void
 }
 
 const captured = vi.hoisted(() => ({
@@ -146,33 +166,56 @@ const captured = vi.hoisted(() => ({
   linkOpeners: [] as { path: string | null; open?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void }[],
   /** The page title's commit, as the newest editor was handed it (YAZ-2420 D16). */
   editorRetitle: undefined as ((path: string, title: string, kind: 'file' | 'dir') => void) | undefined,
+  /** The title fields' rule (YAZ-5580), as the newest editor reads it from App: is a title typed for a path its file's name? */
+  titleIsName: undefined as ((path: string) => boolean) | undefined,
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
   /** The new tab page (YAZ-2663 D3), as App last handed it its doors; null while it does not show. */
   startPage: null as { roots: readonly string[]; onOpen: (path: string) => void; onOpenBackground: (path: string) => void; onShowInFiles: (path: string) => void; onBack: () => void; onRowMenu: (path: string, x: number, y: number) => void; onBackToSearch: () => void; focusRef: { current: (() => boolean) | null }; previewPath?: string | null; onPreview?: (path: string | null) => void } | null,
   /** The door of the new tab page stub (YAZ-2663 S33): whether its first row took the keyboard focus. */
   startPageFocus: vi.fn(() => true),
-  /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder — and the table of contents setting with its door (YAZ-2700 D2). */
+  /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-page folder — and the table of contents setting with its door (YAZ-2700 D2). */
   /** Each main tab's zoom door (YAZ-3647 D2), by tab id, as the newest Editor stub render was handed it. */
   zoomDoors: new Map<string, (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void>(),
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }[],
+  /** The card flow mounts the REAL page editor (`./editor/Editor`); every other test the stub. */
+  realEditor: false,
+  crepes: [] as import('@milkdown/crepe').Crepe[],
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void; folderPages?: FolderPagesSettings }[],
 }))
 
-vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
-    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
+vi.mock('./editor/Editor', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./editor/Editor')>()
+  return {
+  /** The REAL page editor while `captured.realEditor` is on (the card flow), else the stub. */
+  Editor: (props: Parameters<typeof real.Editor>[0]) => (captured.realEditor ? <real.Editor {...props} /> : <EditorStub {...(props as unknown as Parameters<typeof EditorStub>[0])} />),
+  }
+})
+/** Each real editor's Crepe, newest last (the card flow drives its ProseMirror view). */
+vi.mock('./editor/createCrepe', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./editor/createCrepe')>()
+  return {
+    ...real,
+    createCrepe: (opts: Parameters<typeof real.createCrepe>[0]) => {
+      const crepe = real.createCrepe(opts)
+      captured.crepes.push(crepe)
+      return crepe
+    },
+  }
+})
+const EditorStub = ({ folderPages, vaultReadOnly, onVaultLock, root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void; folderPages?: FolderPagesSettings }) => {
+    captured.editors.push({ vaultReadOnly, onVaultLock, path, root, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, folderPages })
     if (tabId !== undefined && onZoom !== undefined) captured.zoomDoors.set(tabId, onZoom)
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.linkOpeners.push({ path, open: onOpenLink })
     captured.editorRetitle = onRetitle
+    captured.titleIsName = useContext(TitleIsName)
     captured.viewOnlyLinks.push(viewOnlyLinks)
     return (
-      <div data-editor data-root={root} data-path={path ?? ''} data-review-settings={reviewSettings === undefined ? 'none' : 'given'}>
+      <div data-editor data-root={root} data-path={path ?? ''}>
         <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
         <button type="button" data-open-right-background onClick={() => onOpenFileBackground?.('/v/d.md')} />
       </div>
     )
-  },
-}))
+  }
 // The new tab page reads the favorites and the trees itself (StartPage.test.tsx): here it is a stub that shows whether App mounts it.
 vi.mock('./workspace/StartPage', async () => {
   const { useEffect } = await import('react')
@@ -193,20 +236,29 @@ vi.mock('./workspace/StartPage', async () => {
   }
 })
 vi.mock('./sidebar/Sidebar', () => ({
-  Sidebar: (props: Omit<SidebarStubProps, 'root' | 'upkeep' | 'dueCount' | 'reviewing' | 'onOpenInbox'>) => {
+  Sidebar: (props: Omit<SidebarStubProps, 'root' | 'review' | 'dueCount' | 'reviewing' | 'onOpenInbox'>) => {
     // The first vault's own, as a window with one vault reads them: its folder and its Inbox row (YAZ-2602 R5).
-    const { root, upkeep, dueCount, reviewing } = props.vaults[0]
-    captured.sidebar = { ...props, root, upkeep, dueCount, reviewing, onOpenInbox: () => props.onInbox(root) }
+    const { root, review, dueCount, reviewing } = props.vaults[0]
+    captured.sidebar = { ...props, root, review, dueCount, reviewing, onOpenInbox: () => props.onInbox(root) }
     captured.sidebarRenders++
-    return <aside ref={props.asideRef} data-sidebar data-root={root} />
+    return <aside ref={props.asideRef} className="sidebar" data-sidebar data-root={root} />
   },
 }))
 
 import { App, preloadTabBoard, replayNotice } from './App'
-import { dropAllNoteWindows, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow } from './views/view/NoteWindow'
+import { CARD_PREVIEW } from './editor/card/cardOpen'
+import { CARD_OPEN, cardBlockViewOfDom } from './editor/card/cardBlockView'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { TextSelection } from '@milkdown/kit/prose/state'
+import { cardRecords } from '@shared/cardLine'
+import { splitFrontmatter } from '@shared/frontmatter'
+import { getMarkdownForSave } from './editor/createCrepe'
+import { dropAllPageWindows, keepPageWindow, pageWindowKey, pageWindowMemory, openPageWindow } from './views/view/PageWindow'
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+/** The card course's notice is due in the next mount (YAZ-5120): only its own test sets it. */
+let courseNoticeDue = false
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
 type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
@@ -237,8 +289,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   // ⌘N and ⌘D (YAZ-3556 D1).
   const menuNewItem = new Set<() => void>()
   const menuGoTo = new Set<() => void>()
-  // File › Open Today's Daily Note (YAZ-3607 D11).
-  const menuDailyNote = new Set<() => void>()
+  // File › Open Today's Daily Page (YAZ-3607 D11).
+  const menuDailyPage = new Set<() => void>()
   const menuZoom = new Set<(step: ZoomStep) => void>()
   const menuWhatsNew = new Set<() => void>()
   // The board gestures (YAZ-3037): Export Excalidraw Drawing… is the one App routes itself during a review.
@@ -257,6 +309,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkHighlightTab = new Set<(ref: TabRef | null) => void>()
   const linkTabAction = new Set<(req: { ref: TabRef; action: TabAction }) => void>()
   const linkFromFiles = new Set<(action: FilesAction) => void>()
+  const linkTakeInbox = new Set<(carry: InboxCarry) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const dragLanded = new Set<(ev: { paths: string[] }) => void>()
@@ -276,7 +329,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       if (f === undefined) return Promise.reject({ code: 'NOT_FOUND', message: 'path does not exist', path })
       return { path, content: f.content, mtime: f.mtime, size: f.content.length }
     }),
-    // The tab board's pages (YAZ-2648 D6): no note has a head here, so a page shows its title.
+    // The tab board's pages (YAZ-2648 D6): no page has a head here, so a page shows its title.
     readHeads: vi.fn(async (paths: readonly string[]) => paths.map(() => null)),
     writeFile: vi.fn(async ({ path, content }: { path: string; content: string }) => {
       files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
@@ -289,11 +342,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       files[path] = { content: content ?? '', mtime: 1 }
       return { path, mtime: 1, size: (content ?? '').length }
     }),
-    // Today's daily note in the main process (YAZ-4269 D2), as it is in a vault without IDs and the flat layout: the
-    // note named by the title in the daily notes folder, found when it is there, else made.
-    makeDailyNote: vi.fn(async (vault: string) => {
-      const title = dailyNoteName(state.settings.dailyNoteFormat, new Date()).trim()
-      const path = `${vault}/${state.settings.dailyNoteFolder}/${title}.md`
+    // Today's daily page in the main process (YAZ-4269 D2), as it is in a vault without IDs and the flat layout: the
+    // page named by the title in the daily pages folder, found when it is there, else made.
+    makeDailyPage: vi.fn(async (vault: string) => {
+      const title = dailyPageName(state.settings.dailyPageFormat, new Date()).trim()
+      const path = `${vault}/${state.settings.dailyPageFolder}/${title}.md`
       const created = files[path] === undefined
       if (created) files[path] = { content: '', mtime: 1 }
       return { path, title, id: null, created, others: [] }
@@ -301,7 +354,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
     watch: vi.fn((_root?: string, _listener?: unknown): (() => void) => () => undefined),
     state: {
-      get: vi.fn(async () => state),
+      // The card course's one notice (YAZ-5120) shows once per Mac: here it has shown, unless a test asks for it
+      // (`courseNoticeDue`), so it never takes the place of the notice another test reads.
+      get: vi.fn(async () => (courseNoticeDue ? state : { ...state, course: { ...(state.course ?? defaultCourseState()), offered: true } })),
       setSettings: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
@@ -313,6 +368,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setBaseGroups: vi.fn(async () => undefined),
       // The tab board's canvas (YAZ-3343 D1): the switch and the moved cards.
       setTabCanvas: vi.fn(async () => undefined),
+      setCourse: vi.fn(async () => undefined),
       onChange: vi.fn((listener: (next: AppState) => void) => {
         stateChanged.add(listener)
         return () => stateChanged.delete(listener)
@@ -332,9 +388,12 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       duplicate: vi.fn(async (_view?: PageView) => undefined),
       // A tab's "Move to new window" (YAZ-2933): main opens the window; the tab leaves this one after.
       popOut: vi.fn(async (_path: string, _carry?: { view?: PageView }) => undefined),
-      noteClosed: vi.fn(async (_files: readonly string[]) => undefined),
+      pageClosed: vi.fn(async (_files: readonly string[]) => undefined),
       // A tab's "Move to ▸ <window>" (YAZ-3091 D1): main hands the tab to that window; the tab leaves this one after.
       moveTo: vi.fn(async (_to: string, _path: string, _carry?: { view?: PageView; name?: string }) => undefined),
+      // The Inbox tab's moves (YAZ-5054): main opens the window or hands it on; the Inbox leaves this one after.
+      inboxToNewWindow: vi.fn(async (_carry: InboxCarry) => undefined),
+      moveInboxTo: vi.fn(async (_to: string, _carry: InboxCarry) => undefined),
       closeSelf: vi.fn(async () => undefined),
       // "Move to ▸" (YAZ-3091 D8): a row under the pointer lights up its window; another window's row lights up this one.
       highlight: vi.fn(async (_to: string | null) => undefined),
@@ -413,7 +472,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onNewWindow: menuSub(menuNewWindow),
       onNewItem: menuSub(menuNewItem),
       onGoTo: menuSub(menuGoTo),
-      onDailyNote: menuSub(menuDailyNote),
+      onDailyPage: menuSub(menuDailyPage),
       onKeySheet: menuSub(new Set()),
       onZoom: vi.fn((l: (step: ZoomStep) => void) => {
         menuZoom.add(l)
@@ -475,6 +534,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         linkFromFiles.add(l)
         return () => linkFromFiles.delete(l)
       }),
+      // Another window's Inbox moved here (YAZ-5054).
+      onTakeInbox: vi.fn((l: (carry: InboxCarry) => void) => {
+        linkTakeInbox.add(l)
+        return () => linkTakeInbox.delete(l)
+      }),
       ready: vi.fn(async () => undefined),
     },
     // In-app rename (Links E1, GRO-2194) + external repair (E1c, GRO-2242): App subscribes to
@@ -523,6 +587,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       version: vi.fn(),
       restore: vi.fn(async () => undefined),
     },
+    // YAZ-5041: the window tells main when no page is on show (the Inbox tab, the blank tab), for the app menu.
+    hotkeys: { noPageInFront: vi.fn(async () => undefined) },
     // Settings › Sharing (YAZ-3040): not set up, nothing shared.
     share: {
       status: vi.fn(async () => ({ state: 'off' as const, url: null, workersDevUrl: null, customDomain: null, accountName: null, workerName: null, bucketName: null, readyAt: null, demo: false })),
@@ -536,16 +602,18 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       stats: vi.fn(async (r: string) => ({ root: r, boards: { bytes: 0, count: 0 }, pictures: { bytes: 0, count: 0 }, other: { bytes: 0, count: 0 }, git: null, large: [], embedded: { bytes: 0, boards: 0 } })),
       shrink: vi.fn(async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 })),
     },
-    // No `review.json` (YAZ-2322), so upkeep is off: App owns one `useReviewSettings`, which reads and subscribes on vault open.
+    // No `review.json` (YAZ-4967), so card review has its defaults: each vault owns one `useReviewSettings`, which reads and subscribes on vault open.
     vaultConfig: { read: vi.fn(async (_root?: string, _name?: string): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
+    // "Duplicate into <vault>…" (YAZ-5109): main copies the card skill into the vault as `Card skill`.
+    cardSkill: { duplicate: vi.fn(async (vault: string, _again: boolean): Promise<{ made: string } | { exists: string }> => ({ made: `${vault}/Card skill` })) },
     // A vault's IDs (YAZ-2677): main saves the answer and runs the duplicate check.
     ids: {
       set: vi.fn(async (_root?: string, _enabled?: boolean, _letters?: string): Promise<void> => undefined),
       check: vi.fn(async (_root?: string) => 'No duplicates.'),
       // The rows "ID letters" and "Old IDs" (YAZ-2677 D5, D6).
-      state: vi.fn(async (_root?: string) => ({ letters: 'YAZ', notes: 0, stale: 0, old: 0 })),
-      reletter: vi.fn(async (_root?: string, letters = 'YAZ') => ({ letters, notes: 0, stale: 0, old: 0 })),
-      backfill: vi.fn(async (_root?: string) => ({ letters: 'YAZ', notes: 0, stale: 0, old: 0 })),
+      state: vi.fn(async (_root?: string) => ({ letters: 'YAZ', pages: 0, stale: 0, old: 0 })),
+      reletter: vi.fn(async (_root?: string, letters = 'YAZ') => ({ letters, pages: 0, stale: 0, old: 0 })),
+      backfill: vi.fn(async (_root?: string) => ({ letters: 'YAZ', pages: 0, stale: 0, old: 0 })),
       onChanged: vi.fn(() => () => undefined),
     },
     // The sounds of a gesture (YAZ-3267 D15): App asks once per gesture that lands or trashes something.
@@ -562,7 +630,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     update: {
       state: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),
       onState: vi.fn(() => () => undefined),
-      notes: vi.fn(async () => ({ current: '1.0.13', checks: true, releases: [] })),
+      pages: vi.fn(async () => ({ current: '1.0.13', checks: true, releases: [] })),
       check: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),
       restart: vi.fn(async () => undefined),
     },
@@ -593,7 +661,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitNewItem: () => menuNewItem.forEach((l) => l()),
     emitGoTo: () => menuGoTo.forEach((l) => l()),
-    emitDailyNote: () => menuDailyNote.forEach((l) => l()),
+    emitDailyPage: () => menuDailyPage.forEach((l) => l()),
     emitWhatsNew: () => menuWhatsNew.forEach((l) => l()),
     emitZoom: (step: ZoomStep) => menuZoom.forEach((l) => l(step)),
     emitExportDrawing: () => menuExportDrawing.forEach((l) => l()),
@@ -610,6 +678,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitHighlightTab: (ref: TabRef | null) => linkHighlightTab.forEach((l) => l(ref)),
     emitTabAction: (req: { ref: TabRef; action: TabAction }) => linkTabAction.forEach((l) => l(req)),
     emitFromFiles: (action: FilesAction) => linkFromFiles.forEach((l) => l(action)),
+    emitTakeInbox: (carry: InboxCarry) => linkTakeInbox.forEach((l) => l(carry)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitDragLanded: (paths: string[]) => dragLanded.forEach((l) => l({ paths })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
@@ -682,6 +751,8 @@ afterEach(() => {
   captured.linkOpeners = []
   captured.viewOnlyLinks = []
   captured.editors = []
+  captured.realEditor = false
+  captured.crepes = []
   history.replaceState(null, '', '/')
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
@@ -755,10 +826,10 @@ describe('App ⌘⇧C copy path (YAZ-1338)', () => {
     const ref = captured.sidebar?.selectionRef
     expect(ref).toBeDefined()
     act(() => {
-      if (ref) ref.current = new Set(['/v/notes/b.md', '/v/c.md'])
+      if (ref) ref.current = new Set(['/v/pages/b.md', '/v/c.md'])
     })
     act(() => void el.querySelector('.app')?.dispatchEvent(chord()))
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/notes/b.md\n/v/c.md')
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/pages/b.md\n/v/c.md')
     await act(async () => {})
     expect(el.querySelector('.link-notice')?.textContent).toBe('Copied 2 paths')
   })
@@ -780,14 +851,14 @@ describe('App ⌘⇧C copy path (YAZ-1338)', () => {
     // The row that the keyboard is on is what the user looks at: it is copied, not the rows selected in the sidebar.
     const ref = captured.sidebar?.selectionRef
     act(() => {
-      if (ref) ref.current = new Set(['/v/notes/b.md', '/v/c.md'])
+      if (ref) ref.current = new Set(['/v/pages/b.md', '/v/c.md'])
     })
     act(() => void row.dispatchEvent(chord()))
     expect(writeText).toHaveBeenLastCalledWith('/v/Projects/Plan.md')
     // The focus is off the page: the selection of the sidebar is copied, as before.
     row.blur()
     act(() => void el.querySelector('.app')?.dispatchEvent(chord()))
-    expect(writeText).toHaveBeenLastCalledWith('/v/notes/b.md\n/v/c.md')
+    expect(writeText).toHaveBeenLastCalledWith('/v/pages/b.md\n/v/c.md')
   })
 
   it('with nothing selected and nothing open it does nothing and leaves the key alone', async () => {
@@ -884,7 +955,7 @@ describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
   })
 
   /** ⌘⌫ (YAZ-3272 D20): the same window listener and boundary; the Sidebar's handle holds the rules (a selection, no menu, no vault row). */
-  it('⌘⌫ asks the handle to delete and is swallowed when it acted (S66); plain ⌫ asks nothing (S68); a note, a field and a declining handle keep the key (S69, S72)', async () => {
+  it('⌘⌫ asks the handle to delete and is swallowed when it acted (S66); plain ⌫ asks nothing (S68); a page, a field and a declining handle keep the key (S69, S72)', async () => {
     const { el } = await open()
     const h = handle()
     arm(h)
@@ -1015,9 +1086,9 @@ describe('App notice icon (D10 amended, YAZ-1674)', () => {
 
 describe('App on a null root (C2, GRO-2164)', () => {
   it('boots to the Welcome screen with the recents and never auto-opens the folder dialog', async () => {
-    const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/vaults/notes')] }, { id: 'w1', root: null, file: null, tabs: [] })
+    const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/vaults/pages')] }, { id: 'w1', root: null, file: null, tabs: [] })
     expect(el.querySelector('.welcome__title')?.textContent?.trim()).toBe('Yaseen Docs')
-    expect([...el.querySelectorAll('.welcome__recent-path')].map((s) => s.textContent)).toEqual(['/vaults/notes'])
+    expect([...el.querySelectorAll('.welcome__recent-path')].map((s) => s.textContent)).toEqual(['/vaults/pages'])
     expect(bridge.pickFolder).not.toHaveBeenCalled()
     expect(el.querySelector('[data-editor]')).toBeNull()
     expect(el.querySelector('[data-sidebar]')).toBeNull()
@@ -1025,15 +1096,15 @@ describe('App on a null root (C2, GRO-2164)', () => {
   })
 
   it('clicking a live recent opens that folder in place, blank — its remembered last file stays unread (YAZ-3487 D7)', async () => {
-    const state = withFolder({ ...defaultAppState(), recents: [recent('/vaults/notes')] }, '/vaults/notes', '/vaults/notes/a.md')
+    const state = withFolder({ ...defaultAppState(), recents: [recent('/vaults/pages')] }, '/vaults/pages', '/vaults/pages/a.md')
     const { bridge, el } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
     await act(async () => el.querySelector<HTMLButtonElement>('.welcome__recent')?.click())
     expect(el.querySelector('.welcome')).toBeNull()
-    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/vaults/notes')
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/vaults/pages')
     expect(el.querySelector('[data-editor]')).toBeNull()
-    expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/vaults/notes')
+    expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/vaults/pages')
     expect(location.hash).toBe('')
-    expect(bridge.state.pushRecent).toHaveBeenCalledWith('/vaults/notes')
+    expect(bridge.state.pushRecent).toHaveBeenCalledWith('/vaults/pages')
   })
 
   it('clicking a dead recent marks the row, drops the MRU entry and does not switch the window', async () => {
@@ -1099,7 +1170,7 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Favorites; the vault lands on Files (YAZ-1846 D2)
   })
 
-  it('YAZ-3487 D15: with "Open on: Its last note" File › Open Recent opens the folder on its lastFile, as before D7', async () => {
+  it('YAZ-3487 D15: with "Open on: Its last page" File › Open Recent opens the folder on its lastFile, as before D7', async () => {
     const state = withFolder(defaultAppState(), '/w', '/w/b.md')
     state.settings = { ...state.settings, vaultOpensOn: 'last' }
     const { el, emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
@@ -1194,8 +1265,8 @@ describe('App window title (C3, GRO-2165; vault first, YAZ-2555 D6)', () => {
     expect(document.title).toBe('Yaseen Docs')
     await act(async () => emitOpenRoot('/vaults/w'))
     expect(document.title).toBe('w')
-    await act(async () => emitLinkOpenFile('/vaults/w/Note.md'))
-    expect(document.title).toBe('w — Note')
+    await act(async () => emitLinkOpenFile('/vaults/w/Page.md'))
+    expect(document.title).toBe('w — Page')
   })
 
   it('is the folder alone with no file open', async () => {
@@ -1204,11 +1275,11 @@ describe('App window title (C3, GRO-2165; vault first, YAZ-2555 D6)', () => {
   })
 
   it('a FOLDER tab named like a file keeps its whole name, in the title and on the strip, once the Files tree says so (YAZ-2290)', async () => {
-    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/vaults/named', file: '/vaults/named/Notes.md', tabs: ['/vaults/named/Notes.md'] })
-    bridge.tree.mockResolvedValueOnce({ root: '/vaults/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/vaults/named/Notes.md', children: [] }], generatedAt: 2 })
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/vaults/named', file: '/vaults/named/Pages.md', tabs: ['/vaults/named/Pages.md'] })
+    bridge.tree.mockResolvedValueOnce({ root: '/vaults/named', tree: [{ type: 'dir', name: 'Pages.md', path: '/vaults/named/Pages.md', children: [] }], generatedAt: 2 })
     await act(async () => void (await fetchTree('/vaults/named')))
-    expect(document.title).toBe('named — Notes.md')
-    expect(el.querySelector('.tabbar [role="tab"]')?.textContent).toBe('Notes.md')
+    expect(document.title).toBe('named — Pages.md')
+    expect(el.querySelector('.tabbar [role="tab"]')?.textContent).toBe('Pages.md')
   })
 })
 
@@ -1242,7 +1313,7 @@ describe('App deep links (E1, GRO-2171)', () => {
     await vi.waitFor(() => expect(bridge.share.get).toHaveBeenCalledWith({ root: '/v', path: '/v/Plan.excalidraw' }))
   })
 
-  it('File › Share Link does nothing on a note: no dialog, no question to main, no notice (YAZ-3040)', async () => {
+  it('File › Share Link does nothing on a page: no dialog, no question to main, no notice (YAZ-3040)', async () => {
     const { bridge, el, emitShareLink } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     await act(async () => emitShareLink())
     expect(el.querySelector('[role="dialog"][aria-label^="Share "]')).toBeNull()
@@ -1287,29 +1358,29 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     expect(order).toEqual(['carry', 'workspace'])
     expect(el.querySelector('.right-panel__header')?.textContent).toContain('b')
 
-    await act(async () => emitFileRenamed('/v/Docs', '/v/Notes', 'dir'))
-    expect(el.querySelector('.right-panel__header')?.getAttribute('title')).toBe('/v/Notes/b.md')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/main.md'], '/v/main.md', { open: true, width: 440, items: ['/v/Notes/b.md'], expanded: '/v/Notes/b.md' }))
+    await act(async () => emitFileRenamed('/v/Docs', '/v/Pages', 'dir'))
+    expect(el.querySelector('.right-panel__header')?.getAttribute('title')).toBe('/v/Pages/b.md')
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/main.md'], '/v/main.md', { open: true, width: 440, items: ['/v/Pages/b.md'], expanded: '/v/Pages/b.md' }))
     carry.mockRestore()
   })
 
-  it('a folder table\'s note window follows a rename of its note or of a folder above it, and closes on a delete (YAZ-4544)', async () => {
+  it('a folder table\'s page window follows a rename of its page or of a folder above it, and closes on a delete (YAZ-4544)', async () => {
     const { emitFileRenamed, emitFileDeleted } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] })
-    const key = noteWindowKey('t1', '/v/F', 'Table')
-    keepNoteWindow(key, noteWindowMemory('/v/F/a.md'))
+    const key = pageWindowKey('t1', '/v/F', 'Table')
+    keepPageWindow(key, pageWindowMemory('/v/F/a.md'))
     await act(async () => emitFileRenamed('/v/F/a.md', '/v/F/b.md', 'file'))
-    expect(openNoteWindow(key)?.path).toBe('/v/F/b.md')
+    expect(openPageWindow(key)?.path).toBe('/v/F/b.md')
     await act(async () => emitFileRenamed('/v/F', '/v/G', 'dir'))
     // A folder rename moves the window to the folder's new key, so the renamed page still shows it (YAZ-4635 P5).
-    const moved = noteWindowKey('t1', '/v/G', 'Table')
-    expect(openNoteWindow(key)).toBeUndefined()
-    expect(openNoteWindow(moved)?.path).toBe('/v/G/b.md')
+    const moved = pageWindowKey('t1', '/v/G', 'Table')
+    expect(openPageWindow(key)).toBeUndefined()
+    expect(openPageWindow(moved)?.path).toBe('/v/G/b.md')
     await act(async () => emitFileDeleted('/v/G/b.md'))
-    expect(openNoteWindow(moved)).toBeUndefined()
-    keepNoteWindow(key, noteWindowMemory('/v/H/c.md'))
+    expect(openPageWindow(moved)).toBeUndefined()
+    keepPageWindow(key, pageWindowMemory('/v/H/c.md'))
     await act(async () => emitFileDeleted('/v/H', 'dir'))
-    expect(openNoteWindow(key)).toBeUndefined()
-    dropAllNoteWindows()
+    expect(openPageWindow(key)).toBeUndefined()
+    dropAllPageWindows()
   })
 })
 
@@ -1354,8 +1425,25 @@ describe('App section indent settings (YAZ-2709)', () => {
   })
 })
 
+describe('App shown hidden words (YAZ-5005, the app\'s look as the fallback since YAZ-5484)', () => {
+  it('puts the app\'s Shown hidden words, next mark and Clean look on the app container as VARIABLES (no attribute: a vault\'s surface overrides them without a clash): Highlight by default, Underline live from a change, with no card drawn again', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    expect(app.style.getPropertyValue('--shown-hidden-words')).toBe('highlight')
+    expect(app.style.getPropertyValue('--mark-next-hidden')).toBe('on')
+    expect(app.style.getPropertyValue('--card-clean')).toBe('off')
+    for (const name of ['data-shown-hidden-words', 'data-mark-next-hidden', 'data-card-clean']) expect(app.hasAttribute(name), name).toBe(false)
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, shownHiddenWords: 'underline', markNextHidden: false, cardSpacing: 'clean' } }))
+    expect(el.querySelector<HTMLElement>('.app')).toBe(app)
+    expect(app.style.getPropertyValue('--shown-hidden-words')).toBe('underline')
+    expect(app.style.getPropertyValue('--mark-next-hidden')).toBe('off')
+    expect(app.style.getPropertyValue('--card-clean')).toBe('on')
+    expect(app.style.getPropertyValue('--inbox-card-pad')).toBe('44px')
+  })
+})
+
 describe('App guide lines and folding defaults (YAZ-4094, YAZ-4119 fix 3)', () => {
-  it('puts Settings › "Bullet threading default" on <html> as `data-threading`, off by default, and not on `.app`: each note pane decides on its own host (YAZ-4432)', async () => {
+  it('puts Settings › "Bullet threading default" on <html> as `data-threading`, off by default, and not on `.app`: each page pane decides on its own host (YAZ-4432)', async () => {
     const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     const html = document.documentElement
     expect(html.dataset.threading).toBe('off')
@@ -1377,7 +1465,7 @@ describe('App guide lines and folding defaults (YAZ-4094, YAZ-4119 fix 3)', () =
 })
 
 describe('App sidebar zoom from the menu keys (YAZ-3389 D6)', () => {
-  it('with no note focused, ⌘+ at 200 writes nothing, and ⌘0 at 150 writes 100 over the other settings', async () => {
+  it('with no page focused, ⌘+ at 200 writes nothing, and ⌘0 at 150 writes 100 over the other settings', async () => {
     const at200: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarZoom: 200, theme: 'dark' } }
     const { bridge, emitStateChanged, emitZoom } = await mount(at200, { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => emitZoom(1))
@@ -1441,7 +1529,7 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
       act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tocLines } }))
       expect(app.getAttribute('data-toc-lines')).toBe(tocLines)
     }
-    // It is a gate in the stylesheet and no prop of an editor: the open note is not drawn again, and the other gates stay.
+    // It is a gate in the stylesheet and no prop of an editor: the open page is not drawn again, and the other gates stay.
     expect(captured.editors.length).toBe(renders)
     expect([app.getAttribute('data-section-lines'), app.getAttribute('data-content-width')]).toEqual(['always', 'narrow'])
   })
@@ -1495,6 +1583,20 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(attrs()).toEqual(['material', 'off', 'plain', 'instant'])
     expect(app.style.getPropertyValue('--kind-pdf')).toBe('')
     expect(captured.editors.length).toBe(renders)
+  })
+
+  it('YAZ-5100 round 2: names the kinds with a picked colour for app.css (`data-icon-colors`), and puts a picked card colour on the root too, for the hover preview outside `.app`', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    expect(app.hasAttribute('data-icon-colors')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--kind-card')).toBe('')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarIconColors: { card: '#cc3366', folder: '#112233' } } }))
+    expect(app.getAttribute('data-icon-colors')).toBe('card folder')
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#112233')
+    expect(document.documentElement.style.getPropertyValue('--kind-card')).toBe('#cc3366')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS } }))
+    expect(app.hasAttribute('data-icon-colors')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--kind-card')).toBe('')
   })
 })
 
@@ -1971,9 +2073,9 @@ describe('App tab board across windows (YAZ-3343)', () => {
     await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Move to new window')?.click())
     await act(async () => {})
     expect(tabNames(el)).toHaveLength(before.length - 1)
-    expect(bridge.window.noteClosed).not.toHaveBeenCalled()
+    expect(bridge.window.pageClosed).not.toHaveBeenCalled()
     await act(async () => void (await captured.sidebar?.onOpenVaultHere('/w')))
-    expect(bridge.window.noteClosed).toHaveBeenCalledExactlyOnceWith(['/v/b.md', '/v/c.md'])
+    expect(bridge.window.pageClosed).toHaveBeenCalledExactlyOnceWith(['/v/b.md', '/v/c.md'])
   })
 
   it('YAZ-3343 D22, S47: a window opened EMPTY from the board (its first identity says so) boots with no tab — not the vault\'s last file — and a tab moved in quietly is its ONE tab, active', async () => {
@@ -2388,20 +2490,27 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
 })
 
 /**
- * ⌘N and ⌘D (YAZ-3556 D1–D9): the New… box on "Default location for new notes", whose ⏎ shows Files and asks the Sidebar
+ * ⌘N and ⌘D (YAZ-3556 D1–D9): the New… box on "Default location for new pages", whose ⏎ shows Files and asks the Sidebar
  * for the name field; the jump to `settings.goTo` for each kind of place, and a path the vault does not have. The
  * Welcome window has no vault: both keys do nothing there. Each test has a vault of its own: the tree feed keeps a tree per root.
  */
 describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
   let n = 0
-  const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const page = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
   const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
   /** A fresh vault holding Projects/plan.md, the window on it with the sidebar hidden, and the settings given. */
+  /**
+   * YAZ-5486: a default folder is the VAULT's (`new-places.json` › newPage); the app's own vault-relative folder is no
+   * vault's, so these windows read it from the vault's file.
+   */
   const mountWith = async (settings: Partial<AppState['settings']>) => {
     const v = `/goto-${++n}`
-    const m = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, ...settings } }, { id: 'w1', root: v, file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' }, {}, (b) =>
-      b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [folder(`${v}/Projects`, [note(`${v}/Projects/plan.md`)])], generatedAt: 1 })),
-    )
+    const { newPageLocation, newPageFolder, ...app } = settings
+    const vaultPlaces = newPageLocation === undefined ? null : { version: 1, places: [null, null, null], newPage: { location: newPageLocation, folder: newPageFolder ?? '' } }
+    const m = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, ...app } }, { id: 'w1', root: v, file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' }, {}, (b) => {
+      b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [folder(`${v}/Projects`, [page(`${v}/Projects/plan.md`)])], generatedAt: 1 }))
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'new-places.json' ? vaultPlaces : null))
+    })
     return { ...m, v }
   }
   const settle = () => act(async () => {})
@@ -2417,11 +2526,11 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
   })
 
   it('⌘N opens the box on the default folder; ⏎ shows the hidden sidebar on Files and asks for the name field there, one request per box', async () => {
-    const { el, bridge, v, emitNewItem } = await mountWith({ newNoteLocation: 'folder', newNoteFolder: 'Projects' })
+    const { el, bridge, v, emitNewItem } = await mountWith({ newPageLocation: 'folder', newPageFolder: 'Projects' })
     act(() => emitNewItem())
     await settle()
     expect(el.querySelector('.new-item__place')?.textContent).toBe('Projects')
-    expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Note')
+    expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Page')
     act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
     // ⏎ moves to the place row, ⏎ there makes it (YAZ-4252).
     act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
@@ -2429,18 +2538,18 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
     expect(el.querySelector('.new-item')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
     expect(captured.sidebar?.lens).toBe('files')
-    // The name field starts with "New item name starts with" (YAZ-4246): the Dated note's MM_DD- by default.
+    // The name field starts with "New item name starts with" (YAZ-4246): the Dated page's MM_DD- by default.
     expect(captured.sidebar?.createRequest).toEqual({ id: 1, kind: 'drawing', dir: `${v}/Projects`, seed: expect.stringMatching(/^\d{2}_\d{2}- $/) })
     act(() => captured.sidebar?.onCreateConsumed?.(1))
     expect(captured.sidebar?.createRequest).toBeNull()
-    // The box opens again on Note (D7).
+    // The box opens again on Page (D7).
     act(() => emitNewItem())
     await settle()
-    expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Note')
+    expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Page')
   })
 
   it('⌘N › Folder: ⏎ asks the sidebar for the folder name field with the name template (YAZ-4252)', async () => {
-    const { el, v, emitNewItem } = await mountWith({ newNoteLocation: 'folder', newNoteFolder: 'Projects', newNoteTitleTemplate: 'Plan {MM}- ' })
+    const { el, v, emitNewItem } = await mountWith({ newPageLocation: 'folder', newPageFolder: 'Projects', newPageTitleTemplate: 'Plan {MM}- ' })
     act(() => emitNewItem())
     await settle()
     const key = (k: string) => act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })))
@@ -2452,7 +2561,7 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
   })
 
   it('⌘N with a default folder the vault does not have: the box shows the vault folder and says so (D3)', async () => {
-    const { el, emitNewItem } = await mountWith({ newNoteLocation: 'folder', newNoteFolder: 'Inbox' })
+    const { el, emitNewItem } = await mountWith({ newPageLocation: 'folder', newPageFolder: 'Inbox' })
     act(() => emitNewItem())
     await settle()
     expect(el.querySelector('.new-item .confirm__status')?.textContent).toMatch(/“Inbox” is not in this vault/)
@@ -2491,22 +2600,22 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
   })
 })
 
-describe('App ⌘-click on the daily note button (YAZ-3776)', () => {
+describe('App ⌘-click on the daily page button (YAZ-3776)', () => {
   let n = 0
-  const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const page = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
   /** Today's name at the press, as App reads it: a run across midnight still agrees. */
-  const today = () => dailyNoteName(DEFAULT_SETTINGS.dailyNoteFormat, new Date()).trim()
+  const today = () => dailyPageName(DEFAULT_SETTINGS.dailyPageFormat, new Date()).trim()
   /** A vault without IDs: plan.md and garden.md in two tabs, plan.md in front, the sidebar on Recents, and a Daily folder that holds what was made. */
   const mountDaily = async () => {
     const v = `/daily-${++n}`
     const files: Record<string, { content: string; mtime: number }> = {}
-    const m = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Daily' } }, { id: 'w1', root: v, file: `${v}/Projects/plan.md`, tabs: [`${v}/Projects/plan.md`, `${v}/Projects/garden.md`], sidebarLens: 'recents' }, files, (b) => {
+    const m = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Daily' } }, { id: 'w1', root: v, file: `${v}/Projects/plan.md`, tabs: [`${v}/Projects/plan.md`, `${v}/Projects/garden.md`], sidebarLens: 'recents' }, files, (b) => {
       b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false }))
       b.bridge.tree.mockImplementation(async (root: string) => ({
         root,
         tree: [
-          { type: 'dir', name: 'Daily', path: `${v}/Daily`, children: Object.keys(files).filter((path) => path.startsWith(`${v}/Daily/`)).map(note) },
-          { type: 'dir', name: 'Projects', path: `${v}/Projects`, children: [note(`${v}/Projects/garden.md`), note(`${v}/Projects/plan.md`)] },
+          { type: 'dir', name: 'Daily', path: `${v}/Daily`, children: Object.keys(files).filter((path) => path.startsWith(`${v}/Daily/`)).map(page) },
+          { type: 'dir', name: 'Projects', path: `${v}/Projects`, children: [page(`${v}/Projects/garden.md`), page(`${v}/Projects/plan.md`)] },
         ],
         generatedAt: 1,
       }))
@@ -2514,13 +2623,13 @@ describe('App ⌘-click on the daily note button (YAZ-3776)', () => {
     return { ...m, v, files }
   }
   const press = async (background: boolean) => {
-    act(() => captured.sidebar?.onOpenDailyNote?.(background))
+    act(() => captured.sidebar?.onOpenDailyPage?.(background))
     await act(async () => {})
     await act(async () => {})
   }
   const tabs = (el: HTMLElement) => [...el.querySelectorAll('[role="tab"]')].map((tab) => `${tab.textContent}${tab.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
 
-  it('makes today\'s note and opens it in a background tab next to the current one (YAZ-3808 D3): the tab in front and the sidebar stay; a second ⌘-click adds nothing (D1, D2)', async () => {
+  it('makes today\'s page and opens it in a background tab next to the current one (YAZ-3808 D3): the tab in front and the sidebar stay; a second ⌘-click adds nothing (D1, D2)', async () => {
     const { el, v, files, bridge } = await mountDaily()
     expect(tabs(el)).toEqual(['plan*', 'garden'])
     await press(true)
@@ -2529,17 +2638,35 @@ describe('App ⌘-click on the daily note button (YAZ-3776)', () => {
     expect(captured.sidebar?.lens).toBe('recents')
     expect(captured.sidebar?.revealRequest ?? null).toBeNull()
     await press(true)
-    expect(bridge.makeDailyNote).toHaveBeenCalledTimes(1)
+    expect(bridge.makeDailyPage).toHaveBeenCalledTimes(1)
     expect(tabs(el)).toEqual(['plan*', today(), 'garden'])
   })
 
-  it('a plain click still opens the note in front and shows its row in Files', async () => {
+  it('a plain click still opens the page in front and shows its row in Files', async () => {
     const { el, v } = await mountDaily()
     await press(false)
-    // The open tabs are kept ones, so the note comes in a tab of its own, in front.
+    // The open tabs are kept ones, so the page comes in a tab of its own, in front.
     expect(tabs(el)).toEqual(['plan', `${today()}*`, 'garden'])
     expect(captured.sidebar?.lens).toBe('files')
     expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: `${v}/Daily/${today()}.md`, focus: false })
+  })
+
+  it('YAZ-4985: in a read-only vault today\'s page is a New page, so it asks first; Cancel makes nothing, "Unlock for 10 minutes" makes it', async () => {
+    const { el, v, files, bridge } = await mountDaily()
+    bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+    await act(async () => (bridge.vaultConfig.onChange.mock.calls as unknown as [(c: { root: string; name: string }) => void][]).forEach(([listener]) => listener({ root: v, name: 'read-only.json' })))
+    await act(async () => {})
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+    await press(false)
+    expect(el.querySelector('#confirm-read-only-vault-text')).not.toBeNull()
+    await act(async () => button('Cancel')?.click())
+    await act(async () => {})
+    expect(bridge.makeDailyPage).not.toHaveBeenCalled()
+    await press(false)
+    await act(async () => button('Unlock for 10 minutes')?.click())
+    await act(async () => {})
+    await act(async () => {})
+    expect(Object.keys(files)).toEqual([`${v}/Daily/${today()}.md`])
   })
 })
 
@@ -2556,10 +2683,10 @@ describe('App settings dialog (YAZ-1679)', () => {
 })
 
 describe('App "What\'s new" sheet (YAZ-2976 D4, D5, D8)', () => {
-  /** The lazy chunk lands on a later tick than the click: settle until the sheet is in (or give up after 2 s — a loaded CI runner took more than 100 ms to import it), then let its notes read answer. */
+  /** The lazy chunk lands on a later tick than the click: settle until the sheet is in (or give up after 2 s — a loaded CI runner took more than 100 ms to import it), then let its pages read answer. */
   const settle = async (el: HTMLElement) => {
     for (let i = 0; i < 400 && el.querySelector('.whats-new') === null; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
-    await act(async () => {}) // and its notes read answers
+    await act(async () => {}) // and its pages read answers
   }
 
   it('Help › What\'s New… and the pill open the ONE lazy sheet; closing it leaves the pill\'s state (S19)', async () => {
@@ -2599,7 +2726,7 @@ describe('App ⌘⇧F explore (YAZ-2571)', () => {
     expect(done()).toBe(true)
   }
   const esc = () => act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-  it('File › Explore Vault… mounts the stack (its own chunk) with the caret in its search; ⌘⇧F again adds a search; Esc closes one layer, then the stack', async () => {
+  it('File › Explore Vault… mounts the stack (its own chunk) with the caret in its search; Esc closes one layer, then the stack', async () => {
     const { el, emitExplore } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     expect(el.querySelector('.explore')).toBeNull()
     act(() => emitExplore())
@@ -2608,27 +2735,35 @@ describe('App ⌘⇧F explore (YAZ-2571)', () => {
     expect(stack.getAttribute('aria-modal')).toBe('true')
     expect(document.activeElement).toBe(stack.querySelector('.explore__input'))
     expect(stack.querySelectorAll('.explore__layer')).toHaveLength(1)
+    esc()
+    expect(el.querySelector('.explore')).toBeNull()
+  })
+
+  it('YAZ-4994 decision: the Explore key again, with layers open, adds a NEW search on top; it never closes Explore', async () => {
+    const { el, emitExplore } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => emitExplore())
+    await until(() => el.querySelector('.explore') !== null)
+    expect(el.querySelectorAll('.explore__layer')).toHaveLength(1)
+    act(() => emitExplore())
+    expect(el.querySelector('.explore')).not.toBeNull()
     expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
+    expect(el.querySelectorAll('.explore__input')).toHaveLength(2)
     expect(document.activeElement).toBe(el.querySelectorAll('.explore__input')[1])
+    // Esc goes back one layer: the first search is still there.
     esc()
     await until(() => el.querySelectorAll('.explore__layer').length === 1)
     expect(document.activeElement).toBe(el.querySelector('.explore__input'))
-    esc()
-    expect(el.querySelector('.explore')).toBeNull()
   })
 
   it('⌘K with the stack open closes the whole stack first, then runs its sidebar search (Yaseen: "⌘K keeps its sidebar search"); the keyboard is not given back', async () => {
     const { el, emitExplore, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     act(() => emitExplore())
     await until(() => el.querySelector('.explore') !== null)
-    act(() => emitExplore())
-    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
     act(() => emitSearch())
     expect(el.querySelector('.explore')).toBeNull()
     expect(captured.sidebar?.lens).toBe('search')
     expect(captured.sidebar?.pendingSearchFocus).toBe(true)
-    // Not back in the note: the sidebar's search bar is asked for the caret instead.
+    // Not back in the page: the sidebar's search bar is asked for the caret instead.
     expect(document.activeElement?.closest('.milkdown')).toBeNull()
   })
 })
@@ -2696,6 +2831,87 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     // A lens asks for no caret.
     act(() => captured.sidebar?.onLensChange('files'))
     expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['files', false])
+  })
+
+  it('YAZ-4994: the search key toggles: again, with the keyboard in the search, the sidebar is as the key found it and the page has the keyboard', async () => {
+    const { el, bridge, emitSearch, emitToggleSidebar } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
+    const page = document.createElement('button')
+    el.appendChild(page)
+    page.focus()
+    act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('search')
+    // The search bar takes the keyboard (the stub's own box stands in for it).
+    const bar = el.querySelector<HTMLElement>('[data-sidebar]') as HTMLElement
+    bar.tabIndex = -1
+    bar.focus()
+    act(() => emitSearch())
+    expect(el.querySelector('[data-sidebar]')).toBeNull() // the key opened the sidebar: it closes again
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: true })
+    expect(document.activeElement).toBe(page)
+    act(() => emitToggleSidebar())
+    expect(captured.sidebar?.lens).toBe('favorites') // the lens the window last showed
+  })
+
+  it('YAZ-4994: from an open sidebar the second press keeps the sidebar and shows its lens again; with the keyboard out of the sidebar the key goes back INTO the search', async () => {
+    const { el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
+    const page = document.createElement('button')
+    el.appendChild(page)
+    page.focus()
+    act(() => emitSearch())
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    // The keyboard went back to the page (a click in it): the Search tab shows, and the key asks for the bar again.
+    act(() => emitSearch())
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+    const bar = el.querySelector<HTMLElement>('[data-sidebar]') as HTMLElement
+    bar.tabIndex = -1
+    bar.focus()
+    act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(document.activeElement).toBe(page)
+  })
+
+  it('YAZ-4995, Yaseen\'s example: ⌘K opens the search → Esc shows the files → Esc closes the sidebar; another Esc never opens it', async () => {
+    const { el, bridge, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
+    const esc = () => {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      act(() => void (document.activeElement ?? document.body).dispatchEvent(event))
+      return event
+    }
+    act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('search')
+    // The keyboard in the sidebar (the stub's box stands in for its search and its rows).
+    const aside = el.querySelector<HTMLElement>('[data-sidebar]') as HTMLElement
+    aside.tabIndex = -1
+    aside.focus()
+    expect(esc().defaultPrevented).toBe(true)
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(esc().defaultPrevented).toBe(true)
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: true })
+    expect(esc().defaultPrevented).toBe(false)
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+  })
+
+  it('YAZ-4995: Esc with the caret in the page text, or with a menu open, does not close the sidebar', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
+    const text = document.createElement('div')
+    text.setAttribute('contenteditable', 'true')
+    el.appendChild(text)
+    text.focus()
+    act(() => void text.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    // A menu that closes on the window's Esc: this Esc is the menu's.
+    text.remove()
+    const menu = document.createElement('div')
+    menu.className = 'ctx-menu'
+    document.body.appendChild(menu)
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    menu.remove()
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
   })
 
   it('S16 (YAZ-2638): a switch to a different vault from the Search tab lands on Files (YAZ-1846), on a sidebar of its own key — so the text is gone', async () => {
@@ -3522,14 +3738,14 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(activeLabel(el)).toBe('e')
   })
 
-  it('a tab\'s menu offers "Copy path" and no "Copy ID", for a note whose id the window\'s index holds as for a note with none, a PDF and an image (YAZ-2420 D31)', async () => {
-    const note = (path: string, id?: string): IndexRecord => {
+  it('a tab\'s menu offers "Copy path" and no "Copy ID", for a page whose id the window\'s index holds as for a page with none, a PDF and an image (YAZ-2420 D31)', async () => {
+    const page = (path: string, id?: string): IndexRecord => {
       const name = path.slice(path.lastIndexOf('/') + 1)
       return { path, ...(id === undefined ? {} : { id }), name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
     }
     const tabs = ['/v/a.md', '/v/b.md', '/v/report.PDF', '/v/photo.PNG']
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs }, {}, (b) =>
-      b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/a.md', 'k3m9x2pq7abc'), note('/v/b.md')], folders: [], generatedAt: 1, ids: true }),
+      b.bridge.index.mockResolvedValue({ root: '/v', records: [page('/v/a.md', 'k3m9x2pq7abc'), page('/v/b.md')], folders: [], generatedAt: 1, ids: true }),
     )
     const menuOf = (path: string) => {
       const tab = el.querySelector<HTMLElement>(`[role="tab"][title="${path}"]`)?.closest<HTMLElement>('.tabbar__tab')
@@ -3544,7 +3760,7 @@ describe('App tabs (I2, GRO-2234)', () => {
 
   it('E: the window title, the tab strip, the right panel, the rename sheet and a notice all name a page by its title, off the window\'s index (YAZ-2420 D14)', async () => {
     const ABDUL = '/v/up-001-abdul-k3m9x2pq7abc.md'
-    const note = (path: string, title: string): IndexRecord => {
+    const page = (path: string, title: string): IndexRecord => {
       const name = path.slice(path.lastIndexOf('/') + 1)
       return { path, name, basename: name.replace(/\.md$/i, ''), title, folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
     }
@@ -3552,13 +3768,13 @@ describe('App tabs (I2, GRO-2234)', () => {
       defaultAppState(),
       { id: 'w1', root: '/v', file: ABDUL, tabs: [ABDUL, '/v/b.md'], rightPanel: { open: true, width: 440, items: ['/v/c.md'], expanded: '/v/c.md' } },
       {},
-      (b) => b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/b.md', 'b'), note('/v/c.md', 'Side Note'), note(ABDUL, 'UP-001 - Abdul')], folders: [], generatedAt: 1, ids: true }),
+      (b) => b.bridge.index.mockResolvedValue({ root: '/v', records: [page('/v/b.md', 'b'), page('/v/c.md', 'Side Page'), page(ABDUL, 'UP-001 - Abdul')], folders: [], generatedAt: 1, ids: true }),
     )
     expect(document.title).toBe('v — UP-001 - Abdul')
     expect(stripLabels(el)).toEqual(['UP-001 - Abdul', 'b'])
-    expect(el.querySelector('.right-panel__label')?.textContent).toBe('Side Note')
+    expect(el.querySelector('.right-panel__label')?.textContent).toBe('Side Page')
     await act(async () => void captured.sidebar?.onRenameFile(ABDUL, '/v/renamed.md', 'file'))
-    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'renamed'? No other notes link to it.")
+    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'renamed'? No other pages link to it.")
     bridge.file.delete.mockRejectedValueOnce(new Error('boom'))
     await act(async () => void captured.sidebar?.onDeleteEntries([ABDUL]))
     expect(el.querySelector('.link-notice')?.textContent).toBe('Can\'t move "UP-001 - Abdul" to the Trash — nothing was deleted')
@@ -3739,7 +3955,7 @@ describe('App external-rename banner (Links E1c, GRO-2242)', () => {
     await act(async () => el.querySelectorAll<HTMLButtonElement>('.rename-banner button')[0]?.click())
     expect(b.bridge.file.repairRename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
     expect(files['/v/A.md'].content).toBe('See [[B2]] and [[B2|Bee]].\n')
-    expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 page')
     expect(el.querySelector('.rename-banner')).toBeNull()
   })
 
@@ -3789,7 +4005,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
     await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
-    expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 1 note will be updated.")
+    expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 1 page will be updated.")
     expect(bridge.file.rename).not.toHaveBeenCalled() // nothing moves before the beat
 
     await act(async () => sheetBtn(el, 'Rename')?.click())
@@ -3826,10 +4042,10 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
     expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
     // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
-    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 1 note')
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 1 page')
   })
 
-  it('YAZ-3303 D2 (YAZ-3335): a rename whose link update skipped a note says so, also with "Move, rename or delete" Off', async () => {
+  it('YAZ-3303 D2 (YAZ-3335): a rename whose link update skipped a page says so, also with "Move, rename or delete" Off', async () => {
     for (const noticeUndo of [true, false]) {
       const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
       const state = askOff()
@@ -3838,20 +4054,20 @@ describe('App rename door (⚡ YAZ-888)', () => {
       bridge.writeFile.mockImplementation(async ({ path }: { path: string; content: string }) => Promise.reject({ code: 'IO', message: `busy ${path}` }))
       await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
       expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
-      expect([noticeUndo, el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Renamed to "B2". Updated links in 0 notes; 1 skipped (unsaved changes)'])
+      expect([noticeUndo, el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Renamed to "B2". Updated links in 0 pages; 1 skipped (unsaved changes)'])
       act(() => root?.unmount())
     }
   })
 
-  it('YAZ-3337: the toast of an undo or a redo of a move says the links that followed, and a note it skipped (replayNotice)', () => {
+  it('YAZ-3337: the toast of an undo or a redo of a move says the links that followed, and a page it skipped (replayNotice)', () => {
     const n = [{ name: 'N.md', kind: 'file' as const }]
-    expect(replayNotice('undo', n, [], { updated: 0, skipped: 1 })).toBe('Moved back 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)')
-    expect(replayNotice('redo', n, [], { updated: 1, skipped: 0 })).toBe('Moved 1 file (N.md). Updated links in 1 note')
+    expect(replayNotice('undo', n, [], { updated: 0, skipped: 1 })).toBe('Moved back 1 file (N.md). Updated links in 0 pages; 1 skipped (unsaved changes)')
+    expect(replayNotice('redo', n, [], { updated: 1, skipped: 0 })).toBe('Moved 1 file (N.md). Updated links in 1 page')
     expect(replayNotice('undo', n, [])).toBe('Moved back 1 file (N.md)')
     expect(replayNotice('undo', [], ['N — moved again'], { updated: 0, skipped: 1 })).toBe("Can't undo: N — moved again")
   })
 
-  it('YAZ-3303 D2 (YAZ-3337): an undo and a redo of a move whose link update skipped a note say so, also with "Move, rename or delete" Off', async () => {
+  it('YAZ-3303 D2 (YAZ-3337): an undo and a redo of a move whose link update skipped a page say so, also with "Move, rename or delete" Off', async () => {
     const settle = () => act(async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0)) })
     const key = (shiftKey: boolean) => act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: shiftKey ? 'Z' : 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })))
     const busy = async ({ path }: { path: string; content: string }) => Promise.reject({ code: 'IO', message: `busy ${path}` })
@@ -3868,7 +4084,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       redo.bridge.writeFile.mockImplementation(busy)
       key(true)
       await settle()
-      expect([noticeUndo, redo.el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Moved 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)'])
+      expect([noticeUndo, redo.el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Moved 1 file (N.md). Updated links in 0 pages; 1 skipped (unsaved changes)'])
       act(() => root?.unmount())
 
       // The undo: N goes from Docs to Other, then back (⌘Z) while R cannot be written. The index first
@@ -3881,7 +4097,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       undo.bridge.writeFile.mockImplementation(busy)
       key(false)
       await settle()
-      expect([noticeUndo, undo.el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Moved back 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)'])
+      expect([noticeUndo, undo.el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Moved back 1 file (N.md). Updated links in 0 pages; 1 skipped (unsaved changes)'])
       act(() => root?.unmount())
     }
   })
@@ -3896,7 +4112,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo') // YAZ-3255 D11
   })
 
-  /** A move never deletes values (YAZ-4713 C9): no sheet asks before one, and no note is written for it. */
+  /** A move never deletes values (YAZ-4713 C9): no sheet asks before one, and no page is written for it. */
   describe('a move never deletes values (YAZ-4713 C9)', () => {
     const HIRING = '3y7505rsr6fd'
     const TEAM = 'mzf9cjhn02vm'
@@ -3911,12 +4127,12 @@ describe('App rename door (⚡ YAZ-888)', () => {
       generatedAt: 1,
       ids: true,
     })
-    // The disk as it is once the rename has landed: the note is at its new place.
+    // The disk as it is once the rename has landed: the page is at its new place.
     const moved = () => ({ '/v/Team/Archive/Noor.md': { content: held, mtime: 1 }, '/v/Team/Archive/Plain.md': { content: 'Body\n', mtime: 1 } })
     const mountTeam = (files: Record<string, { content: string; mtime: number }> = moved()) => mount(defaultAppState(), identity(), files, (b) => b.bridge.index.mockResolvedValue(snapshot()))
     const drag = (oldPath: string, newPath: string) => act(async () => await captured.sidebar?.onRenameFile(oldPath, newPath, 'file'))
 
-    it('a note moved to a place where a folder that showed it no longer does: no sheet, the move runs at once, and every value stays — Hiring’s block too (D20 and D21 are gone)', async () => {
+    it('a page moved to a place where a folder that showed it no longer does: no sheet, the move runs at once, and every value stays — Hiring’s block too (D20 and D21 are gone)', async () => {
       const files = moved()
       const { bridge, el } = await mountTeam(files)
       await drag(NOOR, '/v/Team/Archive/Noor.md')
@@ -3926,7 +4142,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(bridge.writeFile).not.toHaveBeenCalled()
     })
 
-    it('any other move — under the same folders, of a note with no values, of one whose block names no folder: no sheet, and no note is read or written', async () => {
+    it('any other move — under the same folders, of a page with no values, of one whose block names no folder: no sheet, and no page is read or written', async () => {
       const files = moved()
       const { bridge, el } = await mountTeam(files)
       bridge.readFile.mockClear()
@@ -3939,7 +4155,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         expect(el.querySelector('.confirm')).toBeNull()
         expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: from, newPath: to })
       }
-      // A note that holds nothing stale is not read at all.
+      // A page that holds nothing stale is not read at all.
       expect(bridge.readFile).not.toHaveBeenCalled()
       expect(bridge.writeFile).not.toHaveBeenCalled()
     })
@@ -3963,12 +4179,12 @@ describe('App rename door (⚡ YAZ-888)', () => {
     it('a rename that only changes the name: the rename sheet as today, never this one', async () => {
       const { el } = await mountTeam()
       await act(async () => void captured.sidebar?.onRenameFile(NOOR, '/v/Team/Hiring/Noor Khan.md', 'file'))
-      expect(sheetText(el)).toBe("Rename 'Noor' to 'Noor Khan'? No other notes link to it.")
+      expect(sheetText(el)).toBe("Rename 'Noor' to 'Noor Khan'? No other pages link to it.")
       expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Rename'])
       expect(el.querySelector('.confirm__btn--danger')).toBeNull()
     })
 
-    it('a title edit of a note that holds a folder’s values: the rename sheet, never this one, and the values stay (YAZ-2420 D16)', async () => {
+    it('a title edit of a page that holds a folder’s values: the rename sheet, never this one, and the values stay (YAZ-2420 D16)', async () => {
       const files = { [NOOR]: { content: held, mtime: 1 } }
       const { bridge, el } = await mountTeam(files)
       await act(async () => void captured.sidebar?.onRetitle(NOOR, 'Noor Khan', 'file'))
@@ -4000,7 +4216,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         expect(el.querySelector('.link-notice')?.getAttribute('data-icon')).toBe('paste')
       })
 
-      it('a list whose notes leave folders: no sheet, every move runs, and every value stays (C9)', async () => {
+      it('a list whose pages leave folders: no sheet, every move runs, and every value stays (C9)', async () => {
         const files = moved()
         const { bridge, el } = await mountTeam(files)
         const list = [
@@ -4291,13 +4507,13 @@ describe('App rename door (⚡ YAZ-888)', () => {
       b.bridge.index.mockResolvedValue({ root: '/v', records: titled, folders: [], generatedAt: 1, ids: true })
       b.bridge.file.retitle.mockResolvedValue({ oldPath: ABDUL, newPath: RENAMED, kind: 'file' })
     }
-    const notes = () => ({ '/v/A.md': { content: 'See [[Abdul]].\n', mtime: 1 }, '/v/ById.md': { content: `See [[${ID}]].\n`, mtime: 1 } })
+    const pages = () => ({ '/v/A.md': { content: 'See [[Abdul]].\n', mtime: 1 }, '/v/ById.md': { content: `See [[${ID}]].\n`, mtime: 1 } })
 
-    it('asks first, counting the notes whose links spell the old title, and confirming retitles through the whole pipeline: `[[Old title]]` becomes `[[New title]]`, an id link is neither counted nor rewritten', async () => {
-      const files = notes()
+    it('asks first, counting the pages whose links spell the old title, and confirming retitles through the whole pipeline: `[[Old title]]` becomes `[[New title]]`, an id link is neither counted nor rewritten', async () => {
+      const files = pages()
       const { bridge, el } = await mount(defaultAppState(), identity(), files, feedTitled)
       await act(async () => void captured.sidebar?.onRetitle(ABDUL, 'UP-001 - Abdul', 'file'))
-      expect(sheetText(el)).toBe("Rename 'Abdul' to 'UP-001 - Abdul'? Links in 1 note will be updated.")
+      expect(sheetText(el)).toBe("Rename 'Abdul' to 'UP-001 - Abdul'? Links in 1 page will be updated.")
       expect(bridge.file.retitle).not.toHaveBeenCalled() // nothing is written before the beat
 
       await act(async () => sheetBtn(el, 'Rename')?.click())
@@ -4306,30 +4522,30 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(files['/v/A.md'].content).toBe('See [[UP-001 - Abdul]].\n')
       expect(files['/v/ById.md'].content).toBe(`See [[${ID}]].\n`)
       // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
-      expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "UP-001 - Abdul". Updated links in 1 note')
+      expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "UP-001 - Abdul". Updated links in 1 page')
     })
 
     it('"Ask before renaming" off: a title edit runs with no sheet, and the links that spelled the old title still follow (YAZ-2420 3C1)', async () => {
-      const files = notes()
+      const files = pages()
       const { bridge, el } = await mount(askOff(), identity(), files, feedTitled)
       await act(async () => await captured.sidebar?.onRetitle(ABDUL, 'UP-001 - Abdul', 'file'))
       expect(el.querySelector('.confirm')).toBeNull()
       expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: ABDUL, title: 'UP-001 - Abdul' })
       expect(files['/v/A.md'].content).toBe('See [[UP-001 - Abdul]].\n')
       // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
-      expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "UP-001 - Abdul". Updated links in 1 note')
+      expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "UP-001 - Abdul". Updated links in 1 page')
     })
 
     it('the page title commits through the same door as the sidebar', async () => {
-      const { bridge, el } = await mount(defaultAppState(), { ...identity(), file: ABDUL, tabs: [ABDUL] }, notes(), feedTitled)
+      const { bridge, el } = await mount(defaultAppState(), { ...identity(), file: ABDUL, tabs: [ABDUL] }, pages(), feedTitled)
       await act(async () => void captured.editorRetitle?.(ABDUL, 'UP-001 - Abdul', 'file'))
-      expect(sheetText(el)).toBe("Rename 'Abdul' to 'UP-001 - Abdul'? Links in 1 note will be updated.")
+      expect(sheetText(el)).toBe("Rename 'Abdul' to 'UP-001 - Abdul'? Links in 1 page will be updated.")
       await act(async () => sheetBtn(el, 'Rename')?.click())
       expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: ABDUL, title: 'UP-001 - Abdul' })
     })
 
     it('a title edit that keeps the file name still rewrites the links: the path main answers with is the one the links are told', async () => {
-      const files = notes()
+      const files = pages()
       const { bridge, el } = await mount(defaultAppState(), identity(), files, feedTitled)
       bridge.file.retitle.mockResolvedValue({ oldPath: ABDUL, newPath: ABDUL, kind: 'file' })
       await act(async () => void captured.sidebar?.onRetitle(ABDUL, 'Abdul!', 'file'))
@@ -4339,18 +4555,18 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
     it('a folder is retitled the same way, and named by the title typed', async () => {
       const { bridge, el } = await mount(defaultAppState(), identity(), {}, feed)
-      bridge.file.retitle.mockResolvedValue({ oldPath: '/v/Docs', newPath: '/v/notes-2026', kind: 'dir' })
-      await act(async () => void captured.sidebar?.onRetitle('/v/Docs', 'Notes 2026', 'dir'))
-      expect(sheetText(el)).toBe("Rename 'Docs' to 'Notes 2026'? Links in 1 note will be updated.")
+      bridge.file.retitle.mockResolvedValue({ oldPath: '/v/Docs', newPath: '/v/pages-2026', kind: 'dir' })
+      await act(async () => void captured.sidebar?.onRetitle('/v/Docs', 'Pages 2026', 'dir'))
+      expect(sheetText(el)).toBe("Rename 'Docs' to 'Pages 2026'? Links in 1 page will be updated.")
       await act(async () => sheetBtn(el, 'Rename')?.click())
-      expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: '/v/Docs', title: 'Notes 2026' })
+      expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: '/v/Docs', title: 'Pages 2026' })
     })
 
     it.each([
-      [{ code: 'BAD_REQUEST', message: "this note's properties do not parse", path: ABDUL }, "Can't change the title: this note's properties do not parse"],
+      [{ code: 'BAD_REQUEST', message: "this page's properties do not parse", path: ABDUL }, "Can't change the title: this page's properties do not parse"],
       [{ code: 'ALREADY_EXISTS', message: 'a folder with this name already exists', path: RENAMED }, 'Can\'t change the title: "UP-001 - Abdul" already exists'],
     ])('a refused title edit says the title could not be changed, with the reason, and rewrites nothing', async (error, notice) => {
-      const files = notes()
+      const files = pages()
       const { bridge, el } = await mount(defaultAppState(), identity(), files, feedTitled)
       bridge.file.retitle.mockRejectedValue(error)
       await act(async () => void captured.sidebar?.onRetitle(ABDUL, 'UP-001 - Abdul', 'file'))
@@ -4400,7 +4616,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         trashing(b.bridge)
       })
 
-    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "Allow for 10 minutes" opens the vault’s file actions that long, then it asks again', async () => {
+    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "10 minutes" opens the vault’s file actions that long, then it asks again', async () => {
       // "Ask before renaming" off: the rename sheet would otherwise stand between the vault's sheet and the rename.
       const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
         feed(b)
@@ -4414,17 +4630,18 @@ describe('App rename door (⚡ YAZ-888)', () => {
       // Delete asks; Cancel deletes nothing.
       act(() => void captured.sidebar?.onDeleteEntries(['/v/B.md']))
       await act(async () => {})
-      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow its file actions — rename, move, delete, new and paste — for 10 minutes?')
+      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow this file change?')
+      expect([...el.querySelectorAll('.confirm__actions button')].map((b) => b.textContent)).toEqual(['Unlock for 10 minutes', '1 hour', 'Until I lock it', 'Cancel', 'Just this once'])
       expect(bridge.file.delete).not.toHaveBeenCalled()
       await act(async () => button('Cancel')?.click())
       expect(sheet()).toBeNull()
       expect(bridge.file.delete).not.toHaveBeenCalled()
-      // Rename asks too; "Allow for 10 minutes" lets it run.
+      // Rename asks too; "Unlock for 10 minutes" lets it run.
       act(() => void captured.sidebar?.onRenameFile('/v/B.md', '/v/C.md', 'file'))
       await act(async () => {})
       expect(sheet()).not.toBeNull()
       expect(bridge.file.rename).not.toHaveBeenCalled()
-      await act(async () => button('Allow for 10 minutes')?.click())
+      await act(async () => button('Unlock for 10 minutes')?.click())
       await act(async () => {})
       expect(sheet()).toBeNull()
       expect(renames(bridge)).toEqual([['/v/B.md', '/v/C.md']])
@@ -4442,6 +4659,203 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => button('Cancel')?.click())
       expect(bridge.file.delete.mock.calls.length).toBe(1)
       clock.mockRestore()
+    })
+
+    it('YAZ-4985: "Just this once" (Enter) lets one action through and leaves no allowance: the next action asks again; a pure move by rename asks once; a delete the sidebar asked already does not ask again', async () => {
+      const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const enter = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+      // Two files in one Delete: one action, one ask.
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md']))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      enter()
+      await settle()
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete.mock.calls.map(([req]) => req.path)).toEqual(['/v/A.md', '/v/B.md'])
+      // No allowance stayed: the next action asks again.
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')?.click())
+      expect(bridge.file.delete).toHaveBeenCalledTimes(2)
+      // A drag's move of one row comes to the rename door, which hands it to the move door: one ask, not two.
+      act(() => void captured.sidebar?.onRenameFile('/v/R.md', '/v/Docs/R.md', 'file'))
+      await act(async () => {})
+      enter()
+      await settle()
+      expect(sheet()).toBeNull()
+      expect(renames(bridge)).toEqual([['/v/R.md', '/v/Docs/R.md']])
+      // The sidebar asked before its delete sheet (`asked`): App does not ask again.
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Docs/R.md'], true))
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete).toHaveBeenCalledTimes(3)
+    })
+
+    it("YAZ-4985: a vault that only ANOTHER window shows (a cut made there, pasted here) is asked by its own read-only file; its \"10 minutes\" is kept for it and never opens this window's vault", async () => {
+      const { el } = await mount({ ...defaultAppState(), recents: [{ path: '/w', lastOpened: 1 }] }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+      let answer: Promise<boolean> | undefined
+      act(() => void (answer = captured.sidebar?.onFileAction?.('/w')))
+      await act(async () => {})
+      expect(sheet()?.textContent).toBe('This vault (w) is read only. Allow this file change?')
+      await act(async () => button('Unlock for 10 minutes')?.click())
+      await expect(answer).resolves.toBe(true)
+      // Within the 10 minutes that vault does not ask again.
+      await act(async () => void (answer = captured.sidebar?.onFileAction?.('/w')))
+      await expect(answer).resolves.toBe(true)
+      expect(sheet()).toBeNull()
+      // This window's own read-only vault still asks: the allowance was the other vault's.
+      act(() => void (answer = captured.sidebar?.onFileAction?.('/v')))
+      await act(async () => {})
+      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow this file change?')
+      await act(async () => button('Cancel')?.click())
+      await expect(answer).resolves.toBe(false)
+      // A folder the app knows as no vault never asks.
+      await expect(captured.sidebar?.onFileAction?.('/nowhere')).resolves.toBe(true)
+    })
+
+    it('YAZ-5581: the sidebar lock unlocks the whole vault: every editor of the vault edits (no Read only) while it runs; Lock now saves each open page FIRST, then locks it; read-only.json is never written', async () => {
+      const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/A.md', tabs: ['/v/A.md'] }, { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const editor = () => captured.editors.filter((e) => e.root === '/v').at(-1)
+      expect(editor()?.vaultReadOnly).toBe(true)
+      // An open page's save step, as `useTimedUnlock` registers it: the lock waits for it.
+      const order: string[] = []
+      let saved!: () => void
+      const off = editor()!.onVaultLock!(() => new Promise<void>((resolve) => (saved = () => (order.push('saved'), resolve()))))
+      act(() => captured.sidebar?.onUnlockVault?.('/v', 'until'))
+      expect(editor()?.vaultReadOnly).toBe(false)
+      expect(captured.sidebar?.vaults[0].unlockedUntil).toBe(Infinity)
+      act(() => captured.sidebar?.onLockVault?.('/v'))
+      await act(async () => {})
+      // Still unlocked while the page saves.
+      expect(editor()?.vaultReadOnly).toBe(false)
+      await act(async () => saved())
+      order.push(editor()?.vaultReadOnly === true ? 'locked' : 'open')
+      expect(order).toEqual(['saved', 'locked'])
+      expect(captured.sidebar?.vaults[0].unlockedUntil).toBeNull()
+      expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+      off()
+    })
+
+    it('YAZ-4985, YAZ-5581: the sidebar lock and the ask box share ONE allowance: "Unlock for 10 minutes" from the lock lets a move through with no ask, the lock counts it, and at zero the vault locks again by itself; the box\'s "1 hour" shows on the lock', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      try {
+        const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+          feed(b)
+          b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+          b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+        })
+        await act(async () => {})
+        const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+        const lock = () => captured.sidebar?.vaults[0]
+        expect([lock()?.readOnly, lock()?.unlockedUntil]).toEqual([true, null])
+        act(() => captured.sidebar?.onUnlockVault?.('/v', 'ten'))
+        const until = lock()?.unlockedUntil
+        expect(until).toBeGreaterThan(Date.now() + 599_000)
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/A.md', newPath: '/v/Docs/A.md', kind: 'file' }, { oldPath: '/v/B.md', newPath: '/v/Docs/B.md', kind: 'file' }]))
+        expect(sheet()).toBeNull()
+        expect(renames(bridge)).toHaveLength(2)
+        // At zero: locked again, and the lock says so.
+        await act(async () => vi.advanceTimersByTime(600_000))
+        expect(lock()?.unlockedUntil).toBeNull()
+        act(() => void captured.sidebar?.onMoveEntries([{ oldPath: '/v/R.md', newPath: '/v/Docs/R.md', kind: 'file' }, { oldPath: '/v/Docs/A.md', newPath: '/v/A.md', kind: 'file' }]))
+        await act(async () => {})
+        expect(sheet()).not.toBeNull()
+        // The box's "1 hour" is the same allowance: the lock shows it.
+        await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === '1 hour')?.click())
+        await act(async () => {})
+        expect(lock()?.unlockedUntil).toBeGreaterThan(Date.now() + 3_599_000)
+        expect(renames(bridge)).toHaveLength(4)
+        // "Lock now" from the lock ends it for the box too.
+        await act(async () => captured.sidebar?.onLockVault?.('/v'))
+        expect(lock()?.unlockedUntil).toBeNull()
+        act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
+        await act(async () => {})
+        expect(sheet()).not.toBeNull()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('YAZ-4985: an Undo or a Redo in a read-only vault asks first — a Delete made while the vault was not read only does not come back by ⌘Z, and ⌘⇧Z does not delete it again, until "Unlock for 10 minutes"', async () => {
+      let on = false
+      const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+      const turn = async (next: boolean) => {
+        on = next
+        await act(async () => (bridge.vaultConfig.onChange.mock.calls as unknown as [(c: { root: string; name: string }) => void][]).forEach(([listener]) => listener({ root: '/v', name: 'read-only.json' })))
+        await settle()
+      }
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      expect(bridge.file.delete).toHaveBeenCalledTimes(1)
+      await turn(true)
+      // ⌘Z asks; Cancel puts nothing back, and the step stays on the undo list.
+      await press()
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Cancel')?.click())
+      await settle()
+      expect(putBacks(bridge)).toEqual([])
+      await press()
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Unlock for 10 minutes')?.click())
+      await settle()
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/B.md 1`, '/v/B.md']])
+      // The redo of the delete: allowed for 10 minutes now, so it runs; past them it asks.
+      const now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 10 * 60_000 + 1)
+      await press(true)
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Cancel')?.click())
+      await settle()
+      expect(bridge.file.delete).toHaveBeenCalledTimes(1)
+      clock.mockRestore()
+    })
+
+    it('YAZ-4985: the Undo of a move in a read-only vault asks first; Cancel moves nothing back', async () => {
+      let on = false
+      const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on } : null))
+      })
+      await act(async () => {})
+      await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/A.md', newPath: '/v/Docs/A.md', kind: 'file' }, { oldPath: '/v/B.md', newPath: '/v/Docs/B.md', kind: 'file' }]))
+      await settle()
+      const before = renames(bridge).length
+      expect(before).toBe(2)
+      on = true
+      await act(async () => (bridge.vaultConfig.onChange.mock.calls as unknown as [(c: { root: string; name: string }) => void][]).forEach(([listener]) => listener({ root: '/v', name: 'read-only.json' })))
+      await settle()
+      await press()
+      expect(el.querySelector('#confirm-read-only-vault-text')).not.toBeNull()
+      await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')?.click())
+      await settle()
+      expect(renames(bridge).length).toBe(before)
     })
 
     it('S66 (YAZ-3272, as D23 of YAZ-3293 words it): one row deleted says "Deleted 1 file (Todo.md)" with Undo, by its kind and its name on disk', async () => {
@@ -4566,7 +4980,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => sheetBtn(el, 'Rename')?.click())
       await settle()
       expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
-      expect(toast(el)).toEqual({ text: 'Renamed to "B2". Updated links in 1 note', action: 'Undo' })
+      expect(toast(el)).toEqual({ text: 'Renamed to "B2". Updated links in 1 page', action: 'Undo' })
       // The index as it stands after the rename: A links to B2.
       bridge.index.mockResolvedValue({ root: '/v', records: [record('/v/A.md', { links: ['B2'] }), record('/v/B2.md'), record('/v/R.md', { links: ['Docs/N'] }), record('/v/Docs/N.md')], folders: [], generatedAt: 2, ids: true })
 
@@ -4575,14 +4989,14 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(el.querySelector('.confirm')).toBeNull() // no sheet on an undo
       expect(renames(bridge)).toEqual([['/v/B.md', '/v/B2.md'], ['/v/B2.md', '/v/B.md']])
       expect(files['/v/A.md'].content).toBe('See [[B]].\n')
-      expect(toast(el)).toEqual({ text: 'Renamed back to "B". Updated links in 1 note', action: 'Redo' })
+      expect(toast(el)).toEqual({ text: 'Renamed back to "B". Updated links in 1 page', action: 'Redo' })
 
       bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 3, ids: true })
       await press(true)
       expect(el.querySelector('.confirm')).toBeNull()
       expect(renames(bridge)).toEqual([['/v/B.md', '/v/B2.md'], ['/v/B2.md', '/v/B.md'], ['/v/B.md', '/v/B2.md']])
       expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
-      expect(toast(el)).toEqual({ text: 'Renamed to "B2". Updated links in 1 note', action: 'Undo' })
+      expect(toast(el)).toEqual({ text: 'Renamed to "B2". Updated links in 1 page', action: 'Undo' })
       expect(bridge.app.sound).not.toHaveBeenCalled()
     })
 
@@ -4668,19 +5082,19 @@ describe('App rename door (⚡ YAZ-888)', () => {
   describe('a name typed in a vault that does not use IDs is the file\u2019s name (YAZ-2523 V3)', () => {
     const feedPlain = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: false })
 
-    it('from the sidebar: a note is renamed to `<dir>/<typed>.md` through the same sheet and pipeline, the links that named it follow, and no title is written', async () => {
+    it('from the sidebar: a page is renamed to `<dir>/<typed>.md` through the same sheet and pipeline, the links that named it follow, and no title is written', async () => {
       const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
       const { bridge, el } = await mount(defaultAppState(), identity(), files, feedPlain)
-      await act(async () => void captured.sidebar?.onRetitle('/v/B.md', 'Meeting notes', 'file'))
-      expect(sheetText(el)).toBe("Rename 'B' to 'Meeting notes'? Links in 1 note will be updated.")
+      await act(async () => void captured.sidebar?.onRetitle('/v/B.md', 'Meeting pages', 'file'))
+      expect(sheetText(el)).toBe("Rename 'B' to 'Meeting pages'? Links in 1 page will be updated.")
       expect(bridge.file.rename).not.toHaveBeenCalled() // nothing moves before the beat
       await act(async () => sheetBtn(el, 'Rename')?.click())
-      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/Meeting notes.md' })
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/Meeting pages.md' })
       expect(bridge.file.retitle).not.toHaveBeenCalled()
-      expect(files['/v/A.md'].content).toBe('See [[Meeting notes]].\n')
+      expect(files['/v/A.md'].content).toBe('See [[Meeting pages]].\n')
     })
 
-    it('from a note\u2019s page title and a table\u2019s Name cell, the editor\u2019s door: the same rename, in the note\u2019s own folder', async () => {
+    it('from a page\u2019s page title and a table\u2019s Name cell, the editor\u2019s door: the same rename, in the page\u2019s own folder', async () => {
       const files = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
       const { bridge, el } = await mount(askOff(), { ...identity(), file: '/v/Docs/N.md', tabs: ['/v/Docs/N.md'] }, files, feedPlain)
       await act(async () => await captured.editorRetitle?.('/v/Docs/N.md', 'v1.2', 'file'))
@@ -4690,37 +5104,37 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(files['/v/R.md'].content).toBe('See [[Docs/v1.2]].\n')
     })
 
-    it('a note stays a note: a name typed with another file’s suffix is the note `talk.pdf.md`, as "New note" makes it', async () => {
+    it('a page stays a page: a name typed with another file’s suffix is the page `talk.pdf.md`, as "New page" makes it', async () => {
       const { bridge } = await mount(askOff(), identity(), {}, feedPlain)
       await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'talk.pdf', 'file'))
       expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/talk.pdf.md' })
     })
 
     it.each([
-      ['the sidebar', () => captured.sidebar?.onRetitle('/v/Docs', 'Notes 2026', 'dir')],
-      ['its page title', () => captured.editorRetitle?.('/v/Docs', 'Notes 2026', 'dir')],
+      ['the sidebar', () => captured.sidebar?.onRetitle('/v/Docs', 'Pages 2026', 'dir')],
+      ['its page title', () => captured.editorRetitle?.('/v/Docs', 'Pages 2026', 'dir')],
     ])('a folder, from %s: a directory rename to the name typed, the links through it follow, and no title is written', async (_, retitle) => {
       const files = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
       const { bridge } = await mount(askOff(), identity(), files, feedPlain)
-      bridge.file.rename.mockResolvedValue({ oldPath: '/v/Docs', newPath: '/v/Notes 2026', kind: 'dir' } as never)
+      bridge.file.rename.mockResolvedValue({ oldPath: '/v/Docs', newPath: '/v/Pages 2026', kind: 'dir' } as never)
       await act(async () => await retitle())
-      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/Docs', newPath: '/v/Notes 2026' })
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/Docs', newPath: '/v/Pages 2026' })
       expect(bridge.file.retitle).not.toHaveBeenCalled()
-      expect(files['/v/R.md'].content).toBe('See [[Notes 2026/N]].\n')
+      expect(files['/v/R.md'].content).toBe('See [[Pages 2026/N]].\n')
     })
 
     it('a name typed before the vault’s index has landed renames nothing and says so: its kind is not known yet (YAZ-2523)', async () => {
       const { bridge, el } = await mount(askOff(), identity(), {}, (b) => b.bridge.index.mockReturnValue(new Promise(() => undefined)))
-      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'Meeting notes', 'file'))
+      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'Meeting pages', 'file'))
       expect(el.querySelector('.link-notice')?.textContent).toBe("Can't rename: couldn't load the current file list")
       expect(bridge.file.rename).not.toHaveBeenCalled()
       expect(bridge.file.retitle).not.toHaveBeenCalled()
     })
 
     it.each([
-      [false, "Rename 'B' to 'C'? Links in 1 note will be updated.", 'See [[C]].\n'],
-      [true, "Rename 'B' to 'C'? No other notes link to it.", 'See [[B]].\n'],
-    ])('a note that holds `title: B`, renamed with IDs %s: `[[B]]` is counted and rewritten only where the title is an ordinary property (YAZ-2523 V12)', async (ids, asked, after) => {
+      [false, "Rename 'B' to 'C'? Links in 1 page will be updated.", 'See [[C]].\n'],
+      [true, "Rename 'B' to 'C'? No other pages link to it.", 'See [[B]].\n'],
+    ])('a page that holds `title: B`, renamed with IDs %s: `[[B]]` is counted and rewritten only where the title is an ordinary property (YAZ-2523 V12)', async (ids, asked, after) => {
       const held = [record('/v/A.md', { links: ['B'] }), record('/v/B.md', { properties: { title: 'B' } })]
       const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
       const { el } = await mount(defaultAppState(), identity(), files, (b) => b.bridge.index.mockResolvedValue({ root: '/v', records: held, folders: [], generatedAt: 1, ids }))
@@ -4728,6 +5142,20 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(sheetText(el)).toBe(asked)
       await act(async () => sheetBtn(el, 'Rename')?.click())
       expect(files['/v/A.md'].content).toBe(after)
+    })
+
+    it.each([
+      [false, true],
+      [true, false],
+    ])('every title field asks App whether a title is a file name (YAZ-5580): with IDs %s, a "/" is said under the field: %s', async (ids, isName) => {
+      await mount(askOff(), { ...identity(), file: '/v/B.md', tabs: ['/v/B.md'] }, {}, (b) => b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids }))
+      expect(captured.titleIsName?.('/v/B.md')).toBe(isName)
+      expect(captured.titleIsName?.('/v/Docs')).toBe(isName)
+    })
+
+    it('before the vault’s index lands its kind is not known: no title field says anything yet (the rename door says so) (YAZ-5580)', async () => {
+      await mount(askOff(), { ...identity(), file: '/v/B.md', tabs: ['/v/B.md'] }, {}, (b) => b.bridge.index.mockReturnValue(new Promise(() => undefined)))
+      expect(captured.titleIsName?.('/v/B.md')).toBe(false)
     })
 
     it('the name it already has renames nothing; a name a file cannot hold is said in the notice and renames nothing', async () => {
@@ -4798,14 +5226,14 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
   it('a FOLDER rename asks too, and its count is the DIR-mode one — pathed links only', async () => {
     const { el } = await mount(defaultAppState(), identity(), {}, feed)
-    await act(async () => void captured.sidebar?.onRenameFile('/v/Docs', '/v/Notes', 'dir'))
-    expect(sheetText(el)).toBe("Rename 'Docs' to 'Notes'? Links in 1 note will be updated.")
+    await act(async () => void captured.sidebar?.onRenameFile('/v/Docs', '/v/Pages', 'dir'))
+    expect(sheetText(el)).toBe("Rename 'Docs' to 'Pages'? Links in 1 page will be updated.")
   })
 
   it('a page nobody links to says so rather than promising an update of nothing', async () => {
     const { el } = await mount(defaultAppState(), identity(), {}, feed)
     await act(async () => void captured.sidebar?.onRenameFile('/v/A.md', '/v/A2.md', 'file'))
-    expect(sheetText(el)).toBe("Rename 'A' to 'A2'? No other notes link to it.")
+    expect(sheetText(el)).toBe("Rename 'A' to 'A2'? No other pages link to it.")
   })
 
   it('classifies an image as a navigation-only file without adding it to the semantic index', async () => {
@@ -4832,7 +5260,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         records: semanticRecords,
         viewOnlyCatalog: expect.objectContaining({ entries: [expect.objectContaining({ path: '/v/photo.png', kind: 'image' })] }),
       }))
-      expect(sheetText(el)).toBe("Rename 'photo.png' to 'photo-v2.png'? Links in 1 note will be updated.")
+      expect(sheetText(el)).toBe("Rename 'photo.png' to 'photo-v2.png'? Links in 1 page will be updated.")
       expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(treeReadsBeforeRename)
 
       ;(captured.sidebar?.viewOnlyLinks as MutableViewOnlyLinkSource | undefined)?.reset()
@@ -4868,7 +5296,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
     await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
     expect(rootReads).toBe(2)
-    expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? Links in 1 note will be updated.")
+    expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? Links in 1 page will be updated.")
     expect(bridge.file.rename).not.toHaveBeenCalled()
 
     await act(async () => sheetBtn(el, 'Rename')?.click())
@@ -4903,14 +5331,14 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
     await act(async () => void await captured.sidebar?.onRenameFile('/v/Old', '/v/New', 'dir'))
     expect(rootReads).toBe(2)
-    expect(sheetText(el)).toBe("Rename 'Old' to 'New'? Links in 1 note will be updated.")
+    expect(sheetText(el)).toBe("Rename 'Old' to 'New'? Links in 1 page will be updated.")
     await act(async () => sheetBtn(el, 'Rename')?.click())
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/Old', newPath: '/v/New' })
     expect(files['/v/A.md'].content).toBe('[[New/data.json]]\n')
     await act(async () => release())
   })
 
-  it('a FOLDER rename counts the name links to the folder itself — a note\u2019s and another folder\u2019s Page — and confirming rewrites both (YAZ-2290 D10, YAZ-4584 D40)', async () => {
+  it('a FOLDER rename counts the name links to the folder itself — a page\u2019s and another folder\u2019s Page — and confirming rewrites both (YAZ-2290 D10, YAZ-4584 D40)', async () => {
     const TEAM = '---\nfolder_settings:\n  views:\n    - type: page\n      name: Page\n---\n- [[Projects]]\n'
     const files = { '/v/A.md': { content: 'See [[Projects]].\n', mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 } }
     const page = { views: [{ type: 'page', name: 'Page' }] }
@@ -4931,7 +5359,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     })
 
     await act(async () => void await captured.sidebar?.onRenameFile('/v/Projects', '/v/Work', 'dir'))
-    expect(sheetText(el)).toBe("Rename 'Projects' to 'Work'? Links in 2 notes will be updated.")
+    expect(sheetText(el)).toBe("Rename 'Projects' to 'Work'? Links in 2 pages will be updated.")
     await act(async () => sheetBtn(el, 'Rename')?.click())
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/Projects', newPath: '/v/Work' })
     expect(files['/v/A.md'].content).toBe('See [[Work]].\n')
@@ -4962,7 +5390,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     await act(async () => void await captured.sidebar?.onRenameFile('/v/Old', '/v/New', 'dir'))
 
     expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(readsBeforeRename + 1)
-    expect(sheetText(el)).toBe("Rename 'Old' to 'New'? Links in 1 note will be updated.")
+    expect(sheetText(el)).toBe("Rename 'Old' to 'New'? Links in 1 page will be updated.")
     await act(async () => sheetBtn(el, 'Rename')?.click())
     expect(files['/v/A.md'].content).toBe('[[New/data.json]]\n')
   })
@@ -5012,7 +5440,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         folders: [],
         dirs: [],
       })
-      expect(sheetText(el)).toBe("Rename 'Archive.json' to 'Renamed.json'? Links in 1 note will be updated.")
+      expect(sheetText(el)).toBe("Rename 'Archive.json' to 'Renamed.json'? Links in 1 page will be updated.")
     } finally {
       count.mockRestore()
     }
@@ -5080,7 +5508,7 @@ describe('in-app delete (GRO-2272)', () => {
   })
 
   it('the delete path never fetches the index — link rewriting would need it (LOCKED decision C)', async () => {
-    // A rename fetches the index to find referencing notes. A delete must NOT: notes linking
+    // A rename fetches the index to find referencing pages. A delete must NOT: pages linking
     // to a deleted page stay byte-identical. Asserted across BOTH event kinds; the
     // sidebar-triggered call is covered end-to-end in C3, where the menu item exists.
     const files = { '/v/Docs/a.md': { content: '# a', mtime: 1 }, '/v/x.md': { content: '# x', mtime: 1 } }
@@ -5126,364 +5554,669 @@ describe('opening a vault creates no file (YAZ-2290)', () => {
 })
 
 /**
- * An upkeep review (YAZ-2322) REPLACES the main pane and is not a tab: the strip gives way to the
- * review bar, the session's note is the one visible page, and nothing about the workspace —
- * tabs, active tab, right panel — moves until the user moves it. One editor per note, always.
+ * Card review in App (YAZ-4967): each vault counts its due cards for the sidebar's Inbox row and holds one
+ * session, which App draws as the Inbox screen over the tab stack.
  */
-describe('App upkeep review (YAZ-2322)', () => {
-  /** A note last changed in 1970: in review by default, and long overdue. */
-  const due = (name: string, folder = ''): IndexRecord => ({
+describe('App card review (YAZ-4967)', () => {
+  const H = 3_600_000
+  /** A page of `cards`: each `[id, reviews]`, as the index hands them (D4). */
+  const page = (name: string, folder: string, ...cards: [string, { at: string; rating: 'again' | 'good' }[]][]): IndexRecord => ({
     path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, title: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
-    properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'x',
+    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cards.map(([id, reviews]) => ({ id, off: false, next: false, reviews })),
   })
-  const withIndex = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) =>
-    void b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true })
-  /** The vault's `review.json` turns upkeep on, and the index holds `records`. */
-  const upkeepOn = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) => {
-    b.bridge.vaultConfig.read.mockResolvedValue({ enabled: true })
-    withIndex(...records)(b)
-  }
+  // Two Remembered an hour ago: out of its same-day steps, so not due (YAZ-5020: a new card needs two in a row).
+  const hourAgo = () => [
+    { at: new Date(Date.now() - H).toISOString().slice(0, 16) + ':00.000Z', rating: 'good' as const },
+    { at: new Date(Date.now() - H + 60_000).toISOString().slice(0, 16) + ':00.000Z', rating: 'good' as const },
+  ]
+  const RECORDS = () => [
+    page('x', '', ['V-1', [{ at: '2020-01-01T09:00:00.000Z', rating: 'good' }]], ['V-2', hourAgo()]), // due; not due
+    page('p', 'Work', ['V-3', []]), // new
+  ]
+  const withIndex = (records: IndexRecord[], ids = true) => (b: ReturnType<typeof installBridge>) =>
+    void b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids })
   const TABS: IdentityFixture = { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'] }
-
-  const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
-  const activeLabel = (el: HTMLElement) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
-  const layers = (el: HTMLElement) =>
-    [...el.querySelectorAll<HTMLElement>('.tabstack__layer')].map((l) => [
-      l.querySelector('[data-editor]')?.getAttribute('data-path'),
-      l.classList.contains('tabstack__layer--hidden'),
-    ])
-  const editorsOn = (el: HTMLElement, path: string) => el.querySelectorAll(`[data-editor][data-path="${path}"]`).length
-  const button = (el: HTMLElement, name: string) => [...el.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') ?? b.textContent) === name)
   const openInbox = () => act(() => captured.sidebar?.onOpenInbox())
 
-  it('the sidebar is handed the due count, and told while a review is open', async () => {
-    await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    expect(captured.sidebar?.upkeep).toBe(true)
+  it('a vault with no review.json reviews cards: the sidebar gets the due count — a due card and a new one, not the card answered an hour ago', async () => {
+    await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    expect(captured.sidebar?.review).toBe(true)
     expect(captured.sidebar?.dueCount).toBe(2)
     expect(captured.sidebar?.reviewing).toBe(false)
+  })
+
+  it('YAZ-5011: the Inbox row opens the Inbox as its own tab, last in the strip; a page tab brings its page to the front and the Inbox stays open behind; the row goes back to it; its ✕ closes it', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    const strip = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
     openInbox()
     expect(captured.sidebar?.reviewing).toBe(true)
+    await vi.waitFor(() => expect(el.querySelector('.tabstack .card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
+    // A second click goes to the open Inbox tab: one per window, and it stays open.
+    openInbox()
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
+    // The active page's tab, under the Inbox: its page comes to the front; the Inbox tab stays, hidden.
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][1].click())
+    expect(strip()).toEqual(['a', 'b*', 'Inbox'])
+    expect(captured.sidebar?.reviewing).toBe(false)
+    expect(el.querySelector<HTMLElement>('.card-inbox')?.hidden).toBe(true)
+    openInbox()
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
+    expect(el.querySelector<HTMLElement>('.card-inbox')?.hidden).toBe(false)
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar [aria-label="Close Inbox"]')!.click())
+    expect(strip()).toEqual(['a', 'b*'])
+    expect(el.querySelector('.card-inbox')).toBeNull()
   })
 
-  it('starting a review moves nothing in the workspace, and closing it returns to exactly the tabs that were there', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
-    const { bridge, el } = await mount(
-      defaultAppState(),
-      { ...TABS, rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } },
-      {},
-      upkeepOn(due('x'), due('y')),
-    )
-    bridge.window.setIdentity.mockClear()
+  it('YAZ-5038: a board tab under the Inbox tab is a tab behind: its layer hides, and File › Share Link finds no board on show; back on its tab, both are as before', async () => {
+    const BOARD: IdentityFixture = { id: 'w1', root: '/v', file: '/v/Plan.excalidraw', tabs: ['/v/a.md', '/v/Plan.excalidraw'] }
+    const { el, bridge, emitShareLink } = await mount(defaultAppState(), BOARD, {}, withIndex(RECORDS()))
+    const layer = () => el.querySelector<HTMLElement>('.tabstack__layer:not(.tabstack__layer--hidden)')
+    expect(layer()).toBeInstanceOf(HTMLElement)
     openInbox()
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
-    expect(document.title).toBe('v — b')
-    expect(location.hash).toBe('#/v/b.md')
-    expect(el.querySelector('.right-panel__header')?.textContent).toBe('r')
-    act(() => button(el, 'Close review')?.click())
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
-    expect(stripLabels(el)).toEqual(['a', 'b'])
-    expect(activeLabel(el)).toBe('b')
-    expect(layers(el)).toEqual([['/v/b.md', false]])
-    expect(el.querySelector('.right-panel__header')?.textContent).toBe('r')
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(el.querySelector('.review-answers')).toBeNull()
+    await vi.waitFor(() => expect(el.querySelector('.card-inbox')?.hasAttribute('hidden')).toBe(false), { timeout: SLOW_RUNNER_MS })
+    // No layer of the stack shows: the Inbox is the tab on show.
+    expect(layer()).toBeNull()
+    await act(async () => emitShareLink())
+    expect(el.querySelector('[role="dialog"][aria-label^="Share "]')).toBeNull()
+    expect(bridge.share.get).not.toHaveBeenCalled()
+    // The board's tab: its layer shows, and Share Link is its own again.
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][1].click())
+    expect(layer()).toBeInstanceOf(HTMLElement)
+    await act(async () => emitShareLink())
+    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull())
   })
 
-  it('S48: a review that starts closes the tab board, and the board does not open during a review — by the key or by the button', async () => {
-    const { el, emitTabOverview } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    act(() => emitTabOverview())
-    expect(el.querySelector('.taboverview')).not.toBeNull()
+  it('YAZ-5041: the Inbox tab to the front tells main no page is in front, so the app menu follows no page; the page tab tells main a page is in front again', async () => {
+    const BOARD: IdentityFixture = { id: 'w1', root: '/v', file: '/v/Plan.excalidraw', tabs: ['/v/a.md', '/v/Plan.excalidraw'] }
+    const { el, bridge } = await mount(defaultAppState(), BOARD, {}, withIndex(RECORDS()))
+    const told = bridge.hotkeys.noPageInFront
+    // A page on show: main reads the window's tab, as before; nothing to tell.
+    expect(told).not.toHaveBeenCalledWith(true)
     openInbox()
-    expect(el.querySelector('.taboverview')).toBeNull()
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    act(() => emitTabOverview())
-    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.click())
-    expect(el.querySelector('.taboverview')).toBeNull()
-    expect(el.querySelector('.review-bar')).not.toBeNull()
+    await vi.waitFor(() => expect(told).toHaveBeenLastCalledWith(true), { timeout: SLOW_RUNNER_MS })
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][1].click())
+    await vi.waitFor(() => expect(told).toHaveBeenLastCalledWith(false))
   })
 
-  it('the new tab page does not show while a review is open, and shows again when it closes (YAZ-2663 S25)', async () => {
-    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, upkeepOn(due('x')))
-    expect(el.querySelector('[data-start-page]')).not.toBeNull()
+  it('YAZ-5016: the Inbox tab, dragged first, keeps its place: a page tab and the sidebar\'s Inbox row go to it there; its menu\'s "Close other tabs" keeps it in front; closed and opened again, it stands at the end', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    const strip = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
+    const tabEl = (name: string) => [...el.querySelectorAll<HTMLElement>('.tabbar .tabbar__tab')].find((t) => t.querySelector('[role="tab"]')?.textContent === name)!
+    const drag = (target: Element, type: string, clientX: number) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
     openInbox()
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    expect(el.querySelector('[data-start-page]')).toBeNull()
-    act(() => button(el, 'Close review')?.click())
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(el.querySelector('[data-start-page]')).not.toBeNull()
+    await vi.waitFor(() => expect(el.querySelector('.tabstack .card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
+    // jsdom lays out no tab: a point left of the strip is its first slot.
+    drag(tabEl('Inbox'), 'dragstart', 0)
+    drag(tabEl('a'), 'drop', -1)
+    expect(strip()).toEqual(['Inbox*', 'a', 'b'])
+    // A page tab to the front, then the sidebar's Inbox row: the Inbox tab comes to the front where it stands.
+    act(() => tabEl('b').querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+    expect(strip()).toEqual(['Inbox', 'a', 'b*'])
+    openInbox()
+    expect(strip()).toEqual(['Inbox*', 'a', 'b'])
+    // Its menu: only the tab's own items (YAZ-5054: "Move to new window" too; no other window, so no "Move to"). "Close other tabs" closes the page tabs, and the Inbox tab stays in front.
+    act(() => void tabEl('Inbox').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const items = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    expect(items.map((item) => item.textContent)).toEqual(['Move to new window', 'Close tab', 'Close other tabs', 'Close tabs to the right'])
+    act(() => items[2].click())
+    expect(strip()).toEqual(['Inbox*'])
+    expect(el.querySelector<HTMLElement>('.card-inbox')?.hidden).toBe(false)
+    // Closed, then opened again with page tabs open: at the end, as a new tab.
+    act(() => captured.sidebar?.onOpenFile('/v/a.md'))
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar [aria-label="Close Inbox"]')!.click())
+    expect(strip()).toEqual(['a*'])
+    openInbox()
+    expect(strip()).toEqual(['a', 'Inbox*'])
   })
 
-  it('YAZ-2662 S67: a review that starts closes the preview panel of the search, and no panel shows during a review or comes back when it closes', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    const shown = () => [el.querySelector('.quicklook') !== null, captured.sidebar?.previewPath, el.querySelector('.review-bar') !== null]
-    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
-    expect(shown()).toEqual([true, '/v/archive.zip', false])
+  it('YAZ-5054: the Inbox tab moves to a new window with its scope, filter and card, and closes here; "Move to ▸" another window the same; the sidebar row opens one in a new window and keeps this one', async () => {
+    const win = (id: string, tabs: string[]): WindowEntry => ({ id, root: '/v', roots: ['/v'], file: tabs.at(-1) ?? null, tabs, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const { el, bridge } = await mount({ ...defaultAppState(), windows: [win('w1', ['/v/a.md', '/v/b.md']), win('w2', ['/v/x.md'])] }, TABS, {}, withIndex(RECORDS()))
+    const strip = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
+    const menu = () => {
+      act(() => void el.querySelector('.tabbar__tab--inbox')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    }
+    await act(async () => captured.sidebar?.onReviewFolder('/v/Work'))
+    await vi.waitFor(() => expect(el.querySelector('.tabstack .card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    expect(strip()).toEqual(['a', 'b', 'Inbox · Work*'])
+    const toNew = menu().find((item) => item.textContent === 'Move to new window')!
+    await act(async () => toNew.click())
+    // The card on show goes too (the hook's test); this fixture's page has no card text, so the done screen shows and there is none.
+    expect(bridge.window.inboxToNewWindow).toHaveBeenCalledExactlyOnceWith({ root: '/v', folder: 'Work', filter: 'all' })
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b*']))
+    expect(captured.sidebar?.reviewing).toBe(false)
+    // "Move to ▸" the other window that shows the vault.
     openInbox()
-    expect(shown()).toEqual([false, null, true])
-    await act(async () => captured.sidebar?.onPreview('/v/archive.zip'))
-    expect(shown()).toEqual([false, null, true])
-    await act(async () => button(el, 'Close review')?.click())
-    expect(shown()).toEqual([false, null, false])
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b', 'Inbox*']))
+    const moveTo = menu().find((item) => item.textContent === 'Move to')!
+    act(() => moveTo.click())
+    const row = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub [role="menuitem"]')][0]
+    await act(async () => row.click())
+    expect(bridge.window.moveInboxTo).toHaveBeenCalledExactlyOnceWith('w2', expect.objectContaining({ root: '/v', filter: 'all' }))
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b*']))
+    // The sidebar row's "Open in new window": a fresh Inbox there; nothing closes here.
+    openInbox()
+    await act(async () => captured.sidebar?.onInboxNewWindow?.('/v'))
+    expect(bridge.window.inboxToNewWindow).toHaveBeenLastCalledWith({ root: '/v' })
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
   })
 
-  it('⌘T during a review does nothing (YAZ-2655 S82)', async () => {
-    const { el, emitNewTab } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    openInbox()
-    act(() => emitNewTab())
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    expect(captured.sidebar?.pendingSearchFocus).toBe(false)
-    act(() => button(el, 'Close review')?.click())
-    expect(stripLabels(el)).toEqual(['a', 'b'])
+  it('YAZ-5054: an Inbox moved here opens on its scope, filter and card once the index is in; a window that has its own Inbox goes to it instead', async () => {
+    const { el, emitTakeInbox } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    const strip = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
+    act(() => emitTakeInbox({ root: '/v', filter: 'new', card: { path: '/v/Work/p.md', id: 'V-3' } }))
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b', 'Inbox*']), { timeout: SLOW_RUNNER_MS })
+    await vi.waitFor(() => expect(el.querySelector('.card-inbox')?.textContent).toContain('New cards'), { timeout: SLOW_RUNNER_MS })
+    // Its own Inbox stays as it is: the moved one goes to it.
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][0].click())
+    expect(strip()).toEqual(['a*', 'b', 'Inbox'])
+    act(() => emitTakeInbox({ root: '/v', folder: 'Work' }))
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b', 'Inbox*']))
+    // A vault this window does not show: nothing opens.
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar [aria-label="Close Inbox"]')!.click())
+    act(() => emitTakeInbox({ root: '/elsewhere' }))
+    expect(strip()).toEqual(['a*', 'b'])
   })
 
-  it('with a session open the tab strip gives way to the review bar, and the note\'s editor is the only visible layer', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    openInbox()
-    expect(el.querySelector('.tabbar')).toBeNull()
-    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Inbox')
-    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
-    expect(layers(el)).toEqual([
-      ['/v/b.md', true],
-      ['/v/x.md', false],
-    ])
-    expect(button(el, 'Still relevant⌘⇧⏎')).toBeDefined()
+  it('"Review this folder" and "Review this page" start a session over that scope: its first card\'s page is read', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    const inboxTabs = () => [...el.querySelectorAll('.tabbar .tabbar__tab--inbox [role="tab"]')].map((t) => t.textContent)
+    bridge.readFile.mockClear()
+    await act(async () => captured.sidebar?.onReviewFolder('/v/Work'))
+    expect(captured.sidebar?.reviewing).toBe(true)
+    expect(bridge.readFile).toHaveBeenCalledWith('/v/Work/p.md')
+    expect(inboxTabs()).toEqual(['Inbox · Work'])
+    bridge.readFile.mockClear()
+    await act(async () => captured.sidebar?.onReviewPage('/v/x.md'))
+    expect(bridge.readFile).toHaveBeenCalledWith('/v/x.md')
+    expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Work/p.md')
+    // YAZ-5011: the same Inbox tab, with the new scope.
+    expect(inboxTabs()).toEqual(['Inbox · x'])
   })
 
-  it('Skip shows the next note in a layer of its own; the one before is gone', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
+  it('review off in review.json: no Inbox, nothing due, no session', async () => {
+    await mount(defaultAppState(), TABS, {}, (b) => {
+      b.bridge.vaultConfig.read.mockImplementation(async (_root, name) => (name === 'review.json' ? { enabled: false } : null))
+      withIndex(RECORDS())(b)
+    })
+    expect(captured.sidebar?.review).toBe(false)
+    expect(captured.sidebar?.dueCount).toBe(0)
     openInbox()
-    act(() => button(el, 'Skip⌘⇧S')?.click())
-    expect(layers(el)).toEqual([
-      ['/v/b.md', true],
-      ['/v/y.md', false],
-    ])
-  })
-
-  it('⌘⇧S stays the review\'s Skip (YAZ-3037, YAZ-3028 D10): with a review open, the menu\'s Export Excalidraw Drawing… gesture skips the note', async () => {
-    const { el, emitExportDrawing } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
-    openInbox()
-    act(() => emitExportDrawing())
-    expect(layers(el)).toEqual([
-      ['/v/b.md', true],
-      ['/v/y.md', false],
-    ])
-  })
-
-  it('a note that is already an open tab shows through that tab\'s layer — one editor for the path', async () => {
-    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
-    act(() => captured.sidebar?.onOpenFile('/v/b.md'))
-    expect(layers(el)).toEqual([
-      ['/v/a.md', true],
-      ['/v/b.md', false],
-    ])
-    openInbox()
-    expect(layers(el)).toEqual([
-      ['/v/a.md', false],
-      ['/v/b.md', true],
-    ])
-    expect(editorsOn(el, '/v/a.md')).toBe(1)
-    act(() => button(el, 'Close review')?.click())
-    expect(layers(el)).toEqual([
-      ['/v/a.md', true],
-      ['/v/b.md', false],
-    ])
-  })
-
-  it('S9 (YAZ-2940): a note that has copies shows through ONE copy\'s layer — the active copy when it shows the note, else the first from the left — and no other editor mounts', async () => {
-    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
-    act(() => void el.querySelector('.tabbar__tab')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((item) => item.textContent === 'Duplicate tab')!.click())
-    const [first, copy] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((tab) => tab.dataset.tab)
-    act(() => captured.sidebar?.onOpenFile('/v/b.md')) // a · a′ · b, b active
-    const shown = () => [...el.querySelectorAll<HTMLElement>('.tabstack__layer:not(.tabstack__layer--hidden)')].map((layer) => layer.dataset.tab)
-    openInbox()
-    expect(shown()).toEqual([first])
-    expect(editorsOn(el, '/v/a.md')).toBe(2)
-    act(() => button(el, 'Close review')?.click())
-    act(() => el.querySelectorAll<HTMLElement>('.tabbar [role="tab"]')[1].click()) // the copy a′
-    openInbox()
-    expect(shown()).toEqual([copy])
-    expect(editorsOn(el, '/v/a.md')).toBe(2)
-  })
-
-  it('a note open in the side panel is reviewed there: the main pane says so and mounts no second editor', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
-    const { el } = await mount(
-      defaultAppState(),
-      { ...TABS, rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } },
-      {},
-      upkeepOn(due('r')),
-    )
-    openInbox()
-    expect(el.querySelector('.tabstack .review-message')?.textContent).toBe('This note is open in the side panel.')
-    expect(layers(el)).toEqual([['/v/b.md', true]])
-    expect(editorsOn(el, '/v/r.md')).toBe(1)
-    expect(el.querySelector('.review-answers')).not.toBeNull() // the answers still work
-  })
-
-  it('nothing due: the empty state, no answers, and "Back to tabs" closes', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn())
-    openInbox()
-    expect(el.querySelector('.tabstack .review-message p')?.textContent).toBe('Inbox complete.')
-    expect(el.querySelector('.review-answers')).toBeNull()
-    act(() => button(el, 'Back to tabs')?.click())
-    expect(el.querySelector('.review-message')).toBeNull()
-    expect(stripLabels(el)).toEqual(['a', 'b'])
-  })
-
-  it('a link clicked in the note opens in a background tab; the review stays', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-    openInbox()
-    act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/x.md"] [data-open-right-current]')?.click())
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    act(() => button(el, 'Close review')?.click())
-    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
-    expect(activeLabel(el)).toBe('b')
-  })
-
-  it('YAZ-3943 5B: a plain link click during a review to a page a tab shows makes no copy: the strip is as it was', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-    openInbox()
-    const open = (path: string) => act(() => captured.editorOpeners.filter((o) => o.path === '/v/x.md').at(-1)!.open(path))
-    open('/v/a.md')
-    open('/v/b.md')
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    act(() => button(el, 'Close review')?.click())
-    expect(stripLabels(el)).toEqual(['a', 'b'])
-    expect(activeLabel(el)).toBe('b')
-  })
-
-  it('"Review this folder" starts a session over that folder alone, named for it', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('p', 'Work/Projects'), due('q', 'Work/Projects/sub')))
-    act(() => captured.sidebar?.onReviewFolder('/v/Work/Projects'))
-    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Projects')
-    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
-    expect(el.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) [data-editor]')?.getAttribute('data-path')).toBe('/v/Work/Projects/p.md')
-  })
-
-  it('the sidebar and the tab menu get the SAME review lookup and write: a note answers, anything else is null', async () => {
-    const files = { '/v/a.md': { content: 'Body.\n', mtime: 1 } }
-    const { bridge, el } = await mount(defaultAppState(), TABS, files, upkeepOn(due('a')))
-    expect(captured.sidebar?.reviewState('/v/a.md')).toBe(true)
-    expect(captured.sidebar?.reviewState('/v/photo.png')).toBeNull()
-    act(() => void el.querySelector('.tabbar__tab')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
-    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === 'Turn review off')?.click())
-    expect(bridge.writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: '/v/a.md', content: '---\nreview: false\n---\nBody.\n' }))
-  })
-
-  it('the same holds for a note shown through its own tab: its link does not navigate the active tab under the review', async () => {
-    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
-    act(() => captured.sidebar?.onOpenFile('/v/b.md'))
-    openInbox()
-    act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/a.md"] [data-open-right-current]')?.click())
-    act(() => button(el, 'Close review')?.click())
-    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
-    expect(activeLabel(el)).toBe('b')
-  })
-
-  it('clicking the Inbox row again closes the review', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-    openInbox()
-    expect(el.querySelector('.review-bar')).not.toBeNull()
-    openInbox()
-    expect(el.querySelector('.review-bar')).toBeNull()
     expect(captured.sidebar?.reviewing).toBe(false)
   })
+})
 
-  it('opening a file from the sidebar ends the review and shows that file', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-    openInbox()
-    act(() => captured.sidebar?.onOpenFile('/v/a.md'))
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(activeLabel(el)).toBe('a')
+/**
+ * THE PAGE CARD FLOW (YAZ-4962; the App-level test YAZ-4965 names, no Playwright): a page with a card → the Inbox
+ * shows it → Space shows the hidden words, then the next side → Remembered writes the review to the card line, as
+ * the hover said → ⌘Z takes it back off the line → the done screen when nothing is due. The bridge's file store is
+ * the disk: the asserts read the Markdown the app wrote. And the card window opens from the editor's open-card hook.
+ */
+describe('App: the card flow (YAZ-4962)', () => {
+  const PAGE = '/v/cards.md'
+  const page = (line: string) => `# Cards\n\n\`\`\`card\nCapital of {{France}}\n---\n{{Paris}}\n\`\`\`\n${line}\n`
+  const record = (): IndexRecord => ({
+    path: PAGE, name: 'cards.md', basename: 'cards', title: 'Cards', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1,
+    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [] }],
+  })
+  const TABS: IdentityFixture = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }
+  const inbox = (el: HTMLElement) => el.querySelector<HTMLElement>('.card-inbox')
+  const press = (el: HTMLElement, key: string, init: KeyboardEventInit = {}) =>
+    act(async () => void inbox(el)?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })))
+  const hidden = (el: HTMLElement) => [...el.querySelectorAll('.card-inbox .card__hidden')].map((s) => s.textContent)
+  const sides = (el: HTMLElement) => el.querySelectorAll('.card-inbox .card__side').length
+
+  it('a page with a card: the Inbox shows it; Space steps; Remembered writes the review the hover showed; ⌘Z removes it; nothing due: "Inbox complete."', async () => {
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9 -->'), mtime: 1 }, '/v/a.md': { content: '# A\n', mtime: 1 } }
+    const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+    expect(captured.sidebar?.dueCount).toBe(1)
+    act(() => captured.sidebar?.onOpenInbox())
+    await vi.waitFor(() => expect(el.querySelector('.card-inbox .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    // The head: the ID, no brackets (YAZ-5037 "Title · ID", the ID first, D20); the card's first line is not said again above the card.
+    expect(el.querySelector('.card-inbox .explore__title')).toBeNull()
+    expect(el.querySelector('.card-inbox .card__id')?.textContent).toBe('WIKI-9')
+    expect(el.querySelector('.card-inbox__place')?.textContent).toBe('0 / 1')
+    // The page under the Inbox stays where it was: its tab layer is still mounted.
+    expect(el.querySelector('.tabstack__layer [data-editor][data-path="/v/a.md"]')).not.toBeNull()
+    // Space (D18): the hidden word of the front, then the back, then its hidden word; then the buttons.
+    expect([sides(el), hidden(el)]).toEqual([1, []])
+    await press(el, ' ')
+    expect([sides(el), hidden(el)]).toEqual([1, ['France']])
+    await press(el, ' ')
+    expect([sides(el), hidden(el)]).toEqual([2, ['France']])
+    // YAZ-5010: the buttons show from the moment the card shows.
+    expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2)
+    await press(el, ' ')
+    expect([sides(el), hidden(el)]).toEqual([2, ['France', 'Paris']])
+    await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
+    const remembered = el.querySelectorAll<HTMLButtonElement>('.card-inbox__answer')[1]
+    // A new card's first Remembered keeps it in its same-day steps (YAZ-5020): the hover says "later today".
+    expect(remembered.getAttribute('aria-description')).toBe('Remembered · later today')
+    // Remembered (2): the review lands on the card line, written as the line holds reviews (the answer's seconds may
+    // end it, YAZ-5033).
+    const review = /, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)?/g
+    await press(el, '2')
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m))
+    expect(files[PAGE].content.replace(review, '')).toBe(page('<!-- card: WIKI-9 -->'))
+    const once = files[PAGE].content
+    // YAZ-5020: still in its steps, the card comes back in this session, from its first step; its second Remembered
+    // takes it out of them.
+    await vi.waitFor(() => expect([sides(el), hidden(el)]).toEqual([1, []]))
+    for (let i = 0; i < 3; i++) await press(el, ' ')
+    await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
+    expect(el.querySelectorAll<HTMLButtonElement>('.card-inbox__answer')[1].getAttribute('aria-description')).toMatch(/^Remembered · (\d+ days?|today)$/)
+    await press(el, '2')
+    await vi.waitFor(() => expect(files[PAGE].content.match(review)).toHaveLength(2))
+    expect(files[PAGE].content.replace(review, '')).toBe(page('<!-- card: WIKI-9 -->'))
+    // Nothing left in the session: the done screen.
+    await vi.waitFor(() => expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.'))
+    // ⌘Z: the last review comes off the line and the card shows again, from its first step.
+    await press(el, 'z', { metaKey: true })
+    await vi.waitFor(() => expect(files[PAGE].content).toBe(once))
+    await vi.waitFor(() => expect(sides(el)).toBe(1))
+    expect(hidden(el)).toEqual([])
+    // YAZ-5011: Esc does not close the Inbox (a tab; the Esc order goes on to the sidebar); its tab's ✕ does.
+    await press(el, 'Escape')
+    expect(inbox(el)).not.toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar [aria-label="Close Inbox"]')!.click())
+    expect(inbox(el)).toBeNull()
+    expect(el.querySelector('.tabbar [aria-label="Close Inbox"]')).toBeNull()
   })
 
-  it('File › Close Tab closes the review, not the tab hidden under it', async () => {
-    const { el, emitCloseTab } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-    openInbox()
-    act(() => emitCloseTab())
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(stripLabels(el)).toEqual(['a', 'b'])
+  it('the card window opens from the editor\'s open-card hook (`mdapp:card-open`): a card layer of the page, the card read-only; a hook with no page opens nothing', async () => {
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, title "Capital of France", 2026-01-02T09:00:00.000Z good -->'), mtime: 1 } }
+    const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+    act(() => void document.dispatchEvent(new CustomEvent(CARD_OPEN, { detail: { path: null, cardId: 'WIKI-9', index: 0 } })))
+    await act(async () => {})
+    expect(document.querySelector('.explore')).toBeNull()
+    act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_OPEN, { bubbles: true, detail: { path: PAGE, cardId: 'WIKI-9', index: 0 } })))
+    await vi.waitFor(() => expect(document.querySelector('.explore__layer[data-kind="card"] .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    const layer = document.querySelector<HTMLElement>('.explore__layer[data-kind="card"]')!
+    expect(layer.querySelector('.card > .card-band')?.textContent).toBe('Capital of France')
+    expect(layer.querySelector('.card__id')?.textContent).toBe('WIKI-9')
+    expect(layer.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
+    expect(layer.querySelector('.card-strip__line')?.textContent).toMatch(/^Due /)
   })
 
-  /** Upkeep is off until a vault turns it on (🔒 D7): every test below starts with no `review.json`. */
-  describe('off until the vault turns it on', () => {
-    const editorSettings = (el: HTMLElement, path: string) => el.querySelector(`[data-editor][data-path="${path}"]`)?.getAttribute('data-review-settings')
-    const tabMenu = (el: HTMLElement) => {
-      act(() => void el.querySelector('.tabbar__tab')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
-      return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].map((b) => b.textContent ?? '')
+  it('YAZ-5152: the preview ask (`mdapp:card-preview`) shows the card as the Inbox does, over the window, inside the app (its Card spacing); Space steps; Esc closes it; nothing is written', async () => {
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->'), mtime: 1 } }
+    const { el, bridge } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+    const writesBefore = bridge.writeFile.mock.calls.length
+    act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_PREVIEW, { bubbles: true, detail: { path: PAGE, id: 'WIKI-9', text: 'Capital of {{France}}\n---\n{{Paris}}', notitle: false, reviews: [{ at: '2026-01-02T09:00:00.000Z', rating: 'good' }] } })))
+    await vi.waitFor(() => expect(document.querySelector('.card-preview .card-inbox__card .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    const preview = document.querySelector<HTMLElement>('.card-preview')!
+    expect(preview.closest('.app')).not.toBeNull()
+    expect(preview.querySelector('.card-preview__label')?.textContent).toBe('Preview')
+    await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })))
+    expect([...preview.querySelectorAll('.card__hidden')].map((h) => h.textContent)).toEqual(['France'])
+    await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    await vi.waitFor(() => expect(document.querySelector('.card-preview')).toBeNull())
+    expect(bridge.writeFile.mock.calls.length).toBe(writesBefore)
+  })
+
+  /** YAZ-5152 option A (Yaseen: "Yes, A"): the preview is inside the app, as the Inbox tab is. */
+  describe('YAZ-5152 A: the preview fills the page area', () => {
+    const TWO: IdentityFixture = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }
+    const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+    const activeLabel = (el: HTMLElement) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+    const tabNamed = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')].find((t) => t.textContent === label)!
+    const mountTwo = () => {
+      const files = { [PAGE]: { content: page('<!-- card: WIKI-9 -->'), mtime: 1 }, '/v/a.md': { content: '# A\n', mtime: 1 }, '/v/b.md': { content: '# B\n', mtime: 1 } }
+      return mount(defaultAppState(), TWO, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
     }
-    /** The Settings dialog's "Enable upkeep review" switch, clicked On or Off. */
-    const setUpkeep = (el: HTMLElement, emitSettings: () => void, on: boolean) => {
-      act(() => emitSettings())
-      settingsPage(el, 'Review')
-      act(() => el.querySelectorAll<HTMLButtonElement>('[data-setting="enabled"] button')[on ? 0 : 1].click())
-      act(() => button(el, 'Close settings')?.click())
+    const openPreview = async (from: Element) => {
+      act(() => void from.dispatchEvent(new CustomEvent(CARD_PREVIEW, { bubbles: true, detail: { path: PAGE, id: 'WIKI-9', text: 'Capital of {{France}}\n---\n{{Paris}}', title: '', notitle: false, reviews: [] } })))
+      await vi.waitFor(() => expect(document.querySelector('.card-preview .card-inbox__card .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      return document.querySelector<HTMLElement>('.card-preview')!
     }
+    const press = (el: Element, init: MouseEventInit = {}) => act(() => void el.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, ...init })))
+    const gone = () => vi.waitFor(() => expect(document.querySelector('.card-preview')).toBeNull())
 
-    it('upkeep off: the sidebar is told so — no Inbox row, no "Review this folder" — nothing is due, and nothing is written', async () => {
-      const { bridge } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
-      expect(captured.sidebar?.upkeep).toBe(false)
-      expect(captured.sidebar?.dueCount).toBe(0)
-      expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
-      expect(bridge.writeFile).not.toHaveBeenCalled()
+    it('the frame stays: the preview is in the tab stack, the sidebar and the tab row show beside it, the tab you came from stays active; ⌘W closes only the preview', async () => {
+      const { el, emitCloseTab } = await mountTwo()
+      const preview = await openPreview(el.querySelector('.tabstack')!)
+      expect(preview.parentElement?.classList.contains('tabstack')).toBe(true)
+      expect(el.querySelector('.tabbar-row')).not.toBeNull()
+      expect(el.querySelector('aside.sidebar')).not.toBeNull()
+      expect([stripLabels(el), activeLabel(el)]).toEqual([['a', 'b'], 'a'])
+      act(() => emitCloseTab())
+      await gone()
+      expect([stripLabels(el), activeLabel(el)]).toEqual([['a', 'b'], 'a'])
     })
 
-    it('upkeep off: a note\'s row menu and its tab menu have no "Turn review on" / "Turn review off"', async () => {
-      const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('a')))
-      expect(captured.sidebar?.reviewState('/v/a.md')).toBeNull()
-      const items = tabMenu(el)
-      expect(items).toContain('Copy path')
-      expect(items.some((label) => label.startsWith('Turn review'))).toBe(false)
-    })
-
-    it('upkeep off: a page is handed no review settings, so it has no Reviews section', async () => {
-      const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('b')))
-      expect(editorSettings(el, '/v/b.md')).toBe('none')
-    })
-
-    it('upkeep off: the review hotkeys do nothing', async () => {
-      const { bridge, el } = await mount(defaultAppState(), TABS, { '/v/x.md': { content: 'Body.\n', mtime: 1 } }, withIndex(due('x')))
-      for (const key of ['Enter', 'S', 'Escape']) {
-        const event = new KeyboardEvent('keydown', { key, metaKey: key !== 'Escape', shiftKey: key !== 'Escape', bubbles: true, cancelable: true })
-        act(() => void document.body.dispatchEvent(event))
-        expect(event.defaultPrevented).toBe(false)
-      }
-      expect(bridge.writeFile).not.toHaveBeenCalled()
-      expect(el.querySelector('.review-bar')).toBeNull()
-      expect(stripLabels(el)).toEqual(['a', 'b'])
-    })
-
-    it('turned on in Settings: the Inbox row, the menu items and the Reviews section are there at once, and a review runs', async () => {
-      const files = { '/v/a.md': { content: 'Body.\n', mtime: 1 } }
-      const { bridge, el, emitSettings } = await mount(defaultAppState(), TABS, files, withIndex(due('a'), due('p', 'Work')))
-      setUpkeep(el, emitSettings, true)
-      expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', 'review.json', { algorithm: 'upkeep', enabled: true, baseDays: 30, growth: 2, maxDays: 365, reviewByDefault: true })
-      expect(captured.sidebar?.upkeep).toBe(true)
-      expect(captured.sidebar?.dueCount).toBe(2)
-      expect(captured.sidebar?.reviewState('/v/a.md')).toBe(true)
-      expect(tabMenu(el)).toContain('Turn review off')
-      expect(editorSettings(el, '/v/b.md')).toBe('given')
-      act(() => captured.sidebar?.onReviewFolder('/v/Work'))
-      expect(el.querySelector('.review-bar__label')?.textContent).toBe('Work')
-      expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 1')
-    })
-
-    it('turned off while a review is open: the review closes, the tabs are as they were, and nothing is written to a note', async () => {
-      const { bridge, el, emitSettings } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
-      openInbox()
-      expect(el.querySelector('.review-bar')).not.toBeNull()
-      setUpkeep(el, emitSettings, false)
-      expect(el.querySelector('.review-bar')).toBeNull()
-      expect(el.querySelector('.review-answers')).toBeNull()
-      expect(captured.sidebar?.upkeep).toBe(false)
-      expect(captured.sidebar?.reviewing).toBe(false)
-      expect(captured.sidebar?.dueCount).toBe(0)
-      expect(stripLabels(el)).toEqual(['a', 'b'])
+    it('ONE click on a tab closes the preview and switches to that tab; ONE click in the sidebar closes it and opens the page', async () => {
+      const { el } = await mountTwo()
+      await openPreview(el.querySelector('.tabstack')!)
+      const b = tabNamed(el, 'b')
+      press(b)
+      act(() => b.click())
+      await gone()
       expect(activeLabel(el)).toBe('b')
-      expect(bridge.writeFile).not.toHaveBeenCalled()
+      await openPreview(el.querySelector('.tabstack')!)
+      press(el.querySelector('aside.sidebar')!)
+      act(() => captured.sidebar?.onOpenFile('/v/a.md'))
+      await gone()
+      expect([stripLabels(el), activeLabel(el)]).toEqual([['a', 'b'], 'a'])
+    })
+
+    it('from Explore: Explore hides while the preview shows (its layers kept), and Esc brings it back; a click on a tab leaves both', async () => {
+      const { el, emitExplore } = await mountTwo()
+      act(() => emitExplore())
+      await vi.waitFor(() => expect(document.querySelector('.explore')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      const explore = document.querySelector<HTMLElement>('.explore')!
+      await openPreview(explore)
+      expect(explore.hidden).toBe(true)
+      await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+      await gone()
+      expect(document.querySelector('.explore')).toBe(explore)
+      expect(explore.hidden).toBe(false)
+      await openPreview(explore)
+      const b = tabNamed(el, 'b')
+      press(b)
+      act(() => b.click())
+      await gone()
+      await vi.waitFor(() => expect(document.querySelector('.explore')).toBeNull())
+      expect(activeLabel(el)).toBe('b')
     })
   })
+
+  /**
+   * YAZ-5009 round 2 (Yaseen: "esc again doesnt take me back to inbox"), over YAZ-5145 (the Inbox's E opens Explore's own
+   * page layer, in edit, landed on the card in Edit card): the whole round trip over App's real wiring — the Inbox tab,
+   * its window keys, the Explore stack's keys on its root, the real page editor in the layer and the card's real Edit
+   * card, and App's last Esc (`escapeOrder`). Each key goes where the browser sends it: to the element that has the
+   * keyboard (`document.activeElement`), not to a chosen component. Esc steps back one step at a time (Edit card, the
+   * layer's edit, the layer); ⌘↵ leaves the layer's edit at once (YAZ-4988), then goes back to the Inbox.
+   */
+  describe.each([
+    ['Esc', { key: 'Escape' }, 3],
+    ['⌘↵', { key: 'Enter', metaKey: true }, 2],
+  ] as const)('YAZ-5145: Inbox › E › the page layer in edit, the card in Edit card › %s › … › back to the Inbox', (_name, done, keys) => {
+    const typed = (init: KeyboardEventInit) => act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })))
+    const layer = () => document.querySelector<HTMLElement>('.explore__layer[data-kind="page"]')
+
+    it.each([
+      ['the same text', ''],
+      ['a changed text', ' (Seine)'],
+    ])('with %s: the keys go back one step each, then the Inbox tab is active, at the same card and step', async (_what, added) => {
+      captured.realEditor = true
+      const files = { [PAGE]: { content: page('<!-- card: WIKI-9 -->'), mtime: 1 }, '/v/a.md': { content: '# A\n', mtime: 1 } }
+      const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+      act(() => captured.sidebar?.onOpenInbox())
+      await vi.waitFor(() => expect(el.querySelector('.card-inbox .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      await vi.waitFor(() => expect(inbox(el)?.contains(document.activeElement)).toBe(true))
+      // One Space: the front's hidden word shows. That is the step to come back to.
+      await typed({ key: ' ' })
+      expect([sides(el), hidden(el)]).toEqual([1, ['France']])
+      // E: Explore's own page layer (no card window), in edit, the card in Edit card, the caret in its text.
+      await typed({ key: 'e' })
+      expect(document.querySelector('.explore__layer[data-kind="card"]')).toBeNull()
+      const editor = () => layer()?.querySelector<HTMLElement>('.explore__body--edit .card .card__editor .ProseMirror') ?? null
+      await vi.waitFor(() => expect(editor()?.textContent).toContain('Paris'), { timeout: SLOW_RUNNER_MS })
+      await vi.waitFor(() => expect(editor()?.contains(document.activeElement)).toBe(true))
+      if (added !== '') {
+        const inner = cardBlockViewOfDom(editor()!.closest('.card'))!.cardEditor!.view()!
+        act(() => inner.dispatch(inner.state.tr.insertText(added, inner.state.doc.content.size - 1)))
+      }
+      // The keys before the last: back to reading (Esc: Edit card's Done first), the layer stays, the keyboard in it.
+      for (let i = 0; i < keys - 1; i++) {
+        await typed(done)
+        await act(async () => {})
+      }
+      await vi.waitFor(() => expect(layer()?.querySelector('.explore__body--edit')).toBeNull(), { timeout: SLOW_RUNNER_MS })
+      if (added !== '') await vi.waitFor(() => expect(files[PAGE].content).toContain(`{{Paris}}${added}`), { timeout: SLOW_RUNNER_MS })
+      await vi.waitFor(() => expect(layer()?.contains(document.activeElement)).toBe(true))
+      // The last key: the layer closes, back to the Inbox tab, at the same card and step.
+      await typed(done)
+      await vi.waitFor(() => expect(document.querySelector('.explore')).toBeNull())
+      const active = el.querySelector('.tabbar [role="tab"][aria-selected="true"]')
+      expect(active?.textContent).toBe('Inbox')
+      expect(inbox(el)?.hidden).toBe(false)
+      expect(el.querySelector('.card-inbox .card__id')?.textContent).toContain('WIKI-9')
+      expect([sides(el), hidden(el)]).toEqual([1, ['France']])
+      // The keyboard is back in the Inbox: the next Space is the Inbox's.
+      expect(inbox(el)?.contains(document.activeElement)).toBe(true)
+      await typed({ key: ' ' })
+      expect(sides(el)).toBe(2)
+      // No tab was opened by the ⌘↵ (a layer from the Inbox goes back, YAZ-5009).
+      expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['a', 'Inbox'])
+    }, 30_000)
+  })
+})
+
+/**
+ * THE WHOLE FLOW (YAZ-4965's verification plan) through the REAL page editor: `/card` in the open page takes its ID at
+ * once → the page saves → the index reads the save (the watcher) → the Inbox counts and shows it → Remembered writes the
+ * review → ⌘Z takes it off. The page stays OPEN in its tab with unsaved typing elsewhere in it while the Inbox writes
+ * (the outside-edit merge, YAZ-3704): the typing and the review both reach the file, and the answer lands QUIETLY in
+ * the open page — no outside-change bar, no glow (the app's own write, `announcedWrite`).
+ */
+describe('App: the card flow from /card, through the real editor (YAZ-4965)', () => {
+  const PAGE = '/v/cards.md'
+  const scan = (path: string, content: string): IndexRecord => ({
+    path, name: path.slice(3), basename: path.slice(3, -3), title: path.slice(3, -3), folder: '', ext: 'md', size: content.length, ctime: 1, mtime: 1,
+    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cardRecords(splitFrontmatter(content).body),
+  })
+
+  it('/card → ID at insert → save → index → Inbox → Remembered writes the line, the open page keeps its typing, quietly → ⌘Z', async () => {
+    captured.realEditor = true
+    const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: '# Cards\n\nIntro\n\nx\n', mtime: 1 } }
+    const watchers = new Set<(ev: { type: string; path: string; mtime: number }) => void>()
+    const { el, bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
+      b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: Date.now(), ids: true }))
+      b.bridge.watch.mockImplementation((_root?: string, listener?: unknown) => {
+        watchers.add(listener as (ev: { type: string; path: string; mtime: number }) => void)
+        return () => watchers.delete(listener as (ev: { type: string; path: string; mtime: number }) => void)
+      })
+      ;(b.bridge as unknown as { mintPageId: (path: string) => Promise<string> }).mintPageId = vi.fn(async () => 'WIKI-9')
+    })
+    // The watcher tells each write, as main's does (the editor skips its own by mtime; the index reads it again).
+    // Main's compare-and-set too: a save against bytes that changed is refused, as `fs:write` refuses it.
+    bridge.writeFile.mockImplementation(async ({ path, content, expectedMtime }: { path: string; content: string; expectedMtime?: number }) => {
+      if (expectedMtime !== undefined && files[path] !== undefined && expectedMtime !== files[path].mtime) return Promise.reject({ code: 'CONFLICT', message: 'changed on disk', path })
+      files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
+      const mtime = files[path].mtime
+      setTimeout(() => watchers.forEach((l) => l({ type: 'change', path, mtime })), 30)
+      return { path, mtime, size: content.length }
+    })
+    await vi.waitFor(() => expect(captured.crepes.length).toBeGreaterThan(0), { timeout: SLOW_RUNNER_MS })
+    const crepe = captured.crepes.at(-1)!
+    await vi.waitFor(() => expect(el.querySelector('.ProseMirror')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    view.hasFocus = () => true
+    // `/card` on the last line: the "Card" row inserts an empty card, and the door's ID lands at once.
+    const last = view.state.doc.content.size - 1
+    await act(async () => {
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, last - 1, last)).insertText('/card'))
+      await new Promise((r) => setTimeout(r, 20))
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)))
+    })
+    await vi.waitFor(() => expect([...document.querySelectorAll('.milkdown-slash-menu .menu-group li')].map((li) => li.textContent?.trim())).toContain('Card'), { timeout: SLOW_RUNNER_MS })
+    await act(async () => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    // The user writes the card (its text, as Edit card's code editor puts it in the block).
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'code_block' && node.attrs.language === 'card') at = pos
+      return at === -1
+    })
+    expect(at).toBeGreaterThan(-1)
+    // The card starts empty: its title is no line of its text but a part of its card line, edited in the title band
+    // (YAZ-5308 decision D; YAZ-5030's "Title" first line is gone). /card opens Edit card at the Title field; Done
+    // (nothing typed) gives the block back to the page, where the card's text is written.
+    expect(view.state.doc.nodeAt(at)?.textContent).toBe('')
+    const card = cardBlockViewOfDom(view.dom.querySelector('.card'))!
+    await act(async () => {
+      await card.cardEditor?.ready
+      card.done()
+    })
+    expect(card.editing).toBe(false)
+    await act(async () => void view.dispatch(view.state.tr.insertText('Capital of {{France}}\n---\nParis', at + 1)))
+    // The autosave writes the card with the ID the door gave at insert, before any sweep.
+    await vi.waitFor(() => expect(files[PAGE].content).toBe('# Cards\n\nIntro\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'), { timeout: SLOW_RUNNER_MS })
+    // The index reads the save: the Inbox row counts the new card.
+    await vi.waitFor(() => expect(captured.sidebar?.dueCount).toBe(1), { timeout: SLOW_RUNNER_MS })
+    // Unsaved typing in the open page, elsewhere than the card ("Intro" → "Intro, typed").
+    let intro = -1
+    view.state.doc.descendants((node, pos) => {
+      if (intro === -1 && node.textContent === 'Intro') intro = pos + 1 + 'Intro'.length
+      return intro === -1
+    })
+    await act(async () => void view.dispatch(view.state.tr.insertText(', typed', intro)))
+    act(() => captured.sidebar?.onOpenInbox())
+    const inbox = () => el.querySelector<HTMLElement>('.card-inbox')
+    await vi.waitFor(() => expect(inbox()?.querySelector('.card__side')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    const press = (key: string, init: KeyboardEventInit = {}) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })))
+    for (let i = 0; i < 3; i++) await press(' ')
+    await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
+    await press('2')
+    // The review part may end with the answer's seconds (YAZ-5033: ` <n>s`, written when known).
+    const reviewed = /^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(reviewed), { timeout: SLOW_RUNNER_MS })
+    // The open page took the review, and its next save writes the typing with it: both are in the file.
+    await vi.waitFor(() => expect(files[PAGE].content).toContain('Intro, typed'), { timeout: SLOW_RUNNER_MS })
+    expect(files[PAGE].content).toMatch(reviewed)
+    expect(getMarkdownForSave(crepe)).toMatch(reviewed)
+    // The answer is the app's own write: no outside-change bar in the open page, nothing glows.
+    expect(el.querySelector('.outside-changes-bar')).toBeNull()
+    expect(el.querySelector('.outside-change, [data-outside-change]')).toBeNull()
+    // ⌘Z in the Inbox takes the review off the line; the typing stays.
+    await press('z', { metaKey: true })
+    await vi.waitFor(() => expect(files[PAGE].content).toBe('# Cards\n\nIntro, typed\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'), { timeout: SLOW_RUNNER_MS })
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-9 -->'))
+    expect(el.querySelector('.outside-changes-bar')).toBeNull()
+  }, 30_000)
+
+  /**
+   * YAZ-5026: Edit card with the page's editor, through the real page editor and App's save: bold and a hidden word typed
+   * in the card's editor, Done, the exact Markdown in the file; ⌘Z in the page gives the old file back.
+   */
+  it('YAZ-5026: Edit card → bold and a hidden word in the page`s editor → Done → the exact Markdown in the file → ⌘Z gives the old file back', async () => {
+    captured.realEditor = true
+    // The card's title (its first line) is in Edit card's Title field (YAZ-5164 part 3): the editor holds the rest.
+    const before = '# Cards\n\n```card\nCities\n\nCapital of France\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
+    const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: before, mtime: 1 } }
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
+      b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: 1, ids: true }))
+    })
+    bridge.writeFile.mockImplementation(async ({ path, content }: { path: string; content: string }) => {
+      files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
+      return { path, mtime: files[path].mtime, size: content.length }
+    })
+    await vi.waitFor(() => expect(captured.crepes.length).toBeGreaterThan(0), { timeout: SLOW_RUNNER_MS })
+    const crepe = captured.crepes.at(-1)!
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    await vi.waitFor(() => expect(view.dom.querySelector('.card')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    view.hasFocus = () => true
+    // Edit card: the page's own editor in the card, no raw text box.
+    const card = cardBlockViewOfDom(view.dom.querySelector('.card'))!
+    await act(async () => {
+      card.dom.querySelector('.card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      await card.cardEditor!.ready
+    })
+    expect(card.dom.querySelector('.cm-editor')).toBeNull()
+    const inner = card.cardEditor!.view()!
+    const word = (text: string) => {
+      let at = -1
+      inner.state.doc.descendants((node, pos) => {
+        if (at < 0 && node.isText && node.text!.includes(text)) at = pos + node.text!.indexOf(text)
+        return at < 0
+      })
+      return TextSelection.create(inner.state.doc, at, at + text.length)
+    }
+    const keyIn = (init: KeyboardEventInit) => act(async () => void inner.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })))
+    // Bold (⌘B) on "Capital", a hidden word (⌘L) on "France", then Done (⌘↵).
+    act(() => inner.dispatch(inner.state.tr.setSelection(word('Capital'))))
+    await keyIn({ key: 'b', metaKey: true })
+    act(() => inner.dispatch(inner.state.tr.setSelection(word('France'))))
+    await keyIn({ key: 'l', metaKey: true })
+    await keyIn({ key: 'Enter', metaKey: true })
+    expect(card.editing).toBe(false)
+    const after = '# Cards\n\n```card\nCities\n\n**Capital** of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
+    await vi.waitFor(() => expect(files[PAGE].content).toBe(after), { timeout: SLOW_RUNNER_MS })
+    // One ⌘Z in the page takes the whole edit back.
+    await act(async () => void view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true, cancelable: true })))
+    await vi.waitFor(() => expect(files[PAGE].content).toBe(before), { timeout: SLOW_RUNNER_MS })
+  }, 30_000)
+
+  it('a READ-ONLY vault: the page is locked, yet Remembered writes the review line to the file, and the open page shows no bar', async () => {
+    captured.realEditor = true
+    const line = '<!-- card: WIKI-9 -->'
+    const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: `# Cards\n\n\`\`\`card\nCapital of {{France}}\n\`\`\`\n${line}\n`, mtime: 1 } }
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
+      b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: 1, ids: true }))
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+    })
+    await vi.waitFor(() => expect(el.querySelector('.ProseMirror')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    // The page is locked (read only for the whole vault).
+    await vi.waitFor(() => expect(captured.crepes.at(-1)!.editor.action((ctx) => ctx.get(editorViewCtx)).editable).toBe(false), { timeout: SLOW_RUNNER_MS })
+    act(() => captured.sidebar?.onOpenInbox())
+    const inbox = () => el.querySelector<HTMLElement>('.card-inbox')
+    await vi.waitFor(() => expect(inbox()?.querySelector('.card__side')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    // E Edit card in every vault (YAZ-5145: in a read-only one, Explore's own 'Allow edits?' asks first).
+    expect([...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)).toContain('Edit card (E)')
+    const press = (key: string) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
+    await press(' ')
+    await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
+    await press('2')
+    // The review part may end with the answer's seconds (YAZ-5033: ` <n>s`, written when known).
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m), { timeout: SLOW_RUNNER_MS })
+    await vi.waitFor(() => expect(getMarkdownForSave(captured.crepes.at(-1)!)).toMatch(/<!-- card: WIKI-9, \S+ good(?: \d+s)? -->/))
+    expect(el.querySelector('.outside-changes-bar')).toBeNull()
+    // A review is no file change (YAZ-4948 with YAZ-4985): the read-only ask never comes for the card line.
+    expect(el.querySelector('#confirm-read-only-vault-text')).toBeNull()
+  }, 30_000)
+
+  /**
+   * YAZ-5038 (Yaseen: "i double clicked a word for the tool bar to show up but then i went to the inbox and then the tool
+   * bar was still on the screen"): the Inbox tab is a tab like any other. The page tab under it is NOT on show, so its
+   * layer hides as a page tab's does behind another tab — and with it everything the page draws: the selection toolbar,
+   * its menus and pickers, the find bar, the outline. What the user looks at is the Inbox: the window title says so, and
+   * no sidebar row stands as the open page. Back on the page tab, the page shows again as it was, its toolbar too.
+   */
+  it('YAZ-5038: a word selected on a page shows the toolbar; the Inbox tab to the front hides the page layer with the toolbar in it, as a page tab does; the page tab brings both back', async () => {
+    captured.realEditor = true
+    const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: '# Cards\n\nIntro words\n\n```card\nCapital of {{France}}\n```\n<!-- card: WIKI-9 -->\n', mtime: 1 } }
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
+      b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: 1, ids: true }))
+    })
+    await vi.waitFor(() => expect(el.querySelector('.ProseMirror')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    const view = captured.crepes.at(-1)!.editor.action((ctx) => ctx.get(editorViewCtx))
+    view.hasFocus = () => true
+    // The double click: "words" selected, and the selection toolbar shows, in the page's layer.
+    let from = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text?.includes('words')) from = pos + node.text.indexOf('words')
+      return from === -1
+    })
+    await act(async () => {
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, from + 'words'.length)))
+      await new Promise((r) => setTimeout(r, 60))
+    })
+    const toolbar = () => el.querySelector<HTMLElement>('.milkdown-toolbar[data-show="true"]')
+    await vi.waitFor(() => expect(toolbar()).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    const layerHidden = (node: Element | null) => node?.closest('.tabstack__layer')?.classList.contains('tabstack__layer--hidden')
+    expect(layerHidden(toolbar())).toBe(false)
+    const titleBefore = document.title
+    expect(captured.sidebar?.activeFile).toBe(PAGE)
+    // The sidebar's Inbox row: the Inbox tab to the front.
+    act(() => captured.sidebar?.onOpenInbox())
+    await vi.waitFor(() => expect(el.querySelector('.card-inbox')?.hasAttribute('hidden')).toBe(false), { timeout: SLOW_RUNNER_MS })
+    // The page tab is behind: its layer hides, the toolbar with it (the same class every page tab behind another wears).
+    expect(layerHidden(el.querySelector('.ProseMirror'))).toBe(true)
+    expect(layerHidden(el.querySelector('.milkdown-toolbar'))).toBe(true)
+    // What shows is the Inbox: no sidebar row is the open page, and the title names the Inbox tab.
+    expect(captured.sidebar?.activeFile).toBeNull()
+    expect(document.title).toMatch(/ — Inbox$/)
+    // The page tab: the page shows again as it was, its selection and toolbar too, and the title is the page's again.
+    act(() => el.querySelector<HTMLButtonElement>(`.tabbar [role="tab"]:not(.tabbar__tab--inbox)`)!.click())
+    expect(layerHidden(el.querySelector('.ProseMirror'))).toBe(false)
+    expect(el.querySelector('.card-inbox')?.hasAttribute('hidden')).toBe(true)
+    expect(captured.sidebar?.activeFile).toBe(PAGE)
+    expect(document.title).toBe(titleBefore)
+  }, 30_000)
 })
 
 /**
@@ -5492,7 +6225,7 @@ describe('App upkeep review (YAZ-2322)', () => {
  */
 describe('App opens a vault with no question about IDs (YAZ-2677 D1)', () => {
   const VAULT: IdentityFixture = { id: 'w1', root: '/v', file: null, tabs: [] }
-  const ASK = { notes: 3, folders: 1, foreign: 0 }
+  const ASK = { pages: 3, folders: 1, foreign: 0 }
   /** The index's answer for every root. */
   const feed = (ids: boolean, ask?: IndexResponse['ask']) => (b: ReturnType<typeof installBridge>) => void b.bridge.index.mockImplementation(async (root) => ({ root, records: [], folders: [], generatedAt: 1, ids, ask }))
   /** The vault's `ids.json` changed, as main says it: the index is fetched again. */
@@ -5507,7 +6240,7 @@ describe('App opens a vault with no question about IDs (YAZ-2677 D1)', () => {
   })
 
   it('an empty folder with no answer opens with no box (S1)', async () => {
-    const { bridge, el } = await mount(defaultAppState(), VAULT, {}, feed(false, { notes: 0, folders: 0, foreign: 0 }))
+    const { bridge, el } = await mount(defaultAppState(), VAULT, {}, feed(false, { pages: 0, folders: 0, foreign: 0 }))
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
   })
@@ -5541,10 +6274,10 @@ describe('App opens a vault with no question about IDs (YAZ-2677 D1)', () => {
  * keys of `ids.json` that it does not change (R10) and gives the numbers now (R32) — proved in
  * `desktop/src/main/vaultIndex/twoMacs.test.ts`. The front end never writes `ids.json` itself.
  */
-describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2677 D2)', () => {
+describe('App "Give this vault\u2019s pages IDs" in Settings (YAZ-2523 V4, YAZ-2677 D2)', () => {
   const VAULT: IdentityFixture = { id: 'w1', root: '/v', file: null, tabs: [] }
-  const ASK = { notes: 1, folders: 2, foreign: 0 }
-  const note = (id?: string): IndexRecord => ({ path: '/v/a.md', name: 'a.md', basename: 'a', title: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...(id === undefined ? {} : { id }) })
+  const ASK = { pages: 1, folders: 2, foreign: 0 }
+  const page = (id?: string): IndexRecord => ({ path: '/v/a.md', name: 'a.md', basename: 'a', title: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...(id === undefined ? {} : { id }) })
   /** The index's snapshot, and what the vault's `ids.json` holds (null: no file). A vault whose answer is not yes carries `ask`, as main sends it: with the letters the file holds. */
   const feed = (ids: boolean, records: IndexRecord[], file: { letters?: string; [key: string]: unknown } | null = null) => (b: ReturnType<typeof installBridge>) => {
     b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids, ...(!ids && { ask: { ...ASK, ...(file?.letters !== undefined && { letters: file.letters }) } }) })
@@ -5572,7 +6305,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   })
 
   it('a vault with no answer, or one that said no, reads Off; a click on Off writes nothing and reads nothing', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()]))
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [page()]))
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
     expect(pressed(el)).toEqual(['false', 'true'])
@@ -5583,13 +6316,13 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   })
 
   it('On opens the box with the counts of the snapshot and writes nothing; valid letters and "Give IDs" save yes and the letters in capitals (S5, S7, S12)', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()], { enabled: false }))
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [page()], { enabled: false }))
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
     expect(idsReads(bridge)).toEqual([])
     await act(async () => idsButtons(el)[0].click())
-    expect(sheetText(el)).toContain('Give the notes in this vault IDs?')
-    expect(sheetText(el)).toContain('the app will write an ID into 1 note, add a hidden settings file to 2 folders, and name the file of each note you make or retitle.')
+    expect(sheetText(el)).toContain('Give the pages in this vault IDs?')
+    expect(sheetText(el)).toContain('the app will write an ID into 1 page, add a hidden settings file to 2 folders, and name the file of each page you make or retitle.')
     expect(bridge.ids.set).not.toHaveBeenCalled()
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
     expect(bridge.ids.set).not.toHaveBeenCalled()
@@ -5602,7 +6335,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   })
 
   it('Cancel in the box writes nothing, and the switch stays Off (S8)', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()]))
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [page()]))
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[0].click())
@@ -5614,7 +6347,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   })
 
   it('a vault that has letters asks for them, and only those letters start the save (S9)', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()], { enabled: false, letters: 'YAZ', was: ['OLD'], other: 1 }))
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [page()], { enabled: false, letters: 'YAZ', was: ['OLD'], other: 1 }))
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[0].click())
@@ -5627,8 +6360,8 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', true, 'YAZ')
   })
 
-  it('a vault whose notes hold IDs reads On; Off asks before it saves no, with no letters handed over (S11)', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [note('k3m9x2pq7abc')], { enabled: true, letters: 'YAZ', was: ['OLD'] }))
+  it('a vault whose pages hold IDs reads On; Off asks before it saves no, with no letters handed over (S11)', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [page('k3m9x2pq7abc')], { enabled: true, letters: 'YAZ', was: ['OLD'] }))
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
     expect(pressed(el)).toEqual(['true', 'false'])
@@ -5638,12 +6371,27 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
   })
 
-  it('an ID vault with no note holding one yet: Off saves no at once', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [], { enabled: true }))
+  it('an ID vault with no page holding one yet, Cards off: Off saves no at once', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, (b) => {
+      feed(true, [], { enabled: true })(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'review.json' ? { enabled: false } : null))
+    })
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[1].click())
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
+  })
+
+  it('YAZ-5154: Off with Cards on asks "Cards will turn off"; Turn off saves IDs off, then Cards off in review.json', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [], { enabled: true }))
+    act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
+    await act(async () => idsButtons(el)[1].click())
+    expect(bridge.ids.set).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm__text')?.textContent).toBe('Cards will turn off. Your cards and reviews stay in the files.')
+    await act(async () => sheetBtn(el, 'Turn off')?.click())
+    expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', 'review.json', expect.objectContaining({ enabled: false }), REVIEW_SETTINGS_KEYS)
   })
 
   it('`ids.json` that is not valid JSON: On and Off save nothing, the front end never reads the file, and a notice says why', async () => {
@@ -5652,7 +6400,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
       b.bridge.ids.set.mockRejectedValue(new Error('ids.json is not valid JSON'))
     }
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, (b) => {
-      feed(false, [note()])(b)
+      feed(false, [page()])(b)
       broken(b)
     })
     act(() => emitSettings())
@@ -5671,13 +6419,15 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     act(() => on.emitSettings())
     settingsPage(on.el, 'Files & Links')
     await act(async () => idsButtons(on.el)[1].click())
+    // Cards are on (no review.json): Off asks first (YAZ-5154); IDs refuse, so Cards stay as they were.
+    await act(async () => sheetBtn(on.el, 'Turn off')?.click())
     expect(on.el.querySelector('.link-notice')?.textContent).toBe("Couldn't save this vault's answer: ids.json is not valid JSON")
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     expect(on.bridge.vaultConfig.write).not.toHaveBeenCalled()
   })
 
   it('a save that fails says so in the notice', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()]))
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [page()]))
     bridge.ids.set.mockRejectedValueOnce(new Error('disk full'))
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
@@ -5691,7 +6441,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
 /** "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the row asks main for the vault of the active tab, and shows its one line. */
 describe('App "Duplicate IDs" in Settings (YAZ-2677 D7)', () => {
   const VAULT: IdentityFixture = { id: 'w1', root: '/v', file: null, tabs: [] }
-  const feed = (ids: boolean) => (b: ReturnType<typeof installBridge>) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [], generatedAt: 1, ids, ...(ids ? { letters: ['YAZ'] } : { ask: { notes: 0, folders: 0, foreign: 0 } }) })
+  const feed = (ids: boolean) => (b: ReturnType<typeof installBridge>) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [], generatedAt: 1, ids, ...(ids ? { letters: ['YAZ'] } : { ask: { pages: 0, folders: 0, foreign: 0 } }) })
   const row = (el: HTMLElement) => el.querySelector<HTMLElement>('[data-setting="duplicates"]')
 
   it('the row is there only while the vault uses IDs; a click asks main, and the line shows what it answers', async () => {
@@ -5704,11 +6454,11 @@ describe('App "Duplicate IDs" in Settings (YAZ-2677 D7)', () => {
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
     expect(bridge.ids.check).not.toHaveBeenCalled()
-    bridge.ids.check.mockResolvedValueOnce('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.')
+    bridge.ids.check.mockResolvedValueOnce('YAZ-101 is on two pages. The Mac that made "Bar" fixes it when its app runs.')
     await act(async () => row(el)?.querySelector('button')?.click())
     await act(async () => undefined)
     expect(bridge.ids.check).toHaveBeenCalledExactlyOnceWith('/v')
-    expect(row(el)?.querySelector('[role="status"]')?.textContent).toBe('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.')
+    expect(row(el)?.querySelector('[role="status"]')?.textContent).toBe('YAZ-101 is on two pages. The Mac that made "Bar" fixes it when its app runs.')
   })
 })
 
@@ -5735,12 +6485,13 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
-      // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a note (YAZ-4938), its "Read only" (YAZ-4939), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json']],
+      // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a page (YAZ-4938), its "Read only" (YAZ-4939), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
+      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'table-look.json'], ['/v', 'folder-pages.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'table-look.json'], ['/v', 'folder-pages.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json']],
       coldDiff: [['/v']],
-      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a note (YAZ-4938), read only (YAZ-4939), text formatting and link pills (YAZ-4924), each subscribed
+      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a page (YAZ-4938), read only (YAZ-4939), text formatting and link pills (YAZ-4924), each subscribed
       // once for each mount effect (7 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
-      subscriptions: [2, 2, 16],
+      // YAZ-5484: card-look.json too; YAZ-5487: table-look.json too; YAZ-5489: folder-pages.json too.
+      subscriptions: [2, 2, 26],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -5757,20 +6508,20 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
  */
 describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   type Bridge = ReturnType<typeof installBridge>
-  const note = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
+  const page = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
     const name = path.slice(path.lastIndexOf('/') + 1)
     return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
   }
-  /** A note last changed in 1970: in review by default, and long overdue. */
-  const due = (path: string, folder = ''): IndexRecord => note(path, { folder, text: 'x' })
+  /** A page with one new card: due at once (YAZ-4967). */
+  const due = (path: string, folder = ''): IndexRecord => page(path, { folder, cards: [{ id: `C-${path}`, off: false, next: false, reviews: [] }] })
   /** Vault `/v` first, `/w` second, one tab in each; the `/v` tab is the active one. */
   const TWO: IdentityFixture = { id: 'w1', root: '/v', roots: ['/v', '/w'], file: '/v/a.md', tabs: ['/v/a.md', '/w/b.md'] }
   /** Each vault's own index answer. */
   const feed = (byRoot: Record<string, Partial<IndexResponse>>) => (b: Bridge) =>
     void b.bridge.index.mockImplementation(async (vault) => ({ root: vault, records: [], folders: [], generatedAt: 1, ids: true, ...byRoot[vault] }))
-  /** Each vault's own `review.json`: upkeep on, or no file. */
-  const upkeep = (on: Record<string, boolean>) => (b: Bridge) => void b.bridge.vaultConfig.read.mockImplementation(async (vault) => (vault !== undefined && on[vault] ? { enabled: true } : null))
-  const NOTES = feed({ '/v': { records: [note('/v/a.md', { title: 'Ay' })] }, '/w': { records: [note('/w/b.md', { title: 'Bee' })] } })
+  /** Each vault's own `review.json`: card review on, or off (YAZ-4967; no file would be on). */
+  const cardReview = (on: Record<string, boolean>) => (b: Bridge) => void b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'review.json' ? { enabled: vault !== undefined && on[vault] === true } : null))
+  const PAGES = feed({ '/v': { records: [page('/v/a.md', { title: 'Ay' })] }, '/w': { records: [page('/w/b.md', { title: 'Bee' })] } })
   const callsFor = (spy: { mock: { calls: unknown[][] } }, vault: string) => spy.mock.calls.filter(([first]) => first === vault).length
   const editor = (path: string) => captured.editors.filter((e) => e.path === path).at(-1)
   const renders = (path: string) => captured.editors.filter((e) => e.path === path).length
@@ -5786,17 +6537,224 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   /** Main says a vault's file changed, to every listener of the push. */
   const push = <T,>(spy: { mock: { calls: unknown[][] } }, payload: T) => (spy.mock.calls as [(p: T) => void][]).forEach(([listener]) => listener(payload))
 
+  it('YAZ-5488: the window draws the icon colours of the ACTIVE tab\'s vault (its icons.json); a vault with none draws the app\'s', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), TWO, {}, (b) => {
+      PAGES(b)
+      b.bridge.icons.get.mockImplementation(async (vault: string) => (vault === '/w' ? { paths: {}, colors: { folder: '#aa0000' } } : { paths: {} }))
+    })
+    await act(async () => {})
+    const app = el.querySelector<HTMLElement>('.app')!
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarIconColors: { folder: '#00bb00' } } }))
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#00bb00')
+    show('/w/b.md')
+    await act(async () => {})
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#aa0000')
+    expect(app.getAttribute('data-icon-colors')).toBe('folder')
+    show('/v/a.md')
+    await act(async () => {})
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#00bb00')
+  })
+
+  /**
+   * YAZ-5487: TWO vaults with different table looks draw differently, side by side: each page layer (and every surface
+   * that wears `textVarsFor`: the hover preview, Quick Look, the right panel, Explore's page layers) carries its vault's
+   * whole table look and its name (`--table-look`, which the editor's script reads); `.app` keeps the app's look (the
+   * fallback), and no table attribute is on it any more. A vault with no table-look.json reads `.app`'s.
+   */
+  /**
+   * YAZ-5489 (replaces YAZ-4585 D34): TWO vaults with different folder page defaults: each page's editor (and its folder
+   * page) gets its vault's folder-pages.json over the app's Settings › Folder pages, the personal parts the app's; a
+   * vault with no file the app's whole; the sidebar's folder page file rows follow each vault's switch.
+   */
+  describe('YAZ-5489: two vaults\' folder page defaults, side by side', () => {
+    const FILES: Record<string, unknown> = { '/v': { version: 1, rowHeight: 'tall', showFolderPageFiles: true } }
+    const withFiles = (b: Bridge) => {
+      PAGES(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'folder-pages.json' && vault !== undefined ? (FILES[vault] ?? null) : null))
+    }
+    const pagesOf = (path: string) => captured.editors.filter((e) => e.path === path).at(-1)?.folderPages
+
+    it('each editor its vault\'s; the personal parts and a vault with no file, the app\'s; the sidebar per vault; Settings writes the picked vault', async () => {
+      const app = { ...DEFAULT_SETTINGS, folderPages: { ...DEFAULT_SETTINGS.folderPages, rowHeight: 'medium' as const, weekStartsOn: 'monday' as const } }
+      const { el, bridge, emitStateChanged, emitSettings } = await mount(defaultAppState(), { ...TWO, file: '/w/b.md' }, {}, withFiles)
+      act(() => emitStateChanged({ ...defaultAppState(), settings: app }))
+      show('/v/a.md')
+      await act(async () => {})
+      expect(pagesOf('/v/a.md')).toMatchObject({ rowHeight: 'tall', weekStartsOn: 'monday', showFolderPageFiles: true })
+      expect(pagesOf('/w/b.md')).toMatchObject({ rowHeight: 'medium', weekStartsOn: 'monday', showFolderPageFiles: false })
+      const pageFilesIn = (captured.sidebar as unknown as { pageFilesIn: (root: string) => boolean }).pageFilesIn
+      expect([pageFilesIn('/v'), pageFilesIn('/w')]).toEqual([true, false])
+      act(() => emitSettings())
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Folder pages')?.click())
+      const select = el.querySelector<HTMLSelectElement>('[data-setting="folderPagesVault"] select[aria-label="Vault"]') as HTMLSelectElement
+      expect([...select.options].map((o) => o.textContent)).toEqual(['v', 'w'])
+      const height = () => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="folderPages.rowHeight"] button')]
+      expect(height().find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Tall')
+      act(() => height().find((b) => b.textContent === 'Short')!.click())
+      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/v', 'folder-pages.json', { version: 1, showFolderPageFiles: true }, ['version', ...FOLDER_PAGES_VAULT_PARTS]]])
+    })
+  })
+
+  describe('YAZ-5487: two vaults\' table looks, side by side', () => {
+    const LOOKS: Record<string, unknown> = { '/v': { version: 1, look: { rowBand: 'calendar', dimPast: 'text', headerRow: { color: 'blue', align: 'center' } } }, '/w': { version: 1, look: { rowBand: 'off', nowMark: 'both', textInCells: 'clip', width: 900 } } }
+    const withLooks = (looks: Record<string, unknown>) => (b: Bridge) => {
+      PAGES(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'table-look.json' && vault !== undefined ? (looks[vault] ?? null) : null))
+    }
+    const look = (el: HTMLElement | null | undefined) => ['--table-row-band', '--table-dim-past', '--table-now-mark', '--table-text', '--table-width-set', '--table-header-hue', '--table-header-aligned'].map((name) => el?.style.getPropertyValue(name))
+    const layer = (el: HTMLElement, path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer')
+
+    it('page layers: each vault\'s own look and name; `.app` the app\'s, with no table attribute; a vault with no file reads `.app`\'s', async () => {
+      const looks = { ...LOOKS }
+      const { el, bridge } = await mount(defaultAppState(), TWO, {}, withLooks(looks))
+      show('/w/b.md')
+      await act(async () => {})
+      expect(look(layer(el, '/v/a.md'))).toEqual(['calendar', 'text', 'line', 'wrap', 'off', 'var(--table-fill-solid-blue)', 'on'])
+      expect(look(layer(el, '/w/b.md'))).toEqual(['off', 'shade', 'both', 'clip', 'on', 'initial', 'off'])
+      expect(layer(el, '/v/a.md')!.style.getPropertyValue('--table-look')).not.toBe(layer(el, '/w/b.md')!.style.getPropertyValue('--table-look'))
+      const app = el.querySelector<HTMLElement>('.app')!
+      expect(look(app)).toEqual(['all', 'shade', 'line', 'wrap', 'off', '', 'off'])
+      expect(el.querySelector('.app[data-table-row-band], .app[data-table-now], .app[data-table-dim-past], .app[data-table-text], .app[data-table-width], .app[data-table-header-color], .app[data-table-sticky-subheaders]')).toBeNull()
+      // The file of /w goes: its layers carry only its name, and read `.app`'s; /v keeps its style.
+      const before = layer(el, '/v/a.md')!.style.cssText
+      looks['/w'] = null
+      await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: 'table-look.json' }))
+      expect(look(layer(el, '/w/b.md'))).toEqual(['', '', '', '', '', '', ''])
+      expect(layer(el, '/w/b.md')!.style.getPropertyValue('--table-look')).not.toBe('')
+      expect(layer(el, '/v/a.md')!.style.cssText).toBe(before)
+    })
+
+    it('Settings › Tables: the Vault dropdown starts on the active tab\'s vault, and a change writes only that vault\'s table-look.json', async () => {
+      const { bridge, el, emitSettings } = await mount(defaultAppState(), { ...TWO, file: '/w/b.md' }, {}, withLooks(LOOKS))
+      act(() => emitSettings())
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Tables')?.click())
+      const select = el.querySelector<HTMLSelectElement>('[data-setting="tableLookVault"] select[aria-label="Vault"]') as HTMLSelectElement
+      expect([...select.options].map((o) => o.textContent)).toEqual(['w', 'v'])
+      const band = () => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="tableRowBand"] button')]
+      expect(band().find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Off')
+      act(() => band().find((b) => b.textContent === 'All tables')!.click())
+      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', 'table-look.json', { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900 } }, ['version', 'look', 'newTables']]])
+      // YAZ-5602 round 2: Time in slot writes the vault's file too (`look.slotTime`), never the app's settings.
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="tableSlotTime"] button')].find((b) => b.textContent === 'Count down')!.click())
+      expect(bridge.vaultConfig.write.mock.calls.at(-1)).toEqual(['/w', 'table-look.json', { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900, slotTime: 'down' } }, ['version', 'look', 'newTables']])
+      expect(JSON.stringify(bridge.state.setSettings.mock.calls)).not.toContain('tableSlotTime')
+    })
+  })
+
+  /**
+   * YAZ-5484 (replaces YAZ-5005's one card look for the whole app): TWO vaults with different card looks draw
+   * differently, side by side, on every surface that shows a card: the page layers (a card in a page, a card file's
+   * tab), the hover preview and Quick Look (the layer style, `textVarsFor`), Explore's card layer (the card window),
+   * and Preview a card. The Inbox and Settings' preview have their own tests (`CardInbox.test.tsx`,
+   * `SettingsDialog.test.tsx`). `.app` keeps the app's look (the fallback); a vault with no card-look.json reads it.
+   */
+  describe('YAZ-5484: two vaults\' card looks, side by side', () => {
+    const LOOKS: Record<string, unknown> = { '/v': { version: 1, hiddenWords: 'box', textSize: 20, spacing: 'clean' }, '/w': { version: 1, hiddenWords: 'underline', markNext: false, nextColour: '#aa3399', tables: 'center' } }
+    const withLooks = (looks: Record<string, unknown>) => (b: Bridge) => {
+      PAGES(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'card-look.json' && vault !== undefined ? (looks[vault] ?? null) : null))
+    }
+    const look = (el: HTMLElement | null | undefined) => ['--shown-hidden-words', '--mark-next-hidden', '--card-clean', '--card-text-size', '--card-next-hidden', '--card-table-inline', '--inbox-card-pad'].map((name) => el?.style.getPropertyValue(name))
+    const V_LOOK = ['box', 'on', 'on', '20px', 'initial', 'initial', '44px']
+    const W_LOOK = ['underline', 'off', 'off', 'initial', 'initial', 'auto', 'initial']
+    const layer = (el: HTMLElement, path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer')
+
+    it('page layers: each vault\'s own look on its layers; `.app` the app\'s; no attribute anywhere', async () => {
+      const { el } = await mount(defaultAppState(), TWO, {}, withLooks(LOOKS))
+      show('/w/b.md')
+      await act(async () => {})
+      expect(look(layer(el, '/v/a.md'))).toEqual(V_LOOK)
+      expect(look(layer(el, '/w/b.md'))).toEqual(W_LOOK)
+      const app = el.querySelector<HTMLElement>('.app')!
+      expect(look(app)).toEqual(['highlight', 'on', 'off', '', '', '', ''])
+      expect(el.querySelector('[data-shown-hidden-words], [data-mark-next-hidden], [data-card-clean]')).toBeNull()
+    })
+
+    it('a vault with NO card-look.json: its layers set no card variable and read `.app`\'s, the app\'s look', async () => {
+      const { el, emitStateChanged } = await mount(defaultAppState(), TWO, {}, withLooks({ '/v': LOOKS['/v'] }))
+      show('/w/b.md')
+      await act(async () => {})
+      act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, shownHiddenWords: 'underline' } }))
+      expect(look(layer(el, '/w/b.md'))).toEqual(['', '', '', '', '', '', ''])
+      expect(look(layer(el, '/v/a.md'))).toEqual(V_LOOK)
+      expect(el.querySelector<HTMLElement>('.app')!.style.getPropertyValue('--shown-hidden-words')).toBe('underline')
+    })
+
+    it('a change of one vault\'s file restyles only its layers', async () => {
+      const looks = { ...LOOKS }
+      const { el, bridge } = await mount(defaultAppState(), TWO, {}, withLooks(looks))
+      show('/w/b.md')
+      await act(async () => {})
+      const before = layer(el, '/v/a.md')!.style.cssText
+      looks['/w'] = { version: 1, hiddenWords: 'box' }
+      await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: 'card-look.json' }))
+      expect(layer(el, '/w/b.md')!.style.getPropertyValue('--shown-hidden-words')).toBe('box')
+      expect(layer(el, '/v/a.md')!.style.cssText).toBe(before)
+    })
+
+    it('the hover preview and Quick Look wear the layer style of the file\'s vault', async () => {
+      const { el } = await mount(defaultAppState(), TWO, {}, withLooks(LOOKS))
+      await act(async () => {})
+      // The sidebar's hover preview (PagePreview) wears `textVarsFor` of its path.
+      // The stub keeps every prop the Sidebar gets; the hover preview's door is `textVarsFor`.
+      const textVarsFor = (captured.sidebar as unknown as { textVarsFor: (path: string) => Record<string, unknown> }).textVarsFor
+      const worn = (path: string) => {
+        const box = document.createElement('div')
+        for (const [name, value] of Object.entries(textVarsFor(path))) if (name.startsWith('--')) box.style.setProperty(name, String(value))
+        return look(box)
+      }
+      expect(worn('/v/x.md')).toEqual(V_LOOK)
+      expect(worn('/w/y.md')).toEqual(W_LOOK)
+      act(() => captured.sidebar?.onPreview('/w/y.md'))
+      expect(look(el.querySelector<HTMLElement>('.quicklook'))).toEqual(W_LOOK)
+      act(() => captured.sidebar?.onPreview('/v/x.md'))
+      expect(look(el.querySelector<HTMLElement>('.quicklook'))).toEqual(V_LOOK)
+    })
+
+    it('the card window (Explore\'s card layer) and Preview a card: the card\'s vault\'s look', async () => {
+      const { el } = await mount(defaultAppState(), TWO, {}, withLooks(LOOKS))
+      await act(async () => {})
+      act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_OPEN, { bubbles: true, detail: { path: '/w/cards.md', cardId: 'W-1', index: 0 } })))
+      await vi.waitFor(() => expect(document.querySelector('.explore__layer[data-kind="card"]')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      expect(look(document.querySelector<HTMLElement>('.explore__layer[data-kind="card"]'))).toEqual(W_LOOK)
+      act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_OPEN, { bubbles: true, detail: { path: '/v/cards.md', cardId: 'V-1', index: 0 } })))
+      await vi.waitFor(() => expect(document.querySelectorAll('.explore__layer[data-kind="card"]').length).toBe(2), { timeout: SLOW_RUNNER_MS })
+      expect([...document.querySelectorAll<HTMLElement>('.explore__layer[data-kind="card"]')].map(look)).toEqual([W_LOOK, V_LOOK])
+      act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_PREVIEW, { bubbles: true, detail: { path: '/w/cards.md', id: 'W-1', text: 'Capital of {{Peru}}\n---\n{{Lima}}', title: '', notitle: false, reviews: [] } })))
+      await vi.waitFor(() => expect(document.querySelector('.card-preview')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      expect(look(document.querySelector<HTMLElement>('.card-preview'))).toEqual(W_LOOK)
+    })
+  })
+
+  it('YAZ-5485: each vault\'s page spacing on its own layers; a vault with no spacing reads the app\'s values from .app', async () => {
+    const files: Record<string, unknown> = { '/v': { version: 2, spacing: { line: 2, blockGap: 8 } } }
+    const { el } = await mount(defaultAppState(), TWO, {}, (b) => {
+      PAGES(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === TEXT_FORMATTING_FILE && vault !== undefined ? (files[vault] ?? null) : null))
+    })
+    show('/w/b.md')
+    await act(async () => {})
+    const layer = (path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer') as HTMLElement
+    expect(layer('/v/a.md').style.getPropertyValue('--edit-line-height')).toBe('2')
+    expect(layer('/v/a.md').style.getPropertyValue('--edit-block-gap')).toBe('8px')
+    expect(layer('/v/a.md').style.getPropertyValue('--page-bullet-indent')).toBe('2.15em')
+    expect(layer('/w/b.md').style.getPropertyValue('--edit-line-height')).toBe('')
+    expect(el.querySelector<HTMLElement>('.app')!.style.getPropertyValue('--edit-line-height')).toBe(String(DEFAULT_SETTINGS.lineSpacing))
+  })
+
   it('each page layer carries its own vault\'s text formatting; a change in one vault restyles only its layers, and no editor renders again (YAZ-3067 D12)', async () => {
     const files: Record<string, unknown> = { '/v': { version: 1, text: { size: 18 }, h2: { size: 21 } }, '/w': { version: 1, h2: { size: 30, underline: true } } }
     const { bridge, el } = await mount(defaultAppState(), { ...TWO, rightPanel: { open: true, width: 440, items: ['/w/c.md'], expanded: '/w/c.md' } }, {}, (b) => {
-      NOTES(b)
+      PAGES(b)
       b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === TEXT_FORMATTING_FILE && vault !== undefined ? (files[vault] ?? null) : null))
     })
     show('/w/b.md')
     await act(async () => {})
     const layer = (path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer') as HTMLElement
     const right = () => el.querySelector<HTMLElement>('[data-testid="right-layer-/w/c.md"]') as HTMLElement
-    const vars = (node: HTMLElement) => Object.fromEntries([...node.style].filter((name) => name.startsWith('--')).map((name) => [name, node.style.getPropertyValue(name)]))
+    // `--table-look` names the layer's vault (YAZ-5487: the editor's script reads its table look by it); left out here.
+    const vars = (node: HTMLElement) => Object.fromEntries([...node.style].filter((name) => name.startsWith('--') && name !== '--table-look').map((name) => [name, node.style.getPropertyValue(name)]))
+    expect(layer('/v/a.md').style.getPropertyValue('--table-look')).not.toBe(layer('/w/b.md').style.getPropertyValue('--table-look'))
     expect(vars(layer('/v/a.md'))).toEqual({ '--text-size': '18px', '--h2-size': '21px' })
     expect(vars(layer('/w/b.md'))).toEqual({ '--h2-size': '30px', '--h2-decoration': 'underline' })
     expect(vars(right())).toEqual(vars(layer('/w/b.md')))
@@ -5818,7 +6776,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   })
 
   it('Settings › Text formatting lists the window\'s vaults by name (the folder name with none), starts on the active tab\'s vault, and a change writes only that vault\'s file (YAZ-3068 D15)', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), { ...TWO, file: '/w/b.md' }, {}, NOTES)
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), { ...TWO, file: '/w/b.md' }, {}, PAGES)
     act(() => emitSettings())
     // Settings opens on General (YAZ-3276 D7); Text formatting is on Appearance.
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Appearance')?.click())
@@ -5826,7 +6784,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect([...select.options].map((o) => o.textContent)).toEqual(['v', 'w'])
     expect(select.value).toBe('1')
     act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Text larger"]')?.click())
-    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', TEXT_FORMATTING_FILE, { version: 1, text: { size: 17 } }]])
+    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', TEXT_FORMATTING_FILE, { version: 2, text: { size: 17 } }, TEXT_FORMATTING_KEYS]])
     // The page layer of /w takes the new size at once; nothing reaches the layer of /v.
     await act(async () => {})
     expect(el.querySelector<HTMLElement>('.tabstack__layer [data-path="/w/b.md"]')?.closest<HTMLElement>('.tabstack__layer')?.style.getPropertyValue('--text-size')).toBe('17px')
@@ -5840,7 +6798,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   })
 
   it('each mounted editor gets the root and the index source of ITS vault, and each vault has its own watcher and index (S30)', async () => {
-    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, PAGES)
     show('/w/b.md')
     expect(editor('/v/a.md')?.root).toBe('/v')
     expect(editor('/w/b.md')?.root).toBe('/w')
@@ -5854,14 +6812,14 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(14) // review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066) and link-pills.json (YAZ-4924)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(24) // folder-pages.json (YAZ-5489), table-look.json (YAZ-5487), card-look.json (YAZ-5484), review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066), link-pills.json (YAZ-4924), daily-pages.json (YAZ-5491) and new-places.json (YAZ-5486)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
   })
 
   it('a switch between the tabs of two vaults asks main for nothing: both scopes are loaded (S29, S80)', async () => {
-    const { bridge } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge } = await mount(defaultAppState(), TWO, {}, PAGES)
     const asked = () => [bridge.index, bridge.tree, bridge.watch, bridge.properties.get, bridge.github.status, bridge.vaultConfig.read, bridge.coldDiff].map((spy) => spy.mock.calls.length)
     const before = asked()
     show('/w/b.md')
@@ -5872,14 +6830,14 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   })
 
   it('a change in vault /w does not render the mounted editor of /v', async () => {
-    const { bridge } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge } = await mount(defaultAppState(), TWO, {}, PAGES)
     show('/w/b.md')
     const before = { v: renders('/v/a.md'), w: renders('/w/b.md') }
     act(() => push(bridge.github.onStatus, { root: '/w', state: 'syncing' }))
     expect(renders('/w/b.md')).toBeGreaterThan(before.w)
     expect(renders('/v/a.md')).toBe(before.v)
     expect([editor('/v/a.md')?.sync?.state, editor('/w/b.md')?.sync?.state]).toEqual(['off', 'syncing']) // each page shows its own vault's sync (S43)
-    feed({ '/v': { records: [note('/v/a.md')] }, '/w': { records: [note('/w/b.md'), note('/w/c.md')] } })({ bridge } as Bridge)
+    feed({ '/v': { records: [page('/v/a.md')] }, '/w': { records: [page('/w/b.md'), page('/w/c.md')] } })({ bridge } as Bridge)
     await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: IDS_FILE }))
     expect(records(editor('/w/b.md')?.wikilinks)).toEqual(['/w/b.md', '/w/c.md'])
     expect(records(editor('/v/a.md')?.wikilinks)).toEqual(['/v/a.md'])
@@ -5888,7 +6846,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
 
   it('the window title names the vault of the active tab, and the strip names each tab by its own vault\'s index (S36)', async () => {
     const state = { ...defaultAppState(), folders: { '/w': { ...defaultFolderState(), name: 'Work' } } }
-    const { el } = await mount(state, TWO, {}, NOTES)
+    const { el } = await mount(state, TWO, {}, PAGES)
     expect(document.title).toBe('v — Ay')
     expect(stripLabels(el)).toEqual(['Ay', 'Bee'])
     show('/w/b.md')
@@ -5901,29 +6859,42 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/v /w')
   })
 
-  it('a new note made from a page goes to the folder of that page, in that page\'s vault (S37)', async () => {
+  it('a new page made from a page goes to the folder of that page, in that page\'s vault (S37)', async () => {
     await mount(defaultAppState(), TWO)
     show('/w/b.md')
-    const folderFor = editor('/w/b.md')?.newNoteFolderFor
-    expect(folderFor).toBe(editor('/v/a.md')?.newNoteFolderFor) // the window's one getter, stable under every editor
+    const folderFor = editor('/w/b.md')?.newPageFolderFor
+    expect(folderFor).toBe(editor('/v/a.md')?.newPageFolderFor) // the window's one getter, stable under every editor
     expect(folderFor?.('/w/sub/x.md')).toBe('sub')
     expect(folderFor?.('/v/deep/er/y.md')).toBe('deep/er')
+  })
+
+  it('YAZ-5486: a new [[link]] page goes to ITS vault\'s place (new-places.json); the app\'s folder is no vault\'s', async () => {
+    const places: Record<string, unknown> = { '/v': { version: 1, places: [null, null, null], newPage: { location: 'folder', folder: 'Inbox' } } }
+    await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, newPageLocation: 'folder', newPageFolder: 'Elsewhere' } }, TWO, {}, (b) =>
+      b.bridge.vaultConfig.read.mockImplementation(async (vault?: string, name?: string) => (name === 'new-places.json' ? (places[vault ?? ""] ?? null) : null)),
+    )
+    show('/w/b.md')
+    await act(async () => {})
+    const folderFor = editor('/w/b.md')?.newPageFolderFor
+    expect(folderFor?.('/v/deep/y.md')).toBe('Inbox')
+    // /w has no file: not the app's "Elsewhere" (it would be made there), the default: beside the page.
+    expect(folderFor?.('/w/sub/x.md')).toBe('sub')
   })
 
   it('a tab and a right-panel page are a folder by their own vault\'s tree, and each page gets its own vault (S31, S32)', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
     const { el } = await mount(
       defaultAppState(),
-      { ...TWO, tabs: ['/v/a.md', '/w/Notes.md'], rightPanel: { open: true, width: 440, items: ['/w/Plans.md', '/w/r.md'], expanded: '/w/r.md' } },
+      { ...TWO, tabs: ['/v/a.md', '/w/Pages.md'], rightPanel: { open: true, width: 440, items: ['/w/Plans.md', '/w/r.md'], expanded: '/w/r.md' } },
       {},
       (b) =>
         void b.bridge.tree.mockImplementation(async (vault) => ({
           root: vault,
-          tree: vault === '/w' ? ['Notes.md', 'Plans.md'].map((name): TreeNode => ({ type: 'dir', name, path: `/w/${name}`, children: [] })) : [],
+          tree: vault === '/w' ? ['Pages.md', 'Plans.md'].map((name): TreeNode => ({ type: 'dir', name, path: `/w/${name}`, children: [] })) : [],
           generatedAt: 1,
         })),
     )
-    expect(stripLabels(el)).toEqual(['a', 'Notes.md'])
+    expect(stripLabels(el)).toEqual(['a', 'Pages.md'])
     expect([...el.querySelectorAll('.right-panel__header')].map((h) => h.textContent)).toEqual(['Plans.md', 'r'])
     expect(el.querySelector('[data-testid="right-layer-/w/r.md"] [data-editor]')?.getAttribute('data-root')).toBe('/w')
   })
@@ -5935,20 +6906,20 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(editor('/elsewhere/x.md')?.wikilinks).toBe(editor('/v/a.md')?.wikilinks)
   })
 
-  it('a rename in /w reads /w\'s index, and counts and rewrites the links of /w\'s notes alone (S30)', async () => {
+  it('a rename in /w reads /w\'s index, and counts and rewrites the links of /w\'s pages alone (S30)', async () => {
     const files = {
       '/v/A.md': { content: 'See [[B]].\n', mtime: 1 },
       '/w/C.md': { content: 'See [[B]].\n', mtime: 1 },
       '/w/D.md': { content: 'And [[B]].\n', mtime: 1 },
     }
     const index = feed({
-      '/v': { records: [note('/v/A.md', { links: ['B'] }), note('/v/B.md')] },
-      '/w': { records: [note('/w/C.md', { links: ['B'] }), note('/w/D.md', { links: ['B'] }), note('/w/B.md')] },
+      '/v': { records: [page('/v/A.md', { links: ['B'] }), page('/v/B.md')] },
+      '/w': { records: [page('/w/C.md', { links: ['B'] }), page('/w/D.md', { links: ['B'] }), page('/w/B.md')] },
     })
     const { bridge, el } = await mount(defaultAppState(), TWO, files, index)
     bridge.index.mockClear()
     await act(async () => void captured.sidebar?.onRenameFile('/w/B.md', '/w/B2.md', 'file'))
-    expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 2 notes will be updated.")
+    expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 2 pages will be updated.")
     await act(async () => sheetBtn(el, 'Rename')?.click())
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/w/B.md', newPath: '/w/B2.md' })
     expect(bridge.index.mock.calls).toEqual([['/w']])
@@ -5956,28 +6927,28 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(files['/w/D.md'].content).toBe('And [[B2]].\n')
     expect(files['/v/A.md'].content).toBe('See [[B]].\n')
     // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
-    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 2 notes')
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 2 pages')
   })
 
   it('a rename that waits for its answer is dropped when the list of vaults changes', async () => {
-    const index = feed({ '/v': { records: [note('/v/A.md', { links: ['B'] }), note('/v/B.md')] } })
+    const index = feed({ '/v': { records: [page('/v/A.md', { links: ['B'] }), page('/v/B.md')] } })
     const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), TWO, {}, index)
     await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
-    expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 1 note will be updated.")
+    expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 1 page will be updated.")
     await act(async () => emitFileRenamed('/w', '/w2', 'dir'))
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).not.toHaveBeenCalled()
   })
 
   it('the Sync, Reviews and IDs settings are the ones of the active tab\'s vault, and a change is saved in that vault (S39)', async () => {
-    const index = feed({ '/v': { ids: true, records: [note('/v/a.md', { id: 'k3m9x2pq7abc' })] }, '/w': { ids: false, records: [note('/w/b.md')] } })
+    const index = feed({ '/v': { ids: true, records: [page('/v/a.md', { id: 'k3m9x2pq7abc' })] }, '/w': { ids: false, records: [page('/w/b.md')] } })
     const { bridge, el, emitSettings } = await mount(defaultAppState(), TWO, {}, (b) => {
       index(b)
-      upkeep({ '/v': true })(b)
+      cardReview({ '/v': true })(b)
       b.bridge.github.status.mockImplementation(async (vault) => ({ root: vault, state: 'off' as const, enabled: vault === '/v' }))
     })
     // Each of the three rows is on the page of its own section.
-    const PAGE: Record<string, string> = { ids: 'Files & Links', enabled: 'Review', githubSync: 'Sync' }
+    const PAGE: Record<string, string> = { ids: 'Files & Links', enabled: 'Cards', githubSync: 'Sync' }
     const pressed = (setting: string) => {
       settingsPage(el, PAGE[setting])
       return [...el.querySelectorAll(`[data-setting="${setting}"] button`)].map((b) => b.getAttribute('aria-pressed'))
@@ -5994,7 +6965,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     settingsPage(el, PAGE.ids)
     await act(async () => turnOn('ids'))
     expect(bridge.ids.set).not.toHaveBeenCalled()
-    expect(sheetText(el)).toContain('Give the notes in w IDs?')
+    expect(sheetText(el)).toContain('Give the pages in w IDs?')
     act(() => {
       const field = el.querySelector('.confirm__input') as HTMLInputElement
       Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(field, 'wrk')
@@ -6004,8 +6975,15 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/w', true, 'WRK')
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     settingsPage(el, PAGE.enabled)
+    // The index still says IDs off here (the bridge is a stub), so Cards ask for IDs first (YAZ-5154).
     await act(async () => turnOn('enabled'))
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }))
+    act(() => {
+      const field = el.querySelector('.confirm__input') as HTMLInputElement
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(field, 'wrk')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => sheetBtn(el, 'Turn on both')?.click())
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }), REVIEW_SETTINGS_KEYS)
     settingsPage(el, PAGE.githubSync)
     await act(async () => turnOn('githubSync'))
     expect(bridge.github.setEnabled).toHaveBeenCalledExactlyOnceWith('/w', true)
@@ -6014,7 +6992,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   it('with two or more vaults the Sync, Review, IDs, Storage and shared-boards settings say which vault they act on: the active tab\'s (R10, S39; YAZ-3039, YAZ-3040)', async () => {
     const { el, emitSettings } = await mount(defaultAppState(), TWO, {}, (b) => {
       feed({ '/v': { ids: true }, '/w': { ids: false } })(b)
-      upkeep({ '/v': true, '/w': true })(b)
+      cardReview({ '/v': true, '/w': true })(b)
     })
     /** The "Vault: …" line of each page that has one: Files & Links (its "This vault" group), Review and Sync. */
     const named = () =>
@@ -6025,84 +7003,55 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
           return [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: ')).map((text) => [title, text])
         })
     act(() => emitSettings())
-    // Files & Links names it twice: its "This vault" group and its "Link pills" group (YAZ-4924).
-    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
+    // Files & Links names it three times: its "This vault" group, "Daily pages" (YAZ-5491: with no file yet, the active
+    // tab's vault) and its "Link pills" group (YAZ-4924).
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ...Array.from({ length: 4 }, () => ['Cards', 'Vault: v']), ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ...Array.from({ length: 4 }, () => ['Cards', 'Vault: w']), ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {
-    const { bridge, el } = await mount(defaultAppState(), TWO, {}, feed({ '/v': { ids: false, ask: { notes: 3, folders: 0, foreign: 0 } }, '/w': { ids: false, ask: { notes: 5, folders: 0, foreign: 0 } } }))
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, feed({ '/v': { ids: false, ask: { pages: 3, folders: 0, foreign: 0 } }, '/w': { ids: false, ask: { pages: 5, folders: 0, foreign: 0 } } }))
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
   })
 
-  it('a review of a folder of /w runs with /w\'s settings and /w\'s notes while the active tab is in /v (S42)', async () => {
-    const files = { '/w/Work/p.md': { content: 'Body.\n', mtime: 1 } }
-    const { bridge, el } = await mount(defaultAppState(), TWO, files, (b) => {
-      upkeep({ '/w': true })(b)
+  it('a review of a folder of /w runs with /w\'s settings and /w\'s cards while the active tab is in /v; one review per window (S41, S42)', async () => {
+    const { bridge } = await mount(defaultAppState(), TWO, {}, (b) => {
+      cardReview({ '/v': true, '/w': true })(b)
       feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/q.md'), due('/w/Work/p.md', 'Work')] } })(b)
     })
-    act(() => captured.sidebar?.onReviewFolder('/w/Work'))
-    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Work')
-    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 1')
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/w/Work/p.md')
-    expect(shownEditor(el)?.getAttribute('data-root')).toBe('/w')
-    expect(shownEditor(el)?.getAttribute('data-review-settings')).toBe('given')
-    expect(el.querySelector('[data-editor][data-path="/v/a.md"]')?.getAttribute('data-review-settings')).toBe('none')
-    await act(async () => button(el, 'Still relevant⌘⇧⏎')?.click())
-    expect(bridge.writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: '/w/Work/p.md' }))
-    act(() => button(el, 'Close review')?.click())
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(activeLabel(el)).toBe('a')
-    expect(captured.sidebar?.reviewState('/w/q.md')).toBe(true) // by path, to the vault that holds it
-    expect(captured.sidebar?.reviewState('/v/x.md')).toBeNull() // upkeep is off in /v
+    const reviewing = () => captured.sidebar?.vaults.map((vault) => vault.reviewing)
+    bridge.readFile.mockClear()
+    await act(async () => captured.sidebar?.onReviewFolder('/w/Work'))
+    expect(bridge.readFile).toHaveBeenCalledWith('/w/Work/p.md')
+    expect(bridge.readFile).not.toHaveBeenCalledWith('/w/q.md')
+    expect(reviewing()).toEqual([false, true])
+    await act(async () => captured.sidebar?.onOpenInbox())
+    expect(reviewing()).toEqual([true, false]) // the review of /w is not waiting under it
   })
 
-  it('one review per window: a start in /v closes the review of /w (S41, S42)', async () => {
-    const { el } = await mount(defaultAppState(), TWO, {}, (b) => {
-      upkeep({ '/v': true, '/w': true })(b)
-      feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/Work/p.md', 'Work')] } })(b)
-    })
-    act(() => captured.sidebar?.onReviewFolder('/w/Work'))
-    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Work')
-    expect(captured.sidebar?.reviewing).toBe(false) // the sidebar's Inbox row is the first vault's
-    act(() => captured.sidebar?.onOpenInbox())
-    expect([...el.querySelectorAll('.review-bar__label')].map((l) => l.textContent)).toEqual(['Inbox'])
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/x.md')
-    expect(captured.sidebar?.reviewing).toBe(true)
-    act(() => button(el, 'Close review')?.click())
-    expect(el.querySelector('.review-bar')).toBeNull() // the review of /w is not waiting under it
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/a.md')
-  })
-
-  it('the sidebar is handed each vault\'s own Inbox — upkeep, count, state — and a row\'s click opens ITS vault\'s review, closes the other vault\'s, and closes its own when it is the one open (R5, S41)', async () => {
-    const { el } = await mount(defaultAppState(), { ...TWO, roots: ['/v', '/w', '/x'] }, {}, (b) => {
-      upkeep({ '/v': true, '/w': true })(b)
+  it('the sidebar is handed each vault\'s own Inbox — review, count, state — and a row\'s click opens ITS vault\'s review and closes the other vault\'s; on its own open one it stays (YAZ-5011: the Inbox tab, one per window) (R5, S41)', async () => {
+    await mount(defaultAppState(), { ...TWO, roots: ['/v', '/w', '/x'] }, {}, (b) => {
+      cardReview({ '/v': true, '/w': true })(b)
       feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/p.md'), due('/w/q.md')] }, '/x': { records: [due('/x/z.md')] } })(b)
     })
-    const rows = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.upkeep, vault.dueCount, vault.reviewing])
+    const rows = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.review, vault.dueCount, vault.reviewing])
     expect(rows()).toEqual([['/v', true, 1, false], ['/w', true, 2, false], ['/x', false, 0, false]])
-    act(() => captured.sidebar?.onInbox('/w'))
+    await act(async () => captured.sidebar?.onInbox('/w'))
     expect(rows()).toEqual([['/v', true, 1, false], ['/w', true, 2, true], ['/x', false, 0, false]])
-    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
-    expect(shownEditor(el)?.getAttribute('data-root')).toBe('/w')
-    act(() => captured.sidebar?.onInbox('/v'))
+    await act(async () => captured.sidebar?.onInbox('/v'))
     expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([true, false, false])
-    expect(el.querySelectorAll('.review-bar')).toHaveLength(1)
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/x.md')
-    act(() => captured.sidebar?.onInbox('/v'))
-    expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([false, false, false])
-    expect(el.querySelector('.review-bar')).toBeNull()
-    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/a.md')
+    await act(async () => captured.sidebar?.onInbox('/v'))
+    expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([true, false, false])
   })
 
   it('each vault syncs as in its own window: the attention banner is the vault\'s that has a problem, and its prompt names that vault (S43)', async () => {
     const writeText = vi.fn(async (_text: string) => undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, PAGES)
     expect(el.querySelector('.sync-banner')).toBeNull()
     act(() => push(bridge.github.onStatus, { root: '/w', state: 'attention', attention: 'auth' }))
     expect(el.querySelector('.sync-banner strong')?.textContent).toBe("GitHub didn't accept this computer's credentials.")
@@ -6114,16 +7063,16 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   })
 
   it('a board row\'s "Share" opens the ONE Share dialog on that board, in its own vault, and the dialog asks main about it (YAZ-3040)', async () => {
-    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, PAGES)
     await act(async () => captured.sidebar?.onShareFile?.('/w/plans/Roadmap.excalidraw'))
     await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Roadmap"]')).not.toBeNull())
     expect(bridge.share.get).toHaveBeenCalledWith({ root: '/w', path: '/w/plans/Roadmap.excalidraw' })
-    await act(async () => captured.sidebar?.onShareFile?.('/w/notes.md'))
+    await act(async () => captured.sidebar?.onShareFile?.('/w/pages.md'))
     expect(el.querySelectorAll('[role="dialog"][aria-label^="Share "]')).toHaveLength(1)
   })
 
   it('a file held back as too large (YAZ-3039): the banner names it, offers no Dismiss, and its sidebar row gets the cloud-off icon', async () => {
-    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, PAGES)
     act(() => push(bridge.github.onStatus, { root: '/w', state: 'attention', attention: 'too-large', tooLarge: ['Huge.excalidraw'] }))
     expect(el.querySelector('.sync-banner strong')?.textContent).toBe('A file is too big for GitHub.')
     expect(el.querySelector('.sync-banner')?.textContent).toContain('Huge.excalidraw is over GitHub')
@@ -6132,7 +7081,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   })
 
   it('a pass that merged a drawing says so once, and "See changes" opens that drawing\'s Version history in its own vault (YAZ-3039)', async () => {
-    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, PAGES)
     const merged = [{ path: 'plans/Roadmap.excalidraw', author: 'Sam', clashes: 0 }]
     act(() => push(bridge.github.onStatus, { root: '/w', state: 'synced', merged }))
     expect(el.querySelector('.link-notice__text')?.textContent).toBe("Merged Sam's changes into “Roadmap”.")
@@ -6144,7 +7093,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   it('the "renamed outside the app" banner of /w names its paths inside /w, and Update repairs /w\'s links (S44)', async () => {
     const files = { '/w/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), TWO, files, (b) => {
-      feed({ '/w': { records: [note('/w/A.md', { links: ['B'], size: 20, mtime: 5 }), note('/w/B2.md', { mtime: 100 })] } })(b)
+      feed({ '/w': { records: [page('/w/A.md', { links: ['B'], size: 20, mtime: 5 }), page('/w/B2.md', { mtime: 100 })] } })(b)
       b.bridge.coldDiff.mockImplementation(async (vault) =>
         vault === '/w' ? { root: '/w', scannedAt: 1, cacheStatus: 'hit', added: [{ path: '/w/B2.md', size: 7, mtime: 100 }], removed: [{ path: '/w/B.md', size: 7, mtime: 100 }], changed: [] } : null,
       )
@@ -6159,7 +7108,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   })
 
   it('vault /w\'s folder is renamed in another window: the vaults of this window follow, with no identity write, and /v is not touched (S48)', async () => {
-    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), TWO, {}, PAGES)
     show('/w/b.md')
     const before = { source: editor('/w/b.md')?.wikilinks, index: callsFor(bridge.index, '/v'), watch: callsFor(bridge.watch, '/v'), renders: renders('/v/a.md') }
     bridge.window.setIdentity.mockClear()
@@ -6177,7 +7126,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   })
 
   it('the FIRST vault\'s folder is renamed: the window\'s root and its sidebar follow, and /w is not touched', async () => {
-    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), TWO, {}, PAGES)
     show('/w/b.md')
     const before = { index: callsFor(bridge.index, '/w'), watch: callsFor(bridge.watch, '/w'), renders: renders('/w/b.md') }
     await act(async () => emitFileRenamed('/v', '/v2', 'dir'))
@@ -6192,7 +7141,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   it('"Open in this window" on a third vault leaves the window on that one vault, blank (YAZ-3487 D7), with the tabs reset and the two scopes unloaded (S61)', async () => {
     const offs: Record<string, ReturnType<typeof vi.fn>[]> = {}
     const { bridge, el } = await mount(withFolder(defaultAppState(), '/z', '/z/last.md'), TWO, {}, (b) => {
-      NOTES(b)
+      PAGES(b)
       b.bridge.watch.mockImplementation((vault) => {
         const off = vi.fn()
         ;(offs[vault ?? ''] ??= []).push(off)
@@ -6219,7 +7168,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   })
 
   it('the first vault\'s folder is gone: that vault leaves the window with its tabs, and /w stays loaded as it was (S53)', async () => {
-    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, PAGES)
     show('/w/b.md')
     const before = { source: editor('/w/b.md')?.wikilinks, index: callsFor(bridge.index, '/w'), watch: callsFor(bridge.watch, '/w') }
     act(() => captured.sidebar?.onRootMissing('/v'))
@@ -6319,19 +7268,19 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
   })
 
   it('refuses a folder that is in the window, inside one of its vaults, or around one, each with its notice and with nothing asked or written (S4, S5, R8)', async () => {
-    const { bridge, el } = await mount(named({ '/data/v': 'Notes' }), { id: 'w1', root: '/data/v', file: null, tabs: [] })
+    const { bridge, el } = await mount(named({ '/data/v': 'Pages' }), { id: 'w1', root: '/data/v', file: null, tabs: [] })
     const quiet = () => [bridge.window.setIdentity, bridge.state.pushRecent, bridge.state.removeRecent].map((spy) => spy.mock.calls.length)
     const trees = bridge.tree.mock.calls.length
     const before = quiet()
 
     expect(await add('/data/v')).toBe(false)
-    expect(noticeText(el)).toBe('Notes is already in this window')
+    expect(noticeText(el)).toBe('Pages is already in this window')
     expect(await add('/data/v/')).toBe(false)
-    expect(noticeText(el)).toBe('Notes is already in this window')
+    expect(noticeText(el)).toBe('Pages is already in this window')
     expect(await add('/data/v/sub')).toBe(false)
-    expect(noticeText(el)).toBe("Can't add sub: it is inside Notes")
+    expect(noticeText(el)).toBe("Can't add sub: it is inside Pages")
     expect(await add('/data')).toBe(false)
-    expect(noticeText(el)).toBe("Can't add data: it contains Notes")
+    expect(noticeText(el)).toBe("Can't add data: it contains Pages")
     expect(storage.getRoots()).toEqual(['/data/v'])
     expect(quiet()).toEqual(before)
     expect(bridge.tree.mock.calls.length).toBe(trees)
@@ -6689,7 +7638,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     const rel = path.slice('/v/'.length)
     return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links, embeds: [] }
   }
-  /** A links to B; R links to Docs/N by path; B links to A, so A has a note that links to it only while B stays. */
+  /** A links to B; R links to Docs/N by path; B links to A, so A has a page that links to it only while B stays. */
   const records = [record('/v/A.md', ['B']), record('/v/B.md', ['A']), record('/v/R.md', ['Docs/N']), record('/v/Docs/N.md')]
   const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
   const TREE: TreeNode[] = [{ type: 'dir', name: 'Docs', path: '/v/Docs', children: [file('/v/Docs/N.md')] }, file('/v/A.md'), file('/v/B.md'), file('/v/R.md')]
@@ -6703,23 +7652,23 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   const boxText = (el: HTMLElement) => el.querySelector('.drag-out-ask__text')?.textContent
   const button = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.drag-out-ask button')].find((b) => b.textContent === label || b.getAttribute('aria-label') === label)
 
-  it('asks with the count of the notes that link to the items (S26); a later toast does not hide it (S32); ✕ closes it and changes nothing (S28)', async () => {
+  it('asks with the count of the pages that link to the items (S26); a later toast does not hide it (S32); ✕ closes it and changes nothing (S28)', async () => {
     const { bridge, el } = await mountVault()
     await draggedOut('/v/B.md', '/v/Docs')
-    expect(boxText(el)).toBe('Copied 1 folder and 1 file (B.md, Docs) to Finder? 2 notes link to them.')
+    expect(boxText(el)).toBe('Copied 1 folder and 1 file (B.md, Docs) to Finder? 2 pages link to them.')
     expect(el.querySelector('.link-notice')).toBeNull() // its own slot, not the toast
     act(() => captured.sidebar?.onNotice('Copied path'))
     expect(el.querySelector('.link-notice')?.textContent).toBe('Copied path')
-    expect(boxText(el)).toBe('Copied 1 folder and 1 file (B.md, Docs) to Finder? 2 notes link to them.')
+    expect(boxText(el)).toBe('Copied 1 folder and 1 file (B.md, Docs) to Finder? 2 pages link to them.')
     await act(async () => button(el, 'Keep in vault')?.click())
     expect(box(el)).toBeNull()
     expect(bridge.file.delete).not.toHaveBeenCalled()
   })
 
-  it('one item says "it"; a second drag out replaces the box (S32); an item no note links to says no count', async () => {
+  it('one item says "it"; a second drag out replaces the box (S32); an item no page links to says no count', async () => {
     const { el } = await mountVault()
     await draggedOut('/v/B.md')
-    expect(boxText(el)).toBe('Copied 1 file (B.md) to Finder? 1 note links to it.')
+    expect(boxText(el)).toBe('Copied 1 file (B.md) to Finder? 1 page links to it.')
     await draggedOut('/v/R.md')
     expect(el.querySelectorAll('.drag-out-ask')).toHaveLength(1)
     expect(boxText(el)).toBe('Copied 1 file (R.md) to Finder?')
@@ -6765,7 +7714,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it.
     await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     expect(box(el)?.getAttribute('role')).toBe('alertdialog')
-    expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
+    expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 file (A.md) to Finder? 1 page links to it.')
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(box(el)).toBeNull()
     expect(bridge.file.delete).not.toHaveBeenCalled()
@@ -6796,7 +7745,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it (as in the alert dialog test).
     await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     act(() => emitDragLanded(['/v/B.md']))
-    expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
+    expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 page links to it.')
     act(() => emitDragLanded(['/v/A.md']))
     expect(box(el)).toBeNull()
     // The word comes while the box reads the trees: it never shows.
@@ -6811,7 +7760,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     const { el } = await mountVault()
     await draggedOut('/v/gone.md', '/v/A.md')
     await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
-    expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
+    expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 page links to it.')
     await act(async () => button(el, 'Keep in vault')?.click())
     await draggedOut('/v/gone.md')
     expect(box(el)).toBeNull()
@@ -6863,19 +7812,19 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ tabs: expect.arrayContaining(['/v/a.md']) }))
   })
 
-  it('YAZ-3776: the daily note button in a Files window asks main too: ⌘-click for a background tab with no copy (D2, YAZ-3943 5B), a click as a row click', async () => {
+  it('YAZ-3776: the daily page button in a Files window asks main too: ⌘-click for a background tab with no copy (D2, YAZ-3943 5B), a click as a row click', async () => {
     noPopup()
-    const daily = dailyNoteName(DEFAULT_SETTINGS.dailyNoteFormat, new Date()).trim()
-    const state = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Daily' }, windows: [entry({ ...FILES }), entry({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })] }
+    const daily = dailyPageName(DEFAULT_SETTINGS.dailyPageFormat, new Date()).trim()
+    const state = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Daily' }, windows: [entry({ ...FILES }), entry({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })] }
     const { bridge } = await mount(state, FILES, { [`/v/Daily/${daily}.md`]: { content: '', mtime: 1 } }, (b) => {
       b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false }))
       b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [{ type: 'dir', name: 'Daily', path: '/v/Daily', children: [{ type: 'file', name: `${daily}.md`, path: `/v/Daily/${daily}.md`, size: 1, mtime: 1, kind: 'markdown' }] }], generatedAt: 1 }))
     })
     const sidebar = await filesSidebar()
-    // The note is on disk but not in the (empty) index, so main is asked: it finds it on disk, and it opens.
-    act(() => sidebar.onOpenDailyNote?.(true))
+    // The page is on disk but not in the (empty) index, so main is asked: it finds it on disk, and it opens.
+    act(() => sidebar.onOpenDailyPage?.(true))
     await vi.waitFor(() => expect(bridge.window.openFromFiles).toHaveBeenCalledTimes(1), { timeout: SLOW_RUNNER_MS })
-    act(() => sidebar.onOpenDailyNote?.(false))
+    act(() => sidebar.onOpenDailyPage?.(false))
     await vi.waitFor(() => expect(bridge.window.openFromFiles).toHaveBeenCalledTimes(2), { timeout: SLOW_RUNNER_MS })
     expect(bridge.window.openFromFiles.mock.calls.map(([action]) => action)).toEqual([
       { kind: 'open', path: `/v/Daily/${daily}.md`, how: 'background' },
@@ -6943,7 +7892,7 @@ describe('App Files window (YAZ-3357)', () => {
     act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background' }))
     expect(tabNames(el)).toEqual(['a', 'b', 'c'])
     expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
-    // YAZ-3943 5B: an open page again — the daily note's open (no `copy`) adds nothing, a ⌘-click's (`copy`) a copy
+    // YAZ-3943 5B: an open page again — the daily page's open (no `copy`) adds nothing, a ⌘-click's (`copy`) a copy
     act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background' }))
     expect(tabNames(el)).toEqual(['a', 'b', 'c'])
     act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background', copy: true }))
@@ -7108,5 +8057,275 @@ describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
     await act(async () => sidebar.onAddVaultFor?.('zz', 'q.md'))
     expect(el.querySelector('#confirm-add-vault-for-link-text')).toBeNull()
     expect(el.querySelector('.link-notice')?.textContent).toContain('This item is in the vault "zz", which this Mac does not know. Open that folder first.')
+  })
+})
+
+
+/**
+ * THE CARD SKILL IN THE SIDEBAR (YAZ-5108), one test per row of the issue's table: the app's copy is one more vault of
+ * the window — last, `app: true` — while the switch says Show and a vault has reviews on. It never joins the window's
+ * own vaults (`setIdentity` roots), Recent vaults, or the 8-vault count. Made-up paths only.
+ */
+describe('App: the card skill in the sidebar (YAZ-5108)', () => {
+  const SKILL = '/demo-profile/card-skill'
+  const START = `${SKILL}/Start here.md`
+  const skillOn = (settings: Partial<AppState['settings']> = {}): AppState => ({ ...defaultAppState(), settings: { ...defaultAppState().settings, ...settings } })
+  const reviews = (on: boolean) => (b: ReturnType<typeof installBridge>) => b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === 'review.json' ? { enabled: root === SKILL ? false : on } : name === 'read-only.json' && root === SKILL ? { on: true } : null))
+  const shown = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.app === true]) ?? []
+  const rootsWritten = (bridge: ReturnType<typeof installBridge>['bridge']) => (bridge.window.setIdentity.mock.calls as unknown as [{ roots?: string[] }][]).flatMap(([patch]) => patch.roots ?? [])
+
+  it('reviews off in this vault: no "Card skill" row', async () => {
+    await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(false))
+    expect(shown()).toEqual([['/v', false]])
+  })
+
+  it('reviews on, switch on Show: the row shows at the bottom, closed, and the window\'s own vaults stay as they are', async () => {
+    const { bridge } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    expect(shown()).toEqual([['/v', false], [SKILL, true]])
+    expect(captured.sidebar?.vaults.at(-1)).toMatchObject({ name: 'Card skill', review: false, readOnly: true })
+    expect(captured.sidebar?.closedVaults).toContain(SKILL)
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(rootsWritten(bridge)).not.toContain(SKILL)
+    expect((bridge.state.pushRecent.mock.calls as unknown as [string][]).map(([path]) => path)).not.toContain(SKILL)
+    expect(storage.listVaults().map((v) => v.path)).not.toContain(SKILL)
+  })
+
+  it('a window with two vaults: their rows as today, then "Card skill" last; a reorder never stores it', async () => {
+    const { bridge } = await mount(skillOn(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    expect(shown()).toEqual([['/a', false], ['/b', false], [SKILL, true]])
+    act(() => captured.sidebar?.onReorderVaults(['/b', SKILL, '/a']))
+    expect(storage.getRoots()).toEqual(['/b', '/a'])
+    expect(rootsWritten(bridge)).not.toContain(SKILL)
+  })
+
+  it('Hide from the right-click menu: the row goes, its tabs close, the switch is Hide, and the notice says where it is; "Open Settings" opens Review with the switch', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: START, tabs: ['/v/a.md', START], cardSkill: SKILL }, {}, reviews(true))
+    expect(captured.editors.some((e) => e.path === START && e.root === SKILL)).toBe(true)
+    await act(async () => captured.sidebar?.onHideCardSkill?.())
+    expect(shown()).toEqual([['/v', false]])
+    expect(storage.getSettings().cardSkillInSidebar).toBe(false)
+    expect(bridge.state.setSettings).toHaveBeenCalledWith(expect.objectContaining({ cardSkillInSidebar: false }))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/a.md'] }))
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Card skill hidden. Turn it on again in Settings › Cards.')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Open Settings')
+    await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+    expect(el.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Cards')
+    const toggle = el.querySelector('[role="group"][aria-label="Card skill in the sidebar"]')
+    expect([...(toggle?.querySelectorAll('button') ?? [])].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Show', 'false'], ['Hide', 'true']])
+  })
+
+  it('switch back to Show: the row shows again, closed', async () => {
+    const { el } = await mount(skillOn({ cardSkillInSidebar: false }), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    expect(shown()).toEqual([['/v', false]])
+    await act(async () => (captured.sidebar as unknown as { onOpenSettings: () => void }).onOpenSettings())
+    settingsPage(el, 'Cards')
+    const show = [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Card skill in the sidebar"] button')].find((b) => b.textContent === 'Show')
+    await act(async () => show?.click())
+    expect(shown()).toEqual([['/v', false], [SKILL, true]])
+    expect(captured.sidebar?.closedVaults).toContain(SKILL)
+  })
+
+  it('app restart with a skill tab open, skill shown: the tab comes back, read only in the skill\'s own scope', async () => {
+    await mount(skillOn(), { id: 'w1', root: '/v', file: START, tabs: ['/v/a.md', START], cardSkill: SKILL }, {}, reviews(true))
+    expect(captured.editors.some((e) => e.path === START && e.root === SKILL)).toBe(true)
+  })
+
+  it('app restart with a skill tab open, skill hidden: the tab does not come back', async () => {
+    const { bridge } = await mount(skillOn({ cardSkillInSidebar: false }), { id: 'w1', root: '/v', file: START, tabs: ['/v/a.md', START], cardSkill: SKILL }, {}, reviews(true))
+    expect(captured.editors.some((e) => e.path === START)).toBe(false)
+    expect(bridge.readFile).not.toHaveBeenCalledWith(START)
+  })
+
+  it('a file action in the skill is refused at once, with a word on how to change it', async () => {
+    const { el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    let allowed: boolean | undefined
+    await act(async () => {
+      allowed = await captured.sidebar?.onFileAction?.(SKILL)
+    })
+    expect(allowed).toBe(false)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('The card skill is read only. Duplicate it into your vault to change it.')
+  })
+
+  it('YAZ-5109: "Duplicate into <vault>…" asks main to copy into that vault and says where it landed', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledExactlyOnceWith('/v', false)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Duplicated the card skill into v: "Card skill". You can change it there.')
+  })
+
+  it('YAZ-5204: "Duplicate into <vault>…" into a read-only vault writes nothing and says why in one line; a writable vault of the window still takes it', async () => {
+    const readOnlyV = (b: ReturnType<typeof installBridge>) =>
+      b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === 'review.json' ? { enabled: root !== SKILL } : name === 'read-only.json' ? { on: root === SKILL || root === '/v' } : null))
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], cardSkill: SKILL }, {}, readOnlyV)
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(bridge.cardSkill.duplicate).not.toHaveBeenCalled()
+    expect(el.querySelector('#confirm-read-only-vault-text')).toBeNull()
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe(cardSkillReadOnlyVault('v'))
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/w'))
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledExactlyOnceWith('/w', false)
+  })
+
+  it('YAZ-5109: with `Card skill` in the vault already, one sheet asks before a second copy; Cancel makes nothing, the other button makes `Card skill 2`', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, (b) => {
+      reviews(true)(b)
+      b.bridge.cardSkill.duplicate.mockImplementation(async (vault: string, again: boolean) => (again ? { made: `${vault}/Card skill 2` } : { exists: `${vault}/Card skill` }))
+    })
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(el.querySelector('#confirm-card-skill-again-text')?.textContent).toBe('Card skill is already in v. Make a second copy? The app keeps using the first one.')
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+    await act(async () => button('Cancel')?.click())
+    expect(el.querySelector('#confirm-card-skill-again-text')).toBeNull()
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledTimes(1)
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    await act(async () => button('Make a second copy')?.click())
+    expect(bridge.cardSkill.duplicate).toHaveBeenLastCalledWith('/v', true)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Duplicated the card skill into v: "Card skill 2". You can change it there.')
+  })
+})
+
+describe('App: the card course (YAZ-5120)', () => {
+  afterEach(() => {
+    courseNoticeDue = false
+  })
+
+  it('the one notice, the first time a vault with Review on shows: it is kept as shown, and "Open the course" opens the lazy layer; Esc closes it', async () => {
+    courseNoticeDue = true
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
+    expect(bridge.state.setCourse).toHaveBeenCalledWith({ offered: true })
+    const open = [...el.querySelectorAll<HTMLButtonElement>('.link-notice button')].find((b) => b.textContent === 'Open the course')!
+    act(() => open.click())
+    // The lazy layer's chunk holds every chapter's scenes (YAZ-5121): its first load can take past waitFor's 1 s default.
+    await vi.waitFor(() => expect(document.querySelector('.course[role="dialog"]')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(document.querySelector('.course')).toBeNull()
+  })
+
+  // YAZ-5272: the offer is for a person new to cards (Yaseen): the vault in front has cards on and holds no card yet.
+  describe('YAZ-5272: only a person new to cards gets the offer', () => {
+    const cardIn = (path: string): IndexRecord => ({
+      path, name: 'cards.md', basename: 'cards', title: 'Cards', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1,
+      properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [] }],
+    })
+    const index = (b: ReturnType<typeof installBridge>) =>
+      void b.bridge.index.mockImplementation(async (root: string) => ({ root, records: root === '/a' ? [cardIn('/a/cards.md')] : [], folders: [], generatedAt: 1, ids: true }))
+
+    it('a vault with Review on and one card, `offered` false: no notice, nothing kept as offered, and no course line in its empty Inbox', async () => {
+      courseNoticeDue = true
+      const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/a', file: '/a/x.md', tabs: ['/a/x.md'] }, { '/a/x.md': { content: '# x', mtime: 1 } }, index)
+      await vi.waitFor(() => expect(bridge.index).toHaveBeenCalledWith('/a'))
+      await act(async () => new Promise((r) => setTimeout(r, 50)))
+      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
+      expect(bridge.state.setCourse).not.toHaveBeenCalledWith({ offered: true })
+      act(() => captured.sidebar?.onOpenInbox())
+      await vi.waitFor(() => expect(el.querySelector('.card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+      expect(el.querySelector('.course-offer')).toBeNull()
+    })
+
+    it('a window with a vault with cards in front and a vault with none: no notice; the vault with none in front: the notice, one time', async () => {
+      courseNoticeDue = true
+      const files = { '/a/x.md': { content: '# x', mtime: 1 }, '/b/y.md': { content: '# y', mtime: 1 } }
+      const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'] }, files, index)
+      await vi.waitFor(() => expect(bridge.index).toHaveBeenCalledWith('/a'))
+      await act(async () => new Promise((r) => setTimeout(r, 50)))
+      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
+      act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
+      await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
+      expect((bridge.state.setCourse.mock.calls as unknown as [{ offered?: boolean }][]).filter(([patch]) => patch.offered === true)).toHaveLength(1)
+    })
+  })
+
+  it('requestCourse(chapter) from any part opens the course at that chapter', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain('New to cards?')
+    act(() => requestCourse('good-card'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 7 of 12'))
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  })
+
+  it('YAZ-5123: the guided tour`s "Show me" opens Settings at Cards, and a file, with the app`s own doors', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, { '/v/a.md': { content: '# a', mtime: 1 }, '/v/b.md': { content: '# b', mtime: 1 } })
+    act(() => showTourPlace({ kind: 'settings', page: 'cards' }))
+    await vi.waitFor(() => expect(document.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Cards'))
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    act(() => showTourPlace({ kind: 'file', path: '/v/b.md' }))
+    await vi.waitFor(() => expect(el.querySelector('.tabbar__tab--active')?.textContent ?? '').toContain('b'))
+  })
+
+  it('YAZ-5201: in a window with vaults A and B, the course stays in the vault it was opened from: B in front during the run makes nothing in B', async () => {
+    const files = { '/a/x.md': { content: '# x', mtime: 1 }, '/b/y.md': { content: '# y', mtime: 1 } }
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'] }, files, (b) => {
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'review.json' ? { enabled: true } : null))
+      Object.assign(b.bridge, { createDir: vi.fn(async (req: { path: string }) => ({ path: req.path })), mintPageId: vi.fn(async () => 'TST-1') })
+    })
+    act(() => requestCourse('first-card'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 2 of 12'))
+    expect(bridge.state.setCourse).toHaveBeenCalledWith({ vault: '/a' })
+    // The person brings vault B to the front in the middle of the course (the tour lets them use the whole app).
+    act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
+    await vi.waitFor(() => expect(document.querySelector('.tabbar__tab--active')?.textContent ?? '').toContain('y'))
+    // YAZ-5366: chapter 2's hands-on part is live steps now. Next up to the first one (c2-13): its check makes the folder.
+    const next = () => [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.getAttribute('aria-label') === 'Next step')!
+    for (let i = 0; i < 40 && !(document.querySelector('.course__caption')?.textContent ?? '').startsWith('Your card is now a real file'); i++) act(() => next().click())
+    expect(document.querySelector('.course__caption')?.textContent).toContain('Your card is now a real file')
+    const createDir = (bridge as unknown as { createDir: ReturnType<typeof vi.fn> }).createDir
+    await vi.waitFor(() => expect(createDir).toHaveBeenCalled(), { timeout: SLOW_RUNNER_MS })
+    // The live step's check and the clip's scene may both ask for the folder: every ask is in vault A, none in B.
+    expect([...new Set(createDir.mock.calls.map(([req]) => (req as { path: string }).path))]).toEqual(['/a/course-cards'])
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    document.querySelectorAll('.course-tour-root').forEach((n) => n.remove())
+  })
+
+  it('YAZ-5201: the course opens again at its place in the vault kept with it; when that vault is not in the window, one line and "Start over" in the vault in front', async () => {
+    const state: AppState = { ...defaultAppState(), course: { ...defaultCourseState(), chapter: 'inbox', clip: 'c3-04', vault: '/gone' } }
+    const { bridge } = await mount(state, { id: 'w1', root: '/a', file: '/a/x.md', tabs: ['/a/x.md'] }, { '/a/x.md': { content: '# x', mtime: 1 } })
+    act(() => requestCourse())
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 3 of 12'))
+    expect([...document.querySelectorAll('.course__note')].map((n) => n.textContent)).toEqual(['gone is not open in this window, so the course makes no files. Start over in a'])
+    expect(bridge.state.setCourse).not.toHaveBeenCalledWith(expect.objectContaining({ vault: '/a' }))
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.textContent === 'Start over in a')!.click())
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 1 of 12'))
+    expect(bridge.state.setCourse).toHaveBeenCalledWith({ chapter: '', clip: '', vault: '/a' })
+    expect(document.querySelector('.course__note')).toBeNull()
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  })
+
+  it('YAZ-5114 with YAZ-5120: "Learn the formats" opens the course at the chapter on good cards and formats, not the folder', async () => {
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    const at = COURSE.findIndex((chapter) => chapter.title === FORMATS_CHAPTER_TITLE)
+    expect(at).toBeGreaterThanOrEqual(0)
+    act(() => void document.body.dispatchEvent(new CustomEvent(CARD_FORMATS_OPEN, { bubbles: true, detail: { folder: '/demo-profile/card-skill/formats' } })))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain(`Chapter ${at + 1} of ${COURSE.length}`))
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  })
+
+  describe('Card tips (YAZ-5114) turns off the course offers; the Settings button stays', () => {
+    const noCards = (b: ReturnType<typeof installBridge>) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [], generatedAt: 1, ids: true })
+    const tips = (cardTips: boolean): AppState => ({ ...defaultAppState(), settings: { ...defaultAppState().settings, cardTips } })
+    const openInbox = async (el: HTMLElement) => {
+      act(() => captured.sidebar?.onOpenInbox())
+      await vi.waitFor(() => expect(el.querySelector('.card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    }
+
+    it('On (the default): the notice shows, and the empty Inbox of a vault with no card has the course line', async () => {
+      courseNoticeDue = true
+      const { el } = await mount(tips(true), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, noCards)
+      await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
+      await openInbox(el)
+      await vi.waitFor(() => expect(el.querySelector('.course-offer')).not.toBeNull())
+    })
+
+    it('Off: no notice, nothing kept as offered, and no course line in the same empty Inbox; Settings › Cards still has "Open the course"', async () => {
+      courseNoticeDue = true
+      const { bridge, el } = await mount(tips(false), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, noCards)
+      await openInbox(el)
+      await vi.waitFor(() => expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.'), { timeout: SLOW_RUNNER_MS })
+      expect(el.querySelector('.course-offer')).toBeNull()
+      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
+      expect(bridge.state.setCourse).not.toHaveBeenCalledWith({ offered: true })
+      await act(async () => (captured.sidebar as unknown as { onOpenSettings: () => void }).onOpenSettings())
+      settingsPage(el, 'Cards')
+      expect([...el.querySelectorAll('button')].some((b) => b.textContent === 'Open the course')).toBe(true)
+    })
   })
 })

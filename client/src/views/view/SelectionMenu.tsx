@@ -9,7 +9,7 @@ import { valueFromText } from './tableSelection'
 interface SelectionMenuProps {
   x: number
   y: number
-  /** A selection of whole rows: the note actions show. */
+  /** A selection of whole rows: the page actions show. */
   rows: boolean
   /** The one column's editor when every selected cell is in one writable column: "Set value ›" shows. */
   setValue: { kind: EditorKind; options?: readonly string[] } | null
@@ -25,7 +25,7 @@ interface SelectionMenuProps {
   /** Absent: the item shows, off (the host has no such action). */
   onDuplicate?: () => void
   onDelete?: () => void
-  /** More items, their own group before the note actions (YAZ-3746 13AI: the row freeze, as in the row menu). */
+  /** More items, their own group before the page actions (YAZ-3746 13AI: the row freeze, as in the row menu). */
   extra?: ReactNode
   /** The Fill flyouts (YAZ-3746 13AQ): whole columns get Fill column. Default: Fill cell, Fill row. */
   fillTargets?: readonly FillTarget[]
@@ -43,7 +43,7 @@ export function ClearFormattingItem({ onClear }: { onClear: () => void }) {
 
 /**
  * The right-click on a selection in the folder table (YAZ-4593, S27 / S28): Copy, Paste, Clear cells, Fill › and Clear
- * formatting (YAZ-4603 D54), Set value › (one column only), then Duplicate notes and Delete notes… for whole rows.
+ * formatting (YAZ-4603 D54), Set value › (one column only), then Duplicate pages and Delete pages… for whole rows.
  * Each action closes the menu.
  */
 export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, onFill, onSetValue, onClearFormatting, onNewRowBelow, onDuplicate, onDelete, extra, fillTargets, onClose }: SelectionMenuProps) {
@@ -62,7 +62,7 @@ export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, 
   /** The single Fill ›'s first target (YAZ-3746 13AW): the rows from whole rows, the columns from whole columns, else the cells. */
   const fillFirst: FillTarget = rows ? 'row' : fillTargets?.includes('column') === true && fillTargets.includes('row') !== true ? 'column' : 'cell'
   // The row menu's order (YAZ-3746 13AW): clipboard with its keys · Fill › Set value › Clear formatting · the row edits ·
-  // the view (freeze) · Delete notes…, red and last.
+  // the view (freeze) · Delete pages…, red and last.
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
       <MenuFlyout.Provider value={flyout}>
@@ -83,7 +83,7 @@ export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, 
         {(onNewRowBelow !== undefined || rows) && (
           <div className="ctx-menu__group" role="group">
             {onNewRowBelow !== undefined && plain('New row below', onNewRowBelow)}
-            {rows && plain(unit('Duplicate notes'), onDuplicate)}
+            {rows && plain(unit('Duplicate pages'), onDuplicate)}
           </div>
         )}
         {extra !== undefined && (
@@ -93,7 +93,7 @@ export function SelectionMenu({ x, y, rows, setValue, onCopy, onPaste, onClear, 
         )}
         {rows && (
           <div className="ctx-menu__group" role="group">
-            {plain(unit('Delete notes…'), onDelete, undefined, true)}
+            {plain(unit('Delete pages…'), onDelete, undefined, true)}
           </div>
         )}
       </MenuFlyout.Provider>

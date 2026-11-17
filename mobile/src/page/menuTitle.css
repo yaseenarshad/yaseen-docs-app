@@ -1,0 +1,24 @@
+/* The full title at the top of a ⋯ menu: wrapped, never cut; the folder under it, small and grey. */
+.menu-title {
+  margin: 0 0 4px;
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.menu-title__name {
+  margin: 0;
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.menu-title__path {
+  margin: 3px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

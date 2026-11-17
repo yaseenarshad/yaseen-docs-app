@@ -1,6 +1,6 @@
 /**
  * The explore search (YAZ-2571): the sidebar search's rows and ranking, then the text rows (tags, frontmatter values)
- * and the typo pass. The guard at the end counts the work of a keystroke on a 5,000-note index: one scan of the rows
+ * and the typo pass. The guard at the end counts the work of a keystroke on a 5,000-page index: one scan of the rows
  * in memory, nothing read, no second index.
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -16,15 +16,15 @@ const rec = (path: string, title: string, extra: Partial<IndexRecord> = {}): Ind
 
 const records = [
   rec('/vault/words/conjecture.md', 'conjecture (vocab)', { tags: ['vocab', 'maths'], properties: { source: 'Mochi scouting', status: 'learning' } }),
-  rec('/vault/words/precipitous.md', 'precipitous', { aliases: ['steep'], properties: { note: 'A long value that is a document and not a line, repeated to pass the eighty characters the snippet allows at most.' } }),
+  rec('/vault/words/precipitous.md', 'precipitous', { aliases: ['steep'], properties: { page: 'A long value that is a document and not a line, repeated to pass the eighty characters the snippet allows at most.' } }),
   rec('/vault/react.md', 'React', { tags: ['frontend'], properties: { title: 'React', id: 'YAZ-1', summary: 'A library for UI' } }),
-  rec('/vault/notes/working-log.md', 'Working log'),
+  rec('/vault/pages/working-log.md', 'Working log'),
 ]
-const rows = (): SearchCandidate[] => [...folderCandidates('/vault', ['/vault/words', '/vault/notes'], []), ...searchCandidates(records), ...textCandidates(records)]
+const rows = (): SearchCandidate[] => [...folderCandidates('/vault', ['/vault/words', '/vault/pages'], []), ...searchCandidates(records), ...textCandidates(records)]
 const paths = (list: readonly SearchCandidate[]) => list.map((r) => r.path)
 
 describe('text rows', () => {
-  it('one row per tag and per frontmatter string value, the note\'s title as its label and the matched text as its snippet; app keys, long values and the title itself left out', () => {
+  it('one row per tag and per frontmatter string value, the page\'s title as its label and the matched text as its snippet; app keys, long values and the title itself left out', () => {
     const text = textCandidates(records)
     expect(text.map((r) => [r.label, r.name, r.snippet])).toEqual([
       ['conjecture (vocab)', 'vocab', '#vocab'],
@@ -36,9 +36,9 @@ describe('text rows', () => {
     ])
   })
 
-  it('a tag or a value finds its note through the shared matcher, after the title matches', () => {
+  it('a tag or a value finds its page through the shared matcher, after the title matches', () => {
     expect(exploreRows(rows(), 'scouting').map((r) => [r.label, r.snippet])).toEqual([['conjecture (vocab)', 'source: Mochi scouting']])
-    // "vocab" is in a title and a tag of one note: the title row alone shows (the tag's exact match would rank first, and twice is noise).
+    // "vocab" is in a title and a tag of one page: the title row alone shows (the tag's exact match would rank first, and twice is noise).
     expect(exploreRows(rows(), 'vocab').map((r) => [r.path, r.snippet])).toEqual([['/vault/words/conjecture.md', undefined]])
   })
 })
@@ -68,14 +68,14 @@ describe('the typo pass', () => {
     const stats: SearchStats = { fuzzy: 0 }
     exploreRows(rows(), 'con', stats)
     expect(stats.fuzzy).toBe(0)
-    const many = Array.from({ length: 10 }, (_, i) => rec(`/vault/n${i}.md`, `Note ${i}`))
-    exploreRows(searchCandidates(many), 'note', stats)
+    const many = Array.from({ length: 10 }, (_, i) => rec(`/vault/n${i}.md`, `Page ${i}`))
+    exploreRows(searchCandidates(many), 'page', stats)
     expect(stats.fuzzy).toBe(0)
     exploreRows(searchCandidates(many), 'nite', stats)
     expect(stats.fuzzy).toBe(10)
   })
 
-  it('leaves out the rows the exact pass shows, and a note shows once', () => {
+  it('leaves out the rows the exact pass shows, and a page shows once', () => {
     const list = rows()
     expect(fuzzyRows(list, 'conjeture', new Set(['/vault/words/conjecture.md']), SEARCH_CAP)).toEqual([])
     // The title row and the tag rows of conjecture are all within one edit of "conjecture (vocab)"'s parts: one row shows.
@@ -83,30 +83,30 @@ describe('the typo pass', () => {
   })
 })
 
-describe('the keystroke guard: a 5,000-note index', () => {
-  const big = Array.from({ length: 5000 }, (_, i) => rec(`/vault/f${i % 50}/note-${i}.md`, i === 4242 ? 'conjecture (vocab)' : `Note ${i}`, { aliases: [`N${i}`], tags: ['t'], properties: { status: i % 2 === 0 ? 'open' : 'done' } }))
+describe('the keystroke guard: a 5,000-page index', () => {
+  const big = Array.from({ length: 5000 }, (_, i) => rec(`/vault/f${i % 50}/page-${i}.md`, i === 4242 ? 'conjecture (vocab)' : `Page ${i}`, { aliases: [`N${i}`], tags: ['t'], properties: { status: i % 2 === 0 ? 'open' : 'done' } }))
   const list = [...folderCandidates('/vault', Array.from({ length: 50 }, (_, i) => `/vault/f${i}`), []), ...searchCandidates(big), ...textCandidates(big)]
 
   it('a typo query costs one typo scan over the rows, no read and no second index; a plain query costs none', () => {
     const reads = vi.fn()
     const stats: SearchStats = { fuzzy: 0 }
     const found = exploreRows(list, 'conjeture', stats)
-    expect(paths(found)).toEqual(['/vault/f42/note-4242.md'])
+    expect(paths(found)).toEqual(['/vault/f42/page-4242.md'])
     // One look at each row at most: the exact pass's own scan, then the typo pass over the rows it missed that are
-    // long enough to hold the text within two edits ("Note 1", "N12", "t", "open" are not: skipped unread).
+    // long enough to hold the text within two edits ("Page 1", "N12", "t", "open" are not: skipped unread).
     expect(stats.fuzzy).toBe(list.filter((c) => c.lower.length >= 'conjeture'.length - editsAllowed('conjeture'.length)).length)
     expect(stats.fuzzy).toBeLessThanOrEqual(list.length)
     expect(stats.fuzzy).toBeGreaterThan(4000)
     expect(reads).not.toHaveBeenCalled()
     const plain: SearchStats = { fuzzy: 0 }
-    const notes = exploreRows(list, 'note 1', plain)
-    expect(notes.length).toBe(SEARCH_CAP)
+    const pages = exploreRows(list, 'page 1', plain)
+    expect(pages.length).toBe(SEARCH_CAP)
     expect(plain.fuzzy).toBe(0)
     expect(FUZZY_WHEN).toBe(8)
   })
 
-  it('the rows are built once per snapshot: 5,000 notes give one title, one alias, one tag and one value row each', () => {
-    // Plus one file-name row (YAZ-3748 B4): the conjecture note's file name says nothing of its title.
+  it('the rows are built once per snapshot: 5,000 pages give one title, one alias, one tag and one value row each', () => {
+    // Plus one file-name row (YAZ-3748 B4): the conjecture page's file name says nothing of its title.
     expect(searchCandidates(big)).toHaveLength(10001)
     expect(textCandidates(big)).toHaveLength(10000)
   })
@@ -117,7 +117,7 @@ describe('`#5` in the explore search (YAZ-2571 round 5)', () => {
     rec('/vault/emb-5.md', '04 Resize04 Resize04 Resize04', { id: 'EMB-5', tags: ['5'] }),
     rec('/vault/emb-6.md', '05 The view', { id: 'EMB-6' }),
     rec('/vault/emb-1234.md', 'Big', { id: 'EMB-1234' }),
-    rec('/vault/emb-12.md', 'Note #1235 draft', { id: 'EMB-12', properties: { ticket: '#1234' } }),
+    rec('/vault/emb-12.md', 'Page #1235 draft', { id: 'EMB-12', properties: { ticket: '#1234' } }),
   ]
   const list = () => [...searchCandidates(emb, ['EMB']), ...textCandidates(emb)]
 

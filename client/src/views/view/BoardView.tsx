@@ -2,9 +2,8 @@ import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type Ke
 import { useUnit } from '../../vault/unitWord'
 import { ViewFind } from './viewFind'
 import type { IndexRecord } from '@shared/types'
-import { type Modifiers, openByGesture, openByKey, openTarget } from '../../lib/openGesture'
-import { newWindowClick } from '../../lib/newWindowClick'
-import { rowPage } from '../../links/shortcuts'
+import { type CardClick, type Modifiers, openByKey } from '../../lib/openGesture'
+import { clickCard } from './cardClick'
 import { pageColumnKeys, type FolderSettings } from '../folderSettings'
 import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
 import { type Group, type Row, propertyKeys } from '../engine'
@@ -18,10 +17,10 @@ import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
-import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
-import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
+import { type CardPageDoors, cardMenuItems } from './rowMenuItems'
+import { type PageWindowLink, currentItemClass, shownRows, usePageWindowItems } from './PageWindow'
 import { NO_READ_ONLY } from '../readOnlyRows'
-import { ReadOnlyName } from './ReadOnlyMark'
+import { ItemName, useItemLock } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 
 /** Board windowing (YAZ-3746 13AX): the cards a list draws first, the cards each step adds, and how far ahead (px) of the screen a list's end starts the next step. */
@@ -52,25 +51,27 @@ export interface BoardViewProps {
   onOpenFileBackground?: (path: string) => void
   /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
   onOpenWindow?: (path: string) => void
-  /** The card's link: the board writes its order (column by column, top to bottom) and marks the card's note (D24). */
-  windowLink?: NoteWindowLink
+  /** What a plain click on a card, title or body, opens (YAZ-5582, `cardClickOf`): the mini window or a background tab. Absent: a background tab. */
+  clickOpens?: CardClick
+  /** The card's link: the board writes its order (column by column, top to bottom) and marks the card's page (D24). */
+  windowLink?: PageWindowLink
   /** Passive notice surface for page actions that fail because a card moved or disappeared. */
   onNotice?: (message: string) => void
   /** A drop on another section, including nested level metadata, via ViewsPane's existing optimistic write path. */
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
-  /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
+  /** The read-only pages (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
-  /** "Card style ›" in a card's right-click (YAZ-4906, YAZ-4834 P5): the note's `color`, `text_color` and `weight`, as the calendar card's. Absent: no item. */
+  /** "Card style ›" in a card's right-click (YAZ-4906, YAZ-4834 P5): the page's `color`, `text_color` and `weight`, as the calendar card's. Absent: no item. */
   onStyle?: (path: string, writes: CardStyleWrite[]) => void
   /** The last failed move, flagged inline on its card. */
   moveError: { path: string; message: string } | null
-  /** Create a note seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
+  /** Create a page seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
-  /** "Show New buttons" (YAZ-3746 13BL): false drops each column's "+ New card" and its header's "+"; the header menu's New note in this group stays. */
+  /** "Show New buttons" (YAZ-3746 13BL): false drops each column's "+ New card" and its header's "+"; the header menu's New page in this group stays. */
   newCards?: boolean
-  /** The card menu's note items (YAZ-3746 13BO): Open, the new note beside a card, Duplicate, Delete. Absent: none. */
-  noteDoors?: CardNoteDoors
-  /** ViewsPane's whole-vault resolver: a column header and a card value read an id link as its note's title (YAZ-2293 D8). */
+  /** The card menu's page items (YAZ-3746 13BO): Open, the new page beside a card, Duplicate, Delete. Absent: none. */
+  pageDoors?: CardPageDoors
+  /** ViewsPane's whole-vault resolver: a column header and a card value read an id link as its page's title (YAZ-2293 D8). */
   resolve?: Resolver
 }
 
@@ -79,10 +80,10 @@ export interface BoardViewProps {
  * as kanban columns on one horizontally scrolling row. With two group levels, each outer remains
  * one column: merge-rule `direct` cards come first, then compact inner sections stack vertically.
  * Every level uses the shared `GroupHeader` (chevron, typed value, count, per-section summaries)
- * over its cards: `file.name`, when present in `order`, as the title button → `onOpenFile`, then
+ * over its cards: `file.name`, when present in `order`, as the title button (a click on the card), then
  * the view's other `order` properties as small label/value rows typed like table cells. A card is
- * a focusable cell (YAZ-1557 D2): a plain click selects it, arrows walk the cards, and the title,
- * Enter, or a modifier opens through `lib/openGesture.ts` — the table's exact rule. Column
+ * a focusable cell (YAZ-1557 D2): a click selects it and opens it the Calendar's way (YAZ-5582: "Clicking a card
+ * opens", ⌘ a background tab, ⌥ the right panel), arrows walk the cards, and Enter opens by the table's rule. Column
  * width follows `cardSize` (shared `cardWidth`: a number = px, legacy small/medium/large values
  * remain readable as 220/280/340, and absent or invalid values default to 280). Collapsing a
  * column hides its cards and
@@ -115,13 +116,14 @@ export function BoardView({
   onOpenFileRight,
   onOpenFileBackground,
   onOpenWindow,
+  clickOpens = 'background',
   windowLink,
   onNotice,
   onMoveToGroup,
   moveError,
   onNewInGroup,
   newCards = true,
-  noteDoors,
+  pageDoors,
   resolve,
   readOnly = NO_READ_ONLY,
   onStyle,
@@ -134,7 +136,7 @@ export function BoardView({
   const adds = levels.map((_, level) => groupTakesNew(view, level, settings.columns))
   /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES; a fold never plays (13A). */
   const flipRoot = useFlip(collapsed.join('\u001e'))
-  // The note window (YAZ-4547 D24): column by column, top to bottom, collapsed sections left out; the board's root
+  // The page window (YAZ-4547 D24): column by column, top to bottom, collapsed sections left out; the board's root
   // is the FLIP root too, so one stable ref callback sets both.
   const windowOrder = useMemo(() => shownRows(groups, [], collapsed), [groups, collapsed])
   const boardRef = useRef<HTMLDivElement | null>(null)
@@ -190,6 +192,8 @@ export function BoardView({
   )
   // ⌘F's jump to a card not drawn yet draws its list down to it; the find bar scrolls to it once it mounts.
   const find = useContext(ViewFind)
+  /** The read-only cards (YAZ-5587): which ask, which never move, which wear a lock. */
+  const itemLock = useItemLock(readOnly)
   useEffect(() => {
     if (find === null) return
     find.scrollTo = (path) => void revealCard(path)
@@ -198,7 +202,7 @@ export function BoardView({
     }
   }, [find, revealCard])
   // The mini window's step onto a card not drawn yet: draw it, then show it (two frames: the commit, then its layout).
-  useNoteWindowItems(windowLink, windowOrder, boardRef, (current) => {
+  usePageWindowItems(windowLink, windowOrder, boardRef, (current) => {
     if (current !== null && revealCard(current)) requestAnimationFrame(() => requestAnimationFrame(() => windowLink?.show?.()))
   })
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
@@ -206,13 +210,13 @@ export function BoardView({
   /** The exact rendered record targeted by the latest whole-card secondary click. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /**
-   * The card menu's groups: the note items, then "Card style ›" (YAZ-4906, YAZ-4834 P5: the card shows the note's style,
-   * so it sets it here too) when the pane writes styles and the note is not read-only. The panel's ✓ marks are the
+   * The card menu's groups: the page items, then "Card style ›" (YAZ-4906, YAZ-4834 P5: the card shows the page's style,
+   * so it sets it here too) when the pane writes styles and the page is not read-only. The panel's ✓ marks are the
    * card's style NOW (the rows, optimistic).
    */
   const cardMenu = (path: string) => {
-    const items = cardMenuItems(noteDoors, path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => noteDoors.newBelow!(path) })
-    if (onStyle === undefined || readOnly.has(path)) return items
+    const items = cardMenuItems(pageDoors, path, () => setMenu(null), pageDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => pageDoors.newBelow!(path) })
+    if (onStyle === undefined || itemLock.fixed(path)) return items
     const properties = records.find((r) => r.path === path)?.properties ?? {}
     return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(path, writes)} />] }
   }
@@ -224,11 +228,12 @@ export function BoardView({
       suppressClick.current = false
     })
   }
-  /** The one open rule (YAZ-1557), shared with the table: ⌘ → background tab, ⌥ → right panel, plain → current tab, ⇧ → nothing. */
+  /** Enter's rule (YAZ-1557, YAZ-4605 D56), the table's: plain → this tab, ⌘ → a background tab, ⌥ → the right panel, ⇧ → the mini window. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
+  /** A click's rule (YAZ-5582), the Calendar's: plain → "Clicking a card opens", ⌘ → a background tab, ⌥ → the right panel, ⇧⌘ → a new window, ⇧ → nothing. */
   const openCard = (row: Row, e: Modifiers): void => {
     if (suppressClick.current) return
-    openByGesture(e, row.record.path, openHandlers)
+    clickCard(e, row.record.path, clickOpens, { onOpenFileRight, onOpenFileBackground, onOpenWindow })
   }
   /**
    * Arrow keys walk cards like table cells (YAZ-1557 D2): ↑↓ through the column's cards in DOM
@@ -255,7 +260,7 @@ export function BoardView({
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (
       <div className="view-board__hint">
-        <p>{unit('Board views group notes into columns. Pick a property to group by.')}</p>
+        <p>{unit('Board views group pages into columns. Pick a property to group by.')}</p>
         <button
           type="button"
           className="view-menu__action"
@@ -283,12 +288,9 @@ export function BoardView({
           key={key}
           type="button"
           className="view-board__title"
-          onClick={(event) => {
-            event.stopPropagation()
-            if (!newWindowClick(event, rowPage(row.record.path))) openCard(row, event)
-          }}
+          // No click of its own: it reaches the card's, which selects the card and opens it (YAZ-5582 "body or title").
         >
-          {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
+          <ItemName mark={itemLock.mark(row.record.path)}>{rowTitle(row)}</ItemName>
         </button>
       )
     return <CardProp def={def} view={view} row={row} field={key} resolve={resolve} />
@@ -306,7 +308,8 @@ export function BoardView({
     setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title })
   }
   const dragSource = (row: Row, group: Group, at: GroupSpot): Record<string, unknown> => {
-    const source = dnd.source(row.record.path, group, at, readOnly.has(row.record.path))
+    // A page the vault's Read only locks still drags: its drop asks "Allow edits?" first (YAZ-5411).
+    const source = dnd.source(row.record.path, group, at, itemLock.fixed(row.record.path))
     const onDragEnd = source.onDragEnd as ((event: ReactDragEvent) => void) | undefined
     if (onDragEnd === undefined) return source
     return {
@@ -328,19 +331,17 @@ export function BoardView({
           key={row.record.path}
           data-flip-key={row.record.path}
           className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}${currentItemClass(windowLink, row.record.path)}`}
-          // The note's `color`, `text_color` and `weight` dress the card here too (YAZ-4906, views.css), the calendar card's attributes.
+          // The page's `color`, `text_color` and `weight` dress the card here too (YAZ-4906, views.css), the calendar card's attributes.
           {...cardStyleAttrs(row.record.properties)}
           {...dragSource(row, group, at)}
           {...hover.itemProps(row.record.path)}
-          // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
-          // title, Enter, or a modifier opens — so a card without a title still has a name to read.
+          // Every card is a focusable "cell" (YAZ-1557 D2): a click selects it (arrows walk on from it) and
+          // opens it as "Clicking a card opens" says (YAZ-5582), so a card without a title still has a name to read.
           tabIndex={0}
           aria-label={nameKey === undefined ? row.record.title : undefined}
-          // ⇧⌘-click opens the note in a new window (YAZ-4444 D32), asked before ⇧ vetoes the open.
           onClick={(event) => {
-            if (newWindowClick(event, rowPage(row.record.path))) return
-            if (openTarget(event) === 'current') event.currentTarget.focus()
-            else openCard(row, event)
+            event.currentTarget.focus()
+            openCard(row, event)
           }}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget || event.key !== 'Enter') return

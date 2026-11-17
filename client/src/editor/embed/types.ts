@@ -1,5 +1,5 @@
 /**
- * THE BOARD WINDOW'S CONTRACT (YAZ-4820): what a host (the note's `![[…]]` decorations, 2A; the image node view, 2B)
+ * THE BOARD WINDOW'S CONTRACT (YAZ-4820): what a host (the page's `![[…]]` decorations, 2A; the image node view, 2B)
  * gives a window, and what the window gives back. The window (`boardWindow.ts`, 1B) knows nothing about ProseMirror;
  * a host knows nothing about pan, zoom or pictures. This file is the types and the one `loadBoardWindow`, so a host can
  * import it eagerly while the window itself stays in a lazy chunk.
@@ -28,17 +28,17 @@ export interface BoardRef {
 
 export type OpenHow = 'thisTab' | 'backgroundTab'
 
-/** A host's side of one window. Every callback is optional where a host may not offer it (a read-only note, say). */
+/** A host's side of one window. Every callback is optional where a host may not offer it (a read-only page, say). */
 export interface BoardWindowHost {
   ref: BoardRef
   /** The options as the text holds them now; null = none written yet (the window fits, at the default size). */
   options: EmbedOptions | null
-  /** False in a read-only note (item 24): pan and zoom work, nothing is reported to write, no handles. */
+  /** False in a read-only page (item 24): pan and zoom work, nothing is reported to write, no handles. */
   editable: boolean
   /** The editor column's width in CSS px: the widest a window may be, and a new window's width (D11). */
   columnWidth: () => number
   /**
-   * The element the note scrolls in (YAZ-4862), the window's "one screen" for its picture (D5); absent or null = the
+   * The element the page scrolls in (YAZ-4862), the window's "one screen" for its picture (D5); absent or null = the
    * viewport. `mountInBox` finds it once, at the mount.
    */
   scrollRoot?: Element | null
@@ -77,7 +77,7 @@ export interface WindowMenuRow {
 export interface BoardWindowHandle {
   /** The window's root element; the host puts it in its widget / node view. */
   readonly dom: HTMLElement
-  /** New host facts (the text changed, a rename resolved, the note went read-only). Option changes are ignored while a gesture runs (item 17). */
+  /** New host facts (the text changed, a rename resolved, the page went read-only). Option changes are ignored while a gesture runs (item 17). */
   update(host: Partial<Omit<BoardWindowHost, 'columnWidth'>>): void
   /** The host's selection covers the whole embed: handles show, keys go to the window (D10). */
   setSelected(on: boolean): void
@@ -93,7 +93,7 @@ export interface BoardWindowHandle {
   fit(): void
   /** Show page `id` of a diagram, fitted (the layer's page tabs, YAZ-4943); written only as a page change is. */
   showPage(id: string): void
-  /** A view still waiting for its 800 ms write goes to `onOptions` now (A8): the note saves, or goes. */
+  /** A view still waiting for its 800 ms write goes to `onOptions` now (A8): the page saves, or goes. */
   flush(): void
   destroy(): void
 }

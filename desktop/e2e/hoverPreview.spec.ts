@@ -1,6 +1,6 @@
 /**
  * The hover preview on the new tab page (YAZ-3403 D1, D2, D7) against the REAL app: a window with no tabs shows the
- * page; a rest on a recent note opens the sidebar's note panel beside the row, with the top of the note. Then
+ * page; a rest on a recent page opens the sidebar's page panel beside the row, with the top of the page. Then
  * Settings › Files & Links › Preview on hover › New tab page goes off: the state file says so, no panel opens on the
  * page, and the sidebar (its own switch) still previews (S36). Same harness as startPage.spec.ts (temp
  * `--user-data-dir`, a COPY of the generated fixture vault), hidden. The dwell, each close and the other places are
@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { appWindow, buildFixtureVault, clickMenuItem, copyVault, fileRow, launchApp, readState, seededState, shoot, wholeRow } from './helpers'
 
-/** The body of the fixture's `Ideas.md` (helpers.buildFixtureVault): the top of the note that the panel shows. */
+/** The body of the fixture's `Ideas.md` (helpers.buildFixtureVault): the top of the page that the panel shows. */
 const IDEAS_BODY = 'synthetic-idea-body'
 const MINUTE = 60_000
 /** YAZ-3508: a code file whose card shows coloured code. */
@@ -31,7 +31,7 @@ let win: Page
 test.describe.configure({ mode: 'serial' })
 
 const recent = (w: Page) => w.locator('.start__column[data-col="recent"] .start__row')
-const notePanel = (w: Page) => w.locator('.note-preview')
+const pagePanel = (w: Page) => w.locator('.page-preview')
 const dialog = (w: Page) => w.locator('.settings-dialog[role="dialog"]')
 
 test.beforeAll(async () => {
@@ -46,7 +46,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('YAZ-3403 S1, S15, S36: a rest on a recent note of the new tab page shows its top beside the row; with "New tab page" off in Settings no panel opens there, and the sidebar still previews', async () => {
+test('YAZ-3403 S1, S15, S36: a rest on a recent page of the new tab page shows its top beside the row; with "New tab page" off in Settings no panel opens there, and the sidebar still previews', async () => {
   const roadmap = path.join(vault, 'Projects', 'Roadmap.md')
   const ideas = path.join(vault, 'Ideas.md')
   // A window with no tabs shows the new tab page; its "Recently viewed" column reads the seeded open history.
@@ -59,18 +59,18 @@ test('YAZ-3403 S1, S15, S36: a rest on a recent note of the new tab page shows i
   win = await appWindow(app, 'w1')
   await expect(recent(win).locator('.start__name')).toHaveText(['Roadmap', 'Ideas'])
 
-  // S1: the rest opens the sidebar's note panel, beside the row, with the note's name and the top of its text.
+  // S1: the rest opens the sidebar's page panel, beside the row, with the page's name and the top of its text.
   const row = recent(win).nth(1)
   await row.hover()
-  await expect(notePanel(win)).toBeVisible()
-  await expect(notePanel(win).locator('.board-preview__name')).toHaveText('Ideas')
-  await expect(notePanel(win).locator('.note-preview__body')).toContainText(IDEAS_BODY)
-  const [rowBox, panelBox] = await Promise.all([row.boundingBox(), notePanel(win).boundingBox()])
+  await expect(pagePanel(win)).toBeVisible()
+  await expect(pagePanel(win).locator('.board-preview__name')).toHaveText('Ideas')
+  await expect(pagePanel(win).locator('.page-preview__body')).toContainText(IDEAS_BODY)
+  const [rowBox, panelBox] = await Promise.all([row.boundingBox(), pagePanel(win).boundingBox()])
   expect(panelBox!.x >= rowBox!.x + rowBox!.width || panelBox!.x + panelBox!.width <= rowBox!.x).toBe(true) // beside the row, not over it
   await shoot(win, 'hover-preview-01-new-tab-page')
   // S12: the pointer leaves the row, and the panel goes.
   await win.locator('.start__heading').first().hover()
-  await expect(notePanel(win)).toHaveCount(0)
+  await expect(pagePanel(win)).toHaveCount(0)
 
   // S15: Settings › Files & Links › Preview on hover › New tab page: Off. The state file keeps it.
   await clickMenuItem(app, 'menu.app.settings', 'w1')
@@ -86,13 +86,13 @@ test('YAZ-3403 S1, S15, S36: a rest on a recent note of the new tab page shows i
   // No panel on the page now: the rest is well past the 400 ms dwell.
   await recent(win).nth(1).hover()
   await win.waitForTimeout(1_000)
-  await expect(notePanel(win)).toHaveCount(0)
+  await expect(pagePanel(win)).toHaveCount(0)
   await shoot(win, 'hover-preview-02-new-tab-page-off')
 
   // S36: each other place keeps its own switch — a Files row of the sidebar still previews.
   await fileRow(win, 'Ideas').hover()
-  await expect(notePanel(win)).toBeVisible()
-  await expect(notePanel(win).locator('.note-preview__body')).toContainText(IDEAS_BODY)
+  await expect(pagePanel(win)).toBeVisible()
+  await expect(pagePanel(win).locator('.page-preview__body')).toContainText(IDEAS_BODY)
 })
 
 /** The distinct colours of the coloured spans in the code card. */

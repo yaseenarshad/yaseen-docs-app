@@ -1,8 +1,8 @@
 /**
  * A folder page row's right-click (`PageContextMenu`):
  * - YAZ-4797 demo: the shortcut items, from the page's `ShortcutActions`. On a shortcut row: "Go to where it lives
- *   (<folder>)" and "Remove shortcut from <page>"; on every note row: "Add shortcut to ›", the vault's folders less the
- *   one the note lives in, with a search box (Enter picks the first match). A read-only note, a folder row, or a page
+ *   (<folder>)" and "Remove shortcut from <page>"; on every page row: "Add shortcut to ›", the vault's folders less the
+ *   one the page lives in, with a search box (Enter picks the first match). A read-only page, a folder row, or a page
  *   with no doors (a vault without IDs) gets none.
  * - YAZ-4778 demo: "Open in new window" is its own row, right after "Open in new tab", no longer inside "Open in ›".
  */
@@ -51,7 +51,7 @@ function menu(path: string, d: ShortcutDoors | null, onClose = vi.fn()) {
   act(() =>
     root!.render(
       <ShortcutActions.Provider value={d}>
-        <PageContextMenu x={0} y={0} path={path} title="note" onOpenBackground={vi.fn()} onClose={onClose} />
+        <PageContextMenu x={0} y={0} path={path} title="page" onOpenBackground={vi.fn()} onClose={onClose} />
       </ShortcutActions.Provider>,
     ),
   )
@@ -74,7 +74,7 @@ describe('YAZ-4797 demo: shortcut items in a folder page row menu', () => {
     expect(d.goHome).toHaveBeenCalledExactlyOnceWith('/vault/Recipes/Desserts')
   })
 
-  it('YAZ-4797 demo: Remove shortcut takes the note off this page only', () => {
+  it('YAZ-4797 demo: Remove shortcut takes the page off this page only', () => {
     const d = doors()
     const onClose = menu(TIRAMISU, d)
     act(() => mainItems().find((b) => b.textContent === 'Remove shortcut from Party menu')!.click())
@@ -82,7 +82,7 @@ describe('YAZ-4797 demo: shortcut items in a folder page row menu', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('YAZ-4797 demo: a note that lives here has only Add shortcut to', () => {
+  it('YAZ-4797 demo: a page that lives here has only Add shortcut to', () => {
     menu(GARLIC, doors())
     const text = mainText()
     expect(text).toContain('Add shortcut to')
@@ -90,7 +90,7 @@ describe('YAZ-4797 demo: shortcut items in a folder page row menu', () => {
     expect(text.some((t) => t?.startsWith('Remove shortcut'))).toBe(false)
   })
 
-  it('YAZ-4797 demo: Add shortcut to lists the folders less the one the note lives in; a pick adds it there', () => {
+  it('YAZ-4797 demo: Add shortcut to lists the folders less the one the page lives in; a pick adds it there', () => {
     const d = doors()
     menu(GARLIC, d)
     openAddShortcut()
@@ -119,7 +119,7 @@ describe('YAZ-4797 demo: shortcut items in a folder page row menu', () => {
     expect(host!.querySelector('.ctx-menu__empty')?.textContent).toBe('No folder matches')
   })
 
-  it('YAZ-4797 demo: a read-only note, a folder row, or no doors: no shortcut items', () => {
+  it('YAZ-4797 demo: a read-only page, a folder row, or no doors: no shortcut items', () => {
     const has = () => mainText().some((t) => t === 'Add shortcut to' || t?.startsWith('Remove shortcut') || t?.startsWith('Go to where'))
     menu(TIRAMISU, doors({ locked: () => true }))
     expect(has()).toBe(false)
@@ -144,7 +144,7 @@ describe('YAZ-4778 demo: Open in new window is its own row', () => {
     act(() =>
       root!.render(
         <PageActions.Provider value={{ openNewWindow, reveal: vi.fn() }}>
-          <PageContextMenu x={0} y={0} path="/vault/note.md" title="note" onOpenBackground={vi.fn()} onClose={vi.fn()} />
+          <PageContextMenu x={0} y={0} path="/vault/page.md" title="page" onOpenBackground={vi.fn()} onClose={vi.fn()} />
         </PageActions.Provider>,
       ),
     )
@@ -152,7 +152,7 @@ describe('YAZ-4778 demo: Open in new window is its own row', () => {
     act(() => mainItems().find((b) => b.textContent === 'Open in')!.click())
     expect(subItems().map((b) => b.textContent)).not.toContain('New window')
     act(() => mainItems().find((b) => b.textContent === 'Open in new window')!.click())
-    expect(openNewWindow).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+    expect(openNewWindow).toHaveBeenCalledExactlyOnceWith('/vault/page.md')
   })
 })
 

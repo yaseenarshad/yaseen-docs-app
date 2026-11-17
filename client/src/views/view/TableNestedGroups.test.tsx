@@ -289,7 +289,7 @@ describe('three levels (YAZ-4531)', () => {
     expect(links(el)).toEqual(['a12'])
   })
 
-  it('windowing keeps working with 600 notes over three levels; every line is one row height', () => {
+  it('windowing keeps working with 600 pages over three levels; every line is one row height', () => {
     const many: IndexRecord[] = Array.from({ length: 600 }, (_, i) =>
       rec(`n${String(i).padStart(3, '0')}`, { dept: i % 2 ? 'odd' : 'even', proc: `p${i % 3}`, step: `s${i % 5}` }),
     )

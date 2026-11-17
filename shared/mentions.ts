@@ -1,13 +1,13 @@
 /**
  * Who links to what (YAZ-4738 L5): ONE pass over an index snapshot's links, the reverse map that the "Linked mentions"
- * section under each note, the Linked mentions column and `yaseendocs mentions` (L6) all read. Pure; the caller hands
+ * section under each page, the Linked mentions column and `yaseendocs mentions` (L6) all read. Pure; the caller hands
  * in the resolver (the app's window resolver, or the command's own over the same scan), so all three agree.
  */
 import { folderSettingsLinks } from './folderSettingsLinks'
 import { exactLinkTarget } from './linkRewrite'
 import type { IndexRecord } from './types'
 
-/** Every target a note links to: index links and embeds, then the nested settings leaves (lazily). */
+/** Every target a page links to: index links and embeds, then the nested settings leaves (lazily). */
 export function* referenceTargets(record: IndexRecord): Generator<string> {
   yield* record.links
   yield* record.embeds
@@ -23,9 +23,9 @@ const dirOf = (path: string): string => path.slice(0, path.lastIndexOf('/'))
 const byPath = (a: IndexRecord, b: IndexRecord): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
 
 /**
- * Path → the records that mention it, each list path-sorted. A note mentions what its `links` and `embeds` resolve to
+ * Path → the records that mention it, each list path-sorted. A page mentions what its `links` and `embeds` resolve to
  * (one entry however many mentions it holds); a folder, as its settings record, what its `referenceTargets` resolve to.
- * A page never mentions itself: a note its own path, a folder its own directory. One resolver call per link.
+ * A page never mentions itself: a page its own path, a folder its own directory. One resolver call per link.
  */
 export function mentionsOf(records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: (target: string) => string | null): Map<string, IndexRecord[]> {
   const map = new Map<string, IndexRecord[]>()

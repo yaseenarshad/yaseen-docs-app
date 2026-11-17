@@ -1,7 +1,7 @@
 /**
  * YAZ-4591 in the table: a Number or Date column's format shapes its cells (S21/S22) while the
  * editor keeps the raw value, Edit column writes the format into the declaration, and renaming an
- * option in Edit column asks the host to rename it in the notes too (S24) — `setColumn`'s `rename`.
+ * option in Edit column asks the host to rename it in the pages too (S24) — `setColumn`'s `rename`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -124,11 +124,11 @@ describe('Edit column', () => {
     expect([...byLabel<HTMLSelectElement>('Format of Due').options].map((o) => o.textContent)).toEqual(['2026-11-07', 'Nov 7, 2026', 'Relative (in 3 days)'])
   })
 
-  it('S24: renaming an option asks the host to rename it in the notes too', () => {
+  it('S24: renaming an option asks the host to rename it in the pages too', () => {
     const { el, setColumn } = mount({ stage: SELECT })
     editColumn(el, 3)
     click(byLabel('Edit option Todo'))
-    expect(document.body.textContent).toContain('Renaming this option changes it in every note that holds it.')
+    expect(document.body.textContent).toContain('Renaming this option changes it in every page that holds it.')
     setValue(byLabel<HTMLInputElement>('Option name'), 'Next')
     act(() => void byLabel<HTMLInputElement>('Option name').form!.requestSubmit())
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('stage', { kind: 'select', options: ['Next', 'Done'] }, SELECT, { from: 'Todo', to: 'Next' })

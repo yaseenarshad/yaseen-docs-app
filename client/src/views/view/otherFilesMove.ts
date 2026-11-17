@@ -17,21 +17,21 @@ export interface TraySubfolder {
 
 /**
  * The views' door for a WHOLE subfolder (YAZ-4747 OF1), beside `OtherFilesMove` and under the same rule (null while
- * the tray takes no moves). `FolderView` provides it; `ViewsPane` provides it again with `move` bound to the notes its
+ * the tray takes no moves). `FolderView` provides it; `ViewsPane` provides it again with `move` bound to the pages its
  * view shows, so the ask (OF2) counts what the table shows.
  */
 export interface FolderTray {
-  /** The subfolder directly under the page that holds this row's page (a note in Desserts/Cakes → Desserts); null for a note of the page itself, or a folder already moved. */
+  /** The subfolder directly under the page that holds this row's page (a page in Desserts/Cakes → Desserts); null for a page of the page itself, or a folder already moved. */
   folderOf: (rowPath: string) => TraySubfolder | null
   /** The same for a Folder group's key, a root-relative folder: only a subfolder directly under the page. */
   folderAt: (rel: string) => TraySubfolder | null
-  /** Move it: the ask first when the view shows notes of it (`shown`, the view's note paths). */
+  /** Move it: the ask first when the view shows pages of it (`shown`, the view's page paths). */
   move: (dir: string, shown?: readonly string[]) => void
 }
 
 export const OtherFilesFolderMove = createContext<FolderTray | null>(null)
 
-/** A note row can move; a folder row (YAZ-4579 D32) cannot: its page is its folder. */
+/** A page row can move; a folder row (YAZ-4579 D32) cannot: its page is its folder. */
 export const movesToOtherFiles = (path: string): boolean => rowPage(path) === path
 
 /**

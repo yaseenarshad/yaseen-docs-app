@@ -180,10 +180,10 @@ describe('where arrows stay as typed', () => {
 
   it('as the end of an open `<!--` in the line; after it closes, arrows work again', async () => {
     const { crepe, view } = await mount('a\n')
-    type(view, ' <!-- note -->')
-    expect(saved(crepe)).toContain('<!-- note -->')
+    type(view, ' <!-- page -->')
+    expect(saved(crepe)).toContain('<!-- page -->')
     type(view, ' then -> b')
-    expect(saved(crepe)).toContain('<!-- note --> then → b')
+    expect(saved(crepe)).toContain('<!-- page --> then → b')
   })
 
   it('with Settings › Editor › Typing › Arrows off (D8)', async () => {

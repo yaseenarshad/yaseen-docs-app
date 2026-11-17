@@ -634,7 +634,7 @@ describe('page links (YAZ-4039)', () => {
     expect(surface.props?.links).toBeUndefined()
   })
 
-  it("right-click on a pill opens the note's link menu at the pointer, and ⌘-click opens the page behind", async () => {
+  it("right-click on a pill opens the page's link menu at the pointer, and ⌘-click opens the page behind", async () => {
     const onOpenLinkBackground = vi.fn()
     render({ wikilinks: linkSource(), onOpenLink: vi.fn(), onOpenLinkBackground })
     await flush()

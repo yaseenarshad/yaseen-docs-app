@@ -15,7 +15,7 @@ import type { MenuAction, MenuItem } from '../../sidebar/menuSections'
 import { getMarkdownForSave, setMarkdown, zoomPageTo } from '../createCrepe'
 import { applyExternalMarkdown } from '../external/applyExternalMarkdown'
 import { mount, pressKey, typeText, unmountAll } from '../marks/markTestKit'
-import { noteMenuSections } from '../noteMenu'
+import { pageMenuSections } from '../pageMenu'
 import { canZoomInto, getZoomedItemPos, zoomKeyAt, ZOOM_CRUMB_CLASS, ZOOM_HIDDEN_CLASS } from '../outline/zoom'
 import { cellNoteButtonPlacements } from './cellNoteButton'
 import { setCellNoteButtonSetting } from './timeFormatSetting'
@@ -187,7 +187,7 @@ describe('the cell note card (the demo)', () => {
   })
 })
 
-describe('previous and next note, and the open note\'s cell (round 2 of the demo)', () => {
+describe('previous and next note, and the open page\'s cell (round 2 of the demo)', () => {
   const TWO = '| a          | b          |\n| ---------- | ---------- |\n| x[^cell-2] | y          |\n| z          | w[^cell-1] |\n\n[^cell-2]: first\n\n[^cell-1]: second\n\nEnd\n'
   const head = (root: HTMLElement) => card(root)!.querySelector('.cell-note-card__head')!
   const steps = (root: HTMLElement) => [...head(root).querySelectorAll<HTMLButtonElement>('.cell-note-card__step:not(.cell-note-card__history)')]
@@ -337,7 +337,7 @@ describe('round 3 of the demo', () => {
 
 describe('round 4 of the demo', () => {
   const menu = (view: EditorView, row: number, col: number): MenuAction[] =>
-    noteMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
+    pageMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
       .flat()
       .flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat()))
 
@@ -463,7 +463,7 @@ describe('⌘. on a cell (D9) and an empty note (D15)', () => {
 
 describe('the table menu (D8)', () => {
   const all = (view: EditorView, row: number, col: number): MenuAction[] =>
-    noteMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
+    pageMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
       .flat()
       .flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat()))
   const ids = (view: EditorView, row: number, col: number) => all(view, row, col).map((item) => item.id).filter((id) => id.includes('note'))
@@ -611,7 +611,7 @@ describe('the "Add cell note" button (D8, 5A-7)', () => {
     expect(shownButton()).toBeNull()
   })
 
-  it('a typed key in the cell places nothing; a read-only note shows no button', async () => {
+  it('a typed key in the cell places nothing; a read-only page shows no button', async () => {
     const { crepe, view } = await mount(NOTES, zoomOpts())
     boxes(view)
     view.hasFocus = () => true
@@ -788,7 +788,7 @@ describe('the full-text card of a cut cell (YAZ-4901)', () => {
     expect(card()).toBeNull()
   })
 
-  it('a read-only note shows the card too', async () => {
+  it('a read-only page shows the card too', async () => {
     const view = await open()
     cut(view, 3, 1)
     view.setProps({ editable: () => false })
@@ -810,7 +810,7 @@ describe('the corner opens the note (5A-18)', () => {
   })
 })
 
-describe('a read-only note (5A-6, 5A-22)', () => {
+describe('a read-only page (5A-6, 5A-22)', () => {
   const EMPTY = '| a          |\n| ---------- |\n| b[^cell-1] |\n\n[^cell-1]: <br />\n\nEnd\n'
 
   it('closing an empty cell note\'s card changes nothing', async () => {
@@ -824,7 +824,7 @@ describe('a read-only note (5A-6, 5A-22)', () => {
     expect(view.state.doc.eq(doc)).toBe(true)
   })
 
-  it('canOpenCellNote: a read-only note opens only a cell note that is there', async () => {
+  it('canOpenCellNote: a read-only page opens only a cell note that is there', async () => {
     const { crepe, view } = await mount(NOTES, zoomOpts())
     expect(canOpenCellNote(view, cellPos(view, 3, 1))).toBe(true)
     crepe.setReadonly(true)

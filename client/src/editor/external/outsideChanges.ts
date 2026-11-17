@@ -1,19 +1,19 @@
 /**
- * What changed outside the app, shown in the open note (YAZ-3704 D3–D9) — the engine behind
+ * What changed outside the app, shown in the open page (YAZ-3704 D3–D9) — the engine behind
  * `OutsideChangesChannel` and the one-line note (`OutsideChangesBar.tsx`).
  *
  * Input: every outside edit that lands as a diff or a merge (`applyExternalMarkdown`,
  * `mergeExternalMarkdown`) is ONE transaction with `OUTSIDE_RANGES_META`: where each new piece sits in
- * the new document, and the text it replaced. A quiet apply (a copy of this note in another tab saved:
+ * the new document, and the text it replaced. A quiet apply (a copy of this page in another tab saved:
  * the user's own typing) carries none, so it never glows. A rebuild makes a new state, so the list starts
- * empty; the host then says `markWholeNote`.
+ * empty; the host then says `markWholePage`.
  *
  * The list (D3) lives in plugin state, memory only, for this editor, nothing saved to disk. When the editor is
  * destroyed, its tab keeps the list for this page (`outsideChangesMemory.ts`), and an editor of the same tab and page
  * gets it back (`keptBack`). Every position is mapped through every transaction, as find and the fold plugin map
  * theirs. One change is one TEXTBLOCK (D4): ranges in one line are one change, and a range across several
  * textblocks (bullets added) is one change for each. More than `MAX_CHANGES` empties the list into
- * whole-note mode, with no glow.
+ * whole-page mode, with no glow.
  *
  * Drawing: the changed words glow (inline `outside-change`); removed text is a thin red mark (D7, a widget: not in
  * the doc, never copied or saved). The mouse on either shows at once a box with the line word by word: the words
@@ -26,7 +26,7 @@
  * Check off (D8): **Checked**, **Mark all checked**, the Glow time (D5), or the user's OWN edit in a
  * change's textblock — never an outside edit, an undo or redo, a transaction a plugin appends, or one kept out
  * of the history (Milkdown's heading-id sync after an outside heading edit, YAZ-3844). A timed Glow ends
- * whole-note mode at the same time; until checked, it stays until Dismiss.
+ * whole-page mode at the same time; until checked, it stays until Dismiss.
  *
  * The numbered list (YAZ-3998, `OutsideChangesList.tsx`): each change gets a number when it comes, in the order the changes
  * happened (one save's changes top to bottom), and keeps it until it is checked off; the numbers start at 1 again once the
@@ -37,8 +37,8 @@
  * leaves the folds that hide the active change open: the landing. Outside the zoomed bullet, the page
  * zooms out first and the host tells the tab.
  *
- * Cell notes (YAZ-4319): a change inside a cell note glows in a block the page hides until the note's card opens. So its
- * cell's note mark glows too (`OUTSIDE_CELL_CLASS` on the cell), and Next opens the note as a card beside its cell, as
+ * Cell notes (YAZ-4319): a change inside a cell note glows in a block the cell note hides until its card opens. So its
+ * cell's note mark glows too (`OUTSIDE_CELL_CLASS` on the cell), and Next opens the cell note as a card beside its cell, as
  * find does (YAZ-3818 D19), with the caret where it was. Next closes the card it opened when it moves on; Mark all
  * checked leaves it open: the landing.
  */
@@ -67,14 +67,14 @@ export const OUTSIDE_REMOVED_CLASS = 'outside-removed'
 /** On each changed textblock: its hover shows the Checked button (outsideChanges.css). */
 export const OUTSIDE_BLOCK_CLASS = 'outside-change-block'
 export const OUTSIDE_CHECKED_CLASS = 'outside-checked'
-/** A table cell whose cell note holds a change (YAZ-4319): its note mark glows, since the note itself is hidden. */
+/** A table cell whose cell note holds a change (YAZ-4319): its note mark glows, since the cell note itself is hidden. */
 export const OUTSIDE_CELL_CLASS = 'outside-change-cell'
 /** On a glow or a removed mark: the mouse on it shows the box. Its value is the box's text in short ("Before: …"). */
 export const OUTSIDE_TIP_ATTR = 'data-outside-tip'
 /** The word-by-word box (YAZ-3989): one for each editor, on the body, hidden while the mouse is on no change. */
 export const OUTSIDE_TIP_CLASS = 'outside-tip'
 
-/** D3: above this many changes the list empties and the note is "changed as a whole". */
+/** D3: above this many changes the list empties and the page is "changed as a whole". */
 export const MAX_CHANGES = 200
 /** D7: a removed text longer than this is cut in the mark's tip, with "…"; so is a Before line (YAZ-3947). */
 const REMOVED_TITLE_CHARS = 200
@@ -111,9 +111,9 @@ interface OutsideState {
   lastNumber: number
   /** Moves each time the decorations are built again: the list, a change's text, or the ring changed. */
   version: number
-  wholeNote: boolean
-  /** When whole-note mode ends with a timed Glow (ms since the epoch); null = until Dismiss. */
-  wholeNoteEnds: number | null
+  wholePage: boolean
+  /** When whole-page mode ends with a timed Glow (ms since the epoch); null = until Dismiss. */
+  wholePageEnds: number | null
   glow: OutsideChangeGlow
   /** Items Next opened; Next folds them again when it moves on. */
   revealed: ReadonlySet<number>
@@ -481,21 +481,21 @@ const checkedButton = (id: number) => (view: EditorView): HTMLElement => {
 }
 
 /** The label of the cell note that holds the block at `pos`, or null. */
-const noteLabelAt = (doc: ProseNode, pos: number): string | null => {
-  const note = cellNoteAround(doc.resolve(pos))
-  return note === null ? null : (doc.nodeAt(note)!.attrs.label as string)
+const cellNoteLabelAt = (doc: ProseNode, pos: number): string | null => {
+  const cellNote = cellNoteAround(doc.resolve(pos))
+  return cellNote === null ? null : (doc.nodeAt(cellNote)!.attrs.label as string)
 }
 
 const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], activeId: number | null): DecorationSet => {
   if (changes.length === 0) return DecorationSet.empty
   const decorations: Decoration[] = []
   // The cell notes that hold a change: one walk finds their marks, only when there are any (YAZ-4319).
-  const notes = new Set<string>()
+  const cellNotes = new Set<string>()
   for (const change of changes) {
     const block = doc.nodeAt(change.pos)
     if (block === null) continue
-    const label = noteLabelAt(doc, change.pos)
-    if (label !== null) notes.add(label)
+    const label = cellNoteLabelAt(doc, change.pos)
+    if (label !== null) cellNotes.add(label)
     const active = change.id === activeId
     // A change with nothing to glow and no mark (an empty bullet added) wears the ring on its block.
     const ringOnBlock = active && change.glow.length === 0 && change.removed.length === 0
@@ -513,9 +513,9 @@ const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], act
       Decoration.widget(change.pos + 1 + block.content.size, checkedButton(change.id), { side: 1, ignoreSelection: true, stopEvent: () => true, key: `outside-checked-${change.id}` }),
     )
   }
-  if (notes.size > 0) {
+  if (cellNotes.size > 0) {
     doc.descendants((node, pos) => {
-      if (!isCellNoteMark(node) || !notes.has(node.attrs.label as string)) return true
+      if (!isCellNoteMark(node) || !cellNotes.has(node.attrs.label as string)) return true
       const cell = cellPosAround(doc.resolve(pos))
       if (cell !== null) decorations.push(Decoration.node(cell, cell + doc.nodeAt(cell)!.nodeSize, { class: OUTSIDE_CELL_CLASS }))
       return false
@@ -524,11 +524,11 @@ const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], act
   return DecorationSet.create(doc, decorations)
 }
 
-/** The bar's view of the list: the count, whole-note mode, and when the last timed glow goes (null while any waits for a check). */
-const snapshotOf = ({ changes, wholeNote, wholeNoteEnds }: OutsideState): OutsideChangesSnapshot => ({
+/** The bar's view of the list: the count, whole-page mode, and when the last timed glow goes (null while any waits for a check). */
+const snapshotOf = ({ changes, wholePage, wholePageEnds }: OutsideState): OutsideChangesSnapshot => ({
   count: changes.length,
-  wholeNote,
-  fadesAt: wholeNote ? wholeNoteEnds : changes.length > 0 && changes.every((change) => change.ends !== null) ? Math.max(...changes.map((change) => change.ends!)) : null,
+  wholePage,
+  fadesAt: wholePage ? wholePageEnds : changes.length > 0 && changes.every((change) => change.ends !== null) ? Math.max(...changes.map((change) => change.ends!)) : null,
 })
 
 const applyMeta = (meta: OutsideMeta, state: Omit<OutsideState, 'decorations'>): { next: Omit<OutsideState, 'decorations'>; redraw: boolean } => {
@@ -536,22 +536,22 @@ const applyMeta = (meta: OutsideMeta, state: Omit<OutsideState, 'decorations'>):
     case 'check':
       return { next: { ...state, changes: state.changes.filter((change) => change.id !== meta.id) }, redraw: true }
     case 'clear':
-      return { next: { ...state, changes: [], wholeNote: false, wholeNoteEnds: null, activeId: null }, redraw: true }
+      return { next: { ...state, changes: [], wholePage: false, wholePageEnds: null, activeId: null }, redraw: true }
     case 'whole':
       return state.glow === 'off'
         ? { next: state, redraw: false }
-        : { next: { ...state, changes: [], wholeNote: true, wholeNoteEnds: endsAt(state.glow, meta.now), activeId: null }, redraw: true }
+        : { next: { ...state, changes: [], wholePage: true, wholePageEnds: endsAt(state.glow, meta.now), activeId: null }, redraw: true }
     case 'glow': {
-      // Off clears what shows; a timed glow starts every change's time now, and whole-note mode's.
-      if (meta.glow === 'off') return { next: { ...state, glow: meta.glow, changes: [], wholeNote: false, wholeNoteEnds: null, activeId: null }, redraw: true }
+      // Off clears what shows; a timed glow starts every change's time now, and whole-page mode's.
+      if (meta.glow === 'off') return { next: { ...state, glow: meta.glow, changes: [], wholePage: false, wholePageEnds: null, activeId: null }, redraw: true }
       const ends = endsAt(meta.glow, meta.now)
-      return { next: { ...state, glow: meta.glow, changes: state.changes.map((change) => ({ ...change, ends })), wholeNoteEnds: state.wholeNote ? ends : null }, redraw: false }
+      return { next: { ...state, glow: meta.glow, changes: state.changes.map((change) => ({ ...change, ends })), wholePageEnds: state.wholePage ? ends : null }, redraw: false }
     }
     case 'expire': {
       const changes = state.changes.filter((change) => change.ends === null || change.ends > meta.now)
-      const wholeNoteEnded = state.wholeNoteEnds !== null && state.wholeNoteEnds <= meta.now
-      if (changes.length === state.changes.length && !wholeNoteEnded) return { next: state, redraw: false }
-      return { next: { ...state, changes, ...(wholeNoteEnded ? { wholeNote: false, wholeNoteEnds: null } : {}) }, redraw: true }
+      const wholePageEnded = state.wholePageEnds !== null && state.wholePageEnds <= meta.now
+      if (changes.length === state.changes.length && !wholePageEnded) return { next: state, redraw: false }
+      return { next: { ...state, changes, ...(wholePageEnded ? { wholePage: false, wholePageEnds: null } : {}) }, redraw: true }
     }
     case 'active':
       return { next: { ...state, activeId: meta.id, revealed: meta.revealed, revealedHeadings: meta.revealedHeadings }, redraw: true }
@@ -568,10 +568,10 @@ const beforeThrough = (mapping: Mapping, doc: ProseNode) => (pos: number): strin
 }
 
 /**
- * A kept list back on the note its tab shows again (YAZ-3704 demo feedback): as it was, when the note is the same; when
- * the note changed while the tab was away, the kept list goes through the diff from the doc it was drawn on to the note
+ * A kept list back on the page its tab shows again (YAZ-3704 demo feedback): as it was, when the page is the same; when
+ * the page changed while the tab was away, the kept list goes through the diff from the doc it was drawn on to the page
  * now, and what changed glows as one outside save would, numbered after it. Never the doc itself: folds, caret and
- * history stay. Null: nothing fits (a rewrite, or a diff that does not give the note now).
+ * history stay. Null: nothing fits (a rewrite, or a diff that does not give the page now).
  */
 const keptBack = (kept: SavedOutsideChanges, doc: ProseNode, glow: OutsideChangeGlow): OutsideMeta | null => {
   if (shapeOf(doc) === kept.shape) return { type: 'restore', changes: kept.changes as OutsideChange[], lastNumber: kept.lastNumber }
@@ -611,7 +611,7 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
     if (current() === undefined) return
     // Moving on: the card Next opened closes, unless the reader closed it or the next change is in it too.
     const openNow = cellNoteCardKey.getState(view.state)?.label ?? null
-    if (opened !== null && openNow === opened && noteLabelAt(view.state.doc, target.pos) !== opened) {
+    if (opened !== null && openNow === opened && cellNoteLabelAt(view.state.doc, target.pos) !== opened) {
       closeCellNote(view, false)
       target = current()?.changes.find((change) => change.id === to.id) ?? target
     }
@@ -630,9 +630,9 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
     fold(revealed, false)
     foldHeadings(revealedHeadings, false)
     // A change inside a hidden cell note: its card opens beside its cell, the caret where it was (find's D19).
-    const note = cellNoteAround(view.state.doc.resolve(target.pos))
-    if (note !== null && isCellNoteHidden(view.state, note)) {
-      const label = view.state.doc.nodeAt(note)!.attrs.label as string
+    const cellNote = cellNoteAround(view.state.doc.resolve(target.pos))
+    if (cellNote !== null && isCellNoteHidden(view.state, cellNote)) {
+      const label = view.state.doc.nodeAt(cellNote)!.attrs.label as string
       const mark = markPosOf(view.state.doc, label)
       const cell = mark === null ? null : cellPosAround(view.state.doc.resolve(mark))
       if (cell !== null && openCellNote(view, cell, false)) opened = label
@@ -680,7 +680,7 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
       opened = null
       dispatchMeta({ type: 'clear' })
     },
-    markWholeNote: () => dispatchMeta({ type: 'whole', now: Date.now() }),
+    markWholePage: () => dispatchMeta({ type: 'whole', now: Date.now() }),
     setGlow: (glow) => dispatchMeta({ type: 'glow', glow, now: Date.now() }),
   }
 }
@@ -692,7 +692,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
       new Plugin<OutsideState>({
         key: outsideKey,
         state: {
-          init: () => ({ changes: [], activeId: null, lastNumber: 0, version: 0, wholeNote: false, wholeNoteEnds: null, glow: channel.getGlow(), revealed: NONE, revealedHeadings: NONE, decorations: DecorationSet.empty }),
+          init: () => ({ changes: [], activeId: null, lastNumber: 0, version: 0, wholePage: false, wholePageEnds: null, glow: channel.getGlow(), revealed: NONE, revealedHeadings: NONE, decorations: DecorationSet.empty }),
           apply: (transaction, previous, oldState, newState) => {
             const meta: OutsideMeta | undefined = transaction.getMeta(outsideKey)
             const ranges: OutsideRange[] | undefined = transaction.getMeta(OUTSIDE_RANGES_META)
@@ -712,7 +712,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
               redraw = changes.length !== state.changes.length
               state = { ...state, changes, revealed: mapSet(state.revealed, transaction.mapping), revealedHeadings: mapSet(state.revealedHeadings, transaction.mapping) }
             }
-            if (ranges !== undefined && ranges.length > 0 && state.glow !== 'off' && !state.wholeNote) {
+            if (ranges !== undefined && ranges.length > 0 && state.glow !== 'off' && !state.wholePage) {
               // Before (YAZ-3947): the block's content start, back through this transaction.
               const beforeOf = beforeThrough(transaction.mapping, oldState.doc)
               // YAZ-3998: numbers in the order the changes came; an empty list starts at 1 again.
@@ -727,7 +727,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
               redraw ||= applied.redraw
             }
             if (state.changes.length > MAX_CHANGES) {
-              state = { ...state, changes: [], wholeNote: true, wholeNoteEnds: endsAt(state.glow, Date.now()) }
+              state = { ...state, changes: [], wholePage: true, wholePageEnds: endsAt(state.glow, Date.now()) }
               redraw = true
             }
             if (state.activeId !== null && !state.changes.some((change) => change.id === state.activeId)) state = { ...state, activeId: null }
@@ -742,14 +742,14 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
         },
         view: (editorView) => {
           const unbind = channel.bind(createController(editorView, channel))
-          // D5: one timer for the view, set to the soonest end of a timed glow (a change's, or whole-note mode's).
+          // D5: one timer for the view, set to the soonest end of a timed glow (a change's, or whole-page mode's).
           let timer: ReturnType<typeof setTimeout> | undefined
           let timerAt = Infinity
           const sync = () => {
             const state = outsideKey.getState(editorView.state)
             if (state === undefined) return
             channel.sync(snapshotOf(state), state.version)
-            const soonest = state.changes.reduce((min, change) => Math.min(min, change.ends ?? Infinity), state.wholeNoteEnds ?? Infinity)
+            const soonest = state.changes.reduce((min, change) => Math.min(min, change.ends ?? Infinity), state.wholePageEnds ?? Infinity)
             if (soonest === timerAt && (timer !== undefined || soonest === Infinity)) return
             clearTimeout(timer)
             timer = undefined

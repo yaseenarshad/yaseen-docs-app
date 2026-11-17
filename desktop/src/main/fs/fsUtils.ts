@@ -3,6 +3,7 @@ import { link, mkdir, open, readdir, readFile, rename, stat, unlink } from 'node
 import path from 'node:path'
 import { folderSettingsPath, type BridgeError, type FileKind, type TreeNode } from '@shared/types'
 import { ASSETS_DIR } from '@shared/drawingAssets'
+import { nameOrderCi } from '@shared/assetLookup'
 import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSkipped, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
@@ -79,8 +80,9 @@ export async function* vaultFiles(root: string): AsyncGenerator<{ full: string; 
   }
 }
 
+/** Names in a folder, case-insensitive: `nameOrderCi`, the one order the phone's asset lookup uses too (YAZ-5068). */
 export function byNameCi<T extends { name: string }>(a: T, b: T): number {
-  return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+  return nameOrderCi(a.name, b.name)
 }
 
 function errnoCode(err: unknown): string | undefined {
@@ -183,7 +185,7 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
 /**
  * Opens, writes and fsyncs before closing (YAZ-2177; libuv issues F_FULLFSYNC on macOS): the bytes
  * are on disk before a rename or link gives them a real name, so a crash or power loss can't
- * surface an empty or torn note, state file or image under it. A string lands as UTF-8; bytes (an
+ * surface an empty or torn page, state file or image under it. A string lands as UTF-8; bytes (an
  * image through `writeAsset`, YAZ-1661) land verbatim — `writeFile` ignores the encoding for a view.
  * `mode` sets the permissions a NEW file is born with (YAZ-3038: `secrets.json` is owner-only from the start).
  */
@@ -240,7 +242,7 @@ export async function atomicWrite(file: string, content: string | Uint8Array, mo
  *
  * The link only CLAIMS the name (YAZ-2380): the same bytes are then renamed in over it. macOS
  * reports nothing at all when a file whose first name was a since-removed hard link is later
- * deleted, so a note left on the linked inode could be deleted outside the app and stay in the
+ * deleted, so a page left on the linked inode could be deleted outside the app and stay in the
  * tree and the index for good. A renamed-in file — what every save already leaves — is seen to go.
  *
  * `mode` is the new file's permissions from its first byte (YAZ-3044 A7: the Draw import's copies).

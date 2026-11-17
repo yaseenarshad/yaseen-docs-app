@@ -1,0 +1,39 @@
+import { AppProvider, type AppServices } from './app/AppState'
+import { Shell } from './screens/Shell'
+import type { Updates } from './pwa/updates'
+import { UpdateLine } from './pwa/UpdateLine'
+import { UpdatesContext } from './pwa/updatesContext'
+import { ExploreHost } from './explore/ExploreHost'
+
+/**
+ * Yaseen Docs: the app state (`AppProvider`) around the shell. `main.tsx` passes the real services; tests pass fakes.
+ * `updates`: the service worker's update, for the "A new version is ready" line; none in dev and tests.
+ */
+export function App({ services, updates }: { services: AppServices; updates?: Updates | null }) {
+  return (
+    <AppProvider services={services}>
+      <UpdatesContext.Provider value={updates ?? null}>
+        <Shell />
+        <ExploreHost />
+        {updates && <UpdateLine updates={updates} />}
+      </UpdatesContext.Provider>
+    </AppProvider>
+  )
+}
+
+/** The browser gives no storage (Private Browsing, or blocked site data): the app cannot keep a vault. */
+/** The words when the phone's store cannot open (also the dot's end state for a store that stops answering). */
+export const NO_STORAGE_MESSAGE = 'This browser does not let Yaseen Docs keep your vault. Turn off Private Browsing, or allow site data for this site.'
+
+export function NoStorage() {
+  return (
+    <div className="app">
+      <main className="screen">
+        <h1 className="title">Yaseen Docs</h1>
+        <div className="problem" role="alert">
+          <p>{NO_STORAGE_MESSAGE}</p>
+        </div>
+      </main>
+    </div>
+  )
+}

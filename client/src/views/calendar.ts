@@ -1,16 +1,26 @@
 /**
- * The calendar view's date rules (YAZ-4540, YAZ-949): which columns it can show by, the day a note
+ * The calendar view's date rules (YAZ-4540, YAZ-949): which columns it can show by, the day a page
  * goes on, the value a move writes, and the month grid. No date library: `expr/dates.ts` and the
  * native `Date` (D4).
  */
-import { type ColorStrengthValue, type FolderPagesSettings, type IndexRecord, type PropertiesResponse, readColorStrength } from '@shared/types'
+import { type ColorStrengthValue, type FolderPagesSettings, type IndexRecord, type PropertiesResponse, calLine, readColorStrength } from '@shared/types'
 import type { Row } from './engine'
 import { columnTyping } from './editorType'
 import { formatDate, parseIsoDate, renderDate } from './expr/dates'
-import type { FolderSettings } from './folderSettings'
+import type { FolderSettings } from './folderSettingsRead'
 import { writableKey } from './readOnlyRows'
 import { allPropertyKeys } from './view/properties'
 import type { ViewDef, ViewSet } from './viewSchema'
+
+/** The Calendar's scales (YAZ-4558 D22, YAZ-5588 Rolling) in the switch's order, with their words: the toolbar's switch and the View tab's "Opens in" share them. */
+export type CalendarScale = FolderPagesSettings['calendarScale']
+export const CALENDAR_SCALES: readonly (readonly [CalendarScale, string])[] = [
+  ['month', 'Month'],
+  ['week', 'Week'],
+  ['rolling', 'Rolling'],
+]
+/** A view's scale as written (Settings' scale already filled in by the pane), Month for anything else. */
+export const calendarScaleOf = (view: ViewDef): CalendarScale => CALENDAR_SCALES.find(([s]) => s === view.calendarScale)?.[0] ?? 'month'
 
 /** A day as the grid and a write name it: `YYYY-MM-DD`. */
 export type DayKey = string
@@ -64,7 +74,7 @@ export interface Span {
 
 /**
  * A card's days (YAZ-4858): its start day and its end day (the `endKey` column's), the same day for a one-day card;
- * null for no day. A note with an end and no start goes on its end day (item 5); an end on or before the start is no
+ * null for no day. A page with an end and no start goes on its end day (item 5); an end on or before the start is no
  * span, the card is a one-day card on its start.
  */
 export function spanOf(properties: Readonly<Record<string, unknown>>, key: string | null, endKey: string | null): { start: DayKey; end: DayKey } | null {
@@ -117,10 +127,12 @@ export interface BarPlace {
 
 /**
  * The bars of one week row (YAZ-4858): each span that has a shown day in `days` (the row's days in order, with or
- * without its weekends), cut to those days, in lanes above the one-day cards. The lanes fill in order: the bar that
- * starts first, then the longer one, then row order, takes the first lane free from its first column on. Pure.
+ * without its weekends), cut to those days, in lanes above the one-day cards. The bars take lanes one by one, each the
+ * highest lane free over all its shown days on the row (a gap an earlier bar left is filled when a later bar fits it),
+ * else a new lane; `bars` come in reading order (column, then lane). The order of placing (YAZ-5603): `sorted` (the view has a sort) = the rows' order, the view's sort, as the
+ * one-day cards; else the bar that starts first, then the longer one, then row order. Pure.
  */
-export function layoutWeek(days: readonly DayKey[], multi: readonly Span[]): { bars: BarPlace[]; lanes: number } {
+export function layoutWeek(days: readonly DayKey[], multi: readonly Span[], sorted = false): { bars: BarPlace[]; lanes: number } {
   const placed: Omit<BarPlace, 'lane'>[] = []
   if (days.length === 0) return { bars: [], lanes: 0 }
   const first = days[0]
@@ -137,15 +149,19 @@ export function layoutWeek(days: readonly DayKey[], multi: readonly Span[]): { b
     if (col === -1 || end < col) continue
     placed.push({ span, col, cols: end - col + 1, cutStart: span.start < days[col], cutEnd: span.end > days[end] })
   }
-  placed.sort((a, b) => a.col - b.col || b.cols - a.cols)
-  const laneEnds: number[] = []
+  if (!sorted) placed.sort((a, b) => a.col - b.col || b.cols - a.cols)
+  // Each lane's taken columns.
+  const taken: boolean[][] = []
   const bars = placed.map((bar) => {
-    let lane = laneEnds.findIndex((end) => end < bar.col)
-    if (lane === -1) lane = laneEnds.push(0) - 1
-    laneEnds[lane] = bar.col + bar.cols - 1
+    const cols = Array.from({ length: bar.cols }, (_, i) => bar.col + i)
+    let lane = taken.findIndex((used) => cols.every((c) => !used[c]))
+    if (lane === -1) lane = taken.push(new Array<boolean>(days.length).fill(false)) - 1
+    for (const c of cols) taken[lane][c] = true
     return { ...bar, lane }
   })
-  return { bars, lanes: laneEnds.length }
+  // Reading order, for the DOM and the page window: by first column, then from the top lane.
+  bars.sort((a, b) => a.col - b.col || a.lane - b.lane)
+  return { bars, lanes: taken.length }
 }
 
 /** The days from `from` to `to` (negative when `to` is earlier): a bar's whole-card drag moves both its dates by it (YAZ-4858). */
@@ -161,6 +177,12 @@ export function spanLabel(start: DayKey, end: DayKey): string {
   if (end <= start) return dayLabel(start)
   const year = String(new Date().getFullYear())
   return start.slice(0, 4) === year && end.slice(0, 4) === year ? `${monthDay(start)} – ${monthDay(end)}` : weekLabel([start, end])
+}
+
+/** A bar's hover (YAZ-5604 item 8): its days and how many, for example "Nov 12 – Nov 15 · 4 days". */
+export function spanDays(start: DayKey, end: DayKey): string {
+  const count = daysBetween(start, end) + 1
+  return `${spanLabel(start, end)} · ${count} ${count === 1 ? 'day' : 'days'}`
 }
 
 /** The days from the week's first day to `date`: Monday first (D11), or Sunday first (Settings › Folder pages, YAZ-4585). */
@@ -185,6 +207,52 @@ export const addDays = (day: DayKey, days: number): DayKey => formatDate(localDa
 /** The 1st of the month `months` after the month of `day`: the month grid's ‹ › (YAZ-4558 D22). */
 export const monthStart = (day: DayKey, months: number): DayKey => formatDate(localDay(`${day.slice(0, 8)}01`, 0, months).getTime(), 'YYYY-MM-DD')
 
+/** The same day `months` later (earlier when negative); a day the month does not have is its last day (Nov 30 for "Aug 31 + 3"). */
+export function addMonths(day: DayKey, months: number): DayKey {
+  const first = localDay(`${day.slice(0, 8)}01`, 0, months)
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+  return formatDate(new Date(first.getFullYear(), first.getMonth(), Math.min(Number(day.slice(8, 10)), last)).getTime(), 'YYYY-MM-DD')
+}
+
+/** Months a Rolling calendar goes past its earliest and its latest dated card (YAZ-5609), and around today with none. */
+export const ROLL_MARGIN_MONTHS = 3
+export const ROLL_EMPTY_MONTHS = 12
+
+/**
+ * Rolling's ends (YAZ-5609): the first day of its first and of its last week. From the earliest dated day less
+ * `ROLL_MARGIN_MONTHS` to the latest plus as many, or `ROLL_EMPTY_MONTHS` either side of today with no dated card;
+ * today is always in.
+ */
+export function rollingEnds(dated: Iterable<DayKey>, today: DayKey, sundayFirst = false): { first: DayKey; last: DayKey } {
+  let lo: DayKey | null = null
+  let hi: DayKey | null = null
+  for (const day of dated) {
+    if (lo === null || day < lo) lo = day
+    if (hi === null || day > hi) hi = day
+  }
+  const from = lo === null ? addMonths(today, -ROLL_EMPTY_MONTHS) : addMonths(lo, -ROLL_MARGIN_MONTHS)
+  const to = hi === null ? addMonths(today, ROLL_EMPTY_MONTHS) : addMonths(hi, ROLL_MARGIN_MONTHS)
+  return { first: weekDays(from < today ? from : today, sundayFirst)[0], last: weekDays(to > today ? to : today, sundayFirst)[0] }
+}
+
+/** A calendar's "Between months" width (YAZ-5608): its whole px 1–`MAX_CAL_LINE`, else 0 (Off, the default). */
+export const monthLineOf = (view: Pick<ViewDef, 'monthLine'>): number => (view.monthLine === undefined ? 0 : calLine(view.monthLine) === view.monthLine ? view.monthLine : 0)
+/** Its colour: the stored `blue light`, else Blue, Medium. */
+export const monthLineColorOf = (view: Pick<ViewDef, 'monthLineColor'>): ColorStrengthValue => readColorStrength(view.monthLineColor) ?? { color: 'blue', strength: 'medium' }
+
+/** Rolling's "Shade every other month" (YAZ-5608): every second month by its count from year 0, so the shade never moves as you scroll. */
+export const shadedMonth = (day: DayKey): boolean => (Number(day.slice(0, 4)) * 12 + Number(day.slice(5, 7)) - 1) % 2 === 1
+
+/**
+ * Where "Between months" draws (YAZ-5608): a stepped line round each month's first days. A day whose day above (a week
+ * earlier) is in another month has the line on its top; a day whose shown neighbour on the left is in another month
+ * has it on its left. `left` is null in the first column.
+ */
+export function monthEdges(day: DayKey, left: DayKey | null): { top: boolean; left: boolean } {
+  const month = day.slice(0, 7)
+  return { top: addDays(day, -7).slice(0, 7) !== month, left: left !== null && left.slice(0, 7) !== month }
+}
+
 /** The 7 days, Monday first unless `sundayFirst` (YAZ-4585), of the week that holds `day` (YAZ-4558 D22). */
 export function weekDays(day: DayKey, sundayFirst = false): DayKey[] {
   const first = addDays(day, -intoWeek(localDay(day), sundayFirst))
@@ -195,6 +263,18 @@ export function weekDays(day: DayKey, sundayFirst = false): DayKey[] {
 export function weekendOf(day: DayKey): 'Sat' | 'Sun' | null {
   const weekday = localDay(day).getDay()
   return weekday === 6 ? 'Sat' : weekday === 0 ? 'Sun' : null
+}
+
+/**
+ * Whether `day` is the first SHOWN day of its month, the day that says the month (YAZ-5608): the 1st, or with Hide
+ * weekends the first workday when the month starts on a Saturday or Sunday (YAZ-5648 #3).
+ */
+export function firstShownOfMonth(day: DayKey, hideWeekends: boolean): boolean {
+  const date = Number(day.slice(8))
+  if (date === 1) return true
+  if (!hideWeekends || weekendOf(day) !== null) return false
+  for (let d = 1; d < date; d++) if (weekendOf(`${day.slice(0, 8)}${String(d).padStart(2, '0')}`) === null) return false
+  return true
 }
 
 /** "Hide weekends" (YAZ-4595 S33): the days of a week row without its Saturday and Sunday, by the weekday, not the column. */

@@ -18,7 +18,7 @@ describe('the bridge’s pure parts', () => {
     expect(wireLook({ label: 'Roadmap', icon: { image, url: 'data:image/png;base64,AA' } })).toEqual({ label: 'Roadmap', icon: 'data:image/png;base64,AA' })
     expect(wireLook({ label: 'Plain', icon: null })).toEqual({ label: 'Plain', icon: null })
     expect(wireLook({ label: 'Soon' })).toEqual({ label: 'Soon' })
-    expect(wireLook({ label: 'Missing note · YAZ-9', missing: true })).toEqual({ label: 'Missing note · YAZ-9', missing: true })
+    expect(wireLook({ label: 'Missing page · YAZ-9', missing: true })).toEqual({ label: 'Missing page · YAZ-9', missing: true })
     // The icon shows a folder: the frame needs no folder flag (A19).
     expect(wireLook({ label: 'Folder', folder: true, icon: null })).toEqual({ label: 'Folder', icon: null })
     expect(wireLook(null)).toBeNull()

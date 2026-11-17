@@ -95,7 +95,7 @@ export interface ValueCount {
 /**
  * The column's own values among `rows` that contain `text` (case ignored), each with its row count, most rows first
  * (ties in the rows' order), `limit` at most: the value list under the Contains box (YAZ-4919 round 2). Read as the
- * checklist's values (`propertyValues`): a list cell counts each item, a link is its target. A note column only: a file
+ * checklist's values (`propertyValues`): a list cell counts each item, a link is its target. A page column only: a file
  * field or a formula lists none.
  */
 export function valueCounts(property: string, rows: readonly IndexRecord[], text: string, limit = 8): ValueCount[] {

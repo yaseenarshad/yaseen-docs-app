@@ -33,6 +33,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { fitFlyout, fitMenu } from '../lib/fitMenu'
 import { SWITCH_MS } from '../sidebar/ContextMenu'
 import { bulletDotTarget, handleTargetPos, isOwnHandleGrab, isTaskBox, type HandleTarget } from './blockHandleTarget'
 
@@ -51,6 +52,11 @@ export interface MenuRow {
   icon?: () => SVGElement
   /** The click or key that does it too, at the right edge (`data-hint`, drawn by CSS as the tab menu's are). */
   hint?: string
+  /**
+   * The row asks in place first (YAZ-5696 with YAZ-5697, as ContextMenu's `ask`): the first click turns it into
+   * `question` with Cancel (first, focused) and `yes`; only `yes` runs it (`rowAskDom.ts`, a lazy chunk).
+   */
+  ask?: { question: string; yes: string; danger?: boolean }
   /**
    * A parent row ("Open in ▸", YAZ-3901): its flyout's rows, in groups with a line between two. One level: a child
    * has no children. Hover, a click and ArrowRight open it; ArrowLeft and Escape close it; a child runs and closes
@@ -353,6 +359,8 @@ function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElemen
   return picker
 }
 
+const loadRowAsk = () => import('./rowAskDom')
+
 /** One row's button: a click runs it, then `close`; with `refresh` (a `stay` flyout's child), the menu is drawn again instead. */
 function rowButton(row: MenuRow, close: () => void, refresh?: (run: () => void) => void): HTMLButtonElement {
   const item = document.createElement('button')
@@ -369,7 +377,17 @@ function rowButton(row: MenuRow, close: () => void, refresh?: (run: () => void) 
   }
   if (row.hint !== undefined) item.dataset.hint = row.hint
   item.addEventListener('mousedown', (e) => e.preventDefault())
+  // A row that asks first (YAZ-5697): its chunk comes as the menu draws it, so the first click asks at once.
+  const ask = row.ask
+  if (ask !== undefined) void loadRowAsk()
   item.addEventListener('click', () => {
+    if (ask !== undefined)
+      return void loadRowAsk().then(({ askInPlace }) =>
+        askInPlace(item, ask, () => {
+          row.run()
+          close()
+        }),
+      )
     if (refresh !== undefined) return refresh(row.run)
     row.run()
     close()
@@ -384,7 +402,7 @@ const lastTab = new Map<string, number>()
  * A flyout's content (`renderParent`): `row.children` as groups, a line between two, a small grey heading each
  * (`row.headings`); then the tabs (`row.tabs`, YAZ-4794 demo), the picked tab's switch (`bar`) and groups in a box of
  * their own, drawn again at a tab click. A `stay` row's picks go through `refresh`; others run and `close`. An empty
- * group is left out here, the one place (a caller hands its groups as they are). The note's right-click menu draws a
+ * group is left out here, the one place (a caller hands its groups as they are). The page's right-click menu draws a
  * parent's `panel` with it too (YAZ-4899: "Subheader row style ›" is the six-dot menu's "Subheader row ›", one panel).
  */
 export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, refresh?: (run: () => void) => void): void {
@@ -552,10 +570,10 @@ function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refres
       })
       flyout.style.visibility = 'hidden'
       wrap.appendChild(flyout)
-      const r = flyout.getBoundingClientRect()
-      const p = button.getBoundingClientRect()
-      flyout.style.left = `${p.right + r.width > window.innerWidth ? Math.max(0, p.left - r.width) : p.right}px`
-      flyout.style.top = `${Math.max(0, Math.min(p.top, window.innerHeight - r.height))}px`
+      // YAZ-4970: a flyout taller than the window fits it and scrolls, as the right-click menu's (`lib/fitMenu.ts`).
+      const at = fitFlyout(flyout, button.getBoundingClientRect())
+      flyout.style.left = `${at.left}px`
+      flyout.style.top = `${at.top}px`
       flyout.style.visibility = ''
       button.setAttribute('aria-expanded', 'true')
     }
@@ -651,12 +669,12 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
   return el
 }
 
-/** Each mounted editor's rows, for its note menu (`noteMenu.tsx`). */
+/** Each mounted editor's rows, for its page menu (`pageMenu.tsx`). */
 const providers = new WeakMap<EditorView, (target: HandleTarget) => MenuItem[]>()
 
 /**
  * The menu's rows and strips for `target` in `view` (YAZ-3727 D15): a right-click on a line's text shows them
- * too, in the note's own menu, so both menus come from one list of rows. No pickers: they stay on the handle.
+ * too, in the page's own menu, so both menus come from one list of rows. No pickers: they stay on the handle.
  */
 export function blockMenuItems(view: EditorView, target: HandleTarget): Array<MenuRow | MenuStrip> {
   return (providers.get(view)?.(target) ?? []).filter((item): item is MenuRow | MenuStrip => item.kind !== 'number' && item.kind !== 'choice')
@@ -676,6 +694,18 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           let openTarget: HandleTarget | null = null
           // True while a `stay` strip's own change runs: that doc change keeps the menu.
           let holding = false
+          // Where the open menu was opened (screen px): a menu drawn again is fitted from there.
+          let openAt = { x: 0, y: 0 }
+          const place = (menu: HTMLElement) => {
+            const at = fitMenu(menu, openAt.x, openAt.y)
+            menu.style.left = `${at.left}px`
+            menu.style.top = `${at.top}px`
+          }
+          // A scroll closes the menu, but not the menu's own scroll (YAZ-4970): a menu taller than the window scrolls.
+          const onScroll = (e: Event) => {
+            if (popup !== null && e.target instanceof Node && popup.contains(e.target)) return
+            close()
+          }
 
           const close = () => {
             // Something in the menu had the focus: it goes back to the editor, not to the page.
@@ -716,9 +746,10 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             close()
             openTarget = target
             popup = renderMenu(view.dom.parentElement, items, close, refresh)
-            const r = popup.getBoundingClientRect()
-            popup.style.left = `${Math.max(0, Math.min(e.clientX, window.innerWidth - r.width))}px`
-            popup.style.top = `${Math.max(0, Math.min(e.clientY, window.innerHeight - r.height))}px`
+            // YAZ-4970: a menu taller than the window was only moved to the top, its last rows out of reach; now it fits
+            // the window and scrolls (`lib/fitMenu.ts`, the right-click menu's rule).
+            openAt = { x: e.clientX, y: e.clientY }
+            place(popup)
           }
           // A `stay` click (a strip, a flyout's child, a picker's choice): run it, then draw the menu again in its place
           // from the new state, the flyout or picker panel that was open opened again (YAZ-4774 demo).
@@ -739,6 +770,8 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             popup = items.length === 0 ? null : renderMenu(view.dom.parentElement, items, close, refresh)
             if (popup === null) return
             Object.assign(popup.style, { left, top })
+            // Drawn again, it may be taller or shorter (a picker's row opened): it fits the window again.
+            place(popup)
             if (flyout !== null) [...popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === flyout)?.click()
             if (picker !== null)
               [...popup.querySelectorAll('.block-menu-picker')].find((p) => p.querySelector('.block-menu-picker__label')?.textContent === picker)?.querySelector<HTMLButtonElement>('.block-menu-picker__value')?.click()
@@ -762,7 +795,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           document.addEventListener('mousedown', onMouseDown, true)
           document.addEventListener('mouseup', onMouseUp, true)
           document.addEventListener('contextmenu', onContextMenu, true)
-          document.addEventListener('scroll', close, true)
+          document.addEventListener('scroll', onScroll, true)
           window.addEventListener('keydown', onKeyDown)
           document.addEventListener('keydown', onTab, true)
           window.addEventListener('blur', close)
@@ -776,7 +809,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
               document.removeEventListener('mousedown', onMouseDown, true)
               document.removeEventListener('mouseup', onMouseUp, true)
               document.removeEventListener('contextmenu', onContextMenu, true)
-              document.removeEventListener('scroll', close, true)
+              document.removeEventListener('scroll', onScroll, true)
               window.removeEventListener('keydown', onKeyDown)
               document.removeEventListener('keydown', onTab, true)
               window.removeEventListener('blur', close)

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ALLOW_MS, useTimedUnlock, type TimedUnlock } from './useTimedUnlock'
+import { VaultReadOnly, type BeforeVaultLock } from '../vault/readOnlyVault'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -130,5 +131,25 @@ describe('useTimedUnlock', () => {
     act(() => root?.unmount())
     root = null
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('YAZ-5581: the surface\'s save is its step before the VAULT locks again (registered through `VaultReadOnly`, gone on close); it runs only while this tab\'s own unlock does not', () => {
+    const steps = new Set<() => unknown>()
+    const beforeLock: BeforeVaultLock = (step) => {
+      steps.add(step)
+      return () => void steps.delete(step)
+    }
+    root = createRoot(document.createElement('div'))
+    act(() => root?.render(<VaultReadOnly.Provider value={{ on: false, allowFileAction: () => Promise.resolve(true), beforeLock }}><Probe /></VaultReadOnly.Provider>))
+    expect(steps.size).toBe(1)
+    steps.forEach((step) => step())
+    expect(save).toHaveBeenCalledOnce()
+    // A tab unlocked on its own stays as it is.
+    act(() => state.allow('close'))
+    steps.forEach((step) => step())
+    expect(save).toHaveBeenCalledOnce()
+    act(() => root?.unmount())
+    root = null
+    expect(steps.size).toBe(0)
   })
 })

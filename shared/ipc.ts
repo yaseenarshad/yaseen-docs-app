@@ -10,9 +10,12 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardFoldArrowsRequest, BoardHeadResponse, BoardHoverLinksRequest, BoardHoverOutlineRequest, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DuplicateRequest, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageDownloadRequest, ImageDownloadResponse, ImageResponse, IndexResponse, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaLibraryFile, MediaUsedRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PickPicturesFolderRequest, PickPicturesFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
-import type { FoundNote } from './noteBirth'
-import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, ListScope, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardFoldArrowsRequest, BoardHeadResponse, BoardHoverLinksRequest, BoardHoverOutlineRequest, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DuplicateRequest, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageDownloadRequest, ImageDownloadResponse, ImageResponse, IndexResponse, InboxCarry, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaLibraryFile, MediaUsedRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PickPicturesFolderRequest, PickPicturesFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, FriendsSendView, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
+import type { FoundPage } from './pageBirth'
+import type { CardSkillDuplicate, CardSkillFormats } from './cardSkillFolder'
+import type { CoursePatch } from './courseState'
+import type { CourseAudioChange, CourseAudioSound } from './courseAudio'
+import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
@@ -44,7 +47,7 @@ const push = <T = void>(channel: string): Push<T> => ({ kind: 'push', channel })
 export const CONTRACT = {
   tree: invoke<[root: string], TreeResponse>('fs:tree', 1),
   readFile: invoke<[path: string], FileResponse>('fs:read', 1),
-  /** The top of each note in `paths`, in their order (YAZ-2648 D6): only the head is read off disk, never the file. `null` for a path that is no note or could not be read; one never fails the rest. */
+  /** The top of each page in `paths`, in their order (YAZ-2648 D6): only the head is read off disk, never the file. `null` for a path that is no page or could not be read; one never fails the rest. */
   readHeads: invoke<[paths: readonly string[]], (FileHead | null)[]>('fs:read-heads', 1),
   /**
    * The top of a `text` kind file for its hover card (YAZ-3508): at most `TEXT_HEAD_READ_BYTES` off disk, cut to
@@ -59,16 +62,16 @@ export const CONTRACT = {
   createFile: invoke<[req: string | CreateFileRequest], CreateFileResponse>('fs:create-file', 1),
   /**
    * The door (YAZ-2677 🔒 D4, R17): the next ID of the vault that holds `path`, for a caller that
-   * must know it before its note exists (`CreateFileRequest.id`). The number is saved before it is
+   * must know it before its page exists (`CreateFileRequest.id`). The number is saved before it is
    * answered, so one that is never used is a gap and no ID is given two times. Null where the vault
    * does not use IDs.
    */
-  mintNoteId: invoke<[path: string], string | null>('fs:mint-note-id', 1),
+  mintPageId: invoke<[path: string], string | null>('fs:mint-page-id', 1),
   /**
-   * Today's daily note of `vault`, a vault of the calling window, found on disk or made (YAZ-4269 D2): for the button
-   * when its index has none. One maker at a time on this Mac, the command too, so the two never make two notes.
+   * Today's daily page of `vault`, a vault of the calling window, found on disk or made (YAZ-4269 D2): for the button
+   * when its index has none. One maker at a time on this Mac, the command too, so the two never make two pages.
    */
-  makeDailyNote: invoke<[vault: string], FoundNote>('fs:make-daily-note', 1),
+  makeDailyPage: invoke<[vault: string], FoundPage>('fs:make-daily-page', 1),
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index: invoke<[root: string], IndexResponse>('fs:index', 1),
   /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first `index(root)` build. Read it AFTER the first index snapshot. */
@@ -89,7 +92,7 @@ export const CONTRACT = {
   /**
    * The drawing DOCUMENT's two doors (YAZ-3028 D2, Draw's 🔒 YAZ-1810): one per direction, the only way a
    * `.excalidraw` opened in a TAB reads and writes. A load is the scene plus the pictures it names; a
-   * save lands new pictures in `assets/` BEFORE the scene, under the mtime guard. A note embed keeps `readAsset` / `writeAsset`.
+   * save lands new pictures in `assets/` BEFORE the scene, under the mtime guard. A page embed keeps `readAsset` / `writeAsset`.
    */
   drawing: {
     load: invoke<[req: DrawingLoadRequest], DrawingLoadResponse>('drawing:load', 1),
@@ -196,6 +199,13 @@ export const CONTRACT = {
     set: invoke<[req: SecretSetRequest], void>('secrets:set', 1),
     has: invoke<[req: SecretHasRequest], boolean>('secrets:has', 1),
   },
+  /**
+   * The Mac's send of the numbers to friends (YAZ-5086, decision 16): its last state for Settings › Cards › "Friends",
+   * with no network call. Numbers and words only: no token, no gist ID, no repo name.
+   */
+  friends: {
+    status: invoke<[], FriendsSendView>('friends:status', 0),
+  },
   /** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */
   state: {
     get: invoke<[], AppState>('state:get', 0),
@@ -213,6 +223,8 @@ export const CONTRACT = {
     setSidebarWidth: invoke<[width: number], void>('state:set-sidebar-width', 1),
     /** The tab board's canvas (YAZ-3343 D1): the switch, moved cards, forgotten cards (Tidy up). Sent on a drop or a click, never on each pointer move. */
     setTabCanvas: invoke<[patch: TabCanvasPatch], void>('state:set-tab-canvas', 1),
+    /** The card course's place, finished chapters, offers, Mute and Speed (YAZ-5120): only the fields the patch names. Per machine. */
+    setCourse: invoke<[patch: CoursePatch], void>('state:set-course', 1),
     /** The Favorites order of the window's vaults (YAZ-2631 D1); main merges it into the one list. */
     setFavoritesOrder: invoke<[roots: readonly string[], paths: readonly string[]], void>('state:set-favorites-order', 2),
     /** The focus order of the window's vaults (YAZ-2702 Decision 3); main merges it into the one list, as it does the Favorites order. */
@@ -225,11 +237,11 @@ export const CONTRACT = {
     setFolder: invoke<[root: string, patch: FolderPatch], void>('state:set-folder', 2),
     /** Replace the fold keys for one file; an empty list removes the entry. The preload sends a copy of `keys`. */
     setFolds: invoke<[root: string, file: string, keys: readonly string[]], void>('state:set-folds', 3),
-    /** What one note's table of contents is built from (YAZ-2700 D14): `headings`, `bullets`, or `null` for Auto, which removes the entry. */
+    /** What one page's table of contents is built from (YAZ-2700 D14): `headings`, `bullets`, or `null` for Auto, which removes the entry. */
     setTocSource: invoke<[root: string, file: string, source: TocSource | null], void>('state:set-toc-source', 3),
-    /** Replace the folded rows of one note's table of contents (YAZ-3939 D1); an empty list removes the entry. The preload sends a copy of `keys`. */
+    /** Replace the folded rows of one page's table of contents (YAZ-3939 D1); an empty list removes the entry. The preload sends a copy of `keys`. */
     setTocFolds: invoke<[root: string, file: string, keys: readonly string[]], void>('state:set-toc-folds', 3),
-    /** One code file's "Table of contents" switch (YAZ-2950, YAZ-3506): `true` or `false`, and each is stored. Only the delete of the file removes the entry. A note's switch is in its frontmatter (YAZ-4094 G4). */
+    /** One code file's "Table of contents" switch (YAZ-2950, YAZ-3506): `true` or `false`, and each is stored. Only the delete of the file removes the entry. A page's switch is in its frontmatter (YAZ-4094 G4). */
     setTocSwitch: invoke<[root: string, file: string, on: boolean], void>('state:set-toc-switch', 3),
     /** Replace the collapsed group keys for one base view (`<basePath>::<viewName>`); an empty list removes the entry. The preload sends a copy of `collapsed`. */
     setBaseGroups: invoke<[root: string, key: string, collapsed: readonly string[]], void>('state:set-base-groups', 3),
@@ -244,10 +256,16 @@ export const CONTRACT = {
      */
     recording: invoke<[on: boolean], void>('hotkeys:recording', 1),
     /**
-     * A drawing opened over a note in the calling window, or closed (YAZ-3564 K9): while it is open, main builds the
+     * A drawing opened over a page in the calling window, or closed (YAZ-3564 K9): while it is open, main builds the
      * menu as for a drawing tab, so ⌘D duplicates instead of going to your place. A reload or close ends it by itself.
      */
     drawingInFront: invoke<[on: boolean], void>('hotkeys:drawing-in-front', 1),
+    /**
+     * No page is on show in the calling window, or one is again (YAZ-5041): the Inbox tab or the blank tab is in front.
+     * The window's stored `file` is still the tab under it (for restore), so main builds the menu as for no tab while
+     * this is on: the board items grey, and no tab's key picks (YAZ-3564 K9). A reload or close ends it by itself.
+     */
+    noPageInFront: invoke<[on: boolean], void>('hotkeys:no-page-in-front', 1),
   },
   window: {
     /** Who am I: main answers from `AppState.windows` by the `?win=<id>` in the window's URL. */
@@ -268,6 +286,13 @@ export const CONTRACT = {
      * Main checks that `to` is live and shows a vault of `path`, raises it, and pushes `link:take-tab` to it.
      */
     moveTo: invoke<[to: string, path: string, carry?: PopOutCarry], void>('window:move-to', 3),
+    /**
+     * The Inbox tab's "Move to new window" and the sidebar Inbox row's "Open in new window" (YAZ-5054): a new window on
+     * the caller's vaults with no page tab, the sidebar hidden, and `link:take-inbox` pushed to it with `carry`.
+     */
+    inboxToNewWindow: invoke<[carry: InboxCarry], void>('window:inbox-to-new-window', 1),
+    /** The Inbox tab's "Move to ▸ <window>" (YAZ-5054): main checks `to` is live and shows `carry.root`, raises it, pushes `link:take-inbox`. */
+    moveInboxTo: invoke<[to: string, carry: InboxCarry], void>('window:move-inbox-to', 2),
     /** A card of another window on the tab board (YAZ-3343 D3): raise `to` and make its tab `ref` active. */
     focusTab: invoke<[to: string, ref: TabRef], void>('window:focus-tab', 2),
     /** The ✕ of another window's cards, and Kill all with "Show all windows" on (YAZ-3343 D3, D10): window `to` closes these tabs itself. */
@@ -341,9 +366,9 @@ export const CONTRACT = {
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
     /** "Open by itself" (YAZ-2858 D1): raise the window that shows ONLY this vault, else the EMPTY caller takes it, else open a new one on it, blank (YAZ-3487 D1, D7); a workspace window that shows it does not count and does not change. `false` = the folder is gone and was pruned from the MRU. */
     openAlone: invoke<[path: string], boolean>('window:open-alone', 1),
-    /** Tabs closed in THIS window (YAZ-3487 D10): main puts their notes in "Recently closed" of the window's vaults. */
-    noteClosed: invoke<[files: readonly string[]], void>('window:note-closed', 1),
-    /** "Remove from Recently closed" / "Clear Recently closed" (YAZ-3487 D14): drop these notes, or with null every closed note of THIS window's vaults. */
+    /** Tabs closed in THIS window (YAZ-3487 D10): main puts their pages in "Recently closed" of the window's vaults. */
+    pageClosed: invoke<[files: readonly string[]], void>('window:page-closed', 1),
+    /** "Remove from Recently closed" / "Clear Recently closed" (YAZ-3487 D14): drop these pages, or with null every closed page of THIS window's vaults. */
     forgetClosed: invoke<[files: readonly string[] | null], void>('window:forget-closed', 1),
     /** Open a saved set of vaults (YAZ-2602 D8, S65, S66): raise the window that shows exactly its vaults, else open one on them; a vault whose folder is gone is left out and named in `missing`; `opened: false` = no folder is left. */
     openSet: invoke<[id: string], OpenSetResult>('window:open-set', 1),
@@ -418,7 +443,7 @@ export const CONTRACT = {
     onSettings: push('menu:settings'),
     /** View › Toggle Sidebar (YAZ-1280). */
     onToggleSidebar: push('menu:toggle-sidebar'),
-    /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note or the app (YAZ-1710). */
+    /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused page or the app (YAZ-1710). */
     onZoom: push<ZoomStep>('menu:zoom'),
     /** File › Close Tab (⌘W): close the active tab (GRO-2232). */
     onCloseTab: push('menu:close-tab'),
@@ -440,12 +465,12 @@ export const CONTRACT = {
     onNewTab: push('menu:new-tab'),
     /** File › New Window (⌘⇧N): the focused window calls `window.duplicate`, which opens a window on its vaults with no tab (YAZ-3343 D35). */
     onNewWindow: push('menu:new-window'),
-    /** File › New… (⌘N, YAZ-3556 D1): open the New… box (a note, a drawing or a diagram). A window with no vault does nothing. */
+    /** File › New… (⌘N, YAZ-3556 D1): open the New… box (a page, a drawing or a diagram). A window with no vault does nothing. */
     onNewItem: push('menu:new-item'),
     /** File › Show in Sidebar (⌘D, YAZ-3556 D1, D9): show the place of `settings.goTo`. A window with no vault does nothing. */
     onGoTo: push('menu:go-to'),
-    /** File › Open Today's Daily Note (YAZ-3607 D11): open today's daily note, made first when today has none. A window with no vault does nothing. */
-    onDailyNote: push('menu:daily-note'),
+    /** File › Open Today's Daily Page (YAZ-3607 D11): open today's daily page, made first when today has none. A window with no vault does nothing. */
+    onDailyPage: push('menu:daily-page'),
     /** Help › What's New… (YAZ-2976 D8): the window opens its "What's new" window. */
     onWhatsNew: push('menu:whats-new'),
     /** Help › Keys of This Tab… (YAZ-3564 K11): show the keys of the tab in front. */
@@ -468,6 +493,8 @@ export const CONTRACT = {
     onOpenFile: push<string>('link:open-file'),
     /** Another window moved a tab here (YAZ-3091 D1, D5): add it as a new active tab with its name and page view. */
     onTakeTab: push<MovedTab>('link:take-tab'),
+    /** Another window moved its Inbox tab here, or opened one in this new window (YAZ-5054): open the Inbox, or go to the one open. */
+    onTakeInbox: push<InboxCarry>('link:take-inbox'),
     /** Another window's tab board picked a tab of this window (YAZ-3343 D3): make it active (it is copy `ref.copy` of `ref.path`). */
     onFocusTab: push<TabRef>('link:focus-tab'),
     /** Another window's tab board closed tabs of this window (YAZ-3343 D3, D10). */
@@ -495,13 +522,13 @@ export const CONTRACT = {
   file: {
     /** In-app rename (Links E1 GRO-2194; folders E1b GRO-2241): same-directory, extension kind unchanged; never overwrites (`ALREADY_EXISTS`). */
     rename: invoke<[req: RenameFileRequest], RenameFileResponse>('fs:rename', 1),
-    /** A title edit (YAZ-2420 🔒 D16): writes `title:`, then renames the note or folder to the name built from it; a changed path is repaired and pushed as `rename`'s is. */
+    /** A title edit (YAZ-2420 🔒 D16): writes `title:`, then renames the page or folder to the name built from it; a changed path is repaired and pushed as `rename`'s is. */
     retitle: invoke<[req: RetitleRequest], RenameFileResponse>('fs:retitle', 1),
     /** Store/tab repair for a rename that ALREADY happened on disk (Links E1c, GRO-2242): `newPath` must exist, `oldPath` must not; pushes the same `file:renamed`. */
     repairRename: invoke<[req: RenameFileRequest], RenameFileResponse>('file:repair-rename', 1),
     /** Fired in every window after a successful rename or repair. */
     onRenamed: push<FileRenamedEvent>('file:renamed'),
-    /** In-app delete (GRO-2272): to the SYSTEM TRASH only, never `fs.rm`; refuses dot-entries and the calling window's own root. Notes linking to it stay byte-identical. */
+    /** In-app delete (GRO-2272): to the SYSTEM TRASH only, never `fs.rm`; refuses dot-entries and the calling window's own root. Pages linking to it stay byte-identical. */
     delete: invoke<[req: DeleteRequest], DeleteResponse>('fs:delete', 1),
     /** The Undo of a delete (YAZ-3268 D16): an entry of the Trash back to its old place in a vault of the calling window. Never overwrites (`ALREADY_EXISTS`); `NOT_FOUND` when the entry left the Trash. No push: the watcher's add fills the tree. */
     putBack: invoke<[req: PutBackRequest], PutBackResponse>('fs:put-back', 1),
@@ -547,23 +574,36 @@ export const CONTRACT = {
   vaultConfig: {
     /** Parsed `<root>/.yaseendocs/<name>`, or null when the folder/file is missing; malformed JSON rejects `INVALID_CONFIG`. */
     read: invoke<[root: string, name: string], unknown>('vaultConfig:read', 2),
-    /** Creates `.yaseendocs/` on first write; atomic tmp+rename; pretty-printed JSON. `name` must be a plain `<stem>.json`. */
-    write: invoke<[root: string, name: string, value: unknown], void>('vaultConfig:write', 3),
+    /**
+     * Creates `.yaseendocs/` on first write; atomic tmp+rename; pretty-printed JSON. `name` must be a plain `<stem>.json`.
+     * `known` (YAZ-5483): the top-level keys this writer owns; every other top-level key of the file on disk is kept,
+     * so an older build never erases a newer build's key.
+     */
+    write: invoke<[root: string, name: string, value: unknown, known?: readonly string[]], void>('vaultConfig:write', 4),
     /** Fired in every window after any vault's config change. */
     onChange: push<VaultConfigChange>('vaultConfig:changed'),
+  },
+  /** The card skill (YAZ-5059). */
+  cardSkill: {
+    /**
+     * "Duplicate into <vault>…" (YAZ-5109): the app's copy into the top of `vault`, a vault of the calling window, as
+     * `Card skill` — every file writable, with no `.yaseendocs` and no `.version`. With `Card skill` there it makes nothing
+     * and answers `exists`; with `again`, it makes the next free `Card skill N`. Never over anything.
+     */
+    duplicate: invoke<[vault: string, again: boolean], CardSkillDuplicate>('card-skill:duplicate', 2),
   },
   /** A vault's IDs (YAZ-2677), each for a vault of the calling window: the switch in Settings and the duplicate check. */
   ids: {
     /**
      * Save the vault's answer in its `ids.json`, and with a yes its ID letters, in capitals (🔒 D2).
      * Every other key of the file stays (R10, R12), and the read and the write are one step in main,
-     * so two windows that save at one moment each keep the other's change. A yes gives every note
+     * so two windows that save at one moment each keep the other's change. A yes gives every page
      * and folder its number NOW, on this Mac (R32, S64); a Mac that only sees the yes arrive by the
      * sync waits (S65). A file that is not valid JSON is not written over (`INVALID_CONFIG`).
      */
     set: invoke<[root: string, enabled: boolean, letters?: string], void>('ids:set', 3),
     /**
-     * "Check for duplicates" (🔒 D7, S55 to S57): the notes that share an ID are settled now, on this
+     * "Check for duplicates" (🔒 D7, S55 to S57): the pages that share an ID are settled now, on this
      * Mac (R32), and the answer tells the result in one line: `No duplicates.`, what was fixed, or
      * which ID another Mac must fix (then nothing was written).
      */
@@ -579,13 +619,13 @@ export const CONTRACT = {
      */
     reletter: invoke<[root: string, letters: string], IdsState>('ids:reletter', 2),
     /**
-     * "Give old IDs numbers" (🔒 D6, S88 to S90): each note and folder with an old 12-character ID
+     * "Give old IDs numbers" (🔒 D6, S88 to S90): each page and folder with an old 12-character ID
      * takes the vault's next number, oldest file first, and each link, `also_in` entry, folder-value
      * key and built file name follows. A second run finishes one that stopped, with the same numbers.
      * Resolves when it is done, to the state after it.
      */
     backfill: invoke<[root: string], IdsState>('ids:backfill', 1),
-    /** Fired in every window when "Change letters" or "Give old IDs numbers" ends, done or stopped: the notes of `root` have new paths, so its index is read at once (YAZ-3102). Filter by `root`. */
+    /** Fired in every window when "Change letters" or "Give old IDs numbers" ends, done or stopped: the pages of `root` have new paths, so its index is read at once (YAZ-3102). Filter by `root`. */
     onChanged: push<{ root: string }>('ids:changed'),
   },
   /** Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835): targeted, serialised mutators; a corrupt file rejects every write `INVALID_CONFIG`. */
@@ -619,7 +659,7 @@ export const CONTRACT = {
     /** Fired in every window after any change to a vault's new-places.json, own or external; filter by `root`. */
     onChanged: push<{ root: string }>('newPlaces:changed'),
   },
-  /** A vault's one-row icon picks over `.yaseendocs/icons.json` (YAZ-3440 D8), by absolute path (`shared/vaultIcons.ts`); the name rules are `settings.sidebarIconRules`. */
+  /** A vault's one-row icon picks over `.yaseendocs/icons.json` (YAZ-3440 D8), by absolute path (`shared/vaultIcons.ts`); and (YAZ-5488) the vault's own name rules and icon colours, when it has them (absent: the app's settings). */
   icons: {
     /** The picks; none when the file is absent or malformed. Never creates anything. */
     get: invoke<[root: string], VaultIcons>('icons:get', 1),
@@ -719,6 +759,12 @@ export const CONTRACT = {
     sound: invoke<[kind: GestureSound], void>('app:sound', 1),
     /** This user's home folder (YAZ-3886 P2): the Welcome screen shows it as "~" in a folder's path. Never fails. */
     home: invoke<[], string>('app:home', 0),
+    /**
+     * The format hint on a new card (YAZ-5114): the `formats` folder of the card skill that `vault` uses (its own
+     * `Card skill` folder, else the app's copy, `cardSkillFolder`) and the format names in it, A to Z. Null when that
+     * skill has no `formats` folder. `vault` null: the app's copy. Never writes.
+     */
+    cardFormats: invoke<[vault: string | null], CardSkillFormats | null>('app:card-formats', 1),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {
@@ -749,6 +795,20 @@ export const CONTRACT = {
    * request a handle and a position. `null` = no helper answers (none fits, or it is down): the tab
    * falls back to Monaco's one-file help, with no message. Long form: docs/CONTRACTS.md › Bridge API.
    */
+  /**
+   * The course sound (YAZ-5159, 6D1): main downloads one chapter's file when the person starts that chapter, then the
+   * next chapter's in the background, only while the course is open. A failed download is `missing`, never a rejection.
+   */
+  courseAudio: {
+    /** The course layer opened (`true`) or closed (`false`) in this window. The last close stops the downloads. */
+    open: invoke<[open: boolean], void>('course-audio:open', 1),
+    /** A chapter starts (or "Try again"): its sound downloads when it is not here. */
+    chapterStarting: invoke<[chapter: string], void>('course-audio:chapter-starting', 1),
+    /** The chapter's sound when its checked file is here; else null. */
+    chapter: invoke<[chapter: string], CourseAudioSound | null>('course-audio:chapter', 1),
+    /** A chapter's sound arrived, is downloading, or could not come. */
+    onChange: push<CourseAudioChange>('course-audio:changed'),
+  },
   lsp: {
     open: invoke<[req: LspOpenRequest], LspOpenResponse | null>('lsp:open', 1),
     /** The tab's whole text now (debounced by the tab). */
@@ -796,8 +856,8 @@ export const SPECIAL = {
   menuPasteAs: 'menu:paste-as',
   menuCopyText: invoke<[text: string, html?: string], void>('menu:copy-text', 2),
   menuPasteTextFallback: invoke<[text: string], void>('menu:paste-text-fallback', 1),
-  /** A note's own right-click menu (YAZ-3653): main runs the row on the sending window, as the native menu's roles do. */
-  menuEdit: invoke<[action: NoteMenuAction, arg?: NoteMenuArg], void>('menu:edit', 2),
+  /** A page's own right-click menu (YAZ-3653): main runs the row on the sending window, as the native menu's roles do. */
+  menuEdit: invoke<[action: PageMenuAction, arg?: PageMenuArg], void>('menu:edit', 2),
   /** The macOS spell checker's guesses for a word, best first; null when it is spelled right (YAZ-4464). */
   spellGuesses: invoke<[word: string], string[] | null>('spell:guesses', 1),
 } as const
@@ -841,8 +901,8 @@ export type YaseenDocsApi = Bridge<typeof CONTRACT> & {
     onCopyAs(listener: (mode: CopyAsMode) => string | CopyAsRich | undefined): () => void
     /** Explicit paste targets the focused editor; return true when handled. */
     onPasteAs(listener: (request: ClipboardPasteRequest) => boolean): () => void
-    /** A row of a note's own right-click menu (YAZ-3653); `arg` for `add-word`, `reveal-image` and `copy-image` only (YAZ-3727 D22). */
-    edit(action: NoteMenuAction, arg?: NoteMenuArg): Promise<void>
+    /** A row of a page's own right-click menu (YAZ-3653); `arg` for `add-word`, `reveal-image` and `copy-image` only (YAZ-3727 D22). */
+    edit(action: PageMenuAction, arg?: PageMenuArg): Promise<void>
   }
   spell: {
     /** The spellchecker's suggestions for a misspelled `word`, or null when it is spelled right (YAZ-3653, YAZ-4464). */

@@ -229,7 +229,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(swatch('#00aa00').classList.contains('active')).toBe(true)
   })
 
-  it('Hex code: a valid hex and Enter applies it with the focus back in the note; an invalid one does nothing', async () => {
+  it('Hex code: a valid hex and Enter applies it with the focus back in the page; an invalid one does nothing', async () => {
     const { crepe, view } = await mount('hello world\n')
     await select(view, 'world')
     await press('highlight-more')
@@ -246,7 +246,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(hexInput().value).toBe('abcdef')
     // Three digits read as six.
     expect(readHex('f80')).toBe('#ff8800')
-    // Escape in the field closes the panel and gives the focus back to the note.
+    // Escape in the field closes the panel and gives the focus back to the page.
     hexInput().focus()
     key('Escape', hexInput())
     expect(isOpen()).toBe(false)
@@ -406,7 +406,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     watch.disconnect()
   })
 
-  it('R G B from the keyboard: typing previews, Enter is one pick with the focus back in the note', async () => {
+  it('R G B from the keyboard: typing previews, Enter is one pick with the focus back in the page', async () => {
     const { crepe, view } = await mount('hello world\n')
     await select(view, 'world')
     await press('highlight-more')
@@ -439,7 +439,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(getMarkdownForSave(crepe)).toBe('hello world\n')
   })
 
-  it('Escape closes only the box — from the note, the hex field or an R G B field — and a second one the panel', async () => {
+  it('Escape closes only the box — from the page, the hex field or an R G B field — and a second one the panel', async () => {
     const { view } = await mount('hello world\n')
     await select(view, 'world')
     await press('highlight-more')
@@ -566,7 +566,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(current()).toBe('None')
     key('ArrowLeft')
     expect(current()).toBe('Custom colour…')
-    // Any other key closes it and goes on to the note.
+    // Any other key closes it and goes on to the page.
     expect(key('x').defaultPrevented).toBe(false)
     expect(isOpen()).toBe(false)
   })

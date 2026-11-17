@@ -122,9 +122,9 @@ export async function appWindow(app: ElectronApplication, winId: string, timeout
 
 /** The visible tab's layer: every other open tab stays mounted underneath, hidden. */
 export const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-/** The visible tab's note editor. */
+/** The visible tab's page editor. */
 export const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
-/** The visible tab's folder view (YAZ-2290): the views a folder's tab shows over its notes (`section.folder-view`, FolderView.tsx). */
+/** The visible tab's folder view (YAZ-2290): the views a folder's tab shows over its pages (`section.folder-view`, FolderView.tsx). */
 export const contents = (w: Page) => layer(w).locator('.folder-view')
 export const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
 export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
@@ -146,7 +146,7 @@ export const lensTab = (w: Page, label: 'Files') => w.locator('.sidebar__lenses 
 /** The Search tab (YAZ-2638 D2): the second tab of the row, a magnifier, so its name lives in `aria-label`. */
 export const searchTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Search"]')
 /** The search bar. It is on the Search tab only (YAZ-2638 S6): on Files, Focus and Favorites this finds nothing. */
-export const searchBar = (w: Page) => w.locator('[aria-label="Search notes"]')
+export const searchBar = (w: Page) => w.locator('[aria-label="Search pages"]')
 /**
  * Shows the Search tab by the click a user makes on it (YAZ-2638 S5) and waits for its bar. Every
  * spec calls this before it types a query: no other tab has the bar. Safe on the tab that already
@@ -167,7 +167,8 @@ export async function openFromBlankTab(w: Page, label: string): Promise<void> {
   await expect(tabsOf(w)).toHaveText(['New tab'])
   await expect(searchBar(w)).toBeFocused()
   await w.keyboard.type(label)
-  await expect(fileRow(w, label)).toBeVisible()
+  // In a vault with IDs the result row reads "DOC-1 — Hub": "Show IDs" in search is Always by default (YAZ-4940).
+  await expect(w.locator('.tree__row--file .tree__label').filter({ hasText: new RegExp(`(^|— )${label}$`) }).first()).toBeVisible()
   await searchBar(w).press('Enter')
   await expect(activeTab(w)).toContainText(label)
 }
@@ -175,7 +176,7 @@ export async function openFromBlankTab(w: Page, label: string): Promise<void> {
 export const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
 /**
  * An item of the menu's open LIST (the flyout, `.ctx-menu__sub`) by its exact label. The create rows
- * (YAZ-3085 D1, D3) share a label with their list's first item — "New note" is both (edge case 9) —
+ * (YAZ-3085 D1, D3) share a label with their list's first item — "New page" is both (edge case 9) —
  * so `menuItem` matches two buttons while a list is open; a list item is clicked through this one.
  */
 export const menuListItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu__sub [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
@@ -232,7 +233,7 @@ export async function dragAbove(w: Page, source: Locator, target: Locator): Prom
 export const nextFrame = (w: Page): Promise<unknown> => w.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))))
 
 /**
- * Types ` <prefix><timestamp>` at the end of the seed note's LAST bullet and returns the marker; the
+ * Types ` <prefix><timestamp>` at the end of the seed page's LAST bullet and returns the marker; the
  * autosave is left pending. The caret goes to the line end with ⌘→: on macOS `End` does not move it,
  * it starts an animated scroll (YAZ-2131, 3ccc0cc).
  */
@@ -247,7 +248,7 @@ export async function typeMarkerAtLastBullet(w: Page, prefix: string): Promise<s
 // ---------- fixture vault ----------
 
 /** The file the smoke suite seeds open; has nested bullets so outline folding is exercisable. */
-export const SEED_FILE = 'Welcome note.md'
+export const SEED_FILE = 'Welcome page.md'
 export const SEED_BODY = 'seed-welcome-body'
 export const PARENT_BULLET = 'Parent bullet'
 export const CHILD_BULLET = 'Child bullet alpha'
@@ -279,14 +280,14 @@ export async function copyVault(src: string): Promise<string> {
   return dest
 }
 
-// ---------- a note on disk (YAZ-2420): the app builds its name as `<kebab-title>-<id>.md` ----------
+// ---------- a page on disk (YAZ-2420): the app builds its name as `<kebab-title>-<id>.md` ----------
 
 /**
- * A note id as a pattern, for finding a file whose name the app built: a number ID (YAZ-2677 D3 —
- * `YAZ-12` in the note's `id:` line, `yaz-12` in its file name), or an old 12-character ID, which
- * a note made before number IDs still holds.
+ * A page id as a pattern, for finding a file whose name the app built: a number ID (YAZ-2677 D3 —
+ * `YAZ-12` in the page's `id:` line, `yaz-12` in its file name), or an old 12-character ID, which
+ * a page made before number IDs still holds.
  */
-export const NOTE_ID = '(?:[A-Za-z]{2,5}-[1-9]\\d*|[0-9a-hjkmnp-tv-z]{12})'
+export const PAGE_ID = '(?:[A-Za-z]{2,5}-[1-9]\\d*|[0-9a-hjkmnp-tv-z]{12})'
 
 /** The one file in `dir` whose name matches, or '' while there is none or more than one. */
 export async function only(dir: string, pattern: RegExp): Promise<string> {
@@ -294,15 +295,15 @@ export async function only(dir: string, pattern: RegExp): Promise<string> {
   return hits.length === 1 ? hits[0] : ''
 }
 
-/** The one note in `dir` the app named for a title whose kebab-case is `kebab`, or '' (`only`). */
-export const builtNote = (dir: string, kebab: string): Promise<string> => only(dir, new RegExp(`^${kebab}-${NOTE_ID}\\.md$`))
+/** The one page in `dir` the app named for a title whose kebab-case is `kebab`, or '' (`only`). */
+export const builtPage = (dir: string, kebab: string): Promise<string> => only(dir, new RegExp(`^${kebab}-${PAGE_ID}\\.md$`))
 
 /** This Mac's ID in a test profile (`mac.json` in the user data folder, YAZ-2677): 12 of `[0-9a-z]`. */
 export const E2E_MAC = 'e2emac000001'
 
 /**
  * A vault that uses IDs before the app opens it (YAZ-2523 🔒 V1): its `ids.json` says yes with
- * `letters`, and this Mac is its first Mac, so the index gives each note its number at once. With
+ * `letters`, and this Mac is its first Mac, so the index gives each page its number at once. With
  * no count file no Mac is first, and the sweep waits 10 minutes (YAZ-2677 🔒 D8). A vault left as
  * it is stays plain: that is the default, and every spec that does not call this tests it.
  */
@@ -327,12 +328,27 @@ export const titleOf = (content: string) => (/^title: (.*)$/m.exec(content)?.[1]
 const SEEDED_LENS = 'files' as const
 
 /**
+ * The app state every seed starts from: a fresh profile, as a person has it once two things of the card work are behind
+ * them. Both are their own choices in the real app, and a spec that tests one turns it back on:
+ *  - `course.offered`: the one notice "New to cards? Take the … course" (YAZ-5272) has shown on this Mac. On a fresh
+ *    profile it stands over the top of the first window of each spec whose vault has no card.
+ *  - `settings.cardSkillInSidebar` off (Settings › Cards › "Card skill in the sidebar": Hide, YAZ-5108): the card skill's
+ *    read-only row is not added under each window's vault, so a spec's tree is its own vault's.
+ */
+export function freshState(): AppState {
+  const state = defaultAppState()
+  state.course.offered = true
+  state.settings.cardSkillInSidebar = false
+  return state
+}
+
+/**
  * One-window seed on `vault`/`file` — the no-native-dialog "open folder" (schema: shared/types.ts AppState v1).
  * No `expanded` option since YAZ-1642: the tree expansion is a session list main reads back as
  * `[]`, so a spec that needs a nested row opens its dir the way a user does — `expandDirs`.
  */
 export function seededState(vault: string, file: string | null): AppState {
-  const state = defaultAppState()
+  const state = freshState()
   state.recents = [{ path: vault, lastOpened: Date.now() }]
   state.windows = [{ id: 'w1', root: vault, roots: [vault], file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
   state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } }
@@ -425,7 +441,7 @@ export interface SeedWindow {
  * "Last vault", brings back only the windows on `recentRoots[0]` (YAZ-2589 D2).
  */
 export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): AppState {
-  const state = defaultAppState()
+  const state = freshState()
   state.settings.startupWindows = 'all'
   const now = Date.now()
   state.recents = recentRoots.map((p, i) => ({ path: p, lastOpened: now - i }))
@@ -583,7 +599,7 @@ export async function closeWindow(app: ElectronApplication, winId: string): Prom
   }, winId)
 }
 
-// ---------- a folder's OUTLINE view editor (YAZ-903; harnessed in YAZ-904) ----------
+// ---------- a folder's PAGE tab editor (the Outline view of YAZ-903 until YAZ-4584 D38; harnessed in YAZ-904) ----------
 
 /**
  * THE OUTLINE IS A PROSEMIRROR NOW, and driving one from Playwright is its own small craft — so
@@ -607,8 +623,11 @@ export async function closeWindow(app: ElectronApplication, winId: string): Prom
  * own answer, and retry the whole thing until the two agree. Never a sleep.
  */
 
-/** The outline view's editor — a real contenteditable, the note editor's own Crepe (YAZ-901). */
-export const outlineEditor = (scope: Locator) => scope.locator('.view-outline .editor-instance .ProseMirror')
+/**
+ * The folder's Page tab editor (YAZ-4584 D38): the body of its `.folder.md` in the page editor's own Crepe. It replaced
+ * the Outline view, and a stored `type: outline` reads as this tab; the fixtures hold their documents as that body.
+ */
+export const outlineEditor = (scope: Locator) => scope.locator('.view-page .editor-instance .ProseMirror')
 
 /**
  * Its bullets, in document order — nested ones included, as siblings. Read with `textContent`
@@ -659,12 +678,12 @@ export interface OutlineCaret {
 export const outlineCaret = (w: Page): Promise<OutlineCaret | null> =>
   w.evaluate(() => {
     const active = document.activeElement
-    if (active === null || !active.classList.contains('ProseMirror') || active.closest('.view-outline') === null) return null
+    if (active === null || !active.classList.contains('ProseMirror') || active.closest('.view-page') === null) return null
     const sel = document.getSelection()
     const node = sel === null ? null : sel.anchorNode
     if (sel === null || node === null) return null
     const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
-    const bullet = el === null ? null : el.closest('.view-outline .content-dom > p')
+    const bullet = el === null ? null : el.closest('.view-page .content-dom > p')
     if (bullet === null) return null
     const range = document.createRange()
     range.selectNodeContents(bullet)

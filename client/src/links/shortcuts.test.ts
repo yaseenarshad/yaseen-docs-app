@@ -5,7 +5,7 @@
  * runs the real one-key writer over an in-memory disk behind `api`, so what lands is real bytes.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { isNoteId } from '@shared/noteId'
+import { isPageId } from '@shared/pageId'
 import type { FileWriteRequest, IndexRecord } from '@shared/types'
 
 /** The vault the writes land in: path → content. */
@@ -25,7 +25,7 @@ vi.mock('../api', async (importOriginal) => {
         return { path, mtime: 2, size: content.length }
       }),
       // The door in the main process (YAZ-2677 D4): the vault's next number.
-      mintNoteId: (await import('../testNoteIds')).testDoor(),
+      mintPageId: (await import('../testPageIds')).testDoor(),
     },
   }
 })
@@ -72,24 +72,24 @@ const pathsIn = (records: readonly IndexRecord[], folder: string, folders: reado
   folderRows(records, folders, folder).map((r) => r.path)
 
 describe('what a folder shows (YAZ-2375 D4)', () => {
-  it('a note directly in the folder is a row; another folder’s note is not', () => {
+  it('a page directly in the folder is a row; another folder’s page is not', () => {
     const records = [rec('/vault/Other.md'), rec('/vault/Projects/A.md'), rec('/vault/Projects-old/X.md'), rec('/vault/Projects/C.md')]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Projects/A.md', '/vault/Projects/C.md'])
   })
 
-  it('a note in a subfolder, at any depth, is a row', () => {
+  it('a page in a subfolder, at any depth, is a row', () => {
     const records = [rec('/vault/Projects/A.md'), rec('/vault/Projects/Deep/B.md'), rec('/vault/Projects/Deep/Deeper/C.md')]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Projects/A.md', '/vault/Projects/Deep/B.md', '/vault/Projects/Deep/Deeper/C.md'])
     expect(pathsIn(records, 'Projects/Deep')).toEqual(['/vault/Projects/Deep/B.md', '/vault/Projects/Deep/Deeper/C.md'])
     expect(pathsIn(records, 'Projects/Deep/Deeper')).toEqual(['/vault/Projects/Deep/Deeper/C.md'])
   })
 
-  it('a folder with no notes of its own but notes in its subfolders shows all of them', () => {
+  it('a folder with no pages of its own but pages in its subfolders shows all of them', () => {
     const records = [rec('/vault/Projects/Deep/B.md'), rec('/vault/Projects/Deep/Deeper/C.md'), rec('/vault/Projects/Other/D.md')]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Projects/Deep/B.md', '/vault/Projects/Deep/Deeper/C.md', '/vault/Projects/Other/D.md'])
   })
 
-  it('a subfolder is never a row: every row is a note of the snapshot', () => {
+  it('a subfolder is never a row: every row is a page of the snapshot', () => {
     const records = [rec('/vault/Projects/A.md'), rec('/vault/Projects/Deep/B.md')]
     expect(folderRows(records, NESTED, 'Projects')).toEqual(records)
   })
@@ -99,7 +99,7 @@ describe('what a folder shows (YAZ-2375 D4)', () => {
     for (const folder of ['Projects/Deep/Deeper', 'Projects/Deep', 'Projects']) expect(pathsIn(records, folder, NESTED)).toEqual(['/vault/Areas/Health.md'])
   })
 
-  it('a note that would be a row twice is shown once: it lives under the folder and is also a shortcut into it, or into a subfolder of it', () => {
+  it('a page that would be a row twice is shown once: it lives under the folder and is also a shortcut into it, or into a subfolder of it', () => {
     const records = [
       rec('/vault/Areas/Both.md', { also_in: [PROJECTS_ID, DEEP_ID, DEEPER_ID] }),
       rec('/vault/Projects/A.md', { also_in: [DEEP_ID] }),
@@ -111,18 +111,18 @@ describe('what a folder shows (YAZ-2375 D4)', () => {
     expect(pathsIn(records, 'Projects/Deep', NESTED)).toEqual(all)
   })
 
-  it('the vault root\'s entry is EVERY note of the vault, each once (YAZ-4921: the root\'s own page lists the whole vault), in the index\'s order', () => {
+  it('the vault root\'s entry is EVERY page of the vault, each once (YAZ-4921: the root\'s own page lists the whole vault), in the index\'s order', () => {
     const records = [rec('/vault/Projects/A.md'), rec('/vault/Projects/Deep/B.md', { also_in: [AREAS_ID] }), rec('/vault/Top.md')]
     expect(pathsIn(records, '', NESTED)).toEqual(['/vault/Projects/A.md', '/vault/Projects/Deep/B.md', '/vault/Top.md'])
   })
 
-  it('plus the notes whose `also_in` holds the folder’s id — the `id` of its `.folder.md`', () => {
+  it('plus the pages whose `also_in` holds the folder’s id — the `id` of its `.folder.md`', () => {
     const records = [rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] }), rec('/vault/Projects/A.md')]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Areas/Health.md', '/vault/Projects/A.md'])
     expect(pathsIn(records, 'Areas')).toEqual(['/vault/Areas/Health.md'])
   })
 
-  it('a note that lives in the folder AND names it shows once; so does one naming it twice', () => {
+  it('a page that lives in the folder AND names it shows once; so does one naming it twice', () => {
     const records = [rec('/vault/Areas/Twice.md', { also_in: [PROJECTS_ID, PROJECTS_ID] }), rec('/vault/Projects/A.md', { also_in: [PROJECTS_ID] })]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Areas/Twice.md', '/vault/Projects/A.md'])
   })
@@ -130,7 +130,7 @@ describe('what a folder shows (YAZ-2375 D4)', () => {
   it('an id no folder has is ignored quietly', () => {
     const records = [rec('/vault/Areas/Health.md', { also_in: [NOBODY_ID, 'Projects'] })]
     expect(pathsIn(records, 'Projects')).toEqual([])
-    expect([...rowsByFolder(records, FOLDERS).keys()]).toEqual(['Areas', '']) // the root shows every note (YAZ-4921)
+    expect([...rowsByFolder(records, FOLDERS).keys()]).toEqual(['Areas', '']) // the root shows every page (YAZ-4921)
   })
 
   it('a scalar `also_in` is ONE entry', () => {
@@ -143,8 +143,8 @@ describe('what a folder shows (YAZ-2375 D4)', () => {
     expect(pathsIn(records, 'Projects', [settings('Projects')])).toEqual(['/vault/Projects/A.md'])
   })
 
-  // The ID vault's half is `plus the notes whose also_in holds the folder's id`, above.
-  it('in a vault that does not use IDs no row is a shortcut: its index hands out no folder id, so a note\u2019s `also_in` names nothing (YAZ-2523 V5)', () => {
+  // The ID vault's half is `plus the pages whose also_in holds the folder's id`, above.
+  it('in a vault that does not use IDs no row is a shortcut: its index hands out no folder id, so a page\u2019s `also_in` names nothing (YAZ-2523 V5)', () => {
     const records = [rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] }), rec('/vault/Projects/A.md')]
     // The same folders as such a vault's index hands them out: the `id` line is a property, and the record has no id.
     const plain = FOLDERS.map(({ id, ...folder }) => ({ ...folder, properties: { id } }))
@@ -166,24 +166,24 @@ describe('what a folder shows (YAZ-2375 D4)', () => {
   })
 })
 
-describe('the folders that show a note', () => {
+describe('the folders that show a page', () => {
   const showing = (record: IndexRecord, folders: readonly IndexRecord[] = NESTED): string[] => foldersShowing(record.folder, record.properties, foldersById(folders))
 
-  it('the folder it lives in, then each folder above it, nearest first — and the vault root last, whose own page lists every note (YAZ-4921)', () => {
+  it('the folder it lives in, then each folder above it, nearest first — and the vault root last, whose own page lists every page (YAZ-4921)', () => {
     expect(showing(rec('/vault/Projects/Deep/Deeper/C.md'))).toEqual(['Projects/Deep/Deeper', 'Projects/Deep', 'Projects', ''])
     expect(showing(rec('/vault/Projects/A.md'))).toEqual(['Projects', ''])
   })
 
   it('then each folder it is a shortcut in, followed by the folders above that one — each folder once, the root last', () => {
-    const note = rec('/vault/Areas/Health.md', { also_in: [DEEPER_ID, PROJECTS_ID, AREAS_ID, NOBODY_ID] })
-    expect(showing(note)).toEqual(['Areas', 'Projects/Deep/Deeper', 'Projects/Deep', 'Projects', ''])
+    const page = rec('/vault/Areas/Health.md', { also_in: [DEEPER_ID, PROJECTS_ID, AREAS_ID, NOBODY_ID] })
+    expect(showing(page)).toEqual(['Areas', 'Projects/Deep/Deeper', 'Projects/Deep', 'Projects', ''])
   })
 
-  it('a note directly in the vault root is shown by the root alone', () => {
+  it('a page directly in the vault root is shown by the root alone', () => {
     expect(showing(rec('/vault/Top.md'))).toEqual([''])
   })
 
-  it('agrees with the rows: a folder shows a note exactly when it is one of the folders showing that note', () => {
+  it('agrees with the rows: a folder shows a page exactly when it is one of the folders showing that page', () => {
     const records = [
       rec('/vault/Top.md', { also_in: [DEEP_ID] }),
       rec('/vault/Areas/Health.md', { also_in: [DEEPER_ID, NOBODY_ID] }),
@@ -207,22 +207,22 @@ describe('`also_in`, read tolerantly', () => {
 })
 
 describe('a row is a shortcut where it does not live under the folder', () => {
-  it('the shortcut mark: a note that is not under the folder being shown is there by a shortcut', () => {
+  it('the shortcut mark: a page that is not under the folder being shown is there by a shortcut', () => {
     const health = rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] })
     expect(isShortcut(health, 'Projects')).toBe(true)
     expect(isShortcut(health, 'Areas')).toBe(false)
     expect(isShortcut(rec('/vault/Projects-old/X.md'), 'Projects')).toBe(true)
   })
 
-  it('a note from a subfolder, at any depth, is no shortcut', () => {
+  it('a page from a subfolder, at any depth, is no shortcut', () => {
     expect(isShortcut(rec('/vault/Projects/Deep/B.md'), 'Projects')).toBe(false)
     expect(isShortcut(rec('/vault/Projects/Deep/Deeper/C.md'), 'Projects')).toBe(false)
     expect(isShortcut(rec('/vault/Projects/A.md'), 'Projects/Deep')).toBe(true)
   })
 })
 
-describe('"Notes in subfolders: Hide" keeps a row directly in the folder (YAZ-4564 D25)', () => {
-  it('a note directly in the folder and a shortcut stay; a note in a subfolder, at any depth, goes', () => {
+describe('"Pages in subfolders: Hide" keeps a row directly in the folder (YAZ-4564 D25)', () => {
+  it('a page directly in the folder and a shortcut stay; a page in a subfolder, at any depth, goes', () => {
     expect(directlyIn(rec('/vault/Projects/A.md'), 'Projects')).toBe(true)
     expect(directlyIn(rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] }), 'Projects')).toBe(true)
     expect(directlyIn(rec('/vault/Projects/Deep/B.md'), 'Projects')).toBe(false)
@@ -270,7 +270,7 @@ describe('rowsByFolder is built once per snapshot', () => {
 })
 
 describe('adding a shortcut (YAZ-2290 D2)', () => {
-  const NOTE = '/vault/Areas/Health.md'
+  const PAGE = '/vault/Areas/Health.md'
   const PROJECTS = '/vault/Projects'
   const SETTINGS_FILE = '/vault/Projects/.folder.md'
   const frontmatterOf = (path: string): Record<string, unknown> => parseFrontmatter(splitFrontmatter(disk.get(path) ?? '').frontmatter).properties
@@ -278,75 +278,75 @@ describe('adding a shortcut (YAZ-2290 D2)', () => {
   beforeEach(() => {
     disk.clear()
     // Already a shortcut in Areas, and carrying an entry this app does not understand.
-    disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
+    disk.set(PAGE, `---\nalso_in:\n  - ${AREAS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
   })
 
-  /** Pick the note for Projects — twice: the second pick must change nothing. */
+  /** Pick the page for Projects — twice: the second pick must change nothing. */
   const pickTwice = async (): Promise<void> => {
-    await addShortcut(PROJECTS, NOTE)
-    const [note, folder] = [disk.get(NOTE), disk.get(SETTINGS_FILE)]
-    await addShortcut(PROJECTS, NOTE)
-    expect(disk.get(NOTE)).toBe(note)
+    await addShortcut(PROJECTS, PAGE)
+    const [page, folder] = [disk.get(PAGE), disk.get(SETTINGS_FILE)]
+    await addShortcut(PROJECTS, PAGE)
+    expect(disk.get(PAGE)).toBe(page)
     expect(disk.get(SETTINGS_FILE)).toBe(folder)
   }
 
   it('a folder whose settings file has an id: that id is appended, every entry already there kept as written', async () => {
     disk.set(SETTINGS_FILE, `---\nid: ${PROJECTS_ID}\n---\n`)
     await pickTwice()
-    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', PROJECTS_ID])
-    expect(disk.get(NOTE)).toContain('title: Health\n---\nBody\n')
+    expect(frontmatterOf(PAGE).also_in).toEqual([AREAS_ID, 'Old Folder', PROJECTS_ID])
+    expect(disk.get(PAGE)).toContain('title: Health\n---\nBody\n')
     expect(disk.get(SETTINGS_FILE)).toBe(`---\nid: ${PROJECTS_ID}\n---\n`)
   })
 
   it('a folder with NO settings file: the file is written holding just a fresh id — the next number, from the door (YAZ-2677 D4) — and that id is the one used', async () => {
-    const asked = vi.mocked(api.mintNoteId).mock.calls.length
+    const asked = vi.mocked(api.mintPageId).mock.calls.length
     await pickTwice()
     const { id } = frontmatterOf(SETTINGS_FILE)
-    expect(isNoteId(id)).toBe(true)
+    expect(isPageId(id)).toBe(true)
     expect(id).toMatch(/^YAZ-[1-9]\d*$/)
     expect(disk.get(SETTINGS_FILE)).toBe(`---\nid: ${String(id)}\n---\n`)
-    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
-    // The folder's id is quiet (YAZ-3235 D1): bookkeeping. The note's `also_in` is the user's shortcut: a save of the note.
+    expect(frontmatterOf(PAGE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
+    // The folder's id is quiet (YAZ-3235 D1): bookkeeping. The page's `also_in` is the user's shortcut: a save of the page.
     const writes = vi.mocked(api.writeFile).mock.calls.map(([req]) => req)
     expect(writes.filter((req) => req.path === SETTINGS_FILE).every((req) => req.quiet === true)).toBe(true)
-    expect(writes.filter((req) => req.path === NOTE).every((req) => req.quiet === undefined)).toBe(true)
+    expect(writes.filter((req) => req.path === PAGE).every((req) => req.quiet === undefined)).toBe(true)
     // One number, asked for the folder; the second pick found the id and took none.
-    expect(vi.mocked(api.mintNoteId).mock.calls.slice(asked)).toEqual([[PROJECTS]])
+    expect(vi.mocked(api.mintPageId).mock.calls.slice(asked)).toEqual([[PROJECTS]])
   })
 
   it('a folder that holds its id costs no number, and a number ID written by hand in another case is used as the index holds it (YAZ-2677 R2)', async () => {
-    const asked = vi.mocked(api.mintNoteId).mock.calls.length
+    const asked = vi.mocked(api.mintPageId).mock.calls.length
     disk.set(SETTINGS_FILE, '---\nid: yaz-77\n---\n')
     await pickTwice()
     expect(disk.get(SETTINGS_FILE)).toBe('---\nid: yaz-77\n---\n')
-    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', 'YAZ-77'])
-    expect(vi.mocked(api.mintNoteId).mock.calls).toHaveLength(asked)
+    expect(frontmatterOf(PAGE).also_in).toEqual([AREAS_ID, 'Old Folder', 'YAZ-77'])
+    expect(vi.mocked(api.mintPageId).mock.calls).toHaveLength(asked)
   })
 
   it('an `also_in` entry written by hand in another case names the same folder: no second entry is added, and "Remove shortcut" takes it out (YAZ-2677 R2)', async () => {
     disk.set(SETTINGS_FILE, '---\nid: YAZ-77\n---\n')
-    disk.set(NOTE, '---\nalso_in:\n  - yaz-77\n  - Old Folder\n---\nBody\n')
-    await addShortcut(PROJECTS, NOTE)
-    expect(disk.get(NOTE)).toBe('---\nalso_in:\n  - yaz-77\n  - Old Folder\n---\nBody\n')
-    await removeShortcut(PROJECTS, NOTE, [{ ...rec('/vault/Projects/.folder.md'), id: 'YAZ-77' }])
-    expect(frontmatterOf(NOTE).also_in).toEqual(['Old Folder'])
+    disk.set(PAGE, '---\nalso_in:\n  - yaz-77\n  - Old Folder\n---\nBody\n')
+    await addShortcut(PROJECTS, PAGE)
+    expect(disk.get(PAGE)).toBe('---\nalso_in:\n  - yaz-77\n  - Old Folder\n---\nBody\n')
+    await removeShortcut(PROJECTS, PAGE, [{ ...rec('/vault/Projects/.folder.md'), id: 'YAZ-77' }])
+    expect(frontmatterOf(PAGE).also_in).toEqual(['Old Folder'])
   })
 
   it('an id that reaches the settings file while the door is asked stays: the number taken is a gap, and the id in the file is the one used', async () => {
-    vi.mocked(api.mintNoteId).mockImplementationOnce(async () => {
+    vi.mocked(api.mintPageId).mockImplementationOnce(async () => {
       disk.set(SETTINGS_FILE, `---\nid: ${PROJECTS_ID}\n---\n`) // the sweep in the main process was first
       return 'YAZ-500'
     })
-    await addShortcut(PROJECTS, NOTE)
+    await addShortcut(PROJECTS, PAGE)
     expect(disk.get(SETTINGS_FILE)).toBe(`---\nid: ${PROJECTS_ID}\n---\n`)
-    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', PROJECTS_ID])
+    expect(frontmatterOf(PAGE).also_in).toEqual([AREAS_ID, 'Old Folder', PROJECTS_ID])
   })
 
   it('a vault that does not use IDs after all (the door answers null): the shortcut is refused, and nothing is written', async () => {
-    vi.mocked(api.mintNoteId).mockResolvedValueOnce(null)
-    const note = disk.get(NOTE)
-    await expect(addShortcut(PROJECTS, NOTE)).rejects.toThrow('this vault does not use IDs')
-    expect(disk.get(NOTE)).toBe(note)
+    vi.mocked(api.mintPageId).mockResolvedValueOnce(null)
+    const page = disk.get(PAGE)
+    await expect(addShortcut(PROJECTS, PAGE)).rejects.toThrow('this vault does not use IDs')
+    expect(disk.get(PAGE)).toBe(page)
     expect(disk.has(SETTINGS_FILE)).toBe(false)
   })
 
@@ -354,131 +354,131 @@ describe('adding a shortcut (YAZ-2290 D2)', () => {
     disk.set(SETTINGS_FILE, '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n---\n')
     await pickTwice()
     const { id, folder_settings } = frontmatterOf(SETTINGS_FILE)
-    expect(isNoteId(id)).toBe(true)
+    expect(isPageId(id)).toBe(true)
     expect(folder_settings).toEqual({ views: [{ type: 'table', name: 'Table' }] })
-    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
+    expect(frontmatterOf(PAGE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
   })
 
-  it('a note with no `also_in` gains the key, and a scalar one becomes a list that keeps it', async () => {
+  it('a page with no `also_in` gains the key, and a scalar one becomes a list that keeps it', async () => {
     disk.set(SETTINGS_FILE, `---\nid: ${PROJECTS_ID}\n---\n`)
-    disk.set(NOTE, 'Body\n')
-    await addShortcut(PROJECTS, NOTE)
-    expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`)
-    disk.set(NOTE, `---\nalso_in: ${AREAS_ID}\n---\nBody\n`)
-    await addShortcut(PROJECTS, NOTE)
-    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, PROJECTS_ID])
+    disk.set(PAGE, 'Body\n')
+    await addShortcut(PROJECTS, PAGE)
+    expect(disk.get(PAGE)).toBe(`---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`)
+    disk.set(PAGE, `---\nalso_in: ${AREAS_ID}\n---\nBody\n`)
+    await addShortcut(PROJECTS, PAGE)
+    expect(frontmatterOf(PAGE).also_in).toEqual([AREAS_ID, PROJECTS_ID])
   })
 
   it('a settings file whose `id` is another tool’s value is one with no id: this app’s is written over it, then used (YAZ-2420 D30)', async () => {
     disk.set(SETTINGS_FILE, '---\nid: my-own-id\n---\n')
     await pickTwice()
     const { id } = frontmatterOf(SETTINGS_FILE)
-    expect(isNoteId(id)).toBe(true)
+    expect(isPageId(id)).toBe(true)
     expect(disk.get(SETTINGS_FILE)).toBe(`---\nid: ${String(id)}\n---\n`)
-    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
+    expect(frontmatterOf(PAGE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
   })
 })
 
 describe('removing a shortcut (YAZ-2290 E5)', () => {
-  const NOTE = '/vault/Areas/Health.md'
+  const PAGE = '/vault/Areas/Health.md'
 
-  it('takes the folder’s id out of the note’s `also_in` and leaves every other entry, and byte, alone', async () => {
-    disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, FOLDERS)
-    expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
+  it('takes the folder’s id out of the page’s `also_in` and leaves every other entry, and byte, alone', async () => {
+    disk.set(PAGE, `---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
+    await removeShortcut('/vault/Projects', PAGE, FOLDERS)
+    expect(disk.get(PAGE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
   })
 
-  it('"Remove shortcut" removes the entries naming the folder OR any folder under it, and never deletes the note', async () => {
-    disk.set(NOTE, `---\nalso_in:\n  - ${DEEPER_ID}\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - ${DEEP_ID}\ntitle: Health\n---\nBody\n`)
-    await removeShortcut('/vault/Projects/Deep', NOTE, NESTED)
-    expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\ntitle: Health\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, NESTED)
-    expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\ntitle: Health\n---\nBody\n`)
+  it('"Remove shortcut" removes the entries naming the folder OR any folder under it, and never deletes the page', async () => {
+    disk.set(PAGE, `---\nalso_in:\n  - ${DEEPER_ID}\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - ${DEEP_ID}\ntitle: Health\n---\nBody\n`)
+    await removeShortcut('/vault/Projects/Deep', PAGE, NESTED)
+    expect(disk.get(PAGE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\ntitle: Health\n---\nBody\n`)
+    await removeShortcut('/vault/Projects', PAGE, NESTED)
+    expect(disk.get(PAGE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\ntitle: Health\n---\nBody\n`)
   })
 
   it('a folder with no `.folder.md` of its own still removes the entries naming the folders under it', async () => {
-    disk.set(NOTE, `---\nalso_in:\n  - ${DEEP_ID}\n  - ${AREAS_ID}\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, [settings('Projects/Deep', DEEP_ID), settings('Projects-old', AREAS_ID)])
-    expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n---\nBody\n`)
+    disk.set(PAGE, `---\nalso_in:\n  - ${DEEP_ID}\n  - ${AREAS_ID}\n---\nBody\n`)
+    await removeShortcut('/vault/Projects', PAGE, [settings('Projects/Deep', DEEP_ID), settings('Projects-old', AREAS_ID)])
+    expect(disk.get(PAGE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n---\nBody\n`)
   })
 
   it('the key goes with its last entry — list or scalar: an emptied list is no list', async () => {
-    disk.set(NOTE, `---\nalso_in:\n  - ${PROJECTS_ID}\ntitle: Health\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, FOLDERS)
-    expect(disk.get(NOTE)).toBe('---\ntitle: Health\n---\nBody\n')
-    disk.set(NOTE, `---\nalso_in: ${PROJECTS_ID}\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, FOLDERS)
-    expect(disk.get(NOTE)).toBe('---\n---\nBody\n') // the one-key writer's own empty block
+    disk.set(PAGE, `---\nalso_in:\n  - ${PROJECTS_ID}\ntitle: Health\n---\nBody\n`)
+    await removeShortcut('/vault/Projects', PAGE, FOLDERS)
+    expect(disk.get(PAGE)).toBe('---\ntitle: Health\n---\nBody\n')
+    disk.set(PAGE, `---\nalso_in: ${PROJECTS_ID}\n---\nBody\n`)
+    await removeShortcut('/vault/Projects', PAGE, FOLDERS)
+    expect(disk.get(PAGE)).toBe('---\n---\nBody\n') // the one-key writer's own empty block
   })
 
-  it('a folder with no `.folder.md`, or one that holds no id, names nothing: the note is not written', async () => {
+  it('a folder with no `.folder.md`, or one that holds no id, names nothing: the page is not written', async () => {
     vi.mocked(api.writeFile).mockClear()
-    disk.set(NOTE, `---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, [])
-    await removeShortcut('/vault/Projects', NOTE, [settings('Projects')])
+    disk.set(PAGE, `---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`)
+    await removeShortcut('/vault/Projects', PAGE, [])
+    await removeShortcut('/vault/Projects', PAGE, [settings('Projects')])
     expect(api.writeFile).not.toHaveBeenCalled()
   })
 
-  it('a note that does not name the folder is not written', async () => {
+  it('a page that does not name the folder is not written', async () => {
     vi.mocked(api.writeFile).mockClear()
-    disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, FOLDERS)
+    disk.set(PAGE, `---\nalso_in:\n  - ${AREAS_ID}\n---\nBody\n`)
+    await removeShortcut('/vault/Projects', PAGE, FOLDERS)
     expect(api.writeFile).not.toHaveBeenCalled()
   })
 })
 
-/** A note's `in`, written: one block per id, each holding `order`. */
+/** A page's `in`, written: one block per id, each holding `order`. */
 const blocks = (...ids: string[]): string => `in:\n${ids.map((id) => `  ${id}:\n    order: 1\n`).join('')}`
 
 describe('a move never deletes values (YAZ-4713 C9)', () => {
-  const NOTE = '/vault/Areas/Health.md'
+  const PAGE = '/vault/Areas/Health.md'
 
   it('"Remove shortcut" takes only the `also_in` entry: every field and every block of `in` stays, byte for byte', async () => {
-    disk.set(NOTE, `---\nalso_in:\n  - ${DEEP_ID}\ntitle: Health\ndomain: Billing\n${blocks(AREAS_ID, PROJECTS_ID, DEEP_ID, NOBODY_ID)}---\nBody\n`)
-    await removeShortcut('/vault/Projects/Deep', NOTE, NESTED)
-    expect(disk.get(NOTE)).toBe(`---\ntitle: Health\ndomain: Billing\n${blocks(AREAS_ID, PROJECTS_ID, DEEP_ID, NOBODY_ID)}---\nBody\n`)
+    disk.set(PAGE, `---\nalso_in:\n  - ${DEEP_ID}\ntitle: Health\ndomain: Billing\n${blocks(AREAS_ID, PROJECTS_ID, DEEP_ID, NOBODY_ID)}---\nBody\n`)
+    await removeShortcut('/vault/Projects/Deep', PAGE, NESTED)
+    expect(disk.get(PAGE)).toBe(`---\ntitle: Health\ndomain: Billing\n${blocks(AREAS_ID, PROJECTS_ID, DEEP_ID, NOBODY_ID)}---\nBody\n`)
   })
 
   it('the write the removal rides on is refused: nothing is removed', async () => {
-    const note = `---\nalso_in:\n  - ${PROJECTS_ID}\n${blocks(PROJECTS_ID)}---\n`
-    disk.set(NOTE, note)
+    const page = `---\nalso_in:\n  - ${PROJECTS_ID}\n${blocks(PROJECTS_ID)}---\n`
+    disk.set(PAGE, page)
     vi.mocked(api.writeFile).mockRejectedValueOnce(new Error('disk full'))
-    await expect(removeShortcut('/vault/Projects', NOTE, FOLDERS)).rejects.toThrow('disk full')
-    expect(disk.get(NOTE)).toBe(note)
+    await expect(removeShortcut('/vault/Projects', PAGE, FOLDERS)).rejects.toThrow('disk full')
+    expect(disk.get(PAGE)).toBe(page)
   })
 })
 
 describe('checker round 2 (8E): each Undo of a folder page shortcut puts back exactly what was there', () => {
-  const NOTE = '/vault/Areas/Health.md'
+  const PAGE = '/vault/Areas/Health.md'
 
   it('add to Projects, then its Undo (drop the added id), keeps the shortcut in Projects/Deep', async () => {
     disk.clear()
     disk.set('/vault/Projects/.folder.md', `---\nid: ${PROJECTS_ID}\n---\n`)
     // A shortcut in Projects/Deep already. Projects is not a holder, so the menu offers it.
-    disk.set(NOTE, `---\nalso_in:\n  - ${DEEP_ID}\n---\nBody\n`)
-    const before = disk.get(NOTE)
-    const added = await addShortcut('/vault/Projects', NOTE)
+    disk.set(PAGE, `---\nalso_in:\n  - ${DEEP_ID}\n---\nBody\n`)
+    const before = disk.get(PAGE)
+    const added = await addShortcut('/vault/Projects', PAGE)
     expect(added).toBe(PROJECTS_ID)
-    await setShortcutEntries(NOTE, { drop: [added] })
-    expect(disk.get(NOTE)).toBe(before)
+    await setShortcutEntries(PAGE, { drop: [added] })
+    expect(disk.get(PAGE)).toBe(before)
   })
 
-  it('an add the note holds already writes nothing and answers null: there is nothing to undo', async () => {
+  it('an add the page holds already writes nothing and answers null: there is nothing to undo', async () => {
     disk.clear()
     disk.set('/vault/Projects/.folder.md', `---\nid: ${PROJECTS_ID}\n---\n`)
-    disk.set(NOTE, `---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`)
-    const before = disk.get(NOTE)
-    expect(await addShortcut('/vault/Projects', NOTE)).toBeNull()
-    expect(disk.get(NOTE)).toBe(before)
+    disk.set(PAGE, `---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`)
+    const before = disk.get(PAGE)
+    expect(await addShortcut('/vault/Projects', PAGE)).toBeNull()
+    expect(disk.get(PAGE)).toBe(before)
   })
 
   it('remove from Projects takes Projects and Projects/Deep out; its Undo (restore those) puts both back', async () => {
     disk.clear()
-    disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - ${DEEP_ID}\n---\nBody\n`)
-    const removed = await removeShortcut('/vault/Projects', NOTE, NESTED)
+    disk.set(PAGE, `---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - ${DEEP_ID}\n---\nBody\n`)
+    const removed = await removeShortcut('/vault/Projects', PAGE, NESTED)
     expect(removed).toEqual([PROJECTS_ID, DEEP_ID])
-    expect(alsoIn(parseFrontmatter(splitFrontmatter(disk.get(NOTE)!).frontmatter).properties)).toEqual([AREAS_ID])
-    await setShortcutEntries(NOTE, { restore: removed })
-    expect(alsoIn(parseFrontmatter(splitFrontmatter(disk.get(NOTE)!).frontmatter).properties)).toEqual([AREAS_ID, PROJECTS_ID, DEEP_ID])
+    expect(alsoIn(parseFrontmatter(splitFrontmatter(disk.get(PAGE)!).frontmatter).properties)).toEqual([AREAS_ID])
+    await setShortcutEntries(PAGE, { restore: removed })
+    expect(alsoIn(parseFrontmatter(splitFrontmatter(disk.get(PAGE)!).frontmatter).properties)).toEqual([AREAS_ID, PROJECTS_ID, DEEP_ID])
   })
 })

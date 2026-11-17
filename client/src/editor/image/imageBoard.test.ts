@@ -2,7 +2,7 @@
  * A board in another vault, as the stock image node (YAZ-4828 2B): `![CloudFront|640x360 …](../w/CloudFront.drawio)`
  * mounts the board window instead of an `<img>`. A FAKE window (`loadBoardWindow` mocked) records its host and calls.
  * Pinned: the ref (the other vault's root, path and name), the options from the alt, writes into the alt only and
- * outside undo, none in a read-only note, selection, fold, the gallery skipping boards, the menu, destroy, and a plain
+ * outside undo, none in a read-only page, selection, fold, the gallery skipping boards, the menu, destroy, and a plain
  * image rendering as before.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -59,7 +59,7 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 function imageOptions(extra: Partial<ImageOptions> = {}): ImageOptions {
   return {
     root: '/v',
-    notePath: '/v/n.md',
+    pagePath: '/v/n.md',
     boards: {
       place: (src) => (src.startsWith('../w/') ? { root: '/w', path: `/w/${decodeURIComponent(src.slice(5))}`, vault: 'Work' } : null),
       open: vi.fn(),
@@ -107,7 +107,7 @@ describe('a board src (2B)', () => {
     expect(root.querySelectorAll('.image-view img')).toHaveLength(1)
   })
 
-  it('a view write changes only the alt, outside undo; never in a read-only note', async () => {
+  it('a view write changes only the alt, outside undo; never in a read-only page', async () => {
     const { crepe, view } = await mount('![CloudFront](../w/CloudFront.drawio)\n')
     await windows(1)
     const depth = undoDepth(view.state)
@@ -218,7 +218,7 @@ describe('a board src (2B)', () => {
     expect(getMarkdownForSave(crepe)).toBe('![CloudFront|My name|640x360 view=1,2,0.5 locked](../w/CloudFront.drawio)\n')
   })
 
-  it('a read-only note tells the window (item 24), and editable again', async () => {
+  it('a read-only page tells the window (item 24), and editable again', async () => {
     const { view } = await mount('![CloudFront](../w/CloudFront.drawio)\n')
     await windows(1)
     view.setProps({ editable: () => false })

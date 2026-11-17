@@ -39,16 +39,16 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/
 
 const fileOf = (content: string, mtime = 100) => ({ path: PATH, content, mtime, size: content.length })
 
-const note = (entries: string) => `---\ntitle: Funnel\ncomments:\n${entries}---\nBody\n`
+const page = (entries: string) => `---\ntitle: Funnel\ncomments:\n${entries}---\nBody\n`
 
 /** One comment, no replies yet. */
-const LONE = note(`  - id: aaaaaaaa
+const LONE = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     body: Parent comment
 `)
 
 /** LONE as the disk moved on after the prop was taken: the FRESH bytes a write must build on. */
-const FRESHER = note(`  - id: aaaaaaaa
+const FRESHER = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     body: Parent comment
   - id: ffffffff
@@ -57,7 +57,7 @@ const FRESHER = note(`  - id: aaaaaaaa
 `)
 
 /** Deliberately out of `at` order on disk: a thread of two replies, a lone comment, an orphan reply. */
-const THREADED = note(`  - id: aaaaaaaa
+const THREADED = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     body: Parent comment
   - id: bbbbbbbb
@@ -78,7 +78,7 @@ const THREADED = note(`  - id: aaaaaaaa
 `)
 
 /** A titled comment after a title-less one whose first line carries a Markdown marker. */
-const TITLED = note(`  - id: aaaaaaaa
+const TITLED = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     title: Churn
     body: Parent comment
@@ -89,7 +89,7 @@ const TITLED = note(`  - id: aaaaaaaa
       More text
 `)
 
-const AGENT = note(`  - id: aaaaaaaa
+const AGENT = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     by: agent
     body: Written by an agent
@@ -99,7 +99,7 @@ const AGENT = note(`  - id: aaaaaaaa
 `)
 
 /** Multi-line bodies and one title, so every comment but the one-liner has something to fold. */
-const FOLDABLE = note(`  - id: aaaaaaaa
+const FOLDABLE = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     body: |-
       Parent comment
@@ -121,7 +121,7 @@ const FOLDABLE = note(`  - id: aaaaaaaa
 `)
 
 /** Numbered the way `addComment` numbers, plus a hand-written comment without one and an orphan reply that has one. */
-const NUMBERED = note(`  - id: aaaaaaaa
+const NUMBERED = page(`  - id: aaaaaaaa
     n: 1
     at: 2026-09-11T20:00:00Z
     body: Parent comment
@@ -396,7 +396,7 @@ describe('CommentsSection — composer', () => {
     const textarea = textareaOf(composer)
     expect(textarea?.placeholder).toBe('Leave a comment…')
     expect(titleInputOf(composer)).toBeNull()
-    expect(submitOf(composer)?.textContent).toBe('Comment')
+    expect(submitOf(composer)?.textContent).toBe('Comment (Cmd+Enter)')
     expect(submitOf(composer)?.disabled).toBe(true)
 
     focus(textarea)
@@ -492,7 +492,7 @@ describe('CommentsSection — reply', () => {
 
     setValue(textareaOf(composer), 'Third reply')
     expect(composer.classList.contains('comments__composer--collapsed')).toBe(false)
-    expect(submitOf(composer)?.textContent).toBe('Reply')
+    expect(submitOf(composer)?.textContent).toBe('Reply (Cmd+Enter)')
 
     click(submitOf(composer))
     await flush()
@@ -516,7 +516,7 @@ describe('CommentsSection — edit and delete', () => {
 
     setValue(textareaOf(composer), 'Parent comment revised')
     setValue(titleInputOf(composer), 'Churn revisited')
-    click(buttonNamed(composer, 'Save'))
+    click(buttonNamed(composer, 'Save (Cmd+Enter)'))
     await flush()
 
     expect(written()).toMatch(/ {4}title: Churn revisited\n {4}edited: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n {4}body: Parent comment revised\n/)
@@ -536,7 +536,7 @@ describe('CommentsSection — edit and delete', () => {
     const composer = must(q<HTMLElement>(titled, '.comments__composer'), 'edit composer')
 
     setValue(titleInputOf(composer), '')
-    click(buttonNamed(composer, 'Save'))
+    click(buttonNamed(composer, 'Save (Cmd+Enter)'))
     await flush()
 
     expect(written()).not.toContain('    title:')
@@ -623,7 +623,7 @@ describe('CommentsSection — numbers (🔒 D15)', () => {
   })
 
   it('a reply under a parent that has no number is a dot too — there is no run to belong to', () => {
-    const el = mount(note(`  - id: aaaaaaaa\n    at: 2026-09-11T20:00:00Z\n    body: Parent comment\n  - id: bbbbbbbb\n    n: 1\n    at: 2026-09-12T20:00:00Z\n    reply_to: aaaaaaaa\n    body: First reply\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    at: 2026-09-11T20:00:00Z\n    body: Parent comment\n  - id: bbbbbbbb\n    n: 1\n    at: 2026-09-12T20:00:00Z\n    reply_to: aaaaaaaa\n    body: First reply\n`))
     expect(articles(el).map((a) => markOf(a)?.textContent)).toEqual(['·', '·'])
   })
 
@@ -712,7 +712,7 @@ describe('CommentsSection — errors', () => {
 describe('CommentsSection — links and stale edits', () => {
   it('a link in a body opens through the shell; the click never navigates the app window', () => {
     // Below the header line: the first line is the header, rendered as text, so a link lives in the rest.
-    const el = mount(note(`  - id: aaaaaaaa\n    at: 2026-09-11T18:22:31Z\n    body: "Read this\\nSee [the site](https://example.com) now."\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    at: 2026-09-11T18:22:31Z\n    body: "Read this\\nSee [the site](https://example.com) now."\n`))
     const a = must(q<HTMLAnchorElement>(el, '.comments__body a'), 'the link')
     const ev = new MouseEvent('click', { bubbles: true, cancelable: true })
     act(() => void a.dispatchEvent(ev))
@@ -737,7 +737,7 @@ describe('CommentsSection — links and stale edits', () => {
 
 describe('CommentsSection — one-liners keep their Markdown; nothing to fold, no fold-all', () => {
   it('a title-less one-liner renders its inline Markdown in the header row', () => {
-    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: "See **this** and [site](https://example.com)"\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: "See **this** and [site](https://example.com)"\n`))
     const head = must(q(el, '.comments__summary'), 'the header seat')
     expect(head.querySelector('strong')?.textContent).toBe('this')
     expect(head.querySelector('a')?.getAttribute('href')).toBe('https://example.com')
@@ -745,7 +745,7 @@ describe('CommentsSection — one-liners keep their Markdown; nothing to fold, n
   })
 
   it('a page of only one-liners has nothing to fold, so there is no fold-all button', () => {
-    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: One.\n  - id: bbbbbbbb\n    n: 2\n    at: 2026-09-11T19:22:31Z\n    body: Two.\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: One.\n  - id: bbbbbbbb\n    n: 2\n    at: 2026-09-11T19:22:31Z\n    body: Two.\n`))
     expect(articles(el)).toHaveLength(2)
     expect(tool(el)).toBeNull()
   })
@@ -754,7 +754,7 @@ describe('CommentsSection — one-liners keep their Markdown; nothing to fold, n
 // ---------- order (YAZ-1515) ----------
 
 /** Three top-level comments, numbered, filed in `at` order. */
-const THREE = note(`  - id: aaaaaaaa
+const THREE = page(`  - id: aaaaaaaa
     n: 1
     at: 2026-09-10T20:00:00Z
     body: First
@@ -849,7 +849,7 @@ describe('header wrap (YAZ-1516)', () => {
 
   it('a 48-char title is rendered WHOLE in the header row', () => {
     expect(TITLE).toHaveLength(48)
-    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    title: ${TITLE}\n    body: |-\n      Line one\n      Line two\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    title: ${TITLE}\n    body: |-\n      Line one\n      Line two\n`))
     const head = must(q(el, '.comments__summary'), 'the header seat')
     expect(head.textContent).toBe(TITLE)
     expect(head.classList.contains('comments__summary--title')).toBe(true)
@@ -940,7 +940,7 @@ describe('CommentsSection — YAZ-4615 resolve, writers, signing', () => {
   const actionOf = (article: Element, text: string) => all<HTMLButtonElement>(article, '.comments__action').find((b) => b.textContent === text) ?? null
   const written = () => String(writeFile.mock.calls.at(-1)?.[0].content ?? '')
 
-  const RESOLVABLE = note(`  - id: aaaaaaaa
+  const RESOLVABLE = page(`  - id: aaaaaaaa
     n: 1
     at: 2026-09-11T20:00:00Z
     body: Parent comment
@@ -1000,6 +1000,38 @@ describe('CommentsSection — YAZ-4615 resolve, writers, signing', () => {
     expect(q(el, '.comments__resolved-toggle--group')?.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('D5: the header link brings the group into view a frame later; with no scrollIntoView (jsdom, YAZ-4965 CI) or after an unmount nothing throws', async () => {
+    const errors: unknown[] = []
+    const onError = (e: ErrorEvent): void => {
+      errors.push(e.error)
+      e.preventDefault()
+    }
+    window.addEventListener('error', onError)
+    const frame = (): Promise<void> => new Promise((done) => requestAnimationFrame(() => done()))
+    try {
+      const el = mountWith(RESOLVABLE.replace('    body: Lone comment', '    resolved: 2026-09-13T00:00:00Z\n    body: Lone comment'))
+      // No scrollIntoView on the element (jsdom has none): the frame runs with no error.
+      click(button(el, '· 1 resolved'))
+      await frame()
+      expect(errors).toEqual([])
+      // Where the method exists, the group is brought to the top of the view.
+      const group = must(q(el, '.comments__resolved'), 'group')
+      const scroll = vi.fn()
+      Object.assign(group, { scrollIntoView: scroll })
+      click(button(el, '· 1 resolved'))
+      await frame()
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' })
+      // A click, then the section goes before its frame: the frame does nothing.
+      click(button(el, '· 1 resolved'))
+      unmount()
+      await frame()
+      expect(scroll).toHaveBeenCalledTimes(1)
+      expect(errors).toEqual([])
+    } finally {
+      window.removeEventListener('error', onError)
+    }
+  })
+
   it('D5 In place: a resolved thread stays in time order, dimmed, with "Resolved" and Reopen', () => {
     const el = mountWith(RESOLVABLE.replace('    body: Parent comment', '    resolved: 2026-09-13T00:00:00Z\n    body: Parent comment'), { resolvedPlace: 'inPlace' })
     expect(threads(el)[0].classList.contains('comments__thread--resolved')).toBe(true)
@@ -1027,7 +1059,7 @@ describe('CommentsSection — YAZ-4615 resolve, writers, signing', () => {
 
   it('a card under the handle `agent` changes nothing: `agent` stays the violet "AI" with Edit', async () => {
     readConfig.mockResolvedValue({ version: 1, people: { agent: { name: 'Agent Smith', picture: null, updated: '2026-09-01T00:00:00Z' } } })
-    const el = mountWith(note(`  - id: aaaaaaaa
+    const el = mountWith(page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     by: agent
     body: From an agent
@@ -1042,7 +1074,7 @@ describe('CommentsSection — YAZ-4615 resolve, writers, signing', () => {
   it('D6, D8: a teammate shows by their card and has no Edit; your own, an agent\'s and an old comment keep Edit', async () => {
     readConfig.mockResolvedValue({ version: 1, people: { sam: { name: 'Sam Lee', picture: null, updated: '2026-09-01T00:00:00Z' } } })
     const el = mountWith(
-      note(`  - id: aaaaaaaa
+      page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     by: sam
     body: From Sam

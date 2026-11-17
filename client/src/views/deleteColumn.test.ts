@@ -1,9 +1,9 @@
 /**
  * Delete column (YAZ-1513): the declaration goes, every view reference goes, the label goes — ONE
  * settings write through the host's door — and the field is stripped where the host says the values are: for a
- * separate column (YAZ-4713 C3) THIS page's block (D19), for a shared one the note's own field (C1, C7); nothing else
- * in a note is touched. The views of the folder pages below lose the column too, in the same Undo (C7). Notes without
- * it are never written; a note whose frontmatter will not parse is reported, never rewritten;
+ * separate column (YAZ-4713 C3) THIS page's block (D19), for a shared one the page's own field (C1, C7); nothing else
+ * in a page is touched. The views of the folder pages below lose the column too, in the same Undo (C7). Pages without
+ * it are never written; a page whose frontmatter will not parse is reported, never rewritten;
  * built-in keys are refused before anything is touched. `transformFile` is stubbed over an
  * in-memory disk so the strips are real `setFolderValue` rewrites.
  */
@@ -23,7 +23,7 @@ vi.mock('./writeProperty', () => ({
   }),
 }))
 import { transformFile } from './writeProperty'
-import { deleteColumn, filterMentions, notesHolding, pruneColumnFromViews, pruneColumnLabel, pruneFilter, undeletableReason, type DeleteColumnHost } from './deleteColumn'
+import { deleteColumn, filterMentions, pagesHolding, pruneColumnFromViews, pruneColumnLabel, pruneFilter, undeletableReason, type DeleteColumnHost } from './deleteColumn'
 
 const rec = (path: string, properties: Record<string, unknown>): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -31,10 +31,10 @@ const rec = (path: string, properties: Record<string, unknown>): IndexRecord => 
   return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder, ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases: [], tags: [], links: [], embeds: [] }
 }
 
-/** The folder deleting, and another that shows the same notes. */
+/** The folder deleting, and another that shows the same pages. */
 const FOLDER_ID = 'k3m9x2pq7abc'
 const OTHER_ID = 'z8y7x6w5v4t3'
-/** A note's properties holding `values` for the folder deleting, beside its `own` fields. */
+/** A page's properties holding `values` for the folder deleting, beside its `own` fields. */
 const held = (values: Record<string, unknown>, own: Record<string, unknown> = {}): Record<string, unknown> => ({ ...own, in: { [FOLDER_ID]: values } })
 
 const A = '/vault/a.md'
@@ -76,7 +76,7 @@ const host = (over: Partial<DeleteColumnHost> = {}): DeleteColumnHost => ({
 })
 
 describe('undeletableReason: built-in keys are hidden, never deleted', () => {
-  it('refuses file.*, formula.* and the reserved keys with the one tooltip; a plain note key may go', () => {
+  it('refuses file.*, formula.* and the reserved keys with the one tooltip; a plain page key may go', () => {
     for (const key of ['file.name', 'file.mtime', 'formula.score', 'note.also_in', 'comments', 'in', 'note.in']) {
       expect(undeletableReason(key)).toBe('Built-in column — hide it instead')
     }
@@ -84,12 +84,12 @@ describe('undeletableReason: built-in keys are hidden, never deleted', () => {
     expect(undeletableReason('status')).toBeNull()
   })
 
-  it('refuses `id` (YAZ-2293): the note id is the app\'s value — a column that can be hidden, never deleted', () => {
+  it('refuses `id` (YAZ-2293): the page id is the app\'s value — a column that can be hidden, never deleted', () => {
     expect(undeletableReason('id')).toBe('Built-in column — hide it instead')
     expect(undeletableReason('note.id')).toBe('Built-in column — hide it instead')
   })
 
-  it('refuses `also_in` (YAZ-2290 D2): a note\'s shortcuts are the app\'s list — stripping it would take every shortcut down', async () => {
+  it('refuses `also_in` (YAZ-2290 D2): a page\'s shortcuts are the app\'s list — stripping it would take every shortcut down', async () => {
     expect(undeletableReason('also_in')).toBe('Built-in column — hide it instead')
     expect(undeletableReason('note.also_in')).toBe('Built-in column — hide it instead')
     const h = host()
@@ -147,7 +147,7 @@ describe('the pure pruners', () => {
     expect(pruneColumnFromViews([other], 'status')[0]).toBe(other)
   })
 
-  it('filterMentions: the identifier `note.<key>` or the bare key as a whole token, outside string literals', () => {
+  it('filterMentions: the identifier `page.<key>` or the bare key as a whole token, outside string literals', () => {
     expect(filterMentions('note.status == "idea"', 'status')).toBe(true)
     expect(filterMentions('status == "idea"', 'note.status')).toBe(true)
     expect(filterMentions('note.status_2 == 1', 'status')).toBe(false) // a longer identifier
@@ -177,14 +177,14 @@ describe('the pure pruners', () => {
     expect(pruneColumnLabel(undefined, 'status')).toBeUndefined()
   })
 
-  it('notesHolding lists the notes whose block for THIS folder holds the field — never a top-level field, never another folder’s', () => {
+  it('pagesHolding lists the pages whose block for THIS folder holds the field — never a top-level field, never another folder’s', () => {
     const records = [...host().records, rec('/vault/own.md', { status: 'mine' }), rec('/vault/theirs.md', { in: { [OTHER_ID]: { status: 'x' } } })]
-    expect(notesHolding(records, { block: FOLDER_ID }, 'note.status').map((m) => m.basename)).toEqual(['a', 'c'])
-    expect(notesHolding(records, { block: FOLDER_ID }, 'owner').map((m) => m.basename)).toEqual(['a', 'b'])
+    expect(pagesHolding(records, { block: FOLDER_ID }, 'note.status').map((m) => m.basename)).toEqual(['a', 'c'])
+    expect(pagesHolding(records, { block: FOLDER_ID }, 'owner').map((m) => m.basename)).toEqual(['a', 'b'])
     // YAZ-4769 (one key, capitals ignored): `Status` is the `status` field.
-    expect(notesHolding(records, { block: FOLDER_ID }, 'Status').map((m) => m.basename)).toEqual(['a', 'c'])
-    // A shared column (YAZ-4713 C1): the note's own field, never a block.
-    expect(notesHolding(records, null, 'status').map((m) => m.basename)).toEqual(['own'])
+    expect(pagesHolding(records, { block: FOLDER_ID }, 'Status').map((m) => m.basename)).toEqual(['a', 'c'])
+    // A shared column (YAZ-4713 C1): the page's own field, never a block.
+    expect(pagesHolding(records, null, 'status').map((m) => m.basename)).toEqual(['own'])
   })
 })
 
@@ -199,10 +199,10 @@ describe('deleteColumn', () => {
     )
     expect(disk.get(A)).toBe(`---\n# a comment\ntitle: A\nin:\n  ${FOLDER_ID}:\n    owner: "[[Sam]]"\n---\n\nbody a\n`)
     expect(disk.get(C)).toBe('---\n---\nbody c\n') // the emptied block goes, and `in` with it
-    // a note without the field is never even read
+    // a page without the field is never even read
     expect(disk.get(B)).toBe(`---\ntitle: B\nin:\n  ${FOLDER_ID}:\n    owner: "[[Kim]]"\n---\n`)
     expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual([A, C])
-    // Quiet (YAZ-3235 D1): a column strip is a tidy-up of each note, not an edit the user made there.
+    // Quiet (YAZ-3235 D1): a column strip is a tidy-up of each page, not an edit the user made there.
     expect(vi.mocked(transformFile).mock.calls.every(([, , quiet]) => quiet === true)).toBe(true)
   })
 
@@ -252,7 +252,7 @@ describe('deleteColumn', () => {
     expect(notice).not.toHaveBeenCalled()
   })
 
-  it('YAZ-4713 C7: a note read only on disk keeps its value — the column goes, the note is never written (YAZ-3076 D6)', async () => {
+  it('YAZ-4713 C7: a page read only on disk keeps its value — the column goes, the page is never written (YAZ-3076 D6)', async () => {
     disk.set(C, `---\nreadonly: true\nin:\n  ${FOLDER_ID}:\n    status: 1-Backlog\n---\nbody c\n`)
     const h = host({ records: [rec(A, held({ status: '2-Todo', owner: '[[Sam]]' }, { title: 'A' })), rec(B, held({ owner: '[[Kim]]' }, { title: 'B' })), rec(C, held({ status: '1-Backlog' }, { readonly: true }))] })
     await deleteColumn('note.status', h)
@@ -273,9 +273,9 @@ describe('deleteColumn', () => {
     expect(order).toContain('strip')
   })
 
-  it('a note that cannot be written (invalid YAML) is reported, not written; the others are still stripped (no rollback)', async () => {
+  it('a page that cannot be written (invalid YAML) is reported, not written; the others are still stripped (no rollback)', async () => {
     const h = host({ records: [...host().records, { ...rec(BROKEN, held({ status: 'x' })), title: 'UP-001 - Abdul' }] })
-    await expect(deleteColumn('status', h)).rejects.toThrow(/Could not remove "status" from 1 note: UP-001 - Abdul \(frontmatter is not valid YAML/)
+    await expect(deleteColumn('status', h)).rejects.toThrow(/Could not remove "status" from 1 page: UP-001 - Abdul \(frontmatter is not valid YAML/)
     expect(disk.get(BROKEN)).toBe('---\nstatus: [unclosed\n---\n')
     expect(disk.get(A)).not.toContain('status:')
     expect(disk.get(C)).not.toContain('status:')
@@ -293,7 +293,7 @@ describe('deleteColumn', () => {
     const h = host()
     await expect(deleteColumn('file.name', h)).rejects.toThrow("Can't delete file.name: built-in column — hide it instead")
     await expect(deleteColumn('comments', h)).rejects.toThrow(/built-in column/)
-    // The note id (YAZ-2293): stripping it from every note would orphan every link to them.
+    // The page id (YAZ-2293): stripping it from every page would orphan every link to them.
     await expect(deleteColumn('id', h)).rejects.toThrow(/built-in column/)
     expect(h.writeSettings).not.toHaveBeenCalled()
     expect(transformFile).not.toHaveBeenCalled()
@@ -306,14 +306,14 @@ describe('deleteColumn', () => {
     expect(disk.get(A)).toContain('status: 2-Todo')
   })
 
-  it('a page with no id holds no values of its own: the host names no note, the settings are written and no note is read', async () => {
+  it('a page with no id holds no values of its own: the host names no page, the settings are written and no page is read', async () => {
     const h = host({ records: [] })
     await deleteColumn('status', h)
     expect(h.writeSettings).toHaveBeenCalledTimes(1)
     expect(transformFile).not.toHaveBeenCalled()
   })
 
-  it('a key with no declaration and no references still strips the notes and writes the settings unchanged in shape', async () => {
+  it('a key with no declaration and no references still strips the pages and writes the settings unchanged in shape', async () => {
     const h = host({ columns: {}, def: { views: [{ type: 'table', name: 'T' }] } })
     await deleteColumn('owner', h)
     expect(h.writeSettings).toHaveBeenCalledExactlyOnceWith({}, [{ type: 'table', name: 'T' }], undefined)
@@ -323,21 +323,21 @@ describe('deleteColumn', () => {
 })
 
 describe('Delete a column from a folder: nothing else is touched', () => {
-  const NOTE = '/vault/Projects/note.md'
+  const PAGE = '/vault/Projects/page.md'
   const GONE = '/vault/Elsewhere/moved-out.md'
-  /** The same field three times over: the note's own, another folder's, and the deleting folder's. */
+  /** The same field three times over: the page's own, another folder's, and the deleting folder's. */
   const three = `---\nowner: mine\nin:\n  ${OTHER_ID}:\n    owner: theirs\n  ${FOLDER_ID}:\n    owner: Sam\n    status: 2-Todo\n---\nbody\n`
   const properties = { owner: 'mine', in: { [OTHER_ID]: { owner: 'theirs' }, [FOLDER_ID]: { owner: 'Sam', status: '2-Todo' } } }
 
-  it('the note’s own field of that name, and another folder’s value of that name, both stay — only THIS folder’s block loses it', async () => {
-    disk.set(NOTE, three)
-    await deleteColumn('owner', host({ records: [rec(NOTE, properties)] }))
-    expect(disk.get(NOTE)).toBe(`---\nowner: mine\nin:\n  ${OTHER_ID}:\n    owner: theirs\n  ${FOLDER_ID}:\n    status: 2-Todo\n---\nbody\n`)
+  it('the page’s own field of that name, and another folder’s value of that name, both stay — only THIS folder’s block loses it', async () => {
+    disk.set(PAGE, three)
+    await deleteColumn('owner', host({ records: [rec(PAGE, properties)] }))
+    expect(disk.get(PAGE)).toBe(`---\nowner: mine\nin:\n  ${OTHER_ID}:\n    owner: theirs\n  ${FOLDER_ID}:\n    status: 2-Todo\n---\nbody\n`)
   })
 
-  it('a note that only holds the field at its top level, or for another folder, is never read', async () => {
-    disk.set(NOTE, '---\nowner: mine\n---\n')
-    await deleteColumn('owner', host({ records: [rec(NOTE, { owner: 'mine', in: { [OTHER_ID]: { owner: 'theirs' } } })] }))
+  it('a page that only holds the field at its top level, or for another folder, is never read', async () => {
+    disk.set(PAGE, '---\nowner: mine\n---\n')
+    await deleteColumn('owner', host({ records: [rec(PAGE, { owner: 'mine', in: { [OTHER_ID]: { owner: 'theirs' } } })] }))
     expect(transformFile).not.toHaveBeenCalled()
   })
 
@@ -349,7 +349,7 @@ describe('Delete a column from a folder: nothing else is touched', () => {
   })
 })
 
-describe('YAZ-4713 C7: a shared column\'s values are the notes\' own fields; clear or keep; the views below lose it in one Undo', () => {
+describe('YAZ-4713 C7: a shared column\'s values are the pages\' own fields; clear or keep; the views below lose it in one Undo', () => {
   const SCHEMA = '/vault/schema/table.md'
   const ORDERS = '/vault/schema/orders/.folder.md'
   const ORDERS_VIEWS = [{ type: 'table', name: 'Orders', order: ['file.name', 'note.domain'], sort: [{ property: 'note.domain', direction: 'ASC' }] }]
@@ -369,7 +369,7 @@ describe('YAZ-4713 C7: a shared column\'s values are the notes\' own fields; cle
     disk.set(ORDERS, ordersFile)
   })
 
-  it('Clear: the field leaves the note, Orders\' sort and order on it go; Undo puts the declaration, the views and the value back', async () => {
+  it('Clear: the field leaves the page, Orders\' sort and order on it go; Undo puts the declaration, the views and the value back', async () => {
     let restore: (() => Promise<void>) | undefined
     const h = shared({ notice: (_m, r) => void (restore = r) })
     await deleteColumn('note.domain', h, true)
@@ -382,7 +382,7 @@ describe('YAZ-4713 C7: a shared column\'s values are the notes\' own fields; cle
     expect(h.writeSettings).toHaveBeenLastCalledWith({ domain: { kind: 'select', options: ['Billing'] } }, [{ type: 'table', name: 'T', order: ['file.name', 'note.domain'] }], undefined)
   })
 
-  it('Keep: only the column goes — every note keeps its field, and the views below still lose the column', async () => {
+  it('Keep: only the column goes — every page keeps its field, and the views below still lose the column', async () => {
     await deleteColumn('note.domain', shared(), false)
     expect(disk.get(SCHEMA)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\nbody\n')
     expect(disk.get(ORDERS)).not.toContain('domain')

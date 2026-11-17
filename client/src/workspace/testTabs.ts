@@ -22,6 +22,8 @@ export interface PathTabs {
   blank: boolean
   /** The last tab opened behind next to the active one (YAZ-3808 D4), by its path. */
   chain?: string
+  /** The last tab opened behind at a named slot (YAZ-5023), by its path. */
+  atChain?: string
 }
 
 export type PathWorkspace = Omit<WorkspaceState, keyof TabsState> & PathTabs
@@ -49,6 +51,7 @@ export function byPath<S extends TabsState>(s: S): Omit<S, keyof TabsState> & Pa
     history: { steps: s.history.steps.map((step) => ({ ...step, tab: p(step.tab) })), index: s.history.index },
     preview: s.preview === null ? null : p(s.preview),
     ...(s.chain === undefined ? {} : { chain: p(s.chain) }),
+    ...(s.atChain === undefined ? {} : { atChain: p(s.atChain) }),
   }
 }
 

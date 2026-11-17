@@ -155,7 +155,7 @@ describe('createMediaStore — two Macs (YAZ-4364, round 3 decision 2)', () => {
     const newer = Object.fromEntries(Array.from({ length: MAX_MEDIA_REMOVED }, (_, i) => [`gone-${i}`, 5000 + i]))
     const own = (await onDisk()) as { removed: Record<string, number> }
     await writeFile(file(), JSON.stringify({ ...own, favorites: [row('y', 4000)], removed: { ...own.removed, ...newer } }))
-    // One more removal writes the library with the cap applied; X's note must not fall off while media.json holds X.
+    // One more removal writes the library with the cap applied; X's page must not fall off while media.json holds X.
     await store.favorites({ op: 'remove', itemKey: 'y' })
     expect(((await onDisk()) as { removed: Record<string, number> }).removed.x).toBeDefined()
     expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual([])

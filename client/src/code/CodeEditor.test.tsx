@@ -384,7 +384,7 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     return rows
   }
   const clickRow = (id: string, label: string): void => {
-    // The menu stays open after a row (as a note's does): open it only when it is closed.
+    // The menu stays open after a row (as a page's does): open it only when it is closed.
     if (menuIn(tab(id)) === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
     act(() => [...(menuIn(tab(id))?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent?.startsWith(label))!.click())
   }
@@ -698,7 +698,7 @@ describe('text size, scroll and Duplicate tab (YAZ-3451)', () => {
     return event
   }
 
-  it("⌘+ / ⌘− / ⌘0 reach the code tab as the note's ZOOM_EVENT: the tab claims them and Monaco's text size follows the note's steps", async () => {
+  it("⌘+ / ⌘− / ⌘0 reach the code tab as the page's ZOOM_EVENT: the tab claims them and Monaco's text size follows the page's steps", async () => {
     await opened(FILE)
     expect(editor().options.fontSize).toBe(13)
     expect(zoomStep(1).defaultPrevented).toBe(true)
@@ -1027,16 +1027,16 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     await focused()
     const button = container.querySelector<HTMLButtonElement>('.status-chips > .fold-all__trigger')!
     await act(async () => button.focus())
-    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (Cmd+Shift+U)')
     await act(async () => button.click())
     expect(editor().triggered).toEqual(['editor.foldAll'])
     expect([...editor().folded].sort((a, b) => a - b)).toEqual([1, 2, 5])
     expect(document.activeElement).toBe(editor().input)
-    expect(button.getAttribute('aria-label')).toBe('Expand all (⌘⇧I)')
+    expect(button.getAttribute('aria-label')).toBe('Expand all (Cmd+Shift+I)')
     await act(async () => button.click())
     expect(editor().triggered).toEqual(['editor.foldAll', 'editor.unfoldAll'])
     expect([...editor().folded]).toEqual([])
-    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (Cmd+Shift+U)')
   })
 
   it('YAZ-3938 D9: the chevrons point up for "Collapse all" and down for "Expand all", and follow a fold arrow or key with no look at the button', async () => {
@@ -1046,10 +1046,10 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     expect(pointsDown()).toBe(false)
     await act(async () => editor().trigger('keyboard', 'editor.foldAll'))
     expect(pointsDown()).toBe(true)
-    expect(button.getAttribute('aria-label')).toBe('Expand all (⌘⇧I)')
+    expect(button.getAttribute('aria-label')).toBe('Expand all (Cmd+Shift+I)')
     await act(async () => editor().toggleFold(2))
     expect(pointsDown()).toBe(false)
-    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (Cmd+Shift+U)')
   })
 })
 

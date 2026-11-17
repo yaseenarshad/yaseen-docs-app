@@ -1,0 +1,141 @@
+/**
+ * A PAGE'S CONVERT ACTIONS (YAZ-5037 phase 5), for the page's host (`Editor`): the door its cards and card embeds call
+ * (`CardConvertDoor`: "Move to its own file", "Put back into this page"), the cog's "Turn into a card file", and the
+ * one ask they need ("2 other pages embed this card. They will show it from this page."). Small and eager; the writes
+ * (`review/cardConvert.ts`) load when an action runs.
+ *
+ * Only in a vault with IDs (D8). The actions that MAKE a card file (Move, Turn into a card file) show only while the
+ * vault's Review is on, as New card does. Each is a file action: the vault's Read only asks first (`allowFileAction`).
+ * A failure says why in one notice, and nothing changed. Move to its own file then OPENS THE NEW CARD FILE in the tab
+ * (`onOpenCardFile`, YAZ-5133), as New card does: the tab never stays on the page the card left.
+ */
+import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { cardFileShape } from '@shared/cardFileFormat'
+import { cardIdOf } from '@shared/cardLine'
+import { cardEmbedders } from '@shared/cardLinks'
+import { splitFrontmatter } from '@shared/frontmatter'
+import { ConfirmSheet } from '../components/ConfirmSheet'
+import type { CardConvertDoor } from './card/cardBlockView'
+import type { PageSwitch } from './PageSettings'
+import { linkCard, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+
+type Actions = typeof import('../review/cardConvert')
+
+/**
+ * Runs one convert action of the vault `root`: the vault's Read only asks first; a failure is one notice
+ * ("Can't move the card: the file changed on disk. Nothing changed; try again."). Resolves true when it ran to the end.
+ */
+export async function runConvert(root: string, allow: (root: string) => Promise<boolean>, onNotice: (message: string) => void, failure: string, action: (actions: Actions) => Promise<unknown>): Promise<boolean> {
+  if (!(await allow(root))) return false
+  const actions = await import('../review/cardConvert')
+  try {
+    await action(actions)
+    return true
+  } catch (err) {
+    onNotice(`Can't ${failure}: ${actions.convertFailure(err)}`)
+    return false
+  }
+}
+
+/** Can the page `content` turn into a card file? One card with its ID and no other text (`canBeCardFile`, read here without its module). */
+function oneCardOnly(content: string): boolean {
+  const shape = cardFileShape(splitFrontmatter(content).body)
+  return shape.problem === 'ok' && cardIdOf(shape.cards[0].line) !== null
+}
+
+/** The ask before Put back drops the card file's other properties: "The card file's aliases and tags properties are not moved to this page. They go to the Trash with the card file." */
+export function dropText(keys: readonly string[]): string {
+  const names = keys.length === 1 ? keys[0] : `${keys.slice(0, -1).join(', ')} and ${keys[keys.length - 1]}`
+  return `The card file's ${names} ${keys.length === 1 ? 'property is' : 'properties are'} not moved to this page. ${keys.length === 1 ? 'It goes' : 'They go'} to the Trash with the card file.`
+}
+
+export interface CardConvertHost {
+  root: string
+  path: string
+  /** The vault's index and links. Absent (no vault index): no action shows. */
+  wikilinks?: WikilinkResolveSource
+  /** The vault's Review is on: the actions that make a card file show. */
+  reviewOn: boolean
+  /** The page is a folder page's Page tab: it never turns into a card file. */
+  inFolderPage: boolean
+  /** The page's bytes on disk now (the cog's row reads them when the menu opens). */
+  disk: () => string
+  allowFileAction: (root: string) => Promise<boolean>
+  onNotice?: (message: string) => void
+  /** The page became a card file under the same name: the tab reads it again, to show it as one. */
+  onReread?: () => void
+  /** Move to its own file made this card file (YAZ-5133): the tab opens it. */
+  onOpenCardFile?: (path: string) => void
+}
+
+/** The page's convert door (made once: it reads the host at each call), its cog rows, and its ask while one is open. */
+export function useCardConvert(host: CardConvertHost): { door: CardConvertDoor; rows: () => readonly PageSwitch[]; sheet: ReactNode } {
+  const ref = useRef(host)
+  ref.current = host
+  const [ask, setAsk] = useState<{ text: string; go: () => void; cancel?: () => void } | null>(null)
+  const labelId = useId()
+
+  const run = useCallback((failure: string, action: (actions: Actions) => Promise<unknown>): Promise<boolean> => {
+    const h = ref.current
+    return runConvert(h.root, h.allowFileAction, h.onNotice ?? (() => {}), failure, action)
+  }, [])
+
+  const door = useMemo(
+    (): CardConvertDoor => ({
+      canMove: () => ref.current.reviewOn && ref.current.wikilinks?.ids === true,
+      move: (id, index) => {
+        let made: string | null = null
+        void run('move the card', async (a) => void (made = await a.moveCardToFile(ref.current.path, id, index))).then((done) => {
+          if (done && made !== null) ref.current.onOpenCardFile?.(made)
+        })
+      },
+      putBack: (card, inner, nth) => {
+        const { path, wikilinks } = ref.current
+        // The card file's other properties go to the Trash with it (its comments move to the page): ask first (YAZ-5647).
+        const askDrop = (keys: readonly string[]) =>
+          new Promise<boolean>((resolve) => setAsk({ text: dropText(keys), go: () => resolve(true), cancel: () => resolve(false) }))
+        const go = () => void run('put the card back', (a) => a.putCardBackIntoPage(path, card.path, card.id, inner, nth, askDrop))
+        // The other pages that embed it show it from this page after.
+        const others = wikilinks === undefined ? 0 : cardEmbedders(wikilinks.records, card.id, (target) => linkCard(target, wikilinks)).filter((r) => r.path !== path && r.path !== card.path).length
+        if (others === 0) return go()
+        setAsk({ text: others === 1 ? '1 other page embeds this card. It will show it from this page.' : `${others} other pages embed this card. They will show it from this page.`, go })
+      },
+    }),
+    [run],
+  )
+
+  const rows = useCallback((): readonly PageSwitch[] => {
+    const h = ref.current
+    if (h.inFolderPage || !h.reviewOn || h.wikilinks?.ids !== true || !oneCardOnly(h.disk())) return []
+    return [
+      {
+        label: 'Turn into a card file',
+        divider: true,
+        onToggle: () =>
+          void run('turn the page into a card file', (a) => a.turnIntoCardFile(ref.current.path)).then((done) => {
+            // A new name remaps the tab, which reads it; the same name is read again here.
+            if (done) ref.current.onReread?.()
+          }),
+      },
+    ]
+  }, [run])
+
+  const sheet =
+    ask === null ? null : (
+      <ConfirmSheet
+        labelId={labelId}
+        text={ask.text}
+        confirmLabel="Put back"
+        focusConfirm
+        onConfirm={() => {
+          setAsk(null)
+          ask.go()
+        }}
+        onCancel={() => {
+          setAsk(null)
+          ask.cancel?.()
+        }}
+      />
+    )
+  return { door, rows, sheet }
+}

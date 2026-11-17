@@ -1,14 +1,14 @@
 /**
  * open-big-code (YAZ-3438, YAZ-3501): click the 5 MB code file (`bigCode.mjs`) in the tree → its first
  * lines painted (plus a frame), the longest task on the way, and the time until its Outline is there
- * (the TS worker's tree, `nav.outline` in the tab). From a small note each time.
+ * (the TS worker's tree, `nav.outline` in the tab). From a small page each time.
  *
  * WRITTEN, NOT RUN: `npm run perf` starts the app with a window on screen, which an agent may not do
  * here (YAZ-3501 proved the typing with the hidden `codeTab.spec.ts` step 11 instead). The first person
  * to run it corrects what they find: `npm run desktop:build && npm run perf -- open-big-code --runs 5`.
  */
 import path from 'node:path'
-import { writeNote } from '../genVault.mjs'
+import { writePageFile } from '../genVault.mjs'
 import { sleep } from '../lib/app.mjs'
 import { painted, row, session } from '../lib/session.mjs'
 import { CODE_SHOWN, writeBigCode } from './bigCode.mjs'
@@ -17,7 +17,7 @@ const OPEN_TIMEOUT_MS = 60_000
 
 export function setup(dir) {
   const vault = path.join(dir, 'vault')
-  return { profile: path.join(dir, 'profile'), vault, small: writeNote(vault, 'Small', 'bullets', 20), big: writeBigCode(vault) }
+  return { profile: path.join(dir, 'profile'), vault, small: writePageFile(vault, 'Small', 'bullets', 20), big: writeBigCode(vault) }
 }
 
 export function run(app, { profile, vault, small, big }) {

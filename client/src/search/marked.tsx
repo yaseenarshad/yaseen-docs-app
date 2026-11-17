@@ -4,7 +4,8 @@
  * `tree__mark`: one look in both lists (`app.css`).
  */
 import type { ReactNode } from 'react'
-import { matchRanges, readNeedle, type Needle } from '../links/completion'
+import { readNeedle, type Needle } from '../links/completion'
+import { matchRanges } from '../links/matchRanges'
 import { idQuery } from './searchCandidates'
 
 /**

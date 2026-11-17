@@ -1,0 +1,67 @@
+import type { EntryKind, GistsApi, IndexHandle } from '@shared/friendGists'
+import { kindOf, removeMany, type ListOptions, type RemoveResult } from '@shared/friendsList'
+import type { GistBudget } from '@shared/friendSend'
+import { PHONE, type VaultStore } from '../store'
+
+/**
+ * Removes that GitHub refused BEFORE their first write (its own "rate limit", or no connection). The list
+ * cannot hold them yet, so the phone keeps them (phone-only state) until the sender or the rows run them, in order, as
+ * ONE re-key. A restart keeps them. Until then the row shows "Removing…".
+ */
+export const REMOVE_QUEUE = 'friendsRemoveQueue'
+
+export interface QueuedRemove {
+  /** My pointer for the friend, the group, or the shared link. */
+  mine: string
+  /** More of my gists to delete with it ("Delete group": the group file). */
+  drop?: string[]
+  /**
+   * The kind of entry the person removed (a friend, a group, a shared link). The drain removes the pointer
+   * only while it is still that kind: a shared link that a friend took since then is that friend's pointer now.
+   * Absent (a queue of an older app): any kind, as before.
+   */
+  kind?: EntryKind
+  at: number
+}
+
+export async function loadQueue(store: VaultStore): Promise<QueuedRemove[]> {
+  const q = await store.getState<QueuedRemove[]>(PHONE, REMOVE_QUEUE)
+  return Array.isArray(q) ? q : []
+}
+
+/** Adds a remove to the queue (once). `store` is the phone-wide session of the action. */
+export async function enqueueRemove(store: VaultStore, item: QueuedRemove): Promise<void> {
+  const q = await loadQueue(store)
+  if (q.some((x) => x.mine === item.mine)) return
+  await store.setState(PHONE, REMOVE_QUEUE, [...q, item])
+}
+
+/**
+ * Runs the queue as one `removeMany`. A queued remove leaves the queue once the list holds it (its first write went:
+ * `took`), or when its pointer is not that kind of entry in the list any more (gone, or a shared link that a friend took,
+ * YAZ-5352). Null: the queue is empty.
+ */
+export async function drainQueue(api: GistsApi, handle: IndexHandle, store: VaultStore, budget: GistBudget, opts: ListOptions): Promise<RemoveResult | null> {
+  const q = await loadQueue(store)
+  if (q.length === 0) return null
+  const kinds = Object.fromEntries(q.filter((x) => x.kind !== undefined).map((x) => [x.mine, x.kind!]))
+  const result = await removeMany(api, handle, q.map((x) => x.mine), budget, opts, { drop: q.flatMap((x) => x.drop ?? []), kinds })
+  const took = new Set(result.kind === 'not-found' ? [] : (result.took ?? []))
+  const index = result.handle.index
+  const left = q.filter((x) => !took.has(x.mine) && kindOf(index, x.mine) !== null && (x.kind === undefined || kindOf(index, x.mine) === x.kind))
+  if (left.length === 0) await store.removeState(PHONE, REMOVE_QUEUE)
+  else if (left.length < q.length) await store.setState(PHONE, REMOVE_QUEUE, left)
+  return result
+}
+
+/** Takes a waiting remove back (the person added the same friend again before it ran). */
+export async function dequeueRemove(store: VaultStore, mine: string): Promise<void> {
+  const q = await loadQueue(store)
+  if (!q.some((x) => x.mine === mine)) return
+  const rest = q.filter((x) => x.mine !== mine)
+  if (rest.length === 0) await store.removeState(PHONE, REMOVE_QUEUE)
+  else await store.setState(PHONE, REMOVE_QUEUE, rest)
+}
+
+/** The pointers that wait in the queue (for the "Removing…" rows). */
+export const queuedMines = async (store: VaultStore): Promise<Set<string>> => new Set((await loadQueue(store)).map((x) => x.mine))

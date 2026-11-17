@@ -1,14 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react'
-
-const PRESETS = [50, 75, 90, 100, 125, 150, 200, 300, 400]
-
-/**
- * Next preset above (`1`) or below (`-1`) `value`; a custom value snaps to the nearest preset in
- * that direction (117 → 125 / 100). `null` past the last preset, which is what disables the button.
- * (Reverse-then-find because the client lib is ES2022: no `findLast`.)
- */
-export const stepZoom = (value: number, direction: 1 | -1): number | null =>
-  (direction === 1 ? PRESETS.find((p) => p > value) : [...PRESETS].reverse().find((p) => p < value)) ?? null
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
+import type { ZoomStep } from '@shared/types'
+import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS, stepZoom } from './zoomSteps'
 
 /**
  * The keyboard's step (⌘+ / ⌘−, YAZ-1710 D16): the preset ladder up to 200%, then 25 at a time
@@ -18,13 +10,60 @@ export const stepZoom = (value: number, direction: 1 | -1): number | null =>
 export const stepZoomByKey = (value: number, direction: 1 | -1): number | null => {
   if (direction === 1 ? value < 200 : value <= 200) return stepZoom(value, direction)
   const next = direction === 1 ? Math.floor(value / 25) * 25 + 25 : Math.ceil(value / 25) * 25 - 25
-  return next > 400 ? null : next
+  return next > ZOOM_MAX ? null : next
+}
+
+/** ⌘+ / ⌘− / ⌘0 (`ZoomStep`) on a zoom: the key ladder up or down, 100 for ⌘0; at either end it stays. */
+export const zoomByKey = (value: number, step: ZoomStep): number => (step === 0 ? 100 : (stepZoomByKey(value, step) ?? value))
+
+/**
+ * A zoom kept across restarts in localStorage under `key` (the app's origin: every window): a whole percent in the
+ * page zoom's range (50–400), 100 by default and never written. Explore's page layers (`explore:zoom`) and the Inbox
+ * (`inbox:zoom`, YAZ-5372) each keep one; a page tab's zoom is its own, in its tab.
+ */
+export function savedZoom(key: string): number {
+  try {
+    const n = Number(localStorage.getItem(key))
+    return Number.isInteger(n) && n >= ZOOM_MIN && n <= ZOOM_MAX ? n : 100
+  } catch {
+    return 100
+  }
+}
+export function saveZoom(key: string, zoom: number): void {
+  try {
+    if (zoom === 100) localStorage.removeItem(key)
+    else localStorage.setItem(key, String(zoom))
+  } catch {
+    // No storage: the zoom lasts the run.
+  }
+}
+
+/**
+ * The mini window's memory of the page zoom (YAZ-5607), the same shape as its Properties memory (YAZ-3746 13Q):
+ * `PageWindow` provides one `{ current }` per window, so each page it shows (a ‹ › step, a card click that swaps the
+ * page in, YAZ-5582) starts at the zoom last set there, and each change writes it. Null (a tab, the right panel): the
+ * page's own zoom, as before.
+ */
+export const PageZoomMemory = createContext<{ current: number | null } | null>(null)
+
+/** A page's zoom state: it starts from the mini window's memory when there is one (else `start`), and each change writes it back. */
+export function useKeptZoom(start: number): [number, (next: number) => void] {
+  const memory = useContext(PageZoomMemory)
+  const [zoom, setZoom] = useState(() => memory?.current ?? start)
+  const change = useCallback(
+    (next: number) => {
+      if (memory !== null) memory.current = next
+      setZoom(next)
+    },
+    [memory],
+  )
+  return [zoom, change]
 }
 
 const parseZoom = (draft: string): number | null => {
   const text = draft.trim()
   const next = Number(text.replace(/%$/, ''))
-  return /^\d{1,3}%?$/.test(text) && next >= 50 && next <= 400 ? next : null
+  return /^\d{1,3}%?$/.test(text) && next >= ZOOM_MIN && next <= ZOOM_MAX ? next : null
 }
 
 /** `label` names the pill for a screen reader: a table's own zoom is "Table zoom" (YAZ-4091, `table/tableZoomPill.tsx`). */
@@ -146,7 +185,7 @@ export function DocumentZoom({ value, onChange, label = 'Document zoom' }: { val
         </div>
         <div className="document-zoom__divider" aria-hidden="true" />
         <div className="document-zoom__presets" role="group" aria-label="Zoom presets">
-          {PRESETS.map((preset) => <button key={preset} type="button" aria-pressed={value === preset}
+          {ZOOM_STEPS.map((preset) => <button key={preset} type="button" aria-pressed={value === preset}
             onClick={() => commit(preset, true)}>
             <span>{preset}%</span><span aria-hidden="true">{value === preset ? '✓' : ''}</span>
           </button>)}

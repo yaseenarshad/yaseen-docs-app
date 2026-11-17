@@ -21,8 +21,8 @@ vi.mock('../editor/createCrepe', async (load) => {
 afterEach(unmountAll)
 
 /**
- * Folds in edit (YAZ-4306) and ⌘↑ / ⌘↓ in edit (YAZ-4308, 2C): the box editor keeps the box's folds in the note's own
- * fold state, reports them as line indexes, and acts on them as a note does.
+ * Folds in edit (YAZ-4306) and ⌘↑ / ⌘↓ in edit (YAZ-4308, 2C): the box editor keeps the box's folds in the page's own
+ * fold state, reports them as line indexes, and acts on them as a page does.
  */
 
 const folds = (view: EditorView) => itemLines(view.state.doc, outlineCollapsedPositions(view.state), helpers)
@@ -41,7 +41,7 @@ function caret(view: EditorView, offset: number) {
 const BOX = '• a\n    ○ b\n    ○ c\n• d'
 
 describe('folds in the box editor (YAZ-4306, YAZ-4308)', () => {
-  it('opens with the box folds in the note fold state, and reports nothing for them', async () => {
+  it('opens with the box folds in the page fold state, and reports nothing for them', async () => {
     const { view, onFoldsChange } = await mountBox(BOX, undefined, { anchor: 0, head: 0 }, [0])
     expect(folds(view)).toEqual([0])
     expect(onFoldsChange).not.toHaveBeenCalled()
@@ -59,7 +59,7 @@ describe('folds in the box editor (YAZ-4306, YAZ-4308)', () => {
 
   it("⌘↑ takes the user's key from Settings › Hotkeys", async () => {
     const { storage } = await import('../lib/storage')
-    const spy = vi.spyOn(storage, 'getSettings').mockReturnValue({ ...storage.getSettings(), hotkeys: { 'note.foldHere': 'CmdOrCtrl+Alt+K' } } as ReturnType<typeof storage.getSettings>)
+    const spy = vi.spyOn(storage, 'getSettings').mockReturnValue({ ...storage.getSettings(), hotkeys: { 'page.foldHere': 'CmdOrCtrl+Alt+K' } } as ReturnType<typeof storage.getSettings>)
     try {
       const { view, onFoldsChange } = await mountBox(BOX)
       caret(view, 1)

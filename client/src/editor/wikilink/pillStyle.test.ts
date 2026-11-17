@@ -1,9 +1,9 @@
 /**
- * Right-click a pill › "Pill style ›" (YAZ-4924 round 5, `pillStyle.ts`): ONE link's own style, written into the note
+ * Right-click a pill › "Pill style ›" (YAZ-4924 round 5, `pillStyle.ts`): ONE link's own style, written into the page
  * as the marks the page toolbar writes around the whole link — bold `**`, italic `*`, underline `<u>`, highlight `==`
  * or `<mark class="highlight-<name>">` — and "↺ Back to the vault's look", which takes them off that link only. A
  * real editor, real right-clicks; the flyout stays open after a pick (as "Header row style ›"); one undo each; a
- * read-only note shows the row disabled. A Markdown link pill has the same row.
+ * read-only page shows the row disabled. A Markdown link pill has the same row.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -109,12 +109,12 @@ describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
     expect(getMarkdownForSave(crepe)).toBe('pad **[[Other]]** and *==[[Known]]==* tail\n')
   })
 
-  it('a read-only note shows the row disabled, with the read-only reason: styling changes the note', async () => {
+  it('a read-only page shows the row disabled, with the read-only reason: styling changes the page', async () => {
     const { crepe, root, view } = await mount('pad [[Known]] tail\n')
     crepe.setReadonly(true)
     rightClick(span(root, 'Known'))
     const row = Array.from(popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).find((b) => b.textContent === 'Pill style')!
-    expect([row.disabled, row.dataset.hint, row.classList.contains('ctx-menu__item--parent')]).toEqual([true, 'This note is read only', false])
+    expect([row.disabled, row.dataset.hint, row.classList.contains('ctx-menu__item--parent')]).toEqual([true, 'This page is read only', false])
   })
 })
 

@@ -29,7 +29,7 @@ describe('tree', () => {
     expect(typeof body.generatedAt).toBe('number')
     // Every dir shows, viewer-able files or not (GRO-2022 D1): Empty and assets-only included.
     // Every regular file shows too, viewer or not (YAZ-1577 D1): book.epub is listed with `kind: null`.
-    expect(names(body.tree)).toEqual(['alpha', 'assets-only', 'Empty', 'Zeta', 'A.md', 'b.md', 'book.epub', 'notes.txt'])
+    expect(names(body.tree)).toEqual(['alpha', 'assets-only', 'Empty', 'Zeta', 'A.md', 'b.md', 'book.epub', 'pages.txt'])
     expect(body.tree.find((n) => n.name === 'book.epub')).toMatchObject({ type: 'file', kind: null })
     const zeta = body.tree[3]
     if (zeta.type !== 'dir') throw new Error('expected dir')
@@ -43,7 +43,7 @@ describe('tree', () => {
       expect.objectContaining({ type: 'file', name: 'img.png', kind: 'image' }),
     ])
     const all = flatten(body.tree)
-    expect(all).toContain(path.join(root, 'notes.txt'))
+    expect(all).toContain(path.join(root, 'pages.txt'))
     expect(all.some((p) => p.includes('.obsidian') || p.includes('.git') || p.includes('node_modules'))).toBe(false)
     expect(all).not.toContain(path.join(root, '.hidden.md'))
     // `.yaseendocs/` (vault-local config, GRO-2188) never reaches the tree — the sidebar renders the tree as-is.
@@ -77,7 +77,7 @@ describe('tree', () => {
 
   it("hides a crash-left atomic-write tmp (never deletes it), while names that merely contain `.tmp` still show (YAZ-2179)", async () => {
     const leftover = path.join(root, 'alpha', 'a.md.tmp-0123456789ab')
-    const lookalikes = ['notes.tmp', 'draft.tmp.md', 'report.tmp-draft.md', 'x.tmp-0123456789ab.md', 'y.md.tmp-0123456789AB', 'z.md.tmp-0123456789a']
+    const lookalikes = ['pages.tmp', 'draft.tmp.md', 'report.tmp-draft.md', 'x.tmp-0123456789ab.md', 'y.md.tmp-0123456789AB', 'z.md.tmp-0123456789a']
     try {
       await writeFile(leftover, '# a (the only copy of a torn save)')
       await Promise.all(lookalikes.map((name) => writeFile(path.join(root, name), 'mine')))

@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { noteFileName } from '@shared/noteName'
+import { pageFileName } from '@shared/pageName'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, type WatchEvent } from '@shared/types'
 import { vaultFiles } from '../fs/testFixture'
 import { _resetIndexCache } from './cache'
@@ -31,7 +31,7 @@ vi.mock('../fs/watchers', () => ({
   },
 }))
 
-// One seam: a write of a note that loses once to another writer, as when the editor saves the note at that moment.
+// One seam: a write of a page that loses once to another writer, as when the editor saves the page at that moment.
 // `wrote` hears each write that was made, after it: what the user does at that moment.
 const fails = vi.hoisted(() => ({ write: undefined as string | undefined, wrote: undefined as ((file: string) => Promise<void>) | undefined }))
 vi.mock('../fs/file', async (importOriginal) => {
@@ -148,25 +148,25 @@ async function syncAndSee(): Promise<void> {
   await pump(air)
 }
 
-/** A note made in the app: the number comes from the door first, then the note is written with it (R17, R18). */
+/** A page made in the app: the number comes from the door first, then the page is written with it (R17, R18). */
 async function make(mac: Mac, title: string, body = ''): Promise<{ id: string; file: string }> {
   const [id] = (await mintIds(mac.root, 1))!
-  const file = noteFileName(title, id)
+  const file = pageFileName(title, id)
   await writeFile(path.join(mac.root, file), `---\nid: ${id}\ntitle: ${title}\n---\n${body}`)
   await pump(mac)
   return { id, file }
 }
 
-/** A folder made in the app: its `.folder.md` holds the next number (S33), and one note in it holds a value for the folder. */
-async function makeFolder(mac: Mac, name: string): Promise<{ id: string; note: string }> {
+/** A folder made in the app: its `.folder.md` holds the next number (S33), and one page in it holds a value for the folder. */
+async function makeFolder(mac: Mac, name: string): Promise<{ id: string; page: string }> {
   const [id] = (await mintIds(mac.root, 1))!
   await mkdir(path.join(mac.root, name))
   await writeFile(path.join(mac.root, name, FOLDER_SETTINGS_FILE), `---\nid: ${id}\ntitle: ${name}\n---\n`)
-  const note = `${name}/member.md`
-  // An old ID: it is the note's own, and no Mac counts with it.
-  await writeFile(path.join(mac.root, note), `---\nid: ${name[0].toLowerCase()}1000000000a\nin:\n  ${id}:\n    Status: open\n---\n`)
+  const page = `${name}/member.md`
+  // An old ID: it is the page's own, and no Mac counts with it.
+  await writeFile(path.join(mac.root, page), `---\nid: ${name[0].toLowerCase()}1000000000a\nin:\n  ${id}:\n    Status: open\n---\n`)
   await pump(mac)
-  return { id, note }
+  return { id, page }
 }
 
 /** Someone writes a file on this Mac: the user in the editor, or an agent. */
@@ -281,7 +281,7 @@ async function bothMake101(): Promise<void> {
 }
 
 describe('a clash: two Macs gave one number before a sync (S41 to S50)', () => {
-  it('S41: the older note keeps the ID; the Mac that made the newer note gives it the next number; the other Mac writes nothing', async () => {
+  it('S41: the older page keeps the ID; the Mac that made the newer page gives it the next number; the other Mac writes nothing', async () => {
     await bothMake101()
     at('10:20')
     await sync()
@@ -300,7 +300,7 @@ describe('a clash: two Macs gave one number before a sync (S41 to S50)', () => {
     expect(pro.notices).toEqual([])
   })
 
-  it('S42: a link the Air wrote to its own note before the sync follows the note to its new number', async () => {
+  it('S42: a link the Air wrote to its own page before the sync follows the page to its new number', async () => {
     await bothMake101()
     at('10:08')
     await write(air, 'plan.md', linking('plan.md', 'YAZ-101'))
@@ -373,7 +373,7 @@ describe('a clash: two Macs gave one number before a sync (S41 to S50)', () => {
     expect(await read(air, 'inbox.md')).toBe(linking('inbox.md', 'YAZ-102'))
   })
 
-  it('S45: ONE notice tells the ID, the note, its new number, the links updated, and each link that was not changed', async () => {
+  it('S45: ONE notice tells the ID, the page, its new number, the links updated, and each link that was not changed', async () => {
     await bothMake101()
     at('10:08')
     await write(air, 'plan.md', linking('plan.md', 'YAZ-101'))
@@ -390,7 +390,7 @@ describe('a clash: two Macs gave one number before a sync (S41 to S50)', () => {
     await converged()
   })
 
-  it('S46: with the Air off after the sync, both Macs hold two notes with one ID, the ID opens the keeper, and the Air fixes it when its app runs next', async () => {
+  it('S46: with the Air off after the sync, both Macs hold two pages with one ID, the ID opens the keeper, and the Air fixes it when its app runs next', async () => {
     await bothMake101()
     at('10:08')
     await write(air, 'plan.md', linking('plan.md', 'YAZ-101'))
@@ -436,7 +436,7 @@ describe('a clash: two Macs gave one number before a sync (S41 to S50)', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('S48: the Air lost its index cache and cannot tell which note it made: the first note in path order keeps the ID, the Air gives the other the next number, no link is changed, and the notice says so (R29)', async () => {
+  it('S48: the Air lost its index cache and cannot tell which page it made: the first page in path order keeps the ID, the Air gives the other the next number, no link is changed, and the notice says so (R29)', async () => {
     await bothMake101()
     at('10:08')
     await write(air, 'plan.md', linking('plan.md', 'YAZ-101'))
@@ -452,7 +452,7 @@ describe('a clash: two Macs gave one number before a sync (S41 to S50)', () => {
     expect(await idIn(air, 'bar-yaz-101.md')).toBe('YAZ-101')
     expect(await idIn(air, 'foo-yaz-102.md')).toBe('YAZ-102')
     expect(await read(air, 'plan.md')).toBe(linking('plan.md', 'YAZ-101'))
-    expect(air.notices).toEqual(['YAZ-101 was used on two Macs. "Foo" is now YAZ-102. No link was changed: this Mac could not tell which note it made. Check the links in "Plan".'])
+    expect(air.notices).toEqual(['YAZ-101 was used on two Macs. "Foo" is now YAZ-102. No link was changed: this Mac could not tell which page it made. Check the links in "Plan".'])
     await sync()
     await writesNothing(pro, () => pump(pro))
     await converged()
@@ -512,13 +512,13 @@ describe('the fix is safe to run again, and to stop anywhere', () => {
     expect((await countOf(air)).last).toBe(102)
   })
 
-  it('a fix that stops after the links and before the note continues with the SAME number: the next sweep finishes it, and takes no second number', async () => {
+  it('a fix that stops after the links and before the page continues with the SAME number: the next sweep finishes it, and takes no second number', async () => {
     await bothMake101()
     at('10:08')
     await write(air, 'plan.md', linking('plan.md', 'YAZ-101'))
     at('10:20')
     await sync()
-    // The one write of the note loses to another writer, as when the editor saves it at that moment.
+    // The one write of the page loses to another writer, as when the editor saves it at that moment.
     fails.write = 'bar-yaz-101.md'
     await pump(air)
     expect(await idIn(air, 'bar-yaz-101.md')).toBe('YAZ-101')
@@ -591,7 +591,7 @@ describe('the fix is safe to run again, and to stop anywhere', () => {
 })
 
 describe('two folders made on two Macs with one number (S54, R30a)', () => {
-  it('the older folder keeps the ID; the notes of the newer folder carry their values to the new ID, and then the folder takes it', async () => {
+  it('the older folder keeps the ID; the pages of the newer folder carry their values to the new ID, and then the folder takes it', async () => {
     at('10:00')
     const clients = await makeFolder(pro, 'Clients')
     at('10:07')
@@ -603,8 +603,8 @@ describe('two folders made on two Macs with one number (S54, R30a)', () => {
     await pump(air)
     expect(await idIn(air, `Clients/${FOLDER_SETTINGS_FILE}`)).toBe('YAZ-101')
     expect(await idIn(air, `Vendors/${FOLDER_SETTINGS_FILE}`)).toBe('YAZ-102')
-    expect(await read(air, vendors.note)).toContain('in:\n  YAZ-102:\n    Status: open\n')
-    expect(await read(air, clients.note)).toContain('in:\n  YAZ-101:\n    Status: open\n')
+    expect(await read(air, vendors.page)).toContain('in:\n  YAZ-102:\n    Status: open\n')
+    expect(await read(air, clients.page)).toContain('in:\n  YAZ-101:\n    Status: open\n')
     expect(air.notices).toEqual(['YAZ-101 was used on two Macs. "Vendors" is now YAZ-102. 0 links updated.'])
     await converged()
   })
@@ -619,7 +619,7 @@ describe('"Check for duplicates" (S55 to S57)', () => {
     await bothMake101()
     at('10:08')
     await write(air, 'plan.md', linking('plan.md', 'YAZ-101'))
-    // The fix did not end by itself: the write of the note lost to another writer.
+    // The fix did not end by itself: the write of the page lost to another writer.
     at('10:20')
     await sync()
     fails.write = 'bar-yaz-101.md'
@@ -634,17 +634,17 @@ describe('"Check for duplicates" (S55 to S57)', () => {
     expect(await checkDuplicates(air.root)).toBe('No duplicates.')
   })
 
-  it('S57: on the Mac that must not fix it writes nothing, and tells which note the other Mac will fix', async () => {
+  it('S57: on the Mac that must not fix it writes nothing, and tells which page the other Mac will fix', async () => {
     await bothMake101()
     await quit(air)
     at('10:20')
     await sync()
     await pump(pro)
-    await writesNothing(pro, async () => expect(await checkDuplicates(pro.root)).toBe('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.'))
-    // It still knows after a restart: the diary holds which note is the Pro's own.
+    await writesNothing(pro, async () => expect(await checkDuplicates(pro.root)).toBe('YAZ-101 is on two pages. The Mac that made "Bar" fixes it when its app runs.'))
+    // It still knows after a restart: the diary holds which page is the Pro's own.
     await quit(pro)
     await open(pro)
-    await writesNothing(pro, async () => expect(await checkDuplicates(pro.root)).toBe('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.'))
+    await writesNothing(pro, async () => expect(await checkDuplicates(pro.root)).toBe('YAZ-101 is on two pages. The Mac that made "Bar" fixes it when its app runs.'))
   })
 
   it('a copy is given its own number at once, on any Mac, and the line tells it (R32)', async () => {
@@ -668,7 +668,7 @@ describe('a file that arrives with no ID: one Mac gives the number (S59 to S68, 
     expect(await idIn(pro, 'x.md')).toBe('YAZ-101')
   })
 
-  it('S51: a note duplicated in Finder on the Pro: the original keeps the ID, and the copy has the next number at once', async () => {
+  it('S51: a page duplicated in Finder on the Pro: the original keeps the ID, and the copy has the next number at once', async () => {
     await write(pro, 'seed copy.md', SEED['seed.md'])
     expect([await idIn(pro, 'seed.md'), await idIn(pro, 'seed copy.md')]).toEqual(['YAZ-99', 'YAZ-101'])
   })
@@ -711,7 +711,7 @@ describe('a file that arrives with no ID: one Mac gives the number (S59 to S68, 
     await converged()
   })
 
-  it('S52: a note duplicated while the apps were closed reaches both Macs: the Air waits 10 minutes, and then — the Pro still off — gives the COPY the number; the original keeps its ID', async () => {
+  it('S52: a page duplicated while the apps were closed reaches both Macs: the Air waits 10 minutes, and then — the Pro still off — gives the COPY the number; the original keeps its ID', async () => {
     await quit(pro)
     await quit(air)
     await arrives('a copy of seed.md', SEED['seed.md'])
@@ -721,7 +721,7 @@ describe('a file that arrives with no ID: one Mac gives the number (S59 to S68, 
     expect([await idIn(air, 'seed.md'), await idIn(air, 'a copy of seed.md')]).toEqual(['YAZ-99', 'YAZ-101'])
   })
 
-  it('S53: a folder duplicated in Finder on the Air, the Pro off: the Air waits 10 minutes, then each note of the copy and its `.folder.md` get the next numbers, and the notes of the copy carry their folder values to the new folder ID', async () => {
+  it('S53: a folder duplicated in Finder on the Air, the Pro off: the Air waits 10 minutes, then each page of the copy and its `.folder.md` get the next numbers, and the pages of the copy carry their folder values to the new folder ID', async () => {
     const clients = await makeFolder(pro, 'Clients')
     await syncAndSee()
     await quit(pro)
@@ -729,11 +729,11 @@ describe('a file that arrives with no ID: one Mac gives the number (S59 to S68, 
     await cp(path.join(air.root, 'Clients'), path.join(air.root, 'Clients copy'), { recursive: true })
     await writesNothing(air, () => pump(air).then(() => later(ID_WAIT_MS - 1000)))
     await later(1000)
-    const [folder, note] = [await idIn(air, `Clients copy/${FOLDER_SETTINGS_FILE}`), await idIn(air, 'Clients copy/member.md')]
-    expect([folder, note].sort()).toEqual(['YAZ-102', 'YAZ-103'])
+    const [folder, page] = [await idIn(air, `Clients copy/${FOLDER_SETTINGS_FILE}`), await idIn(air, 'Clients copy/member.md')]
+    expect([folder, page].sort()).toEqual(['YAZ-102', 'YAZ-103'])
     expect(await read(air, 'Clients copy/member.md')).toContain(`in:\n  ${folder}:\n    Status: open\n`)
     expect(await read(air, 'Clients copy/member.md')).not.toContain(clients.id)
-    // The original folder and its note keep each byte.
+    // The original folder and its page keep each byte.
     expect(await filesOf(air.root)).toMatchObject(Object.fromEntries(Object.entries(original).filter(([rel]) => !rel.startsWith(`${VAULT_CONFIG_DIR}/`))))
   })
 

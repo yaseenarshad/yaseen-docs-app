@@ -10,7 +10,7 @@
  *    serialises back to the very bytes it swallowed, so no file was ever rewritten (the YAZ-964
  *    contrast, proven rather than assumed).
  *
- * Real Crepe in jsdom, the note editor's own feature map.
+ * Real Crepe in jsdom, the page editor's own feature map.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'

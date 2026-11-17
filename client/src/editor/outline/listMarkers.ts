@@ -4,7 +4,7 @@
  * other kind showed `2.` on screen and saved `*` (B1, B2).
  *
  * Replaces Milkdown's `syncListOrderPlugin` (removed in `createCrepe()`). That plugin fixed items in numbered lists
- * only, skipped every transaction with metadata (a paste, a drop) or `addToHistory: false`, and walked the WHOLE note
+ * only, skipped every transaction with metadata (a paste, a drop) or `addToHistory: false`, and walked the WHOLE page
  * on each change: median 19.3 ms, p95 184.8 ms per keystroke at 6,000 lines in jsdom (B4; `listMarkers.perf.test.ts`
  * holds this plugin's budget). This one runs after every document change and visits only the lists around or inside
  * the ranges the change wrote: each list that holds an end of a range (the ancestor walk, so an insert at the top of a

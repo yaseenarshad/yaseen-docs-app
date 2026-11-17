@@ -1,10 +1,11 @@
-/* The explore stack (YAZ-2571): layers of search and note panels over the workspace, the newest on top, each a
+/* The explore stack (YAZ-2571): layers of search and page panels over the workspace, the newest on top, each a
    little right of the one under it. The workspace never moves. Above the tab board and the preview panel, below
    a menu (`.ctx-menu`, 1000). Light and dark come from the theme variables. */
 .explore {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  /* Under a sheet and a toast App draws while it shows (YAZ-4987, app.css `:root`). */
+  z-index: var(--z-explore);
   /* The workspace shows through a light dim: the trail stays readable. */
   background: rgba(0, 0, 0, 0.28);
 }
@@ -32,7 +33,7 @@
   overflow: hidden;
   outline: none;
 }
-.explore__layer--note,
+.explore__layer--page,
 .explore__layer--board {
   height: 80vh;
 }
@@ -63,7 +64,7 @@
   pointer-events: none;
 }
 
-/* Entry (Mochi's fade-up): opacity 0 → 1, translateY(10px) scale(.9) → none; a search in 100 ms, a note in 150 ms. The exit is the reverse. */
+/* Entry (Mochi's fade-up): opacity 0 → 1, translateY(10px) scale(.9) → none; a search in 100 ms, a page in 150 ms. The exit is the reverse. */
 @media (prefers-reduced-motion: no-preference) {
   .explore__layer--in {
     animation: explore-in var(--explore-ms, 150ms) cubic-bezier(0.4, 0.3, 0, 1);
@@ -212,21 +213,20 @@
   color: var(--fg-muted);
   border-top: 1px solid var(--border);
 }
-.explore__foot kbd {
-  padding: 0 4px;
-  font-family: inherit;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-}
 
-/* ---------- the note panel ---------- */
+/* ---------- the page panel ---------- */
 .explore__head {
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 8px 16px;
+  /* ONE HEIGHT (YAZ-5164, Q50): the head never grows or shrinks on a switch, a scroll or a chip that comes and goes, so
+     nothing under it moves. Its parts are centred in it; their menus drop over the page. */
+  box-sizing: border-box;
+  height: var(--explore-head-height, 41px);
+  position: relative;
+  z-index: 7;
+  padding: 0 10px 0 16px;
   border-bottom: 1px solid var(--border);
   /* The head drags the layer (round 3). */
   cursor: grab;
@@ -272,16 +272,44 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The head's title (Q50): see-through while the page's own title is in view; it fades in once that scrolls away (the
+   layer writes `data-title-shown`). Opacity only: its slot keeps its place and the head its height. */
+.explore__head > .explore__title,
+.explore__head > .explore__id {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.explore__head[data-title-shown] > .explore__title,
+.explore__head[data-title-shown] > .explore__id {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .explore__head > .explore__title,
+  .explore__head > .explore__id {
+    transition: none;
+  }
+}
+/* The page's own chips in the head (YAZ-5164 Option A): the editor's fold-all, cog, Read only chip, Sync and Saved. */
+.explore__chips {
+  gap: 8px;
+}
+.explore__chips[hidden] {
+  display: none;
+}
+/* While the layer's own chip holds the vault's Read only, the card file's chip for the same lock does not show twice. */
+.explore__head[data-layer-lock] .explore__chips .read-only-chip {
+  display: none;
+}
 .explore__mode {
   font-size: 11px;
   color: var(--fg-muted);
 }
-/* The note tab's Read only chip in a Read only vault (YAZ-4939): its "Allow edits?" box hangs under it, over the body. */
+/* The page tab's Read only chip in a Read only vault (YAZ-4939): its "Allow edits?" box hangs under it, over the body. */
 .explore__lock {
   flex: none;
   cursor: default;
 }
-/* The note's or folder's id after its title (round 1, item 1), in an ID vault. */
+/* The page's or folder's id after its title (round 1, item 1), in an ID vault. */
 .explore__id {
   margin-left: 6px;
   font-size: 11px;
@@ -302,17 +330,9 @@
 .explore__results .explore__id {
   flex: none;
 }
-/* The fold-all button in the head (item 4): the note tab's own, at the head's size. */
+/* The fold-all button in the head (item 4): the page tab's own, at the head's size. */
 .explore__head .fold-all__trigger {
   flex: none;
-}
-/* The comment stream and Linked mentions under the note (item 3), as the tab stacks them. */
-.explore__under {
-  margin-top: 24px;
-}
-.explore__under .comments,
-.explore__under .backlinks {
-  padding: 0;
 }
 .explore__button {
   flex: none;
@@ -328,11 +348,6 @@
 .explore__button:hover {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
-.explore__button kbd {
-  margin-left: 4px;
-  font-family: inherit;
-  color: var(--fg-muted);
-}
 
 /* Reading: the body is the one scroller, so a covered layer keeps its place. Editing: the editor fills the body and
    scrolls inside itself (`.editor-host`), as a tab's does. */
@@ -342,50 +357,66 @@
   overflow-y: auto;
   padding: 8px 24px 32px;
 }
+/* The page layer's body box (YAZ-5164): the body on show fills it; while read ⇄ edit switches, the incoming body lies
+   under it at the same size, see-through, until it is up at the same place. Opacity, not visibility: the incoming editor
+   takes the caret as it mounts, and a hidden element cannot take it. */
+.explore__bodies {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.explore__body--incoming {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+}
 .explore__body:focus {
   outline: none;
 }
-/* ⌘F's bar in a reading layer (check 11): at the top of the scroller, under the head, over the text. */
-.explore__body > .find-bar-dock--note {
-  position: sticky;
-  top: 0;
-  right: 0;
-  left: 0;
-}
-.explore__body--edit {
+/* ONE PAGE FRAME (YAZ-5164 Option A): reading, editing and a card file draw the page tab's own frame in the body, its
+   scroller with the page's 48 px sides (`.editor-host`, `.card-file`); the body itself has no sides and no scroll. */
+.explore__body--frame {
   display: flex;
   flex-direction: column;
   padding: 0;
   overflow: hidden;
 }
-.explore__body--edit > .editor {
+.explore__body--frame > .editor {
   flex: 1;
   min-height: 0;
 }
+/* Reading, the body IS the page's scroller (`PageFrame`): the tab's own, with its tail under the page. */
+.explore__body.explore__body--read {
+  padding: 0 0 64px;
+}
 
-/* The zoom of a note layer (round 4): `--document-zoom` on the body, and app.css's own rule scales the reading Crepe's
-   `.ProseMirror`; the comment stream and the mentions under it scale as in a tab (`.editor-host > * > *`). */
-.explore__under > * {
-  zoom: var(--document-zoom, 1);
-}
-/* Editing: the editor inside the layer carries its own zoom on its scroller (always 100 here: the stack takes the keys
-   first). The layer's value wins, so the note zooms by the same rules as the tab; the editor's own pill is not shown. */
-.explore__body--edit .editor-host {
+/* The zoom of a page layer (round 4): `--document-zoom` on the body; the frame's own rules scale the page as in a tab.
+   The editor inside the layer carries its own zoom on its scroller (always 100 here: the stack takes the keys first),
+   a card file's view too: the layer's value wins. */
+.explore__body--frame :is(.editor-host, .card-file) {
   --document-zoom: inherit !important;
-}
-.explore__body--edit .status-chips .document-zoom {
-  display: none;
 }
 /* The pill in the head, at the head's size. */
 .explore__head .document-zoom {
   flex: none;
 }
 
-/* YAZ-4956: a layer narrower than its head (a tiled cell, a drag) folds the head. The observer in
-   `ExploreHeadMore.tsx` writes `data-compact`. Folded: the title (cut with "…") and × stay; the ID and the parts in
-   `.explore__fold` hide, and ⋯ holds them. The fold box is `display: contents`, so a full head is laid out as before. */
+/* YAZ-4956, YAZ-4986: a layer narrower than its head folds the head's parts ONE BY ONE, the least important first
+   (`FOLD_ORDER` in `ExploreHeadMore.tsx`): the zoom pill, the fold-all button, ‹ n/m ›, ↗, the Read only chip's word
+   (its lock stays), the chip, Edit / Done. The title (cut with "…"), the ID and × never fold. The observer writes
+   `data-folded` on a part and `data-compact` on the head while any part is folded; ⋯ then shows and holds them all.
+   The fold box is `display: contents`, so a full head is laid out as before. */
 .explore__fold {
   display: contents;
+}
+.explore__part {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
 }
 .explore__more {
   display: none;
@@ -393,15 +424,24 @@
 .explore__head[data-compact] .explore__more {
   display: block;
 }
-.explore__head[data-compact] > .explore__id,
-.explore__head[data-compact] .explore__fold > * {
+/* The card window's ⋯ has rows of its own (D13: review, history, Copy card ID): it shows at every width (YAZ-4964). */
+.explore__head .explore__more--always {
+  display: block;
+}
+.explore__head [data-folded] {
   display: none;
+}
+/* The ID stays (Yaseen: "esp i need to see the id please"): the title gives way first. */
+.explore__head > .explore__id,
+.explore__head > .card__id {
+  flex: none;
+  white-space: nowrap;
 }
 .explore__head[data-compact] .explore__title {
   min-width: 48px;
 }
 /* The Read only chip shows again while its "Allow edits?" box is open (E, or ⋯ › Allow edits…) or it has the keyboard. */
-.explore__head[data-compact] .explore__fold > .explore__lock:is(:focus-within, :has(.read-only-chip__ask)) {
+.explore__head .explore__lock[data-folded]:is(:focus-within, :has(.read-only-chip__ask)) {
   display: revert;
 }
 
@@ -663,11 +703,6 @@
   opacity: 0.5;
   cursor: default;
 }
-.explore__arrange-apply kbd {
-  margin-left: 4px;
-  font-family: inherit;
-  opacity: 0.8;
-}
 
 /* The empty box (YAZ-4945): Opened and Edited, a heading each inside the one list; each row's time, muted, on the right. */
 .explore .search-results > .explore__group {
@@ -692,4 +727,9 @@
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* YAZ-5152: Explore hides while a card preview it opened shows, its layers kept; Esc brings it back. */
+.explore[hidden] {
+  display: none;
 }

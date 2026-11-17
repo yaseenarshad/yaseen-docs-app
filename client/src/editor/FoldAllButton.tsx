@@ -1,7 +1,7 @@
 /**
- * The fold-all button (YAZ-3938 D1, D4): the chevrons, left of the cog, in a note and in a code tab. One
+ * The fold-all button (YAZ-3938 D1, D4): the chevrons, left of the cog, in a page and in a code tab. One
  * button for both directions, the sidebar's rule (YAZ-862): while anything is open it collapses all; once
- * everything is folded it expands all. The host gives `run`: in a note the ⌘⇧U / ⌘⇧I command
+ * everything is folded it expands all. The host gives `run`: in a page the ⌘⇧U / ⌘⇧I command
  * (`foldAllHotkeys.ts`), so one ⌘Z undoes it; in a code tab Monaco's own fold action.
  *
  * D9: the chevrons show what a click does: they point up for "Collapse all" and down for "Expand all".
@@ -13,7 +13,8 @@
  * so it never does the wrong thing.
  */
 import { useEffect, useRef, useState } from 'react'
-import { hintOf } from '../lib/keyHint'
+import { labelWith } from '@shared/keyLabel'
+import { wordsOf } from '../lib/keyHint'
 import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
 
 /** What a click does now. */
@@ -31,8 +32,7 @@ export function FoldAllButton({ read, run, subscribe, keys }: {
 }) {
   const [shown, setShown] = useState<{ next: FoldNext; label: string }>({ next: 'collapse', label: LABEL.collapse })
   const labelOf = (next: FoldNext): string => {
-    const key = next === 'none' ? undefined : hintOf(next === 'collapse' ? keys.collapse : keys.expand)
-    return key === undefined ? LABEL[next] : `${LABEL[next]} (${key})`
+    return labelWith(LABEL[next], next === 'none' ? undefined : wordsOf(next === 'collapse' ? keys.collapse : keys.expand))
   }
   const refresh = (): void =>
     void Promise.resolve(read()).then((next) => {

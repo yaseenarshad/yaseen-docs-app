@@ -158,7 +158,7 @@ const openProperties = (el: ParentNode): HTMLElement => {
 // ---------- tests ----------
 
 describe('primary line', () => {
-  it('file.name first in order renders a link that opens the note; the rest sits inline after it', () => {
+  it('file.name first in order renders a link that opens the page; the rest sits inline after it', () => {
     const { el, onOpenFile } = mount(LIST_BASE)
     expect(items(el)).toHaveLength(8)
     expect(titles(el)[0]).toBe('Agentic Agency')
@@ -167,7 +167,7 @@ describe('primary line', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 
-  it('a right-click on a row opens the page menu: "Copy path", and no "Copy ID" though its note has an id (YAZ-2420 D31)', () => {
+  it('a right-click on a row opens the page menu: "Copy path", and no "Copy ID" though its page has an id (YAZ-2420 D31)', () => {
     const { el } = mount(LIST_BASE, { records: TEST_RECORDS.map((r) => ({ ...r, id: 'k3m9x2pq7abc' })) })
     act(() => void items(el)[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const labels = [...document.querySelectorAll('.ctx-menu__item')].map((item) => item.textContent)
@@ -192,7 +192,7 @@ describe('primary line', () => {
     expect(inlineOf(items(el)[0])).toBe('Agentic Agency') // the VALUE is the title too (YAZ-2420 D18)
   })
 
-  it('empty values are skipped in the inline run — a bare note renders no inline span', () => {
+  it('empty values are skipped in the inline run — a bare page renders no inline span', () => {
     const { el } = mount(LIST_BASE)
     const attribution = items(el).find((i) => i.querySelector('.view-list__title')?.textContent === 'Attribution')
     expect(attribution).toBeDefined()
@@ -201,7 +201,7 @@ describe('primary line', () => {
 })
 
 describe('the title (YAZ-2420 D14)', () => {
-  it('E: a list row\'s primary line shows the note\'s title, not its file name; a note with none shows its file name', () => {
+  it('E: a list row\'s primary line shows the page\'s title, not its file name; a page with none shows its file name', () => {
     const { el } = mount(LIST_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
     const titles = [...el.querySelectorAll('.view-list__title')].map((b) => b.textContent)
     expect(titles).toContain('UP-001 - Abdul')
@@ -218,7 +218,7 @@ describe('an id link (YAZ-2293 D8)', () => {
   const props = { records, folder: testFolderHost({ vaultRecords: records }) }
   const vsl = (el: ParentNode) => items(el).find((i) => i.querySelector('.view-list__title')?.textContent === 'VSL-v1')!
 
-  it('the inline run reads as the title of the note the id names, as a name link reads as its name', () => {
+  it('the inline run reads as the title of the page the id names, as a name link reads as its name', () => {
     const { el } = mount('views:\n  - type: list\n    name: L\n    order:\n      - file.name\n      - note.related\n', props)
     expect(inlineOf(vsl(el))).toBe('[[Attribution]]')
     expect(inlineOf(items(el)[1])).toBe('[[Agentic Agency]]')

@@ -138,11 +138,11 @@ describe('board:set-read-only on a diagram', () => {
 describe('board:set-read-only refuses a bad request before touching the disk', () => {
   it('a non-boolean `on`, a missing or non-number `expectedMtime`, a path that is no board, or a path out of the vault', async () => {
     const { file, mtime } = await seed('Sketch.excalidraw', SCENE)
-    await seed('Note.md', '# hi\n')
+    await seed('Page.md', '# hi\n')
     expect((await failure(setBoardReadOnly({ root, path: 'Sketch.excalidraw', on: 'yes', expectedMtime: mtime }))).code).toBe('BAD_REQUEST')
     expect((await failure(setBoardReadOnly({ root, path: 'Sketch.excalidraw', on: true }))).code).toBe('BAD_REQUEST')
     expect((await failure(setBoardReadOnly({ root, path: 'Sketch.excalidraw', on: true, expectedMtime: '1' }))).code).toBe('BAD_REQUEST')
-    expect((await failure(setBoardReadOnly({ root, path: 'Note.md', on: true, expectedMtime: mtime }))).code).toBe('UNSUPPORTED_EXTENSION')
+    expect((await failure(setBoardReadOnly({ root, path: 'Page.md', on: true, expectedMtime: mtime }))).code).toBe('UNSUPPORTED_EXTENSION')
     expect((await failure(setBoardReadOnly({ root, path: '../x.excalidraw', on: true, expectedMtime: mtime }))).code).toBe('BAD_REQUEST')
     expect((await failure(setBoardReadOnly({ root, path: 'missing.drawio', on: true, expectedMtime: mtime }))).code).toBe('NOT_FOUND')
     expect((await failure(setBoardReadOnly(null))).code).toBe('BAD_REQUEST')
@@ -171,13 +171,13 @@ describe('board:set-hover-links on a drawing', () => {
   // A diagram has its own switch since YAZ-4748 D10 (below): a file that is no board is the one refused for its kind.
   it('refuses a bad request and a file that is no board, and writes nothing', async () => {
     const { file, mtime } = await seed('Sketch.excalidraw', SCENE)
-    await seed('Note.md', '# hi\n')
+    await seed('Page.md', '# hi\n')
     expect((await failure(setBoardHoverLinks({ root, path: 'Sketch.excalidraw', on: 'no', expectedMtime: mtime }))).code).toBe('BAD_REQUEST')
     expect((await failure(setBoardHoverLinks({ root, path: 'Sketch.excalidraw', on: false }))).code).toBe('BAD_REQUEST')
-    expect((await failure(setBoardHoverLinks({ root, path: 'Note.md', on: false, expectedMtime: mtime }))).code).toBe('UNSUPPORTED_EXTENSION')
+    expect((await failure(setBoardHoverLinks({ root, path: 'Page.md', on: false, expectedMtime: mtime }))).code).toBe('UNSUPPORTED_EXTENSION')
     expect((await failure(setBoardHoverLinks({ root, path: 'image.drawio.svg', on: false, expectedMtime: mtime }))).code).toBe('UNSUPPORTED_EXTENSION')
     expect(await readFile(file, 'utf8')).toBe(SCENE)
-    expect(await readFile(path.join(root, 'Note.md'), 'utf8')).toBe('# hi\n')
+    expect(await readFile(path.join(root, 'Page.md'), 'utf8')).toBe('# hi\n')
   })
 })
 

@@ -6,6 +6,7 @@ import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value,
 import { formatDateValue, formatNumber } from './columnFormat'
 import type { ViewSet } from './viewSchema'
 import { canonicalKey } from './view/keys'
+import { cardCellText } from './cardRows'
 
 /**
  * "Export as CSV…" and "Copy as table" (YAZ-4594 S30): a view's shown rows × its shown columns, as the cells show them.
@@ -17,7 +18,7 @@ export interface CellTextContext {
   resolve?: Resolver
   /** The folder's declarations by bare name: a Number or Date column's `format` (YAZ-4591). */
   decls: Readonly<Record<string, PropertyDecl>>
-  /** The folder page's own folder, as the index names it: a note directly in it has an empty Folder cell. */
+  /** The folder page's own folder, as the index names it: a page directly in it has an empty Folder cell. */
   pageFolder: string
   /** A folder's title, as its Folder chip shows it (YAZ-4564). */
   folderTitle: (dir: string) => string
@@ -30,7 +31,7 @@ const inlineLinkText = (text: string, resolve: Resolver | undefined): string =>
     return link instanceof LinkValue ? linkText(link, resolve) : whole
   })
 
-/** One value as a cell shows it: a link by its note's title, a list joined by ", ", a formatted Number or Date. */
+/** One value as a cell shows it: a link by its page's title, a list joined by ", ", a formatted Number or Date. */
 function valueText(v: Value | undefined, resolve: Resolver | undefined, decl?: PropertyDecl): string {
   if (v === undefined || v === null) return ''
   if (v instanceof ErrorValue) return '#ERROR'
@@ -50,12 +51,15 @@ export function cellText(row: Row, key: string, ctx: CellTextContext): string {
   const c = canonicalKey(key)
   if (c === 'file.name') return row.record.title
   if (c === 'file.folder') return row.record.folder === ctx.pageFolder ? '' : ctx.folderTitle(row.record.folder)
+  // A card row's success rate (YAZ-5319), in percent as its cell shows it.
+  const card = cardCellText(c, row.values[key])
+  if (card !== null) return card
   return valueText(row.values[key], ctx.resolve, c.startsWith('note.') ? ctx.decls[c.slice('note.'.length)] : undefined)
 }
 
 /**
  * The rows in the order the view shows them: group by group, a group's direct rows before its inner groups (the
- * table's walk). Each note once: a fanned-out row that shows under two groups is one line in a file. A collapsed
+ * table's walk). Each page once: a fanned-out row that shows under two groups is one line in a file. A collapsed
  * group's rows are in: they are the view's rows, only folded away.
  */
 export function shownRows(rows: readonly Row[], groups: readonly Group[] | null): Row[] {
@@ -89,7 +93,7 @@ export function toCsv(table: readonly (readonly string[])[]): string {
   return table.map((line) => line.map(field).join(',')).join('\r\n') + '\r\n'
 }
 
-/** Tab-separated, for Sheets or a note's table: a tab or a line break inside a cell becomes a space. */
+/** Tab-separated, for Sheets or a page's table: a tab or a line break inside a cell becomes a space. */
 export function toTsv(table: readonly (readonly string[])[]): string {
   return table.map((line) => line.map((s) => s.replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n')
 }

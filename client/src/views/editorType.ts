@@ -1,20 +1,21 @@
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import { orderedPropertyOptions } from '@shared/propertyOptions'
-import type { FolderSettings } from './folderSettings'
+import type { FolderSettings } from './folderSettingsRead'
 import { canonicalKey } from './view/keys'
+import { CARD_FIX_STATUSES, CARD_STATUSES } from './cardRows'
 
 /**
  * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence, as amended
  * by the 5E relation contract (GRO-2120 comment 1f28abb4 §5), narrowed by YAZ-836 (the
  * type-scoped rung that used to sit above it died with the type system) and topped by YAZ-819
  * (the folder's own, view-scoped declaration): the FOLDER whose view is rendering
- * wins, then a vault-wide property declaration; otherwise the note's own YAML value decides; a
- * note without the key borrows the dominant value type across the view's records; text is the
+ * wins, then a vault-wide property declaration; otherwise the page's own YAML value decides; a
+ * page without the key borrows the dominant value type across the view's records; text is the
  * final fallback. `file.*` and `formula.*` never get an editor. The per-column halves are
- * computed once per render via `columnTyping`; `cellEditor` adds the per-note value on top.
+ * computed once per render via `columnTyping`; `cellEditor` adds the per-page value on top.
  *
  * TOMBSTONE (⚡ YAZ-815, ruled by Yasin): a rung for an explicit `.obsidian/types.json`
- * assignment sat between the vault-wide declarations and the note's own value, with a `types`
+ * assignment sat between the vault-wide declarations and the page's own value, with a `types`
  * parameter to feed it. Nothing ever fed it — the one surface that mounts these editors reads
  * the window's link snapshot rather than fetching an index (🔒 D2) — and the whole
  * `.obsidian/types.json` chain came out with it: a foreign app's file is not our schema.
@@ -28,7 +29,7 @@ export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind |
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ].*)?$/
 const WIKILINK = /^\[\[[^[\]]+\]\]$/
 
-/** The editor a raw YAML value asks for; null when the note has no value for the key. */
+/** The editor a raw YAML value asks for; null when the page has no value for the key. */
 export function valueKind(raw: unknown): EditorKind | null {
   if (raw === undefined || raw === null) return null
   if (typeof raw === 'boolean') return 'checkbox'
@@ -71,6 +72,10 @@ const DECLARED_KIND: Record<Exclude<PropertyKind, 'mentions'>, EditorKind> = {
   image: 'image',
 }
 
+const CARD_STATUS_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_STATUSES }
+const CARD_FIX_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_FIX_STATUSES }
+const CARD_UP_NEXT_TYPING: ColumnTyping = { assigned: 'checkbox', dominant: null }
+
 /**
  * The column-wide typing facts for `key` over the view's records, the folder's own
  * declaration (YAZ-819) and the vault-wide property declarations (5E).
@@ -82,6 +87,11 @@ export function columnTyping(
   settings?: FolderSettings | null,
 ): ColumnTyping {
   const c = canonicalKey(key)
+  // A card row's edited columns (YAZ-5319): Card status, a Select of Active and Archived; Card fix status (YAZ-5430), a
+  // Select of Needs fixing, blank when not marked; Card up next, a checkbox.
+  if (c === 'card.status') return CARD_STATUS_TYPING
+  if (c === 'card.fix') return CARD_FIX_TYPING
+  if (c === 'card.upNext') return CARD_UP_NEXT_TYPING
   if (!c.startsWith('note.')) return null
   const bare = c.slice(5)
   const dominant = dominantKind(records, bare)

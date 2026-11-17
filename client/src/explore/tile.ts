@@ -10,7 +10,7 @@
  *
  * Even `TILE_GAP` gaps, inside the area under the top bar. A narrow window takes fewer columns (YAZ-4944): a cell is
  * never under a window's least width (`MIN_BOX_WIDTH`) where one column has it, so the windows never overlap; three
- * become two on top and one under them, two and the grid one column. The Tile button picks the layout by how many notes and
+ * become two on top and one under them, two and the grid one column. The Tile button picks the layout by how many pages and
  * boards are open (`layoutForCount`); more than 5: the 5 used last. A tiled window is still a window: a drag, a
  * resize, a raise and × work as before.
  */
@@ -26,7 +26,7 @@ export const TILE_GAP = 12
 /** The glide to the new places (none with reduced motion). */
 export const TILE_MS = 200
 
-/** The layout for `count` open notes and boards; null under 2 (nothing to arrange). */
+/** The layout for `count` open pages and boards; null under 2 (nothing to arrange). */
 export function layoutForCount(count: number): TileLayout | null {
   return count < 2 ? null : count === 2 ? 'two' : count === 3 ? 'three' : count === 4 ? 'grid' : 'gridCentre'
 }
@@ -62,7 +62,7 @@ export function tileCells(layout: TileLayout, area: TileArea, gap = TILE_GAP): L
   return cells
 }
 
-/** The windows a layout takes by default: the most recently used first (the front order), notes and boards, searches only when asked. */
+/** The windows a layout takes by default: the most recently used first (the front order), pages and boards, searches only when asked. */
 export function pickRecent(backToFront: readonly { id: number; kind: string }[], places: number, includeSearches: boolean): number[] {
   return backToFront
     .filter((l) => includeSearches || l.kind !== 'search')

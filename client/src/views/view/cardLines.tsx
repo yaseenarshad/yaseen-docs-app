@@ -8,14 +8,14 @@ import { canonicalKey } from './keys'
 
 /**
  * A card's lines (YAZ-1206, YAZ-1217), one code for the Board and the Calendar (YAZ-4857): each shown key starts a
- * line, and `cardStyle[key].join` puts it on the line being built instead, so the order IS the layout. A note
+ * line, and `cardStyle[key].join` puts it on the line being built instead, so the order IS the layout. A page
  * key's line can be bold or underlined and hide its label.
  */
 export type CardStyle = NonNullable<ViewDef['cardStyle']>[string]
 
 export const cardStyleOf = (view: ViewDef, key: string): CardStyle => view.cardStyle?.[canonicalKey(key)] ?? {}
 
-/** The text flags a note row carries (YAZ-1206); the title takes part in the layout only (YAZ-1217). */
+/** The text flags a page row carries (YAZ-1206); the title takes part in the layout only (YAZ-1217). */
 const styleClasses = (style: CardStyle) => `${style.bold === true ? ' view-board__prop--bold' : ''}${style.underline === true ? ' view-board__prop--underline' : ''}`
 
 /** The card's ROWS (YAZ-1217): each ordered key starts a line, `join` appends it to the one being built — so a join with no line yet is a harmless no-op. */
@@ -62,7 +62,7 @@ export function CardLine({ line, item, lead, className = '' }: { line: readonly 
 }
 
 /**
- * A card's own style (YAZ-4906): the note's `color` (`readColorStrength`: `blue`, `blue light`), `text_color` and
+ * A card's own style (YAZ-4906): the page's `color` (`readColorStrength`: `blue`, `blue light`), `text_color` and
  * `weight` as the attributes views.css draws the card by, on a calendar card and a board card alike; a value the app
  * cannot read gives none.
  */

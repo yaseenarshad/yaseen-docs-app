@@ -1,5 +1,5 @@
 /**
- * The hover cards of a note table's cells (YAZ-3818 D14, YAZ-4901), one controller (`cellHoverCard.ts`) per editor:
+ * The hover cards of a page table's cells (YAZ-3818 D14, YAZ-4901), one controller (`cellHoverCard.ts`) per editor:
  *
  * - A cell with a note (the YAZ-3818 demo): rest the pointer anywhere on it for the hover dwell (`HOVER_PREVIEW_DWELL_MS`,
  *   as a note's link hover, `wikilink/wikilinkHover.ts`) and a small read-only box shows beside the cell, with the note's
@@ -8,7 +8,7 @@
  *   (`cellNoteCard.ts`). The box takes no click (5A-13), and never shows while that note's card is open.
  * - A cut cell (YAZ-4901; Clip, YAZ-4900, its line wider inside than out, checked on the hover only): after 250 ms the
  *   full-text card under the cell, the cell's lines as the note preview writes them (a bullet `• `, a to-do ☐ / ☑), up to
- *   12 then "…". No macOS tooltip. Never while the caret is in that cell (item 9). In a read-only note too (item 12).
+ *   12 then "…". No macOS tooltip. Never while the caret is in that cell (item 9). In a read-only page too (item 12).
  * - A cut cell WITH a note (item 10): ONE card at the full-text card's place and wait: the full text, a line, then the
  *   note's part as above.
  *
@@ -78,11 +78,11 @@ function cellCard(view: EditorView, cell: HTMLElement): CellCard | null {
   if (view.hasFocus() && cellPosAround(selection.$from) === cellPos) return null
   const cut = isCut(cell)
   const label = cellNoteOf(doc, cellPos)
-  const notePos = label === null || label === openCellNoteLabel(view.state) ? null : notePosOf(doc, label)
-  if (!cut && notePos === null) return null
+  const pagePos = label === null || label === openCellNoteLabel(view.state) ? null : notePosOf(doc, label)
+  if (!cut && pagePos === null) return null
   const box = cardShell()
   if (cut) box.appendChild(textPart(cellNotePreviewLines(doc.nodeAt(cellPos)!, CARD_TEXT_LINES + 1)))
-  if (notePos !== null) box.append(...noteParts(view, label!, notePos))
+  if (pagePos !== null) box.append(...noteParts(view, label!, pagePos))
   if (cut) return { box, dwell: CUT_CARD_DWELL_MS, under: true }
   // The note's box: right of the corner, or left of it at the window's edge (the box is 260px wide).
   const rect = cell.getBoundingClientRect()

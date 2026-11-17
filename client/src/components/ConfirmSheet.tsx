@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { choiceKey } from './choiceKeys'
 
 /**
  * THE CONFIRM SHEET (YAZ-2201): the app's own sheet, never a native dialog — the confirm
@@ -38,9 +39,15 @@ export interface ConfirmSheetProps {
    * focus then says what Enter does. Not given, the focus is on Cancel.
    */
   focusConfirm?: boolean
+  /**
+   * A sheet of choices (YAZ-4989: "This vault is read only" — Just this once · 1 minute · 10 minutes · Cancel): ↓ / Tab
+   * and ↑ / ⇧Tab move the focus through them in that order (the confirm button, the `other` buttons, Cancel), and Enter
+   * picks the focused one, not always the confirm button (`choiceKeys.ts`).
+   */
+  choices?: boolean
 }
 
-export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cancel', danger = false, keys = 'window', onConfirm, onCancel, confirmDisabled = false, children, other, focusConfirm = false }: ConfirmSheetProps) {
+export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cancel', danger = false, keys = 'window', onConfirm, onCancel, confirmDisabled = false, children, other, focusConfirm = false, choices = false }: ConfirmSheetProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
 
@@ -53,7 +60,15 @@ export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cance
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- once, as the sheet opens
 
   // preventDefault matters on both keys: Enter would otherwise ALSO activate the focused Cancel.
+  const sheetRef = useRef<HTMLDivElement>(null)
   const onKey = (e: KeyboardEvent | ReactKeyboardEvent): void => {
+    if (choices && sheetRef.current !== null) {
+      const confirm = confirmRef.current
+      const cancel = cancelRef.current
+      const rest = [...sheetRef.current.querySelectorAll<HTMLButtonElement>('.confirm__actions button:not([disabled])')].filter((b) => b !== confirm && b !== cancel)
+      const order = [confirm, ...rest, cancel].filter((b): b is HTMLButtonElement => b !== null && !b.disabled)
+      if (choiceKey(e, sheetRef.current, order)) return
+    }
     if (e.key !== 'Escape' && e.key !== 'Enter') return
     e.preventDefault()
     if (keys === 'contained') e.stopPropagation()
@@ -68,7 +83,7 @@ export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cance
     if (keys !== 'window') return
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keys, onConfirm, onCancel, confirmDisabled]) // eslint-disable-line react-hooks/exhaustive-deps -- `onKey` reads exactly these
+  }, [keys, onConfirm, onCancel, confirmDisabled, choices]) // eslint-disable-line react-hooks/exhaustive-deps -- `onKey` reads exactly these
 
   return (
     <div
@@ -79,7 +94,7 @@ export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cance
       }}
       onKeyDown={keys === 'window' ? undefined : onKey}
     >
-      <div className="confirm" role="dialog" aria-modal="true" aria-labelledby={labelId} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className={choices ? 'confirm confirm--choices' : 'confirm'} role="dialog" aria-modal="true" aria-labelledby={labelId} onMouseDown={(e) => e.stopPropagation()}>
         <p className="confirm__text" id={labelId}>
           {text}
         </p>

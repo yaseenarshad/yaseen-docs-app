@@ -86,20 +86,20 @@ const menuTakes = (row: KeyRow, key: string, overrides: HotkeyOverrides | undefi
   clashesOf(row, key, overrides, aside).some((other) => other.scope === 'app' && other.changeable && other.passesToPages !== true)
 
 /**
- * YAZ-4277 D9: the notes' fold keys also fold the selected text boxes of a drawing (fold all, unfold all), so one
+ * YAZ-4277 D9: the pages' fold keys also fold the selected text boxes of a drawing (fold all, unfold all), so one
  * rebinding in Settings moves both. The engine's actions, by name.
  */
-export const NOTE_KEYS_ON_DRAWINGS: Readonly<Record<string, string>> = {
-  'note.foldHere': 'foldTextBoxes',
-  'note.unfoldHere': 'unfoldTextBoxes',
+export const PAGE_KEYS_ON_DRAWINGS: Readonly<Record<string, string>> = {
+  'page.foldHere': 'foldTextBoxes',
+  'page.unfoldHere': 'unfoldTextBoxes',
 }
 
 /**
  * The engine's `keyBindings`: one per drawing action or tool row the user changed, or whose key an App command
- * takes (`menuTakes`), with that key left out; [] while nothing changed. The notes' fold keys the user changed too.
+ * takes (`menuTakes`), with that key left out; [] while nothing changed. The pages' fold keys the user changed too.
  */
 export function drawingKeyBindings(overrides: HotkeyOverrides | undefined, aside?: HotkeyAside): EngineKeyBinding[] {
-  const notes = Object.entries(NOTE_KEYS_ON_DRAWINGS).flatMap(([id, name]) => {
+  const pages = Object.entries(PAGE_KEYS_ON_DRAWINGS).flatMap(([id, name]) => {
     const row = keyRow(id)
     if (row === undefined || overrides?.[id] === undefined) return []
     return [{ name, defaults: chords(row.keys), keys: chords(keysOf(row, overrides)) }]
@@ -111,7 +111,7 @@ export function drawingKeyBindings(overrides: HotkeyOverrides | undefined, aside
     const free = now.filter((k) => !menuTakes(row, k, overrides, aside))
     if (overrides?.[row.id] === undefined && free.length === now.length) return []
     return [{ name, defaults: chords(row.keys), keys: chords(free) }]
-  }).concat(notes)
+  }).concat(pages)
 }
 
 /** The drawing keys as the engine gets them, as one string: a settings write that moves none keeps the engine's prop. */

@@ -92,7 +92,7 @@ export async function resolveGit(candidates: readonly string[] = GIT_CANDIDATES)
 
 /**
  * Runs git at the EXPLICIT binary path `bin` inside `root`. No shell, no `PATH` lookup — see the
- * module note on the `openInVsCode.ts` exception.
+ * module page on the `openInVsCode.ts` exception.
  *
  * Resolves with the exit code: a non-zero exit NEVER throws, because callers classify it (exit 2
  * from `remote get-url` means "no origin", not an error). Rejects only when the process could not
@@ -142,8 +142,8 @@ export function git(bin: string, root: string, args: string[], opts: { timeoutMs
           return
         }
         if (code === null || code === undefined) {
-          const note = `git: timed out after ${timeout}ms`
-          resolve({ code: GIT_TIMEOUT_CODE, stdout, stderr: stderr === '' ? note : `${stderr.trimEnd()}\n${note}` })
+          const page = `git: timed out after ${timeout}ms`
+          resolve({ code: GIT_TIMEOUT_CODE, stdout, stderr: stderr === '' ? page : `${stderr.trimEnd()}\n${page}` })
           return
         }
         reject(err)

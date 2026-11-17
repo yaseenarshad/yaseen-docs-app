@@ -78,7 +78,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   const conj = group.items.length ? group.conj : pendingConj
   // Folder is a menu key too since YAZ-4564 D26: each extra once.
   const listed = allPropertyKeys(def, view, records, folder.settings.columns)
-  // Kind (`file.kind`, YAZ-4579 D31) is one too where the view shows subfolder rows: notes or folders.
+  // Kind (`file.kind`, YAZ-4579 D31) is one too where the view shows subfolder rows: pages or folders.
   const extras = showsFolderRows(view) ? [...FILE_EXTRAS, 'file.kind'] : FILE_EXTRAS
   const keys = [...listed, ...extras.filter((k) => !listed.includes(k))]
   /** The column's rung of the typing ladder (D4), the same one the table's cell editors read. */

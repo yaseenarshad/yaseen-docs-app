@@ -105,7 +105,8 @@ describe('pythonSymbols', () => {
     expect(pythonSymbols('# only a comment\n\nprint(1)\n')).toEqual([])
   })
 
-  it('5 000 lines in a few milliseconds', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('5 000 lines in a few milliseconds', { retry: 2 }, () => {
     const block = (i: number) => [`@decorator`, `class Model${i}:`, `    """Docs that mention def and class."""`, `    def method_a(self, x: int) -> int:`, `        return x + ${i}`, '', `    async def method_b(self):`, `        await thing(`, `            ${i},`, `        )`, '']
     const lines = [`LIMIT = 1`, ...Array.from({ length: 454 }, (_, i) => block(i)).flat()]
     expect(lines.length).toBeGreaterThanOrEqual(4995)

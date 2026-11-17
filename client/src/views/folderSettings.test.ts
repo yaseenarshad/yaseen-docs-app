@@ -256,7 +256,7 @@ describe('defaultView (YAZ-1104): the saved starting view', () => {
   })
 })
 
-describe('other_files (YAZ-4597 D44): the notes moved to the Other files tray', () => {
+describe('other_files (YAZ-4597 D44): the pages moved to the Other files tray', () => {
   const write = vi.mocked(writeProperty)
 
   it('reads a list of links; absent stays undefined with no problem', () => {

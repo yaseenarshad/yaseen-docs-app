@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { type LinkCandidate, matchLinkCandidates, trailingLinkFragment } from '../../links/completion'
+import { createContext, useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { type LinkCandidate, matchLinks, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
 import { ColumnDecls, cellContent } from './GroupHeader'
@@ -26,27 +26,32 @@ export interface EditableCellProps {
   editor: EditorKind | null
   /**
    * What the link, multi-link and text editors' `[[…]]` completion offers, each with what picking it writes. A folder
-   * page's cells: the note editor's rows, notes then folders (`cellLinkCandidates`, YAZ-4601 D49), or a link column's
+   * page's cells: the page editor's rows, pages then folders (`cellLinkCandidates`, YAZ-4601 D49), or a link column's
    * target folder (`belongsToTitles`); the properties panel: the titles (`titleCandidates`).
    */
   titles: readonly LinkCandidate[]
   /**
-   * The ONE write: the host's own. A folder's views write its block of the note
+   * The ONE write: the host's own. A folder's views write its block of the page
    * (`FolderHost.writeValues`, D19); the properties panel writes the row's group and moves its
    * belief of disk with it (⚡ YAZ-884). Resolves on success, rejects with the message to show.
    */
   onCommit: (next: unknown) => Promise<unknown>
   /**
    * The vault's resolver (YAZ-2293 D8): the display — and the chips editor's chips — read an id
-   * link as its note's title. Display ONLY: the editors' text and every commit stay the stored form.
+   * link as its page's title. Display ONLY: the editors' text and every commit stay the stored form.
    */
   resolve?: Resolver
   /**
-   * The note is read only (YAZ-3076 D6, S52, S56): the value shows with the tooltip "This note is read
+   * The page is read only (YAZ-3076 D6, S52, S56): the value shows with the tooltip "This page is read
    * only", with no `[data-edit]`, so a click, a double-click or a key opens nothing; a checkbox is
    * shown disabled. Nothing commits.
    */
   readOnly?: boolean
+  /**
+   * A read-only cell whose lock the folder page's "Allow edits?" opens (YAZ-5411, YAZ-5587): a click asks first
+   * (`ItemLock.ask`), and once allowed the cell opens — a checkbox toggles — as the click would have.
+   */
+  ask?: (open: () => void) => boolean
 }
 
 /**
@@ -58,7 +63,7 @@ export interface EditableCellProps {
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve, readOnly = false }: EditableCellProps) {
+export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve, readOnly = false, ask }: EditableCellProps) {
   const unit = useUnit()
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
@@ -90,7 +95,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
 
   // A lock ends the edit (YAZ-3124): the draft goes with the unmounted field, and no focus moves —
   // not `close()`, whose focus hand-back is for the human's own Enter or Esc. Without it the editor
-  // would reopen, and take the focus, the moment the note stopped being read only.
+  // would reopen, and take the focus, the moment the page stopped being read only.
   useEffect(() => {
     if (readOnly) setEditing(false)
   }, [readOnly])
@@ -120,12 +125,22 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
   if (readOnly) {
     // An Image cell (YAZ-4802) shows its picture, read only too.
     if (editor === 'image') return <ImageCellEditor raw={raw} decl={decl} label={`Edit ${propKey}`} readOnly onCommit={() => {}} />
+    /** The click that asks (`ask`): once allowed, the same click on the cell's editor, which the unlock has drawn. */
+    const asking = ask && ((e: ReactMouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      ask(() => wrapRef.current?.querySelector<HTMLElement>('[data-edit]')?.click())
+    })
     return editor === 'checkbox' ? (
       <span className="view-cell-edit">
-        <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={readOnlyTip(unit)} />
+        {asking ? (
+          <input type="checkbox" aria-disabled="true" checked={raw === true} readOnly aria-label={propKey} title={readOnlyTip(unit)} onClick={asking} />
+        ) : (
+          <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={readOnlyTip(unit)} />
+        )}
       </span>
     ) : (
-      <span className="view-cell-edit view-cell-edit--read-only" title={readOnlyTip(unit)}>
+      <span className="view-cell-edit view-cell-edit--read-only" title={readOnlyTip(unit)} onClick={asking}>
         {cellContent(value, resolve, decl)}
       </span>
     )
@@ -274,7 +289,7 @@ function ChipsEditor({ initial, label, titles, resolve, onCommit, onDone }: Chip
   const dirty = useRef(false)
 
   const fragment = titles === undefined ? null : trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkCandidates(titles ?? [], fragment)
+  const matches = fragment === null ? [] : matchLinks(titles ?? [], fragment)
 
   const change = (next: string[]) => {
     dirty.current = true
@@ -396,7 +411,7 @@ interface LinkEditorProps {
 /**
  * Link editor: a text input whose unclosed trailing `[[fragment` offers index titles
  * (through the shared matcher, `links/completion.ts` — GRO-2191); ArrowUp/Down pick, Enter
- * completes to `[[id]]` — `[[basename]]` for a note without one, YAZ-2293 — (then Enter again
+ * completes to `[[id]]` — `[[basename]]` for a page without one, YAZ-2293 — (then Enter again
  * commits the string).
  */
 function LinkEditor({ initial, titles, label, onCommit, onDone }: LinkEditorProps) {
@@ -405,7 +420,7 @@ function LinkEditor({ initial, titles, label, onCommit, onDone }: LinkEditorProp
   const done = useRef(false)
 
   const fragment = trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkCandidates(titles, fragment)
+  const matches = fragment === null ? [] : matchLinks(titles, fragment)
 
   const finish = (commit: boolean) => {
     if (done.current) return

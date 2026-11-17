@@ -3,9 +3,9 @@ import { fileHash, hashFilePath } from './urlHash'
 
 describe('fileHash / hashFilePath', () => {
   it('round-trips absolute paths, spaces included', () => {
-    const p = '/Users/me/Notes/My Targeting.md'
+    const p = '/Users/me/Pages/My Targeting.md'
     expect(hashFilePath(fileHash(p))).toBe(p)
-    expect(fileHash(p)).toBe('#/Users/me/Notes/My%20Targeting.md')
+    expect(fileHash(p)).toBe('#/Users/me/Pages/My%20Targeting.md')
   })
 
   it('null file → empty hash; empty/foreign hashes → null', () => {

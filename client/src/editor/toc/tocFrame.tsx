@@ -1,5 +1,5 @@
 /**
- * THE FRAME OF A TABLE OF CONTENTS (YAZ-2700, YAZ-2752; shared since YAZ-3486): what a note's table
+ * THE FRAME OF A TABLE OF CONTENTS (YAZ-2700, YAZ-2752; shared since YAZ-3486): what a page's table
  * of contents (`TableOfContents.tsx`) and a code tab's Outline (`code/outline/CodeOutline.tsx`) do
  * the same way, in one place. Each of them draws its own rows; the frame around the rows is this:
  *
@@ -17,7 +17,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactM
 import { TOC_MIN_W } from '@shared/types'
 import { holdColResize } from '../../lib/colResize'
 import { storage } from '../../lib/storage'
-import { isNoteKey } from '../noteKeys'
+import { isPageKey } from '../pageKeys'
 
 /** The card stays this long after the mouse or the keyboard leaves it. */
 export const GRACE_MS = 200
@@ -49,7 +49,7 @@ export const shown = (el: Element | null | undefined): el is HTMLElement => el i
 /**
  * The measure: the section's width picks the look, the scroller's top and height place it. A
  * ResizeObserver, so it costs nothing on a scroll or a keystroke — the scroller's BOX does not
- * grow with the note. A hidden tab is not measured (its layout is skipped, YAZ-2195); the
+ * grow with the page. A hidden tab is not measured (its layout is skipped, YAZ-2195); the
  * observer reports it when it shows. `scrollerOf` is read once per `shows` / `anchor` change.
  */
 export function useTocBox(shows: boolean, scrollerOf: () => HTMLElement | null, anchor: unknown): TocBox {
@@ -78,7 +78,7 @@ export function useTocBox(shows: boolean, scrollerOf: () => HTMLElement | null, 
  * and the find bar's place all read. It is there only while the names show. A drag writes the
  * same variable itself (`beginTocResize`), so after its release this finds the width already there
  * and the column does not jump. Names that go away under a drag — the editor closes, the window
- * narrows, the note zooms — end it. The section also wears `data-toc-names` while the names show: a
+ * narrows, the page zooms — end it. The section also wears `data-toc-names` while the names show: a
  * folder page's Page tab puts its outline deep in the page's scroller, and toc.css gives that scroller
  * its room by this attribute, with no `:has()` over the text (YAZ-4849; typing, bug YAZ-3329).
  */
@@ -146,7 +146,7 @@ export function useTocShortcut(shows: boolean, hostRef: RefObject<HTMLElement | 
     if (!shows) return
     const onKeyDown = (event: KeyboardEvent): void => {
       // The key as it is now (YAZ-3564 K4): the setting is read at each keydown.
-      if (!isNoteKey(event, 'note.toc', storage.getSettings()?.hotkeys)) return
+      if (!isPageKey(event, 'page.toc', storage.getSettings()?.hotkeys)) return
       const section = hostRef.current?.closest('section.editor')
       if (!shown(section)) return
       const active = document.activeElement

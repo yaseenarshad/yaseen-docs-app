@@ -1,8 +1,8 @@
 /**
- * "Add note shortcut" (YAZ-2290 D2): pick ONE note to also appear in a folder. Not a second
+ * "Add page shortcut" (YAZ-2290 D2): pick ONE page to also appear in a folder. Not a second
  * search — the search bar's own candidates and matcher (`searchCandidates`, `searchTitles`), drawn
  * as the flat result list (`SearchResults`; the bar itself draws a tree since YAZ-2620) inside the
- * confirm sheet's shell, so it ranks like the bar and closes like a sheet. Notes only (the index holds nothing else), and none the folder already
+ * confirm sheet's shell, so it ranks like the bar and closes like a sheet. Pages only (the index holds nothing else), and none the folder already
  * shows: one living under it or already a shortcut there has nothing to add.
  *
  * The input keeps focus, as the bar's does: type to filter, ↑/↓ move the highlight (clamped, never
@@ -23,7 +23,7 @@ interface ShortcutPickerProps {
   folder: string
   /** The window's index source — the Sidebar's own, no second feed; the list follows it while the picker is open. */
   source: WikilinkResolveSource
-  /** The chosen note's path; the caller writes the shortcut and closes the picker. */
+  /** The chosen page's path; the caller writes the shortcut and closes the picker. */
   onPick: (path: string) => void
   onClose: () => void
 }
@@ -49,15 +49,15 @@ export function ShortcutPicker({ folder, source, onPick, onClose }: ShortcutPick
 
   return (
     <div className="confirm-overlay" onMouseDown={onClose}>
-      <div className="confirm shortcut-picker" role="dialog" aria-modal="true" aria-label={unit('Add note shortcut')} onMouseDown={(e) => e.stopPropagation()}>
+      <div className="confirm shortcut-picker" role="dialog" aria-modal="true" aria-label={unit('Add page shortcut')} onMouseDown={(e) => e.stopPropagation()}>
         <div className="sidebar__search">
           <SearchIcon />
           <input
             className="sidebar__search-input"
             type="text"
             autoFocus
-            placeholder={unit('Add note shortcut')}
-            aria-label={unit('Find a note')}
+            placeholder={unit('Add page shortcut')}
+            aria-label={unit('Find a page')}
             spellCheck={false} // names, not prose (YAZ-3748 B2)
             value={query}
             onChange={(e) => {

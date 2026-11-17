@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { LINK_PILLS_FILE, NO_LINK_PILLS } from '@shared/linkPills'
+import { LINK_PILLS_FILE, LINK_PILLS_KEYS, NO_LINK_PILLS } from '@shared/linkPills'
 import type { VaultConfigChange } from '@shared/types'
 import { useLinkPills, type LinkPillsState } from './useLinkPills'
 
@@ -77,11 +77,11 @@ describe('useLinkPills (YAZ-4924)', () => {
     expect(state.pills).toEqual({ box: { fill: 'none' }, parts: { name: { bold: true } } })
     await act(async () => state.save({ box: { fill: 'none' }, parts: { name: { bold: true } }, format: '{name} ({id})' }))
     expect(state.pills).toEqual({ box: { fill: 'none' }, parts: { name: { bold: true } }, format: '{name} ({id})' })
-    expect(write).toHaveBeenCalledWith('/v', LINK_PILLS_FILE, { version: 2, box: { fill: 'none' }, parts: { name: { bold: true } }, format: '{name} ({id})' })
+    expect(write).toHaveBeenCalledWith('/v', LINK_PILLS_FILE, { version: 2, box: { fill: 'none' }, parts: { name: { bold: true } }, format: '{name} ({id})' }, LINK_PILLS_KEYS)
     // Reset: every field gone is today's object again.
     await act(async () => state.save({}))
     expect(state.pills).toBe(NO_LINK_PILLS)
-    expect(write).toHaveBeenLastCalledWith('/v', LINK_PILLS_FILE, { version: 2 })
+    expect(write).toHaveBeenLastCalledWith('/v', LINK_PILLS_FILE, { version: 2 }, LINK_PILLS_KEYS)
   })
 
   it('a version 1 file reads converted, in memory; it is written as version 2 only on a save', async () => {
@@ -90,7 +90,7 @@ describe('useLinkPills (YAZ-4924)', () => {
     expect(state.pills).toEqual({ format: '({icon}{name} ({vault}))', box: { fill: 'none' }, parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } } })
     expect(write).not.toHaveBeenCalled()
     await act(async () => state.save({ ...state.pills, vault: 'never' }))
-    expect(write).toHaveBeenCalledWith('/v', LINK_PILLS_FILE, { version: 2, format: '({icon}{name} ({vault}))', box: { fill: 'none' }, parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } }, vault: 'never' })
+    expect(write).toHaveBeenCalledWith('/v', LINK_PILLS_FILE, { version: 2, format: '({icon}{name} ({vault}))', box: { fill: 'none' }, parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } }, vault: 'never' }, LINK_PILLS_KEYS)
   })
 
   it("a change broadcast of this vault's file reads it again; another file or vault does nothing", async () => {

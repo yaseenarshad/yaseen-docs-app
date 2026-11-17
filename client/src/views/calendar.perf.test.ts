@@ -11,10 +11,10 @@ describe('calendar perf (YAZ-4540)', () => {
     // A mix the demo has: bare dates, times, a zone, and no date at all.
     const due = i % 10 === 0 ? undefined : i % 3 === 0 ? `2026-12-${day}T10:30Z` : i % 2 ? `2026-12-${day} 09:00` : `2026-12-${day}`
     const record: IndexRecord = {
-      path: `/vault/Tasks/Note ${i}.md`,
-      name: `Note ${i}.md`,
-      basename: `Note ${i}`,
-      title: `Note ${i}`,
+      path: `/vault/Tasks/Page ${i}.md`,
+      name: `Page ${i}.md`,
+      basename: `Page ${i}`,
+      title: `Page ${i}`,
       folder: 'Tasks',
       ext: 'md',
       size: 0,
@@ -39,7 +39,7 @@ describe('calendar perf (YAZ-4540)', () => {
     expect(median).toBeLessThan(budgetMs(16))
   })
 
-  it('puts 1000 records in time order (a week, and the note window order) in under 16 ms (YAZ-4558, YAZ-4547 D24)', () => {
+  it('puts 1000 records in time order (a week, and the page window order) in under 16 ms (YAZ-4558, YAZ-4547 D24)', () => {
     const rows = Array.from({ length: 1000 }, (_, i) => row(i))
     timeFirst(rows, 'due') // warm up
     const { median, worst, result } = timeMedian(9, () => timeFirst(rows, 'due'))

@@ -1,6 +1,6 @@
 /**
  * THE ASK FOR A BOARD'S OUTSIDE PICTURES FOLDER (YAZ-3943 demo round 3). A board whose block names a folder outside
- * the vault that this Mac has not approved asks ONCE when it opens — in a tab (`DrawingEditor`) or in the note popup
+ * the vault that this Mac has not approved asks ONCE when it opens — in a tab (`DrawingEditor`) or in the page popup
  * (`DrawingModal`) — in the app's confirm sheet. "Allow" puts the folder on the Mac's list (`picture-folders:allow`,
  * checked in main like a pick), and no other board using that folder asks again. "Not now" (Esc and a click outside
  * too) opens the board as it is: it shows every picture it can read, new pictures land in the vault's `assets/`

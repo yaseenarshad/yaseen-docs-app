@@ -1,6 +1,8 @@
 import { FOLDER_PAGE_CHOICES, HEADER_ROW_PARTS, type FolderPagesSettings, type HeaderRowOwn } from '@shared/types'
 import { HeaderStyleControl } from './StylePanel'
-import { headerRowSetting } from '../../editor/table/timeFormatSetting'
+import { useContext } from 'react'
+import { tableLookOfRoot } from '../../editor/table/tableLook'
+import { ImageVault } from './imageCell'
 import { groupLineStyleOf, groupLinesOf, headerRowOfView, type Mutate, type ViewDef } from '../viewSchema'
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 import { ChoiceSeg, RowLabel } from './settingRow'
@@ -75,17 +77,20 @@ export function GroupGuideSettings({ view, own, viewIndex, onUpdate }: { view: V
 }
 
 /** Settings › Tables › Header row as a folder table takes it: no Text colour there is Muted, its look before (YAZ-4774). */
-export const folderHeaderRow = (): Required<HeaderRowOwn> => {
-  const settings = headerRowSetting()
+export const folderHeaderRow = (root: string | null = null): Required<HeaderRowOwn> => {
+  // YAZ-5487: the folder page's vault's (`table-look.json`), else the app's.
+  const settings = tableLookOfRoot(root).tableHeaderRow
   return { ...settings, text: settings.text ?? 'muted' }
 }
 
 /** What a folder table's header row shows (YAZ-4794): the view's own parts over Settings'. */
-export const shownHeaderRow = (view: ViewDef): Required<HeaderRowOwn> => ({ ...folderHeaderRow(), ...headerRowOfView(view) })
+export const shownHeaderRow = (view: ViewDef, base: Required<HeaderRowOwn> = folderHeaderRow()): Required<HeaderRowOwn> => ({ ...base, ...headerRowOfView(view) })
+
+/** The folder page's vault's header row (`ImageVault` names it), for the views' menus and the calendar's day names. */
+export const useFolderHeaderRow = (): Required<HeaderRowOwn> => folderHeaderRow(useContext(ImageVault))
 
 /** The view's own header row as `next`, less the parts equal to Settings (YAZ-4774); the first build's `shadedHeader` goes. */
-function writeHeaderRow(view: ViewDef, next: HeaderRowOwn): void {
-  const settings = folderHeaderRow()
+function writeHeaderRow(view: ViewDef, next: HeaderRowOwn, settings: Required<HeaderRowOwn>): void {
   for (const p of HEADER_ROW_PARTS) if (next[p] === settings[p]) delete next[p]
   delete view.shadedHeader
   if (Object.keys(next).length > 0) view.headerRow = next
@@ -96,22 +101,22 @@ function writeHeaderRow(view: ViewDef, next: HeaderRowOwn): void {
  * One header row pick on a view (YAZ-4794): the View tab's and the column header's "Header row ›" ONE writer. A pick
  * that equals Settings removes the part, as `chooseOwn` does.
  */
-export function setHeaderRowPart(view: ViewDef, part: keyof HeaderRowOwn, value: string): void {
-  writeHeaderRow(view, { ...headerRowOfView(view), [part]: value } as HeaderRowOwn)
+export function setHeaderRowPart(view: ViewDef, part: keyof HeaderRowOwn, value: string, base: Required<HeaderRowOwn> = folderHeaderRow()): void {
+  writeHeaderRow(view, { ...headerRowOfView(view), [part]: value } as HeaderRowOwn, base)
 }
 
 /** Does the header row look like any row (YAZ-4793, YAZ-4794): no shade, regular, full text? */
 export const plainHeaderRow = (shown: Required<HeaderRowOwn>): boolean => shown.strength === 'off' && shown.weight === 'regular' && shown.text === 'full'
 
-/** "Plain, like any row" (YAZ-4794, as a note table's YAZ-4793): one pick sets the three parts; on a plain row it hands them back to Settings. */
-export function toggleHeaderRowPlain(view: ViewDef): void {
+/** "Plain, like any row" (YAZ-4794, as a page table's YAZ-4793): one pick sets the three parts; on a plain row it hands them back to Settings. */
+export function toggleHeaderRowPlain(view: ViewDef, base: Required<HeaderRowOwn> = folderHeaderRow()): void {
   const next: HeaderRowOwn = { ...headerRowOfView(view) }
-  if (plainHeaderRow(shownHeaderRow(view))) {
+  if (plainHeaderRow(shownHeaderRow(view, base))) {
     delete next.strength
     delete next.weight
     delete next.text
   } else Object.assign(next, { strength: 'off', weight: 'regular', text: 'full' } satisfies HeaderRowOwn)
-  writeHeaderRow(view, next)
+  writeHeaderRow(view, next, base)
 }
 
 /**
@@ -124,7 +129,8 @@ export function toggleHeaderRowPlain(view: ViewDef): void {
  * a way that isnt as verbose?"
  */
 export function HeaderRowStyleRow({ label, own, viewIndex, onUpdate }: { label: string; own: ViewDef; viewIndex: number; onUpdate: Mutate }) {
-  const shown = shownHeaderRow(own)
+  const base = useFolderHeaderRow()
+  const shown = shownHeaderRow(own, base)
   return (
     <div className="view-settings-row">
       <RowLabel icon="headerRow">{label}</RowLabel>
@@ -133,8 +139,8 @@ export function HeaderRowStyleRow({ label, own, viewIndex, onUpdate }: { label: 
         shown={shown}
         plainLabel="Plain, like any row"
         plainOn={plainHeaderRow(shown)}
-        onPlain={() => onUpdate((d) => toggleHeaderRowPlain(d.views[viewIndex]))}
-        onPick={(part, value) => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], part, value))}
+        onPlain={() => onUpdate((d) => toggleHeaderRowPlain(d.views[viewIndex], base))}
+        onPick={(part, value) => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], part, value, base))}
       />
       <FromSettings own={own} viewKey="headerRow" viewIndex={viewIndex} onUpdate={onUpdate} />
     </div>

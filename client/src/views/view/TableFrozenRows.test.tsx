@@ -45,7 +45,7 @@ const GROUPED = (frozen: number) => table(`    groupBy:
     frozenRows: ${frozen}
 `)
 
-/** 600 empty notes, n000…n599, for the windowing case. */
+/** 600 empty pages, n000…n599, for the windowing case. */
 const manyRecords = (n = 600): IndexRecord[] => Array.from({ length: n }, (_, i) => rec(`n${String(i).padStart(3, '0')}`, {}))
 
 let root: Root | null = null
@@ -173,7 +173,7 @@ describe('the frozen lines (YAZ-4537)', () => {
 })
 
 describe('frozen lines under windowing (YAZ-4537)', () => {
-  it('600 notes: the frozen lines stay mounted at any scroll, and the window starts below them', () => {
+  it('600 pages: the frozen lines stay mounted at any scroll, and the window starts below them', () => {
     const { el } = mount(table('    frozenRows: 3\n'), { records: manyRecords() })
     const names = () => bodyLines(el).map(lineName)
     for (const top of [0, 5000, 600 * 28]) {

@@ -22,10 +22,10 @@ const ROWS = [
   row('/v/refs/My Report.pdf', 'My Report.pdf'),
 ]
 
-function optionsFor(root: string, notePath: string, rows: LinkCandidate[] = ROWS): PathPasteOptions {
+function optionsFor(root: string, pagePath: string, rows: LinkCandidate[] = ROWS): PathPasteOptions {
   const candidates = createWikilinkCandidateSource()
   candidates.update(rows)
-  return { root, notePath, candidates, onNotice: vi.fn() }
+  return { root, pagePath, candidates, onNotice: vi.fn() }
 }
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
@@ -70,7 +70,7 @@ const undoOnce = (view: EditorView) => undo(view.state, view.dispatch)
 
 describe('a pasted path becomes the picker\'s link (D1, D5)', () => {
   it.each([
-    ['P1 a note', '/v/projects/roadmap-yaz-12.md', 'Next:[[YAZ-12]]'],
+    ['P1 a page', '/v/projects/roadmap-yaz-12.md', 'Next:[[YAZ-12]]'],
     ['P3 a folder with a trailing slash', '/v/research/', 'Next:[[YAZ-7]]'],
     ['P4 a folder page', '/v/research/.folder.md', 'Next:[[YAZ-7]]'],
     ['P5 a view-only file', '/v/refs/My Report.pdf', 'Next:[[My Report.pdf]]'],
@@ -99,7 +99,7 @@ describe('a pasted path becomes the picker\'s link (D1, D5)', () => {
 
 describe('a path that stays text (D6, P11 to P15)', () => {
   it.each([
-    ['P11 a note the index does not have yet', '/v/new.md', "Can't find new.md yet, so it stays a path"],
+    ['P11 a page the index does not have yet', '/v/new.md', "Can't find new.md yet, so it stays a path"],
     ['P12, W5 a known kind in a vault not open in this window', '/w/plan.md', 'plan.md is not in a vault open in this window, so it stays a path'],
     ['P13 an unknown kind outside the vault', '/usr/bin/env', null],
     ['P13 a folder outside the vault', '/w/projects', null],
@@ -200,7 +200,7 @@ describe('a web link pasted over words (D7)', () => {
   it.each([
     ['U1 https', 'https://milkdown.dev/guide', 'Read [the guide](https://milkdown.dev/guide) first.'],
     ['U2 mailto', 'mailto:a@b.co', 'Read [the guide](mailto:a@b.co) first.'],
-    ['U5 text that is no URL', 'note: hi', 'Read note: hi first.'],
+    ['U5 text that is no URL', 'page: hi', 'Read page: hi first.'],
   ])('%s', async (_name, text, markdown) => {
     const { crepe, view } = await mount('Read the guide first.\n')
     select(view, 'the guide')
@@ -233,9 +233,9 @@ describe('a web link pasted over words (D7)', () => {
 describe('a Markdown link\'s target in this vault (D8)', () => {
   const mac = optionsFor('/v', '/v/a/today.md')
   it.each([
-    ['L1 a relative note', '../projects/roadmap-yaz-12.md', '/v/projects/roadmap-yaz-12.md'],
+    ['L1 a relative page', '../projects/roadmap-yaz-12.md', '/v/projects/roadmap-yaz-12.md'],
     ['L2 %20, #heading and ?query', '../refs/My%20Report.pdf#page=2', '/v/refs/My Report.pdf'],
-    ['L2 ./ inside the note folder', './../research', '/v/research'],
+    ['L2 ./ inside the page folder', './../research', '/v/research'],
     ['L3 a file:// URL', 'file:///v/projects/roadmap-yaz-12.md', '/v/projects/roadmap-yaz-12.md'],
     ['L3 an absolute path', '/v/research/', '/v/research'],
     ['L6 a file no tab can show', '../finance/budget.zip', null],
@@ -255,7 +255,7 @@ describe('a Markdown link\'s target in this vault (D8)', () => {
 })
 
 describe('the cases the checker named (YAZ-3632) and the fixed bugs', () => {
-  it('P2 a vault without IDs: the picker spells the note by its name', async () => {
+  it('P2 a vault without IDs: the picker spells the page by its name', async () => {
     const { crepe, view } = await mount('Next:\n', optionsFor('/v', '/v/a/today.md', [row('/v/Roadmap.md', 'Roadmap')]))
     atEnd(view)
     paste(view, '/v/Roadmap.md')
@@ -269,7 +269,7 @@ describe('the cases the checker named (YAZ-3632) and the fixed bugs', () => {
     expect(saved(crepe)).toBe('Next:[[YAZ-7]]')
   })
 
-  it('P21 a read-only note takes no paste', async () => {
+  it('P21 a read-only page takes no paste', async () => {
     const { crepe, view } = await mount()
     atEnd(view)
     crepe.setReadonly(true)
@@ -412,7 +412,7 @@ describe('links across the vaults of a window (D14, D15, D16)', () => {
     return { ...options, candidatesOf: (path: string) => (path.startsWith('/w/') ? other : path.startsWith('/v/') ? options.candidates : null) }
   }
 
-  it('W3 a path of a note in another vault of the window is a relative link named after it; W4 over words, the words', async () => {
+  it('W3 a path of a page in another vault of the window is a relative link named after it; W4 over words, the words', async () => {
     const { crepe, view } = await mount('Next:\n\nRead the plan first.\n', workspace())
     atEnd(view)
     paste(view, PLAN)

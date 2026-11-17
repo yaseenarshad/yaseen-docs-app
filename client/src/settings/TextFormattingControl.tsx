@@ -13,7 +13,7 @@
  * - A "Line" line below Heading 6 (YAZ-3208, 🔒 D10): the vault's default line — a preview, the
  *   darkness (steps of 5%, 5–100), the thickness (steps of 1px, 1–24) and the style (Solid, Dotted,
  *   Dashed). `withLineDefaults` keeps only the fields that differ from the app's 50%, 3px, solid;
- *   "Reset" removes the `line` key. Plain lines in every note of the vault follow it (D8).
+ *   "Reset" removes the `line` key. Plain lines in every page of the vault follow it (D8).
  */
 import { useState, type CSSProperties } from 'react'
 import { TEXT_DEFAULT_SIZE, TEXT_SIZE_MAX, TEXT_SIZE_MIN, type TextFormatting } from '@shared/textFormatting'

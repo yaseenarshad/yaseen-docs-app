@@ -1,10 +1,10 @@
 /**
- * A click on a link in a note (YAZ-3935, demo round 1 C1 of YAZ-3879): in an editable note it works as a click on
- * text, and only a bound gesture opens (Settings › Hotkeys › "Links in a note", `shared/keys/gestures.ts`). A
- * read-only note keeps "a click opens" (point 6). `[[links]]` (`wikilinkClick.ts`) and Markdown links
+ * A click on a link in a page (YAZ-3935, demo round 1 C1 of YAZ-3879): in an editable page it works as a click on
+ * text, and only a bound gesture opens (Settings › Hotkeys › "Links in a page", `shared/keys/gestures.ts`). A
+ * read-only page keeps "a click opens" (point 6). `[[links]]` (`wikilinkClick.ts`) and Markdown links
  * (`markdownLink.ts`) both ask here.
  *
- * The pointer (C1): the text cursor on a link of an editable note, the hand only while the modifiers of a bound open
+ * The pointer (C1): the text cursor on a link of an editable page, the hand only while the modifiers of a bound open
  * gesture are held. One attribute on the editor's root (`LINK_HAND_ATTR`), set by a window keydown / keyup / blur
  * listener that acts on a modifier's own key alone: no work per mouse move, one Set lookup per typed key.
  */
@@ -28,7 +28,7 @@ export function linkClickAction(view: Pick<EditorView, 'editable'>, event: Mouse
   if (bound !== null) return bound
   if (!plain(event)) return null
   if (explore()) return 'explore'
-  // A read-only note and a preview keep "a click opens" (YAZ-3879 point 6): there is no caret to put.
+  // A read-only page and a preview keep "a click opens" (YAZ-3879 point 6): there is no caret to put.
   return view.editable ? null : 'thisTab'
 }
 
@@ -37,7 +37,7 @@ const OPEN_WORDS: Record<GestureAction, string> = { thisTab: 'to open', newTab: 
 /**
  * The hover card's one quiet line (YAZ-3879 point 9): how to open the link now, from the bound gestures: Open in this
  * tab's ("⌘-click to open") if it has one, else a background tab's (by default "⌘-click to open in a background tab"),
- * else a new tab's; none bound, no line. A read-only note: "Click to open". A note pill while the vault's "Clicking a
+ * else a new tab's; none bound, no line. A read-only page: "Click to open". A page pill while the vault's "Clicking a
  * link" is Explore (`explore`, YAZ-4939): "Click to open in Explore", unless a plain click is bound to an open.
  */
 export function linkOpenHint(hotkeys: HotkeyOverrides | undefined, editable: boolean, explore = false): string | undefined {
@@ -64,7 +64,7 @@ export function trackLinkHand(view: EditorView, hotkeys: () => HotkeyOverrides |
     if (MODIFIER_KEYS.has(event.key)) set(event)
   }
   const onBlur = () => set(NONE)
-  // "The old way" (a plain click opens) shows the hand with no key held; the pointer coming on the note checks again.
+  // "The old way" (a plain click opens) shows the hand with no key held; the pointer coming on the page checks again.
   const onEnter = (event: MouseEvent) => set(event)
   set(NONE)
   window.addEventListener('keydown', onKey, true)

@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react'
 /**
  * A page switch of the cog that is kept in the app state: a code file's "Table of contents" (YAZ-2950,
  * YAZ-3506; YAZ-3558 D1: Settings › "Table of contents default" until the file makes its own choice, which
- * then wins, also over Off). A code file has no frontmatter; a note's switches are IN the note (YAZ-4094 G4,
+ * then wins, also over Off). A code file has no frontmatter; a page's switches are IN the page (YAZ-4094 G4,
  * `shared/pageSwitches.ts`). `read` and `write` are the pair in `storage` for that switch; `read` gives
  * `undefined` for a file that made no choice, and the switch is then `fallback`.
  *

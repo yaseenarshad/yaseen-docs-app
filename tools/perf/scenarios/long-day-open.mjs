@@ -1,7 +1,7 @@
 /**
  * long-day-open (YAZ-3737 5A): long-day's "tabs left open" variant. One window opens long-day's 21 files as kept tabs
- * (`OPENS`: notes, a `.drawio`, an `.excalidraw` with pictures, a GIF board, `.ts`, `.py`, the 5 MB `.ts`), goes back to its
- * first note, and leaves every tab open. Tab sleep is on with a short clock: `YASEEN_DOCS_TAB_SLEEP_SECONDS`
+ * (`OPENS`: pages, a `.drawio`, an `.excalidraw` with pictures, a GIF board, `.ts`, `.py`, the 5 MB `.ts`), goes back to its
+ * first page, and leaves every tab open. Tab sleep is on with a short clock: `YASEEN_DOCS_TAB_SLEEP_SECONDS`
  * (`SLEEP_SECONDS`), which main reads only under `YASEEN_DOCS_E2E=1` and hands the page as `?sleepSeconds=`. The run
  * waits until every tab but the one in front has slept, then wakes one by a click.
  *
@@ -45,7 +45,7 @@ export const setup = (dir) => longDaySetup(dir, { cycles: 1 })
 
 /** In the page: true once `f` is on screen in the tab in front (as long-day reads it). */
 function shown({ name, kind }) {
-  if (kind === 'note') return painted(name)
+  if (kind === 'page') return painted(name)
   if (kind === 'code') return `(document.querySelector('${LAYER} .editor--code .view-lines')?.textContent.includes(${js(sentinel(name))}) ?? false)`
   if (kind === 'bigCode') return CODE_SHOWN
   if (kind === 'diagram') return 'window.__drawioLoad !== undefined'
@@ -86,21 +86,21 @@ export async function run(app, fx) {
       await page.ev(GIF_PROBE)
       const t0 = performance.now()
       for (const f of files) await open(page, f)
-      // Back to the first note: every one of the 21 is now a tab behind it.
+      // Back to the first page: every one of the 21 is now a tab behind it.
       await page.ev(`document.querySelector(${js(tab(home))}).click()`)
       await page.waitFor(painted('Home'), OPEN_TIMEOUT_MS)
       const left = performance.now()
       const openSeconds = Math.round((left - t0) / 100) / 10
       const awake = await sample(proc, page)
       console.error(`long-day-open awake: ${JSON.stringify(awake)}`)
-      // Every tab behind the first note sleeps: one layer is left, the one in front.
+      // Every tab behind the first page sleeps: one layer is left, the one in front.
       await page.waitFor(`${LAYERS} === 1 && document.querySelectorAll('.tabbar__tab').length === ${files.length + 1}`, SLEEP_TIMEOUT_MS)
       const sleptAfterSeconds = Math.round((performance.now() - left) / 100) / 10
       await sleep(3000) // the slept editors' unmounts and the GC of their workers' messages
       const asleep = await sample(proc, page)
       console.error(`long-day-open asleep: ${JSON.stringify(asleep)}`)
-      // One wake: a click on a sleeping note's tab, which comes back on screen.
-      const woken = files.find((f) => f.kind === 'note')
+      // One wake: a click on a sleeping page's tab, which comes back on screen.
+      const woken = files.find((f) => f.kind === 'page')
       await page.ev(`document.querySelector(${js(tab(woken.file))}).click()`)
       await page.waitFor(shown(woken), OPEN_TIMEOUT_MS)
       const afterWake = await sample(proc, page)

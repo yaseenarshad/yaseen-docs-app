@@ -267,7 +267,7 @@ describe('Settings › Sharing (YAZ-1889)', () => {
     expect(byTest('sharing-setup').disabled).toBe(false)
   })
 
-  it('ready: the status, the link address and the account; the demo note only in the demo', async () => {
+  it('ready: the status, the link address and the account; the demo page only in the demo', async () => {
     share.status.mockResolvedValue(READY)
     await mount()
     expect(byTest('sharing-status').textContent).toBe('✅ Sharing ready')

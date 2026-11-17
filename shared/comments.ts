@@ -1,8 +1,19 @@
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { textFingerprint } from './reviews'
 
 /**
- * Comments per page (YAZ-1472): a note's comment stream lives ON the note, under the reserved
+ * Eight hex characters standing for a text: the comment IDs below are made from it. FNV-1a over UTF-16 units, so the
+ * renderer and the main process agree without a crypto dependency; line-ending style and blank space around the text
+ * do not count.
+ */
+export function textFingerprint(body: string): string {
+  const text = body.replace(/\r\n/g, '\n').trim()
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193)
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+/**
+ * Comments per page (YAZ-1472): a page's comment stream lives ON the page, under the reserved
  * frontmatter key `comments` — a FLAT list of maps (🔒 D1/D2). A reply carries `reply_to: <id>`
  * and a thread is ONE level deep: a reply to a reply is filed under the top-level parent. Who
  * wrote it is the writer's handle in `by` (YAZ-4615 D2: the app signs with your profile's handle,
@@ -20,7 +31,7 @@ import { textFingerprint } from './reviews'
 export const COMMENTS_KEY = 'comments'
 
 export interface PageComment {
-  /** `crypto.randomUUID().slice(0, 8)` — enough for one note. */
+  /** `crypto.randomUUID().slice(0, 8)` — enough for one page. */
   id: string
   /**
    * The comment's number, quotable and never reassigned: a top-level comment is one past the
@@ -225,7 +236,7 @@ export function threadsOf(comments: readonly PageComment[]): CommentThread[] {
 /**
  * The list as it will be written back, or the refusal: `foreign` and `invalid` bytes are not ours.
  * YAZ-4615 D10: every write first gives a hand-written entry with no id its derived id and the next
- * number in its run — the "next time the app writes that note's comments". An entry that has an id
+ * number in its run — the "next time the app writes that page's comments". An entry that has an id
  * keeps what it has (an unnumbered one stays unnumbered, D15).
  */
 function writable(content: string): readonly unknown[] {

@@ -90,7 +90,7 @@ function selectedNativeText(): string {
   return selection.toString()
 }
 
-// No clipboard API crosses contextBridge: only a menu gesture (main's menu, or the note menu's `menu.edit` during a
+// No clipboard API crosses contextBridge: only a menu gesture (main's menu, or the page menu's `menu.edit` during a
 // user gesture) can initiate this path.
 const copyListeners = new Set<(mode: CopyAsMode) => string | CopyAsRich | undefined>()
 ipcRenderer.on(SPECIAL.menuCopyAs, (_event, mode: unknown) => {
@@ -148,13 +148,13 @@ const api: YaseenDocsApi = {
     ...generated.menu,
     onCopyAs: (listener) => listen(copyListeners, listener),
     onPasteAs: (listener) => listen(pasteListeners, listener),
-    // A note menu row or key (YAZ-3653): only during a user gesture, so page code cannot cut, copy or paste on its own.
+    // A page menu row or key (YAZ-3653): only during a user gesture, so page code cannot cut, copy or paste on its own.
     edit: (action, arg) =>
       navigator.userActivation?.isActive === false
         ? Promise.reject({ code: 'BAD_REQUEST', message: 'menu.edit runs only from a click or a key' })
         : call<void>(SPECIAL.menuEdit.channel, ...(arg === undefined ? [action] : [action, arg])),
   },
-  // The note menu's spelling rows (YAZ-3653). On macOS Electron loads no dictionary, so `webFrame` always
+  // The page menu's spelling rows (YAZ-3653). On macOS Electron loads no dictionary, so `webFrame` always
   // says "spelled right" there: main asks the macOS checker instead (YAZ-4464). Windows keeps Hunspell here.
   spell: {
     suggestions: async (word) =>

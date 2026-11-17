@@ -4,7 +4,7 @@
  * opens a small menu upward with two rows, each the same "− 100% +" (`ZoomStepper`): App size on top, the App size of
  * every window (`settings.appZoom`, along `APP_ZOOM_STEPS`), and Sidebar at the bottom, next to the chip, the zoom of
  * the sidebar's lists (YAZ-3389; a Files window's own zoom there, D13). The keys never reach the App size: ⌘+ / ⌘− /
- * ⌘0 zoom a note or the sidebar (`zoomRequest.ts`).
+ * ⌘0 zoom a page or the sidebar (`zoomRequest.ts`).
  *
  * The menu goes to `document.body`: a fixed box inside a zoomed one scales and moves (`SessionList`). It is zoomed by
  * 1 / the page's zoom, so it keeps its size on the screen at every App size, and while it is open it keeps its place on
@@ -18,6 +18,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useS
 import { createPortal } from 'react-dom'
 import { SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
 import { ZoomStepper } from './ZoomStepper'
+import { withKeys } from '@shared/keyLabel'
 
 interface ZoomMenuProps {
   /** The sidebar zoom in percent: the chip's label and the Sidebar row. */
@@ -113,7 +114,7 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
   const [min, max] = [SIDEBAR_ZOOM_STEPS[0], SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]]
   return (
     <div className="zoom-footer" role="group" aria-label="Sidebar zoom in the footer">
-      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar out" title="Zoom the sidebar out (⌘−)" disabled={sidebar <= min} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, -1))}>
+      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar out" title={withKeys('Zoom the sidebar out', '⌘−')} disabled={sidebar <= min} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, -1))}>
         −
       </button>
       <button
@@ -128,7 +129,7 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
       >
         {Math.round(sidebar)}%
       </button>
-      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar in" title="Zoom the sidebar in (⌘+)" disabled={sidebar >= max} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, 1))}>
+      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar in" title={withKeys('Zoom the sidebar in', '⌘+')} disabled={sidebar >= max} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, 1))}>
         +
       </button>
       {place !== undefined &&

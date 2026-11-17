@@ -1,9 +1,10 @@
 /**
  * THE FOCUS TAB, END TO END (S12 of YAZ-2171 — YAZ-2619, which replaces the Focus Mode of
  * YAZ-1605 / 1628): right-click a folder or a file → "Add to focus" puts it in the focus list of
- * its vault and shows the Focus tab (the eye, between the Search tab and the heart), where each item
- * is a top row in the order added. The Files tab is never narrowed. "Remove from focus" takes one
- * item out, and "Clear" — on the line above the list — empties it.
+ * its vault, and the Focus tab (the eye, between the Search tab and the heart) shows each item as a
+ * top row in the order added. An add stays on the tab it was made on (YAZ-4460 demo). The Files tab
+ * is never narrowed. "Remove from focus" takes one item out, and "Clear" — on the line above the
+ * list, "Vault list" — empties it once its sheet says yes (YAZ-4460 demo).
  *
  * What only the real app can prove is WHERE the list lives: IN THE VAULT (YAZ-2702 Decisions 1 and
  * 2), in `<vault>/.yaseendocs/focus.<mac id>.json`, written through main — never in the window's
@@ -22,7 +23,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, tabsOf, appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, searchBar, SEED_FILE, seededState, wholeRow, shoot, topLabels, windowCount, winParam } from './helpers'
+import { activeTab, tabsOf, appWindow, buildFixtureVault, clickMenuItem, closeWindow, confirmSheet, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, searchBar, SEED_FILE, seededState, wholeRow, shoot, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -36,9 +37,9 @@ let win: Page
 
 /** The Focus tab: a glyph (the eye), so its name lives in `aria-label` (YAZ-2619 D4). */
 const focusTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Focus"]')
-/** The line above the Focus list (D4): the count of top rows, and "Clear". */
-const countLine = (w: Page) => w.locator('.sidebar__body .sidebar__focus-bar span')
-const clearButton = (w: Page) => w.locator('.sidebar__body .sidebar__focus-clear')
+/** The line above the Focus list: which list shows (no count since YAZ-4470, 10), then "+ Folder" and "Clear". */
+const countLine = (w: Page) => w.locator('.sidebar__body .sidebar__focus-bar > span:first-child')
+const clearButton = (w: Page, label: 'Clear' | '+ Folder') => w.locator('.sidebar__body .sidebar__focus-clear', { hasText: label })
 const bodyMsg = (w: Page) => w.locator('.sidebar__body .sidebar__msg')
 /** App's one passive toast (`.link-notice`, YAZ-1341) — its text. */
 const toast = (w: Page) => w.locator('.link-notice__text')
@@ -69,7 +70,7 @@ test.afterAll(async () => {
 
 // ---------------------------------------------------------------- add a folder
 
-test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder as an open top row, leaves the Files tab whole and writes the list to the VAULT\'s focus file, not to the state file', async () => {
+test('step 1 — "Add to focus" on a folder stays on Files; the Focus tab has the folder as an open top row, leaves the Files tab whole and writes the list to the VAULT\'s focus file, not to the state file', async () => {
   app = await launchApp({ userData, seedState: wholeRow(seededState(vault, path.join(vault, SEED_FILE))) })
   win = await appWindow(app, 'w1')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
@@ -81,13 +82,15 @@ test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder 
 
   await pickFromRowMenu(dirRow(win, 'Projects'), 'Add to focus')
   await expect(toast(win)).toHaveText('Added to focus')
-  // The add shows the Focus tab (D3): the folder is its one top row — and OPEN (R4).
+  // The add stays on Files (YAZ-4460 demo). On the Focus tab the folder is its one top row — and OPEN (R4).
+  await expect(focusTab(win)).toHaveAttribute('aria-selected', 'false')
+  await focusTab(win).click()
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true')
   await expect(topLabels(win)).toHaveText(['Projects'])
   await expect(fileRow(win, 'Roadmap')).toBeVisible()
   await expect(dirRow(win, 'archive')).toBeVisible()
   await expect(fileRow(win, 'Ideas')).toHaveCount(0)
-  await expect(countLine(win)).toHaveText('1 in focus')
+  await expect(countLine(win)).toHaveText('Vault list')
   await expect.poll(focusListOnDisk).toEqual(['Projects'])
   // The state file holds no focus list (YAZ-2702 Decision 1): not on the window's entry, not in the vault bucket.
   expect((await readState(userData)).windows[0]).not.toHaveProperty('focusList')
@@ -98,8 +101,8 @@ test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder 
   await lensTab(win, 'Files').click()
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
-  await expect(fileRow(win, 'Welcome note')).toBeVisible()
-  await expect(topLabels(win)).toHaveCount(3) // Projects + Ideas, Welcome note
+  await expect(fileRow(win, 'Welcome page')).toBeVisible()
+  await expect(topLabels(win)).toHaveCount(3) // Projects + Ideas, Welcome page
   await expect(countLine(win)).toHaveCount(0)
   await dirRow(win, 'Projects').click({ button: 'right' })
   await expect(menuItem(win, 'Remove from focus')).toBeVisible()
@@ -109,12 +112,15 @@ test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder 
 
 // ---------------------------------------------------------------- add a file
 
-test('step 2 — "Add to focus" on a file, from the Files tab, puts it at the end of the list and shows the Focus tab again', async () => {
+test('step 2 — "Add to focus" on a file, from the Files tab, puts it at the end of the list', async () => {
   await pickFromRowMenu(fileRow(win, 'Ideas'), 'Add to focus')
+  await expect(toast(win)).toHaveText('Added to focus')
+  await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
+  await focusTab(win).click()
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true')
   // The order ADDED, never the tree's (D2): the folder first, then the file.
   await expect(topLabels(win)).toHaveText(['Projects', 'Ideas'])
-  await expect(countLine(win)).toHaveText('2 in focus')
+  await expect(countLine(win)).toHaveText('Vault list')
   await expect.poll(focusListOnDisk).toEqual(['Projects', 'Ideas.md'])
   await expect.poll(async () => (await readState(userData)).windows[0]?.sidebarLens).toBe('focus')
   await shoot(win, 'focus-03-file-added')
@@ -132,7 +138,7 @@ test('step 3 — the list and the active tab survive quit → relaunch: the list
   win = await appWindow(app, 'w1')
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true')
   await expect(topLabels(win)).toHaveText(['Projects', 'Ideas'])
-  await expect(countLine(win)).toHaveText('2 in focus')
+  await expect(countLine(win)).toHaveText('Vault list')
   // Folded: the list is durable, the expansion is not (YAZ-1642) — the row, without its children.
   await expect(openDirs(win)).toHaveCount(0)
   await expect(fileRow(win, 'Roadmap')).toHaveCount(0)
@@ -154,7 +160,7 @@ test('step 4 — a second window on the vault shows the same list (YAZ-2702 S7, 
   await focusTab(dup).click()
   await expect(focusTab(dup)).toHaveAttribute('aria-selected', 'true')
   await expect(topLabels(dup)).toHaveText(['Projects', 'Ideas'])
-  await expect(countLine(dup)).toHaveText('2 in focus')
+  await expect(countLine(dup)).toHaveText('Vault list')
 
   // Remove in the FIRST window: the toast, the file, and the OTHER window's rows — which it can
   // only know through main's `focus:changed` off the file it just wrote (S7).
@@ -162,10 +168,10 @@ test('step 4 — a second window on the vault shows the same list (YAZ-2702 S7, 
   await expect(toast(win)).toHaveText('Removed from focus')
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true') // a remove keeps the tab (R5)
   await expect(topLabels(win)).toHaveText(['Projects'])
-  await expect(countLine(win)).toHaveText('1 in focus')
+  await expect(countLine(win)).toHaveText('Vault list')
   await expect.poll(focusListOnDisk).toEqual(['Projects'])
   await expect(topLabels(dup)).toHaveText(['Projects'])
-  await expect(countLine(dup)).toHaveText('1 in focus')
+  await expect(countLine(dup)).toHaveText('Vault list')
   await shoot(dup, 'focus-05-second-window')
 
   // The window closes and is forgotten; the list is the vault's, so it stays (S8).
@@ -279,10 +285,11 @@ test('step 4e — "Open folder page" opens the FOLDER page of archive in copy 1:
 
 // ---------------------------------------------------------------- clear
 
-test('step 5 — "Clear" empties the list: the empty message shows, the count line goes, the tab stays, and the vault\'s focus file holds an empty list', async () => {
-  await clearButton(win).click()
+test('step 5 — "Clear", once its sheet says yes, empties the list: the empty message shows, the line and the tab stay, and the vault\'s focus file holds an empty list', async () => {
+  await clearButton(win, 'Clear').click()
+  await confirmSheet(win).locator('.confirm__btn', { hasText: 'Clear' }).click()
   await expect(bodyMsg(win)).toHaveText('Nothing in focus. Right-click a file or folder → Add to focus.')
-  await expect(countLine(win)).toHaveCount(0)
+  await expect(countLine(win)).toHaveText('Vault list') // the bar stays on an empty list: it holds "+ Folder" (YAZ-4460 F3)
   await expect(topLabels(win)).toHaveCount(0)
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true') // "Clear" keeps the tab (R5)
   await expect.poll(focusListOnDisk).toEqual([])

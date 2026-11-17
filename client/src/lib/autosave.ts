@@ -2,7 +2,7 @@
  * Pure debounced auto-save state machine (no DOM, no React) so the dirty /
  * debounce / conflict rules can be unit-tested.
  *
- * GENERIC OVER THE CONTENT KEY `C` (Draw's 🔒 YAZ-1775 D3, ported by YAZ-3028): a note hands it its
+ * GENERIC OVER THE CONTENT KEY `C` (Draw's 🔒 YAZ-1775 D3, ported by YAZ-3028): a page hands it its
  * markdown; a board hands it the engine's cheap scene VERSION (an integer) and serialises inside
  * `save()` only when the timer fires — the canvas reports a change per pointer move, and
  * serialising every one of them is precisely the cost the version exists to avoid. `===` is the

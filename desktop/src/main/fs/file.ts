@@ -29,7 +29,7 @@ export async function readFile(path: string): Promise<FileResponse> {
 }
 
 /**
- * `window.yaseenDocs.writeFile(req)`: a note or a code file (YAZ-3445 D3). Atomic (tmp + rename),
+ * `window.yaseenDocs.writeFile(req)`: a page or a code file (YAZ-3445 D3). Atomic (tmp + rename),
  * parent dir must exist. The bytes are the string as given: the code tab keeps the file's line
  * break and BOM in it, so main never rewrites either. With `expectedMtime`, a newer file on disk rejects `CONFLICT` carrying
  * the current mtime and nothing is written. A target that is not a regular file is `NOT_A_FILE`. The request crosses IPC from a sandboxed renderer,

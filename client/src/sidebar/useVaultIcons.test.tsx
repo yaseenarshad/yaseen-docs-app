@@ -17,8 +17,9 @@ function installBridge(disk: Record<string, VaultIcons>) {
   let changed: ((change: { root: string }) => void) | null = null
   const icons = {
     get: vi.fn(async (root: string): Promise<VaultIcons> => structuredClone(disk[root] ?? { paths: {} })),
+    // As main: the picks are replaced; rules and colours only when the request has them (YAZ-5488).
     set: vi.fn(async (root: string, next: VaultIcons): Promise<void> => {
-      disk[root] = structuredClone(next)
+      disk[root] = { ...disk[root], ...structuredClone(next) }
     }),
     onChanged: vi.fn((listener: (change: { root: string }) => void) => {
       changed = listener
@@ -133,5 +134,42 @@ describe('useVaultIcons (YAZ-3440 D8)', () => {
     act(() => here().pick(['/a/n0.md'], 'python'))
     await settle()
     expect(icons.set.mock.calls.length).toBe(writes + 1)
+  })
+})
+
+describe('useVaultIcons: each vault\'s own rules and colours (YAZ-5488)', () => {
+  const spanish: IconRule = { match: 'Spanish', kind: 'folder', icon: 'folder-i18n' }
+  const python: IconRule = { match: '*.md', kind: 'file', icon: 'python' }
+  it('lookOf answers only what a vault\'s file has; each vault\'s rows read its own rules, a vault with none the app\'s', async () => {
+    const disk: Record<string, VaultIcons> = { '/a': { paths: {}, rules: [spanish], colors: { card: '#aa00ff' } }, '/b': { paths: {} } }
+    installBridge(disk)
+    await mount(['/a', '/b'])
+    expect(here().lookOf('/a')).toEqual({ rules: [spanish], colors: { card: '#aa00ff' } })
+    expect(here().lookOf('/b')).toEqual({})
+    expect(here().lookOf(null)).toEqual({})
+    const icons = here().rowIcons
+    expect(icons.vaultRules.get('/a')?.map((r) => r.icon)).toEqual(['folder-i18n'])
+    expect(icons.vaultRules.has('/b')).toBe(false)
+  })
+
+  it('saveLook shows at once and writes the vault\'s rules (its picks as they are); a pick after it keeps them; a refused write toasts and reads again', async () => {
+    const disk: Record<string, VaultIcons> = { '/a': { paths: { '/a/x.md': 'lua' } } }
+    const { icons } = installBridge(disk)
+    await mount(['/a'])
+    act(() => here().saveLook('/a', { rules: [python] }))
+    expect(here().lookOf('/a')).toEqual({ rules: [python] })
+    await settle()
+    expect(icons.set.mock.calls.at(-1)).toEqual(['/a', { paths: { '/a/x.md': 'lua' }, rules: [python] }])
+    act(() => here().pick(['/a/y.md'], 'rust'))
+    await settle()
+    expect(icons.set.mock.calls.at(-1)).toEqual(['/a', { paths: { '/a/x.md': 'lua', '/a/y.md': 'rust' } }])
+    expect(here().lookOf('/a')).toEqual({ rules: [python] })
+    expect(disk['/a']).toEqual({ paths: { '/a/x.md': 'lua', '/a/y.md': 'rust' }, rules: [python] })
+
+    icons.set.mockRejectedValueOnce(new Error('icons.json is malformed; fix or delete it'))
+    act(() => here().saveLook('/a', { colors: { page: '#123456' } }))
+    await settle()
+    expect(onNotice).toHaveBeenCalledWith("Can't save the icons: icons.json is malformed; fix or delete it", 'error')
+    expect(here().lookOf('/a')).toEqual({ rules: [python] })
   })
 })

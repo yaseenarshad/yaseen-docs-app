@@ -1,0 +1,604 @@
+import { isAudioRef } from '@client/editor/card/cardMedia'
+import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/localOnly'
+import { parseAlt } from '@client/editor/image/imageSrc'
+import { headSpan, tailSpan, type PillEnd } from '@client/editor/wikilink/linkPillLook'
+import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
+import { Renderer, type RendererExtension, type Token, type Tokens } from 'marked'
+import { drawingBox, onMacWords } from '../drawing/drawingBox'
+import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
+import { cardMoreButton } from '../cardMenu/moreButton'
+import { applyTableFile, readTableComment } from './tableFile'
+import { applyTableLook, type PhoneTableLook } from './tableLook'
+import { layoutTables } from './tableLayout'
+import type { CellTaskTag } from './cellTasks'
+import { BLOCK_MATH, markTasks, pageMarked, readerText, type PageLinkToken, type PageTask, type TaskItem } from './pageMarked'
+
+/**
+ * A PAGE, READ ONLY, WITH NO EDITOR (4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
+ * ProseMirror), which never reaches the phone. The phone draws the page's Markdown with the two libraries the Mac
+ * already uses to draw a card and a comment (`renderCard`, `comments/markdown.ts`): `marked` (GitHub flavour; a single
+ * line break is a line break, as the Mac's page shows it, `softBreaks.css`) and DOMPurify. This file is in a chunk of
+ * its own: Search does not load it.
+ *
+ * A page is the person's own text, but it can come from git or an agent, so it is untrusted: DOMPurify keeps document
+ * markup only. No script, style, frame, form or control; no handler; no `javascript:` address. The phone's own marks
+ * (links, embeds, cards) are data attributes that DOMPurify keeps, and that this file turns into elements AFTER it,
+ * with `textContent` and `setAttribute`, never with HTML.
+ *
+ * What the page shows, as on the Mac:
+ *  - Headings, paragraphs, bold, italic, strike, code, `==highlight==`, `<u>`, lists, task boxes (each with its line,
+ *    `data-task`: a tap in a page ticks it, YAZ-5494, `taskTicks.ts`; YAZ-5618 a task in a table cell too, `cellTasks.ts`), tables (in a box that scrolls sideways, with column widths
+ *    from their text: `tableLayout.ts`), code blocks, quotes, rules.
+ *  - A callout (`> [!tip] Title`): a box with its title. The Mac's page shows it as a quote; the phone draws it as
+ *    Obsidian and GitHub do (the brief lists callouts; recorded on YAZ-5079).
+ *  - `[[link]]`: what `look.link` says: a page, a card or a file opens; a broken link keeps its text, marked missing.
+ *  - `![[ID]]` of a card: a box the page view fills with the card (round 15, item 1); an ID no card has: "Missing card ·
+ *    ID", as the Mac. A picture or a sound waits for its bytes (`data-vault-src`, `data-vault-sound`): the address is
+ *    never one the browser fetches. A drawing: a picture the phone draws (`drawing/`); a plain draw.io file: a diagram draw.io's viewer draws (`drawing/diagram/`). A picture from the web: a calm line, because
+ *    the page's CSP loads none (decision 8, round 12 item 13).
+ *  - The page's own card (a `card` fence): drawn read only by `look.card` (`renderCard`); its card line is out of sight,
+ *    and gives the card its head (ID, "Archived", "Title hidden in review") and its title band, as the Mac's page card
+ *    (before, only the ID was kept, so a card's title never showed in a page).
+ *  - Web links open in Safari (`target="_blank"`); a link to a vault file opens it (`data-open`).
+ *
+ * A long page draws in slices (`renderPage`'s `slice`): it is cut between blocks (`cutAt`, never inside a code fence),
+ * and each piece is parsed, cleaned and drawn on its own, so a 2 MB page never holds the thread for a long task.
+ * A page under `ONE_PIECE` characters is one piece, so a reference link or a list reads as it does on the Mac. Above
+ * it, a definition in another piece is not found, and an ordered list cut between items starts again at its number.
+ */
+
+/**
+ * What a `[[link]]` or a Markdown link opens: a page (at a heading, when the link names one), a card, a file
+ * of the vault, a heading of this same page (`[[#Heading]]`, `[x](#heading)`), or a folder's page (a link that names
+ * a folder and no page, `folderLink.ts`).
+ */
+export type LinkOpen = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string } | { kind: 'folder'; path: string }
+
+export interface LinkShow {
+  /** The text the link shows (the Mac's `linksAsShown`: a title for an ID, the words after `|`). */
+  label: string
+  /** What a tap opens; null: the link is broken. */
+  open: LinkOpen | null
+  /** A broken link's words for VoiceOver ("Missing page · DEMO-9"). */
+  missing?: string
+  /** The vault's pill format's ends (`link-pills.json`): drawn before and after the name, as the Mac's page. */
+  ends?: { head: PillEnd | null; tail: PillEnd | null }
+}
+
+/** What an `![[embed]]` is. */
+export type EmbedShow =
+  | { kind: 'card'; id: string }
+  | { kind: 'missing-card'; id: string }
+  | { kind: 'picture'; path: string; alt: string }
+  | { kind: 'sound'; path: string }
+  | { kind: 'drawing'; name: string; path?: string | null }
+  | { kind: 'file'; path: string; name: string }
+  | { kind: 'text'; text: string }
+
+/** The vault's look-ups, from the index (`pageLook.ts`); the tests give their own. */
+export interface PageLook {
+  link(inner: string): LinkShow
+  embed(inner: string): EmbedShow
+  /** A Markdown link's or picture's address as written → the vault file, or null (none, or not in the vault). */
+  asset(src: string): string | null
+  /** The page's own card, drawn read only (`renderCard`). */
+  card(text: string): HTMLElement
+  /** The vault's table look (`table-look.json`); absent or null: the Mac's defaults. */
+  tables?: PhoneTableLook | null
+}
+
+export type Slice = () => Promise<void>
+
+/** For the speed test: the time each piece of a long page took to draw, in ms. */
+export interface PieceStats {
+  times: number[]
+}
+
+/** A page this long or shorter is one piece. */
+export const ONE_PIECE = 64_000
+/** The first piece of a longer page; it shrinks while a piece takes too long. */
+const FIRST_PIECE = 1_500
+const SLOW_PIECE_MS = 10
+const QUICK_PIECE_MS = 4
+const SMALLEST_PIECE = 1_000
+const LARGEST_PIECE = 8_000
+
+/** A small text with each kind of block: drawn once, cold, in its own slices, so the first real piece is not slow. */
+const WARM_UP = ['w', '## w\n\n**b** *i* `c`', '[[l]] [a](#a) ==h==', '- x\n- [ ] y', '| a | b |\n| - | - |\n| 1 | 2 |', '> q\n\n```\nc\n```']
+let warm = false
+
+const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+
+/**
+ * The renderers of the reader's own tokens (`pageMarked.ts` reads them: `[[link]]`, `![[embed]]`, `==highlight==`,
+ * `[^id]`, `[^id]: note`, `$$ math $$`).
+ */
+const ownTokens: RendererExtension[] = [
+  {
+    name: 'pageLink',
+    renderer(token) {
+      const { inner, embed } = token as PageLinkToken
+      return embed ? `<span ${localMark('page-embed')}="${escapeHtml(inner)}"></span>` : `<a ${localMark('page-link')}="${escapeHtml(inner)}"></a>`
+    },
+  },
+  {
+    // The Mac's yellow highlight (`marks/highlight.ts`).
+    name: 'highlight',
+    renderer(token) {
+      return `<mark>${this.parser.parseInline(token.tokens ?? [])}</mark>`
+    },
+  },
+  {
+    // A footnote mark (as the Mac's GFM page). A table's cell note (`[^cell-N]`) is a small mark.
+    name: 'footnoteRef',
+    renderer(token) {
+      const id = String(token.id)
+      if (/^cell-/i.test(id)) return '<sup class="page-cellnote" role="img" aria-label="Cell note">•</sup>'
+      return `<sup class="page-fnref"><a href="#fn-${escapeHtml(id)}">${escapeHtml(id)}</a></sup>`
+    },
+  },
+  {
+    // The note, where it is written (as the Mac's page). A cell note stays hidden under its table.
+    name: 'footnoteDef',
+    renderer(token) {
+      const id = String(token.id)
+      if (/^cell-/i.test(id)) return ''
+      return `<div class="page-footnote" id="fn-${escapeHtml(id)}"><span class="page-footnote__label">${escapeHtml(id)}</span>${this.parser.parseInline(token.tokens ?? [])}</div>`
+    },
+  },
+  {
+    // Block math: the Mac draws no math (its Latex feature is off, YAZ-977: dollars are text), and a math library is
+    // heavy: the phone shows the source in a code block. `$…$` inside a line stays text, as on the Mac.
+    name: 'blockMath',
+    renderer(token) {
+      return `<pre class="page-math"><code>${escapeHtml(String(token.text))}</code></pre>`
+    },
+  },
+]
+
+/** One parse: the page's own cards it met, in order, with what the card line under each says (`lined`: it has one). */
+interface Parse {
+  cards: (CardMarks & { text: string; lined: boolean })[]
+}
+let parse: Parse = { cards: [] }
+
+/** THE reader's parser (`pageMarked.ts`): the tick finds its task with the same one. */
+const markdown = pageMarked
+/** The task item being drawn, for its box (`listitem`, `checkbox`). */
+let taskItem: TaskItem | null = null
+/** A task's box; with its core and line (`data-task`, `data-task-line`) when it is a task the Mac reads (a tap ticks it). */
+function taskBox(checked: boolean, task: PageTask | null): string {
+  const mark = task === null ? '' : ` ${localMark('task')}="${escapeHtml(task.core)}" ${localMark('task-line')}="${task.line}"`
+  return `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"${mark}></span>`
+}
+/** A table token with the body of the table comment after it (`table: …`; YAZ-5480, `tableFile.ts`). */
+type FiledTable = Tokens.Table & { fileComment?: string }
+
+/**
+ * Each table followed by its table comment (`<!-- table: … -->`, the Mac's: the comment is the NEXT block, as the Mac's
+ * `joinNextComment` reads it) gets the comment's text, in every container (lists, quotes). The comment itself shows
+ * nothing (`html` below).
+ */
+function joinTableComments(tokens: Token[]): void {
+  tokens.forEach((token, at) => {
+    if (token.type === 'table') {
+      const next = tokens[at + 1]
+      // Its body only: the cleaner drops an attribute that holds `-->` (DOMPurify's guard), so the mark holds `table: …`.
+      if (next?.type === 'html' && readTableComment(next.raw) !== null) (token as FiledTable).fileComment = next.raw.trim().replace(/^<!--\s*/, '').replace(/\s*-->$/, '')
+      return
+    }
+    if (token.type === 'list') for (const item of (token as Tokens.List).items) joinTableComments(item.tokens)
+    else if ('tokens' in token && Array.isArray(token.tokens)) joinTableComments(token.tokens)
+  })
+}
+
+markdown.use({
+  extensions: ownTokens,
+  renderer: {
+    table(token) {
+      const html = Renderer.prototype.table.call(this, token)
+      const comment = (token as FiledTable).fileComment
+      return comment === undefined ? html : html.replace(/^<table>/, `<table ${localMark('table-file')}="${escapeHtml(comment)}">`)
+    },
+    // A task's box carries its core (`data-task`) and its line in the page's body (`data-task-line`),
+    // as the parse found them (`markTasks`), so a tap names exactly the line it writes. `listitem` hands the item to its
+    // box: marked draws the box first. A list item marked reads as a task but the Mac does not (`pageTask` null) gets
+    // no box: its brackets show as the text they are on the Mac.
+    listitem(item) {
+      taskItem = item.task ? (item as TaskItem) : null
+      return Renderer.prototype.listitem.call(this, item)
+    },
+    checkbox: ({ checked }) => {
+      const item = taskItem
+      taskItem = null
+      const task = item?.pageTask
+      if (item !== null && task === null) return escapeHtml(/\[[ xX]\]/.exec(item.raw)?.[0] ?? (checked ? '[x]' : '[ ]'))
+      return `${taskBox(checked, task ?? null)} `
+    },
+    code(token) {
+      if (token.lang?.trim() !== 'card') return false
+      parse.cards.push({ text: token.text, id: null, title: '', lined: false })
+      return `<div ${localMark('page-card')}="${parse.cards.length - 1}"></div>`
+    },
+    html(token) {
+      // YAZ-5618: a task in a table cell (`cellTasks.ts`): its box right after its `<li>`, as a task of the page.
+      const cellTask = (token as CellTaskTag).cellTask
+      if (cellTask !== undefined) return `<li>${taskBox(cellTask.checked, cellTask)}`
+      const { text } = token
+      // A comment shows nothing. A card line (`<!-- card: ID, title "…", … -->`) under a card gives that card its ID, its
+      // title and its marks.
+      if (/^\s*<!--\s*card:[\s\S]*?-->\s*$/.test(text)) {
+        const last = parse.cards.at(-1)
+        const line = parseCardLine(text.trim())
+        if (last !== undefined && !last.lined && line !== null) {
+          Object.assign(last, { lined: true, id: cardIdOf(line), title: cardTitleOf(line), off: isCardOff(line), notitle: isCardNoTitle(line) })
+        }
+        return ''
+      }
+      // Only WHOLE comments show nothing. An unclosed `<!--` runs to the end of the text (CommonMark); hiding
+      // it would hide the rest of the page. It goes to `cleanLocal`, which shows it, and the rest, as text.
+      return text.replace(/<!--[\s\S]*?--!?>/g, '').trim() === '' ? '' : false
+    },
+  },
+})
+
+/**
+ * The page's text cleaned by THE phone's allow list (`cleanLocal`, `client/src/editor/card/localOnly.ts`), which every
+ * card on the phone goes through too: document markup only, and nothing that loads from another host.
+ */
+const clean = (html: string): DocumentFragment => cleanLocal(html)
+
+const WEB = /^(https?:|mailto:|tel:)/i
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i
+
+function decoded(src: string): string {
+  try {
+    return decodeURIComponent(src)
+  } catch {
+    return src
+  }
+}
+
+/** A quiet line in place of something the phone does not draw. */
+function mediaLine(kind: 'missing' | 'board', text: string): HTMLElement {
+  const el = document.createElement('span')
+  el.className = `page-media page-media--${kind}`
+  el.textContent = text
+  return el
+}
+
+function picture(path: string, alt: string): HTMLImageElement {
+  const { text, width } = parseAlt(alt)
+  const img = document.createElement('img')
+  img.className = 'page-picture'
+  img.alt = text
+  img.dataset.vaultSrc = path
+  if (width !== null) img.width = width
+  return img
+}
+
+function sound(path: string): HTMLElement {
+  const el = document.createElement('div')
+  el.className = 'page-sound'
+  el.dataset.vaultSound = path
+  el.textContent = path.slice(path.lastIndexOf('/') + 1)
+  return el
+}
+
+/** Marks an `<a>` as one the page view opens: no address the browser follows. */
+function opens(a: HTMLAnchorElement, open: LinkOpen): void {
+  // A `#part` of this page keeps its address as written (no host, no path); the page view lands on it.
+  if (open.kind !== 'heading' || !(a.getAttribute('href') ?? '').trim().startsWith('#')) a.setAttribute('href', '#')
+  a.dataset.open = open.kind
+  if (open.kind !== 'heading') a.dataset.path = open.path
+  if (open.kind === 'card') a.dataset.card = open.id
+  if ((open.kind === 'page' || open.kind === 'heading') && open.heading !== undefined && open.heading !== '') a.dataset.heading = open.heading
+}
+
+/** A link's `#part` as written, decoded once (`#Getting%20started` is "Getting started"). */
+function partOf(href: string): string {
+  const at = href.indexOf('#')
+  return at < 0 ? '' : decoded(href.slice(at + 1))
+}
+
+function drawLinks(root: DocumentFragment, look: PageLook): void {
+  for (const a of root.querySelectorAll<HTMLAnchorElement>('a')) {
+    const inner = a.getAttribute('data-page-link')
+    if (inner !== null) {
+      a.removeAttribute('data-page-link')
+      const show = look.link(inner)
+      a.textContent = show.label
+      a.className = show.open === null ? 'wikilink wikilink--unresolved' : show.open.kind === 'card' ? 'wikilink wikilink--card' : 'wikilink'
+      // The vault's format adds pieces at the pill's ends: the Mac's three spans, the head, the name, the
+      // tail, each in the pill's classes; the `<a>` holds them and draws nothing itself.
+      const head = show.ends?.head ?? null
+      const tail = show.ends?.tail ?? null
+      if (head !== null || tail !== null) {
+        const cls = a.className
+        const name = document.createElement('span')
+        name.className = cls
+        name.textContent = show.label
+        a.replaceChildren(...[head === null ? null : headSpan(cls, head), name, tail === null ? null : tailSpan(cls, tail)].filter((el): el is HTMLElement => el !== null))
+        a.className = show.open === null ? 'page-pill page-pill--missing' : 'page-pill'
+      }
+      // A missing page's link is plain and dim, and no link: a tap on it does nothing.
+      if (show.open !== null) opens(a, show.open)
+      else {
+        a.removeAttribute('href')
+        a.setAttribute('aria-disabled', 'true')
+        if (show.missing !== undefined) a.setAttribute('aria-label', show.missing)
+      }
+      continue
+    }
+    // Every other link, by what the browser would open (`urlOf`): the web opens Safari; mail stays; a part of
+    // the page stays; a vault file opens in the app; anything else is text. A class from the text changes nothing.
+    const web = a.classList.contains('page-media--web')
+    a.removeAttribute('class')
+    const href = a.getAttribute('href')
+    if (href === null) continue
+    const { kind, href: url } = urlOf(href)
+    if (kind === 'web') {
+      if (web) a.className = 'page-media page-media--web'
+      a.setAttribute('href', url)
+      a.target = '_blank'
+      a.rel = 'noopener noreferrer'
+      continue
+    }
+    if (kind === 'mail') continue
+    // A `#part` of this page lands on its heading (or a footnote); the window's address never changes.
+    if (kind === 'path' && href.trim().startsWith('#')) {
+      opens(a, { kind: 'heading', heading: partOf(href.trim()) })
+      continue
+    }
+    // A relative link to a page of the vault (`../Notes/Plan.md#Goals`): that page, at its heading. With no extension, a
+    // page of that name (`[Plan](Plan)`), as a `[[link]]` reads it.
+    const bare = href.split('#')[0]
+    const path = kind !== 'path' ? null : (look.asset(bare) ?? (/\.[a-z0-9]+$/i.test(bare) || bare === '' ? null : look.asset(`${bare}.md`)))
+    if (path === null) a.removeAttribute('href')
+    else opens(a, /\.(md|markdown)$/i.test(path) ? { kind: 'page', path, heading: partOf(href) } : { kind: 'file', path })
+  }
+}
+
+function drawPictures(root: DocumentFragment, look: PageLook): void {
+  // A web picture is a link already (`cleanLocal`). A vault picture holds its path in `data-local-src`: no address.
+  for (const img of root.querySelectorAll<HTMLImageElement>('img')) {
+    const src = img.getAttribute(LOCAL_SRC)
+    const alt = img.getAttribute('alt') ?? ''
+    if (src === null) {
+      if (urlOf(img.getAttribute('src') ?? '').kind !== 'own') img.remove()
+      continue
+    }
+    const path = look.asset(src)
+    if (path === null) img.replaceWith(mediaLine('missing', `Missing picture · ${decoded(src)}`))
+    else if (isAudioRef(path)) img.replaceWith(sound(path))
+    else img.replaceWith(picture(path, alt))
+  }
+}
+
+function drawEmbeds(root: DocumentFragment, look: PageLook): void {
+  for (const span of root.querySelectorAll<HTMLElement>('span[data-page-embed]')) {
+    const inner = span.getAttribute('data-page-embed') ?? ''
+    const show = look.embed(inner)
+    let el: Node
+    switch (show.kind) {
+      case 'card': {
+        const box = document.createElement('div')
+        box.className = 'card-embed'
+        box.dataset.cardEmbed = show.id
+        el = box
+        break
+      }
+      case 'missing-card': {
+        const box = document.createElement('div')
+        box.className = 'card-embed card-embed--missing'
+        box.textContent = `Missing card · ${show.id}`
+        el = box
+        break
+      }
+      case 'picture':
+        el = picture(show.path, show.alt)
+        break
+      case 'sound':
+        el = sound(show.path)
+        break
+      case 'drawing':
+        // An Excalidraw drawing is drawn on the phone (`drawing/`); any other board keeps its line.
+        el = drawingBox(show.path ?? null, show.name) ?? mediaLine('board', onMacWords(show.name))
+        break
+      case 'file': {
+        const a = document.createElement('a')
+        a.className = 'wikilink'
+        a.textContent = show.name
+        opens(a, { kind: 'file', path: show.path })
+        el = a
+        break
+      }
+      case 'text':
+        el = document.createTextNode(show.text)
+        break
+    }
+    // A card box (and a drawing's) is a block: alone in its paragraph, it takes the paragraph's place.
+    const p = span.parentElement
+    if ((show.kind.endsWith('card') || (el as Element).tagName === 'FIGURE') && p?.tagName === 'P' && p.childNodes.length === 1) p.replaceWith(el)
+    else span.replaceWith(el)
+  }
+}
+
+function drawCards(root: DocumentFragment, look: PageLook, cards: Parse['cards']): void {
+  for (const slot of root.querySelectorAll<HTMLElement>('div[data-page-card]')) {
+    const card = cards[Number(slot.getAttribute('data-page-card'))]
+    slot.removeAttribute('data-page-card')
+    if (card === undefined) continue
+    slot.className = card.off === true ? 'card page-card card--off' : 'card page-card'
+    if (card.id !== null) slot.dataset.cardId = card.id
+    // The Mac's card box: the head, the title band, the sides in `.card__body` (`card.css` spaces them).
+    const body = document.createElement('div')
+    body.className = 'card__body'
+    body.append(look.card(card.text))
+    const head = cardHead(card)
+    // A card with an ID has its ⋯ (the card actions) at the right of its head.
+    if (head !== null && card.id !== null) head.append(cardMoreButton(card.id, card.title))
+    for (const part of [head, titleBand(card.title)]) if (part !== null) slot.append(part)
+    slot.append(body)
+  }
+}
+
+/** `> [!tip] Title` (Obsidian, GitHub): the quote becomes a callout with that title. */
+function drawCallouts(root: DocumentFragment): void {
+  for (const quote of root.querySelectorAll('blockquote')) {
+    const p = quote.firstElementChild
+    const first = p?.tagName === 'P' ? p.firstChild : null
+    if (p === null || p === undefined || first === null || first.nodeType !== Node.TEXT_NODE) continue
+    const m = /^\s*\[!([\w-]+)\][+-]?[ \t]*/.exec(first.nodeValue ?? '')
+    if (m === null) continue
+    first.nodeValue = (first.nodeValue ?? '').slice(m[0].length)
+    const title = document.createElement('div')
+    title.className = 'page-callout__title'
+    // The title is the rest of the first line: the nodes before the first line break.
+    while (p.firstChild !== null && p.firstChild.nodeName !== 'BR') title.append(p.firstChild)
+    p.firstChild?.remove()
+    if ((title.textContent ?? '').trim() === '') title.textContent = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase()
+    if (p.childNodes.length === 0) p.remove()
+    quote.className = 'page-callout'
+    quote.setAttribute('data-callout', m[1].toLowerCase())
+    quote.prepend(title)
+  }
+}
+
+/**
+ * One piece of a page as the parser draws it, before the cleaner: its HTML and its cards. `firstLine`: the line of the
+ * body the piece starts on (its boxes' `data-task-line`).
+ */
+export function pieceHtml(text: string, firstLine = 0): { html: string; cards: Parse['cards'] } {
+  parse = { cards: [] }
+  const own = readerText(text)
+  const tokens = markdown.lexer(own)
+  markTasks(tokens, own, firstLine)
+  joinTableComments(tokens)
+  return { html: markdown.parser(tokens), cards: parse.cards }
+}
+
+/** One piece of a page as clean elements; `firstLine`: the line of the body the piece starts on (its tasks' lines). */
+export function renderPiece(text: string, look: PageLook, firstLine = 0): DocumentFragment {
+  const { html, cards } = pieceHtml(text, firstLine)
+  const root = clean(html)
+  drawLinks(root, look)
+  drawPictures(root, look)
+  drawEmbeds(root, look)
+  drawCards(root, look, cards)
+  drawCallouts(root)
+  // A table's own settings from the file (its frozen rows and columns), read with the Mac's parser.
+  for (const table of root.querySelectorAll<HTMLTableElement>('table[data-table-file]')) {
+    applyTableFile(table, table.getAttribute('data-table-file') ?? '', look.tables)
+    table.removeAttribute('data-table-file')
+  }
+  // Each table's defaults from the vault, for what it does not set itself.
+  if (look.tables != null) for (const table of root.querySelectorAll('table')) applyTableLook(table, look.tables)
+  // Each table, the page's and its cards', in its box with its column widths (`tableLayout.ts`).
+  layoutTables(root)
+  return root
+}
+
+const FENCE = /^ {0,3}(`{3,}|~{3,})/
+/** The next block is a table comment: blank lines, then `<!-- table:`. */
+const TABLE_COMMENT_NEXT = /^\s*<!--\s*table:/
+
+/**
+ * Where the piece that starts at `from` ends: after the first blank line at or past `from + size`, outside a code fence
+ * and outside a math block (YAZ-5547: a piece that starts inside one would read its `- [ ]` lines as tasks). The whole
+ * rest when there is none.
+ */
+export function cutAt(text: string, from: number, size: number): number {
+  let fence: string | null = null
+  let at = from
+  while (at < text.length) {
+    const nl = text.indexOf('\n', at)
+    const end = nl === -1 ? text.length : nl + 1
+    const line = text.slice(at, nl === -1 ? text.length : nl)
+    const math = fence === null && /^ {0,3}\$\$/.test(line) ? BLOCK_MATH.exec(text.slice(at)) : null
+    if (math !== null) {
+      at += math[0].length
+      continue
+    }
+    const m = FENCE.exec(line)
+    if (m !== null) {
+      if (fence === null) fence = m[1][0]
+      else if (m[1][0] === fence) fence = null
+    }
+    // Never between a table and its comment (the blank line the Mac writes between them).
+    if (fence === null && line.trim() === '' && end - from >= size && !TABLE_COMMENT_NEXT.test(text.slice(end, end + 200))) return end
+    at = end
+  }
+  return text.length
+}
+
+/** The pieces of `text` of about `size` characters each (`cutAt`). Joined, they are `text`. */
+export function splitBlocks(text: string, size: number): string[] {
+  const out: string[] = []
+  for (let from = 0; from < text.length; ) {
+    const end = cutAt(text, from, size)
+    out.push(text.slice(from, end))
+    from = end
+  }
+  return out.length === 0 ? [text] : out
+}
+
+/**
+ * The renderer's warm-up alone, in slices (`renderPage` runs it before its first page). YAZ-5589: the Today button runs
+ * it once the app is idle, so a warm renderer draws the first piece of a page in the same frame as the tap.
+ */
+export async function warmRenderer(look: PageLook, slice: Slice): Promise<void> {
+  if (warm) return
+  cleanLocal('<p>w</p>')
+  await slice()
+  for (const text of WARM_UP) {
+    renderPiece(text, look)
+    await slice()
+  }
+  warm = true
+}
+
+/**
+ * Draws `body` (a page's Markdown, its properties left out) into `into`, in place of what it held. A long page draws
+ * piece by piece, with `slice()` between pieces. `live()` false: stop (the page changed again, or closed).
+ */
+export async function renderPage(body: string, look: PageLook, into: HTMLElement, slice?: Slice, live: () => boolean = () => true, stats?: PieceStats): Promise<void> {
+  if (slice === undefined) {
+    into.replaceChildren(renderPiece(body, look))
+    return
+  }
+  // The first start of `marked` and DOMPurify is slow (40 to 50 ms of CPU in jsdom), also for a short page (the
+  // first that opens). It runs once, cut into its own slices: the cleaner, then small texts with each kind of block.
+  // Then the pieces of a long page start small and grow while they are quick.
+  if (!warm) {
+    await warmRenderer(look, slice)
+    if (!live()) return
+  }
+  if (body.length <= ONE_PIECE) {
+    into.replaceChildren(renderPiece(body, look))
+    return
+  }
+  let size = FIRST_PIECE
+  let first = true
+  // The line each piece starts on, so its boxes carry their lines in the whole body.
+  let line = 0
+  for (let from = 0; from < body.length; ) {
+    const end = cutAt(body, from, size)
+    const t0 = performance.now()
+    const text = body.slice(from, end)
+    const piece = renderPiece(text, look, line)
+    line += text.match(/\r\n|\r|\n/g)?.length ?? 0
+    // The first piece replaces the old page at once; the rest are added as they come.
+    if (first) into.replaceChildren(piece)
+    else into.append(piece)
+    first = false
+    const ms = performance.now() - t0
+    stats?.times.push(ms)
+    if (ms > SLOW_PIECE_MS && size > SMALLEST_PIECE) size = Math.max(SMALLEST_PIECE, Math.floor(size / 2))
+    else if (ms < QUICK_PIECE_MS && size < LARGEST_PIECE) size = Math.min(LARGEST_PIECE, size * 2)
+    from = end
+    await slice()
+    if (!live()) return
+  }
+  if (first) into.replaceChildren()
+}

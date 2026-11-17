@@ -1,0 +1,417 @@
+/* Chapter 5, "Why it is worth it" (YAZ-5121): the few arrangements its scenes need. App tokens; the drawings' wood
+   and paper are plain colours, as the kit's index card is. */
+
+/* c5-01 */
+.kit-sofar {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(86cqw, 24em);
+  font-size: clamp(13px, 3.4cqmin, 19px);
+}
+.kit-sofar li {
+  align-items: center;
+}
+.kit-sofar li span:nth-child(2) {
+  flex: 1;
+}
+.kit-sofar__tick {
+  color: var(--ok);
+  font-weight: 800;
+}
+
+/* c5-02 */
+.kit-interest {
+  display: block;
+  width: min(90cqw, 36em);
+  max-height: 72cqh;
+  overflow: visible;
+}
+.kit-interest__base {
+  fill: color-mix(in srgb, var(--fg-muted) 45%, transparent);
+}
+.kit-interest__grow {
+  fill: var(--accent);
+}
+.kit-interest__key {
+  display: flex;
+  gap: 1.4em;
+  color: var(--fg-muted);
+  font-size: clamp(11px, 2.6cqmin, 14px);
+}
+.kit-interest__key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+.kit-interest__swatch {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg-muted) 45%, transparent);
+}
+.kit-interest__swatch--grow {
+  background: var(--accent);
+}
+
+/* c5-04 */
+.kit-five {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(4px, 1.4cqmin, 10px);
+  font-size: clamp(var(--kit-min-text), 2.2cqmin, 13px);
+}
+.kit-five .kit-mini {
+  width: 10em;
+}
+.kit-five__year {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.kit-five__year .kit-tally {
+  width: min(80cqw, 30em);
+  max-height: 42cqh;
+}
+
+/* c5-05 */
+.kit-pile {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(24px, 10cqmin, 90px);
+}
+.kit-pile__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+.kit-pile__stack {
+  position: relative;
+  width: clamp(70px, 22cqmin, 150px);
+  height: min(56cqh, 15em);
+}
+.kit-pile__stack i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2.1%;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--border));
+  border-radius: 2px;
+  background: var(--bg);
+}
+.kit-pile__col--today .kit-pile__stack i {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* c5-13 to c5-15: one card's path */
+.kit-path {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow: visible;
+}
+.kit-path__arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.kit-path__arc.is-away {
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 50%, transparent));
+}
+.kit-path__gap {
+  font-weight: 600;
+}
+.kit-path__here {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+.kit-path__card {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.kit-who {
+  width: min(70cqw, 20em);
+  height: 74cqh;
+}
+.kit-who .kit-head {
+  width: 100%;
+  height: 100%;
+}
+.kit-who__words {
+  display: grid;
+}
+.kit-who__words > * {
+  grid-area: 1 / 1;
+}
+
+/* c5-06 */
+.kit-cabinet {
+  width: min(48cqw, 20em);
+  max-height: 70cqh;
+}
+.kit-cabinet__body {
+  fill: #7a4f2a;
+}
+.kit-cabinet__drawer {
+  fill: #a8733f;
+  stroke: #5e3b1d;
+  stroke-width: 1.2;
+}
+.kit-cabinet__handle {
+  fill: #e5d3a8;
+}
+.kit-cabinet__slip {
+  fill: #fbf7ea;
+  stroke: #d8cfb8;
+  stroke-width: 0.5;
+}
+.kit-luhmann__facts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+}
+.kit-luhmann__count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+}
+.kit-luhmann__number {
+  color: var(--accent);
+  font-size: clamp(30px, 11cqmin, 84px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+/* c5-07 */
+.kit-shelf {
+  display: block;
+  width: min(92cqw, 40em);
+  max-height: 64cqh;
+}
+.kit-shelf__board {
+  stroke: #8a5a2b;
+  stroke-width: 3;
+}
+.kit-shelf__spine {
+  fill: color-mix(in srgb, var(--fg-muted) 55%, transparent);
+}
+.kit-shelf__book {
+  fill: var(--accent);
+}
+.kit-books__count {
+  display: flex;
+  gap: 1.6em;
+  font-size: clamp(14px, 4cqmin, 24px);
+}
+.kit-books__count b {
+  font-size: 1.3em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* c5-08 */
+
+
+/* c5-09, c5-10 */
+.kit-life {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(8px, 3cqmin, 24px);
+  width: min(96cqw, 44em);
+}
+.kit-life__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  min-width: 0;
+  padding: 0.7em 0.5em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  font-size: clamp(var(--kit-min-text), 2.6cqmin, 14px);
+}
+.kit-life__art {
+  display: block;
+  width: 100%;
+  max-height: 38cqh;
+  overflow: visible;
+}
+.kit-life__name {
+  font-weight: 600;
+}
+.kit-life__table {
+  fill: color-mix(in srgb, var(--fg) 8%, var(--bg));
+  stroke: var(--kit-line);
+}
+.kit-life__person {
+  fill: color-mix(in srgb, var(--fg-muted) 50%, transparent);
+}
+.kit-life__you {
+  fill: var(--accent);
+}
+.kit-life__card {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.kit-life__cardline {
+  stroke: var(--kit-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.kit-life__french {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5em 0.6em;
+  padding: 0.6em 0.2em;
+}
+.kit-life__word {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15em;
+}
+.kit-life__word b {
+  font-family: Charter, 'Iowan Old Style', Georgia, serif;
+  font-size: 1.15em;
+}
+.kit-life__word i {
+  color: var(--accent);
+  font-size: max(var(--kit-min-text), 0.82em);
+  font-style: normal;
+}
+.kit-life__cycle {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+.kit-life__node {
+  fill: var(--accent);
+}
+
+/* c5-11 */
+.kit-base2 {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: clamp(4px, 1.4cqmin, 10px);
+  width: min(96cqw, 46em);
+  font-size: clamp(var(--kit-min-text), 1.8cqmin, 11px);
+}
+.kit-base2 .kit-mini {
+  width: 100%;
+}
+.kit-base2__label {
+  padding: 0.35em 1em;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: clamp(13px, 3.6cqmin, 20px);
+  font-weight: 700;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* c5-12 */
+.kit-chapter5-visual {
+  display: grid;
+  width: min(84cqw, 66rem);
+  font-size: clamp(14px, 3.15cqmin, 27px);
+  justify-items: center;
+  gap: clamp(8px, 2.1cqmin, 24px);
+}
+
+.kit-research,
+.kit-gym-cards,
+.kit-gym-comparison__pair {
+  display: grid;
+  width: 100%;
+  align-items: center;
+  gap: clamp(8px, 3cqw, 48px);
+}
+
+.kit-research { grid-template-columns: 1.2fr auto 1fr; }
+.kit-gym-comparison__pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kit-gym-cards { grid-template-columns: 0.85fr 1.15fr; }
+
+.kit-research__notes { display: grid; gap: 0.4em; }
+.kit-research__note,
+.kit-gym-cards__face {
+  display: grid;
+  gap: 0.3em;
+  border: 1px solid var(--kit-line);
+  border-top: 3px solid var(--accent);
+  border-radius: 5px;
+  padding: 0.5em 0.7em;
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+}
+.kit-research__note span,
+.kit-gym-cards__face span { color: var(--fg-muted); font-size: max(var(--kit-min-text), 0.85em); }
+.kit-research__arrow { color: var(--accent); font-size: 1.9em; }
+
+.kit-research__book {
+  display: grid;
+  box-sizing: border-box;
+  align-content: space-between;
+  aspect-ratio: 3 / 4;
+  width: min(100%, 8em);
+  padding: 0.7em;
+  border-radius: 4px 8px 8px 4px;
+  border-left: 0.46em solid color-mix(in srgb, var(--accent) 55%, #12152b);
+  color: #fff;
+  background: #30358a;
+  box-shadow: 0.35em 0.3em 0 #ddd9cf, var(--kit-shadow);
+}
+.kit-research__book--greene { background: #7b3936; border-color: #542222; }
+.kit-research__book span { font-size: max(var(--kit-min-text), 0.72em); }
+.kit-research__book strong { font-family: Georgia, serif; font-weight: 600; }
+.kit-research__series { display: grid; width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1em; justify-items: center; }
+.kit-research__series > :nth-child(even) { background: #40564d; border-color: #284137; }
+.kit-research__series > :nth-child(3) { background: #7b3936; border-color: #542222; }
+.kit-research__archive { display: grid; width: 100%; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0.38em; }
+.kit-research__archive span { aspect-ratio: 4 / 3; border: 1px solid var(--kit-line); border-top: 3px solid var(--accent); border-radius: 3px; background: var(--bg); box-shadow: var(--kit-shadow); }
+
+.kit-gym-panel {
+  display: grid;
+  justify-items: center;
+  gap: 0.4em;
+  min-width: 0;
+  border: 1px solid var(--kit-line);
+  border-radius: 12px;
+  background: var(--bg);
+  padding: 0.45em;
+  text-align: center;
+}
+.kit-gym-drawing { width: 100%; height: min(38cqh, 10em); }
+.kit-gym-drawing path { fill: none; stroke: var(--fg); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.kit-gym-drawing rect, .kit-gym-drawing circle { fill: var(--accent); }
+.kit-gym-progress { display: flex; gap: 0.25em; align-items: end; height: 1.15em; }
+.kit-gym-progress span { width: 1.5em; height: 30%; background: var(--accent); border-radius: 4px; }
+.kit-gym-progress span:nth-child(2) { height: 60%; }
+.kit-gym-progress span:nth-child(3) { height: 100%; }
+.kit-gym-cards__pile { display: grid; width: min(100%, 10em); justify-self: center; padding-bottom: 1em; }
+.kit-gym-cards__pile > * { grid-area: 1 / 1; }
+.kit-gym-cards__pile > :nth-child(2) { margin-top: 0.5em; margin-left: 0.55em; }
+.kit-gym-cards__pile > :nth-child(3) { margin-top: 1em; margin-left: 1.1em; }
+.kit-gym-cards__face { min-height: 5.5em; align-content: center; }
+
+.kit-approval { display: grid; width: 100%; grid-template-columns: 1fr auto 1fr; align-items: center; gap: clamp(8px, 2cqw, 30px); }

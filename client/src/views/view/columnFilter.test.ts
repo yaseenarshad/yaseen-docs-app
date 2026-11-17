@@ -92,7 +92,7 @@ describe('a column\'s rules in the view\'s filters (YAZ-4919)', () => {
       { value: 'agentic/levels', count: 1 },
     ])
     expect(valueCounts('note.related', TEST_RECORDS, '')).toEqual([{ value: 'Agentic Agency', count: 1 }])
-    // Only a note column lists values: a file field or a formula has none here.
+    // Only a page column lists values: a file field or a formula has none here.
     expect(valueCounts('file.name', TEST_RECORDS, '')).toEqual([])
     expect(valueCounts('formula.x', TEST_RECORDS, '')).toEqual([])
   })

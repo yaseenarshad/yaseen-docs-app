@@ -1,9 +1,9 @@
 /**
  * The Folder column shows the path from the page (YAZ-4801 demo: "how come no folder showing up here?" / "does it hide
  * recipes?"). `rowCell` draws a `file.folder` cell under the page's `FolderPages`:
- * - From this page (default, `path`): starts WITH the page, so a note directly in the page shows the page's name;
+ * - From this page (default, `path`): starts WITH the page, so a page directly in the page shows the page's name;
  * - Full path (`full`): from the vault's top;
- * - Last folder (`last`): only where the note lives.
+ * - Last folder (`last`): only where the page lives.
  * Each part is a chip that opens that folder's page. `folderColumnOf` reads the view's key.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -40,11 +40,11 @@ function cell(folder: string, page: string, folderColumn: FolderPagesValue['fold
 const parts = (el: HTMLElement) => [...el.querySelectorAll('.view-folder-path__part')].map((p) => p.textContent)
 
 describe('YAZ-4801 demo: From this page (the default) starts with the page', () => {
-  it('YAZ-4801 demo: a note directly in the page shows the page name, never a blank', () => {
+  it('YAZ-4801 demo: a page directly in the page shows the page name, never a blank', () => {
     expect(parts(cell('top/recipes', 'top/recipes', 'path'))).toEqual(['Recipes'])
   })
 
-  it('YAZ-4801 demo: a note in a subfolder shows the page, then the subfolder', () => {
+  it('YAZ-4801 demo: a page in a subfolder shows the page, then the subfolder', () => {
     const el = cell('top/recipes/desserts', 'top/recipes', 'path')
     expect(parts(el)).toEqual(['Recipes', 'Desserts'])
     expect(el.querySelector('.view-folder-path')!.getAttribute('title')).toBe('Recipes › Desserts')
@@ -55,7 +55,7 @@ describe('YAZ-4801 demo: From this page (the default) starts with the page', () 
     expect(parts(cell('top/recipes/desserts', 'top/recipes', undefined))).toEqual(['Recipes', 'Desserts'])
   })
 
-  it('YAZ-4801 demo: a note that lives outside the page (a shortcut) shows its whole path from the vault top, "Lives in"', () => {
+  it('YAZ-4801 demo: a page that lives outside the page (a shortcut) shows its whole path from the vault top, "Lives in"', () => {
     const el = cell('top/other', 'top/recipes', 'path')
     expect(parts(el)).toEqual(['Top', 'Other'])
     expect(el.querySelector('.view-folder-path')!.getAttribute('title')).toBe('Lives in Top › Other')
@@ -68,7 +68,7 @@ describe('YAZ-4801 demo: Full path and Last folder', () => {
     expect(parts(cell('top/recipes', 'top/recipes', 'full'))).toEqual(['Top', 'Recipes'])
   })
 
-  it('YAZ-4801 demo: Last folder shows only where the note lives; directly in the page, the page name', () => {
+  it('YAZ-4801 demo: Last folder shows only where the page lives; directly in the page, the page name', () => {
     expect(cell('top/recipes/desserts', 'top/recipes', 'last').textContent).toBe('Desserts')
     act(() => root?.unmount())
     container?.remove()

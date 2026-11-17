@@ -11,6 +11,7 @@
  * ENGINE-BOUND BY DESIGN: `exportToBlob` comes in as an argument (`engine.ts`'s lazy rule), which
  * is also what lets a test drive this with a stub instead of a canvas.
  */
+import { visibleElements } from '../drawings/drawingPicture'
 import type { ExcalidrawModule } from '../drawings/engine'
 
 const PREVIEW_MIME_TYPE = 'image/png'
@@ -44,10 +45,8 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
   })
 }
 
-/** The elements a picture draws: everything not soft-deleted. None left means there is nothing to draw. */
-export function visibleElements<T>(elements: readonly T[]): T[] {
-  return elements.filter((element) => !(typeof element === 'object' && element !== null && (element as { isDeleted?: boolean }).isDeleted === true))
-}
+// The elements a picture draws (YAZ-5440: in `drawingPicture.ts`, which the phone shares).
+export { visibleElements }
 
 export interface PreviewScene {
   elements: readonly unknown[]

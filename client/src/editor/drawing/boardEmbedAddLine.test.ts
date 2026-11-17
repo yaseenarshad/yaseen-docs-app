@@ -222,7 +222,7 @@ describe('YAZ-4907: the keys on a selected embed', () => {
 
   it('a board of another vault (an image node, selected) takes the same keys', async () => {
     const boards = { place: (src: string) => (src.startsWith('../w/') ? { root: '/w', path: `/w/${src.slice(5)}`, vault: 'Work' } : null), open: vi.fn(), linkMenu: (path: string) => ({ labels: [], open: () => void path }) }
-    const { crepe, view } = await mount('* ![Plan](../w/Plan.drawio)\n\n* after\n', { image: { root: '/v', notePath: '/v/n.md', boards } })
+    const { crepe, view } = await mount('* ![Plan](../w/Plan.drawio)\n\n* after\n', { image: { root: '/v', pagePath: '/v/n.md', boards } })
     let imagePos = -1
     view.state.doc.descendants((node, pos) => {
       if (imagePos === -1 && node.type.name === 'image') imagePos = pos

@@ -1,16 +1,17 @@
 /**
  * THE ZOOM STEPPER, a quiet "− 100% +": the two rows of the footer's zoom menu (`ZoomMenu`, YAZ-3432) are one each.
  *  - `sidebar` (YAZ-3389): the sidebar's lists only (`settings.sidebarZoom`, one value for every full window; a Files
- *    window's own `WindowEntry.zoom`, D13) — never the frame, never a note, which has its own zoom
- *    (`editor/DocumentZoom.tsx`). ⌘+ / ⌘− / ⌘0 step it too when no note claims them.
+ *    window's own `WindowEntry.zoom`, D13) — never the frame, never a page, which has its own zoom
+ *    (`editor/DocumentZoom.tsx`). ⌘+ / ⌘− / ⌘0 step it too when no page claims them.
  *  - `app` (YAZ-3432): the App size of every window (`settings.appZoom`). Mouse only.
- *  - `toc` (YAZ-3939 D7): the names of a note's table of contents (`settings.tocZoom`), on the sidebar's steps.
+ *  - `toc` (YAZ-3939 D7): the names of a page's table of contents (`settings.tocZoom`), on the sidebar's steps.
  * − and + walk the kind's steps (`stepZoom`) and stop at the walls; a click on the percent goes back to 100%. A step
  * that reaches a wall turns its own button off, so the focus moves to the percent first: it stays in the row instead
  * of falling to the page (YAZ-3434).
  */
 import { memo, useRef, type MouseEvent } from 'react'
 import { APP_ZOOM_STEPS, SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
+import { withKeys } from '@shared/keyLabel'
 
 /** Each kind's steps and words: the group's name, the accessible names and the titles of −, + and the percent. */
 const KINDS = {
@@ -19,8 +20,8 @@ const KINDS = {
     label: 'Sidebar zoom',
     out: 'Zoom the sidebar out',
     into: 'Zoom the sidebar in',
-    outTitle: 'Zoom the sidebar out (⌘−)',
-    intoTitle: 'Zoom the sidebar in (⌘+)',
+    outTitle: withKeys('Zoom the sidebar out', '⌘−'),
+    intoTitle: withKeys('Zoom the sidebar in', '⌘+'),
     valueTitle: 'Sidebar zoom. Click for 100%',
   },
   app: {
@@ -37,8 +38,8 @@ const KINDS = {
     label: 'Table of contents zoom',
     out: 'Zoom the table of contents out',
     into: 'Zoom the table of contents in',
-    outTitle: 'Zoom the table of contents out (⌘−)',
-    intoTitle: 'Zoom the table of contents in (⌘+)',
+    outTitle: withKeys('Zoom the table of contents out', '⌘−'),
+    intoTitle: withKeys('Zoom the table of contents in', '⌘+'),
     valueTitle: 'Table of contents zoom. Click for 100%',
   },
 } as const

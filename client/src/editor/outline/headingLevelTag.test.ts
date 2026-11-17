@@ -232,7 +232,7 @@ describe('the heading level tag (YAZ-2700 D12)', () => {
     await new Promise((r) => setTimeout(r, 300))
     expect(onMarkdownUpdated).not.toHaveBeenCalled()
     expect(getMarkdownForSave(crepe)).toBe(before)
-    // The source says "###### Six" and nothing says "H6": the tag is no text of the note, in the file or in the DOM.
+    // The source says "###### Six" and nothing says "H6": the tag is no text of the page, in the file or in the DOM.
     expect(before).toContain('###### Six')
     expect(before).not.toMatch(/H[1-6]/)
     expect(root.querySelector('.ProseMirror')?.textContent).not.toMatch(/H[1-6]/)

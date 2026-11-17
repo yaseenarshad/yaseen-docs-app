@@ -264,7 +264,7 @@ describe('a Linked mentions column\'s Edit column (YAZ-4739 L2)', () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const { el } = mount(table(), { status: { kind: 'mentions' } }, { setColumn })
     editColumn(el)
-    // No relation and no separate value for a column no note holds.
+    // No relation and no separate value for a column no page holds.
     expect(el.querySelector('.column-detail [aria-label="Link target"], .column-detail [aria-label^="Relation for"]')).toBeNull()
     commit(q<HTMLInputElement>(el, '.column-detail [aria-label="Only from the column for Status"]'), 'Reads / writes')
     expect(setColumn).toHaveBeenLastCalledWith('status', { kind: 'mentions', from: { column: 'Reads / writes' } }, { kind: 'mentions' })

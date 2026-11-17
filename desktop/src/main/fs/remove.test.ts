@@ -58,7 +58,7 @@ describe('removeEntry (GRO-2272 A1)', () => {
 
   it('moves a non-vault file to the Trash — no extension gate beyond what the tree shows', async () => {
     trashResolves()
-    const p = path.join(root, 'notes.txt')
+    const p = path.join(root, 'pages.txt')
     expect(await removeEntry({ path: p })).toEqual({ path: p, kind: 'file', trashed: null })
   })
 
@@ -132,7 +132,7 @@ describe('removeEntry (GRO-2272 A1)', () => {
 })
 
 /**
- * Where the item went (YAZ-3268 D16): main notes its `ino` and `dev` before `shell.trashItem`, then
+ * Where the item went (YAZ-3268 D16): main pages its `ino` and `dev` before `shell.trashItem`, then
  * finds the entry with both in the Trash of its disk. The mock MOVES the item into the temp Trash,
  * as the real one does, under its own name or under a new one.
  */

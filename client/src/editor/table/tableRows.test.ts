@@ -12,11 +12,11 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { closeSubmenu } from '../blockHandleMenu'
 import { SWITCH_MS } from '../../components/Flyout'
 import { getMarkdownForSave } from '../createCrepe'
-import { mountNote, unmountAll } from './tableTestKit'
+import { mountPage, unmountAll } from './tableTestKit'
 import { setTextInCellsSetting } from './timeFormatSetting'
 
 async function mount(markdown: string): Promise<{ crepe: Crepe; view: EditorView; item: HTMLElement }> {
-  const { crepe, view } = await mountNote(markdown)
+  const { crepe, view } = await mountPage(markdown)
   const handle = document.createElement('div')
   handle.className = 'milkdown-block-handle'
   const item = document.createElement('div')
@@ -193,7 +193,7 @@ describe('the menu on a table', () => {
     expect(popup.querySelectorAll('.block-menu-picker')).toHaveLength(0)
   })
 
-  it('a read-only note shows no rows', async () => {
+  it('a read-only page shows no rows', async () => {
     const { view, item } = await mount(SMALL)
     view.setProps({ editable: () => false })
     const pos = tablePos(view)

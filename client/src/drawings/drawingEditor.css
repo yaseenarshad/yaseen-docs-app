@@ -13,7 +13,7 @@
  * Everything below the canvas frame is the CHROME INSIDE the engine (Draw's YAZ-1812: the rail, the
  * docked canvas panel, the parity rules), scoped under
  * `.editor--drawing .excalidraw` so the engine's own design tokens apply unchanged and nothing
- * leaks into the shell or into the note embed's modal.
+ * leaks into the shell or into the page embed's modal.
  */
 
 .drawing-editor {
@@ -199,7 +199,7 @@
 
 /* 🔒 Draw's YAZ-1775 D10: the engine's own menu trigger is not this app's door — the rail's hamburger is.
    This is the web app's own rule (`AppSidebar.scss:3-5`); the tab's export and background come from the
-   application menu (YAZ-3037). Scoped to the TAB: the note embed's modal keeps the engine's menu and
+   application menu (YAZ-3037). Scoped to the TAB: the page embed's modal keeps the engine's menu and
    has no rail and no canvas panel (rule 28). */
 .editor--drawing .excalidraw .main-menu-trigger {
   display: none;

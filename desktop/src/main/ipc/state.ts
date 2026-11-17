@@ -1,16 +1,17 @@
-import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
+import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, cleanCardsAdded, cleanUpNextTaken, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
+import { cleanCourseState, defaultCourseState, type CoursePatch } from '@shared/courseState'
 import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { requireStringArray } from '../fs/validate'
 import type { SettingsFolder } from '../settingsFolder'
-import { drawingInFront, hotkeyRecording } from '../hotkeyRecording'
+import { drawingInFront, hotkeyRecording, noPageInFront } from '../hotkeyRecording'
 import { isSettings, readCanvasCard, readCanvasFrame, readCanvasKey, type Store } from '../store'
 import { createSystemHotkeys } from '../systemHotkeys'
 import { broadcastAll } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
 
-/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name` / `key` / `in`, each type-checked. */
+/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name` / `key` / `in` / `upNext` / `added`, each type-checked. */
 function requireFolderPatch(raw: unknown): FolderPatch {
   if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
   const patch: FolderPatch = {}
@@ -34,6 +35,18 @@ function requireFolderPatch(raw: unknown): FolderPatch {
     if (raw.in !== null && typeof raw.in !== 'string') throw new BridgeFailure('BAD_REQUEST', "'in' must be a string or null")
     patch.in = raw.in
   }
+  // "Up next a day" (YAZ-5028): the day and its card IDs.
+  if (raw.upNext !== undefined) {
+    const upNext = cleanUpNextTaken(raw.upNext)
+    if (upNext === null) throw new BridgeFailure('BAD_REQUEST', "'upNext' must be { day, cards }")
+    patch.upNext = upNext
+  }
+  // "Add more for today" (YAZ-5042): the day and its two numbers.
+  if (raw.added !== undefined) {
+    const added = cleanCardsAdded(raw.added)
+    if (added === null) throw new BridgeFailure('BAD_REQUEST', "'added' must be { day, newCards, upNext }")
+    patch.added = added
+  }
   return patch
 }
 
@@ -46,6 +59,22 @@ function optionalCards<T>(raw: unknown, key: 'set' | 'forget', read: (v: unknown
     if (card === null) throw new BridgeFailure('BAD_REQUEST', `'${key}[${i}]' must be ${shape}`)
     return card
   })
+}
+
+/**
+ * The card course's patch (YAZ-5120), strict at the boundary: an object whose every field is one the course state
+ * has, with a valid value (`cleanCourseState` keeps the base's value for a bad one, so a bad field shows as a change).
+ */
+function requireCoursePatch(raw: unknown): CoursePatch {
+  if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
+  const fields = defaultCourseState()
+  for (const [key, value] of Object.entries(raw)) {
+    if (!Object.hasOwn(fields, key)) throw new BridgeFailure('BAD_REQUEST', `'${key}' is not a field of the course`)
+    // The value alone over a base with no value for its field: a valid value is kept as it is, a bad one is not.
+    const kept = cleanCourseState({ [key]: value }, { ...fields, [key]: undefined } as never)[key as keyof typeof fields]
+    if (JSON.stringify(kept) !== JSON.stringify(value)) throw new BridgeFailure('BAD_REQUEST', `'${key}' has a bad value`)
+  }
+  return raw as CoursePatch
 }
 
 /**
@@ -100,10 +129,15 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
     if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
     hotkeyRecording.set(event.sender, on)
   })
-  // A drawing opens over a note in the calling window, or closes (YAZ-3564 K9); `main/index.ts` rebuilds the menu as for a drawing tab.
+  // A drawing opens over a page in the calling window, or closes (YAZ-3564 K9); `main/index.ts` rebuilds the menu as for a drawing tab.
   handleWithEvent(CONTRACT.hotkeys.drawingInFront, async (event, on: unknown) => {
     if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
     drawingInFront.set(event.sender, on)
+  })
+  // The Inbox tab or the blank tab comes to the front of the calling window, or leaves it (YAZ-5041): the menu follows no page.
+  handleWithEvent(CONTRACT.hotkeys.noPageInFront, async (event, on: unknown) => {
+    if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
+    noPageInFront.set(event.sender, on)
   })
   handle(CONTRACT.state.setSidebarWidth, async (width: unknown) => {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
@@ -154,6 +188,9 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
   })
   handle(CONTRACT.state.setTabCanvas, async (patch: unknown) => {
     store.setTabCanvas(requireTabCanvasPatch(patch))
+  })
+  handle(CONTRACT.state.setCourse, async (patch: unknown) => {
+    store.setCourse(requireCoursePatch(patch))
   })
   // Every live window gets the new state (`state.onChange` in the renderer), whichever window changed it.
   store.onChange((state) => broadcastAll(CONTRACT.state.onChange.channel, state))

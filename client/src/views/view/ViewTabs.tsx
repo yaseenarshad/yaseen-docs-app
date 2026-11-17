@@ -104,7 +104,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
                 draggable={renaming !== i}
                 onDragStart={(e) => {
                   // A PRIVATE mime, like `TabBar`'s workspace one: `text/plain` would let a tab
-                  // mis-dropped on the note body above insert its name into the markdown.
+                  // mis-dropped on the page body above insert its name into the markdown.
                   e.dataTransfer?.setData(VIEW_TAB_MIME, v.name)
                   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
                   live.start(e, i)

@@ -1,6 +1,6 @@
 /**
  * ⌘A on a bullet (YAZ-4348 demo round 2, `bulletSelectAll.ts`), through a REAL Crepe: the first ⌘A selects the
- * bullet's own line, the second the whole note; off a bullet, ⌘A is the whole note at once.
+ * bullet's own line, the second the whole page; off a bullet, ⌘A is the whole page at once.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -43,7 +43,7 @@ function caretIn(view: EditorView, text: string): void {
 }
 
 const selected = (view: EditorView): string => view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '\n')
-const wholeNote = (view: EditorView): boolean => view.state.selection.from <= 1 && view.state.selection.to === view.state.doc.content.size
+const wholePage = (view: EditorView): boolean => view.state.selection.from <= 1 && view.state.selection.to === view.state.doc.content.size
 
 afterEach(async () => {
   for (const m of mounted.splice(0)) {
@@ -53,7 +53,7 @@ afterEach(async () => {
 })
 
 describe('⌘A on a bullet (YAZ-4348 demo round 2)', () => {
-  it('selects the bullet’s own line first, then the whole note', async () => {
+  it('selects the bullet’s own line first, then the whole page', async () => {
     const view = await mount('Intro line\n\n- First bullet\n  - Nested one\n- Second bullet\n')
     caretIn(view, 'First')
     selectAll(view)
@@ -73,14 +73,14 @@ describe('⌘A on a bullet (YAZ-4348 demo round 2)', () => {
     expect(selected(view)).toBe('A task item')
   })
 
-  it('off a bullet, ⌘A is the whole note at once', async () => {
+  it('off a bullet, ⌘A is the whole page at once', async () => {
     const view = await mount('A plain paragraph\n\n- A bullet\n')
     caretIn(view, 'plain')
     selectAll(view)
     expect(view.state.selection.to).toBe(view.state.doc.content.size)
   })
 
-  it('an empty bullet has nothing to select: ⌘A is the whole note at once', async () => {
+  it('an empty bullet has nothing to select: ⌘A is the whole page at once', async () => {
     const view = await mount('Intro line\n\n- First bullet\n-\n- Third bullet\n')
     let empty = -1
     view.state.doc.descendants((node, pos) => {
@@ -89,10 +89,10 @@ describe('⌘A on a bullet (YAZ-4348 demo round 2)', () => {
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, empty)))
     expect(view.state.selection.$from.parent.content.size).toBe(0)
     selectAll(view)
-    expect(wholeNote(view)).toBe(true)
+    expect(wholePage(view)).toBe(true)
   })
 
-  it('a selection across two bullets is not one line: ⌘A is the whole note at once', async () => {
+  it('a selection across two bullets is not one line: ⌘A is the whole page at once', async () => {
     const view = await mount('Intro line\n\n- First bullet\n- Second bullet\n')
     let first = -1
     let second = -1
@@ -102,22 +102,22 @@ describe('⌘A on a bullet (YAZ-4348 demo round 2)', () => {
     })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, first, second)))
     selectAll(view)
-    expect(wholeNote(view)).toBe(true)
+    expect(wholePage(view)).toBe(true)
   })
 
-  it('a bullet in a table cell keeps the cell’s ⌘A (priority 90 over 80): the cell first, then the note', async () => {
+  it('a bullet in a table cell keeps the cell’s ⌘A (priority 90 over 80): the cell first, then the page', async () => {
     const view = await mount('| Day | Plan |\n| --- | --- |\n| Tuesday | <ul><li>Museum</li><li>Park</li></ul> |\n')
     caretIn(view, 'Park')
     expect(view.state.selection.$from.node(-1).type.name).toBe('list_item')
     selectAll(view)
     expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '|')).toBe('Museum|Park')
     selectAll(view)
-    expect(wholeNote(view)).toBe(true)
+    expect(wholePage(view)).toBe(true)
   })
 
   it('a bullet in an open cell note keeps the card’s ⌘A: the whole cell note, not the bullet', async () => {
-    const note = ['| Day | Plan |', '| --- | --- |', '| Monday | Flights[^cell-1] |', '', '[^cell-1]: Book the window seat.', '', '    * bullet a', '    * bullet b', ''].join('\n')
-    const view = await mount(note, { zoom: { title: () => 'Notes', onZoom: () => {} } })
+    const page = ['| Day | Plan |', '| --- | --- |', '| Monday | Flights[^cell-1] |', '', '[^cell-1]: Book the window seat.', '', '    * bullet a', '    * bullet b', ''].join('\n')
+    const view = await mount(page, { zoom: { title: () => 'Pages', onZoom: () => {} } })
     openCellNote(view, cellPos(view, 1, 1))
     caretIn(view, 'bullet a')
     expect(view.state.selection.$from.node(-1).type.name).toBe('list_item')

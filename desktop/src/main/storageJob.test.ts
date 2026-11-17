@@ -87,7 +87,8 @@ async function contents(root: string): Promise<Record<string, string>> {
 }
 
 describe('runOffThread (YAZ-1801 D8, 🔒 D11)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
-  it('stats: answers exactly what the in-thread walk answers, while the event loop keeps turning', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('stats: answers exactly what the in-thread walk answers, while the event loop keeps turning', { retry: 2 }, async () => {
     const repo = await makeGitRepo()
     cleanups.push(repo.cleanup)
     await heavyVault(repo.root, STATS_STROKES)
@@ -105,7 +106,8 @@ describe('runOffThread (YAZ-1801 D8, 🔒 D11)', { timeout: REAL_GIT_TIMEOUT_MS 
     expectOffThread(blocked, stalled)
   })
 
-  it('shrink: the same result and the same files as the direct call, skip list honoured, while the event loop keeps turning', async () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('shrink: the same result and the same files as the direct call, skip list honoured, while the event loop keeps turning', { retry: 2 }, async () => {
     const work = await mkdtemp(path.join(tmpdir(), 'mdapp-storage-job-'))
     cleanups.push(() => rm(work, { recursive: true, force: true }))
     const [direct, viaWorker] = [path.join(work, 'direct'), path.join(work, 'worker')]

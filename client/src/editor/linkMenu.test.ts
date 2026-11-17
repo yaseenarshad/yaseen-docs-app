@@ -1,7 +1,7 @@
 /**
  * The one link menu (YAZ-3740) on a real editor, for each kind of link: the exact rows, their order, their groups
  * and their hints, and that each new row calls App's door with the link's target. Its flyout ("Open in ▸",
- * YAZ-3901) on `openMenuAt`: pointer and keys. A missing note and an ID of another vault of the window (YAZ-3905):
+ * YAZ-3901) on `openMenuAt`: pointer and keys. A missing page and an ID of another vault of the window (YAZ-3905):
  * their menus (their pills are `wikilinkPlugin.test.ts`'s).
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
@@ -20,12 +20,12 @@ const record = (path: string, title: string, id?: string): IndexRecord => ({
   ...(id === undefined ? {} : { id }), properties: {}, aliases: [], tags: [], links: [], embeds: [],
 })
 
-const NOTE = '/vault/AR v2 plan.md'
+const PAGE = '/vault/AR v2 plan.md'
 const ROAD = '/vault/Plans/Road Map.md'
 const DIR = '/vault/Projects'
-const records = [record(NOTE, 'AR v2 plan', 'YAS-466'), record(ROAD, 'Road Map')]
+const records = [record(PAGE, 'AR v2 plan', 'YAS-466'), record(ROAD, 'Road Map')]
 const folders = [record(`${DIR}/.folder.md`, 'Projects')]
-const paths: Record<string, string> = { 'yas-466': NOTE, 'plans/road map': ROAD, projects: DIR }
+const paths: Record<string, string> = { 'yas-466': PAGE, 'plans/road map': ROAD, projects: DIR }
 const resolve = (target: string) => paths[target.toLowerCase()] ?? null
 /** The window's other vaults: one uses `INL`, two use `TWO`. */
 const vaultsOf: VaultsOfLetters = (letters) => (letters === 'INL' ? ['In-harness-lab'] : letters === 'TWO' ? ['Alpha', 'Beta'] : [])
@@ -55,7 +55,7 @@ async function mountWith(markdown: string, options: (acts: Doors) => Partial<Par
   return { crepe, root, acts, view: crepe.editor.action((ctx) => ctx.get(editorViewCtx)) }
 }
 
-/** A note of a vault that uses IDs (`YAS`), with App's doors unless `withDoors` is false. */
+/** A page of a vault that uses IDs (`YAS`), with App's doors unless `withDoors` is false. */
 async function mount(markdown: string, withDoors = true, letters: VaultsOfLetters = vaultsOf) {
   const source = createWikilinkResolveSource()
   source.update(resolve, records, folders, true, ['YAS'])
@@ -68,7 +68,7 @@ async function mount(markdown: string, withDoors = true, letters: VaultsOfLetter
   return { ...m, onNotice }
 }
 
-/** A note with one Markdown link; `inApp` finds `/Other/Plan.md` for a relative href. */
+/** A page with one Markdown link; `inApp` finds `/Other/Plan.md` for a relative href. */
 async function mountMarkdown(markdown: string, extra: Partial<MarkdownLinkNav> = {}) {
   const nav: Partial<MarkdownLinkNav> = { open: vi.fn(), copy: vi.fn().mockResolvedValue(undefined), onNotice: vi.fn(), ...extra }
   const m = await mountWith(markdown, (acts) => {
@@ -159,12 +159,12 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
   })
 
-  it('YAZ-4936: "Open in Explore" after "Open in new tab" when the host has the door, for a note only; it opens the note\'s path there', async () => {
+  it('YAZ-4936: "Open in Explore" after "Open in new tab" when the host has the door, for a page only; it opens the page\'s path there', async () => {
     const source = createWikilinkResolveSource()
     source.update(resolve, records, folders, true, ['YAS'])
     const openExplore = vi.fn()
-    const note = await mountWith('pad [[YAS-466]] tail\n', () => ({ wikilinks: source, wikilinkNav: { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), openExplore }, vaultsOfLetters: vaultsOf }))
-    const menu = menuOf(note.root, note.view, 'AR v2 plan')
+    const page = await mountWith('pad [[YAS-466]] tail\n', () => ({ wikilinks: source, wikilinkNav: { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), openExplore }, vaultsOfLetters: vaultsOf }))
+    const menu = menuOf(page.root, page.view, 'AR v2 plan')
     expect(shape(menu).slice(2, 6)).toEqual(['Open', 'Open in new tab', 'Open in Explore', '──'])
     rowOf(menu, 'Open in Explore').click()
     expect(openExplore).toHaveBeenCalledOnce()
@@ -185,7 +185,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(flyoutOf(menu))).toEqual(['VS Code', 'Default app', '──', 'Reveal in Finder'])
   })
 
-  it('YAZ-4936: a Markdown pill to a note has "Open in Explore" too, and it opens the page through `openPath` with "explore"', async () => {
+  it('YAZ-4936: a Markdown pill to a page has "Open in Explore" too, and it opens the page through `openPath` with "explore"', async () => {
     const { root, view, nav } = await mountMarkdown('[the plan](../Other/Plan.md)\n', { exploreClick: () => false })
     const menu = menuOf(root, view, 'the plan')
     expect(shape(menu).slice(0, 3)).toEqual(['Open', 'Open in new tab', 'Open in Explore'])
@@ -230,12 +230,12 @@ describe('each new row calls its door with the link\'s target (YAZ-3740)', () =>
     rowOf(menuOf(root, view, 'AR v2 plan'), 'Remove from favorites').click()
     rowOf(menuOf(root, view, 'AR v2 plan'), 'Add to focus').click()
     for (const child of ['New window', 'VS Code', 'Default app', 'Reveal in Finder']) rowOf(flyoutOf(menuOf(root, view, 'AR v2 plan')), child).click()
-    expect(acts.showInSidebar).toHaveBeenCalledExactlyOnceWith(NOTE)
+    expect(acts.showInSidebar).toHaveBeenCalledExactlyOnceWith(PAGE)
     // The state the menu read goes with the toggle, as the tab menu's.
-    expect(acts.toggleFavorite).toHaveBeenCalledExactlyOnceWith([NOTE], true)
-    expect(acts.toggleFocus).toHaveBeenCalledExactlyOnceWith([NOTE], false)
-    for (const door of [acts.openNewWindow, acts.openVsCode, acts.openDefault, acts.reveal]) expect(door).toHaveBeenCalledExactlyOnceWith(NOTE)
-    expect(acts.listState).toHaveBeenCalledWith(NOTE)
+    expect(acts.toggleFavorite).toHaveBeenCalledExactlyOnceWith([PAGE], true)
+    expect(acts.toggleFocus).toHaveBeenCalledExactlyOnceWith([PAGE], false)
+    for (const door of [acts.openNewWindow, acts.openVsCode, acts.openDefault, acts.reveal]) expect(door).toHaveBeenCalledExactlyOnceWith(PAGE)
+    expect(acts.listState).toHaveBeenCalledWith(PAGE)
   })
 
   it('demo M2: only Copy path, Add to focus and Add to favorites carry an icon, as in the tab menu; no row has a hint', async () => {
@@ -377,11 +377,11 @@ describe('the flyout of a parent row (YAZ-3901)', () => {
   })
 })
 
-describe('the menus of a missing note and an ID of another vault (YAZ-3905; their pills: wikilinkPlugin.test.ts)', () => {
+describe('the menus of a missing page and an ID of another vault (YAZ-3905; their pills: wikilinkPlugin.test.ts)', () => {
   it('S10: its menu says what it can, and copies the ID', async () => {
     const { root, view, onNotice } = await mount('pad [[YAS-999]] tail\n')
-    const menu = menuOf(root, view, 'Missing note · YAS-999')
-    expect(shape(menu)).toEqual(['(Missing note · YAS-999)', '──', 'Copy ID', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
+    const menu = menuOf(root, view, 'Missing page · YAS-999')
+    expect(shape(menu)).toEqual(['(Missing page · YAS-999)', '──', 'Copy ID', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
     rowOf(menu, 'Copy ID').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith('YAS-999')
     await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Copied: YAS-999'))

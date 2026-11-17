@@ -1,12 +1,12 @@
-import { createNote as birth, folderPath, type NoteDisk, type Seed } from '@shared/noteBirth'
+import { createPage as birth, folderPath, type PageDisk, type Seed } from '@shared/pageBirth'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { typedFolders } from '@shared/linkResolver'
 
 export { folderPath }
 
-/** The renderer's disk for `@shared/noteBirth` (YAZ-4269 D1): the bridge. A missing template is null; any other read failure propagates. */
-export const bridgeDisk: NoteDisk = {
+/** The renderer's disk for `@shared/pageBirth` (YAZ-4269 D1): the bridge. A missing template is null; any other read failure propagates. */
+export const bridgeDisk: PageDisk = {
   read: (path) =>
     api.readFile(path).then(
       (file) => file.content,
@@ -17,21 +17,21 @@ export const bridgeDisk: NoteDisk = {
     ),
   createFile: (req) => api.createFile(req),
   createDir: (req) => api.createDir(req),
-  mintId: (path) => takeNoteId(path),
+  mintId: (path) => takePageId(path),
   isThere: (err) => err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS',
 }
 
-/** Birth of a note (`@shared/noteBirth` `createNote`, where its rules are told) over the bridge. Every caller in the app keeps this call. */
-export const createNote = (dir: string, title: string, ids: boolean, seed?: Seed, id?: string, templateAt?: string): Promise<string> => birth(bridgeDisk, dir, title, ids, seed, id, templateAt)
+/** Birth of a page (`@shared/pageBirth` `createPage`, where its rules are told) over the bridge. Every caller in the app keeps this call. */
+export const createPage = (dir: string, title: string, ids: boolean, seed?: Seed, id?: string, templateAt?: string): Promise<string> => birth(bridgeDisk, dir, title, ids, seed, id, templateAt)
 
 /**
- * The next ID of the vault that holds `path`, from the door in the main process (`fs:mint-note-id`,
+ * The next ID of the vault that holds `path`, from the door in the main process (`fs:mint-page-id`,
  * YAZ-2677 🔒 D4): the ONE way the front end gets an ID. The number is saved before it comes back,
  * so one that is then not used is a gap. Refused where the vault does not use IDs: a window one
  * answer behind makes nothing.
  */
-export async function takeNoteId(path: string): Promise<string> {
-  const id = await api.mintNoteId(path)
+export async function takePageId(path: string): Promise<string> {
+  const id = await api.mintPageId(path)
   if (id === null) throw new Error('this vault does not use IDs')
   return id
 }

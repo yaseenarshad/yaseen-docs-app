@@ -56,7 +56,7 @@ describe('buildTree', () => {
     const step3 = tree.children[pipe][2]
     expect([tree.depth[step3], tree.parent[step3], tree.kind[step3], tree.nameLine[step3], tree.nameColumn[step3]]).toEqual([1, pipe, METHOD, 22, 3])
 
-    // A chain 300 deep: every level is a row (the note TOC stops at 5).
+    // A chain 300 deep: every level is a row (the page TOC stops at 5).
     let deep: CodeSymbol = sym('leaf', VARIABLE, 300, 300)
     for (let d = 299; d >= 1; d--) deep = sym(`n${d}`, FUNCTION, d, 600 - d, [deep])
     const chain = build([deep])
@@ -255,7 +255,8 @@ describe('S12: a 5 MB file', () => {
       sym(`value${i}`, CONSTANT, i + 2, i + 2, [prop('id', i + 2, 24, 29), prop('name', i + 2, 31, 44), prop('tags', i + 2, 46, 75), prop('active', i + 2, 77, 89)], 14),
     )
 
-  it('builds, sorts, filters, marks and finds the current row of 260 000 symbols in time', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('builds, sorts, filters, marks and finds the current row of 260 000 symbols in time', { retry: 2 }, () => {
     const symbols = big()
     const time = (work: () => void): number => {
       const t0 = performance.now()

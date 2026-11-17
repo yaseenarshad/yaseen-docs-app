@@ -117,7 +117,7 @@ const cell = (el: ParentNode, r: number, c: number): HTMLElement => {
   if (td === null) throw new Error(`no cell ${r}:${c}`)
   return td
 }
-/** The data row index of the note titled `name`. */
+/** The data row index of the page titled `name`. */
 const rowOf = (el: ParentNode, name: string): number => Number([...el.querySelectorAll<HTMLElement>('td.view-table__name')].find((td) => td.textContent === name)!.dataset.cell!.split(':')[0])
 const gutter = (el: ParentNode, r: number) => cell(el, r, 0).parentElement!.querySelector<HTMLElement>('td.view-table__gutter')!
 const header = (el: ParentNode, c: number) => el.querySelectorAll<HTMLElement>('.view-table thead th')[c + 1]
@@ -201,7 +201,7 @@ describe('select gestures (YAZ-4593 S27, S28)', () => {
     expect(commits).toBe(0)
   })
 
-  it('with 600 notes (windowed), the selection marks the rows a scroll mounts', () => {
+  it('with 600 pages (windowed), the selection marks the rows a scroll mounts', () => {
     const many = Array.from({ length: 600 }, (_, i): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/n${String(i).padStart(3, '0')}.md`, basename: `n${i}`, name: `n${i}.md`, title: `n${String(i).padStart(3, '0')}`, folder: '', properties: {} }))
     const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n', { records: many })
     down(header(el, 1), { shiftKey: true })
@@ -237,7 +237,7 @@ describe('⌘C and ⌘V (YAZ-4593)', () => {
     expect(writeText).toHaveBeenCalledWith('idea')
   })
 
-  it('⌘V pastes from the top-left cell: values per kind, ONE write per note, the Name column skipped', async () => {
+  it('⌘V pastes from the top-left cell: values per kind, ONE write per page, the Name column skipped', async () => {
     const { el, writeValues, retitle } = mount(TABLE)
     clip = 'Renamed\t5\tdone\tyes\nOther\t7\tx\tno\n'
     key(cell(el, 0, 0), 'v', { metaKey: true })
@@ -256,7 +256,7 @@ describe('⌘C and ⌘V (YAZ-4593)', () => {
     ])
   })
 
-  it('⌘V skips a read-only note, a text that is no value of the kind, and a value that is already there', async () => {
+  it('⌘V skips a read-only page, a text that is no value of the kind, and a value that is already there', async () => {
     const { el, writeValues } = mount(TABLE, { records: locked() })
     clip = '9\tidea\n10\tdone'
     key(cell(el, 0, 1), 'v', { metaKey: true })
@@ -276,7 +276,7 @@ describe('⌘C and ⌘V (YAZ-4593)', () => {
 })
 
 describe('the selection right-click (YAZ-4593)', () => {
-  it('a cell range offers Copy, Paste, Clear cells and Fill; no Set value over two columns, no note actions', () => {
+  it('a cell range offers Copy, Paste, Clear cells and Fill; no Set value over two columns, no page actions', () => {
     const { el } = mount(TABLE)
     drag(el, [0, 1], [1, 2])
     rightClick(cell(el, 1, 1))
@@ -294,19 +294,19 @@ describe('the selection right-click (YAZ-4593)', () => {
     expect(items(el)).toContain('Copy path')
   })
 
-  it('rows offer Duplicate notes and Delete notes… (off with no host action)', () => {
+  it('rows offer Duplicate pages and Delete pages… (off with no host action)', () => {
     const { el } = mount(TABLE)
     down(gutter(el, 1))
     down(gutter(el, 2), { shiftKey: true })
     rightClick(cell(el, 2, 2))
-    // The row freeze is the view group's, before Delete notes… (YAZ-3746 13AW).
-    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below', 'Duplicate notes', 'Freeze up to this row', 'Delete notes…'])
-    // ViewsPane wires 11C's `onDuplicateNote` / `onDeleteNotes` at merge (YAZ-4592); without them the items are off.
-    expect(item(el, 'Delete notes…').disabled).toBe(true)
+    // The row freeze is the view group's, before Delete pages… (YAZ-3746 13AW).
+    expect(items(el)).toEqual(['Copy', 'Paste', 'Clear cells', 'Fill', 'Clear formatting', 'New row below', 'Duplicate pages', 'Freeze up to this row', 'Delete pages…'])
+    // ViewsPane wires 11C's `onDuplicatePage` / `onDeletePages` at merge (YAZ-4592); without them the items are off.
+    expect(item(el, 'Delete pages…').disabled).toBe(true)
     expect(item(el, 'Copy').disabled).toBe(false)
   })
 
-  it('with the host duplicate and trash (11C, YAZ-4592), Duplicate notes copies each row and Delete notes… asks, then trashes them all', () => {
+  it('with the host duplicate and trash (11C, YAZ-4592), Duplicate pages copies each row and Delete pages… asks, then trashes them all', () => {
     const duplicate = vi.fn()
     const trash = vi.fn(() => Promise.resolve())
     const { el } = mount(TABLE, {}, { duplicate, trash })
@@ -314,17 +314,17 @@ describe('the selection right-click (YAZ-4593)', () => {
     down(gutter(el, 1))
     down(gutter(el, 2), { shiftKey: true })
     rightClick(cell(el, 2, 2))
-    act(() => item(el, 'Duplicate notes').click())
+    act(() => item(el, 'Duplicate pages').click())
     expect(duplicate.mock.calls.map(([path]) => path)).toEqual(paths)
     rightClick(cell(el, 2, 2))
-    act(() => item(el, 'Delete notes…').click())
+    act(() => item(el, 'Delete pages…').click())
     expect(trash).not.toHaveBeenCalled()
     const del = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent === 'Delete')!
     act(() => del.click())
     expect(trash).toHaveBeenCalledExactlyOnceWith(paths)
   })
 
-  it('Clear cells writes the empty value once per note, only where there is a value and the note is not read only', async () => {
+  it('Clear cells writes the empty value once per page, only where there is a value and the page is not read only', async () => {
     const { el, writeValues } = mount(TABLE, { records: locked() })
     const creator = rowOf(el, 'Creator Economy')
     drag(el, [0, 1], [creator, 2])
@@ -351,7 +351,7 @@ describe('the selection right-click (YAZ-4593)', () => {
     expect(cell(el, 1, 2).style.getPropertyValue('--view-cell-fill')).toBe('var(--table-fill-red)')
   })
 
-  it('Set value › over one column writes that value to each note that does not have it', async () => {
+  it('Set value › over one column writes that value to each page that does not have it', async () => {
     const { el, writeValues } = mount(TABLE, { records: locked() })
     down(header(el, 3), { shiftKey: true })
     rightClick(cell(el, 2, 3))
@@ -359,7 +359,7 @@ describe('the selection right-click (YAZ-4593)', () => {
     act(() => item(el, 'Set value').click())
     act(() => item(el, 'Checked').click())
     await flush()
-    // 8 notes: Agentic Agency is read only, Creator Economy is already checked.
+    // 8 pages: Agentic Agency is read only, Creator Economy is already checked.
     expect(writeValues).toHaveBeenCalledTimes(6)
     for (const [, writes] of writeValues.mock.calls as unknown as [string, unknown][]) expect(writes).toEqual([{ key: 'published', value: true }])
   })
@@ -452,12 +452,12 @@ describe('one drag rule, ⇧+arrows and ⌘A (YAZ-4603 D53)', () => {
 describe('⌘\\ Clear formatting (YAZ-4603 D54)', () => {
   // Agentic Agency (row 0): a row fill and a Status cell fill; Attribution (row 1): a Priority cell fill. Status wraps, Priority clips.
   const FORMATTED = `${TABLE}    fills:
-      - note: "[[Agentic Agency]]"
+      - page: "[[Agentic Agency]]"
         fill: red
-      - note: "[[Agentic Agency]]"
+      - page: "[[Agentic Agency]]"
         column: note.status
         fill: blue
-      - note: "[[Attribution]]"
+      - page: "[[Attribution]]"
         column: note.priority
         fill: green
     columnWrap:
@@ -517,10 +517,10 @@ describe('⌘\\ Clear formatting (YAZ-4603 D54)', () => {
     expect(onNotice).not.toHaveBeenCalled()
   })
 
-  it('with nothing to clear: a fill of a note the view hides, or a link to nothing, is no reason to write (YAZ-4636 T9b)', () => {
+  it('with nothing to clear: a fill of a page the view hides, or a link to nothing, is no reason to write (YAZ-4636 T9b)', () => {
     const onNotice = vi.fn()
     const hidden = TEST_RECORDS.find((r) => r.title === 'VSL-v1')!
-    const { el, onChange } = mount(FORMATTED.replace('    columnWrap:', `      - note: "[[${hidden.title}]]"\n        fill: red\n      - note: "[[Nobody]]"\n        fill: red\n    columnWrap:`), { records: TEST_RECORDS.filter((r) => r !== hidden) }, { onNotice, vaultRecords: TEST_RECORDS })
+    const { el, onChange } = mount(FORMATTED.replace('    columnWrap:', `      - page: "[[${hidden.title}]]"\n        fill: red\n      - page: "[[Nobody]]"\n        fill: red\n    columnWrap:`), { records: TEST_RECORDS.filter((r) => r !== hidden) }, { onNotice, vaultRecords: TEST_RECORDS })
     key(cell(el, 2, 3), '\\', { metaKey: true })
     expect(onChange).not.toHaveBeenCalled()
     expect(onNotice).not.toHaveBeenCalled()
@@ -565,8 +565,8 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
       - property: file.name
         direction: ASC
 `
-  const note = (i: number, properties: Record<string, unknown> = {}): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/f/a${i}.md`, basename: `a${i}`, name: `a${i}.md`, title: `a${i}`, folder: 'f', properties })
-  const NOTES = [note(0, { num: 1, due: '2026-01-30', day: 'Monday', week: 'Week 1', tag: 'x' }), note(1, { num: 3 }), note(2), note(3), note(4)]
+  const page = (i: number, properties: Record<string, unknown> = {}): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/f/a${i}.md`, basename: `a${i}`, name: `a${i}.md`, title: `a${i}`, folder: 'f', properties })
+  const PAGES = [page(0, { num: 1, due: '2026-01-30', day: 'Monday', week: 'Week 1', tag: 'x' }), page(1, { num: 3 }), page(2), page(3), page(4)]
   const handle = (el: ParentNode) => el.querySelector<HTMLElement>('.view-table__fill-handle')
   /** Press the handle, move over `to`, release there. */
   function fillTo(el: HTMLElement, to: [number, number]) {
@@ -577,7 +577,7 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
   const writesOf = (writeValues: ReturnType<typeof vi.fn>, path: string) => (writeValues.mock.calls as unknown as [string, unknown][]).filter(([p]) => p === path).map(([, w]) => w)
 
   it('the handle sits in the corner of the focused cell, then of the selection; placing it renders nothing', () => {
-    const { el } = mount(FILL_TABLE, { records: NOTES })
+    const { el } = mount(FILL_TABLE, { records: PAGES })
     act(() => cell(el, 1, 2).focus())
     expect(handle(el)?.parentElement).toBe(cell(el, 1, 2))
     drag(el, [0, 1], [2, 3])
@@ -586,8 +586,8 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
     expect(commits).toBe(0)
   })
 
-  it('a drag down marks the target with its outer edges, and continues a number step; ONE write per note, no render while it drags', async () => {
-    const { el, writeValues } = mount(FILL_TABLE, { records: NOTES })
+  it('a drag down marks the target with its outer edges, and continues a number step; ONE write per page, no render while it drags', async () => {
+    const { el, writeValues } = mount(FILL_TABLE, { records: PAGES })
     drag(el, [0, 1], [1, 1])
     down(handle(el)!)
     move(cell(el, 3, 1))
@@ -601,12 +601,12 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
     expect(cell(el, 3, 1).textContent).toBe('7')
     await flush()
     expect(writeValues).toHaveBeenCalledTimes(2)
-    expect(writesOf(writeValues, NOTES[2].path)).toEqual([[{ key: 'num', value: 5 }]])
-    expect(writesOf(writeValues, NOTES[3].path)).toEqual([[{ key: 'num', value: 7 }]])
+    expect(writesOf(writeValues, PAGES[2].path)).toEqual([[{ key: 'num', value: 5 }]])
+    expect(writesOf(writeValues, PAGES[3].path)).toEqual([[{ key: 'num', value: 7 }]])
   })
 
   it('a drag up and to the left fills nothing and marks no target (YAZ-4636 T9a)', async () => {
-    const { el, writeValues } = mount(FILL_TABLE, { records: NOTES })
+    const { el, writeValues } = mount(FILL_TABLE, { records: PAGES })
     drag(el, [1, 1], [2, 2])
     down(handle(el)!)
     move(cell(el, 0, 1))
@@ -617,12 +617,12 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
   })
 
   it('one source row down: a date steps by a day, a weekday and a trailing number by 1, other text repeats', async () => {
-    const { el, writeValues } = mount(FILL_TABLE, { records: NOTES })
+    const { el, writeValues } = mount(FILL_TABLE, { records: PAGES })
     drag(el, [0, 2], [0, 5])
     fillTo(el, [2, 2])
     await flush()
     expect(writeValues).toHaveBeenCalledTimes(2)
-    expect(writesOf(writeValues, NOTES[1].path)).toEqual([
+    expect(writesOf(writeValues, PAGES[1].path)).toEqual([
       [
         { key: 'due', value: '2026-01-31' },
         { key: 'day', value: 'Tuesday' },
@@ -630,7 +630,7 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
         { key: 'tag', value: 'x' },
       ],
     ])
-    expect(writesOf(writeValues, NOTES[2].path)[0]).toEqual([
+    expect(writesOf(writeValues, PAGES[2].path)[0]).toEqual([
       { key: 'due', value: '2026-02-01' },
       { key: 'day', value: 'Wednesday' },
       { key: 'week', value: 'Week 3' },
@@ -639,7 +639,7 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
   })
 
   it('a drag right continues each row across the columns', async () => {
-    const records = [note(0, { num: 1, due: 2 }), note(1)]
+    const records = [page(0, { num: 1, due: 2 }), page(1)]
     const { el, writeValues } = mount(FILL_TABLE, { records })
     drag(el, [0, 1], [0, 2])
     fillTo(el, [0, 4])
@@ -651,9 +651,9 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
     ])
   })
 
-  it('read-only notes and the Name column are skipped; Undo writes the old values back, one write per note', async () => {
+  it('read-only pages and the Name column are skipped; Undo writes the old values back, one write per page', async () => {
     const onNotice = vi.fn()
-    const records = NOTES.map((r, i) => (i === 2 ? { ...r, properties: { ...r.properties, readonly: true } } : r))
+    const records = PAGES.map((r, i) => (i === 2 ? { ...r, properties: { ...r.properties, readonly: true } } : r))
     const { el, writeValues, retitle } = mount(FILL_TABLE, { records }, { onNotice })
     // Name a0, a1 would go on as a2, a3: the Name column is never written.
     drag(el, [0, 0], [1, 1])
@@ -669,8 +669,8 @@ ${COLS.map((k) => `      - note.${k}`).join('\n')}
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(records[3].path, [{ key: 'num', value: undefined }])
   })
 
-  it('a windowed table (600 notes) fills the rows a drag passes', async () => {
-    const many = Array.from({ length: 600 }, (_, i): IndexRecord => ({ ...note(i, i === 0 ? { num: 4 } : {}), title: `n${String(i).padStart(3, '0')}` }))
+  it('a windowed table (600 pages) fills the rows a drag passes', async () => {
+    const many = Array.from({ length: 600 }, (_, i): IndexRecord => ({ ...page(i, i === 0 ? { num: 4 } : {}), title: `n${String(i).padStart(3, '0')}` }))
     const { el, writeValues } = mount(FILL_TABLE, { records: many })
     act(() => cell(el, 0, 1).focus())
     down(handle(el)!)
@@ -803,7 +803,7 @@ describe('the selection follows the rows, or goes (YAZ-4636 T7)', () => {
     expect(selected(el)).toEqual([])
   })
 
-  it('Delete notes… trashes the notes the menu was opened on, even after the rows re-sorted under it', () => {
+  it('Delete pages… trashes the pages the menu was opened on, even after the rows re-sorted under it', () => {
     const trash = vi.fn(() => Promise.resolve())
     const { el, setRecords } = mount(RANKED, { records: ranked([1, 2, 3, 4]) }, { trash })
     down(gutter(el, 1))
@@ -811,12 +811,12 @@ describe('the selection follows the rows, or goes (YAZ-4636 T7)', () => {
     rightClick(cell(el, 2, 2))
     // r3 and r2 take rows 1 and 2 now; the menu was opened on r1 and r2.
     setRecords(ranked([1, 9, 8, 2]))
-    act(() => item(el, 'Delete notes…').click())
+    act(() => item(el, 'Delete pages…').click())
     confirmDelete()
     expect(trash).toHaveBeenCalledExactlyOnceWith(['/vault/r1.md', '/vault/r2.md'])
   })
 
-  it('a note shown under two groups is trashed once', () => {
+  it('a page shown under two groups is trashed once', () => {
     const trash = vi.fn(() => Promise.resolve())
     const both = { ...TEST_RECORDS[4], path: '/vault/both.md', basename: 'both', name: 'both.md', title: 'both', folder: '', properties: { tags: ['a', 'b'] } }
     const onlyC = { ...both, path: '/vault/onlyC.md', basename: 'onlyC', name: 'onlyC.md', title: 'onlyC', properties: { tags: ['c'] } }
@@ -825,7 +825,7 @@ describe('the selection follows the rows, or goes (YAZ-4636 T7)', () => {
     down(gutter(el, 0))
     down(gutter(el, 2), { shiftKey: true })
     rightClick(cell(el, 0, 1))
-    act(() => item(el, 'Delete notes…').click())
+    act(() => item(el, 'Delete pages…').click())
     confirmDelete()
     expect(trash).toHaveBeenCalledExactlyOnceWith([both.path, onlyC.path])
   })
@@ -850,19 +850,19 @@ describe('an internal copy keeps the stored value (YAZ-4636 T9c)', () => {
 })
 
 /**
- * A Linked mentions column (YAZ-4738 L1, L3): its cells are the titles of the notes that link to the row, as pills —
+ * A Linked mentions column (YAZ-4738 L1, L3): its cells are the titles of the pages that link to the row, as pills —
  * three, then "+N" — and nothing the table does writes it: no editor, no paste, no clear.
  */
 describe('a Linked mentions column is read only (YAZ-4738)', () => {
-  const note = (name: string, init: Partial<IndexRecord> = {}): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/${name}.md`, basename: name, name: `${name}.md`, title: name, folder: '', properties: { status: 'idea' }, links: [], embeds: [], ...init })
-  const hub = note('hub')
-  const lonely = note('lonely')
-  const linking = ['a', 'b', 'c', 'd'].map((name) => note(name, { links: ['hub'] }))
+  const page = (name: string, init: Partial<IndexRecord> = {}): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/${name}.md`, basename: name, name: `${name}.md`, title: name, folder: '', properties: { status: 'idea' }, links: [], embeds: [], ...init })
+  const hub = page('hub')
+  const lonely = page('lonely')
+  const linking = ['a', 'b', 'c', 'd'].map((name) => page(name, { links: ['hub'] }))
   const records = [...linking, hub, lonely]
   const settings = { columns: { used_by: { kind: 'mentions' as const } }, views: [], problems: [] }
   const VIEW = 'views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.used_by\n      - note.status\n    sort:\n      - property: file.name\n        direction: ASC\n'
 
-  it('shows the linking notes as pills, three then "+1"; a note nobody links to is empty', () => {
+  it('shows the linking pages as pills, three then "+1"; a page nobody links to is empty', () => {
     const { el } = mount(VIEW, { records }, { settings, vaultRecords: records })
     const cellOf = cell(el, rowOf(el, 'hub'), 1)
     expect([...cellOf.querySelectorAll('.view-table__chip, .view-link-pill')].map((pill) => pill.textContent)).toEqual(['a', 'b', 'c', '+1'])

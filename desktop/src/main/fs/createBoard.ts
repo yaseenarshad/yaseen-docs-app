@@ -6,12 +6,12 @@
  * MAIN PICKS THE CONTENT by the kind of `path` (`EMPTY_SCENE_JSON` or `EMPTY_DIAGRAM_XML`); the
  * renderer sends none, so this door can only ever make an empty board. `fs:create-file` stays
  * Markdown-only (YAZ-1289, D2). The board is born STAMPED (Draw's 🔒 YAZ-1834 D3, YAZ-1802 D7): its
- * two dates, both "now", go first, so no board this app creates ever exists without them. No note
- * ID, in any vault: IDs are for notes only (D9).
+ * two dates, both "now", go first, so no board this app creates ever exists without them. No page
+ * ID, in any vault: IDs are for pages only (D9).
  *
  * `createDurable` never writes over anything: an existing name rejects EEXIST, which
  * `toBridgeFailure` maps to ALREADY_EXISTS and the caller answers with the next free name. The
- * parent folder must exist (`NOT_FOUND`), the same as a note's.
+ * parent folder must exist (`NOT_FOUND`), the same as a page's.
  */
 import { stat } from 'node:fs/promises'
 import type { BoardKind, CreateBoardResponse, NewBoardPictures } from '@shared/types'
