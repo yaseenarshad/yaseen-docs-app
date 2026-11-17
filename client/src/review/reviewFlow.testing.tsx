@@ -48,9 +48,9 @@ export const shortId = (id: string): string => id.replace(/^F([A-Z])-(\d+)$/, '$
 const iso = (t: number) => new Date(t).toISOString()
 
 /** The card line after its ID, for `kind`; `i` spreads the due dates (card 0 the most overdue). */
-function lineOf(kind: FlowKind, i: number, now: number): string {
-  // Each card one day more overdue than the one after it: Due today In order is the cards' order.
-  const back = (days: number) => iso(now - (days + 30 - i) * DAY)
+function lineOf(kind: FlowKind, i: number, now: number, flip: boolean): string {
+  // Each card one day more overdue than the one after it (`flip`: one day less): Due today In order is the cards' order.
+  const back = (days: number) => iso(now - (days + (flip ? i : 30 - i)) * DAY)
   switch (kind) {
     case 'due':
       return `, ${back(60)} good, ${back(50)} good`
@@ -75,9 +75,9 @@ function lineOf(kind: FlowKind, i: number, now: number): string {
 
 /**
  * A vault of `spec` (`[kind, how many]`, in order), with `review` settings; cards are named by kind: D1 (due), N1
- * (new), L1 (learned), O1 (old), S1 (short), X1 (later), U1 (Up next). `split` puts every second page in a folder.
+ * (new), L1 (learned), O1 (old), S1 (short), X1 (later), U1 (Up next). `flip`: the last card the most overdue.
  */
-export function flowVault(spec: readonly [FlowKind, number][], now: number, review: Record<string, unknown> = {}): FlowVault {
+export function flowVault(spec: readonly [FlowKind, number][], now: number, review: Record<string, unknown> = {}, flip = false): FlowVault {
   const letter: Record<FlowKind, string> = { due: 'D', new: 'N', learned: 'L', old: 'O', short: 'S', later: 'X', next: 'U' }
   const cards: FlowVault['cards'] = []
   const blocks: string[] = []
@@ -86,7 +86,7 @@ export function flowVault(spec: readonly [FlowKind, number][], now: number, revi
     for (let k = 1; k <= n; k++, i++) {
       const id = `${letter[kind]}${k}`
       cards.push({ id, kind, path: 'cards.md' })
-      blocks.push(`\`\`\`card\nQuestion ${id}?\n---\nAnswer {{${id}}}\n\`\`\`\n<!-- card: ${realId(id)}${lineOf(kind, i, now)} -->`)
+      blocks.push(`\`\`\`card\nQuestion ${id}?\n---\nAnswer {{${id}}}\n\`\`\`\n<!-- card: ${realId(id)}${lineOf(kind, i, now, flip)} -->`)
     }
   const files = { '.yaseendocs/review.json': JSON.stringify({ fuzz: false, newPerDay: null, dueTodayOrder: 'in-order', ...review }), 'cards.md': `---\ntitle: Cards\n---\n\n# Cards\n\n${blocks.join('\n\n')}\n` }
   return { files, review, cards, now }
@@ -584,6 +584,33 @@ export const FLOW_SCENARIOS: FlowScenario[] = [
     },
   },
   {
+    name: 'Order (⚙): Due today In order is the most overdue first, not the ID order (open item C); then Shuffle for the rest',
+    vault: (now) => flowVault([['due', 4]], now, {}, true),
+    async run(t) {
+      await t.start()
+      await t.filter('due')
+      want(t, 'In order: D4 is the most overdue', t.last!.card?.id, 'D4')
+      await t.answer('good', 'D4')
+      await t.answer('good', 'D3')
+      await t.order({ due: 'shuffle' })
+      await t.answerAll(() => 'good')
+      want(t, 'each card once, then Finished reviewing.', [[...t.shown].sort().join(' '), t.screens], ['D1 D2 D3 D4', ['Finished reviewing.']])
+    },
+  },
+  {
+    name: 'Order (⚙): All cards Due first, then Shuffle mid-run mixes the due and new cards not answered yet',
+    vault: (now) => flowVault([['due', 4], ['new', 4]], now),
+    async run(t) {
+      await t.start()
+      await t.answer('good', 'D1')
+      await t.order({ all: 'shuffle' })
+      await t.answerAll(() => 'good')
+      const kinds = t.kinds().slice(1, 8)
+      want(t, 'Shuffle: a new card comes before the last due card', [kinds.indexOf('N') < kinds.lastIndexOf('D'), t.screens], [true, ['Inbox complete.']])
+      await t.order({ all: 'due-first' })
+    },
+  },
+  {
     name: 'Due today with no miss: no % screen, "Finished reviewing." then Learn new cards',
     vault: (now) => flowVault([['due', 3], ['new', 1]], now),
     async run(t) {
@@ -773,7 +800,7 @@ export const FLOW_SCENARIOS: FlowScenario[] = [
     },
   },
   {
-    name: 'Midnight during a run: the run goes on; opened again, the new day',
+    name: 'Midnight during a run: the run goes on; the finish screen`s Today line is the new day`s',
     vault: (now) => flowVault([['due', 3], ['new', 1]], now),
     async run(t, now) {
       const late = new Date(now)
