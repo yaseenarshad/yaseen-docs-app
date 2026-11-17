@@ -17,7 +17,7 @@ import { storage } from '../lib/storage'
 import { countLinkReferences, linkingPages } from '../links/renameLinks'
 import { addShortcut, removeShortcut, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
-import { ancestorDirs, copyDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
+import { ancestorDirs, copyDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile, treeHasPath } from '../lib/treeState'
 import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { landOnCard } from '../editor/card/cardOpen'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
@@ -1239,9 +1239,13 @@ export function Sidebar({
   const placeTab = useRef<string | null | undefined>(undefined)
   /** The scroll to put back once the place's folders are drawn (the layout effect below). */
   const placeScroll = useRef<number | null>(null)
+  /** The selected rows on screen (YAZ-5769), kept current below `useSelection`. */
+  const placeSelected = useRef<ReadonlySet<string>>(new Set())
+  /** The rows to select again once the place's sidebar tab shows (the effect after `useSelection`, which clears on a tab change). */
+  const placeSelection = useRef<{ lens: SidebarTab; paths: readonly string[] } | null>(null)
   const placeHere = (body: HTMLElement | null): TabPlace => {
     const now = placeNow.current
-    return { lens: now.lens === 'search' ? storage.getSidebarLens() : now.lens, expanded: now.expanded, shut: { focus: shutStackFolders('focus'), favorites: shutStackFolders('favorites') }, scrollTop: body?.scrollTop ?? 0 }
+    return { lens: now.lens === 'search' ? storage.getSidebarLens() : now.lens, expanded: now.expanded, shut: { focus: shutStackFolders('focus'), favorites: shutStackFolders('favorites') }, scrollTop: body?.scrollTop ?? 0, selected: now.lens === 'search' ? [] : [...placeSelected.current] }
   }
   /** `folders` false at the mount: the tree started from the place's folders. */
   const putBack = (place: TabPlace, folders: boolean): void => {
@@ -1250,6 +1254,7 @@ export function Sidebar({
     setShutStackFolders('favorites', place.shut.favorites)
     if (place.lens !== placeNow.current.lens) onLensChange(place.lens)
     placeScroll.current = place.scrollTop
+    placeSelection.current = { lens: place.lens, paths: place.selected ?? [] }
   }
   useEffect(() => {
     const from = placeTab.current
@@ -1375,6 +1380,15 @@ export function Sidebar({
   useEffect(() => (bodyRef.current !== null ? stickyFolders(bodyRef.current, stickyLevels, zoomValue / 100) : undefined), [stickyLevels, zoomValue])
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
+  placeSelected.current = selectedPaths
+  // A tab's own selected rows come back with its place (YAZ-5769), once its sidebar tab shows and every tree has landed:
+  // after `useSelection`'s clear on a tab change, and before its prune drops a row the vault no longer has.
+  useEffect(() => {
+    const wanted = placeSelection.current
+    if (wanted === null || wanted.lens !== lens || !loaded || forest === null) return
+    placeSelection.current = null
+    dispatchSelection({ type: 'replace', paths: wanted.paths.filter((path) => treeHasPath(forest, path)) })
+  })
   // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the
   // first copy that shows it. Files and Search draw each row once, so they light every row of it, as before.
   const copyTops = lens === 'focus' ? focusNodes : lens === 'favorites' ? favoriteNodes : null

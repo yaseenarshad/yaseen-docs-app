@@ -14,6 +14,8 @@ export interface TabPlace {
   shut: { focus: ReadonlySet<string>; favorites: ReadonlySet<string> }
   /** The scroll of `.sidebar__body`. */
   scrollTop: number
+  /** The selected rows (YAZ-5769): put back on the same sidebar tab; a row the vault no longer has is dropped. */
+  selected: readonly string[]
 }
 
 /** By tab id, the place saved last at the end: never more tabs than the strip holds (`prunePlaces`). */

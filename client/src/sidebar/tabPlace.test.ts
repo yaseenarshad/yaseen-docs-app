@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { clearPlaces, foldersChangedHere, lastPlace, markFoldersChanged, prunePlaces, readPlace, savePlace, type TabPlace } from './tabPlace'
 
-const place = (lens: TabPlace['lens'], scrollTop: number): TabPlace => ({ lens, expanded: [`/v/${lens}`], shut: { focus: new Set(['f']), favorites: new Set() }, scrollTop })
+const place = (lens: TabPlace['lens'], scrollTop: number): TabPlace => ({ lens, expanded: [`/v/${lens}`], shut: { focus: new Set(['f']), favorites: new Set() }, scrollTop, selected: [] })
 
 afterEach(clearPlaces)
 

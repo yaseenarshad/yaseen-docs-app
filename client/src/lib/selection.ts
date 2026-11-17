@@ -22,6 +22,8 @@ export type SelectionAction =
   | { type: 'clear' }
   /** Drop what the vault no longer has; `exists` is asked once per selected path. */
   | { type: 'prune'; exists: (path: string) => boolean }
+  /** A tab's own selected rows, put back with its sidebar place (YAZ-5769). */
+  | { type: 'replace'; paths: readonly string[] }
 
 /**
  * Every no-op returns the SAME set, deliberately: this feeds a `useReducer`, so an unchanged
@@ -44,6 +46,9 @@ export function selectionReducer(sel: ReadonlySet<string>, action: SelectionActi
       const kept = [...sel].filter(action.exists)
       return kept.length === sel.size ? sel : new Set(kept)
     }
+    case 'replace':
+      if (action.paths.length === 0) return sel.size === 0 ? sel : EMPTY_SELECTION
+      return action.paths.length === sel.size && action.paths.every((path) => sel.has(path)) ? sel : new Set(action.paths)
   }
 }
 
