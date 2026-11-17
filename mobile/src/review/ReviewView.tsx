@@ -797,6 +797,7 @@ function SessionScreen({
                 marks={page === null ? null : { off: false, next: page.next === true, fix: false, notitle: page.notitle === true, ...(page.titleAt !== undefined && { titleAt: page.notitle === true ? 'never' : page.titleAt }) }}
                 upNext
                 fix={false}
+                titleGlobal={review.settings.titleAt}
                 rowClassName="review__menu-row"
                 onAction={(a) => {
                   if (a.kind === 'off') return archive()

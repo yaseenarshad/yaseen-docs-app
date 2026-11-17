@@ -89,7 +89,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(head.querySelector('.card__more')!.getAttribute('aria-label')).toBe('Card actions: Speed of light')
     const menu = await openMenu()
     expect(menu.getAttribute('aria-label')).toBe('Card actions: RV-17')
-    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›'])
+    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title in reviewDefault (Always) ›'])
     // The ⋯ again closes it.
     await tap(head.querySelector<HTMLElement>('.card__more')!)
     expect(h!.host.querySelector('.card-menu')).toBeNull()
@@ -107,7 +107,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
     const menu = await openMenu()
-    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›'])
+    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title in reviewDefault (Always) ›'])
     expect(h!.button(/Headings/)).toBeNull()
 
     await tap(row(menu, 'off'))

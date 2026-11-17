@@ -5,6 +5,9 @@ import type { Answers } from '../answers/answers'
 import { changeCardLine } from '../answers/cardLineWrite'
 import { UnsentChangeError } from '../answers/ops'
 import CardActionRows from './CardActionRows'
+import { REVIEW_FILE } from '../app/vaultTabs'
+import { sanitizeReviewSettings } from '@shared/reviews'
+import type { CardTitleShow } from '@shared/cardTitleAt'
 import type { CardActionMarks } from './cardActions'
 
 export interface CardMenuForProps {
@@ -30,6 +33,25 @@ export interface CardMenuForProps {
  */
 export default function CardMenuFor({ answers, path, id, upNext, onClose, onNotice, rowClassName }: CardMenuForProps) {
   const [marks, setMarks] = useState<CardActionMarks | null>(null)
+  // The vault's Show card titles (review.json): Title in review's "Default (Always)" (YAZ-5696 round 2).
+  const [titleGlobal, setTitleGlobal] = useState<CardTitleShow | undefined>(undefined)
+  useEffect(() => {
+    if (answers === null) return
+    let live = true
+    void answers.text(REVIEW_FILE).then((text) => {
+      if (!live) return
+      let raw: unknown = {}
+      try {
+        raw = text === null ? {} : JSON.parse(text)
+      } catch {
+        raw = {}
+      }
+      setTitleGlobal(sanitizeReviewSettings(raw).titleAt)
+    })
+    return () => {
+      live = false
+    }
+  }, [answers])
   const [reads, setReads] = useState(0)
   useEffect(() => {
     if (answers === null) return
@@ -53,6 +75,7 @@ export default function CardMenuFor({ answers, path, id, upNext, onClose, onNoti
     <CardActionRows
       marks={marks}
       upNext={upNext}
+      titleGlobal={titleGlobal}
       disabled={answers === null}
       rowClassName={rowClassName}
       onAction={(action) => {
