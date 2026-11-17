@@ -660,19 +660,19 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.move).toHaveBeenCalledTimes(3)
   })
 
-  it('YAZ-5004: ⋯ opens a row of icon actions with their names (Undo off while there is nothing to undo); each runs the hook`s own action; Esc closes the row first', () => {
+  it('YAZ-5004, YAZ-5697 round 2: ⋯ opens the ONE card menu (Undo last review, then the card\'s Inbox rows; Undo off while there is nothing to undo); each runs the hook`s own action; Archive card asks first; Esc closes it', async () => {
     mount(TWO_SIDES)
     const more = () => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!
-    const actions = () => [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__more-action')]
+    const actions = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')]
     expect(actions()).toEqual([])
     act(() => more().click())
-    expect(actions().map((b) => [b.getAttribute('aria-label'), b.disabled])).toEqual([
+    expect(actions().map((b) => [b.textContent, b.disabled])).toEqual([
       ['Undo last review', true],
-      ['Archive card', false],
-      ['Put at top of Inbox', false],
       ['Open card', false],
+      ['Put at top of Inbox', false],
+      ['Archive card', false],
+      ['Title in review', false],
     ])
-    expect(actions().every((b) => b.querySelector('svg') !== null)).toBe(true)
     press('Escape')
     expect(actions()).toEqual([])
     expect(review.close).not.toHaveBeenCalled()
@@ -680,11 +680,15 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     const run = (label: string) => {
       act(() => more().click())
-      act(() => actions().find((b) => b.getAttribute('aria-label') === label)!.click())
+      act(() => actions().find((b) => b.textContent === label)!.click())
     }
     run('Undo last review')
     expect(review.undo).toHaveBeenCalledOnce()
     run('Archive card')
+    // One click never archives: it asks in place first.
+    expect(review.turnOff).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(el.querySelector('.ctx-menu__ask')?.textContent).toContain('Archive this card?'))
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click())
     expect(review.turnOff).toHaveBeenCalledOnce()
     run('Put at top of Inbox')
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
@@ -1050,7 +1054,7 @@ describe('the guided tour hears the Inbox (YAZ-5123)', () => {
       press(' ')
       expect(heard).toHaveLength(all)
       act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
-      const marks = [...el.querySelectorAll<HTMLElement>('.card-inbox__more-action[data-tour]')].map((b) => [b.getAttribute('aria-label'), b.dataset.tour])
+      const marks = [...el.querySelectorAll<HTMLElement>('.ctx-menu .ctx-menu__item[data-tour]')].map((b) => [b.textContent, b.dataset.tour])
       expect(marks).toEqual([['Archive card', 'card-menu-archive']])
     } finally {
       stop()
@@ -1182,7 +1186,7 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-part[data-kind="page"]')!.click())
     expect(vi.mocked(props.openPage).mock.lastCall).toEqual(asked)
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
-    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-action[aria-label="Open card"]')!.click())
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].find((b) => b.textContent === 'Open card')!.click())
     expect(vi.mocked(props.openPage).mock.calls).toEqual([asked, asked, asked])
     press('e')
     expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, { id: 'WIKI-9', index: 1 })
@@ -1930,14 +1934,14 @@ describe('YAZ-5430: To fix never shows in the Inbox (Yaseen: "As long as to fix 
     mount(TWO_SIDES)
     const labels = () => {
       act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
-      const out = [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__more-action')].map((b) => b.getAttribute('aria-label'))
+      const out = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)
       press('Escape')
       return out
     }
-    expect(labels()).toEqual(['Undo last review', 'Archive card', 'Put at top of Inbox', 'Open card'])
+    expect(labels()).toEqual(['Undo last review', 'Open card', 'Put at top of Inbox', 'Archive card', 'Title in review'])
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, fix: true } } }
     render()
-    expect(labels()).toEqual(['Undo last review', 'Archive card', 'Put at top of Inbox', 'Open card'])
+    expect(labels()).toEqual(['Undo last review', 'Open card', 'Put at top of Inbox', 'Archive card', 'Title in review'])
   })
 })
 

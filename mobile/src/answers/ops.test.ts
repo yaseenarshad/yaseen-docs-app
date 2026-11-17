@@ -18,6 +18,8 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     ['next', [{ kind: 'next', id: 'NC-2', on: true }], '<!-- card: NC-2, next -->'],
     ['fix', [{ kind: 'fix', id: 'NC-2', on: true }], '<!-- card: NC-2, fix -->'],
     ['notitle', [{ kind: 'notitle', id: 'NC-2', on: true }], '<!-- card: NC-2, notitle -->'],
+    // YAZ-5697 round 2: Title in review › on the phone, the Mac's words.
+    ['title', [{ kind: 'title', id: 'NC-2', choice: 'side2' }], '<!-- card: NC-2, title-side2 -->'],
   ]
   for (const [name, ops, want] of kinds) {
     it(`${name}: on a page, only that card's line changes`, () => {
@@ -259,5 +261,14 @@ describe('YAZ-5520: a list that holds an unreview and a review of the same revie
     const before = pg('NC-2, 2026-11-14T06:07:00.000Z good, tags "a"')
     expect(applyOps(before, [{ kind: 'review', id: 'NC-2', review: R2 }]).content).toBe(pg('NC-2, 2026-11-14T06:02:00.000Z again, 2026-11-14T06:07:00.000Z good, tags "a"'))
     expect(applyOps(before, [{ kind: 'review', id: 'NC-2', review: { at: '2026-11-14T06:30:00.000Z', rating: 'easy' } }]).content).toBe(pg('NC-2, 2026-11-14T06:07:00.000Z good, 2026-11-14T06:30:00.000Z easy, tags "a"'))
+  })
+})
+
+describe('YAZ-5697 round 2: Title in review › on the phone (the Mac\'s YAZ-5696 choice)', () => {
+  const line = (text: string) => parseCardLine(`<!-- card: ${text} -->`)!
+  it('a choice of when the title shows is ONE `title` action, the Mac\'s change; Never alone stays a `notitle` action', () => {
+    expect(opsBetween('NC-1', line('NC-1'), line('NC-1, title-front'))).toEqual([{ kind: 'title', id: 'NC-1', choice: 'front' }])
+    expect(opsBetween('NC-1', line('NC-1, title-front'), line('NC-1'))).toEqual([{ kind: 'title', id: 'NC-1', choice: 'default' }])
+    expect(opsBetween('NC-1', line('NC-1'), line('NC-1, notitle'))).toEqual([{ kind: 'notitle', id: 'NC-1', on: true }])
   })
 })

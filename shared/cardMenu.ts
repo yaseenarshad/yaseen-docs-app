@@ -7,13 +7,12 @@
  *   1. Open: Open card (a card in a page or an embed) or Open page / Open page in a new tab (the card window); Preview.
  *   2. The file: Show as link, Move to its own file, Put back into this page, Turn into a page.
  *   3. The review: Put at top of Inbox, Archive card, Fix later, Title in review › (YAZ-5696: Default · At once · After
- *      the front · With Side 2 · Never; the phone, which cannot write a title choice yet, keeps Title on the front).
+ *      the front · With Side 2 · Never; the phone too).
  *   4. Copy card ID, Copy card link.
  *   5. Reset history, alone (it asks by typing, `askResetHistory`).
  *
  * THE ONE ASK RULE: a row that changes the card or its file, and that the same row does not take back, asks in place
- * first (`ask`, Cancel first). Archive card (only Unarchive takes it back), a Title in review choice (and the phone's
- * Title on the front), Move to its own file and
+ * first (`ask`, Cancel first). Archive card (only Unarchive takes it back), a Title in review choice, Move to its own file and
  * Put back into this page (two files change, no Undo), Turn into a page (the file is rewritten and renamed). Put at top
  * of Inbox and Fix later do not ask: the same row says "Remove …" and takes it back. Show as link does not ask: it only
  * changes the page's text, and ⌘Z takes it back. Unarchive card does not ask: it only brings a card back.
@@ -21,9 +20,9 @@
  * The rows are data: the place runs a row by its `action` (its own writes: a page's transaction, the file, the Inbox's
  * Undo stack) and draws them with its menu (`ContextMenu`, or the page's DOM menu).
  */
-import { ARCHIVE_ASK, titleChoiceAsk, titleFrontAsk, type CardAsk } from './cardAsks'
-import { withCardFix, withCardNext, withCardNoTitle, withCardOff, withCardTitleChoice, type CardLine, type CardTitleChoice } from './cardLine'
-import { CARD_TITLE_CHOICES, cardTitleChoiceLabel } from './cardTitleShows'
+import { ARCHIVE_ASK, titleChoiceAsk, type CardAsk } from './cardAsks'
+import { withCardFix, withCardNext, withCardOff, withCardTitleChoice, type CardLine, type CardTitleChoice } from './cardLine'
+import { CARD_TITLE_CHOICES, cardTitleChoiceLabel } from './cardTitleAt'
 
 export type CardMenuAction =
   | 'open-card'
@@ -57,7 +56,7 @@ export interface CardMenuMarks {
 export interface CardMenuItem {
   action: CardMenuAction
   label: string
-  /** The right-hand word: a key, the card's ID, or Title on the front's state now (Show / Hide). */
+  /** The right-hand word: a key, the card's ID, or Title in review's choice now. */
   hint?: string
   /** It asks in place first (the one ask rule). */
   ask?: CardAsk
@@ -92,8 +91,6 @@ export interface CardMenuPlace {
   fix?: boolean
   /** The title row (default true): Title in review ›. */
   title?: boolean
-  /** The phone: Title on the front (Show / Hide), its one toggle, until it can write a title choice. */
-  titleToggle?: boolean
   /** The review rows wait (a read-only page that cannot write the file). */
   locked?: boolean
   /** Copy card ID: the ID, once the card has one. */
@@ -139,11 +136,7 @@ export function cardMenu(place: CardMenuPlace): CardMenuItem[][] {
       const fix = !m.fix
       review.push({ action: 'fix', label: fix ? 'Fix later' : 'Remove Fix later', on: fix, disabled, change: (l) => withCardFix(l, fix) })
     }
-    if (place.title !== false && place.titleToggle === true) {
-      // ONE toggle row (YAZ-5030): the hint is the state now; the row turns it to the other.
-      const hide = !m.notitle
-      review.push({ action: 'title', label: 'Title on the front', hint: m.notitle ? 'Hide' : 'Show', ask: titleFrontAsk(hide), on: hide, disabled, change: (l) => withCardNoTitle(l, hide) })
-    } else if (place.title !== false) {
+    if (place.title !== false) {
       // Title in review › (YAZ-5696): the hint and the ✓ say the choice now; another choice asks first.
       const now: CardTitleChoice = m.titleAt ?? (m.notitle ? 'never' : 'default')
       const children = CARD_TITLE_CHOICES.map(({ choice, label }): CardMenuItem => ({ action: 'title-choice', label, checked: choice === now, ask: choice === now ? undefined : titleChoiceAsk(choice), disabled, change: (l) => withCardTitleChoice(l, choice) }))

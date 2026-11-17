@@ -981,7 +981,7 @@ function InTheApp(props: SceneProps) {
             x={58}
             y={34}
             p={cardMenu}
-            items={cardMenuItems('file', { 'Title on the front': since(b, 0.6, 0.2) }, titleHidden ? 'Hide' : 'Show', unit)}
+            items={cardMenuItems('file', { 'Title in review': since(b, 0.6, 0.2) }, titleHidden ? 'never' : 'default', unit)}
           />
           {id !== 'c2-15' && <Pointer beat={b} from={pointer.from} to={pointer.to} move={pointer.move} click={pointer.click} show={pointer.show} />}
         </AppWindow>

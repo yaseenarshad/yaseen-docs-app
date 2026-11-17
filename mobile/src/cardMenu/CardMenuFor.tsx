@@ -43,7 +43,7 @@ export default function CardMenuFor({ answers, path, id, upNext, onClose, onNoti
     void answers.text(path).then((text) => {
       if (!live) return
       const card = text === null ? null : cardOnPageIn(path, text, id)
-      setMarks(card === null ? null : { off: card.off, next: card.next, fix: card.fix === true, notitle: card.notitle === true })
+      setMarks(card === null ? null : { off: card.off, next: card.next, fix: card.fix === true, notitle: card.notitle === true, ...(card.titleAt !== undefined && { titleAt: card.notitle === true ? 'never' : card.titleAt }) })
     })
     return () => {
       live = false

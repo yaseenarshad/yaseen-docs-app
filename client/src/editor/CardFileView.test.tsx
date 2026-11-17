@@ -188,13 +188,13 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(el.textContent).not.toContain('Open page')
   })
 
-  it('⋯: Put at top of Inbox, Archive card, Fix later, Title in review, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
+  it('⋯ (the one card menu, YAZ-5697 round 2): Preview, Turn into a page, Put at top of Inbox, Archive card, Fix later, Title in review, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     await mount(FILE)
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     const rows = await menu()
-    expect(rows).toEqual(['Preview', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Copy card link', 'Turn into a page'])
+    expect(rows).toEqual(['Preview', 'Turn into a page', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Copy card link'])
     pick('Copy card link')
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })

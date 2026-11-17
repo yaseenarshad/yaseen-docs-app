@@ -139,6 +139,11 @@ const boxes = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>('.ca
 const hidden = (root: HTMLElement) => [...root.querySelectorAll(`.${BOARD_EMBED_SYNTAX_CLASS}`)].map((el) => el.textContent ?? '').join('')
 const press = (el: Element | null | undefined) => el?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
 const menuLabels = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
+/** The open ask's answer (YAZ-5697: a row that asks in place; the ask is a lazy chunk). */
+const yes = async (label: string): Promise<void> => {
+  await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
+  ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === label)!.click()
+}
 const menuItem = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -362,7 +367,7 @@ describe('the ⋯ menu', () => {
     const { root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
     press(box.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title on the front', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
     menuItem('Archive card')!.click()
     await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
     await new Promise((r) => setTimeout(r, 20))
@@ -375,7 +380,7 @@ describe('the ⋯ menu', () => {
     const { crepe, root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
     press(box.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Archive card', 'Fix later', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
     // Open card: the card window, through the one open hook.
     const opened: CardOpenRequest[] = []
     const listen = (e: Event) => opened.push((e as CustomEvent<CardOpenRequest>).detail)
@@ -386,6 +391,7 @@ describe('the ⋯ menu', () => {
     // Archive card: the card line of the card file.
     press(box.querySelector('.card__more'))
     menuItem('Archive card')!.click()
+    await yes('Archive')
     await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, title "Capital of France", off -->'))
     // Show as link: the embed becomes the card's link, in the page.
     press(box.querySelector('.card__more'))
@@ -398,7 +404,7 @@ describe('the ⋯ menu', () => {
     const { root, view } = await mount('![[GEO-2]]\n')
     view.setProps({ editable: () => false })
     press(boxes(root)[0]!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Unarchive card', 'Fix later', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Put at top of Inbox', 'Unarchive card', 'Fix later', 'Title in review', 'Copy card ID'])
   })
 
   it('YAZ-5097: Fix later writes `fix` on the ORIGINAL; a card marked in the index says "To fix" in the head and Remove Fix later', async () => {
@@ -474,8 +480,11 @@ describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back in
     const { root } = await mount('Intro.\n\n![[GEO-140]]\n\nMid ![[GEO-140]] text.\n\n- Item\n\n  ![[GEO-140]]\n', { cards: { path: PLAN, convert } })
     const [lone, inline, inList] = boxes(root)
     press(lone!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put back into this page', 'Archive card', 'Fix later', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put back into this page', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
+    // YAZ-5697 round 2: it asks first ("Put this card back into this page?").
     menuItem('Put back into this page')!.click()
+    expect(convert.putBack).not.toHaveBeenCalled()
+    await yes('Put back')
     expect(convert.putBack).toHaveBeenCalledWith({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 0)
     // With words around it: no card block can go there.
     press(inline!.querySelector('.card__more'))
@@ -484,6 +493,7 @@ describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back in
     // An indented line under a list item: the second lone embed of that text.
     press(inList!.querySelector('.card__more'))
     menuItem('Put back into this page')!.click()
+    await yes('Put back')
     expect(convert.putBack).toHaveBeenLastCalledWith({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 1)
   })
 
@@ -503,7 +513,10 @@ describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back in
     const cards = [...root.querySelectorAll<HTMLElement>('.card:not(.card-embed)')]
     press(cards[1]!.querySelector('.card__more'))
     expect(menuLabels().slice(0, 3)).toEqual(['Open card', 'Preview', 'Move to its own file'])
+    // YAZ-5697 round 2: it asks first ("Move this card to its own file?").
     menuItem('Move to its own file')!.click()
+    expect(convert.move).not.toHaveBeenCalled()
+    await yes('Move')
     expect(convert.move).toHaveBeenCalledWith('GEO-2', 1)
     press(cards[2]!.querySelector('.card__more'))
     expect(menuLabels()).not.toContain('Move to its own file')

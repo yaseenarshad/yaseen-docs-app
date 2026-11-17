@@ -404,7 +404,7 @@ function Embedded(props: SceneProps) {
                         x={46}
                         y={20}
                         p={cardMenu}
-                        items={cardMenuItems('file', { 'Copy card link': copyActive }, 'Show', unit)}
+                        items={cardMenuItems('file', { 'Copy card link': copyActive }, 'default', unit)}
                       />
                     }
                   />

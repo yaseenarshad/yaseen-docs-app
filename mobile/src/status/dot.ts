@@ -1,6 +1,7 @@
 import type { AnswersState } from '../answers/answers'
 import type { LostAnswer, WaitingAnswer } from '../answers/outbox'
 import type { CardOp } from '../answers/ops'
+import { cardTitleChoiceLabel } from '@shared/cardTitleAt'
 import type { ShellSyncStatus } from '../app/syncPort'
 import type { TokenEndWarning } from '../auth/expiry'
 
@@ -192,7 +193,8 @@ const ANSWER_WORDS: Record<CardOp['kind'], (op: CardOp) => string> = {
   off: (op) => (op.kind === 'off' && !op.on ? 'Unarchive card' : 'Archive card'),
   next: (op) => (op.kind === 'next' && !op.on ? 'Not up next' : 'Up next'),
   fix: (op) => (op.kind === 'fix' && !op.on ? 'Fixed' : 'Fix later'),
-  notitle: (op) => (op.kind === 'notitle' && !op.on ? 'Title on the front: Show' : 'Title on the front: Hide'),
+  notitle: (op) => (op.kind === 'notitle' && !op.on ? 'Title in review: Default' : 'Title in review: Never'),
+  title: (op) => (op.kind === 'title' ? `Title in review: ${cardTitleChoiceLabel(op.choice)}` : 'Title in review'),
 }
 
 export function lostRows(lost: readonly LostAnswer[]): LostRow[] {

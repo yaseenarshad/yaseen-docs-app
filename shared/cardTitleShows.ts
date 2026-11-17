@@ -26,12 +26,5 @@ export function titleShows(card: { title: string; at: CardTitleAt; counts: reado
 }
 
 
-/** The ⋯ menu's "Title in review ›" choices (YAZ-5696), in order, with their words: the Mac's two card menus share them. */
-export const CARD_TITLE_CHOICES: readonly { choice: CardTitleChoice; label: string }[] = [
-  { choice: 'default', label: 'Default' },
-  { choice: 'once', label: 'At once' },
-  { choice: 'front', label: 'After the front' },
-  { choice: 'side2', label: 'With Side 2' },
-  { choice: 'never', label: 'Never' },
-]
-export const cardTitleChoiceLabel = (choice: CardTitleChoice): string => CARD_TITLE_CHOICES.find((c) => c.choice === choice)!.label
+/** The choices' words live with the choice (`cardTitleAt.ts`, small: the phone's status line names them too). */
+export { CARD_TITLE_CHOICES, cardTitleChoiceLabel } from './cardTitleAt'

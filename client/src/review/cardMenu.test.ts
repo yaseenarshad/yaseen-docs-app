@@ -57,7 +57,7 @@ describe('one card menu (YAZ-5697 round 2)', () => {
       ['Never', true, null],
     ])
     // Archived: Unarchive card does not ask.
-    expect(asks({ marks: { ...NONE, off: true, notitle: true }, titleToggle: true })).toEqual([['Title on the front', 'Show the title on the front?', 'Show']])
+    expect(asks({ marks: { ...NONE, off: true } })).toEqual([])
   })
 
   it('the vault\'s word for a page; the phone\'s Up next; a read-only page\'s rows wait; no marks, no review rows', () => {

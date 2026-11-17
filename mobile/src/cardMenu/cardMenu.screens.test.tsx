@@ -89,7 +89,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(head.querySelector('.card__more')!.getAttribute('aria-label')).toBe('Card actions: Speed of light')
     const menu = await openMenu()
     expect(menu.getAttribute('aria-label')).toBe('Card actions: RV-17')
-    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title on the frontShow'])
+    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›'])
     // The ⋯ again closes it.
     await tap(head.querySelector<HTMLElement>('.card__more')!)
     expect(h!.host.querySelector('.card-menu')).toBeNull()
@@ -107,7 +107,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
     const menu = await openMenu()
-    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title on the frontShow'])
+    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›'])
     expect(h!.button(/Headings/)).toBeNull()
 
     await tap(row(menu, 'off'))
@@ -127,21 +127,30 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(rows(again)).toContain('Unarchive card')
   })
 
-  it('Title on the front: its ask\'s Hide hides it ("Title hidden in review", YAZ-5697); a tap outside cancels the ask', async () => {
+  it('Title in review › (YAZ-5696, YAZ-5697 round 2): its choices open under it; Never asks first, then hides it ("Title hidden in review"); a tap outside cancels the ask', async () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
     let menu = await openMenu()
-    await tap(row(menu, 'notitle'))
-    expect(menu.querySelector('[role="alertdialog"]')?.textContent).toContain('Hide the title on the front?')
+    await tap(row(menu, 'title'))
+    expect([...menu.querySelectorAll('[data-action^="title-"]')].map((b) => [b.textContent, b.getAttribute('aria-checked')])).toEqual([
+      ['Default✓', 'true'],
+      ['At once', 'false'],
+      ['After the front', 'false'],
+      ['With Side 2', 'false'],
+      ['Never', 'false'],
+    ])
+    await tap(row(menu, 'title-never'))
+    expect(menu.querySelector('[role="alertdialog"]')?.textContent).toContain('Never show the title in review?')
     await act(async () => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
     await h!.settle()
     // The tap outside cancels and (the reader's rule) closes the menu: nothing was written.
     expect(t.answers.waiting()).toEqual([])
     expect(h!.host.querySelector('.card-menu')).toBeNull()
     menu = await openMenu()
-    expect(row(menu, 'notitle').textContent).toBe('Title on the frontShow')
-    await tap(row(menu, 'notitle'))
-    await tap([...menu.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Hide')!)
+    expect(row(menu, 'title').textContent).toBe('Title in reviewDefault ›')
+    await tap(row(menu, 'title'))
+    await tap(row(menu, 'title-never'))
+    await tap([...menu.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Never')!)
     await waitFor(() => t.answers.waiting().length === 1)
     expect(t.answers.waiting()[0].op).toEqual({ kind: 'notitle', id: 'RV-1', on: true })
     await waitFor(() => h!.host.querySelector('.card-view__card .card__notitle') !== null)
@@ -184,7 +193,7 @@ describe('a page card\'s ⋯ (YAZ-5504)', () => {
     await tap(cards[2].querySelector<HTMLElement>('.card__more')!)
     await waitFor(() => cards[2].querySelector('[data-action="off"]') !== null && !row(cards[2], 'off').disabled)
     expect(cards[2].querySelector('.card__more')!.getAttribute('aria-expanded')).toBe('true')
-    expect(rows(cards[2].querySelector('.card-menu')!)).toEqual(['Up next', 'Unarchive card', 'Fix later', 'Title on the frontHide'])
+    expect(rows(cards[2].querySelector('.card-menu')!)).toEqual(['Up next', 'Unarchive card', 'Fix later', 'Title in reviewNever ›'])
     // The ⋯ again closes it.
     await tap(cards[2].querySelector<HTMLElement>('.card__more')!)
     expect(h!.host.querySelector('.card-menu')).toBeNull()
