@@ -1239,13 +1239,16 @@ export function Sidebar({
   const placeTab = useRef<string | null | undefined>(undefined)
   /** The scroll to put back once the place's folders are drawn (the layout effect below). */
   const placeScroll = useRef<number | null>(null)
-  /** The selected rows on screen (YAZ-5769), kept current below `useSelection`. */
+  /**
+   * The selected rows on screen (YAZ-5769), kept current below `useSelection`. Saved as they are, also when the switch
+   * shows Search: a blank tab opens on Search in the same commit, and Search has no selection of its own to save.
+   */
   const placeSelected = useRef<ReadonlySet<string>>(new Set())
   /** The rows to select again once the place's sidebar tab shows (the effect after `useSelection`, which clears on a tab change). */
   const placeSelection = useRef<{ lens: SidebarTab; paths: readonly string[] } | null>(null)
   const placeHere = (body: HTMLElement | null): TabPlace => {
     const now = placeNow.current
-    return { lens: now.lens === 'search' ? storage.getSidebarLens() : now.lens, expanded: now.expanded, shut: { focus: shutStackFolders('focus'), favorites: shutStackFolders('favorites') }, scrollTop: body?.scrollTop ?? 0, selected: now.lens === 'search' ? [] : [...placeSelected.current] }
+    return { lens: now.lens === 'search' ? storage.getSidebarLens() : now.lens, expanded: now.expanded, shut: { focus: shutStackFolders('focus'), favorites: shutStackFolders('favorites') }, scrollTop: body?.scrollTop ?? 0, selected: [...placeSelected.current] }
   }
   /** `folders` false at the mount: the tree started from the place's folders. */
   const putBack = (place: TabPlace, folders: boolean): void => {
