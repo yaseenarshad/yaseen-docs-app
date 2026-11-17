@@ -60,7 +60,7 @@ let props: CardInboxProps
 const TITLE = 'Capital of France'
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, learned: null, today: { learned: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, learned: null, today: { cards: 0, learned: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
 }
 
 function render() {
@@ -1468,6 +1468,10 @@ describe("YAZ-5674: the top right as Mochi's — ✕ K, the filter's icon, done 
     expect(top()?.querySelector('.session-count__done')?.textContent).toBe('4 / 6')
     expect(top()?.querySelector('.session-count__done svg')?.outerHTML).toBe(el.querySelector('.card-inbox__filter svg')?.outerHTML)
     expect(top()?.querySelector('[aria-label]')?.getAttribute('aria-label')).toBe('2 missed, 4 of 6 done')
+    // YAZ-5689 (Yaseen: "make the 3 normal black color", Mochi's): the done number, then "/ total" apart; the ✕'s number apart from the ✕.
+    expect(top()?.querySelector('.session-count__n')?.textContent).toBe('4')
+    expect(top()?.querySelector('.session-count__total')?.textContent).toBe(' / 6')
+    expect(top()?.querySelector('.session-count__misses-n')?.textContent).toBe('2')
     session = { ...session, filter: 'new', progress: { done: 0, total: 4, waiting: 0 }, misses: 0 }
     render()
     expect(top()?.querySelector('.session-count__misses')).toBeNull()
@@ -1487,24 +1491,28 @@ describe("YAZ-5674: the top right as Mochi's — ✕ K, the filter's icon, done 
     expect(top()).toBeNull()
   })
 
-  it('no "Today: …" and no "N of M" in the top row; today`s total is the cards menu`s last line', () => {
+  it('no "Today: …" and no "N of M" in the top row; the cards menu`s last line is "Today: N cards" alone (YAZ-5690): no reviews, no time, whatever Time so far says', () => {
     mount(TWO_SIDES, SHOWN)
-    session = { ...session, today: { learned: 31, reviews: 35, seconds: 9 * 60 + 10 } }
+    session = { ...session, today: { cards: 21, learned: 31, reviews: 35, seconds: 9 * 60 + 10 } }
     render()
     const bar = el.querySelector('.card-inbox__bar')!
     expect(bar.querySelector('.card-inbox__today')).toBeNull()
     expect(bar.textContent).not.toMatch(/Today|\d+ of \d+/)
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(document.querySelector('.card-inbox__menu-today')?.textContent).toBe('Today: 31 learned · 35 reviews · 9 min')
+    expect(document.querySelector('.card-inbox__menu-today')?.textContent).toBe('Today: 21 cards')
+    expect(document.querySelector('.card-inbox__menu-foot .card-inbox__time')).toBeNull()
+    session = { ...session, today: { cards: 1, learned: 1, reviews: 0, seconds: 0 } }
+    render()
+    expect(document.querySelector('.card-inbox__menu-today')?.textContent).toBe('Today: 1 card')
     // Nothing answered today: no line.
-    session = { ...session, today: { learned: 0, reviews: 0, seconds: 0 } }
+    session = { ...session, today: { cards: 0, learned: 0, reviews: 0, seconds: 0 } }
     render()
     expect(document.querySelector('.card-inbox__menu-today')).toBeNull()
   })
 
   it('the done screen says today`s total under "Inbox complete."', () => {
     mount(TWO_SIDES, SHOWN)
-    session = { ...session, card: null, today: { learned: 12, reviews: 14, seconds: 4 * 60 + 31 } }
+    session = { ...session, card: null, today: { cards: 26, learned: 12, reviews: 14, seconds: 4 * 60 + 31 } }
     render()
     const done = el.querySelector('.card-inbox__done')!
     expect(done.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
@@ -1516,107 +1524,102 @@ describe("YAZ-5674: the top right as Mochi's — ✕ K, the filter's icon, done 
   })
 })
 
-describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default), shown, or off', () => {
-  const today = { learned: 31, reviews: 35, seconds: 9 * 60 + 10 }
-  /** YAZ-5674: today's line is the cards menu's last line (the top row has Mochi's count): the menu opened. */
-  const bar = () => {
-    if (document.querySelector('.card-inbox__filter-menu') === null) act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    return document.querySelector('.card-inbox__menu-today')
+describe('YAZ-5689: the top row`s right end is the count and ONE sliders icon, "View"; a click opens Time, Zoom, Focus mode', () => {
+  const today = { cards: 21, learned: 31, reviews: 35, seconds: 9 * 60 + 10 }
+  const view = () => el.querySelector<HTMLButtonElement>('.card-inbox__bar .card-inbox__view')
+  const panel = () => document.querySelector<HTMLElement>('.card-inbox__view-panel')
+  const open = () => {
+    if (panel() === null) act(() => view()!.click())
+    return panel()!
   }
-  const clock = () => (bar(), document.querySelector<HTMLElement>('.card-inbox__menu-today .card-inbox__time'))
-  const tip = () => document.body.querySelector<HTMLElement>('.hover-tip[role="tooltip"]')
-  /** The mouse on the clock, past the hover box's wait. */
-  const hover = (on: Element) => {
-    vi.useFakeTimers()
-    try {
-      act(() => void on.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
-      act(() => void vi.advanceTimersByTime(400))
-    } finally {
-      vi.useRealTimers()
-    }
-  }
-  const unhover = (on: Element) => act(() => void on.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+  const rowsOf = () => [...open().querySelectorAll<HTMLElement>('.card-inbox__view-row')]
+  const labels = () => rowsOf().map((r) => r.querySelector('.card-inbox__view-label')!.textContent)
+  const timeRow = () => rowsOf().find((r) => r.dataset.row === 'time')
+  const withFocus = (on: boolean, onFocusMode: (on: boolean) => void) => act(() => root?.render(<CardInbox {...props} review={review} session={session} focusMode={on} onFocusMode={onFocusMode} />))
+  beforeEach(() => localStorage.removeItem('inbox:zoom'))
 
-  it('hidden (round 2, Yaseen: "its not a click"): a clock in the time`s place; the time shows ONLY in its hover box while the mouse is on it; a click shows nothing that stays', () => {
+  it('at rest: the count, then one quiet icon button — the page header`s sliders — "View", aria-haspopup, aria-expanded; no zoom pill, no focus button, no clock in the row', () => {
     mount(TWO_SIDES)
+    withFocus(false, vi.fn())
+    const bar = el.querySelector('.card-inbox__bar')!
+    expect(bar.querySelector('.card-inbox__tools, .document-zoom, .card-inbox__focus, .card-inbox__time')).toBeNull()
+    expect(view()!.previousElementSibling?.className).toBe('card-inbox__place')
+    expect(bar.lastElementChild).toBe(view())
+    expect([view()!.type, view()!.getAttribute('aria-label'), view()!.getAttribute('aria-haspopup'), view()!.getAttribute('aria-expanded'), view()!.tabIndex]).toEqual(['button', 'View', 'dialog', 'false', 0])
+    // The page header's "adjust" icon (`PropertiesIcon`): two lines with a knob each.
+    expect(view()!.querySelectorAll('svg path, svg circle').length).toBe(3)
+    expect(panel()).toBeNull()
+  })
+
+  it('a click opens the panel under it: Time, Zoom (− 100% +), Focus mode; a click again, Esc or a press outside closes it', () => {
+    mount(TWO_SIDES)
+    session = { ...session, today }
+    withFocus(false, vi.fn())
+    act(() => view()!.click())
+    expect([panel()?.getAttribute('role'), panel()?.getAttribute('aria-label'), view()!.getAttribute('aria-expanded')]).toEqual(['dialog', 'View', 'true'])
+    expect(labels()).toEqual(['Time', 'Zoom', 'Focus mode'])
+    expect(open().querySelector('.document-zoom')?.getAttribute('aria-label')).toBe('Inbox zoom')
+    act(() => view()!.click())
+    expect([panel(), view()!.getAttribute('aria-expanded')]).toEqual([null, 'false'])
+    open()
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(panel()).toBeNull()
+    open()
+    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(panel()).toBeNull()
+  })
+
+  it('Time follows Time so far: hidden (the default) behind a tap, "Show" then the time; shown: the time; off: no Time row', () => {
+    mount(TWO_SIDES)
+    session = { ...session, today }
+    render()
     expect(review.settings.timeSoFar).toBe('hidden')
+    const show = timeRow()!.querySelector<HTMLButtonElement>('button.card-inbox__view-time')!
+    expect([show.textContent, show.getAttribute('aria-label')]).toEqual(['Show', 'Show time so far'])
+    act(() => show.click())
+    expect(timeRow()!.querySelector('.card-inbox__view-time')!.textContent).toBe('9 min')
+    // It folds again with the panel: hidden each time it opens.
+    act(() => view()!.click())
+    expect(timeRow()!.querySelector('.card-inbox__view-time')!.textContent).toBe('Show')
+    act(() => view()!.click())
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, timeSoFar: 'shown' })
     session = { ...session, today }
     render()
-    expect(bar()?.textContent).toBe('Today: 31 learned · 35 reviews · ')
-    expect(clock()?.querySelector('svg')).not.toBeNull()
-    expect(clock()?.getAttribute('aria-label')).toBe('Time so far: 9 min')
-    expect(tip()).toBeNull()
-    hover(clock()!)
-    // Round 3 (Yaseen: "time so far: then next line"): the words, then the time on its own line, a little stronger.
-    expect([...tip()!.children].map((c) => [c.className, c.textContent])).toEqual([
-      ['card-inbox__time-label', 'Time so far:'],
-      ['card-inbox__time-value', '9 min'],
-    ])
-    // Round 3: one box only — no native tooltip on the clock or the line it sits in.
-    expect(clock()!.closest('[title]:not([title=""])')).toBeNull()
-    // Never on screen: the line keeps the clock.
-    expect(bar()?.textContent).toBe('Today: 31 learned · 35 reviews · ')
-    unhover(clock()!)
-    expect(tip()).toBeNull()
-    // A click is no toggle: the line stays the same, and the press takes no focus (the keyboard stays in the Inbox).
-    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
-    clock()!.dispatchEvent(down)
-    expect(down.defaultPrevented).toBe(true)
-    act(() => clock()!.click())
-    expect(bar()?.textContent).toBe('Today: 31 learned · 35 reviews · ')
-    expect(tip()).toBeNull()
-  })
-
-  it('hidden: the keyboard reaches the clock; its focus shows the box, the blur hides it', () => {
-    mount(TWO_SIDES)
-    session = { ...session, today }
-    render()
-    expect(clock()?.tabIndex).toBe(0)
-    act(() => clock()!.focus())
-    expect(tip()?.textContent).toBe('Time so far:9 min')
-    act(() => clock()!.blur())
-    expect(tip()).toBeNull()
-  })
-
-  it('YAZ-5665 (Yaseen: "on the completion screen can we show it?"): hidden, every finish screen shows the time, with no clock', () => {
-    mount(TWO_SIDES)
-    session = { ...session, card: null, today }
-    render()
-    const done = () => el.querySelector('.card-inbox__done-today')
-    expect(done()?.textContent).toBe('Today: 31 learned · 35 reviews · 9 min')
-    expect(el.querySelector('.card-inbox__done .card-inbox__time')).toBeNull()
-    // A page's, a filter's, and the Due today end too.
-    for (const more of [{ scope: 'page' as const }, { filter: 'new' as const, counts: { ...session.counts, all: 3 } }]) {
-      session = { ...session, ...more }
-      render()
-      expect(done()?.textContent).toBe('Today: 31 learned · 35 reviews · 9 min')
-    }
-  })
-
-  it('hidden with no seconds today: no clock, as there is no time to show', () => {
-    mount(TWO_SIDES)
-    session = { ...session, today: { learned: 2, reviews: 2, seconds: 0 } }
-    render()
-    expect(bar()?.textContent).toBe('Today: 2 learned · 2 reviews')
-    expect(clock()).toBeNull()
-  })
-
-  it('off: the cards alone, no clock, in the cards menu (the done screen: the time, YAZ-5665); the answer still saves its seconds', async () => {
+    expect(timeRow()!.querySelector('.card-inbox__view-time')!.textContent).toBe('9 min')
+    act(() => view()!.click())
     mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, timeSoFar: 'off' })
     session = { ...session, today }
     render()
-    expect(bar()?.textContent).toBe('Today: 31 learned · 35 reviews')
-    expect(document.querySelector('.card-inbox__time')).toBeNull()
-    // The menu closed (the second click of its button), the keys answer again.
-    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    await flush()
-    press('2')
-    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
-    session = { ...session, card: null }
-    render()
-    // YAZ-5665: the finish screen shows the time whatever the setting says.
-    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 31 learned · 35 reviews · 9 min')
-    expect(el.querySelector('.card-inbox__time')).toBeNull()
+    expect(labels()).toEqual(['Zoom'])
+  })
+
+  it('Zoom in the panel: + and − zoom the card; the key ladder works with the panel shut; away from 100% the icon wears a dot', () => {
+    mount(TWO_SIDES)
+    const level = () => el.querySelector<HTMLElement>('.card-inbox')!.style.getPropertyValue('--document-zoom')
+    expect(view()!.hasAttribute('data-zoomed')).toBe(false)
+    const plus = open().querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!
+    act(() => plus.click())
+    expect([level(), localStorage.getItem('inbox:zoom')]).toEqual(['1.25', '125'])
+    expect(view()!.hasAttribute('data-zoomed')).toBe(true)
+    act(() => view()!.click())
+    expect(panel()).toBeNull()
+    act(() => void el.querySelector('.card-inbox')!.dispatchEvent(new CustomEvent(ZOOM_EVENT, { detail: 0, bubbles: true, cancelable: true })))
+    expect(level()).toBe('1')
+    expect(view()!.hasAttribute('data-zoomed')).toBe(false)
+  })
+
+  it('Focus mode in the panel: the same button (aria-pressed) and F; without the App`s door no Focus mode row', () => {
+    mount(TWO_SIDES)
+    expect(labels()).toEqual(['Time', 'Zoom'])
+    act(() => view()!.click())
+    const onFocusMode = vi.fn()
+    withFocus(false, onFocusMode)
+    const focus = () => open().querySelector<HTMLButtonElement>('.card-inbox__focus')!
+    expect([focus().getAttribute('aria-label'), focus().getAttribute('aria-pressed')]).toEqual(['Focus mode', 'false'])
+    act(() => focus().click())
+    expect(onFocusMode).toHaveBeenLastCalledWith(true)
+    withFocus(true, onFocusMode)
+    expect(focus().getAttribute('aria-pressed')).toBe('true')
   })
 })
 
@@ -1652,45 +1655,31 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2', 'Due today10', 'New cards10'])
   })
 
-  it('round 2: a click on the count turns the row into "Add [10] more new cards" (the Settings number, selected); Enter adds the typed number and the menu stays open; Esc goes back; the keys stay in the field', () => {
+  it('YAZ-5690: a click on New cards` count picks the filter (the add is in the ⚙ part); Up next`s count still turns into "Add [2] more Up next"; Enter adds, Esc goes back, the keys stay in the field', () => {
     mount(TWO_SIDES)
     session = { ...session, ...WAITING }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    // A click on the name picks the filter; on the count, the field.
-    act(() => rows()[3].querySelector<HTMLElement>('.card-inbox__count')!.click())
-    expect(review.setFilter).not.toHaveBeenCalled()
-    expect(rows()[3].textContent).toBe('Add  more new cardsEnter')
-    expect(field()?.value).toBe('10')
-    expect(document.activeElement).toBe(field())
-    typeIn(field()!, '12')
-    // Space and the digits do not reach the Inbox; Esc does not close the menu.
-    key(field()!, ' ')
-    expect(review.answer).not.toHaveBeenCalled()
-    key(field()!, 'Enter')
-    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 12)
-    // The menu stays open, the row back to its count.
-    expect(rows()).toHaveLength(4)
-    expect(field()).toBeNull()
-    // Up next: its own field, at its own number; Esc goes back and the menu stays.
     act(() => rows()[1].querySelector<HTMLElement>('.card-inbox__count')!.click())
     expect(field()?.value).toBe('2')
     expect(rows()[1].textContent).toBe('Add  more Up nextEnter')
+    expect(document.activeElement).toBe(field())
+    key(field()!, ' ')
+    expect(review.answer).not.toHaveBeenCalled()
     key(field()!, 'ArrowUp')
     expect(field()?.value).toBe('3')
     key(field()!, 'Escape')
     expect(field()).toBeNull()
     expect(rows()).toHaveLength(4)
-    expect(review.addCards).toHaveBeenCalledTimes(1)
-    // Empty: Enter adds nothing.
-    act(() => rows()[3].querySelector<HTMLElement>('.card-inbox__count')!.click())
-    typeIn(field()!, '')
+    act(() => rows()[1].querySelector<HTMLElement>('.card-inbox__count')!.click())
+    typeIn(field()!, '4')
     key(field()!, 'Enter')
-    expect(review.addCards).toHaveBeenCalledTimes(1)
-    // Nothing waits: the count does not add, it picks the filter.
-    session = { ...session, more: { new: 0, next: 3 }, adds: { new: 0, next: 2 } }
-    render()
+    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('next', 4)
+    expect(rows()).toHaveLength(4)
+    // New cards: no field in the row, no "Click to add"; the click picks the filter.
+    expect(rows()[3].querySelector('.card-inbox__count')!.getAttribute('title')).toBeNull()
     act(() => rows()[3].querySelector<HTMLElement>('.card-inbox__count')!.click())
+    expect(field()).toBeNull()
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('new')
   })
 
@@ -2273,7 +2262,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
    */
   it('YAZ-5685: three even rows (glyph, name, count; no line under New cards); the Today line ends with a quiet ⚙, folded', () => {
     mount(TWO_SIDES)
-    session = { ...session, ...WAITING, today: { learned: 15, reviews: 26, seconds: 0 } }
+    session = { ...session, ...WAITING, today: { cards: 41, learned: 15, reviews: 26, seconds: 0 } }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     const items = [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')]
@@ -2290,7 +2279,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     const foot = document.querySelector('.card-inbox__menu-foot')!
     expect(foot.parentElement!.lastElementChild).toBe(foot)
     expect([...foot.children].map((c) => c.className)).toEqual(['card-inbox__menu-today', 'card-inbox__cog'])
-    expect(foot.querySelector('.card-inbox__menu-today')!.textContent).toBe('Today: 15 learned · 26 reviews')
+    expect(foot.querySelector('.card-inbox__menu-today')!.textContent).toBe('Today: 41 cards')
     expect([cog()!.tagName, cog()!.type, cog()!.getAttribute('aria-label'), cog()!.getAttribute('aria-expanded'), cog()!.tabIndex]).toEqual(['BUTTON', 'button', 'Review settings', 'false', 0])
     expect(cog()!.querySelector('svg')).not.toBeNull()
     expect(part()).toBeNull()
@@ -2309,7 +2298,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     expect(settings.parentElement!.lastElementChild).toBe(settings)
     expect(settings.querySelector('h6')!.textContent).toBe('New cards')
     const list = settings.querySelector('ul')!
-    expect([...list.children].map((li) => [li.tagName, li.getAttribute('data-setting'), li.firstElementChild!.textContent])).toEqual([['LI', 'from', 'From']])
+    expect([...list.children].map((li) => [li.tagName, li.getAttribute('data-setting'), li.firstElementChild!.textContent])).toEqual([['LI', 'from', 'From'], ['LI', 'add', 'Add today']])
     // The same control as before: a folder glyph, the pick, a small ▾; a button, so Tab reaches it.
     const from = list.querySelector<HTMLButtonElement>('.card-inbox__new-from')!
     expect([...from.children].map((c) => c.tagName.toLowerCase())).toEqual(['svg', 'span', 'svg'])
@@ -2324,9 +2313,36 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('new')
   })
 
+  it('YAZ-5690: the ⚙ part`s "Add today" — a number field at the Settings number and "Add" — adds that many new cards for today; Enter too; the menu stays open; nothing waiting: both off', () => {
+    mount(TWO_SIDES)
+    session = { ...session, ...WAITING }
+    render()
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
+    openSettings()
+    const row = () => part()!.querySelector<HTMLElement>('li[data-setting="add"]')!
+    const number = () => row().querySelector<HTMLInputElement>('input.card-inbox__add-number')!
+    const add = () => row().querySelector<HTMLButtonElement>('button.card-inbox__add-go')!
+    expect([number().value, number().getAttribute('aria-label'), add().textContent]).toEqual(['10', 'How many new cards to add', 'Add'])
+    // Not focused on its own: the menu keeps the keyboard where it was.
+    expect(document.activeElement).not.toBe(number())
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(number(), '12')
+      number().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => add().click())
+    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 12)
+    expect(document.querySelector('.card-inbox__filter-menu')).not.toBeNull()
+    act(() => void number().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    expect(review.addCards).toHaveBeenLastCalledWith('new', 12)
+    expect(review.setFilter).not.toHaveBeenCalled()
+    session = { ...session, more: { new: 0, next: 3 }, adds: { new: 0, next: 2 } }
+    render()
+    expect([number().disabled, add().disabled]).toEqual([true, true])
+  })
+
   it('YAZ-5685: closing the menu folds the part — a click on the filter, Esc — so it opens folded each time; with nothing done today the ⚙ stays', () => {
     mount(TWO_SIDES)
-    session = { ...session, ...WAITING, today: { learned: 0, reviews: 0, seconds: 0 } }
+    session = { ...session, ...WAITING, today: { cards: 0, learned: 0, reviews: 0, seconds: 0 } }
     render()
     const filter = () => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!
     act(() => filter().click())
@@ -2349,14 +2365,14 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     session = { ...session, ...WAITING, newFrom: SPANISH }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    const note = () => rows()[3].querySelector('.card-inbox__filter-note')
-    expect([note()?.textContent, rows()[3].querySelector('.card-inbox__count')!.textContent]).toEqual(['· Spanish', '10'])
+    const rowPick = () => rows()[3].querySelector('.card-inbox__filter-pick')
+    expect([rowPick()?.textContent, rows()[3].querySelector('.card-inbox__count')!.textContent]).toEqual(['· Spanish', '10'])
     session = { ...session, newFrom: [] }
     render()
-    expect(note()).toBeNull()
+    expect(rowPick()).toBeNull()
     session = { ...session, newFrom: SPANISH, newFallback: true }
     render()
-    expect(note()).toBeNull()
+    expect(rowPick()).toBeNull()
   })
 })
 
@@ -2368,20 +2384,6 @@ describe('the Inbox zoom (YAZ-5372)', () => {
   }
   const level = () => el.querySelector<HTMLElement>('.card-inbox')!.style.getPropertyValue('--document-zoom')
   beforeEach(() => localStorage.removeItem('inbox:zoom'))
-
-  it('the page zoom\'s own pill sits at the bar\'s end, after "3 of 12"; its + and − zoom the card\'s text and the value is kept', () => {
-    mount(TWO_SIDES)
-    const bar = el.querySelector('.card-inbox__bar')!
-    const pill = bar.querySelector('.card-inbox__tools > .document-zoom')!
-    expect(pill.getAttribute('aria-label')).toBe('Inbox zoom')
-    expect(bar.querySelector('.card-inbox__place + .card-inbox__tools')).not.toBeNull()
-    expect(level()).toBe('1')
-    act(() => pill.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!.click())
-    expect([level(), localStorage.getItem('inbox:zoom')]).toEqual(['1.25', '125'])
-    // A new Inbox (a restart) opens at the kept zoom.
-    mount(TWO_SIDES)
-    expect(level()).toBe('1.25')
-  })
 
   it('⌘+ / ⌘− / ⌘0 while the Inbox shows are its own — from the Inbox, the body, the tab row — never the sidebar\'s; a key in the sidebar or a claimed one is left alone', () => {
     mount(TWO_SIDES)
@@ -2432,33 +2434,3 @@ describe('the Inbox zoom (YAZ-5372)', () => {
   })
 })
 
-describe('focus mode on the Inbox bar (YAZ-5375)', () => {
-  const focusButton = () => el.querySelector<HTMLButtonElement>('.card-inbox__tools .card-inbox__focus')
-  const withFocus = (on: boolean, onFocusMode: (on: boolean) => void) => act(() => root?.render(<CardInbox {...props} review={review} session={session} focusMode={on} onFocusMode={onFocusMode} />))
-
-  it('a quiet icon button after the zoom, "Focus mode (F)"; a click, F and (while on) Esc turn it on or off; Esc with it off is not taken', () => {
-    mount(TWO_SIDES)
-    expect(focusButton()).toBeNull() // App gives the door
-    const onFocusMode = vi.fn()
-    withFocus(false, onFocusMode)
-    const tools = el.querySelector('.card-inbox__tools')!
-    expect(tools.firstElementChild?.classList.contains('document-zoom')).toBe(true)
-    expect([focusButton()!.getAttribute('aria-label'), focusButton()!.getAttribute('aria-pressed')]).toEqual(['Focus mode', 'false'])
-    act(() => focusButton()!.click())
-    expect(onFocusMode).toHaveBeenLastCalledWith(true)
-    press('f')
-    expect(onFocusMode).toHaveBeenLastCalledWith(true)
-    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-    act(() => void el.querySelector('.card-inbox')!.dispatchEvent(esc))
-    expect([esc.defaultPrevented, onFocusMode.mock.calls.length]).toEqual([false, 2])
-    withFocus(true, onFocusMode)
-    expect(focusButton()!.getAttribute('aria-pressed')).toBe('true')
-    press('F')
-    expect(onFocusMode).toHaveBeenLastCalledWith(false)
-    press('Escape')
-    expect(onFocusMode).toHaveBeenCalledTimes(4)
-    expect(onFocusMode).toHaveBeenLastCalledWith(false)
-    act(() => focusButton()!.click())
-    expect(onFocusMode).toHaveBeenLastCalledWith(false)
-  })
-})

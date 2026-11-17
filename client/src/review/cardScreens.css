@@ -476,7 +476,8 @@
   opacity: 0.6;
 }
 /* The card's place (YAZ-5017 round 2; YAZ-5132 the Inbox's one breadcrumb; YAZ-5682 no vault): folder › page, each a quiet link
-   with its icon; the middle parts give way first ("…"), the page keeps its name. */
+   with its icon. YAZ-5687 gap 4: the crumb takes the room it has; the folders give way first ("…", they shrink 100 times
+   sooner), then the page's name. No percentage cap: on a shrink-to-fit row it cut a lone page to "T…". */
 .card-inbox__path {
   flex: 0 1 auto;
   display: inline-flex;
@@ -492,7 +493,7 @@
   opacity: 0.6;
 }
 .card-inbox__path-part {
-  flex: 0 1 auto;
+  flex: 0 100 auto;
   display: inline-flex;
   align-items: center;
   min-width: 1.8em;
@@ -516,8 +517,7 @@
   text-overflow: ellipsis;
 }
 .card-inbox__path-part[data-kind='page'] {
-  flex-shrink: 0;
-  max-width: 60%;
+  flex: 0 1 auto;
   color: var(--fg);
 }
 .card-inbox__path-part:hover:not(:disabled) {
@@ -541,79 +541,94 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* Time so far, hidden (YAZ-5130): a small quiet clock in the time's place; round 2: its hover box shows the time, no click. */
-.card-inbox__time-tip {
-  display: inline-flex;
-  vertical-align: middle;
-}
-.card-inbox__time {
-  display: inline-flex;
-  align-items: center;
-  min-height: 18px;
-  padding: 0 3px;
-  border-radius: 5px;
-  cursor: default;
-}
-.card-inbox__time:hover {
-  background: color-mix(in srgb, var(--fg) 7%, transparent);
-  color: var(--fg);
-}
-/* Round 3: the hover box in two lines, "Time so far:" over the time, which is a little stronger. */
-.card-inbox__time-label,
-.card-inbox__time-value {
-  display: block;
-}
-.card-inbox__time-label {
-  color: var(--fg-muted);
-}
-.card-inbox__time-value {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.card-inbox__time:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.card-inbox__time:focus:not(:focus-visible) {
-  outline: none;
-}
-/* The bar's own controls (YAZ-5372: the Inbox's zoom, the page zoom's pill; YAZ-5375: focus mode), at its right end,
-   after "4 / 6". With no card (the done screen) it takes the push right. YAZ-5686 (Yaseen: "completely make them fade
-   unless u mouse over to that area"): invisible until the pointer enters their own area (a few px of slack around
-   them), then a 150 ms fade in; a keyboard focus inside, or the zoom's menu open, shows them too. Focus mode on hides
-   them the same way (F or Esc leave it). Opacity only: they keep their room, so nothing jumps. The ✕ and done / total count
-   (`.card-inbox__place`) never fades. */
-.card-inbox__tools {
+/* The top row's View (YAZ-5689, Yaseen: "should we make it behind one icon click?"): at rest the row's right end is the
+   count and ONE quiet icon, the page header's sliders; a click opens the panel (Time, Zoom, Focus mode). YAZ-5686's
+   hover fade is gone with the controls it hid. Away from 100% the icon wears a small accent dot. */
+.card-inbox__view {
+  position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin: -6px 0 -6px auto;
-  padding: 6px 0 6px 8px;
-  opacity: 0;
-  transition: opacity 150ms ease-out;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
 }
-.card-inbox__bar > .card-inbox__place ~ .card-inbox__tools {
+.card-inbox__place ~ .card-inbox__view {
   margin-left: 2px;
 }
-.card-inbox__tools:hover,
-.card-inbox__tools:focus-within,
-.card-inbox__tools:has(.document-zoom__trigger[aria-expanded='true']) {
-  opacity: 1;
+.card-inbox__view:hover,
+.card-inbox__view[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
 }
-.card-inbox__tools .document-zoom {
-  border-color: transparent;
+.card-inbox__view:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
-.card-inbox__tools:hover .document-zoom,
-.card-inbox__tools:focus-within .document-zoom {
-  border-color: var(--border);
+.card-inbox__view[data-zoomed]::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--bg-side);
+  border-radius: 50%;
+  background: var(--accent);
 }
-@media (prefers-reduced-motion: reduce) {
-  .card-inbox__tools {
-    transition: none;
-  }
+/* The panel: a short list, a label on the left and its control on the right of each row. */
+.card-inbox__view-panel {
+  padding: 6px;
 }
-/* Focus mode (YAZ-5375 C): the bar's quiet icon button, beside the zoom; pressed while the tab row is hidden. */
+.card-inbox__view-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.card-inbox__view-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 4px 0 8px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.card-inbox__view-label {
+  flex: 1 1 auto;
+}
+.card-inbox__view-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+button.card-inbox__view-time {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button.card-inbox__view-time:hover {
+  color: var(--fg);
+}
+.card-inbox__view-key {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+/* Focus mode (YAZ-5375 C): a quiet icon button, the View panel's Focus mode row (YAZ-5689); pressed while the tab row is hidden. */
 .card-inbox__focus {
   display: inline-flex;
   align-items: center;
@@ -925,8 +940,6 @@ body.card-inbox--sizing {
 }
 .card-inbox__place {
   flex: none;
-  font-size: 12px;
-  color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
 }
 .card-inbox__body {
@@ -1435,8 +1448,42 @@ body.card-inbox--sizing {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+/* "Add today [10] Add" (YAZ-5690): the field of the done screen's pill, then a quiet "Add"; nothing waiting: both off. */
+.card-inbox__add-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.card-inbox__add-setting .card-inbox__add-number {
+  border-color: var(--border);
+}
+.card-inbox__add-setting .card-inbox__add-number:focus {
+  border-color: var(--accent);
+}
+.card-inbox__add-go {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.card-inbox__add-go:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+}
+.card-inbox__add-go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.card-inbox__add-setting :disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 /* "New cards · Spanish": the pick, quiet, on the row; a long name gets "…" and never widens the menu much. */
-.card-inbox__filter-note {
+.card-inbox__filter-pick {
   min-width: 0;
   max-width: 110px;
   margin-left: -3px;

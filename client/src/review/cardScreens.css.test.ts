@@ -75,38 +75,29 @@ describe('the last answer\'s line is quiet for every answer (YAZ-5433)', () => {
 })
 
 /**
- * YAZ-5686 (Yaseen: "maybe just completely make them fade unless u mouse over to that area"): the Review top bar's
- * zoom (− 100% +) and full-screen button are invisible until the mouse enters THEIR area (not the whole bar), then fade
- * in (150 ms); keyboard focus in them, or the zoom's menu open, shows them. Opacity only: they keep their room, so
- * nothing jumps. Reduce motion: no fade. The ✕ and done / total count is never faded.
+ * YAZ-5689 (Yaseen: "should we make it behind one icon click?"): YAZ-5686's hover fade is gone with the controls it
+ * hid; the row's right end is the count and ONE quiet icon, "View", which wears a small accent dot while the zoom is
+ * not 100%. And YAZ-5687 gap 4: a top-level page's crumb was cut to "T…" with room to spare (a 60% cap of a shrink-to-fit
+ * row); the crumb takes the room it has, the folders give way first, then the page's name.
  */
-describe('the zoom and full-screen controls fade in only on hover (YAZ-5686)', () => {
+describe('the top row`s View icon and the breadcrumb (YAZ-5689)', () => {
   const all = rules(cards)
-  const opacityOne = all.filter((r) => r.decls['opacity'] === '1').flatMap((r) => r.selectors)
-
-  it('invisible by default, keeping their room; a 150 ms fade', () => {
-    // Outside the media queries (Reduce motion's own rule is its own test).
-    const tools = decls(cards.replace(/@media[^{]*\{[\s\S]*?\}\s*\}/g, ''), '.card-inbox__tools')
-    expect(tools['opacity']).toBe('0')
-    expect(tools['transition']).toBe('opacity 150ms ease-out')
-    for (const r of all.filter((r) => r.selectors.some((s) => s.includes('.card-inbox__tools')))) {
-      expect(r.decls['display']).not.toBe('none')
-      expect(r.decls['visibility']).toBeUndefined()
-    }
+  it('no rule left for the old tools or their fade', () => {
+    expect(all.filter((r) => r.selectors.some((s) => s.includes('.card-inbox__tools')))).toEqual([])
   })
 
-  it('shown on the pointer over their own area, a keyboard focus inside, or the zoom menu open; not on the whole bar', () => {
-    expect(opacityOne).toEqual(expect.arrayContaining(['.card-inbox__tools:hover', '.card-inbox__tools:focus-within', ".card-inbox__tools:has(.document-zoom__trigger[aria-expanded='true'])"]))
-    expect(opacityOne.filter((s) => s.includes('.card-inbox__bar:hover'))).toEqual([])
-    expect(all.filter((r) => r.selectors.some((s) => s.startsWith('.card-inbox__bar:hover') && s.includes('.card-inbox__tools')))).toEqual([])
+  it('the View icon: a quiet button; away from 100% a small accent dot', () => {
+    expect(decls(cards, '.card-inbox__view')).toMatchObject({ background: 'none', color: 'var(--fg-muted)' })
+    const dot = decls(cards, '.card-inbox__view[data-zoomed]::after')
+    expect(dot).toMatchObject({ background: 'var(--accent)', 'border-radius': '50%' })
   })
 
-  it('Reduce motion: shown and hidden at once', () => {
-    const raw = readFileSync(path.join(__dirname, 'cardScreens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
-    expect(raw).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.card-inbox__tools \{\s*transition: none;\s*\}/)
-  })
-
-  it('the ✕ and done / total count is never faded', () => {
-    for (const r of all.filter((r) => r.selectors.some((s) => /\.card-inbox__place\b/.test(s) && !s.includes('__tools')))) expect(r.decls['opacity']).toBeUndefined()
+  it('the crumb: no percentage cap on the page part; folders shrink far sooner than the page`s name', () => {
+    const part = decls(cards, '.card-inbox__path-part')
+    const page = decls(cards, ".card-inbox__path-part[data-kind='page']")
+    expect(page['max-width']).toBeUndefined()
+    const shrink = (d: Record<string, string>) => Number((d['flex'] ?? '').split(' ')[1] ?? d['flex-shrink'])
+    expect(shrink(part)).toBeGreaterThanOrEqual(100 * shrink(page))
+    expect(shrink(page)).toBeGreaterThan(0)
   })
 })

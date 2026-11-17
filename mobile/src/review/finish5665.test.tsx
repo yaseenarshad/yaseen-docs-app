@@ -63,6 +63,6 @@ describe('YAZ-5665: the finish screens always show the time on the phone', () =>
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...due(2)) })
     await answerAll(1)
     await h.click(/Choose what to review/)
-    expect(h.host.querySelector('.review__sheet-today')?.textContent).toBe('Today: 0 learned · 1 review · ⏱')
+    expect(h.host.querySelector('.review__sheet-today')?.textContent).toBe('Today: 1 card · ⏱')
   })
 })

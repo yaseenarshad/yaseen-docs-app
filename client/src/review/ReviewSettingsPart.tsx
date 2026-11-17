@@ -5,7 +5,7 @@
  *
  *  - `ReviewSettingsCog`: the small ⚙ at the right of the Today line; a click (Enter, Space) opens or folds the part.
  *  - `ReviewSettingsPart`: under the Today line, a list of sections, each a small title and its rows ("New cards":
- *    "From" and today's folder picker, the platform's own door). More sections and rows go in the list later.
+ *    "From" and today's folder picker, the platform's own door; "Add today" and its number, YAZ-5690). More sections and rows go in the list later.
  *  - `useSettingsFold`: the part's open state. It starts folded each time the menu opens (the menu's owner calls
  *    `fold` as it closes; the phone's sheet mounts fresh).
  */
@@ -22,8 +22,15 @@ export interface ReviewSettingsSection {
   rows: readonly ReviewSettingRow[]
 }
 
-/** The New cards section: "From" and the folder picker's door (the Mac's "All folders ▾", the phone's "All folders ›"). */
-export const newCardsSettings = (from: ReactNode): ReviewSettingsSection => ({ title: 'New cards', rows: [{ id: 'from', label: 'From', control: from }] })
+/**
+ * The New cards section: "From" and the folder picker's door (the Mac's "All folders ▾", the phone's "All folders ›");
+ * then "Add today" (YAZ-5690, Yaseen: "new cards from that place, add this many number… all under the settings cog"):
+ * a number field and "Add" (`AddMoreField`, look `setting`), the cards menu's old "click the count to add more".
+ */
+export const newCardsSettings = (from: ReactNode, add?: ReactNode): ReviewSettingsSection => ({
+  title: 'New cards',
+  rows: [{ id: 'from', label: 'From', control: from }, ...(add === undefined ? [] : [{ id: 'add', label: 'Add today', control: add }])],
+})
 
 export function useSettingsFold(): { open: boolean; toggle: () => void; fold: () => void; id: string } {
   const [open, setOpen] = useState(false)

@@ -14,10 +14,12 @@ interface ContextMenuSurfaceProps {
   width?: number
   /** What the surface announces: a `menu` by default; the Info popover is a `dialog` (Draw's 🔒 YAZ-1835 D6). */
   role?: 'menu' | 'dialog'
+  /** Its name for a screen reader (the Review top row's "View" panel, YAZ-5689). */
+  label?: string
 }
 
 /** Action-free context-menu mechanics shared by menus whose commands stay domain-owned. */
-export function ContextMenuSurface({ x, y, onClose, children, minWidth, className, width, role = 'menu' }: ContextMenuSurfaceProps) {
+export function ContextMenuSurface({ x, y, onClose, children, minWidth, className, width, role = 'menu', label }: ContextMenuSurfaceProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   const [position, setPosition] = useState({ left: x, top: y })
@@ -75,6 +77,7 @@ export function ContextMenuSurface({ x, y, onClose, children, minWidth, classNam
       ref={menuRef}
       className={['ctx-menu', className].filter(Boolean).join(' ')}
       role={role}
+      aria-label={label}
       style={{ left: position.left, top: position.top, width, minWidth }}
       onMouseDown={(event) => event.stopPropagation()}
     >

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CARD_SECONDS_MAX } from '@shared/cardLine'
 import { AnswerClock } from './answerTimer'
-import { reviewDuration, todayCards, todayDuration } from './reviewTime'
+import { reviewDuration, todayCards, todayDuration, todayStudied } from './reviewTime'
 
 /** YAZ-5033: the answer timer with no DOM, and the words for its time. */
 describe('AnswerClock', () => {
@@ -76,11 +76,17 @@ describe('the words for the time', () => {
   it('today: seconds under a minute, else whole minutes; the cards with the right word', () => {
     expect([0, 45, 60, 89, 90, 9 * 60 + 29].map(todayDuration)).toEqual(['0 s', '45 s', '1 min', '1 min', '2 min', '9 min'])
     // The time is its own part (YAZ-5130: hidden, shown or off by the setting); the cards always read the same.
-    expect(todayCards({ learned: 0, reviews: 0, seconds: 0 })).toBe('')
+    expect(todayCards({ cards: 0, learned: 0, reviews: 0, seconds: 0 })).toBe('')
     // YAZ-5684 (Mochi's Dashboard, which always shows both): new cards learned today, and due cards' first answers.
-    expect(todayCards({ learned: 31, reviews: 40, seconds: 540 })).toBe('Today: 31 learned · 40 reviews')
-    expect(todayCards({ learned: 1, reviews: 1, seconds: 0 })).toBe('Today: 1 learned · 1 review')
-    expect(todayCards({ learned: 2, reviews: 0, seconds: 0 })).toBe('Today: 2 learned · 0 reviews')
-    expect(todayCards({ learned: 0, reviews: 3, seconds: 0 })).toBe('Today: 0 learned · 3 reviews')
+    expect(todayCards({ cards: 71, learned: 31, reviews: 40, seconds: 540 })).toBe('Today: 31 learned · 40 reviews')
+    expect(todayCards({ cards: 2, learned: 1, reviews: 1, seconds: 0 })).toBe('Today: 1 learned · 1 review')
+    expect(todayCards({ cards: 2, learned: 2, reviews: 0, seconds: 0 })).toBe('Today: 2 learned · 0 reviews')
+    expect(todayCards({ cards: 3, learned: 0, reviews: 3, seconds: 0 })).toBe('Today: 0 learned · 3 reviews')
+  })
+
+  it('YAZ-5690: the cards menu`s foot, "Today: N cards" — every different card answered today; no reviews, no time', () => {
+    expect(todayStudied({ cards: 0, learned: 0, reviews: 0, seconds: 30 })).toBe('')
+    expect(todayStudied({ cards: 1, learned: 0, reviews: 0, seconds: 9 })).toBe('Today: 1 card')
+    expect(todayStudied({ cards: 21, learned: 4, reviews: 15, seconds: 540 })).toBe('Today: 21 cards')
   })
 })

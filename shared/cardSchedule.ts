@@ -643,9 +643,11 @@ export const cardQueue = (records: readonly CardPage[], s: ReviewSettings, now: 
 
 /**
  * Today's review work, as Mochi's Dashboard "Today" counts it (YAZ-5684; YAZ-5671 finding 13): "Today: 2 learned ·
- * 3 reviews · 2 min".
+ * 3 reviews · 2 min" (the finish screens). The cards menu's foot says `cards` alone (YAZ-5690): "Today: 21 cards".
  */
 export interface ReviewedToday {
+  /** Every different card answered today, new and due, whatever the answer (YAZ-5690, Yaseen: "today twenty one cards"). */
+  cards: number
   /** New cards that got their first ✓ today (a Forgot on a new card counts nowhere). */
   learned: number
   /** The FIRST answer today on each card that was a due card this morning (it had a ✓ before today): a retry in the missed pass adds nothing, nor a learned card's later answers. */
@@ -667,6 +669,7 @@ export function reviewedToday(pages: readonly { cards?: readonly CardRecord[] }[
   end.setDate(end.getDate() + 1)
   const from = cardTime(start.getTime())
   const to = cardTime(end.getTime())
+  let cards = 0
   let learned = 0
   let reviews = 0
   let seconds = 0
@@ -686,9 +689,10 @@ export function reviewedToday(pages: readonly { cards?: readonly CardRecord[] }[
         seconds += r.seconds ?? 0
       }
       if (!today) continue
+      cards++
       if (knownBefore) reviews++
       else if (rightToday) learned++
     }
   }
-  return { learned, reviews, seconds }
+  return { cards, learned, reviews, seconds }
 }

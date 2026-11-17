@@ -105,6 +105,6 @@ describe("today's counts: the day's bounds as card times", () => {
     const at = (h: number, m: number, s: number, ms: number, day = 15) => cardTime(new Date(2026, 10, day, h, m, s, ms).getTime())
     const rec = (a: string) => ({ id: a, off: false, next: false, reviews: [{ at: a, rating: 'good' as const }] })
     const pages = [{ cards: [rec(at(0, 0, 0, 0)), rec(at(23, 59, 59, 999)), rec(at(0, 0, 0, 0, 16)), rec(at(23, 59, 59, 999, 14))] }]
-    expect(reviewedToday(pages, now)).toMatchObject({ cards: 2, reviews: 2 })
+    expect(reviewedToday(pages, now)).toEqual({ cards: 2, learned: 2, reviews: 0, seconds: 0 })
   })
 })

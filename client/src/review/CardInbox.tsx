@@ -71,11 +71,11 @@
  *  - HOW LONG EACH ANSWER TOOK (YAZ-5033, `answerTimer.ts`): the timer starts when a card shows (again when ⌘Z shows
  *    it again), pauses while the Inbox is not in front and over any stretch of "Pause the timer after" with no key or
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The cards menu's last line
- *    says today's work across the vault (YAZ-5674: out of the top row), "Today: 2 learned · 31 reviews · 9 min" (`session.today`, from
- *    the index), and the done screen says it too.
- *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (round 2: only its hover box
- *    shows it, and a keyboard focus), or shows, or is off, by Settings › Review › Time so far, DURING the review: every
- *    finish screen shows the time (YAZ-5665, `DoneScreen`). The timer and the saved seconds do not change with it.
+ *    says "Today: 21 cards" (YAZ-5690, `session.today`, from the index); the done screen says "Today: 2 learned · 31
+ *    reviews · 9 min".
+ *    TIME SO FAR (YAZ-5130; YAZ-5689 in the top row's View panel, `ReviewViewButton`): behind a "Show" by default, or
+ *    shown, or off, by Settings › Review › Time so far, DURING the review: every finish screen shows the time
+ *    (YAZ-5665, `DoneScreen`). The timer and the saved seconds do not change with it.
  *  - REVIEWS AT THE BOTTOM OF THE LAST SIDE (YAZ-5105, as Mochi; it amends YAZ-5000, which took them out of the Inbox):
  *    a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card, outside its frame (round 2): the
  *    card window's own `CardReviews`, closed until asked for, with no delete here. Round 3: it shows as soon as the
@@ -103,7 +103,8 @@ import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides } from '@shared/cardText'
 import { withCardTitle } from '@shared/cardLine'
 import { PageTitle } from '../editor/PageTitle'
-import { DocumentZoom, savedZoom, saveZoom, zoomByKey } from '../editor/DocumentZoom'
+import { savedZoom, saveZoom, zoomByKey } from '../editor/DocumentZoom'
+import { ReviewViewButton } from './ReviewViewButton'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
 import type { ZoomStep } from '@shared/types'
 import { changeCardLine } from './cardFile'
@@ -122,7 +123,6 @@ import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CardInboxBar } from './CardInboxBar'
 import { CardAgainChip, CardStateChip, answerIcon, answerLine, showsAgain } from './cardInboxChip'
-import { FocusIcon } from './cardInboxIcons'
 import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
 import { CardInboxHints } from './CardInboxHints'
 import { KeyLabel } from '../keys/KeyLabel'
@@ -254,7 +254,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   )
   // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
   const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown, review.settings.pauseAfter)
-  // Time so far (YAZ-5130): hidden in the clock's hover box by default (round 2: hover only, never a click).
+  // Time so far (YAZ-5130): the View panel's Time row (YAZ-5689), behind a "Show" by default.
   const time = review.settings.timeSoFar
 
   // Space's steps (D18, YAZ-5048, YAZ-5049, YAZ-5105 round 3) and the scroll that follows them: the Inbox's card,
@@ -273,7 +273,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   }, [page, session.answers, showAnswers])
 
   /**
-   * THE INBOX'S ZOOM (YAZ-5372): the page zoom's own pill and key ladder (`DocumentZoom`), and its own rule: the Inbox
+   * THE INBOX'S ZOOM (YAZ-5372): the page zoom's own pill (in the top row's View panel, YAZ-5689) and key ladder (`DocumentZoom`), and its own rule: the Inbox
    * carries `--document-zoom` as a page's scroller does, so the whole card scales as a page does (app.css) — its text,
    * title band, sides, pictures, spacing and width (Card width × zoom, capped by the window). The bar, the head and the
    * buttons stay. One value for the Inbox, kept across restarts (`inbox:zoom` in localStorage).
@@ -476,20 +476,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         addCards={review.addCards}
         resetCards={review.resetCards}
         openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))}
-        time={time}
         pick={review}
-        tools={
-          <>
-            <DocumentZoom value={zoom} onChange={setZoom} label="Inbox zoom" />
-            {onFocusMode !== undefined && (
-              <HoverTip text={focusMode ? 'Exit focus mode (F)' : 'Focus mode (F)'}>
-                <button type="button" className="card-inbox__focus" aria-label="Focus mode" aria-pressed={focusMode} onMouseDown={(e) => e.preventDefault()} onClick={() => onFocusMode(!focusMode)}>
-                  <FocusIcon on={focusMode} />
-                </button>
-              </HoverTip>
-            )}
-          </>
-        }
+        view={<ReviewViewButton seconds={session.today.seconds} time={time} zoom={zoom} setZoom={setZoom} focusMode={focusMode} onFocusMode={onFocusMode} />}
       />
       <div ref={columnRef} className="card-inbox__column" style={cardColumnStyle(width)}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
