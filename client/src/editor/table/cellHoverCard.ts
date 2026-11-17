@@ -62,13 +62,16 @@ export function cardShell(): HTMLElement {
 export function textPart(lines: string[]): HTMLElement {
   const part = document.createElement('div')
   part.className = 'cell-note-preview__text'
-  for (const text of lines.length > CARD_TEXT_LINES ? [...lines.slice(0, CARD_TEXT_LINES), '…'] : lines) {
-    const line = document.createElement('div')
-    line.className = 'cell-note-preview__text-line'
-    line.textContent = text
-    part.appendChild(line)
-  }
+  for (const text of lines.length > CARD_TEXT_LINES ? [...lines.slice(0, CARD_TEXT_LINES), '…'] : lines) part.appendChild(textLine(text))
   return part
+}
+
+/** One line of the full-text part. */
+function textLine(text: string): HTMLElement {
+  const line = document.createElement('div')
+  line.className = 'cell-note-preview__text-line'
+  line.textContent = text
+  return line
 }
 
 /** The padding under the full-text part and under the note's lines, in px (`cellHoverCard.css`). */
@@ -78,38 +81,51 @@ const TEXT_LINE_HEIGHT = 1.4
 
 /**
  * A card that its `max-height` cuts (YAZ-5717: the window less 16px, or the room beside the cell, YAZ-5747) ends with
- * "…", never in the middle with no sign. Every card, on show only; a card that is not cut reads only its own rect.
+ * "…", never in the middle with no sign, never in the note's title. Every card, on show only; a card that is not cut
+ * reads only its own rect. True when it changed the card.
  * - The full-text part cut: it clamps to the rows that fit (`--fit-lines`, its own "…"), and the note's part under it goes.
+ * - The full-text part fits, but the note's title, hint or first line does not (YAZ-5758): the note's part goes, and the
+ *   text gets a last row "…", clamped to the rows that fit as above (then the browser's "…" ends the last row).
  * - Else the note's lines cut (YAZ-5746): the lines past the bottom go, and the last line that shows reads "…".
  */
-export function fitCard(box: HTMLElement): void {
+export function fitCard(box: HTMLElement): boolean {
   const rect = box.getBoundingClientRect()
   // No layout (a box that is not drawn): nothing to measure.
-  if (rect.height === 0) return
+  if (rect.height === 0) return false
   const text = box.querySelector<HTMLElement>('.cell-note-preview__text')
   const textRect = text?.getBoundingClientRect()
+  /** The text part alone, in the rows of the card that fit. */
+  const textOnly = (part: HTMLElement, partRect: DOMRect) => {
+    while (part.nextElementSibling) part.nextElementSibling.remove()
+    const row = parseFloat(getComputedStyle(part).fontSize) * TEXT_LINE_HEIGHT
+    part.style.setProperty('--fit-lines', String(Math.min(CARD_TEXT_LINES, Math.max(1, Math.floor((rect.bottom - PAD - (partRect.top + PAD)) / row)))))
+  }
   if (text && textRect && textRect.bottom > rect.bottom) {
-    const row = parseFloat(getComputedStyle(text).fontSize) * TEXT_LINE_HEIGHT
-    text.style.setProperty('--fit-lines', String(Math.max(1, Math.floor((rect.bottom - PAD - (textRect.top + PAD)) / row))))
-    while (text.nextElementSibling) text.nextElementSibling.remove()
-    return
+    textOnly(text, textRect)
+    return true
   }
   const bottom = rect.bottom - PAD
   const lines = Array.from(box.querySelectorAll<HTMLElement>('.cell-note-preview__line'))
   const past = lines.findIndex((line) => line.getBoundingClientRect().bottom > bottom)
-  if (past < 0) return
+  if (past < 0) return false
+  if (past === 0 && text && textRect) {
+    if (text.lastElementChild?.textContent !== '…') text.appendChild(textLine('…'))
+    textOnly(text, textRect)
+    return true
+  }
   const keep = Math.max(1, past)
   for (const line of lines.slice(keep)) line.remove()
   lines[keep - 1].textContent = '…'
+  return true
 }
 
 /**
  * Under the cell at its left edge; above it when there is no room under; inside the window. As wide as its text
  * (YAZ-4903: no empty room beside a short text), up to the cell's width clamped to 240–420 px, then the text wraps.
  * It never covers its cell (YAZ-5747): a card that fits on neither side goes to the side with more room, as tall as
- * that room, and `fitCard` ends what this cuts with "…".
+ * that room, and `fitCard` ends what this cuts with "…". Gives the cell's top when the card is above it, else null.
  */
-function placeUnder(box: HTMLElement, cell: HTMLElement): void {
+function placeUnder(box: HTMLElement, cell: HTMLElement): number | null {
   const rect = cell.getBoundingClientRect()
   box.style.width = 'max-content'
   box.style.maxWidth = `${Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, rect.width))}px`
@@ -121,11 +137,13 @@ function placeUnder(box: HTMLElement, cell: HTMLElement): void {
   // The room under the cell and above it, `EDGE` from the window's edges.
   const under = window.innerHeight - EDGE - (rect.bottom + GAP)
   const above = rect.top - GAP - EDGE
-  if (height <= under) return
+  if (height <= under) return null
   const up = height <= above || above > under
   const room = Math.max(0, up ? above : under)
   if (height > room) box.style.maxHeight = `${room}px`
-  if (up) box.style.top = `${rect.top - GAP - Math.min(height, room)}px`
+  if (!up) return null
+  box.style.top = `${rect.top - GAP - Math.min(height, room)}px`
+  return rect.top
 }
 
 export function cellHoverCards(build: (cell: HTMLElement) => CellCard | null): CellCards {
@@ -160,14 +178,16 @@ export function cellHoverCards(build: (cell: HTMLElement) => CellCard | null): C
   const show = () => {
     timer = null
     if (card === null || current === null) return
-    if (card.under) placeUnder(card.box, current)
+    let cellTop: number | null = null
+    if (card.under) cellTop = placeUnder(card.box, current)
     else {
       // The host placed it beside the cell. A box below the window's bottom moves up (YAZ-5717): one read, on show only.
       document.body.appendChild(card.box)
       const rect = card.box.getBoundingClientRect()
       if (rect.bottom > window.innerHeight - EDGE) card.box.style.top = `${Math.max(EDGE, window.innerHeight - EDGE - rect.height)}px`
     }
-    fitCard(card.box)
+    // A card above its cell that the fit made shorter moves down, `GAP` above the cell again: one more read, on show only.
+    if (fitCard(card.box) && cellTop !== null) card.box.style.top = `${cellTop - GAP - card.box.getBoundingClientRect().height}px`
     shown = card.box
     warm = true
   }

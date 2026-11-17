@@ -902,13 +902,16 @@ describe('the full-text card of a cut cell (YAZ-4901)', () => {
     })
     /**
      * jsdom lays out nothing. This lays out the card as a browser would: `natural` px tall, capped by its inline
-     * `max-height` and by the CSS one (the window less 16px); each note line 20px tall, from 60px under the card's top;
-     * the full-text part from the card's top, `textHeight` px tall, in 12.5px text.
+     * `max-height` and by the CSS one (the window less 16px); the full-text part from the card's top, `textHeight` px
+     * tall, in 12.5px text; then the note's title and hint, `headHeight` px; then each note line, 20px tall. `natural`
+     * is a number, or `'content'`: as tall as what the card holds now, with 8px under the last note line.
      */
-    const layout = (natural: number, windowHeight: number, textHeight = 40) => {
+    const layout = (natural: number | 'content', windowHeight: number, textHeight = 40, headHeight = 20) => {
       Object.defineProperty(window, 'innerHeight', { value: windowHeight, configurable: true })
       const isCard = (el: HTMLElement) => el.classList.contains('cell-note-preview')
-      const height = (card: HTMLElement) => Math.min(natural, parseFloat(card.style.maxHeight) || Infinity, windowHeight - 16)
+      const content = (card: HTMLElement) =>
+        (card.querySelector('.cell-note-preview__text') ? textHeight : 0) + (card.querySelector('.cell-note-preview__header') ? headHeight + card.querySelectorAll('.cell-note-preview__line').length * 20 + 8 : 0)
+      const height = (card: HTMLElement) => Math.min(natural === 'content' ? content(card) : natural, parseFloat(card.style.maxHeight) || Infinity, windowHeight - 16)
       const own = HTMLElement.prototype.getBoundingClientRect
       vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
         return isCard(this) ? height(this) : 0
@@ -922,7 +925,7 @@ describe('the full-text card of a cut cell (YAZ-4901)', () => {
         if (card !== null && this.classList.contains('cell-note-preview__text')) return new DOMRect(parseFloat(card.style.left), parseFloat(card.style.top), 320, textHeight)
         if (card === null || !this.classList.contains('cell-note-preview__line')) return own.call(this)
         const index = [...card.querySelectorAll('.cell-note-preview__line')].indexOf(this)
-        return new DOMRect(parseFloat(card.style.left), parseFloat(card.style.top) + 60 + index * 20, 300, 20)
+        return new DOMRect(parseFloat(card.style.left), parseFloat(card.style.top) + textHeight + headHeight + index * 20, 300, 20)
       })
       const style = window.getComputedStyle
       vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) =>
@@ -986,6 +989,26 @@ describe('the full-text card of a cut cell (YAZ-4901)', () => {
       const noted = await rest(new DOMRect(100, 60, 100, 30))
       expect(noted.querySelector<HTMLElement>('.cell-note-preview__text')!.style.getPropertyValue('--fit-lines')).toBe('4')
       expect(noted.querySelector('.cell-note-preview__header, .cell-note-preview__hint, .cell-note-preview__body')).toBeNull()
+    })
+
+    it('1E (YAZ-5758): the text fits but the note\'s title or first line does not: the note\'s part goes, and the text ends with a "…" row (clamped to the rows that fit)', async () => {
+      // A 250px window, the cell from 200 to 230: above it 188px, the card at 8 to 196. The text part (150px) fits;
+      // the first note line (178 to 198) does not end by 196 - 8.
+      layout(600, 250, 150)
+      const box = await rest(new DOMRect(100, 200, 100, 30))
+      expect(box.querySelector('.cell-note-preview__header, .cell-note-preview__hint, .cell-note-preview__body')).toBeNull()
+      expect(textLines(box)).toEqual(['Flights', '…'])
+      // (196 - 8 - (8 + 8)) / 17.5: 9 rows fit.
+      expect(box.querySelector<HTMLElement>('.cell-note-preview__text')!.style.getPropertyValue('--fit-lines')).toBe('9')
+    })
+
+    it('a card above its cell that the fit makes shorter moves down: its bottom is 4px above the cell again', async () => {
+      // A 718px window, the cell from 360 to 401: the card goes above, capped to 348px (8 to 356). Its 21 note lines
+      // start 65px under its top: 13 fit, and the card shrinks to 40 + 25 + 13 × 20 + 8 = 333px.
+      layout('content', 718, 40, 25)
+      const box = await rest(new DOMRect(100, 360, 100, 41))
+      expect(box.querySelectorAll('.cell-note-preview__line')).toHaveLength(13)
+      expect([box.getBoundingClientRect().top, box.getBoundingClientRect().bottom]).toEqual([360 - 4 - 333, 360 - 4])
     })
   })
 
