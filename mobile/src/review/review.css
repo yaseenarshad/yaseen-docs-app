@@ -80,9 +80,11 @@
   font-size: 14px;
 }
 
-/* YAZ-5679: the "Added card to reviews" toast sits above the row of controls. */
-.review > .learned-toast {
-  bottom: calc(var(--tap) + 28px);
+/* YAZ-5679: the "Added card to reviews" toast. YAZ-5692 (the Mac's YAZ-5680 fix 4): it hangs off the hint line's top
+   edge, so it never covers the line or its Undo, whatever the controls' height. */
+.review__hint > .learned-toast {
+  right: 12px;
+  bottom: calc(100% + 6px);
 }
 
 /* The progress bar (YAZ-5676, Mochi's: `SessionBar`, `sessionCount.css`), under the top line. */
@@ -173,8 +175,10 @@
 }
 
 .review__sheet-ic {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
   width: 22px;
-  text-align: center;
   color: var(--fg-muted);
 }
 
@@ -632,9 +636,10 @@
   visibility: visible;
 }
 
-/* ---- The hint line: "Tap anywhere · 3 left", "Did you remember it?"; after an answer, "Last: … · ↶ Undo" ---- */
+/* ---- The hint line: "Tap anywhere · 3 left", "Did you remember it?"; after an answer, the Mac's "✓ Remembered · … · Undo" ---- */
 
 .review__hint {
+  position: relative;
   display: flex;
   flex: none;
   justify-content: center;
@@ -642,50 +647,54 @@
   gap: 8px;
   min-height: 30px;
   margin: 0;
-  padding: 4px 16px 0;
+  /* The card's own side room (`.review__stage`), so the Mac's longer line fits at 320 px (YAZ-5693). */
+  padding: 4px 10px 0;
   font-size: 13px;
   color: var(--fg-muted);
   text-align: center;
 }
 
-/* "Last: Capital of Spain (Forgot)" — one quiet line; a long title gives way with "…", the answer word stays. */
-.review__lastanswer {
+/* YAZ-5693: the Mac's line (`AnswerLine`, its look in `cardScreens.css`): "✓ Remembered · Capital of Spain · back in 9
+   days · Undo" — one quiet line, only its mark in the answer's colour; the name gives way with "…", the rest stays. */
+.review__last {
   display: inline-flex;
+  align-items: center;
   min-width: 0;
   max-width: 100%;
   white-space: nowrap;
+  font-size: 12.5px;
 }
 
-.review__lastanswer-name {
+.review__last-mark {
+  flex: none;
+  margin-right: 1px;
+  color: var(--ok);
+}
+
+.review__last[data-rating='hard'] .review__last-mark {
+  color: var(--warn);
+}
+
+.review__last[data-rating='again'] .review__last-mark {
+  color: var(--danger);
+}
+
+.review__last-text {
+  display: inline-flex;
   min-width: 0;
-  margin-left: 0.3em;
+  white-space: pre;
+}
+
+.review__last-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.review__lastanswer-rating {
+/* "· Undo" after the words: the button sits close, its 44 pt box still reaches the finger. */
+.review__last-text + .review__undo {
   flex: none;
-  white-space: pre;
-}
-
-/* "· ↶ Undo" after the answer word: the button sits close, its 44 pt box still reaches the finger. */
-.review__lastanswer-sep {
-  flex: none;
-  white-space: pre;
-}
-
-.review__lastanswer + .review__undo {
-  flex: none;
-  margin-left: -6px;
-  padding: 0 6px 0 2px;
-}
-
-.review__last {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 100%;
+  padding: 0 4px;
 }
 
 .review__last:empty {

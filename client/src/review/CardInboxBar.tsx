@@ -34,7 +34,7 @@
  * No Archived row (YAZ-5319, Yaseen: "there will be too many to review that way"): a folder page's table finds archived
  * cards (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
  */
-import { Fragment, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from 'react'
+import { Fragment, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardPlacePart, CardReviewApi, CardReviewSession } from './useCardReview'
@@ -43,29 +43,12 @@ import { todayStudied } from './reviewTime'
 import { AddMoreField } from './AddMoreField'
 import { SessionBar, SessionCount } from './SessionCount'
 import { useNewCardsPicker } from './NewCardsPicker'
-import { kindCount, kindCountText, newRowPick, pickLabel, showsFilter } from './inboxMenu'
+import { kindCount, kindCountText, newRowPick, pickLabel } from './inboxMenu'
+import { CARD_FILTERS, inboxFilters } from './cardFilters'
 import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, useSettingsFold } from './ReviewSettingsPart'
-import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
+import { ChevronIcon, FolderIcon, PageIcon, VaultIcon } from './cardInboxIcons'
 
 const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
-
-/** The filters in menu order, with their names and glyphs. */
-export const CARD_FILTERS: readonly {
-  id: CardFilter
-  label: string
-  icon: () => ReactElement
-}[] = [
-  { id: 'all', label: 'All cards', icon: InboxTrayIcon },
-  { id: 'next', label: 'Up next', icon: UpNextIcon },
-  { id: 'due', label: 'Due today', icon: DueIcon },
-  { id: 'new', label: 'New cards', icon: () => <NewIcon /> },
-]
-
-/**
- * The filters the cards menu offers (YAZ-5321, Yaseen: "Up next should only show if they have in the card base, in the
- * vault, up next selected"): the rule is `showsFilter` (`inboxMenu.ts`, shared with the phone).
- */
-export const inboxFilters = (session: Pick<CardReviewSession, 'upNext' | 'filter'>): typeof CARD_FILTERS => CARD_FILTERS.filter((f) => showsFilter(f.id, session))
 
 interface CardInboxBarProps {
   session: CardReviewSession

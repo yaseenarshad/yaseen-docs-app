@@ -162,7 +162,7 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     for (let i = 0; i < 4; i++) await answer('Remembered')
     await answer('Remembered')
     expect(q('.due-end')?.dataset.kind).toBe('done')
-    // The second tap, ~120 ms later, where ✓ was: "↶ Undo" is there now. It does nothing.
+    // The second tap, ~120 ms later, where ✓ was: "Undo" is there now. It does nothing.
     const undo = q('.review__stage--done .review__undo')
     expect(undo).not.toBeNull()
     await act(async () => undo!.click())

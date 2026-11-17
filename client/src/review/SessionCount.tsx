@@ -20,7 +20,7 @@ type Numbers = Pick<CardReviewSession, 'progress' | 'misses'>
 
 const share = (n: number, total: number): string => `${total <= 0 ? 0 : Math.min(100, (100 * n) / total)}%`
 
-/** The top right: "✕ 2 · ▣ 4 / 6". `icon`: the open filter's glyph. */
+/** The top right: "✕ 2 · [tray] 4 / 6". `icon`: the open filter's icon (`FilterIcon`, `cardFilters.tsx`). */
 export function SessionCount({ session, icon }: { session: Numbers; icon: ReactNode }) {
   const { done, total } = session.progress
   const misses = session.misses

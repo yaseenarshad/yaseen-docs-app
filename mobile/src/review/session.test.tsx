@@ -50,7 +50,7 @@ describe('Review: a full session (decision 11)', () => {
 
     await h.click('Remembered')
     expect(h.head()).toBe('Hola · DEMO-13')
-    expect(h.last()).toBe('Last: la biblioteca (Remembered) · ↶ Undo')
+    expect(h.last()).toMatch(/^✓ Remembered · la biblioteca · back (later today|today|in \d+ days?) · Undo$/)
     expect(ops()).toEqual(['review:DEMO-12:good'])
 
     await h.click('Forgot')

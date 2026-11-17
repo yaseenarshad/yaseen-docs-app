@@ -5,11 +5,11 @@ import { UNDO_SHOWN_MS } from './words'
 import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
- * YAZ-5500 (reopened; Yaseen's pick: A, text only): right after ✕ or ✓, the hint line under the card says "Last:
- * <title> (Forgot) · ↶ Undo" (or "(Remembered)"; the ID when the card has no title), in place of the hint. One thing:
- * the separate 4-second "↶ Undo" is folded into it. No timer: it stays until the first action on the next card — a tap
- * that shows a part, ← or →, or the deck drawer — and then the plain hint is back. Undo stays in ⋯. No ✕ or ✓ and no
- * colour cue; one line cut with "…"; a tap on its words never steps the card. The real engine and answer list
+ * YAZ-5500 (reopened): right after ✕ or ✓, the hint line under the card says the answer, in place of the hint. One thing:
+ * the separate 4-second Undo is folded into it. No timer: it stays until the first action on the next card — a tap
+ * that shows a part, ← or →, or the deck drawer — and then the plain hint is back. Undo stays in ⋯. One line cut with
+ * "…"; a tap on its words never steps the card. YAZ-5693: the words are the Mac's ("✕ Forgot · <title> · back later
+ * today · Undo"; the ID when the card has no title), from the Mac's piece. The real engine and answer list
  * (`testing.ts`). Made-up data only.
  */
 const OLD = '2026-10-02T09:00:00.000Z good, 2026-10-12T09:00:00.000Z good'
@@ -40,25 +40,25 @@ const real = (ms: number) => act(async () => void (await new Promise((r) => setT
 const plain = /^(Tap anywhere · \d+ left|Did you remember it\?)$/
 
 describe('YAZ-5500: the last answer in the hint line, right after answering', () => {
-  it('"Last: <title> (Forgot) · ↶ Undo" at once, in place of the hint; no timer; the ID with no title', async () => {
+  it('"✕ Forgot · <title> · back later today · Undo" at once, in place of the hint; no timer; the ID with no title', async () => {
     h = await reviewSetup(FILES)
     expect(hint()).toMatch(plain)
     await h.click('Forgot')
-    expect(hint()).toBe('Last: Capital of Spain (Forgot) · ↶ Undo')
-    // One Undo, in the line: no second "↶ Undo" of its own beside it.
+    expect(hint()).toBe('✕ Forgot · Capital of Spain · back later today · Undo')
+    // One Undo, in the line: no second Undo of its own beside it.
     expect(h.host.querySelectorAll('.review__hint .review__undo')).toHaveLength(1)
     expect(q('.review__hint-text')).toBeNull()
-    // Text only: no marks, no colour of its own.
-    expect(q('.review__lastanswer')?.textContent).not.toMatch(/[✕✓]/)
-    expect(q('.review__lastanswer')?.getAttribute('style')).toBeNull()
-    expect(q('.review__lastanswer [data-rating]')).toBeNull()
+    // YAZ-5693: the Mac's line — its mark, in the answer's colour by the line's data-rating (the CSS), nothing inline.
+    expect(q('.review__last-mark')?.textContent).toBe('✕')
+    expect(q('.review__last')?.getAttribute('data-rating')).toBe('again')
+    expect(q('.review__last-text')?.getAttribute('style')).toBeNull()
     // No timer: past the old 4 seconds, it stays.
     await real(UNDO_SHOWN_MS + 300)
-    expect(hint()).toBe('Last: Capital of Spain (Forgot) · ↶ Undo')
+    expect(hint()).toBe('✕ Forgot · Capital of Spain · back later today · Undo')
     // The next answer: its own line, by ID (the card has no title).
     expect(h.head()).toBe('CAP-2')
     await h.click('Remembered')
-    expect(hint()).toBe('Last: CAP-2 (Remembered) · ↶ Undo')
+    expect(hint()).toMatch(/^✓ Remembered · CAP-2 · back in \d+ days? · Undo$/)
   })
 
   it('the first tap on the next card (a part shows) puts it away: the plain hint again', async () => {
@@ -69,7 +69,7 @@ describe('YAZ-5500: the last answer in the hint line, right after answering', ()
     const before = shown()
     await h.tap()
     expect(shown()).toBeGreaterThan(before)
-    expect(q('.review__lastanswer')).toBeNull()
+    expect(q('.review__last-mark')).toBeNull()
     expect(q('.review__hint .review__undo')).toBeNull()
     expect(hint()).toMatch(plain)
     // Undo stays in ⋯.
@@ -83,10 +83,10 @@ describe('YAZ-5500: the last answer in the hint line, right after answering', ()
     const shown = () => h!.host.querySelectorAll('.phone-card__body .card__side').length * 100 + h!.host.querySelectorAll('.phone-card__body .card__hidden').length
     const before = shown()
     await h.seen()
-    await act(async () => q('.review__lastanswer-name')!.click())
+    await act(async () => q('.review__last-name')!.click())
     await h.settle()
     expect(shown()).toBe(before)
-    expect(hint()).toBe('Last: Capital of Spain (Remembered) · ↶ Undo')
+    expect(hint()).toMatch(/^✓ Remembered · Capital of Spain · back in \d+ days? · Undo$/)
   })
 
   it('a tap in the 400 ms after the answer (the second tap of a double tap) does not put it away', async () => {
@@ -95,7 +95,7 @@ describe('YAZ-5500: the last answer in the hint line, right after answering', ()
     expect(q('[data-guard]')).not.toBeNull()
     await act(async () => q('.review__card')!.click())
     await h.settle()
-    expect(hint()).toBe('Last: Capital of Spain (Remembered) · ↶ Undo')
+    expect(hint()).toMatch(/^✓ Remembered · Capital of Spain · back in \d+ days? · Undo$/)
   })
 
   it('→ puts it away (← too: after an answer it has nothing to go back to, as the Mac)', async () => {
@@ -111,10 +111,10 @@ describe('YAZ-5500: the last answer in the hint line, right after answering', ()
   it('opening the deck drawer puts it away', async () => {
     h = await reviewSetup(FILES)
     await h.click('Forgot')
-    expect(hint()).toContain('Last: Capital of Spain')
+    expect(hint()).toContain('Forgot · Capital of Spain')
     await h.click(/Choose what to review/)
     expect(q('.review__sheet')).not.toBeNull()
-    expect(q('.review__lastanswer')).toBeNull()
+    expect(q('.review__last-mark')).toBeNull()
     expect(hint()).toMatch(plain)
   })
 
@@ -123,10 +123,10 @@ describe('YAZ-5500: the last answer in the hint line, right after answering', ()
     await h.click('Forgot')
     await h.click('More card actions')
     await h.click('More card actions')
-    expect(hint()).toBe('Last: Capital of Spain (Forgot) · ↶ Undo')
+    expect(hint()).toBe('✕ Forgot · Capital of Spain · back later today · Undo')
     await h.click('Undo')
     expect(h.head()).toContain('CAP-1')
-    expect(q('.review__lastanswer')).toBeNull()
+    expect(q('.review__last-mark')).toBeNull()
     expect(h.answers.waiting()).toHaveLength(0)
   })
 
@@ -134,11 +134,11 @@ describe('YAZ-5500: the last answer in the hint line, right after answering', ()
     h = await reviewSetup(FILES)
     await h.click('Forgot')
     await h.tap()
-    expect(q('.review__lastanswer')).toBeNull()
+    expect(q('.review__last-mark')).toBeNull()
     await h.click('More card actions')
     await h.click('Undo last answer')
     expect(h.head()).toContain('CAP-1')
-    expect(q('.review__lastanswer')).toBeNull()
+    expect(q('.review__last-mark')).toBeNull()
   })
 
   it('one line: a long title gives way with "…", the answer word stays whole (the CSS)', async () => {
@@ -146,11 +146,12 @@ describe('YAZ-5500: the last answer in the hint line, right after answering', ()
     const { dirname, resolve } = await import('node:path')
     const { fileURLToPath } = await import('node:url')
     const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'review.css'), 'utf8')
-    expect(css).toMatch(/\.review__lastanswer \{[^}]*white-space: nowrap;/)
-    expect(css).toMatch(/\.review__lastanswer-name \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/)
-    expect(css).toMatch(/\.review__lastanswer-rating \{[^}]*flex: none;/)
+    expect(css).toMatch(/\.review__last \{[^}]*white-space: nowrap;/)
+    expect(css).toMatch(/\.review__last-name \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/)
+    expect(css).toMatch(/\.review__last-mark \{[^}]*flex: none;/)
     // The status box it sits in may shrink to the screen, so the title (not the Undo) gives way.
     expect(css).toMatch(/\.review__last \{[^}]*min-width: 0;[^}]*max-width: 100%;/)
-    expect(css).not.toMatch(/\.review__lastanswer[^{+]*\{[^}]*color:/)
+    // YAZ-5693 (the Mac's YAZ-5433): only the mark has a colour; the words are the line's own grey.
+    expect(css).not.toMatch(/\.review__last-(text|name) \{[^}]*color:/)
   })
 })
