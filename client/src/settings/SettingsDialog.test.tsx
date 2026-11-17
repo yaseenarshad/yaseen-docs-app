@@ -1747,10 +1747,12 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Show card titles', 'Card tables', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
     expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', 'GitHub'])
-    // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
+    // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why. YAZ-5708: the
+    // rules of now (YAZ-5655, consolidated): days only, only misses come back, a new card's first ✓ joins today's reviews.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!
     expect([how.open, how.querySelector('summary')?.textContent]).toEqual([false, 'How cards come back'])
-    expect(how.textContent).toMatch(/later in this session.*two times in a row.*one Remembered is enough.*days.*Anki.*Mochi/s)
+    expect(how.textContent).toMatch(/Remembered is done for today.*once, in Review missed cards.*first Remembered adds it to today.s reviews.*whole days.*Mochi/s)
+    expect(how.textContent).not.toMatch(/two times in a row|one minute|one Remembered is enough/)
     expect(rowButtons(el, 'buttons').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Two', 'true'], ['Four', 'false']])
     expect(['retention', 'maxDays', 'newPerDay'].map((id) => input(el, id).value)).toEqual(['90', '365', '10'])
     expect(input(el, 'weights').value).toBe(DEFAULT_REVIEW_SETTINGS.weights.join(', '))

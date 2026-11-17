@@ -1,7 +1,8 @@
 /**
  * Settings › Review › "How cards come back" (YAZ-5020, Yaseen: "can we put it on the review page so we remember what
  * all these settings are"): the same-day rules of `shared/cardSchedule.ts` and `useCardReview` in plain words, and
- * where each one comes from. Closed by default: a quiet line that opens.
+ * where each one comes from. Closed by default: a quiet line that opens. YAZ-5708: the rules of now (YAZ-5655,
+ * consolidated): days only (YAZ-5702), only misses come back, a new card's first ✓ joins today's reviews.
  */
 export function ReviewHowCardsComeBack() {
   return (
@@ -9,15 +10,12 @@ export function ReviewHowCardsComeBack() {
       <summary>How cards come back</summary>
       <ul>
         <li>
-          <b>Forgot:</b> the card comes back later in this session, after the other cards. It comes back until you remember it.
+          <b>A card you know:</b> Remembered is done for today. Forgot brings it back once, in Review missed cards, until you remember it.
         </li>
         <li>
-          <b>A new card:</b> remember it two times in a row. A Forgot starts the count again. Thus a new card shows at least two times on its first day.
+          <b>A new card:</b> Forgot brings it back in the same run; it stays new. Its first Remembered adds it to today&apos;s reviews: it shows one more time today.
         </li>
-        <li>
-          <b>A card you know:</b> after a Forgot, one Remembered is enough.
-        </li>
-        <li>Then FSRS sets the wait in days, from your weights and your remember rate.</li>
+        <li>Then FSRS sets the wait, always in whole days. A Forgot gives 1 day.</li>
         <li>If you close the Inbox first, these cards show when you open it again.</li>
         <li>
           <b>Up next:</b> marked cards show first. With a number in <b>Up next a day</b>, only that many are Up next each day: they go first, and the Up next row
@@ -25,9 +23,7 @@ export function ReviewHowCardsComeBack() {
         </li>
       </ul>
       <p>
-        Why: FSRS plans in days. A repeat on the same day is a short step; the step is one minute, so this session decides, not a clock. Anki advises few steps,
-        each shorter than one day, and its new cards also need two steps. Mochi also brings a forgotten card back in the same session, but its docs say a new card
-        you remember goes straight to the schedule.
+        Why: as Mochi. Its FSRS plans in whole days, with no steps in minutes, so only a missed card, and a new card&apos;s first review, come back the same day.
       </p>
     </details>
   )
