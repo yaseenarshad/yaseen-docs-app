@@ -14,9 +14,11 @@ import { cardBlock, inOrder, page, reviewSetup, type ReviewHarness } from './tes
  * Remembered lets it go and the new cards come. The card's own text (made-up demo data); the real engine and list.
  */
 const NOW = Date.UTC(2026, 10, 15, 19, 10)
+// Its last ✕ the day before (YAZ-5708: a ✕ of TODAY makes it a miss waiting when the Review opens, as Mochi's "✕ 33"
+// at the start of Due today, YAZ-5671 finding 5; this story is the ✕ of this session).
 const NC205 = cardBlock(
   'What is a pastel de nata?\n---\nA custard tart.',
-  'NC-205, 2026-09-20T08:00:00.000Z good 8s, 2026-09-24T08:00:00.000Z good 6s, 2026-10-05T08:00:00.000Z good 5s, 2026-11-15T15:39:00.000Z again 4s',
+  'NC-205, 2026-09-20T08:00:00.000Z good 8s, 2026-09-24T08:00:00.000Z good 6s, 2026-10-05T08:00:00.000Z good 5s, 2026-11-14T15:39:00.000Z again 4s',
 )
 const NC207 = cardBlock('"Good night" in Portuguese is {{boa noite}}.', 'NC-207')
 const NC206 = cardBlock('"Good morning" in Portuguese is {{bom dia}}.', 'NC-206, title "Good morning", 2026-11-12T07:30:00.000Z good 5s')

@@ -195,17 +195,17 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
     page('A.md', ['DUE-1', known(5)], ['NEW-1', ''], ['NEW-2', ''])
     await mount({ ...S, newPerDay: 1 })
     await step(() => review.addCards('new', 1))
-    // NEW-1 begun under New cards (its first ✓), then DUE-1 under Due today: the stop, with NEW-2 under it.
+    // NEW-1 begun under New cards (its first ✓), then DUE-1 and NEW-1's same-day review under Due today (one pass,
+    // YAZ-5708): the stop, with NEW-2 under it.
     await act(async () => review.setFilter('new'))
     await answer('NEW-1', 'good')
     await act(async () => review.setFilter('due'))
     await answer('DUE-1', 'good')
-    expect(review.session?.end?.kind).toBe('done')
+    await answer('NEW-1', 'good')
+    expect(review.session?.end).toMatchObject({ kind: 'done', fresh: 1 })
     // Reset: today's number back to 1, which NEW-1 used. NEW-2 is not in today's list, so it never shows.
     await step(() => review.resetCards('new'))
     await act(async () => review.goOn())
-    await shown('NEW-1')
-    await answer('NEW-1', 'good')
     expect(review.session?.card).toBeNull()
     expect(reviewsOf('A.md', 'NEW-2')).toEqual([])
   })

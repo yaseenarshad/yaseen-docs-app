@@ -397,8 +397,9 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
         const ok = card !== null && before?.end === null
         await step(() => r().turnOff())
         const after = snap(r())
-        // Out of the session; an Up next card's place may go to the next marked card (it joins, YAZ-5031).
-        const freesPlace = card?.next === true && driver.settings.upNextPerDay !== null ? 1 : 0
+        // Out of the session; an Up next card's place may go to the next marked card (it joins, YAZ-5031), a new card's
+        // New cards place to the next new card (rule 33, v1 rule 11: a freed place fills at once).
+        const freesPlace = (card?.next === true && driver.settings.upNextPerDay !== null) || (card?.isNew === true && card.next !== true && driver.settings.newPerDay !== null) ? 1 : 0
         if (ok && after !== null && before !== null && (after.counts.all > before.counts.all - 1 + freesPlace || after.card?.id === card!.id)) fail('6. Archive takes the card on show out', { line, before: before.counts, after: after.counts })
         planChanged = true
         dirty(stack)

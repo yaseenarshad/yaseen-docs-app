@@ -16,9 +16,10 @@
  * differ on purpose. A Forgot on a new card never makes a ✕ (finding 11).
  *
  * ALL CARDS (YAZ-5707, Mochi's finding E5 on YAZ-5703): ONE run with no stop, so its numbers are these with two more
- * things. The run carries today's earlier work (`earlierDone`, fixed when the session starts): the cards of its queue
- * answered today before it (a new card learned earlier, its same-day review waiting: E5's "2 / 7"), each counted as done
- * the way this session would have counted it. And the exact rule is:
+ * things. The run carries today's earlier work (`earlierAnswers`, fixed when the session starts): the answers today
+ * before it on the cards of its queue (a new card learned earlier, its same-day review waiting: E5's "2 / 7"; a miss
+ * waiting for its re-check), counted as this session counts its own, so a card counts once across the two: a miss's ✓
+ * in its re-check after the Inbox opened again adds nothing (YAZ-5708). And the exact rule is:
  *   total = earlier + the session's done + every card still waiting (each once), where the waiting cards are the
  *   cards at the start not answered yet, a new card back after a ✕ (it moved nothing), each learned new card's
  *   same-day review (+1 when learned) and each missed card (+1 when missed, −1 when remembered at the end).
@@ -68,12 +69,12 @@ const missed = (c: SessionCard): boolean => c.forgot === true && !c.isNew
 
 /**
  * The filter's numbers (YAZ-5675): `queue` is the cards still waiting in the session; `earlier` (YAZ-5707, All cards
- * only) today's work before the session (`earlierDone`).
+ * only) today's answers before the session (`earlierAnswers`), counted first.
  */
-export function filterCount(answers: readonly SessionAnswer[], queue: readonly SessionCard[], filter: CardFilter, earlier = 0): FilterCount {
+export function filterCount(answers: readonly SessionAnswer[], queue: readonly SessionCard[], filter: CardFilter, earlier: readonly SessionAnswer[] = []): FilterCount {
   const seen = new Set<string>()
-  let done = earlier
-  for (const a of answers) {
+  let done = 0
+  for (const a of [...earlier, ...answers]) {
     if (!matchesFilter(a, filter)) continue
     if (a.isNew) {
       if (a.rating !== 'again') done++
@@ -87,31 +88,35 @@ export function filterCount(answers: readonly SessionAnswer[], queue: readonly S
 }
 
 /**
- * Today's work before a session (YAZ-5707, Mochi's E5: "2 / 7" at the start of All cards after 2 new cards learned):
- * of `cards` (the session's queue), each card answered today (`from`, the local day's start) up to `before` (the session's start), as this session would have counted it: a
- * card known before today, 1 (its first answer); a new card learned today, 1, and 1 more once its same-day review was
- * answered; a new card with only ✕ today, 0. Archived cards count nothing.
+ * Today's answers before a session (YAZ-5707, Mochi's E5: "2 / 7" at the start of All cards after 2 new cards learned):
+ * of `cards` (the session's queue, each with its `key`), each answer today (`from`, the local day's start) up to
+ * `before` (the session's start), with what the card was then, so `filterCount` counts them as it counts the session's
+ * own: a card known before today, 1 (its first answer); a new card learned today, 1, and 1 more for its same-day
+ * review; a new card with only ✕ today, 0. Archived cards count nothing.
  */
-export function earlierDone(cards: Iterable<{ off: boolean; reviews: readonly CardReview[] }>, from: string, before: string): number {
-  let done = 0
+export function earlierAnswers(cards: Iterable<{ key: string; off: boolean; reviews: readonly CardReview[] }>, from: string, before: string): SessionAnswer[] {
+  const out: SessionAnswer[] = []
   for (const card of cards) {
     if (card.off) continue
     let known = false
-    let today = 0
-    let learned = -1
-    for (const r of card.reviews) {
-      if (r.at < from) {
-        if (r.rating !== 'again') known = true
-        continue
-      }
-      if (r.at > before) continue
-      if (!known && learned === -1 && r.rating !== 'again') learned = today
-      today++
+    for (const r of [...card.reviews].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))) {
+      if (r.at > before) break
+      if (r.at >= from) out.push({ key: card.key, rating: r.rating, isNew: !known, next: false, first: false })
+      if (r.rating !== 'again') known = true
     }
-    if (today === 0) continue
-    done += known ? 1 : learned === -1 ? 0 : learned < today - 1 ? 2 : 1
   }
-  return done
+  return out
+}
+
+/**
+ * A card of a session's queue at its start that waits for its re-check (YAZ-5708, rules 7 and 18): a card with a ✓ whose
+ * last answer, today, was ✕. It stays a miss waiting when the Inbox opens again: the red, the ✕ K, the "Again" chip, at
+ * the end of the run.
+ */
+export function missedToday(reviews: readonly CardReview[], from: string): boolean {
+  let last: CardReview | undefined
+  for (const r of reviews) if (last === undefined || r.at > last.at) last = r
+  return last !== undefined && last.rating === 'again' && last.at >= from && reviews.some((r) => r.rating !== 'again')
 }
 
 /** The ring's numbers (YAZ-5043): the due cards' first answers, how many were Remembered, the % to the nearest (never 100 while one was missed). */

@@ -2610,7 +2610,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'howCardsComeBack',
             label: 'How cards come back',
-            hint: 'Forgot brings a card back later in this session until you remember it. A new card needs two Remembered in a row. Then FSRS sets the wait in days.',
+            hint: 'Remembered is done for today. Forgot brings a card back once, in Review missed cards. A new card\'s first Remembered adds it to today\'s reviews. FSRS sets the wait in whole days.',
             keywords: [...REVIEW_KEYWORDS, 'forgot', 'again', 'same day', 'session', 'steps', 'learning', 'relearning', 'anki', 'mochi'],
             bare: true,
             available: reviewOn,

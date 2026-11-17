@@ -203,13 +203,15 @@ describe('YAZ-5616: new cards begun in the New cards list come back the same day
     expect((await look()).bar).toBe('6/6')
   })
 
-  it('then Due today: the begun cards are Due today cards, so its end leads on to them', async () => {
+  // YAZ-5708 (Mochi: "Finished learning cards." · "Review cards 4" is one Due today run): the begun cards are cards of
+  // Due today's pass, so its end comes after them. Before, the pass stopped after DUE-2 with "Learn new cards 2".
+  it('then Due today: the begun cards are Due today cards of its one pass, then its end', async () => {
     await mount()
     await act(async () => review.setFilter('new'))
     await answer('good')
     await answer('good')
     await act(async () => review.setFilter('due'))
-    // Nothing is left in any list: the vault's done screen.
-    expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'stop: done', 'NEW-1', 'NEW-2', 'done: Inbox complete.'])
+    // Nothing is left in any list after the one pass: "Finished reviewing.".
+    expect(await rest()).toEqual(['DUE-1', 'DUE-2', 'NEW-1', 'NEW-2', 'stop: done'])
   })
 })
