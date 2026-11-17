@@ -137,7 +137,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
       ['Never', 'false'],
       ['Always', 'false'],
       ['After the first click', 'false'],
-      ['With Side 2', 'false'],
+      ['Before Side 2', 'false'],
     ])
     // Round 3: no eye by Title in review (it stays by the Mac's Settings › Cards › Show card titles).
     expect(menu.querySelector('.card-actions__help, .card-title-help__box')).toBeNull()

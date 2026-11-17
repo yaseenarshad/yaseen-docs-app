@@ -7,7 +7,7 @@
  *   1. Open: Open card (a card in a page or an embed) or Open page / Open page in a new tab (the card window); Preview.
  *   2. The file: Show as link, Move to its own file, Put back into this page, Turn into a page.
  *   3. The review: Move to Up next (YAZ-5697, Yaseen: one word, the Mac and the phone), Archive card, Fix later,
- *      Title in review › (YAZ-5696 round 2: Default (Always) · Never · Always · After the first click · With Side 2; the
+ *      Title in review › (YAZ-5696 round 2: Default (Always) · Never · Always · After the first click · Before Side 2; the
  *      phone too. Round 3: the row says the short word, "Default", "After first click", as narrow as the others; no eye).
  *   4. Copy card ID, Copy card link.
  *   5. Reset history, alone (it asks by typing, `askResetHistory`).

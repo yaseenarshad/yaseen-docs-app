@@ -7,13 +7,13 @@
  */
 import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { reviewTitleOf, type CardTitleAt, type CardTitleShow } from '@shared/cardLine'
-import { titleShows } from '@shared/cardTitleShows'
+import { reviewTitleAt, titleShows, titleStepOf, type TitleStep } from '@shared/cardTitleShows'
 import { cardSides, hiddenCount } from '@shared/cardText'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBody, type CardLinkDoors } from './cardParts'
 import { CARD_MEDIA, CARD_OPENS, stopCardAudio } from '../editor/card/cardMedia'
 import { glideView, spaceMove } from './inboxScroll'
-import { START, hide, markOf, reveal, shownParts, type Reveal } from './cardSteps'
+import { START, hide, markOf, nextStep, reveal, shownParts, type Reveal } from './cardSteps'
 
 /** The step a card is at (D18): how many sides show, which hidden words, and the marked blank (`cardSteps.ts`, YAZ-5049 round 4). */
 export interface CardStep extends Reveal {
@@ -35,10 +35,12 @@ export function useCardFront(pageText: string | null, card: { title: string; not
  * `waits` while `titleShows` says it is not time yet: the card's own choice (`own`), else the global `titleAt`.
  */
 export function bandTitle(title: string, own: CardTitleAt | undefined, global: CardTitleShow, steps: Pick<CardSteps, 'counts' | 'step'>): { text: string; waits: boolean } {
-  // A global Never with no own choice has no title here (`reviewTitleOf`); a title that is here shows at once then.
-  const at = own ?? (global === 'never' ? 'always' : global)
-  return { text: title, waits: title !== '' && !titleShows({ title, at, counts: steps.counts, sides: steps.step.sides, open: steps.step.open, next: steps.step.next }) }
+  const at = reviewTitleAt(own, global)
+  return { text: title, waits: title !== '' && !titleShows({ title, at, counts: steps.counts, sides: steps.step.sides, open: steps.step.open, titled: steps.step.titled }) }
 }
+
+/** Where the band's title is its own Space (YAZ-5709, `titleStepOf`): the same card, own and global choices as `bandTitle`. */
+export const bandTitleStep = (title: string, own: CardTitleAt | undefined, global: CardTitleShow): TitleStep => titleStepOf(title, reviewTitleAt(own, global))
 
 export interface CardSteps {
   /** Each side's hidden words. */
@@ -46,7 +48,7 @@ export interface CardSteps {
   step: CardStep
   /** Every side and every hidden word shows. */
   done: boolean
-  /** YAZ-5048: the next Space shows the next side (the sides that show have no hidden word left). */
+  /** YAZ-5048: the next Space shows the next side (the sides that show have no hidden word left, the title's own step past). */
   nextSide: boolean
   /** The blank the next Space shows (YAZ-5049 round 4: after a click, the next one still hidden after the clicked word). */
   mark: number | null
@@ -67,38 +69,43 @@ export interface CardSteps {
   restart: () => void
 }
 
-/** Space's steps over `text`, the card `cardKey` (a new key starts at the front), in the scrolled view `viewRef`. */
-export function useCardSteps(text: string | null, cardKey: string | null, viewRef: RefObject<HTMLElement | null>): CardSteps {
+/**
+ * Space's steps over `text`, the card `cardKey` (a new key starts at the front), in the scrolled view `viewRef`; `title`
+ * where the title is its own step (YAZ-5709, `bandTitleStep`).
+ */
+export function useCardSteps(text: string | null, cardKey: string | null, viewRef: RefObject<HTMLElement | null>, title: TitleStep = null): CardSteps {
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
   const [stepState, setStep] = useState<CardStep>({ ...START, key: cardKey })
   const step: CardStep = stepState.key === cardKey ? stepState : { ...START, key: cardKey }
   // A card that goes and comes back (⌘Z after the last answer) starts again from its first step.
   useEffect(() => setStep((s) => (s.key === cardKey ? s : { ...START, key: cardKey })), [cardKey])
   const hiddenUpTo = useCallback((sides: number): number => counts.slice(0, sides).reduce((a, b) => a + b, 0), [counts])
-  const done = text !== null && step.sides >= counts.length && step.open.length >= hiddenUpTo(counts.length)
-  const nextSide = !done && text !== null && step.open.length >= hiddenUpTo(step.sides)
+  const after = text === null ? null : nextStep(step, counts, title)
+  const done = text !== null && after === null
+  const nextSide = after !== null && after.sides > step.sides
   const mark = markOf(step, hiddenUpTo(step.sides))
   const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.open.length > 0 || done)
   const stepOn = useCallback(
     (by: 'key' | 'mouse' = 'key'): boolean => {
       if (text === null) return false
-      const upTo = hiddenUpTo(step.sides)
-      const m = markOf(step, upTo)
+      // The title's own step (YAZ-5709) shows at the card's top, in the band: nothing to bring into view.
+      const titleNow = after !== null && after.titled && !step.titled
+      const m = markOf(step, hiddenUpTo(step.sides))
       // Round 5 (Yaseen: "Yes, build it"): Space never shows a blank you cannot see. Round 6 (Yaseen: "certain space
       // clicks that are actually oriented towards just moving the screen"): the same for the next side and the end.
       const view = viewRef.current
-      if (by === 'key' && view !== null) {
+      if (by === 'key' && view !== null && !titleNow) {
         const dy = spaceMove(view, done ? 'end' : (m ?? 'side'))
         if (dy !== 0) {
           glideView(view, dy)
           return true
         }
       }
-      if (done) return false
-      setStep(m !== null ? { ...reveal(step, m, upTo), key: step.key } : { ...step, sides: step.sides + 1, next: null })
+      if (after === null) return false
+      setStep({ ...after, key: step.key })
       return true
     },
-    [done, text, step, viewRef, hiddenUpTo],
+    [done, after, text, step, viewRef, hiddenUpTo],
   )
   const showWord = useCallback(
     (word: number) => {

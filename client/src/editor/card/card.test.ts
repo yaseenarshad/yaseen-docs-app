@@ -370,7 +370,7 @@ describe('the card in the page', () => {
     expect(opened).toEqual([{ path: '/v/Page.md', cardId: 'WIKI-7', index: 0 }])
   })
 
-  it('YAZ-5030, YAZ-5696: ⋯ Title in review › Never asks in place first (YAZ-5697), then sets `notitle` in one undo step; With Side 2 writes `title-side2`; the head says "Title hidden in review"; the card still shows its title', async () => {
+  it('YAZ-5030, YAZ-5696: ⋯ Title in review › Never asks in place first (YAZ-5697), then sets `notitle` in one undo step; Before Side 2 writes `title-side2`; the head says "Title hidden in review"; the card still shows its title', async () => {
     const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     const parentOf = () => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
@@ -379,7 +379,7 @@ describe('the card in the page', () => {
     const choose = async (label: string) => {
       parentOf().click()
       const sub = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub button')]
-      expect(sub.map((b) => b.textContent)).toEqual(['Default', 'Never', 'Always', 'After the first click', 'With Side 2'])
+      expect(sub.map((b) => b.textContent)).toEqual(['Default', 'Never', 'Always', 'After the first click', 'Before Side 2'])
       sub.find((b) => b.textContent === label)!.click()
       await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
       return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')]
@@ -409,8 +409,8 @@ describe('the card in the page', () => {
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     undo(view.state, view.dispatch)
     expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', true])
-    const side2 = await choose('With Side 2')
-    expect(side2.map((b) => b.textContent)).toEqual(['Cancel', 'With Side 2'])
+    const side2 = await choose('Before Side 2')
+    expect(side2.map((b) => b.textContent)).toEqual(['Cancel', 'Before Side 2'])
     side2[1].click()
     await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-7, title-side2, 2026-11-12T14:05:00.000Z good -->'))
     expect(mark().hidden).toBe(true)
