@@ -99,8 +99,8 @@ export interface FlowView {
   filter: CardFilter
   /** The card on show: its ID, its chip (New card or Due) and whether it wears "Again". */
   card: { id: string; isNew: boolean; again: boolean } | null
-  /** The cards menu's counts: what is left in each list. */
-  menu: Record<CardFilter, number>
+  /** The cards menu's counts: what is left in each list; null when the app did not read them this step. */
+  menu: Record<CardFilter, number> | null
   /** The top right: the red ✕ K (0 when hidden), "done / total"; null when the app hides it (nothing to count). */
   count: { misses: number; done: number; total: number } | null
   /** The bar's fills, in % of its width. */
@@ -408,10 +408,10 @@ export class FlowTester {
     const m = this.m
     const f = m.filter
     const model = { filter: f, done: m.done(f), total: m.done(f) + m.left(f), waiting: m.waiting(f), misses: m.misses(), menu: { all: m.left('all'), due: m.left('due'), new: m.left('new'), next: m.left('next') }, stop: m.stop }
-    this.log.push(`${step} | ${v.card === null ? `[${v.screen?.title}]` : `${v.card.id}${v.card.isNew ? '*' : ''}${v.card.again ? '↺' : ''}`} ${v.count === null ? '–' : `${v.count.misses > 0 ? `✕${v.count.misses} ` : ''}${v.count.done}/${v.count.total}`} grey ${Math.round(v.bar.grey)} red ${Math.round(v.bar.red)} menu ${v.menu.all}/${v.menu.due}/${v.menu.new}/${v.menu.next} · model ${model.misses > 0 ? `✕${model.misses} ` : ''}${model.done}/${model.total} ${model.menu.all}/${model.menu.due}/${model.menu.new}/${model.menu.next}`)
+    this.log.push(`${step} | ${v.card === null ? `[${v.screen?.title}]` : `${v.card.id}${v.card.isNew ? '*' : ''}${v.card.again ? '↺' : ''}`} ${v.count === null ? '–' : `${v.count.misses > 0 ? `✕${v.count.misses} ` : ''}${v.count.done}/${v.count.total}`} grey ${Math.round(v.bar.grey)} red ${Math.round(v.bar.red)} menu ${v.menu === null ? '–' : `${v.menu.all}/${v.menu.due}/${v.menu.new}/${v.menu.next}`} · model ${model.misses > 0 ? `✕${model.misses} ` : ''}${model.done}/${model.total} ${model.menu.all}/${model.menu.due}/${model.menu.new}/${model.menu.next}`)
     if (v.filter !== f) this.fail('the filter is the one picked', { app: v.filter, model: f })
     // The menu counts are what is left (Mochi findings 4–6).
-    for (const k of ['all', 'due', 'new', 'next'] as const) if (v.menu[k] !== model.menu[k]) this.fail(`the menu's ${k} count is what is left`, { app: v.menu, model: model.menu })
+    for (const k of ['all', 'due', 'new', 'next'] as const) if (v.menu !== null && v.menu[k] !== model.menu[k]) this.fail(`the menu's ${k} count is what is left`, { app: v.menu, model: model.menu })
     // The numbers (rules 15–18). The app may hide the count only while nothing is counted.
     if (v.count === null) {
       if (model.total > 0) this.fail('the count shows while there is something to count', { model })
@@ -629,13 +629,16 @@ export const FLOW_SCENARIOS: FlowScenario[] = [
       await t.filter('new')
       want(t, 'New cards 0 / 3', t.top(), '0 / 3')
       await t.answer('again', 'N1')
-      want(t, 'Forgot on a new card: nothing moves (Mochi finding 3)', [t.top(), t.last!.menu.new], ['0 / 3', 3])
+      want(t, 'Forgot on a new card: nothing moves (Mochi finding 3)', [t.top(), t.last!.menu?.new], ['0 / 3', 3])
       await t.answer('good', 'N2')
       want(t, 'Remembered: 1 / 3, New −1, Due today +1 (finding 4)', [t.top(), t.last!.menu], ['1 / 3', { all: 4, due: 2, new: 2, next: 0 }])
       await t.answerAll(() => 'good')
       want(t, 'N1 back after its ✕; then Finished learning cards · Review cards 4', [t.shown.slice(1).join(' '), t.screens.at(-1), t.last!.screen!.buttons[0]], ['N1 N2 N3 N1', 'Finished learning cards.', 'Review cards 4'])
       await t.press('Review cards')
-      await t.answerAll(miss(['N3']))
+      await t.answerAll(missOnce(['N3']))
+      // One Due today pass of D1 and the three learned cards (Mochi's "Review cards 4"), N3's re-check, then its end
+      // (no % screen: a learned card's review is no first answer, and D1 was right).
+      want(t, 'Review cards 4 is one Due today pass', [[...new Set(t.shown.slice(-5))].sort().join(' '), t.screens.slice(-2)], ['D1 N1 N2 N3', ['Finished learning cards.', 'Finished reviewing.']])
     },
   },
   {
