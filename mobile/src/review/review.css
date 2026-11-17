@@ -75,15 +75,9 @@
   color: var(--fg-muted);
 }
 
-.review__place {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.review__place small {
+/* YAZ-5674: Mochi's count (`SessionCount`), a little larger on the phone. */
+.review__place .session-count {
   font-size: 14px;
-  font-weight: 400;
-  color: var(--fg-muted);
 }
 
 /* The progress bar (YAZ-5676, Mochi's: `SessionBar`, `sessionCount.css`), under the top line. */

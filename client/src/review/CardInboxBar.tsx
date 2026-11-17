@@ -7,11 +7,11 @@
  * the vault, its folders and the page, "Cards Demo › spanish-words › Verbs", each with the tree's own icon (`FileIcon`:
  * a folder's, a page's); a card file ends at its folder (its name is its title, the head's). Each part is a link: a
  * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
- * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033; the time hidden behind a
- * clock's hover box by default, YAZ-5130, `TodayWork`), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
- * Mochi's): one step per card of the filter (YAZ-5594), in the order answered: red while its last answer was a Forgot,
- * grey once the session lets it go, empty while it waits; a card back in its steps adds no step and no "of". Only the tab
- * on show counts (YAZ-5432, `filterProgress`), so Due today done fills it.
+ * On the right Mochi's count (YAZ-5674, `SessionCount`): a red ✕ K (the misses waiting; none at 0 and in the missed
+ * pass), the open filter's icon, then "done / total" of the filter on show (YAZ-5675). Under it Mochi's progress bar
+ * (YAZ-5676, `SessionBar`). Today's work across the vault ("Today: 31 cards · 9 min", YAZ-5033; the time hidden behind a
+ * clock's hover box by default, YAZ-5130, `TodayWork`) is the cards menu's last line, as the phone's sheet has it: Mochi's
+ * top row has none (Yaseen: "the today is not needed").
  *
  * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
  * total is? like / 5"): the Up next row reads "today / total" — "2 / 5" (New cards' count stands alone, YAZ-5434); the total is every
@@ -41,7 +41,7 @@ import { todayCards } from './reviewTime'
 import { TodayWork } from './TodayWork'
 import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
-import { SessionBar } from './SessionCount'
+import { SessionBar, SessionCount } from './SessionCount'
 import { useNewCardsPicker } from './NewCardsPicker'
 import { kindCount, kindCountText, pickLabel, showsFilter } from './inboxMenu'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
@@ -156,14 +156,9 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             ))}
           </nav>
         )}
-        {todayCards(session.today) !== '' && (
-          <span className="card-inbox__today">
-            <TodayWork today={session.today} time={time} />
-          </span>
-        )}
-        {session.card !== null && (
+        {(session.card !== null || session.end !== null) && (
           <span className="card-inbox__place">
-            {session.progress.done} / {session.progress.total}
+            <SessionCount session={session} icon={<current.icon />} />
           </span>
         )}
         {tools !== undefined && <span className="card-inbox__tools">{tools}</span>}
@@ -253,6 +248,12 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                 </div>
               )
             })}
+            {/* YAZ-5674: today's work, out of the top row (Mochi has none there); the phone's sheet ends the same way. */}
+            {todayCards(session.today) !== '' && (
+              <p className="card-inbox__menu-today" role="none">
+                <TodayWork today={session.today} time={time} />
+              </p>
+            )}
           </ContextMenuSurface>
         )}
         {menu !== null && picker.picker}

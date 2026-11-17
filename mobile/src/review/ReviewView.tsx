@@ -34,7 +34,7 @@ import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
 import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import { DoneScreen, type DoneLook } from '@client/review/DoneScreen'
-import { SessionBar } from '@client/review/SessionCount'
+import { SessionBar, SessionCount } from '@client/review/SessionCount'
 import { CardActions } from '../cardMenu/lazy'
 import { overlayCount } from '../app/browserHistory'
 import { reviewKey } from './keys'
@@ -46,8 +46,9 @@ import './review.css'
  * answer list, never files); the card is the Mac's own drawing (`PhoneCard`). The mockup (version 9) is the spec.
  *
  *  - The top row: the filter "All cards ▾" (round 10, addition 1: All cards, Up next, Due today, New cards, with
- *    counts) and today's work, "Today: 31 cards · 9 min".
- *  - Above the card: its state ("Due today", "New card") and "3 of 12"; then the head, "Title · ID", with "in <page>"
+ *    counts; its sheet ends with today's work, "Today: 31 cards · 9 min") and Mochi's count, "✕ 2 ▣ 4 / 6" (YAZ-5674,
+ *    the Mac's `SessionCount`).
+ *  - Above the card: its state ("Due today", "New card"); then the head, "Title · ID", with "in <page>"
  *    for a card in a page (round 15, item 4). The title is the card line's (decision D): never a
  *    line of the card's text, so the text is drawn whole. A card with no title: the ID alone, as the Mac's Inbox head.
  *    "Title on the front: Hide" (`notitle`): the ID alone until the card is fully shown; so too a title that holds a
@@ -568,24 +569,24 @@ function SessionScreen({
   }, [])
 
   const filter = session.filter
+  const counted = card !== null || session.end !== null
   const countButton = (
     <button
       type="button"
       className="review__count-btn"
       aria-haspopup="dialog"
       aria-expanded={menu === 'filter'}
-      aria-label={`${filterLabel(session.filter)}${card !== null ? `, ${session.progress.done} of ${session.progress.total} done` : ''}. Choose what to review`}
+      aria-label={`${filterLabel(session.filter)}${counted ? `, ${session.misses > 0 ? `${session.misses} missed, ` : ''}${session.progress.done} of ${session.progress.total} done` : ''}. Choose what to review`}
       onClick={() => {
         if (menu !== 'filter') firstAction()
         setMenu(menu === 'filter' ? null : 'filter')
       }}
     >
-      <span className="review__mode">
-        {FILTER_ICON[filter]} {filterLabel(session.filter)} ▾
-      </span>
-      {card !== null && (
+      <span className="review__mode">{filterLabel(session.filter)} ▾</span>
+      {/* YAZ-5674: Mochi's count, the Mac's piece; the list's glyph moves here, in front of "done / total" (once). */}
+      {counted && (
         <span className="review__place">
-          {session.progress.done} <small>/ {session.progress.total}</small>
+          <SessionCount session={session} icon={<span aria-hidden="true">{FILTER_ICON[filter]}</span>} />
         </span>
       )}
     </button>

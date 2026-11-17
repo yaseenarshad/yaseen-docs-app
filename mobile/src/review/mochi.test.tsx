@@ -154,6 +154,17 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
     expect(ids(h)).toEqual([])
   }, 30_000)
 
+  it('YAZ-5674: the count as Mochi`s, the Mac`s piece — a red ✕ K, the open list`s glyph, "done / total"; the glyph once', async () => {
+    h = await reviewSetup(THREE)
+    const place = () => q('.review__count-btn .review__place')
+    expect(place()?.textContent).toBe('▣0 / 3')
+    expect(q('.review__mode')?.textContent).toBe('All cards ▾')
+    await h.click('Forgot')
+    expect(place()?.querySelector('.session-count__misses')?.textContent).toBe('1')
+    expect(place()?.querySelector('.session-count__done')?.textContent).toBe('▣1 / 4')
+    expect(h.button(/Choose what to review/)?.getAttribute('aria-label')).toBe('All cards, 1 missed, 1 of 4 done. Choose what to review')
+  })
+
   it('YAZ-5676: the progress bar as Mochi`s: grey done ÷ total, then red for the misses waiting, both from the left', async () => {
     h = await reviewSetup(THREE)
     const widths = () => ['grey', 'red'].map((part) => h!.host.querySelector<HTMLElement>(`.review__progress .session-bar__${part}`)?.style.width)

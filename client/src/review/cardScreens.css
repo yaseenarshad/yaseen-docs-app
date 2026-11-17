@@ -420,7 +420,7 @@
   align-self: stretch;
   background: var(--bg-side);
 }
-/* The top row (YAZ-5017, as Mochi's): the filter, the scope's path, and "3 of 12" on the right. */
+/* The top row (YAZ-5017, as Mochi's): the filter, the scope's path, and Mochi's "✕ 2 · 4 / 6" on the right (YAZ-5674). */
 .card-inbox__bar {
   display: flex;
   align-items: center;
@@ -534,10 +534,12 @@
   margin-left: auto;
   padding-right: 4px;
 }
-/* Today's work (YAZ-5033): quiet, on the right before "3 of 12"; it takes the push to the right when it shows. */
-.card-inbox__bar > .card-inbox__today {
-  flex: none;
-  margin-left: auto;
+/* Today's work (YAZ-5033; YAZ-5674: the cards menu's last line, out of the top row), quiet, across both columns. */
+.card-inbox__menu-today {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  padding: 6px 10px 4px;
+  border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
@@ -579,10 +581,7 @@
 .card-inbox__time:focus:not(:focus-visible) {
   outline: none;
 }
-.card-inbox__bar > .card-inbox__today + .card-inbox__place {
-  margin-left: 12px;
-}
-/* The bar's own controls (YAZ-5372: the Inbox's zoom, the page zoom's pill), at its right end, after "3 of 12". Quiet:
+/* The bar's own controls (YAZ-5372: the Inbox's zoom, the page zoom's pill), at its right end, after "4 / 6". Quiet:
    faint until the bar is pointed at or a control has the keyboard. With no card (the done screen) it takes the push right. */
 .card-inbox__tools {
   flex: none;
@@ -593,7 +592,7 @@
   opacity: 0.45;
   transition: opacity 120ms ease-out;
 }
-.card-inbox__bar > :is(.card-inbox__today, .card-inbox__place) ~ .card-inbox__tools {
+.card-inbox__bar > .card-inbox__place ~ .card-inbox__tools {
   margin-left: 10px;
 }
 .card-inbox__bar:hover > .card-inbox__tools,
@@ -880,7 +879,7 @@ body.card-inbox--sizing {
   font-size: 12px;
   line-height: 18px;
 }
-/* YAZ-5048: where you are in a card of more than one side, on the row's right: quiet, as "3 of 12" in the top row. */
+/* YAZ-5048: where you are in a card of more than one side, on the row's right: quiet, as "4 / 6" in the top row. */
 .card-inbox__sides {
   flex: none;
   margin-left: auto;

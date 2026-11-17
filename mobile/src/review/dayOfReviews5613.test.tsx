@@ -57,7 +57,8 @@ const sheet = async (): Promise<Record<string, string>> => {
 }
 const look = async () => {
   const bar = q('.review__progress')
-  const place = q('.review__card') === null ? null : (q('.review__place')?.textContent ?? '').replace(/\s+/g, ' ').trim()
+  // "done / total" (YAZ-5675), without the ✕ and the list's glyph in front of it (YAZ-5674).
+  const place = q('.review__card') === null ? null : (/\d+ \/ \d+/.exec(q('.review__place .session-count__done')?.textContent ?? '')?.[0] ?? '')
   return { card: card(), place, bar: `${bar?.getAttribute('aria-valuenow')}/${bar?.getAttribute('aria-valuemax')}`, menu: await sheet() }
 }
 const row = (card: string, place: string | null, bar: string, all: number, due: number, fresh: number, next?: number) => ({

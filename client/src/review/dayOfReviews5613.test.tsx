@@ -164,7 +164,8 @@ async function look(): Promise<{ card: string; place: string | null; bar: string
   const bar = el.querySelector('.card-inbox__progress')
   return {
     card,
-    place: el.querySelector('.card-inbox__place')?.textContent ?? null,
+    // "done / total" (YAZ-5675) while a card shows, without the ✕ and the filter's icon in front of it (YAZ-5674).
+    place: showing() === null ? null : (/\d+ \/ \d+/.exec(el.querySelector('.card-inbox__place .session-count__done')?.textContent ?? '')?.[0] ?? null),
     bar: `${bar?.getAttribute('aria-valuenow')}/${bar?.getAttribute('aria-valuemax')}`,
     menu: await menu(),
   }
