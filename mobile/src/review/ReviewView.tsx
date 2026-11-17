@@ -7,6 +7,9 @@ import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/c
 import { newCardsFrom } from '@client/review/inboxMenu'
 import { addedLine, resetLine } from '@client/review/cardWords'
 import { reviewDuration, todayDuration, todayStudied } from '@client/review/reviewTime'
+import { AskInPlace } from '@client/components/AskInPlace'
+import { addQuestion } from '@client/review/AddMoreField'
+import type { AddKind } from '@shared/cardSchedule'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
@@ -601,6 +604,8 @@ function SessionScreen({
     </button>
   )
   const topBox = useReviewTop()
+  // YAZ-5699: the finish screen's add waiting for its second tap.
+  const [addAsk, setAddAsk] = useState<AddKind | null>(null)
   // During the review only (the sheet's line): the time as Settings › Review › Time so far says. The finish screens show it always.
   const today = <TodayLine session={session} mode={review.settings.timeSoFar} />
   const fromButton = (
@@ -608,18 +613,34 @@ function SessionScreen({
       from {newCardsFrom(session)} ›
     </button>
   )
-  // "Add 10 new cards" (YAZ-5042) and its "from Spanish ›", "Add 2 Up next": one tap each (the Mac's pill has a field).
+  // "Add 10 new cards" (YAZ-5042) and its "from Spanish ›", "Add 2 Up next" (the Mac's pill has a field). YAZ-5699
+  // (Yaseen: "that should be a two click as well"): a tap asks in place, "Add 10 new cards to today?", Cancel first
+  // (`AskInPlace`, the Mac's); Add there adds. "Learn new cards" / "Review missed cards" stay one tap: they add nothing.
   const adds =
     addKinds.length === 0 ? null : (
       <div className="review__done-adds">
-        {addKinds.map((k) => (
-          <span key={k} className="review__done-add">
-            <button type="button" className="btn review__add" onClick={() => review.addCards(k)}>
-              {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
-            </button>
-            {k === 'new' && fromButton}
-          </span>
-        ))}
+        {addKinds.map((k) =>
+          addAsk === k ? (
+            <AskInPlace
+              key={k}
+              question={addQuestion(k, session.adds[k])}
+              yes="Add"
+              className="review__done-ask"
+              onYes={() => {
+                setAddAsk(null)
+                review.addCards(k)
+              }}
+              onNo={() => setAddAsk(null)}
+            />
+          ) : (
+            <span key={k} className="review__done-add">
+              <button type="button" className="btn review__add" onClick={() => setAddAsk(k)}>
+                {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
+              </button>
+              {k === 'new' && fromButton}
+            </span>
+          ),
+        )}
       </div>
     )
 
