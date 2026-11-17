@@ -129,6 +129,24 @@ const CRUMB = (deep: boolean): Record<string, string> => ({
 })
 
 /**
+ * YAZ-5714 round 2 (`#fixture=review-reveal`): a vault shaped as a real one, 18 folders of 150 pages each (2,700: a real vault's size) and the card's page five
+ * folders down, last in the tree (the row is far below the first screen). Review shows the card's side 2; the proof
+ * taps the crumb and Show in Search with real touches, and watches the glow. Made-up data.
+ */
+const REVEAL: Record<string, string> = {
+  '.yaseendocs/review.json': '{}',
+  ...Object.fromEntries(
+    Array.from({ length: 18 }, (_, f) => Array.from({ length: 150 }, (_, i) => [`${String.fromCharCode(65 + f)} folder ${f + 1}/Page ${i + 1}.md`, page(`Page ${i + 1}`, 'Text.')])).flat(),
+  ),
+  'World/School/Year two/Spring term/Other.md': page('Other', 'Text.'),
+  'World/School/Year two/Spring term/World history/Before.md': page('Before', 'Text.'),
+  'World/School/Year two/Spring term/World history/history-cards.md': page(
+    'History cards',
+    block('The year the US declared independence?\n---\n{{1776}}', 'NC-6042, title "The year the US declared independence"'),
+  ),
+}
+
+/**
  * YAZ-5495 (the Mac's YAZ-5043): the end of Due today. Five made-up due cards and three new ones; `-clear` has no new
  * card. `#fixture=review-due-missed` (the % screen after one Forgot), `-done` (Due today is done, Learn new cards),
  * `-clear` (done, nothing new left).
@@ -182,7 +200,7 @@ const press = (name: string | RegExp) => {
 const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
-  const files = name.startsWith('review-crumb') ? CRUMB(name.startsWith('review-crumb-deep')) : name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name === 'review-mochi-pill' ? MOCHI_PILL : name.startsWith('review-mochi') ? MOCHI : name.startsWith('review-room-') ? ROOM(name.slice('review-room-'.length)) : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const files = name === 'review-reveal' ? REVEAL : name.startsWith('review-crumb') ? CRUMB(name.startsWith('review-crumb-deep')) : name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name === 'review-mochi-pill' ? MOCHI_PILL : name.startsWith('review-mochi') ? MOCHI : name.startsWith('review-room-') ? ROOM(name.slice('review-room-'.length)) : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
   // YAZ-5706: the zoom is kept on this phone; each fixture starts at 100% (one browser runs them all).
   writeReviewZoom(name === 'review-room-z50' ? 50 : name === 'review-room-z200' ? 200 : 100)
@@ -202,7 +220,7 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
   }
   const backend = memoryBackend()
   // YAZ-5714: the crumb's Show in Search reads the vault's own copy (the tests' way): the review's store and tokens.
-  const own = name.startsWith('review-crumb')
+  const own = name.startsWith('review-crumb') || name === 'review-reveal'
   const store = own ? t.store : await openVaultStore(backend)
   const tokens = own ? t.s.tokens : tokenStoreOn(backend)
   if (!own) await tokens.write(VAULT, 'github_pat_11FIXTURE0' + 'f'.repeat(72))
@@ -212,6 +230,8 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
   await saveVaultList(store, { vaults: [...others, vault], open: VAULT })
   const sync = fakeSync()
   sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
+  // YAZ-5714 round 2: the proof runs a sync pass (what the phone's engine does each 15 s and after answers) while the row glows.
+  if (name === 'review-reveal') Object.assign(window, { __fixtureSync: sync })
   const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, media, friends: fakeFriends(store, false), fetch: async () => new Response('{}', { status: 401 }) }
   if (name === 'review-taps')
     Object.assign(window, {
@@ -335,6 +355,7 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
     case 'review-crumb-bubble':
     case 'review-crumb-deep-bubble':
     case 'review-crumb-search':
+    case 'review-reveal':
       tap()
       await wait(40)
       tap()

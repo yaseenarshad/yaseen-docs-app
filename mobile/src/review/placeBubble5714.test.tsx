@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { answersSetup } from '../answers/testing'
@@ -97,5 +99,45 @@ describe('YAZ-5713 / YAZ-5714: the crumb`s bubble and Show in Search', () => {
     await until(() => card() !== undefined)
     expect(card()).toBe(step)
     expect(q('.place-bubble')).toBeNull()
+  })
+
+  // YAZ-5714 round 2 (Yaseen's phone test: no glow). The glow was a class put on the row by hand in an effect that ran
+  // again on the tree's next render (a sync pass, the answers sent, the vault's data): its cleanup took the class off
+  // before it ever showed. Now the tree draws the glow itself, and it ends only when its fade does.
+  it('the glow outlives the tree`s next render (a sync pass right after Show in Search), and ends with its fade', async () => {
+    await app()
+    await tap(q('.review__crumb')!)
+    await h.click('Show in Search')
+    await until(() => q('.tree__row--revealed') !== null)
+    // One pass of the phone's sync, as its engine runs one every 15 s and after the answers.
+    await h.syncSet({ status: 'syncing', progress: null })
+    await h.syncSet({ status: 'synced', progress: null })
+    await h.settle()
+    const lit = q('.tree__row--revealed')
+    expect(lit?.dataset.path).toBe('New cards test/History/history-cards.md')
+    // The fade's end clears it (jsdom plays no animation: its end is sent by hand).
+    await act(async () => lit!.dispatchEvent(new Event('animationend', { bubbles: true })))
+    expect(q('.tree__row--revealed')).toBeNull()
+  })
+
+  it('a second Show in Search lights the row again', async () => {
+    await app()
+    for (let i = 0; i < 2; i++) {
+      await tap(q('.review__crumb')!)
+      await h.click('Show in Search')
+      await until(() => q('.tree__row--revealed') !== null)
+      expect(q('.tree__row--revealed')?.dataset.path).toBe('New cards test/History/history-cards.md')
+      await h.click('Review')
+      await until(() => q('.review__crumb') !== null)
+    }
+  })
+
+  it('the glow is an animation: the Mac`s yellow held, then a 1.5 s fade (3 s in all, the Mac`s); reduced motion: held, no fade', () => {
+    const css = readFileSync(join(import.meta.dirname, '../search/treeLook.css'), 'utf8')
+    const rule = css.match(/\.search \.tree__row--revealed \{([^}]*)\}/)?.[1] ?? ''
+    expect(rule).toMatch(/animation: tree-reveal 3s/)
+    const frames = css.match(/@keyframes tree-reveal \{([\s\S]*?)\n\}/)?.[1] ?? ''
+    expect(frames).toMatch(/0%,\s*50% \{[^}]*background-color: var\(--reveal-bg\)/)
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.search \.tree__row--revealed \{[^}]*animation: tree-reveal-still 1\.5s/)
   })
 })

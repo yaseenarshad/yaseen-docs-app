@@ -141,7 +141,8 @@ import { freePort } from './freePort'
  *    content with the hint line under it, a long card scrolls as one page (and at its end), ✕ ✓ neutral grey.
  *  - the Review top bar (`#fixture=review-mochi`, `review-mochi-more`, YAZ-5698), light and dark, at 320, 375 and 390 px:
  *    the filter on the left (a 44 px tap), the count in the true centre (1 px), the dot and the ⚙ right, no overlap.
- *  - the card's crumb (`#fixture=review-crumb`, `-deep`, `-bubble`, `-search`, YAZ-5713, YAZ-5714), light and dark, at 320, 375
+ *  - the card's crumb (`#fixture=review-crumb`, `-deep`, `-bubble`, `-search`, YAZ-5713, YAZ-5714; `review-reveal`: the glow
+ *    through a sync pass, a vault of 2,700 pages, YAZ-5714 round 2), light and dark, at 320, 375
  *    and 390 px: folded from the start, the page whole; the bubble inside the screen; Show in Search lands on the lit row.
  *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
  *    every bar and the full-screen table inside it, no install hint; a phone (upright and on its side) keeps the full
@@ -2921,6 +2922,39 @@ if (process.env.LAYOUT_CRUMB !== 'no') {
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  Show in Search at ${w}, ${scheme}: ${m.error ?? `"${m.label}" lit (${m.bg}), ${m.onScreen ? 'on the screen' : 'OFF SCREEN'}; open ${m.open.join(', ')}${m.sideways ? '; SCROLLS SIDEWAYS' : ''}`}  ${file}`)
     }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+  // YAZ-5714 round 2 (Yaseen's phone: no glow): `review-reveal`, a vault of 2,700 pages and the page five folders down,
+  // at 390x844. Show in Search, then one sync pass (the phone's engine runs one each 15 s and after the answers) while
+  // the row glows: the glow starts with the row on the screen, holds yellow, fades, and is gone by 3.6 s. Reduced
+  // motion: held, no fade, gone by 2 s.
+  for (const reduce of [false, true]) {
+    await open('review-reveal', 390, 844)
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: reduce ? 'reduce' : 'no-preference' }] }, page)
+    const m = await evaluate(`(async () => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+      const s = []
+      const t0 = performance.now()
+      const look = () => { const row = document.querySelector('.tree__row--revealed'); if (!row) return { t: Math.round(performance.now() - t0), lit: false }; const b = row.getBoundingClientRect(), box = row.closest('.screen').getBoundingClientRect(), cs = getComputedStyle(row); return { t: Math.round(performance.now() - t0), lit: true, path: row.dataset.path, onScreen: b.top >= box.top && b.bottom <= box.bottom, bg: cs.backgroundColor, anim: cs.animationName } }
+      document.querySelector('.review__crumb').click()
+      await wait(100)
+      document.querySelector('.place-bubble__go').click()
+      await wait(500)
+      s.push(look())
+      window.__fixtureSync.set({ status: 'syncing', progress: null })
+      await wait(150)
+      window.__fixtureSync.set({ status: 'synced', lastSyncedAt: Date.now() })
+      await wait(${reduce ? 750 : 1350})
+      s.push(look())
+      await wait(${reduce ? 1000 : 1600})
+      s.push(look())
+      return s
+    })()`)
+    const [early, later, end] = m
+    const yellow = (x: { bg?: string }) => /^rgba?\((255, 227, 110|217, 183, 42)/.test(x.bg ?? '')
+    const ok = early.lit && early.path === 'World/School/Year two/Spring term/World history/history-cards.md' && early.onScreen && yellow(early) && later.lit && yellow(later) && later.anim === (reduce ? 'tree-reveal-still' : 'tree-reveal') && !end.lit
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  Show in Search glow through a sync pass${reduce ? ', reduced motion' : ''}: ${m.map((x: { t: number; lit: boolean; bg?: string; anim?: string; onScreen?: boolean }) => `${x.t} ms ${x.lit ? `${x.bg} ${x.anim}${x.onScreen ? '' : ' OFF SCREEN'}` : 'no glow'}`).join('; ')}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
