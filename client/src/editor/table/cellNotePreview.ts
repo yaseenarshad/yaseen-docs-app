@@ -41,6 +41,27 @@ export function setCellNotePreviewLines(lines: number): void {
   previewLines = Math.min(CELL_NOTE_PREVIEW_LINES_MAX, Math.max(CELL_NOTE_PREVIEW_LINES_MIN, n))
 }
 
+/** The body's padding under its last line, in px (`.cell-note-preview__body` in `cellHoverCard.css`). */
+const BODY_PAD_BOTTOM = 8
+
+/**
+ * A note box that the window cuts (YAZ-5717): its CSS `max-height` is the window less 16px, so in a short window the last
+ * lines would end in the middle with no sign. The lines past the box's bottom go, and the last line that shows reads
+ * "…". One layout read for the box and its lines, on show only.
+ */
+export function fitNoteLines(box: HTMLElement): void {
+  const rect = box.getBoundingClientRect()
+  // No layout (a box that is not drawn): nothing to measure.
+  if (rect.height === 0) return
+  const bottom = rect.bottom - BODY_PAD_BOTTOM
+  const lines = Array.from(box.querySelectorAll<HTMLElement>('.cell-note-preview__line'))
+  const past = lines.findIndex((line) => line.getBoundingClientRect().bottom > bottom)
+  if (past < 0) return
+  const keep = Math.max(1, past)
+  for (const line of lines.slice(keep)) line.remove()
+  lines[keep - 1].textContent = '…'
+}
+
 /** A list item's marker as plain text: a to-do's box, a number, else a bullet. */
 const marker = (list: ProseNode, item: ProseNode, index: number): string =>
   item.attrs.checked === true ? '☑ ' : item.attrs.checked === false ? '☐ ' : list.type.name === 'ordered_list' ? `${(list.attrs.order as number) + index}. ` : '• '
@@ -103,7 +124,7 @@ function cellCard(view: EditorView, cell: HTMLElement): CellCard | null {
   const rect = cell.getBoundingClientRect()
   box.style.left = `${rect.right + 4 + NOTE_BOX_WIDTH > window.innerWidth ? Math.max(0, rect.right - 4 - NOTE_BOX_WIDTH) : rect.right + 4}px`
   box.style.top = `${rect.top}px`
-  return { box, dwell: HOVER_PREVIEW_DWELL_MS, under: false }
+  return { box, dwell: HOVER_PREVIEW_DWELL_MS, under: false, fit: fitNoteLines }
 }
 
 export const cellNotePreview = $prose(() => {

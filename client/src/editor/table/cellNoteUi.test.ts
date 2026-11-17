@@ -23,7 +23,7 @@ import { cellNoteButtonPlacements } from './cellNoteButton'
 import { setCellNoteButtonSetting } from './timeFormatSetting'
 import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, openCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
 import { cellHoverCardRuns } from './cellHoverCard'
-import { cellNotePreviewLines, NOTE_BOX_WIDTH, setCellNotePreviewLines } from './cellNotePreview'
+import { cellNotePreviewLines, fitNoteLines, NOTE_BOX_WIDTH, setCellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
 import { cellPos } from './tableTestKit'
 
@@ -725,6 +725,30 @@ describe('the preview (D14)', () => {
     // 900 + 4 + 360 > 1024: left of the corner. 700 + 300 > 768 - 8: up, 8px from the bottom.
     expect([box.style.left, box.style.top]).toEqual([`${900 - 4 - NOTE_BOX_WIDTH}px`, `${768 - 8 - 300}px`])
     spy.mockRestore()
+  })
+
+  it('YAZ-5717: in a short window the lines past the box\'s bottom go, and the last one that shows reads "…"', () => {
+    const box = document.createElement('div')
+    const body = document.createElement('div')
+    box.appendChild(body)
+    for (let i = 1; i <= 10; i++) {
+      const line = document.createElement('div')
+      line.className = 'cell-note-preview__line'
+      line.textContent = `Line ${i}`
+      // Each line 20px tall from y = 40.
+      line.getBoundingClientRect = () => new DOMRect(0, 20 + i * 20, 300, 20)
+      body.appendChild(line)
+    }
+    // The box ends at 148: less its 8px padding, the lines must end by 140. Lines 1 to 5 fit (line 5 ends at 140); line 5 becomes "…".
+    box.getBoundingClientRect = () => new DOMRect(0, 0, 360, 148)
+    fitNoteLines(box)
+    expect(Array.from(box.querySelectorAll('.cell-note-preview__line'), (l) => l.textContent)).toEqual(['Line 1', 'Line 2', 'Line 3', 'Line 4', '…'])
+    // A box with room keeps every line.
+    const roomy = box.cloneNode(true) as HTMLElement
+    roomy.getBoundingClientRect = () => new DOMRect(0, 0, 360, 1000)
+    roomy.querySelectorAll<HTMLElement>('.cell-note-preview__line').forEach((l) => (l.getBoundingClientRect = () => new DOMRect(0, 40, 300, 20)))
+    fitNoteLines(roomy)
+    expect(roomy.querySelectorAll('.cell-note-preview__line')).toHaveLength(5)
   })
 
   it('YAZ-5717: the CSS gives the note box 360px, at most the window less 16px, and lines that wrap', () => {

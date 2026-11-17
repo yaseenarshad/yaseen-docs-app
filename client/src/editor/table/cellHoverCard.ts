@@ -39,6 +39,8 @@ export interface CellCard {
   box: HTMLElement
   dwell: number
   under: boolean
+  /** Run once the box is on the page and placed: the note box drops the lines its `max-height` cuts (YAZ-5717). */
+  fit?: (box: HTMLElement) => void
 }
 
 export interface CellCards {
@@ -125,6 +127,7 @@ export function cellHoverCards(build: (cell: HTMLElement) => CellCard | null): C
       const rect = card.box.getBoundingClientRect()
       if (rect.bottom > window.innerHeight - EDGE) card.box.style.top = `${Math.max(EDGE, window.innerHeight - EDGE - rect.height)}px`
     }
+    card.fit?.(card.box)
     shown = card.box
     warm = true
   }
