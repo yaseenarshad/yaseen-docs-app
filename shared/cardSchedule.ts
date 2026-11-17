@@ -223,19 +223,12 @@ export interface DueCard {
  * its log as text, one map per settings object: new settings are a new object, so a settings change starts empty. A
  * hit costs a string join and a lookup, no FSRS step.
  */
-const dueCache = new WeakMap<ReviewSettings, Map<string, CardDue>>()
-/** A reviewed card's due date. */
-interface CardDue {
-  due: number
-}
-const NEW_DUE: CardDue = Object.freeze({ due: Number.NaN })
+const dueCache = new WeakMap<ReviewSettings, Map<string, number>>()
 /** A cap so a long session cannot grow the log map without end: past it, the map starts again. Each answer adds a log. */
 const CACHE_MAX = 20_000
 
-export const cardDueAt = (reviews: readonly CardReview[], s: ReviewSettings): number => cardDue(reviews, s).due
-
-function cardDue(reviews: readonly CardReview[], s: ReviewSettings): CardDue {
-  if (reviews.length === 0) return NEW_DUE
+export function cardDueAt(reviews: readonly CardReview[], s: ReviewSettings): number {
+  if (reviews.length === 0) return Number.NaN
   let map = dueCache.get(s)
   if (map === undefined) dueCache.set(s, (map = new Map()))
   let key = ''
@@ -243,8 +236,7 @@ function cardDue(reviews: readonly CardReview[], s: ReviewSettings): CardDue {
   let due = map.get(key)
   if (due === undefined) {
     if (map.size >= CACHE_MAX) map.clear()
-    const last = replay(reviews, s)
-    map.set(key, (due = last === null ? NEW_DUE : { due: last.due }))
+    map.set(key, (due = replay(reviews, s)?.due ?? Number.NaN))
   }
   return due
 }
@@ -282,7 +274,7 @@ function cardFacts(r: CardPage, s: ReviewSettings): readonly CardFacts[] {
   const hit = map?.get(r.path)
   if (hit !== undefined && hit.mtime === r.mtime && hit.size === r.size && hit.facts.length === cards.length) return hit.facts
   const facts = cards.map((card) => ({
-    ...cardDue(card.reviews, s),
+    due: cardDueAt(card.reviews, s),
     // The earliest review, without a sort.
     first: card.reviews.reduce<string | null>((a, x) => (a === null || x.at < a ? x.at : a), null),
     learned: !isNewCard(card.reviews),

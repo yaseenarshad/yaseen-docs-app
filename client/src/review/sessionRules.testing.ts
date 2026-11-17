@@ -11,11 +11,12 @@
  *  2. Review dates only move forward: a card's reviews are in time order, a new review is never before the card's
  *     last one nor after now, and the due date it gives is never before the review.
  *  3. Counts never grow from an answer or from a card shown again: All cards, New cards, Up next and the Inbox
- *     row's count never go up; Due today goes up by one only for a new card's first Remembered (New one less);
- *     "N / M" keeps M (same filter). ← →, the filter, the clock in the day and a stop's button change no count.
- *  4. The numbers agree: Up next + Due today + New cards = All cards (Review rules v1, rule 7); the bar's whole is M; the bar's done part plus the
- *     cards left under the filter is M; 1 ≤ N ≤ M while a card shows; the stop "Review missed cards K" comes only
- *     after a Forgot (K ≥ 1, never 100%).
+ *     row's count never go up; Due today goes up by one only for a new card's first Remembered (New one less). The
+ *     total of "done / total" may grow, as Mochi's does (YAZ-5675). ← →, the filter, the clock in the day and a stop's
+ *     button change no count.
+ *  4. The numbers agree: Up next + Due today + New cards = All cards (Review rules v1, rule 7); done + the cards left
+ *     under the filter = total (YAZ-5675); the misses waiting (the bar's red, the ✕ K) are cards left; the stop
+ *     "Review missed cards K" comes only after a Forgot (K ≥ 1, never 100%).
  *  5. Undo of an answer puts the counts back as they were before that answer.
  *  6. Archive takes the card on show out of the session (All cards one less, unless its Up next place brings the next
  *     marked card in).

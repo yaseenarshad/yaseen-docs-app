@@ -53,18 +53,18 @@ import './review.css'
  * answer list, never files); the card is the Mac's own drawing (`PhoneCard`). The mockup (version 9) is the spec.
  *
  *  - The top row: the filter "All cards" (left, YAZ-5698) (round 10, addition 1: All cards, Up next, Due today, New cards, with
- *    counts; its sheet ends with today's work, "Today: 2 learned · 31 reviews · 9 min") and Mochi's count, "✕ 2 · tray 4 / 6" (YAZ-5674,
+ *    counts; its sheet ends with today's work, "Today: 21 cards · ⏱", YAZ-5690) and Mochi's count, "✕ 2 · tray 4 / 6" (YAZ-5674,
  *    the Mac's `SessionCount`).
  *  - Above the card: its state ("Due today", "New card"); then the head, "Title · ID", with "in <page>"
  *    for a card in a page (round 15, item 4). The title is the card line's (decision D): never a
  *    line of the card's text, so the text is drawn whole. A card with no title: the ID alone, as the Mac's Inbox head.
- *    "Title on the front: Hide" (`notitle`): the ID alone at every step and after the answer (YAZ-5695). A shown
+ *    Title in review › Never (`notitle`): the ID alone at every step and after the answer (YAZ-5695). A shown
  *    title comes as the Mac's (YAZ-5696, `titleShows`): Never, Always, After the first click or With Side 2, by the card's own
  *    choice or review.json's `titleAt`; a title that holds a hidden-word mark waits until the card is fully shown. A card
  *    file that is not valid says so (round 15, item 3).
  *  - A TAP ON THE CARD shows the next hidden word, else the next side: what Space does on the Mac. No swipes.
  *  - At the bottom, in reach of the thumb: ✕ Forgot and ✓ Remembered (or four by the setting), then ⋯: Archive card,
- *    Up next, Title on the front, Open page (a card file: Open card); no Fix later, as the Mac's Inbox (YAZ-5625,
+ *    Move to Up next, Title in review ›, Open page (a card file: Open card); no Fix later, as the Mac's Inbox (YAZ-5625,
  *    YAZ-5430). The answer buttons work at any step, as on the Mac.
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
  *  - Done: the Mac's own finish screens (`DoneScreen`, YAZ-5665): "Inbox complete." with its 🎉, ✓ and confetti, the
@@ -157,7 +157,6 @@ function useAnswersState(link: ReviewLink): AnswersState {
 /** The step a card is at: how many sides show, which hidden words, and the marked one (the Mac's `cardSteps.ts`). */
 type Step = Reveal & { key: string | null }
 
-/** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 /** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
 /** `words` and `rating`: the hint line's "✓ Remembered · Capital of Spain · back in 9 days · Undo", right after the answer (the Mac's, YAZ-5693). */
 type Line = { kind: 'answer'; count: number; path: string; id: string; words: AnswerWords; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
@@ -891,10 +890,10 @@ function LastLine({ last, back, quiet, undo }: { last: { words: AnswerWords; rat
   )
 }
 
-/** The answer buttons' glyphs (as Mochi): ✕ Forgot, ✓ Remembered; with four buttons, Hard and Easy too. */
 /** The finish screens' look on the phone (`DoneScreen`, YAZ-5665): its classes, and a lighter burst over the Review screen. */
 export const DONE_LOOK: DoneLook = { title: 'review__done-title', line: 'review__done-line', more: 'link-btn review__done-more', today: 'review__done-today', go: 'btn due-end__go', area: '.review', burst: { maxDpr: 2, pieces: 80 } }
 
+/** The answer buttons' glyphs (as Mochi): ✕ Forgot, ✓ Remembered; with four buttons, Hard and Easy too. */
 const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good: '✓', easy: '⇈' }
 
 /** What an open menu keeps for itself: the menus, and the buttons that open them (a second tap there closes it: YAZ-5539). */

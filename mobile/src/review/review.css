@@ -678,14 +678,6 @@
   min-height: 140px;
 }
 
-.phone-card__media {
-  display: block;
-  min-height: 24px;
-  margin: 6px 0;
-  font-size: 14px;
-  color: var(--fg-muted);
-}
-
 /* The part the next tap shows: the accent's mark (the Mac's "Mark the next hidden word"). YAZ-5484: not where the vault
    turned it off (`--mark-next-hidden: off`, card-look.json); its colour is the vault's where it picked one; with a file,
    the Mac's own mark rules (`card.css`) draw it in the vault's hidden-word look. */

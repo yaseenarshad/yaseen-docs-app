@@ -91,23 +91,25 @@ import { tourEvent } from '../course/tourBus'
  * queue leave (not the one on show, not a repeat), today's new cards not in it join at the end. It is a setting, so
  * it is not on the undo stack. `newCardFolders` gives the picker its folders and counts.
  *
- * THE END OF DUE TODAY (YAZ-5043, as Mochi's two passes; Due today only since YAZ-5707: All cards is one run, below):
- * a Forgot on a card with reviews is held back to the end of the DUE part of the queue (before any new card). When the first pass of the due cards is done the session STOPS (`pause`): "You remembered 93% of
- * cards." with one button, "Review missed cards 5" (no skip: you finish them that day; YAZ-5677, Mochi's words). A missed card is one with a
- * Forgot in this session: only misses come back (YAZ-5702, the YAZ-5655 amendment); a learned new card's one same-day
- * review (`fromNew`) waits after the pass and makes no stop. When the missed cards are done
- * too it stops again: "Due today is done.", then "Learn new cards 11" (`goOn`). The % counts each due card's FIRST
- * answer of this session only (`dueFirsts`, `sessionProgress.ts`): a card missed then got right counts as missed, a new card never counts, and a
- * history reset elsewhere changes nothing. Each stop shows once per session (`stage`): a card that becomes due later
- * never brings the % screen back. ⌘Z on a stop takes it back with the last answer: the card shows again.
+ * THE END OF DUE TODAY (YAZ-5043, as Mochi's two passes; Review rules, the consolidated list on YAZ-5655, rules 6–7 and
+ * 20–21). Only Due today stops (`pause`): All cards is one run (below), and Up next and New cards never stop. A Forgot
+ * on a card with reviews goes back to the end of the DUE part of the queue (before any new card). When the first pass
+ * of the due cards is done the session STOPS: "You remembered 93% of cards." with one button, "Review missed cards 5"
+ * (no skip: you finish them that day; YAZ-5677, Mochi's words). A missed card is one with a Forgot in this session:
+ * only misses come back (YAZ-5702); a learned new card's one same-day review (`fromNew`) waits after the pass and makes
+ * no stop. When the missed cards are done too it stops again: "Finished reviewing missed cards." (YAZ-5678), then
+ * "Learn new cards 11" (`goOn`). The % counts each due card's FIRST answer of this session only (`dueFirsts`,
+ * `sessionProgress.ts`): a card missed then got right counts as missed, a new card never counts, and a history reset
+ * elsewhere changes nothing. Each stop shows once per session (`stage`): a card that becomes due later never brings
+ * the % screen back. ⌘Z on a stop takes it back with the last answer: the card shows again.
  *
  * ALL CARDS IS ONE RUN (YAZ-5707; Mochi's finding E5 on YAZ-5703: on All cards Mochi never stops). The run is every
  * card of today's queue, in the Order settings' order (`ordered`, once at the start: All cards Due first or Shuffle;
  * Due today In order or Shuffle, which orders the due cards here too),
  * then each learned new card's same-day review, then the missed cards at the very end (`allPart`, `repeatPlace`), and
  * then "Inbox complete." No stop between the due and the new cards, no "% / Review missed cards" screen and no "Learn
- * new cards" offer on All cards: those stay on Due today. One switch (`ALL_CARDS_STOP_BEFORE_MISSED`) would bring back a
- * % stop before the missed cards. The numbers: `sessionProgress.ts` (All cards carries today's earlier work).
+ * new cards" offer on All cards: those stay on Due today. The numbers: `sessionProgress.ts` (All cards carries today's
+ * earlier work).
  */
 
 /** Which cards of the session show (YAZ-5017). Each has a count of the session's queue. */
@@ -198,7 +200,7 @@ export interface CardReviewSession {
   lastArchive?: { id: string } | null
   /** The saved folder pick for new cards (YAZ-5322), each with its name; empty for All folders. */
   newFrom: Pick<NewCardFolder, 'folder' | 'label'>[]
-  /** A stop at the end of Due today (YAZ-5043): the screen in place of the card; null while cards show. */
+  /** A stop at the end of Due today (YAZ-5043; only Due today stops, YAZ-5707): the screen in place of the card; null while cards show. */
   end: DueTodayEnd | null
   /**
    * This landing on the done screen after an answer of this session (YAZ-5662): its cheer plays once for it, not when
@@ -447,11 +449,10 @@ const repeatPlace = (rest: readonly QueueCard[], from: number, card: QueueCard, 
 
 /**
  * The stop after a due card's answer (YAZ-5043), or none: the first pass done (missed cards wait, or none: Due today
- * is done), or the missed cards done. Only under All cards and Due today, and each stop once (`stage`).
+ * is done), or the missed cards done. Only under Due today (YAZ-5707: All cards never stops), and each stop once (`stage`).
  */
 const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> => {
   const none = { stage: s.stage, pause: null }
-  if (s.filter === 'all') return allStop(s)
   if (!inPass(card, s.filter) || s.stage === 'over' || s.filter !== 'due') return none
   const due = s.queue.filter((c) => inPass(c, s.filter))
   // The first pass is done when every due card waiting is a repeat: a missed card (only misses come back, YAZ-5702, the
@@ -464,25 +465,12 @@ const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> 
 }
 
 /**
- * YAZ-5707, THE ONE SWITCH: at the end of an All cards run with misses, stop at "You remembered N%" with "Review missed
- * cards K" (true), or roll straight into the missed cards (false: Mochi, finding E5 — All cards never stops).
- */
-const ALL_CARDS_STOP_BEFORE_MISSED = false
-
-/**
  * Where a card of an All cards session stands (YAZ-5707): 0 the run (a card not answered yet), 1 back today but not
  * missed (a learned new card's same-day review; a new card after a ✕, which stays New until its first ✓, so it never
  * shows twice in a row while other cards wait), 2 a missed card (✕ on a due card, or on a same-day review). The queue
  * keeps them in that order.
  */
 const allPart = (c: QueueCard): 0 | 1 | 2 => (c.repeat !== true ? 0 : c.forgot === true && !c.isNew ? 2 : 1)
-
-/** All cards' stop (YAZ-5707): none, unless the switch is on and only missed cards are left after a first-answer ✕. */
-const allStop = (s: Session): Pick<Session, 'stage' | 'pause'> => {
-  const none = { stage: s.stage, pause: null }
-  if (!ALL_CARDS_STOP_BEFORE_MISSED || s.stage !== 'first' || s.queue.some((c) => allPart(c) < 2)) return none
-  return missedCards(s).length > 0 && s.answered.some((a) => a.first && a.rating === 'again') ? { stage: 'missed', pause: 'missed' } : none
-}
 
 /**
  * The Order setting (YAZ-5707) on the cards of `queue` from `from` on that are not Up next and not back after an
@@ -539,7 +527,7 @@ const ordered = (queue: readonly QueueCard[], from: number, s: Pick<ReviewSettin
 
 /**
  * A card of Due today's pass (YAZ-5043): its own cards (rule 7). A new card begun today (`fromNew`) waits for its
- * second ✓ after the pass. (All cards has no pass since YAZ-5707: `allStop`.)
+ * second ✓ after the pass. (All cards has no pass since YAZ-5707.)
  */
 const inPass = (c: QueueCard, filter: CardFilter): boolean => c.fromNew !== true && matchesFilter(c, filter)
 
@@ -780,7 +768,7 @@ const withReset = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
   for (const c of s.queue) {
     const ofKind = c.repeat !== true && (what === 'next' ? c.next : c.isNew && !c.next)
     const now = today.get(cardKey(c))
-    // Rule 11 (YAZ-5614 item 3): on a stop no card is on show, so Reset keeps none that today's list does not have.
+    // Rule 33 (v1 rule 11, YAZ-5655): on a stop no card is on show, so Reset keeps none that today's list does not have.
     if (ofKind && (c !== head || s.pause !== null) && (now === undefined || (what === 'next' && !now.next))) {
       dropped.add(cardKey(c))
       if (now === undefined) continue
@@ -1366,7 +1354,7 @@ export function useCardReview(
   const goOn = useCallback(() => {
     setSession((s) => {
       if (s === null || s.pause === null) return s
-      // Learn new cards from Due today: the New cards filter. Under All cards the new cards are next already.
+      // Learn new cards from Due today (the one filter that stops, YAZ-5707): the New cards filter.
       // YAZ-5616: with no plain new card left, the begun ones (Due today cards now) come next under Due today itself.
       if (s.pause === 'done' && s.filter === 'due') return s.queue.some((c) => matchesFilter(c, 'new')) ? fitted({ ...s, filter: 'new', at: 0, turn: s.turn + 1, pause: null }) : fitted({ ...s, turn: s.turn + 1, pause: null })
       return { ...s, pause: null }

@@ -1,4 +1,5 @@
 import { storage } from '../lib/storage'
+import { dayOf } from './localDay'
 
 /**
  * The Up next marks an answer took off today (YAZ-5028), per vault: `cardQueue`'s `upNextTaken`, so "Up next a day"
@@ -11,11 +12,6 @@ import { storage } from '../lib/storage'
  * Mac does not see it.
  */
 const NONE: readonly string[] = Object.freeze([])
-
-export const dayOf = (now: number): string => {
-  const d = new Date(now)
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-}
 
 /** The card IDs of vault `root` whose mark an answer took off today: one array while the list holds still (a snapshot). */
 export function upNextTakenToday(root: string, now = Date.now()): readonly string[] {

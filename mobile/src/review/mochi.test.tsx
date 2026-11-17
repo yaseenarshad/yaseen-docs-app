@@ -8,7 +8,7 @@ import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from '
 /**
  * YAZ-5415: the Review screen like Mochi (the approved mockup, round 5). Tap anywhere (and what keeps its own tap), a
  * tap on a hidden part, the bounce at the end, ← → as the Mac, an answer before all parts show, Undo in the hint line,
- * the review menu (each list, Reset, the folder pick with two folders) and the progress bar in steps. The real engine
+ * the review menu (each list, Reset, the folder pick with two folders) and the progress bar (Mochi's two fills, YAZ-5676). The real engine
  * and answer list on the fake GitHub (`testing.ts`).
  */
 let h: ReviewHarness | undefined

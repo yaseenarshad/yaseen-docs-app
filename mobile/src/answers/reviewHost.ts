@@ -1,5 +1,6 @@
 // The pure card read: no bridge, so the phone's build wall takes it. Never `cardFile.ts` (the desktop's).
 import { cardOnPageIn, type CardOnPage } from '@client/review/cardRead'
+import { dayOf } from '@client/review/localDay'
 import type { ReviewHost } from '@client/review/reviewHost'
 import { CardNotFoundError, cardIdOf, cardNextIndex, cardReviewIndex, cardReviewsOf, pageCards, type CardLine, type CardReview } from '@shared/cardLine'
 import { NOTHING_ADDED, type CardsAddedToday } from '@shared/cardSchedule'
@@ -34,11 +35,6 @@ export interface PhoneDays {
 }
 
 const NONE: readonly string[] = Object.freeze([])
-/** The local calendar day, in the Mac's own form (`dayOf` in `client/src/review/upNextTaken.ts`). */
-const dayOf = (now: number): string => {
-  const d = new Date(now)
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-}
 
 export async function openPhoneDays(store: VaultStore, vault: string, now: () => number = Date.now): Promise<PhoneDays> {
   let kept: StoredDays = (await store.getState<StoredDays>(vault, DAYS_STATE)) ?? { upNext: null, added: null }

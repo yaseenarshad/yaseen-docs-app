@@ -23,9 +23,9 @@ import { CARD_TITLE_AT, OLD_TITLE_AT, type CardTitleAt, type CardTitleChoice, ty
  * line WRITES. The line READS any valid ISO 8601 time (YAZ-5673): with or without seconds or milliseconds, `Z` or an
  * offset (the minute-only `2026-11-12T14:05Z` of the first builds and of the demo vault's seed); its `at` is that
  * instant in the written form, and the part keeps its own text (`raw`), so no write rewrites a user's old review just
- * to change its form. An invalid time (`2026-02-30T…`, no zone) is an unknown part, kept as its text. `off` takes the card out of review. `next` puts it at the top of the Inbox
- * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. `notitle` hides the card's title on the
- * Inbox's front (YAZ-5030, "Title on the front: Hide"); absent, the title shows. `fix` marks the card "Fix later"
+ * to change its form. An invalid time (`2026-02-30T…`, no zone) is an unknown part, kept as its text. `off` takes the card out of review. `next` puts it in Up next
+ * (YAZ-4999 D3; ⋯ › "Move to Up next", YAZ-5697): its first answer removes it, in the same write. `notitle` hides the
+ * card's title in review (YAZ-5030; ⋯ › Title in review › Never, YAZ-5696); absent, the title shows. `fix` marks the card "Fix later"
  * (YAZ-5097): it has a mistake to fix at the desk; it stays in review.
  *
  * THE TITLE (YAZ-5308, decision D: "a card's facts always live in its card line"): `title "Capital of France"`, right
@@ -549,7 +549,7 @@ export function withCardNext(line: CardLine, on: boolean, at?: number): CardLine
 }
 
 /**
- * The title hidden on the Inbox's front or shown (YAZ-5030, the ⋯ menu's "Title on the front"): `notitle` goes after
+ * The title hidden in review or shown (YAZ-5030; ⋯ › Title in review › Never, YAZ-5696): `notitle` goes after
  * the ID, the title and any `off` / `next` right after them, or first; Show removes every `notitle`.
  */
 export function withCardNoTitle(line: CardLine, hide: boolean): CardLine {
