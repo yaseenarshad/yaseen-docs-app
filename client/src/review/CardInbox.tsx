@@ -451,7 +451,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const retitle = (path: string, id: string, next: string): void => {
     changeCardLine(path, id, (l) => withCardTitle(l, next)).catch((err: unknown) => onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`))
   }
-  const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide })
+  const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide, lineUndo: session.lastAdd !== null || archivedLine || line !== null })
   /** The ⋯ row's actions (YAZ-5004): the hook's own, with their names and keys for the hover box. */
   const moreActions =
     card === null
