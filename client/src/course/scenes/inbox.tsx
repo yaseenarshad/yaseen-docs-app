@@ -222,7 +222,6 @@ function OneAtATime(props: SceneProps) {
             <InboxView
               beat={b}
               card={{ title: MOON.title, text: MOON.text, id: MOON.id, sides: 1, state: 'Due today', blanks: since(b, 0.485, 0.5) * (0.6 + 0.4 * Math.abs(Math.sin(Math.max(0, b.t - recall * b.length) * 3))), lit: [0, 0] }}
-              position={1}
               total={4}
               place={PLACE}
               glowKey={{ Show: since(b, recall, 0.5) }}
@@ -343,7 +342,6 @@ function Answering(props: SceneProps) {
   let last: { rating: 'again' | 'good'; text: string; p: number; undo?: number } | undefined
   let card = MOON
   let cardId = MOON.id
-  let position = 1
   let answered: boolean[] = []
   let glowKey: Record<string, number> = {}
   let canUndo = false
@@ -377,7 +375,6 @@ function Answering(props: SceneProps) {
     if (answeredNow) {
       card = { ...CANBERRA, id: TODAY[1].id }
       cardId = TODAY[1].id
-      position = 2
       answered = [false]
       canUndo = true
     }
@@ -396,7 +393,6 @@ function Answering(props: SceneProps) {
           <InboxView
             beat={b}
             card={{ title: card.title, text: card.text, id: cardId, shown, sides, state: 'Due today' }}
-            position={position}
             total={4}
             answered={answered}
             place={PLACE}
@@ -682,7 +678,6 @@ function Complete(props: SceneProps) {
           <InboxView
             beat={b}
             card={{ title: PROTEIN.title, text: `${FIRST_FRONT}\n---\nAn egg is mostly protein and fat.`, id: TODAY[3].id, shown: 1, sides: 2, state: 'Due today' }}
-            position={4}
             total={4}
             answered={after ? [false, true, false, false] : [false, true, false]}
             place={PLACE}
