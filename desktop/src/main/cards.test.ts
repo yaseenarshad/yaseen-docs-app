@@ -387,7 +387,7 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
   })
 })
 
-describe('YAZ-5020: same-day steps — cards come back in the same session (Yaseen\'s 21 weights, retention 0.9, no fuzz)', () => {
+describe('YAZ-5020: same-day steps — a ✕ and a new card\'s first ✓ come back in the same session, only misses after that (YAZ-5702) (Yaseen\'s 21 weights, retention 0.9, no fuzz)', () => {
   const s = { ...DEFAULT_REVIEW_SETTINGS, fuzz: false }
   const t0 = new Date(2026, 5, 15, 9, 0).getTime()
   /** A log of answers, each `[minutes after t0, rating]`, as the line holds them (to the minute). */
@@ -429,9 +429,10 @@ describe('YAZ-5020: same-day steps — cards come back in the same session (Yase
     expect(daysOnly(log([0, 'again'], [10, 'good']))).toBe(3)
   })
 
-  it('new → Remembered → Forgot → Remembered → Remembered leaves after the second Remembered that follows the Forgot', () => {
+  it('new → Remembered → Forgot → Remembered: only misses come back (YAZ-5702), so that ✓ is done for today though FSRS keeps its step; the next ✓ ends the steps', () => {
     const l = log([0, 'good'], [1, 'again'], [2, 'good'], [3, 'good'])
-    expect(steps(l)).toEqual([true, true, true, false])
+    expect(steps(l)).toEqual([true, true, false, false])
+    expect(cardHistory(l, s)[2].interval).toBe(1)
     expect(lastWait(l)).toBe(1)
     expect(cardState(l, s).lapses).toBe(0) // a Forgot in the learning steps is not a lapse
   })
@@ -448,11 +449,11 @@ describe('YAZ-5020: same-day steps — cards come back in the same session (Yase
   it('the replay stays deterministic: the same log gives the same state; two answers in one minute replay in line order', () => {
     const l = log([0, 'good'], [1, 'again'], [1, 'good'])
     expect(cardState(l, { ...s })).toEqual(cardState(l, { ...s }))
-    expect(steps(l)).toEqual([true, true, true])
+    expect(steps(l)).toEqual([true, true, false]) // the last ✓ is done for today (YAZ-5702)
     expect(steps(log([0, 'good'], [1, 'good'], [1, 'again']))).toEqual([true, false, true])
   })
 
-  it('a card in its steps is due now (whatever its minute, also past midnight); the queue and the page count show it; the hover says so', () => {
+  it('a card in its steps (a ✕, a new card`s first ✓) is due now (whatever its minute, also past midnight); the queue and the page count show it; the hover says so', () => {
     expect(isCardDue(t0 + 2 * DAY, t0, true)).toBe(true)
     expect(isCardDue(t0 + 2 * DAY, t0)).toBe(false)
     // Answered one second before midnight: its step ends after midnight, it is still due tonight.

@@ -152,7 +152,7 @@ describe('YAZ-5614 random sessions on the Mac: the rules always hold', () => {
 
   // Review rules v1, rule 2 (YAZ-5655) changed the expected end: a card with only ✕ is a New card, so it is in no Due
   // today pass and makes no stop at all. Before, it was a due card and the pass ended on "Due today is done." (100%).
-  it('a ✓ that leaves a card in its learning steps makes no "Review missed cards" stop (seed 230; rule 2: a ✕-only card is New)', async () => {
+  it('a ✕-only card`s first ✓ (a new card learned, back once today) makes no "Review missed cards" stop (seed 230; rule 2: a ✕-only card is New)', async () => {
     const d = macDriver(vault(card('AA-1', ', 2026-11-06T09:00:00.000Z again')), sanitizeReviewSettings({ fuzz: false }))
     await step(d, () => d.review().start())
     expect(d.review().session?.counts).toMatchObject({ all: 1, due: 0, new: 1 })

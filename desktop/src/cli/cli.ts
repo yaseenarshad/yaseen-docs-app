@@ -423,7 +423,7 @@ const inCardFile = (record: IndexRecord | undefined): { cardFile?: true } => (re
 /**
  * `due` (YAZ-4963, idea 12): the cards due now, or every card of one page with the day it is next due. The date
  * is computed by the same `shared/cardSchedule.ts` the Inbox uses, from the same scan, so the two agree. A card in its
- * same-day steps (YAZ-5020: Forgot, or a new card not yet Remembered twice) is due now, whatever minute its step ends:
+ * same-day steps (YAZ-5020: a Forgot, or a new card's first Remembered; only misses come back, YAZ-5702) is due now, whatever minute its step ends:
  * it is listed as `steps` (`--json`: `inSteps: true`, `due` the minute its step ends).
  */
 async function due(target: string, json: boolean, io: Io): Promise<void> {

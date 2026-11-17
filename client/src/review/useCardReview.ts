@@ -59,10 +59,10 @@ import { tourEvent } from '../course/tourBus'
  * pass total −1. A new session (or the Inbox tab closed) starts it empty.
  *
  * Same-day steps (YAZ-5020): an answer that leaves the card in its steps (`CardAnswer.inSteps`: a Forgot; a new card's
- * first Remembered) puts it back at the END of this session's queue, until the scheduler lets it go: a new card after
- * two Remembered in a row, a known card after one. Closed
- * and opened again, the Inbox shows it at once: a card in its steps is due now (`cardQueue`). ⌘Z takes the repeat
- * out again and puts the card back at its place.
+ * first Remembered) puts it back at the END of this session's queue. Only misses come back (YAZ-5702, the YAZ-5655
+ * amendment): a ✓ on a card that already had a ✓ is done for today, also when FSRS keeps it in a step
+ * (`shared/cardSchedule.ts` holds it to tomorrow), so a due card's ✓ never puts it back. Closed and opened again, the
+ * Inbox shows a card put back at once (`cardQueue`). ⌘Z takes the repeat out again and puts the card back at its place.
  *
  * Fast ← → (YAZ-5029, Yaseen: "why does these two things jump and show like a small version of them like latency?"):
  * the cards around the one showing (`AHEAD` each way, under the filter) are read ahead into a small cache, so the next
@@ -95,7 +95,8 @@ import { tourEvent } from '../course/tourBus'
  * reviews is held back to the end of the DUE part of the queue (before any new card), so the missed cards come before
  * the new ones. When the first pass of the due cards is done the session STOPS (`pause`): "You remembered 93% of
  * cards." with one button, "Review missed cards 5" (no skip: you finish them that day; YAZ-5677, Mochi's words). A missed card is one with a
- * Forgot in this session (YAZ-5614): a card back after a ✓ (still in its learning steps) waits, but makes no stop. When the missed cards are done
+ * Forgot in this session: only misses come back (YAZ-5702, the YAZ-5655 amendment); a learned new card's one same-day
+ * review (`fromNew`) waits after the pass and makes no stop. When the missed cards are done
  * too it stops again: "Due today is done.", then "Learn new cards 11" (`goOn`). The % counts each due card's FIRST
  * answer of this session only (`dueFirsts`, `sessionProgress.ts`): a card missed then got right counts as missed, a new card never counts, and a
  * history reset elsewhere changes nothing. Each stop shows once per session (`stage`): a card that becomes due later
@@ -384,11 +385,11 @@ interface ArchiveStep {
 type UndoStep = AnswerStep | AddStep | ResetStep | ArchiveStep
 
 /**
- * A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps.
+ * A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps: a Forgot,
+ * or a new card's first Remembered (only misses come back, YAZ-5702: a due card's ✓ never does).
  * `fromNew` (YAZ-5610, Yaseen's rule from Mochi): a new card past its first Remembered, back the same day as a Due today
  * card; it is no missed card (the % screen's "Review missed cards" leaves it out) and waits at the end of the session.
- * `forgot` (YAZ-5626): put back by a Forgot (✕), so it wears "Again"; the last answer decides, so a ✓ that leaves it in
- * its steps takes it off.
+ * `forgot` (YAZ-5626): put back by a Forgot (✕), so it wears "Again"; the last answer decides.
  */
 type QueueCard = DueCard & { repeat?: boolean; fromNew?: boolean; forgot?: boolean }
 
@@ -429,8 +430,8 @@ const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> 
   const none = { stage: s.stage, pause: null }
   if (!inPass(card, s.filter) || s.stage === 'over' || (s.filter !== 'all' && s.filter !== 'due')) return none
   const due = s.queue.filter((c) => inPass(c, s.filter))
-  // The first pass is done when every due card waiting is a repeat (YAZ-5614: a repeat after a ✓, a card still in its
-  // learning steps, is no missed card: the stop needs a Forgot, so it never says "100%" with "Review missed cards 1").
+  // The first pass is done when every due card waiting is a repeat: a missed card (only misses come back, YAZ-5702, the
+  // YAZ-5655 amendment). The stop needs a Forgot, so it never says "100%" with "Review missed cards 1").
   if (due.some((c) => c.repeat !== true)) return none
   // And the % it shows must be under 100: a first answer of this session was a Forgot (spec 15).
   if (s.stage === 'first' && missedCards(s).length > 0 && s.answered.some((a) => a.first && a.rating === 'again')) return { stage: 'missed', pause: 'missed' }
@@ -445,7 +446,7 @@ const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> 
  */
 const inPass = (c: QueueCard, filter: CardFilter): boolean => c.fromNew !== true && (filter === 'all' ? c.next || !c.isNew : matchesFilter(c, 'due'))
 
-/** The missed cards waiting (YAZ-5043): due cards back in this session after a Forgot of this session (YAZ-5614). */
+/** The missed cards waiting (YAZ-5043): due cards back in this session after a Forgot of this session (only misses come back, YAZ-5702). */
 const missedCards = (s: Session): QueueCard[] => {
   const forgot = new Set(s.answered.filter((a) => a.rating === 'again').map((a) => a.key))
   return s.queue.filter((c) => !c.isNew && c.repeat === true && c.fromNew !== true && forgot.has(cardKey(c)))
@@ -1028,7 +1029,8 @@ export function useCardReview(
       }
       setSession((s) => {
         if (s === null || !showing(s, card)) return s
-        // Still in its steps (YAZ-5020): back at the end of this session, no longer new or up next.
+        // Still in its steps (YAZ-5020): back at the end of this session, no longer new or up next. Only misses come back
+        // (YAZ-5702, the YAZ-5655 amendment): a ✓ on a card that had a ✓ is never in its steps here (`cardSchedule.ts`).
         const repeat = written !== 'gone' && chosen.inSteps
         // YAZ-5043: a due card's first answer this session counts for the % (a repeat's, a new card's never do); rule 8:
         // an Up next card's too, new or not.

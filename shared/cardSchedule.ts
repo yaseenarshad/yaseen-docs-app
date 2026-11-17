@@ -11,14 +11,21 @@ import { inFolder } from './types'
  * log and the same settings give the same due date every time, on every Mac, also with fuzz on — ts-fsrs seeds its
  * fuzz from the review time, the review count, and difficulty × stability, all of which the log fixes.
  *
- * Same-day steps (YAZ-5020, Yaseen: "we should just bring it back in the same session"): `enable_short_term: true`,
- * so FSRS knows about a card shown again the same day (its same-day weights w17–w19), with the smallest step ts-fsrs
- * takes, one minute (`CARD_STEP`; "0m" turns the steps off). A NEW card has two learning steps: it leaves them after
- * two Remembered in a row, and each Forgot starts them again (Anki's default shape). A known card that was Forgot has
- * one relearning step: one Remembered ends it. A card in its steps (`CardState.inSteps`) is due NOW, whatever its
- * minute: the Inbox puts it back at the end of the session, and an Inbox opened again shows it. The minute itself is
- * never what the person sees. After the last step FSRS gives days, as before. Reviews keep their full time on the line
- * (YAZ-5642: to the millisecond, so no two share one); they replay in time order.
+ * Same-day steps (YAZ-5020): `enable_short_term: true`, so FSRS knows about a card shown again the same day (its
+ * same-day weights w17–w19), with the smallest step ts-fsrs takes, one minute (`CARD_STEP`; "0m" turns the steps
+ * off). A NEW card has two learning steps: it leaves them after two Remembered in a row, and each Forgot starts them
+ * again (Anki's default shape). A known card that was Forgot has one relearning step: one Remembered ends it. A card
+ * in its steps (`CardState.inSteps`) is due NOW, whatever its minute: the Inbox puts it back at the end of the
+ * session, and an Inbox opened again shows it. The minute itself is never what the person sees. After the last step
+ * FSRS gives days, as before. Reviews keep their full time on the line (YAZ-5642: to the millisecond, so no two share
+ * one); they replay in time order.
+ *
+ * Only misses come back (YAZ-5702, the YAZ-5655 amendment; Mochi never brings a ✓ card back the same day): a ✓ on a
+ * card that already had a ✓ (a due card, or a missed card in the missed pass) is DONE for today, also when FSRS keeps
+ * it in a step (a card with a recent lapse while still learning: ✓ ✕, then ✓). Such a step waits for the next local
+ * day (`held`): due at tomorrow's first moment, not in its steps. FSRS's card and the .md are untouched (the review is
+ * written, FSRS still counts its step); only when the card shows again changes. A NEW card's first ✓ is not held:
+ * it comes back for its second ✓, as a learned card of Due today (Mochi's finding 4).
  *
  * Why not days only (the old D5 `false`): a card shown again the same day under `false` gets a too-long interval —
  * the research (YAZ-5020) measured new → Forgot → Remembered with Yaseen's weights at 3 days, where 1 day is right.
@@ -75,44 +82,55 @@ export interface CardHistoryRow {
   review: CardReview
   /** Whole days since the review before; 0 for the first. */
   elapsed: number
-  /** The wait this review set, in days; 0 for a step. */
+  /** The wait this review set, in days; 0 for a step, 1 for a ✓ held to tomorrow (YAZ-5702, only misses come back). */
   interval: number
   /** When this review made the card due (ms). */
   due: number
-  /** This review left the card in its same-day steps: it comes back in this session. */
+  /** This review left the card in its same-day steps: it comes back in this session (a ✕, a new card's first ✓; only misses come back, YAZ-5702). */
   inSteps: boolean
 }
 
-/** One step of the replay: the review, the FSRS card after it (in the local frame, rule 14), and its real due time. */
+/**
+ * One step of the replay: the review, the FSRS card after it (in the local frame, rule 14), its real due time, the
+ * wait in days, and whether it comes back in this session (`inSteps`).
+ */
 interface ReplayStep {
   review: CardReview
   card: Card
   due: number
+  interval: number
+  inSteps: boolean
 }
 
 /** The FSRS card after each review of `reviews`, in time order, with its review: the ONE replay loop. */
 function steps(reviews: readonly CardReview[], s: ReviewSettings): ReplayStep[] {
   const f = schedulerOf(s)
   const out: ReplayStep[] = []
+  let learned = false
   for (const review of inOrder(reviews)) {
     const at = Date.parse(review.at)
     const local = localFrame(at)
     seedAt = at
     const card = f.next(out.at(-1)?.card ?? createEmptyCard(local), local, GRADES[review.rating]).card
+    const remembered = review.rating !== 'again'
+    // Only misses come back (YAZ-5702): a ✓ on a card that had a ✓ is done for today; its step waits for tomorrow.
+    const held = remembered && learned && inSteps(card)
+    learned ||= remembered
+    if (held) out.push({ review, card, due: new Date(at).setHours(24, 0, 0, 0), interval: 1, inSteps: false })
     // Back from the local frame by the review's own offset: the due date is the review time plus the wait.
-    out.push({ review, card, due: card.due.getTime() + (at - local) })
+    else out.push({ review, card, due: card.due.getTime() + (at - local), interval: card.scheduled_days, inSteps: inSteps(card) })
   }
   return out
 }
 
 /** Replays `reviews` through FSRS: one row per review, in time order. */
 export function cardHistory(reviews: readonly CardReview[], s: ReviewSettings): CardHistoryRow[] {
-  return steps(reviews, s).map(({ review, card, due }, i, all) => ({
+  return steps(reviews, s).map(({ review, due, interval, inSteps }, i, all) => ({
     review,
     elapsed: i === 0 ? 0 : Math.max(0, Math.round((Date.parse(review.at) - Date.parse(all[i - 1].review.at)) / DAY)),
-    interval: card.scheduled_days,
+    interval,
     due,
-    inSteps: inSteps(card),
+    inSteps,
   }))
 }
 
@@ -134,15 +152,15 @@ export interface CardState {
   lastReview: string | null
   /** How many times the card was answered "again" after it was learned. */
   lapses: number
-  /** In its same-day steps (YAZ-5020): due now, and it comes back in this session. */
+  /** In its same-day steps (YAZ-5020): due now, and it comes back in this session (a ✕, a new card's first ✓; only misses come back, YAZ-5702). */
   inSteps: boolean
 }
 
 export function cardState(reviews: readonly CardReview[], s: ReviewSettings): CardState {
   const last = replay(reviews, s)
   if (last === null) return { isNew: true, due: null, interval: 0, lastReview: null, lapses: 0, inSteps: false }
-  const { card, review, due } = last
-  return { isNew: false, due, interval: card.scheduled_days, lastReview: review.at, lapses: card.lapses, inSteps: inSteps(card) }
+  const { card, review, due, interval, inSteps } = last
+  return { isNew: false, due, interval, lastReview: review.at, lapses: card.lapses, inSteps }
 }
 
 /**
@@ -171,7 +189,10 @@ export interface CardAnswer {
   review: CardReview
   interval: number
   due: number
-  /** The card stays in its same-day steps: it comes back later in this session ("later today"), not in `interval` days. */
+  /**
+   * The card stays in its same-day steps: it comes back later in this session ("later today"), not in `interval` days.
+   * Only a ✕ or a new card's first ✓ (only misses come back, YAZ-5702): a ✓ on a card that had a ✓ is done for today.
+   */
   inSteps: boolean
 }
 
@@ -190,7 +211,8 @@ export function previewAnswers(reviews: readonly CardReview[], s: ReviewSettings
 
 /**
  * Due now: due before local midnight tonight, the one test the Inbox, the count and `yaseendocs due` share. A card in
- * its same-day steps is due now too (`inSteps`, YAZ-5020), whatever minute its step ends.
+ * its same-day steps is due now too (`inSteps`, YAZ-5020), whatever minute its step ends: a ✕, or a new card's first ✓.
+ * Only misses come back (YAZ-5702, the YAZ-5655 amendment): a ✓ on a card that had a ✓ is never in its steps here.
  */
 export const isCardDue = (due: number, now: number, steps = false): boolean => steps || due < new Date(now).setHours(24, 0, 0, 0)
 
@@ -242,7 +264,7 @@ function cardDue(reviews: readonly CardReview[], s: ReviewSettings): CardDue {
   if (due === undefined) {
     if (map.size >= CACHE_MAX) map.clear()
     const last = replay(reviews, s)
-    map.set(key, (due = last === null ? NEW_DUE : { due: last.due, inSteps: inSteps(last.card) }))
+    map.set(key, (due = last === null ? NEW_DUE : { due: last.due, inSteps: last.inSteps }))
   }
   return due
 }

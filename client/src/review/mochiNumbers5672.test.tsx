@@ -288,3 +288,121 @@ describe('YAZ-5684: the Today line counts like Mochi`s Dashboard (finding 13): N
     expect(review.session?.today).toMatchObject({ learned: 2, reviews: 3 })
   })
 })
+
+describe('YAZ-5702: only misses come back (the YAZ-5655 amendment; Mochi, YAZ-5671)', () => {
+  /** A card with a ✓ and then a ✕ while it was still learning (a recent lapse): FSRS keeps it in its learning steps. */
+  const lapsed = (d: number) => `, 2026-11-0${d}T09:00:00.000Z good, 2026-11-0${d + 1}T09:00:00.000Z again`
+
+  it('Yaseen`s case: 21 due (2 with a recent lapse), 13 ✕ and 8 ✓ → ✕ 13 · 21 / 34, Due today 13, the bar full', async () => {
+    page('D.md', ...Array.from({ length: 19 }, (_, i): [string, string] => [`DUE-${i + 1}`, known(9)]), ['DUE-20', lapsed(3)], ['DUE-21', lapsed(5)])
+    await mount()
+    await act(async () => review.setFilter('due'))
+    expect(top()).toBe('0 / 21 | grey 0 red 0 | all 21 due 21 new 0')
+    const missed = new Set(Array.from({ length: 13 }, (_, i) => `DUE-${i + 1}`))
+    for (let i = 0; i < 21; i++) await go(missed.has(review.session!.card!.id) ? 'again' : 'good')
+    expect(top()).toBe('✕ 13 · 21 / 34 | grey 62 red 100 | all 13 due 13 new 0')
+    expect(review.session?.end).toMatchObject({ kind: 'missed', percent: 38, missed: 13 })
+    // The missed pass: each ✓ is done for today, also on a card FSRS still keeps in a step.
+    await act(async () => review.goOn())
+    for (let i = 0; i < 13; i++) await go('good')
+    expect(top()).toBe('21 / 21 | grey 100 red 100 | all 0 due 0 new 0')
+    // And not back later today, nor in a new session; tomorrow it is due again.
+    vi.setSystemTime(Date.now() + 3 * 3_600_000)
+    await reopen()
+    expect(review.session?.card ?? null).toBeNull()
+    expect(plan().queue.length).toBe(0)
+  })
+
+  it('a ✕ then ✓ on a card with a recent lapse: back once in the missed pass, then done for today; due tomorrow', async () => {
+    page('D.md', ['DUE-20', lapsed(3)], ['DUE-1', known(9)])
+    await mount()
+    await act(async () => review.setFilter('due'))
+    const first = review.session!.card!.id
+    const other = first === 'DUE-20' ? 'DUE-1' : 'DUE-20'
+    // DUE-20 missed, whichever comes first; DUE-1 remembered.
+    await answer(first, first === 'DUE-20' ? 'again' : 'good')
+    await answer(other, other === 'DUE-20' ? 'again' : 'good')
+    expect(top()).toBe('✕ 1 · 2 / 3 | grey 67 red 100 | all 1 due 1 new 0')
+    await act(async () => review.goOn())
+    await answer('DUE-20', 'good')
+    expect(top()).toBe('2 / 2 | grey 100 red 100 | all 0 due 0 new 0')
+    const reviews = reviewsOf('D.md', 'DUE-20')
+    // The .md keeps every answer; only when the card shows again changed.
+    expect(reviews.map((r) => r.rating)).toEqual(['good', 'again', 'again', 'good'])
+    const last = cardHistory(reviews, S).at(-1)!
+    expect(last.inSteps).toBe(false)
+    expect(isCardDue(last.due, Date.now())).toBe(false)
+    expect(isCardDue(last.due, new Date(2026, 10, 13, 0, 0).getTime())).toBe(true)
+  })
+
+  /** Nothing comes back later today, nor in a session opened again. */
+  const doneForToday = async () => {
+    expect(review.session?.card ?? null).toBeNull()
+    vi.setSystemTime(Date.now() + 3 * 3_600_000)
+    await reopen()
+    expect(review.session?.card ?? null).toBeNull()
+    expect(plan().queue).toEqual([])
+  }
+
+  describe('the four rows: due ✓, due ✕, new ✕, new ✓ (CHANGED: a ✓ that FSRS keeps in a step, on a card that had a ✓)', () => {
+    it('due ✓ (CHANGED for a card with a recent lapse): done for today, no stop, nothing back', async () => {
+      page('D.md', ['DUE-1', known(9)], ['DUE-20', lapsed(3)])
+      await mount()
+      await go('good')
+      await go('good')
+      expect(review.session?.end).toMatchObject({ kind: 'done' })
+      await doneForToday()
+    })
+
+    it('due ✕ (unchanged): back only in "Review missed cards"; its ✓ there is done for today (CHANGED for a card with a recent lapse)', async () => {
+      page('D.md', ['DUE-1', known(9)], ['DUE-20', lapsed(3)])
+      await mount()
+      await go('again')
+      await go('again')
+      expect(review.session?.card ?? null).toBeNull()
+      expect(review.session?.end).toMatchObject({ kind: 'missed', missed: 2 })
+      await act(async () => review.goOn())
+      await go('good')
+      await go('good')
+      await doneForToday()
+    })
+
+    it('new ✕ (unchanged): back in the new-cards run until its first ✓', async () => {
+      newCards(1)
+      await mount()
+      await answer('NEW-1', 'again')
+      await answer('NEW-1', 'again')
+      await shown('NEW-1')
+      expect(review.session?.counts).toMatchObject({ new: 1, due: 0 })
+    })
+
+    it('new ✓ (unchanged): added to reviews, ONE more review today; its ✓ is done for today', async () => {
+      newCards(1)
+      await mount()
+      await answer('NEW-1', 'good')
+      expect(review.session?.counts).toMatchObject({ new: 0, due: 1 })
+      await answer('NEW-1', 'good')
+      await doneForToday()
+    })
+
+    it('new ✓, then ✕ on its same-day review: back as a missed card; its ✓ then is done for today (CHANGED: it came back once more)', async () => {
+      newCards(1)
+      await mount()
+      await answer('NEW-1', 'good')
+      await answer('NEW-1', 'again')
+      await answer('NEW-1', 'good')
+      await doneForToday()
+      expect(reviewsOf('N.md', 'NEW-1').map((r) => r.rating)).toEqual(['good', 'again', 'good'])
+    })
+  })
+
+  it('new cards unchanged: a Forgot new card comes back until its first ✓, which sends it to Due today', async () => {
+    newCards(1)
+    await mount()
+    await act(async () => review.setFilter('new'))
+    await go('again')
+    await go('again')
+    await go('good')
+    expect(review.session?.counts.due).toBe(1)
+  })
+})

@@ -735,11 +735,8 @@ describe('useCardReview', () => {
     await act(async () => review.goOn())
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { id: 'WIKI-1' } }))
     await step(() => review.answer('good'))
-    // Still in its steps: back once more, no longer a miss (no red), the total the same.
-    expect(review.session).toMatchObject({ end: null, progress: { done: 1, total: 2, waiting: 0 } })
-    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { id: 'WIKI-1' } }))
-    await step(() => review.answer('good'))
-    // Due today is done: the bar is full, though a new card waits.
+    // Only misses come back (YAZ-5702, the YAZ-5655 amendment): the ✓ in the missed pass is done for today, also with
+    // FSRS still keeping the card in a step. Due today is done: the bar is full, though a new card waits.
     expect(review.session).toMatchObject({ end: { kind: 'done', count: 1, percent: 0, fresh: 1 }, progress: { done: 1, total: 1, waiting: 0 } })
     // Another tab: its own numbers.
     act(() => review.setFilter('new'))
@@ -877,19 +874,20 @@ describe('useCardReview: same-day steps (YAZ-5020)', () => {
     expect(review.dueCount).toBe(0)
   })
 
-  it('a new card: Remembered, Forgot, Remembered, Remembered — it leaves after the second Remembered that follows the Forgot; also in one minute', async () => {
+  it('a new card: Remembered (added to reviews, back once), Forgot (back as a miss), Remembered — done for today (YAZ-5702); also in one minute', async () => {
     vault = new Map()
     page('N.md', ['New {{b}}?', 'WIKI-6'])
     await mount()
     await act(async () => review.start())
-    // YAZ-5675 (Mochi): learned, +1 (it comes back today); its Forgot then, as a Due today card, done +1 and +1.
-    const steps = [['good', 0, 1], ['again', 1, 2], ['good', 2, 3], ['good', 2, 3]] as const
+    // YAZ-5675 (Mochi): learned, +1 (it comes back today); its Forgot then, as a Due today card, done +1 and +1; its ✓
+    // then is done for today (only misses come back, YAZ-5702), though FSRS still counts a step.
+    const steps = [['good', 0, 1], ['again', 1, 2], ['good', 2, 3]] as const
     for (const [rating, done, total] of steps) {
       expect(place()).toEqual(['WIKI-6', done, total])
       await answer('WIKI-6', rating, 0)
     }
     expect(review.session?.card).toBeNull()
-    expect(new Set(reviewsOn('N.md', 'WIKI-6').map((r) => r.at)).size).toBe(4) // YAZ-5642: four answers in one minute, four times
+    expect(new Set(reviewsOn('N.md', 'WIKI-6').map((r) => r.at)).size).toBe(3) // YAZ-5642: three answers in one minute, three times
     expect(review.dueCount).toBe(0)
   })
 

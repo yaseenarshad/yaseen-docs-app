@@ -4,7 +4,8 @@
  * answer, local midnight, the day start, time zones (also the days that change the clock), with no React.
  *
  * The rules (YAZ-5611 spec): a new card needs two ✓ in a row, a ✕ starts its steps again (spec 11, 12); a card in its
- * steps comes back the same day; the wait a button shows is the wait the written review gets (D13); "due" is due
+ * steps comes back the same day, but only misses come back (YAZ-5702, the YAZ-5655 amendment): a ✓ on a card that had a
+ * ✓ is done for today; the wait a button shows is the wait the written review gets (D13); "due" is due
  * before LOCAL midnight tonight; the day — the new-card limit, "Today: …" — is the device's local calendar day from
  * midnight, and Review does not use the tables' "Calendar day" setting (spec 21); the same log gives the same due date
  * on every device (D5). Made-up data only.
@@ -55,10 +56,16 @@ describe('YAZ-5615: the next review of each answer', () => {
     expect(cardWait(steps[1].shown.interval, false)).toMatch(/^\d+ days?$/)
   })
 
-  it('a ✕ starts a new card\'s steps again: ✓ ✕ ✓ is still in its steps; one more ✓ ends them', () => {
-    const { steps } = walk(['good', 'again', 'good', 'good'], S, NOW)
-    expect(steps.map((x) => x.after.inSteps)).toEqual([true, true, true, false])
-    expect(steps[3].after.interval).toBeGreaterThanOrEqual(1)
+  it('a ✕ starts a new card\'s steps again; only misses come back (YAZ-5702): the ✓ after it is done for today, due tomorrow; the next day\'s ✓ ends the steps', () => {
+    const { steps } = walk(['good', 'again', 'good'], S, NOW)
+    expect(steps.map((x) => x.after.inSteps)).toEqual([true, true, false])
+    expect(steps[2].after).toMatchObject({ interval: 1, due: local(2026, 10, 13) })
+    expect(cardWait(steps[2].shown.interval, steps[2].shown.inSteps)).toBe('1 day')
+    expect(isCardDue(steps[2].after.due!, NOW)).toBe(false)
+    expect(isCardDue(steps[2].after.due!, local(2026, 10, 13))).toBe(true)
+    const next = walk(['good'], S, local(2026, 10, 13, 9), 20_000, walk(['good', 'again', 'good'], S, NOW).reviews).steps[0]
+    expect(next.after.inSteps).toBe(false)
+    expect(next.after.interval).toBeGreaterThanOrEqual(1)
   })
 
   it('a known card: ✕ puts it in one relearning step (a lapse); one ✓ ends it with days', () => {
@@ -102,7 +109,9 @@ describe('YAZ-5615: the next review of each answer', () => {
           expect(after.inSteps).toBe(shown.inSteps)
           // Dates move forward: the next review is after the answer, and a wait of days is that many whole days.
           expect(shown.due).toBeGreaterThan(Date.parse(shown.review.at))
-          if (!shown.inSteps) expect(shown.due - Date.parse(shown.review.at)).toBe(shown.interval * DAY)
+          // A wait of days is that many whole days; a ✓ held to tomorrow (YAZ-5702) is due at tomorrow's first moment.
+          const tomorrow = new Date(Date.parse(shown.review.at)).setHours(24, 0, 0, 0)
+          if (!shown.inSteps) expect([shown.interval * DAY, tomorrow - Date.parse(shown.review.at)]).toContain(shown.due - Date.parse(shown.review.at))
           now = shown.inSteps ? now + 60_000 : shown.due
         }
         // The Reviews table replays the same dates (`cardHistory`).
@@ -111,7 +120,7 @@ describe('YAZ-5615: the next review of each answer', () => {
     }
   })
 
-  it('a card in its steps is due now, whatever minute its step ends; a card with days is due on its day', () => {
+  it('a card in its steps (a ✕) is due now, whatever minute its step ends; a card with days is due on its day', () => {
     const { steps } = walk(['again'], S, NOW)
     expect(steps[0].after.inSteps).toBe(true)
     expect(isCardDue(steps[0].after.due!, NOW, true)).toBe(true)
@@ -220,8 +229,10 @@ describe('YAZ-5615: time zones', () => {
     const log = [at(t0, 'good'), at(t0 + 60_000, 'again'), at(t0 + 120_000, 'good'), at(t0 + 180_000, 'good'), at(t0 + 9 * DAY, 'good'), at(t0 + 40 * DAY, 'again'), at(t0 + 40 * DAY + 60_000, 'good')]
     const zones = ['UTC', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Asia/Kolkata', 'Asia/Kathmandu', 'Asia/Tokyo', 'Pacific/Kiritimati']
     for (const s of [S, NO_FUZZ]) {
-      const rows = zones.map((tz) => inZone(tz, () => cardHistory(log, s).map((r) => [r.due, r.interval, r.inSteps])))
+      // A ✓ held to tomorrow (YAZ-5702, only misses come back) is due at the device's own midnight, the one due date that is local.
+      const rows = zones.map((tz) => inZone(tz, () => cardHistory(log, s).map((r) => [r.interval === 1 && r.due === new Date(Date.parse(r.review.at)).setHours(24, 0, 0, 0) ? 'tomorrow' : r.due, r.interval, r.inSteps])))
       for (const row of rows) expect(row).toEqual(rows[0])
+      expect(rows[0][2]).toEqual(['tomorrow', 1, false])
     }
   })
 

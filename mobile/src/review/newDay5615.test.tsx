@@ -76,3 +76,21 @@ describe('YAZ-5615: the next review of each answer, as the phone writes it', () 
     expect(after.due).toBe(Date.parse(reviews[1].at) + after.interval * 86_400_000)
   })
 })
+
+describe('YAZ-5702 on the phone: only misses come back (the YAZ-5655 amendment)', () => {
+  /** A ✓ and then a ✕ while it was still learning (a recent lapse): FSRS keeps it in its learning steps. */
+  const LAPSED = ', 2026-11-03T09:00:00.000Z good, 2026-11-04T09:00:00.000Z again'
+  /** A known card, due long ago. */
+  const KNOWN = ', 2026-09-01T09:00:00.000Z good, 2026-09-02T09:00:00.000Z good'
+
+  it('due ✓ on a card with a recent lapse and on a known card: both done for today: 2 / 2 (before: 2 / 3, back later today)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true })
+    vi.setSystemTime(NOW)
+    h = await reviewSetup({ '.yaseendocs/review.json': '{"fuzz": false}', 'p.md': page('P', card(1, LAPSED), card(2, KNOWN)) })
+    await h.click('Remembered')
+    await h.click('Remembered')
+    expect(h.text()).not.toContain('Review missed cards')
+    expect(h.text()).toContain('2 / 2')
+    expect(h.text()).toContain('Finished reviewing.')
+  })
+})
