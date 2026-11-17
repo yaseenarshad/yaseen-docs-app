@@ -1,149 +1,98 @@
 import { describe, expect, it } from 'vitest'
 import type { CardRating } from '@shared/cardLine'
-import { dueFirsts, filterPlace, filterProgress, type SessionAnswer, type SessionCard } from './sessionProgress'
+import { dueFirsts, filterCount, sessionMisses, type SessionAnswer, type SessionCard } from './sessionProgress'
 
 const key = (id: string) => `P.md\n${id}`
 const due = (id: string, rating: CardRating, first = true): SessionAnswer => ({ key: key(id), rating, isNew: false, next: false, first })
 const fresh = (id: string, rating: CardRating): SessionAnswer => ({ key: key(id), rating, isNew: true, next: false, first: false })
-const card = (id: string, isNew = false, next = false): SessionCard => ({ path: 'P.md', id, isNew, next })
-const share = (p: { done: number; size: number }) => p.done / p.size
+const card = (id: string, isNew = false, forgot = false): SessionCard => ({ path: 'P.md', id, isNew, next: false, forgot })
+/** A learned new card back for its second ✓: a Due today card now. */
+const learned = (id: string): SessionCard => ({ path: 'P.md', id, isNew: false, next: false })
 
-describe('YAZ-5432: the progress bar counts only the tab on show', () => {
-  // A session: 4 due cards (2 missed, then their pass), 2 new cards answered (y missed, back), 2 new cards not yet.
-  const answers = [due('a', 'good'), due('b', 'again'), due('c', 'good'), due('d', 'again'), due('b', 'good', false), due('d', 'good', false), fresh('x', 'good'), fresh('y', 'again')]
-  const queue = [card('y', true), card('n1', true), card('n2', true)]
+/** The top right and the bar as Mochi shows them (YAZ-5671 finding 15): "✕ K · done / total", grey %, red %. */
+const read = (answers: SessionAnswer[], queue: SessionCard[], filter: 'all' | 'due' | 'new' = 'due') => {
+  const c = filterCount(answers, queue, filter)
+  return { top: `${sessionMisses(queue) > 0 ? `✕ ${sessionMisses(queue)} · ` : ''}${c.done} / ${c.total}`, grey: Math.round((100 * c.done) / c.total), red: Math.round((100 * (c.done + c.waiting)) / c.total) }
+}
 
-  it('per tab, the filled share is that tab`s cards done / its cards', () => {
-    expect(filterProgress(answers, queue, 'due')).toMatchObject({ done: 4, size: 4 })
-    expect(filterProgress(answers, queue, 'new')).toMatchObject({ done: 1, size: 4 })
-    expect(filterProgress(answers, queue, 'all')).toMatchObject({ done: 5, size: 8 })
-    expect(filterProgress(answers, queue, 'next')).toMatchObject({ done: 0, size: 0, runs: [] })
+describe('YAZ-5675: the numbers move as Mochi`s (YAZ-5671 finding 15, a 4-card session, measured after every answer)', () => {
+  it('first pass: each miss adds 1 to the total and 1 to ✕; the bar is full at the end of the pass', () => {
+    const answers: SessionAnswer[] = []
+    expect(read(answers, [card('a'), card('b'), card('c'), card('d')])).toEqual({ top: '0 / 4', grey: 0, red: 0 })
+    answers.push(due('a', 'again'))
+    expect(read(answers, [card('b'), card('c'), card('d'), card('a', false, true)])).toEqual({ top: '✕ 1 · 1 / 5', grey: 20, red: 40 })
+    answers.push(due('b', 'again'))
+    expect(read(answers, [card('c'), card('d'), card('a', false, true), card('b', false, true)])).toEqual({ top: '✕ 2 · 2 / 6', grey: 33, red: 67 })
+    answers.push(due('c', 'good'))
+    expect(read(answers, [card('d'), card('a', false, true), card('b', false, true)])).toEqual({ top: '✕ 2 · 3 / 6', grey: 50, red: 83 })
+    answers.push(due('d', 'good'))
+    expect(read(answers, [card('a', false, true), card('b', false, true)])).toEqual({ top: '✕ 2 · 4 / 6', grey: 67, red: 100 })
+    // "You remembered 50% of cards."
+    expect(dueFirsts(answers).percent).toBe(50)
   })
 
-  it('Due today done: the bar is full, whatever waits under New cards', () => {
-    expect(share(filterProgress(answers, queue, 'due'))).toBe(1)
+  it('the missed pass: done stays; a Forgot moves nothing; each Remembered takes 1 off the total', () => {
+    const answers = [due('a', 'again'), due('b', 'again'), due('c', 'good'), due('d', 'good')]
+    const c = (q: SessionCard[]) => filterCount(answers, q, 'due')
+    expect(c([card('a', false, true), card('b', false, true)])).toEqual({ done: 4, total: 6, waiting: 2 })
+    answers.push(due('a', 'again', false))
+    expect(c([card('b', false, true), card('a', false, true)])).toEqual({ done: 4, total: 6, waiting: 2 })
+    answers.push(due('b', 'good', false))
+    expect(c([card('a', false, true)])).toEqual({ done: 4, total: 5, waiting: 1 })
+    answers.push(due('a', 'good', false))
+    expect(c([])).toEqual({ done: 4, total: 4, waiting: 0 })
+  })
+})
+
+describe('YAZ-5675: new cards (YAZ-5671 findings 3, 4, 11, 18)', () => {
+  it('New cards, 4 new: a Forgot moves nothing; each Remembered is done +1; the total stays 4', () => {
+    const answers: SessionAnswer[] = [fresh('w', 'again')]
+    expect(filterCount(answers, [card('x', true), card('y', true), card('z', true), card('w', true)], 'new')).toEqual({ done: 0, total: 4, waiting: 0 })
+    answers.push(fresh('x', 'good'))
+    // The learned card left New cards: it waits under Due today now.
+    expect(filterCount(answers, [card('y', true), card('z', true), card('w', true), learned('x')], 'new')).toEqual({ done: 1, total: 4, waiting: 0 })
+    answers.push(fresh('y', 'good'), fresh('z', 'good'), fresh('w', 'again'))
+    expect(filterCount(answers, [card('w', true), learned('x'), learned('y'), learned('z')], 'new')).toEqual({ done: 3, total: 4, waiting: 0 })
+    answers.push(fresh('w', 'good'))
+    expect(filterCount(answers, [learned('x'), learned('y'), learned('z'), learned('w')], 'new')).toEqual({ done: 4, total: 4, waiting: 0 })
+    expect(sessionMisses([card('w', true, true)])).toBe(0)
   })
 
-  it('the first pass done, the missed cards wait: red, not done, and the bar no bigger', () => {
-    // On the % screen the reds stand where they were missed; on to the missed cards, they wait at the right end (YAZ-5660).
-    expect(filterProgress(answers.slice(0, 4), [card('b'), card('d')], 'due')).toMatchObject({ runs: [{ missed: false, count: 2 }, { missed: true, count: 2 }], done: 2, size: 4 })
-    expect(filterProgress(answers.slice(0, 4), [card('b'), card('d')], 'due', { paused: true })).toEqual({
-      runs: [
-        { missed: false, count: 1 },
-        { missed: true, count: 1 },
-        { missed: false, count: 1 },
-        { missed: true, count: 1 },
-      ],
-      done: 2,
-      size: 4,
-    })
+  it('All cards: a new card learned adds 1 to the total (it comes back today); its second ✓ is done +1', () => {
+    const answers: SessionAnswer[] = [due('a', 'good'), due('b', 'good'), due('c', 'good')]
+    expect(filterCount(answers, [card('n', true)], 'all')).toEqual({ done: 3, total: 4, waiting: 0 })
+    answers.push(fresh('n', 'good'))
+    expect(filterCount(answers, [learned('n')], 'all')).toEqual({ done: 4, total: 5, waiting: 0 })
+    answers.push(due('n', 'good', false))
+    expect(filterCount(answers, [], 'all')).toEqual({ done: 5, total: 5, waiting: 0 })
   })
 
-  // Review rules v1, rule 7 (YAZ-5655): each card is in one list only. Before, an Up next card counted under its own kind too.
-  it('rule 7: an Up next card counts under Up next and All cards only, never under its own kind', () => {
-    const marked: SessionAnswer = { ...fresh('m', 'good'), next: true }
-    expect(filterProgress([marked], [card('o', true, true)], 'next')).toMatchObject({ done: 1, size: 2 })
-    expect(filterProgress([marked], [card('o', true, true)], 'all')).toMatchObject({ done: 1, size: 2 })
-    expect(filterProgress([marked], [card('o', true, true)], 'new')).toMatchObject({ done: 0, size: 0 })
-    expect(filterProgress([marked], [], 'due')).toMatchObject({ done: 0, size: 0 })
+  it('the numbers survive a filter switch: each filter reads its own share of the same answers', () => {
+    const answers = [due('a', 'again'), fresh('n', 'good'), due('b', 'good')]
+    const queue = [card('m', true), card('a', false, true), learned('n')]
+    const all = filterCount(answers, queue, 'all')
+    expect(filterCount(answers, queue, 'new')).toEqual({ done: 1, total: 2, waiting: 0 })
+    expect(filterCount(answers, queue, 'due')).toEqual({ done: 2, total: 4, waiting: 1 })
+    expect(filterCount(answers, queue, 'all')).toEqual(all)
+    expect(all).toEqual({ done: 3, total: 6, waiting: 1 })
+    expect(sessionMisses(queue)).toBe(1)
   })
+})
 
-  it('the ring reads the same answers: the due cards` first answers only', () => {
-    expect(dueFirsts(answers)).toEqual({ count: 4, remembered: 2, percent: 50 })
+describe('the ring reads the due cards` first answers only', () => {
+  it('a card missed then got right counts as missed; a new card never counts', () => {
+    expect(dueFirsts([due('a', 'good'), due('b', 'again'), due('b', 'good', false), fresh('x', 'good')])).toEqual({ count: 2, remembered: 1, percent: 50 })
     expect(dueFirsts([])).toEqual({ count: 0, remembered: 0, percent: 100 })
     expect(dueFirsts([due('a', 'good'), due('b', 'good'), due('c', 'again')]).percent).toBe(66)
   })
 })
 
-describe('YAZ-5594, YAZ-5610: one step and one count per CARD, never per answer', () => {
-  it('3 cards, the last one forgotten 3 times then remembered: 3 steps and "3 / 3" all the way; it turns grey when let go', () => {
-    const answers: SessionAnswer[] = []
-    const read = (queue: SessionCard[]) => ({ ...filterProgress(answers, queue, 'due'), ...filterPlace(answers, queue, 0, 'due') })
-    expect(read([card('a'), card('b'), card('c')])).toEqual({ runs: [], done: 0, size: 3, position: 1, total: 3 })
-    answers.push(due('a', 'good'))
-    expect(read([card('b'), card('c')])).toEqual({ runs: [{ missed: false, count: 1 }], done: 1, size: 3, position: 2, total: 3 })
-    answers.push(due('b', 'good'))
-    expect(read([card('c')])).toEqual({ runs: [{ missed: false, count: 2 }], done: 2, size: 3, position: 3, total: 3 })
-    for (let i = 0; i < 3; i++) {
-      answers.push(due('c', 'again', i === 0))
-      expect(read([card('c')])).toEqual({ runs: [{ missed: false, count: 2 }, { missed: true, count: 1 }], done: 2, size: 3, position: 3, total: 3 })
-    }
-    answers.push(due('c', 'good', false))
-    expect(filterProgress(answers, [], 'due')).toEqual({ runs: [{ missed: false, count: 3 }], done: 3, size: 3 })
-  })
-
-  it('a forgotten first card: the next card is "2 / 3", the bar has one red step and is no bigger', () => {
-    const answers = [due('a', 'again')]
-    const queue = [card('b'), card('c'), card('a')]
-    expect(filterPlace(answers, queue, 0, 'all')).toEqual({ position: 2, total: 3 })
-    expect(filterProgress(answers, queue, 'all')).toEqual({ runs: [{ missed: true, count: 1 }], done: 0, size: 3 })
-  })
-
-  it('a new card back after its first Remembered: its step stays empty (not done), the count stays', () => {
-    const answers = [fresh('x', 'good')]
-    const queue = [card('y', true), card('x', true)]
-    expect(filterProgress(answers, queue, 'new')).toEqual({ runs: [{ missed: false, count: 1, open: true }], done: 0, size: 2 })
-    expect(filterPlace(answers, queue, 0, 'new')).toEqual({ position: 2, total: 2 })
-    expect(filterPlace(answers, queue, 1, 'new')).toEqual({ position: 2, total: 2 })
-  })
-})
-
-/** The bar as Yaseen reads it: g grey, r red, . empty, one letter per card. */
-const bar = (p: { runs: { missed: boolean; count: number; open?: boolean }[]; size: number }): string =>
-  p.runs.map((r) => (r.open === true ? '.' : r.missed ? 'r' : 'g').repeat(r.count)).join('').padEnd(p.size, '.')
-
-describe('YAZ-5660: option B — a red stays where it was missed; the pass over, the reds slide to the right end', () => {
-  // Yaseen's mockup: 17 due cards, missed 3, 5, 6 and 12. Made-up cards.
-  const ids = Array.from({ length: 17 }, (_, i) => `c${i + 1}`)
-  const missed = new Set(['c3', 'c5', 'c6', 'c12'])
-  const firstPass = (upTo: number): SessionAnswer[] => ids.slice(0, upTo).map((id) => due(id, missed.has(id) ? 'again' : 'good'))
-  const waiting = (upTo: number): SessionCard[] => [...ids.slice(upTo), ...ids.slice(0, upTo).filter((id) => missed.has(id))].map((id) => card(id))
-
-  it('first pass: each answer fills the next piece from the left; a red stays in its place', () => {
-    expect(bar(filterProgress(firstPass(1), waiting(1), 'due'))).toBe('g' + '.'.repeat(16))
-    expect(bar(filterProgress(firstPass(3), waiting(3), 'due'))).toBe('ggr' + '.'.repeat(14))
-    expect(bar(filterProgress(firstPass(6), waiting(6), 'due'))).toBe('ggrgrr' + '.'.repeat(11))
-    expect(bar(filterProgress(firstPass(12), waiting(12), 'due'))).toBe('ggrgrrgggggr' + '.'.repeat(5))
-  })
-
-  it('card 17: the bar is FULL with the reds in place (the % screen); on to the missed cards, 13 grey then 4 red', () => {
-    const answers = firstPass(17)
-    const pausedBar = filterProgress(answers, waiting(17), 'due', { paused: true })
-    expect(bar(pausedBar)).toBe('ggrgrrgggggrggggg')
-    expect(pausedBar.moved).toBeUndefined()
-    const slid = filterProgress(answers, waiting(17), 'due')
-    expect(bar(slid)).toBe('g'.repeat(13) + 'rrrr')
-    expect(slid).toMatchObject({ done: 13, size: 17 })
-    // The slide (drawn once): each red, left to right, moved from 3, 5, 6 and 12 to 14, 15, 16 and 17.
-    expect(slid.moved).toEqual([11, 10, 10, 5])
-  })
-
-  it('Review missed cards: each ✓ turns the leftmost red grey; a ✕ leaves it red; all grey = done', () => {
-    const answers = firstPass(17)
-    let queue = waiting(17)
-    const answer = (id: string, rating: CardRating) => {
-      answers.push(due(id, rating, false))
-      queue = queue.filter((c) => c.id !== id)
-      if (rating === 'again') queue.push(card(id))
-      return filterProgress(answers, queue, 'due')
-    }
-    expect(bar(answer('c3', 'good'))).toBe('g'.repeat(14) + 'rrr')
-    const again = answer('c5', 'again')
-    expect(bar(again)).toBe('g'.repeat(14) + 'rrr')
-    expect(again.moved).toBeUndefined()
-    expect(bar(answer('c6', 'good'))).toBe('g'.repeat(15) + 'rr')
-    expect(bar(answer('c12', 'good'))).toBe('g'.repeat(16) + 'r')
-    expect(answer('c5', 'good')).toEqual({ runs: [{ missed: false, count: 17 }], done: 17, size: 17 })
-  })
-
-  it('a card joins mid-session (the other device, Add more): the bar grows and the pass is not over', () => {
-    expect(bar(filterProgress(firstPass(17), [...waiting(17), card('c18')], 'due'))).toBe('ggrgrrgggggrggggg.')
-  })
-
-  it('New cards: a new card`s ✕ keeps it New and red; the pass over, it slides right', () => {
-    const answers = [fresh('x', 'again'), fresh('y', 'good')]
-    expect(bar(filterProgress(answers, [card('z', true), card('x', true)], 'new'))).toBe('rg.')
-    answers.push(fresh('z', 'good'))
-    expect(bar(filterProgress(answers, [card('x', true)], 'new'))).toBe('ggr')
-  })
+// Review rules v1, rule 7 (YAZ-5655): each card is in one list only.
+it('rule 7: an Up next card counts under Up next and All cards only, never under its own kind', () => {
+  const marked: SessionAnswer = { ...due('m', 'good'), next: true }
+  const waiting: SessionCard = { path: 'P.md', id: 'o', isNew: true, next: true }
+  expect(filterCount([marked], [waiting], 'next')).toEqual({ done: 1, total: 2, waiting: 0 })
+  expect(filterCount([marked], [waiting], 'all')).toEqual({ done: 1, total: 2, waiting: 0 })
+  expect(filterCount([marked], [waiting], 'new')).toEqual({ done: 0, total: 0, waiting: 0 })
+  expect(filterCount([marked], [], 'due')).toEqual({ done: 0, total: 0, waiting: 0 })
 })

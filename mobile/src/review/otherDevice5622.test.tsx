@@ -42,17 +42,17 @@ const pull = async () => {
 }
 
 describe('YAZ-5622: a card answered on the Mac', () => {
-  it('mid-session: out of N / M at once, and the phone never shows it', async () => {
+  it('mid-session: out of "done / total" at once, and the phone never shows it', async () => {
     h = await reviewSetup(files())
     expect(showing()).toBe('OD-1')
-    expect(place()).toEqual([1, 3])
+    expect(place()).toEqual([0, 3])
     await h.s.git.push({ 'a.md': page('A', card(1), card(2, MAC), card(3)) })
     await pull()
     expect(showing()).toBe('OD-1')
-    expect(place()).toEqual([1, 2])
+    expect(place()).toEqual([0, 2])
     await h.click('Remembered')
     expect(showing()).toBe('OD-3')
-    expect(place()).toEqual([2, 2])
+    expect(place()).toEqual([1, 2])
     await h.click('Remembered')
     expect(showing()).toBeNull()
   })
@@ -64,7 +64,7 @@ describe('YAZ-5622: a card answered on the Mac', () => {
     await h.s.git.push({ 'a.md': page('A', card(1, `${MAC} 6s`), card(2), card(3)) })
     await pull()
     expect(showing()).toBe('OD-2')
-    expect(place()).toEqual([1, 2])
+    expect(place()).toEqual([0, 2])
   })
 
   it('between sessions: a session opened after the pass never takes it', async () => {
@@ -74,7 +74,7 @@ describe('YAZ-5622: a card answered on the Mac', () => {
     await t.engine.idle()
     h = await mountReview(t)
     expect(showing()).toBe('OD-1')
-    expect(place()).toEqual([1, 2])
+    expect(place()).toEqual([0, 2])
     await h.click('Remembered')
     expect(showing()).toBe('OD-3')
   })

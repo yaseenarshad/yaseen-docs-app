@@ -138,9 +138,9 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
     await mount()
     expect(review.session?.counts).toEqual({ all: 4, next: 1, due: 2, new: 1 })
     await act(async () => review.setFilter('due'))
-    expect([review.session?.card?.id, review.session?.total]).toEqual(['DUE-1', 2])
+    expect([review.session?.card?.id, review.session?.progress.total]).toEqual(['DUE-1', 2])
     await act(async () => review.setFilter('next'))
-    expect([review.session?.card?.id, review.session?.total]).toEqual(['UP-1', 1])
+    expect([review.session?.card?.id, review.session?.progress.total]).toEqual(['UP-1', 1])
   })
 
   it('rule 8: the % screen counts every card answered in that pass, an Up next card too (a new one as well)', async () => {

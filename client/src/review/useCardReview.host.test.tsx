@@ -120,7 +120,7 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
     await step(() => review.undo())
     expect(host.files.get(`${ROOT}/K.md`)).toBe(before)
     await shown('WIKI-5')
-    expect([review.session?.position, review.session?.total, review.session?.canUndo]).toEqual([1, 2, false])
+    expect([review.session?.progress.done, review.session?.progress.total, review.session?.canUndo]).toEqual([0, 2, false])
     // Forgot again; the missed pass brings it back first, then the new card twice Remembered.
     await answer('WIKI-5', 'again')
     await answer('WIKI-5', 'good')
@@ -203,15 +203,15 @@ describe('a card answered on the other device (YAZ-5622)', () => {
   const ids = () => review.session?.counts
   beforeEach(() => page('D.md', ['Due {{c}}?', `WIKI-7, ${OLDER(5)}`], ['Due {{d}}?', `WIKI-8, ${OLDER(6)}`]))
 
-  it('mid-session, a card further on: out of the counts and N / M at once, and → passes it by', async () => {
+  it('mid-session, a card further on: out of the counts and "done / total" at once, and → passes it by', async () => {
     await mount()
     await act(async () => review.start())
     await shown('WIKI-7')
     expect(ids()).toMatchObject({ all: 4, due: 3, new: 1 })
-    expect([review.session?.position, review.session?.total]).toEqual([1, 4])
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 4])
     await elsewhere('D.md', 'WIKI-8', 'good')
     expect(ids()).toMatchObject({ all: 3, due: 2, new: 1 })
-    expect([review.session?.position, review.session?.total]).toEqual([1, 3])
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 3])
     expect(review.dueCount).toBe(3)
     act(() => review.move(1))
     await shown('WIKI-5')
@@ -244,7 +244,7 @@ describe('a card answered on the other device (YAZ-5622)', () => {
     await shown('WIKI-8')
     await elsewhere('D.md', 'WIKI-7', 'good')
     expect(review.session?.canBack).toBe(false)
-    expect([review.session?.position, review.session?.total]).toEqual([1, 3])
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 3])
   })
 
   it('a Forgot on the other device: the card is still due today, so it stays', async () => {
@@ -277,6 +277,6 @@ describe('a card answered on the other device (YAZ-5622)', () => {
     await shown('WIKI-8')
     expect(review.session?.canUndo).toBe(true)
     expect(review.session?.answered).toEqual(['good'])
-    expect([review.session?.position, review.session?.total]).toEqual([2, 4])
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([1, 4])
   })
 })

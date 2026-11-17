@@ -5778,7 +5778,7 @@ describe('App: the card flow (YAZ-4962)', () => {
     // The head: the ID, no brackets (YAZ-5037 "Title · ID", the ID first, D20); the card's first line is not said again above the card.
     expect(el.querySelector('.card-inbox .explore__title')).toBeNull()
     expect(el.querySelector('.card-inbox .card__id')?.textContent).toBe('WIKI-9')
-    expect(el.querySelector('.card-inbox__place')?.textContent).toBe('1 of 1')
+    expect(el.querySelector('.card-inbox__place')?.textContent).toBe('0 / 1')
     // The page under the Inbox stays where it was: its tab layer is still mounted.
     expect(el.querySelector('.tabstack__layer [data-editor][data-path="/v/a.md"]')).not.toBeNull()
     // Space (D18): the hidden word of the front, then the back, then its hidden word; then the buttons.

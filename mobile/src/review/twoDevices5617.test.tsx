@@ -64,7 +64,7 @@ describe('YAZ-5617 phone: the Mac answers while the phone reviews', () => {
     const line = (await h.remoteLines())['TD-1']
     expect(new Set(line.match(/\d{4}-\d\d-\d\dT[\d:.]+Z/g)).size).toBe(4)
     expect(showing()).toBe('TD-2')
-    expect(place()).toEqual([2, 2])
+    expect(place()).toEqual([1, 2])
     await h.click('Remembered')
     expect(showing()).toBeNull()
     await h.wait(5_000)
@@ -76,7 +76,7 @@ describe('YAZ-5617 phone: the Mac answers while the phone reviews', () => {
     h = await reviewSetup(FILES)
     await h.s.git.push({ 'a.md': page('A', card(1), card(2, mac('again')), card(3)) })
     await pull()
-    expect(place()).toEqual([1, 3])
+    expect(place()).toEqual([0, 3])
     await h.click('Remembered')
     expect(showing()).toBe('TD-2')
     await h.click('Remembered')

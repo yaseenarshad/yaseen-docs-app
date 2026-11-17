@@ -8,7 +8,7 @@ import { folderTitle } from '../links/folderTitle'
 import { isCardGone, type CardOnPage } from './cardRead'
 import { useLocalDay } from './localDay'
 import type { ReviewHost } from './reviewHost'
-import { dueFirsts, filterPlace, filterProgress, matchesFilter, type FilterProgress, type SessionAnswer } from './sessionProgress'
+import { dueFirsts, filterCount, matchesFilter, sessionMisses, type FilterCount, type SessionAnswer } from './sessionProgress'
 import { tourEvent } from '../course/tourBus'
 
 /**
@@ -19,7 +19,7 @@ import { tourEvent } from '../course/tourBus'
  * checked against the live index only when its turn comes, and read from its page when it shows (the index holds no
  * text, D4). A card whose page or ID is gone is passed over. A card that LEAVES the scope's due cards while the session
  * is open (answered on the other device, YAZ-5622; archived elsewhere) leaves the whole session at once (`withLive`):
- * the counts, "N / M", ← → and the card on show, so it never gets a second review.
+ * the counts, "done / total", ← → and the card on show, so it never gets a second review.
  *
  * The buttons (D13): `showAnswers` fixes what each button shows ("Remembered · 9 days") for the card on show. `answer`
  * writes the review at the time the button was PRESSED (Review rules v1, rule 15, YAZ-5655), at least 1 ms after the
@@ -39,7 +39,7 @@ import { tourEvent } from '../course/tourBus'
  *
  * The filter (YAZ-5017, as Mochi's "All cards ▾"): All cards, Due today (cards with reviews, due now) or New cards
  * (never reviewed, within today's new-card limit: the queue's own). The queue stays whole; the filter picks which of its
- * cards show, and "3 of 12" counts only those. Up next (YAZ-5028): the cards marked `next`, new or reviewed (`off` cards
+ * cards show, and "done / total" counts only those. Up next (YAZ-5028): the cards marked `next`, new or reviewed (`off` cards
  * are never in the queue); an answer takes a card out of it, as the repeat it may leave is no longer up next.
  *
  * Up next a day (YAZ-5028, Yaseen: "so it kinda works like new?"): only the day's N places are Up next — they go first,
@@ -53,15 +53,14 @@ import { tourEvent } from '../course/tourBus'
  * leaves it, and the card goes when nothing else keeps it due. Only a CHANGE of the index's marks moves the session
  * (`marks`, the marks it last saw), so a snapshot that has not caught up with an answer yet never brings its card back.
  *
- * `answered` (YAZ-5020, the progress bar) is each answer of the session, in order, with its card's kind; ⌘Z takes the
- * last one back. The bar shows the filter on show only (YAZ-5432, `filterProgress`): one step per card of that filter
- * in this session (YAZ-5594), and "3 of 13" counts the same cards (`filterPlace`). A new session (or the Inbox tab
- * closed) starts it empty.
+ * `answered` (YAZ-5020) is each answer of the session, in order, with its card's kind; ⌘Z takes the last one back. The
+ * top right's "✕ K · done / total" and the bar read it with the queue, as Mochi counts (YAZ-5675, `filterCount`): a
+ * Forgot on a due card is done +1 and total +1, a new card learned under All cards total +1, a Remembered in the missed
+ * pass total −1. A new session (or the Inbox tab closed) starts it empty.
  *
  * Same-day steps (YAZ-5020): an answer that leaves the card in its steps (`CardAnswer.inSteps`: a Forgot; a new card's
- * first Remembered) puts it back at the END of this session's queue. It is the same card: the session does not grow
- * ("3 of 13" and the bar's size stay, YAZ-5594 and YAZ-5610), and the card is done only when it is let go. It
- * comes back until the scheduler lets it go: a new card after two Remembered in a row, a known card after one. Closed
+ * first Remembered) puts it back at the END of this session's queue, until the scheduler lets it go: a new card after
+ * two Remembered in a row, a known card after one. Closed
  * and opened again, the Inbox shows it at once: a card in its steps is due now (`cardQueue`). ⌘Z takes the repeat
  * out again and puts the card back at its place.
  *
@@ -139,9 +138,6 @@ export interface CardReviewSession {
   cards?: CardReviewScope
   /** The card showing; null once nothing is left (the done screen). */
   card: ShownCard | null
-  /** The showing card's place among the filter's `total` cards of this session, each card once (YAZ-5594, YAZ-5610). */
-  position: number
-  total: number
   /** ← and → (YAZ-5004): a card before or after the one showing is still in the queue. */
   canBack: boolean
   canNext: boolean
@@ -158,8 +154,13 @@ export interface CardReviewSession {
   place: CardPlacePart[]
   /** Each answer of the session, in order (YAZ-5020): a Forgot ('again') or a Remembered (any other). */
   answered: CardRating[]
-  /** The progress bar (YAZ-5020) of the filter on show only (YAZ-5432, `filterProgress`): one step per card (YAZ-5594). */
-  progress: FilterProgress
+  /**
+   * The filter on show's "done / total" and its due cards waiting after a Forgot (YAZ-5675, as Mochi's, `filterCount`):
+   * the top right's count and the progress bar (grey done ÷ total, red (done + waiting) ÷ total).
+   */
+  progress: FilterCount
+  /** The top right's red ✕ K (YAZ-5674): the session's due cards back after a Forgot; 0 (hidden) in the missed pass. */
+  misses: number
   /** Today's review work across the vault, from the index (YAZ-5033): the top row's and the done screen's "Today: …". */
   today: ReviewedToday
   /** The scope's cards past today's number, of each kind (YAZ-5042): the menu's "38 more", the done screen's line. */
@@ -515,7 +516,7 @@ const withMarks = (s: Session, live: readonly DueCard[]): Session => {
 /**
  * The session after the index changed (YAZ-5622, audit item 6): a card that WAS in the scope's queue (`live`, `cardQueue`)
  * and is not now was answered on the other device (or archived, or its page went): it leaves the whole session — the
- * counts, "N / M", ← and →, the card on show too — so it never gets a second review. Only a CHANGE moves it, as with
+ * counts, "done / total", ← and →, the card on show too — so it never gets a second review. Only a CHANGE moves it, as with
  * the marks (YAZ-5031): a snapshot that has not caught up with this session's own write (an Undo that brought a card
  * back) drops nothing. Only the FILES move it (`files`: the index changed): this device's own Add more, Reset, Up next
  * places or settings have their own rules (`withAdded`, `withReset`, …), so then it only takes the new list in. `keep`: the
@@ -1292,8 +1293,6 @@ export function useCardReview(
     const { filter, queue, scope } = session
     const counts = countOf(queue)
     const lastStep = session.undo.at(-1)
-    // "3 of 12" under the filter (YAZ-5017): the place among its cards, each card once (YAZ-5594, YAZ-5610).
-    const { position, total } = filterPlace(session.answered, queue, session.at, filter)
     const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
     return {
@@ -1301,8 +1300,6 @@ export function useCardReview(
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
       cards: scope,
       card: shownCard,
-      position,
-      total,
       canBack: session.pause === null && stepFrom(session, -1) !== -1,
       canNext: session.pause === null && stepFrom(session, 1) !== -1,
       // The card before, still on show (YAZ-5029), has no answers: none of its buttons writes to the card under it.
@@ -1313,7 +1310,9 @@ export function useCardReview(
       from,
       place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered.map((a) => a.rating),
-      progress: filterProgress(session.answered, queue, filter, { paused: session.pause !== null }),
+      progress: filterCount(session.answered, queue, filter),
+      // Mochi hides the ✕ in the missed pass (YAZ-5671 finding 9); its % screen still shows it.
+      misses: session.stage === 'first' || session.pause === 'missed' ? sessionMisses(queue) : 0,
       today,
       more: scopePlan.more,
       adds: addsOf(scopePlan, settings),

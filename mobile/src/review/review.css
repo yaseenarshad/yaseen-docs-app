@@ -19,7 +19,7 @@
    first load draws them (the Review tab's place and its "Loading…" before this chunk comes). */
 
 /* ---- YAZ-5415: the Mochi look (round 5 of the mockup). One line at the top (the shell's top bar draws the dot and the
-   gear; this screen draws the count into its middle), a thin progress bar in steps, the card with its chip and crumb
+   gear; this screen draws the count into its middle), Mochi's progress bar (YAZ-5676), the card with its chip and crumb
    on one line, the hint line, and one row of controls: ← → · ✕ ✓ centred · ⋯. The screen never scrolls: the card does. */
 
 :root {
@@ -86,52 +86,9 @@
   color: var(--fg-muted);
 }
 
-/* The progress bar in steps (round 4, as Mochi): grey for Remembered, red for Forgot. */
+/* The progress bar (YAZ-5676, Mochi's: `SessionBar`, `sessionCount.css`), under the top line. */
 .review__progress {
-  display: flex;
-  flex: none;
-  gap: 1px;
-  height: 3px;
-  background: var(--border);
-}
-
-.review__progress:not([data-steps]) {
-  gap: 0;
-  background: var(--border);
-}
-
-.review__step {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.review__progress[data-steps] .review__step {
-  background: var(--border);
-}
-
-.review__step[data-answer='remembered'] {
-  background: color-mix(in srgb, var(--fg-muted) 55%, transparent) !important;
-}
-
-.review__step[data-answer='forgot'] {
-  background: var(--danger) !important;
-}
-
-/* YAZ-5660 (option B): the pass over, each red slides from where it was missed to the right end, once. */
-.review__step[data-slide] {
-  animation: review-step-slide 280ms ease-out;
-}
-
-@keyframes review-step-slide {
-  from {
-    transform: translateX(calc(-1 * var(--moved) * (100% + 1px)));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .review__step[data-slide] {
-    animation: none;
-  }
+  margin: 0 10px;
 }
 
 /* ---- The review sheet (the Mac's cards menu) ---- */

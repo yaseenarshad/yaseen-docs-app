@@ -60,7 +60,7 @@ let props: CardInboxProps
 const TITLE = 'Capital of France'
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { runs: [], done: 0, size: 12 }, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
 }
 
 function render() {
@@ -163,8 +163,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(head()).toEqual([['card__id', 'WIKI-9']])
     expect(band()).toBe('Capital of France')
     expect(el.querySelector('.card-band__label')).toBeNull()
-    // YAZ-5017: "3 of 12" moved to the top row, on the right.
-    expect(el.querySelector('.card-inbox__bar .card-inbox__place')?.textContent).toBe('3 of 12')
+    // YAZ-5675: Mochi's "done / total" in the top row, on the right.
+    expect(el.querySelector('.card-inbox__bar .card-inbox__place')?.textContent).toBe('2 / 12')
     const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
     // Nothing to undo; the digits are on the buttons.
     expect(hints()).toEqual(['Show (Space)', 'Open page (O)', 'Edit card (E)', 'New tab (Cmd+Enter)'])
@@ -249,7 +249,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       seen.push(hasE())
     }
     expect(seen).toEqual([true, true, true, true, true])
-    session = { ...session, canNext: true, canBack: true, position: 4 }
+    session = { ...session, canNext: true, canBack: true }
     render()
     expect(hasE()).toBe(true)
     press('e')
@@ -270,7 +270,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     // Back from Explore (the stack closed): the same card, the same step.
     render()
     expect(shown()).toEqual(['France'])
-    expect(el.querySelector('.card-inbox__place')?.textContent).toBe('3 of 12')
+    expect(el.querySelector('.card-inbox__place')?.textContent).toBe('2 / 12')
   })
 
   it('YAZ-5031: an up-next card in a read-only vault is answered by the same door as in any vault (`answer`, which takes `next` out in the same write): no ask, no other path', async () => {
@@ -352,8 +352,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const card = session.card!
     // → : a new card, its answers not fixed yet, and its page not read yet; then the page; then its answers.
     for (const next of [
-      { ...session, position: 4, answers: null, card: { ...card, id: 'WIKI-10', page: null } },
-      { ...session, position: 4, answers: null, card: { ...card, id: 'WIKI-10', page: { ...card.page!, id: 'WIKI-10', text: 'Next {{card}}' } } },
+      { ...session, answers: null, card: { ...card, id: 'WIKI-10', page: null } },
+      { ...session, answers: null, card: { ...card, id: 'WIKI-10', page: { ...card.page!, id: 'WIKI-10', text: 'Next {{card}}' } } },
     ]) {
       session = next
       render()
@@ -567,7 +567,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       ['reviews', '0 Reviews', true],
       ['properties', 'Properties0', true],
     ])
-    session = { ...session, position: 4, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', reviews: [{ at: AT, rating: 'good' }] } } }
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', reviews: [{ at: AT, rating: 'good' }] } } }
     render()
     await flush()
     expect(el.querySelector('.card-reviews'), 'the next card starts on its front').toBeNull()
@@ -586,7 +586,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await flush()
     expect(blanks()).toBe(1)
     expect(el.querySelector('.card-reviews')).not.toBeNull()
-    session = { ...session, position: 4, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', text: 'Nothing hidden', reviews: [{ at: AT, rating: 'good' }] } } }
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', text: 'Nothing hidden', reviews: [{ at: AT, rating: 'good' }] } } }
     render()
     await flush()
     expect(el.querySelector('.card-reviews')).not.toBeNull()
@@ -849,7 +849,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     drag('right', 900, 0) // far in: the minimum
     expect(inboxCardWidth()).toBe(CARD_MIN_WIDTH)
     // Another card: the same width.
-    session = { ...session, position: 4, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10' } } }
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10' } } }
     render()
     expect(column().style.width).toBe(`min(calc(${CARD_MIN_WIDTH}px * var(--document-zoom, 1)), 100%)`)
     // The Inbox tab closed and opened again (the app still runs): the same width.
@@ -860,24 +860,23 @@ describe('the Inbox screen (YAZ-4962)', () => {
     setInboxCardWidth(null)
   })
 
-  it('YAZ-5020, YAZ-5432: the progress bar under the top row draws the tab`s own progress — empty at start; each run a part, red for a Forgot, grey for a Remembered, run/size wide', () => {
+  it('YAZ-5675: the progress bar under the top row reads the filter`s numbers — grey done ÷ total, red (done + waiting) ÷ total, both from the left', () => {
     mount(TWO_SIDES)
     const bar = () => el.querySelector<HTMLElement>('.card-inbox__top > .card-inbox__progress')!
-    const parts = () => [...bar().querySelectorAll<HTMLElement>('.card-inbox__progress-part')].map((p) => [p.dataset.missed === 'true' ? 'red' : 'grey', p.style.width])
+    const widths = () => [bar().querySelector<HTMLElement>('.session-bar__grey')!.style.width, bar().querySelector<HTMLElement>('.session-bar__red')!.style.width]
     expect(el.querySelector('.card-inbox__top')?.firstElementChild?.className).toBe('card-inbox__bar')
-    expect(parts()).toEqual([])
-    expect(bar().getAttribute('aria-valuenow')).toBe('0')
-    session = { ...session, progress: { runs: [{ missed: false, count: 1 }], done: 1, size: 8 } }
+    session = { ...session, progress: { done: 0, total: 4, waiting: 0 } }
     render()
-    expect(parts()).toEqual([['grey', '12.5%']])
-    session = { ...session, progress: { runs: [{ missed: false, count: 1 }, { missed: true, count: 2 }, { missed: false, count: 2 }], done: 5, size: 8 } }
+    expect(widths()).toEqual(['0%', '0%'])
+    // YAZ-5671 finding 15: ✕ 1 · 1 / 5, grey 20%, red 40%.
+    session = { ...session, progress: { done: 1, total: 5, waiting: 1 } }
     render()
-    expect(parts()).toEqual([['grey', '12.5%'], ['red', '25%'], ['grey', '25%']])
-    expect([bar().getAttribute('aria-valuenow'), bar().getAttribute('aria-valuemax')]).toEqual(['5', '8'])
-    // Due today done (YAZ-5432): full.
-    session = { ...session, progress: { runs: [{ missed: false, count: 3 }, { missed: true, count: 1 }], done: 4, size: 4 } }
+    expect(widths()).toEqual(['20%', '40%'])
+    expect([bar().getAttribute('aria-valuenow'), bar().getAttribute('aria-valuemax')]).toEqual(['1', '5'])
+    // The first pass over: full, the red at the right end.
+    session = { ...session, progress: { done: 4, total: 6, waiting: 2 } }
     render()
-    expect(parts()).toEqual([['grey', '75%'], ['red', '25%']])
+    expect(widths()[1]).toBe('100%')
   })
 
   it('YAZ-5024: the key row folds the least important keys when it does not fit — ⌘↵ first, then O; Space and E stay', () => {
@@ -1277,7 +1276,7 @@ describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
     expect(cardAudioPlaying()).toBe(true)
     expect(shown()).toEqual(before)
     stopCardAudio()
-    session = { ...sessionOf('No sound'), position: 9 }
+    session = { ...sessionOf('No sound') }
     render()
     expect(hints()).not.toContain('Play (P)')
   })
@@ -1288,7 +1287,7 @@ describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
     viewOnlyLinks.update({ entries: [], resolve: (t: string) => (t === 'Card pipeline.drawio' ? '/v/Card pipeline.drawio' : null) } as never)
     const base = props.vaultOf
     props = { ...props, vaultOf: (p) => ({ ...base(p), viewOnlyLinks }) }
-    session = { ...sessionOf('A diagram\n---\n![[Card pipeline.drawio]]'), position: 5 }
+    session = { ...sessionOf('A diagram\n---\n![[Card pipeline.drawio]]') }
     render()
     press(' ')
     const board = el.querySelector<HTMLElement>('.card__board')!
@@ -1435,7 +1434,7 @@ describe("YAZ-5033: today's total — the top row and the done screen", () => {
     render()
     const bar = el.querySelector('.card-inbox__bar')!
     expect(bar.querySelector('.card-inbox__today')?.textContent).toBe('Today: 31 cards · 9 min')
-    expect(bar.querySelector('.card-inbox__today + .card-inbox__place')?.textContent).toBe('3 of 12')
+    expect(bar.querySelector('.card-inbox__today + .card-inbox__place')?.textContent).toBe('2 / 12')
     session = { ...session, today: { cards: 1, reviews: 1, seconds: 13 } }
     render()
     expect(bar.querySelector('.card-inbox__today')?.textContent).toBe('Today: 1 card · 13 s')
@@ -1987,7 +1986,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       it('a new card starts at its top, with no glide', () => {
         mount(TWO_SIDES)
         const view = scroller(500)
-        session = { ...sessionOf(TWO_SIDES), position: 4, card: { ...sessionOf(TWO_SIDES).card!, id: 'WIKI-10' } }
+        session = { ...sessionOf(TWO_SIDES), card: { ...sessionOf(TWO_SIDES).card!, id: 'WIKI-10' } }
         render()
         expect(scrollTo).not.toHaveBeenCalled()
         expect(view.scrollTop).toBe(0)
@@ -2110,7 +2109,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       // A new value each time, so the nudge plays again.
       expect(answers().getAttribute('data-nudge')).not.toBe(first)
       // The next card: no nudge.
-      session = { ...sessionOf(THREE), position: 4, card: { ...sessionOf(THREE).card!, id: 'WIKI-10' } }
+      session = { ...sessionOf(THREE), card: { ...sessionOf(THREE).card!, id: 'WIKI-10' } }
       render()
       expect(answers().hasAttribute('data-nudge')).toBe(false)
     })

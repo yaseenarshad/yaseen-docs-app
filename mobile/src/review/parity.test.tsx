@@ -156,7 +156,7 @@ async function script(run: Run): Promise<string[]> {
   const seen: string[] = []
   const look = () => {
     const s = run.review().session
-    seen.push(s === null ? 'none' : `${s.card?.id ?? 'done'} "${s.card?.page?.title ?? '-'}" ${JSON.stringify(s.card?.page?.properties ?? null)} ${s.position}/${s.total} due:${run.review().dueCount} [${s.counts.all}/${s.counts.next}/${s.counts.due}/${s.counts.new}]`)
+    seen.push(s === null ? 'none' : `${s.card?.id ?? 'done'} "${s.card?.page?.title ?? '-'}" ${JSON.stringify(s.card?.page?.properties ?? null)} ${s.progress.done}/${s.progress.total} due:${run.review().dueCount} [${s.counts.all}/${s.counts.next}/${s.counts.due}/${s.counts.new}]`)
   }
   const minute = (m: number) => vi.setSystemTime(NOW + m * 60_000)
   const step = async (m: number, fn: () => unknown) => {

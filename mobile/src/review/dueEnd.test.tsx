@@ -102,8 +102,8 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(q('.due-end__pct')?.textContent).toBe('60%')
     // No skip: one button.
     expect(endButtons()).toEqual(['Review missed cards 2'])
-    // The step bar keeps its grey and red.
-    expect([...h.host.querySelectorAll('.review__step[data-answer]')].map((s) => (s as HTMLElement).dataset.answer)).toEqual(['remembered', 'forgot', 'remembered', 'forgot', 'remembered'])
+    // The bar (YAZ-5676, Mochi's): full, the 2 misses waiting as red at the right end (5 / 7).
+    expect(['grey', 'red'].map((p) => Math.round(parseFloat(h!.host.querySelector<HTMLElement>(`.session-bar__${p}`)!.style.width)))).toEqual([71, 100])
     await h.click('Review missed cards 2')
     expect(await answer('Remembered')).toBe('VRB-2')
     expect(await answer('Remembered')).toBe('VRB-4')

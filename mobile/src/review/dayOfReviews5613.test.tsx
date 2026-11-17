@@ -89,22 +89,23 @@ describe('YAZ-5613: a full day of reviews on the phone, step by step (YAZ-5611 r
     h = await reviewSetup(FILES)
     const steps: [string, () => Promise<void>, ReturnType<typeof row>][] = [
       // Review rules v1, rule 7: UP-1 is under Up next only (before: Due today 4, with UP-1 in it too).
-      ['start', async () => undefined, row('UP-1', '1 / 6', '0/6', 6, 3, 2, 1)],
-      ['UP-1 ✓', () => answer('Remembered'), row('DUE-1', '2 / 6', '1/6', 5, 3, 2)],
-      ['DUE-1 ✕', () => answer('Forgot'), row('DUE-2', '3 / 6', '1/6', 5, 3, 2)],
-      ['DUE-2 ✓', () => answer('Remembered'), row('DUE-3', '4 / 6', '2/6', 4, 2, 2)],
-      ['DUE-3 ✓', () => answer('Remembered'), row('stop: missed', null, '3/6', 3, 1, 2)],
-      ['Review missed cards', () => h!.click('Review missed cards 1'), row('DUE-1', '4 / 6', '3/6', 3, 1, 2)],
-      ['DUE-1 ✕ again', () => answer('Forgot'), row('DUE-1', '4 / 6', '3/6', 3, 1, 2)],
-      ['Undo (in ⋯)', undo, row('DUE-1', '4 / 6', '3/6', 3, 1, 2)],
-      ['DUE-1 ✕ again', () => answer('Forgot'), row('DUE-1', '4 / 6', '3/6', 3, 1, 2)],
+      ['start', async () => undefined, row('UP-1', '0 / 6', '0/6', 6, 3, 2, 1)],
+      ['UP-1 ✓', () => answer('Remembered'), row('DUE-1', '1 / 6', '1/6', 5, 3, 2)],
+      // YAZ-5675 (Mochi, as the Mac): a ✕ is done +1 and the total +1.
+      ['DUE-1 ✕', () => answer('Forgot'), row('DUE-2', '2 / 7', '2/7', 5, 3, 2)],
+      ['DUE-2 ✓', () => answer('Remembered'), row('DUE-3', '3 / 7', '3/7', 4, 2, 2)],
+      ['DUE-3 ✓', () => answer('Remembered'), row('stop: missed', null, '4/7', 3, 1, 2)],
+      ['Review missed cards', () => h!.click('Review missed cards 1'), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
+      ['DUE-1 ✕ again', () => answer('Forgot'), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
+      ['Undo (in ⋯)', undo, row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
+      ['DUE-1 ✕ again', () => answer('Forgot'), row('DUE-1', '4 / 7', '4/7', 3, 1, 2)],
       ['DUE-1 ✓', () => answer('Remembered'), row('stop: done', null, '4/6', 2, 0, 2)],
-      ['Learn new cards', () => h!.click('Learn new cards 2'), row('NEW-1', '5 / 6', '4/6', 2, 0, 2)],
-      ['NEW-1 ✓ (first)', () => answer('Remembered'), row('NEW-2', '6 / 6', '4/6', 2, 1, 1)],
-      ['NEW-2 ✕', () => answer('Forgot'), row('NEW-1', '6 / 6', '4/6', 2, 1, 1)],
-      ['NEW-1 ✓ (second)', () => answer('Remembered'), row('NEW-2', '6 / 6', '5/6', 1, 0, 1)],
-      ['NEW-2 ✓ (first)', () => answer('Remembered'), row('NEW-2', '6 / 6', '5/6', 1, 1, 0)],
-      ['NEW-2 ✓ (second)', () => answer('Remembered'), row('done: Inbox complete.', null, '6/6', 0, 0, 0)],
+      ['Learn new cards', () => h!.click('Learn new cards 2'), row('NEW-1', '4 / 6', '4/6', 2, 0, 2)],
+      ['NEW-1 ✓ (first)', () => answer('Remembered'), row('NEW-2', '5 / 7', '5/7', 2, 1, 1)],
+      ['NEW-2 ✕', () => answer('Forgot'), row('NEW-1', '5 / 7', '5/7', 2, 1, 1)],
+      ['NEW-1 ✓ (second)', () => answer('Remembered'), row('NEW-2', '6 / 7', '6/7', 1, 0, 1)],
+      ['NEW-2 ✓ (first)', () => answer('Remembered'), row('NEW-2', '7 / 8', '7/8', 1, 1, 0)],
+      ['NEW-2 ✓ (second)', () => answer('Remembered'), row('done: Inbox complete.', null, '8/8', 0, 0, 0)],
     ]
     const seen = []
     const want = []
@@ -121,15 +122,15 @@ describe('YAZ-5613: a full day of reviews on the phone, step by step (YAZ-5611 r
     for (let i = 0; i < 4; i++) await answer('Remembered')
     await h.click('Learn new cards 2')
     await answer('Remembered') // NEW-1's first ✓
-    expect(await look()).toEqual(row('NEW-2', '6 / 6', '4/6', 2, 1, 1))
+    expect(await look()).toEqual(row('NEW-2', '5 / 7', '5/7', 2, 1, 1))
     await reopen(60 * 60_000)
-    expect(await look()).toEqual(row('NEW-1', '1 / 2', '0/2', 2, 1, 1))
+    expect(await look()).toEqual(row('NEW-1', '0 / 2', '0/2', 2, 1, 1))
     await answer('Remembered')
     expect(await look()).toEqual(row('stop: done', null, '1/2', 1, 0, 1))
     await h.click('Learn new cards 1')
     await answer('Remembered')
     await answer('Remembered')
-    expect(await look()).toEqual(row('done: Inbox complete.', null, '2/2', 0, 0, 0))
+    expect(await look()).toEqual(row('done: Inbox complete.', null, '3/3', 0, 0, 0))
     // The next day, 9:00: the new-card limit starts again (NEW-3, NEW-4), and no card of yesterday is a new card.
     vi.setSystemTime(new Date(2026, 10, 13, 9, 0).getTime())
     await reopen(0)
@@ -146,7 +147,7 @@ describe('YAZ-5613: a full day of reviews on the phone, step by step (YAZ-5611 r
     await h.click('Learn new cards 2')
     await answer('Forgot') // NEW-1 ✕: it stays under New cards
     const inSession = await look()
-    expect(inSession).toEqual(row('NEW-2', '6 / 6', '4/6', 2, 0, 2))
+    expect(inSession).toEqual(row('NEW-2', '4 / 6', '4/6', 2, 0, 2))
     await reopen(60_000)
     expect((await look()).menu).toEqual(inSession.menu)
   })

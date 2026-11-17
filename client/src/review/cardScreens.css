@@ -641,33 +641,9 @@
 .card-inbox__tools:has(.card-inbox__focus[aria-pressed='true']) {
   opacity: 1;
 }
-/* The progress bar (YAZ-5020, as Mochi's): thin, under the row; a Remembered fills grey, a Forgot red. */
+/* The progress bar (YAZ-5676, Mochi's: `SessionBar`, `sessionCount.css`), under the row. */
 .card-inbox__progress {
-  display: flex;
-  height: 2px;
   margin: 0 4px;
-  overflow: hidden;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-}
-.card-inbox__progress-part {
-  flex: none;
-  height: 100%;
-  background: color-mix(in srgb, var(--fg) 38%, transparent);
-  /* YAZ-5660: this is also the reds' slide to the right end once the pass is over (the grey part grows, the red moves). */
-  transition: width 200ms ease-out;
-}
-.card-inbox__progress-part[data-missed] {
-  background: var(--danger);
-}
-/* YAZ-5594: a card answered Remembered that comes back in its steps: not done, so its place stays empty. */
-.card-inbox__progress-part[data-open] {
-  background: transparent;
-}
-@media (prefers-reduced-motion: reduce) {
-  .card-inbox__progress-part {
-    transition: none;
-  }
 }
 /* The filter menu: the app's menu, each row its glyph, its name and a small count pill. YAZ-5042 round 2: a grid of two
    columns, so the count pills line up whether a row has "· Reset" after it or not. The Up next and New cards pills read

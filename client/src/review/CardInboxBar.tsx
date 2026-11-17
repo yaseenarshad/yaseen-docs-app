@@ -41,6 +41,7 @@ import { todayCards } from './reviewTime'
 import { TodayWork } from './TodayWork'
 import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
+import { SessionBar } from './SessionCount'
 import { useNewCardsPicker } from './NewCardsPicker'
 import { kindCount, kindCountText, pickLabel, showsFilter } from './inboxMenu'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
@@ -162,7 +163,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
         )}
         {session.card !== null && (
           <span className="card-inbox__place">
-            {session.position} of {session.total}
+            {session.progress.done} / {session.progress.total}
           </span>
         )}
         {tools !== undefined && <span className="card-inbox__tools">{tools}</span>}
@@ -256,19 +257,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
         )}
         {menu !== null && picker.picker}
       </div>
-      <div className="card-inbox__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.progress.size} aria-valuenow={session.progress.done}>
-        {session.progress.runs.map((run, i) => (
-          <span
-            key={i}
-            className="card-inbox__progress-part"
-            data-missed={run.missed || undefined}
-            data-open={run.open || undefined}
-            style={{
-              width: `${(100 * run.count) / Math.max(1, session.progress.size)}%`,
-            }}
-          />
-        ))}
-      </div>
+      <SessionBar session={session} className="card-inbox__progress" />
     </div>
   )
 }

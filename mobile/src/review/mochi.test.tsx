@@ -112,7 +112,8 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
     expect(h.button('Previous card')?.disabled).toBe(true)
     await h.click('Next card')
     expect(h.head()).toBe('AR-2')
-    expect(h.text()).toContain('2 / 3')
+    // YAZ-5675 (Mochi): "done / total"; → answers nothing.
+    expect(h.text()).toContain('0 / 3')
     await h.click('Previous card')
     expect(h.head()).toBe('AR-1')
     expect(ids(h)).toEqual([])
@@ -153,17 +154,16 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
     expect(ids(h)).toEqual([])
   }, 30_000)
 
-  it('the progress bar in steps: one step a card; grey for Remembered, red for Forgot, in the order answered', async () => {
+  it('YAZ-5676: the progress bar as Mochi`s: grey done ÷ total, then red for the misses waiting, both from the left', async () => {
     h = await reviewSetup(THREE)
-    const steps = () => [...h!.host.querySelectorAll('.review__progress .review__step')].map((s) => (s as HTMLElement).dataset.answer ?? '-')
-    expect(steps()).toEqual(['-', '-', '-'])
+    const widths = () => ['grey', 'red'].map((part) => h!.host.querySelector<HTMLElement>(`.review__progress .session-bar__${part}`)?.style.width)
+    expect(widths()).toEqual(['0%', '0%'])
     await h.click('Remembered')
     await h.click('Forgot')
-    // A Forgot card comes back at the end of the session (its same-day step): the same card, so no new step
-    // (YAZ-5594); its step is red, and it is not done.
-    expect(steps()).toEqual(['remembered', 'forgot', '-'])
-    expect(q('.review__progress')?.getAttribute('aria-valuenow')).toBe('1')
-    expect(q('.review__progress')?.getAttribute('aria-valuemax')).toBe('3')
+    // A Forgot is done +1 and the total +1 (the card comes back at the end of the session): 2 / 4, red after the grey.
+    expect(widths()).toEqual(['50%', '75%'])
+    expect(q('.review__progress')?.getAttribute('aria-valuenow')).toBe('2')
+    expect(q('.review__progress')?.getAttribute('aria-valuemax')).toBe('4')
   })
 })
 
@@ -186,13 +186,13 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     expect(h.text()).toContain('New cards ▾')
     expect(h.host.querySelector('.review__chip')?.textContent).toBe('New')
     expect(h.head()).toBe('MN-2')
-    expect(h.text()).toContain('1 / 1')
+    expect(h.text()).toContain('0 / 1')
     await h.click(/Choose what to review/)
     await h.click(/^Up next$/)
     expect(h.head()).toBe('MN-3')
     await h.click(/Choose what to review/)
     await h.click(/^All cards$/)
-    expect(h.text()).toContain('1 / 3')
+    expect(h.text()).toContain('0 / 3')
   })
 
   it('Reset sets today\'s new cards back to the Settings number (never below today\'s work); Undo takes it back', async () => {

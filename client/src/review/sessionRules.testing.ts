@@ -110,15 +110,15 @@ export function randomVault(seed: number, now: number): { files: Record<string, 
 
 interface Snap {
   counts: Record<CardFilter, number>
-  total: number
-  position: number
   filter: CardFilter
   dueCount: number
   card: { id: string; isNew: boolean; next: boolean; repeat: boolean } | null
   end: string | null
   /** The stop's numbers (YAZ-5043): the % and the missed cards waiting. */
   stop: { percent: number; missed: number } | null
-  progress: { done: number; size: number }
+  /** The top right (YAZ-5675, as Mochi's): "done / total" of the filter, its misses waiting, and the ✕ K. */
+  progress: { done: number; total: number; waiting: number }
+  misses: number
 }
 
 const snap = (r: CardReviewApi): Snap | null => {
@@ -126,14 +126,13 @@ const snap = (r: CardReviewApi): Snap | null => {
   if (s === null) return null
   return {
     counts: { ...s.counts },
-    total: s.total,
-    position: s.position,
     filter: s.filter,
     dueCount: r.dueCount,
     card: s.card === null ? null : { id: s.card.id, isNew: s.card.isNew, next: s.card.next, repeat: s.card.repeat === true },
     end: s.end?.kind ?? null,
     stop: s.end === null ? null : { percent: s.end.percent, missed: s.end.missed },
-    progress: { done: s.progress.done, size: s.progress.size },
+    progress: { ...s.progress },
+    misses: s.misses,
   }
 }
 
@@ -238,20 +237,21 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
   }
   const checkNumbers = (s: Snap | null, tap: string) => {
     if (s === null) return
-    const { counts, total, position, filter, progress } = s
+    const { counts, filter, progress } = s
     // Review rules v1, rule 7 (YAZ-5655): each card in one list only. Before: Due today + New cards = All cards.
     if (counts.next + counts.due + counts.new !== counts.all) fail('4. rule 7: Up next + Due today + New cards = All cards', { tap, counts })
     if (counts.next > counts.all || Object.values(counts).some((c) => c < 0)) fail('4. counts in range', { tap, counts })
-    if (progress.size !== total) fail('4. the bar`s whole is M', { tap, progress, total })
-    if (progress.done + counts[filter] !== total) fail('4. done + left = M', { tap, progress, counts, filter, total })
-    if (s.card !== null && s.end === null && (position < 1 || position > total)) fail('4. 1 ≤ N ≤ M', { tap, position, total })
+    // YAZ-5675 (Mochi's numbers): the total is what is done and what is left under the filter; the red is a part of what is left.
+    if (progress.done + counts[filter] !== progress.total) fail('4. done + left = total', { tap, progress, counts, filter })
+    if (progress.waiting < 0 || progress.waiting > counts[filter]) fail('4. the misses waiting are cards left', { tap, progress, counts, filter })
+    if (s.misses < 0 || s.misses > counts.all) fail('4. ✕ K counts cards left', { tap, misses: s.misses, counts })
     // The % stop of Due today (spec 15): only after a miss, so never 100% and always one missed card or more.
     if (s.end === 'missed' && (s.stop === null || s.stop.missed < 1 || s.stop.percent >= 100)) fail('4. "Review missed cards" only after a Forgot', { tap, stop: s.stop })
   }
   /**
    * Rule 3: nothing grew. `due` may grow by `dueGrows`, `new` by `newGrows` (Review rules v1, rule 7: an answered card
    * that comes back moves to its own list — an Up next card to Due today, or to New cards while it has no ✓ yet);
-   * `sameTotal`: M stays (same filter).
+   * (YAZ-5675: the total may grow, as Mochi's does.)
    */
   const noGrowth = (a: Snap | null, b: Snap | null, tap: string, dueGrows = 0, rowMayGrow = false, newGrows = 0) => {
     if (a === null || b === null) return
@@ -260,7 +260,6 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
     const moved = Math.max(0, a.counts.next - b.counts.next)
     if (grew('all') || grew('new', newGrows + moved) || grew('next') || grew('due', dueGrows + moved)) fail('3. counts never grow', { tap, before: a.counts, after: b.counts })
     if (b.dueCount > a.dueCount + (rowMayGrow ? 1 : 0)) fail('3. the Inbox row`s count never grows', { tap, before: a.dueCount, after: b.dueCount })
-    if (a.filter === b.filter && b.total > a.total) fail('3. "N / M" keeps M', { tap, before: `${a.position}/${a.total}`, after: `${b.position}/${b.total}` })
   }
   const same = (a: Snap | null, b: Snap | null, tap: string) => {
     if (a === null || b === null) return
@@ -367,7 +366,7 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
       case 'next':
         await step(() => r().move(tap === 'back' ? -1 : 1))
         same(before, snap(r()), line)
-        if (before !== null && snap(r())!.total !== before.total) fail('3. ← → keep M', { line, before: before.total, after: snap(r())!.total })
+        if (before !== null && snap(r())!.progress.total !== before.progress.total) fail('3. ← → keep the total', { line, before: before.progress, after: snap(r())!.progress })
         break
       case 'filter': {
         const f = pick(rnd, ['all', 'due', 'new', 'next'] as const)
