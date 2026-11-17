@@ -10,8 +10,10 @@
  *  - total = done + the filter's cards still waiting in the session, each once. So a Forgot on a due card adds 1 (the
  *    card comes back), a new card learned under All cards adds 1 (its second ✓ comes today, as a Due today card), and
  *    in the missed pass each Remembered takes 1 off (the card is let go) while a Forgot moves nothing.
- *  - waiting: the filter's due cards back after a Forgot (the bar's red, after the grey).
- * The ✕ K (`sessionMisses`) is the whole session's due cards back after a Forgot, under any filter (finding 2).
+ *  - waiting: the filter's due cards back after a Forgot (the bar's red, after the grey), and the top right's ✕ K.
+ * YAZ-5681 (Yaseen: "shouldn't the three x only be representative of what's in only in that part?"): the ✕ counts the
+ * OPEN filter's misses, so it and the red always agree. Mochi shows the session's ✕ on every filter (finding 2); we
+ * differ on purpose. A Forgot on a new card never makes a ✕ (finding 11).
  *
  * The ring's % is each due card's FIRST answer of the session (`dueFirsts`): a card missed then got right counts as
  * missed, a new card never counts.
@@ -71,9 +73,6 @@ export function filterCount(answers: readonly SessionAnswer[], queue: readonly S
   const left = queue.filter((c) => matchesFilter(c, filter))
   return { done, total: done + left.length, waiting: left.filter(missed).length }
 }
-
-/** The ✕ K (YAZ-5674): the session's due cards back after a Forgot, under any filter. */
-export const sessionMisses = (queue: readonly SessionCard[]): number => queue.filter(missed).length
 
 /** The ring's numbers (YAZ-5043): the due cards' first answers, how many were Remembered, the whole % (never 100 while one was missed). */
 export function dueFirsts(answers: readonly SessionAnswer[]): { count: number; remembered: number; percent: number } {

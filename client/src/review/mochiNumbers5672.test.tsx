@@ -217,3 +217,22 @@ describe('YAZ-5679: "Added card to reviews · Undo" when a new card is learned (
     expect(review.session?.learned).toBeNull()
   })
 })
+
+describe('YAZ-5681: the ✕ and the red follow the open filter (differs from Mochi on purpose)', () => {
+  it('3 misses in Due today; New cards: no ✕ and no red; back to Due today: ✕ 3; All cards: ✕ 3', async () => {
+    dueCards(4)
+    newCards(2)
+    await mount()
+    await act(async () => review.setFilter('due'))
+    await go('again')
+    await go('again')
+    await go('again')
+    expect(top()).toBe('✕ 3 · 3 / 7 | grey 43 red 86 | all 6 due 4 new 2')
+    await act(async () => review.setFilter('new'))
+    expect(top()).toBe('0 / 2 | grey 0 red 0 | all 6 due 4 new 2')
+    await act(async () => review.setFilter('due'))
+    expect(top()).toBe('✕ 3 · 3 / 7 | grey 43 red 86 | all 6 due 4 new 2')
+    await act(async () => review.setFilter('all'))
+    expect(top()).toBe('✕ 3 · 3 / 9 | grey 33 red 67 | all 6 due 4 new 2')
+  })
+})

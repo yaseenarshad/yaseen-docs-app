@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CardRating } from '@shared/cardLine'
-import { dueFirsts, filterCount, sessionMisses, type SessionAnswer, type SessionCard } from './sessionProgress'
+import { dueFirsts, filterCount, type SessionAnswer, type SessionCard } from './sessionProgress'
 
 const key = (id: string) => `P.md\n${id}`
 const due = (id: string, rating: CardRating, first = true): SessionAnswer => ({ key: key(id), rating, isNew: false, next: false, first })
@@ -12,7 +12,7 @@ const learned = (id: string): SessionCard => ({ path: 'P.md', id, isNew: false, 
 /** The top right and the bar as Mochi shows them (YAZ-5671 finding 15): "✕ K · done / total", grey %, red %. */
 const read = (answers: SessionAnswer[], queue: SessionCard[], filter: 'all' | 'due' | 'new' = 'due') => {
   const c = filterCount(answers, queue, filter)
-  return { top: `${sessionMisses(queue) > 0 ? `✕ ${sessionMisses(queue)} · ` : ''}${c.done} / ${c.total}`, grey: Math.round((100 * c.done) / c.total), red: Math.round((100 * (c.done + c.waiting)) / c.total) }
+  return { top: `${c.waiting > 0 ? `✕ ${c.waiting} · ` : ''}${c.done} / ${c.total}`, grey: Math.round((100 * c.done) / c.total), red: Math.round((100 * (c.done + c.waiting)) / c.total) }
 }
 
 describe('YAZ-5675: the numbers move as Mochi`s (YAZ-5671 finding 15, a 4-card session, measured after every answer)', () => {
@@ -55,7 +55,8 @@ describe('YAZ-5675: new cards (YAZ-5671 findings 3, 4, 11, 18)', () => {
     expect(filterCount(answers, [card('w', true), learned('x'), learned('y'), learned('z')], 'new')).toEqual({ done: 3, total: 4, waiting: 0 })
     answers.push(fresh('w', 'good'))
     expect(filterCount(answers, [learned('x'), learned('y'), learned('z'), learned('w')], 'new')).toEqual({ done: 4, total: 4, waiting: 0 })
-    expect(sessionMisses([card('w', true, true)])).toBe(0)
+    // A Forgot on a new card never makes a ✕ (finding 11).
+    expect(filterCount([fresh('w', 'again')], [card('w', true, true)], 'all').waiting).toBe(0)
   })
 
   it('All cards: a new card learned adds 1 to the total (it comes back today); its second ✓ is done +1', () => {
@@ -75,7 +76,8 @@ describe('YAZ-5675: new cards (YAZ-5671 findings 3, 4, 11, 18)', () => {
     expect(filterCount(answers, queue, 'due')).toEqual({ done: 2, total: 4, waiting: 1 })
     expect(filterCount(answers, queue, 'all')).toEqual(all)
     expect(all).toEqual({ done: 3, total: 6, waiting: 1 })
-    expect(sessionMisses(queue)).toBe(1)
+    // YAZ-5681: the ✕ is each filter's own (New cards none), not the session's.
+    expect(filterCount(answers, queue, 'new').waiting).toBe(0)
   })
 })
 

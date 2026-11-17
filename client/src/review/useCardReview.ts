@@ -8,7 +8,7 @@ import { folderTitle } from '../links/folderTitle'
 import { isCardGone, type CardOnPage } from './cardRead'
 import { useLocalDay } from './localDay'
 import type { ReviewHost } from './reviewHost'
-import { dueFirsts, filterCount, matchesFilter, sessionMisses, type FilterCount, type SessionAnswer } from './sessionProgress'
+import { dueFirsts, filterCount, matchesFilter, type FilterCount, type SessionAnswer } from './sessionProgress'
 import { tourEvent } from '../course/tourBus'
 
 /**
@@ -159,7 +159,10 @@ export interface CardReviewSession {
    * the top right's count and the progress bar (grey done ÷ total, red (done + waiting) ÷ total).
    */
   progress: FilterCount
-  /** The top right's red ✕ K (YAZ-5674): the session's due cards back after a Forgot; 0 (hidden) in the missed pass. */
+  /**
+   * The top right's red ✕ K (YAZ-5674): the open filter's due cards back after a Forgot, the bar's red too (YAZ-5681:
+   * one place we differ from Mochi on purpose, which shows the session's ✕ on every filter); 0 (hidden) in the missed pass.
+   */
   misses: number
   /**
    * The last thing done was a Remembered that learned a new card (YAZ-5679, Mochi's "Added card to reviews · Undo"):
@@ -1297,6 +1300,7 @@ export function useCardReview(
     else if (shownCard !== null && page !== null) lastShown.current = { session: session.id, card: shownCard }
     const { filter, queue, scope } = session
     const counts = countOf(queue)
+    const progress = filterCount(session.answered, queue, filter)
     const lastStep = session.undo.at(-1)
     const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
@@ -1315,9 +1319,9 @@ export function useCardReview(
       from,
       place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered.map((a) => a.rating),
-      progress: filterCount(session.answered, queue, filter),
-      // Mochi hides the ✕ in the missed pass (YAZ-5671 finding 9); its % screen still shows it.
-      misses: session.stage === 'first' || session.pause === 'missed' ? sessionMisses(queue) : 0,
+      progress,
+      // Mochi hides the ✕ in the missed pass (YAZ-5671 finding 9); its % screen still shows it. YAZ-5681: the open filter's.
+      misses: session.stage === 'first' || session.pause === 'missed' ? progress.waiting : 0,
       today,
       more: scopePlan.more,
       adds: addsOf(scopePlan, settings),
