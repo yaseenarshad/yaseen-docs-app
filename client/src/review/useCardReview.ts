@@ -209,7 +209,7 @@ export interface DueTodayEnd {
   /** Due cards answered this session (their first answer), and how many of those first answers were Remembered. */
   count: number
   remembered: number
-  /** The whole % remembered, never rounded up to 100 while one card was missed. */
+  /** The % remembered, to the nearest (YAZ-5680 check), never 100 while one card was missed. */
   percent: number
   /** The missed cards waiting (the "Review missed cards 5" button). */
   missed: number
