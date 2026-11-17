@@ -125,6 +125,10 @@ export function useVaultTree(
   // A NEW window's closed tree is no choice of the user: it writes nothing until a folder opens or closes here, so the
   // vault keeps the list its other windows saved (bug YAZ-3513). The reducer answers a new list for each change.
   const startList = useRef(storage.isCollapsedStart() ? expanded : null)
+  // The open folders when "A place for each tab" began here (YAZ-5750): back on one place, a window that changed none
+  // since then writes nothing, so it does not put its own list over the list of the window that the user used.
+  const tabStart = useRef<string[] | null>(null)
+  if (!shared && tabStart.current === null) tabStart.current = expanded
 
   // What the Files tab draws (YAZ-2602 D3). One vault → its tree. Two or more → one
   // folder row per vault, in the window's order, named as the app names the vault, its tree below it;
@@ -273,8 +277,12 @@ export function useVaultTree(
     }
     if (expanded === startList.current) return
     startList.current = null
-    // A place for each tab (YAZ-5701): the tabs' folders stay in this window. Back on one place, the folders on screen are written.
+    // A place for each tab (YAZ-5701): the tabs' folders stay in this window. Back on one place, the folders on screen are
+    // written only if they changed in this window (YAZ-5750).
     if (!shared) return
+    const untouched = tabStart.current === expanded
+    tabStart.current = null
+    if (untouched) return
     for (const vault of roots) {
       // The app's own vault keeps its open folders for the session only (YAZ-5108): nothing of it goes to the store.
       if (appRoots.includes(vault)) continue

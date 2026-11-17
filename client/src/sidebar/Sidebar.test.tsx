@@ -6749,6 +6749,22 @@ describe('focus tab (YAZ-2619)', () => {
       }
     })
 
+    it('YAZ-5750: back on "One place for the window", a window that the user did not touch with a place for each tab writes nothing over the shared list, so the other window\'s folders survive its Hide and Show', async () => {
+      const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5750-A', settings: PER_TAB }, { focus: ['/Projects'] })
+      // Window 1 (another renderer) opened Projects and wrote it when the setting came back to one place.
+      const theirs = [copyFoldKey(`${v}/Projects`, `${v}/Projects`)]
+      storage.setExpanded(v, theirs)
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      await rerender({ activeTab: 'yaz5750-A', settings: TEST_SETTINGS })
+      expect(setExpanded).not.toHaveBeenCalled()
+      expect(storage.getExpanded(v)).toEqual(theirs)
+      setExpanded.mockRestore()
+      // This window hides and shows its sidebar: it reads the shared list, Projects open.
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: 'yaz5750-A', settings: TEST_SETTINGS })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+    })
+
     it('"One place for the window" (the default): a tab switch changes nothing, and the open folders go to the store as before', async () => {
       const setExpanded = vi.spyOn(storage, 'setExpanded')
       const { el, v, props, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-C' }, { focus: ['/Projects'] })
