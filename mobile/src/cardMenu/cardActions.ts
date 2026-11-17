@@ -7,7 +7,7 @@ import { CARD_TITLE_CHOICES, type CardTitleChoice, type CardTitleShow } from '@s
  * THE CARD'S SETTINGS ON THE PHONE: the review rows of the ONE card menu (`shared/cardMenu.ts`, YAZ-5697 round 2), the
  * Mac's rows in the Mac's order, words and asks: Move to Up next (YAZ-5697: one word on the Mac and the
  * phone), Archive card, Fix later, Title in review › (YAZ-5696: Default · At once · After the front ·
- * With Side 2 · Never). Each changes the card line with the Mac's own change. Answering a card is not a setting: it
+ * Before Side 2 · Never). Each changes the card line with the Mac's own change. Answering a card is not a setting: it
  * stays one tap.
  */
 export type CardActionKind = 'next' | 'off' | 'fix' | 'title'

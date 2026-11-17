@@ -24,7 +24,7 @@ import type { CardPreviewRequest } from '../editor/card/cardOpen'
 import { toggleCardAudio } from '../editor/card/cardMedia'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBand, CardId, CardStrip, type CardLinkDoors } from './cardParts'
-import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
+import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, bandTitleStep, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
 import { KeyLabel } from '../keys/KeyLabel'
 import { EyeIcon } from '../views/view/icons'
@@ -58,7 +58,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
   const { text, title: headTitle } = useCardFront(card.text, card, settings?.titleAt ?? 'always')
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
-  const steps = useCardSteps(text, cardKey, rootRef)
+  const steps = useCardSteps(text, cardKey, rootRef, bandTitleStep(headTitle, card.titleAt, settings?.titleAt ?? 'always'))
   // YAZ-5696: the Inbox's timing (the card's own choice, else the vault's; Review off: at once).
   const band = bandTitle(headTitle, card.titleAt, settings?.titleAt ?? 'always', steps)
   useStepScroll(steps, true, rootRef)

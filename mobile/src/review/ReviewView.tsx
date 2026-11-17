@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useMenuToggle } from '../app/menuToggle'
 import { useAnswerTimer } from '@client/review/answerTimer'
 import { AGAIN_LABEL, AGAIN_TITLE, AnswerLine, answerWords, cardStateText, showsAgain, type AnswerWords } from '@client/review/cardInboxChip'
-import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
+import { START, markOf, nextStep, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
 import { newCardsFrom } from '@client/review/inboxMenu'
 import { addedLine, resetLine } from '@client/review/cardWords'
 import { reviewDuration, todayDuration, todayStudied } from '@client/review/reviewTime'
@@ -14,7 +14,7 @@ import { useCardReview, type CardReviewApi, type CardReviewSession } from '@clie
 import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
 import { reviewTitleOf, type CardRating } from '@shared/cardLine'
-import { titleShows } from '@shared/cardTitleShows'
+import { reviewTitleAt, titleShows, titleStepOf } from '@shared/cardTitleShows'
 import { answerLabel, answerRatings } from '@shared/cardSchedule'
 import { cardPieces, cardSides, hiddenCount } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
@@ -59,7 +59,7 @@ import './review.css'
  *    for a card in a page (round 15, item 4). The title is the card line's (decision D): never a
  *    line of the card's text, so the text is drawn whole. A card with no title: the ID alone, as the Mac's Inbox head.
  *    Title in review › Never (`notitle`): the ID alone at every step and after the answer (YAZ-5695). A shown
- *    title comes as the Mac's (YAZ-5696, `titleShows`): Never, Always, After the first click or With Side 2, by the card's own
+ *    title comes as the Mac's (YAZ-5696, `titleShows`): Never, Always, After the first click or Before Side 2 (YAZ-5709: the title then has its own tap), by the card's own
  *    choice or review.json's `titleAt`; a title that holds a hidden-word mark waits until the card is fully shown. A card
  *    file that is not valid says so (round 15, item 3).
  *  - A TAP ON THE CARD shows the next hidden word, else the next side: what Space does on the Mac. No swipes.
@@ -291,10 +291,14 @@ function SessionScreen({
   const [stepState, setStep] = useState<Step>({ ...START, key: cardKey })
   const step: Step = stepState.key === cardKey ? stepState : { ...START, key: cardKey }
   const upTo = (sides: number) => counts.slice(0, sides).reduce((a, b) => a + b, 0)
-  const done = text !== null && step.sides >= counts.length && step.open.length >= upTo(counts.length)
+  // The title's own tap (YAZ-5709: After the first click, Before Side 2), the Mac's `nextStep`.
+  const titleAt = reviewTitleAt(page?.titleAt, review.settings.titleAt)
+  const titleStep = titleStepOf(titleText, titleAt)
+  const after = text === null ? null : nextStep(step, counts, titleStep)
+  const done = text !== null && after === null
   const mark = markOf(step, upTo(step.sides))
-  // What the hint line counts: the hidden parts not shown yet, and each side still to come.
-  const left = text === null ? 0 : upTo(counts.length) - step.open.length + Math.max(0, counts.length - step.sides)
+  // What the hint line counts: the hidden parts not shown yet, each side still to come, and the title's own tap.
+  const left = text === null ? 0 : upTo(counts.length) - step.open.length + Math.max(0, counts.length - step.sides) + (titleStep !== null && !step.titled ? 1 : 0)
   // After an answer, taps wait until the next card is on the screen AND a short time has passed, so the
   // second tap of a double tap never lands on a card the person has not seen. The answer buttons still work at any
   // step of a card once it is seen (decision 11, as the Mac: "the buttons should always be there").
@@ -334,18 +338,16 @@ function SessionScreen({
   const advance = () => {
     if (page === null || guarded) return
     firstAction()
+    // The title's own tap (YAZ-5709) shows in the head, at the top: nothing to bring into view.
+    const titleNow = after !== null && after.titled && !step.titled
     const target: TapTarget = mark !== null ? mark : step.sides < counts.length ? 'side' : 'end'
     // The Mac's reading scroll: a part out of view first comes into view; that tap shows nothing.
     const view = cardBox.current
-    const move = view === null ? 0 : tapMove(view, target)
+    const move = view === null || titleNow ? 0 : tapMove(view, after === null ? 'end' : target)
     if (move !== 0 && view !== null) return glideCard(view, move)
-    if (done || target === 'end') return setNudge({ key: cardKey, n: nudge.key === cardKey ? nudge.n + 1 : 1 })
-    if (typeof target === 'number') {
-      lastShown.current = target
-      return setStep({ ...reveal(step, target, upTo(step.sides)), key: step.key })
-    }
-    lastShown.current = null
-    setStep({ ...step, sides: step.sides + 1, next: null })
+    if (after === null) return setNudge({ key: cardKey, n: nudge.key === cardKey ? nudge.n + 1 : 1 })
+    lastShown.current = !titleNow && typeof target === 'number' ? target : null
+    setStep({ ...after, key: step.key })
   }
   /** A tap on a hidden part (the Mac's click on a blank): THAT part shows. */
   const showPart = (word: number) => {
@@ -561,9 +563,7 @@ function SessionScreen({
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
   const canUndo = shownLine?.undo === true || session.canUndo
 
-  // A global Never with no own choice gave no title (`reviewTitleOf`); a title that is here then shows at once.
-  const titleAt = page?.titleAt ?? (review.settings.titleAt === 'never' ? 'always' : review.settings.titleAt)
-  const headTitle = titleShows({ title: titleText, at: titleAt, counts, sides: step.sides, open: step.open, next: step.next }) ? titleText : ''
+  const headTitle = titleShows({ title: titleText, at: titleAt, counts, sides: step.sides, open: step.open, titled: step.titled }) ? titleText : ''
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
   // The crumb (YAZ-5132's place, from the first folder, YAZ-5682): "LEARNING / Memory", inside the card, on the chip's line.
   const crumb = session.place.map((p) => p.label)

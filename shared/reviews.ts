@@ -90,7 +90,7 @@ export interface ReviewSettings {
   timeSoFar: TimeSoFar
   /**
    * When a card's title shows in Review (YAZ-5696, Settings › Cards › Card look › "Show card titles"): Never, Always
-   * (the default: as before), After the first click, With Side 2. A card's own choice on its line wins
+   * (the default: as before), After the first click, Before Side 2. A card's own choice on its line wins
    * (`cardTitleAtOf`); `notitle` never shows it. Round 1's `once` and `front` read as Always and After the first click.
    */
   titleAt: CardTitleShow

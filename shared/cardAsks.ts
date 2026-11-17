@@ -29,7 +29,7 @@ export function titleChoiceAsk(choice: CardTitleChoice): CardAsk {
     never: 'Never show the title in review?',
     always: 'Always show the title?',
     click: 'Show the title after the first click?',
-    side2: 'Show the title with Side 2?',
+    side2: 'Show the title before Side 2?',
   }
   // The answer is the choice's bare name: "Default", not "Default (Always)".
   return { question: question[choice], yes: choice === 'default' ? 'Default' : cardTitleChoiceLabel(choice, 'always') }

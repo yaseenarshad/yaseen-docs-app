@@ -120,18 +120,37 @@ describe('the answer list keeps the title part byte for byte (decision 2 with YA
   })
 })
 
-describe('when a title shows (YAZ-5696: Never · Always · After the first click · With Side 2): the Mac\'s one rule (`titleShows`)', () => {
+describe('when a title shows (YAZ-5696, YAZ-5709: Never · Always · After the first click · Before Side 2): the Mac\'s one rule (`titleShows`, `nextStep`)', () => {
   // Two hidden words on the front, one on Side 2.
   const CARD = 'A {{one}} and {{two}}\n---\n{{three}}'
   const withGlobal = (titleAt: string, line: string) => ({ '.yaseendocs/review.json': JSON.stringify({ titleAt }), 'p.md': page('Geography', cardBlock(CARD, line)) })
 
-  it('the global After the first click: the ID alone until the first tap, then "Title · ID"; VoiceOver hears it only then', async () => {
+  /** What shows after each tap: the card's text and the head. */
+  const walk = async (n: number) => {
+    const out: string[] = []
+    for (let i = 0; i < n; i++) {
+      await h!.tap()
+      out.push(`${h!.cardText()} | ${h!.head()}`)
+    }
+    return out
+  }
+
+  it('the global After the first click (YAZ-5709): the first tap shows the title BY ITSELF; VoiceOver hears it only then; then the words, then Side 2', async () => {
     h = await reviewSetup(withGlobal('click', 'TI-20, title "Numbers"'))
     expect(h.head()).toBe('TI-20')
     expect(spoken()).not.toContain('Numbers')
-    await h.tap()
-    expect(h.head()).toBe('Numbers · TI-20')
+    expect(h.text()).toContain('Tap anywhere · 5 left')
+    expect(await walk(1)).toEqual(['A _ and _ | Numbers · TI-20'])
     expect(spoken()).toContain('Numbers')
+    expect(await walk(4)).toEqual(['A one and _ | Numbers · TI-20', 'A one and two | Numbers · TI-20', 'A one and two _ | Numbers · TI-20', 'A one and two three | Numbers · TI-20'])
+  })
+
+  it('After the first click: a one-sided card with nothing hidden: the title is the one tap', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': JSON.stringify({ titleAt: 'click' }), 'p.md': page('Geography', cardBlock('Nothing hidden here.', 'TI-25, title "Numbers"')) })
+    expect(h.head()).toBe('TI-25')
+    expect(h.text()).toContain('Tap anywhere · 1 left')
+    expect(await walk(1)).toEqual(['Nothing hidden here. | Numbers · TI-25'])
+    expect(h.text()).toContain('Did you remember it?')
   })
 
   it('the global Never: the ID alone at every step and in the answer\'s line', async () => {
@@ -145,13 +164,32 @@ describe('when a title shows (YAZ-5696: Never · Always · After the first click
     expect(h.text()).not.toContain('Numbers')
   })
 
-  it('the card\'s own `title-side2` wins over the global Always: the title comes with Side 2', async () => {
+  it('the card\'s own `title-side2` (Before Side 2, YAZ-5709) wins over the global Always: 5 taps: word, word, the title, Side 2, the back word', async () => {
     h = await reviewSetup(withGlobal('always', 'TI-21, title "Numbers", title-side2'))
-    await h.tap()
-    await h.tap()
     expect(h.head()).toBe('TI-21')
+    expect(await walk(5)).toEqual(['A one and _ | TI-21', 'A one and two | TI-21', 'A one and two | Numbers · TI-21', 'A one and two _ | Numbers · TI-21', 'A one and two three | Numbers · TI-21'])
+  })
+
+  it('Before Side 2: a card of 3 sides gets its title before Side 2; a one-sided card last (none hidden: the one tap)', async () => {
+    const one = (text: string, id: string) => ({ '.yaseendocs/review.json': JSON.stringify({ titleAt: 'side2' }), 'p.md': page('Geography', cardBlock(text, `${id}, title "Numbers"`)) })
+    h = await reviewSetup(one('A {{one}}\n---\nB {{two}}\n---\nC', 'TI-26'))
+    expect(await walk(5)).toEqual(['A one | TI-26', 'A one | Numbers · TI-26', 'A one B _ | Numbers · TI-26', 'A one B two | Numbers · TI-26', 'A one B two C | Numbers · TI-26'])
+    h.unmount()
+    h = await reviewSetup(one('A {{one}} and {{two}}', 'TI-27'))
+    expect(await walk(3)).toEqual(['A one and _ | TI-27', 'A one and two | TI-27', 'A one and two | Numbers · TI-27'])
+    h.unmount()
+    h = await reviewSetup(one('Nothing hidden here.', 'TI-28'))
+    expect(await walk(1)).toEqual(['Nothing hidden here. | Numbers · TI-28'])
+  })
+
+  it('Before Side 2: an answer before the title shows still works; Undo brings the card back at its step, the title step still to come', async () => {
+    h = await reviewSetup(withGlobal('side2', 'TI-29, title "Numbers"'))
     await h.tap()
-    expect(h.head()).toBe('Numbers · TI-21')
+    await h.click('Remembered')
+    expect(h.last()).toContain('Remembered · Numbers')
+    await h.click('Undo')
+    expect(`${h.cardText()} | ${h.head()}`).toBe('A one and _ | TI-29')
+    expect(await walk(3)).toEqual(['A one and two | TI-29', 'A one and two | Numbers · TI-29', 'A one and two _ | Numbers · TI-29'])
   })
 
   it('the card\'s own `title-always` wins over the global Never', async () => {

@@ -28,7 +28,7 @@
  *  - TITLE IN REVIEW: NEVER (YAZ-5696; the card line's `notitle`, YAZ-5030): the title is on the card line (YAZ-5308), never in
  *    the text, so it is never a Space step. YAZ-5695 (Yaseen: "it should never show up in reviews. Period."): no band
  *    at any step, fully shown too, and the answer line names the card by its ID (`reviewTitleOf`).
- *  - WHEN A TITLE SHOWS (YAZ-5696): Never, Always, After the first click or With Side 2 — the card's own choice
+ *  - WHEN A TITLE SHOWS (YAZ-5696): Never, Always, After the first click or Before Side 2 (YAZ-5709: the title then has its own Space) — the card's own choice
  *    (⋯ › Title in review, its line's `title-click`…), else Settings › Cards › Show card titles (`bandTitle`,
  *    `titleShows`). While it waits the band keeps its room, empty to the eye and to VoiceOver, so the card never jumps.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
@@ -118,7 +118,7 @@ import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
-import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
+import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, bandTitleStep, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
 import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
@@ -253,7 +253,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
 
   // Space's steps (D18, YAZ-5048, YAZ-5049, YAZ-5105 round 3) and the scroll that follows them: the Inbox's card,
   // shared with the Preview (YAZ-5152, `inboxCard.tsx`). The card's sound stops with the card and a hidden Inbox.
-  const steps = useCardSteps(text, cardKey, rootRef)
+  const steps = useCardSteps(text, cardKey, rootRef, bandTitleStep(headTitle, card?.page?.titleAt, review.settings.titleAt))
   const { counts, step, done, nextSide, onLastSide } = steps
   // YAZ-5696: when the band's title shows (the card's own choice, else Settings › Cards › Show card titles).
   const band = bandTitle(headTitle, card?.page?.titleAt, review.settings.titleAt, steps)

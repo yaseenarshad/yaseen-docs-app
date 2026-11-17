@@ -2019,11 +2019,11 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(rowButtons(el, 'timeSoFar').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Hidden (click to see)', 'true'], ['Shown', 'false'], ['Off', 'false']])
     act(() => rowButtons(el, 'timeSoFar')[2].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, timeSoFar: 'off' })
-    // YAZ-5696: Show card titles — Always by default (no change for anyone), After the first click, With Side 2; saved in
+    // YAZ-5696: Show card titles — Always by default (no change for anyone), After the first click, Before Side 2; saved in
     // review.json, so the phone reads it too; the hint says a card's own choice wins.
     // Round 2 (Yaseen: "never, always, after the first click, and with side two"): Always by default; an eye explains each.
     const choices = () => [...row(el, 'cardTitleAt')!.querySelectorAll<HTMLButtonElement>('[aria-pressed]')]
-    expect(choices().map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Never', 'false'], ['Always', 'true'], ['After the first click', 'false'], ['With Side 2', 'false']])
+    expect(choices().map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Never', 'false'], ['Always', 'true'], ['After the first click', 'false'], ['Before Side 2', 'false']])
     expect(row(el, 'cardTitleAt')?.textContent).toMatch(/Title in review/)
     act(() => choices()[2].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, titleAt: 'click' })
@@ -2032,7 +2032,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     const eye = row(el, 'cardTitleAt')!.querySelector<HTMLButtonElement>('button.card-title-help')!
     expect(eye.getAttribute('aria-label')).toBe('What the choices mean')
     act(() => eye.focus())
-    expect(document.querySelector('.card-title-help__box')?.textContent).toBe('Never: The title never shows in Review.Always: The title shows as soon as the card shows.After the first click: The title shows after your first Space or tap on the card.With Side 2: The title shows when Side 2 shows.')
+    expect(document.querySelector('.card-title-help__box')?.textContent).toBe('Never: The title never shows in Review.Always: The title shows as soon as the card shows.After the first click: The title shows on its own, with your first Space or tap on the card.Before Side 2: The title shows on its own Space or tap, just before Side 2.')
     act(() => rowButtons(el, 'enabled')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, enabled: false })
     expect(onChange).not.toHaveBeenCalled()

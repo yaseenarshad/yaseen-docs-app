@@ -103,13 +103,13 @@ describe('the merge rule of sync keeps the choice, three ways', () => {
   const T = '2026-11-13T10:00:00.000Z good 4s'
   const M = '2026-11-13T10:05:00.000Z again 7s'
 
-  it('the Mac sets With Side 2 (mine), the phone answers (theirs): the choice and both answers stay', () => {
+  it('the Mac sets Before Side 2 (mine), the phone answers (theirs): the choice and both answers stay', () => {
     const [t, m] = uniteCardLines(page(`YAZ-7, title "Hola", ${R1}`), page(`YAZ-7, title "Hola", ${R1}, ${T}`), page(`YAZ-7, title "Hola", title-side2, ${R1}, ${M}`))
     expect(t).toBe(m)
     expect(lineOf(t)).toBe(`<!-- card: YAZ-7, title "Hola", title-side2, ${R1}, ${T}, ${M} -->`)
   })
 
-  it('a change from After the first click to With Side 2 on one side wins over the side that left it', () => {
+  it('a change from After the first click to Before Side 2 on one side wins over the side that left it', () => {
     const [t] = uniteCardLines(page(`YAZ-7, title-click, ${R1}`), page(`YAZ-7, title-click, ${R1}, ${T}`), page(`YAZ-7, title-side2, ${R1}`))
     expect(lineOf(t)).toBe(`<!-- card: YAZ-7, title-side2, ${R1}, ${T} -->`)
   })
@@ -129,14 +129,14 @@ describe('the global default (review.json `titleAt`)', () => {
 })
 
 describe('the words: the choices, "Default (Always)", and the eye\'s help', () => {
-  it('Default names what it means now; then Never · Always · After the first click · With Side 2', () => {
+  it('Default names what it means now; then Never · Always · After the first click · Before Side 2 (YAZ-5709)', () => {
     expect(CARD_TITLE_CHOICES.map((c) => c.choice)).toEqual(['default', 'never', 'always', 'click', 'side2'])
     expect(cardTitleChoiceLabel('default', 'always')).toBe('Default (Always)')
-    expect(cardTitleChoiceLabel('default', 'side2')).toBe('Default (With Side 2)')
+    expect(cardTitleChoiceLabel('default', 'side2')).toBe('Default (Before Side 2)')
     expect(cardTitleChoiceLabel('click', 'always')).toBe('After the first click')
   })
   it('the help says each of the four in one line', () => {
-    expect(CARD_TITLE_HELP.map((h) => h.label)).toEqual(['Never', 'Always', 'After the first click', 'With Side 2'])
+    expect(CARD_TITLE_HELP.map((h) => h.label)).toEqual(['Never', 'Always', 'After the first click', 'Before Side 2'])
     for (const h of CARD_TITLE_HELP) expect(h.text).not.toContain('\n')
   })
 })
@@ -151,35 +151,23 @@ describe('the title in Review: the global Never, the card\'s own choice over it 
 })
 
 describe('`titleShows`: the one rule for a step (Mac and phone)', () => {
-  // Two sides: two hidden words on the front, one on Side 2 (words 0, 1 | 2).
+  // Two sides: two hidden words on the front, one on Side 2 (words 0, 1 | 2). `titled`: the title's own step has come
+  // (YAZ-5709, `nextStep` in client/src/review/cardSteps.ts walks the steps).
   const two = { counts: [2, 1] }
-  const at = (sides: number, open: number[], next: number | null = null) => ({ ...two, sides, open, next })
-  const shows = (when: 'always' | 'click' | 'side2', step: { counts: number[]; sides: number; open: number[]; next: number | null }, title = 'Hola') => titleShows({ title, at: when, ...step })
+  const at = (sides: number, open: number[], titled = false) => ({ ...two, sides, open, titled })
+  const shows = (when: 'always' | 'click' | 'side2', step: { counts: number[]; sides: number; open: number[]; titled: boolean }, title = 'Hola') => titleShows({ title, at: when, ...step })
 
   it('Always: from the front', () => {
     expect(shows('always', at(1, []))).toBe(true)
   })
 
-  it('After the first click: after the first Space or tap, whatever it shows; a word hidden again keeps it', () => {
-    expect(shows('click', at(1, []))).toBe(false)
-    expect(shows('click', at(1, [0], 1))).toBe(true)
-    // A card with no hidden word on its front: the first click is the flip.
-    expect(shows('click', { counts: [0, 1], sides: 1, open: [], next: null })).toBe(false)
-    expect(shows('click', { counts: [0, 1], sides: 2, open: [], next: null })).toBe(true)
-    // The shown word clicked hidden again: still a click.
-    expect(shows('click', at(1, [], 0))).toBe(true)
-  })
-
-  it('After the first click on a card with nothing to click: as soon as it is fully shown, at once', () => {
-    expect(shows('click', { counts: [0], sides: 1, open: [], next: null })).toBe(true)
-  })
-
-  it('With Side 2: when the last side shows; a one-sided card when fully shown', () => {
-    expect(shows('side2', at(1, [0, 1]))).toBe(false)
-    expect(shows('side2', at(2, [0, 1]))).toBe(true)
-    expect(shows('side2', { counts: [2], sides: 1, open: [0], next: 1 })).toBe(false)
-    expect(shows('side2', { counts: [2], sides: 1, open: [0, 1], next: null })).toBe(true)
-    expect(shows('side2', { counts: [0], sides: 1, open: [], next: null })).toBe(true)
+  it('After the first click and Before Side 2 (YAZ-5709): only once the title\'s own step has come', () => {
+    for (const when of ['click', 'side2'] as const) {
+      expect(shows(when, at(1, []))).toBe(false)
+      expect(shows(when, at(1, [0, 1]))).toBe(false)
+      expect(shows(when, at(1, [0, 1], true))).toBe(true)
+      expect(shows(when, { counts: [0], sides: 1, open: [], titled: false })).toBe(false)
+    }
   })
 
   it('a title that holds a hidden-word mark waits until the card is fully shown, whatever the choice', () => {
