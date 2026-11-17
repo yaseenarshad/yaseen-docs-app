@@ -8,12 +8,20 @@ import './cardTitleHelp.css'
  * with a small eye in order to explain them"): hover, or the keyboard's focus, shows each of the four choices in one
  * line (`CARD_TITLE_HELP`). The words are the screen reader's too.
  */
-export function CardTitleHelp() {
+export function CardTitleHelp({ inRow = false }: { inRow?: boolean }) {
+  const description = CARD_TITLE_HELP.map((h) => `${h.label}: ${h.text}`).join(' ')
   return (
-    <HoverTip text={<CardTitleHelpBox />} focus>
-      <button type="button" className="card-title-help" aria-label="What the choices mean" aria-description={CARD_TITLE_HELP.map((h) => `${h.label}: ${h.text}`).join(' ')}>
-        <EyeIcon />
-      </button>
+    <HoverTip text={<CardTitleHelpBox />} focus={!inRow}>
+      {/* In a menu row (a button already) the eye is a mark, not a second button: the row's hover box is its own. */}
+      {inRow ? (
+        <span className="card-title-help card-title-help--row" role="img" aria-label="What the choices mean" aria-description={description}>
+          <EyeIcon />
+        </span>
+      ) : (
+        <button type="button" className="card-title-help" aria-label="What the choices mean" aria-description={description}>
+          <EyeIcon />
+        </button>
+      )}
     </HoverTip>
   )
 }

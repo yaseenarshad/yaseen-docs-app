@@ -208,7 +208,15 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
   const panel = item.panel
   return (
     <FlyoutParent
-      label={item.icon === undefined ? item.label : <span className="ctx-menu__label">{item.icon}{item.label}</span>}
+      label={
+        item.icon === undefined && item.after === undefined ? item.label : (
+          <span className="ctx-menu__label">
+            {item.icon}
+            {item.label}
+            {item.after}
+          </span>
+        )
+      }
       open={open}
       hint={item.hint}
       // A DOM panel (YAZ-4899) is the editor's own: its classes dress the tabs as the six-dot menu's.

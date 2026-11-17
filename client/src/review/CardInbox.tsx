@@ -60,9 +60,9 @@
  *  - FAST ← → (YAZ-5029): the buttons are the setting's, always mounted, the same size from card to card; only their
  *    hover waits for the card's answers. The hook reads the cards around this one ahead and keeps the card before on show
  *    until the next one's text is ready, so the card never empties and nothing under it moves.
- *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
- *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Archive card (YAZ-5046),
- *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
+ *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens the
+ *    ONE card menu (YAZ-5697 round 2, `cardMenuView.ts`): Undo last review (⌘Z), then the card's Inbox rows — Open card,
+ *    Put at top of Inbox / Remove from top of Inbox, Archive card (YAZ-5046; it asks first), Title in review ›.
  *  - THE LAST ANSWER'S LINE (YAZ-5025 round 2; no toast): one quiet line, centred under the answer buttons, "✓ Remembered ·
  *    DEMO-51 · back in 9 days · Undo ⌘Z" (YAZ-5433: the card's title alone, its ID with no title; all grey, a Forgot's ✕ only red), in the button hover's words. It stays until the next answer
  *    replaces it; its Undo is the hook's own undo, as ⌘Z; an undo clears it. It shows only once the session counts the
@@ -117,19 +117,20 @@ import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
-import { ARCHIVE_PATH } from './cardInboxIcons'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
 import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
+import { ContextMenu } from '../sidebar/ContextMenu'
+import type { MenuSection } from '../sidebar/menuSections'
+import { cardMarksOf, cardMenuSections } from './cardMenuView'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CardInboxBar } from './CardInboxBar'
 import { AnswerLine, CardAgainChip, CardStateChip, answerIcon, answerWords, showsAgain, type AnswerWords } from './cardInboxChip'
 import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
 import { CardInboxHints } from './CardInboxHints'
 import { KeyLabel } from '../keys/KeyLabel'
-import { withKeys } from '@shared/keyLabel'
 import { AddMoreField } from './AddMoreField'
 import { newCardsFrom, useNewCardsPicker } from './NewCardsPicker'
 import { ChevronIcon } from './cardInboxIcons'
@@ -213,16 +214,6 @@ export function isInboxKeyTarget(event: KeyboardEvent, inbox: HTMLElement | null
   return inbox.contains(target)
 }
 
-const icon = (d: string) => (
-  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d={d} />
-  </svg>
-)
-/** The ⋯ row's icons (YAZ-5004): undo, an archive box (Archive card, YAZ-5046), up to the top, a card window. */
-const ICON_UNDO = icon('M6 4 3 7l3 3M3 7h7a3 3 0 0 1 0 6H8')
-const ICON_OFF = icon(ARCHIVE_PATH)
-const ICON_TOP = icon('M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3')
-const ICON_CARD = icon('M2.5 3.5h11v9h-11zM2.5 6.5h11')
 
 /** The last answer's line (YAZ-5025 round 2): its words, its answer, and the session's answer count with it. */
 interface LastAnswer {
@@ -315,6 +306,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const ratings = answerRatings(review.settings)
   // The ⋯ row (YAZ-5004): open or closed; it closes with the card, Esc and a press outside it.
   const [moreState, setMore] = useState<string | null>(null)
+  const [moreAt, setMoreAt] = useState<{ x: number; y: number } | null>(null)
   const moreOpen = moreState !== null && moreState === cardKey
   const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode })
   live.current = { steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode }
@@ -352,14 +344,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const answerLineNow = lastLine !== null && answeredCount === lastLine.count && session.answered[answeredCount - 1] === lastLine.rating ? lastLine : null
   const line = archived ? null : answerLineNow
   const archivedLine = archived && archivedAt !== null && session.lastAdd === null
-  useEffect(() => {
-    if (!moreOpen) return
-    const away = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || event.target.closest('.card-inbox__more') === null) setMore(null)
-    }
-    window.addEventListener('pointerdown', away, true)
-    return () => window.removeEventListener('pointerdown', away, true)
-  }, [moreOpen])
 
   /** One Space (D18): the next hidden word of the sides showing, else the next side. */
   // THE END's cue (YAZ-5049 round 3, Yaseen: "there is no way to know they have hit the end"): the hint row has
@@ -455,21 +439,37 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
     changeCardLine(path, id, (l) => withCardTitle(l, next)).catch((err: unknown) => onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`))
   }
   const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide, lineUndo: session.lastAdd !== null || archivedLine || line !== null })
-  /** The ⋯ row's actions (YAZ-5004): the hook's own, with their names and keys for the hover box. */
-  const moreActions =
+  /**
+   * The ⋯ (YAZ-5004): Undo last review, then the ONE card menu's Inbox rows (YAZ-5697 round 2: Open card, Put at top of
+   * Inbox, Archive card, Title in review ›; no Fix later, YAZ-5430). Archive card asks first, then goes on the hook's
+   * Undo stack (YAZ-5621); the other marks are the hook's own writes.
+   */
+  const moreSections = (): MenuSection[] =>
     card === null
       ? []
-      : [
-          { id: 'undo', label: 'Undo last review', keys: '⌘Z', icon: ICON_UNDO, disabled: !session.canUndo, run: () => void review.undo() },
-          { id: 'off', label: 'Archive card', tour: 'card-menu-archive', icon: ICON_OFF, disabled: card.page === null, run: () => {
-            setArchivedAt({})
-            void review.turnOff()
-          } },
-          card.page?.next === true
-            ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
-            : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
-          { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card, cardFile) },
-        ]
+      : cardMenuSections({
+          marks: cardMarksOf(card.page === null ? null : { ...card.page, id: card.id }),
+          path: card.path,
+          upNext: true,
+          fix: false,
+          copyId: null,
+          change: (change) => void review.setMark(card.path, card.id, change),
+          onNotice,
+          openCard: () => openCard(card, cardFile),
+          first: { id: 'undo', label: 'Undo last review', hint: '⌘Z', disabled: !session.canUndo, onSelect: () => void review.undo() },
+          runOwn: (item) => {
+            if (item.action === 'off' && item.on === true) {
+              setArchivedAt({})
+              void review.turnOff()
+              return true
+            }
+            if (item.action === 'next') {
+              void review.setNext(card.path, card.id, item.on === true)
+              return true
+            }
+            return false
+          },
+        })
 
   return (
     <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ ...(card !== null && cardVarsOf?.(card.path)), '--document-zoom': zoom / 100 } as CSSProperties}>
@@ -599,31 +599,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
               })}
             </div>
             <div className="card-inbox__more">
-              {moreOpen && (
-                <div className="card-inbox__more-row" role="toolbar" aria-label="Card actions">
-                  {moreActions.map((a) => (
-                    <HoverTip key={a.id} text={withKeys(a.label, a.keys)}>
-                      <button
-                        type="button"
-                        className="explore__button card-inbox__more-action"
-                        data-action={a.id}
-                        data-tour={a.tour}
-                        aria-label={a.label}
-                        disabled={a.disabled}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setMore(null)
-                          a.run()
-                        }}
-                      >
-                        {a.icon}
-                      </button>
-                    </HoverTip>
-                  ))}
-                </div>
-              )}
+              {moreOpen && moreAt !== null && <ContextMenu x={moreAt.x} y={moreAt.y} sections={moreSections()} onClose={() => setMore(null)} />}
               <HoverTip text="More">
-                <button type="button" className="explore__button card-inbox__more-button" data-tour="card-menu" aria-label="More" aria-expanded={moreOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => setMore(moreOpen ? null : cardKey)}>
+                <button type="button" className="explore__button card-inbox__more-button" data-tour="card-menu" aria-label="More" aria-expanded={moreOpen} onMouseDown={(e) => e.preventDefault()} onClick={(e) => {
+                    const box = e.currentTarget.getBoundingClientRect()
+                    setMoreAt({ x: box.left, y: box.bottom + 4 })
+                    setMore(moreOpen ? null : cardKey)
+                  }}>
                   ⋯
                 </button>
               </HoverTip>

@@ -1,5 +1,5 @@
 import { hiddenCount } from './cardText'
-import type { CardTitleAt, CardTitleChoice, CardTitleShow } from './cardTitleAt'
+import type { CardTitleAt } from './cardTitleAt'
 
 /**
  * WHEN A CARD'S TITLE SHOWS IN REVIEW (YAZ-5696; round 2: Never · Always · After the first click · With Side 2): the one
@@ -24,24 +24,5 @@ export function titleShows(card: { title: string; at: CardTitleAt; counts: reado
   return counts.length <= 1 ? done : sides >= counts.length
 }
 
-const LABELS: Readonly<Record<CardTitleShow, string>> = { never: 'Never', always: 'Always', click: 'After the first click', side2: 'With Side 2' }
-
-/**
- * The ⋯ menu's "Title in review ›" choices (YAZ-5696), in order: Default first (every card starts on it), then the four
- * as the setting lists them. One list for the Mac's card menus and the phone's.
- */
-export const CARD_TITLE_CHOICES: readonly { choice: CardTitleChoice }[] = [{ choice: 'default' }, { choice: 'never' }, { choice: 'always' }, { choice: 'click' }, { choice: 'side2' }]
-
-/** A choice's words; Default says what it means now, as the table menu's "Default (On)": "Default (Always)". */
-export const cardTitleChoiceLabel = (choice: CardTitleChoice, global: CardTitleShow): string => (choice === 'default' ? `Default (${LABELS[global]})` : LABELS[choice])
-
-/** The setting's choices, in order, with their words. */
-export const CARD_TITLE_SHOW_OPTIONS: readonly { value: CardTitleShow; label: string }[] = (['never', 'always', 'click', 'side2'] as const).map((value) => ({ value, label: LABELS[value] }))
-
-/** The eye's help (round 2, Yaseen: "a tooltip with a small eye"): each of the four in one line. */
-export const CARD_TITLE_HELP: readonly { label: string; text: string }[] = [
-  { label: LABELS.never, text: 'The title never shows in Review.' },
-  { label: LABELS.always, text: 'The title shows as soon as the card shows.' },
-  { label: LABELS.click, text: 'The title shows after your first Space or tap on the card.' },
-  { label: LABELS.side2, text: 'The title shows when Side 2 shows.' },
-]
+/** The choices' words live with the choice (`cardTitleAt.ts`, small: the phone's status line names them too). */
+export { CARD_TITLE_CHOICES, CARD_TITLE_HELP, CARD_TITLE_SHOW_OPTIONS, cardTitleChoiceLabel } from './cardTitleAt'

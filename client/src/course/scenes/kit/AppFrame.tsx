@@ -17,6 +17,8 @@ import { InboxIcon } from '../../../views/view/icons'
 import { keysText } from '@shared/keyLabel'
 import { KeyLabel } from '../../../keys/KeyLabel'
 import { CARD_SKILL_MENU } from '../../../sidebar/menuSections'
+import { cardMenu } from '@shared/cardMenu'
+import type { CardTitleChoice } from '@shared/cardTitleAt'
 import { clamp, ease, lerp, type Beat } from './beat'
 
 /**
@@ -102,15 +104,15 @@ export interface MenuItem {
 }
 
 /**
- * A card's ⋯ menu, as the app lists it: a card in a page (`cardBlockView.ts`, `menuRows`) or a card file's tab
- * (`CardFileView.tsx`, `cardMenuSections`). `active` lights rows by label; `titleHint` is "Title on the front"'s state;
- * `unit` is the vault's page word (`useUnit`), as the app's "Turn into a page" goes through it.
+ * A card's ⋯ menu, as the app lists it: the ONE card menu (`shared/cardMenu.ts`, YAZ-5697 round 2), a card in a page's
+ * rows (`page`) or a card file's tab's (`file`). `active` lights rows by label; `titleHint` is Title in review's choice
+ * now; `unit` is the vault's page word (`useUnit`), as the app's "Turn into a page" goes through it.
  */
-export function cardMenuItems(where: 'page' | 'file', active: Readonly<Record<string, number>> = {}, titleHint: 'Show' | 'Hide' = 'Show', unit: (text: string) => string = (text) => text): MenuItem[] {
-  const rows: MenuItem[] =
-    where === 'page'
-      ? [{ label: 'Open card' }, { label: 'Preview', hint: 'P' }, { label: 'Put at top of Inbox', rule: true }, { label: 'Archive card' }, { label: 'Title on the front', hint: titleHint }, { label: 'Reset history' }, { label: 'Copy card ID', rule: true }]
-      : [{ label: 'Preview', hint: 'P' }, { label: 'Put at top of Inbox', rule: true }, { label: 'Archive card' }, { label: 'Title on the front', hint: titleHint }, { label: 'Copy card ID', rule: true }, { label: 'Copy card link' }, { label: unit('Turn into a page'), rule: true }]
+export function cardMenuItems(where: 'page' | 'file', active: Readonly<Record<string, number>> = {}, titleHint: CardTitleChoice = 'default', unit: (text: string) => string = (text) => text): MenuItem[] {
+  const marks = { off: false, next: false, fix: false, notitle: titleHint === 'never', titleAt: titleHint, reviews: where === 'page' ? 1 : 0 }
+  const groups = where === 'page' ? cardMenu({ open: 'card', preview: true, marks, upNext: true, copyId: 'ID', reset: true, unit }) : cardMenu({ preview: true, toPage: true, marks, upNext: true, copyId: 'ID', copyLink: true, unit })
+  // The ID's own hints are the card's: the picture shows the words and the keys only.
+  const rows: MenuItem[] = groups.flatMap((group, g) => group.map((item, i) => ({ label: item.label, ...(item.hint !== undefined && item.action !== 'copy-id' && item.action !== 'copy-link' && { hint: item.hint }), ...(g > 0 && i === 0 && { rule: true }) })))
   return rows.map((row) => (active[row.label] === undefined ? row : { ...row, active: active[row.label] }))
 }
 

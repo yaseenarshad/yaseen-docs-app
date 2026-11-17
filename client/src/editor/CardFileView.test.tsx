@@ -188,13 +188,13 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(el.textContent).not.toContain('Open page')
   })
 
-  it('⋯: Put at top of Inbox, Archive card, Fix later, Title in review, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
+  it('⋯ (the one card menu, YAZ-5697 round 2): Preview, Turn into a page, Put at top of Inbox, Archive card, Fix later, Title in review, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     await mount(FILE)
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     const rows = await menu()
-    expect(rows).toEqual(['Preview', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Copy card link', 'Turn into a page'])
+    expect(rows).toEqual(['Preview', 'Turn into a page', 'Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Copy card link'])
     pick('Copy card link')
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })
@@ -226,7 +226,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain(', fix -->'))
   })
 
-  it('YAZ-5696: ⋯ Title in review › Default · At once · After the front · With Side 2 · Never; a change asks in place first (YAZ-5697), then writes the card line', async () => {
+  it('YAZ-5696: ⋯ Title in review › Default · Never · Always · After the first click · With Side 2; a change asks in place first (YAZ-5697), then writes the card line', async () => {
     await mount(FILE)
     const line = () => disk.files.get(PATH)!.split('\n').find((l) => l.startsWith('<!-- card'))
     const flyoutRows = () => [...document.querySelectorAll<HTMLElement>('.ctx-menu__sub [role="menuitem"]')]
@@ -239,10 +239,16 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
       return parent
     }
     const parent = await open()
-    expect(parent.dataset.hint).toBe('Default')
-    expect(choices()).toEqual([['Default', '✓'], ['At once', ''], ['After the front', ''], ['With Side 2', ''], ['Never', '']])
+    // Default says what it means now: the vault's Show card titles (Always).
+    expect(parent.dataset.hint).toBe('Default (Always)')
+    // Round 2: the row's small eye; its hover says each of the four in one line.
+    const eye = parent.querySelector<HTMLElement>('.card-title-help')!
+    expect(eye.getAttribute('aria-label')).toBe('What the choices mean')
+    act(() => eye.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    await vi.waitFor(() => expect(document.querySelector('.card-title-help__box')?.textContent).toContain('After the first click: The title shows after your first Space or tap on the card.'))
+    expect(choices()).toEqual([['Default (Always)', '✓'], ['Never', ''], ['Always', ''], ['After the first click', ''], ['With Side 2', '']])
     // With Side 2: it asks first; Cancel writes nothing.
-    act(() => flyoutRows()[3].click())
+    act(() => flyoutRows()[4].click())
     await act(async () => undefined)
     const ask = () => document.querySelector<HTMLElement>('.ctx-menu__ask')
     expect(ask()?.textContent).toContain('Show the title with Side 2?')
@@ -252,15 +258,15 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await act(async () => undefined)
     expect(disk.files.get(PATH)).toBe(FILE)
     // Yes: the line takes `title-side2`.
-    act(() => flyoutRows()[3].click())
+    act(() => flyoutRows()[4].click())
     await act(async () => undefined)
     act(() => answers()[1].click())
     await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-9, title "Capital of France", title-side2 -->'))
     act(() => document.querySelector<HTMLElement>('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     // The menu says the choice now; Never takes its place (`notitle`), Default takes both away.
     expect((await open()).dataset.hint).toBe('With Side 2')
-    expect(choices()[3]).toEqual(['With Side 2', '✓'])
-    act(() => flyoutRows()[4].click())
+    expect(choices()[4]).toEqual(['With Side 2', '✓'])
+    act(() => flyoutRows()[1].click())
     await act(async () => undefined)
     expect(ask()?.textContent).toContain('Never show the title in review?')
     act(() => answers()[1].click())

@@ -8,7 +8,7 @@ import { cardActions, type CardAction, type CardActionMarks } from './cardAction
 import { TWO_TAP_MS, UNARMED, twoTap } from './twoTap'
 
 /**
- * YAZ-5505: every card setting on the phone needs TWO taps. The first turns the row into "Tap again to …" in place (YAZ-5697: Archive card and Title on the front ask in place instead);
+ * YAZ-5505: every card setting on the phone needs TWO taps. The first turns the row into "Tap again to …" in place (YAZ-5697: Archive card and a Title in review choice ask in place instead);
  * the second within about 3 s does it; anything else cancels. VoiceOver's double tap is ONE activation. Made-up data.
  */
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -26,20 +26,20 @@ describe('the rule, pure', () => {
 })
 
 describe('the rows: the Mac\'s card menu, its order and words', () => {
-  it('Up next (with review on), Archive card, Fix later, Title on the front (hint: the state now)', () => {
+  it('Up next (with review on), Archive card, Fix later, Title in review › (hint: the choice now; YAZ-5697 round 2: the one card menu\'s rows)', () => {
     expect(cardActions(NONE, { upNext: true }).map((r) => [r.label, r.hint ?? ''])).toEqual([
       ['Up next', ''],
       ['Archive card', ''],
       ['Fix later', ''],
-      ['Title on the front', 'Show'],
+      ['Title in review', 'Default'],
     ])
     expect(cardActions({ off: true, next: true, fix: true, notitle: true }, { upNext: true }).map((r) => [r.label, r.hint ?? '', r.on])).toEqual([
       ['Remove from Up next', '', false],
       ['Unarchive card', '', false],
       ['Remove Fix later', '', false],
-      ['Title on the front', 'Hide', false],
+      ['Title in review', 'Never', true],
     ])
-    expect(cardActions(NONE, { upNext: false }).map((r) => r.kind)).toEqual(['off', 'fix', 'notitle'])
+    expect(cardActions(NONE, { upNext: false }).map((r) => r.kind)).toEqual(['off', 'fix', 'title'])
   })
   it('each row changes ONLY its own word on the line', () => {
     const line = parseCardLine('<!-- card: NC-1, title "T", 2026-11-01T09:00:00.000Z good -->')!
@@ -47,10 +47,16 @@ describe('the rows: the Mac\'s card menu, its order and words', () => {
       next: '<!-- card: NC-1, title "T", next, 2026-11-01T09:00:00.000Z good -->',
       off: '<!-- card: NC-1, title "T", off, 2026-11-01T09:00:00.000Z good -->',
       fix: '<!-- card: NC-1, title "T", fix, 2026-11-01T09:00:00.000Z good -->',
-      notitle: '<!-- card: NC-1, title "T", notitle, 2026-11-01T09:00:00.000Z good -->',
+      'title-never': '<!-- card: NC-1, title "T", notitle, 2026-11-01T09:00:00.000Z good -->',
     }
-    for (const row of cardActions(NONE, { upNext: true })) {
-      expect(formatCardLine(row.change(line))).toBe(want[row.kind])
+    const rows = cardActions(NONE, { upNext: true }).flatMap((r) => r.children ?? [r]).filter((r) => want[r.key] !== undefined)
+    expect(rows.map((r) => r.key)).toEqual(['next', 'off', 'fix', 'title-never'])
+    for (const row of rows) {
+      expect(formatCardLine(row.change(line))).toBe(want[row.key])
+      // And its Undo takes it out again.
+      expect(formatCardLine(row.undo(row.change(line)))).toBe(formatCardLine(line))
+    }
+    for (const row of rows.slice(0, 3)) {
       // And the row of the marked card takes it out again.
       const back = cardActions({ ...NONE, [row.kind]: true }, { upNext: true }).find((r) => r.kind === row.kind)!
       expect(formatCardLine(back.change(row.change(line)))).toBe(formatCardLine(line))
@@ -81,7 +87,7 @@ describe('the rows on the screen', () => {
   const click = (el: Element) => act(() => (el as HTMLElement).click())
   const down = (el: Element) => act(() => void el.dispatchEvent(new Event('pointerdown', { bubbles: true })))
 
-  it('YAZ-5697: Archive card and Title on the front ask in place instead (the Mac\'s words): Cancel first and focused, then the answer; no time limit; Cancel, a tap outside or Escape run nothing', () => {
+  it('YAZ-5697: Archive card and a Title in review choice ask in place instead (the Mac\'s words): Cancel first and focused, then the answer; no time limit; Cancel, a tap outside or Escape run nothing', () => {
     draw()
     const ask = () => host.querySelector<HTMLElement>('[role="alertdialog"]')
     const answers = () => [...(ask()?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
@@ -100,17 +106,18 @@ describe('the rows on the screen', () => {
     click(row('off'))
     down(document.body)
     expect(ask()).toBeNull()
-    click(row('notitle'))
-    expect(ask()?.textContent).toContain('Hide the title on the front?')
-    expect(answers().map((b) => b.textContent)).toEqual(['Cancel', 'Hide'])
+    click(row('title'))
+    click(row('title-never'))
+    expect(ask()?.textContent).toContain('Never show the title in review?')
+    expect(answers().map((b) => b.textContent)).toEqual(['Cancel', 'Never'])
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     expect(ask()).toBeNull()
     expect(done).toEqual([])
-    click(row('notitle'))
+    click(row('title-never'))
     click(answers()[1])
     click(row('off'))
     click(answers()[1])
-    expect(done.map((a) => [a.kind, a.on])).toEqual([['notitle', true], ['off', true]])
+    expect(done.map((a) => [a.key, a.on])).toEqual([['title-never', true], ['off', true]])
   })
 
   it('one tap does nothing but arm: the row says "Tap again to mark Fix later" in place, and VoiceOver hears it', () => {

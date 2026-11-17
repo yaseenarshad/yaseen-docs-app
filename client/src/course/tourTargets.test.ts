@@ -22,6 +22,9 @@ function sourceFiles(dir: string): string[] {
   })
 }
 const files = sourceFiles(SRC).map((path) => ({ path: relative(SRC, path), text: readFileSync(path, 'utf8') }))
+// The one card menu's rows (YAZ-5697 round 2) are in `shared/cardMenu.ts`: their tour marks too.
+const SHARED_MENU = resolve(SRC, '../../shared/cardMenu.ts')
+files.push({ path: relative(SRC, SHARED_MENU), text: readFileSync(SHARED_MENU, 'utf8') })
 
 /** Every `data-tour` name the code can put on an element: JSX, `dataset.tour`, a menu row's `tour`, and a `tour` prop. */
 function marksInCode(): Map<string, string[]> {

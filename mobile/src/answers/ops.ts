@@ -2,6 +2,8 @@ import {
   cardIdOf,
   cardReviewKey,
   cardReviewsOf,
+  cardTitleAtOf,
+  cardTitleChoiceOf,
   formatCardLine,
   isCardFix,
   isCardNext,
@@ -13,11 +15,13 @@ import {
   withCardNoTitle,
   withCardOff,
   withCardReview,
+  withCardTitleChoice,
   withoutCardReview,
   type CardLine,
   type CardPart,
   type CardRating,
   type CardReview,
+  type CardTitleChoice,
 } from '@shared/cardLine'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { lineEndOf } from '@shared/lineEnds'
@@ -53,6 +57,12 @@ export type CardOp =
    * The Mac's own change (`withCardNoTitle`): the word goes after the ID, the title and any `off` / `next`; Show takes it out.
    */
   | { kind: 'notitle'; id: string; on: boolean }
+  /**
+   * Title in review › (YAZ-5696 on the phone, YAZ-5697 round 2): when the title shows in Review — the Mac's own change
+   * (`withCardTitleChoice`: `notitle`, or `title-once` / `title-front` / `title-side2`, or none for the default). A change
+   * of `notitle` alone stays a `notitle` action, as before.
+   */
+  | { kind: 'title'; id: string; choice: CardTitleChoice }
 
 /**
  * A new review goes at its TIME among the line's reviews: before the first review made later, else right
@@ -92,6 +102,8 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
       return withCardFix(line, op.on)
     case 'notitle':
       return withCardNoTitle(line, op.on)
+    case 'title':
+      return withCardTitleChoice(line, op.choice)
   }
 }
 
@@ -222,13 +234,13 @@ export class UnsentChangeError extends Error {
 /**
  * A change of card `id`'s line (the review host's `changeCardLine`, the ⋯ menu) as actions: each mark that changed,
  * then each review taken out, then each review added. Applied to `before`, they give `after`'s marks and reviews.
- * The title on the front (`notitle`) is a mark too since YAZ-5503. Any other change (the title, YAZ-5308; a property,
+ * The title on the front (`notitle`) is a mark too since YAZ-5503; so is the title's choice (`title-…`, YAZ-5696). Any other change (the title, YAZ-5308; a property,
  * YAZ-5349; an ID, an unknown part) cannot be sent: it throws `UnsentChangeError`, so nothing is half saved.
  */
 export function opsBetween(id: string, before: CardLine, after: CardLine): CardOp[] {
   const rest = (line: CardLine) =>
     line.parts
-      .filter((p) => p.kind !== 'review' && p.kind !== 'off' && p.kind !== 'next' && p.kind !== 'fix' && p.kind !== 'notitle')
+      .filter((p) => p.kind !== 'review' && p.kind !== 'off' && p.kind !== 'next' && p.kind !== 'fix' && p.kind !== 'notitle' && p.kind !== 'titleat')
       .map((p) =>
         p.kind === 'id' ? `id:${p.id}` : p.kind === 'title' ? `title:${p.title}` : p.kind === 'property' ? `property:${JSON.stringify([p.name, p.value])}` : p.kind === 'other' ? `other:${p.text}` : (p as { kind: string }).kind,
       )
@@ -238,7 +250,9 @@ export function opsBetween(id: string, before: CardLine, after: CardLine): CardO
   if (isCardOff(before) !== isCardOff(after)) ops.push({ kind: 'off', id, on: isCardOff(after) })
   if (isCardNext(before) !== isCardNext(after)) ops.push({ kind: 'next', id, on: isCardNext(after) })
   if (isCardFix(before) !== isCardFix(after)) ops.push({ kind: 'fix', id, on: isCardFix(after) })
-  if (isCardNoTitle(before) !== isCardNoTitle(after)) ops.push({ kind: 'notitle', id, on: isCardNoTitle(after) })
+  // The title's choice (YAZ-5696): `notitle` alone stays its own action; a change of `title-…` is one Title in review action.
+  if (cardTitleAtOf(before) !== cardTitleAtOf(after)) ops.push({ kind: 'title', id, choice: cardTitleChoiceOf(after) })
+  else if (isCardNoTitle(before) !== isCardNoTitle(after)) ops.push({ kind: 'notitle', id, on: isCardNoTitle(after) })
   // Reviews by name (YAZ-5642: a full time and a rating is one review): the ones taken out, then the ones added.
   const was = new Map(cardReviewsOf(before).map((r) => [cardReviewKey(r), r]))
   const now = new Map(cardReviewsOf(after).map((r) => [cardReviewKey(r), r]))

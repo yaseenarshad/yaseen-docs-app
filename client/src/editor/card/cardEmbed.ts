@@ -29,11 +29,13 @@
  *
  * Not here: an embed inside a card (card-in-card is off in the card editor; a card's own render keeps `![[…]]` as text).
  */
-import { cleanCardTitle, withCardFix, withCardOff, withCardTitle } from '@shared/cardLine'
+import { cleanCardTitle, withCardTitle } from '@shared/cardLine'
 import type { CardLink } from '@shared/cardLinks'
 import { BridgeRequestError, api } from '../../api'
 import { pageLabel, pathTitles } from '../../lib/pageLabel'
 import { changeCardLine, changeCardTextIn, cardInContent, type CardAtPage } from '../../review/cardFile'
+import { cardMarksOf, cardMenuRows } from '../../review/cardMenuView'
+import type { CardMenuMarks } from '@shared/cardMenu'
 import type { MenuRow } from '../blockHandleMenu'
 import { scrollRootOf } from '../embed/hostWindow'
 import { copyText, openMenuAt } from '../linkMenu'
@@ -133,12 +135,15 @@ const button = (className: string, label: string): HTMLButtonElement => {
   return b
 }
 
-/** The ⋯ rows of a card embed (YAZ-5037). `editable`: the page, for Show as link; the review rows write the original as the page card's do. */
+/**
+ * The ⋯ rows of a card embed (YAZ-5037): the ONE card menu (`review/cardMenuView.ts`, YAZ-5697 round 2), an embed's
+ * rows of it — Open card, Preview, Show as link (`editable`: the page), Put back into this page, the review rows and
+ * Reset history (they write the ORIGINAL, as a card in a page's do), Copy card ID. `marks`: the card as read, else its
+ * index record's.
+ */
 export function cardEmbedMenuRows(o: {
   card: CardLink
-  off: boolean
-  /** The card is marked Fix later (YAZ-5097). */
-  fix: boolean
+  marks: CardMenuMarks
   editable: boolean
   target: string
   from: EventTarget
@@ -149,19 +154,22 @@ export function cardEmbedMenuRows(o: {
   /** "Put back into this page" (YAZ-5037 phase 5): the card is in a card file, the embed stands alone on its line, and the page's door is there. Else null. */
   putBack?: (() => void) | null
 }): MenuRow[] {
-  const { card, off, fix } = o
+  const { card } = o
   const failed = (err: unknown) => o.onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`)
-  const rows: Array<MenuRow | null> = [
-    { label: 'Open card', run: () => openCardWindow(card.path, card.id, card.index, o.from) },
-    // Preview (YAZ-5152): the card as the Inbox shows it, once it is read; nothing saved.
-    ...(o.preview == null ? [] : [{ label: 'Preview', run: o.preview }]),
-    o.editable ? { label: 'Show as link', run: () => o.replace(`[[${o.target}]]`) } : null,
-    o.putBack == null ? null : { label: pathUnit(card.path)('Put back into this page'), run: o.putBack },
-    { label: off ? 'Unarchive card' : 'Archive card', divider: true, run: () => void changeCardLine(card.path, card.id, (l) => withCardOff(l, !off), card.index).catch(failed) },
-    { label: fix ? 'Remove Fix later' : 'Fix later', run: () => void changeCardLine(card.path, card.id, (l) => withCardFix(l, !fix), card.index).catch(failed) },
-    { label: 'Copy card ID', divider: true, run: () => copyText(card.id, 'card ID', o.onNotice, undefined, true) },
-  ]
-  return rows.filter((row): row is MenuRow => row !== null)
+  return cardMenuRows({
+    marks: o.marks,
+    path: card.path,
+    upNext: true,
+    copyId: card.id,
+    reset: true,
+    unit: pathUnit(card.path),
+    change: (change) => void changeCardLine(card.path, card.id, change, card.index).catch(failed),
+    onNotice: o.onNotice,
+    openCard: () => openCardWindow(card.path, card.id, card.index, o.from),
+    preview: o.preview ?? undefined,
+    showAsLink: o.editable ? () => o.replace(`[[${o.target}]]`) : undefined,
+    putBack: o.putBack ?? undefined,
+  })
 }
 
 /** Draws the card box of `host` into a new element (see the module doc). */
@@ -217,6 +225,12 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
 
   const off = (c: CardLink): boolean => read?.id === c.id ? read.off : recordAt(source.records, c.path)?.cards?.[c.index]?.off === true
   const fix = (c: CardLink): boolean => (read?.id === c.id ? read.fix === true : recordAt(source.records, c.path)?.cards?.[c.index]?.fix === true)
+  /** The ⋯'s marks (YAZ-5697 round 2): the card as read, else its index record's. */
+  const marksOf = (c: CardLink): CardMenuMarks => {
+    if (read?.id === c.id) return cardMarksOf(read)!
+    const rec = recordAt(source.records, c.path)?.cards?.[c.index]
+    return { off: rec?.off === true, next: rec?.next === true, fix: rec?.fix === true, notitle: rec?.notitle === true, titleAt: rec?.notitle === true ? 'never' : (rec?.titleAt ?? 'default'), reviews: rec?.reviews.length ?? 0 }
+  }
 
   /** The head, or the missing line: from the index alone. */
   const draw = (): void => {
@@ -398,7 +412,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     // Put back: only a card file's card (a card in a page stays where it is), and only from an embed alone on its line.
     const place = doors.putBack !== undefined && recordAt(source.records, c.path)?.kind === 'card' ? host.place() : null
     const putBack = place === null ? null : () => doors.putBack!({ id: c.id, path: c.path }, place.inner, place.nth)
-    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), fix: fix(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack, preview: read === null ? null : previewRead }))
+    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, marks: marksOf(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack, preview: read === null ? null : previewRead }))
     closeMenu = () => {
       close()
       closeMenu = null

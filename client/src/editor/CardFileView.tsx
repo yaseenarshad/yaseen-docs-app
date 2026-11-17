@@ -57,13 +57,14 @@ import { api, BridgeRequestError } from '../api'
 import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
 import { forgetNewCard, isNewCard } from '../review/newCardFile'
-import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
+import { CardPane, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { CardBand, cardFacts, cardNextReview, CardId, CardNextChip, type CardStripPart } from '../review/cardParts'
 import { PropertiesIcon } from '../views/view/icons'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { usePathTitles } from '../lib/pageLabel'
 import { ContextMenu } from '../sidebar/ContextMenu'
+import { cardMarksOf, cardMenuSections } from '../review/cardMenuView'
 import type { MenuSection } from '../sidebar/menuSections'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { CardFileNotice } from './CardFileNotice'
@@ -307,11 +308,10 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       else turning.current = false
     })
   }
-  const sections = (): MenuSection[] => [
-    // Reset history stays the last row (YAZ-5376): "Turn into a page" goes in before it. It asks in place first
-    // (YAZ-5697): it rewrites and renames the file, and no Undo takes it back.
-    ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true, preview, more: converts ? [[{ id: 'to-page', label: unit('Turn into a page'), ask: { question: unit('Turn this card into a page?'), yes: unit('Turn into a page') }, onSelect: toPage }]] : [] }),
-  ]
+  // The one card menu (YAZ-5697 round 2): a card file's rows of it; Turn into a page asks first (it rewrites and renames
+  // the file, and no Undo takes it back).
+  const sections = (): MenuSection[] =>
+    cardMenuSections({ marks: cardMarksOf(card), path, upNext: reviewOn, copyId: id, copyLink: true, reset: true, unit, change: (c) => void writes.changeLine(c), onNotice, preview: card === null ? undefined : preview, toPage: converts ? toPage : undefined })
   const fixes =
     !converts ? null : shape.problem === 'many' ? (
       <button type="button" onClick={() => convert('split the card file', (a) => a.splitIntoCardFiles(path))}>
