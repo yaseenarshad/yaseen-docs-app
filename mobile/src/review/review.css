@@ -80,9 +80,11 @@
   font-size: 14px;
 }
 
-/* YAZ-5679: the "Added card to reviews" toast sits above the row of controls. */
-.review > .learned-toast {
-  bottom: calc(var(--tap) + 28px);
+/* YAZ-5679: the "Added card to reviews" toast. YAZ-5692 (the Mac's YAZ-5680 fix 4): it hangs off the hint line's top
+   edge, so it never covers the line or its Undo, whatever the controls' height. */
+.review__hint > .learned-toast {
+  right: 12px;
+  bottom: calc(100% + 6px);
 }
 
 /* The progress bar (YAZ-5676, Mochi's: `SessionBar`, `sessionCount.css`), under the top line. */
@@ -600,6 +602,7 @@
 /* ---- The hint line: "Tap anywhere · 3 left", "Did you remember it?"; after an answer, the Mac's "✓ Remembered · … · Undo" ---- */
 
 .review__hint {
+  position: relative;
   display: flex;
   flex: none;
   justify-content: center;
@@ -607,7 +610,8 @@
   gap: 8px;
   min-height: 30px;
   margin: 0;
-  padding: 4px 16px 0;
+  /* The card's own side room (`.review__stage`), so the Mac's longer line fits at 320 px (YAZ-5693). */
+  padding: 4px 10px 0;
   font-size: 13px;
   color: var(--fg-muted);
   text-align: center;
@@ -621,6 +625,7 @@
   min-width: 0;
   max-width: 100%;
   white-space: nowrap;
+  font-size: 12.5px;
 }
 
 .review__last-mark {
@@ -652,8 +657,7 @@
 /* "· Undo" after the words: the button sits close, its 44 pt box still reaches the finger. */
 .review__last-text + .review__undo {
   flex: none;
-  margin-left: -6px;
-  padding: 0 6px 0 2px;
+  padding: 0 4px;
 }
 
 .review__last:empty {

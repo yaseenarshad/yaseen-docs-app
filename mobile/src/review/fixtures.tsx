@@ -86,10 +86,20 @@ const DUE_END = (fresh: boolean): Record<string, string> => ({
   ...(fresh && { 'spanish/places.md': page('Places', ...['la playa', 'el museo', 'la plaza'].map((w, i) => block(`What does "${w}" mean?\n---\n{{place ${i + 1}}}`, `PLC-${i + 1}`))) }),
 })
 
-/** YAZ-5500: `#fixture=review-last`: right after one Forgot, the hint line says it: "Last: … (Forgot) · ↶ Undo". */
+/** YAZ-5500: `#fixture=review-last`: right after one Forgot, the hint line says it: "✕ Forgot · … · back later today · Undo". */
 const LAST: Record<string, string> = {
   '.yaseendocs/review.json': '{}',
   'geography/capitals.md': page('Capitals', block('What is the capital of Spain?\n---\n{{Madrid}}', `CAP-1, title "Capital of Spain", ${DUE}`), block('What is the capital of Portugal?\n---\n{{Lisbon}}', `CAP-2, title "Capital of Portugal", ${DUE}`)),
+}
+
+/**
+ * YAZ-5692, YAZ-5693 (the parity gaps of YAZ-5687): three made-up new cards. `#fixture=review-learned`: the first one's
+ * Remembered (the toast "Added card to reviews · Undo" over the hint line's "✓ Remembered · … · Undo");
+ * Both under New cards; `-end`: all three learned, the finish screen with the toast and the line.
+ */
+const LEARNED: Record<string, string> = {
+  '.yaseendocs/review.json': '{"newPerDay": 3}',
+  'languages/new-words.md': page('New words', ...[1, 2, 3].map((i) => block(`New word ${i}?\n---\nWord {{${i}}}.`, `PYN-${i}`))),
 }
 
 /**
@@ -119,7 +129,7 @@ const press = (name: string | RegExp) => {
 const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
-  const files = name === 'review-taps' ? TAPS : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const files = name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
   step('setup')
   // The fake GitHub runs in this one tab: no Web Lock, as in the tests (Node has none).
@@ -251,6 +261,17 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
       press('Remembered')
       await wait(500)
       press('More card actions')
+      break
+    case 'review-learned':
+    case 'review-learned-end':
+      // New cards alone, so the last card learned ends on "Finished learning cards." (All cards would review it again).
+      press(/^All cards/)
+      await wait(30)
+      press(/^New cards/)
+      for (let i = 0; i < (name === 'review-learned' ? 1 : 3); i++) {
+        await wait(500) // past the tap guard (YAZ-5226)
+        press('Remembered')
+      }
       break
     case 'review-done':
       for (let i = 0; i < 4; i++) {

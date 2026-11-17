@@ -266,7 +266,7 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
 describe('YAZ-5679: the Mac`s toast on the phone, "Added card to reviews · Undo"', () => {
   it('a new card`s Remembered shows it above the controls; its Undo takes the answer back; a Forgot shows none', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('New?\n---\n{{n}}', 'LN-1'), cardBlock('Other?\n---\n{{o}}', 'LN-2')) })
-    const toast = () => q('.review > .learned-toast')
+    const toast = () => q('.review__hint > .learned-toast') // YAZ-5692: the hint line's own
     await h.click('Forgot')
     expect(toast()).toBeNull()
     await h.click('Remembered')

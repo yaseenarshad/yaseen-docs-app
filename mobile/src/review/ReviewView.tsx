@@ -528,6 +528,9 @@ function SessionScreen({
   // the line says why it is back, and the card comes in again (a fresh front, the "Again" chip).
   const back = lastAnswer !== null && lastAnswer.rating === 'again' && card !== null && card.path === lastAnswer.path && card.id === lastAnswer.id && lastAnswer.count === answeredNow
   const lastLine = <LastLine last={lastAnswer} back={back} quiet={quietLine} undo={undo} />
+  // YAZ-5679: the Mac's toast, "Added card to reviews · Undo". YAZ-5692 (the Mac's YAZ-5680 fix 4): it hangs off the hint
+  // line's top edge, on a card and on a finish screen, so it never covers the line or its Undo, whatever the controls' height.
+  const toast = <LearnedToast learned={session.learned} onUndo={undo} />
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
   const canUndo = shownLine?.undo === true || session.canUndo
 
@@ -624,8 +627,6 @@ function SessionScreen({
     <div className="review review--mochi" onClickCapture={onTap} onTouchStart={NO_OP}>
       {topBox !== null && shown ? createPortal(countButton, topBox) : <div className="review__top">{countButton}</div>}
       <SessionBar session={session} className="review__progress" />
-      {/* YAZ-5679: the Mac's toast, "Added card to reviews · Undo". */}
-      <LearnedToast learned={session.learned} onUndo={undo} />
       {answers.lost.length > 0 && <LostAnswers answers={answers} link={link} />}
       {notice !== null && (
         <p className="review__notice" role="alert">
@@ -692,6 +693,7 @@ function SessionScreen({
           <div className="review__hint">
             {lastAnswer === null && quietLine === null && <span className="review__hint-text">{hintText(left)}</span>}
             {lastLine}
+            {toast}
           </div>
         </>
       ) : (
@@ -700,7 +702,12 @@ function SessionScreen({
           <div className="review__done" role="status">
             <DoneScreen review={review} session={session} shown={shown} look={DONE_LOOK} addKinds={addKinds} adds={adds} from={fromButton} unit={unit} />
           </div>
-          {(lastAnswer !== null || quietLine !== null) && <div className="review__hint">{lastLine}</div>}
+          {(lastAnswer !== null || quietLine !== null || session.learned !== null) && (
+            <div className="review__hint">
+              {lastLine}
+              {toast}
+            </div>
+          )}
         </DoneStage>
       )}
 
