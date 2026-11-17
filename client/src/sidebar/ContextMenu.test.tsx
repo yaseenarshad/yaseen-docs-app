@@ -210,11 +210,17 @@ describe('a row that asks in place (`ask`, YAZ-5697)', () => {
     return { el, onSelect, onClose }
   }
   const ask = (el: HTMLElement) => el.querySelector<HTMLElement>('.ctx-menu__ask')
+  /** The first click; the ask is its own chunk (no eager weight), so it draws a moment later. */
+  const askFor = async (el: HTMLElement) => {
+    act(() => buttonOf(el, 'Archive card')?.click())
+    await vi.waitFor(() => expect(ask(el)).not.toBeNull())
+    await act(async () => undefined)
+  }
   const askButtons = (el: HTMLElement) => [...(ask(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
 
-  it('the first click runs nothing and keeps the menu open: the row says its question, Cancel first and focused, then the answer', () => {
+  it('the first click runs nothing and keeps the menu open: the row says its question, Cancel first and focused, then the answer', async () => {
     const { el, onSelect, onClose } = asking()
-    act(() => buttonOf(el, 'Archive card')?.click())
+    await askFor(el)
     expect(onSelect).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
     expect(ask(el)?.textContent).toContain('Archive this card?')
@@ -224,17 +230,17 @@ describe('a row that asks in place (`ask`, YAZ-5697)', () => {
     expect(buttonOf(el, 'Archive card')).toBeUndefined()
   })
 
-  it('the answer runs it, then the menu closes', () => {
+  it('the answer runs it, then the menu closes', async () => {
     const { el, onSelect, onClose } = asking()
-    act(() => buttonOf(el, 'Archive card')?.click())
+    await askFor(el)
     act(() => askButtons(el)[1].click())
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Cancel puts the row back, its keyboard on it; nothing runs, the menu stays', () => {
+  it('Cancel puts the row back, its keyboard on it; nothing runs, the menu stays', async () => {
     const { el, onSelect, onClose } = asking()
-    act(() => buttonOf(el, 'Archive card')?.click())
+    await askFor(el)
     act(() => askButtons(el)[0].click())
     expect(ask(el)).toBeNull()
     expect(document.activeElement).toBe(buttonOf(el, 'Archive card'))
@@ -242,13 +248,13 @@ describe('a row that asks in place (`ask`, YAZ-5697)', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('the focus going elsewhere in the menu (a click on another row) cancels; Escape closes the menu and runs nothing', () => {
+  it('the focus going elsewhere in the menu (a click on another row) cancels; Escape closes the menu and runs nothing', async () => {
     const { el, onSelect, onClose } = asking()
-    act(() => buttonOf(el, 'Archive card')?.click())
+    await askFor(el)
     act(() => buttonOf(el, 'Fix later')?.focus())
     expect(ask(el)).toBeNull()
     expect(buttonOf(el, 'Archive card')).toBeDefined()
-    act(() => buttonOf(el, 'Archive card')?.click())
+    await askFor(el)
     key(document.activeElement, 'Escape')
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(onSelect).not.toHaveBeenCalled()

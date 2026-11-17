@@ -3153,15 +3153,6 @@ body.drag-held iframe {
   font-weight: 500;
 }
 
-/* A row that asks in place (YAZ-5697): its question over the confirm sheet's buttons, Cancel first. */
-.ctx-menu__ask {
-  padding: var(--menu-row-padding);
-}
-
-.ctx-menu__ask .confirm__text {
-  margin-bottom: 8px;
-}
-
 /* A group's heading (YAZ-4460 demo: "Show it in"): small grey words, no hover, no button. */
 .ctx-menu__heading {
   padding: 4px 12px 2px;

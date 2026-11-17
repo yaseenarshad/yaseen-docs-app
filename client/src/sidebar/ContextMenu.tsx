@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Suspense, createContext, lazy, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FlyoutParent, useFlyout } from '../components/Flyout'
 import { fitMenu } from '../lib/fitMenu'
 import type { MenuAction, MenuEntry, MenuParent, MenuStrip } from './menuSections'
@@ -55,35 +55,9 @@ const MenuHeading = ({ label, tip }: { label: string; tip?: string }) => (
   </div>
 )
 
-/**
- * A row's ask in place (`ask`, YAZ-5697): its question, then Cancel (first, with the focus: a stray Enter runs nothing)
- * and the answer, in the confirm sheet's buttons. The focus leaving it (a click elsewhere in the menu) is Cancel.
- */
-function RowAsk({ ask, tour, onYes, onNo }: { ask: NonNullable<MenuAction['ask']>; tour?: string; onYes: () => void; onNo: () => void }) {
-  const cancel = useRef<HTMLButtonElement>(null)
-  useLayoutEffect(() => cancel.current?.focus({ preventScroll: true }), [])
-  return (
-    <div
-      className="ctx-menu__ask"
-      role="group"
-      aria-label={ask.question}
-      data-tour={tour}
-      onBlur={(e) => {
-        if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) onNo()
-      }}
-    >
-      <p className="confirm__text">{ask.question}</p>
-      <div className="confirm__actions">
-        <button ref={cancel} type="button" role="menuitem" className="confirm__btn" onClick={onNo}>
-          Cancel
-        </button>
-        <button type="button" role="menuitem" className={ask.danger === true ? 'confirm__btn confirm__btn--danger' : 'confirm__btn'} onClick={onYes}>
-          {ask.yes}
-        </button>
-      </div>
-    </div>
-  )
-}
+/** A row's ask in place (`ask`, YAZ-5697, `RowAsk.tsx`): its own chunk, fetched once a menu with an asking row opens (no eager weight). */
+const loadRowAsk = () => import('./RowAsk')
+const RowAsk = lazy(loadRowAsk)
 
 function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
   // The item's preview (YAZ-3091 D8): on while the pointer or the focus is on it, off when both leave or it unmounts.
@@ -117,20 +91,25 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
     refocus.current = false
     row.current?.focus({ preventScroll: true })
   }, [armed])
+  useEffect(() => {
+    if (item.ask !== undefined) void loadRowAsk()
+  }, [item.ask])
   if (armed && item.ask !== undefined)
     return (
-      <RowAsk
-        ask={item.ask}
-        tour={item.tour}
-        onYes={() => {
-          item.onSelect()
-          onClose()
-        }}
-        onNo={() => {
-          refocus.current = document.activeElement instanceof Element && document.activeElement.closest('.ctx-menu__ask') !== null
-          setArmed(false)
-        }}
-      />
+      <Suspense fallback={null}>
+        <RowAsk
+          ask={item.ask}
+          tour={item.tour}
+          onYes={() => {
+            item.onSelect()
+            onClose()
+          }}
+          onNo={() => {
+            refocus.current = document.activeElement instanceof Element && document.activeElement.closest('.ctx-menu__ask') !== null
+            setArmed(false)
+          }}
+        />
+      </Suspense>
     )
   return (
     <button

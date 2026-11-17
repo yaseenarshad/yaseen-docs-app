@@ -2658,6 +2658,7 @@ describe('the card window (YAZ-4962)', () => {
     await pick('Archive card')
     // YAZ-5697: the row asks in place first; the first click wrote nothing.
     expect(files[PAGE]).not.toContain(', off,')
+    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click())
     await flush()
     await flush()
@@ -2745,6 +2746,7 @@ describe('the card window (YAZ-4962)', () => {
     // YAZ-5697: it asks in place first ("Hide the title on the front?", Cancel first); the first click wrote nothing.
     await flush()
     expect(files[PAGE]).not.toContain('notitle')
+    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
     expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Hide the title on the front?')
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Hide')!.click())
     await flush()
