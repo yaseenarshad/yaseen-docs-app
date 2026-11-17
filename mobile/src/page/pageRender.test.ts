@@ -298,7 +298,8 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
   })
 
   // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
-  it('YAZ-5213: a 2 MB page draws in slices, and no slice of its work takes 50 ms (CPU time of this thread)', { retry: 2, timeout: 300_000 }, async () => {
+  // timing test: it measures this machine's speed, so it runs on our Macs but not on the shared CI machine, where it can't pass reliably (Yaseen: stop the timing tests from blocking CI, YAZ-4965)
+  it.skipIf(!!process.env.CI)('YAZ-5213: a 2 MB page draws in slices, and no slice of its work takes 50 ms (CPU time of this thread)', { retry: 2, timeout: 300_000 }, async () => {
     const block = (i: number) => `## Part ${i}\n\nSome **made-up** words, a [[Trip plan]] link and \`code\`. ${'More words here. '.repeat(20)}\n\n- one\n- two\n\n`
     let text = ''
     for (let i = 0; text.length < 2_000_000; i++) text += block(i)

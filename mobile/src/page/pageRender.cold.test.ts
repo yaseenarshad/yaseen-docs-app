@@ -11,7 +11,8 @@ const look: PageLook = { link: (i) => ({ label: i, open: null }), embed: (i) => 
 
 describe('a long page, cold (YAZ-5244)', () => {
   // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
-  it('the first slices are short: each under 25 ms of CPU, the first one too', { retry: 2 }, async () => {
+  // timing test: it measures this machine's speed, so it runs on our Macs but not on the shared CI machine, where it can't pass reliably (Yaseen: stop the timing tests from blocking CI, YAZ-4965)
+  it.skipIf(!!process.env.CI)('the first slices are short: each under 25 ms of CPU, the first one too', { retry: 2 }, async () => {
     const cpu = () => {
       const u = process.threadCpuUsage()
       return (u.user + u.system) / 1000

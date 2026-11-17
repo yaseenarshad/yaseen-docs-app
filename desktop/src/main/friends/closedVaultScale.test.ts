@@ -78,7 +78,8 @@ const time = async <T>(work: () => Promise<T>): Promise<[T, number]> => {
 
 describe('a closed vault of 100,000 files (YAZ-5390)', () => {
   // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
-  it('a closed vault of 100,000 files is counted inside the limit; then a scan reads only the files that changed', { retry: 2, timeout: 600_000 }, async () => {
+  // timing test: it measures this machine's speed, so it runs on our Macs but not on the shared CI machine, where it can't pass reliably (Yaseen: stop the timing tests from blocking CI, YAZ-4965)
+  it.skipIf(!!process.env.CI)('a closed vault of 100,000 files is counted inside the limit; then a scan reads only the files that changed', { retry: 2, timeout: 600_000 }, async () => {
     const root = await bigVault('huge', 100_000, 1)
     const count = makeCounter(worker, { scanDir: path.join(dir, 'scan-cache') })
     const [first, cold] = await time(() => count(countPayload([]), NOW, [{ root, key: 'a' }]))
@@ -112,7 +113,8 @@ describe('a closed vault of 100,000 files (YAZ-5390)', () => {
 
 describe('the main thread, the whole path of one try (YAZ-5252)', () => {
   // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
-  it('one try with an open vault of 20,000 cards and a closed vault of 20,000 cards: the main thread is busy less than 50 ms of CPU at a time', { retry: 2, timeout: 300_000 }, async () => {
+  // timing test: it measures this machine's speed, so it runs on our Macs but not on the shared CI machine, where it can't pass reliably (Yaseen: stop the timing tests from blocking CI, YAZ-4965)
+  it.skipIf(!!process.env.CI)('one try with an open vault of 20,000 cards and a closed vault of 20,000 cards: the main thread is busy less than 50 ms of CPU at a time', { retry: 2, timeout: 300_000 }, async () => {
     const bin = await resolveGit()
     expect(bin).not.toBeNull()
     const closedRoot = await bigVault('closed', 5_000, 4)

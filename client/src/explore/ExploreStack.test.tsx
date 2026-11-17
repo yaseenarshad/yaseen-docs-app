@@ -2607,8 +2607,8 @@ describe('the card window (YAZ-4962)', () => {
     await flush()
     const facts = strip()
     expect(facts[0]).toBe('cards')
-    // Overdue (the reviews are from January, a step of a day gone by): the date and how long ago, in red.
-    expect(facts[1]).toMatch(/^Due \d+ days ago \(Jan 11, 2026\) · \d+% chance you remember it$/)
+    // Overdue (the reviews are from January; FSRS days only, YAZ-5702: the ✓ after a ✕ waits 3 days, to Jan 14): the date and how long ago, in red.
+    expect(facts[1]).toMatch(/^Due \d+ days ago \(Jan 14, 2026\) · \d+% chance you remember it$/)
     expect(factText(1).querySelector('.card-strip__next')?.hasAttribute('data-overdue')).toBe(true)
     // The (i) is the app's own tip (YAZ-5032 round 2): its one svg; a click shows the words.
     expect(factText(1).querySelectorAll('svg')).toHaveLength(1)
@@ -2623,7 +2623,7 @@ describe('the card window (YAZ-4962)', () => {
       ['Jan 11, 2026', 'Remembered', '1 day', '—'],
     ])
     // YAZ-5381: the last line, due on the left, the chance on the right.
-    expect(top().querySelector('.card-reviews__next .card-reviews__due')?.textContent).toMatch(/^Due \d+ days ago \(Jan 11, 2026\)$/)
+    expect(top().querySelector('.card-reviews__next .card-reviews__due')?.textContent).toMatch(/^Due \d+ days ago \(Jan 14, 2026\)$/)
     expect(top().querySelector('.card-reviews__next .card-reviews__chance')?.textContent).toMatch(/^\d+% chance you remember it$/)
     const deletes = top().querySelectorAll<HTMLButtonElement>('.card-reviews__table .card-reviews__delete')
     expect(deletes).toHaveLength(3)
