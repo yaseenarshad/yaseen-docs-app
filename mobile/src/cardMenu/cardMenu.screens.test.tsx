@@ -89,7 +89,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(head.querySelector('.card__more')!.getAttribute('aria-label')).toBe('Card actions: Speed of light')
     const menu = await openMenu()
     expect(menu.getAttribute('aria-label')).toBe('Card actions: RV-17')
-    expect(rows(menu)).toEqual(['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault (Always) ›'])
+    expect(rows(menu)).toEqual(['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›'])
     // The ⋯ again closes it.
     await tap(head.querySelector<HTMLElement>('.card__more')!)
     expect(h!.host.querySelector('.card-menu')).toBeNull()
@@ -107,7 +107,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
     const menu = await openMenu()
-    expect(rows(menu)).toEqual(['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault (Always) ›'])
+    expect(rows(menu)).toEqual(['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›'])
     expect(h!.button(/Headings/)).toBeNull()
 
     await tap(row(menu, 'off'))
@@ -139,13 +139,8 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
       ['After the first click', 'false'],
       ['With Side 2', 'false'],
     ])
-    // Round 2: the eye by Title in review; a tap shows each of the four in one line, a tap again hides it.
-    const eye = menu.querySelector<HTMLButtonElement>('.card-actions__help')!
-    expect(eye.getAttribute('aria-label')).toBe('What the choices mean')
-    await tap(eye)
-    expect(menu.querySelector('.card-title-help__box')?.textContent).toContain('With Side 2: The title shows when Side 2 shows.')
-    await tap(eye)
-    expect(menu.querySelector('.card-title-help__box')).toBeNull()
+    // Round 3: no eye by Title in review (it stays by the Mac's Settings › Cards › Show card titles).
+    expect(menu.querySelector('.card-actions__help, .card-title-help__box')).toBeNull()
     await tap(row(menu, 'title-never'))
     expect(menu.querySelector('[role="alertdialog"]')?.textContent).toContain('Never show the title in review?')
     await act(async () => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
@@ -154,7 +149,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(t.answers.waiting()).toEqual([])
     expect(h!.host.querySelector('.card-menu')).toBeNull()
     menu = await openMenu()
-    expect(row(menu, 'title').textContent).toBe('Title in reviewDefault (Always) ›')
+    expect(row(menu, 'title').textContent).toBe('Title in reviewDefault ›')
     await tap(row(menu, 'title'))
     await tap(row(menu, 'title-never'))
     await tap([...menu.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Never')!)

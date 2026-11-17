@@ -7,8 +7,8 @@
  *   1. Open: Open card (a card in a page or an embed) or Open page / Open page in a new tab (the card window); Preview.
  *   2. The file: Show as link, Move to its own file, Put back into this page, Turn into a page.
  *   3. The review: Move to Up next (YAZ-5697, Yaseen: one word, the Mac and the phone), Archive card, Fix later,
- *      Title in review › (YAZ-5696 round 2: Default (Always) · Never · Always · After the first click · With Side 2, and
- *      the eye's help; the phone too).
+ *      Title in review › (YAZ-5696 round 2: Default (Always) · Never · Always · After the first click · With Side 2; the
+ *      phone too. Round 3: the row says the short word, "Default", "After first click", as narrow as the others; no eye).
  *   4. Copy card ID, Copy card link.
  *   5. Reset history, alone (it asks by typing, `askResetHistory`).
  *
@@ -23,7 +23,7 @@
  */
 import { ARCHIVE_ASK, titleChoiceAsk, type CardAsk } from './cardAsks'
 import { withCardFix, withCardNext, withCardOff, withCardTitleChoice, type CardLine, type CardTitleChoice, type CardTitleShow } from './cardLine'
-import { CARD_TITLE_CHOICES, cardTitleChoiceLabel } from './cardTitleAt'
+import { CARD_TITLE_CHOICES, cardTitleChoiceLabel, cardTitleChoiceShort } from './cardTitleAt'
 
 export type CardMenuAction =
   | 'open-card'
@@ -70,8 +70,6 @@ export interface CardMenuItem {
   change?: (line: CardLine) => CardLine
   /** A review row: the mark after it (true sets the word). */
   on?: boolean
-  /** Title in review ›: the small eye by its name, whose help says each choice in one line (`CARD_TITLE_HELP`). */
-  help?: true
   /** Title in review ›: its choices, one picked (`checked`); a pick of another asks first. */
   children?: CardMenuItem[]
   checked?: boolean
@@ -143,7 +141,7 @@ export function cardMenu(place: CardMenuPlace): CardMenuItem[][] {
       // Title in review › (YAZ-5696): the hint and the ✓ say the choice now; another choice asks first.
       const now: CardTitleChoice = m.titleAt ?? (m.notitle ? 'never' : 'default')
       const children = CARD_TITLE_CHOICES.map(({ choice }): CardMenuItem => ({ action: 'title-choice', label: cardTitleChoiceLabel(choice, place.titleGlobal), checked: choice === now, ask: choice === now ? undefined : titleChoiceAsk(choice), disabled, change: (l) => withCardTitleChoice(l, choice) }))
-      review.push({ action: 'title', label: 'Title in review', hint: cardTitleChoiceLabel(now, place.titleGlobal), help: true, disabled, children })
+      review.push({ action: 'title', label: 'Title in review', hint: cardTitleChoiceShort(now), disabled, children })
     }
   }
 

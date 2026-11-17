@@ -42,8 +42,6 @@ export interface CardAction {
   change: (line: CardLine) => CardLine
   /** The change back (an Undo): a Title in review choice goes back to the choice before. */
   undo: (line: CardLine) => CardLine
-  /** Title in review ›: the eye by it, whose tap shows each choice in one line (YAZ-5696 round 2). */
-  help?: true
   /** Title in review ›: its choices; `checked` the one now. */
   children?: CardAction[]
   checked?: boolean
@@ -68,7 +66,7 @@ export function cardActions(marks: CardActionMarks, options: { upNext: boolean; 
         const choice = CARD_TITLE_CHOICES[i].choice
         return { kind: 'title', key: `title-${choice}`, on: true, label: c.label, confirm: '', ask: c.ask, checked: c.checked, done: `Title in review: ${c.label}`, change: c.change!, undo: (l) => withCardTitleChoice(l, now) }
       })
-      return { kind: 'title', key: 'title', on: true, label: item.label, hint: item.hint, help: item.help, confirm: '', done: '', change: (l) => l, undo: (l) => l, children }
+      return { kind: 'title', key: 'title', on: true, label: item.label, hint: item.hint, confirm: '', done: '', change: (l) => l, undo: (l) => l, children }
     }
     const kind = item.action as 'next' | 'off' | 'fix'
     const on = item.on === true

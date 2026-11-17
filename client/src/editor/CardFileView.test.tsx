@@ -239,13 +239,10 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
       return parent
     }
     const parent = await open()
-    // Default says what it means now: the vault's Show card titles (Always).
-    expect(parent.dataset.hint).toBe('Default (Always)')
-    // Round 2: the row's small eye; its hover says each of the four in one line.
-    const eye = parent.querySelector<HTMLElement>('.card-title-help')!
-    expect(eye.getAttribute('aria-label')).toBe('What the choices mean')
-    act(() => eye.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
-    await vi.waitFor(() => expect(document.querySelector('.card-title-help__box')?.textContent).toContain('After the first click: The title shows after your first Space or tap on the card.'))
+    // Round 3 (Yaseen: the row as narrow as the others): the row says the short word, "Default", and has no eye; the
+    // list says what Default means now: the vault's Show card titles (Always).
+    expect(parent.dataset.hint).toBe('Default')
+    expect(parent.querySelector('.card-title-help, svg')).toBeNull()
     expect(choices()).toEqual([['Default (Always)', '✓'], ['Never', ''], ['Always', ''], ['After the first click', ''], ['With Side 2', '']])
     // With Side 2: it asks first; Cancel writes nothing.
     act(() => flyoutRows()[4].click())

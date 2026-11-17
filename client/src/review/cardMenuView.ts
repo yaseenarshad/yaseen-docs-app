@@ -10,9 +10,6 @@ import { withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { MenuRow } from '../editor/blockHandleMenu'
 import type { MenuAction, MenuSection } from '../sidebar/menuSections'
 import type { CardAtPage } from './cardRead'
-import { createElement } from 'react'
-import { CARD_TITLE_HELP } from '@shared/cardTitleShows'
-import { CardTitleHelp } from '../components/CardTitleHelp'
 import { titleShowFor } from './useReviewSettings'
 
 /** The card's marks for the one card menu (`shared/cardMenu.ts`, YAZ-5697 round 2); null for a card with no ID yet. */
@@ -120,8 +117,6 @@ export function cardMenuSections(d: CardMenuDoors): MenuSection[] {
             id: 'title-review',
             label: item.label,
             hint: item.hint,
-            // Round 2: the small eye by the name; its hover says each choice in one line.
-            ...(item.help === true && { after: createElement(CardTitleHelp, { inRow: true }) }),
             children: [item.children.map((c) => ({ id: `title-${c.label}`, label: c.label, radio: { group: 'title-review', on: c.checked === true }, ask: c.ask, disabled: c.disabled, onSelect: () => runCardMenuItem(c, d) }))],
           }
         : { id: item.action, label: item.label, hint: item.hint, tour: item.tour, danger: item.danger, disabled: item.disabled, ask: item.ask, onSelect: () => runCardMenuItem(item, d) },
@@ -143,7 +138,6 @@ export function cardMenuRows(d: CardMenuDoors): MenuRow[] {
         ask: item.ask,
         divider: g > 0 && i === 0 ? true : undefined,
         run: () => runCardMenuItem(item, d),
-        ...(item.help === true && { help: CARD_TITLE_HELP }),
         ...(item.children !== undefined && {
           children: [item.children.map((c): MenuRow => ({ label: c.label, hint: c.checked === true ? '✓' : undefined, ask: c.ask, disabled: c.disabled, run: () => runCardMenuItem(c, d) }))],
         }),

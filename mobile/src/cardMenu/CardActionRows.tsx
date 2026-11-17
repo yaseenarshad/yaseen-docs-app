@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useId, useState } from 'react'
-import { CARD_TITLE_HELP, type CardTitleShow } from '@shared/cardTitleAt'
+import { useEffect, useId, useState } from 'react'
+import type { CardTitleShow } from '@shared/cardTitleAt'
 import { Confirm } from '../screens/Confirm'
 import { cardActions, type CardAction, type CardActionMarks } from './cardActions'
 import { useTwoTap } from './twoTap'
@@ -41,7 +41,6 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
   const { armed, tap, cancel } = useTwoTap({ ms })
   const [asking, setAsking] = useState<string | null>(null)
   const [titleOpen, setTitleOpen] = useState(false)
-  const [helpOpen, setHelpOpen] = useState(false)
   const rows = cardActions(marks ?? { off: false, next: false, fix: false, notitle: false }, { upNext, fix, titleGlobal })
   // The rows that show: Title in review's choices under it while it is open.
   const shown = rows.flatMap((r) => (r.children !== undefined && titleOpen ? [r, ...r.children] : [r]))
@@ -115,7 +114,7 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
               />
             </div>
           )
-        const button = (
+        return (
           <button
             key={row.key}
             type="button"
@@ -138,31 +137,6 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
               </>
             )}
           </button>
-        )
-        if (row.help !== true) return button
-        // YAZ-5696 round 2 (Yaseen: "a tooltip with a small eye"): the eye by Title in review; a tap shows each choice
-        // in one line under it, a tap again hides it. Its own button beside the row: a tap on it never opens the choices.
-        return (
-          <Fragment key={row.key}>
-            <span className="card-actions__titled">
-              {button}
-              <button type="button" className="card-actions__help" aria-label="What the choices mean" aria-expanded={helpOpen} data-two-tap={group} disabled={wait} onClick={() => setHelpOpen((open) => !open)}>
-                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-                  <path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4-6.5-4-6.5-4z" />
-                  <circle cx="8" cy="8" r="1.8" />
-                </svg>
-              </button>
-            </span>
-            {helpOpen && (
-              <span className="card-title-help__box card-actions__helpbox" role="note">
-                {CARD_TITLE_HELP.map((h) => (
-                  <span key={h.label} className="card-title-help__line">
-                    <strong>{h.label}:</strong> {h.text}
-                  </span>
-                ))}
-              </span>
-            )}
-          </Fragment>
         )
       })}
     </>
