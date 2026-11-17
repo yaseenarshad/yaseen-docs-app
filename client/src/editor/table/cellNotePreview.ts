@@ -49,7 +49,7 @@ const BODY_PAD_BOTTOM = 8
  * lines would end in the middle with no sign. The lines past the box's bottom go, and the last line that shows reads
  * "…". One layout read for the box and its lines, on show only.
  */
-export function fitNoteLines(box: HTMLElement): void {
+export function fitCellNoteLines(box: HTMLElement): void {
   const rect = box.getBoundingClientRect()
   // No layout (a box that is not drawn): nothing to measure.
   if (rect.height === 0) return
@@ -136,13 +136,13 @@ function cellCard(view: EditorView, cell: HTMLElement): CellCard | null {
   if (cut) box.appendChild(textPart(cellNotePreviewLines(doc.nodeAt(cellPos)!, CARD_TEXT_LINES + 1)))
   if (pagePos !== null) box.append(...noteParts(view, label!, pagePos))
   // A cut cell's card with a note fits its note lines too: the window can cut it as it cuts the box (YAZ-5746).
-  if (cut) return { box, dwell: CUT_CARD_DWELL_MS, under: true, ...(pagePos !== null && { fit: fitNoteLines }) }
+  if (cut) return { box, dwell: CUT_CARD_DWELL_MS, under: true, ...(pagePos !== null && { fit: fitCellNoteLines }) }
   // The note's box: right of the corner, or left of it at the window's edge. `cellHoverCards` moves it up when its
   // bottom is below the window (YAZ-5717).
   const rect = cell.getBoundingClientRect()
   box.style.left = `${rect.right + 4 + CELL_NOTE_BOX_WIDTH > window.innerWidth ? Math.max(0, rect.right - 4 - CELL_NOTE_BOX_WIDTH) : rect.right + 4}px`
   box.style.top = `${rect.top}px`
-  return { box, dwell: HOVER_PREVIEW_DWELL_MS, under: false, fit: fitNoteLines }
+  return { box, dwell: HOVER_PREVIEW_DWELL_MS, under: false, fit: fitCellNoteLines }
 }
 
 export const cellNotePreview = $prose(() => {

@@ -23,7 +23,7 @@ import { cellNoteButtonPlacements } from './cellNoteButton'
 import { setCellNoteButtonSetting } from './timeFormatSetting'
 import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, openCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
 import { cellHoverCardRuns } from './cellHoverCard'
-import { cellNotePreviewLines, fitNoteLines, CELL_NOTE_BOX_WIDTH, setCellNotePreviewLines } from './cellNotePreview'
+import { cellNotePreviewLines, fitCellNoteLines, CELL_NOTE_BOX_WIDTH, setCellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
 import { cellPos } from './tableTestKit'
 
@@ -741,13 +741,13 @@ describe('the preview (D14)', () => {
     }
     // The box ends at 148: less its 8px padding, the lines must end by 140. Lines 1 to 5 fit (line 5 ends at 140); line 5 becomes "…".
     box.getBoundingClientRect = () => new DOMRect(0, 0, 360, 148)
-    fitNoteLines(box)
+    fitCellNoteLines(box)
     expect(Array.from(box.querySelectorAll('.cell-note-preview__line'), (l) => l.textContent)).toEqual(['Line 1', 'Line 2', 'Line 3', 'Line 4', '…'])
     // A box with room keeps every line.
     const roomy = box.cloneNode(true) as HTMLElement
     roomy.getBoundingClientRect = () => new DOMRect(0, 0, 360, 1000)
     roomy.querySelectorAll<HTMLElement>('.cell-note-preview__line').forEach((l) => (l.getBoundingClientRect = () => new DOMRect(0, 40, 300, 20)))
-    fitNoteLines(roomy)
+    fitCellNoteLines(roomy)
     expect(roomy.querySelectorAll('.cell-note-preview__line')).toHaveLength(5)
   })
 
@@ -948,6 +948,22 @@ describe('the full-text card of a cut cell (YAZ-4901)', () => {
     it('1A (YAZ-5746): in a short window the card drops the note lines that it cuts, and the last one that shows reads "…"', async () => {
       layout(600, 420)
       expectFitted(await rest(new DOMRect(100, 30, 100, 30)))
+    })
+
+    it('1B (YAZ-5747): a card taller than the room under and above never covers its cell: it takes the side with more room, as tall as that room, 8px from the window\'s edge', async () => {
+      // A 718px window; the cell from 360 to 401: 305px under it, 348px above it. The card wants 600px.
+      layout(600, 718)
+      const above = await rest(new DOMRect(100, 360, 100, 41))
+      const rect = above.getBoundingClientRect()
+      expect([rect.top, rect.bottom]).toEqual([8, 360 - 4])
+      expectFitted(above)
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await unmountAll()
+      // The cell higher up, from 300 to 341: now under it has more room (369px against 288px).
+      layout(600, 718)
+      const under = await rest(new DOMRect(100, 300, 100, 41))
+      expect([under.getBoundingClientRect().top, under.getBoundingClientRect().bottom]).toEqual([341 + 4, 718 - 8])
+      expectFitted(under)
     })
   })
 

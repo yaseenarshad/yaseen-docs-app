@@ -12,7 +12,8 @@
  *
  * The full-text card (items 4, 5): the cell note preview's look (`cellHoverCard.css`), no title and no hint, the cell's
  * lines wrapped, at most `CARD_TEXT_LINES` then "…"; right under the cell at its left edge, as wide as the cell (240 to
- * 420 px), above the cell when there is no room under it, kept inside the window left and right. On `document.body`,
+ * 420 px), above the cell when there is no room under it, never over the cell (YAZ-5747, `placeUnder`), kept inside the
+ * window left and right. On `document.body`,
  * the pointer goes through it.
  */
 import './cellHoverCard.css'
@@ -28,7 +29,7 @@ const MIN_WIDTH = 240
 const MAX_WIDTH = 420
 /** Between the cell and the card, in px. */
 const GAP = 4
-/** The note box keeps this much room from the bottom of the window, in px: its CSS `max-height` is the window less 2 × this (YAZ-5717). */
+/** A card keeps this much room from the top and the bottom of the window, in px: its CSS `max-height` is the window less 2 × this (YAZ-5717). */
 const EDGE = 8
 
 /** How many cards were built: a test proves that a key or a caret move builds none. */
@@ -75,6 +76,8 @@ export function textPart(lines: string[]): HTMLElement {
 /**
  * Under the cell at its left edge; above it when there is no room under; inside the window. As wide as its text
  * (YAZ-4903: no empty room beside a short text), up to the cell's width clamped to 240–420 px, then the text wraps.
+ * It never covers its cell (YAZ-5747): a card that fits on neither side goes to the side with more room, as tall as
+ * that room, and the card's `fit` drops the note lines that this cuts.
  */
 function placeUnder(box: HTMLElement, cell: HTMLElement): void {
   const rect = cell.getBoundingClientRect()
@@ -85,7 +88,14 @@ function placeUnder(box: HTMLElement, cell: HTMLElement): void {
   const width = box.offsetWidth
   box.style.left = `${Math.max(0, Math.min(rect.left, window.innerWidth - width))}px`
   const height = box.offsetHeight
-  if (rect.bottom + GAP + height > window.innerHeight) box.style.top = `${Math.max(0, rect.top - GAP - height)}px`
+  // The room under the cell and above it, `EDGE` from the window's edges.
+  const under = window.innerHeight - EDGE - (rect.bottom + GAP)
+  const above = rect.top - GAP - EDGE
+  if (height <= under) return
+  const up = height <= above || above > under
+  const room = Math.max(0, up ? above : under)
+  if (height > room) box.style.maxHeight = `${room}px`
+  if (up) box.style.top = `${rect.top - GAP - Math.min(height, room)}px`
 }
 
 export function cellHoverCards(build: (cell: HTMLElement) => CellCard | null): CellCards {
