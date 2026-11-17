@@ -6,6 +6,7 @@ import { fakeFriends, fakeSync, reviewOnTabs } from '../dev/fakes'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
 import type { VaultMedia } from '../media/ui/vaultMedia'
+import { writeReviewZoom } from '../store/reviewZoomPref'
 
 /**
  * The Review tab's screen fixtures (4B), for the screenshots: `#fixture=review-…`. Made-up data only: the REAL engine
@@ -43,7 +44,8 @@ const FILES: Record<string, string> = {
 
 /**
  * YAZ-5415 (the Mochi look): a long made-up card in a folder, and pages in three folders for the folder pick.
- * `#fixture=review-mochi` (the card part shown), `-sheet`, `-folders`, `-end` (all shown: the bounce), `-more`.
+ * `#fixture=review-mochi` (the card part shown), `-sheet`, `-folders`, `-end` (all shown: the bounce), `-more`,
+ * `-zoom-max`, `-zoom-min` (YAZ-5706: all shown, the ⋯ open, zoomed all the way in or out).
  */
 const MOCHI: Record<string, string> = {
   '.yaseendocs/review.json': '{"newPerDay": 3}',
@@ -131,6 +133,8 @@ const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
   const files = name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
+  // YAZ-5706: the zoom is kept on this phone; each fixture starts at 100% (one browser runs them all).
+  writeReviewZoom(100)
   step('setup')
   // The fake GitHub runs in this one tab: no Web Lock, as in the tests (Node has none).
   Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined })
@@ -251,6 +255,19 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
         press(/^New cards from/)
         await wait(60)
         for (const f of ['languages', 'trip']) [...document.querySelectorAll<HTMLLabelElement>('.review__sheet-folder')].find((r) => r.textContent?.startsWith(f))?.querySelector('input')?.click()
+      }
+      break
+    case 'review-mochi-zoom-max':
+    case 'review-mochi-zoom-min':
+      // YAZ-5706: every part shown, the ⋯ menu open, its Zoom walked to the wall (400% or 50%).
+      for (let i = 0; i < 4; i++) {
+        tap()
+        await wait(40)
+      }
+      press('More card actions')
+      for (let i = 0; i < 8; i++) {
+        press(name === 'review-mochi-zoom-max' ? 'Zoom the card in' : 'Zoom the card out')
+        await wait(30)
       }
       break
     case 'review-mochi-more':

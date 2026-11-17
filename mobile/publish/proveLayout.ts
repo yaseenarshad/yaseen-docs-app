@@ -133,6 +133,8 @@ import { freePort } from './freePort'
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
  * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no, LAYOUT_WIDE=no, LAYOUT_CELL_CODE=no skip a part).
+ *  - the Review zoom (`#fixture=review-mochi-zoom-max`, `-min`, YAZ-5706), light and dark, at 320, 375 and 390 px: the ⋯
+ *    menu's Zoom at 400% and 50%, inside the screen, 44 px taps; the card's parts zoomed, a long word inside the card.
  *  - the Review top bar (`#fixture=review-mochi`, `review-mochi-more`, YAZ-5698), light and dark, at 320, 375 and 390 px:
  *    the filter on the left (a 44 px tap), the count in the true centre (1 px), the dot and the ⚙ right, no overlap.
  *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
@@ -2624,6 +2626,65 @@ if (process.env.LAYOUT_REVIEW_TOP !== 'no') {
         const ok = !m.error && Math.abs(m.centre) <= 1 && m.filter[2] >= 44 && m.filter[1] - m.filter[0] >= 44 && m.clear && m.inside && m.taps && m.under && !m.sideways
         if (!ok) failed++
         console.log(`${ok ? 'PASS' : 'FAIL'}  Review top bar ${name}${long ? ' (long)' : ''} at ${w}, ${scheme}: ${m.error ?? `the count ${m.centre} px from the centre (${m.count.join('-')}); the filter ${m.filter[0]}-${m.filter[1]}, ${m.filter[2]} px tall, ${m.named ? 'icon and name' : 'ICON ALONE'}; the dot at ${m.dot}, the ⚙ ends ${m.gear}; ${m.clear ? 'nothing overlaps' : 'OVERLAP'}; ${m.inside ? 'inside' : 'OFF SCREEN'}; ${m.taps ? 'each part taps itself' : 'A TAP MISSES'}; progress bar ${m.under ? 'under it' : 'NOT UNDER'}${m.sideways ? '; SCROLLS SIDEWAYS' : ''}`}  ${file}`)
+      }
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5706: the ⋯ menu's Zoom walked to each wall (`review-mochi-zoom-max` 400%, `-min` 50%), light and dark, at 320, 375
+// and 390 px: the menu inside the screen, its − % + each a 44 px tap that its centre hits, the wall's button off; the
+// card's parts zoomed (CSS zoom) and reflowing in the card, the card as wide as at 100%: a long word written in breaks inside it, the card never
+// scrolls sideways and nor does the screen. Then the menu shut: a picture of the card at that zoom.
+const REVIEW_ZOOM = (want: number) => `(() => {
+  const r = (el) => el ? el.getBoundingClientRect() : null
+  const W = window.innerWidth, H = window.innerHeight
+  const menu = r(document.querySelector('.review__menu--more'))
+  const card = document.querySelector('.review__card')
+  const body = document.querySelector('.review__card .phone-card__body')
+  if (!menu || !card || !body) return { error: 'missing ' + JSON.stringify({ menu: !!menu, card: !!card, body: !!body }) }
+  const word = document.createElement('p')
+  word.textContent = 'Pneumonoultramicroscopicsilicovolcanoconiosis_and_more_letters_without_a_break'
+  body.append(word)
+  const b = [...document.querySelectorAll('.review__zoom button')].map((x) => {
+    const q = r(x)
+    const at = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2)
+    return { z: x.dataset.zoom, w: Math.round(q.width), h: Math.round(q.height), hit: at === x, off: x.disabled }
+  })
+  const c = r(card), wq = r(word)
+  const out = {
+    W, percent: document.querySelector('.review__zoom [data-zoom="reset"]')?.textContent,
+    zoom: getComputedStyle(body).zoom,
+    menuIn: menu.left >= 0 && menu.right <= W + 0.5 && menu.top >= 0 && menu.bottom <= H + 0.5,
+    buttons: b,
+    wordIn: wq.left >= c.left - 0.5 && wq.right <= c.right + 0.5,
+    wordLines: Math.round(wq.height / parseFloat(getComputedStyle(word).lineHeight || '20') / Number(getComputedStyle(body).zoom || 1)),
+    full: Math.round(c.width),
+    cardSideways: card.scrollWidth > card.clientWidth + 1,
+    past: [...card.querySelectorAll('*')].filter((e) => r(e).right > c.right + 0.5).slice(0, 3).map((e) => e.className || e.tagName),
+    sideways: document.documentElement.scrollWidth > W,
+  }
+  word.remove()
+  return out
+})()`
+if (process.env.LAYOUT_REVIEW_ZOOM !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of SIZES) {
+      for (const [name, want] of [['review-mochi-zoom-max', 400], ['review-mochi-zoom-min', 50]] as const) {
+        await open(name, w, h)
+        const m = await evaluate(REVIEW_ZOOM(want))
+        const menuShot = join(out, `review-zoom-${want}-menu-${w}-${scheme}.png`)
+        writeFileSync(menuShot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+        await evaluate(`document.querySelector('.review__more').click()`)
+        await wait(150)
+        const cardShot = join(out, `review-zoom-${want}-card-${w}-${scheme}.png`)
+        writeFileSync(cardShot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+        type B = { z: string; w: number; h: number; hit: boolean; off: boolean }
+        const bs = (m.buttons ?? []) as B[]
+        const wall = want === 400 ? 'in' : 'out'
+        const ok = !m.error && m.percent === `${want}%` && Number(m.zoom) === want / 100 && m.menuIn && bs.length === 3 && bs.every((x) => x.w >= 44 && x.h >= 44 && (x.off || x.hit)) && bs.every((x) => x.off === (x.z === wall)) && m.full >= w - 48 && m.wordIn && !m.cardSideways && !m.sideways
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  Review zoom ${want}% at ${w}, ${scheme}: ${m.error ?? `the row says ${m.percent}, the card's parts at zoom ${m.zoom}; the menu ${m.menuIn ? 'inside' : 'OFF SCREEN'}; ${bs.map((x) => `${x.z} ${x.w}x${x.h}${x.off ? ' off' : x.hit ? '' : ' TAP MISSES'}`).join(', ')}; a long word ${m.wordIn ? `inside the card (${m.wordLines} lines)` : 'PAST THE CARD'}; the card ${m.full} px wide, ${m.cardSideways ? `SCROLLS SIDEWAYS (${m.past.join(', ')})` : 'never sideways'}${m.sideways ? '; THE SCREEN SCROLLS SIDEWAYS' : ''}`}  ${menuShot} ${cardShot}`)
       }
     }
   }

@@ -42,6 +42,7 @@ import { DoneScreen, type DoneLook } from '@client/review/DoneScreen'
 import { SessionBar, SessionCount } from '@client/review/SessionCount'
 import { LearnedToast } from '@client/review/LearnedToast'
 import { CardActions } from '../cardMenu/lazy'
+import { ZoomRow, useReviewZoom, zoomStyle } from './ReviewZoom'
 import { overlayCount } from '../app/browserHistory'
 import { reviewKey } from './keys'
 import './review.css'
@@ -403,6 +404,8 @@ function SessionScreen({
 
   // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards").
   const [menu, setMenu] = useState<'filter' | 'from' | 'more' | null>(null)
+  // YAZ-5706: the card's zoom (the ⋯ menu's Zoom row), kept on this phone.
+  const [zoom, setZoom] = useReviewZoom()
   const [line, setLine] = useState<Line | null>(null)
   // The answer's "✓ Remembered · … · Undo" stays until the first thing done on the next card (a tap that
   // shows a part, ← or →, the deck drawer); then the hint line is the plain hint again. No timer. Undo stays in ⋯.
@@ -673,7 +676,7 @@ function SessionScreen({
           <div className="review__stage">
             {/* The card is TEXT for VoiceOver (its question is read; a hidden word stays "Hidden word" until it
                 shows), not one button with a label. The tap is the sighted way; VoiceOver has its own button below. */}
-            <div ref={cardBox} className="review__card card card-screen" style={cardLook} data-back={back ? (answeredNow % 2 === 0 ? 'a' : 'b') : undefined}>
+            <div ref={cardBox} className="review__card card card-screen" style={{ ...cardLook, ...zoomStyle(zoom) }} data-zoom={zoom > 100 ? 'in' : undefined} data-back={back ? (answeredNow % 2 === 0 ? 'a' : 'b') : undefined}>
               <div className="review__cardtop">
                 <span className="review__chip" data-new={card.isNew || undefined} title={cardStateText(card, Date.now())}>
                   <i aria-hidden="true" />
@@ -816,6 +819,7 @@ function SessionScreen({
               >
                 {cardFile ? 'Open card' : unit('Open page')}
               </button>
+              <ZoomRow zoom={zoom} onZoom={setZoom} />
             </div>
           )}
         </div>

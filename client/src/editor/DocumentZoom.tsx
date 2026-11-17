@@ -1,15 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
 import type { ZoomStep } from '@shared/types'
-
-const PRESETS = [50, 75, 90, 100, 125, 150, 200, 300, 400]
-
-/**
- * Next preset above (`1`) or below (`-1`) `value`; a custom value snaps to the nearest preset in
- * that direction (117 → 125 / 100). `null` past the last preset, which is what disables the button.
- * (Reverse-then-find because the client lib is ES2022: no `findLast`.)
- */
-export const stepZoom = (value: number, direction: 1 | -1): number | null =>
-  (direction === 1 ? PRESETS.find((p) => p > value) : [...PRESETS].reverse().find((p) => p < value)) ?? null
+import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS, stepZoom } from './zoomSteps'
 
 /**
  * The keyboard's step (⌘+ / ⌘−, YAZ-1710 D16): the preset ladder up to 200%, then 25 at a time
@@ -19,7 +10,7 @@ export const stepZoom = (value: number, direction: 1 | -1): number | null =>
 export const stepZoomByKey = (value: number, direction: 1 | -1): number | null => {
   if (direction === 1 ? value < 200 : value <= 200) return stepZoom(value, direction)
   const next = direction === 1 ? Math.floor(value / 25) * 25 + 25 : Math.ceil(value / 25) * 25 - 25
-  return next > 400 ? null : next
+  return next > ZOOM_MAX ? null : next
 }
 
 /** ⌘+ / ⌘− / ⌘0 (`ZoomStep`) on a zoom: the key ladder up or down, 100 for ⌘0; at either end it stays. */
@@ -33,7 +24,7 @@ export const zoomByKey = (value: number, step: ZoomStep): number => (step === 0 
 export function savedZoom(key: string): number {
   try {
     const n = Number(localStorage.getItem(key))
-    return Number.isInteger(n) && n >= 50 && n <= 400 ? n : 100
+    return Number.isInteger(n) && n >= ZOOM_MIN && n <= ZOOM_MAX ? n : 100
   } catch {
     return 100
   }
@@ -72,7 +63,7 @@ export function useKeptZoom(start: number): [number, (next: number) => void] {
 const parseZoom = (draft: string): number | null => {
   const text = draft.trim()
   const next = Number(text.replace(/%$/, ''))
-  return /^\d{1,3}%?$/.test(text) && next >= 50 && next <= 400 ? next : null
+  return /^\d{1,3}%?$/.test(text) && next >= ZOOM_MIN && next <= ZOOM_MAX ? next : null
 }
 
 /** `label` names the pill for a screen reader: a table's own zoom is "Table zoom" (YAZ-4091, `table/tableZoomPill.tsx`). */
@@ -194,7 +185,7 @@ export function DocumentZoom({ value, onChange, label = 'Document zoom' }: { val
         </div>
         <div className="document-zoom__divider" aria-hidden="true" />
         <div className="document-zoom__presets" role="group" aria-label="Zoom presets">
-          {PRESETS.map((preset) => <button key={preset} type="button" aria-pressed={value === preset}
+          {ZOOM_STEPS.map((preset) => <button key={preset} type="button" aria-pressed={value === preset}
             onClick={() => commit(preset, true)}>
             <span>{preset}%</span><span aria-hidden="true">{value === preset ? '✓' : ''}</span>
           </button>)}
