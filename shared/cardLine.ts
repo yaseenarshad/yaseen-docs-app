@@ -2,6 +2,7 @@ import { keyFold, splitFrontmatter } from './frontmatterSplit'
 import { closesFence, fenceOf } from './fences'
 import { canonicalPageId, isNumberId } from './pageId'
 import { inLineEnds, withLf } from './lineEnds'
+import { CARD_TITLE_AT, type CardTitleAt, type CardTitleChoice } from './cardTitleAt'
 
 /**
  * PAGE CARDS (YAZ-4946, YAZ-4959 D3): a card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
@@ -64,18 +65,10 @@ export type CardPropertyScalar = string | number | boolean
 /** A card property's value: one value, or a list of two or more (`tags "europe" "capitals"`). */
 export type CardPropertyValue = CardPropertyScalar | CardPropertyScalar[]
 
-/**
- * WHEN a card's title shows in Review (YAZ-5696, Design 2): at once, after the front (no hidden word left on it), or
- * with Side 2 (the last side). The global default is review.json's `titleAt`; a card's own choice is one card line
- * part, its word in `CARD_TITLE_AT_WORDS`. Never is `notitle`, as before.
- */
-export type CardTitleAt = 'once' | 'front' | 'side2'
-export const CARD_TITLE_AT: readonly CardTitleAt[] = ['once', 'front', 'side2']
-/** Each choice's word on the card line: `title-once`, `title-front`, `title-side2`. */
+export { CARD_TITLE_AT, type CardTitleAt, type CardTitleChoice } from './cardTitleAt'
+/** Each choice's word on the card line (YAZ-5696): `title-once`, `title-front`, `title-side2`. */
 export const CARD_TITLE_AT_WORDS: Readonly<Record<CardTitleAt, string>> = { once: 'title-once', front: 'title-front', side2: 'title-side2' }
 const titleAtOfWord = (text: string): CardTitleAt | null => CARD_TITLE_AT.find((at) => CARD_TITLE_AT_WORDS[at] === text) ?? null
-/** The ⋯ menu's "Title in review" choice: Default (no part), one of the three, or Never (`notitle`). */
-export type CardTitleChoice = 'default' | CardTitleAt | 'never'
 
 /** One part of a card line, in the order the line holds them. */
 export type CardPart =

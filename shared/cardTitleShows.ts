@@ -1,5 +1,5 @@
 import { hiddenCount } from './cardText'
-import type { CardTitleAt, CardTitleChoice } from './cardLine'
+import type { CardTitleAt, CardTitleChoice } from './cardTitleAt'
 
 /**
  * WHEN A CARD'S TITLE SHOWS IN REVIEW (YAZ-5696, Design 2): the one rule for a step, the Mac's Inbox and Preview and
