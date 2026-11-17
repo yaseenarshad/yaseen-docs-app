@@ -52,6 +52,7 @@ describe('the cog’s block widths (YAZ-4783 layer 2)', () => {
     mount(null, false)
     expect(group('Code block width')).toBeNull()
     expect(group('Table width')).toBeNull()
+    expect(group('Page width')).toBeNull() // YAZ-5640: a folder page's Page tab passes no handler either
   })
 
   it('a page with no width shows Default pressed and an empty field; its tooltip names the Settings row', () => {

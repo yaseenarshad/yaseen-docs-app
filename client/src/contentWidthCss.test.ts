@@ -15,6 +15,14 @@ describe('content-width CSS contract (YAZ-1176)', () => {
     expect(appCss).not.toMatch(/data-content-width/)
   })
 
+  it("a page's own width (YAZ-5640): the page's scroller works out the column again from the text width it sets, and a card file's column keeps `.app`'s", () => {
+    const own = [...appCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?:^|\})\s*([^{}]+)\{([^{}]*--content-max-width:[^{}]*)\}/g)].map((m) => [m[1]!.trim(), m[2]!.trim()])
+    expect(own).toEqual([
+      ['.app', expect.stringContaining('--content-max-width: calc(var(--content-text-width) + 96px);')],
+      ['.editor-host', '--content-max-width: calc(var(--content-text-width) + 96px);'],
+    ])
+  })
+
   it('routes every aligned shell through the one shared token', () => {
     expect(maxWidthFor(appCss, '.page-header')).toBe('var(--content-max-width)')
     expect(maxWidthFor(appCss, '.editor-instance')).toBe('var(--content-max-width)')

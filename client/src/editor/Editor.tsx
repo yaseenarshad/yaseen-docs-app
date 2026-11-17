@@ -50,7 +50,8 @@ import './outline/sectionIndent.css'
 import './softBreaks.css'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { withLf } from '@shared/lineEnds'
-import { CODE_WIDTH_KEY, readBlockWidth, readFindFolds, readOutsideGlow, readPageSwitches, writeBlockWidth, writeFindFolds, writeOutsideGlow, writePageSwitch, TABLE_WIDTH_KEY, type PageSwitchKey } from '@shared/pageSwitches'
+import { CODE_WIDTH_KEY, readBlockWidth, readFindFolds, readOutsideGlow, readPageSwitches, readPageWidth, writeBlockWidth, writeFindFolds, writeOutsideGlow, writePageSwitch, writePageWidth, TABLE_WIDTH_KEY, type PageSwitchKey } from '@shared/pageSwitches'
+import { contentTextWidth } from '../lib/contentWidth'
 import { watchBlockRoom } from './blockRoom'
 import { undo } from '@milkdown/kit/prose/history'
 import { CODE_WIDTH_DRAGGED, codeBlockCount, codeWidthsToPage, type CodeWidthDragged } from './code/codeWidth'
@@ -840,6 +841,13 @@ function CrepeHost({
    */
   const pageCodeWidth = useMemo(() => readBlockWidth(disk, CODE_WIDTH_KEY), [disk])
   const pageTableWidth = useMemo(() => readBlockWidth(disk, TABLE_WIDTH_KEY), [disk])
+  /**
+   * This page's own Content width (YAZ-5640): its `page-width` key, read off `disk` as the cog's other rows. It wins over
+   * Settings › Appearance › Content width on the page's scroller. A folder page's Page tab has no row and ignores the
+   * key: it draws in the folder page's scroller, which the folder's views share.
+   */
+  const diskPageWidth = useMemo(() => readPageWidth(disk), [disk])
+  const pageWidth = inFolderPage ? null : diskPageWidth
   // Read by the editor's mount (createCrepe), which must not re-run when the switch turns: the effect below sends the change.
   const foldingOnRef = useRef(foldingOn)
   foldingOnRef.current = foldingOn
@@ -1330,6 +1338,8 @@ function CrepeHost({
   /** The cog's "Code block width" / "Table width" (YAZ-4783 layer 2): this page's px, or null to follow Settings again. */
   const changeCodeWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, CODE_WIDTH_KEY, width), 'Code block width')
   const changeTableWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, TABLE_WIDTH_KEY, width), 'Table width')
+  /** The cog's "Page width" (YAZ-5640): this page's step, or null to follow Settings again. */
+  const changePageWidth = (width: ContentWidth | null) => void writeOwnKey((content) => writePageWidth(content, width), 'Page width')
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
@@ -1544,7 +1554,7 @@ function CrepeHost({
     />
   )
   /** The cog's page switches: a page's own cog, or the folder page's for its Page tab (YAZ-4584 D38). */
-  const cog: FolderPageTab['cog'] = { lineNumbers: lineNumbersOn, onToggleLineNumbers: () => setLineNumbersOn((on) => !on), sectionIndent: sectionIndentOn, onToggleSectionIndent: toggleSectionIndent, guideLines: guideLinesOn, onToggleGuideLines: toggleGuideLines, folding: foldingOn, onToggleFolding: toggleFolding, bulletThreading: threadingOn, onToggleBulletThreading: toggleThreading, headingLevels: headingLevelsOn, onToggleHeadingLevels: () => setHeadingLevelsOn((on) => !on), tableOfContents: tableOfContentsOn, onToggleTableOfContents: toggleTableOfContents, tocSource, onChangeTocSource: tableOfContentsOn ? changeTocSource : undefined, outsideGlow: pageGlow, appGlow: outsideChangeGlow, onChangeOutsideGlow: changeOutsideGlow, codeWidth: pageCodeWidth, onChangeCodeWidth: changeCodeWidth, tableWidth: pageTableWidth, onChangeTableWidth: changeTableWidth, readText: () => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '') }
+  const cog: FolderPageTab['cog'] = { lineNumbers: lineNumbersOn, onToggleLineNumbers: () => setLineNumbersOn((on) => !on), sectionIndent: sectionIndentOn, onToggleSectionIndent: toggleSectionIndent, guideLines: guideLinesOn, onToggleGuideLines: toggleGuideLines, folding: foldingOn, onToggleFolding: toggleFolding, bulletThreading: threadingOn, onToggleBulletThreading: toggleThreading, headingLevels: headingLevelsOn, onToggleHeadingLevels: () => setHeadingLevelsOn((on) => !on), tableOfContents: tableOfContentsOn, onToggleTableOfContents: toggleTableOfContents, tocSource, onChangeTocSource: tableOfContentsOn ? changeTocSource : undefined, outsideGlow: pageGlow, appGlow: outsideChangeGlow, onChangeOutsideGlow: changeOutsideGlow, ...(!inFolderPage && { pageWidth, appContentWidth: contentWidth, onChangePageWidth: changePageWidth }), codeWidth: pageCodeWidth, onChangeCodeWidth: changeCodeWidth, tableWidth: pageTableWidth, onChangeTableWidth: changeTableWidth, readText: () => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '') }
   // The Page tab hands its switches, save state and fold-all button to the folder page's toolbar while it shows, again
   // on each render (a switch or the save state moved), and takes them back as it goes (YAZ-4584 D38, YAZ-3746 D35, 10D).
   // A render is a save cycle or a switch, never a keystroke.
@@ -1603,7 +1613,8 @@ function CrepeHost({
       ) : (
         <PageFrame
           {...scrollerData}
-          style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}
+          // The page's own width (YAZ-5640) over Settings' on `.app`: app.css works out `--content-max-width` from it here.
+          style={{ '--document-zoom': documentZoom / 100, ...(pageWidth !== null && { '--content-text-width': contentTextWidth(pageWidth) }) } as CSSProperties}
           header={
             <>
               <PageTitle
@@ -1647,7 +1658,7 @@ function CrepeHost({
           choice, else "Table of contents default", YAZ-3558), and while a bullet is zoomed. */}
       {/* The numbered list of outside changes (YAZ-3998) floats in the room LEFT of the page the same way. */}
       {outsideListPinned && <OutsideChangesList channel={outsideChanges} hostRef={hostRef} onPin={onChangeOutsideListPinned} />}
-      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusPage} folds={tocFolds} onChangeFolds={changeTocFolds} zoom={tocZoom} onChangeZoom={onChangeTocZoom} />
+      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={pageWidth ?? contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusPage} folds={tocFolds} onChangeFolds={changeTocFolds} zoom={tocZoom} onChangeZoom={onChangeTocZoom} />
       {/* Put back's ask (YAZ-5037): other pages embed the card. */}
       {convert.sheet}
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the

@@ -12,7 +12,7 @@ import { act } from 'react'
 import { ZOOM_EVENT } from './zoomRequest'
 import { PageZoomMemory } from './DocumentZoom'
 import { createRoot, type Root } from 'react-dom/client'
-import type { FileResponse, IndexRecord, PageView, TableOfContents, TocSource, TreeNode, WatchEvent } from '@shared/types'
+import type { ContentWidth, FileResponse, IndexRecord, PageView, TableOfContents, TocSource, TreeNode, WatchEvent } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
@@ -218,7 +218,7 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean; vaultReadOnly?: boolean; onFileAction?: (root: string) => Promise<boolean> } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean; vaultReadOnly?: boolean; onFileAction?: (root: string) => Promise<boolean>; contentWidth?: ContentWidth } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
@@ -227,7 +227,7 @@ async function mount(content: string, mtime = 1, extra: { path?: string; wikilin
   if (extra.behind === true) container.className = 'tabstack__layer tabstack__layer--hidden'
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newPageFolderFor={extra.newPageFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} bulletThreadingOnByDefault={extra.bulletThreadingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} vaultReadOnly={extra.vaultReadOnly} onFileAction={extra.onFileAction} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newPageFolderFor={extra.newPageFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} bulletThreadingOnByDefault={extra.bulletThreadingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} vaultReadOnly={extra.vaultReadOnly} onFileAction={extra.onFileAction} contentWidth={extra.contentWidth} />))
   await settle()
   await settle()
   return container
@@ -932,6 +932,46 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     await emit({ type: 'change', path: PATH, mtime: 2 })
     await settle()
     expect(el.querySelector('nav.toc')).toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('"Page width" follows Settings › Content width until THIS page chooses: the page\'s step goes on its scroller, a pill writes `page-width` IN the page, Default takes it away, and an outside change lands at once (YAZ-5640)', async () => {
+    let mtime = 10
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: ++mtime, size: body.content.length }))
+    const host = (el: HTMLElement) => el.querySelector<HTMLElement>('.editor-host')!
+    const widths = (el: HTMLElement) => [...(menuIn(el)?.querySelectorAll<HTMLButtonElement>('[aria-label="Page width"] button') ?? [])]
+    const pressed = (el: HTMLElement) => widths(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
+    const pick = async (el: HTMLElement, label: string) => {
+      await act(async () => {
+        widths(el).find((button) => button.textContent === label)!.click()
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      await settle()
+    }
+    // A Narrow page while Settings says Full: the page's 640 px on its own scroller, over `.app`'s.
+    const el = await mount('---\nstatus: draft\npage-width: narrow\n---\n' + BODY, 1, { contentWidth: 'full' })
+    expect(host(el).style.getPropertyValue('--content-text-width')).toBe('640px')
+    clickCog(el)
+    expect(pressed(el)).toEqual(['Default:false', 'Narrow:true', 'Medium:false', 'Full:false'])
+    expect(widths(el)[0].title).toBe('Default follows Settings › Appearance › Content width: Full')
+    diskHas('---\nstatus: draft\npage-width: narrow\n---\n' + BODY, 1)
+    await pick(el, 'Medium')
+    expect(host(el).style.getPropertyValue('--content-text-width')).toBe('900px')
+    expect(pressed(el)).toEqual(['Default:false', 'Narrow:false', 'Medium:true', 'Full:false'])
+    diskHas('---\nstatus: draft\npage-width: medium\n---\n' + BODY, 11)
+    await pick(el, 'Default')
+    // No key: the scroller sets nothing, so it inherits Settings' width from `.app`.
+    expect(host(el).style.getPropertyValue('--content-text-width')).toBe('')
+    expect(written()).toEqual(['---\nstatus: draft\npage-width: medium\n---\n' + BODY, FM + BODY])
+    expect(menuIn(el)).not.toBeNull() // the menu stays open
+    // Another tab or an agent writes Full: this editor follows without a write of its own.
+    writeFile.mockClear()
+    diskHas('---\nstatus: draft\npage-width: full\n---\n' + BODY, 20)
+    diskHas('---\nstatus: draft\npage-width: full\n---\n' + BODY, 20)
+    await emit({ type: 'change', path: PATH, mtime: 20 })
+    await settle()
+    expect(host(el).style.getPropertyValue('--content-text-width')).toBe('100vw')
+    expect(pressed(el)).toEqual(['Default:false', 'Narrow:false', 'Medium:false', 'Full:true'])
     expect(writeFile).not.toHaveBeenCalled()
   })
 

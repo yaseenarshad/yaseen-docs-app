@@ -219,6 +219,14 @@ button {
   padding-bottom: 64px;
 }
 
+/* A page's own width (YAZ-5640): its scroller sets `--content-text-width` from the page's `page-width` key, so the
+   column is worked out again here. The value on `.app` is fixed there, and a child inherits it as it is. With no key
+   the scroller inherits `.app`'s text width, and the column is the same as before. A card file's column has its own
+   rule (`.card-file__page`). */
+.editor-host {
+  --content-max-width: calc(var(--content-text-width) + 96px);
+}
+
 .editor-host::after {
   content: '';
   display: block;

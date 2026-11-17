@@ -1,8 +1,8 @@
 import { type FocusEvent, Fragment, type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Dropdown } from '../views/view/Dropdown'
 import { createPortal } from 'react-dom'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, type OutsideChangeGlow, type TocSource } from '@shared/types'
-import { OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, type ContentWidth, type OutsideChangeGlow, type TocSource } from '@shared/types'
+import { CONTENT_WIDTH_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
 import { CogIcon } from '../components/CogIcon'
 import { useUnit } from '../vault/unitWord'
 
@@ -97,6 +97,12 @@ export interface PageSettingsProps {
   appGlow?: OutsideChangeGlow
   /** Absent → no "Outside changes glow" row (a board, a drawing, a diagram, a code file). `null` is Default. */
   onChangeOutsideGlow?: (glow: OutsideChangeGlow | null) => void
+  /** This page's own Content width (YAZ-5640): a step, or `null` (Default), which follows Settings › Appearance › Content width. */
+  pageWidth?: ContentWidth | null
+  /** Settings' Content width, which Default's tooltip names. */
+  appContentWidth?: ContentWidth
+  /** Absent → no "Page width" row (a folder page's Page tab, a board, a drawing, a diagram, a code file). `null` is Default. */
+  onChangePageWidth?: (width: ContentWidth | null) => void
   /** This page's width for every code block (YAZ-4783 layer 2): whole px, or `null` (Default), which follows Settings › Editor › Code blocks › Width. */
   codeWidth?: number | null
   /** Absent → no "Code block width" row (a board, a drawing, a diagram, a code file). `null` is Default. */
@@ -127,7 +133,8 @@ export interface PageSettingsProps {
  * and "TOC made from" (YAZ-2700 D14), which the host saves with the page. "Line numbers" and "Heading
  * levels" are never saved. "Outside changes glow" (YAZ-4272 D5) is a native dropdown: Default (Settings' glow) or one
  * of the four glows, saved in the page. "Code block width" and "Table width" (YAZ-4783 layer 2) are Default (Settings')
- * or a px you type, saved in the page too (`code-width`, `table-width`).
+ * or a px you type, saved in the page too (`code-width`, `table-width`). "Page width" (YAZ-5640) is Default (Settings'
+ * Content width) or Narrow, Medium or Full, pills as "TOC made from", saved in the page too (`page-width`).
  *
  * "Read only" (YAZ-3076 D3) is the FIRST row on a page, a drawing and a diagram, and is stored IN
  * the file by the host. A file with no switch (a code file, YAZ-3448) gives no `onToggleReadOnly`. A board's menu has only that row: every Markdown-only row
@@ -178,7 +185,7 @@ function BlockWidthRow({ label, value, settingsRow, onChange }: { label: string;
   </>
 }
 
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, codeWidth = null, onChangeCodeWidth, tableWidth = null, onChangeTableWidth, switches, switchesHeading, rows, readText, trigger }: PageSettingsProps) {
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, pageWidth = null, appContentWidth = 'narrow', onChangePageWidth, codeWidth = null, onChangeCodeWidth, tableWidth = null, onChangeTableWidth, switches, switchesHeading, rows, readText, trigger }: PageSettingsProps) {
   const unit = useUnit()
   // The text counted at the open IS the open state: the counts cannot drift while the menu shows.
   // A board has no text to count: its open menu holds '' and shows no counts.
@@ -471,8 +478,17 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
             {OUTSIDE_CHANGE_GLOW_OPTIONS.map(({ label, value }) => <option key={value} value={value}>{label}</option>)}
           </select>
         </>}
-        {/* This page's width for its code blocks and its tables (YAZ-4783 layer 2), saved in the page. */}
-        {(onChangeCodeWidth !== undefined || onChangeTableWidth !== undefined) && <div className="page-settings__divider" aria-hidden="true" />}
+        {/* This page's widths, saved in the page: its own Content width (YAZ-5640), then its code blocks' and its tables' (YAZ-4783 layer 2). */}
+        {(onChangePageWidth !== undefined || onChangeCodeWidth !== undefined || onChangeTableWidth !== undefined) && <div className="page-settings__divider" aria-hidden="true" />}
+        {onChangePageWidth !== undefined && <>
+          <p className="page-settings__label">Page width:</p>
+          <div className="page-settings__choices" role="group" aria-label="Page width">
+            <button type="button" aria-pressed={pageWidth === null} title={`Default follows Settings › Appearance › Content width: ${CONTENT_WIDTH_OPTIONS.find((option) => option.value === appContentWidth)?.label ?? 'Narrow'}`} onClick={() => onChangePageWidth(null)}>Default</button>
+            {CONTENT_WIDTH_OPTIONS.map(({ label, value }) => (
+              <button key={value} type="button" aria-pressed={value === pageWidth} onClick={() => onChangePageWidth(value)}>{label}</button>
+            ))}
+          </div>
+        </>}
         {onChangeCodeWidth !== undefined && <BlockWidthRow label="Code block width" value={codeWidth} settingsRow="Editor › Code blocks › Width" onChange={onChangeCodeWidth} />}
         {onChangeTableWidth !== undefined && <BlockWidthRow label="Table width" value={tableWidth} settingsRow="Tables › All tables › Width" onChange={onChangeTableWidth} />}
         {readText !== undefined && <>

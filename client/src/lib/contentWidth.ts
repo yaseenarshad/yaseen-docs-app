@@ -9,7 +9,8 @@
 import { CONTENT_TEXT_WIDTHS, CONTENT_WIDTHS, isCardWidth, type ContentWidth, type SettingsState } from '@shared/types'
 
 const stepOf = (v: unknown): ContentWidth => ((CONTENT_WIDTHS as readonly unknown[]).includes(v) ? (v as ContentWidth) : 'narrow')
-const px = (step: ContentWidth): string => {
+/** A step as `--content-text-width`: its px, or `100vw` for Full. Also a page's own width on its scroller (YAZ-5640). */
+export const contentTextWidth = (step: ContentWidth): string => {
   const w = CONTENT_TEXT_WIDTHS[step]
   return w === null ? '100vw' : `${w}px`
 }
@@ -17,7 +18,7 @@ const px = (step: ContentWidth): string => {
 export function contentWidthVars(s: SettingsState): Record<string, string> {
   const page = stepOf(s.contentWidth)
   const card: unknown = (s as Partial<SettingsState>).cardWidth
-  return { '--content-text-width': px(page), '--card-text-width': isCardWidth(card) ? `${card}px` : px(page) }
+  return { '--content-text-width': contentTextWidth(page), '--card-text-width': isCardWidth(card) ? `${card}px` : contentTextWidth(page) }
 }
 
 /**
