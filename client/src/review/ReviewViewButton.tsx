@@ -10,7 +10,7 @@
  *  - Focus mode: the bar's focus button (F, Esc leave it), only where the App gives the door.
  *
  * Esc, a click outside or a click on the icon closes it. Away from 100% the icon wears a small accent dot, so a zoomed
- * card says why at rest. The phone has no View: it has no zoom or focus mode, and its time stays in its sheet.
+ * card says why at rest. The phone has no View: its zoom is a row of its ⋯ menu (YAZ-5706, the same steps), it has no focus mode, and its time stays in its sheet.
  */
 import { useRef, useState } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'

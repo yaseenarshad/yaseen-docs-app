@@ -21,6 +21,16 @@ const blockAfter = (text: string, start: string) => {
 }
 
 describe('the Review tab styles', () => {
+  it('YAZ-5706: the zoom scales the card\'s parts with CSS zoom (they reflow in the card\'s width), never the card box; the Zoom row\'s buttons are touch-sized', () => {
+    expect(css).toMatch(/\.review__card > \* \{[^}]*zoom: var\(--review-zoom, 1\);/)
+    expect(css).not.toMatch(/\.review__card \{[^}]*zoom:/)
+    // The card's width is the screen's at any zoom: 50% never halves it.
+    expect(css).not.toMatch(/max-width:[^;]*--review-zoom/)
+    expect(css).toMatch(/\.review__zoom button \{[^}]*min-width: var\(--tap\);[^}]*min-height: var\(--tap\);/)
+    expect(css).toMatch(/\.review__card\[data-zoom='in'\] \.review__cardtop \{[^}]*flex-wrap: wrap;/)
+    expect(css).toMatch(/\.review__card \.card__rule \{[^}]*margin-inline: calc\(-16px \/ var\(--review-zoom, 1\)\);/)
+  })
+
   it('YAZ-5415: the controls stay at the bottom while a long card scrolls: the screen never scrolls, the card does (no scroll bar)', () => {
     expect(app).toMatch(/\.screen--review \{[^}]*padding: 0;[^}]*overflow: hidden;/)
     expect(css).toMatch(/\.review__card \{[^}]*flex: 1 1 0;[^}]*min-height: 0;[^}]*overflow-y: auto;[^}]*scrollbar-width: none;/)

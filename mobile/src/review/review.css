@@ -607,6 +607,25 @@
 .review__card {
   max-width: calc(var(--card-text-width, 100vw) + 36px);
 }
+/* YAZ-5706: the ⋯ menu's Zoom, as the Mac's Review zoom (its card panel, app.css): the card's parts scale with CSS zoom,
+   the box stays (its border, its padding, the screen's width), so a part's text reflows in the card's width at any
+   zoom (never sideways; a long word breaks, `overflow-wrap: anywhere` above). The vault's Card text size is in the
+   parts, so the zoom multiplies it. The card's width stays the screen's (a phone has no room to widen it, and 50% must
+   not halve it). */
+.review__card > * {
+  zoom: var(--review-zoom, 1);
+}
+/* Zoomed in, the row over the card (the New / Due chip, the folders, Side 1 of 3) wraps: its parts keep their words
+   whole and go under each other instead of past the card's edge. At 100% and under it stays one line, as before. */
+.review__card[data-zoom='in'] .review__cardtop {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+/* The line between two sides runs 16 px into the card's padding on each side (card.css): at any zoom, 16 px on the
+   screen, not 16 px times the zoom (64 px at 400%, past the card's edge). */
+.review__card .card__rule {
+  margin-inline: calc(-16px / var(--review-zoom, 1));
+}
 .review__title {
   font-size: var(--card-title-size, inherit);
 }
@@ -994,6 +1013,40 @@
 
 .review__menu-row:disabled {
   opacity: 0.5;
+}
+
+/* YAZ-5706: the Zoom row, "Zoom  − 100% +": three touch-sized buttons at the right; a tap on one keeps the menu open. */
+.review__zoom {
+  gap: 4px;
+  padding-right: 4px;
+}
+.review__zoom:active {
+  background: none;
+}
+.review__zoom-steps {
+  display: flex;
+  align-items: center;
+}
+.review__zoom button {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.review__zoom button[data-zoom='reset'] {
+  min-width: 58px;
+  font-size: 14px;
+}
+.review__zoom button:active:not(:disabled) {
+  background: var(--bg-side);
+}
+.review__zoom button:disabled {
+  opacity: 0.4;
 }
 
 /* ---- Done ---- */
