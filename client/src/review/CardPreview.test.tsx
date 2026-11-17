@@ -30,7 +30,7 @@ afterEach(() => {
   el?.remove()
 })
 
-function mount(text = TEXT, title = '', notitle = false, titleAt?: 'once' | 'front' | 'side2', settings = DEFAULT_REVIEW_SETTINGS) {
+function mount(text = TEXT, title = '', notitle = false, titleAt?: 'always' | 'click' | 'side2', settings = DEFAULT_REVIEW_SETTINGS) {
   const wikilinks = createWikilinkResolveSource()
   const vault = { root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never, viewOnlyLinks: createViewOnlyLinkSource() }
   const onClose = vi.fn()
@@ -115,7 +115,7 @@ describe('Preview a card (YAZ-5152)', () => {
     expect(band()?.textContent).toBe('Secret title')
     act(() => root?.unmount())
     el.remove()
-    mount(TEXT, 'Secret title', false, 'front')
+    mount(TEXT, 'Secret title', false, 'click')
     expect(band()?.classList.contains('card-band--waiting')).toBe(true)
     press(' ')
     expect(band()?.classList.contains('card-band--waiting')).toBe(false)

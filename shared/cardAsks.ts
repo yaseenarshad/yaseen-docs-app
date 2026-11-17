@@ -26,10 +26,11 @@ export const ARCHIVE_ASK: CardAsk = { question: 'Archive this card?', yes: 'Arch
 export function titleChoiceAsk(choice: CardTitleChoice): CardAsk {
   const question: Record<CardTitleChoice, string> = {
     default: 'Use the default from Settings › Cards?',
-    once: 'Show the title at once?',
-    front: 'Show the title after the front?',
-    side2: 'Show the title with Side 2?',
     never: 'Never show the title in review?',
+    always: 'Always show the title?',
+    click: 'Show the title after the first click?',
+    side2: 'Show the title with Side 2?',
   }
-  return { question: question[choice], yes: cardTitleChoiceLabel(choice) }
+  // The answer is the choice's bare name: "Default", not "Default (Always)".
+  return { question: question[choice], yes: choice === 'default' ? 'Default' : cardTitleChoiceLabel(choice, 'always') }
 }

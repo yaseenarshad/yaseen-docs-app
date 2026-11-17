@@ -51,11 +51,15 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect([title.label, title.hint]).toEqual(['Title in review', 'Never'])
     expect(title.children!.map((c) => [c.label, c.checked, c.ask?.question ?? null])).toEqual([
       ['Default', false, 'Use the default from Settings › Cards?'],
-      ['At once', false, 'Show the title at once?'],
-      ['After the front', false, 'Show the title after the front?'],
-      ['With Side 2', false, 'Show the title with Side 2?'],
       ['Never', true, null],
+      ['Always', false, 'Always show the title?'],
+      ['After the first click', false, 'Show the title after the first click?'],
+      ['With Side 2', false, 'Show the title with Side 2?'],
     ])
+    // YAZ-5696 round 2: with the vault's Show card titles, Default says what it means now ("Default (On)" of the table
+    // menu); the row has the eye's help (`help`).
+    const known = cardMenu({ marks: NONE, titleGlobal: 'side2' }).flat().find((r) => r.action === 'title')!
+    expect([known.hint, known.children![0].label, known.help]).toEqual(['Default (With Side 2)', 'Default (With Side 2)', true])
     // Archived: Unarchive card does not ask.
     expect(asks({ marks: { ...NONE, off: true } })).toEqual([])
   })

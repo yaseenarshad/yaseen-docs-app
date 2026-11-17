@@ -2,7 +2,7 @@ import { keyFold, splitFrontmatter } from './frontmatterSplit'
 import { closesFence, fenceOf } from './fences'
 import { canonicalPageId, isNumberId } from './pageId'
 import { inLineEnds, withLf } from './lineEnds'
-import { CARD_TITLE_AT, type CardTitleAt, type CardTitleChoice } from './cardTitleAt'
+import { CARD_TITLE_AT, OLD_TITLE_AT, type CardTitleAt, type CardTitleChoice, type CardTitleShow } from './cardTitleAt'
 
 /**
  * PAGE CARDS (YAZ-4946, YAZ-4959 D3): a card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
@@ -65,10 +65,13 @@ export type CardPropertyScalar = string | number | boolean
 /** A card property's value: one value, or a list of two or more (`tags "europe" "capitals"`). */
 export type CardPropertyValue = CardPropertyScalar | CardPropertyScalar[]
 
-export { CARD_TITLE_AT, type CardTitleAt, type CardTitleChoice } from './cardTitleAt'
-/** Each choice's word on the card line (YAZ-5696): `title-once`, `title-front`, `title-side2`. */
-export const CARD_TITLE_AT_WORDS: Readonly<Record<CardTitleAt, string>> = { once: 'title-once', front: 'title-front', side2: 'title-side2' }
-const titleAtOfWord = (text: string): CardTitleAt | null => CARD_TITLE_AT.find((at) => CARD_TITLE_AT_WORDS[at] === text) ?? null
+export { CARD_TITLE_AT, CARD_TITLE_SHOW, type CardTitleAt, type CardTitleChoice, type CardTitleShow } from './cardTitleAt'
+/** Each choice's word on the card line (YAZ-5696 round 2): `title-always`, `title-click`, `title-side2`. */
+export const CARD_TITLE_AT_WORDS: Readonly<Record<CardTitleAt, string>> = { always: 'title-always', click: 'title-click', side2: 'title-side2' }
+/** Round 1's words, still read (`title-once`: Always, `title-front`: After the first click); a part keeps its bytes. */
+const OLD_TITLE_AT_WORDS: readonly string[] = Object.keys(OLD_TITLE_AT).map((w) => `title-${w}`)
+const titleAtOfWord = (text: string): CardTitleAt | null =>
+  CARD_TITLE_AT.find((at) => CARD_TITLE_AT_WORDS[at] === text) ?? (text.startsWith('title-') ? (OLD_TITLE_AT[text.slice(6)] ?? null) : null)
 
 /** One part of a card line, in the order the line holds them. */
 export type CardPart =
@@ -79,7 +82,7 @@ export type CardPart =
   | { kind: 'off' }
   | { kind: 'next' }
   | { kind: 'notitle' }
-  | { kind: 'titleat'; at: CardTitleAt }
+  | { kind: 'titleat'; at: CardTitleAt; raw?: string }
   | { kind: 'fix' }
   | { kind: 'other'; text: string }
 
@@ -114,7 +117,7 @@ export interface CardRecord {
   title?: string
   /** The title is hidden on the Inbox's front (the line's `notitle` part, YAZ-5030); absent: it shows. */
   notitle?: true
-  /** When the title shows in Review, the card's own choice (YAZ-5696, `title-front`…); absent: the global default. */
+  /** When the title shows in Review, the card's own choice (YAZ-5696, `title-click`…); absent: the global default. */
   titleAt?: CardTitleAt
   /** The card is marked "Fix later" (the line's `fix`, YAZ-5097): the Cards table's Card fix status; absent: no mark. */
   fix?: true
@@ -242,7 +245,7 @@ const titlePart = (title: string): string => `title ${quoteText(title)}`
 // read as a property (a bare word alone, a bare value that is no number or checkbox) stays an unknown part, kept.
 
 /** The card line's own words: never a property's name (YAZ-5379), in any capitals. */
-const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle', 'fix', ...Object.values(CARD_TITLE_AT_WORDS)])
+const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle', 'fix', ...Object.values(CARD_TITLE_AT_WORDS), ...OLD_TITLE_AT_WORDS])
 const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
 const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/
 const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
@@ -335,7 +338,7 @@ export function parseCardLine(value: string): CardLine | null {
     } else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
-    else if (titleAtOfWord(text) !== null) parts.push({ kind: 'titleat', at: titleAtOfWord(text)! })
+    else if (titleAtOfWord(text) !== null) parts.push(CARD_TITLE_AT_WORDS[titleAtOfWord(text)!] === text ? { kind: 'titleat', at: titleAtOfWord(text)! } : { kind: 'titleat', at: titleAtOfWord(text)!, raw: text })
     else if (text === 'fix') parts.push({ kind: 'fix' })
     else if (!id && isNumberId(text)) {
       id = true
@@ -378,7 +381,7 @@ export function formatCardLine(line: CardLine): string | null {
             : p.kind === 'other'
               ? p.text
               : p.kind === 'titleat'
-                ? CARD_TITLE_AT_WORDS[p.at]
+                ? (p.raw ?? CARD_TITLE_AT_WORDS[p.at])
                 : p.kind,
   )
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
@@ -408,9 +411,12 @@ export const cardTitleChoiceOf = (line: CardLine): CardTitleChoice => (isCardNoT
  * The card's title as Review may show it (YAZ-5695, Yaseen: "if the title is a setting on the card that it should never
  * show up in reviews, it should never show up in reviews. Period."): '' while the card is "Title hidden in review"
  * (`notitle`) — on no side, at no step, fully shown or after the answer, Mac (`useCardFront`, the answer line, the
- * Preview) and phone (`ReviewView`) alike. Outside Review (the page, the card window, Explore) the title shows as ever.
+ * Preview) and phone (`ReviewView`) alike; so with Settings › Cards › Show card titles: Never, for a card with no
+ * timing of its own (`global`). Outside Review (the page, the card window, Explore) the title shows as ever.
  */
-export const reviewTitleOf = (card: { title?: string; notitle?: boolean }): string => (card.notitle === true ? '' : (card.title ?? ''))
+export const reviewTitleOf = (card: { title?: string; notitle?: boolean; titleAt?: CardTitleAt }, global: CardTitleShow = 'always'): string =>
+  // YAZ-5696 round 2: the global Never hides every title that has no timing of its own, the answer line's too.
+  card.notitle === true || (card.titleAt === undefined && global === 'never') ? '' : (card.title ?? '')
 const cardRecordOf = (line: CardLine): CardRecord => {
   const title = cardTitleOf(line)
   const properties = cardPropertiesOf(line)

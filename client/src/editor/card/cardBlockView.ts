@@ -732,6 +732,7 @@ export class CardBlockView implements NodeView {
     return {
       marks: { off: isCardOff(line), next: isCardNext(line), fix: isCardFix(line), notitle: isCardNoTitle(line), titleAt: cardTitleChoiceOf(line), reviews: cardReviewsOf(line).length },
       upNext: true,
+      path: this.path,
       locked: !this.canChangeLine,
       copyId: id,
       reset: true,

@@ -8,7 +8,7 @@ import { keyFold } from './propertyKeys'
  *  - the reviews: the union of both sides' reviews (but a review in the base that one side removed and the other left
  *    as it was stays removed, YAZ-5155), each one ONE time, in time order (`withCardReviews`: of one review
  *    with and without seconds, the timed one);
- *  - the marks (`off`, `next`, `notitle`, `title-front` and its kin (YAZ-5696), `fix`, and each part this app does not know yet): a three-way result
+ *  - the marks (`off`, `next`, `notitle`, `title-click` and its kin (YAZ-5696), `fix`, and each part this app does not know yet): a three-way result
  *    against the base. A mark that one side changed takes that change; a mark both sides left alone stays as it was.
  *  - the title (YAZ-5308: the `title` part, YAZ-5309): a three-way result against the base, as a mark's, by its text. A
  *    title one side changed (a rename on the Mac, while the phone answers) takes that change; both sides changed it,

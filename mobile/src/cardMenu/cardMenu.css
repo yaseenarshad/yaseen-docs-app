@@ -97,3 +97,29 @@
 .card-actions__choice {
   padding-left: 28px;
 }
+
+/* YAZ-5696 round 2: the eye by Title in review, and its four lines under it. */
+.card-actions__titled {
+  display: flex;
+  align-items: stretch;
+}
+.card-actions__titled > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.card-actions__help {
+  flex: 0 0 auto;
+  min-width: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--muted, currentColor);
+}
+.card-actions__helpbox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 16px 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted, currentColor);
+}

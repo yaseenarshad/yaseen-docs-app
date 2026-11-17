@@ -88,7 +88,7 @@ function withReviewInOrder(line: CardLine, review: CardReview, place: number): C
 
 /**
  * The line `now` with the change from `before` to `after` laid on it: the ID, the title (YAZ-5308), `off`, `next`,
- * `notitle` (YAZ-5030), the title's timing (`title-front`…, YAZ-5696) and `fix` (YAZ-5097) as `after` has them where they differ, each review `after` gained added,
+ * `notitle` (YAZ-5030), the title's timing (`title-click`…, YAZ-5696) and `fix` (YAZ-5097) as `after` has them where they differ, each review `after` gained added,
  * each review it lost removed, and each property (YAZ-5379) that `after` set, removed or renamed (YAZ-5383: a rename
  * keeps its place). Everything else of `now` stays.
  */

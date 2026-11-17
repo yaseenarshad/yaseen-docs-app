@@ -28,8 +28,8 @@
  *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the title is on the card line (YAZ-5308), never in
  *    the text, so it is never a Space step. YAZ-5695 (Yaseen: "it should never show up in reviews. Period."): no band
  *    at any step, fully shown too, and the answer line names the card by its ID (`reviewTitleOf`).
- *  - WHEN A SHOWN TITLE APPEARS (YAZ-5696, Design 2): at once, after the front or with Side 2 — the card's own choice
- *    (⋯ › Title in review, its line's `title-front`…), else Settings › Cards › Show card titles (`bandTitle`,
+ *  - WHEN A TITLE SHOWS (YAZ-5696): Never, Always, After the first click or With Side 2 — the card's own choice
+ *    (⋯ › Title in review, its line's `title-click`…), else Settings › Cards › Show card titles (`bandTitle`,
  *    `titleShows`). While it waits the band keeps its room, empty to the eye and to VoiceOver, so the card never jumps.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
@@ -233,7 +233,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const pageText = card?.page?.text ?? null
   // The Inbox's card (YAZ-5152: shared with the Preview, `inboxCard.tsx`): the front, and the head's title off the card
   // line (YAZ-5308), which waits for the last step where it is hidden on the front (YAZ-5030).
-  const { text, title: headTitle } = useCardFront(pageText, card?.page?.title ?? '', card?.page?.notitle === true)
+  const { text, title: headTitle } = useCardFront(pageText, card?.page ?? { title: '' }, review.settings.titleAt)
   // A card FILE (YAZ-5037): "Open card" in the key row, and no "in <page>". One look in the index the vault already holds.
   const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
   // A card that comes back (YAZ-5594: the same card again) is a new turn: the answers so far tell the two apart.
@@ -320,7 +320,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
     // The answers as the hook fixed them (a digit can come before the buttons show: they are fixed now, as `answer` would).
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
     // The card by its title (YAZ-5030); a title hidden in review never shows (YAZ-5695): its ID.
-    const title = card?.page == null ? '' : reviewTitleOf(card.page)
+    const title = card?.page == null ? '' : reviewTitleOf(card.page, review.settings.titleAt)
     pendingLine.current = fixed === undefined || card === null ? null : { words: answerWords(rating, card.id, fixed.interval, fixed.inSteps, review.settings, title), rating, count: session.answered.length + 1 }
     void review.answer(rating, answerSeconds())
   }, [])
@@ -449,6 +449,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
       ? []
       : cardMenuSections({
           marks: cardMarksOf(card.page === null ? null : { ...card.page, id: card.id }),
+          path: card.path,
           upNext: true,
           fix: false,
           copyId: null,

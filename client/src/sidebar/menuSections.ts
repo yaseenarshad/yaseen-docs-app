@@ -97,6 +97,8 @@ export interface MenuAction extends MenuItemBase {
  */
 export interface MenuParent extends MenuItemBase {
   onSelect?: () => void
+  /** A small mark after the label, with its own hover (the card menu's eye by "Title in review", YAZ-5696 round 2). */
+  after?: ReactNode
   children: readonly MenuAction[][]
   /** A glyph before the label, as a leaf has: "Add to focus ▸" keeps its eye (YAZ-4460 F4). */
   icon?: ReactNode

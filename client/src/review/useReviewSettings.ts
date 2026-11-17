@@ -35,6 +35,16 @@ const subscribe = (listener: () => void): (() => void) => {
   return () => listeners.delete(listener)
 }
 
+/**
+ * The vault's Show card titles for the card at `path` (YAZ-5696 round 2): the card menu's "Default (Always)". The open
+ * vault whose root holds the path (the longest root); undefined when none is open.
+ */
+export function titleShowFor(path: string): ReviewSettings['titleAt'] | undefined {
+  let best: string | null = null
+  for (const root of published.keys()) if ((path === root || path.startsWith(`${root.replace(/\/+$/, '')}/`)) && (best === null || root.length > best.length)) best = root
+  return best === null ? undefined : published.get(best)!.titleAt
+}
+
 /** The settings of the vault at `root`, as its scope last read them; undefined for a vault no scope has open. */
 export function useVaultReviewSettings(root: string | null | undefined): ReviewSettings | undefined {
   return useSyncExternalStore(subscribe, () => (root == null ? undefined : published.get(root)))

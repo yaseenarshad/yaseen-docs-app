@@ -82,6 +82,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
+import { CARD_TITLE_SHOW_OPTIONS } from '@shared/cardTitleShows'
 import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_SLOT_TIME_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
@@ -563,6 +564,8 @@ const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'l
 const reviewOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
 
 /** The live spacing previews (YAZ-5050 round 2): loaded only when Settings shows one. */
+// YAZ-5696 round 2: the eye by Show card titles, its own chunk (its CSS too): no eager weight.
+const CardTitleHelp = lazy(() => import('../components/CardTitleHelp').then((m) => ({ default: m.CardTitleHelp })))
 const CardSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.CardSpacingPreview })))
 const PageSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.PageSpacingPreview })))
 /** A preview row: bare (the preview is its own label), found by "preview" and the spacing words. */
@@ -2485,26 +2488,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // YAZ-5696 (Design 2, Yaseen: "on cards in which the title is shown, at what point should the title show?"):
-            // the vault's default, in review.json so the phone reads it too; a card's own ⋯ › Title in review wins
-            // (`titleShows`). At once is today's behaviour, so nothing changes until it is changed.
+            // YAZ-5696 (Yaseen: "on cards in which the title is shown, at what point should the title show?"; round 2:
+            // "never, always, after the first click, and with side two"): the vault's choice, in review.json so the phone
+            // reads it too; a card's own ⋯ › Title in review wins (`titleShows`). Always is as before. The eye explains each.
             id: 'cardTitleAt',
             label: 'Show card titles',
-            hint: "When a card's title shows in Review. After the front: once the front has no hidden word left. A card's own ⋯ › Title in review wins.",
-            keywords: [...REVIEW_KEYWORDS, 'title', 'band', 'when', 'show', 'once', 'front', 'side 2', 'back', 'flip', 'space'],
+            hint: "When a card's title shows in Review. A card's own ⋯ › Title in review wins.",
+            keywords: [...REVIEW_KEYWORDS, 'title', 'band', 'when', 'show', 'never', 'always', 'first click', 'click', 'side 2', 'back', 'flip', 'space', 'tap'],
             available: reviewOn,
             render: ({ review }) =>
               review && (
-                <Segmented
-                  options={[
-                    { label: 'At once', value: 'once' as const },
-                    { label: 'After the front', value: 'front' as const },
-                    { label: 'With Side 2', value: 'side2' as const },
-                  ]}
-                  value={review.settings.titleAt}
-                  onChange={(titleAt) => review.save({ ...review.settings, titleAt })}
-                  ariaLabel="Show card titles"
-                />
+                <span className="card-title-at">
+                  <Segmented options={CARD_TITLE_SHOW_OPTIONS} value={review.settings.titleAt} onChange={(titleAt) => review.save({ ...review.settings, titleAt })} ariaLabel="Show card titles" />
+                  <Suspense fallback={null}>
+                    <CardTitleHelp />
+                  </Suspense>
+                </span>
               ),
           },
           {

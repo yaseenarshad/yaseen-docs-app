@@ -6,8 +6,8 @@
  *
  *   1. Open: Open card (a card in a page or an embed) or Open page / Open page in a new tab (the card window); Preview.
  *   2. The file: Show as link, Move to its own file, Put back into this page, Turn into a page.
- *   3. The review: Put at top of Inbox, Archive card, Fix later, Title in review › (YAZ-5696: Default · At once · After
- *      the front · With Side 2 · Never; the phone too).
+ *   3. The review: Put at top of Inbox, Archive card, Fix later, Title in review › (YAZ-5696 round 2: Default (Always)
+ *      · Never · Always · After the first click · With Side 2, and the eye's help; the phone too).
  *   4. Copy card ID, Copy card link.
  *   5. Reset history, alone (it asks by typing, `askResetHistory`).
  *
@@ -21,7 +21,7 @@
  * Undo stack) and draws them with its menu (`ContextMenu`, or the page's DOM menu).
  */
 import { ARCHIVE_ASK, titleChoiceAsk, type CardAsk } from './cardAsks'
-import { withCardFix, withCardNext, withCardOff, withCardTitleChoice, type CardLine, type CardTitleChoice } from './cardLine'
+import { withCardFix, withCardNext, withCardOff, withCardTitleChoice, type CardLine, type CardTitleChoice, type CardTitleShow } from './cardLine'
 import { CARD_TITLE_CHOICES, cardTitleChoiceLabel } from './cardTitleAt'
 
 export type CardMenuAction =
@@ -69,6 +69,8 @@ export interface CardMenuItem {
   change?: (line: CardLine) => CardLine
   /** A review row: the mark after it (true sets the word). */
   on?: boolean
+  /** Title in review ›: the small eye by its name, whose help says each choice in one line (`CARD_TITLE_HELP`). */
+  help?: true
   /** Title in review ›: its choices, one picked (`checked`); a pick of another asks first. */
   children?: CardMenuItem[]
   checked?: boolean
@@ -91,6 +93,8 @@ export interface CardMenuPlace {
   fix?: boolean
   /** The title row (default true): Title in review ›. */
   title?: boolean
+  /** The vault's Show card titles (review.json `titleAt`): Default says it, "Default (Always)". Absent: "Default". */
+  titleGlobal?: CardTitleShow
   /** The review rows wait (a read-only page that cannot write the file). */
   locked?: boolean
   /** Copy card ID: the ID, once the card has one. */
@@ -139,8 +143,8 @@ export function cardMenu(place: CardMenuPlace): CardMenuItem[][] {
     if (place.title !== false) {
       // Title in review › (YAZ-5696): the hint and the ✓ say the choice now; another choice asks first.
       const now: CardTitleChoice = m.titleAt ?? (m.notitle ? 'never' : 'default')
-      const children = CARD_TITLE_CHOICES.map(({ choice, label }): CardMenuItem => ({ action: 'title-choice', label, checked: choice === now, ask: choice === now ? undefined : titleChoiceAsk(choice), disabled, change: (l) => withCardTitleChoice(l, choice) }))
-      review.push({ action: 'title', label: 'Title in review', hint: cardTitleChoiceLabel(now), disabled, children })
+      const children = CARD_TITLE_CHOICES.map(({ choice }): CardMenuItem => ({ action: 'title-choice', label: cardTitleChoiceLabel(choice, place.titleGlobal), checked: choice === now, ask: choice === now ? undefined : titleChoiceAsk(choice), disabled, change: (l) => withCardTitleChoice(l, choice) }))
+      review.push({ action: 'title', label: 'Title in review', hint: cardTitleChoiceLabel(now, place.titleGlobal), help: true, disabled, children })
     }
   }
 

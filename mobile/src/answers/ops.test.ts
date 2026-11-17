@@ -267,8 +267,8 @@ describe('YAZ-5520: a list that holds an unreview and a review of the same revie
 describe('YAZ-5697 round 2: Title in review › on the phone (the Mac\'s YAZ-5696 choice)', () => {
   const line = (text: string) => parseCardLine(`<!-- card: ${text} -->`)!
   it('a choice of when the title shows is ONE `title` action, the Mac\'s change; Never alone stays a `notitle` action', () => {
-    expect(opsBetween('NC-1', line('NC-1'), line('NC-1, title-front'))).toEqual([{ kind: 'title', id: 'NC-1', choice: 'front' }])
-    expect(opsBetween('NC-1', line('NC-1, title-front'), line('NC-1'))).toEqual([{ kind: 'title', id: 'NC-1', choice: 'default' }])
+    expect(opsBetween('NC-1', line('NC-1'), line('NC-1, title-click'))).toEqual([{ kind: 'title', id: 'NC-1', choice: 'click' }])
+    expect(opsBetween('NC-1', line('NC-1, title-click'), line('NC-1'))).toEqual([{ kind: 'title', id: 'NC-1', choice: 'default' }])
     expect(opsBetween('NC-1', line('NC-1'), line('NC-1, notitle'))).toEqual([{ kind: 'notitle', id: 'NC-1', on: true }])
   })
 })

@@ -1996,7 +1996,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'clean', cardWidth: 520 })
   })
 
-  it('the switches save the whole object with one field changed — never onChange', () => {
+  it('the switches save the whole object with one field changed — never onChange', async () => {
     const { el, save, onChange } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, S)
     act(() => rowButtons(el, 'buttons')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, buttons: 4 })
@@ -2017,12 +2017,20 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(rowButtons(el, 'timeSoFar').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Hidden (click to see)', 'true'], ['Shown', 'false'], ['Off', 'false']])
     act(() => rowButtons(el, 'timeSoFar')[2].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, timeSoFar: 'off' })
-    // YAZ-5696: Show card titles — At once by default (no change for anyone), After the front, With Side 2; saved in
+    // YAZ-5696: Show card titles — Always by default (no change for anyone), After the first click, With Side 2; saved in
     // review.json, so the phone reads it too; the hint says a card's own choice wins.
-    expect(rowButtons(el, 'cardTitleAt').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['At once', 'true'], ['After the front', 'false'], ['With Side 2', 'false']])
+    // Round 2 (Yaseen: "never, always, after the first click, and with side two"): Always by default; an eye explains each.
+    const choices = () => [...row(el, 'cardTitleAt')!.querySelectorAll<HTMLButtonElement>('[aria-pressed]')]
+    expect(choices().map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Never', 'false'], ['Always', 'true'], ['After the first click', 'false'], ['With Side 2', 'false']])
     expect(row(el, 'cardTitleAt')?.textContent).toMatch(/Title in review/)
-    act(() => rowButtons(el, 'cardTitleAt')[2].click())
-    expect(save).toHaveBeenLastCalledWith({ ...S, titleAt: 'side2' })
+    act(() => choices()[2].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, titleAt: 'click' })
+    // The eye is its own lazy chunk: it comes in a moment.
+    await vi.waitFor(() => expect(row(el, 'cardTitleAt')!.querySelector('button.card-title-help')).not.toBeNull())
+    const eye = row(el, 'cardTitleAt')!.querySelector<HTMLButtonElement>('button.card-title-help')!
+    expect(eye.getAttribute('aria-label')).toBe('What the choices mean')
+    act(() => eye.focus())
+    expect(document.querySelector('.card-title-help__box')?.textContent).toBe('Never: The title never shows in Review.Always: The title shows as soon as the card shows.After the first click: The title shows after your first Space or tap on the card.With Side 2: The title shows when Side 2 shows.')
     act(() => rowButtons(el, 'enabled')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, enabled: false })
     expect(onChange).not.toHaveBeenCalled()
