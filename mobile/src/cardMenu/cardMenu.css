@@ -87,3 +87,8 @@
   top: auto;
   bottom: calc(100% + 2px);
 }
+
+/* YAZ-5697: Archive card and Title on the front ask in place (the app's ask, `Confirm`): in the menu's box, no margin. */
+.card-actions__ask .confirm {
+  margin: 2px 0;
+}

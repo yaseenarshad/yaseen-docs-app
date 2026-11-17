@@ -308,8 +308,9 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     })
   }
   const sections = (): MenuSection[] => [
-    // Reset history stays the last row (YAZ-5376): "Turn into a page" goes in before it.
-    ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true, preview, more: converts ? [[{ id: 'to-page', label: unit('Turn into a page'), onSelect: toPage }]] : [] }),
+    // Reset history stays the last row (YAZ-5376): "Turn into a page" goes in before it. It asks in place first
+    // (YAZ-5697): it rewrites and renames the file, and no Undo takes it back.
+    ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true, preview, more: converts ? [[{ id: 'to-page', label: unit('Turn into a page'), ask: { question: unit('Turn this card into a page?'), yes: unit('Turn into a page') }, onSelect: toPage }]] : [] }),
   ]
   const fixes =
     !converts ? null : shape.problem === 'many' ? (

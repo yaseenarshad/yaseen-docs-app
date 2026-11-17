@@ -198,6 +198,70 @@ describe('selecting and closing', () => {
 })
 
 /**
+ * A row that asks in place (YAZ-5697, Yaseen: "how come archive is so easily clicked and there's no double
+ * confirmation?"): the first click turns the row into its question with Cancel (first, focused) and the answer; only
+ * the answer runs it. Cancel, the focus leaving the ask (a click elsewhere in the menu) or Escape run nothing.
+ */
+describe('a row that asks in place (`ask`, YAZ-5697)', () => {
+  const asking = () => {
+    const onSelect = vi.fn()
+    const onClose = vi.fn()
+    const el = mount(0, 0, [[item('Archive card', { onSelect, ask: { question: 'Archive this card?', yes: 'Archive', danger: true } }), item('Fix later')]], onClose)
+    return { el, onSelect, onClose }
+  }
+  const ask = (el: HTMLElement) => el.querySelector<HTMLElement>('.ctx-menu__ask')
+  /** The first click; the ask is its own chunk (no eager weight), so it draws a moment later. */
+  const askFor = async (el: HTMLElement) => {
+    act(() => buttonOf(el, 'Archive card')?.click())
+    await vi.waitFor(() => expect(ask(el)).not.toBeNull())
+    await act(async () => undefined)
+  }
+  const askButtons = (el: HTMLElement) => [...(ask(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+
+  it('the first click runs nothing and keeps the menu open: the row says its question, Cancel first and focused, then the answer', async () => {
+    const { el, onSelect, onClose } = asking()
+    await askFor(el)
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(ask(el)?.textContent).toContain('Archive this card?')
+    expect(askButtons(el).map((b) => b.textContent)).toEqual(['Cancel', 'Archive'])
+    expect(document.activeElement).toBe(askButtons(el)[0])
+    expect(askButtons(el)[1].className).toContain('confirm__btn--danger')
+    expect(buttonOf(el, 'Archive card')).toBeUndefined()
+  })
+
+  it('the answer runs it, then the menu closes', async () => {
+    const { el, onSelect, onClose } = asking()
+    await askFor(el)
+    act(() => askButtons(el)[1].click())
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('Cancel puts the row back, its keyboard on it; nothing runs, the menu stays', async () => {
+    const { el, onSelect, onClose } = asking()
+    await askFor(el)
+    act(() => askButtons(el)[0].click())
+    expect(ask(el)).toBeNull()
+    expect(document.activeElement).toBe(buttonOf(el, 'Archive card'))
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('the focus going elsewhere in the menu (a click on another row) cancels; Escape closes the menu and runs nothing', async () => {
+    const { el, onSelect, onClose } = asking()
+    await askFor(el)
+    act(() => buttonOf(el, 'Fix later')?.focus())
+    expect(ask(el)).toBeNull()
+    expect(buttonOf(el, 'Archive card')).toBeDefined()
+    await askFor(el)
+    key(document.activeElement, 'Escape')
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+})
+
+/**
  * The "Open in ▸" flyout (D7 amended, YAZ-1674). The parent is a `menuitem`
  * with `aria-haspopup`, its chevron CSS so the text stays bare; it opens on hover AND click,
  * stays while the pointer is inside the row or the flyout, closes when the pointer enters a
