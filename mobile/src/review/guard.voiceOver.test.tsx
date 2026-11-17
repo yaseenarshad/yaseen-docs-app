@@ -161,7 +161,7 @@ describe('VoiceOver (YAZ-5229)', () => {
   it('V1: three hidden words: the order of reading; nothing hidden is exposed before it shows', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Name three: {{alpha}}, {{beta}} and {{gamma}}.', `VO-3, ${OLD}`)) })
     const box = h.host.querySelector('.review__card')!
-    const live = () => h!.host.querySelector('[aria-live]')?.textContent ?? ''
+    const live = () => h!.host.querySelector('p.sr-only[aria-live]')?.textContent ?? ''
     const order = [...h.host.querySelectorAll('.review *')].filter((e) => e.matches('.review__card, button, [aria-live]')).map((e) => (e.matches('.review__card') ? 'CARD' : e.matches('[aria-live]') ? 'LIVE' : (e.getAttribute('aria-label') ?? e.textContent ?? '').trim()))
     console.log('[V1] reading order:', JSON.stringify(order))
     const steps: string[] = []
@@ -182,7 +182,7 @@ describe('VoiceOver (YAZ-5229)', () => {
   it('V2: two sides, the front with a hidden word: the step to the back says the back, not the old word', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Front {{one}}\n---\nThe back side', `VO-2, ${OLD}`)) })
     const box = h.host.querySelector('.review__card')!
-    const live = () => h!.host.querySelector('[aria-live]')?.textContent ?? ''
+    const live = () => h!.host.querySelector('p.sr-only[aria-live]')?.textContent ?? ''
     console.log('[V2] start:', spoken(box), '| back in DOM before shown:', box.innerHTML.includes('back side'))
     await h.click('Show the next part')
     await real(10)

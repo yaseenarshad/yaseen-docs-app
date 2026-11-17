@@ -102,3 +102,13 @@ describe('the top row`s View icon and the breadcrumb (YAZ-5689)', () => {
     expect(decls(cards, '.card-inbox__path')['flex']).toBe('1 1 0')
   })
 })
+
+describe('the answer buttons are neutral (YAZ-5716, Yaseen: no colour on remembered or forgotten)', () => {
+  it('no red, amber or green on ✕ ~ ✓ ⇈ at rest: the glyph is the button\'s own text colour; the hover and the end ring stay', () => {
+    const answerRules = rules(cards).filter((r) => r.selectors.some((s) => /\.card-inbox__answer\b|\.card-inbox__answer-icon/.test(s)))
+    expect(answerRules.length).toBeGreaterThan(0)
+    for (const r of answerRules) expect(r.decls.color ?? '').not.toMatch(/--danger|--warn|--ok/)
+    expect(answerRules.some((r) => r.selectors.some((s) => /data-rating/.test(s)))).toBe(false)
+    expect(cards).toMatch(/\.card-inbox__answers \.card-inbox__answer:hover \{[^}]*background:/)
+  })
+})

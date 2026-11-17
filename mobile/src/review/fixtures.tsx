@@ -78,6 +78,32 @@ const MOCHI: Record<string, string> = {
 }
 
 /**
+ * YAZ-5716 (Mochi's breathing room): one made-up due card each, for the layout proof. `#fixture=review-room-short` (a
+ * short card, its first side), `-long` (a long card that scrolls as one page), `-hidden` (hidden words, the first one
+ * shown), `-z50`, `-z200` (the hidden-words card at 50% and 200%).
+ */
+const ROOM = (kind: string): Record<string, string> => ({
+  '.yaseendocs/review.json': '{}',
+  'reading/room.md': page(
+    'Room',
+    kind === 'long'
+      ? block(
+          [
+            'What makes a habit stick?',
+            '---',
+            ...Array.from({ length: 9 }, (_, i) => `Made-up note ${i + 1}: a habit sticks when the cue is plain, the step is small and the reward comes soon after, so the loop runs again tomorrow.`),
+            '',
+            'The last line of the long card: the {{reward}} closes the loop.',
+          ].join('\n\n'),
+          `ROOM-2, ${DUE}`,
+        )
+      : kind === 'short'
+        ? block('When I keep seeing the same fault in other people, what reminds me to look at myself too?\n---\nWhat you see in others is often {{a mirror}}.', `ROOM-1, ${DUE}`)
+        : block('A software {{bug}} is a {{flaw}} that makes a program act in a way nobody {{intended}}, as a dead button or a wrong total.\n---\nThe first one on record was a {{moth}}.', `ROOM-3, ${DUE}`),
+  ),
+})
+
+/**
  * YAZ-5711: `#fixture=review-mochi-pill`: Review's first card holds a page pill ([[Plan]]); the proof taps it (an
  * Explore panel over Review) and measures that the Review screen behind stays still.
  */
@@ -156,10 +182,10 @@ const press = (name: string | RegExp) => {
 const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
-  const files = name.startsWith('review-crumb') ? CRUMB(name.startsWith('review-crumb-deep')) : name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name === 'review-mochi-pill' ? MOCHI_PILL : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const files = name.startsWith('review-crumb') ? CRUMB(name.startsWith('review-crumb-deep')) : name === 'review-taps' ? TAPS : name.startsWith('review-learned') ? LEARNED : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name === 'review-mochi-pill' ? MOCHI_PILL : name.startsWith('review-mochi') ? MOCHI : name.startsWith('review-room-') ? ROOM(name.slice('review-room-'.length)) : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
   // YAZ-5706: the zoom is kept on this phone; each fixture starts at 100% (one browser runs them all).
-  writeReviewZoom(100)
+  writeReviewZoom(name === 'review-room-z50' ? 50 : name === 'review-room-z200' ? 200 : 100)
   step('setup')
   // The fake GitHub runs in this one tab: no Web Lock, as in the tests (Node has none).
   Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined })
@@ -296,6 +322,13 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
         press(name === 'review-mochi-zoom-max' ? 'Zoom the card in' : 'Zoom the card out')
         await wait(30)
       }
+      break
+    case 'review-room-long':
+    case 'review-room-hidden':
+    case 'review-room-z50':
+    case 'review-room-z200':
+      // YAZ-5716: the long card's back side shown; the first hidden word shown.
+      tap()
       break
     case 'review-crumb':
     case 'review-crumb-deep':
