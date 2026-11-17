@@ -149,7 +149,7 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
     await answer('UP-1', 'good')
     await answer('DUE-1', 'again')
     await answer('DUE-2', 'good')
-    expect(review.session?.end).toMatchObject({ kind: 'missed', count: 3, remembered: 2, percent: 66, missed: 1 })
+    expect(review.session?.end).toMatchObject({ kind: 'missed', count: 3, remembered: 2, percent: 67, missed: 1 })
   })
 
   it('rule 10: an Up next card never takes a New cards place — not in the session, not after the Inbox opens again; a card begun as a plain new card keeps its place', async () => {

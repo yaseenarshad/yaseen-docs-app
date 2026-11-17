@@ -9,7 +9,7 @@
  * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
  * On the right Mochi's count (YAZ-5674, `SessionCount`): a red ✕ K (the misses waiting; none at 0 and in the missed
  * pass), the open filter's icon, then "done / total" of the filter on show (YAZ-5675). Under it Mochi's progress bar
- * (YAZ-5676, `SessionBar`). Today's work across the vault ("Today: 31 cards · 9 min", YAZ-5033; the time hidden behind a
+ * (YAZ-5676, `SessionBar`). Today's work across the vault ("Today: 2 learned · 31 reviews · 9 min", YAZ-5033; the time hidden behind a
  * clock's hover box by default, YAZ-5130, `TodayWork`) is the cards menu's last line, as the phone's sheet has it: Mochi's
  * top row has none (Yaseen: "the today is not needed").
  *
@@ -162,7 +162,8 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             ))}
           </nav>
         )}
-        {(session.card !== null || session.end !== null) && (
+        {/* YAZ-5680 check 2: on every finish screen too, as Mochi ("Finished learning cards." with 4 / 4). */}
+        {session.progress.total > 0 && (
           <span className="card-inbox__place">
             <SessionCount session={session} icon={<current.icon />} />
           </span>

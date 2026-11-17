@@ -60,7 +60,7 @@ let props: CardInboxProps
 const TITLE = 'Capital of France'
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, learned: null, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, learned: null, today: { learned: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, landing: null, ...over }
 }
 
 function render() {
@@ -1425,31 +1425,31 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
   })
 })
 
-describe('YAZ-5679: "Added card to reviews · Undo" (Mochi`s note) when a new card is learned', () => {
+describe('YAZ-5679: "Added card to reviews · Undo" (Mochi`s toast) when a new card is learned', () => {
   it('shows at the bottom right for about 3 s; its Undo takes the answer back; a new learned card shows it again', () => {
     vi.useFakeTimers()
     try {
       mount(TWO_SIDES)
-      const note = () => el.querySelector('.card-inbox > .learned-note')
-      expect(note()).toBeNull()
+      const toast = () => el.querySelector('.card-inbox > .learned-toast')
+      expect(toast()).toBeNull()
       session = { ...session, learned: 's1:a' }
       render()
-      expect(note()?.textContent).toBe('Added card to reviews·Undo')
+      expect(toast()?.textContent).toBe('Added card to reviews·Undo')
       act(() => void vi.advanceTimersByTime(2900))
-      expect(note()).not.toBeNull()
+      expect(toast()).not.toBeNull()
       act(() => void vi.advanceTimersByTime(200))
-      expect(note()).toBeNull()
+      expect(toast()).toBeNull()
       session = { ...session, learned: 's1:b' }
       render()
-      act(() => note()!.querySelector<HTMLButtonElement>('.learned-note__undo')!.click())
+      act(() => toast()!.querySelector<HTMLButtonElement>('.learned-toast__undo')!.click())
       expect(review.undo).toHaveBeenCalledOnce()
-      expect(note()).toBeNull()
+      expect(toast()).toBeNull()
       // The next answer (not a learned card): gone.
       session = { ...session, learned: 's1:c' }
       render()
       session = { ...session, learned: null }
       render()
-      expect(note()).toBeNull()
+      expect(toast()).toBeNull()
     } finally {
       vi.useRealTimers()
     }
@@ -1476,37 +1476,48 @@ describe("YAZ-5674: the top right as Mochi's — ✕ K, the filter's icon, done 
     expect(top()?.querySelector('circle')?.getAttribute('stroke-dasharray')).toBe('2.2 2')
   })
 
+  it('YAZ-5680 check 2: every finish screen keeps the count, as Mochi ("Finished learning cards." with 4 / 4); an empty session has none', () => {
+    mount(TWO_SIDES)
+    session = { ...session, card: null, filter: 'new', counts: { all: 4, next: 0, due: 4, new: 0 }, progress: { done: 4, total: 4, waiting: 0 }, misses: 0 }
+    render()
+    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Finished learning cards.')
+    expect(top()?.textContent).toBe('4 / 4')
+    session = { ...session, filter: 'all', counts: { all: 0, next: 0, due: 0, new: 0 }, progress: { done: 0, total: 0, waiting: 0 } }
+    render()
+    expect(top()).toBeNull()
+  })
+
   it('no "Today: …" and no "N of M" in the top row; today`s total is the cards menu`s last line', () => {
     mount(TWO_SIDES, SHOWN)
-    session = { ...session, today: { cards: 31, reviews: 35, seconds: 9 * 60 + 10 } }
+    session = { ...session, today: { learned: 31, reviews: 35, seconds: 9 * 60 + 10 } }
     render()
     const bar = el.querySelector('.card-inbox__bar')!
     expect(bar.querySelector('.card-inbox__today')).toBeNull()
     expect(bar.textContent).not.toMatch(/Today|\d+ of \d+/)
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(document.querySelector('.card-inbox__menu-today')?.textContent).toBe('Today: 31 cards · 35 reviews · 9 min')
+    expect(document.querySelector('.card-inbox__menu-today')?.textContent).toBe('Today: 31 learned · 35 reviews · 9 min')
     // Nothing answered today: no line.
-    session = { ...session, today: { cards: 0, reviews: 0, seconds: 0 } }
+    session = { ...session, today: { learned: 0, reviews: 0, seconds: 0 } }
     render()
     expect(document.querySelector('.card-inbox__menu-today')).toBeNull()
   })
 
   it('the done screen says today`s total under "Inbox complete."', () => {
     mount(TWO_SIDES, SHOWN)
-    session = { ...session, card: null, today: { cards: 12, reviews: 14, seconds: 4 * 60 + 31 } }
+    session = { ...session, card: null, today: { learned: 12, reviews: 14, seconds: 4 * 60 + 31 } }
     render()
     const done = el.querySelector('.card-inbox__done')!
     expect(done.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
-    expect(done.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 cards · 14 reviews · 5 min')
+    expect(done.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 learned · 14 reviews · 5 min')
     // Still shown on a page's done screen.
     session = { ...session, scope: 'page' }
     render()
-    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 cards · 14 reviews · 5 min')
+    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 learned · 14 reviews · 5 min')
   })
 })
 
 describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default), shown, or off', () => {
-  const today = { cards: 31, reviews: 35, seconds: 9 * 60 + 10 }
+  const today = { learned: 31, reviews: 35, seconds: 9 * 60 + 10 }
   /** YAZ-5674: today's line is the cards menu's last line (the top row has Mochi's count): the menu opened. */
   const bar = () => {
     if (document.querySelector('.card-inbox__filter-menu') === null) act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
@@ -1531,7 +1542,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     expect(review.settings.timeSoFar).toBe('hidden')
     session = { ...session, today }
     render()
-    expect(bar()?.textContent).toBe('Today: 31 cards · 35 reviews · ')
+    expect(bar()?.textContent).toBe('Today: 31 learned · 35 reviews · ')
     expect(clock()?.querySelector('svg')).not.toBeNull()
     expect(clock()?.getAttribute('aria-label')).toBe('Time so far: 9 min')
     expect(tip()).toBeNull()
@@ -1544,7 +1555,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     // Round 3: one box only — no native tooltip on the clock or the line it sits in.
     expect(clock()!.closest('[title]:not([title=""])')).toBeNull()
     // Never on screen: the line keeps the clock.
-    expect(bar()?.textContent).toBe('Today: 31 cards · 35 reviews · ')
+    expect(bar()?.textContent).toBe('Today: 31 learned · 35 reviews · ')
     unhover(clock()!)
     expect(tip()).toBeNull()
     // A click is no toggle: the line stays the same, and the press takes no focus (the keyboard stays in the Inbox).
@@ -1552,7 +1563,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     clock()!.dispatchEvent(down)
     expect(down.defaultPrevented).toBe(true)
     act(() => clock()!.click())
-    expect(bar()?.textContent).toBe('Today: 31 cards · 35 reviews · ')
+    expect(bar()?.textContent).toBe('Today: 31 learned · 35 reviews · ')
     expect(tip()).toBeNull()
   })
 
@@ -1572,21 +1583,21 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     session = { ...session, card: null, today }
     render()
     const done = () => el.querySelector('.card-inbox__done-today')
-    expect(done()?.textContent).toBe('Today: 31 cards · 35 reviews · 9 min')
+    expect(done()?.textContent).toBe('Today: 31 learned · 35 reviews · 9 min')
     expect(el.querySelector('.card-inbox__done .card-inbox__time')).toBeNull()
     // A page's, a filter's, and the Due today end too.
     for (const more of [{ scope: 'page' as const }, { filter: 'new' as const, counts: { ...session.counts, all: 3 } }]) {
       session = { ...session, ...more }
       render()
-      expect(done()?.textContent).toBe('Today: 31 cards · 35 reviews · 9 min')
+      expect(done()?.textContent).toBe('Today: 31 learned · 35 reviews · 9 min')
     }
   })
 
   it('hidden with no seconds today: no clock, as there is no time to show', () => {
     mount(TWO_SIDES)
-    session = { ...session, today: { cards: 2, reviews: 2, seconds: 0 } }
+    session = { ...session, today: { learned: 2, reviews: 2, seconds: 0 } }
     render()
-    expect(bar()?.textContent).toBe('Today: 2 cards')
+    expect(bar()?.textContent).toBe('Today: 2 learned · 2 reviews')
     expect(clock()).toBeNull()
   })
 
@@ -1594,7 +1605,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, timeSoFar: 'off' })
     session = { ...session, today }
     render()
-    expect(bar()?.textContent).toBe('Today: 31 cards · 35 reviews')
+    expect(bar()?.textContent).toBe('Today: 31 learned · 35 reviews')
     expect(document.querySelector('.card-inbox__time')).toBeNull()
     // The menu closed (the second click of its button), the keys answer again.
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
@@ -1604,7 +1615,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     session = { ...session, card: null }
     render()
     // YAZ-5665: the finish screen shows the time whatever the setting says.
-    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 31 cards · 35 reviews · 9 min')
+    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 31 learned · 35 reviews · 9 min')
     expect(el.querySelector('.card-inbox__time')).toBeNull()
   })
 })
@@ -2262,7 +2273,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
    */
   it('YAZ-5685: three even rows (glyph, name, count; no line under New cards); the Today line ends with a quiet ⚙, folded', () => {
     mount(TWO_SIDES)
-    session = { ...session, ...WAITING, today: { cards: 15, reviews: 26, seconds: 0 } }
+    session = { ...session, ...WAITING, today: { learned: 15, reviews: 26, seconds: 0 } }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     const items = [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')]
@@ -2279,7 +2290,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     const foot = document.querySelector('.card-inbox__menu-foot')!
     expect(foot.parentElement!.lastElementChild).toBe(foot)
     expect([...foot.children].map((c) => c.className)).toEqual(['card-inbox__menu-today', 'card-inbox__cog'])
-    expect(foot.querySelector('.card-inbox__menu-today')!.textContent).toBe('Today: 15 cards · 26 reviews')
+    expect(foot.querySelector('.card-inbox__menu-today')!.textContent).toBe('Today: 15 learned · 26 reviews')
     expect([cog()!.tagName, cog()!.type, cog()!.getAttribute('aria-label'), cog()!.getAttribute('aria-expanded'), cog()!.tabIndex]).toEqual(['BUTTON', 'button', 'Review settings', 'false', 0])
     expect(cog()!.querySelector('svg')).not.toBeNull()
     expect(part()).toBeNull()
@@ -2315,7 +2326,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
 
   it('YAZ-5685: closing the menu folds the part — a click on the filter, Esc — so it opens folded each time; with nothing done today the ⚙ stays', () => {
     mount(TWO_SIDES)
-    session = { ...session, ...WAITING, today: { cards: 0, reviews: 0, seconds: 0 } }
+    session = { ...session, ...WAITING, today: { learned: 0, reviews: 0, seconds: 0 } }
     render()
     const filter = () => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!
     act(() => filter().click())

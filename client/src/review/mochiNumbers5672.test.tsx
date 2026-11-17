@@ -11,6 +11,7 @@ import { CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS, answerLabel, answerRatings,
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
+import { todayCards } from './reviewTime'
 import { memoryReviewHost, type MemoryReviewHost } from './memoryReviewHost'
 
 const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, fuzz: false }
@@ -234,5 +235,56 @@ describe('YAZ-5681: the ✕ and the red follow the open filter (differs from Moc
     expect(top()).toBe('✕ 3 · 3 / 7 | grey 43 red 86 | all 6 due 4 new 2')
     await act(async () => review.setFilter('all'))
     expect(top()).toBe('✕ 3 · 3 / 9 | grey 33 red 67 | all 6 due 4 new 2')
+  })
+})
+
+describe('YAZ-5680 check 3: today`s line follows the answers at once, also before the index has the write (the Mac`s index lags)', () => {
+  it('two answers with no index update: 2 reviews; ⌘Z with no index update: back to 1; the index catching up changes nothing', async () => {
+    dueCards(3)
+    await mount()
+    const today = () => [review.session!.today.learned, review.session!.today.reviews]
+    expect(today()).toEqual([0, 0])
+    // No reindex after each answer: the index has not caught up yet.
+    const raw = async (r: CardRating) => {
+      await shown(review.session!.card!.id)
+      await act(async () => void review.showAnswers())
+      vi.setSystemTime(Date.now() + 20_000)
+      await act(async () => void (await review.answer(r)))
+    }
+    await raw('good')
+    await raw('again')
+    expect(today()).toEqual([0, 2])
+    await act(async () => void (await review.undo()))
+    expect(today()).toEqual([0, 1])
+    await act(async () => reindex())
+    expect(today()).toEqual([0, 1])
+  })
+})
+
+describe('YAZ-5684: the Today line counts like Mochi`s Dashboard (finding 13): N learned · M reviews', () => {
+  it('due A ✓, B ✕, C ✓, missed B ✓; then, in a new session, new N1 ✕, N1 ✓, N2 ✓ → "Today: 2 learned · 3 reviews"', async () => {
+    dueCards(3)
+    newCards(2)
+    await mount()
+    await act(async () => review.setFilter('due'))
+    await go('good')
+    await go('again')
+    await go('good')
+    await act(async () => review.goOn())
+    await go('good')
+    expect(review.session?.today).toMatchObject({ learned: 0, reviews: 3 })
+    // Closed and opened again the same day: counted from the cards' own review lines, not this session.
+    await act(async () => review.close())
+    await act(async () => review.start())
+    await act(async () => review.setFilter('new'))
+    await go('again')
+    await go('good')
+    await go('good')
+    expect(review.session?.today).toMatchObject({ learned: 2, reviews: 3 })
+    expect(todayCards(review.session!.today)).toBe('Today: 2 learned · 3 reviews')
+    // The learned cards' second ✓ later today adds nothing (they were not due cards this morning).
+    await act(async () => review.setFilter('due'))
+    while (review.session?.card) await go('good')
+    expect(review.session?.today).toMatchObject({ learned: 2, reviews: 3 })
   })
 })

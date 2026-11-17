@@ -22,6 +22,8 @@ import { freePort } from './freePort'
  *    it dimmed, the kept to-do row not; scrolled past the row, the Now pill at the bottom of the screen pointing up;
  *    full screen, the copy marked too. YAZ-5541 (`page-calendar-next`): the next slot tinted as the now row.
  *    YAZ-5606 (`page-calendar-slot-down`, `-up`, `-chip`): the Time in slot pill on the now line, and on the Now pill.
+ *  - long code in a cell (`#fixture=page-cell-code`, `page-cell-code-fit`, YAZ-5683), light and dark at 320, 375 and 390
+ *    px: nothing paints past its cell, a long code wraps with its background; Same as Desktop keeps the saved width.
  *  - the task page (`#fixture=page-tasks`, YAZ-5494), light and dark: each box of the page a check box with a 44 px tap
  *    area, a done task struck through.
  *  - tasks in table cells (`#fixture=page-cell-tasks`, `page-cell-tasks-full`, YAZ-5618), light and dark, at 375 px: each
@@ -129,7 +131,7 @@ import { freePort } from './freePort'
  *    390 px: the columns' widths in each mode, the now row's Lookback never one letter per line, the pill covers no text.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no, LAYOUT_WIDE=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no, LAYOUT_WIDE=no, LAYOUT_CELL_CODE=no skip a part).
  *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
  *    every bar and the full-screen table inside it, no install hint; a phone (upright and on its side) keeps the full
  *    width. The install hint of a phone's tab at 320 and 375 px: one block above the sign-in (its first button: Sign in
@@ -576,6 +578,43 @@ if (process.env.LAYOUT_WIDE !== 'no') {
     const ok = JSON.stringify(menu) === JSON.stringify(['Mobile Vault Default', '✓ Same as Desktop (chosen)', 'Fit Screen'])
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-wide-menu at 390x844, ${scheme}: ${menu.join(' | ')}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5683: long code in a cell (`page-cell-code` Same as Desktop, `page-cell-code-fit` Fit Screen), light and dark at
+// 320, 375 and 390 px: nothing in a cell paints past its cell (each line of its text and of its code's background inside
+// the cell), a code that wraps keeps its background on each line; Same as Desktop: the Where column at the Mac's 304 px
+// at the phone's text size (266, within 2 px); the page never scrolls sideways.
+const CELL_CODE_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const spills = []
+  let wrapped = 0
+  for (const cell of document.querySelectorAll('.reader__body .page-table td, .reader__body .page-table th')) {
+    const box = r(cell)
+    const range = document.createRange(); range.selectNodeContents(cell)
+    const rects = [...range.getClientRects(), ...[...cell.querySelectorAll('code')].flatMap((c) => [...c.getClientRects()])]
+    const over = Math.max(0, ...rects.map((q) => Math.max(q.right - box.right, box.left - q.left)))
+    if (over > 0.5) spills.push(cell.textContent.slice(0, 24) + ' +' + over.toFixed(1))
+    for (const code of cell.querySelectorAll('code')) if (code.getClientRects().length > 1) wrapped++
+  }
+  const real = document.querySelector('.reader__body .page-table table')
+  return { spills, wrapped, where: Math.round(r(real.rows[0].cells[1]).width), cols: [...real.rows[0].cells].map((c) => Math.round(r(c).width)), mode: document.querySelector('.reader__body').dataset.wideTables, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_CELL_CODE !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['page-cell-code', 'page-cell-code-fit'] as const) {
+      for (const [w, h] of SIZES) {
+        const file = await open(name, w, h)
+        const shot = file.replace('.png', `-${scheme}.png`)
+        writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+        const m = await evaluate(CELL_CODE_CHECK)
+        const fit = name === 'page-cell-code-fit'
+        const ok = m.spills.length === 0 && m.wrapped > 0 && m.mode === (fit ? 'fit' : 'scroll') && (fit || Math.abs(m.where - 266) <= 2) && !m.pageWide
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at ${w}x${h}, ${scheme}: ${m.mode}; columns ${m.cols.join(' · ')}; ${m.spills.length ? 'SPILLS ' + m.spills.join(', ') : 'nothing past its cell'}; ${m.wrapped} codes wrap; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+      }
+    }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

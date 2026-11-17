@@ -18,6 +18,7 @@ import { FILTERS, FILTER_ICON } from './words'
  *    it, "New cards" · "From  All folders ›"; a tap again folds it, and each new sheet opens folded.
  *  - "All folders ›" opens the folder page: All folders, then each folder with new cards, a tick box each; more than one
  *    may be ticked, a folder takes its subfolders (`toggledPick`). A change saves at once (`setNewFrom`).
+ *  - Today's work ("Today: 2 learned · 31 reviews · 9 min") sits at the foot, the ⚙ at its right.
  */
 export function ReviewSheet({
   session,

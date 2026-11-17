@@ -74,10 +74,12 @@ export function filterCount(answers: readonly SessionAnswer[], queue: readonly S
   return { done, total: done + left.length, waiting: left.filter(missed).length }
 }
 
-/** The ring's numbers (YAZ-5043): the due cards' first answers, how many were Remembered, the whole % (never 100 while one was missed). */
+/** The ring's numbers (YAZ-5043): the due cards' first answers, how many were Remembered, the % to the nearest (never 100 while one was missed). */
 export function dueFirsts(answers: readonly SessionAnswer[]): { count: number; remembered: number; percent: number } {
   const firsts = answers.filter((a) => a.first)
   const count = firsts.length
   const remembered = firsts.filter((a) => a.rating !== 'again').length
-  return { count, remembered, percent: count === 0 ? 100 : Math.floor((100 * remembered) / count) }
+  // To the nearest, as Mochi (YAZ-5680 check: 2 of 3 is 67%); never 100 while one was missed (199 of 200 is 99%).
+  const percent = count === 0 ? 100 : Math.min(remembered < count ? 99 : 100, Math.round((100 * remembered) / count))
+  return { count, remembered, percent }
 }

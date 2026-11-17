@@ -1040,20 +1040,22 @@ describe('YAZ-5033: the answer saves how long it took; today`s total', () => {
     expect(reviewsOn('Bio/Cells.md', 'WIKI-3')).toEqual([{ at: atNow(), rating: 'good' }])
   })
 
-  it('session.today: the cards answered today across the vault, from the index, with their seconds; it follows each answer', async () => {
-    // WIKI-2 was answered twice today, an hour ago, with no seconds: one card, 0 s. (Local times: any time zone.)
+  it('session.today (YAZ-5684, as Mochi): new cards learned today and due cards` first answers, from the index, with their seconds; it follows each answer', async () => {
+    // WIKI-2 was learned today, an hour ago (two ✓), with no seconds: 1 learned, 0 s. (Local times: any time zone.)
     page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', `WIKI-2, ${cardTime(NOW - 3_600_000)} good, ${cardTime(NOW - 3_540_000)} good`])
     await mount()
     await act(async () => review.start())
-    expect(review.session?.today).toEqual({ cards: 1, reviews: 2, seconds: 0 })
+    expect(review.session?.today).toEqual({ learned: 1, reviews: 0, seconds: 0 })
+    // WIKI-1, a due card: its first answer today is a review.
     await step(() => review.answer('good', 13))
-    expect(review.session?.today).toEqual({ cards: 2, reviews: 3, seconds: 13 })
+    expect(review.session?.today).toEqual({ learned: 1, reviews: 1, seconds: 13 })
     await act(async () => review.goOn()) // YAZ-5043: past "Due today is done."
     await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-3'))
+    // WIKI-3, a new card: a Forgot counts nowhere (its time does).
     await step(() => review.answer('again', 50))
-    expect(review.session?.today).toEqual({ cards: 3, reviews: 4, seconds: 63 })
+    expect(review.session?.today).toEqual({ learned: 1, reviews: 1, seconds: 63 })
     await step(() => review.undo())
-    expect(review.session?.today).toEqual({ cards: 2, reviews: 3, seconds: 13 })
+    expect(review.session?.today).toEqual({ learned: 1, reviews: 1, seconds: 13 })
   })
 })
 

@@ -166,7 +166,7 @@ export interface CardReviewSession {
   misses: number
   /**
    * The last thing done was a Remembered that learned a new card (YAZ-5679, Mochi's "Added card to reviews · Undo"):
-   * one key per such answer, so the note shows for it; Undo (`undo`) takes that answer back. Null otherwise.
+   * one key per such answer, so the toast shows for it; Undo (`undo`) takes that answer back. Null otherwise.
    */
   learned: string | null
   /** Today's review work across the vault, from the index (YAZ-5033): the top row's and the done screen's "Today: …". */
@@ -209,7 +209,7 @@ export interface DueTodayEnd {
   /** Due cards answered this session (their first answer), and how many of those first answers were Remembered. */
   count: number
   remembered: number
-  /** The whole % remembered, never rounded up to 100 while one card was missed. */
+  /** The % remembered, to the nearest (YAZ-5680 check), never 100 while one card was missed. */
   percent: number
   /** The missed cards waiting (the "Review missed cards 5" button). */
   missed: number
@@ -459,6 +459,36 @@ const countOf = (queue: readonly DueCard[]): Record<CardFilter, number> => {
   const counts = { all: queue.length, next: 0, due: 0, new: 0 }
   for (const c of queue) counts[listOf(c)]++
   return counts
+}
+
+/** This device's own answer (`on`) or its undo (YAZ-5680 check 3), laid over the index until the index has it. */
+interface OwnWrite {
+  path: string
+  id: string
+  review: CardReview
+  on: boolean
+}
+
+/** The index's records with this device's own writes laid over them: an answer the index lacks is in, an undone one it still has is out. */
+function withOwnWrites(records: readonly IndexRecord[], writes: readonly OwnWrite[]): readonly IndexRecord[] {
+  if (writes.length === 0) return records
+  const paths = new Set(writes.map((w) => w.path))
+  return records.map((r) => {
+    if (!paths.has(r.path) || r.cards === undefined) return r
+    return {
+      ...r,
+      cards: r.cards.map((c) => {
+        let reviews = c.reviews
+        for (const w of writes) {
+          if (w.path !== r.path || w.id !== c.id) continue
+          const has = reviews.some((x) => x.at === w.review.at)
+          if (w.on && !has) reviews = [...reviews, w.review]
+          else if (!w.on && has) reviews = reviews.filter((x) => x.at !== w.review.at)
+        }
+        return reviews === c.reviews ? c : { ...c, reviews }
+      }),
+    }
+  })
 }
 
 /** Each session's `id`, unique in the app's run (YAZ-5043: an end screen's animation plays once per stop). */
@@ -756,7 +786,10 @@ export function useCardReview(
   const vaultQueue = vaultPlan.queue
   const dueCount = vaultQueue.length
   // YAZ-5033: today's reviews across the vault, from the index: the new answer counts once the index has its write.
-  const today = useMemo(() => reviewedToday(records, Date.now()), [records, day])
+  // YAZ-5680 check 3: this device's own answers and undos count at once, before the index has the write (the Mac's
+  // index lags a write by a moment; the phone's does not): each is laid over the index's card until the index agrees.
+  const [ownWrites, setOwnWrites] = useState<readonly OwnWrite[]>([])
+  const today = useMemo(() => reviewedToday(withOwnWrites(records, ownWrites), Date.now()), [records, ownWrites, day])
 
   // YAZ-5622: the card this session is writing (an answer, an archive): the index may have the write before the write returns.
   const writing = useRef<string | null>(null)
@@ -983,6 +1016,7 @@ export function useCardReview(
       forget(card.path) // also a read begun while it wrote
       if (written === 'failed') return false
       tourEvent('inbox-answered', card.path)
+      if (written !== 'gone') setOwnWrites((w) => [...w.slice(-2 * UNDO_DEPTH), { path: card.path, id: card.id, review: chosen.review, on: true }])
       // YAZ-5028: the answer took the mark off a card of today's Up next: one of the day's places is used. A marked
       // card past the day's places (`card.next` false) loses its mark too, but it held no place.
       if (written !== 'gone' && written.next >= 0 && card.next && root !== null) {
@@ -1108,6 +1142,7 @@ export function useCardReview(
     const back = undone ? await host.readCard(last.card.path, last.card.id).catch(() => null) : null
     busy.current = false
     forget(last.card.path)
+    if (undone) setOwnWrites((w) => [...w.slice(-2 * UNDO_DEPTH), { path: last.card.path, id: last.card.id, review: last.review, on: false }])
     if (undone && last.next >= 0 && last.card.next && root !== null) {
       host.setUpNextTaken(root, last.card.id, false)
       host.setUpNextTaken(root, `${last.card.id}${UP_NEXT_BEGUN}`, false)

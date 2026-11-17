@@ -35,7 +35,7 @@ import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import { DoneScreen, type DoneLook } from '@client/review/DoneScreen'
 import { SessionBar, SessionCount } from '@client/review/SessionCount'
-import { LearnedNote } from '@client/review/LearnedNote'
+import { LearnedToast } from '@client/review/LearnedToast'
 import { CardActions } from '../cardMenu/lazy'
 import { overlayCount } from '../app/browserHistory'
 import { reviewKey } from './keys'
@@ -47,7 +47,7 @@ import './review.css'
  * answer list, never files); the card is the Mac's own drawing (`PhoneCard`). The mockup (version 9) is the spec.
  *
  *  - The top row: the filter "All cards ▾" (round 10, addition 1: All cards, Up next, Due today, New cards, with
- *    counts; its sheet ends with today's work, "Today: 31 cards · 9 min") and Mochi's count, "✕ 2 ▣ 4 / 6" (YAZ-5674,
+ *    counts; its sheet ends with today's work, "Today: 2 learned · 31 reviews · 9 min") and Mochi's count, "✕ 2 ▣ 4 / 6" (YAZ-5674,
  *    the Mac's `SessionCount`).
  *  - Above the card: its state ("Due today", "New card"); then the head, "Title · ID", with "in <page>"
  *    for a card in a page (round 15, item 4). The title is the card line's (decision D): never a
@@ -62,7 +62,7 @@ import './review.css'
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
  *  - Done: the Mac's own finish screens (`DoneScreen`, YAZ-5665): "Inbox complete." with its 🎉, ✓ and confetti, the
  *    end of Due today (its ring, "Review missed cards 5", "Learn new cards 11" and its "from All folders ›", the sheet's
- *    folder page), "Add more for today" when cards wait, and last "Today: 25 cards · 12 min", the time always.
+ *    folder page), "Add more for today" when cards wait, and last "Today: 2 learned · 25 reviews · 12 min", the time always.
  *  - The amber line (round 12, item 9): an answer whose card is gone, with Discard.
  *  - The screen stays on while a card shows (round 10, addition 4). The answer timer stops in the background
  *    (addition 5: the Mac's `useAnswerTimer` pauses on `visibilitychange`).
@@ -570,7 +570,8 @@ function SessionScreen({
   }, [])
 
   const filter = session.filter
-  const counted = card !== null || session.end !== null
+  // YAZ-5680 check 2: on every finish screen too, as Mochi ("Finished learning cards." with 4 / 4).
+  const counted = session.progress.total > 0
   const countButton = (
     <button
       type="button"
@@ -619,8 +620,8 @@ function SessionScreen({
     <div className="review review--mochi" onClickCapture={onTap} onTouchStart={NO_OP}>
       {topBox !== null && shown ? createPortal(countButton, topBox) : <div className="review__top">{countButton}</div>}
       <SessionBar session={session} className="review__progress" />
-      {/* YAZ-5679: the Mac's note, "Added card to reviews · Undo". */}
-      <LearnedNote learned={session.learned} onUndo={undo} />
+      {/* YAZ-5679: the Mac's toast, "Added card to reviews · Undo". */}
+      <LearnedToast learned={session.learned} onUndo={undo} />
       {answers.lost.length > 0 && <LostAnswers answers={answers} link={link} />}
       {notice !== null && (
         <p className="review__notice" role="alert">
@@ -880,7 +881,7 @@ export function spokenText(el: Element): string {
  */
 const CARD_OWN_TAPS = 'a[href], [data-card-link], [data-card-board], img, .card__audio-play, .page-media'
 
-/** "Today: 31 cards · 9 min", with the time as the setting says (hidden behind a tap by default). */
+/** "Today: 2 learned · 31 reviews · 9 min", with the time as the setting says (hidden behind a tap by default). */
 function TodayLine({ session, mode: setting }: { session: CardReviewSession; mode: CardReviewApi['settings']['timeSoFar'] }) {
   const [open, setOpen] = useState(false)
   const cards = todayCards(session.today)

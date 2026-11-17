@@ -32,11 +32,11 @@ const stopwatch = () => h.button(/time so far/i) ?? [...h.host.querySelectorAll(
 const todayLine = () => (h.host.querySelector('.review__done-today')?.textContent ?? '').replace(/\s+/g, ' ')
 
 describe('YAZ-5665: the finish screens always show the time on the phone', () => {
-  it.each(['hidden', 'off'] as const)('Time so far %s: "Inbox complete." says "Today: 2 cards · 40 s", no ⏱', async (time) => {
+  it.each(['hidden', 'off'] as const)('Time so far %s: "Inbox complete." says "Today: 0 learned · 2 reviews · 40 s", no ⏱', async (time) => {
     h = await reviewSetup({ '.yaseendocs/review.json': JSON.stringify({ timeSoFar: time }), 'p.md': page('P', ...due(2)) })
     await answerAll(2)
     expect(h.text()).toContain('Finished reviewing.')
-    expect(todayLine()).toBe('Today: 2 cards · 40 s')
+    expect(todayLine()).toBe('Today: 0 learned · 2 reviews · 40 s')
     expect(stopwatch()).toBeNull()
   })
 
@@ -46,7 +46,7 @@ describe('YAZ-5665: the finish screens always show the time on the phone', () =>
     await h.click(/Due today/)
     await answerAll(1)
     expect(h.button(/^Learn new cards/)).not.toBeNull()
-    expect(todayLine()).toBe('Today: 1 card · 20 s')
+    expect(todayLine()).toBe('Today: 0 learned · 1 review · 20 s')
     expect(stopwatch()).toBeNull()
   })
 
@@ -56,13 +56,13 @@ describe('YAZ-5665: the finish screens always show the time on the phone', () =>
     await h.click(/New cards/)
     await answerAll(1)
     expect(h.text()).toContain('Finished learning cards.')
-    expect(todayLine()).toBe('Today: 1 card · 20 s')
+    expect(todayLine()).toBe('Today: 1 learned · 0 reviews · 20 s')
   })
 
   it('during the review the setting still hides the time behind ⏱ (the sheet)', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...due(2)) })
     await answerAll(1)
     await h.click(/Choose what to review/)
-    expect(h.host.querySelector('.review__sheet-today')?.textContent).toBe('Today: 1 card · ⏱')
+    expect(h.host.querySelector('.review__sheet-today')?.textContent).toBe('Today: 0 learned · 1 review · ⏱')
   })
 })

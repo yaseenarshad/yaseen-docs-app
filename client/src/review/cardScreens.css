@@ -637,9 +637,11 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-/* YAZ-5679: the "Added card to reviews" note stays at the window's bottom right while the Inbox scrolls. */
-.card-inbox > .learned-note {
+/* YAZ-5679: the "Added card to reviews" toast stays at the window's bottom right while the Inbox scrolls. YAZ-5680
+   check 4: above the key row (the dock's 16 px and the row), never over it; it stays on the finish screen as Mochi's. */
+.card-inbox > .learned-toast {
   position: fixed;
+  bottom: 60px;
 }
 /* The progress bar (YAZ-5676, Mochi's: `SessionBar`, `sessionCount.css`), under the row. */
 .card-inbox__progress {

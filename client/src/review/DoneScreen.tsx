@@ -19,7 +19,7 @@
  *    Enjoy your day!".
  *  - A page or a folder done: "This page is done." / "This folder is done.", what waits and its Add, then Mochi's
  *    "You have cards due in other pages." · Review cards 21, which starts the vault's review.
- *  - LAST, on every one of them: "Today: 25 cards · 31 reviews · 12 min", the time always (`todayDone`): the Time so far
+ *  - LAST, on every one of them: "Today: 2 learned · 31 reviews · 12 min", the time always (`todayDone`): the Time so far
  *    setting hides it only during the review.
  */
 import type { ReactNode } from 'react'

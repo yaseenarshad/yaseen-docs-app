@@ -85,7 +85,11 @@ describe('the ring reads the due cards` first answers only', () => {
   it('a card missed then got right counts as missed; a new card never counts', () => {
     expect(dueFirsts([due('a', 'good'), due('b', 'again'), due('b', 'good', false), fresh('x', 'good')])).toEqual({ count: 2, remembered: 1, percent: 50 })
     expect(dueFirsts([])).toEqual({ count: 0, remembered: 0, percent: 100 })
-    expect(dueFirsts([due('a', 'good'), due('b', 'good'), due('c', 'again')]).percent).toBe(66)
+    // YAZ-5680 check (Mochi, finding 8): 2 of 3 is 67%, to the nearest; never 100 while one was missed.
+    expect(dueFirsts([due('a', 'good'), due('b', 'good'), due('c', 'again')]).percent).toBe(67)
+    expect(dueFirsts([due('a', 'good'), due('b', 'again'), due('c', 'again')]).percent).toBe(33)
+    const many = Array.from({ length: 200 }, (_, i) => due(`m${i}`, i === 0 ? 'again' : 'good'))
+    expect(dueFirsts(many).percent).toBe(99)
   })
 })
 

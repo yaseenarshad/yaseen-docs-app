@@ -24,7 +24,7 @@ describe('Review: done, and "Add more for today" (round 10, addition 2)', () => 
     // A new card needs two Remembered (its same-day steps): four answers end the session.
     for (let i = 0; i < 4; i++) await h.click('Remembered')
     expect(h.text()).toContain('Inbox complete')
-    expect(h.text()).toContain('Today: 2 cards')
+    expect(h.text()).toContain('Today: 2 learned · 0 reviews')
     expect(h.text()).toContain('3 new cards wait for another day.')
     await h.click('Add 2 new cards')
     expect(h.head()).toBe('NW-3')

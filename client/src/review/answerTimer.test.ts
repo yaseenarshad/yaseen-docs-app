@@ -76,10 +76,11 @@ describe('the words for the time', () => {
   it('today: seconds under a minute, else whole minutes; the cards with the right word', () => {
     expect([0, 45, 60, 89, 90, 9 * 60 + 29].map(todayDuration)).toEqual(['0 s', '45 s', '1 min', '1 min', '2 min', '9 min'])
     // The time is its own part (YAZ-5130: hidden, shown or off by the setting); the cards always read the same.
-    expect(todayCards({ cards: 0, reviews: 0, seconds: 0 })).toBe('')
-    // YAZ-5678 (honest numbers): different cards, and the answers too when a card was answered more than once.
-    expect(todayCards({ cards: 31, reviews: 40, seconds: 540 })).toBe('Today: 31 cards · 40 reviews')
-    expect(todayCards({ cards: 1, reviews: 1, seconds: 0 })).toBe('Today: 1 card')
-    expect(todayCards({ cards: 10, reviews: 10, seconds: 0 })).toBe('Today: 10 cards')
+    expect(todayCards({ learned: 0, reviews: 0, seconds: 0 })).toBe('')
+    // YAZ-5684 (Mochi's Dashboard, which always shows both): new cards learned today, and due cards' first answers.
+    expect(todayCards({ learned: 31, reviews: 40, seconds: 540 })).toBe('Today: 31 learned · 40 reviews')
+    expect(todayCards({ learned: 1, reviews: 1, seconds: 0 })).toBe('Today: 1 learned · 1 review')
+    expect(todayCards({ learned: 2, reviews: 0, seconds: 0 })).toBe('Today: 2 learned · 0 reviews')
+    expect(todayCards({ learned: 0, reviews: 3, seconds: 0 })).toBe('Today: 0 learned · 3 reviews')
   })
 })

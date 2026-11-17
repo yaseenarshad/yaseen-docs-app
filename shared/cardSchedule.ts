@@ -641,20 +641,24 @@ export function newCardFolders(records: readonly CardPage[], s: ReviewSettings):
 export const cardQueue = (records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[], upNextTaken: readonly string[] = [], added: CardsAddedToday = NOTHING_ADDED): DueCard[] =>
   cardPlan(records, s, now, folder, page, letters, upNextTaken, added).queue
 
-/** Today's review work (YAZ-5033, the Inbox's "Today: 31 cards · 9 min"): the cards answered, and their seconds. */
+/**
+ * Today's review work, as Mochi's Dashboard "Today" counts it (YAZ-5684; YAZ-5671 finding 13): "Today: 2 learned ·
+ * 3 reviews · 2 min".
+ */
 export interface ReviewedToday {
-  /** The cards with at least one review today (a card answered twice counts once). */
-  cards: number
-  /** The reviews made today. */
+  /** New cards that got their first ✓ today (a Forgot on a new card counts nowhere). */
+  learned: number
+  /** The FIRST answer today on each card that was a due card this morning (it had a ✓ before today): a retry in the missed pass adds nothing, nor a learned card's later answers. */
   reviews: number
-  /** The seconds those reviews took; a review with no seconds (made before YAZ-5033) counts 0. */
+  /** The seconds of every answer today; an answer with no seconds (made before YAZ-5033) counts 0. */
   seconds: number
 }
 
 /**
- * Today's reviews across `pages` (the index's records): the LOCAL day of `now`, midnight to midnight. A review's time
- * is ISO 8601 UTC to the millisecond (YAZ-5642) and sorts as a string, so each one is two string compares with the day's bounds (`cardTime`): no
- * date parsed per review. Off cards count too: their reviews were made.
+ * Today's review work across `pages` (the index's records), from each card's own review line, so it is right across
+ * the sessions of the day and the devices: the LOCAL day of `now`, midnight to midnight. A review's time is ISO 8601
+ * UTC to the millisecond (YAZ-5642) and sorts as a string, so each one is two string compares with the day's bounds
+ * (`cardTime`): no date parsed per review. Off cards count too: their reviews were made.
  */
 export function reviewedToday(pages: readonly { cards?: readonly CardRecord[] }[], now: number): ReviewedToday {
   const start = new Date(now)
@@ -663,20 +667,28 @@ export function reviewedToday(pages: readonly { cards?: readonly CardRecord[] }[
   end.setDate(end.getDate() + 1)
   const from = cardTime(start.getTime())
   const to = cardTime(end.getTime())
-  let cards = 0
+  let learned = 0
   let reviews = 0
   let seconds = 0
   for (const page of pages) {
     for (const card of page.cards ?? []) {
-      let any = false
+      let knownBefore = false
+      let today = false
+      let rightToday = false
       for (const r of card.reviews) {
-        if (r.at < from || r.at >= to) continue
-        any = true
-        reviews++
+        if (r.at < from) {
+          if (r.rating !== 'again') knownBefore = true
+          continue
+        }
+        if (r.at >= to) continue
+        today = true
+        if (r.rating !== 'again') rightToday = true
         seconds += r.seconds ?? 0
       }
-      if (any) cards++
+      if (!today) continue
+      if (knownBefore) reviews++
+      else if (rightToday) learned++
     }
   }
-  return { cards, reviews, seconds }
+  return { learned, reviews, seconds }
 }
