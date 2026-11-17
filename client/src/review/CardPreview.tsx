@@ -55,12 +55,12 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
   const bodyRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
   // A title hidden in review is the Inbox's (YAZ-5695): no band, and the bar names the card by its ID.
-  const { text, title: headTitle } = useCardFront(card.text, card.title, card.notitle)
+  const { text, title: headTitle } = useCardFront(card.text, card, settings?.titleAt ?? 'always')
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
   const steps = useCardSteps(text, cardKey, rootRef)
   // YAZ-5696: the Inbox's timing (the card's own choice, else the vault's; Review off: at once).
-  const band = bandTitle(headTitle, card.titleAt, settings?.titleAt ?? 'once', steps)
+  const band = bandTitle(headTitle, card.titleAt, settings?.titleAt ?? 'always', steps)
   useStepScroll(steps, true, rootRef)
   const live = useRef({ steps, onClose, leaveOn, onLeave })
   live.current = { steps, onClose, leaveOn, onLeave }

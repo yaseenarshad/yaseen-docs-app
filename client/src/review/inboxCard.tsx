@@ -6,7 +6,7 @@
  * What each adds is its own: the Inbox its answers, its timer and its session; the Preview none of them.
  */
 import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
-import { reviewTitleOf, type CardTitleAt } from '@shared/cardLine'
+import { reviewTitleOf, type CardTitleAt, type CardTitleShow } from '@shared/cardLine'
 import { titleShows } from '@shared/cardTitleShows'
 import { cardSides, hiddenCount } from '@shared/cardText'
 import type { ExploreVault } from '../explore/ExplorePage'
@@ -23,18 +23,21 @@ export interface CardStep extends Reveal {
 /**
  * The card's front and head title (YAZ-5030, YAZ-5308). The front is the card's text (its sides only) and the head shows
  * its title, off its card line: never part of the text, so it is never a Space step. "Title hidden in review" (`notitle`)
- * means no title at all, at every step (YAZ-5695, `reviewTitleOf`): no band, fully shown too.
+ * means no title at all, at every step (YAZ-5695, `reviewTitleOf`): no band, fully shown too; so does the global Never
+ * (YAZ-5696 round 2) for a card with no timing of its own.
  */
-export function useCardFront(pageText: string | null, title: string, notitle: boolean): { text: string | null; title: string } {
-  return { text: pageText, title: pageText === null ? '' : reviewTitleOf({ title, notitle }) }
+export function useCardFront(pageText: string | null, card: { title: string; notitle?: boolean; titleAt?: CardTitleAt }, global: CardTitleShow): { text: string | null; title: string } {
+  return { text: pageText, title: pageText === null ? '' : reviewTitleOf(card, global) }
 }
 
 /**
  * The band's title at this step (YAZ-5696): `title` is Review's (`reviewTitleOf`: '' when hidden in review, no band);
  * `waits` while `titleShows` says it is not time yet: the card's own choice (`own`), else the global `titleAt`.
  */
-export function bandTitle(title: string, own: CardTitleAt | undefined, global: CardTitleAt, steps: Pick<CardSteps, 'counts' | 'step'>): { text: string; waits: boolean } {
-  return { text: title, waits: title !== '' && !titleShows({ title, at: own ?? global, counts: steps.counts, sides: steps.step.sides, open: steps.step.open }) }
+export function bandTitle(title: string, own: CardTitleAt | undefined, global: CardTitleShow, steps: Pick<CardSteps, 'counts' | 'step'>): { text: string; waits: boolean } {
+  // A global Never with no own choice has no title here (`reviewTitleOf`); a title that is here shows at once then.
+  const at = own ?? (global === 'never' ? 'always' : global)
+  return { text: title, waits: title !== '' && !titleShows({ title, at, counts: steps.counts, sides: steps.step.sides, open: steps.step.open, next: steps.step.next }) }
 }
 
 export interface CardSteps {

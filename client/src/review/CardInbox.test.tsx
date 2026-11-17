@@ -1250,11 +1250,12 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
   })
 })
 
-describe('when a shown title appears (YAZ-5696, Design 2)', () => {
+describe('when a shown title appears (YAZ-5696: Never · Always · After the first click · With Side 2)', () => {
   // Two hidden words on the front, one on Side 2.
   const CARD = 'A {{one}} and {{two}}\n---\n{{three}}'
-  const at = (titleAt: 'once' | 'front' | 'side2', own?: { titleAt?: 'once' | 'front' | 'side2'; title?: string }) => {
-    mount(CARD, { ...DEFAULT_REVIEW_SETTINGS, titleAt })
+  type Show = 'never' | 'always' | 'click' | 'side2'
+  const at = (titleAt: Show, own?: { titleAt?: 'always' | 'click' | 'side2'; title?: string }, text = CARD) => {
+    mount(text, { ...DEFAULT_REVIEW_SETTINGS, titleAt })
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, ...(own?.title !== undefined && { title: own.title }), ...(own?.titleAt !== undefined && { titleAt: own.titleAt }) } } }
     render()
   }
@@ -1266,26 +1267,49 @@ describe('when a shown title appears (YAZ-5696, Design 2)', () => {
   }
   const click = (sel: string) => act(() => el.querySelector<HTMLElement>(sel)!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
-  it('At once (the default): the title shows from the front, as before', async () => {
-    at('once')
+  it('Always (the default): the title shows from the front, as before', async () => {
+    expect(DEFAULT_REVIEW_SETTINGS.titleAt).toBe('always')
+    at('always')
     await flush()
     expect(band()).toBe('shown: Capital of France')
   })
 
-  it('After the front: the band keeps its room and waits; the front\'s last word shows it; hiding a front word again takes it away', async () => {
-    at('front')
+  it('Never (global): no band at any step, and the answer line names the card by its ID', async () => {
+    at('never')
+    await flush()
+    expect(band()).toBe('none')
+    press(' ')
+    press(' ')
+    press(' ')
+    expect(band()).toBe('none')
+    press('2')
+    session = { ...session, answered: ['good'], canUndo: true }
+    render()
+    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · WIKI-9 · back in 3 days · Undo (Cmd+Z)')
+  })
+
+  it('After the first click: the band keeps its room and waits; the first Space shows it, whatever it showed; hiding that word again keeps it', async () => {
+    at('click')
     await flush()
     expect(band()).toBe('waits')
     const waiting = el.querySelector<HTMLElement>('.card-inbox__panel > .card-band')!
     expect(waiting.getAttribute('aria-hidden')).toBe('true')
     press(' ')
-    expect(band()).toBe('waits')
-    press(' ')
-    expect(shown()).toEqual(['one', 'two'])
+    expect(shown()).toEqual(['one'])
     expect(band()).toBe('shown: Capital of France')
-    // A click on a shown front word hides it again: the title waits again.
     click('.card__hidden[data-hidden="0"]')
-    expect(band()).toBe('waits')
+    expect(shown()).toEqual([])
+    expect(band()).toBe('shown: Capital of France')
+  })
+
+  it('After the first click: a click on a blank is a first click too; a card with nothing to click shows it at once', async () => {
+    at('click')
+    await flush()
+    click('.card__blank[data-hidden="1"]')
+    expect(band()).toBe('shown: Capital of France')
+    at('click', undefined, 'Nothing hidden here.')
+    await flush()
+    expect(band()).toBe('shown: Capital of France')
   })
 
   it('With Side 2: the title waits through the front, and shows with Side 2', async () => {
@@ -1299,17 +1323,22 @@ describe('when a shown title appears (YAZ-5696, Design 2)', () => {
     expect(band()).toBe('shown: Capital of France')
   })
 
-  it('the card\'s own choice wins over the global one', async () => {
-    at('once', { titleAt: 'side2' })
+  it('the card\'s own choice wins over the global one, a global Never too', async () => {
+    at('always', { titleAt: 'side2' })
     await flush()
     expect(band()).toBe('waits')
-    at('side2', { titleAt: 'once' })
+    at('side2', { titleAt: 'always' })
     await flush()
+    expect(band()).toBe('shown: Capital of France')
+    at('never', { titleAt: 'click' })
+    await flush()
+    expect(band()).toBe('waits')
+    press(' ')
     expect(band()).toBe('shown: Capital of France')
   })
 
-  it('a title with a hidden-word mark waits until the card is fully shown, At once too', async () => {
-    at('once', { title: 'Capital: {{Paris}}' })
+  it('a title with a hidden-word mark waits until the card is fully shown, Always too', async () => {
+    at('always', { title: 'Capital: {{Paris}}' })
     await flush()
     expect(band()).toBe('waits')
     press(' ')
@@ -1322,9 +1351,8 @@ describe('when a shown title appears (YAZ-5696, Design 2)', () => {
   })
 
   it('a card that comes back (another card, then this one again) starts at its front: the title waits again', async () => {
-    at('front')
+    at('click')
     await flush()
-    press(' ')
     press(' ')
     expect(band()).toBe('shown: Capital of France')
     const was = session.card!
