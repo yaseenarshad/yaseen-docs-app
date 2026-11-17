@@ -59,7 +59,10 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     // YAZ-5696 round 2: with the vault's Show card titles, Default says what it means now ("Default (On)" of the table
     // menu); the row has the eye's help (`help`).
     const known = cardMenu({ marks: NONE, titleGlobal: 'side2' }).flat().find((r) => r.action === 'title')!
-    expect([known.hint, known.children![0].label, known.help]).toEqual(['Default (With Side 2)', 'Default (With Side 2)', true])
+    // Round 3: the row's word is short ("Default", "After first click"); the list keeps "Default (With Side 2)".
+    expect([known.hint, known.children![0].label, 'help' in known]).toEqual(['Default', 'Default (With Side 2)', false])
+    const click = cardMenu({ marks: { ...NONE, titleAt: 'click' }, titleGlobal: 'always' }).flat().find((r) => r.action === 'title')!
+    expect(click.hint).toBe('After first click')
     // Archived: Unarchive card does not ask.
     expect(asks({ marks: { ...NONE, off: true } })).toEqual([])
   })

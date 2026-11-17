@@ -52,8 +52,6 @@ export interface MenuRow {
   icon?: () => SVGElement
   /** The click or key that does it too, at the right edge (`data-hint`, drawn by CSS as the tab menu's are). */
   hint?: string
-  /** A parent's small eye after its name, whose hover box says each line (the card menu's Title in review, YAZ-5696). */
-  help?: readonly { label: string; text: string }[]
   /**
    * The row asks in place first (YAZ-5696 with YAZ-5697, as ContextMenu's `ask`): the first click turns it into
    * `question` with Cancel (first, focused) and `yes`; only `yes` runs it (`rowAskDom.ts`, a lazy chunk).
@@ -363,74 +361,6 @@ function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElemen
 
 const loadRowAsk = () => import('./rowAskDom')
 
-/**
- * A parent's eye (`help`, YAZ-5696 round 2): a mark in the row (a button already), not a second button. A short hover
- * shows the app's hover box (`HoverTip`'s look, `.hover-tip`) under it with one line for each item; leaving it, a press
- * or the menu going hides it. The words are the screen reader's too (`aria-description`).
- */
-function helpEye(help: readonly { label: string; text: string }[]): HTMLElement {
-  const eye = document.createElement('span')
-  eye.className = 'card-title-help card-title-help--row'
-  eye.setAttribute('role', 'img')
-  eye.setAttribute('aria-label', 'What the choices mean')
-  eye.setAttribute('aria-description', help.map((h) => `${h.label}: ${h.text}`).join(' '))
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.setAttribute('width', '16')
-  svg.setAttribute('height', '16')
-  svg.setAttribute('viewBox', '0 0 16 16')
-  svg.setAttribute('fill', 'none')
-  svg.setAttribute('stroke', 'currentColor')
-  svg.setAttribute('stroke-width', '1.3')
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-  path.setAttribute('d', 'M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4-6.5-4-6.5-4z')
-  const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-  dot.setAttribute('cx', '8')
-  dot.setAttribute('cy', '8')
-  dot.setAttribute('r', '1.8')
-  svg.append(path, dot)
-  eye.appendChild(svg)
-  let box: HTMLElement | null = null
-  let timer: ReturnType<typeof setTimeout> | undefined
-  // A press, a key or a scroll anywhere (the menu closing with them) takes the box away.
-  const hide = (): void => {
-    clearTimeout(timer)
-    box?.remove()
-    box = null
-    for (const type of ['pointerdown', 'keydown', 'scroll'] as const) window.removeEventListener(type, hide, true)
-  }
-  const show = (): void => {
-    if (!eye.isConnected) return
-    hide()
-    box = document.createElement('span')
-    box.className = 'hover-tip'
-    box.setAttribute('role', 'tooltip')
-    const lines = document.createElement('span')
-    lines.className = 'card-title-help__box'
-    for (const h of help) {
-      const line = document.createElement('span')
-      line.className = 'card-title-help__line'
-      const name = document.createElement('strong')
-      name.textContent = `${h.label}:`
-      line.append(name, ` ${h.text}`)
-      lines.appendChild(line)
-    }
-    box.appendChild(lines)
-    const r = eye.getBoundingClientRect()
-    box.style.left = `${r.left}px`
-    box.style.top = `${r.bottom + 6}px`
-    document.body.appendChild(box)
-    for (const type of ['pointerdown', 'keydown', 'scroll'] as const) window.addEventListener(type, hide, true)
-    box.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8))}px`
-  }
-  eye.addEventListener('mouseenter', () => {
-    clearTimeout(timer)
-    timer = setTimeout(show, 350)
-  })
-  eye.addEventListener('mouseleave', hide)
-  eye.addEventListener('pointerdown', hide)
-  return eye
-}
-
 /** One row's button: a click runs it, then `close`; with `refresh` (a `stay` flyout's child), the menu is drawn again instead. */
 function rowButton(row: MenuRow, close: () => void, refresh?: (run: () => void) => void): HTMLButtonElement {
   const item = document.createElement('button')
@@ -608,7 +538,6 @@ function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refres
   button.setAttribute('aria-expanded', 'false')
   button.textContent = row.label
   if (row.hint !== undefined) button.dataset.hint = row.hint
-  if (row.help !== undefined) button.appendChild(helpEye(row.help))
   wrap.appendChild(button)
   const state = flyoutsOf(menu)
   let flyout: HTMLElement | null = null
