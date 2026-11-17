@@ -1996,7 +1996,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'clean', cardWidth: 520 })
   })
 
-  it('the switches save the whole object with one field changed — never onChange', () => {
+  it('the switches save the whole object with one field changed — never onChange', async () => {
     const { el, save, onChange } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, S)
     act(() => rowButtons(el, 'buttons')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, buttons: 4 })
@@ -2025,6 +2025,8 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(row(el, 'cardTitleAt')?.textContent).toMatch(/Title in review/)
     act(() => choices()[2].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, titleAt: 'click' })
+    // The eye is its own lazy chunk: it comes in a moment.
+    await vi.waitFor(() => expect(row(el, 'cardTitleAt')!.querySelector('button.card-title-help')).not.toBeNull())
     const eye = row(el, 'cardTitleAt')!.querySelector<HTMLButtonElement>('button.card-title-help')!
     expect(eye.getAttribute('aria-label')).toBe('What the choices mean')
     act(() => eye.focus())
