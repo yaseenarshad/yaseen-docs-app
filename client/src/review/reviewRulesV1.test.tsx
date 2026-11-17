@@ -231,7 +231,7 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
     const midnight = new Date(2026, 10, 13).getTime()
     expect(isCardDue(midnight - 1, NOW)).toBe(true)
     expect(isCardDue(midnight, NOW)).toBe(false)
-    expect(reviewedToday([{ cards: [{ id: 'A-1', off: false, next: false, reviews: [{ at: cardTime(midnight - 1), rating: 'good' }] } as never] }], midnight).reviews).toBe(0)
+    expect(reviewedToday([{ cards: [{ id: 'A-1', off: false, next: false, reviews: [{ at: cardTime(midnight - 1), rating: 'good' }] } as never] }], midnight).cards).toBe(0)
   })
 
   describe('rule 14: "the same day" for the schedule is the LOCAL day', () => {
@@ -262,7 +262,7 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
     vi.setSystemTime(pressed)
     await step(() => review.answer('good'))
     expect(reviewsOf('A.md', 'DUE-1').at(-1)?.at).toBe(cardTime(pressed))
-    expect(reviewedToday(records, pressed).reviews).toBe(1)
+    expect(reviewedToday(records, pressed).cards).toBe(1)
   })
 
   it('rule 16: two answers on one card in the same millisecond — the second gets +1 ms', async () => {

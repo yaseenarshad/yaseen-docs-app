@@ -69,7 +69,7 @@ import './review.css'
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
  *  - Done: the Mac's own finish screens (`DoneScreen`, YAZ-5665): "Inbox complete." with its 🎉, ✓ and confetti, the
  *    end of Due today (its ring, "Review missed cards 5", "Learn new cards 11" and its "from All folders ›", the sheet's
- *    folder page), "Add more for today" when cards wait, and last "Today: 2 learned · 25 reviews · 12 min", the time always.
+ *    folder page), "Add more for today" when cards wait, and last "Today: 21 cards · 12 min" (the sheet's words), the time always.
  *  - The amber line (round 12, item 9): an answer whose card is gone, with Discard.
  *  - The screen stays on while a card shows (round 10, addition 4). The answer timer stops in the background
  *    (addition 5: the Mac's `useAnswerTimer` pauses on `visibilitychange`).

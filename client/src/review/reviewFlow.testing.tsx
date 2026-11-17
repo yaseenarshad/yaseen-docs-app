@@ -16,7 +16,7 @@
  *  - the card on show: one the rules still have today (never a card done for today: no card twice, except a miss in
  *    its re-check, a new card after ✕, or a learned new card's one same-day review), its chip (New / Due) and "Again";
  *  - the stops of Due today (the % screen, Mochi's words and numbers) exactly when the rules make them, and none on
- *    All cards or New cards; the finish screens' Today line.
+ *    All cards or New cards; the finish screens' Today line, the cards menu's "Today: N cards" (YAZ-5710).
  * Each scenario then checks its own end screens, in Mochi's order and words. Made-up cards only.
  */
 import type { CardRating } from '@shared/cardLine'
@@ -183,7 +183,7 @@ interface MCard {
   st: 'wait' | 'missed' | 'learned' | 'done'
   /** The last answer was ✕ (the chip "Again"). */
   again: boolean
-  /** It had a ✓ before today (the Today line's "reviews"). */
+  /** It had a ✓ before today (a known card: Due, not New). */
   knownBefore: boolean
   /** All cards' done: its learning (first ✓) and its review (first answer as a due card) today, each once. */
   all: Set<'learn' | 'review'>
@@ -238,12 +238,10 @@ export class FlowModel {
     if (this.filter === 'due' && this.stage === 'missed' && this.stop === null) return 0
     return this.waiting(this.filter)
   }
-  /** The Today line (YAZ-5684): new cards learned today, and due cards answered today. */
+  /** The Today line (YAZ-5690, YAZ-5710): every different card answered today, new and due, the cards menu's words. */
   todayLine(): string {
-    const cards = [...this.cards.values()].filter((c) => c.today.length > 0)
-    const learned = cards.filter((c) => !c.knownBefore && c.today.some((r) => r !== 'again')).length
-    const reviews = cards.filter((c) => c.knownBefore).length
-    return learned + reviews === 0 ? '' : `Today: ${learned} learned · ${reviews} review${reviews === 1 ? '' : 's'}`
+    const n = [...this.cards.values()].filter((c) => c.today.length > 0).length
+    return n === 0 ? '' : `Today: ${n} card${n === 1 ? '' : 's'}`
   }
   card(id: string): MCard {
     const c = this.cards.get(id)
@@ -448,7 +446,7 @@ export class FlowTester {
         if (v.screen!.title !== want) this.fail('Due today done: Mochi`s words (rule 21)', { screen: v.screen!.title, want })
       } else if (m.left(f) > 0) this.fail('no screen while the filter has cards left and no stop is due (All cards never stops: rule 12)', { screen: v.screen, left: m.left(f) })
       // The time after the counts ("· 4 min") is not the rules' (it always shows there, YAZ-5665).
-      if (v.screen!.today.replace(/ · \d+ (?:s|min)$/, '') !== m.todayLine()) this.fail('the finish screen`s Today line (rule 25)', { app: v.screen!.today, model: m.todayLine() })
+      if (v.screen!.today.replace(/ · \d+ (?:s|min)$/, '') !== m.todayLine()) this.fail('the finish screen`s Today line, the cards menu`s words (rule 25, YAZ-5710)', { app: v.screen!.today, model: m.todayLine() })
     }
     this.last = v
     this.tops.push(this.top())
@@ -815,7 +813,7 @@ export const FLOW_SCENARIOS: FlowScenario[] = [
       await t.answer('good', 'D3')
       want(t, 'the run goes on past midnight', t.top(), '✕ 1 · 3 / 5')
       await t.answerAll(() => 'good')
-      want(t, 'the finish screen counts the new day only', t.last!.screen!.today.startsWith('Today: 1 learned · 2 reviews'), true)
+      want(t, 'the finish screen counts the new day only', t.last!.screen!.today.startsWith('Today: 3 cards'), true)
     },
   },
 ]

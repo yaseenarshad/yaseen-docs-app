@@ -28,7 +28,7 @@ export interface DoneLook {
   line: string
   /** A way on: "3 more in All cards". */
   more: string
-  /** "Today: 2 learned · 25 reviews · 12 min". */
+  /** "Today: 21 cards · 12 min" (`todayDone`). */
   today: string
   /** "Review missed cards" / "Learn new cards" / "Review cards". */
   go: string

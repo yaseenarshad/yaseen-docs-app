@@ -201,7 +201,7 @@ async function play(run: Run, script: Action[], settings: ReviewSettings): Promi
     const r = run.review()
     const s = r.session
     const plan = cardPlan(run.records(), settings, Date.now()).queue.map((c) => `${c.id}${c.isNew ? '*' : ''}${c.next ? '^' : ''}`)
-    seen.push(`${what} → ${s === null ? 'none' : `${s.card?.id ?? 'done'} ${s.progress.done}/${s.progress.total} due:${r.dueCount} c[${s.counts.all}/${s.counts.next}/${s.counts.due}/${s.counts.new}] more[${s.more.new}/${s.more.next}] adds[${s.adds.new}/${s.adds.next}] f:${s.filter} undo:${s.canUndo} today:${s.today.learned}`} plan:${plan.join(',')}`)
+    seen.push(`${what} → ${s === null ? 'none' : `${s.card?.id ?? 'done'} ${s.progress.done}/${s.progress.total} due:${r.dueCount} c[${s.counts.all}/${s.counts.next}/${s.counts.due}/${s.counts.new}] more[${s.more.new}/${s.more.next}] adds[${s.adds.new}/${s.adds.next}] f:${s.filter} undo:${s.canUndo} today:${s.today.cards}`} plan:${plan.join(',')}`)
   }
   vi.setSystemTime(NOW)
   await act(async () => run.review().start())

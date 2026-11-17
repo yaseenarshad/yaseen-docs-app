@@ -24,7 +24,7 @@ describe('Review: done, and "Add more for today" (round 10, addition 2)', () => 
     // A new card needs two Remembered (the first adds it to today's reviews, YAZ-5702): four answers end the session.
     for (let i = 0; i < 4; i++) await h.click('Remembered')
     expect(h.text()).toContain('Inbox complete')
-    expect(h.text()).toContain('Today: 2 learned · 0 reviews')
+    expect(h.text()).toContain('Today: 2 cards')
     expect(h.text()).toContain('3 new cards wait for another day.')
     // YAZ-5699: one tap never adds; it asks in place, Cancel first. Cancel changes nothing; Add adds.
     await h.click('Add 2 new cards')

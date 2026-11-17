@@ -634,16 +634,12 @@ export const cardQueue = (records: readonly CardPage[], s: ReviewSettings, now: 
   cardPlan(records, s, now, folder, page, letters, upNextTaken, added).queue
 
 /**
- * Today's review work, as Mochi's Dashboard "Today" counts it (YAZ-5684; YAZ-5671 finding 13): "Today: 2 learned ·
- * 3 reviews · 2 min" (the finish screens). The cards menu's foot says `cards` alone (YAZ-5690): "Today: 21 cards".
+ * Today's review work: ONE Today line, "Today: 21 cards" (YAZ-5690, YAZ-5710), in the cards menu's foot and on every
+ * finish screen ("Today: 21 cards · 12 min"). YAZ-5684's "2 learned · 3 reviews" is gone.
  */
 export interface ReviewedToday {
-  /** Every different card answered today, new and due, whatever the answer (YAZ-5690, Yaseen: "today twenty one cards"). */
+  /** Every different card answered today, new and due, whatever the answer: the one Today line, "Today: 21 cards" (YAZ-5690, YAZ-5710). */
   cards: number
-  /** New cards that got their first ✓ today (a Forgot on a new card counts nowhere). */
-  learned: number
-  /** The FIRST answer today on each card that was a due card this morning (it had a ✓ before today): a retry in the missed pass adds nothing, nor a learned card's later answers. */
-  reviews: number
   /** The seconds of every answer today; an answer with no seconds (made before YAZ-5033) counts 0. */
   seconds: number
 }
@@ -662,29 +658,17 @@ export function reviewedToday(pages: readonly { cards?: readonly CardRecord[] }[
   const from = cardTime(start.getTime())
   const to = cardTime(end.getTime())
   let cards = 0
-  let learned = 0
-  let reviews = 0
   let seconds = 0
   for (const page of pages) {
     for (const card of page.cards ?? []) {
-      let knownBefore = false
       let today = false
-      let rightToday = false
       for (const r of card.reviews) {
-        if (r.at < from) {
-          if (r.rating !== 'again') knownBefore = true
-          continue
-        }
-        if (r.at >= to) continue
+        if (r.at < from || r.at >= to) continue
         today = true
-        if (r.rating !== 'again') rightToday = true
         seconds += r.seconds ?? 0
       }
-      if (!today) continue
-      cards++
-      if (knownBefore) reviews++
-      else if (rightToday) learned++
+      if (today) cards++
     }
   }
-  return { cards, learned, reviews, seconds }
+  return { cards, seconds }
 }

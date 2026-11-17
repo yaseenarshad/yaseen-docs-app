@@ -76,9 +76,9 @@ describe('friendStats (YAZ-5069)', () => {
     expect(dayOf(s, '2026-11-10')).toEqual({ day: '2026-11-10', cards: 1, seconds: 10, remembered: 2, forgot: 0, newCards: 1, done: true })
     expect(dayOf(s, '2026-11-11')).toMatchObject({ cards: 0, seconds: 0, newCards: 0 })
     const mac = reviewedToday([{ cards }], NOW)
-    // The same seconds; the Inbox's Today counts as Mochi (YAZ-5684): GEO-1 and GEO-4 learned today, GEO-2 reviewed.
+    // The same seconds and the same cards; the Inbox's Today (YAZ-5710): every different card answered today.
     expect(s.days[0].seconds).toBe(mac.seconds)
-    expect([mac.learned, mac.reviews]).toEqual([2, 1])
+    expect(mac.cards).toBe(s.days[0].cards)
     expect(s.totals).toMatchObject({ cards: 4, inReview: 2, newLeft: 1 })
     expect(s.v).toBe(1)
     expect(s.at).toBe('2026-11-13T20:00:00.000Z')
@@ -185,8 +185,8 @@ describe('friendStats (YAZ-5069)', () => {
         ['2026-11-13', 1],
         ['2026-11-12', 1],
       ])
-      // The Inbox's Today (YAZ-5684): the same local day — GEO-2, learned today.
-      expect(reviewedToday([{ cards }], now)).toMatchObject({ learned: 1, reviews: 0 })
+      // The Inbox's Today (YAZ-5710): the same local day — GEO-2, answered today.
+      expect(reviewedToday([{ cards }], now).cards).toBe(1)
     } finally {
       process.env.TZ = 'America/New_York'
     }

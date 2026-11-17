@@ -60,7 +60,7 @@ let props: CardInboxProps
 const TITLE = 'Capital of France'
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, learned: null, today: { cards: 0, learned: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, order: { all: 'due-first', due: 'shuffle' }, end: null, landing: null, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { done: 2, total: 12, waiting: 0 }, misses: 0, learned: null, today: { cards: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, order: { all: 'due-first', due: 'shuffle' }, end: null, landing: null, ...over }
 }
 
 function render() {
@@ -1699,7 +1699,7 @@ describe("YAZ-5674: the top right as Mochi's — ✕ K, the filter's icon, done 
 
   it('no "Today: …" and no "N of M" in the top row; the cards menu`s last line is "Today: N cards" alone (YAZ-5690): no reviews, no time, whatever Time so far says', () => {
     mount(TWO_SIDES, SHOWN)
-    session = { ...session, today: { cards: 21, learned: 31, reviews: 35, seconds: 9 * 60 + 10 } }
+    session = { ...session, today: { cards: 21, seconds: 9 * 60 + 10 } }
     render()
     const bar = el.querySelector('.card-inbox__bar')!
     expect(bar.querySelector('.card-inbox__today')).toBeNull()
@@ -1707,31 +1707,31 @@ describe("YAZ-5674: the top right as Mochi's — ✕ K, the filter's icon, done 
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     expect(document.querySelector('.card-inbox__menu-today')?.textContent).toBe('Today: 21 cards')
     expect(document.querySelector('.card-inbox__menu-foot .card-inbox__time')).toBeNull()
-    session = { ...session, today: { cards: 1, learned: 1, reviews: 0, seconds: 0 } }
+    session = { ...session, today: { cards: 1, seconds: 0 } }
     render()
     expect(document.querySelector('.card-inbox__menu-today')?.textContent).toBe('Today: 1 card')
     // Nothing answered today: no line.
-    session = { ...session, today: { cards: 0, learned: 0, reviews: 0, seconds: 0 } }
+    session = { ...session, today: { cards: 0, seconds: 0 } }
     render()
     expect(document.querySelector('.card-inbox__menu-today')).toBeNull()
   })
 
-  it('the done screen says today`s total under "Inbox complete."', () => {
+  it('the done screen says today`s total under "Inbox complete.": the cards menu`s words, then the time (YAZ-5710)', () => {
     mount(TWO_SIDES, SHOWN)
-    session = { ...session, card: null, today: { cards: 26, learned: 12, reviews: 14, seconds: 4 * 60 + 31 } }
+    session = { ...session, card: null, today: { cards: 26, seconds: 4 * 60 + 31 } }
     render()
     const done = el.querySelector('.card-inbox__done')!
     expect(done.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
-    expect(done.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 learned · 14 reviews · 5 min')
+    expect(done.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 26 cards · 5 min')
     // Still shown on a page's done screen.
     session = { ...session, scope: 'page' }
     render()
-    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 learned · 14 reviews · 5 min')
+    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 26 cards · 5 min')
   })
 })
 
 describe('YAZ-5689: the top row`s right end is the count and ONE sliders icon, "View"; a click opens Time, Zoom, Focus mode', () => {
-  const today = { cards: 21, learned: 31, reviews: 35, seconds: 9 * 60 + 10 }
+  const today = { cards: 21, seconds: 9 * 60 + 10 }
   const view = () => el.querySelector<HTMLButtonElement>('.card-inbox__bar .card-inbox__view')
   const panel = () => document.querySelector<HTMLElement>('.card-inbox__view-panel')
   const open = () => {
@@ -2475,7 +2475,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
    */
   it('YAZ-5685: three even rows (glyph, name, count; no line under New cards); the Today line ends with a quiet ⚙, folded', () => {
     mount(TWO_SIDES)
-    session = { ...session, ...WAITING, today: { cards: 41, learned: 15, reviews: 26, seconds: 0 } }
+    session = { ...session, ...WAITING, today: { cards: 41, seconds: 0 } }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     const items = [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')]
@@ -2635,7 +2635,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
 
   it('YAZ-5685: closing the menu folds the part — a click on the filter, Esc — so it opens folded each time; with nothing done today the ⚙ stays', () => {
     mount(TWO_SIDES)
-    session = { ...session, ...WAITING, today: { cards: 0, learned: 0, reviews: 0, seconds: 0 } }
+    session = { ...session, ...WAITING, today: { cards: 0, seconds: 0 } }
     render()
     const filter = () => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!
     act(() => filter().click())
