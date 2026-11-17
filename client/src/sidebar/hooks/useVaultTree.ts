@@ -65,7 +65,7 @@ function withTime(trees: ReadonlyMap<string, TreeResponse>, vault: string, file:
   return next
 }
 
-const SHARED_FOLDERS = { shared: true, start: () => [] }
+const SHARED_FOLDERS = { shared: true, start: () => [], touch: () => undefined, touched: () => true }
 
 export function useVaultTree(
   vaults: readonly SidebarVault[],
@@ -80,9 +80,10 @@ export function useVaultTree(
   liveTimes = false,
   /**
    * The open folders of the windows on a vault (YAZ-5701): `shared` (the default) reads and writes them in the store.
-   * Off ("A place for each tab"), this window neither writes them nor takes them: it starts from `start`.
+   * Off ("A place for each tab"), this window neither writes them nor takes them: it starts from `start`, and `touch`
+   * marks each change. Back on, it writes them only when `touched()` (YAZ-5750, YAZ-5751): the mark is the window's, so it outlives this mount.
    */
-  share: { shared: boolean; start: () => string[] } = SHARED_FOLDERS,
+  share: { shared: boolean; start: () => string[]; touch: () => void; touched: () => boolean } = SHARED_FOLDERS,
 ) {
   // The window's vaults (YAZ-2602 D1), in the window's order. `root` is the FIRST.
   const roots = useSameList(vaults.map((vault) => vault.root))
@@ -125,10 +126,12 @@ export function useVaultTree(
   // A NEW window's closed tree is no choice of the user: it writes nothing until a folder opens or closes here, so the
   // vault keeps the list its other windows saved (bug YAZ-3513). The reducer answers a new list for each change.
   const startList = useRef(storage.isCollapsedStart() ? expanded : null)
-  // The open folders when "A place for each tab" began here (YAZ-5750): back on one place, a window that changed none
-  // since then writes nothing, so it does not put its own list over the list of the window that the user used.
+  // The open folders this mount began with in "A place for each tab": a change from them is the user's (YAZ-5751).
   const tabStart = useRef<string[] | null>(null)
   if (!shared && tabStart.current === null) tabStart.current = expanded
+  if (shared) tabStart.current = null
+  /** The mode of the last write check: `shared` that turns on again is the switch back to one place. */
+  const sharedBefore = useRef(shared)
 
   // What the Files tab draws (YAZ-2602 D3). One vault → its tree. Two or more → one
   // folder row per vault, in the window's order, named as the app names the vault, its tree below it;
@@ -264,6 +267,8 @@ export function useVaultTree(
   // leaves takes its folders with it, as the store has them. The write waits for that render.
   const merged = useRef(roots)
   useEffect(() => {
+    const back = shared && !sharedBefore.current
+    sharedBefore.current = shared
     const before = merged.current
     merged.current = roots
     const joined = roots.filter((vault) => !before.includes(vault))
@@ -277,12 +282,14 @@ export function useVaultTree(
     }
     if (expanded === startList.current) return
     startList.current = null
-    // A place for each tab (YAZ-5701): the tabs' folders stay in this window. Back on one place, the folders on screen are
-    // written only if they changed in this window (YAZ-5750).
-    if (!shared) return
-    const untouched = tabStart.current === expanded
-    tabStart.current = null
-    if (untouched) return
+    // A place for each tab (YAZ-5701): the tabs' folders stay in this window; each change marks the window (YAZ-5751).
+    if (!shared) {
+      if (expanded !== tabStart.current) share.touch()
+      return
+    }
+    // Back on one place: a window that changed no folder since "A place for each tab" began writes nothing (YAZ-5750),
+    // across Hide and Show sidebar and a vault switch (YAZ-5751).
+    if (back && !share.touched()) return
     for (const vault of roots) {
       // The app's own vault keeps its open folders for the session only (YAZ-5108): nothing of it goes to the store.
       if (appRoots.includes(vault)) continue

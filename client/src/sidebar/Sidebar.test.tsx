@@ -77,6 +77,7 @@ vi.mock('./folderShortcuts', async (importOriginal) => {
 import { testDoor } from '../testPageIds'
 import { onPageTabAsk, takePageTab } from '../views/pageTabRequest'
 import { LIFT_PX } from './hooks/rowGestures'
+import { clearPlaces } from './tabPlace'
 import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { useSameList } from './hooks/useVaultTree'
 import { useVaultListsHere } from '../lists/useVaultListsHere'
@@ -6668,6 +6669,8 @@ describe('focus tab (YAZ-2619)', () => {
   })
 
   describe('a sidebar place for each page tab (YAZ-5701)', () => {
+    // Each test is a window that just started: no place, and no folder changed with a place for each tab.
+    beforeEach(() => clearPlaces())
     const PER_TAB: SettingsState = { ...TEST_SETTINGS, sidebarPlace: 'tab' }
     const stack: FocusFolder = { id: 'yaz5701-stack', name: 'Loose pages', created: 1, at: 1, items: [] }
     const withStack = (b: ReturnType<typeof installBridge>) => b.focusFolders.get.mockImplementation(async (root: string, scope?: unknown) => (scope === 'vault' ? [{ ...stack, items: [{ vault: root.slice(1), path: 'top.md' }] }] : []))
@@ -6762,6 +6765,23 @@ describe('focus tab (YAZ-2619)', () => {
       // This window hides and shows its sidebar: it reads the shared list, Projects open.
       await act(async () => root?.render(<></>))
       await rerender({ activeTab: 'yaz5750-A', settings: TEST_SETTINGS })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+    })
+
+    it('YAZ-5751: back on "One place for the window", a window that opened folders with a place for each tab, then hid and showed its sidebar, still writes them, and they survive the next Hide and Show', async () => {
+      const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5751-A', settings: PER_TAB }, { focus: ['/Projects'] })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      const ours = [copyFoldKey(`${v}/Projects`, `${v}/Projects`)]
+      // Hide and Show sidebar: a new mount, from the tab's place.
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: 'yaz5751-A', settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      await rerender({ activeTab: 'yaz5751-A', settings: TEST_SETTINGS })
+      expect(setExpanded).toHaveBeenLastCalledWith(v, ours)
+      setExpanded.mockRestore()
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: 'yaz5751-A', settings: TEST_SETTINGS })
       expect(isOpen(el, `${v}/Projects`)).toBe('true')
     })
 

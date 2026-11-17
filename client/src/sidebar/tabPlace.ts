@@ -40,5 +40,19 @@ export function prunePlaces(tabs: readonly string[]): void {
   for (const tab of [...places.keys()]) if (!live.has(tab)) places.delete(tab)
 }
 
-/** "One place for the window" drops every place. */
-export const clearPlaces = (): void => places.clear()
+/**
+ * A folder of this window opened or closed while "A place for each tab" was on (YAZ-5750, YAZ-5751): only then does the
+ * switch back to one place write the window's open folders over the list the windows share. Per window, outside the
+ * Sidebar's mount, so a Hide and Show sidebar or a vault switch keeps it.
+ */
+let foldersChanged = false
+export const noteFoldersChanged = (): void => {
+  foldersChanged = true
+}
+export const foldersChangedHere = (): boolean => foldersChanged
+
+/** "One place for the window" drops every place, and the mark above with them. */
+export function clearPlaces(): void {
+  places.clear()
+  foldersChanged = false
+}
