@@ -11,6 +11,7 @@ import { useCardReview, type CardReviewApi, type CardReviewSession } from '@clie
 import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
 import { reviewTitleOf, withCardNoTitle, type CardRating } from '@shared/cardLine'
+import { titleShows } from '@shared/cardTitleShows'
 import { answerLabel, answerRatings } from '@shared/cardSchedule'
 import { cardPieces, cardSides, hiddenCount } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
@@ -53,8 +54,9 @@ import './review.css'
  *  - Above the card: its state ("Due today", "New card"); then the head, "Title · ID", with "in <page>"
  *    for a card in a page (round 15, item 4). The title is the card line's (decision D): never a
  *    line of the card's text, so the text is drawn whole. A card with no title: the ID alone, as the Mac's Inbox head.
- *    "Title on the front: Hide" (`notitle`): the ID alone at every step and after the answer (YAZ-5695); a title that
- *    holds a hidden-word mark: the ID alone until the card is fully shown (a title never gives the answer away). A card
+ *    "Title on the front: Hide" (`notitle`): the ID alone at every step and after the answer (YAZ-5695). A shown
+ *    title comes as the Mac's (YAZ-5696, `titleShows`): at once, after the front or with Side 2, by the card's own
+ *    choice or review.json's `titleAt`; a title that holds a hidden-word mark waits until the card is fully shown. A card
  *    file that is not valid says so (round 15, item 3).
  *  - A TAP ON THE CARD shows the next hidden word, else the next side: what Space does on the Mac. No swipes.
  *  - At the bottom, in reach of the thumb: ✕ Forgot and ✓ Remembered (or four by the setting), then ⋯: Archive card,
@@ -251,10 +253,11 @@ function SessionScreen({
   const pageText = page?.text ?? null
   // The head's title, off the card line (the Mac's `useCardFront`): never part of the text, so the front is
   // the whole text. "Title hidden in review" (`notitle`): no title at all, at any step (YAZ-5695, `reviewTitleOf`,
-  // the Mac's one rule). A title that holds a hidden-word mark waits for the card's last step: its words may be the answer.
+  // the Mac's one rule). WHEN a shown title comes is the Mac's rule too (YAZ-5696, `titleShows`): the card's own
+  // choice, else review.json's `titleAt`; a title that holds a hidden-word mark waits until the card is fully shown.
   const text = pageText
   const cardName = page === null ? '' : reviewTitleOf(page)
-  const title = useMemo(() => ({ text: pageText === null ? '' : cardName, waits: hiddenCount(cardName) > 0 }), [pageText, cardName])
+  const titleText = pageText === null ? '' : cardName
   const record = card === null ? undefined : source.records.find((r) => r.path === card.path)
   const cardFile = record?.kind === 'card'
   // A card that comes back (YAZ-5594: same place, "3 / 3") is a new turn: the answers so far tell the two apart.
@@ -534,7 +537,7 @@ function SessionScreen({
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
   const canUndo = shownLine?.undo === true || session.canUndo
 
-  const headTitle = title.waits && !done ? '' : title.text
+  const headTitle = titleShows({ title: titleText, at: page?.titleAt ?? review.settings.titleAt, counts, sides: step.sides, open: step.open }) ? titleText : ''
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
   // The crumb (YAZ-5132's place, from the first folder, YAZ-5682): "LEARNING / Memory", inside the card, on the chip's line.
   const crumb = session.place.map((p) => p.label)

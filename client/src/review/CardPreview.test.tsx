@@ -30,7 +30,7 @@ afterEach(() => {
   el?.remove()
 })
 
-function mount(text = TEXT, title = '', notitle = false) {
+function mount(text = TEXT, title = '', notitle = false, titleAt?: 'once' | 'front' | 'side2', settings = DEFAULT_REVIEW_SETTINGS) {
   const wikilinks = createWikilinkResolveSource()
   const vault = { root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never, viewOnlyLinks: createViewOnlyLinkSource() }
   const onClose = vi.fn()
@@ -38,7 +38,7 @@ function mount(text = TEXT, title = '', notitle = false) {
   el = document.createElement('div')
   document.body.append(el)
   root = createRoot(el)
-  act(() => root?.render(<CardPreview card={{ path: PATH, id: 'WIKI-9', text, title, notitle, reviews: REVIEWS }} vault={vault} settings={DEFAULT_REVIEW_SETTINGS} doors={{ openLayer: vi.fn(), openTab: vi.fn(), onNotice: vi.fn() }} onNotice={vi.fn()} onClose={onClose} leaveOn=".tabbar-row, .sidebar" onLeave={onLeave} />))
+  act(() => root?.render(<CardPreview card={{ path: PATH, id: 'WIKI-9', text, title, notitle, ...(titleAt !== undefined && { titleAt }), reviews: REVIEWS }} vault={vault} settings={settings} doors={{ openLayer: vi.fn(), openTab: vi.fn(), onNotice: vi.fn() }} onNotice={vi.fn()} onClose={onClose} leaveOn=".tabbar-row, .sidebar" onLeave={onLeave} />))
   return { onClose, onLeave }
 }
 const press = (key: string) => act(() => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
@@ -102,6 +102,23 @@ describe('Preview a card (YAZ-5152)', () => {
     expect(band()).toBeNull()
     expect(el.querySelector('.card-preview__what')?.textContent).toBe('· WIKI-9 · nothing is saved')
     expect(el.textContent).not.toContain('Secret title')
+  })
+
+  it('YAZ-5696: the Preview follows "when the title shows": the global choice, and the card\'s own over it', () => {
+    const band = () => el.querySelector('.card-inbox__panel > .card-band')
+    mount(TEXT, 'Secret title', false, undefined, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'side2' })
+    expect(band()?.classList.contains('card-band--waiting')).toBe(true)
+    press(' ')
+    press(' ')
+    expect(sides()).toBe(2)
+    expect(band()?.classList.contains('card-band--waiting')).toBe(false)
+    expect(band()?.textContent).toBe('Secret title')
+    act(() => root?.unmount())
+    el.remove()
+    mount(TEXT, 'Secret title', false, 'front')
+    expect(band()?.classList.contains('card-band--waiting')).toBe(true)
+    press(' ')
+    expect(band()?.classList.contains('card-band--waiting')).toBe(false)
   })
 
   it('YAZ-5152 A: no title: the bar names the card by its ID', () => {

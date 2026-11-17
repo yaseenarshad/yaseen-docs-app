@@ -14,7 +14,7 @@
  * No React, no editor state: the editor's link follower, the card screens and the card view all reach it.
  */
 
-import { cardPlace, type CardPropertyValue, type CardReview } from '@shared/cardLine'
+import { cardPlace, type CardPropertyValue, type CardReview, type CardTitleAt } from '@shared/cardLine'
 import { landOn } from '../toc/tocMotion'
 
 /** Where a card of a page is (YAZ-5164): its ID (null before it has one) and its place among the page's cards (`pageCards` order, 0 first). */
@@ -70,6 +70,8 @@ export interface CardPreviewRequest {
   title: string
   /** "Title on the front: Hide" (YAZ-5030). */
   notitle: boolean
+  /** When its title shows in Review, its own choice (YAZ-5696); absent: the global one. */
+  titleAt?: CardTitleAt
   /** Its reviews, for the Reviews strip on the last side. */
   reviews: readonly CardReview[]
   /** Its own properties (YAZ-5379), for the strip's Properties part. */

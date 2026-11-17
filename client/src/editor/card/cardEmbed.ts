@@ -388,7 +388,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const previewRead = (): void => {
     const r = read
     if (r === null) return
-    previewCard(dom, { path: r.path, id: r.id, text: r.text, title: r.title, notitle: r.notitle === true, reviews: r.reviews, properties: r.properties })
+    previewCard(dom, { path: r.path, id: r.id, text: r.text, title: r.title, notitle: r.notitle === true, ...(r.titleAt !== undefined && { titleAt: r.titleAt }), reviews: r.reviews, properties: r.properties })
   }
 
   const openMenu = (x: number, y: number): void => {

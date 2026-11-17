@@ -2725,7 +2725,7 @@ describe('the card window (YAZ-4962)', () => {
     expect(layers().map((l) => l.dataset.kind)).toEqual(['card', 'page'])
   })
 
-  it('YAZ-5030: ⋯ "Title on the front" (Show) writes `notitle`; the head then says "Hidden in review"', async () => {
+  it('YAZ-5030, YAZ-5696: ⋯ Title in review › Never (after its ask, YAZ-5697) writes `notitle`; the head then says "Hidden in review"', async () => {
     files[PAGE] = page('<!-- card: WIKI-9, title "Capital of France" -->')
     writeFile.mockImplementation(async ({ path, content }) => {
       files[path] = content
@@ -2736,19 +2736,18 @@ describe('the card window (YAZ-4962)', () => {
     await flush()
     const mark = () => top().querySelector('.explore__head .card__notitle')
     expect(mark()).toBeNull()
-    const row = () => {
-      act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
-      return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent?.startsWith('Title on the front'))!
-    }
-    const shown = row()
-    expect(shown.dataset.hint ?? shown.textContent).toContain('Show')
-    act(() => shown.click())
-    // YAZ-5697: it asks in place first ("Hide the title on the front?", Cancel first); the first click wrote nothing.
+    act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
+    const parent = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Title in review')!
+    expect(parent.dataset.hint).toBe('Default')
+    act(() => parent.click())
+    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__sub')).not.toBeNull())
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === 'Never')!.click())
+    // YAZ-5697: it asks in place first; the first click wrote nothing.
     await flush()
     expect(files[PAGE]).not.toContain('notitle')
     await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
-    expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Hide the title on the front?')
-    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Hide')!.click())
+    expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Never show the title in review?')
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Never')!.click())
     await flush()
     await flush()
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, title "Capital of France", notitle -->')

@@ -3,7 +3,7 @@
  * `cardFile.ts` and every other review host (the phone's, a test's) read a card the same way. `cardFile.ts` gives out
  * the same names.
  */
-import { CardNotFoundError, cardIdOf, cardPlace, cardPropertiesOf, cardReviewsOf, cardTitleOf, isCardFix, isCardNext, isCardNoTitle, isCardOff, pageCards, type CardPropertyValue, type CardReview } from '@shared/cardLine'
+import { CardNotFoundError, cardIdOf, cardPlace, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleOf, isCardFix, isCardNext, isCardNoTitle, isCardOff, pageCards, type CardPropertyValue, type CardReview, type CardTitleAt } from '@shared/cardLine'
 import { isCardFileContent } from '@shared/cardFileFormat'
 import { BridgeRequestError } from '../bridgeError'
 
@@ -22,6 +22,8 @@ export interface CardOnPage {
   next: boolean
   /** The title is hidden on the Inbox's front (YAZ-5030): the line's `notitle`. Absent: it shows. */
   notitle?: boolean
+  /** When its title shows in Review, its own choice (YAZ-5696: the line's `title-front`…). Absent: the global `titleAt`. */
+  titleAt?: CardTitleAt
   /** Marked "Fix later" (YAZ-5097): the line's `fix`. Absent: no mark. */
   fix?: true
   /** The card's own properties (YAZ-5379), off its card line; {} for a card with none. */
@@ -44,7 +46,7 @@ export function cardInContent(path: string, content: string, id: string | null, 
   const card = cards[at]
   if (card === undefined) return null
   const cardFile = at === 0 && isCardFileContent(content)
-  return { path, id: cardIdOf(card.line), index: at, text: card.text, title: cardTitleOf(card.line), reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line), properties: cardPropertiesOf(card.line), ...(isCardFix(card.line) && { fix: true as const }), ...(cardFile && { cardFile: true as const }) }
+  return { path, id: cardIdOf(card.line), index: at, text: card.text, title: cardTitleOf(card.line), reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line), ...(cardTitleAtOf(card.line) !== null && { titleAt: cardTitleAtOf(card.line)! }), properties: cardPropertiesOf(card.line), ...(isCardFix(card.line) && { fix: true as const }), ...(cardFile && { cardFile: true as const }) }
 }
 
 /**
