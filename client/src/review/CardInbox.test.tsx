@@ -90,6 +90,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     close: vi.fn(),
     deleteReview: vi.fn(async () => {}),
     setNext: vi.fn(async () => {}),
+    setMark: vi.fn(async () => {}),
     move: vi.fn(),
     turnOff: vi.fn(async () => {}),
     setFilter: vi.fn(),

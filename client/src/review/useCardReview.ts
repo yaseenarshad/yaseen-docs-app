@@ -251,6 +251,8 @@ export interface CardReviewApi {
   deleteReview: (path: string, id: string, review: CardReview) => Promise<void>
   /** Up next on or off for card `id` of `path` (YAZ-4999 D3, the Inbox head's chip ×): one write of the file, then the card read again. */
   setNext: (path: string, id: string, on: boolean) => Promise<void>
+  /** One mark of card `id` of `path` (the Inbox ⋯'s Title in review, YAZ-5697 round 2): one write of the file, then the card read again. */
+  setMark: (path: string, id: string, change: (line: CardLine) => CardLine) => Promise<void>
   /** ← (-1) and → (+1), YAZ-5004: the card before or after, with no answer; the card left stays in the queue. */
   move: (delta: -1 | 1) => void
   /** The Inbox ⋯'s Archive card (YAZ-5004, YAZ-5046): `off` on the card showing's line, and the card out of the queue. */
@@ -1384,5 +1386,5 @@ export function useCardReview(
     return { all, folders: list }
   }, [folderLabelOf])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter, addCards, resetCards, setNewFrom, newCardFolders: pickerFolders, goOn }
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, setMark, move, turnOff, setFilter, addCards, resetCards, setNewFrom, newCardFolders: pickerFolders, goOn }
 }

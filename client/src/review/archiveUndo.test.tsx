@@ -148,7 +148,7 @@ afterEach(() => {
 
 describe('YAZ-5621: Archive card has an Undo on the Mac, as on the phone', () => {
   it('YAZ-5697 round 2: the Inbox ⋯ is the ONE card menu (Undo last review, then the card\'s rows); one click on Archive card never archives', async () => {
-    await start()
+    await mount()
     const first = showing()!
     await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
     expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Undo last review', 'Open card', 'Put at top of Inbox', 'Archive card', 'Title on the front'])

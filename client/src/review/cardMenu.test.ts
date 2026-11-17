@@ -15,7 +15,7 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect(labels({ open: 'card', preview: true, moveOut: true, marks: NONE, upNext: true, copyId: 'DEMO-7', reset: true })).toEqual([
       ['Open card', 'Preview'],
       ['Move to its own file'],
-      ['Put at top of Inbox', 'Archive card', 'Fix later', 'Title on the front'],
+      ['Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review'],
       ['Copy card ID'],
       ['Reset history'],
     ])
@@ -23,7 +23,7 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect(labels({ open: 'card', preview: true, showAsLink: true, putBack: true, marks: NONE, upNext: true, copyId: 'DEMO-7', reset: true })).toEqual([
       ['Open card', 'Preview'],
       ['Show as link', 'Put back into this page'],
-      ['Put at top of Inbox', 'Archive card', 'Fix later', 'Title on the front'],
+      ['Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review'],
       ['Copy card ID'],
       ['Reset history'],
     ])
@@ -31,12 +31,12 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect(labels({ preview: true, toPage: true, marks: NONE, upNext: true, copyId: 'DEMO-7', copyLink: true, reset: true })).toEqual([
       ['Preview'],
       ['Turn into a page'],
-      ['Put at top of Inbox', 'Archive card', 'Fix later', 'Title on the front'],
+      ['Put at top of Inbox', 'Archive card', 'Fix later', 'Title in review'],
       ['Copy card ID', 'Copy card link'],
       ['Reset history'],
     ])
     // The Inbox (Review): no Fix later (YAZ-5430).
-    expect(labels({ open: 'card', marks: NONE, upNext: true, fix: false })).toEqual([['Open card'], ['Put at top of Inbox', 'Archive card', 'Title on the front']])
+    expect(labels({ open: 'card', marks: NONE, upNext: true, fix: false })).toEqual([['Open card'], ['Put at top of Inbox', 'Archive card', 'Title in review']])
   })
 
   it('THE ONE ASK RULE: every row that changes the card or its file and that the same row does not take back asks', () => {
@@ -45,10 +45,19 @@ describe('one card menu (YAZ-5697 round 2)', () => {
       ['Put back into this page', 'Put this card back into this page?', 'Put back'],
       ['Turn into a page', 'Turn this card into a page?', 'Turn into a page'],
       ['Archive card', 'Archive this card?', 'Archive'],
-      ['Title on the front', 'Hide the title on the front?', 'Hide'],
     ])
-    // Archived: Unarchive card does not ask. Title hidden: it asks to show it.
-    expect(asks({ marks: { ...NONE, off: true, notitle: true } })).toEqual([['Title on the front', 'Show the title on the front?', 'Show']])
+    // Title in review ›: each choice but the one now asks; the phone's Title on the front asks too.
+    const title = cardMenu({ marks: { ...NONE, off: true, notitle: true } }).flat().find((r) => r.action === 'title')!
+    expect([title.label, title.hint]).toEqual(['Title in review', 'Never'])
+    expect(title.children!.map((c) => [c.label, c.checked, c.ask?.question ?? null])).toEqual([
+      ['Default', false, 'Use the default from Settings › Cards?'],
+      ['At once', false, 'Show the title at once?'],
+      ['After the front', false, 'Show the title after the front?'],
+      ['With Side 2', false, 'Show the title with Side 2?'],
+      ['Never', true, null],
+    ])
+    // Archived: Unarchive card does not ask.
+    expect(asks({ marks: { ...NONE, off: true, notitle: true }, titleToggle: true })).toEqual([['Title on the front', 'Show the title on the front?', 'Show']])
   })
 
   it('the vault\'s word for a page; the phone\'s Up next; a read-only page\'s rows wait; no marks, no review rows', () => {
