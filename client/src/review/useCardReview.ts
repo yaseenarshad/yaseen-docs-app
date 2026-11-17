@@ -1484,8 +1484,10 @@ export function useCardReview(
       place: shownCard === null || root === null ? [] : cardPlace(root, folders, records, shownCard.path),
       answered: session.answered.map((a) => a.rating),
       progress,
-      // Mochi hides the ✕ in the missed pass (YAZ-5671 finding 9); its % screen still shows it. YAZ-5681: the open filter's.
-      misses: session.stage === 'first' || session.pause === 'missed' ? progress.waiting : 0,
+      // Mochi hides the ✕ in the missed pass (YAZ-5671 finding 9); its % screen still shows it. YAZ-5681: the open
+      // filter's. Only Due today has a missed pass (rule 14): once it began, All cards and New cards still show their
+      // misses (YAZ-4965 a, YAZ-5708).
+      misses: filter === 'due' && session.stage === 'missed' && session.pause === null ? 0 : progress.waiting,
       today,
       more: scopePlan.more,
       adds: addsOf(scopePlan, settings),
