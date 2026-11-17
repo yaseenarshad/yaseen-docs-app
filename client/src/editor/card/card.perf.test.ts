@@ -85,8 +85,11 @@ describe('a page with 50 cards (idea 25)', () => {
       console.log(
         `cards perf: open a page of 50 cards: median ${median(cards).toFixed(1)} ms (no CodeMirror); the same page as 50 code blocks, all in view: median ${median(code).toFixed(1)} ms (50 CodeMirrors); a keystroke in a paragraph: median ${median(keys).toFixed(2)} ms`,
       )
-      expect(median(cards)).toBeLessThan(budgetMs(400))
-      expect(median(keys)).toBeLessThan(budgetMs(4))
+      // The time limits measure this machine: checked on our Macs, not on the shared CI machine, where they swing 650–2,100 ms (Yaseen: stop the timing tests from blocking CI, YAZ-4965). The checks above still run everywhere.
+      if (!process.env.CI) {
+        expect(median(cards)).toBeLessThan(budgetMs(400))
+        expect(median(keys)).toBeLessThan(budgetMs(4))
+      }
     } finally {
       globalThis.IntersectionObserver = saved
     }
