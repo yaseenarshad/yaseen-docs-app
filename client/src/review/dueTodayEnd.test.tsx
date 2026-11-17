@@ -115,7 +115,7 @@ function Screen({ settings }: { settings: ReviewSettings }) {
   )
 }
 
-async function mount(settings: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS }): Promise<void> {
+async function mount(settings: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }): Promise<void> {
   reindex()
   el = document.createElement('div')
   document.body.appendChild(el)
@@ -249,24 +249,17 @@ describe('YAZ-5043: the end of Due today', () => {
     expect(showing()).toBe('NEW-1')
   })
 
-  it('4. Items 1 and 2: under All cards a missed due card comes back BEFORE the new cards, with a stop after each pass', async () => {
+  it('4. YAZ-5707 (Mochi`s E5): under All cards ONE run — the due cards, the new cards, their same-day reviews, the missed card at the end; no stop, then Inbox complete', async () => {
     await mount()
     expect(review.session?.filter).toBe('all')
     const seen: string[] = []
     seen.push(await answer('again')) // DUE-1 missed
-    for (let i = 0; i < 4; i++) seen.push(await answer('good'))
-    expect(seen).toEqual(DUE)
-    expect(showing()).toBeNull()
-    expect(review.session?.end).toMatchObject({ kind: 'missed', percent: 80, missed: 1, fresh: 3 })
-    await press(/^Review missed cards/)
-    expect(await answer('good')).toBe('DUE-1')
-    // The break before the new cards.
-    expect(showing()).toBeNull()
-    expect(review.session?.end).toMatchObject({ kind: 'done', fresh: 3 })
-    await press(/^Learn new cards 3/)
-    expect(review.session?.filter).toBe('all')
-    while (showing() !== null && seen.length < 20) seen.push(await answer('good'))
-    expect(seen.slice(5)).toEqual([...NEW, ...NEW])
+    while (showing() !== null && seen.length < 20) {
+      expect(review.session?.end).toBeNull()
+      seen.push(await answer('good'))
+    }
+    expect(seen).toEqual([...DUE, ...NEW, ...NEW, 'DUE-1'])
+    expect(review.session?.end).toBeNull()
     expect(doneText()[0]).toBe('Inbox complete.')
   })
 
@@ -290,7 +283,7 @@ describe('YAZ-5043: the end of Due today', () => {
 
   it('6. Item 8: a page review stops on the same screen', async () => {
     await mount()
-    await act(async () => review.start({ page: `${ROOT}/Known.md` }))
+    await act(async () => review.start({ page: `${ROOT}/Known.md` }, { filter: 'due' }))
     await act(async () => reindex())
     expect(review.session?.scope).toBe('page')
     for (const r of ['again', 'good', 'good', 'good', 'good'] as const) await answer(r)
@@ -328,13 +321,13 @@ describe('YAZ-5043: the end of Due today', () => {
     expect(el.querySelector('.due-end')?.getAttribute('data-motion')).toBe('wait')
     shown = true
     await step(() => reindex())
-    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }} />))
     expect(el.querySelector('.due-end')?.getAttribute('data-motion')).toBe('play')
     // Behind a page tab again and back (focus mode, another tab): the stop does not wait or start over.
     shown = false
-    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }} />))
     shown = true
-    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }} />))
     expect(el.querySelector('.due-end')?.getAttribute('data-motion')).not.toBe('wait')
   })
 
@@ -426,9 +419,9 @@ describe('YAZ-5662: Inbox complete with a 🎉, a green ✓ and one burst of con
     expect(cheers()).toBe(1)
     // Behind a page tab and back: the screen shows again, the confetti does not.
     shown = false
-    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }} />))
     shown = true
-    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }} />))
     await settle()
     expect(cheers()).toBe(1)
     // The same page opened again, nothing left in it: the 🎉 shows, with no answer this session no burst.
@@ -443,13 +436,13 @@ describe('YAZ-5662: Inbox complete with a 🎉, a green ✓ and one burst of con
     await freshPage()
     while (review.session!.counts.all > 1) await answer('good')
     shown = false
-    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }} />))
     await answer('good')
     expect(showing()).toBeNull()
     await settle()
     expect(cheers()).toBe(0)
     shown = true
-    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }} />))
     await settle()
     expect(cheers()).toBe(1)
   })

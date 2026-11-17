@@ -93,9 +93,8 @@ describe('YAZ-5615: a new day during a review (spec 21)', () => {
     await mount()
     await step(() => review.start({}))
     await step(() => review.answer('good')) // DUE-1 done: a known card's ✓ lets it go
-    // "Due today is done." (YAZ-5043), then the new cards.
-    expect(review.session!.end?.kind).toBe('done')
-    await step(() => review.goOn())
+    // All cards is one run (YAZ-5707): the new card next, with no stop.
+    expect(review.session!.end).toBeNull()
     expect(review.session!.card!.id).toBe('NEW-1')
     expect(counts()).toEqual({ due: 1, today: 1 })
     // Midnight: the review's own timer moves the day.

@@ -15,10 +15,19 @@
  * OPEN filter's misses, so it and the red always agree. Mochi shows the session's ✕ on every filter (finding 2); we
  * differ on purpose. A Forgot on a new card never makes a ✕ (finding 11).
  *
+ * ALL CARDS (YAZ-5707, Mochi's finding E5 on YAZ-5703): ONE run with no stop, so its numbers are these with two more
+ * things. The run carries today's earlier work (`earlierDone`, fixed when the session starts): the cards of its queue
+ * answered today before it (a new card learned earlier, its same-day review waiting: E5's "2 / 7"), each counted as done
+ * the way this session would have counted it. And the exact rule is:
+ *   total = earlier + the session's done + every card still waiting (each once), where the waiting cards are the
+ *   cards at the start not answered yet, a new card back after a ✕ (it moved nothing), each learned new card's
+ *   same-day review (+1 when learned) and each missed card (+1 when missed, −1 when remembered at the end).
+ * So the bar is full exactly when nothing is left: then "Inbox complete.".
+ *
  * The ring's % is each due card's FIRST answer of the session (`dueFirsts`): a card missed then got right counts as
  * missed, a new card never counts.
  */
-import type { CardRating } from '@shared/cardLine'
+import type { CardRating, CardReview } from '@shared/cardLine'
 import type { DueCard } from '@shared/cardSchedule'
 import type { CardFilter } from './useCardReview'
 
@@ -57,10 +66,13 @@ export interface FilterCount {
 
 const missed = (c: SessionCard): boolean => c.forgot === true && !c.isNew
 
-/** The filter's numbers (YAZ-5675): `queue` is the cards still waiting in the session. */
-export function filterCount(answers: readonly SessionAnswer[], queue: readonly SessionCard[], filter: CardFilter): FilterCount {
+/**
+ * The filter's numbers (YAZ-5675): `queue` is the cards still waiting in the session; `earlier` (YAZ-5707, All cards
+ * only) today's work before the session (`earlierDone`).
+ */
+export function filterCount(answers: readonly SessionAnswer[], queue: readonly SessionCard[], filter: CardFilter, earlier = 0): FilterCount {
   const seen = new Set<string>()
-  let done = 0
+  let done = earlier
   for (const a of answers) {
     if (!matchesFilter(a, filter)) continue
     if (a.isNew) {
@@ -72,6 +84,34 @@ export function filterCount(answers: readonly SessionAnswer[], queue: readonly S
   }
   const left = queue.filter((c) => matchesFilter(c, filter))
   return { done, total: done + left.length, waiting: left.filter(missed).length }
+}
+
+/**
+ * Today's work before a session (YAZ-5707, Mochi's E5: "2 / 7" at the start of All cards after 2 new cards learned):
+ * of `cards` (the session's queue), each card answered today (`from`, the local day's start) up to `before` (the session's start), as this session would have counted it: a
+ * card known before today, 1 (its first answer); a new card learned today, 1, and 1 more once its same-day review was
+ * answered; a new card with only ✕ today, 0. Archived cards count nothing.
+ */
+export function earlierDone(cards: Iterable<{ off: boolean; reviews: readonly CardReview[] }>, from: string, before: string): number {
+  let done = 0
+  for (const card of cards) {
+    if (card.off) continue
+    let known = false
+    let today = 0
+    let learned = -1
+    for (const r of card.reviews) {
+      if (r.at < from) {
+        if (r.rating !== 'again') known = true
+        continue
+      }
+      if (r.at > before) continue
+      if (!known && learned === -1 && r.rating !== 'again') learned = today
+      today++
+    }
+    if (today === 0) continue
+    done += known ? 1 : learned === -1 ? 0 : learned < today - 1 ? 2 : 1
+  }
+  return done
 }
 
 /** The ring's numbers (YAZ-5043): the due cards' first answers, how many were Remembered, the % to the nearest (never 100 while one was missed). */

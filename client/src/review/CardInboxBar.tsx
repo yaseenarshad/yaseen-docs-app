@@ -47,10 +47,10 @@ import { SessionBar, SessionCount } from './SessionCount'
 import { useNewCardsPicker } from './NewCardsPicker'
 import { kindCount, kindCountText, newRowPick, noMoreNew, pickLabel } from './inboxMenu'
 import { CARD_FILTERS, inboxFilters } from './cardFilters'
-import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, upNextSettings, useSettingsFold } from './ReviewSettingsPart'
+import { ReviewSettingsCog, ReviewSettingsPart, newCardsSettings, orderSettings, upNextSettings, useSettingsFold } from './ReviewSettingsPart'
 import { ChevronIcon, FolderIcon, PageIcon, VaultIcon } from './cardInboxIcons'
 
-const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
+const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders' | 'setOrder'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }), setOrder: () => undefined }
 
 interface CardInboxBarProps {
   session: CardReviewSession
@@ -62,7 +62,7 @@ interface CardInboxBarProps {
   /** A click on a part of the card's place: the folder page of the vault or a folder, or the page. */
   openPlace?: (part: CardPlacePart) => void
   /** The folder pick for new cards (YAZ-5322): the picker's rows and its save; without it the row has no "from". */
-  pick?: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'>
+  pick?: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders' | 'setOrder'>
   /** The row's right end after the count (YAZ-5689): the one "View" icon (`ReviewViewButton`: Time, Zoom, Focus mode). */
   view?: ReactNode
 }
@@ -227,6 +227,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                     addCards === undefined ? undefined : session.adds.new === 0 ? <span className="card-inbox__add-none">{noMoreNew(session)}</span> : <AddMoreField kind="new" look="setting" start={session.adds.new} onAdd={(n) => addCards('new', n)} />,
                   ),
                   ...(addCards !== undefined && session.adds.next > 0 ? [upNextSettings(<AddMoreField kind="next" look="setting" start={session.adds.next} onAdd={(n) => addCards('next', n)} />)] : []),
+                  ...orderSettings(session.order, pick.setOrder, 'card-inbox'),
                 ]}
               />
             )}

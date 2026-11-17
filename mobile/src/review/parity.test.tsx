@@ -61,7 +61,7 @@ vi.mock('@client/api', async (importOriginal) => {
 const SETTINGS = sanitizeReviewSettings({ newPerDay: 3, fuzz: false })
 const TWENTY = Array.from({ length: 20 }, (_, i) => `p${i + 1} ${i % 2 === 0 ? `"v${i}"` : String(i)}`).join(', ')
 const FILES: Record<string, string> = {
-  '.yaseendocs/review.json': JSON.stringify({ newPerDay: 3, fuzz: false }),
+  '.yaseendocs/review.json': JSON.stringify({ dueTodayOrder: 'in-order', newPerDay: 3, fuzz: false }),
   'spanish.md': page(
     'Spanish words',
     cardBlock('Old one?\n---\n{{viejo}}', 'PA-1, title "Viejo", tags "europe" "capitals", level "A2", 2026-10-01T09:00:00.000Z good, 2026-10-05T09:00:00.000Z good'),
@@ -236,7 +236,7 @@ describe('one review logic (decision 3): the Mac host and the phone host give th
   })
 
   it('one new card, Remembered two times in ONE minute (it comes back at once): two reviews on both', async () => {
-    const files = { '.yaseendocs/review.json': '{}', 'one.md': page('One', cardBlock('Only?\n---\n{{one}}', 'PA-9')) }
+    const files = { '.yaseendocs/review.json': '{\"dueTodayOrder\": \"in-order\"}', 'one.md': page('One', cardBlock('Only?\n---\n{{one}}', 'PA-9')) }
     const tap = async (run: Run) => {
       const seen: string[] = []
       vi.setSystemTime(NOW)

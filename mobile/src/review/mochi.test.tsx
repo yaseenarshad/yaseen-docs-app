@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VAULT } from '../sync/testing'
-import { readNewFrom } from './newFromPick'
+import { readNewFrom, readOrders } from './newFromPick'
 import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
@@ -296,7 +296,7 @@ describe('the review sheet\'s ⚙ (YAZ-5685, the Mac\'s cards menu)', () => {
     expect(cog().getAttribute('aria-expanded')).toBe('true')
     expect(part()!.previousElementSibling).toBe(foot)
     expect(part()!.querySelector('h6')!.textContent).toBe('New cards')
-    expect([...part()!.querySelectorAll('li')].map((li) => (li.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual(['FromAll folders ›', 'Add todayNo more new cards in any folder'])
+    expect([...part()!.querySelectorAll('li')].map((li) => (li.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual(['FromAll folders ›', 'Add todayNo more new cards in any folder', 'OrderDue firstShuffle', 'OrderIn orderShuffle'])
     await h.click('Review settings')
     expect(part()).toBeNull()
     await h.click('Review settings')
@@ -312,6 +312,31 @@ describe('the review sheet\'s ⚙ (YAZ-5685, the Mac\'s cards menu)', () => {
     await tapOn(q('.review__card'))
     await h.click(/Choose what to review/)
     expect([cog().getAttribute('aria-expanded'), part()]).toEqual(['false', null])
+  })
+
+  const orderRows = () =>
+    [...part()!.querySelectorAll('[role="radiogroup"]')].map((g) => [g.getAttribute('aria-label'), [...g.querySelectorAll('button[role="radio"]')].map((r) => `${r.textContent}${r.getAttribute('aria-checked') === 'true' ? ' ✓' : ''}`)])
+
+  it('YAZ-5707: "All cards" · Order Due first · Shuffle and "Due today" · Order In order · Shuffle (44 pt each); a tap keeps this phone`s pick for that row alone (the phone writes no settings file)', async () => {
+    h = await reviewSetup(FILES, { dueShuffle: true })
+    await h.click(/Choose what to review/)
+    await h.click('Review settings')
+    expect(orderRows()).toEqual([
+      ['Order of All cards', ['Due first ✓', 'Shuffle']],
+      ['Order of Due today', ['In order', 'Shuffle ✓']],
+    ])
+    await tapOn([...part()!.querySelectorAll<HTMLButtonElement>('button[data-order="shuffle"]')][0])
+    await vi.waitFor(async () => expect(await readOrders(h!.store, VAULT)).toEqual({ all: 'shuffle', due: null }))
+    await tapOn(part()!.querySelector<HTMLButtonElement>('button[data-order="in-order"]'))
+    await vi.waitFor(async () => expect(await readOrders(h!.store, VAULT)).toEqual({ all: 'shuffle', due: 'in-order' }))
+    expect(orderRows().map((r) => r[1])).toEqual([['Due first', 'Shuffle ✓'], ['In order ✓', 'Shuffle']])
+  })
+
+  it('YAZ-5707: with no pick of its own the phone follows the Mac`s Order rows (review.json `allCardsOrder`, `dueTodayOrder`)', async () => {
+    h = await reviewSetup({ ...FILES, '.yaseendocs/review.json': '{"newPerDay": 10, "allCardsOrder": "shuffle", "dueTodayOrder": "in-order"}' })
+    await h.click(/Choose what to review/)
+    await h.click('Review settings')
+    expect(orderRows().map((r) => r[1])).toEqual([['Due first', 'Shuffle ✓'], ['In order ✓', 'Shuffle']])
   })
 
   it('YAZ-5690: "Add today [N] Add" under From adds that many new cards for today (the Mac`s field, 44 pt); the foot says "Today: N cards"', async () => {
@@ -340,7 +365,7 @@ describe('the review sheet\'s ⚙ (YAZ-5685, the Mac\'s cards menu)', () => {
     h = await reviewSetup(UP)
     await h.click(/Choose what to review/)
     await h.click('Review settings')
-    expect([...part()!.querySelectorAll('h6')].map((x) => x.textContent)).toEqual(['New cards', 'Up next'])
+    expect([...part()!.querySelectorAll('h6')].map((x) => x.textContent)).toEqual(['New cards', 'Up next', 'All cards', 'Due today'])
     const add = part()!.querySelectorAll('section')[1]!.querySelector<HTMLButtonElement>('button.card-inbox__add-go')!
     expect(part()!.querySelectorAll('section')[1]!.querySelector('input')!.getAttribute('aria-label')).toBe('How many Up next cards to add')
     await tapOn(add)
@@ -350,15 +375,15 @@ describe('the review sheet\'s ⚙ (YAZ-5685, the Mac\'s cards menu)', () => {
     const nextCount = () => [...h!.host.querySelectorAll('.review__sheet-row')].find((r) => r.querySelector('[data-filter="next"]'))!.querySelector('.review__sheet-n')!.textContent
     expect(nextCount()).toBe('2 / 2')
     // Nothing waits now: no Up next group.
-    expect([...part()!.querySelectorAll('h6')].map((x) => x.textContent)).toEqual(['New cards'])
+    expect([...part()!.querySelectorAll('h6')].map((x) => x.textContent)).toEqual(['New cards', 'All cards', 'Due today'])
   })
 
   it('YAZ-5690 round 2: no new card beyond today`s limit: Add today says "No more new cards in any folder"; no Up next waiting: no group', async () => {
     h = await reviewSetup(FILES)
     await h.click(/Choose what to review/)
     await h.click('Review settings')
-    expect([...part()!.querySelectorAll('h6')].map((x) => x.textContent)).toEqual(['New cards'])
-    expect([...part()!.querySelectorAll('li')].map((li) => li.getAttribute('data-setting'))).toEqual(['from', 'add'])
+    expect([...part()!.querySelectorAll('h6')].map((x) => x.textContent)).toEqual(['New cards', 'All cards', 'Due today'])
+    expect([...part()!.querySelectorAll('li')].map((li) => li.getAttribute('data-setting'))).toEqual(['from', 'add', 'order', 'order'])
     expect(part()!.querySelector('li[data-setting="add"] .card-inbox__add-none')?.textContent).toBe('No more new cards in any folder')
   })
 })

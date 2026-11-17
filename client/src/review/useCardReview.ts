@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { isCardSeconds, withCardNext, withCardOff, type CardLine, type CardRating, type CardReview } from '@shared/cardLine'
+import { cardTime, isCardSeconds, withCardNext, withCardOff, type CardLine, type CardRating, type CardReview } from '@shared/cardLine'
 import { UP_NEXT_BEGUN, addStep, anyUpNext, cardPlan, cardState, isCardDue, newCardFolders, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
-import type { ReviewSettings } from '@shared/reviews'
+import type { AllCardsOrder, DueTodayOrder, ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/folderTitle'
 import { isCardGone, type CardOnPage } from './cardRead'
 import { useLocalDay } from './localDay'
 import type { ReviewHost } from './reviewHost'
-import { dueFirsts, filterCount, matchesFilter, type FilterCount, type SessionAnswer } from './sessionProgress'
+import { dueFirsts, earlierDone, filterCount, matchesFilter, type FilterCount, type SessionAnswer } from './sessionProgress'
 import { tourEvent } from '../course/tourBus'
 
 /**
@@ -91,9 +91,8 @@ import { tourEvent } from '../course/tourBus'
  * queue leave (not the one on show, not a repeat), today's new cards not in it join at the end. It is a setting, so
  * it is not on the undo stack. `newCardFolders` gives the picker its folders and counts.
  *
- * THE END OF DUE TODAY (YAZ-5043, as Mochi's two passes): under All cards and Due today, a Forgot on a card with
- * reviews is held back to the end of the DUE part of the queue (before any new card), so the missed cards come before
- * the new ones. When the first pass of the due cards is done the session STOPS (`pause`): "You remembered 93% of
+ * THE END OF DUE TODAY (YAZ-5043, as Mochi's two passes; Due today only since YAZ-5707: All cards is one run, below):
+ * a Forgot on a card with reviews is held back to the end of the DUE part of the queue (before any new card). When the first pass of the due cards is done the session STOPS (`pause`): "You remembered 93% of
  * cards." with one button, "Review missed cards 5" (no skip: you finish them that day; YAZ-5677, Mochi's words). A missed card is one with a
  * Forgot in this session: only misses come back (YAZ-5702, the YAZ-5655 amendment); a learned new card's one same-day
  * review (`fromNew`) waits after the pass and makes no stop. When the missed cards are done
@@ -101,6 +100,14 @@ import { tourEvent } from '../course/tourBus'
  * answer of this session only (`dueFirsts`, `sessionProgress.ts`): a card missed then got right counts as missed, a new card never counts, and a
  * history reset elsewhere changes nothing. Each stop shows once per session (`stage`): a card that becomes due later
  * never brings the % screen back. ⌘Z on a stop takes it back with the last answer: the card shows again.
+ *
+ * ALL CARDS IS ONE RUN (YAZ-5707; Mochi's finding E5 on YAZ-5703: on All cards Mochi never stops). The run is every
+ * card of today's queue, in the Order settings' order (`ordered`, once at the start: All cards Due first or Shuffle;
+ * Due today In order or Shuffle, which orders the due cards here too),
+ * then each learned new card's same-day review, then the missed cards at the very end (`allPart`, `repeatPlace`), and
+ * then "Inbox complete." No stop between the due and the new cards, no "% / Review missed cards" screen and no "Learn
+ * new cards" offer on All cards: those stay on Due today. One switch (`ALL_CARDS_STOP_BEFORE_MISSED`) would bring back a
+ * % stop before the missed cards. The numbers: `sessionProgress.ts` (All cards carries today's earlier work).
  */
 
 /** Which cards of the session show (YAZ-5017). Each has a count of the session's queue. */
@@ -200,6 +207,8 @@ export interface CardReviewSession {
   landing: string | null
   /** The picked folders have no new card left in the scope, so new cards come from All folders (YAZ-5322). */
   newFallback: boolean
+  /** The Order setting of All cards (YAZ-5707): the ⚙'s "Order: Due first · Shuffle". */
+  order: { all: AllCardsOrder; due: DueTodayOrder }
 }
 
 /** Where Due today stopped (YAZ-5043): `missed` after the first pass (missed cards wait), `done` when all are done. */
@@ -269,6 +278,8 @@ export interface CardReviewApi {
   resetCards: (kind: AddKind) => void
   /** Saves the folders new cards come from (YAZ-5322); empty for All folders. The open session's new cards follow at once. */
   setNewFrom: (folders: readonly string[]) => void
+  /** Saves the Order of All cards or of Due today (YAZ-5707); the open session's cards not answered yet follow at once. */
+  setOrder: (order: { all: AllCardsOrder } | { due: DueTodayOrder }) => void
   /** The picker's rows (YAZ-5322): every new card of the vault, and each folder with new cards (or picked), parents first. */
   newCardFolders: () => { all: number; folders: NewCardFolder[] }
   /** Past a stop of Due today (YAZ-5043): the missed cards, or the new cards (Due today's filter goes to New cards). */
@@ -296,6 +307,10 @@ interface CachedCard {
 }
 
 interface Session {
+  /** YAZ-5707: each card's place in today's plan at the start (`cardPlan`): Due today's In order. */
+  rank: ReadonlyMap<string, number>
+  /** YAZ-5707: All cards' "done" before this session: today's earlier work in the scope (`earlierDone`). */
+  earlier: number
   /** YAZ-5029: one per `start`: the card left on show while the next is read is only ever this session's. */
   id: number
   label: string
@@ -416,7 +431,15 @@ const fitted = (s: Session): Session => {
  * Where a Forgot's repeat goes (YAZ-5043): a new card's at the end; a due card's at the end of the DUE part of `rest`,
  * so the missed cards come before the new cards under All cards too.
  */
-const repeatPlace = (rest: readonly QueueCard[], from: number, card: QueueCard): number => {
+const repeatPlace = (rest: readonly QueueCard[], from: number, card: QueueCard, back: QueueCard, filter: CardFilter): number => {
+  if (filter === 'all') {
+    // YAZ-5707: the run's own cards (a new card after ✕) after the run's last card; a same-day review after the
+    // run and the other same-day reviews; a missed card at the very end.
+    const part = allPart(back)
+    if (part === 2) return rest.length
+    for (let i = rest.length - 1; i >= from; i--) if (allPart(rest[i]) <= part) return i + 1
+    return from
+  }
   if (card.isNew || card.fromNew === true) return rest.length
   for (let i = rest.length - 1; i >= from; i--) if (!rest[i].isNew) return i + 1
   return from
@@ -428,7 +451,8 @@ const repeatPlace = (rest: readonly QueueCard[], from: number, card: QueueCard):
  */
 const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> => {
   const none = { stage: s.stage, pause: null }
-  if (!inPass(card, s.filter) || s.stage === 'over' || (s.filter !== 'all' && s.filter !== 'due')) return none
+  if (s.filter === 'all') return allStop(s)
+  if (!inPass(card, s.filter) || s.stage === 'over' || s.filter !== 'due') return none
   const due = s.queue.filter((c) => inPass(c, s.filter))
   // The first pass is done when every due card waiting is a repeat: a missed card (only misses come back, YAZ-5702, the
   // YAZ-5655 amendment). The stop needs a Forgot, so it never says "100%" with "Review missed cards 1").
@@ -440,16 +464,90 @@ const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> 
 }
 
 /**
- * A card of Due today's pass (YAZ-5043): under All cards a due card or an Up next card (rule 8: the % counts every card
- * answered in that pass, an Up next card too); under Due today its own cards (rule 7). A new card begun today
- * (`fromNew`) waits for its second ✓ after the pass.
+ * YAZ-5707, THE ONE SWITCH: at the end of an All cards run with misses, stop at "You remembered N%" with "Review missed
+ * cards K" (true), or roll straight into the missed cards (false: Mochi, finding E5 — All cards never stops).
  */
-const inPass = (c: QueueCard, filter: CardFilter): boolean => c.fromNew !== true && (filter === 'all' ? c.next || !c.isNew : matchesFilter(c, 'due'))
+const ALL_CARDS_STOP_BEFORE_MISSED = false
+
+/**
+ * Where a card of an All cards session stands (YAZ-5707): 0 the run (a card not answered yet), 1 back today but not
+ * missed (a learned new card's same-day review; a new card after a ✕, which stays New until its first ✓, so it never
+ * shows twice in a row while other cards wait), 2 a missed card (✕ on a due card, or on a same-day review). The queue
+ * keeps them in that order.
+ */
+const allPart = (c: QueueCard): 0 | 1 | 2 => (c.repeat !== true ? 0 : c.forgot === true && !c.isNew ? 2 : 1)
+
+/** All cards' stop (YAZ-5707): none, unless the switch is on and only missed cards are left after a first-answer ✕. */
+const allStop = (s: Session): Pick<Session, 'stage' | 'pause'> => {
+  const none = { stage: s.stage, pause: null }
+  if (!ALL_CARDS_STOP_BEFORE_MISSED || s.stage !== 'first' || s.queue.some((c) => allPart(c) < 2)) return none
+  return missedCards(s).length > 0 && s.answered.some((a) => a.first && a.rating === 'again') ? { stage: 'missed', pause: 'missed' } : none
+}
+
+/**
+ * The Order setting (YAZ-5707) on the cards of `queue` from `from` on that are not Up next and not back after an
+ * answer: Due first puts the due cards before the new ones; Shuffle mixes the two at random. Each kind keeps its own
+ * order (most overdue first; the new cards' order), so Due today and New cards read the same in either; the cards
+ * keep the places they had between them, so a Shuffle undone is Due first again.
+ */
+const mixed = (queue: readonly QueueCard[], from: number, order: AllCardsOrder): QueueCard[] => {
+  const slots: number[] = []
+  const due: QueueCard[] = []
+  const fresh: QueueCard[] = []
+  queue.forEach((c, i) => {
+    if (i < from || c.next || c.repeat === true) return
+    slots.push(i)
+    ;(c.isNew ? fresh : due).push(c)
+  })
+  const mixed: QueueCard[] = []
+  if (order === 'due-first') mixed.push(...due, ...fresh)
+  else
+    for (let d = 0, n = 0; d < due.length || n < fresh.length; ) {
+      // Each order of the two kinds is equally likely: the next card is due with the share of due cards left.
+      if (Math.random() * (due.length - d + fresh.length - n) < due.length - d) mixed.push(due[d++])
+      else mixed.push(fresh[n++])
+    }
+  const out = [...queue]
+  slots.forEach((slot, k) => (out[slot] = mixed[k]))
+  return out
+}
+
+/**
+ * Due today's Order (YAZ-5707) on the due cards of `queue` from `from` on (not Up next, not back after an answer): Shuffle
+ * puts them in a random order among their places; In order puts them back in the plan's order (`rank`).
+ */
+const dueOrdered = (queue: readonly QueueCard[], from: number, order: DueTodayOrder, rank: ReadonlyMap<string, number>): QueueCard[] => {
+  const slots: number[] = []
+  queue.forEach((c, i) => {
+    if (i >= from && !c.next && c.repeat !== true && !c.isNew) slots.push(i)
+  })
+  const due = slots.map((i) => queue[i])
+  if (order === 'shuffle')
+    for (let k = due.length - 1; k > 0; k--) {
+      const r = Math.floor(Math.random() * (k + 1))
+      ;[due[k], due[r]] = [due[r], due[k]]
+    }
+  else due.sort((a, b) => (rank.get(cardKey(a)) ?? Infinity) - (rank.get(cardKey(b)) ?? Infinity))
+  const out = [...queue]
+  slots.forEach((slot, k) => (out[slot] = due[k]))
+  return out
+}
+
+/** Both Order settings (YAZ-5707) on `queue` from `from` on: Due today's order of the due cards, then All cards' mix. */
+const ordered = (queue: readonly QueueCard[], from: number, s: Pick<ReviewSettings, 'allCardsOrder' | 'dueTodayOrder'>, rank: ReadonlyMap<string, number>): QueueCard[] =>
+  mixed(dueOrdered(queue, from, s.dueTodayOrder, rank), from, s.allCardsOrder)
+
+/**
+ * A card of Due today's pass (YAZ-5043): its own cards (rule 7). A new card begun today (`fromNew`) waits for its
+ * second ✓ after the pass. (All cards has no pass since YAZ-5707: `allStop`.)
+ */
+const inPass = (c: QueueCard, filter: CardFilter): boolean => c.fromNew !== true && matchesFilter(c, filter)
 
 /** The missed cards waiting (YAZ-5043): due cards back in this session after a Forgot of this session (only misses come back, YAZ-5702). */
 const missedCards = (s: Session): QueueCard[] => {
   const forgot = new Set(s.answered.filter((a) => a.rating === 'again').map((a) => a.key))
-  return s.queue.filter((c) => !c.isNew && c.repeat === true && c.fromNew !== true && forgot.has(cardKey(c)))
+  // A learned new card's same-day review answered ✕ is a missed card too (YAZ-5702: "✕ means Review missed cards").
+  return s.queue.filter((c) => !c.isNew && c.repeat === true && (c.fromNew !== true || c.forgot === true) && forgot.has(cardKey(c)))
 }
 
 /** The place of the card the filter shows next before (-1) or after (+1) `at`; -1 when there is none. */
@@ -734,6 +832,21 @@ const endOf = (s: Session): DueTodayEnd | null => {
   }
 }
 
+/** The local day's start of `now`, as a review time (YAZ-5707: today's earlier work). */
+const dayStart = (now: number): string => {
+  const d = new Date(now)
+  d.setHours(0, 0, 0, 0)
+  return cardTime(d.getTime())
+}
+/**
+ * The index's cards of `queue` (YAZ-5707): today's earlier work that the run carries is that of the cards still in it
+ * (Mochi's E5: the new cards learned earlier, their same-day review waiting); a card done for today is not in the run.
+ */
+const queuedCards = (records: readonly IndexRecord[], queue: readonly DueCard[]) => {
+  const keys = new Set(queue.map(cardKey))
+  return records.flatMap((r) => (r.cards ?? []).filter((c) => c.id !== null && keys.has(`${r.path}\n${c.id}`)))
+}
+
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 const sameCard = (a: DueCard, b: DueCard): boolean => a.path === b.path && a.id === b.id
 /** Is `card` the one on show? By path and ID: a mark the index changed (YAZ-5031) gives the card a new object. */
@@ -827,6 +940,15 @@ export function useCardReview(
       return withNewCards(s, vault ? vaultQueue : cardPlan(records, settings, Date.now(), s.scope.folder, s.scope.page, letters, taken, added).queue)
     })
   }, [pickKey, vaultQueue, records, settings, letters, taken, added])
+
+  // YAZ-5707: a change of the Order changes the open session's cards after the one on show, at once.
+  const orderKey = `${settings.allCardsOrder} ${settings.dueTodayOrder}`
+  const lastOrder = useRef(orderKey)
+  useEffect(() => {
+    if (lastOrder.current === orderKey) return
+    lastOrder.current = orderKey
+    setSession((s) => (s === null ? s : { ...s, queue: ordered(s.queue, s.pause === null ? s.at + 1 : s.at, settings, s.rank) }))
+  }, [orderKey, settings])
 
   // The callbacks read the latest state at call time; their identities stay stable for memoised children.
   const live = useRef({ records, settings, session, loaded, fixed, taken, added })
@@ -954,13 +1076,18 @@ export function useCardReview(
     (scope: CardReviewScope = {}, resume: CardReviewResume = {}) => {
       const { records, settings } = live.current
       if (!settings.enabled) return
-      const queue = cardPlan(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : host.upNextTakenToday(root), root === null ? NO_ADDED : host.cardsAddedToday(root)).queue
+      const now = Date.now()
+      // YAZ-5707: the Order setting, once for the session (⌘Z and a filter switch never mix again).
+      const plan = cardPlan(records, settings, now, scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : host.upNextTakenToday(root), root === null ? NO_ADDED : host.cardsAddedToday(root)).queue
+      const rank = new Map(plan.map((c, i) => [cardKey(c), i]))
+      const queue = ordered(plan, 0, settings, rank)
+      const earlier = earlierDone(queuedCards(records, queue), dayStart(now), cardTime(now))
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020); a moved Inbox on its filter, at its
       // card when that is still in the queue, else on the filter's first card (YAZ-5054).
       const filter = resume.filter ?? 'all'
       const at = resume.card === undefined ? -1 : queue.findIndex((c) => c.path === resume.card?.path && c.id === resume.card.id)
-      setSession((s) => fitted({ id: ++sessionCount, label, scope, queue, at: Math.max(at, 0), turn: (s?.turn ?? 0) + 1, undo: [], filter, answered: [], marks: markedIn(queue), live: listsOf(queue), stage: 'first', pause: null }))
+      setSession((s) => fitted({ id: ++sessionCount, rank, earlier, label, scope, queue, at: Math.max(at, 0), turn: (s?.turn ?? 0) + 1, undo: [], filter, answered: [], marks: markedIn(queue), live: listsOf(queue), stage: 'first', pause: null }))
     },
     [root, source, host],
   )
@@ -1044,9 +1171,9 @@ export function useCardReview(
         // same cards in all); it comes back at the end, and its second Remembered lets it go. A new card's Forgot keeps
         // it under New cards (YAZ-5017).
         const rest: QueueCard[] = [...s.queue.slice(0, s.at), ...after]
-        const place = repeatPlace(rest, s.at, card)
         const learned = card.isNew && rating !== 'again'
         const back: QueueCard = { ...card, due: chosen.due, next: false, repeat: true, forgot: rating === 'again', ...(learned ? { isNew: false, fromNew: true } : {}) }
+        const place = repeatPlace(rest, s.at, card, back, s.filter)
         const queue = repeat ? [...rest.slice(0, place), back, ...rest.slice(place)] : rest
         // YAZ-5432: with what the card was, so each filter's bar reads its own answers.
         const answered = written !== 'gone' ? [...s.answered, { key, rating, isNew: card.isNew, next: card.next, first }] : s.answered
@@ -1292,6 +1419,16 @@ export function useCardReview(
     [saveSettings],
   )
 
+  const setOrder = useCallback(
+    (order: { all: AllCardsOrder } | { due: DueTodayOrder }) => {
+      const { settings } = live.current
+      const next = 'all' in order ? { ...settings, allCardsOrder: order.all } : { ...settings, dueTodayOrder: order.due }
+      if (saveSettings === undefined || (next.allCardsOrder === settings.allCardsOrder && next.dueTodayOrder === settings.dueTodayOrder)) return
+      saveSettings(next)
+    },
+    [saveSettings],
+  )
+
   const turnOff = useCallback(async () => {
     const s0 = live.current.session
     const card = s0?.queue[s0.at]
@@ -1339,7 +1476,7 @@ export function useCardReview(
     else if (shownCard !== null && page !== null) lastShown.current = { session: session.id, card: shownCard }
     const { filter, queue, scope } = session
     const counts = countOf(queue)
-    const progress = filterCount(session.answered, queue, filter)
+    const progress = filterCount(session.answered, queue, filter, filter === 'all' ? session.earlier : 0)
     const lastStep = session.undo.at(-1)
     const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
@@ -1372,6 +1509,7 @@ export function useCardReview(
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count, reset: false } : lastStep?.kind === 'reset' ? { kind: lastStep.what, count: lastStep.count, reset: true } : null,
       newFrom: settings.newFrom.map((folder) => ({ folder, label: folderLabelOf(folder) })),
       newFallback: scopePlan.newFallback,
+      order: { all: settings.allCardsOrder, due: settings.dueTodayOrder },
       end: endOf(session),
       landing: shownCard === null && session.answered.length > 0 ? `${session.id}:${session.answered.length}` : null,
     }
@@ -1388,5 +1526,5 @@ export function useCardReview(
     return { all, folders: list }
   }, [folderLabelOf])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, setMark, move, turnOff, setFilter, addCards, resetCards, setNewFrom, newCardFolders: pickerFolders, goOn }
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, setMark, move, turnOff, setFilter, addCards, resetCards, setNewFrom, setOrder, newCardFolders: pickerFolders, goOn }
 }

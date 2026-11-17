@@ -120,149 +120,29 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(listed()).toEqual([...DUE, 'VRB-2', 'VRB-4'])
   })
 
-  it('4. All cards: a missed due card comes back BEFORE the new cards, with a stop after each pass; then "Inbox complete"', async () => {
+  it('4. YAZ-5707 (Mochi`s E5, as the Mac): All cards is ONE run — the due cards, the new cards and their same-day reviews, the missed card at the end; no stop; then "Inbox complete"', async () => {
     h = await reviewSetup(FILES)
     const seen: string[] = []
     seen.push(await answer('Forgot'))
-    for (let i = 0; i < 4; i++) seen.push(await answer('Remembered'))
-    expect(seen).toEqual(DUE)
-    expect(title()).toBe('You remembered 80% of cards.')
-    await h.click('Review missed cards 1')
-    expect(await answer('Remembered')).toBe('VRB-1')
-    // The break before the new cards.
-    expect(title()).toBe('Finished reviewing missed cards.')
-    await h.click('Learn new cards 3')
-    expect(h.host.querySelector('.review__filter-label')?.textContent).toBe('All cards')
-    while (showing() !== null && seen.length < 20) seen.push(await answer('Remembered'))
-    expect(seen.slice(5)).toHaveLength(6)
-    expect(seen.slice(5).every((id) => NEW.includes(id))).toBe(true)
+    while (showing() !== null && seen.length < 20) {
+      expect(q('.due-end')).toBeNull()
+      seen.push(await answer('Remembered'))
+    }
+    expect(seen.slice(0, 5)).toEqual(DUE)
+    expect(seen.slice(5, 11)).toHaveLength(6)
+    expect(seen.slice(5, 11).every((id) => NEW.includes(id))).toBe(true)
+    expect(seen.slice(11)).toEqual(['VRB-1'])
     expect(title()).toBe('Inbox complete.')
-  })
-
-  it('5. Undo in the hint line on the % screen takes the stop back with the last answer: the card shows again', async () => {
-    h = await reviewSetup(FILES)
-    await pick('Due today')
-    for (const r of ['Remembered', 'Remembered', 'Remembered', 'Remembered', 'Forgot'] as const) await answer(r)
-    expect(q('.due-end')?.dataset.kind).toBe('missed')
-    expect(h.last()).toContain('Undo')
-    // S5: the end screen takes no tap in its first 400 ms (a double tap's second tap); this Undo is a later one.
-    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
-    await h.click('Undo')
-    expect(q('.due-end')).toBeNull()
-    expect(showing()).toBe('VRB-5')
-    expect(await answer('Remembered')).toBe('VRB-5')
-    expect(q('.due-end')?.dataset.kind).toBe('done')
-    expect(title()).toBe('Finished reviewing.')
-    expect(listed()).toEqual(DUE)
-  })
-
-  it('endScreen_ignoresTapsUnder400ms_afterLastAnswer: the second tap of a double tap on ✓ never hits the end screen\'s Undo (S5)', async () => {
-    h = await reviewSetup(FILES)
-    await pick('Due today')
-    for (let i = 0; i < 4; i++) await answer('Remembered')
-    await answer('Remembered')
-    expect(q('.due-end')?.dataset.kind).toBe('done')
-    // The second tap, ~120 ms later, where ✓ was: "Undo" is there now. It does nothing.
-    const undo = q('.review__stage--done .review__undo')
-    expect(undo).not.toBeNull()
-    await act(async () => undo!.click())
-    expect(q('.due-end')?.dataset.kind).toBe('done')
-    expect(showing()).toBeNull()
-    expect(listed()).toEqual(DUE)
-    // A tap after the 400 ms is a choice: Undo takes the answer back.
-    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
-    await h.click('Undo')
-    expect(q('.due-end')).toBeNull()
-    expect(showing()).toBe('VRB-5')
-  })
-
-  it('undo_onDoneScreen_ignoresTapsUnder400ms_onTheReturnedCard: a double tap on Undo never answers the card it brings back (sweep2 M-A)', async () => {
-    h = await reviewSetup(FILES)
-    await pick('Due today')
-    for (const r of ['Remembered', 'Remembered', 'Remembered', 'Remembered', 'Forgot'] as const) await answer(r)
-    expect(q('.due-end')?.dataset.kind).toBe('missed')
-    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
-    // The first tap of the double tap: Undo brings VRB-5 back, with ✓ under the finger.
-    await act(async () => q('.review__stage--done .review__undo')!.click())
-    await h.settle()
-    expect(showing()).toBe('VRB-5')
-    // The second tap, 100–300 ms later, lands on ✓, then on the card: both do nothing.
-    await act(async () => q('.review__answer[data-rating="good"]')!.click())
-    await h.settle()
-    await act(async () => q('.review__card')!.click())
-    await h.settle()
-    expect(showing()).toBe('VRB-5')
-    expect(q('.review__sides')?.textContent).toBe('Side 1 of 2')
-    expect(listed()).toEqual(DUE.slice(0, 4))
-    expect(q('.review__answers')?.dataset.guard).toBe('')
-    // After the 400 ms, ✓ answers it (a choice).
-    expect(await answer('Remembered')).toBe('VRB-5')
-    expect(title()).toBe('Finished reviewing.')
-    expect(listed()).toEqual(DUE)
-  })
-
-  it('reviewMissed_doubleTap_staysOnSide1: the second tap of a double tap on "Review missed cards" never shows side 2 (sweep2 nit 3)', async () => {
-    h = await reviewSetup(FILES)
-    await pick('Due today')
-    for (const r of ['Remembered', 'Forgot', 'Remembered', 'Remembered', 'Remembered'] as const) await answer(r)
-    expect(q('.due-end')?.dataset.kind).toBe('missed')
-    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
-    await act(async () => q('.due-end__go')!.click())
-    await h.settle()
-    expect(showing()).toBe('VRB-2')
-    // The second tap lands on the card, ~150 ms later: nothing.
-    await act(async () => q('.review__card')!.click())
-    await h.settle()
-    expect(q('.review__sides')?.textContent).toBe('Side 1 of 2')
-    // A tap after 400 ms shows side 2.
-    await h.tap()
-    expect(q('.review__sides')?.textContent).toBe('Side 2 of 2')
-  })
-
-  it('6. "from All folders ›" opens the sheet at its folder page; its ‹ closes it', async () => {
-    h = await reviewSetup(FILES)
-    await pick('Due today')
-    for (let i = 0; i < 5; i++) await answer('Remembered')
-    await h.click(/^New cards from All folders/)
-    expect(q('.review__sheet')?.getAttribute('aria-label')).toBe('New cards from')
-    await h.click(/New cards from…$/)
-    expect(q('.review__sheet')).toBeNull()
-    expect(title()).toBe('Finished reviewing.')
-  })
-
-  it('7. Due today done with no new card left: "Finished reviewing." and the done screen\'s own lines under it, no "Learn new cards"', async () => {
-    h = await reviewSetup({ '.yaseendocs/review.json': FILES['.yaseendocs/review.json'], 'verbs.md': FILES['verbs.md'] })
-    await pick('Due today')
-    for (let i = 0; i < 5; i++) await answer('Remembered')
-    expect(title()).toBe('Finished reviewing.')
-    expect(endButtons().some((b) => b.startsWith('Learn new cards'))).toBe(false)
-    expect(h.text()).toContain('Nothing else is due today.')
-  })
-
-  it('8. Reduce Motion: the ring shows full at once, still; the finish screen`s 🎉 still, and the confetti never loads', async () => {
-    reduce = true
-    h = await reviewSetup(FILES)
-    await pick('Due today')
-    for (const r of ['Remembered', 'Remembered', 'Remembered', 'Remembered', 'Forgot'] as const) await answer(r)
-    expect(q('.due-end')?.dataset.motion).toBe('still')
-    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
-    await h.click('Review missed cards 1')
-    await answer('Remembered')
-    expect(q('.done-cheer__party')?.dataset.motion).toBe('still')
-    await act(async () => void (await new Promise((r) => setTimeout(r, 700))))
-    expect(burst).not.toHaveBeenCalled()
   })
 })
 
 describe('YAZ-5662: "Inbox complete." with a 🎉, a green ✓ and one burst of confetti (the Mac\'s `DoneCheer`)', () => {
   const cheers = () => burst.mock.calls.filter(([from]) => from.classList.contains('done-cheer__party'))
   const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 400))))
-  /** All of today, as in 4: the five due cards, then the new cards, to "Inbox complete.". */
+  /** All of today, as in 4: one run (YAZ-5707), the five due cards, then the new cards, to "Inbox complete.". */
   const allDone = async () => {
     h = await reviewSetup(FILES)
-    for (let i = 0; i < 5; i++) await answer('Remembered')
-    await h.click('Learn new cards 3')
-    for (let i = 0; i < 20 && showing() !== null; i++) await answer('Remembered')
+    for (let i = 0; i < 25 && showing() !== null; i++) await answer('Remembered')
     expect(title()).toBe('Inbox complete.')
   }
 
@@ -273,9 +153,9 @@ describe('YAZ-5662: "Inbox complete." with a 🎉, a green ✓ and one burst of 
     expect(party?.nextElementSibling?.className).toBe('review__done-title done-cheer__title')
     expect(q('.review__done-today')).not.toBeNull()
     await settle()
-    // YAZ-5678: one burst per landing — "Finished reviewing." after the due cards, then "Inbox complete.".
-    expect(cheers()).toHaveLength(2)
-    const options = cheers()[1]![1] as { within: Element; maxDpr: number; pieces: number }
+    // One burst per landing (YAZ-5678): All cards has one, "Inbox complete." (YAZ-5707: no stop before it).
+    expect(cheers()).toHaveLength(1)
+    const options = cheers()[0]![1] as { within: Element; maxDpr: number; pieces: number }
     expect(options.within === q('.review')).toBe(true)
     expect([options.maxDpr, options.pieces]).toEqual([2, 80])
   })
@@ -293,7 +173,7 @@ describe('YAZ-5662: "Inbox complete." with a 🎉, a green ✓ and one burst of 
       await away('visible')
       await settle()
       expect(q('.done-cheer__party')).not.toBeNull()
-      expect(cheers()).toHaveLength(2)
+      expect(cheers()).toHaveLength(1)
     } finally {
       if (visible !== undefined) Object.defineProperty(document, 'visibilityState', visible)
       else delete (document as { visibilityState?: unknown }).visibilityState

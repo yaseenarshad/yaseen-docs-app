@@ -91,6 +91,6 @@ describe('YAZ-5702 on the phone: only misses come back (the YAZ-5655 amendment)'
     await h.click('Remembered')
     expect(h.text()).not.toContain('Review missed cards')
     expect(h.text()).toContain('2 / 2')
-    expect(h.text()).toContain('Finished reviewing.')
+    expect(h.text()).toContain('Inbox complete.') // YAZ-5707: All cards is one run
   })
 })

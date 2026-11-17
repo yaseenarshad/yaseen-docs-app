@@ -350,6 +350,27 @@
   color: var(--fg);
 }
 
+/* YAZ-5707: "Order  Due first · Shuffle", each choice a 44 pt tap; the picked one as the open ⚙. */
+.review__sheet-settings-choices {
+  display: flex;
+  gap: 4px;
+}
+
+.review__sheet-settings-choice {
+  min-height: var(--tap);
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+}
+
+.review__sheet-settings-choice[aria-checked='true'] {
+  background: var(--bg-side);
+  color: var(--fg);
+}
+
 /* The ask in place (YAZ-5690 round 3, `AskInPlace`; YAZ-5699 the finish screen's adds): the question, then Cancel and Add, 44 pt each. */
 .review__done-ask {
   width: 100%;

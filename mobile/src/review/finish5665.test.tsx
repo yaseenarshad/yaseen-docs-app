@@ -35,7 +35,8 @@ describe('YAZ-5665: the finish screens always show the time on the phone', () =>
   it.each(['hidden', 'off'] as const)('Time so far %s: "Inbox complete." says "Today: 0 learned · 2 reviews · 40 s", no ⏱', async (time) => {
     h = await reviewSetup({ '.yaseendocs/review.json': JSON.stringify({ timeSoFar: time }), 'p.md': page('P', ...due(2)) })
     await answerAll(2)
-    expect(h.text()).toContain('Finished reviewing.')
+    // YAZ-5707: All cards is one run: its end is "Inbox complete.".
+    expect(h.text()).toContain('Inbox complete.')
     expect(todayLine()).toBe('Today: 0 learned · 2 reviews · 40 s')
     expect(stopwatch()).toBeNull()
   })

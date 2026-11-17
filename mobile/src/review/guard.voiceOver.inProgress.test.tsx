@@ -132,8 +132,8 @@ describe('"a review is in progress" (YAZ-5269)', () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(1)) })
     expect(reviewInProgress()).toBe(true)
     await raw(h, 'Remembered')
-    // YAZ-5495 (the Mac's YAZ-5043): the last due card answered: "Due today is done." in place of "Inbox complete".
-    expect(h.text()).toContain('Finished reviewing.')
+    // YAZ-5707: All cards is one run, no stop: the last card answered, "Inbox complete.".
+    expect(h.text()).toContain('Inbox complete.')
     expect(reviewInProgress()).toBe(true) // only the Undo keeps it
     await real(2000)
     expect(reviewInProgress()).toBe(true) // and nothing ends it but a new session, the screen going, or Undo

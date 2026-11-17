@@ -18,7 +18,7 @@ import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
 import { memoryReviewHost, type MemoryReviewHost } from './memoryReviewHost'
 
-const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS }
+const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
 const ROOT = '/mac'
 const PATH = `${ROOT}/D.md`
