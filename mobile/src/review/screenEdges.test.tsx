@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { answersSetup } from '../answers/testing'
+import { closeAll, closeTop, sheetStack } from '../explore/sheets'
 import { mount, type Harness } from '../screens/testing'
 import { saveVaultList } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
@@ -17,7 +18,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
 })
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => closeAll())
   h?.unmount()
   app?.unmount()
   h = undefined
@@ -27,10 +29,11 @@ afterEach(() => {
 
 const OLD = '2026-10-04T09:00:00.000Z good'
 const dueCards = (n: number, words = 1) => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n${Array.from({ length: words }, (_, w) => `{{w${i + 1}.${w + 1}}}`).join(' ')}`, `DC-${i + 1}, ${inOrder(OLD, i)}`))
+const panelText = () => document.querySelector('.explore-sheet')?.textContent ?? ''
 const ids = (hh: ReviewHarness) => hh.answers.waiting().filter((w) => w.op.kind === 'review').map((w) => w.op.id)
 
 describe('the Review screen: Open page and Back, double taps, Undo, lost answers, filters, links', () => {
-  it('4B-A: Open page, then Back, comes back to the SAME card in the same state (place, shown words, Undo)', async () => {
+  it('4B-A: Open page (a panel over Review, YAZ-5710), then closing it, comes back to the SAME card in the same state (place, shown words, Undo)', async () => {
     const t = await answersSetup({ files: { '.yaseendocs/review.json': '{}', 'p.md': page('Deck', 'A long page.', ...dueCards(4, 3)) } })
     await saveVaultList(t.store, { vaults: [{ repo: REPO, branch: BRANCH, addedAt: 0 }], open: VAULT })
     app = await mount({ phone: { store: t.store, tokens: t.s.tokens } })
@@ -54,14 +57,15 @@ describe('the Review screen: Open page and Back, double taps, Undo, lost answers
     await app.click('Open page')
     // The reader is a lazy chunk; since YAZ-5455..5475 it pulls in more modules (tools, find, properties, Linked from), so a
     // cold import takes ~40 settles, more than a fixed 8. Wait by time, as the other reader tests do.
-    await app.waitText('A long page')
-    console.log('[4B-A] page scrolled to:', JSON.stringify(scrolled), 'nav top:', JSON.stringify((app.services as unknown as { nav?: unknown }).nav ?? null))
-    await app.click('Back')
+    for (let i = 0; i < 400 && !panelText().includes('A long page'); i++) await app.settle()
+    expect(panelText()).toContain('A long page')
+    console.log('[4B-A] page scrolled to:', JSON.stringify(scrolled))
+    await act(async () => closeTop())
     for (let i = 0; i < 8 && !app.text().includes('DC-'); i++) await app.settle()
     for (let i = 0; i < 6; i++) await app.settle()
     Element.prototype.scrollIntoView = orig
     const after = { meta: app.host.querySelector('.review__meta')?.textContent, head: app.host.querySelector('.review__head')?.textContent, last: app.host.querySelector('.review__last')?.textContent, blanks: app.host.querySelectorAll('.card__blank').length, card: (app.host.querySelector('.phone-card__body')?.textContent ?? '').replace(/\s+/g, ' ').trim() }
-    console.log('[4B-A] before Open page:', JSON.stringify(before), '\n[4B-A] after Back:     ', JSON.stringify(after))
+    console.log('[4B-A] before Open page:', JSON.stringify(before), '\n[4B-A] after the panel:', JSON.stringify(after))
     expect(after).toEqual(before)
   })
 
@@ -81,8 +85,9 @@ describe('the Review screen: Open page and Back, double taps, Undo, lost answers
     }
     await app.click('More card actions')
     await app.click('Open page')
-    await app.waitText('Intro')
+    for (let i = 0; i < 400 && !panelText().includes('Intro'); i++) await app.settle()
     for (let i = 0; i < 6; i++) await app.settle()
+    expect(sheetStack().map((s) => s.route)).toEqual([{ kind: 'page', path: 'p.md', at: 'DC-1' }])
     Element.prototype.scrollIntoView = orig
     console.log('[4B-B] scrollIntoView calls:', JSON.stringify(scrolled))
     expect(scrolled).toContain('DC-1')

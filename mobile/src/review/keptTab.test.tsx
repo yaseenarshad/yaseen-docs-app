@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { answersSetup } from '../answers/testing'
+import { closeAll, closeTop } from '../explore/sheets'
 import { mount, type Harness } from '../screens/testing'
 import { saveVaultList } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
@@ -31,7 +32,8 @@ beforeEach(() => {
     return el
   }) as typeof document.createElement)
 })
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => closeAll())
   h?.unmount()
   visible = 'visible'
   vi.restoreAllMocks()
@@ -70,6 +72,17 @@ const until = async (ok: () => boolean) => {
   for (const end = Date.now() + 3000; !ok() && Date.now() < end; ) await h.settle()
 }
 
+// YAZ-5710: Open page / Open card open an Explore panel over Review (whatever the vault's link setting); Review rests
+// under it as under a page.
+const panelOpen = () => document.querySelector('.explore-sheet') !== null
+const closePanels = async () => {
+  for (let i = 0; i < 5 && panelOpen(); i++) {
+    await act(async () => closeTop())
+    for (let j = 0; j < 30 && document.querySelectorAll('.explore-sheet').length > 0 && i === 4; j++) await h.settle()
+    await many(6)
+  }
+}
+
 describe('the kept Review tab', () => {
   it('K1: off the screen the Review box is out of the document; nothing of it can take focus', async () => {
     await app()
@@ -81,7 +94,7 @@ describe('the kept Review tab', () => {
     expect(document.contains(reviewEl)).toBe(false)
   })
 
-  it('K2: the answer timer counts no time while a page is open, nor while on Friends', async () => {
+  it('K2: the answer timer counts no time while a page panel is open, nor while on Friends', async () => {
     const t = await app()
     await h.click('Remembered') // TB-1; the next card shows at NOW
     await seen()
@@ -89,9 +102,9 @@ describe('the kept Review tab', () => {
     vi.setSystemTime(NOW + 5_000)
     await h.click('More card actions')
     await h.click(/^Open (page|card)$/)
-    await until(() => h.button('Back') !== null)
+    await until(panelOpen)
     vi.setSystemTime(NOW + 105_000)
-    await h.click('Back')
+    await closePanels()
     await many()
     vi.setSystemTime(NOW + 106_000)
     await h.click('Friends')
@@ -127,11 +140,11 @@ describe('the kept Review tab', () => {
     await h.click('More card actions')
     await h.click(/^Open (page|card)$/)
     // The reader is a lazy chunk (bigger since YAZ-5455..5475): wait for it, as K2 does.
-    await until(() => h.button('Back') !== null)
+    await until(panelOpen)
     await many()
     at('page open')
     const onPage = held
-    await h.click('Back')
+    await closePanels()
     await many()
     at('back')
     const back = held
@@ -146,7 +159,7 @@ describe('the kept Review tab', () => {
     expect([onPage, back, friends, held]).toEqual([0, 1, 0, 1])
   })
 
-  it('K4: background while a page is open; the chain page → card → page; then Back, Back, Back', async () => {
+  it('K4: background while a page panel is open; the chain page → card → page in panels; then each panel closed', async () => {
     await app()
     await h.click('Remembered') // TB-1 answered → TB-2 (card file)
     await seen()
@@ -159,31 +172,22 @@ describe('the kept Review tab', () => {
     console.log('[K4] before:', JSON.stringify(before))
     await h.click('More card actions')
     await h.click('Open page')
-    await until(() => h.host.querySelector('[data-card-id="TB-3"]') !== null)
+    await until(() => document.querySelector('.explore-sheet [data-card-id="TB-3"]') !== null)
     await setVisible('hidden')
     await many()
     await setVisible('visible')
     await many()
     const steps: string[] = []
-    const links = [...h.host.querySelectorAll<HTMLElement>('a, [data-card-link]')].map((a) => `${a.textContent}|${a.dataset.open}|${a.dataset.path}`)
+    const links = [...document.querySelectorAll<HTMLElement>('.explore-sheet a, .explore-sheet [data-card-link]')].map((a) => `${a.textContent}|${a.dataset.open}|${a.dataset.path}`)
     steps.push('links: ' + JSON.stringify(links))
-    const link = h.host.querySelector<HTMLElement>('a[data-open="page"], a[data-open="card"]')
+    const link = document.querySelector<HTMLElement>('.explore-sheet a[data-open="page"], .explore-sheet a[data-open="card"]')
     if (link !== null) {
       await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
-      await until(() => h.text().includes('How fast'))
-      steps.push('second view: ' + h.text().slice(0, 60))
-      const openPage = h.button('Open page')
-      if (openPage !== null) {
-        await h.click('Open page')
-        await until(() => h.text().includes('Madrid'))
-        steps.push('page again: ' + h.text().includes('Madrid'))
-      }
+      await until(() => document.querySelectorAll('.explore-sheet').length === 2)
+      steps.push('second panel: ' + document.querySelectorAll('.explore-sheet').length)
     }
-    for (let i = 0; i < 5 && h.button('Back') !== null && h.host.querySelector('.review') === null; i++) {
-      await h.click('Back')
-      await many(6)
-      steps.push(`back ${i + 1}: review ${h.host.querySelector('.review') !== null}`)
-    }
+    await closePanels()
+    steps.push(`closed: panels ${document.querySelectorAll('.explore-sheet').length}`)
     const after = state()
     console.log('[K4] ' + steps.join(' | ') + '\n[K4] after:', JSON.stringify(after))
     expect(after).toEqual(before)
