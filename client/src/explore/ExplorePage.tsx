@@ -54,7 +54,7 @@ import { PageMenu } from '../editor/pageMenu'
 import { PageFrame } from '../editor/PageFrame'
 import { PageTitle } from '../editor/PageTitle'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
-import { HeadChipsSlot, LAYER_ESCAPE } from '../editor/StatusChips'
+import { HeadChipsSlot, LAYER_ESCAPE, LayerZoom } from '../editor/StatusChips'
 import { usePathTitles } from '../lib/pageLabel'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from '../editor/outline/foldAllHotkeys'
 import type { MenuSection } from '../sidebar/menuSections'
@@ -917,6 +917,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       {/* Both bodies while a switch is under way (YAZ-5164): the incoming one see-through under the one on show. A card
           file has one body: its own view, in read and in Edit card. */}
       <HeadChipsSlot.Provider value={chipsSlot}>
+        <LayerZoom.Provider value={zoom}>
         <div className="explore__bodies">
           {cardFile ? (
             <div ref={editBodyRef} className="explore__body explore__body--frame explore__body--card-file" style={bodyStyle} tabIndex={-1}>
@@ -954,6 +955,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
             </>
           )}
         </div>
+        </LayerZoom.Provider>
       </HeadChipsSlot.Provider>
     </UnitContext.Provider>
   )

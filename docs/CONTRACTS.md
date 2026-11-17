@@ -1417,8 +1417,16 @@ only `--document-zoom`; `app.css` applies `zoom: var(--document-zoom)` to the ch
 block (`.editor-host > :not(.editor-mount) > *`) and to the body's `.ProseMirror` node itself. The
 `display: contents` properties panel is one of those children and passes the zoom on to its pieces
 through computed style — listing the pieces again zoomed the chip twice (6B1). Each block's column shell — `max-width`,
-`margin: 0 auto`, the 48px gutters — stays in unzoomed px, so the five blocks keep one aligned
-column and the gutters never grow; bullet indent (`--list-indent: 2.15em`) scales with the text
+`margin: 0 auto`, the 48px gutters — is not zoomed, and all five read the scroller's one `--content-max-width`, so they
+keep one aligned column and the gutters never grow. Since YAZ-5640 (Decision 3, which replaces this part of D14) that
+width grows with the zoom: `.editor-host` works it out as `calc(var(--content-text-width) * var(--document-zoom, 1) + 96px)`,
+so a Narrow page at 200% has 1280px of text and the same letters in a line as at 100%, and zoomed out it gets narrower.
+Full's text width is `200vw` (`contentTextWidth`: the window divided by `ZOOM_MIN`), so Full stays the window at every
+zoom. A folder page's scroller is an `.editor-host` too, so its views and its Page tab grow the same way; a card file's
+column (`.card-file__page`) keeps `.app`'s value, and `--card-text-width` keeps `100vw` for Full. The table of contents
+works out its room from the column as drawn (`columnMax(step, zoom)`; its `pageZoom` is the editor's `documentZoom`, or
+in an Explore layer the layer's zoom through the `LayerZoom` context, never the names' own zoom). `--zoom-slack` (D15) is
+measured from the body's left edge, so it does not depend on the column. Bullet indent (`--list-indent: 2.15em`) scales with the text
 on purpose (damping was tried and rejected, D13). Crepe appends its floating chrome — toolbar,
 slash menu, link preview/edit, block handle — beside `.ProseMirror` inside `.milkdown`, so it is
 unzoomed and floating-ui positions it in unzoomed space, the only space it gets right (a

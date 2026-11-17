@@ -63,7 +63,7 @@ import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './ou
 import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
 import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
-import { HeadChipsSlot, LAYER_ESCAPE, StatusChips } from './StatusChips'
+import { HeadChipsSlot, LAYER_ESCAPE, LayerZoom, StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
 import { NO_VAULT_READ_ONLY, VaultReadOnly, type BeforeVaultLock, type VaultReadOnlyScope } from '../vault/readOnlyVault'
 import { PageMenu } from './pageMenu'
@@ -785,6 +785,8 @@ function CrepeHost({
   const chipsHere = useContext(FolderPageChips)
   /** In an Explore layer (YAZ-5164 Option A): its head holds this page's chips, and Esc is the layer's (back to reading). */
   const inExplore = useContext(HeadChipsSlot) !== null
+  // The page zoom as drawn (YAZ-5640): an Explore layer's zoom wins over this editor's own on its scroller (explore.css).
+  const drawnZoom = useContext(LayerZoom) ?? documentZoom
   const folderChips = inFolderPage ? chipsHere : null
   /** A read-only folder page (YAZ-3746 D36) keeps its Page read only, whatever the `.folder.md` bytes say yet. */
   const folderLocked = useSyncExternalStore(folderChips?.subscribe ?? noSubscribe, () => folderChips?.getState().readOnly ?? false)
@@ -1658,7 +1660,7 @@ function CrepeHost({
           choice, else "Table of contents default", YAZ-3558), and while a bullet is zoomed. */}
       {/* The numbered list of outside changes (YAZ-3998) floats in the room LEFT of the page the same way. */}
       {outsideListPinned && <OutsideChangesList channel={outsideChanges} hostRef={hostRef} onPin={onChangeOutsideListPinned} />}
-      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={pageWidth ?? contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusPage} folds={tocFolds} onChangeFolds={changeTocFolds} zoom={tocZoom} onChangeZoom={onChangeTocZoom} />
+      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={pageWidth ?? contentWidth} pageZoom={drawnZoom} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusPage} folds={tocFolds} onChangeFolds={changeTocFolds} zoom={tocZoom} onChangeZoom={onChangeTocZoom} />
       {/* Put back's ask (YAZ-5037): other pages embed the card. */}
       {convert.sheet}
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the

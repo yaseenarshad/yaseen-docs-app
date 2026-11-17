@@ -33,6 +33,12 @@ export interface ReadOnlyChipState {
  */
 export const HeadChipsSlot = createContext<HTMLElement | null>(null)
 
+/**
+ * The zoom of an Explore layer, percent (YAZ-5640): the layer's body carries it, and it wins over the editor's own zoom
+ * on the editor's scroller (`explore.css`). The editor's table of contents works out its room from it. Null: a tab.
+ */
+export const LayerZoom = createContext<number | null>(null)
+
 /** Esc in the text of an Explore layer's editor (YAZ-5164): the layer goes back to reading. Bubbles from the editor. */
 export const LAYER_ESCAPE = 'mdapp:layer-escape'
 

@@ -219,12 +219,17 @@ button {
   padding-bottom: 64px;
 }
 
-/* A page's own width (YAZ-5640): its scroller sets `--content-text-width` from the page's `page-width` key, so the
-   column is worked out again here. The value on `.app` is fixed there, and a child inherits it as it is. With no key
-   the scroller inherits `.app`'s text width, and the column is the same as before. A card file's column has its own
-   rule (`.card-file__page`). */
+/* The page's column, worked out on its scroller (YAZ-5640). Two reasons:
+   - A page's own width: the scroller sets `--content-text-width` from the page's `page-width` key. The value on `.app`
+     is fixed there, and a child inherits it as it is. With no key the scroller inherits `.app`'s text width.
+   - The column grows with the page zoom (Decision 3): the text width times `--document-zoom`, which the scroller
+     carries; the 48 px sides do not grow. Narrow at 200% is 1280 px of text, the same letters in a line as at 100%.
+     Full is wider than the window at every zoom (`contentTextWidth`), so it stays the window.
+   The five blocks read this one value, so they stay one aligned column at each zoom. A folder page's scroller is an
+   `.editor-host` too: its views and its Page tab grow with its zoom the same way. A card file's column has its own
+   rule (`.card-file__page`) and does not change. */
 .editor-host {
-  --content-max-width: calc(var(--content-text-width) + 96px);
+  --content-max-width: calc(var(--content-text-width) * var(--document-zoom, 1) + 96px);
 }
 
 .editor-host::after {
@@ -236,8 +241,9 @@ button {
 
 /* Document zoom lives on the CONTENT, never on a shell (YAZ-1710 D14). The scroller carries the
    number as `--document-zoom`; every block's column shell (max-width / margin auto / 48px gutter)
-   stays in unzoomed px so the five blocks keep one aligned column, and only what is inside a shell
-   scales. The body is the special case: Crepe appends its floating chrome (toolbar, slash menu,
+   is not zoomed, and only what is inside a shell scales. The shells' max-width is the one
+   `--content-max-width` of the scroller, so the five blocks keep one aligned column; since YAZ-5640
+   (Decision 3) that width grows with the zoom (the rule above), and the 48px gutters stay. The body is the special case: Crepe appends its floating chrome (toolbar, slash menu,
    link tooltip, block handle) beside `.ProseMirror` inside `.milkdown`, so the zoom sits on the
    ProseMirror node itself and that chrome stays at 100% — floating-ui then positions it in
    unzoomed space, which is the only space it gets right. The properties panel is `display: contents`

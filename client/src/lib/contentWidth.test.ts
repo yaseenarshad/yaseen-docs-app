@@ -6,9 +6,11 @@ const vars = (over: Partial<SettingsState>) => contentWidthVars({ ...DEFAULT_SET
 
 describe('Content width and Card width (YAZ-5144)', () => {
   it('each Content width step is clearly wider than the one before: 640 px, 900 px, the window', () => {
-    expect(['narrow', 'medium', 'full'].map((contentWidth) => vars({ contentWidth: contentWidth as SettingsState['contentWidth'] })['--content-text-width'])).toEqual(['640px', '900px', '100vw'])
-    // The pages' column, sides in: what the table of contents makes room for.
+    // Full is the window at every page zoom: the column grows with the zoom, from 50% (YAZ-5640).
+    expect(['narrow', 'medium', 'full'].map((contentWidth) => vars({ contentWidth: contentWidth as SettingsState['contentWidth'] })['--content-text-width'])).toEqual(['640px', '900px', '200vw'])
+    // The pages' column, sides in: what the table of contents makes room for. The text grows with the page zoom, the sides do not.
     expect([columnMax('narrow'), columnMax('medium'), columnMax('full')]).toEqual([736, 996, Infinity])
+    expect([columnMax('narrow', 2), columnMax('medium', 0.5), columnMax('full', 0.5)]).toEqual([1280 + 96, 450 + 96, Infinity])
   })
 
   it('round 2: Card width Same as pages (null) follows Content width; Custom is its own px', () => {

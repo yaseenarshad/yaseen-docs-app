@@ -970,7 +970,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     diskHas('---\nstatus: draft\npage-width: full\n---\n' + BODY, 20)
     await emit({ type: 'change', path: PATH, mtime: 20 })
     await settle()
-    expect(host(el).style.getPropertyValue('--content-text-width')).toBe('100vw')
+    expect(host(el).style.getPropertyValue('--content-text-width')).toBe('200vw') // Full: the window at every page zoom (YAZ-5640 Decision 3)
     expect(pressed(el)).toEqual(['Default:false', 'Narrow:false', 'Medium:false', 'Full:true'])
     expect(writeFile).not.toHaveBeenCalled()
   })
