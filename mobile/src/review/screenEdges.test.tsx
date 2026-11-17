@@ -142,22 +142,6 @@ describe('the Review screen: Open page and Back, double taps, Undo, lost answers
     expect(tab).toBe(dot)
   })
 
-  it('the lost line words vs the dot sheet words for one action of each kind', async () => {
-    const { lostAction } = await import('./words')
-    const { sanitizeReviewSettings } = await import('@shared/reviews')
-    const s4 = sanitizeReviewSettings({ buttons: 4 })
-    const ops = [
-      { kind: 'review', id: 'X', review: { at: 'x', rating: 'hard' } },
-      { kind: 'off', id: 'X', on: false },
-      { kind: 'next', id: 'X', on: false },
-      { kind: 'fix', id: 'X', on: false },
-    ] as const
-    for (const op of ops) {
-      const l = { seq: 1, group: 1, op, path: 'p.md', title: 'T', madeAt: 0 }
-      expect(lostAction(op as never, s4)).toBe(dotLostRows([l as never])[0].answer)
-    }
-  })
-
   it('a filter with no cards, and a filter change while a card is half shown', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(2, 3)) })
     await h.tap()

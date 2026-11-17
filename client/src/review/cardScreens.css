@@ -194,21 +194,6 @@
   font-size: 13px;
   color: var(--fg-muted);
 }
-.card-strip__props {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-}
-.card-strip__prop {
-  display: grid;
-  grid-template-columns: minmax(80px, 30%) 1fr;
-  gap: 12px;
-  padding: 5px 8px;
-}
-.card-strip__prop-name {
-  color: var(--fg-muted);
-}
 .card-reviews--strip .card-reviews__scroll {
   padding: 2px 4px 12px;
 }

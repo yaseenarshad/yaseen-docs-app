@@ -25,7 +25,7 @@
  *  - THE TITLE BAND (YAZ-5308 A3): the title sits in the band at the top of the card's frame (`CardBand`), with no label;
  *    a card with no title has none. A click renames a card in a page; a card file's title (YAZ-5037) is a link, and it
  *    and O open it in Explore (YAZ-5145, "Open card").
- *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the title is on the card line (YAZ-5308), never in
+ *  - TITLE IN REVIEW: NEVER (YAZ-5696; the card line's `notitle`, YAZ-5030): the title is on the card line (YAZ-5308), never in
  *    the text, so it is never a Space step. YAZ-5695 (Yaseen: "it should never show up in reviews. Period."): no band
  *    at any step, fully shown too, and the answer line names the card by its ID (`reviewTitleOf`).
  *  - WHEN A TITLE SHOWS (YAZ-5696): Never, Always, After the first click or With Side 2 — the card's own choice
@@ -440,8 +440,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   }
   const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide, lineUndo: session.lastAdd !== null || archivedLine || line !== null })
   /**
-   * The ⋯ (YAZ-5004): Undo last review, then the ONE card menu's Inbox rows (YAZ-5697 round 2: Open card, Put at top of
-   * Inbox, Archive card, Title in review ›; no Fix later, YAZ-5430). Archive card asks first, then goes on the hook's
+   * The ⋯ (YAZ-5004): Undo last review, then the ONE card menu's Inbox rows (YAZ-5697 round 2: Open card, Move to Up next
+   * (YAZ-5697), Archive card, Title in review ›; no Fix later, YAZ-5430). Archive card asks first, then goes on the hook's
    * Undo stack (YAZ-5621); the other marks are the hook's own writes.
    */
   const moreSections = (): MenuSection[] =>

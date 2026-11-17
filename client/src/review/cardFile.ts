@@ -79,9 +79,6 @@ export const changeCardTextIn = (path: string, id: string | null, text: string, 
     }),
   )
 
-/** Writes `review` to card `id`'s line: the answer the hover showed, as it showed it (D13). Throws `CardNotFoundError`. */
-export const writeCardReview = (path: string, id: string, review: CardReview): Promise<unknown> => changeCardLine(path, id, (l) => withCardReview(l, review))
-
 /**
  * The Inbox's answer: `review` on card `id`'s line, and its `next` removed in the SAME write (YAZ-4999 D3: the first
  * answer to an up-next card ends the mark). Resolves to the place `next` had among the line's parts (-1: none), for

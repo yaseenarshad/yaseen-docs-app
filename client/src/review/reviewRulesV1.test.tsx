@@ -144,8 +144,7 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
   })
 
   // YAZ-5707 (Mochi's finding E5): All cards has no % screen, it is one run; the % screen is Due today's, where no Up
-  // next card is. So rule 8 holds only behind the switch `ALL_CARDS_STOP_BEFORE_MISSED`; on All cards the missed card
-  // comes back at the end of the run.
+  // next card is. On All cards the missed card comes back at the end of the run.
   it('rule 8 (YAZ-5707): All cards has no % screen; the Up next card counts in the run and the missed card comes back at its end', async () => {
     page('A.md', ['UP-1', ', next'], ['DUE-1', known(5)], ['DUE-2', known(6)])
     await mount()

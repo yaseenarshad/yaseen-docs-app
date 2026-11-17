@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 
+/**
+ * The local calendar day of `now` as the day lists key it ("2026-11-7": no zero padding): Up next taken and the cards
+ * added today, on the Mac (`upNextTaken.ts`, `cardsAdded.ts`) and the phone (`mobile/src/answers/reviewHost.ts`) alike.
+ */
+export const dayOf = (now: number): string => {
+  const d = new Date(now)
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
+
 /** The ms from `now` to the next local midnight, and a little more, so the clock has passed it when the timer fires. */
 export const msToMidnight = (now = Date.now()): number => new Date(now).setHours(24, 0, 0, 0) - now + 50
 

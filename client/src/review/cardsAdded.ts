@@ -1,6 +1,6 @@
 import { NOTHING_ADDED, type CardsAddedToday } from '@shared/cardSchedule'
 import { storage } from '../lib/storage'
-import { dayOf } from './upNextTaken'
+import { dayOf } from './localDay'
 
 /**
  * "Add more for today" (YAZ-5042), per vault: how many new cards and Up next cards the Inbox added past the Settings
