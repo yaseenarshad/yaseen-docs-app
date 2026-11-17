@@ -23,7 +23,7 @@ import { cellNoteButtonPlacements } from './cellNoteButton'
 import { setCellNoteButtonSetting } from './timeFormatSetting'
 import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, openCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
 import { cellHoverCardRuns } from './cellHoverCard'
-import { cellNotePreviewLines, fitNoteLines, NOTE_BOX_WIDTH, setCellNotePreviewLines } from './cellNotePreview'
+import { cellNotePreviewLines, fitNoteLines, CELL_NOTE_BOX_WIDTH, setCellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
 import { cellPos } from './tableTestKit'
 
@@ -714,7 +714,7 @@ describe('the preview (D14)', () => {
     // jsdom lays out nothing: the box is as tall as 300px wherever it is put.
     const own = HTMLElement.prototype.getBoundingClientRect
     const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      return this.classList.contains('cell-note-preview') ? new DOMRect(parseFloat(this.style.left), parseFloat(this.style.top), NOTE_BOX_WIDTH, 300) : own.call(this)
+      return this.classList.contains('cell-note-preview') ? new DOMRect(parseFloat(this.style.left), parseFloat(this.style.top), CELL_NOTE_BOX_WIDTH, 300) : own.call(this)
     })
     const cell = view.nodeDOM(cellPos(view, 1, 1)) as HTMLElement
     // The cell's right edge at 900 of jsdom's 1024 × 768 window, its top at 700.
@@ -723,7 +723,7 @@ describe('the preview (D14)', () => {
     vi.advanceTimersByTime(400)
     const box = document.querySelector<HTMLElement>('.cell-note-preview')!
     // 900 + 4 + 360 > 1024: left of the corner. 700 + 300 > 768 - 8: up, 8px from the bottom.
-    expect([box.style.left, box.style.top]).toEqual([`${900 - 4 - NOTE_BOX_WIDTH}px`, `${768 - 8 - 300}px`])
+    expect([box.style.left, box.style.top]).toEqual([`${900 - 4 - CELL_NOTE_BOX_WIDTH}px`, `${768 - 8 - 300}px`])
     spy.mockRestore()
   })
 
@@ -754,8 +754,8 @@ describe('the preview (D14)', () => {
   it('YAZ-5717: the CSS gives the note box 360px, at most the window less 16px, and lines that wrap', () => {
     const css = readFileSync(resolve(__dirname, 'cellHoverCard.css'), 'utf8')
     const rule = (selector: string) => css.match(new RegExp(`^${selector.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`, 'm'))?.[1] ?? ''
-    expect(NOTE_BOX_WIDTH).toBe(360)
-    expect(rule('.cell-note-preview')).toContain(`width: ${NOTE_BOX_WIDTH}px;`)
+    expect(CELL_NOTE_BOX_WIDTH).toBe(360)
+    expect(rule('.cell-note-preview')).toContain(`width: ${CELL_NOTE_BOX_WIDTH}px;`)
     expect(rule('.cell-note-preview')).toContain('max-height: calc(100vh - 16px);')
     expect(rule('.cell-note-preview__line')).toContain('white-space: pre-wrap;')
     expect(rule('.cell-note-preview__line')).toContain('overflow-wrap: anywhere;')

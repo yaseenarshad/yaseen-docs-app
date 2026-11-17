@@ -30,7 +30,7 @@ import { CARD_TEXT_LINES, CUT_CARD_DWELL_MS, type CellCard, cardShell, cellHover
 import { cellNoteOf, cellNoteTitle, notePosOf, openCellNoteLabel } from './cellNotes'
 
 /** How wide the note's box is, in px: `.cell-note-preview` in `cellHoverCard.css` says the same (YAZ-5717). */
-export const NOTE_BOX_WIDTH = 360
+export const CELL_NOTE_BOX_WIDTH = 360
 
 /** How many lines the note's box shows, then "…" (Settings › Tables › Cell notes › Hover preview lines, YAZ-5717). App sets it. */
 let previewLines = DEFAULT_SETTINGS.tableCellNotePreviewLines
@@ -122,7 +122,7 @@ function cellCard(view: EditorView, cell: HTMLElement): CellCard | null {
   // The note's box: right of the corner, or left of it at the window's edge. `cellHoverCards` moves it up when its
   // bottom is below the window (YAZ-5717).
   const rect = cell.getBoundingClientRect()
-  box.style.left = `${rect.right + 4 + NOTE_BOX_WIDTH > window.innerWidth ? Math.max(0, rect.right - 4 - NOTE_BOX_WIDTH) : rect.right + 4}px`
+  box.style.left = `${rect.right + 4 + CELL_NOTE_BOX_WIDTH > window.innerWidth ? Math.max(0, rect.right - 4 - CELL_NOTE_BOX_WIDTH) : rect.right + 4}px`
   box.style.top = `${rect.top}px`
   return { box, dwell: HOVER_PREVIEW_DWELL_MS, under: false, fit: fitNoteLines }
 }

@@ -1,7 +1,7 @@
 /* A table cell's hover card (`cellHoverCard.ts`): the cell note's preview (YAZ-3818 D14, `cellNotePreview.ts`) and
    the cut cell's full text (YAZ-4901), in a page table and in a folder page table. The link hover card's look
    (`boardPreview.css` `.board-preview`), on the page's body. Read-only: the pointer goes through it. The note preview
-   is 360px wide beside the cell's corner (YAZ-5717; `NOTE_BOX_WIDTH` in `cellNotePreview.ts`), never taller than the
+   is 360px wide beside the cell's corner (YAZ-5717; `CELL_NOTE_BOX_WIDTH` in `cellNotePreview.ts`), never taller than the
    window less 16px; the full-text card is as wide as its text (`max-content`, inline), capped at the cell's width
    clamped to 240–420 px (YAZ-4903). */
 .cell-note-preview {
