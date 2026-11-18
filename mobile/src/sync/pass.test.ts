@@ -344,7 +344,7 @@ describe('nothing heavy on the UI thread: a made-up 1,700-file vault', () => {
     let first = { ms: 0, longest: Infinity, cpu: Infinity }
     let refresh = { ms: 0, longest: Infinity, cpu: Infinity }
     let idx: PhoneIndex | undefined
-    for (let run = 0; run < 5 && (first.longest >= 50 || refresh.longest >= 50); run++) {
+    for (let run = 0; run < 5 && (first.longest >= budgetMs(50) || refresh.longest >= budgetMs(50)); run++) {
       const s = await syncSetup(files)
       const calm = await measure(() => new Promise((r) => setTimeout(r, 100)))
       const f = await measure(() => pass(s, { yieldToUi: realYield }))
@@ -368,11 +368,11 @@ describe('nothing heavy on the UI thread: a made-up 1,700-file vault', () => {
     expect(first.cpu).toBeLessThan(budgetMs(50))
     expect(refresh.cpu).toBeLessThan(budgetMs(50))
     // The wall clock (what the phone feels) only when the machine is calm enough to measure it.
-    if (idle.longest > 15 && (first.longest >= 50 || refresh.longest >= 50)) {
+    if (idle.longest > 15 && (first.longest >= budgetMs(50) || refresh.longest >= budgetMs(50))) {
       console.log('[3B perf] the machine is too busy to measure wall-clock holds (the idle probe alone waited > 15 ms): the wall check skipped, the CPU check ran')
       return
     }
-    expect(first.longest).toBeLessThan(50)
-    expect(refresh.longest).toBeLessThan(50)
+    expect(first.longest).toBeLessThan(budgetMs(50))
+    expect(refresh.longest).toBeLessThan(budgetMs(50))
   })
 })
