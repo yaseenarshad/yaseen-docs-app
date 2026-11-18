@@ -907,6 +907,8 @@ export function ExcalidrawSurface({
         newShapesMatchZoom={canvasPrefs.newShapesMatchZoom}
         // YAZ-4469 demo: the board's own "Hover outline" over the app's
         hoverOutline={boardHoverOutline ?? canvasPrefs.hoverOutline}
+        // YAZ-5771: a double click on a text box's left or right edge snaps its width
+        textEdgeDoubleClick={canvasPrefs.textEdgeDoubleClick}
         defaultItemStyle={defaultItemStyle}
         hostContextMenuItems={hostContextMenuItems}
         onExportPdf={exportPdf}

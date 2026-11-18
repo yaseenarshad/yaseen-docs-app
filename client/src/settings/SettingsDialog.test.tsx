@@ -170,7 +170,7 @@ const TABLES_GROUPS = ['All tables', 'Cell notes', 'Calendar tables']
  * Settings › Drawings and diagrams (YAZ-3037; the name since YAZ-4748 D11): one row per `CanvasPrefs` key the page shows, in
  * its groups, then the draw.io diagrams group, whose one row moved here from Appearance.
  */
-const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'embedRestSeconds', 'newBoardFolder', 'diagramDarkColors']
+const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'textEdgeDoubleClick', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'embedRestSeconds', 'newBoardFolder', 'diagramDarkColors']
 /** Settings › Images (YAZ-3038): the Pixabay key, the library folder and the favorites (YAZ-4363), then the icon packs (YAZ-4359). */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPacks', 'mediaHoverZoom', 'mediaHoverZoomSize']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
@@ -707,6 +707,19 @@ describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)
     const { el: all } = mount()
     type(searchInput(all), 'highlight')
     expect(rowIds(all)).toContain('canvas.hoverOutline')
+  })
+
+  it('YAZ-5771: "Double-click a text box edge" offers Only shrink (the default) and Fit the text; a pick writes only that key; the search finds it by "snap"', () => {
+    const { el, onChange } = mountCanvas()
+    expect(row(el, 'canvas.textEdgeDoubleClick')?.querySelector('.setting__label')?.textContent).toBe('Double-click a text box edge')
+    expect(row(el, 'canvas.textEdgeDoubleClick')?.textContent).toContain('Only shrink: the box keeps its lines')
+    expect(rowButtons(el, 'canvas.textEdgeDoubleClick').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Only shrink', 'true'], ['Fit the text', 'false']])
+    act(() => rowButtons(el, 'canvas.textEdgeDoubleClick')[1].click())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, textEdgeDoubleClick: 'fit' } })
+    unmount()
+    const { el: all } = mount()
+    type(searchInput(all), 'snap')
+    expect(rowIds(all)).toContain('canvas.textEdgeDoubleClick')
   })
 
   it('YAZ-4404 4H and YAZ-4406 4J: the search finds each new switch by a word its label does not have', () => {

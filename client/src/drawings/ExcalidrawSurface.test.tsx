@@ -390,4 +390,13 @@ describe('the engine props of the round 1 switches', () => {
       expect(last().hoverOutline, `app ${app}, board ${board}`).toBe(expected)
     }
   })
+
+  it('YAZ-5771: "Double-click a text box edge" reaches the engine as its prop: Only shrink by default, Fit the text when picked; never appState', async () => {
+    const { DEFAULT_CANVAS_PREFS } = await import('@shared/types')
+    await mountWith(undefined)
+    expect(last().textEdgeDoubleClick).toBe('shrink')
+    expect((last().initialData as { appState: Record<string, unknown> }).appState).not.toHaveProperty('textEdgeDoubleClick')
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, textEdgeDoubleClick: 'fit' })
+    expect(last().textEdgeDoubleClick).toBe('fit')
+  })
 })

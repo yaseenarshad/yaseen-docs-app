@@ -94,6 +94,7 @@ import type {
   ElementsMap,
 } from "./types";
 import { getTextHighlightFill } from "./textRuns";
+import { getElementStyleScale } from "./screenScale";
 import {
   CHECKLIST_DONE_ALPHA,
   getCheckboxGeometry,
@@ -111,14 +112,29 @@ const isPendingImageElement = (
   isInitializedImageElement(element) &&
   !renderConfig.imageCache.has(element.fileId);
 
+/**
+ * YAZ-5739: a shape made below 100% has a line 1 / scale thicker in board px,
+ * so its bitmap gets 1 / scale more room. A pen stroke's and a text's padding
+ * already follow their line width and font size.
+ */
 const getCanvasPadding = (element: ExcalidrawElement) => {
+  const padding = getCanvasPaddingAtScale1(element);
+  if (element.type === "freedraw" || element.type === "text") {
+    return padding;
+  }
+  return padding / Math.min(1, getElementStyleScale(element));
+};
+
+const getCanvasPaddingAtScale1 = (element: ExcalidrawElement) => {
   switch (element.type) {
     case "freedraw":
       return element.strokeWidth * 12;
     case "text":
       return element.fontSize / 2;
     case "arrow":
-      if (element.endArrowhead || element.endArrowhead) {
+      // YAZ-5739: a head at either end needs the room (upstream read
+      // `endArrowhead` twice, so a start head alone could be cut off)
+      if (element.startArrowhead || element.endArrowhead) {
         return 40;
       }
       return 20;
@@ -224,8 +240,12 @@ const cappedElementCanvasSize = (
     scale = Math.sqrt(AREA_LIMIT / (width * height));
   }
 
-  width = Math.floor(width * scale);
-  height = Math.floor(height * scale);
+  // YAZ-5739: at least 1 px, so a flat line far out keeps a bitmap (floor
+  // made it 0 px, and it drew nothing). Round down otherwise: rounding up
+  // took a capped bitmap past AREA_LIMIT, which iOS 17 Safari draws as
+  // nothing (YAZ-5755)
+  width = Math.min(WIDTH_HEIGHT_LIMIT, Math.max(1, Math.floor(width * scale)));
+  height = Math.min(WIDTH_HEIGHT_LIMIT, Math.max(1, Math.floor(height * scale)));
 
   return { width, height, scale };
 };
