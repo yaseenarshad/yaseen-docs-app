@@ -138,12 +138,8 @@ describe("checklist boxes and the done strike scale with the text (YAZ-4277 bug)
             );
 
             // on screen, Yaseen's box under zoom 1 is less than a pixel
-            // wide: its canvas is empty and nothing is drawn, no blob
-            if (!isExporting && fontSize < 1 && zoom < 1) {
-              expect(lineWidths).toEqual([]);
-              expect(fillRectHeights).toEqual([]);
-              return;
-            }
+            // wide: it still gets a 1 px canvas (YAZ-5739) and draws thin
+            // lines there, no blob
 
             // folded: 3 boxes; unfolded: 5 (the nested ones too), each
             // stroked once, and each done box has a tick

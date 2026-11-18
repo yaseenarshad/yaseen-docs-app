@@ -19,7 +19,7 @@
  * toolbar in the engine is the one place they are changed.
  */
 import type { ReactNode } from 'react'
-import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
+import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign, type TextEdgeDoubleClickMode } from '@shared/types'
 import { Segmented, Select, Stepper } from './controls'
 import { DIAGRAM_DARK_COLORS_OPTIONS, EMBED_REST_OPTIONS, newBoardFolderOptions, ON_OFF_OPTIONS, type Option } from './options'
 import { unit } from './unitLabel'
@@ -46,6 +46,12 @@ const TEXT_ALIGN_OPTIONS: readonly Option<TextAlign>[] = [
 const NEW_ELEMENT_STYLE_OPTIONS: readonly Option<NewElementStyleMode>[] = [
   { value: 'default', label: 'Start with the default style' },
   { value: 'keep', label: 'Keep the last style' },
+]
+
+/** YAZ-5771: what a double click on a text box's left or right edge does. */
+const TEXT_EDGE_DOUBLE_CLICK_OPTIONS: readonly Option<TextEdgeDoubleClickMode>[] = [
+  { value: 'shrink', label: 'Only shrink' },
+  { value: 'fit', label: 'Fit the text' },
 ]
 
 /** YAZ-4277 D5, D7: the fold arrows of text boxes. */
@@ -143,6 +149,16 @@ export const CANVAS_SECTION: SettingsSection = {
         },
         // YAZ-4469 demo: the faint outline of what a click would pick, while the selection tool hovers.
         toggle('hoverOutline', 'Hover outline', "A faint outline shows what a click will pick, while you hover. A board's cog can choose its own.", ['hover', 'outline', 'highlight', 'select', 'selection']),
+        {
+          // YAZ-5771: like a column edge in a spreadsheet. Drawings only, not draw.io diagrams.
+          id: 'canvas.textEdgeDoubleClick',
+          label: 'Double-click a text box edge',
+          hint: 'Only shrink: the box keeps its lines and loses its empty space. Fit the text: each paragraph goes on one line.',
+          keywords: ['text box', 'edge', 'double click', 'width', 'fit', 'shrink', 'wrap', 'auto resize', 'snap'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={TEXT_EDGE_DOUBLE_CLICK_OPTIONS} value={settings.canvas.textEdgeDoubleClick ?? DEFAULT_CANVAS_PREFS.textEdgeDoubleClick} onChange={(textEdgeDoubleClick) => onChange(write(settings, { textEdgeDoubleClick }))} ariaLabel="Double-click a text box edge" />
+          ),
+        },
       ],
     },
     {
