@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 import { addComment } from '@shared/comments'
 import { PAGE, PLAN, commentsSetup, isPatch } from './testing'
 
@@ -9,7 +10,10 @@ describe('a comment from the phone reaches the page (fake GitHub, made-up vault)
     const made = await t.port.add({ path: PAGE, body: 'Looks good', by: 'yaseen' })
     await t.settle()
     const page = await t.remote()
-    expect(page).toBe(`---\ntitle:   Plan\ntags: [a,b]\ncomments:\n  - id: ${made.id}\n    n: 1\n    at: 2026-11-14T06:00:00Z\n    by: yaseen\n    body: Looks good\n---\n# Plan\n\nThe body.\n`)
+    // The id is random hex (`newCommentId`); one like `38110107` reads as a NUMBER in YAML, so the writer quotes it
+    // (as in cardFile.test.ts, YAZ-5516). The test expects the same, so it passes for every id (YAZ-5784).
+    const idText = typeof parse(`id: ${made.id}`).id === 'string' ? made.id : `"${made.id}"`
+    expect(page).toBe(`---\ntitle:   Plan\ntags: [a,b]\ncomments:\n  - id: ${idText}\n    n: 1\n    at: 2026-11-14T06:00:00Z\n    by: yaseen\n    body: Looks good\n---\n# Plan\n\nThe body.\n`)
     expect(t.patches()).toBe(1)
     expect(t.port.waiting()).toEqual([])
     // The pass after the commit: the stored copy (what the page view reads) holds it at once.

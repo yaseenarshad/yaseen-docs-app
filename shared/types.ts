@@ -2406,6 +2406,8 @@ export interface SettingsState {
   newPageTitleTemplate: string
   /** Settings › Editor › Cell notes › Keep cell notes open (round 3 of the YAZ-3818 demo): a new tab's cell note card starts pinned (a click outside does not close it). Its pin button still toggles it for that tab. */
   tableCellNotePinned: boolean
+  /** Settings › Tables › Cell notes › Hover preview lines (YAZ-5717): how many lines of a cell note its hover box shows, then "…". Whole lines, `CELL_NOTE_PREVIEW_LINES_MIN`–`MAX`. A setting of this Mac, not of `table-look.json`. */
+  tableCellNotePreviewLines: number
   /** Settings › Editor › Cell notes › All notes opens at (YAZ-4276 A1): a calendar table's "All notes" opens at the time block of the cell you came from, or at now. */
   tableAllNotesOpensAt: AllNotesOpensAt
   /** Settings › Editor › Typing › Arrows (YAZ-4273 D8): `->`, `==>`, `<-`, `<->` and the rest become one arrow character as you type (`typingArrows.ts`). */
@@ -2849,6 +2851,9 @@ export const TABLE_CELL_BULLET_INDENT_MIN = 8
 export const TABLE_CELL_BULLET_INDENT_MAX = 32
 export const TABLE_CELL_BULLET_GAP_MIN = 2
 export const TABLE_CELL_BULLET_GAP_MAX = 12
+/** The lines a cell note's hover box shows (YAZ-5717): whole lines. */
+export const CELL_NOTE_PREVIEW_LINES_MIN = 6
+export const CELL_NOTE_PREVIEW_LINES_MAX = 60
 /** The longest new cell note template (the YAZ-3818 demo), in characters. */
 export const CELL_NOTE_TEMPLATE_MAX = 2000
 /** The longest "New item name starts with" (YAZ-4246), in characters. */
@@ -3124,6 +3129,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableCellNoteTemplate: '',
   newPageTitleTemplate: '{MM}_{DD}- ',
   tableCellNotePinned: true,
+  tableCellNotePreviewLines: 20,
   tableAllNotesOpensAt: 'cell',
   typingArrows: true,
   enterKeepsStylePages: false,

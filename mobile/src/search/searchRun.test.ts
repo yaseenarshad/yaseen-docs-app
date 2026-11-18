@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { phoneRecord } from '../sync/phoneIndex'
 import { ALL_TYPES, buildRows, findRows, phoneKindOf, searchRecords, typeTest, type PhoneType, type SearchSource } from './searchRun'
 import { boardRecord } from '../drawing/boardFiles'
+import { budgetMs } from '../../../client/src/test-perf'
 
 /** One card block with its line, as the Mac writes it: its title on its card line (YAZ-5308), when it has one. */
 const card = (id: string, body: string, title?: string) => `\`\`\`card\n${body}\n\`\`\`\n<!-- card: ${id}${title === undefined ? '' : `, title "${title}"`} -->`
@@ -176,7 +177,7 @@ describe('speed: 5,000 pages and 20,000 cards (YAZ-5079)', () => {
     const longest = (w: number[]) => Math.max(...w)
     console.log(`[4C perf] ${rows.length} rows from 5,000 records: build in ${b.work.length} slices, longest ${longest(b.work).toFixed(1)} ms CPU; 8 queries in ${f.work.length} slices, longest ${longest(f.work).toFixed(1)} ms CPU`)
     expect(rows.length).toBeGreaterThan(25_000)
-    expect(longest(b.work)).toBeLessThan(50)
-    expect(longest(f.work)).toBeLessThan(50)
+    expect(longest(b.work)).toBeLessThan(budgetMs(50))
+    expect(longest(f.work)).toBeLessThan(budgetMs(50))
   })
 })

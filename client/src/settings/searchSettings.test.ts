@@ -120,6 +120,8 @@ describe('settingCandidates', () => {
       'tableCellNoteButton',
       'tableCellNoteTemplate',
       'tableCellNotePinned',
+      // Hover preview lines (YAZ-5717).
+      'tableCellNotePreviewLines',
       'tableAllNotesOpensAt',
       'tableNowMark',
       // Time in slot (YAZ-5602).
@@ -313,7 +315,7 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines', 'folderPages.groupLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403). The Add panel's Hover zoom (YAZ-4447, D34)
     // leads: its label starts with the word, after the drawing's Hover outline (YAZ-4469 demo), which comes first in registry order.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'tableTextInCells' /* its hint says hover a cut cell (YAZ-4900) */, 'tableRowBand' /* its hint names Folder pages › Row band on hover (YAZ-4608 C5) */, 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.groupLines' /* On hover (YAZ-4798) */, 'hotkey-code-showHover'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['tableCellNotePreviewLines' /* "Hover preview lines" starts with the word (YAZ-5717) */, 'canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'tableTextInCells' /* its hint says hover a cut cell (YAZ-4900) */, 'tableRowBand' /* its hint names Folder pages › Row band on hover (YAZ-4608 C5) */, 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.groupLines' /* On hover (YAZ-4798) */, 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a page, at its right edge. Editor')
   })

@@ -57,14 +57,14 @@ export function Select<T>({ options, value, onChange, ariaLabel }: ChoiceProps<T
   )
 }
 
-/** The size buttons of a line (YAZ-3068): "−", the size with its unit ("16 px", or "50%" for a line's darkness), "+". Text formatting's lines and the guide line darkness (YAZ-4094 G3) share it. */
-export function Stepper({ name, size, min, max, unit = 'px', onStep }: { name: string; size: number; min: number; max: number; unit?: 'px' | '%'; onStep: (delta: number) => void }) {
+/** The size buttons of a line (YAZ-3068): "−", the size with its unit ("16 px", "50%" for a line's darkness, "20 lines" for a cell note's hover box, YAZ-5717), "+". Text formatting's lines and the guide line darkness (YAZ-4094 G3) share it. */
+export function Stepper({ name, size, min, max, unit = 'px', onStep }: { name: string; size: number; min: number; max: number; unit?: 'px' | '%' | 'lines'; onStep: (delta: number) => void }) {
   return (
-    <div className="heading-styles__stepper" role="group" aria-label={unit === '%' ? name : `${name} size`}>
+    <div className="heading-styles__stepper" role="group" aria-label={unit === 'px' ? `${name} size` : name}>
       <button type="button" className="settings__option heading-styles__step" aria-label={`${name} smaller`} disabled={size <= min} onClick={() => onStep(-1)}>
         −
       </button>
-      <span className="heading-styles__size">{unit === '%' ? `${size}%` : `${size} px`}</span>
+      <span className="heading-styles__size">{unit === '%' ? `${size}%` : unit === 'lines' ? `${size} lines` : `${size} px`}</span>
       <button type="button" className="settings__option heading-styles__step" aria-label={`${name} larger`} disabled={size >= max} onClick={() => onStep(1)}>
         +
       </button>

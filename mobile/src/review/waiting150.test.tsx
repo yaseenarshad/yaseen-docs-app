@@ -9,6 +9,7 @@ import { BRANCH, REPO, VAULT } from '../sync/testing'
 import type { ReviewLink } from './link'
 import { SEEN_MS } from './tapGuard'
 import { NOW, cardBlock, page } from './testing'
+import { budgetMs } from '../../../client/src/test-perf'
 
 
 /**
@@ -147,7 +148,7 @@ describe('YAZ-5304: the Review screen with 150 answers waiting, no signal', () =
       await h!.settle()
     })
     console.log(`[YAZ-5304] the 151st answer: longest hold ${longest.toFixed(1)} ms of CPU`)
-    expect(longest).toBeLessThan(50)
+    expect(longest).toBeLessThan(budgetMs(50))
     expect(waitingCount(t.answers.waiting())).toBe(151)
 
     // The signal comes back: ONE commit carries them all.

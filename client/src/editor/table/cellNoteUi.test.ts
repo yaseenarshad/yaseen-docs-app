@@ -5,6 +5,8 @@
  * mark; ⌘. in a cell bullet zooms the bullet, and in a card is a no-op; Tab indents in the card; the table menu's cell
  * note rows; Backspace and Delete step over the mark; the one "Add cell note" button; the preview on the whole cell.
  */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
@@ -20,8 +22,8 @@ import { canZoomInto, getZoomedItemPos, zoomKeyAt, ZOOM_CRUMB_CLASS, ZOOM_HIDDEN
 import { cellNoteButtonPlacements } from './cellNoteButton'
 import { setCellNoteButtonSetting } from './timeFormatSetting'
 import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, openCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
-import { cellHoverCardRuns } from './cellHoverCard'
-import { cellNotePreviewLines } from './cellNotePreview'
+import { cellHoverCardRuns, fitCard } from './cellHoverCard'
+import { cellNotePreviewLines, CELL_NOTE_BOX_WIDTH, setCellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
 import { cellPos } from './tableTestKit'
 
@@ -633,8 +635,10 @@ describe('the "Add cell note" button (D8, 5A-7)', () => {
 })
 
 describe('the preview (D14)', () => {
-  it('the first 6 lines as plain text, a bullet as "• "', () => {
-    const lines = (markdown: string) => mount(markdown).then(({ view }) => cellNotePreviewLines(view.state.doc.child(1)))
+  afterEach(() => setCellNotePreviewLines(20))
+
+  it('the first lines as plain text, a bullet as "• "', () => {
+    const lines = (markdown: string) => mount(markdown).then(({ view }) => cellNotePreviewLines(view.state.doc.child(1), 6))
     return Promise.all([
       lines('| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: * one\n    * two\n    * three\n').then((out) => expect(out).toEqual(['• one', '• two', '• three'])),
       lines('| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: Top\n\n    1. first\n       * kid\n    2. second\n\n    * [ ] todo\n    * x\n    * y\n').then((out) =>
@@ -673,6 +677,116 @@ describe('the preview (D14)', () => {
     inCell(view, 'mousemove', 1, 1, 150, 45)
     vi.advanceTimersByTime(400)
     expect(document.querySelector('.cell-note-preview')).toBeNull()
+  })
+
+  /** A table whose "x" cell has a note of `count` bullets: "• 1" to "• count". */
+  const longNote = (count: number) => `| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: ${Array.from({ length: count }, (_, i) => `* ${i + 1}`).join('\n    ')}\n`
+  const bullets = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => `• ${from + i}`)
+  /** The box's lines after a rest on the note's cell. */
+  const boxLines = async (view: EditorView) => {
+    inCell(view, 'mousemove', 1, 0, 150, 45)
+    vi.advanceTimersByTime(400)
+    const lines = [...document.querySelectorAll('.cell-note-preview .cell-note-preview__line')].map((el) => el.textContent)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    return lines
+  }
+
+  it('YAZ-5717: 20 lines then "…" when the note has more; the setting changes the count, clamped to 6–60', async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view: thirty } = await mount(longNote(30))
+    expect(await boxLines(thirty)).toEqual([...bullets(1, 20), '…'])
+    const { view: twenty } = await mount(longNote(20))
+    expect(await boxLines(twenty)).toEqual(bullets(1, 20))
+    setCellNotePreviewLines(6)
+    expect(await boxLines(thirty)).toEqual([...bullets(1, 6), '…'])
+    setCellNotePreviewLines(100)
+    const { view: seventy } = await mount(longNote(70))
+    expect(await boxLines(seventy)).toEqual([...bullets(1, 60), '…'])
+    setCellNotePreviewLines(2)
+    expect(await boxLines(seventy)).toEqual([...bullets(1, 6), '…'])
+  })
+
+  it('YAZ-5717: the box stays inside the window: left of the cell at the right edge, moved up at the bottom', async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view } = await mount(NOTES, zoomOpts())
+    // jsdom lays out nothing: the box is as tall as 300px wherever it is put.
+    const own = HTMLElement.prototype.getBoundingClientRect
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('cell-note-preview') ? new DOMRect(parseFloat(this.style.left), parseFloat(this.style.top), CELL_NOTE_BOX_WIDTH, 300) : own.call(this)
+    })
+    const cell = view.nodeDOM(cellPos(view, 1, 1)) as HTMLElement
+    // The cell's right edge at 900 of jsdom's 1024 × 768 window, its top at 700.
+    cell.getBoundingClientRect = () => new DOMRect(800, 700, 100, 30)
+    cell.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 850, clientY: 710 }))
+    vi.advanceTimersByTime(400)
+    const box = document.querySelector<HTMLElement>('.cell-note-preview')!
+    // 900 + 4 + 360 > 1024: left of the corner. 700 + 300 > 768 - 8: up, 8px from the bottom.
+    expect([box.style.left, box.style.top]).toEqual([`${900 - 4 - CELL_NOTE_BOX_WIDTH}px`, `${768 - 8 - 300}px`])
+    spy.mockRestore()
+  })
+
+  it('YAZ-5717: in a short window the lines past the box\'s bottom go, and the last one that shows reads "…"', () => {
+    const box = document.createElement('div')
+    const body = document.createElement('div')
+    box.appendChild(body)
+    for (let i = 1; i <= 10; i++) {
+      const line = document.createElement('div')
+      line.className = 'cell-note-preview__line'
+      line.textContent = `Line ${i}`
+      // Each line 20px tall from y = 40.
+      line.getBoundingClientRect = () => new DOMRect(0, 20 + i * 20, 300, 20)
+      body.appendChild(line)
+    }
+    // The box ends at 148: less its 8px padding, the lines must end by 140. Lines 1 to 5 fit (line 5 ends at 140); line 5 becomes "…".
+    box.getBoundingClientRect = () => new DOMRect(0, 0, 360, 148)
+    fitCard(box)
+    expect(Array.from(box.querySelectorAll('.cell-note-preview__line'), (l) => l.textContent)).toEqual(['Line 1', 'Line 2', 'Line 3', 'Line 4', '…'])
+    // A box with room keeps every line.
+    const roomy = box.cloneNode(true) as HTMLElement
+    roomy.getBoundingClientRect = () => new DOMRect(0, 0, 360, 1000)
+    roomy.querySelectorAll<HTMLElement>('.cell-note-preview__line').forEach((l) => (l.getBoundingClientRect = () => new DOMRect(0, 40, 300, 20)))
+    fitCard(roomy)
+    expect(roomy.querySelectorAll('.cell-note-preview__line')).toHaveLength(5)
+  })
+
+  it('YAZ-5717: the CSS gives the note box 360px, at most the window less 16px, and lines that wrap', () => {
+    const css = readFileSync(resolve(__dirname, 'cellHoverCard.css'), 'utf8')
+    const rule = (selector: string) => css.match(new RegExp(`^${selector.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`, 'm'))?.[1] ?? ''
+    expect(CELL_NOTE_BOX_WIDTH).toBe(360)
+    expect(rule('.cell-note-preview')).toContain(`width: ${CELL_NOTE_BOX_WIDTH}px;`)
+    expect(rule('.cell-note-preview')).toContain('max-height: calc(100vh - 16px);')
+    expect(rule('.cell-note-preview__line')).toContain('white-space: pre-wrap;')
+    expect(rule('.cell-note-preview__line')).toContain('overflow-wrap: anywhere;')
+    // The title stays on one row with "…".
+    expect(rule('.cell-note-preview__header')).toContain('white-space: nowrap;')
+    // The hanging indent: the lead (indent and marker) is its own column, so a wrapped row starts under the text.
+    expect(rule('.cell-note-preview__line')).toContain('display: flex;')
+    expect(rule('.cell-note-preview__lead')).toContain('flex: none;')
+    expect(rule('.cell-note-preview__lead')).toContain('white-space: pre;')
+  })
+
+  it('YAZ-5780: the clamped full text has no bottom padding inside its clip, so no half row shows under its last row', () => {
+    const css = readFileSync(resolve(__dirname, 'cellHoverCard.css'), 'utf8')
+    const text = css.match(/^\.cell-note-preview__text\s*\{([^}]*)\}/m)?.[1] ?? ''
+    expect(text).toContain('-webkit-line-clamp')
+    expect(text).toContain('overflow: hidden;')
+    // `overflow: hidden` clips at the padding box: the space under the text is a transparent border, outside the clip.
+    expect(text).toMatch(/padding: 8px 12px 0;/)
+    expect(text).toMatch(/border-bottom: 8px solid transparent;/)
+  })
+
+  it('YAZ-5717: a line\'s lead (its indent and marker) is apart from its text, so a wrapped row hangs under the text; nested ones keep their indent', async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view } = await mount('| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: Top\n\n    1. first\n       * kid\n    * [ ] todo\n')
+    inCell(view, 'mousemove', 1, 0, 150, 45)
+    vi.advanceTimersByTime(400)
+    const lines = [...document.querySelectorAll<HTMLElement>('.cell-note-preview .cell-note-preview__line')]
+    expect(lines.map((l) => l.textContent)).toEqual(['Top', '1. first', '  • kid', '☐ todo'])
+    expect(lines.map((l) => l.querySelector('.cell-note-preview__lead')?.textContent ?? '')).toEqual(['', '1. ', '  • ', '☐ '])
+    expect(lines.map((l) => l.querySelector('.cell-note-preview__line-text')?.textContent ?? l.textContent)).toEqual(['Top', 'first', 'kid', 'todo'])
   })
 })
 
@@ -786,6 +900,126 @@ describe('the full-text card of a cut cell (YAZ-4901)', () => {
     vi.advanceTimersByTime(250)
     expect(cellHoverCardRuns.builds).toBe(builds)
     expect(card()).toBeNull()
+  })
+
+  describe('with a long note (YAZ-5717)', () => {
+    /** "Flights" is cut and has a note of 30 bullets; "free" is plain. */
+    const LONG = ['| Day | Plan |', '| - | - |', '| Monday | Flights[^cell-1] |', '| Friday | free |', '', '<!-- table: nowrap -->', '', `[^cell-1]: ${Array.from({ length: 30 }, (_, i) => `* line ${i + 1}`).join('\n    ')}`, ''].join('\n')
+    const realHeight = window.innerHeight
+    afterEach(() => {
+      Object.defineProperty(window, 'innerHeight', { value: realHeight, configurable: true })
+      vi.restoreAllMocks()
+    })
+    /**
+     * jsdom lays out nothing. This lays out the card as a browser would: `natural` px tall, capped by its inline
+     * `max-height` and by the CSS one (the window less 16px); the full-text part from the card's top, `textHeight` px
+     * tall, in 12.5px text; then the note's title and hint, `headHeight` px; then each note line, 20px tall. `natural`
+     * is a number, or `'content'`: as tall as what the card holds now, with 8px under the last note line.
+     */
+    const layout = (natural: number | 'content', windowHeight: number, textHeight = 40, headHeight = 20) => {
+      Object.defineProperty(window, 'innerHeight', { value: windowHeight, configurable: true })
+      const isCard = (el: HTMLElement) => el.classList.contains('cell-note-preview')
+      const content = (card: HTMLElement) =>
+        (card.querySelector('.cell-note-preview__text') ? textHeight : 0) + (card.querySelector('.cell-note-preview__header') ? headHeight + card.querySelectorAll('.cell-note-preview__line').length * 20 + 8 : 0)
+      const height = (card: HTMLElement) => Math.min(natural === 'content' ? content(card) : natural, parseFloat(card.style.maxHeight) || Infinity, windowHeight - 16)
+      const own = HTMLElement.prototype.getBoundingClientRect
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+        return isCard(this) ? height(this) : 0
+      })
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return isCard(this) ? 320 : 0
+      })
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        if (isCard(this)) return new DOMRect(parseFloat(this.style.left), parseFloat(this.style.top), 320, height(this))
+        const card = this.closest<HTMLElement>('.cell-note-preview')
+        if (card !== null && this.classList.contains('cell-note-preview__text')) return new DOMRect(parseFloat(card.style.left), parseFloat(card.style.top), 320, textHeight)
+        if (card === null || !this.classList.contains('cell-note-preview__line')) return own.call(this)
+        const index = [...card.querySelectorAll('.cell-note-preview__line')].indexOf(this)
+        return new DOMRect(parseFloat(card.style.left), parseFloat(card.style.top) + textHeight + headHeight + index * 20, 300, 20)
+      })
+      const style = window.getComputedStyle
+      vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) =>
+        el instanceof HTMLElement && el.classList.contains('cell-note-preview__text') ? ({ fontSize: '12.5px' } as CSSStyleDeclaration) : style(el, pseudo),
+      )
+    }
+    /** Rest on a cut cell at `rect` (row 1, "Flights" with the note, or row 2, "free" with none), and give its card. */
+    const rest = async (rect: DOMRect, row = 1) => {
+      vi.useFakeTimers()
+      document.elementsFromPoint = () => []
+      const { view } = await mount(LONG, zoomOpts())
+      cut(view, row, 1)
+      const cell = view.nodeDOM(cellPos(view, row, 1)) as HTMLElement
+      cell.getBoundingClientRect = () => rect
+      cell.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 10 }))
+      vi.advanceTimersByTime(250)
+      return card()!
+    }
+    /** The card's note lines: the last one reads "…", and each one ends above the card's bottom less its 8px padding. */
+    const expectFitted = (box: HTMLElement) => {
+      const lines = [...box.querySelectorAll<HTMLElement>('.cell-note-preview__line')]
+      const bottom = box.getBoundingClientRect().bottom - 8
+      expect(lines.length).toBeGreaterThan(1)
+      expect(lines.length).toBeLessThan(21)
+      expect(lines.map((l) => l.textContent)).toEqual([...Array.from({ length: lines.length - 1 }, (_, i) => `• line ${i + 1}`), '…'])
+      for (const line of lines) expect(line.getBoundingClientRect().bottom).toBeLessThanOrEqual(bottom)
+    }
+
+    it('1A (YAZ-5746): in a short window the card drops the note lines that it cuts, and the last one that shows reads "…"', async () => {
+      layout(600, 420)
+      expectFitted(await rest(new DOMRect(100, 30, 100, 30)))
+    })
+
+    it('1B (YAZ-5747): a card taller than the room under and above never covers its cell: it takes the side with more room, as tall as that room, 8px from the window\'s edge', async () => {
+      // A 718px window; the cell from 360 to 401: 305px under it, 348px above it. The card wants 600px.
+      layout(600, 718)
+      const above = await rest(new DOMRect(100, 360, 100, 41))
+      const rect = above.getBoundingClientRect()
+      expect([rect.top, rect.bottom]).toEqual([8, 360 - 4])
+      expectFitted(above)
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await unmountAll()
+      // The cell higher up, from 300 to 341: now under it has more room (369px against 288px).
+      layout(600, 718)
+      const under = await rest(new DOMRect(100, 300, 100, 41))
+      expect([under.getBoundingClientRect().top, under.getBoundingClientRect().bottom]).toEqual([341 + 4, 718 - 8])
+      expectFitted(under)
+    })
+
+    it('1B follow-up (YAZ-5747): a cut card whose full text the cap cuts clamps that text to the rows that fit, so it ends with "…"; a note under it goes', async () => {
+      // A 200px window, the cell from 60 to 90: 98px under it, 48px above. The text part wants 300px.
+      // Rows that fit: the card's bottom 192, less 8px padding under and 8px over the text, in 17.5px rows: 4.
+      layout(400, 200, 300)
+      const plain = await rest(new DOMRect(100, 60, 100, 30), 2)
+      expect(plain.getBoundingClientRect().bottom).toBe(200 - 8)
+      expect(plain.querySelector<HTMLElement>('.cell-note-preview__text')!.style.getPropertyValue('--fit-lines')).toBe('4')
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await unmountAll()
+      // The same with a note: the text clamps the same way, and the note's part, all under the cut, goes.
+      layout(400, 200, 300)
+      const noted = await rest(new DOMRect(100, 60, 100, 30))
+      expect(noted.querySelector<HTMLElement>('.cell-note-preview__text')!.style.getPropertyValue('--fit-lines')).toBe('4')
+      expect(noted.querySelector('.cell-note-preview__header, .cell-note-preview__hint, .cell-note-preview__body')).toBeNull()
+    })
+
+    it('1E (YAZ-5758): the text fits but the note\'s title or first line does not: the note\'s part goes, and the text ends with a "…" row (clamped to the rows that fit)', async () => {
+      // A 250px window, the cell from 200 to 230: above it 188px, the card at 8 to 196. The text part (150px) fits;
+      // the first note line (178 to 198) does not end by 196 - 8.
+      layout(600, 250, 150)
+      const box = await rest(new DOMRect(100, 200, 100, 30))
+      expect(box.querySelector('.cell-note-preview__header, .cell-note-preview__hint, .cell-note-preview__body')).toBeNull()
+      expect(textLines(box)).toEqual(['Flights', '…'])
+      // (196 - 8 - (8 + 8)) / 17.5: 9 rows fit.
+      expect(box.querySelector<HTMLElement>('.cell-note-preview__text')!.style.getPropertyValue('--fit-lines')).toBe('9')
+    })
+
+    it('a card above its cell that the fit makes shorter moves down: its bottom is 4px above the cell again', async () => {
+      // A 718px window, the cell from 360 to 401: the card goes above, capped to 348px (8 to 356). Its 21 note lines
+      // start 65px under its top: 13 fit, and the card shrinks to 40 + 25 + 13 × 20 + 8 = 333px.
+      layout('content', 718, 40, 25)
+      const box = await rest(new DOMRect(100, 360, 100, 41))
+      expect(box.querySelectorAll('.cell-note-preview__line')).toHaveLength(13)
+      expect([box.getBoundingClientRect().top, box.getBoundingClientRect().bottom]).toEqual([360 - 4 - 333, 360 - 4])
+    })
   })
 
   it('a read-only page shows the card too', async () => {

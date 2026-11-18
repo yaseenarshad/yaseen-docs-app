@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderPage, splitBlocks, type PageLook } from './pageRender'
 import { ATTACK, remoteAttributes, watchWrites } from './testing'
+import { budgetMs } from '../../../client/src/test-perf'
 
 /**
  * A slicer that yields after each piece and records the CPU time of THIS thread (`process.threadCpuUsage`) spent between
@@ -314,7 +315,7 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     console.log(`[4C perf] a ${(text.length / 1e6).toFixed(1)} MB page (${parts} parts) in jsdom: ${ms.toFixed(0)} ms in all, ${run.work.length} slices; CPU of a slice: median ${sorted[sorted.length >> 1].toFixed(1)} ms, longest ${sorted.at(-1)!.toFixed(1)} ms`)
     expect(run.work.length).toBeGreaterThan(100)
     // The page's own work between two yields, in CPU time of this thread: the load of the machine does not count.
-    expect(sorted.at(-1)!).toBeLessThan(50)
+    expect(sorted.at(-1)!).toBeLessThan(budgetMs(50))
   })
 
   it('YAZ-5213: the slice measure is honest: a 200 ms busy loop in one piece shows as a slice of 200 ms', async () => {

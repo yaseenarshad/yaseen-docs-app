@@ -158,7 +158,7 @@ const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkne
  * Settings › Tables (YAZ-4775), after Editor: the page tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
  */
-const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNextShade', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableCellNotePreviewLines', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNextShade', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -1080,6 +1080,25 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     const plus = row(el, 'tableShadeDarkness')!.querySelector<HTMLButtonElement>('button[aria-label="Shade darkness larger"]')!
     act(() => plus.click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableShadeDarkness: 8 })
+  })
+
+  it('Cell notes › Hover preview lines (YAZ-5717; its place is in TABLES_ROWS): 20 lines by default, steps of 2 inside 6–60, Reset off the default; an old file with no key reads 20', () => {
+    const { el, onChange } = mountOn('Tables')
+    const lines = row(el, 'tableCellNotePreviewLines')!
+    expect(lines.querySelector('.setting__label')?.textContent).toBe('Hover preview lines')
+    expect(lines.textContent).toContain('20 lines')
+    expect([...lines.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Reset')
+    act(() => lines.querySelector<HTMLButtonElement>('button[aria-label="Hover preview lines larger"]')!.click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableCellNotePreviewLines: 22 })
+
+    const atMin = mountOn('Tables', { ...DEFAULT_SETTINGS, tableCellNotePreviewLines: 6 })
+    const minRow = row(atMin.el, 'tableCellNotePreviewLines')!
+    expect(minRow.querySelector<HTMLButtonElement>('button[aria-label="Hover preview lines smaller"]')!.disabled).toBe(true)
+    act(() => [...minRow.querySelectorAll('button')].find((b) => b.textContent === 'Reset')!.click())
+    expect(atMin.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableCellNotePreviewLines: 20 })
+
+    const { tableCellNotePreviewLines: _omitted, ...legacy } = DEFAULT_SETTINGS
+    expect(row(mountOn('Tables', legacy as SettingsState).el, 'tableCellNotePreviewLines')!.textContent).toContain('20 lines')
   })
 
   it('Tables › Band strength (the YAZ-3818 demo): a % you type, kept on ⏎ and clamped to 1–60; − and + step by 1', () => {

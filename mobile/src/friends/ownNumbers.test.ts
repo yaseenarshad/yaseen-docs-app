@@ -8,6 +8,7 @@ import type { SyncEvent } from '../sync/engine'
 import { INDEX_STATE } from '../sync/phoneIndex'
 import { uiSlicer } from '../sync/yieldToUi'
 import { createOwnNumbers } from './ownNumbers'
+import { budgetMs } from '../../../client/src/test-perf'
 
 /**
  * YAZ-5255: my own numbers are counted ONCE for each change of the vault's data (a sync pass that changed it, or a new
@@ -111,7 +112,7 @@ describe('my own numbers (YAZ-5255)', () => {
     const longest = Math.max(...work)
     console.info(`[perf] own numbers, 20,000 cards x 10 answers: ${work.length} slices, longest ${longest.toFixed(1)} ms CPU`)
     expect(work.length).toBeGreaterThan(10)
-    expect(longest).toBeLessThan(50)
+    expect(longest).toBeLessThan(budgetMs(50))
     const vaults: FriendVault[] = [{ pages: Object.values(index), settings: DEFAULT_REVIEW_SETTINGS }]
     expect({ ...counted, at: '' }).toEqual({ ...friendStats(vaults, NOW), at: '' })
   })
