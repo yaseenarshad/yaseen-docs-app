@@ -102,6 +102,7 @@ import { setNewBoardFolderOf } from './drawings/createDrawing'
 import { hasLetters } from '@shared/pageId'
 import { dailyPageVault, todaysPage } from './sidebar/dailyPage'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
+import { clearPlaces, prunePlaces } from './sidebar/tabPlace'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -754,6 +755,13 @@ export function App() {
   const newPlacesOf = (path: string) => vaultNewPlacesFields(appSettings, scopeOf(path).newPlaces.value)
   const newPlacesOfRef = useRef(newPlacesOf)
   newPlacesOfRef.current = newPlacesOf
+  // The sidebar's place for each page tab (YAZ-5701), here because the Sidebar is not mounted while it is hidden: a
+  // closed tab drops its place, and "One place for the window" drops them all.
+  const sidebarPlace = settings.sidebarPlace
+  useEffect(() => {
+    if (sidebarPlace === 'window') clearPlaces()
+  }, [sidebarPlace])
+  useEffect(() => prunePlaces(tabs.map((t) => t.id)), [tabs])
   useEffect(() => setNewBoardFolderOf((root) => newPlacesOfRef.current(root).newBoardFolder), [])
   const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings })
   placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings }
@@ -4271,6 +4279,8 @@ export function App() {
           onCollapse={toggleSidebar}
           // The lens tabs (YAZ-847): App owns the value, the sidebar only renders the row.
           lens={sidebarLens}
+          // The page tab on show (YAZ-5701): each keeps its own sidebar place with "A place for each tab". A Files window has no page tabs.
+          activeTab={filesWindow ? undefined : shown}
           revealRequest={sidebarRevealRequest}
           onRevealConsumed={consumeSidebarReveal}
           menuRequest={sidebarMenuRequest}

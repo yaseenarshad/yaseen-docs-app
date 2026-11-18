@@ -1,8 +1,7 @@
-import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { useAllPathIds, type IdsInFiles, type IdsInSearch, type PathIdsSource } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
-import { KeyLabel } from '../keys/KeyLabel'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
@@ -17,7 +16,7 @@ import { storage } from '../lib/storage'
 import { countLinkReferences, linkingPages } from '../links/renameLinks'
 import { addShortcut, removeShortcut, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
-import { ancestorDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
+import { ancestorDirs, copyDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile, treeHasPath } from '../lib/treeState'
 import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { landOnCard } from '../editor/card/cardOpen'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
@@ -49,7 +48,8 @@ import { buildMenuSections, SCOPE_TIPS } from './menuSections'
 import { UnitContext, useVaultUnit, vaultUnit } from '../vault/unitWord'
 import type { ListFold } from './listFold'
 import { createPortal } from 'react-dom'
-import { FocusFolderList } from './FocusFolderList'
+import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusFolderList'
+import { dropBlankPlace, foldersChangedHere, lastPlace, markFoldersChanged, readPlace, savePlace, type TabPlace } from './tabPlace'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
 import { RecentList } from './RecentList'
@@ -64,7 +64,7 @@ import { VaultSwitcher } from './VaultSwitcher'
 import { VaultLock } from './VaultLock'
 import type { VaultUnlockFor } from '../vault/readOnlyVault'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
-import { useSameList, useVaultTree } from './hooks/useVaultTree'
+import { type FolderShare, useSameList, useVaultTree } from './hooks/useVaultTree'
 import type { ScopeState, VaultListsHere } from '../lists/useVaultListsHere'
 import { outermost, useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, SIDEBAR_REVEAL_MS, type SidebarRevealRequest } from './revealRow'
@@ -203,6 +203,11 @@ interface SidebarProps {
    * choice on every collapse/reopen and every root switch. Search is a tab too (YAZ-2638 D2): App's, and never stored.
    */
   lens: SidebarTab
+  /**
+   * The page tab on show (YAZ-5701): its id, `null` under the new tab page or the Inbox tab. With "Sidebar remembers"
+   * on "A place for each tab", each tab keeps its own place. Absent in a Files window, which has no page tabs.
+   */
+  activeTab?: string | null
   /** A tab was clicked; App writes a lens through to the window identity — never Search — and passes the new value back down. */
   onLensChange: (lens: SidebarTab) => void
   /** One reveal in Files; a request that arrives on another lens is dropped. */
@@ -637,16 +642,8 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { pages:
   return { pages, folders }
 }
 
-/** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59), each the app's hotkey label (YAZ-5332): what it does, then its keys. */
-const SEARCH_KEYS: readonly (readonly [keys: string, does: string])[] = [
-  ['↑ / ↓', 'Move'],
-  ['↵', 'Open'],
-  ['⌘↵', 'Open in a background tab'],
-  ['⇧↵', 'Show in Files'],
-  ['space', 'Preview a file or open a folder, after Up or Down'],
-  ['→ / ←', 'Open or close a folder, after Up or Down'],
-  ['esc', 'Back to the page'],
-]
+/** The first file of the empty Search tab's recents (YAZ-5777): ↓ from the bar lands here, not on its day heading, so Enter opens it. */
+const FIRST_RECENT_FILE = '[aria-label="Recents"] li[data-path] > .tree__row'
 
 /** Which page is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
@@ -719,6 +716,7 @@ export function Sidebar({
   onOpenVaultHere,
   onCollapse,
   lens,
+  activeTab,
   onLensChange,
   revealRequest,
   onRevealConsumed,
@@ -792,7 +790,20 @@ export function Sidebar({
   // The file times stay live (D2) while something reads them: the tab's Last updated sort, any tab's dates (D10), or a
   // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
   const liveTimes = sort?.by === 'updated' || Object.values(settings.rowDates).some(Boolean) || searchFilter.time !== 'any'
-  const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes)
+  // A place for each page tab (YAZ-5701): the window keeps its open folders to itself, and starts from the place of
+  // the tab on show (a New tab's own, YAZ-5757); with none, from the open folders the sidebar last showed. Only the
+  // folders in this window's vaults: a vault switch keeps the place of the tab on show.
+  const perTab = settings.sidebarPlace === 'tab' && activeTab !== undefined
+  const folderShare: FolderShare = {
+    shared: !perTab,
+    start: (): string[] => {
+      const here = vaults.map((vault) => vault.root)
+      return ((readPlace(activeTab ?? null) ?? lastPlace())?.expanded ?? []).filter((dir) => rootOfPath(here, dir) !== null)
+    },
+    touch: markFoldersChanged,
+    touched: foldersChangedHere,
+  }
+  const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes, folderShare)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** The person's own vaults: every vault of the window but the app's own (the card skill, YAZ-5108), which is last. */
@@ -852,6 +863,11 @@ export function Sidebar({
   // Each day split by vault while all vaults show (D7, D8). Kept by value: the vaults' array is new on each App render, and
   // RecentList is a memo.
   const vaultNames = vaults.map((vault) => vault.name).join('\0')
+  // The empty Search tab's recents (YAZ-5774) take no filter of the Recents tab: by vault as its setting says.
+  const searchRecentGroups = useMemo(
+    () => (multi && settings.recentsByVault ? { nameOf: (at: string) => vaultsRef.current.find((vault) => vault.root === at)?.name ?? at } : undefined),
+    [multi, settings.recentsByVault, vaultNames], // eslint-disable-line react-hooks/exhaustive-deps -- a renamed vault draws the headings again
+  )
   const recentGroups = useMemo(
     () => (multi && recentVault === null && settings.recentsByVault ? { nameOf: (at: string) => vaultsRef.current.find((vault) => vault.root === at)?.name ?? at } : undefined),
     [multi, recentVault, settings.recentsByVault, vaultNames], // eslint-disable-line react-hooks/exhaustive-deps -- a renamed vault draws the headings again
@@ -1000,8 +1016,22 @@ export function Sidebar({
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
   const nameOf = useCallback((path: string) => pageName(rootOf(path), path, titles), [rootOf, titles])
 
+  // The real folders inside the stack folders of Focus or Favorites (YAZ-5664), as their copies fold: a shut stack
+  // folder's too, so one Expand all opens both kinds. With a folder shown alone, its folders only.
+  const stackFolders = lens === 'focus' || lens === 'favorites' ? shownTab.folders : null
+  const stackDirs = useMemo(() => {
+    const shownStacks = stackFolders === null ? [] : onlyFolder === undefined ? stackFolders : [onlyFolder]
+    if (forest === null || shownStacks.length === 0) return NO_DIRS
+    const paths = shownStacks.flatMap((folder) => folder.items.flatMap((item) => {
+      const at = resolveItem(item, roots)
+      return 'path' in at ? [at.path] : []
+    }))
+    return copyDirs(favoriteRoots(forest, paths))
+  }, [forest, stackFolders, onlyFolder, roots])
+  const tabDirs = lens === 'favorites' ? favoriteDirs : focusDirs
+  const listDirs = useMemo(() => (stackDirs.length === 0 ? tabDirs : [...new Set([...tabDirs, ...stackDirs])]), [tabDirs, stackDirs])
   // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
-  const bodyDirs = lens === 'favorites' ? favoriteDirs : lens === 'focus' ? focusDirs : lens === 'sessions' || lens === 'recents' ? NO_DIRS : dirs
+  const bodyDirs = lens === 'favorites' || lens === 'focus' ? listDirs : lens === 'sessions' || lens === 'recents' ? NO_DIRS : dirs
   // Enter in the search bar, on a file: the highlighted row's page opens as a tab.
   // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
   // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
@@ -1180,6 +1210,14 @@ export function Sidebar({
     [vaultRows, appRows, searchSort, titles],
   )
   const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard)
+  /** ↑ on the first recent file of the empty Search tab, or on the day heading above it, goes back to the bar (YAZ-5774, YAZ-5777). */
+  const recentUp = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'ArrowUp' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+    const at = e.currentTarget
+    if (e.target !== at.querySelector('.tree__row') && e.target !== at.querySelector(FIRST_RECENT_FILE)) return
+    searchInput.current?.focus()
+    e.preventDefault()
+  }, [])
   // A new query moves the results under a still pointer: the panel of the row that was there goes (YAZ-3403).
   useEffect(() => closePreview(), [query, closePreview])
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
@@ -1194,6 +1232,63 @@ export function Sidebar({
     const row = [...bodyRef.current.querySelectorAll<HTMLElement>('.tree__row[data-path]')].find((r) => r.dataset.path === path)
     row?.scrollIntoView?.({ block: 'nearest' })
   }, [searchCursor.paths])
+
+  // A place for each page tab (YAZ-5701, "Sidebar remembers"): a switch saves the place of the tab that goes and puts
+  // back the place of the tab that comes; a tab with no place keeps what is on screen. Declared before the reveal below,
+  // so "Reveal the open file" runs after the place is back. A switch costs one `setAll` and one scroll write.
+  const placeNow = useRef({ lens, expanded, perTab })
+  placeNow.current = { lens, expanded, perTab }
+  /** The tab whose place is on screen; `undefined` until the first effect. */
+  const placeTab = useRef<string | null | undefined>(undefined)
+  /** The scroll to put back once the place's folders are drawn (the layout effect below). */
+  const placeScroll = useRef<number | null>(null)
+  /**
+   * The selected rows on screen (YAZ-5769), kept current below `useSelection`. Saved as they are, also when the switch
+   * shows Search: a blank tab opens on Search in the same commit, and Search has no selection of its own to save.
+   */
+  const placeSelected = useRef<ReadonlySet<string>>(new Set())
+  /** The rows to select again once the place's sidebar tab shows (the effect after `useSelection`, which clears on a tab change). */
+  const placeSelection = useRef<{ lens: SidebarTab; paths: readonly string[] } | null>(null)
+  const placeHere = (body: HTMLElement | null): TabPlace => {
+    const now = placeNow.current
+    return { lens: now.lens === 'search' ? storage.getSidebarLens() : now.lens, expanded: now.expanded, shut: { focus: shutStackFolders('focus'), favorites: shutStackFolders('favorites') }, scrollTop: body?.scrollTop ?? 0, selected: [...placeSelected.current] }
+  }
+  /** `folders` false at the mount: the tree started from the place's folders. */
+  const putBack = (place: TabPlace, folders: boolean): void => {
+    if (folders) dispatch({ type: 'setAll', dirs: [...place.expanded] })
+    setShutStackFolders('focus', place.shut.focus)
+    setShutStackFolders('favorites', place.shut.favorites)
+    if (place.lens !== placeNow.current.lens) onLensChange(place.lens)
+    placeScroll.current = place.scrollTop
+    placeSelection.current = { lens: place.lens, paths: place.selected ?? [] }
+  }
+  useEffect(() => {
+    const from = placeTab.current
+    const to = activeTab ?? null
+    placeTab.current = to
+    if (!perTab || from === to) return
+    // The first run is the mount: its folders came from the tab's place already (`folderShare.start`).
+    // A New tab's place is for its Hide and Show sidebar only (YAZ-5757): it goes with the tab, and the next New tab keeps the screen.
+    if (from === null) dropBlankPlace()
+    else if (from !== undefined) savePlace(from, placeHere(bodyRef.current))
+    const place = to === null && from !== undefined ? undefined : readPlace(to)
+    if (place !== undefined) putBack(place, from !== undefined)
+  }, [perTab, activeTab])
+  // Only once every vault's tree has landed (YAZ-5749): a mount reads its trees again, and a scroll written over no rows
+  // is clamped to 0. The commit that lands them draws the rows, so this writes once, then holds nothing.
+  useLayoutEffect(() => {
+    if (placeScroll.current === null || !loaded || bodyRef.current === null) return
+    bodyRef.current.scrollTop = placeScroll.current
+    placeScroll.current = null
+  })
+  // The sidebar goes (hidden, or a vault switch): the tab on show keeps the place it showed, a New tab too (YAZ-5757). Before the DOM goes, for the scroll.
+  useLayoutEffect(() => {
+    const body = bodyRef.current
+    return () => {
+      const tab = placeTab.current
+      if (placeNow.current.perTab && tab !== undefined) savePlace(tab, placeHere(body))
+    }
+  }, [])
 
   // Files follows the open tab (YAZ-3440 D13, `sidebarRevealActive`): a new active tab, or Files that shows
   // again, is a QUIET request on the one reveal path below (no flash, no focus, no notice). It is asked one
@@ -1239,12 +1334,15 @@ export function Sidebar({
   // persisted list, which would leave the button offering to collapse nothing.
   // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6).
   const foldVaults = multi && lens === 'files'
-  const anyExpanded = bodyDirs.some((d) => expanded.includes(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault)))
+  // The stack folders of Focus and Favorites fold with the real folders (YAZ-5664): one open of either kind reads "Collapse all".
+  const [stackFold, setStackFold] = useState<ListFold | null>(null)
+  const stacks = lens === 'focus' || lens === 'favorites' ? stackFold : null
+  const anyExpanded = bodyDirs.some((d) => expandedSet.has(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault))) || stacks?.open === true
   // The button is on every tab (YAZ-3511 D19): Search folds its own tree, Sessions and Recents their rows (`ListFold`).
   const [listFold, setListFold] = useState<ListFold | null>(null)
   const ownFold = searching ? searchFold : lens === 'sessions' || lens === 'recents' ? listFold : null
   const foldOpen = ownFold === null ? anyExpanded : ownFold.open
-  const foldDisabled = ownFold === null ? bodyDirs.length === 0 && !foldVaults : !ownFold.any
+  const foldDisabled = ownFold === null ? bodyDirs.length === 0 && !foldVaults && stacks?.any !== true : !ownFold.any
   const allLabel = foldOpen ? 'Collapse all' : 'Expand all'
   // The tab row (YAZ-3273 D8): like the sort, it keeps its identity while its value stays, so the memoised row draws nothing again on a broadcast.
   const storedTabs = settings.sidebarTabs
@@ -1260,8 +1358,10 @@ export function Sidebar({
   foldRef.current = () => {
     if (ownFold !== null) return ownFold.setAll(!ownFold.open)
     if (foldVaults) for (const vault of roots) onSetVaultOpen(vault, !anyExpanded)
+    stacks?.setAll(!anyExpanded)
     // Only the active lens' dirs move (YAZ-1605): a fold the tab does not show is exactly as it was.
-    dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
+    const moving = new Set(bodyDirs)
+    dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !moving.has(d)) : [...new Set([...expanded, ...bodyDirs])] })
   }
   const foldAll = useCallback(() => foldRef.current(), [])
   // A new tab row (YAZ-3279): one write, over the settings of the moment.
@@ -1288,6 +1388,15 @@ export function Sidebar({
   useEffect(() => (bodyRef.current !== null ? stickyFolders(bodyRef.current, stickyLevels, zoomValue / 100) : undefined), [stickyLevels, zoomValue])
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
+  placeSelected.current = selectedPaths
+  // A tab's own selected rows come back with its place (YAZ-5769), once its sidebar tab shows and every tree has landed:
+  // after `useSelection`'s clear on a tab change, and before its prune drops a row the vault no longer has.
+  useEffect(() => {
+    const wanted = placeSelection.current
+    if (wanted === null || wanted.lens !== lens || !loaded || forest === null) return
+    placeSelection.current = null
+    dispatchSelection({ type: 'replace', paths: wanted.paths.filter((path) => treeHasPath(forest, path)) })
+  })
   // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the
   // first copy that shows it. Files and Search draw each row once, so they light every row of it, as before.
   const copyTops = lens === 'focus' ? focusNodes : lens === 'favorites' ? favoriteNodes : null
@@ -1851,6 +1960,8 @@ export function Sidebar({
 
   // The active vault's word for a page (YAZ-4938), for the panel's own words; a row's menu and its delete ask read the row's vault.
   const unit = useVaultUnit(root)
+  /** The empty Search tab's line, shown only when it has no recent file (YAZ-5774). */
+  const searchHint = useMemo(() => ({ none: <p className="sidebar__msg">{unit('Type to search every page and folder.')}</p> }), [unit])
   return (
     <UnitContext.Provider value={unit}>
     <aside ref={setAside} className="sidebar" style={{ width }}>
@@ -1983,7 +2094,12 @@ export function Sidebar({
             onKeyDown={(e) => {
               const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)
               const out = query === '' && (e.key === 'ArrowRight' || e.key === 'ArrowDown') && plain
-              if (out && onLeaveToPage?.() === true) e.preventDefault()
+              // ↓ with no text goes to the first recent row first (YAZ-5774); with none, to the new tab page as before.
+              const recent = !typed && e.key === 'ArrowDown' && plain ? bodyRef.current?.querySelector<HTMLElement>(FIRST_RECENT_FILE) : null
+              if (recent != null) {
+                recent.focus()
+                e.preventDefault()
+              } else if (out && onLeaveToPage?.() === true) e.preventDefault()
               // ↑ with no row above the highlight goes to the tab button of Search (D12): from there ← and → reach Files, Focus and Favorites.
               else if (e.key === 'ArrowUp' && plain && atTop) {
                 e.currentTarget.closest('.sidebar')?.querySelector<HTMLElement>(ACTIVE_TAB_SELECTOR)?.focus()
@@ -2108,17 +2224,13 @@ export function Sidebar({
         }}
       >
         {searching && !typed ? (
-          // The Search tab with an empty bar (YAZ-2638 D2): one line, the keys of the search below it
-          // (YAZ-2662 D10), and no tree.
+          // The Search tab with an empty bar (YAZ-2638 D2): the files saved Today and Yesterday (YAZ-5774), the Recents
+          // tab's own list with no filter, "Today" right under the bar; with none, one line. ↓ in the bar goes to its first
+          // row, ↑ on that row back to the bar.
           <>
-            <p className="sidebar__msg">{unit('Type to search every page and folder.')}</p>
-            <ul className="sidebar__keys">
-              {SEARCH_KEYS.map(([keys, does]) => (
-                <li key={does}>
-                  <KeyLabel action={does} keys={keys} />
-                </li>
-              ))}
-            </ul>
+            <div className="sidebar__search-recents" onKeyDown={recentUp}>
+              <RecentList recentOnly={searchHint} trees={shown} roots={ownRoots} groups={searchRecentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+            </div>
           </>
         ) : searching ? (
           // The Search tab with text typed (YAZ-2638 D2): its body is the Files tree cut down to
@@ -2177,6 +2289,7 @@ export function Sidebar({
             {lists.favoritesTab.folders.length > 0 && forest !== null && (
               <FocusFolderList
                 kind="favorites"
+                onFold={setStackFold}
                 folders={onlyFolder === undefined ? lists.favoritesTab.folders : [onlyFolder]}
                 only={onlyFolder?.id ?? null}
                 onHideOthers={(id) => onFocusOnly?.(id)}
@@ -2239,6 +2352,7 @@ export function Sidebar({
             {lists.focusTab.folders.length > 0 && forest !== null && (
               <FocusFolderList
                 kind="focus"
+                onFold={setStackFold}
                 folders={onlyFolder === undefined ? lists.focusTab.folders : [onlyFolder]}
                 only={onlyFolder?.id ?? null}
                 onHideOthers={(id) => onFocusOnly?.(id)}

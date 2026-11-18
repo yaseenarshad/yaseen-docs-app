@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type MouseEvent } from 'react'
+import { memo, useCallback, type ReactNode, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type MouseEvent } from 'react'
 import { hasHoverPreview } from './hoverPreviewKinds'
 import type { TreeResponse } from '@shared/types'
 import type { OnListFold } from './listFold'
@@ -67,7 +67,15 @@ interface RecentListProps {
   onMenu: (path: string, e: MouseEvent) => void
   /** The sidebar's hover preview (YAZ-3403): a page or board row previews beside the sidebar, as a Files row does. */
   onHoverFile?: (node: { path: string } | null) => void
+  /**
+   * The empty Search tab (YAZ-5774): only the latest 2 days that have saves (Monday: Today, then Friday), and no limit line. With none, or with the trees
+   * on their way, it draws `none` (the Search tab's own line): with recents that line goes, and "Today" is the top row.
+   */
+  recentOnly?: { none: ReactNode }
 }
+
+/** The empty Search tab shows the latest days that have saves (YAZ-5774): as the Recents tab, an empty day is no day. */
+const SEARCH_DAYS = 2
 
 /**
  * The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window,
@@ -75,12 +83,15 @@ interface RecentListProps {
  * the tab shows. Memo: App draws again on each app-state broadcast; the list draws only when its own
  * props, a save log or the day change.
  */
-export const RecentList = memo(function RecentList({ trees, roots, only = null, type = 'all', groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
+export const RecentList = memo(function RecentList({ trees, roots, only = null, type = 'all', groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold, recentOnly }: RecentListProps) {
   const edits = useEdits(roots)
   // Rule 17 (Review rules v1, YAZ-5655): the ONE day timer (`useLocalDay`): midnight, focus and `visibilitychange`.
   const today = useLocalDay()
   const files = useMemo(() => recentFiles(trees, roots, edits, only, type === 'all' ? undefined : (path) => typeOf({ kind: 'file', path }) === type), [trees, roots, edits, only, type])
-  const days = useMemo(() => recentDays(files, new Date()), [files, today]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
+  const days = useMemo(() => {
+    const all = recentDays(files, new Date())
+    return recentOnly !== undefined ? all.slice(0, SEARCH_DAYS) : all
+  }, [files, today, recentOnly]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
   // Each day's vault groups (YAZ-4450 D7), cut once per list: 200 rows at most.
   const grouped = groups !== undefined
   const dayGroups = useMemo(() => (grouped ? new Map(days.map((day) => [day.key, byVault(day.files, roots)])) : null), [grouped, days, roots])
@@ -105,6 +116,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
     [],
   )
 
+  if (recentOnly !== undefined && days.length === 0) return recentOnly.none
   if (files.length === 0) {
     // A tree still on its way: the list cannot say yet which logged files are there.
     if (!roots.every((root) => trees.has(root))) return <p className="sidebar__msg">Loading…</p>
@@ -157,7 +169,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
         })}
       </ul>
       {/* The limit (D3, S21): the 200 newest files show, and a line says so. */}
-      {files.length === MAX_RECENTS && <p className="sidebar__msg">Showing the {MAX_RECENTS} newest files.</p>}
+      {files.length === MAX_RECENTS && recentOnly === undefined && <p className="sidebar__msg">Showing the {MAX_RECENTS} newest files.</p>}
     </>
   )
 })

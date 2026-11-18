@@ -77,6 +77,7 @@ vi.mock('./folderShortcuts', async (importOriginal) => {
 import { testDoor } from '../testPageIds'
 import { onPageTabAsk, takePageTab } from '../views/pageTabRequest'
 import { LIFT_PX } from './hooks/rowGestures'
+import { clearPlaces } from './tabPlace'
 import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { useSameList } from './hooks/useVaultTree'
 import { useVaultListsHere } from '../lists/useVaultListsHere'
@@ -3404,40 +3405,55 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('Type to search every page and folder.')
   })
 
-  it('YAZ-2662 S59, S60: the empty Search tab shows its line and, below it, the keys of the search — in the keycap of the bar; with text typed the keys do not show', async () => {
-    const { el } = await open({ lens: 'search' })
-    /** Each row of the list: the app's hotkey label (YAZ-5332), what it does first, then its keys. */
-    const keys = () => [...el.querySelectorAll('.sidebar__body .sidebar__keys li')].map((li) => li.textContent)
-    expect(keys()).toEqual([
-      'Move (Up / Down)',
-      'Open (Enter)',
-      'Open in a background tab (Cmd+Enter)',
-      'Show in Files (Shift+Enter)',
-      'Preview a file or open a folder, after Up or Down (Space)',
-      'Open or close a folder, after Up or Down (Right / Left)',
-      'Back to the page (Esc)',
-    ])
-    // The line is its own element, and the list is the one thing below it.
-    expect([...el.querySelector('.sidebar__body')!.children].map((child) => child.className)).toEqual(['sidebar__msg', 'sidebar__keys'])
-    expect(bodyMsg(el)).toBe(HINT)
+  it('YAZ-5774: the empty Search tab shows the recent files of the latest 2 days that have saves, right under the bar, with no line above them, and no older day; the key hints are gone; with text typed only the results show', async () => {
+    const day = 24 * 60 * 60 * 1000
+    const now = Date.now()
+    const v = `/v-tab-${++vaults}`
+    const records = PAGES.map((rel) => ({ ...indexRecord(`${v}${rel}`), folder: rel.slice(1, Math.max(1, rel.lastIndexOf('/'))) }))
+    const { el, props } = await mount({ root: v, lens: 'search' }, (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
+      b.index.mockResolvedValue({ root: v, records, folders: [], generatedAt: 1, ids: true } as never)
+      b.state.get.mockResolvedValue({ ...defaultAppState(), folders: { [v]: { ...defaultFolderState(), edits: { [`${v}/Alpha.md`]: now, [`${v}/Docs/Anchor.md`]: now - 3 * day, [`${v}/Docs/Guides/Anchor guide.md`]: now - 5 * day } } } })
+      return storage.init()
+    })
+    await act(async () => undefined)
+    const recents = () => el.querySelector('.sidebar__body [aria-label="Recents"]')
+    const days = () => [...el.querySelectorAll('.sidebar__body .recents__day .tree__label')].map((n) => n.textContent)
+    const files = () => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__body [aria-label="Recents"] li > ul .tree__row')].map((r) => r.title)
+    expect(bodyMsg(el)).toBeNull()
+    // The day before is empty: the second day is the latest one before it with a save, as on the Recents tab.
+    const earlier = new Date(now - 3 * day).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: new Date(now - 3 * day).getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric' })
+    expect(days()).toEqual(['Today', earlier])
+    expect(files()).toEqual([`${v}/Alpha.md`, `${v}/Docs/Anchor.md`])
+    expect(el.querySelector('.sidebar__keys')).toBeNull()
     await type(searchBar(el)!, '   ') // spaces are no text
-    expect(keys()).toHaveLength(7)
-    // S60: with text — matches or none — the list is gone.
+    expect(recents()).not.toBeNull()
+    // With text, matches or none, the recents go and the search is as before.
     for (const text of ['anchor', 'zzz']) {
       await type(searchBar(el)!, text)
-      expect([text, el.querySelector('.sidebar__keys')]).toEqual([text, null])
+      expect([text, recents()]).toEqual([text, null])
     }
+    // ↓ from the empty bar goes to the first recent FILE, not its day heading (YAZ-5777); Enter on it opens that file.
+    await type(searchBar(el)!, '')
+    const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+    act(() => void searchBar(el)!.dispatchEvent(down))
+    const first = document.activeElement as HTMLElement
+    expect([down.defaultPrevented, first.title]).toEqual([true, `${v}/Alpha.md`])
+    act(() => first.click()) // what Enter does on a focused button
+    expect(props.onOpenFile).toHaveBeenLastCalledWith(`${v}/Alpha.md`)
+    // ↑ on the first file goes back to the bar, and ↑ on the "Today" heading too.
+    act(() => void first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })))
+    expect(document.activeElement).toBe(searchBar(el))
+    const heading = el.querySelector<HTMLButtonElement>('.sidebar__body .recents__day')!
+    heading.focus()
+    act(() => void heading.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })))
+    expect(document.activeElement).toBe(searchBar(el))
   })
 
-  it('YAZ-2662: with the bar empty no key of the list is taken — ↓, →, ←, Space and Enter are left for what stands beside the bar (the page of a new tab, YAZ-2663); ↑ goes to the tabs of the panel (YAZ-2663 D12)', async () => {
+  it('YAZ-5774: the empty Search tab with no saved file shows only its line', async () => {
     const { el } = await open({ lens: 'search' })
-    const taken = (key: string) => {
-      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
-      act(() => void searchBar(el)!.dispatchEvent(event))
-      return event.defaultPrevented
-    }
-    expect(['ArrowDown', 'ArrowRight', 'ArrowLeft', ' ', 'Enter'].map(taken)).toEqual(Array(5).fill(false))
-    expect(taken('ArrowUp')).toBe(true)
+    expect([bodyMsg(el), el.querySelector('.sidebar__body')!.textContent]).toEqual([HINT, HINT])
+    expect(el.querySelector('.sidebar__body [aria-label="Recents"]')).toBeNull()
   })
 
   it('S17, S19: on the Search tab the expand-all button stays, dimmed with no text (YAZ-3511 D19), and there is no blank-space menu — not even the OS one — with text or with none', async () => {
@@ -6319,6 +6335,39 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
 })
 
 /**
+ * YAZ-5664: Collapse all on Focus or Favorites closes the stack folders and the real folders inside them, and Expand
+ * all opens them. The tab shows two stack folders, `${ids[0]}` with `Projects` and `${ids[1]}` with `top.md`, and no
+ * top-level item. The test opens `Projects` in its stack folder first.
+ */
+async function stackFoldFlow(el: HTMLElement, v: string, ids: readonly [string, string]) {
+  const allButton = () => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__expand-all')
+  const stack = (id: string) => el.querySelector<HTMLButtonElement>(`[data-focus-folder="${id}"]`)
+  const projects = () => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${v}/Projects"]`)
+  const open = (row: Element | null) => row?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+  const key = (dir: string) => copyFoldKey(`${v}/Projects`, dir)
+  expect([open(stack(ids[0])), open(stack(ids[1]))]).toEqual(['true', 'true'])
+  // Before, the button read "Expand all" here: the stack folders were not in its count.
+  expect(allButton()?.getAttribute('aria-label')).toBe('Collapse all')
+  await act(async () => projects()?.click())
+  expect(open(projects())).toBe('true')
+  await act(async () => allButton()?.click())
+  expect([open(stack(ids[0])), open(stack(ids[1]))]).toEqual(['false', 'false'])
+  expect(storage.getExpanded(v)).not.toContain(key(`${v}/Projects`))
+  expect(allButton()?.getAttribute('aria-label')).toBe('Expand all')
+  await act(async () => allButton()?.click())
+  expect([open(stack(ids[0])), open(stack(ids[1]))]).toEqual(['true', 'true'])
+  expect(open(projects())).toBe('true')
+  expect(open(el.querySelector(`.tree__row[data-path="${v}/Projects/Alpha"]`))).toBe('true')
+  expect(storage.getExpanded(v)).toEqual(expect.arrayContaining([key(`${v}/Projects`), key(`${v}/Projects/Alpha`)]))
+  expect(allButton()?.getAttribute('aria-label')).toBe('Collapse all')
+}
+/** The two stack folders of `stackFoldFlow`, in the vault named `vault`. */
+const twoStacks = (vault: string, ids: readonly [string, string]): FocusFolder[] => [
+  { id: ids[0], name: 'Client work', created: 1, at: 1, items: [{ vault, path: 'Projects' }] },
+  { id: ids[1], name: 'Loose pages', created: 1, at: 1, items: [{ vault, path: 'top.md' }] },
+]
+
+/**
  * The Focus tab (YAZ-2619): the lens between Files and the heart, listing the files and folders the
  * user added from any row's menu, in the order added, each a full tree row (D2). The list is the
  * VAULT's, kept in the vault (YAZ-2702 Decision 1): read through `focus.get`, written through
@@ -6626,6 +6675,216 @@ describe('focus tab (YAZ-2619)', () => {
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
   })
 
+  it('YAZ-5664: Collapse all closes both stack folders and the real folder open inside one; Expand all opens them all again', async () => {
+    const ids = ['yaz5664-focus-a', 'yaz5664-focus-b'] as const
+    const { el, v } = await mountVault({ lens: 'focus' }, {}, (b) => {
+      b.focusFolders.get.mockImplementation(async (root: string, scope?: unknown) => (scope === 'vault' ? twoStacks(root.slice(1), ids) : []))
+    })
+    await stackFoldFlow(el, v, ids)
+  })
+
+  describe('a sidebar place for each page tab (YAZ-5701)', () => {
+    // Each test is a window that just started: no place, and no folder changed with a place for each tab.
+    beforeEach(() => clearPlaces())
+    const PER_TAB: SettingsState = { ...TEST_SETTINGS, sidebarPlace: 'tab' }
+    const stack: FocusFolder = { id: 'yaz5701-stack', name: 'Loose pages', created: 1, at: 1, items: [] }
+    const withStack = (b: ReturnType<typeof installBridge>) => b.focusFolders.get.mockImplementation(async (root: string, scope?: unknown) => (scope === 'vault' ? [{ ...stack, items: [{ vault: root.slice(1), path: 'top.md' }] }] : []))
+    const body = (el: HTMLElement) => el.querySelector<HTMLElement>('.sidebar__body')!
+    const stackOpen = (el: HTMLElement) => el.querySelector(`[data-focus-folder="${stack.id}"]`)?.getAttribute('aria-expanded')
+
+    it('"A place for each tab": a switch puts back each tab\'s sidebar tab, open folders, shut stack folders and scroll; a tab with no place keeps what is on screen; the open folders never go to the store, until "One place for the window" writes the ones on screen', async () => {
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      const { el, v, props, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-A', settings: PER_TAB }, { focus: ['/Projects'] }, withStack)
+      const at = (activeTab: string, lens?: SidebarTab) => rerender({ activeTab, settings: PER_TAB, ...(lens !== undefined && { lens }) })
+      // Tab A, on Focus: Projects open, the stack folder shut, scrolled down.
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      act(() => el.querySelector<HTMLButtonElement>(`[data-focus-folder="${stack.id}"]`)?.click())
+      body(el).scrollTop = 40
+      // Tab B has no place yet: the screen stays as it is.
+      await at('yaz5701-B')
+      expect(props.onLensChange).not.toHaveBeenCalled()
+      expect([isOpen(el, `${v}/Projects`), stackOpen(el), body(el).scrollTop]).toEqual(['true', 'false', 40])
+      // On B: Projects closed, the stack folder open, then Files at the top.
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      act(() => el.querySelector<HTMLButtonElement>(`[data-focus-folder="${stack.id}"]`)?.click())
+      await at('yaz5701-B', 'files')
+      body(el).scrollTop = 0
+      // Back to A: Focus, Projects open, the stack folder shut, the scroll at 40.
+      await at('yaz5701-A')
+      expect(props.onLensChange).toHaveBeenLastCalledWith('focus')
+      await at('yaz5701-A', 'focus')
+      expect([isOpen(el, `${v}/Projects`), stackOpen(el), body(el).scrollTop]).toEqual(['true', 'false', 40])
+      // To B again: Files at the top, and its Focus has Projects closed and the stack folder open.
+      await at('yaz5701-B')
+      expect(props.onLensChange).toHaveBeenLastCalledWith('files')
+      await at('yaz5701-B', 'files')
+      expect(body(el).scrollTop).toBe(0)
+      await at('yaz5701-B', 'focus')
+      expect([isOpen(el, `${v}/Projects`), stackOpen(el)]).toEqual(['false', 'true'])
+      expect(setExpanded).not.toHaveBeenCalled()
+      // "One place for the window": the folders on screen go to the store again.
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      await rerender({ activeTab: 'yaz5701-B', settings: TEST_SETTINGS })
+      expect(setExpanded).toHaveBeenLastCalledWith(v, [copyFoldKey(`${v}/Projects`, `${v}/Projects`)])
+      setExpanded.mockRestore()
+    })
+
+    it('"A place for each tab": the sidebar that is hidden and shown again puts back the place of the tab on show, and reads no open folders of the other windows', async () => {
+      const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-E', settings: PER_TAB }, { focus: ['/Projects'] })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      body(el).scrollTop = 40
+      // Another window opens Alpha in the shared list while this sidebar is hidden.
+      await act(async () => root?.render(<></>))
+      storage.setExpanded(v, [copyFoldKey(`${v}/Projects`, `${v}/Projects/Alpha`)])
+      await rerender({ activeTab: 'yaz5701-E', settings: PER_TAB })
+      expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Projects/Alpha`), body(el).scrollTop]).toEqual(['true', 'false', 40])
+    })
+
+    it('YAZ-5749: the sidebar shown again puts the scroll back once the tree has drawn its rows — a browser clamps a scroll written before', async () => {
+      // A browser clamps `scrollTop` to the content (jsdom does not): here each drawn row is 20 px of it.
+      const real = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!
+      const held = new WeakMap<Element, number>()
+      Object.defineProperty(Element.prototype, 'scrollTop', {
+        configurable: true,
+        get(this: Element) {
+          return held.get(this) ?? 0
+        },
+        set(this: Element, to: number) {
+          held.set(this, Math.max(0, Math.min(to, this.querySelectorAll('.tree__row').length * 20)))
+        },
+      })
+      try {
+        const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5749-A', settings: PER_TAB }, { focus: ['/Projects'] })
+        await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+        body(el).scrollTop = 40
+        expect(body(el).scrollTop).toBe(40)
+        await act(async () => root?.render(<></>))
+        // Shown again: the first render has no rows, the tree lands after its read.
+        await rerender({ activeTab: 'yaz5749-A', settings: PER_TAB })
+        expect([isOpen(el, `${v}/Projects`), body(el).scrollTop]).toEqual(['true', 40])
+      } finally {
+        Object.defineProperty(Element.prototype, 'scrollTop', real)
+      }
+    })
+
+    it('YAZ-5750: back on "One place for the window", a window that the user did not touch with a place for each tab writes nothing over the shared list, so the other window\'s folders survive its Hide and Show', async () => {
+      const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5750-A', settings: PER_TAB }, { focus: ['/Projects'] })
+      // Window 1 (another renderer) opened Projects and wrote it when the setting came back to one place.
+      const theirs = [copyFoldKey(`${v}/Projects`, `${v}/Projects`)]
+      storage.setExpanded(v, theirs)
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      await rerender({ activeTab: 'yaz5750-A', settings: TEST_SETTINGS })
+      expect(setExpanded).not.toHaveBeenCalled()
+      expect(storage.getExpanded(v)).toEqual(theirs)
+      setExpanded.mockRestore()
+      // This window hides and shows its sidebar: it reads the shared list, Projects open.
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: 'yaz5750-A', settings: TEST_SETTINGS })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+    })
+
+    it('YAZ-5751: back on "One place for the window", a window that opened folders with a place for each tab, then hid and showed its sidebar, still writes them, and they survive the next Hide and Show', async () => {
+      const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5751-A', settings: PER_TAB }, { focus: ['/Projects'] })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      const ours = [copyFoldKey(`${v}/Projects`, `${v}/Projects`)]
+      // Hide and Show sidebar: a new mount, from the tab's place.
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: 'yaz5751-A', settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      await rerender({ activeTab: 'yaz5751-A', settings: TEST_SETTINGS })
+      expect(setExpanded).toHaveBeenLastCalledWith(v, ours)
+      setExpanded.mockRestore()
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: 'yaz5751-A', settings: TEST_SETTINGS })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+    })
+
+    it('YAZ-5756: back on "One place for the window" after a vault switch, a vault whose folders the user did not change writes nothing over its shared list; only the vault that changed counts', async () => {
+      // Vault A, with a place for each tab: Projects opens. That marks vault A only.
+      const a = await mountVault({ lens: 'focus', activeTab: 'yaz5756-A', settings: PER_TAB }, { focus: ['/Projects'] })
+      await act(async () => rowByPath(a.el, `${a.v}/Projects`)?.click())
+      // A vault switch in place: this sidebar goes, and one on vault B comes. No folder of B changes.
+      await act(async () => root?.render(<></>))
+      a.el.remove()
+      const b = await mountVault({ lens: 'focus', activeTab: 'yaz5756-B', settings: PER_TAB }, { focus: ['/Projects'] })
+      const theirs = [copyFoldKey(`${b.v}/Projects`, `${b.v}/Projects`)]
+      storage.setExpanded(b.v, theirs)
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      await b.rerender({ activeTab: 'yaz5756-B', settings: TEST_SETTINGS })
+      expect(setExpanded).not.toHaveBeenCalled()
+      expect(storage.getExpanded(b.v)).toEqual(theirs)
+      setExpanded.mockRestore()
+      // Hide and Show sidebar: the mount reads the shared list of B, Projects open.
+      await act(async () => root?.render(<></>))
+      await b.rerender({ activeTab: 'yaz5756-B', settings: TEST_SETTINGS })
+      expect(isOpen(b.el, `${b.v}/Projects`)).toBe('true')
+    })
+
+    it('YAZ-5757: on a New tab (no tab id), Hide and Show sidebar keeps the folders opened there; the next New tab keeps what is on screen', async () => {
+      const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5757-A', settings: PER_TAB }, { focus: ['/Projects'] })
+      // A New tab: Projects opens there. Tab A saved its place with Projects closed.
+      await rerender({ activeTab: null, settings: PER_TAB })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: null, settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      // Back to A: its own place, Projects closed. A new New tab keeps that screen, not the old New tab's place.
+      await rerender({ activeTab: 'yaz5757-A', settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      await rerender({ activeTab: null, settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: null, settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+    })
+
+    it('YAZ-5769: "A place for each tab": each tab gets its own selected rows back, also after a blank tab that opens on Search in the same commit; a selected row the vault no longer has is dropped', async () => {
+      const { watch, fire: emit } = withWatcher()
+      const { el, v, bridge, rerender } = await mountVault({ lens: 'files', activeTab: 'yaz5769-A', settings: PER_TAB, watch }, { focus: [] })
+      const picked = () => [...el.querySelectorAll<HTMLElement>('.sidebar__body .tree__row--selected')].map((r) => r.dataset.path)
+      // Tab A: top.md and Projects selected.
+      shiftClickRow(rowByPath(el, `${v}/top.md`))
+      shiftClickRow(rowByPath(el, `${v}/Projects`))
+      const ours = picked()
+      expect(ours).toHaveLength(2)
+      // Tab B: its own selection, Pages only.
+      await rerender({ activeTab: 'yaz5769-B', settings: PER_TAB, lens: 'files' })
+      dropSelection(el)
+      shiftClickRow(rowByPath(el, `${v}/Pages`))
+      expect(picked()).toEqual([`${v}/Pages`])
+      await rerender({ activeTab: 'yaz5769-A', settings: PER_TAB, lens: 'files' })
+      expect(picked()).toEqual(ours)
+      await rerender({ activeTab: 'yaz5769-B', settings: PER_TAB, lens: 'files' })
+      expect(picked()).toEqual([`${v}/Pages`])
+      // A blank tab opens on Search in the same commit as the switch: tab B still saves its rows.
+      await rerender({ activeTab: null, settings: PER_TAB, lens: 'search' })
+      await rerender({ activeTab: 'yaz5769-B', settings: PER_TAB, lens: 'files' })
+      expect(picked()).toEqual([`${v}/Pages`])
+      // On tab B, top.md goes from the vault. Back on tab A, only Projects is selected again.
+      bridge.tree.mockResolvedValue({ root: v, tree: FOCUS(v).filter((n) => n.path !== `${v}/top.md`), generatedAt: 2 } as never)
+      await act(async () => emit({ type: 'unlink', path: `${v}/top.md` }))
+      await afterQuiet()
+      await rerender({ activeTab: 'yaz5769-A', settings: PER_TAB, lens: 'files' })
+      expect(picked()).toEqual([`${v}/Projects`])
+    })
+
+    it('"One place for the window" (the default): a tab switch changes nothing, and the open folders go to the store as before', async () => {
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      const { el, v, props, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-C' }, { focus: ['/Projects'] })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      expect(setExpanded).toHaveBeenLastCalledWith(v, [copyFoldKey(`${v}/Projects`, `${v}/Projects`)])
+      body(el).scrollTop = 40
+      await rerender({ activeTab: 'yaz5701-D' })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      await rerender({ activeTab: 'yaz5701-C' })
+      expect(props.onLensChange).not.toHaveBeenCalled()
+      expect([isOpen(el, `${v}/Projects`), body(el).scrollTop]).toEqual(['false', 40])
+      expect(setExpanded).toHaveBeenLastCalledWith(v, [])
+      setExpanded.mockRestore()
+    })
+  })
+
   it('S17, S21, R5, R10, R11: the bar names the list, no count (YAZ-4470); the chevrons act on the tab\'s folders only and are gone when it shows none; "Clear" empties the list and keeps the tab', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/top.md'] })
     expect(bridge.focus.set).not.toHaveBeenCalled() // a list that was read is never written back
@@ -6926,6 +7185,11 @@ describe('favorites (YAZ-1766)', () => {
     expect(bar()?.querySelector('span')?.textContent).toBe('Only Client files')
     await act(async () => [...(bar()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Show all')?.click())
     expect(props.onFocusOnly).toHaveBeenCalledExactlyOnceWith(null)
+  })
+  it('YAZ-5664: on Favorites too, Collapse all closes both stack folders and the real folder inside; Expand all opens them all again', async () => {
+    const ids = ['yaz5664-fav-a', 'yaz5664-fav-b'] as const
+    const { el, v } = await mountVault({ lens: 'favorites' }, { folders: (name) => twoStacks(name, ids) })
+    await stackFoldFlow(el, v, ids)
   })
   describe('a New … that stays on the tab (YAZ-4782)', () => {
     const field = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
@@ -11646,6 +11910,21 @@ describe('several vaults in one window (YAZ-2602)', () => {
       expect(recentRows(el)).toEqual(['Today', `${at.b}/b.md`])
       await rerender({ recentVault: null, settings: { ...TEST_SETTINGS, recentsByVault: false } })
       expect(recentRows(el)).toEqual(['Today', `${at.a}/a.md`, `${at.b}/b.md`])
+    })
+
+    it('YAZ-5783: the empty Search tab of a window with two vaults, "by vault" on: its days split by vault; ↓ from the bar lands on the first FILE, not a heading; ↑ there goes back to the bar', async () => {
+      const at = pair()
+      const saves = (state: AppState): AppState => ({ ...state, folders: { [at.a]: { ...defaultFolderState(), edits: { [`${at.a}/a.md`]: Date.now() - 1000 } }, [at.b]: { ...defaultFolderState(), edits: { [`${at.b}/b.md`]: Date.now() - 2000 } } } })
+      const recentRows = (el: HTMLElement) => [...el.querySelectorAll('[aria-label="Recents"] .tree__row')].map((r) => r.classList.contains('recents__vault') ? `[${r.querySelector('.tree__label')?.textContent}]` : (r as HTMLElement).title || r.textContent)
+      const { el } = await mountVaults([vault(at.a, 'Pages'), vault(at.b, 'Work')], { lens: 'search' }, (bridge) => bridge.state.get.mockResolvedValue(saves(defaultAppState())))
+      expect(recentRows(el)).toEqual(['Today', '[Pages]', `${at.a}/a.md`, '[Work]', `${at.b}/b.md`])
+      const bar = el.querySelector<HTMLInputElement>('.sidebar__search-input')!
+      const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+      act(() => void bar.dispatchEvent(down))
+      const first = document.activeElement as HTMLElement
+      expect([down.defaultPrevented, first.title]).toEqual([true, `${at.a}/a.md`])
+      act(() => void first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })))
+      expect(document.activeElement).toBe(bar)
     })
   })
 })

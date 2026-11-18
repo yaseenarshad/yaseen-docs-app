@@ -101,6 +101,7 @@ import {
   SECTION_STEPS,
   SIDEBAR_DEFAULT_W,
   SIDEBAR_ARROW_MOTIONS,
+  SIDEBAR_PLACES,
   SIDEBAR_FILE_ICONS,
   SIDEBAR_FOLDER_ICONS,
   SIDEBAR_ICON_KINDS,
@@ -169,6 +170,7 @@ import {
   type Session,
   type SidebarLens,
   type SidebarArrowMotion,
+  type SidebarPlace,
   type SidebarFileIcons,
   type SidebarFolderIcons,
   type SidebarIconColors,
@@ -786,6 +788,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sidebarFolderIcons: (v): v is SidebarFolderIcons => typeof v === 'string' && (SIDEBAR_FOLDER_ICONS as readonly string[]).includes(v),
   sidebarArrowMotion: (v): v is SidebarArrowMotion => typeof v === 'string' && (SIDEBAR_ARROW_MOTIONS as readonly string[]).includes(v),
   sidebarRevealActive: (v): v is boolean => typeof v === 'boolean',
+  sidebarPlace: (v): v is SidebarPlace => typeof v === 'string' && (SIDEBAR_PLACES as readonly string[]).includes(v),
   sidebarIconColors: isSidebarIconColors,
   sidebarIconRules: isIconRules,
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.

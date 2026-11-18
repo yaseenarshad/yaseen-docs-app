@@ -86,3 +86,14 @@ describe('orderedSelection (YAZ-1337, as ⚡ YAZ-1338 rules it)', () => {
     expect(orderedSelection(EMPTY_SELECTION, null)).toEqual([])
   })
 })
+
+describe('replace (YAZ-5769)', () => {
+  it('puts back a tab\'s own selected rows; the same rows, or none on an empty selection, keep the same set', () => {
+    const sel = selectionReducer(EMPTY_SELECTION, { type: 'set', path: 'a' })
+    const back = selectionReducer(sel, { type: 'replace', paths: ['b', 'c'] })
+    expect([...back]).toEqual(['b', 'c'])
+    expect(selectionReducer(back, { type: 'replace', paths: ['c', 'b'] })).toBe(back)
+    expect(selectionReducer(EMPTY_SELECTION, { type: 'replace', paths: [] })).toBe(EMPTY_SELECTION)
+    expect(selectionReducer(back, { type: 'replace', paths: [] })).toBe(EMPTY_SELECTION)
+  })
+})

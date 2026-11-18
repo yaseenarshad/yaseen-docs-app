@@ -2757,19 +2757,6 @@ body.drag-held iframe {
   color: var(--danger);
 }
 
-/* The keys of the search, below the line of the empty Search tab (YAZ-2662 D10): quiet, in two
-   columns — the keycaps of a row, and what they do. */
-.sidebar__keys {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0 14px;
-  padding: 0;
-  list-style: none;
-  font-size: 11px;
-  color: var(--fg-muted);
-}
-
 /* The flat result list (YAZ-803) — a ranked list whose rows borrow the tree row's metrics and
    wash; the folder rides under the label instead of an indent (🔒 flat-list ruling on YAZ-739).
    The shortcut picker's alone since YAZ-2620: the sidebar's search draws the tree itself. */

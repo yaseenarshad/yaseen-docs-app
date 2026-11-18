@@ -141,6 +141,16 @@ export const CopyIcon = () => (
   </svg>
 )
 
+/** Tabler's pencil on a 24 grid. The column mark's ✎ draws the same path (YAZ-5770). */
+export const PENCIL_PATH = 'M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4M13.5 6.5l4 4'
+
+/** A pencil: every menu row that changes a name, at the Copy icon's size and line (YAZ-5770). */
+export const PencilIcon = () => (
+  <svg {...svg} width={15} height={15} viewBox="0 0 24 24" strokeWidth={2} className="pencil-icon">
+    <path d={PENCIL_PATH} />
+  </svg>
+)
+
 /** Circled "i", for the vault switcher row's full-path tooltip (YAZ-1974 D2). */
 export const InfoIcon = () => (
   <svg {...svg}>

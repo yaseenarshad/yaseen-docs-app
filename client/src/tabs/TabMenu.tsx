@@ -1,7 +1,7 @@
 import { isSupportedFile } from '@shared/fileKind'
 import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
-import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, HeartIcon, PencilIcon } from '../views/view/icons'
 import { focusPlaces, scopeGroup, type MenuAction, type MenuSection } from '../sidebar/menuSections'
 import type { ListState } from '../lists/useVaultListsHere'
 import { useUnit } from '../vault/unitWord'
@@ -125,7 +125,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     ],
     // "Rename file" (YAZ-4248), a group of its own after the tab's name, so the file's name and the tab's are apart.
     // Grey on a tab that shows no file (a folder page, Settings).
-    onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', disabled: !isSupportedFile(menu.path), onSelect: () => onRenameFile(menu.path) }],
+    onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', icon: <PencilIcon />, disabled: !isSupportedFile(menu.path), onSelect: () => onRenameFile(menu.path) }],
     [
       ...(lists === null || onToggleFavorite === undefined
         ? []

@@ -1,6 +1,7 @@
 import type { ColumnSources } from '../columnInheritance'
 import { SAME_WORD, type UnitText } from '../../vault/unitWord'
 import { HoverTip } from '../../components/HoverTip'
+import { PENCIL_PATH } from './icons'
 
 /**
  * The six header states (YAZ-4713 C11, locked 2026-11-08; C11B, demo 2026-11-09; YAZ-4769 demo): none (this folder's own),
@@ -24,7 +25,7 @@ export function columnMark(sources: ColumnSources, key: string, separate: boolea
 /** Tabler-style strokes on a 24 grid: corner-down-right (↳), pencil (✎), corner-left-up (↑), lock, circle-dashed (◌). */
 const PATHS: Record<Mark['icon'], string> = {
   parent: 'M6 6v6a3 3 0 0 0 3 3h10l-4 -4m0 8l4 -4',
-  copy: 'M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4M13.5 6.5l4 4',
+  copy: PENCIL_PATH,
   below: 'M18 18h-6a3 3 0 0 1 -3 -3v-10l-4 4m8 0l-4 -4',
   lock: 'M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2zM8 11v-4a4 4 0 1 1 8 0v4',
   loose: 'M8.56 3.69a9 9 0 0 0 -2.92 1.95M3.69 8.56a9 9 0 0 0 -.69 3.44M3.69 15.44a9 9 0 0 0 1.95 2.92M8.56 20.31a9 9 0 0 0 3.44 .69M15.44 20.31a9 9 0 0 0 2.92 -1.95M20.31 15.44a9 9 0 0 0 .69 -3.44M20.31 8.56a9 9 0 0 0 -1.95 -2.92M15.44 3.69a9 9 0 0 0 -3.44 -.69',

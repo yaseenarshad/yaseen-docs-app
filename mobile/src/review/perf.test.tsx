@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { budgetMs } from '../../../client/src/test-perf'
 import { answersSetup } from '../answers/testing'
 import { NOW, cardBlock, mountReview, page, type ReviewHarness } from './testing'
 
@@ -60,6 +61,9 @@ async function probe<T>(work: () => Promise<T>): Promise<{ ms: number; longest: 
   return { ms, longest: Math.max(...gaps, cpu() - last), value }
 }
 
+/** A long task is 50 ms of CPU; the check allows the shared slack of a busy CI computer (`budgetMs`). */
+const LONG_TASK = budgetMs(50)
+
 describe('Review with 3,000 due cards', () => {
   // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
   it('opening the tab and answering never hold the thread for 50 ms; the numbers are printed', { retry: 2, timeout: 120_000 }, async () => {
@@ -69,7 +73,7 @@ describe('Review with 3,000 due cards', () => {
     let open = { ms: 0, longest: Infinity }
     let answer = { ms: 0, longest: Infinity }
     let total = ''
-    for (let run = 0; run < 5 && (open.longest >= 50 || answer.longest >= 50); run++) {
+    for (let run = 0; run < 5 && (open.longest >= LONG_TASK || answer.longest >= LONG_TASK); run++) {
       h?.unmount()
       const t = await answersSetup({ files })
       const o = await probe(() => mountReview(t))
@@ -85,7 +89,7 @@ describe('Review with 3,000 due cards', () => {
     console.log(`[4B perf] 3,000 due cards: open ${open.ms.toFixed(0)} ms, longest hold ${open.longest.toFixed(1)} ms of CPU; answer ${answer.ms.toFixed(0)} ms, longest hold ${answer.longest.toFixed(1)} ms of CPU; "${total}"`)
     expect(total).toBe('0 / 3000')
     expect(h!.text()).toContain('1 / 3000')
-    expect(open.longest).toBeLessThan(50)
-    expect(answer.longest).toBeLessThan(50)
+    expect(open.longest).toBeLessThan(LONG_TASK)
+    expect(answer.longest).toBeLessThan(LONG_TASK)
   })
 })
