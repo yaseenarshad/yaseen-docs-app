@@ -144,12 +144,14 @@ export function createMediaStore(initialFolder: string, deps: MediaStoreDeps): M
   async function write(lib: MediaLibraryFile): Promise<void> {
     const dir = folder
     const p = path.join(dir, await ownName())
-    const { mtime } = await fsCall(p, async () => {
-      // Never `mkdir -p` (YAZ-4383): a settings folder that is gone must not come back as a stray copy.
-      await makeLibraryDir(dir)
-      return atomicWrite(p, `${JSON.stringify(lib, null, 2)}\n`)
+    await watched.ownWrite(p, async () => {
+      const { mtime } = await fsCall(p, async () => {
+        // Never `mkdir -p` (YAZ-4383): a settings folder that is gone must not come back as a stray copy.
+        await makeLibraryDir(dir)
+        return atomicWrite(p, `${JSON.stringify(lib, null, 2)}\n`)
+      })
+      return mtime
     })
-    watched.recordOwnWrite(p, mtime)
     notify()
   }
 
