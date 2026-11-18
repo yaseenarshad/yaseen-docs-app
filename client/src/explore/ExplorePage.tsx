@@ -34,8 +34,9 @@ import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { isCardFileContent } from '@shared/cardFileFormat'
-import { readPageSwitches, type PageSwitches } from '@shared/pageSwitches'
-import type { CommentsOrder, PageView, PropertiesResponse } from '@shared/types'
+import { readPageSwitches, readPageWidth, type PageSwitches } from '@shared/pageSwitches'
+import type { CommentsOrder, ContentWidth, PageView, PropertiesResponse } from '@shared/types'
+import { contentTextWidth } from '../lib/contentWidth'
 import type { CardReview } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import { api } from '../api'
@@ -53,7 +54,7 @@ import { PageMenu } from '../editor/pageMenu'
 import { PageFrame } from '../editor/PageFrame'
 import { PageTitle } from '../editor/PageTitle'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
-import { HeadChipsSlot, LAYER_ESCAPE } from '../editor/StatusChips'
+import { HeadChipsSlot, LAYER_ESCAPE, LayerZoom } from '../editor/StatusChips'
 import { usePathTitles } from '../lib/pageLabel'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from '../editor/outline/foldAllHotkeys'
 import type { MenuSection } from '../sidebar/menuSections'
@@ -236,6 +237,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   /** Where the read-only Crepe mounts: its own box ABOVE the comment stream and the mentions, as the page tab stacks them. */
   const mountRef = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState<Content>({ kind: 'loading' })
+  /** The page's own width (YAZ-5640), read with the text: reading draws the column as the editor does, so a switch moves nothing. */
+  const [pageWidth, setPageWidth] = useState<ContentWidth | null>(null)
   /** The read-only Crepe once it is up, for the fold-all button (round 1, item 4); null while loading or editing. */
   const [ready, setReady] = useState<ReturnType<typeof createCrepe> | null>(null)
   /**
@@ -285,6 +288,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
         setStale(false)
         const body = splitFrontmatter(file.content).body
         const switches = readPageSwitches(file.content)
+        setPageWidth(readPageWidth(file.content))
         setContent((prev) =>
           body.trim() === '' ? { kind: 'empty' } : prev.kind === 'body' && prev.body === body && JSON.stringify(prev.switches) === JSON.stringify(switches) ? prev : { kind: 'body', body, switches },
         )
@@ -806,6 +810,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   }, [cardFile, shown, ready, path])
   /** The text formatting of the vault, and the zoom as the page tab's scroller carries it (`--document-zoom`, app.css): the same rules scale the page's content. */
   const bodyStyle = { ...style, '--document-zoom': zoom / 100 } as CSSProperties
+  /** Reading's frame, which IS the page's scroller: the page's own width on it too (YAZ-5640), as the editor puts it on its own. */
+  const readStyle = pageWidth === null ? bodyStyle : ({ ...bodyStyle, '--content-text-width': contentTextWidth(pageWidth) } as CSSProperties)
   /** ⋯ of a folded head (YAZ-4956): what the folded parts do, built when the menu opens. */
   const moreSections = (): MenuSection[] => {
     const view = ready !== null && mode === 'read' ? editorViewOf(ready) : null
@@ -911,6 +917,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       {/* Both bodies while a switch is under way (YAZ-5164): the incoming one see-through under the one on show. A card
           file has one body: its own view, in read and in Edit card. */}
       <HeadChipsSlot.Provider value={chipsSlot}>
+        <LayerZoom.Provider value={zoom}>
         <div className="explore__bodies">
           {cardFile ? (
             <div ref={editBodyRef} className="explore__body explore__body--frame explore__body--card-file" style={bodyStyle} tabIndex={-1}>
@@ -927,7 +934,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
               {(mode === 'read' || shown === 'read') && (
                 <>
                   {/* The page tab's frame (YAZ-5164 Option A), read only: the same title, Properties, sides and blocks as the editor's. */}
-                  <PageFrame ref={bodyRef} className={`explore__body explore__body--read${shown === 'read' ? '' : ' explore__body--incoming'}`} style={bodyStyle} tabIndex={-1} data-explore-read="" header={header}>
+                  <PageFrame ref={bodyRef} className={`explore__body explore__body--read${shown === 'read' ? '' : ' explore__body--incoming'}`} style={readStyle} tabIndex={-1} data-explore-read="" header={header}>
                     <div ref={mountRef} className="editor-mount" />
                     {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}
                     {content.kind === 'empty' && <p className="editor-msg">{unit('Empty page')}</p>}
@@ -948,6 +955,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
             </>
           )}
         </div>
+        </LayerZoom.Provider>
       </HeadChipsSlot.Provider>
     </UnitContext.Provider>
   )
