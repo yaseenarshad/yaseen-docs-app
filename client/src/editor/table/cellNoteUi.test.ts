@@ -767,6 +767,16 @@ describe('the preview (D14)', () => {
     expect(rule('.cell-note-preview__lead')).toContain('white-space: pre;')
   })
 
+  it('YAZ-5780: the clamped full text has no bottom padding inside its clip, so no half row shows under its last row', () => {
+    const css = readFileSync(resolve(__dirname, 'cellHoverCard.css'), 'utf8')
+    const text = css.match(/^\.cell-note-preview__text\s*\{([^}]*)\}/m)?.[1] ?? ''
+    expect(text).toContain('-webkit-line-clamp')
+    expect(text).toContain('overflow: hidden;')
+    // `overflow: hidden` clips at the padding box: the space under the text is a transparent border, outside the clip.
+    expect(text).toMatch(/padding: 8px 12px 0;/)
+    expect(text).toMatch(/border-bottom: 8px solid transparent;/)
+  })
+
   it('YAZ-5717: a line\'s lead (its indent and marker) is apart from its text, so a wrapped row hangs under the text; nested ones keep their indent', async () => {
     vi.useFakeTimers()
     document.elementsFromPoint = () => []

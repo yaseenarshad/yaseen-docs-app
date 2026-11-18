@@ -74,7 +74,7 @@ function textLine(text: string): HTMLElement {
   return line
 }
 
-/** The padding under the full-text part and under the note's lines, in px (`cellHoverCard.css`). */
+/** The space under the full-text part (a transparent border, YAZ-5780) and under the note's lines, in px (`cellHoverCard.css`). */
 const PAD = 8
 /** The full-text part's line height, in em (`.cell-note-preview__text` in `cellHoverCard.css`). */
 const TEXT_LINE_HEIGHT = 1.4

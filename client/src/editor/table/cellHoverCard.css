@@ -26,7 +26,10 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--fit-lines, 12);
   overflow: hidden;
-  padding: 8px 12px;
+  /* The space under the text is a border, not padding (YAZ-5780): `overflow: hidden` clips at the padding box, so a
+     bottom padding drew the top of the row after the clamp. The same 8px (`PAD` in `cellHoverCard.ts`). */
+  padding: 8px 12px 0;
+  border-bottom: 8px solid transparent;
   line-height: 1.4;
 }
 

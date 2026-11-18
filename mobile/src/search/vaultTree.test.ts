@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { buildTree, visibleRows } from './vaultTree'
+import { budgetMs } from '../../../client/src/test-perf'
 
 /** YAZ-5438: the Mac's sidebar tree, its pure parts (order, names, kinds, open folders to any depth). */
 const rec = (path: string, title = '', kind?: 'card', cardId?: string): IndexRecord =>
@@ -57,14 +58,14 @@ describe('the Mac sidebar tree on the phone (YAZ-5438)', () => {
     for (let i = 0; i < 5000; i++) many.push(rec(`All/Page ${i}.md`, `Page ${i}`))
     let t = performance.now()
     const tree = buildTree(many)
-    expect(performance.now() - t).toBeLessThan(50)
+    expect(performance.now() - t).toBeLessThan(budgetMs(50))
     t = performance.now()
     const closed = visibleRows(tree, new Set())
-    expect(performance.now() - t).toBeLessThan(50)
+    expect(performance.now() - t).toBeLessThan(budgetMs(50))
     expect(closed).toHaveLength(51)
     t = performance.now()
     const open = visibleRows(tree, new Set(['All']))
-    expect(performance.now() - t).toBeLessThan(50)
+    expect(performance.now() - t).toBeLessThan(budgetMs(50))
     expect(open).toHaveLength(5051)
     expect(open.slice(0, 4).map((r) => r.label)).toEqual(['All', 'Page 0', 'Page 1', 'Page 2'])
   })

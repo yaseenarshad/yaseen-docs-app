@@ -6,6 +6,7 @@ import { mount, newPhone, NOW, type Harness } from '../../screens/testing'
 import { saveVaultList, vaultId } from '../../store'
 import { boardRows, PERIODS, vsBoard, type BoardEntry } from './board'
 import { demoBoard, demoFriend, demoGroup, demoMe, fakeService, fakeServices } from './demo'
+import { budgetMs } from '../../../../client/src/test-perf'
 
 // YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
 vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
@@ -87,7 +88,7 @@ describe('30 friends and 5 groups', () => {
       worst = Math.max(worst, cpu() - t)
     }
     console.info(`[perf] 4 periods x 31 rows + 30 "You vs": worst ${worst.toFixed(2)} ms CPU of 20 runs`)
-    expect(worst).toBeLessThan(50)
+    expect(worst).toBeLessThan(budgetMs(50))
   })
 
   // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
