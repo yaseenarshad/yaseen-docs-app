@@ -268,8 +268,8 @@ interface Mounted {
   onChangeZoom: ReturnType<typeof vi.fn>
   /** How many times React has committed the table of contents: a render that drew nothing new does not count, and neither does a write to the DOM by hand. */
   commits: () => number
-  /** `saved` is the width setting; it stays what it was when left out. */
-  render: (mode: TableOfContentsMode, contentWidth?: ContentWidth, saved?: number) => void
+  /** `saved` is the width setting; it stays what it was when left out. `pageZoom` is the page's zoom, percent (YAZ-5640). */
+  render: (mode: TableOfContentsMode, contentWidth?: ContentWidth, saved?: number, pageZoom?: number) => void
 }
 
 const mounts: Mounted[] = []
@@ -307,12 +307,12 @@ function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS
   const hostRef = { current: mountEl }
   let commits = 0
   let savedNow = saved
-  const render = (next: TableOfContentsMode, contentWidth: ContentWidth = 'narrow', nextSaved = savedNow): void => {
+  const render = (next: TableOfContentsMode, contentWidth: ContentWidth = 'narrow', nextSaved = savedNow, pageZoom?: number): void => {
     savedNow = nextSaved
     act(() => {
       root.render(
         <Profiler id="toc" onRender={() => void (commits += 1)}>
-          <TableOfContents channel={channel} mode={next} contentWidth={contentWidth} onChangeMode={onChangeMode} width={nextSaved} onChangeWidth={onChangeWidth} hostRef={hostRef} onReturnFocus={onReturnFocus} folds={folds} onChangeFolds={onChangeFolds} zoom={zoom} onChangeZoom={onChangeZoom} />
+          <TableOfContents channel={channel} mode={next} contentWidth={contentWidth} pageZoom={pageZoom} onChangeMode={onChangeMode} width={nextSaved} onChangeWidth={onChangeWidth} hostRef={hostRef} onReturnFocus={onReturnFocus} folds={folds} onChangeFolds={onChangeFolds} zoom={zoom} onChangeZoom={onChangeZoom} />
         </Profiler>,
       )
     })
@@ -761,6 +761,29 @@ describe('names: the column', () => {
     expect(nav(m)?.hasAttribute('data-names')).toBe(false)
     m.render('auto', 'full')
     expect(nav(m)?.hasAttribute('data-names')).toBe(false)
+  })
+
+  it('YAZ-5640: the room beside the column is worked out from the column as drawn — at 200% a Narrow column is 1280 + 96 px, its sides unzoomed; the names\' own zoom plays no part', () => {
+    const drawn = 1280 + 96
+    const m = mount('auto', HEADINGS, drawn + TOC_WIDTH, 480)
+    // At 100% the column is 736 px: names, and the names take the whole margin up to their saved 480 px.
+    expect(nav(m)?.hasAttribute('data-names')).toBe(true)
+    expect(m.section.style.getPropertyValue('--toc-width')).toBe('480px')
+    // At 200% the column takes 1376 px: the names get only the margin that is left.
+    m.render('auto', 'narrow', 480, 200)
+    expect(nav(m)?.hasAttribute('data-names')).toBe(true)
+    expect(m.section.style.getPropertyValue('--toc-width')).toBe(`${TOC_WIDTH}px`)
+    // At 300% the column (1920 + 96 px) leaves no room: lines.
+    m.render('auto', 'narrow', 480, 300)
+    expect(nav(m)?.hasAttribute('data-names')).toBe(false)
+    // One pixel short of the drawn column and the names at 200%: lines; zoomed out to 50%, a narrower column: names.
+    const short = mount('auto', HEADINGS, drawn + TOC_WIDTH - 1)
+    short.render('auto', 'narrow', TOC_DEFAULT_W, 200)
+    expect(nav(short)?.hasAttribute('data-names')).toBe(false)
+    const out = mount('auto', HEADINGS, 320 + 96 + TOC_WIDTH)
+    expect(nav(out)?.hasAttribute('data-names')).toBe(false)
+    out.render('auto', 'narrow', TOC_DEFAULT_W, 50)
+    expect(nav(out)?.hasAttribute('data-names')).toBe(true)
   })
 
   it('pinned shows "Unpin", which sets the mode back to auto', () => {
