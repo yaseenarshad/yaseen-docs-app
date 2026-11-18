@@ -194,7 +194,7 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
     expect(el.querySelector('[role="status"]')).toBeNull()
   })
 
-  it.each(['old versions', 'too big', 'shrink'])('search for "%s" still reaches the page (S8)', (query) => {
+  it.each(['old versions', 'too big'])('search for "%s" still reaches the page (S8)', (query) => {
     const { el } = mount(STATS)
     const input = el.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!
     act(() => {
@@ -202,6 +202,19 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     expect(el.querySelector('.settings-section__title')?.textContent).toMatch(/^Storage( › |$)/)
+  })
+
+  it('search for "shrink" still reaches the page (S8), beside the board\'s "Double-click a text box edge" row whose choice is "Only shrink" (YAZ-5771, YAZ-5775: registry order)', () => {
+    const { el } = mount(STATS)
+    const input = el.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'shrink')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const titles = [...el.querySelectorAll('.settings-section__title')].map((t) => t.textContent ?? '')
+    expect(titles.some((t) => /^Storage( › |$)/.test(t))).toBe(true)
+    expect(el.querySelector('[data-testid="storage-shrink"]')).not.toBeNull()
+    expect(titles.some((t) => /^Canvas/.test(t)) || el.textContent?.includes('Double-click a text box edge')).toBe(true)
   })
 
   it('search for "pictures" still reaches the page (S8), with Files & Links\' picture rows (YAZ-3943 demo 2, round 3: registry order)', () => {
