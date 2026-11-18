@@ -68,14 +68,14 @@ interface RecentListProps {
   /** The sidebar's hover preview (YAZ-3403): a page or board row previews beside the sidebar, as a Files row does. */
   onHoverFile?: (node: { path: string } | null) => void
   /**
-   * The empty Search tab (YAZ-5774): only the days Today and Yesterday, and no limit line. With none, or with the trees
+   * The empty Search tab (YAZ-5774): only the latest 2 days that have saves (Monday: Today, then Friday), and no limit line. With none, or with the trees
    * on their way, it draws `none` (the Search tab's own line): with recents that line goes, and "Today" is the top row.
    */
   recentOnly?: { none: ReactNode }
 }
 
-/** The two days that the empty Search tab shows (YAZ-5774): `recentDays` names them so. */
-const RECENT_LABELS = new Set(['Today', 'Yesterday'])
+/** The empty Search tab shows the latest days that have saves (YAZ-5774): as the Recents tab, an empty day is no day. */
+const SEARCH_DAYS = 2
 
 /**
  * The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window,
@@ -90,7 +90,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
   const files = useMemo(() => recentFiles(trees, roots, edits, only, type === 'all' ? undefined : (path) => typeOf({ kind: 'file', path }) === type), [trees, roots, edits, only, type])
   const days = useMemo(() => {
     const all = recentDays(files, new Date())
-    return recentOnly !== undefined ? all.filter((day) => RECENT_LABELS.has(day.label)) : all
+    return recentOnly !== undefined ? all.slice(0, SEARCH_DAYS) : all
   }, [files, today, recentOnly]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
   // Each day's vault groups (YAZ-4450 D7), cut once per list: 200 rows at most.
   const grouped = groups !== undefined

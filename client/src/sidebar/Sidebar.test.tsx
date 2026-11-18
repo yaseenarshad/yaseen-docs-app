@@ -3405,7 +3405,7 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('Type to search every page and folder.')
   })
 
-  it('YAZ-5774: the empty Search tab shows the recent files of Today and Yesterday right under the bar, with no line above them, and no older day; the key hints are gone; with text typed only the results show', async () => {
+  it('YAZ-5774: the empty Search tab shows the recent files of the latest 2 days that have saves, right under the bar, with no line above them, and no older day; the key hints are gone; with text typed only the results show', async () => {
     const day = 24 * 60 * 60 * 1000
     const now = Date.now()
     const v = `/v-tab-${++vaults}`
@@ -3413,7 +3413,7 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     const { el } = await mount({ root: v, lens: 'search' }, (b) => {
       b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
       b.index.mockResolvedValue({ root: v, records, folders: [], generatedAt: 1, ids: true } as never)
-      b.state.get.mockResolvedValue({ ...defaultAppState(), folders: { [v]: { ...defaultFolderState(), edits: { [`${v}/Alpha.md`]: now, [`${v}/Docs/Anchor.md`]: now - day, [`${v}/Docs/Guides/Anchor guide.md`]: now - 3 * day } } } })
+      b.state.get.mockResolvedValue({ ...defaultAppState(), folders: { [v]: { ...defaultFolderState(), edits: { [`${v}/Alpha.md`]: now, [`${v}/Docs/Anchor.md`]: now - 3 * day, [`${v}/Docs/Guides/Anchor guide.md`]: now - 5 * day } } } })
       return storage.init()
     })
     await act(async () => undefined)
@@ -3421,7 +3421,9 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     const days = () => [...el.querySelectorAll('.sidebar__body .recents__day .tree__label')].map((n) => n.textContent)
     const files = () => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__body [aria-label="Recents"] li > ul .tree__row')].map((r) => r.title)
     expect(bodyMsg(el)).toBeNull()
-    expect(days()).toEqual(['Today', 'Yesterday'])
+    // The day before is empty: the second day is the latest one before it with a save, as on the Recents tab.
+    const earlier = new Date(now - 3 * day).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: new Date(now - 3 * day).getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric' })
+    expect(days()).toEqual(['Today', earlier])
     expect(files()).toEqual([`${v}/Alpha.md`, `${v}/Docs/Anchor.md`])
     expect(el.querySelector('.sidebar__keys')).toBeNull()
     await type(searchBar(el)!, '   ') // spaces are no text
@@ -3441,7 +3443,7 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(document.activeElement).toBe(searchBar(el))
   })
 
-  it('YAZ-5774: the empty Search tab with no file saved Today or Yesterday shows only its line', async () => {
+  it('YAZ-5774: the empty Search tab with no saved file shows only its line', async () => {
     const { el } = await open({ lens: 'search' })
     expect([bodyMsg(el), el.querySelector('.sidebar__body')!.textContent]).toEqual([HINT, HINT])
     expect(el.querySelector('.sidebar__body [aria-label="Recents"]')).toBeNull()
