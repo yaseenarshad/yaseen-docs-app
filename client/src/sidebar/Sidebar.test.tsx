@@ -11911,6 +11911,21 @@ describe('several vaults in one window (YAZ-2602)', () => {
       await rerender({ recentVault: null, settings: { ...TEST_SETTINGS, recentsByVault: false } })
       expect(recentRows(el)).toEqual(['Today', `${at.a}/a.md`, `${at.b}/b.md`])
     })
+
+    it('YAZ-5783: the empty Search tab of a window with two vaults, "by vault" on: its days split by vault; ↓ from the bar lands on the first FILE, not a heading; ↑ there goes back to the bar', async () => {
+      const at = pair()
+      const saves = (state: AppState): AppState => ({ ...state, folders: { [at.a]: { ...defaultFolderState(), edits: { [`${at.a}/a.md`]: Date.now() - 1000 } }, [at.b]: { ...defaultFolderState(), edits: { [`${at.b}/b.md`]: Date.now() - 2000 } } } })
+      const recentRows = (el: HTMLElement) => [...el.querySelectorAll('[aria-label="Recents"] .tree__row')].map((r) => r.classList.contains('recents__vault') ? `[${r.querySelector('.tree__label')?.textContent}]` : (r as HTMLElement).title || r.textContent)
+      const { el } = await mountVaults([vault(at.a, 'Pages'), vault(at.b, 'Work')], { lens: 'search' }, (bridge) => bridge.state.get.mockResolvedValue(saves(defaultAppState())))
+      expect(recentRows(el)).toEqual(['Today', '[Pages]', `${at.a}/a.md`, '[Work]', `${at.b}/b.md`])
+      const bar = el.querySelector<HTMLInputElement>('.sidebar__search-input')!
+      const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+      act(() => void bar.dispatchEvent(down))
+      const first = document.activeElement as HTMLElement
+      expect([down.defaultPrevented, first.title]).toEqual([true, `${at.a}/a.md`])
+      act(() => void first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })))
+      expect(document.activeElement).toBe(bar)
+    })
   })
 })
 
