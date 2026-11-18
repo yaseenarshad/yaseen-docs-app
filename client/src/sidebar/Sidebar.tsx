@@ -642,6 +642,9 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { pages:
   return { pages, folders }
 }
 
+/** The first file of the empty Search tab's recents (YAZ-5777): ↓ from the bar lands here, not on its day heading, so Enter opens it. */
+const FIRST_RECENT_FILE = '[aria-label="Recents"] li[data-path] > .tree__row'
+
 /** Which page is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
@@ -1207,10 +1210,11 @@ export function Sidebar({
     [vaultRows, appRows, searchSort, titles],
   )
   const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard)
-  /** ↑ on the first recent row of the empty Search tab goes back to the bar (YAZ-5774). */
+  /** ↑ on the first recent file of the empty Search tab, or on the day heading above it, goes back to the bar (YAZ-5774, YAZ-5777). */
   const recentUp = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowUp' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
-    if (e.target !== e.currentTarget.querySelector('.tree__row')) return
+    const at = e.currentTarget
+    if (e.target !== at.querySelector('.tree__row') && e.target !== at.querySelector(FIRST_RECENT_FILE)) return
     searchInput.current?.focus()
     e.preventDefault()
   }, [])
@@ -2091,7 +2095,7 @@ export function Sidebar({
               const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)
               const out = query === '' && (e.key === 'ArrowRight' || e.key === 'ArrowDown') && plain
               // ↓ with no text goes to the first recent row first (YAZ-5774); with none, to the new tab page as before.
-              const recent = !typed && e.key === 'ArrowDown' && plain ? bodyRef.current?.querySelector<HTMLElement>('[aria-label="Recents"] .tree__row') : null
+              const recent = !typed && e.key === 'ArrowDown' && plain ? bodyRef.current?.querySelector<HTMLElement>(FIRST_RECENT_FILE) : null
               if (recent != null) {
                 recent.focus()
                 e.preventDefault()

@@ -3410,7 +3410,7 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     const now = Date.now()
     const v = `/v-tab-${++vaults}`
     const records = PAGES.map((rel) => ({ ...indexRecord(`${v}${rel}`), folder: rel.slice(1, Math.max(1, rel.lastIndexOf('/'))) }))
-    const { el } = await mount({ root: v, lens: 'search' }, (b) => {
+    const { el, props } = await mount({ root: v, lens: 'search' }, (b) => {
       b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
       b.index.mockResolvedValue({ root: v, records, folders: [], generatedAt: 1, ids: true } as never)
       b.state.get.mockResolvedValue({ ...defaultAppState(), folders: { [v]: { ...defaultFolderState(), edits: { [`${v}/Alpha.md`]: now, [`${v}/Docs/Anchor.md`]: now - 3 * day, [`${v}/Docs/Guides/Anchor guide.md`]: now - 5 * day } } } })
@@ -3433,13 +3433,20 @@ describe('the Search tab (YAZ-2638 D2)', () => {
       await type(searchBar(el)!, text)
       expect([text, recents()]).toEqual([text, null])
     }
-    // ↓ from the empty bar goes to the first recent row; ↑ there goes back to the bar.
+    // ↓ from the empty bar goes to the first recent FILE, not its day heading (YAZ-5777); Enter on it opens that file.
     await type(searchBar(el)!, '')
     const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
     act(() => void searchBar(el)!.dispatchEvent(down))
-    const first = el.querySelector<HTMLButtonElement>('.sidebar__body [aria-label="Recents"] .tree__row')
-    expect([down.defaultPrevented, document.activeElement]).toEqual([true, first])
-    act(() => void first!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })))
+    const first = document.activeElement as HTMLElement
+    expect([down.defaultPrevented, first.title]).toEqual([true, `${v}/Alpha.md`])
+    act(() => first.click()) // what Enter does on a focused button
+    expect(props.onOpenFile).toHaveBeenLastCalledWith(`${v}/Alpha.md`)
+    // ↑ on the first file goes back to the bar, and ↑ on the "Today" heading too.
+    act(() => void first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })))
+    expect(document.activeElement).toBe(searchBar(el))
+    const heading = el.querySelector<HTMLButtonElement>('.sidebar__body .recents__day')!
+    heading.focus()
+    act(() => void heading.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })))
     expect(document.activeElement).toBe(searchBar(el))
   })
 
@@ -6830,6 +6837,36 @@ describe('focus tab (YAZ-2619)', () => {
       await act(async () => root?.render(<></>))
       await rerender({ activeTab: null, settings: PER_TAB })
       expect(isOpen(el, `${v}/Projects`)).toBe('false')
+    })
+
+    it('YAZ-5769: "A place for each tab": each tab gets its own selected rows back, also after a blank tab that opens on Search in the same commit; a selected row the vault no longer has is dropped', async () => {
+      const { watch, fire: emit } = withWatcher()
+      const { el, v, bridge, rerender } = await mountVault({ lens: 'files', activeTab: 'yaz5769-A', settings: PER_TAB, watch }, { focus: [] })
+      const picked = () => [...el.querySelectorAll<HTMLElement>('.sidebar__body .tree__row--selected')].map((r) => r.dataset.path)
+      // Tab A: top.md and Projects selected.
+      shiftClickRow(rowByPath(el, `${v}/top.md`))
+      shiftClickRow(rowByPath(el, `${v}/Projects`))
+      const ours = picked()
+      expect(ours).toHaveLength(2)
+      // Tab B: its own selection, Pages only.
+      await rerender({ activeTab: 'yaz5769-B', settings: PER_TAB, lens: 'files' })
+      dropSelection(el)
+      shiftClickRow(rowByPath(el, `${v}/Pages`))
+      expect(picked()).toEqual([`${v}/Pages`])
+      await rerender({ activeTab: 'yaz5769-A', settings: PER_TAB, lens: 'files' })
+      expect(picked()).toEqual(ours)
+      await rerender({ activeTab: 'yaz5769-B', settings: PER_TAB, lens: 'files' })
+      expect(picked()).toEqual([`${v}/Pages`])
+      // A blank tab opens on Search in the same commit as the switch: tab B still saves its rows.
+      await rerender({ activeTab: null, settings: PER_TAB, lens: 'search' })
+      await rerender({ activeTab: 'yaz5769-B', settings: PER_TAB, lens: 'files' })
+      expect(picked()).toEqual([`${v}/Pages`])
+      // On tab B, top.md goes from the vault. Back on tab A, only Projects is selected again.
+      bridge.tree.mockResolvedValue({ root: v, tree: FOCUS(v).filter((n) => n.path !== `${v}/top.md`), generatedAt: 2 } as never)
+      await act(async () => emit({ type: 'unlink', path: `${v}/top.md` }))
+      await afterQuiet()
+      await rerender({ activeTab: 'yaz5769-A', settings: PER_TAB, lens: 'files' })
+      expect(picked()).toEqual([`${v}/Projects`])
     })
 
     it('"One place for the window" (the default): a tab switch changes nothing, and the open folders go to the store as before', async () => {
