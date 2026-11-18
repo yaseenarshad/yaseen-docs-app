@@ -1956,6 +1956,8 @@ export function Sidebar({
 
   // The active vault's word for a page (YAZ-4938), for the panel's own words; a row's menu and its delete ask read the row's vault.
   const unit = useVaultUnit(root)
+  /** The empty Search tab's line, shown only when it has no recent file (YAZ-5774). */
+  const searchHint = useMemo(() => ({ none: <p className="sidebar__msg">{unit('Type to search every page and folder.')}</p> }), [unit])
   return (
     <UnitContext.Provider value={unit}>
     <aside ref={setAside} className="sidebar" style={{ width }}>
@@ -2218,12 +2220,12 @@ export function Sidebar({
         }}
       >
         {searching && !typed ? (
-          // The Search tab with an empty bar (YAZ-2638 D2): one line, then the files saved Today and Yesterday (YAZ-5774),
-          // the Recents tab's own list with no filter. ↓ in the bar goes to its first row, ↑ on that row back to the bar.
+          // The Search tab with an empty bar (YAZ-2638 D2): the files saved Today and Yesterday (YAZ-5774), the Recents
+          // tab's own list with no filter, "Today" right under the bar; with none, one line. ↓ in the bar goes to its first
+          // row, ↑ on that row back to the bar.
           <>
-            <p className="sidebar__msg">{unit('Type to search every page and folder.')}</p>
             <div className="sidebar__search-recents" onKeyDown={recentUp}>
-              <RecentList recentOnly trees={shown} roots={ownRoots} groups={searchRecentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+              <RecentList recentOnly={searchHint} trees={shown} roots={ownRoots} groups={searchRecentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
             </div>
           </>
         ) : searching ? (

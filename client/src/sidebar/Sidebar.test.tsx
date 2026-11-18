@@ -3405,7 +3405,7 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('Type to search every page and folder.')
   })
 
-  it('YAZ-5774: the empty Search tab shows its line, then the recent files of Today and Yesterday, and no older day; the key hints are gone; with text typed only the results show', async () => {
+  it('YAZ-5774: the empty Search tab shows the recent files of Today and Yesterday right under the bar, with no line above them, and no older day; the key hints are gone; with text typed only the results show', async () => {
     const day = 24 * 60 * 60 * 1000
     const now = Date.now()
     const v = `/v-tab-${++vaults}`
@@ -3420,7 +3420,7 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     const recents = () => el.querySelector('.sidebar__body [aria-label="Recents"]')
     const days = () => [...el.querySelectorAll('.sidebar__body .recents__day .tree__label')].map((n) => n.textContent)
     const files = () => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__body [aria-label="Recents"] li > ul .tree__row')].map((r) => r.title)
-    expect(bodyMsg(el)).toBe(HINT)
+    expect(bodyMsg(el)).toBeNull()
     expect(days()).toEqual(['Today', 'Yesterday'])
     expect(files()).toEqual([`${v}/Alpha.md`, `${v}/Docs/Anchor.md`])
     expect(el.querySelector('.sidebar__keys')).toBeNull()
