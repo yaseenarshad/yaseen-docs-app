@@ -2,7 +2,6 @@ import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useLayout
 import { useAllPathIds, type IdsInFiles, type IdsInSearch, type PathIdsSource } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
-import { KeyLabel } from '../keys/KeyLabel'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
@@ -643,17 +642,6 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { pages:
   return { pages, folders }
 }
 
-/** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59), each the app's hotkey label (YAZ-5332): what it does, then its keys. */
-const SEARCH_KEYS: readonly (readonly [keys: string, does: string])[] = [
-  ['↑ / ↓', 'Move'],
-  ['↵', 'Open'],
-  ['⌘↵', 'Open in a background tab'],
-  ['⇧↵', 'Show in Files'],
-  ['space', 'Preview a file or open a folder, after Up or Down'],
-  ['→ / ←', 'Open or close a folder, after Up or Down'],
-  ['esc', 'Back to the page'],
-]
-
 /** Which page is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
@@ -872,6 +860,11 @@ export function Sidebar({
   // Each day split by vault while all vaults show (D7, D8). Kept by value: the vaults' array is new on each App render, and
   // RecentList is a memo.
   const vaultNames = vaults.map((vault) => vault.name).join('\0')
+  // The empty Search tab's recents (YAZ-5774) take no filter of the Recents tab: by vault as its setting says.
+  const searchRecentGroups = useMemo(
+    () => (multi && settings.recentsByVault ? { nameOf: (at: string) => vaultsRef.current.find((vault) => vault.root === at)?.name ?? at } : undefined),
+    [multi, settings.recentsByVault, vaultNames], // eslint-disable-line react-hooks/exhaustive-deps -- a renamed vault draws the headings again
+  )
   const recentGroups = useMemo(
     () => (multi && recentVault === null && settings.recentsByVault ? { nameOf: (at: string) => vaultsRef.current.find((vault) => vault.root === at)?.name ?? at } : undefined),
     [multi, recentVault, settings.recentsByVault, vaultNames], // eslint-disable-line react-hooks/exhaustive-deps -- a renamed vault draws the headings again
@@ -1214,6 +1207,13 @@ export function Sidebar({
     [vaultRows, appRows, searchSort, titles],
   )
   const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard)
+  /** ↑ on the first recent row of the empty Search tab goes back to the bar (YAZ-5774). */
+  const recentUp = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'ArrowUp' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+    if (e.target !== e.currentTarget.querySelector('.tree__row')) return
+    searchInput.current?.focus()
+    e.preventDefault()
+  }, [])
   // A new query moves the results under a still pointer: the panel of the row that was there goes (YAZ-3403).
   useEffect(() => closePreview(), [query, closePreview])
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
@@ -2088,7 +2088,12 @@ export function Sidebar({
             onKeyDown={(e) => {
               const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)
               const out = query === '' && (e.key === 'ArrowRight' || e.key === 'ArrowDown') && plain
-              if (out && onLeaveToPage?.() === true) e.preventDefault()
+              // ↓ with no text goes to the first recent row first (YAZ-5774); with none, to the new tab page as before.
+              const recent = !typed && e.key === 'ArrowDown' && plain ? bodyRef.current?.querySelector<HTMLElement>('[aria-label="Recents"] .tree__row') : null
+              if (recent != null) {
+                recent.focus()
+                e.preventDefault()
+              } else if (out && onLeaveToPage?.() === true) e.preventDefault()
               // ↑ with no row above the highlight goes to the tab button of Search (D12): from there ← and → reach Files, Focus and Favorites.
               else if (e.key === 'ArrowUp' && plain && atTop) {
                 e.currentTarget.closest('.sidebar')?.querySelector<HTMLElement>(ACTIVE_TAB_SELECTOR)?.focus()
@@ -2213,17 +2218,13 @@ export function Sidebar({
         }}
       >
         {searching && !typed ? (
-          // The Search tab with an empty bar (YAZ-2638 D2): one line, the keys of the search below it
-          // (YAZ-2662 D10), and no tree.
+          // The Search tab with an empty bar (YAZ-2638 D2): one line, then the files saved Today and Yesterday (YAZ-5774),
+          // the Recents tab's own list with no filter. ↓ in the bar goes to its first row, ↑ on that row back to the bar.
           <>
             <p className="sidebar__msg">{unit('Type to search every page and folder.')}</p>
-            <ul className="sidebar__keys">
-              {SEARCH_KEYS.map(([keys, does]) => (
-                <li key={does}>
-                  <KeyLabel action={does} keys={keys} />
-                </li>
-              ))}
-            </ul>
+            <div className="sidebar__search-recents" onKeyDown={recentUp}>
+              <RecentList recentOnly trees={shown} roots={ownRoots} groups={searchRecentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+            </div>
           </>
         ) : searching ? (
           // The Search tab with text typed (YAZ-2638 D2): its body is the Files tree cut down to

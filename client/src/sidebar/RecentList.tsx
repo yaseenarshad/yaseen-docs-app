@@ -67,7 +67,15 @@ interface RecentListProps {
   onMenu: (path: string, e: MouseEvent) => void
   /** The sidebar's hover preview (YAZ-3403): a page or board row previews beside the sidebar, as a Files row does. */
   onHoverFile?: (node: { path: string } | null) => void
+  /**
+   * The empty Search tab (YAZ-5774): only the days Today and Yesterday. With none, or with the trees on their way, it
+   * draws nothing (the Search tab's own line stays), and it has no limit line.
+   */
+  recentOnly?: boolean
 }
+
+/** The two days that the empty Search tab shows (YAZ-5774): `recentDays` names them so. */
+const RECENT_LABELS = new Set(['Today', 'Yesterday'])
 
 /**
  * The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window,
@@ -75,12 +83,15 @@ interface RecentListProps {
  * the tab shows. Memo: App draws again on each app-state broadcast; the list draws only when its own
  * props, a save log or the day change.
  */
-export const RecentList = memo(function RecentList({ trees, roots, only = null, type = 'all', groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
+export const RecentList = memo(function RecentList({ trees, roots, only = null, type = 'all', groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold, recentOnly = false }: RecentListProps) {
   const edits = useEdits(roots)
   // Rule 17 (Review rules v1, YAZ-5655): the ONE day timer (`useLocalDay`): midnight, focus and `visibilitychange`.
   const today = useLocalDay()
   const files = useMemo(() => recentFiles(trees, roots, edits, only, type === 'all' ? undefined : (path) => typeOf({ kind: 'file', path }) === type), [trees, roots, edits, only, type])
-  const days = useMemo(() => recentDays(files, new Date()), [files, today]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
+  const days = useMemo(() => {
+    const all = recentDays(files, new Date())
+    return recentOnly ? all.filter((day) => RECENT_LABELS.has(day.label)) : all
+  }, [files, today, recentOnly]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
   // Each day's vault groups (YAZ-4450 D7), cut once per list: 200 rows at most.
   const grouped = groups !== undefined
   const dayGroups = useMemo(() => (grouped ? new Map(days.map((day) => [day.key, byVault(day.files, roots)])) : null), [grouped, days, roots])
@@ -105,6 +116,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
     [],
   )
 
+  if (recentOnly && days.length === 0) return null
   if (files.length === 0) {
     // A tree still on its way: the list cannot say yet which logged files are there.
     if (!roots.every((root) => trees.has(root))) return <p className="sidebar__msg">Loading…</p>
@@ -157,7 +169,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
         })}
       </ul>
       {/* The limit (D3, S21): the 200 newest files show, and a line says so. */}
-      {files.length === MAX_RECENTS && <p className="sidebar__msg">Showing the {MAX_RECENTS} newest files.</p>}
+      {files.length === MAX_RECENTS && !recentOnly && <p className="sidebar__msg">Showing the {MAX_RECENTS} newest files.</p>}
     </>
   )
 })

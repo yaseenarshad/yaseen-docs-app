@@ -3405,40 +3405,46 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('Type to search every page and folder.')
   })
 
-  it('YAZ-2662 S59, S60: the empty Search tab shows its line and, below it, the keys of the search — in the keycap of the bar; with text typed the keys do not show', async () => {
-    const { el } = await open({ lens: 'search' })
-    /** Each row of the list: the app's hotkey label (YAZ-5332), what it does first, then its keys. */
-    const keys = () => [...el.querySelectorAll('.sidebar__body .sidebar__keys li')].map((li) => li.textContent)
-    expect(keys()).toEqual([
-      'Move (Up / Down)',
-      'Open (Enter)',
-      'Open in a background tab (Cmd+Enter)',
-      'Show in Files (Shift+Enter)',
-      'Preview a file or open a folder, after Up or Down (Space)',
-      'Open or close a folder, after Up or Down (Right / Left)',
-      'Back to the page (Esc)',
-    ])
-    // The line is its own element, and the list is the one thing below it.
-    expect([...el.querySelector('.sidebar__body')!.children].map((child) => child.className)).toEqual(['sidebar__msg', 'sidebar__keys'])
+  it('YAZ-5774: the empty Search tab shows its line, then the recent files of Today and Yesterday, and no older day; the key hints are gone; with text typed only the results show', async () => {
+    const day = 24 * 60 * 60 * 1000
+    const now = Date.now()
+    const v = `/v-tab-${++vaults}`
+    const records = PAGES.map((rel) => ({ ...indexRecord(`${v}${rel}`), folder: rel.slice(1, Math.max(1, rel.lastIndexOf('/'))) }))
+    const { el } = await mount({ root: v, lens: 'search' }, (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
+      b.index.mockResolvedValue({ root: v, records, folders: [], generatedAt: 1, ids: true } as never)
+      b.state.get.mockResolvedValue({ ...defaultAppState(), folders: { [v]: { ...defaultFolderState(), edits: { [`${v}/Alpha.md`]: now, [`${v}/Docs/Anchor.md`]: now - day, [`${v}/Docs/Guides/Anchor guide.md`]: now - 3 * day } } } })
+      return storage.init()
+    })
+    await act(async () => undefined)
+    const recents = () => el.querySelector('.sidebar__body [aria-label="Recents"]')
+    const days = () => [...el.querySelectorAll('.sidebar__body .recents__day .tree__label')].map((n) => n.textContent)
+    const files = () => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__body [aria-label="Recents"] li > ul .tree__row')].map((r) => r.title)
     expect(bodyMsg(el)).toBe(HINT)
+    expect(days()).toEqual(['Today', 'Yesterday'])
+    expect(files()).toEqual([`${v}/Alpha.md`, `${v}/Docs/Anchor.md`])
+    expect(el.querySelector('.sidebar__keys')).toBeNull()
     await type(searchBar(el)!, '   ') // spaces are no text
-    expect(keys()).toHaveLength(7)
-    // S60: with text — matches or none — the list is gone.
+    expect(recents()).not.toBeNull()
+    // With text, matches or none, the recents go and the search is as before.
     for (const text of ['anchor', 'zzz']) {
       await type(searchBar(el)!, text)
-      expect([text, el.querySelector('.sidebar__keys')]).toEqual([text, null])
+      expect([text, recents()]).toEqual([text, null])
     }
+    // ↓ from the empty bar goes to the first recent row; ↑ there goes back to the bar.
+    await type(searchBar(el)!, '')
+    const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+    act(() => void searchBar(el)!.dispatchEvent(down))
+    const first = el.querySelector<HTMLButtonElement>('.sidebar__body [aria-label="Recents"] .tree__row')
+    expect([down.defaultPrevented, document.activeElement]).toEqual([true, first])
+    act(() => void first!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })))
+    expect(document.activeElement).toBe(searchBar(el))
   })
 
-  it('YAZ-2662: with the bar empty no key of the list is taken — ↓, →, ←, Space and Enter are left for what stands beside the bar (the page of a new tab, YAZ-2663); ↑ goes to the tabs of the panel (YAZ-2663 D12)', async () => {
+  it('YAZ-5774: the empty Search tab with no file saved Today or Yesterday shows only its line', async () => {
     const { el } = await open({ lens: 'search' })
-    const taken = (key: string) => {
-      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
-      act(() => void searchBar(el)!.dispatchEvent(event))
-      return event.defaultPrevented
-    }
-    expect(['ArrowDown', 'ArrowRight', 'ArrowLeft', ' ', 'Enter'].map(taken)).toEqual(Array(5).fill(false))
-    expect(taken('ArrowUp')).toBe(true)
+    expect([bodyMsg(el), el.querySelector('.sidebar__body')!.textContent]).toEqual([HINT, HINT])
+    expect(el.querySelector('.sidebar__body [aria-label="Recents"]')).toBeNull()
   })
 
   it('S17, S19: on the Search tab the expand-all button stays, dimmed with no text (YAZ-3511 D19), and there is no blank-space menu — not even the OS one — with text or with none', async () => {
