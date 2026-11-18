@@ -232,6 +232,11 @@ export const generateRoughOptions = (
   if (scale !== 1) {
     // rough.js's default is 2
     options.maxRandomnessOffset = 2 / scale;
+    // YAZ-5739 (Decision 7): rough.js bows by length × offset, both 1 / scale
+    // bigger in board px, so a shape made below 100% bows by the scale
+    if (scale < 1) {
+      options.bowing = scale;
+    }
   }
 
   switch (element.type) {

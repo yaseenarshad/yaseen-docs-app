@@ -2778,7 +2778,7 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
     });
   });
 
-  describe("autoResize handle", () => {
+  describe("autoResize (fit the text)", () => {
     beforeEach(async () => {
       await render(<Excalidraw handleKeyboardGlobally={true} />);
       API.setElements([]);

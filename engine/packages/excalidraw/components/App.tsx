@@ -281,7 +281,6 @@ import {
   handleFocusPointPointerUp,
   maybeHandleArrowPointlikeDrag,
   getUncroppedWidthAndHeight,
-  getActiveTextElement,
   isEligibleFrameChildType,
   getBindingStrategyForDraggingBindingElementEndpoints,
   isNonDeletedElement,
@@ -394,7 +393,10 @@ import {
   actionWrapSelectionInFrame,
 } from "../actions/actionFrame";
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
-import { actionTextAutoResize } from "../actions/actionTextAutoResize";
+import {
+  actionTextAutoResize,
+  actionTextShrinkToLines,
+} from "../actions/actionTextAutoResize";
 // YAZ-4277 D9: registers ⌘↑ / ⌘↓ on selected text boxes
 import "../actions/actionTextFolds";
 import {
@@ -491,7 +493,6 @@ import { ElementCanvasButtons } from "../components/ElementCanvasButtons";
 import { IconColorEditor } from "../components/IconColorEditor";
 import { LASER_STREAMLINE, LaserTrails } from "../laserTrails";
 import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
-import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { hostTextWysiwyg } from "../wysiwyg/hostTextWysiwyg";
 import { getPlainPasteText, parseStyledHtml } from "../wysiwyg/styledClipboard";
 import { isOverScrollBars } from "../scene/scrollbars";
@@ -7559,58 +7560,6 @@ class App extends React.Component<AppProps, AppState> {
     return null;
   }
 
-  private isHittingTextAutoResizeHandle = (
-    selectedElements: NonDeleted<ExcalidrawElement>[],
-    point: Readonly<{ x: number; y: number }>,
-  ): boolean => {
-    const activeTextElement = getActiveTextElement(
-      selectedElements,
-      this.state,
-    );
-
-    if (
-      activeTextElement &&
-      !activeTextElement.isDeleted &&
-      !activeTextElement.autoResize &&
-      isPointHittingTextAutoResizeHandle(
-        point,
-        activeTextElement,
-        this.state.zoom.value,
-        this.editorInterface.formFactor,
-      )
-    ) {
-      return true;
-    }
-
-    return false;
-  };
-
-  private handleTextAutoResizeHandlePointerDown = (
-    selectedElements: NonDeleted<ExcalidrawElement>[],
-    point: Readonly<{ x: number; y: number }>,
-  ) => {
-    const activeTextElement = getActiveTextElement(
-      selectedElements,
-      this.state,
-    );
-    if (
-      !activeTextElement ||
-      !this.isHittingTextAutoResizeHandle(selectedElements, point)
-    ) {
-      return false;
-    }
-
-    this.actionManager.executeAction(
-      actionTextAutoResize,
-      "ui",
-      // we need to pass down the element since it may already be deselected
-      // due to the pointerdown
-      activeTextElement,
-    );
-    this.cursor.reset();
-    return true;
-  };
-
   // NOTE: Hot path for hit testing, so avoid unnecessary computations
   getElementAtPosition(
     x: number,
@@ -8279,6 +8228,55 @@ class App extends React.Component<AppProps, AppState> {
     });
   };
 
+  /**
+   * YAZ-5771: a double click on the left or right edge of a selected free
+   * text snaps its width, like a column edge in a spreadsheet. The edge is
+   * the one a drag resizes from (the same hit test, at the current zoom).
+   * The host's `textEdgeDoubleClick` picks "shrink" (the default: keep the
+   * line breaks, as wide as the widest line) or "fit" (auto-resize). It never
+   * opens the text for typing.
+   */
+  private handleTextEdgeDoubleClick = (
+    selectedElements: readonly NonDeleted<ExcalidrawElement>[],
+    sceneX: number,
+    sceneY: number,
+  ): boolean => {
+    const text = selectedElements.length === 1 ? selectedElements[0] : null;
+    if (
+      !text ||
+      !isTextElement(text) ||
+      text.containerId ||
+      text.locked ||
+      this.state.viewModeEnabled ||
+      this.state.activeTool.type !== this.state.preferredSelectionTool.type
+    ) {
+      return false;
+    }
+    const hit = getElementWithTransformHandleType(
+      [text],
+      this.state,
+      sceneX,
+      sceneY,
+      this.state.zoom,
+      this.state.lastPointerDownWith,
+      this.scene.getNonDeletedElementsMap(),
+      this.editorInterface,
+    );
+    if (hit?.transformHandleType !== "e" && hit?.transformHandleType !== "w") {
+      return false;
+    }
+    const fit = this.props.textEdgeDoubleClick === "fit";
+    // a box that already fits its text has nothing to snap
+    if (!(fit && text.autoResize)) {
+      this.actionManager.executeAction(
+        fit ? actionTextAutoResize : actionTextShrinkToLines,
+        "ui",
+        text,
+      );
+    }
+    return true;
+  };
+
   private handleCanvasDoubleClick = (
     event: Pick<
       React.MouseEvent<HTMLCanvasElement>,
@@ -8330,6 +8328,10 @@ class App extends React.Component<AppProps, AppState> {
         this.getElementAtPosition(sceneX, sceneY),
       )
     ) {
+      return;
+    }
+
+    if (this.handleTextEdgeDoubleClick(selectedElements, sceneX, sceneY)) {
       return;
     }
 
@@ -9797,11 +9799,6 @@ class App extends React.Component<AppProps, AppState> {
 
     const selectedElements = this.scene.getSelectedElements(this.state);
 
-    if (this.isHittingTextAutoResizeHandle(selectedElements, scenePointer)) {
-      this.cursor.set(CURSOR_TYPE.POINTER);
-      return;
-    }
-
     if (
       selectedElements.length === 1 &&
       !isOverScrollBar &&
@@ -10540,15 +10537,6 @@ class App extends React.Component<AppProps, AppState> {
     this.setState({
       selectedElementsAreBeingDragged: false,
     });
-
-    if (
-      this.handleTextAutoResizeHandlePointerDown(
-        selectedElements,
-        pointerDownState.origin,
-      )
-    ) {
-      return;
-    }
 
     if (this.handleDraggingScrollBar(event, pointerDownState)) {
       return;
@@ -12100,7 +12088,6 @@ class App extends React.Component<AppProps, AppState> {
               this.state,
               {
                 newArrow: Boolean(this.state.newElement),
-                zoom: this.state.zoom,
               },
             )
           : { end: { mode: undefined } };

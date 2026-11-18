@@ -1562,7 +1562,18 @@ export interface CanvasPrefs {
    * `hoverOutline` prop.
    */
   hoverOutline: boolean
+  /**
+   * YAZ-5771: "Double-click a text box edge". A double click on the left or right edge of a selected free text snaps
+   * its width. `shrink`: the box keeps its line breaks and becomes as wide as its widest line, never wider. `fit`: each
+   * paragraph on one line, the box grows with the text (the right-click menu's "Enable text auto-resizing"). Drawings
+   * only. Never appState: the engine's `textEdgeDoubleClick` prop.
+   */
+  textEdgeDoubleClick: TextEdgeDoubleClickMode
 }
+
+/** YAZ-5771: "Only shrink" or "Fit the text". */
+export const TEXT_EDGE_DOUBLE_CLICK_MODES = ['shrink', 'fit'] as const
+export type TextEdgeDoubleClickMode = (typeof TEXT_EDGE_DOUBLE_CLICK_MODES)[number]
 
 /** YAZ-4277 D14: "Start with the default style" or "Keep the last style". */
 export const NEW_ELEMENT_STYLE_MODES = ['default', 'keep'] as const
@@ -1625,6 +1636,7 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   fillSetsTextColor: true,
   newShapesMatchZoom: true,
   hoverOutline: true,
+  textEdgeDoubleClick: 'shrink',
 }
 
 /**
