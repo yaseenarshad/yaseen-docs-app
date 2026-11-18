@@ -2,6 +2,13 @@
 # suite, a build and the size and integrity gate on it (`perf:budget:ci`, YAZ-2131 1B). The
 # Playwright suite (`npm run e2e`) is local, not run here: it drives the app's real windows, so it
 # runs only when Yasin asks (docs/DEVELOPMENT.md). Release packaging is release.yml.
+#
+# Split into jobs that run at the same time (one run was ~45 min on one Mac, ~40 of it `npm test`):
+# - `unit-linux`: the `client` and `mobile` projects, in 4 shards on Linux (no Mac-only code in them).
+# - `mac-tests`: `desktop` and `tools` (codesign, FSEvents, DMG, updater…) and the timing budgets (`perf`,
+#   `perf-engine`), on macOS, as before: the budgets were set on this runner.
+# - `mac-build`: typecheck, build, phone build and the size gate, on macOS: the gate measures the Mac build.
+# - `check`: passes only when all of them pass. It is the one status `main` requires.
 name: ci
 
 on:
@@ -12,33 +19,45 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request's branch cancels that branch's older run. Runs on main all finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  check:
+  unit-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # The phone's layout tests drive headless Chrome (mobile/src/page/chromeLayout.testing.ts); the Linux runner's.
+      - run: npm test -- --project client --project mobile --shard=${{ matrix.shard }}/4
+        env:
+          CHROME: /usr/bin/google-chrome
+
+  mac-tests:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/setup
+      - run: npm test -- --project desktop --project tools --project perf --project perf-engine
+
+  mac-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          node-version: 22
-          cache: npm
-      # The drawing engine's build (YAZ-3572 E4): its five dist/ folders and the stamp in them, keyed on every file
-      # its build reads (`ENGINE_INPUTS` in tools/buildEngine.mjs). A hit makes `npm run engine:build` a no-op; a miss
-      # builds it (about a minute here; longer on a hosted runner, not measured yet) and saves it at the end of the job.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: engine/packages/*/dist
-          key: engine-${{ runner.os }}-${{ hashFiles('engine/package.json', 'engine/yarn.lock', 'engine/tsconfig.json', 'engine/.env.development', 'engine/.env.production', 'engine/scripts/**', 'engine/packages/tsconfig.base.json', 'engine/packages/utils/**', 'engine/packages/common/**', 'engine/packages/math/**', 'engine/packages/fractional-indexing/**', 'engine/packages/element/**', 'engine/packages/excalidraw/**') }}
-      - run: npm ci
-      # First after the install: draw.io's pack copies the engine's fonts, and the typecheck reads its types. A no-op after a cache hit.
-      - run: npm run engine:build
-      # The pinned draw.io pack (YAZ-3028 D5, Draw's YAZ-1802 D5): sha256-checked, so the suites that read
-      # the real bundle run here too, and `npm run build` finds it unpacked. Not cached: the 54 MB draw.war
-      # downloads on each run (the repo allows actions/cache since YAZ-3572, for the engine only so far).
-      - run: npm run drawio:pack
+          persist-credentials: false
+      - uses: ./.github/actions/setup
       - run: npm run typecheck
-      - run: npm test
       - run: npm run build
         env:
           # Monaco (the code tab, YAZ-3438) makes the renderer build need more heap than Node's default on
@@ -50,3 +69,13 @@ jobs:
       # desktop/out against tools/perf/budget.json: renderer + main bytes, chunk closure, fonts, the CLI entry.
       # The packaged half (.app, DMG, Info.plist, seal) is `npm run perf:budget`, run locally after desktop:build.
       - run: npm run perf:budget:ci
+
+  # The required status. `if: always()` so a failed or cancelled job above fails this one instead of skipping it.
+  check:
+    if: always()
+    needs: [unit-linux, mac-tests, mac-build]
+    runs-on: ubuntu-latest
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1
+      - run: echo "all CI jobs passed"
