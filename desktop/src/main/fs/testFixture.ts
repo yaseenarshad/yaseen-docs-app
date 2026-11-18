@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { isAtomicTmp } from '@shared/fileKind'
 import { CARD_TITLES_MOVED, _swept } from '../vaultIndex/idSweep'
 import { COUNT_DIR, macId, type IdDoor } from '../vaultIndex/mint'
 import { BridgeFailure } from './fsUtils'
@@ -53,7 +54,7 @@ const ONCE_DIR = path.dirname(CARD_TITLES_MOVED)
 /**
  * Everything under `dir`, hidden entries included: each file's text by its path from `dir`, each
  * folder as `<path>/`, but the sweep's one-time marks. What a test compares to prove that nothing
- * else was written (YAZ-2523 🔒 V3).
+ * else was written (YAZ-2523 🔒 V3). A save's temp file in flight is no file of the vault.
  */
 export async function vaultFiles(dir: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
@@ -62,6 +63,9 @@ export async function vaultFiles(dir: string): Promise<Record<string, string>> {
     const rel = path.relative(dir, file)
     // The sweep's one-time marks (YAZ-5308, `idSweep.ts`): the vault's own state, no file a test wrote.
     if (rel === ONCE_DIR || rel.startsWith(`${ONCE_DIR}${path.sep}`)) continue
+    // A save in flight (`atomicWrite`): its `.tmp-<hex>` sibling is renamed away at any moment, so a read of it can fail
+    // with ENOENT (a flaky CI run). It is never a file the vault keeps.
+    if (isAtomicTmp(entry.name)) continue
     if (entry.isDirectory()) out[`${rel}/`] = ''
     else out[rel] = await readFile(file, 'utf8')
   }

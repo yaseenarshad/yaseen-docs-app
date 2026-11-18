@@ -6785,6 +6785,45 @@ describe('focus tab (YAZ-2619)', () => {
       expect(isOpen(el, `${v}/Projects`)).toBe('true')
     })
 
+    it('YAZ-5756: back on "One place for the window" after a vault switch, a vault whose folders the user did not change writes nothing over its shared list; only the vault that changed counts', async () => {
+      // Vault A, with a place for each tab: Projects opens. That marks vault A only.
+      const a = await mountVault({ lens: 'focus', activeTab: 'yaz5756-A', settings: PER_TAB }, { focus: ['/Projects'] })
+      await act(async () => rowByPath(a.el, `${a.v}/Projects`)?.click())
+      // A vault switch in place: this sidebar goes, and one on vault B comes. No folder of B changes.
+      await act(async () => root?.render(<></>))
+      a.el.remove()
+      const b = await mountVault({ lens: 'focus', activeTab: 'yaz5756-B', settings: PER_TAB }, { focus: ['/Projects'] })
+      const theirs = [copyFoldKey(`${b.v}/Projects`, `${b.v}/Projects`)]
+      storage.setExpanded(b.v, theirs)
+      const setExpanded = vi.spyOn(storage, 'setExpanded')
+      await b.rerender({ activeTab: 'yaz5756-B', settings: TEST_SETTINGS })
+      expect(setExpanded).not.toHaveBeenCalled()
+      expect(storage.getExpanded(b.v)).toEqual(theirs)
+      setExpanded.mockRestore()
+      // Hide and Show sidebar: the mount reads the shared list of B, Projects open.
+      await act(async () => root?.render(<></>))
+      await b.rerender({ activeTab: 'yaz5756-B', settings: TEST_SETTINGS })
+      expect(isOpen(b.el, `${b.v}/Projects`)).toBe('true')
+    })
+
+    it('YAZ-5757: on a New tab (no tab id), Hide and Show sidebar keeps the folders opened there; the next New tab keeps what is on screen', async () => {
+      const { el, v, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5757-A', settings: PER_TAB }, { focus: ['/Projects'] })
+      // A New tab: Projects opens there. Tab A saved its place with Projects closed.
+      await rerender({ activeTab: null, settings: PER_TAB })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: null, settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      // Back to A: its own place, Projects closed. A new New tab keeps that screen, not the old New tab's place.
+      await rerender({ activeTab: 'yaz5757-A', settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      await rerender({ activeTab: null, settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      await act(async () => root?.render(<></>))
+      await rerender({ activeTab: null, settings: PER_TAB })
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+    })
+
     it('"One place for the window" (the default): a tab switch changes nothing, and the open folders go to the store as before', async () => {
       const setExpanded = vi.spyOn(storage, 'setExpanded')
       const { el, v, props, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-C' }, { focus: ['/Projects'] })

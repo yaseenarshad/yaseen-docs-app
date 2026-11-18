@@ -50,7 +50,7 @@ import { UnitContext, useVaultUnit, vaultUnit } from '../vault/unitWord'
 import type { ListFold } from './listFold'
 import { createPortal } from 'react-dom'
 import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusFolderList'
-import { foldersChangedHere, lastPlace, markFoldersChanged, readPlace, savePlace, type TabPlace } from './tabPlace'
+import { dropBlankPlace, foldersChangedHere, lastPlace, markFoldersChanged, readPlace, savePlace, type TabPlace } from './tabPlace'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
 import { RecentList } from './RecentList'
@@ -65,7 +65,7 @@ import { VaultSwitcher } from './VaultSwitcher'
 import { VaultLock } from './VaultLock'
 import type { VaultUnlockFor } from '../vault/readOnlyVault'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
-import { useSameList, useVaultTree } from './hooks/useVaultTree'
+import { type FolderShare, useSameList, useVaultTree } from './hooks/useVaultTree'
 import type { ScopeState, VaultListsHere } from '../lists/useVaultListsHere'
 import { outermost, useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, SIDEBAR_REVEAL_MS, type SidebarRevealRequest } from './revealRow'
@@ -800,15 +800,14 @@ export function Sidebar({
   // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
   const liveTimes = sort?.by === 'updated' || Object.values(settings.rowDates).some(Boolean) || searchFilter.time !== 'any'
   // A place for each page tab (YAZ-5701): the window keeps its open folders to itself, and starts from the place of
-  // the tab on show; with none, from the open folders the sidebar last showed, in this window's vaults.
+  // the tab on show (a New tab's own, YAZ-5757); with none, from the open folders the sidebar last showed. Only the
+  // folders in this window's vaults: a vault switch keeps the place of the tab on show.
   const perTab = settings.sidebarPlace === 'tab' && activeTab !== undefined
-  const folderShare = {
+  const folderShare: FolderShare = {
     shared: !perTab,
     start: (): string[] => {
-      const own = activeTab == null ? undefined : readPlace(activeTab)
-      if (own !== undefined) return [...own.expanded]
       const here = vaults.map((vault) => vault.root)
-      return (lastPlace()?.expanded ?? []).filter((dir) => rootOfPath(here, dir) !== null)
+      return ((readPlace(activeTab ?? null) ?? lastPlace())?.expanded ?? []).filter((dir) => rootOfPath(here, dir) !== null)
     },
     touch: markFoldersChanged,
     touched: foldersChangedHere,
@@ -1265,8 +1264,10 @@ export function Sidebar({
     placeTab.current = to
     if (!perTab || from === to) return
     // The first run is the mount: its folders came from the tab's place already (`folderShare.start`).
-    if (from !== undefined && from !== null) savePlace(from, placeHere(bodyRef.current))
-    const place = to === null ? undefined : readPlace(to)
+    // A New tab's place is for its Hide and Show sidebar only (YAZ-5757): it goes with the tab, and the next New tab keeps the screen.
+    if (from === null) dropBlankPlace()
+    else if (from !== undefined) savePlace(from, placeHere(bodyRef.current))
+    const place = to === null && from !== undefined ? undefined : readPlace(to)
     if (place !== undefined) putBack(place, from !== undefined)
   }, [perTab, activeTab])
   // Only once every vault's tree has landed (YAZ-5749): a mount reads its trees again, and a scroll written over no rows
@@ -1276,12 +1277,12 @@ export function Sidebar({
     bodyRef.current.scrollTop = placeScroll.current
     placeScroll.current = null
   })
-  // The sidebar goes (hidden, or a vault switch): the tab on show keeps the place it showed. Before the DOM goes, for the scroll.
+  // The sidebar goes (hidden, or a vault switch): the tab on show keeps the place it showed, a New tab too (YAZ-5757). Before the DOM goes, for the scroll.
   useLayoutEffect(() => {
     const body = bodyRef.current
     return () => {
       const tab = placeTab.current
-      if (placeNow.current.perTab && tab !== undefined && tab !== null) savePlace(tab, placeHere(body))
+      if (placeNow.current.perTab && tab !== undefined) savePlace(tab, placeHere(body))
     }
   }, [])
 
