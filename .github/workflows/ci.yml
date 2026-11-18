@@ -5,9 +5,10 @@
 #
 # Split into jobs that run at the same time (one run was ~45 min on one Mac, ~40 of it `npm test`):
 # - `unit-linux`: the `client` and `mobile` projects, in 4 shards on Linux, but for two files that need the Mac.
-# - `mac-tests`: `desktop` and `tools` (codesign, FSEvents, DMG, updater…) and the timing budgets (`perf`,
-#   `perf-engine`), on macOS, as before: the budgets were set on this runner.
-# - `mac-build`: typecheck, build, phone build and the size gate, on macOS: the gate measures the Mac build.
+# - `mac-tests`: `desktop` and `tools` (codesign, FSEvents, DMG, updater…), on macOS.
+# - `mac-build`: typecheck, build, phone build and the size gate, on macOS (the gate measures the Mac build), then the
+#   timing budgets (`perf`, `perf-engine`), on the same Mac runner as before: the budgets were set on it.
+# Only 5 macOS jobs run at once on the free plan, so a run uses 2 of them, no more.
 # - `check`: passes only when all of them pass. It is the one status `main` requires.
 name: ci
 
@@ -84,7 +85,7 @@ jobs:
       # the real bundle run here too, and `npm run build` finds it unpacked. Not cached: the 54 MB draw.war
       # downloads on each run.
       - run: npm run drawio:pack
-      - run: npm test -- --project desktop --project tools --project perf --project perf-engine
+      - run: npm test -- --project desktop --project tools
       # MAC_ONLY: the two client and phone files `unit-linux` leaves out (see there).
       - run: npx vitest run --project client --project mobile src/code/codeKeys.test.ts src/review/waiting150.test.tsx
 
@@ -124,6 +125,9 @@ jobs:
       # desktop/out against tools/perf/budget.json: renderer + main bytes, chunk closure, fonts, the CLI entry.
       # The packaged half (.app, DMG, Info.plist, seal) is `npm run perf:budget`, run locally after desktop:build.
       - run: npm run perf:budget:ci
+      # The timing budgets (`perf`, then `perf-engine`; files one at a time), here rather than in `mac-tests` so the two
+      # Mac jobs take about as long; after the build, on an idle runner, as their budgets need.
+      - run: npm test -- --project perf --project perf-engine
 
   # The required status. `if: always()` so a failed or cancelled job above fails this one instead of skipping it.
   check:
