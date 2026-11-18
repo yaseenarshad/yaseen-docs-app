@@ -55,11 +55,13 @@ jobs:
       # downloads on each run.
       - run: npm run drawio:pack
       # The phone's layout tests drive headless Chrome (mobile/src/page/chromeLayout.testing.ts); the Linux runner's.
-      # Two files need the Mac and run in `mac-tests` instead (MAC_ONLY there): Monaco's keys are the Mac's
-      # (`codeKeys.test.ts`), and a 50 ms CPU limit was set on the Mac runner (`waiting150.test.tsx`).
-      - run: npm test -- --project client --project mobile --shard=${{ matrix.shard }}/4 --exclude '**/src/code/codeKeys.test.ts' --exclude '**/src/review/waiting150.test.tsx'
+      # SKIP_MAC_ONLY leaves out two files that need the Mac (the `exclude` of client/ and mobile/vitest.config.ts);
+      # `mac-tests` runs them (MAC_ONLY there): Monaco's keys are the Mac's (`codeKeys.test.ts`), and a 50 ms CPU limit
+      # was set on the Mac runner (`waiting150.test.tsx`).
+      - run: npm test -- --project client --project mobile --shard=${{ matrix.shard }}/4
         env:
           CHROME: /usr/bin/google-chrome
+          SKIP_MAC_ONLY: '1'
 
   mac-tests:
     runs-on: macos-latest

@@ -51,6 +51,9 @@ export default defineConfig({
     // `npm run mobile:friends-research` (vitest.research.config.ts).
     exclude: [
       ...configDefaults.exclude,
+      // SKIP_MAC_ONLY=1 (CI's Linux shards, .github/workflows/ci.yml): a 50 ms CPU limit set on the Mac runner; CI's
+      // `mac-tests` job runs it.
+      ...(process.env.SKIP_MAC_ONLY === '1' ? ['src/review/waiting150.test.tsx'] : []),
       ...(process.env.CHECK3_FULL === '1' ? [] : ['src/friends/check3/{seeds,mine}-*.test.ts', 'src/friends/check4/{full4,mine4}-*.test.ts', 'src/friends/check5/full5-*.test.ts', 'src/friends/check6/sample6-*.test.ts', 'src/friends/check6/sample8-*.test.ts']),
     ],
   },
