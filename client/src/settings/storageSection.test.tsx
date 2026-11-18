@@ -214,7 +214,7 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
     const titles = [...el.querySelectorAll('.settings-section__title')].map((t) => t.textContent ?? '')
     expect(titles.some((t) => /^Storage( › |$)/.test(t))).toBe(true)
     expect(el.querySelector('[data-testid="storage-shrink"]')).not.toBeNull()
-    expect(titles.some((t) => /^Canvas/.test(t)) || el.textContent?.includes('Double-click a text box edge')).toBe(true)
+    expect(titles.some((t) => /^Drawings and diagrams › Drawing aids/.test(t))).toBe(true)
   })
 
   it('search for "pictures" still reaches the page (S8), with Files & Links\' picture rows (YAZ-3943 demo 2, round 3: registry order)', () => {
