@@ -120,7 +120,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     ],
     [
       // Never "Rename": that word renames on disk in the file menu (YAZ-2949 D3, the vault menu's words).
-      ...(onRename === undefined ? [] : [{ id: 'rename', label: 'Set display name', icon: <PencilIcon />, onSelect: () => onRename(menu.id) }]),
+      ...(onRename === undefined ? [] : [{ id: 'rename', label: 'Set display name', onSelect: () => onRename(menu.id) }]),
       ...(menu.named && onResetName !== undefined ? [{ id: 'reset-name', label: unit('Reset to page name'), onSelect: () => onResetName(menu.id) }] : []),
     ],
     // "Rename file" (YAZ-4248), a group of its own after the tab's name, so the file's name and the tab's are apart.

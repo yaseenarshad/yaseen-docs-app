@@ -123,7 +123,7 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
     ],
     [
       // The pencil marks every row that changes a name (YAZ-5770).
-      { id: 'rename', label: 'Set display name', icon: createElement(PencilIcon), onSelect: () => h.onRename(path) },
+      { id: 'rename', label: 'Set display name', onSelect: () => h.onRename(path) },
       ...(renamed ? [{ id: 'reset-name', label: 'Reset to folder name', onSelect: () => h.onResetName(path) }] : []),
       {
         id: 'key',

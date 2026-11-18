@@ -1,6 +1,8 @@
 /**
  * Every menu row that changes a name wears the pencil (YAZ-5770). The rows live in data builders and in JSX menus,
  * so the sources are read as text: each row's own text, from its marker to the end of its row, holds `PencilIcon`.
+ * "Set display name" (a tab's or a vault row's) is no rename of the file: it has no pencil (YAZ-5772, Yaseen: "i dont
+ * want a pencil icon for display name").
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -13,9 +15,7 @@ const ROWS: [string, string, 'after' | 'before'][] = [
   ['sidebar/menuSections.ts', "id: 'rename', label: 'Rename'", 'after'],
   ['sidebar/FocusFolderList.tsx', "id: 'focus-folder-rename'", 'after'],
   ['sidebar/SessionList.tsx', "id: 'rename-session'", 'after'],
-  ['sidebar/vaultMenuSections.ts', "id: 'rename', label: 'Set display name'", 'after'],
   ['sidebar/vaultMenuSections.ts', "id: 'rename-set'", 'after'],
-  ['tabs/TabMenu.tsx', "id: 'rename', label: 'Set display name'", 'after'],
   ['tabs/TabMenu.tsx', "id: 'rename-file'", 'after'],
   ['explore/exploreMenu.tsx', "id: 'rename-file'", 'after'],
   ['views/view/TableHeaderMenu.tsx', 'Rename column…', 'before'],
@@ -33,6 +33,14 @@ describe('the rename rows (YAZ-5770)', () => {
       return !row.includes('PencilIcon')
     })
     expect(missing).toEqual([])
+  })
+
+  it('"Set display name" has no pencil (YAZ-5772)', () => {
+    for (const file of ['tabs/TabMenu.tsx', 'sidebar/vaultMenuSections.ts']) {
+      const text = readFileSync(path.join(src, file), 'utf8')
+      const at = text.indexOf("label: 'Set display name'")
+      expect(text.slice(at, text.indexOf('onSelect', at)), file).not.toContain('PencilIcon')
+    }
   })
 
   it('the two hand-built menus line their other rows up with the pencil row: the header menu wears ContextMenu\'s class, the property menu its own rule', () => {
