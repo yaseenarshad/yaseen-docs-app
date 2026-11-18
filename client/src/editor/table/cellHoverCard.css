@@ -1,12 +1,14 @@
 /* A table cell's hover card (`cellHoverCard.ts`): the cell note's preview (YAZ-3818 D14, `cellNotePreview.ts`) and
    the cut cell's full text (YAZ-4901), in a page table and in a folder page table. The link hover card's look
    (`boardPreview.css` `.board-preview`), on the page's body. Read-only: the pointer goes through it. The note preview
-   is 260px wide beside the cell's corner; the full-text card is as wide as its text (`max-content`, inline), capped at
-   the cell's width clamped to 240–420 px (YAZ-4903). */
+   is 360px wide beside the cell's corner (YAZ-5717; `CELL_NOTE_BOX_WIDTH` in `cellNotePreview.ts`), never taller than the
+   window less 16px; the full-text card is as wide as its text (`max-content`, inline), capped at the cell's width
+   clamped to 240–420 px (YAZ-4903). */
 .cell-note-preview {
   position: fixed;
   z-index: 40;
-  width: 260px;
+  width: 360px;
+  max-height: calc(100vh - 16px);
   overflow: hidden;
   pointer-events: none;
   background: var(--bg);
@@ -18,13 +20,16 @@
 }
 
 /* The cut cell's full text (YAZ-4901 item 4): wrapped, at most 12 lines (the text's own cap, and this clamp for lines
-   that wrap), then "…". */
+   that wrap), then "…". A card that its max-height cuts clamps to fewer rows (`--fit-lines`, `fitCard`, YAZ-5747). */
 .cell-note-preview__text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 12;
+  -webkit-line-clamp: var(--fit-lines, 12);
   overflow: hidden;
-  padding: 8px 12px;
+  /* The space under the text is a border, not padding (YAZ-5780): `overflow: hidden` clips at the padding box, so a
+     bottom padding drew the top of the row after the clamp. The same 8px (`PAD` in `cellHoverCard.ts`). */
+  padding: 8px 12px 0;
+  border-bottom: 8px solid transparent;
   line-height: 1.4;
 }
 
@@ -57,10 +62,21 @@
   padding: 6px 12px 8px;
 }
 
+/* A note line wraps (YAZ-5717): a long word breaks. Its lead (the indent and the marker, `cellNotePreview.ts`) is a
+   column of its own, so a wrapped row hangs under the text after the marker. */
 .cell-note-preview__line {
+  display: flex;
   min-height: 1.4em;
   line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cell-note-preview__lead {
+  flex: none;
   white-space: pre;
+}
+
+.cell-note-preview__line-text {
+  min-width: 0;
 }

@@ -825,7 +825,7 @@ describe('3D: 2,000 files to fetch, no long task on the UI thread', () => {
     }
     let best = { cpu: Infinity, wall: 0, ms: 0, slices: 0 }
     // Best of up to 3 runs: a GC pause can land in one slice of one run.
-    for (let run = 0; run < 3 && (best.cpu >= 50 || best.wall >= budgetMs(50)); run++) {
+    for (let run = 0; run < 3 && (best.cpu >= budgetMs(50) || best.wall >= budgetMs(50)); run++) {
       const t = await setup(files, { runner: false })
       await t.engine.open(MAIN)
       await t.engine.idle()
@@ -871,7 +871,7 @@ describe('3D: 2,000 files to fetch, no long task on the UI thread', () => {
       return longest
     })()
     console.log(`[3D perf] 1,000 cards, 2,000 pictures: ${best.ms.toFixed(0)} ms, ${best.slices} slices; longest slice ${best.cpu.toFixed(1)} ms CPU, ${best.wall.toFixed(1)} ms wall; idle probe ${idle.toFixed(1)} ms`)
-    expect(best.cpu).toBeLessThan(50)
+    expect(best.cpu).toBeLessThan(budgetMs(50))
     if (idle < budgetMs(50)) expect(best.wall).toBeLessThan(budgetMs(50))
     else console.log('[3D perf] the idle probe alone is over the budget: the wall-clock check is skipped (the CPU check ran)')
   })

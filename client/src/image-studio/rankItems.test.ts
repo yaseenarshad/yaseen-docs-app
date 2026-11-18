@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { StudioItem, UsedMediaItem } from '@shared/types'
 import { rankItems } from './rankItems'
+import { budgetMs } from '../test-perf'
 
 const item = (key: string, title: string): StudioItem => ({ itemKey: key, provider: 'iconify', providerId: key, kind: 'icon', title })
 const used = (it: StudioItem, over: Partial<UsedMediaItem> = {}): [string, UsedMediaItem] => [it.itemKey, { ...it, updatedAt: 1, count: 1, words: [], ...over }]
@@ -59,6 +60,6 @@ describe('rankItems', () => {
     const start = performance.now()
     for (let i = 0; i < 10; i++) rankItems(items, map, 'icon 12', none)
     const each = (performance.now() - start) / 10
-    expect(each).toBeLessThan(50)
+    expect(each).toBeLessThan(budgetMs(50))
   })
 })

@@ -692,6 +692,7 @@ describe('createStore: loading', () => {
       pageBulletGap: [1, 21, 10.5, true],
       tableCellNoteTemplate: ['x'.repeat(2001), 3, null],
       tableCellNotePinned: ['yes', 1],
+      tableCellNotePreviewLines: [5, 61, 20.5, '20', null, NaN],
       typingArrows: ['on', 0],
       tableAllNotesOpensAt: ['here', '', true],
       tableBandColour: ['', 'magenta', '#12345', '#12345g', 4],
@@ -713,6 +714,16 @@ describe('createStore: loading', () => {
         await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true, [field]: value } } }))
         expect(createStore(file).get().settings.canvas, `${field}: ${String(value)}`).toEqual({ ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true })
       }
+    }
+  })
+
+  it('Hover preview lines (YAZ-5717): a file from before it reads 20; each whole number from 6 to 60 survives (the junk is in the YAZ-3818 test)', async () => {
+    const { tableCellNotePreviewLines: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.tableCellNotePreviewLines).toBe(20)
+    for (const lines of [6, 7, 20, 33, 60]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tableCellNotePreviewLines: lines } }))
+      expect(createStore(file).get().settings.tableCellNotePreviewLines).toBe(lines)
     }
   })
 

@@ -16,7 +16,7 @@ import type { HeaderRow, HeaderRowOwn, SettingsState } from './types'
  * no app values, reads the defaults then.
  *
  * The table HABITS stay this Mac's (scoping C): `tableBandRows`, `tableNowButton`, `tableCellNoteButton`,
- * `tableCellNotePinned`, `tableAllNotesOpensAt`.
+ * `tableCellNotePinned`, `tableCellNotePreviewLines` (YAZ-5717), `tableAllNotesOpensAt`.
  */
 
 export const TABLE_LOOK_FILE = 'table-look.json'
