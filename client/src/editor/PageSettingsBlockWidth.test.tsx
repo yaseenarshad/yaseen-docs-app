@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { PageSettings } from './PageSettings'
+import { UNIT_WORDS, UnitContext, unitTextOf } from '../vault/unitWord'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -52,6 +53,7 @@ describe('the cog’s block widths (YAZ-4783 layer 2)', () => {
     mount(null, false)
     expect(group('Code block width')).toBeNull()
     expect(group('Table width')).toBeNull()
+    expect(group('Page width')).toBeNull() // YAZ-5640: a folder page's Page tab passes no handler either
   })
 
   it('a page with no width shows Default pressed and an empty field; its tooltip names the Settings row', () => {
@@ -89,5 +91,24 @@ describe('the cog’s block widths (YAZ-4783 layer 2)', () => {
     type(field('Code block width'), '')
     enter(field('Code block width'))
     expect(changed).toHaveBeenLastCalledWith(null)
+  })
+})
+
+describe('the cog’s "Page width" row (YAZ-5640)', () => {
+  it('YAZ-5753: the row says the vault’s word: "Doc width" in a vault that calls a page a doc, "Page width" by default', () => {
+    for (const [word, unit] of [['Page', undefined], ['Doc', unitTextOf(UNIT_WORDS.doc)]] as const) {
+      container = document.createElement('div')
+      document.body.append(container)
+      root = createRoot(container)
+      const menu = <PageSettings pageWidth={null} appContentWidth="narrow" onChangePageWidth={() => undefined} />
+      act(() => root.render(unit === undefined ? menu : <UnitContext.Provider value={unit}>{menu}</UnitContext.Provider>))
+      act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      const row = group(`${word} width`)
+      expect(row, word).not.toBeNull()
+      expect(row!.previousElementSibling?.textContent).toBe(`${word} width:`)
+      expect([...row!.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Default', 'Narrow', 'Medium', 'Full'])
+      act(() => root.unmount())
+      container.remove()
+    }
   })
 })

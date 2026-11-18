@@ -13,7 +13,7 @@
  * The cog's one choice that is not on/off lives here too, by the same rules: `outside-glow` (YAZ-4272 D2), this page's
  * glow for outside changes, one of `OUTSIDE_CHANGE_GLOWS`. So does `find-folds` (YAZ-4787), this page's ⌘F fold choice,
  * one of `FIND_FOLDS`, set from the find bar. So do `code-width` and `table-width` (YAZ-4783), this page's width for its
- * code blocks and its tables, whole px.
+ * code blocks and its tables, whole px. So does `page-width` (YAZ-5640), this page's Content width, one of `CONTENT_WIDTHS`.
  *
  * NO KEY MEANS "FOLLOW THE APP DEFAULT", so old files and files from other tools need no migration.
  * Both `true` and `false` are stored: the page's choice wins over the default in both directions. Any
@@ -21,7 +21,7 @@
  * nothing. Pure: no fs, no DOM. Tests: `pageSwitches.test.ts`.
  */
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { FIND_FOLDS, isBlockWidth, OUTSIDE_CHANGE_GLOWS, type FindFolds, type OutsideChangeGlow } from './types'
+import { CONTENT_WIDTHS, FIND_FOLDS, isBlockWidth, OUTSIDE_CHANGE_GLOWS, type ContentWidth, type FindFolds, type OutsideChangeGlow } from './types'
 
 export const PAGE_SWITCH_KEYS = ['toc', 'section-indent', 'guide-lines', 'folding', 'bullet-threading'] as const
 export type PageSwitchKey = (typeof PAGE_SWITCH_KEYS)[number]
@@ -86,6 +86,26 @@ export function readOutsideGlow(content: string): OutsideChangeGlow | null {
 /** The page with the page's glow; `null` removes the key, so the page follows the app setting again. */
 export function writeOutsideGlow(content: string, glow: OutsideChangeGlow | null): string {
   return readOutsideGlow(content) === glow ? content : setFrontmatterProperty(content, OUTSIDE_GLOW_KEY, glow ?? undefined)
+}
+
+/**
+ * This page's own Content width (YAZ-5640): `page-width: narrow | medium | full`. The page cog's "Page width" writes it;
+ * "Default" removes the key, and the page follows Settings › Appearance › Content width again. It sizes the page's title
+ * row, text, comments, linked mentions and table of contents.
+ */
+export const PAGE_WIDTH_KEY = 'page-width'
+
+/** The page's own width, or null: no key, or a value that is not a step (the block is parsed only when it names the key). */
+export function readPageWidth(content: string): ContentWidth | null {
+  const { frontmatter } = splitFrontmatter(content)
+  if (!frontmatter.includes(PAGE_WIDTH_KEY)) return null
+  const value = parseFrontmatter(frontmatter).properties[PAGE_WIDTH_KEY]
+  return CONTENT_WIDTHS.includes(value as ContentWidth) ? (value as ContentWidth) : null
+}
+
+/** The page with its own width; `null` removes the key, so the page follows the app setting again. */
+export function writePageWidth(content: string, width: ContentWidth | null): string {
+  return readPageWidth(content) === width ? content : setFrontmatterProperty(content, PAGE_WIDTH_KEY, width ?? undefined)
 }
 
 /**

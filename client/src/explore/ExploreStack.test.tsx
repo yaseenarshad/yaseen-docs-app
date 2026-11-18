@@ -1091,6 +1091,23 @@ describe('round 4: zoom in a page layer', () => {
     expect(value()).toBe('75%')
   })
 
+  it("YAZ-5640: reading draws the page's own width on its frame, as the editor does on its scroller; a page with no `page-width` sets none", async () => {
+    readFile.mockImplementation(async (path) => ({ path, content: path === '/v/alpha.md' ? '---\npage-width: medium\n---\n# Alpha\n\ntext\n' : `# ${path}\n`, mtime: 1, size: 1 }))
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const read = top().querySelector<HTMLElement>('.explore__body--read')!
+    expect(read.classList.contains('editor-host')).toBe(true)
+    expect(read.style.getPropertyValue('--content-text-width')).toBe('900px')
+    expect(read.style.getPropertyValue('--document-zoom')).toBe('1')
+    readFile.mockImplementation(async (path) => ({ path, content: `# ${path}\n\nno key\n`, mtime: 1, size: 1 }))
+    key(read, { key: 'Escape' })
+    await flush()
+    await typeQuery('alp')
+    await openResult()
+    expect(top().querySelector<HTMLElement>('.explore__body--read')!.style.getPropertyValue('--content-text-width')).toBe('')
+  })
+
   it('one zoom for every page layer, kept across stacks; ⌘+ / ⌘− / ⌘0 zoom the top page layer only and never reach the tab behind', async () => {
     const tab = vi.fn()
     document.body.addEventListener('yaseendocs:zoom', tab)
