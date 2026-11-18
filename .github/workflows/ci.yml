@@ -4,7 +4,7 @@
 # runs only when Yasin asks (docs/DEVELOPMENT.md). Release packaging is release.yml.
 #
 # Split into jobs that run at the same time (one run was ~45 min on one Mac, ~40 of it `npm test`):
-# - `unit-linux`: the `client` and `mobile` projects, in 4 shards on Linux (no Mac-only code in them).
+# - `unit-linux`: the `client` and `mobile` projects, in 4 shards on Linux, but for two files that need the Mac.
 # - `mac-tests`: `desktop` and `tools` (codesign, FSEvents, DMG, updater…) and the timing budgets (`perf`,
 #   `perf-engine`), on macOS, as before: the budgets were set on this runner.
 # - `mac-build`: typecheck, build, phone build and the size gate, on macOS: the gate measures the Mac build.
@@ -54,7 +54,9 @@ jobs:
       # downloads on each run.
       - run: npm run drawio:pack
       # The phone's layout tests drive headless Chrome (mobile/src/page/chromeLayout.testing.ts); the Linux runner's.
-      - run: npm test -- --project client --project mobile --shard=${{ matrix.shard }}/4
+      # Two files need the Mac and run in `mac-tests` instead (MAC_ONLY there): Monaco's keys are the Mac's
+      # (`codeKeys.test.ts`), and a 50 ms CPU limit was set on the Mac runner (`waiting150.test.tsx`).
+      - run: npm test -- --project client --project mobile --shard=${{ matrix.shard }}/4 --exclude '**/src/code/codeKeys.test.ts' --exclude '**/src/review/waiting150.test.tsx'
         env:
           CHROME: /usr/bin/google-chrome
 
@@ -83,6 +85,8 @@ jobs:
       # downloads on each run.
       - run: npm run drawio:pack
       - run: npm test -- --project desktop --project tools --project perf --project perf-engine
+      # MAC_ONLY: the two client and phone files `unit-linux` leaves out (see there).
+      - run: npx vitest run --project client --project mobile src/code/codeKeys.test.ts src/review/waiting150.test.tsx
 
   mac-build:
     runs-on: macos-latest
