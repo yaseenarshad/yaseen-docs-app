@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { CODE_WIDTH_KEY, readBlockWidth, readOutsideGlow, readPageSwitches, PAGE_SWITCH_KEYS, writeBlockWidth, writeOutsideGlow, writePageSwitch, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
-import { OUTSIDE_CHANGE_GLOWS } from '@shared/types'
+import { CODE_WIDTH_KEY, readBlockWidth, readOutsideGlow, readPageSwitches, readPageWidth, PAGE_SWITCH_KEYS, writeBlockWidth, writeOutsideGlow, writePageSwitch, writePageWidth, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
+import { CONTENT_WIDTHS, OUTSIDE_CHANGE_GLOWS } from '@shared/types'
 
 /**
  * The page cog's on/off rows IN the page (YAZ-4094 G4): read, write, and a page with no choice. The
@@ -93,5 +93,27 @@ describe("the page's code block and table widths (YAZ-4783 layer 2)", () => {
     expect(writeBlockWidth(writeBlockWidth(both, TABLE_WIDTH_KEY, null), CODE_WIDTH_KEY, null)).toBe(PAGE)
     expect(writeBlockWidth(PAGE, TABLE_WIDTH_KEY, null)).toBe(PAGE)
     expect(readBlockWidth(writeBlockWidth('# Body\n', TABLE_WIDTH_KEY, 2400), TABLE_WIDTH_KEY)).toBe(2400)
+  })
+})
+
+describe("the page's own width (YAZ-5640)", () => {
+  it('reads `page-width`: narrow, medium or full; any other value, a block that does not parse, and no key are null', () => {
+    expect(readPageWidth(PAGE)).toBeNull()
+    expect(readPageWidth('# Body\npage-width: narrow\n')).toBeNull()
+    for (const value of ['wide', 'Narrow', '640', 'true', '""', '']) expect(readPageWidth(`---\npage-width: ${value}\n---\n`), value).toBeNull()
+    expect(readPageWidth('---\npage-width: narrow\n  bad: [\n---\n')).toBeNull()
+  })
+
+  it('writes each step with every other byte kept; the same step again is the SAME string; null takes the key away', () => {
+    for (const width of CONTENT_WIDTHS) {
+      const set = writePageWidth(PAGE, width)
+      expect(set).toBe(`---\n# the owner's comment\ntags: [a, b]\nstatus: "draft"\npage-width: ${width}\n---\n# Body\n\ntext\n`)
+      expect(readPageWidth(set)).toBe(width)
+      expect(writePageWidth(set, width)).toBe(set)
+      expect(writePageWidth(set, null)).toBe(PAGE)
+    }
+    expect(readPageWidth(writePageWidth(writePageWidth(PAGE, 'narrow'), 'full'))).toBe('full')
+    expect(writePageWidth(PAGE, null)).toBe(PAGE)
+    expect(readPageWidth(writePageWidth('# Body\n', 'medium'))).toBe('medium')
   })
 })
