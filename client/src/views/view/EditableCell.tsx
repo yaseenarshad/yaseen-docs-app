@@ -23,6 +23,8 @@ export interface EditableCellProps {
   value: Value
   /** The inferred editor (`cellEditor`); null renders the plain read-only content. */
   options?: readonly string[]
+  /** The Select always holds one of `options` (YAZ-5856, Status): no Clear. */
+  required?: boolean
   editor: EditorKind | null
   /**
    * What the link, multi-link and text editors' `[[…]]` completion offers, each with what picking it writes. A folder
@@ -63,7 +65,7 @@ export interface EditableCellProps {
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve, readOnly = false, ask }: EditableCellProps) {
+export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], required = false, resolve, readOnly = false, ask }: EditableCellProps) {
   const unit = useUnit()
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
@@ -255,7 +257,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
       )}
       {editing && isChoice && (
         <Popover label={label} anchor={wrapRef.current} portal onClose={close} className="property-value-popover">
-          <SelectValueEditor raw={current} options={options} multiple={editor === 'multi-select'} label={label} onCommit={commit} onDone={close} />
+          <SelectValueEditor raw={current} options={options} required={required} multiple={editor === 'multi-select'} label={label} onCommit={commit} onDone={close} />
         </Popover>
       )}
     </span>

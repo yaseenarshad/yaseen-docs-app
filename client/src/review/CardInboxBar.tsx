@@ -36,7 +36,7 @@
  * the pick (`cardPlan`).
  *
  * No Archived row (YAZ-5319, Yaseen: "there will be too many to review that way"): a folder page's table finds archived
- * cards (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
+ * cards (+ › Card table, Status), and a card's ⋯ menu unarchives it.
  */
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'

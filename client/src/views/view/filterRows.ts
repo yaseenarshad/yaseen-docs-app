@@ -8,7 +8,7 @@ import { canonicalKey } from './keys'
 import type { OperatorId } from './operatorId'
 import { isCardKey } from '../cardRows'
 
-/** The filter type of each card column (YAZ-5319); Page and Card ID are text. */
+/** The filter type of each card column (YAZ-5319); Page, ID and File name are text. */
 const CARD_TYPES: Readonly<Record<string, PropertyType>> = {
   'card.status': 'select',
   'card.fix': 'select',
@@ -17,6 +17,11 @@ const CARD_TYPES: Readonly<Record<string, PropertyType>> = {
   'card.lastReview': 'date',
   'card.reviews': 'number',
   'card.successRate': 'number',
+  // YAZ-5793: Wait time, Times forgotten, Recall chance (whole percent) and Days overdue.
+  'card.wait': 'number',
+  'card.forgotten': 'number',
+  'card.recall': 'number',
+  'card.overdue': 'number',
 }
 
 /**
