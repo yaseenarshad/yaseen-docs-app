@@ -54,3 +54,12 @@ export const CARD_TITLE_HELP: readonly { label: string; text: string }[] = [
   { label: LABELS.click, text: 'The title shows on its own, with your first Space or tap on the card.' },
   { label: LABELS.side2, text: 'The title shows on its own Space or tap, just before Side 2.' },
 ]
+
+/** The card head's title mark (YAZ-5913 Q2): every head says its title rule, so a head is never blank about the title. */
+const MARKS: Readonly<Record<CardTitleShow, string>> = { never: 'Title hidden in review', always: 'Title always', click: 'Title after first click', side2: 'Title before Side 2' }
+
+/**
+ * The head's words for a card's title rule (YAZ-5913 Q2): its own choice ("Title after first click"), or with no choice
+ * of its own the vault's Show card titles (`global`) in the same words plus "(default)": "Title always (default)".
+ */
+export const cardTitleMark = (choice: CardTitleChoice, global: CardTitleShow): string => (choice === 'default' ? `${MARKS[global]} (default)` : MARKS[choice])

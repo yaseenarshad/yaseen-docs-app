@@ -142,9 +142,10 @@ describe('the card strip on the phone (YAZ-5508)', () => {
     expect(order).toEqual(['card-view__card', 'phone-strip', 'page-comments'])
     expect(view.querySelector('.card-view__card')!.nextElementSibling).toBe(strip(h))
     expect(strip(h).nextElementSibling?.classList.contains('page-comments')).toBe(true)
-    // The strip closed: no due words and no chance anywhere on the view.
+    // The strip closed: no due line and no chance under the card. The head's quiet mark says the state (YAZ-5915).
     expect(view.querySelector('.card-view__facts')).toBeNull()
-    expect(view.textContent).not.toMatch(/chance you remember it|Due (in|today|tomorrow)/)
+    const head = view.querySelector('.card-view__card .card__head')!
+    expect(view.textContent!.replace(head.textContent!, '')).not.toMatch(/chance you remember it|Due (in|today|tomorrow)/)
   })
 
   it("a new card: Reviews holds the Mac's header and its last line, \"Due today\", with no chance", async () => {

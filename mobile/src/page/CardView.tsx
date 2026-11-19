@@ -113,14 +113,14 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   // The top bar's ⋯ holds the page tools only (the full title, Find in card); the card's own ⋯ is on its head.
   const tools = usePageTools(host, { title, path, label: 'Card tools', find: 'Find in card', headings: false })
   const cardMenu = usePageCardMenu(host, { path, answers, upNext: reviewOn })
-  const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}`
+  const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${card.notitle === true}\n${card.titleAt ?? ''}\n${card.fix === true}\n${card.reviews.length}\n${reviewOn}\n${data?.review.titleAt}`
   useEffect(() => {
     const el = host.current
     if (el === null || data === null || card === null) return
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(drawCard(data, path, card.text))
-    const top = cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: reviewOn && card.notitle === true })
+    const top = cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: card.notitle, titleAt: card.titleAt ?? null, fix: card.fix === true, reviews: card.reviews }, data.review)
     // The card's own ⋯ at the right of its head, as a card in a page (only a card with its own ID: it is what the actions write by).
     if (top !== null && card.id !== null) top.append(cardMoreButton(card.id, card.title))
     if (card.id !== null) el.dataset.cardId = card.id

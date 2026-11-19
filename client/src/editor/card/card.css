@@ -107,6 +107,22 @@
 .card__state:empty {
   display: none;
 }
+/* The head's marks (YAZ-5915, `cardHeadMarks`): the review state, the title rule, "To fix", in one quiet line after the
+   ID. A narrow card cuts them first ("…"), never the ID. */
+.card__head .card__marks {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.card__head .card__marks:empty {
+  display: none;
+}
+.card__head .card__marks > .card__state + .card__state {
+  margin-left: 6px;
+}
 /* "Up next" (YAZ-4999 D3): a small chip after the ID in the page, the card window and the Inbox; its × removes the mark. */
 :is(.card, .explore__head, .card-inbox__head) .card__next {
   flex: none;

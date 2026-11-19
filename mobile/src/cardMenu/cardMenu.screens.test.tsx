@@ -85,7 +85,8 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     const head = h!.host.querySelector('.card-view__card .card__head')!
     // At the right of the head (its last thing), as a card in a page; the head's words stay the card's own.
     expect(head.lastElementChild?.classList.contains('card__more-box')).toBe(true)
-    expect(head.textContent).toBe('RV-17')
+    expect(head.querySelector('.card__id')?.textContent).toBe('RV-17')
+    expect(head.querySelector('.card__marks')?.textContent).toBe('NewTitle always (default)')
     expect(head.querySelector('.card__more')!.getAttribute('aria-label')).toBe('Card actions: Speed of light')
     const menu = await openMenu()
     expect(menu.getAttribute('aria-label')).toBe('Card actions: RV-17')
@@ -119,7 +120,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     // The menu closed; the card reads archived at once (before any send); the toast says so.
     expect(h!.host.querySelector('[data-action]')).toBeNull()
     await waitFor(() => h!.host.querySelector('.card-view__card.card--off') !== null)
-    expect(h!.host.querySelector('.card-view__card .card__head')?.textContent).toBe('RV-1Archived')
+    expect(h!.host.querySelector('.card-view__card .card__head .card__review-state')?.textContent).toBe('Archived')
     expect(h!.host.querySelector('.toast')?.textContent).toBe('Archived')
 
     // The menu reads the new marks: Unarchive card.
@@ -189,7 +190,8 @@ describe('a page card\'s ⋯ (YAZ-5504)', () => {
       expect(head.querySelector('.card__more')?.textContent).toBe('')
     }
     expect(cards.map((c) => c.querySelector('.card__more')!.getAttribute('aria-label'))).toEqual(['Card actions: River of Madrid', 'Card actions: RV-2', 'Card actions: River of Vienna'])
-    expect(cards.map((c) => c.querySelector('.card__head')!.textContent)).toEqual(['RV-1', 'RV-2', 'RV-3ArchivedTitle hidden in review'])
+    expect(cards.map((c) => c.querySelector('.card__head .card__id')!.textContent)).toEqual(['RV-1', 'RV-2', 'RV-3'])
+    expect(cards[2].querySelector('.card__marks')!.textContent).toBe('ArchivedTitle hidden in review')
 
     // The third card (archived, title hidden): its own marks.
     await tap(cards[2].querySelector<HTMLElement>('.card__more')!)
@@ -211,7 +213,7 @@ describe('a page card\'s ⋯ (YAZ-5504)', () => {
     await waitFor(() => h!.host.querySelector('[data-card-id="RV-2"]')?.classList.contains('card--off') === true)
     const now = [...h!.host.querySelectorAll<HTMLElement>('.reader__body .page-card')]
     expect(now.map((c) => c.classList.contains('card--off'))).toEqual([false, true, true])
-    expect(now.map((c) => c.querySelector('.card__head')!.textContent)).toEqual(['RV-1', 'RV-2Archived', 'RV-3ArchivedTitle hidden in review'])
+    expect(now.map((c) => c.querySelector('.card__head .card__review-state')!.textContent)).toEqual([expect.stringMatching(/^(New|Due )/), 'Archived', 'Archived'])
     expect(h!.host.querySelector('.toast')?.textContent).toBe('Archived')
 
     // Sent: GitHub's page differs by that ONE word.

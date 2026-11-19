@@ -410,7 +410,7 @@ describe('the ⋯ menu', () => {
   it('YAZ-5097: Fix later writes `fix` on the ORIGINAL; a card marked in the index says "To fix" in the head and Remove Fix later', async () => {
     const { root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
-    expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(true)
+    expect(box.querySelector('.card__fix')).toBeNull()
     press(box.querySelector('.card__more'))
     menuItem('Fix later')!.click()
     await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, title "Capital of France", fix -->'))
@@ -419,7 +419,7 @@ describe('the ⋯ menu', () => {
     disk.files.set(CARD_FILE, cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', '<!-- card: GEO-140, title "Capital of France", fix -->'))
     update(marked.wikilinks, records({ cardFile: { mtime: 2, cards: [card('GEO-140', 'Capital of France', { fix: true })] } }))
     const markedBox = boxes(marked.root)[0]!
-    await vi.waitFor(() => expect(markedBox.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(false))
+    await vi.waitFor(() => expect(markedBox.querySelector('.card__fix')).not.toBeNull())
     expect(markedBox.querySelector('.card__fix')?.textContent).toBe('To fix')
     press(markedBox.querySelector('.card__more'))
     expect(menuLabels()).toContain('Remove Fix later')

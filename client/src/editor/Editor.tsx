@@ -97,6 +97,7 @@ import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { VaultLinksContext } from '../links/vaultLinks'
+import { redrawCardHeads } from '../review/cardHeadMarks'
 import { CardReviewDoor } from '../review/cardReviewDoor'
 import { useReviewOn } from '../review/useReviewSettings'
 import { useCardConvert } from './useCardConvert'
@@ -330,6 +331,12 @@ export function Editor(props: EditorProps) {
   reviewSettings.current = cardReviewSettings
   const hasReview = cardReviewSettings !== undefined && onDeleteCardReview !== undefined
   const cardReviews = useMemo(() => (!hasReview ? null : { settings: () => reviewSettings.current!, deleteReview: onDeleteCardReview }), [hasReview, onDeleteCardReview])
+  // The settings are read at each draw; a change of Review or of Show card titles redraws the card heads' marks (YAZ-5913).
+  const firstSettings = useRef(true)
+  useEffect(() => {
+    if (firstSettings.current) firstSettings.current = false
+    else redrawCardHeads()
+  }, [cardReviewSettings?.enabled, cardReviewSettings?.titleAt])
   return (
     <VaultReadOnly.Provider value={vault}>
       <CardReviewDoor.Provider value={cardReviews}>

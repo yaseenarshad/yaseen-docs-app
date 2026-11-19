@@ -63,6 +63,7 @@ import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstr
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { loadCardMenu, withCardMenu } from '../../review/cardMenuLoad'
+import { CARD_HEADS_REDRAW, cardHeadMarkEls } from '../../review/cardHeadMarks'
 import type { CardMenuDoors } from '../../review/cardMenuView'
 import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleChoiceOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -243,11 +244,8 @@ export class CardBlockView implements NodeView {
   dom: HTMLElement
   /** The card ID, first in the head (D20): a click copies it. Hidden while the card has none. */
   private readonly idButton: HTMLButtonElement
-  private readonly state: HTMLElement
-  /** "Title hidden in review" (YAZ-5030): shown while the line holds `notitle`; quiet, as "Archived" is. */
-  private readonly notitle: HTMLElement
-  /** "To fix" (YAZ-5097): shown while the line holds `fix`; quiet, as "Archived" is. */
-  private readonly fix: HTMLElement
+  /** The quiet marks after the ID (YAZ-5915): the review state, the title rule, "To fix" (`cardHeadMarks`, every card head's). */
+  private readonly marks: HTMLElement
   /** The "Up next" chip (YAZ-4999 D3): shown while the line holds `next`; its × removes the mark. */
   private readonly next: HTMLElement
   private readonly editButton: HTMLButtonElement
@@ -289,14 +287,8 @@ export class CardBlockView implements NodeView {
     const head = document.createElement('div')
     head.className = 'card__head'
     this.idButton = button('card__id', 'Copy card ID', '')
-    this.state = document.createElement('span')
-    this.state.className = 'card__state'
-    this.notitle = document.createElement('span')
-    this.notitle.className = 'card__state card__notitle'
-    this.notitle.textContent = 'Title hidden in review'
-    this.fix = document.createElement('span')
-    this.fix.className = 'card__state card__fix'
-    this.fix.textContent = 'To fix'
+    this.marks = document.createElement('span')
+    this.marks.className = 'card__marks'
     this.next = document.createElement('span')
     this.next.className = 'card__next'
     this.next.append('Up next', button('card__next-remove', 'Remove from Up next', '×'))
@@ -304,7 +296,7 @@ export class CardBlockView implements NodeView {
     // Preview (YAZ-5152): in Edit card's head, beside Done — the card as the Inbox shows it, with what is typed.
     this.previewButton = button('card__preview', 'Preview card', 'Preview')
     this.more = button('card__more', 'Card menu', '⋯')
-    head.append(this.idButton, this.state, this.notitle, this.fix, this.next, this.previewButton, this.editButton, this.more)
+    head.append(this.idButton, this.marks, this.next, this.previewButton, this.editButton, this.more)
     // The title band under the head (YAZ-5308 A3): the body never repeats the title. A card window's or a card file's
     // Edit card has it too (YAZ-5164): after Done, until its host's read card takes over, the card keeps the read
     // card's shape, band and all, so no line moves in between.
@@ -316,6 +308,8 @@ export class CardBlockView implements NodeView {
     this.dom.addEventListener('mousedown', this.onMouseDown)
     this.dom.addEventListener('click', this.onClick)
     this.dom.addEventListener('dblclick', this.onDoubleClick)
+    // The vault's review settings changed (YAZ-5913): the marks follow.
+    window.addEventListener(CARD_HEADS_REDRAW, this.drawMarks)
     views.set(this.dom, this)
     this.draw()
     // A card link's ⌘-click, or a card row of search, opened this page to land on this card (YAZ-5030, YAZ-5164): it
@@ -363,9 +357,7 @@ export class CardBlockView implements NodeView {
     if (id === null) delete this.dom.dataset.cardId
     else this.dom.dataset.cardId = id
     this.idButton.hidden = id === null
-    this.state.textContent = isCardOff(line) ? 'Archived' : ''
-    this.notitle.hidden = !isCardNoTitle(line)
-    this.fix.hidden = !isCardFix(line)
+    this.drawMarks()
     this.dom.classList.toggle('card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
     drawEditButton(this.editButton, this.editing)
@@ -380,6 +372,13 @@ export class CardBlockView implements NodeView {
     if (this.editing || this.drawn === text) return
     this.drawn = text
     this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderCard(text, {}, this.deps.look()))
+  }
+
+  /** The head's marks (YAZ-5915), off the card line and the vault's review settings now. */
+  private drawMarks = (): void => {
+    const line = cardLineOf(this.node)
+    const card = { off: isCardOff(line), fix: isCardFix(line), notitle: isCardNoTitle(line), titleAt: cardTitleAtOf(line), reviews: cardReviewsOf(line) }
+    this.marks.replaceChildren(...cardHeadMarkEls(card, this.deps.reviews?.settings()))
   }
 
   /** The title band (YAZ-5164 part 3); `now`: drawn at once, for a press about to click it. */
@@ -933,6 +932,7 @@ export class CardBlockView implements NodeView {
       this.inner = null
       if (openCard === this) openCard = null
     }
+    window.removeEventListener(CARD_HEADS_REDRAW, this.drawMarks)
     this.strip?.destroy()
     this.strip = null
     this.title?.destroy()

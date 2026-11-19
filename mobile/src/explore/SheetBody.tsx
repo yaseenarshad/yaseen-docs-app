@@ -246,7 +246,7 @@ export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: str
   // YAZ-5548: the card's own ⋯ at the right of its head, as the full card view's (YAZ-5527), with the same menu.
   const cardMenu = usePageCardMenu(host, { path, answers, upNext: reviewOn })
   const title = card === null ? (record?.cards?.find((c) => c.id?.toLowerCase() === id.toLowerCase())?.title ?? '') : card.title
-  const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}\n${card.text}`
+  const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${card.notitle === true}\n${card.titleAt ?? ''}\n${card.fix === true}\n${card.reviews.length}\n${reviewOn}\n${data?.review.titleAt}\n${card.text}`
 
   useEffect(() => {
     const el = host.current
@@ -254,7 +254,7 @@ export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: str
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(drawCard(data, path, card.text))
-    const top = cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: reviewOn && card.notitle === true })
+    const top = cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: card.notitle, titleAt: card.titleAt ?? null, fix: card.fix === true, reviews: card.reviews }, data.review)
     // Only a card with its own ID: it is what the actions write by.
     if (top !== null && card.id !== null) top.append(cardMoreButton(card.id, card.title))
     if (card.id !== null) el.dataset.cardId = card.id
