@@ -161,6 +161,41 @@ describe('layers that move like a cell note (round 3)', () => {
     expect(again[2].x).toBe(base2.left + (600 - base1.left))
   })
 
+  it('YAZ-5975: a layer opened on a page layer resized by hand takes its width and height, LAYER_STEP right and down; the next one too', () => {
+    const list = [search(), page('/v/a.md'), page('/v/b.md'), page('/v/c.md')]
+    const narrow: LayerBox = { x: 300, y: 120, width: 500, height: 600 }
+    const moved = new Map<number, LayerBox>([[list[1].id, narrow]])
+    const boxes = layerBoxes(list, moved, W, H)
+    expect(boxes[1]).toEqual(narrow)
+    expect(boxes[2]).toEqual({ x: 300 + LAYER_STEP, y: 120 + LAYER_STEP, width: 500, height: 600 })
+    // A layer opened on that one (itself sized by the rule) keeps the size too.
+    expect(boxes[3]).toEqual({ x: 300 + 2 * LAYER_STEP, y: 120 + 2 * LAYER_STEP, width: 500, height: 600 })
+    // A layer resized by hand keeps its own box; the one on it takes that size.
+    moved.set(list[2].id, { x: 100, y: 100, width: 700, height: null })
+    const again = layerBoxes(list, moved, W, H)
+    expect(again[2]).toEqual({ x: 100, y: 100, width: 700, height: null })
+    expect(again[3]).toEqual({ x: 100 + LAYER_STEP, y: 100 + LAYER_STEP, width: 700, height: null })
+  })
+
+  it('YAZ-5975: with nothing set by hand, a new layer has the default size; a layer on a search keeps its stack place; the box still fits the window', () => {
+    const list = [search(), page('/v/a.md'), page('/v/b.md')]
+    const boxes = layerBoxes(list, new Map(), W, H)
+    expect(boxes[2].width).toBe(PAGE_WIDTH)
+    expect(boxes[2].height).toBeNull()
+    // A search resized narrow: the page on it is a page's width (the search is another shape).
+    const onSearch = layerBoxes(list, new Map([[list[0].id, { x: 300, y: 50, width: 300, height: 200 }]]), W, H)
+    expect(onSearch[1].width).toBe(PAGE_WIDTH)
+    expect(onSearch[1].height).toBeNull()
+    // Explore size widens the default only, never a size taken from a hand-set box.
+    const sized = layerBoxes(list, new Map([[list[1].id, { x: 300, y: 120, width: 500, height: 600 }]]), W, H, 1.5)
+    expect(sized[2].width).toBe(500)
+    // Near the window's corner the taken box is fitted: on screen, the size cut to the window.
+    const corner = layerBoxes(list, new Map([[list[1].id, { x: W - 500, y: H - 300, width: 500, height: 300 }]]), W, H)
+    expect(corner[2].x).toBe(W - 500)
+    expect(corner[2].x + corner[2].width).toBeLessThanOrEqual(W)
+    expect(corner[2].y + (corner[2].height ?? 0)).toBeLessThanOrEqual(H)
+  })
+
   it('every box fits the window: the size cut to it, the corner kept on screen, never smaller than the least size', () => {
     const list = [page('/v/a.md')]
     const moved = new Map<number, LayerBox>([[list[0].id, { x: 2000, y: -30, width: 3000, height: 5000 }]])

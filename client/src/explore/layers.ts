@@ -206,16 +206,28 @@ export function fitBox(box: LayerBox, W: number, H: number): LayerBox {
  * however far the layer under it was moved from ITS stack place, so a new layer opens next to the layer under it
  * wherever that one is now; a layer moved or resized by hand (`moved`) stands in its own box. Each box fits the window.
  * `size` is Explore size (`panelWidth`): it widens the stack places only, never a box moved or resized by hand.
+ *
+ * THE SIZE OF THE LAYER IT OPENED FROM (YAZ-5975, Yaseen: "does it not follow the same sizing that you then create for
+ * the previous window?"): a page or board layer opened on a page, board or card layer whose box was set by hand (moved or
+ * resized), or took its size that way, takes that layer's width and height, `LAYER_STEP` right and down of it. So each
+ * link followed from a window made narrow opens as narrow. A layer on a search keeps its stack place (the search is
+ * another shape); a layer sized by hand keeps its own box.
  */
 export function layerBoxes(layers: readonly ExploreLayer[], moved: ReadonlyMap<number, LayerBox>, W: number, H: number, size = 1): LayerBox[] {
   const margin = Math.round(H * 0.1)
   const out: LayerBox[] = []
   let dx = 0
   let dy = 0
+  /** The layer under this one had a box set by hand, or one taken from such a box. */
+  let sized = false
   layers.forEach((layer, index) => {
     const base = layerPlace(layer.kind, index, W, size)
     const own = moved.get(layer.id)
-    const box = fitBox(own ?? { x: base.left + dx, y: margin + base.top + dy, width: base.width, height: null }, W, H)
+    const under = index > 0 ? layers[index - 1] : undefined
+    const prev = out[index - 1]
+    const inherit = own === undefined && sized && prev !== undefined && under !== undefined && under.kind !== 'search' && layer.kind !== 'search'
+    const box = fitBox(own ?? (inherit ? { x: prev.x + LAYER_STEP, y: prev.y + LAYER_STEP, width: prev.width, height: prev.height } : { x: base.left + dx, y: margin + base.top + dy, width: base.width, height: null }), W, H)
+    sized = own !== undefined || inherit
     dx = box.x - base.left
     dy = box.y - (margin + base.top)
     out.push(box)
