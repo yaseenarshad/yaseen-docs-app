@@ -433,7 +433,7 @@ export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
 /** One tab's sort (YAZ-3227 D1): Files has no manual order. `kinds` (YAZ-4614 D66) is a boolean or absent; anything else fails the sort. */
 const isTabSort = (v: unknown, manual: boolean, best = false): v is TabSort =>
   isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best')) && (v.kinds === undefined || typeof v.kinds === 'boolean')
-const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, false) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
+const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, true) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
 
 /** A list of known names, each once (YAZ-3273 D8). */
 const isNameSet = <T,>(v: unknown, known: readonly T[]): v is T[] => Array.isArray(v) && v.every((x) => known.includes(x as T)) && new Set(v).size === v.length

@@ -22,6 +22,7 @@ import { setSidebarDrag } from '../sidebarDrag'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type CreateKind } from '../createEntry'
 import { createCardFile } from '../../review/newCardFile'
 import { dragPill, pillLabel } from '../dragPill'
+import { HOLD_HINT, intoHint, levelItems, LIFT_PX, liftHint, liftRow, liftsAt, movedOrder, overFor, type RowLift } from '../rowLift'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { CreatePlace, PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
@@ -122,8 +123,8 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
 /** How long a drag holds over a closed folder before it opens (YAZ-3251 D8). */
 export const SPRING_MS = 700
 
-/** How far the pointer moves from the press before a row lifts (YAZ-3467 D1). Chromium alone lifts it at about 4 px. */
-export const LIFT_PX = 10
+/** How far the pointer moves from the press before a row lifts (YAZ-3467 D1; one value with the smooth drag, YAZ-5916 Q2). Chromium alone lifts it at about 4 px. */
+export { LIFT_PX }
 
 /** Which half of `row` the pointer is in — jsdom's zero rect and 0 clientY read as `after`. */
 const edgeOf = (clientY: number, row: HTMLElement): 'before' | 'after' => {
@@ -187,6 +188,10 @@ export function useTreeDrag(
    * focus folder row under it (`data-focus-folder`); true means it is done, false gives the tab's own reorder.
    */
   focusDrop?: (from: string, over: ReorderOver | null, folder: string | null) => boolean,
+  /** The Files tab's Manual order (YAZ-5916 D1): a folder's new order of item names, saved in the vault. */
+  saveFolderOrder?: (dir: string, names: string[]) => void,
+  /** A Manual reorder was written (YAZ-5917): its item's name, and how to write the order back and forward again. */
+  onReordered?: (name: string, undo: () => void, redo: () => void) => void,
 ) {
   // Drag-to-move (E1b; folders and the selection since YAZ-3251): the dragged paths and the lit
   // target live in REFS (D2), so a hover renders nothing — the lit row wears its class by DOM.
@@ -202,19 +207,25 @@ export function useTreeDrag(
   // Where the last press came down (YAZ-3467 D1): a row lifts only LIFT_PX from it.
   const press = useRef({ x: 0, y: 0 })
   // The lift of a row whose `dragstart` came, while its pointer is not LIFT_PX from the press yet. Null: none.
-  const armed = useRef<(() => void) | null>(null)
+  // `vertical`: a reorder, which lifts only on a move that is mostly up or down (YAZ-5916 Q2); a move lifts any way.
+  const armed = useRef<{ fire: () => void; vertical: boolean } | null>(null)
   // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
-  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop })
-  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop }
+  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop, saveFolderOrder, onReordered })
+  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop, saveFolderOrder, onReordered }
   // Drag-to-reorder (YAZ-2631 D3), ONE for the tab that is shown. Since YAZ-3467 D2 it is mouse events, not the
   // page's HTML5 drag: the dragged top row, the hovered row and edge, and the pill live in refs. The hovered row
   // and edge are state too, ONLY to draw the line: they change when the row or the edge does, not at each move.
   const reorderFrom = useRef<string | null>(null)
   const reorderAt = useRef<ReorderOver | null>(null)
   const pill = useRef<HTMLImageElement | null>(null)
+  // The smooth drag's lift (YAZ-5916 Q1): the row's `li` follows the pointer and its list parts; null before the lift's
+  // first move found its list, and for a row in no list.
+  const lifted = useRef<RowLift | null>(null)
+  // A Files row's Manual drag (`folder`, D2: it reorders its folder, ⌘ moves into one) or a list's top row (`list`).
+  const liftKind = useRef<'list' | 'folder'>('list')
   const [reorderOver, setReorderOver] = useState<ReorderOver | null>(null)
 
-  const fileMove: TreeFileMove = useMemo(() => {
+  const fileMove = useMemo((): TreeFileMove & { into: (dir: string, paths: readonly string[]) => void } => {
     /**
      * The ONE place the lit target changes (D2): the old target loses its class, the new one gains
      * it, and a spring armed for the old one is cleared (D8). `open` arms a new one: a closed folder.
@@ -283,12 +294,17 @@ export function useTreeDrag(
     }
     return {
       accepts,
+      into: (dir: string, paths: readonly string[]) => {
+        const { rootOf: vaultOf, onNotice: say } = live.current
+        if (paths.some((path) => vaultOf(path) !== vaultOf(dir))) return say(BETWEEN_VAULTS)
+        send(dir, paths)
+      },
       /**
        * Where every row drag to move begins (D5). The Tree stops the page's own drag at `dragstart`,
        * and that only ARMS the row (YAZ-3467 D1): it lifts at the first move LIFT_PX from the press.
        */
       start: (path, top) => {
-        armed.current = () => lift(path, top)
+        armed.current = { fire: () => lift(path, top), vertical: false }
       },
       end,
       hover: light,
@@ -315,11 +331,18 @@ export function useTreeDrag(
     }
   }, [])
   /**
-   * The reorder of a top row as mouse events (YAZ-3467 D2, D3). It lifts LIFT_PX from the press, as a
-   * move does; then a pill of the row's name follows the pointer, and the row stays in its place. The
-   * row under the pointer is the event's target: a top row of a list that reorders (`data-reorder`)
-   * takes the line at the half the pointer is in, and anything else takes none (R5). The release
-   * drops; Esc, the window's blur, and a move with no button end it with no drop (R7, R8).
+   * The reorder of a row as mouse events (YAZ-3467 D2, D3), smooth since YAZ-5916 Q1 (`rowLift.ts`). It lifts LIFT_PX
+   * from the press, mostly up or down (Q2); then the row's `li` follows the pointer and the rows of its own list slide
+   * aside to open the gap where it lands. Two kinds:
+   * - `list`: a top row of a list that reorders (Focus, Favorites, the vault rows of Files; YAZ-2631 D3) and an item of
+   *   a focus or favorite folder. Over its own list the gap is the marker. Off it — another list's top row
+   *   (`data-reorder`), a focus folder (`data-focus-folder`) — the gap closes, the pill follows the pointer, and the old
+   *   line or the folder's light shows where it lands (R5; YAZ-4460 F5).
+   * - `folder`: any row of Files under Manual (D2). It only reorders inside its own folder: the gap opens only among
+   *   its own folder's items, and no folder takes it. With ⌘ held the gap closes and the folder under the pointer
+   *   lights (a page row: its folder); the release moves the row, or the selection it is in, into that folder. A small
+   *   hint says so ("Hold ⌘ to move into a folder").
+   * The release drops; Esc, the window's blur, and a move with no button end it with no drop (R7, R8).
    */
   const reorderGesture = useMemo(() => {
     const show = (next: ReorderOver | null) => {
@@ -329,54 +352,164 @@ export function useTreeDrag(
       setReorderOver(next)
     }
     /** The top row of a list that reorders under the pointer, and the half of it the pointer is in; null over anything else (R5). */
-    const overAt = (e: MouseEvent): ReorderOver | null => {
-      const row = e.target instanceof Element ? e.target.closest<HTMLElement>('.tree__row[data-reorder]') : null
+    const overAt = (target: EventTarget | null, y: number): ReorderOver | null => {
+      const row = target instanceof Element ? target.closest<HTMLElement>('.tree__row[data-reorder]') : null
       const path = row?.dataset.path
-      return row === null || path === undefined ? null : { path, edge: edgeOf(e.clientY, row) }
+      return row === null || path === undefined ? null : { path, edge: edgeOf(y, row) }
     }
     /** The focus folder row under the pointer (YAZ-4460 F5): it lights as a drop target, by DOM. */
     let folderLit: HTMLElement | null = null
-    const folderAt = (e: MouseEvent): HTMLElement | null => (e.target instanceof Element ? e.target.closest<HTMLElement>('[data-focus-folder]') : null)
+    const folderAt = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? target.closest<HTMLElement>('[data-focus-folder]') : null)
     const lightFolder = (el: HTMLElement | null) => {
       if (folderLit === el) return
       folderLit?.classList.remove('focus-folder--drop')
       el?.classList.add('focus-folder--drop')
       folderLit = el
     }
+    const hint = liftHint()
+    /** The row under the pointer when it is of `from`'s own folder, as a slot of its level (a drop with no lift). */
+    const sameFolderAt = (target: EventTarget | null, y: number, from: string): { paths: string[]; fixed: boolean[]; from: number; slot: number } | null => {
+      const row = target instanceof Element ? target.closest<HTMLElement>('.tree__row[data-path]') : null
+      const list = row?.closest<HTMLElement>('li')?.parentElement ?? null
+      const path = row?.dataset.path
+      if (row == null || list === null || path === undefined) return null
+      const level = levelItems(list)
+      const at = level.paths.indexOf(path)
+      const i = level.paths.indexOf(from)
+      if (at < 0 || i < 0) return null
+      return { ...level, from: i, slot: edgeOf(y, row) === 'before' ? at : at + 1 }
+    }
+    /** The folder a ⌘ drop lands in (D2): the folder row under the pointer, or a page row's folder; null for none that takes it. */
+    let into: { dir: string; el: HTMLElement } | null = null
+    const intoAt = (target: EventTarget | null, from: string): { dir: string; el: HTMLElement } | null => {
+      const row = target instanceof Element ? target.closest<HTMLElement>('.tree__row[data-path]') : null
+      const path = row?.dataset.path
+      if (row === null || path === undefined || row.dataset.shortcut !== undefined) return null
+      let dir = path
+      let el: HTMLElement | null = row
+      if (!row.classList.contains('tree__row--dir')) {
+        dir = path.slice(0, path.lastIndexOf('/'))
+        el = row.closest('ul.tree')?.parentElement?.querySelector<HTMLElement>(':scope > .tree__row--dir') ?? row.closest('.sidebar')?.querySelector<HTMLElement>('.sidebar__header') ?? null
+      }
+      // Never into itself or a folder inside it (S6), never where it stands already (S7), never into another vault (R11).
+      if (el === null || dir === from || dir.startsWith(`${from}/`) || dir === from.slice(0, from.lastIndexOf('/'))) return null
+      const { rootOf: vaultOf } = live.current
+      return vaultOf(dir) === vaultOf(from) ? { dir, el } : null
+    }
+    const lightInto = (next: { dir: string; el: HTMLElement } | null) => {
+      if (into?.el === next?.el) return
+      into?.el.classList.remove('tree__row--drop', 'sidebar__header--drop')
+      next?.el.classList.add(next.el.classList.contains('sidebar__header') ? 'sidebar__header--drop' : 'tree__row--drop')
+      into = next
+    }
+    const showPill = (on: boolean, x = 0, y = 0) => {
+      const img = pill.current
+      if (img === null) return
+      img.style.visibility = on ? '' : 'hidden'
+      if (on) img.style.setProperty('transform', `translate(${x + 12}px, ${y + 8}px)`)
+    }
+    /** Everything of the gesture off; the lift slides home (`cancel`) unless the drop already settled it. */
     const end = () => {
       lightFolder(null)
+      lightInto(null)
+      hint.remove()
+      lifted.current?.cancel()
+      lifted.current = null
       reorderFrom.current = null
       pill.current?.remove()
       pill.current = null
       show(null)
     }
+    /** The last pointer of the drag, so a ⌘ press or release with no move redraws (D2). */
+    let last: { x: number; y: number; target: EventTarget | null } = { x: 0, y: 0, target: null }
+    const track = (x: number, y: number, target: EventTarget | null, meta: boolean) => {
+      last = { x, y, target }
+      const from = reorderFrom.current
+      const lift = lifted.current
+      if (from === null) return
+      if (liftKind.current === 'folder') {
+        const next = meta ? intoAt(target, from) : null
+        lightInto(next)
+        lift?.move(x, y, meta)
+        hint.show(x, y, meta ? (next === null ? 'Point at a folder' : intoHint(next.el.querySelector('.tree__label')?.textContent ?? '')) : HOLD_HINT)
+        return
+      }
+      // A list (R5): over its own list the gap is the marker; anywhere else the old line, the focus folder's light and the pill.
+      const away = lift === null || !(target instanceof Node && lift.list.contains(target))
+      show(away ? overAt(target, y) : null)
+      if (live.current.focusDrop !== undefined) lightFolder(away ? folderAt(target) : null)
+      lift?.move(x, y, away)
+      showPill(away, x, y)
+    }
     return {
-      lift: (path: string) => {
+      lift: (path: string, row: HTMLElement | undefined, kind: 'list' | 'folder') => {
         end() // a reorder still in flight goes first, with its pill (audit 5)
         reorderFrom.current = path
-        const img = document.createElement('img')
-        img.className = 'tree__reorder-pill'
-        img.alt = ''
-        img.src = dragPill(pillLabel([live.current.finder.nameOf(path)]))
-        document.body.append(img)
-        pill.current = img
+        liftKind.current = kind
+        lifted.current = row === undefined || !row.isConnected ? null : liftRow(row, press.current.y)
+        if (kind === 'list') {
+          const img = document.createElement('img')
+          img.className = 'tree__reorder-pill'
+          img.alt = ''
+          img.src = dragPill(pillLabel([live.current.finder.nameOf(path)]))
+          // With a lift the row itself is the picture: the pill shows only off its list.
+          if (lifted.current !== null) img.style.visibility = 'hidden'
+          document.body.append(img)
+          pill.current = img
+        }
       },
       track: (e: MouseEvent) => {
         if (e.buttons === 0) return end()
-        // The row's box is read before the pill moves, so a move costs one layout, not two.
-        show(overAt(e))
-        if (live.current.focusDrop !== undefined) lightFolder(folderAt(e))
-        pill.current?.style.setProperty('transform', `translate(${e.clientX + 12}px, ${e.clientY + 8}px)`)
+        track(e.clientX, e.clientY, e.target, e.metaKey)
+      },
+      /** ⌘ went down or up while a Files row drags (D2): the gap closes or opens again where the pointer is. */
+      meta: (on: boolean) => {
+        if (reorderFrom.current !== null && liftKind.current === 'folder') track(last.x, last.y, last.target, on)
       },
       /** The release drops on the row under IT, not on the last move's (audit 3): a release off the list saves nothing. */
       drop: (e: MouseEvent) => {
-        show(overAt(e))
         const from = reorderFrom.current
-        const over = reorderAt.current
-        const folder = folderAt(e)?.dataset.focusFolder ?? null
+        if (from === null) return end()
+        track(e.clientX, e.clientY, e.target, e.metaKey)
+        const lift = lifted.current
+        if (liftKind.current === 'folder') {
+          const target = into
+          if (e.metaKey) {
+            end()
+            if (target !== null) {
+              const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults } = live.current
+              fileMove.into(target.dir, dragSet(from, picked.paths, ordered, (p) => vaults.has(p)))
+            }
+            return
+          }
+          // The gap's slot; with no lift (no layout), the half of the row of the same folder under the pointer.
+          const under = lift === null ? sameFolderAt(e.target, e.clientY, from) : null
+          const level = lift ?? under
+          const slot = lift !== null ? lift.slot() : (under?.slot ?? null)
+          const order = level === null ? [] : movedOrder(level.paths.map((path, i) => ({ path, fixed: level.fixed[i] })), level.from, slot)
+          lifted.current = null
+          end()
+          lift?.settle()
+          if (level === null || slot === null || order.every((item, i) => item.path === level.paths[i])) return
+          const dir = from.slice(0, from.lastIndexOf('/'))
+          const save = live.current.saveFolderOrder
+          if (save === undefined) return
+          const after = order.filter((item) => !item.fixed).map((item) => basename(item.path))
+          const before = level.paths.filter((_, i) => !level.fixed[i]).map((path) => basename(path))
+          save(dir, after)
+          // One step of the window's undo list (YAZ-5917): ⌘Z writes the folder's order as it was, once.
+          live.current.onReordered?.(live.current.finder.nameOf(from), () => save(dir, before), () => save(dir, after))
+          return
+        }
+        const away = lift === null || !(e.target instanceof Node && lift.list.contains(e.target))
+        const over = away ? reorderAt.current : overFor(lift.slot(), lift.from, lift.paths)
+        const folder = away ? (folderAt(e.target)?.dataset.focusFolder ?? null) : null
+        // The drop on its own list settles into the gap; any other drop puts the row back.
+        if (!away) lifted.current = null
         end()
-        if (from !== null && live.current.focusDrop?.(from, over, folder) === true) return
-        if (from === null || over === null || over.path === from) return
+        if (!away) lift?.settle()
+        if (live.current.focusDrop?.(from, over, folder) === true) return
+        if (over === null || over.path === from) return
         const order = orderRef.current
         if (!order.includes(from)) return // not a row of the shown tab's list (YAZ-2631 R24): nothing is written
         const without = order.filter((p) => p !== from)
@@ -384,11 +517,16 @@ export function useTreeDrag(
         if (i < 0) return
         const at = over.edge === 'before' ? i : i + 1
         if (order[at] === from) return // the row already stands there: nothing is written
-        live.current.saveOrder([...without.slice(0, at), from, ...without.slice(at)])
+        const next = [...without.slice(0, at), from, ...without.slice(at)]
+        const before = [...order]
+        const save = live.current.saveOrder
+        save(next)
+        // One step of the window's undo list (YAZ-5917): ⌘Z writes the list's order as it was.
+        live.current.onReordered?.(live.current.finder.nameOf(from), () => save(before), () => save(next))
       },
       end,
     }
-  }, [orderRef])
+  }, [orderRef, fileMove])
   // A spring left armed when the panel goes would open a folder of a tree that is gone.
   useEffect(
     () => () => {
@@ -435,12 +573,15 @@ export function useTreeDrag(
     }
     const moved = (e: MouseEvent) => {
       // An armed row (YAZ-3467 D1): a release first was a click; LIFT_PX from the press, it lifts.
+      // A reorder lifts only on a move that is mostly up or down (YAZ-5916 Q2): a sideways wobble stays a click.
       const pending = armed.current
       if (pending !== null) {
+        const dx = e.clientX - press.current.x
+        const dy = e.clientY - press.current.y
         if (e.buttons === 0) armed.current = null
-        else if (Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) >= LIFT_PX) {
+        else if (pending.vertical ? liftsAt(dx, dy) : Math.hypot(dx, dy) >= LIFT_PX) {
           armed.current = null
-          pending()
+          pending.fire()
         }
       }
       if (reorderFrom.current !== null) return reorderGesture.track(e)
@@ -456,6 +597,8 @@ export function useTreeDrag(
     // `dragstart`, and the old HTML5 drag never did. A click follows a release only on the row the
     // press was on: so only a release on the dragged row arms this, and it takes only the next click,
     // and only on that row. Any other click, or the next task, clears it.
+    // Since YAZ-5916 a lifted row takes no pointer events, so the release lands on the row under it and Chromium
+    // clicks the rows' common parent: a lift's release takes the next click of this task anywhere in the page.
     let releasedOn: Element | null = null
     const swallow = (e: MouseEvent) => {
       const row = releasedOn
@@ -470,10 +613,11 @@ export function useTreeDrag(
       armed.current = null
       const from = reorderFrom.current
       if (from === null) return
+      const hadLift = lifted.current !== null
       reorderGesture.drop(e)
       const row = e.target instanceof Element ? e.target.closest<HTMLElement>('.tree__row') : null
-      if (row?.dataset.path !== from) return
-      releasedOn = row
+      if (!hadLift && row?.dataset.path !== from) return
+      releasedOn = hadLift ? document.body : row
       window.addEventListener('click', swallow, true)
       setTimeout(() => {
         releasedOn = null
@@ -483,10 +627,14 @@ export function useTreeDrag(
     // Esc, or the window losing focus, ends a reorder and saves nothing (D2). That Esc is the reorder's
     // alone (audit 2): the row under it does not also clear the selection.
     const keyed = (e: KeyboardEvent) => {
+      if (e.key === 'Meta' && reorderFrom.current !== null) return reorderGesture.meta(true)
       if (e.key !== 'Escape' || reorderFrom.current === null) return
       e.preventDefault()
       e.stopPropagation()
       reorderGesture.end()
+    }
+    const unkeyed = (e: KeyboardEvent) => {
+      if (e.key === 'Meta' && reorderFrom.current !== null) reorderGesture.meta(false)
     }
     const blurred = () => {
       if (reorderFrom.current !== null) reorderGesture.end()
@@ -500,6 +648,7 @@ export function useTreeDrag(
     window.addEventListener('mousedown', pressed, true)
     window.addEventListener('mouseup', released, true)
     window.addEventListener('keydown', keyed, true)
+    window.addEventListener('keyup', unkeyed, true)
     window.addEventListener('blur', blurred)
     const offLanded = api.file.onDragLanded(({ paths }) => {
       if (dragging.current.length > 0 && sameItems(dragging.current, paths)) droppedInside.current = true
@@ -520,6 +669,7 @@ export function useTreeDrag(
       window.removeEventListener('mousedown', pressed, true)
       window.removeEventListener('mouseup', released, true)
       window.removeEventListener('keydown', keyed, true)
+      window.removeEventListener('keyup', unkeyed, true)
       window.removeEventListener('blur', blurred)
     }
   }, [fileMove, reorderGesture])
@@ -528,14 +678,24 @@ export function useTreeDrag(
     () => ({
       over: reorderOver,
       // The reorder arms as a move does (YAZ-3467 D2), and lifts LIFT_PX from the press.
-      start: (path) => {
-        armed.current = () => reorderGesture.lift(path)
+      start: (path, row) => {
+        armed.current = { fire: () => reorderGesture.lift(path, row, 'list'), vertical: true }
       },
     }),
     [reorderOver, reorderGesture],
   )
+  /** A Files row's Manual drag (YAZ-5916 D2): it reorders its own folder; ⌘ moves it into one. One identity for the hook's life. */
+  const manual: TreeReorder = useMemo(
+    () => ({
+      over: null,
+      start: (path, row) => {
+        armed.current = { fire: () => reorderGesture.lift(path, row, 'folder'), vertical: true }
+      },
+    }),
+    [reorderGesture],
+  )
 
-  return { fileMove, reorder }
+  return { fileMove, reorder, manual }
 }
 
 /** Two answers about the clipboard that say the same: the verb and the paths, in order. */

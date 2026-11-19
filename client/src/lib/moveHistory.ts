@@ -46,8 +46,19 @@ export interface DeleteStep {
   items: { path: string; trashed: string; type: 'file' | 'dir'; name: string }[]
 }
 
-/** One entry of the undo list (D17): a move gesture (as YAZ-3255 built it), a rename or a delete. */
-export type UndoStep = MovedGesture | RenameStep | DeleteStep
+/**
+ * A Manual reorder (YAZ-5917) of Files, Focus or Favorites: nothing moved on disk, only a list's order. `name` is the
+ * dragged item's, for the toasts; `undo` writes the order as it was, `redo` as the drop left it (one write each).
+ */
+export interface ReorderStep {
+  step: 'reorder'
+  name: string
+  undo: () => void
+  redo: () => void
+}
+
+/** One entry of the undo list (D17): a move gesture (as YAZ-3255 built it), a rename, a delete, or a reorder (YAZ-5917). */
+export type UndoStep = MovedGesture | RenameStep | DeleteStep | ReorderStep
 
 /** A move gesture: the entry has `moves` (a rename and a delete name their `step`). */
 export const isMoveStep = (entry: UndoStep): entry is MovedGesture => !('step' in entry)

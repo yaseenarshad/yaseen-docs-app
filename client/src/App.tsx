@@ -22,7 +22,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingPages, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
 import type { Move } from './links/shortcuts'
-import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type UndoStep } from './lib/moveHistory'
+import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type ReorderStep, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
 import { dropIndex } from './lib/dragSlot'
@@ -3227,6 +3227,11 @@ export function App() {
     playGestureSound('land')
     stepToast(text, 'paste', 'undo', skipped)
   }, [stepToast])
+  /** A Manual reorder in the sidebar (YAZ-5917): on the undo list, said with Undo. Nothing moved on disk, so no sound. */
+  const recordReorder = useCallback((step: Omit<ReorderStep, 'step'>): void => {
+    moveHistory.current.push({ step: 'reorder', ...step })
+    stepToast(`Moved “${step.name}”`, 'info', 'undo')
+  }, [stepToast])
   const vaultList = roots.join('\n')
   useLayoutEffect(() => {
     renameRootGeneration.current++
@@ -3415,6 +3420,8 @@ export function App() {
    * the step touches, once each, as `trashMany` does. Main's own writes never come here.
    */
   const allowStep = useCallback(async (entry: UndoStep): Promise<boolean> => {
+    // A reorder (YAZ-5917) writes a list of the vault's, never a file of the person's: it asks nothing.
+    if (!isMoveStep(entry) && entry.step === 'reorder') return true
     const paths = isMoveStep(entry) ? entry.moves.flatMap((move) => [move.oldPath, move.newPath]) : entry.step === 'rename' ? [entry.path] : entry.items.map((item) => item.path)
     for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return false
     return true
@@ -3437,6 +3444,12 @@ export function App() {
         // A read-only vault asks first (YAZ-4985), as the gesture did: a Cancel keeps the step on the undo list.
         if (!(await allowStep(entry))) return moveHistory.current.redone(entry)
         // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
+        // A reorder (YAZ-5917): the order as it was, one write; then it can be redone.
+        if (!isMoveStep(entry) && entry.step === 'reorder') {
+          entry.undo()
+          moveHistory.current.undone(entry)
+          return stepToast(`Moved “${entry.name}” back`, 'info', 'redo')
+        }
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'undo') : putBackStep(entry))
         const back = await runMoves(invertMoves(entry.moves), { record: false })
         if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves) })
@@ -3473,6 +3486,11 @@ export function App() {
       try {
         // A read-only vault asks first (YAZ-4985): a Cancel keeps the step on the redo list.
         if (!(await allowStep(entry))) return moveHistory.current.undone(entry)
+        if (!isMoveStep(entry) && entry.step === 'reorder') {
+          entry.redo()
+          moveHistory.current.redone(entry)
+          return stepToast(`Moved “${entry.name}”`, 'info', 'undo')
+        }
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'redo') : deleteAgain(entry))
         const run = await runMoves(entry.moves, { record: false })
         if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves })
@@ -4311,6 +4329,7 @@ export function App() {
           onRenameFile={requestPathRename}
           onMoveEntries={requestMoves}
           onMoved={recordMoves}
+          onReordered={recordReorder}
           onRetitle={requestRetitle}
           onDeleteEntries={trashMany}
           onFileAction={allowFileAction}

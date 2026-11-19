@@ -1,0 +1,48 @@
+/* The sidebar's smooth row drag (YAZ-5916 Q1, `rowLift.ts`): the other rows of the list slide aside while it parts,
+   with the live gap's time and easing (`lib/liveGap` PART_MS, EASING); the lifted row follows the pointer with no
+   transition, over its neighbours, and takes no pointer events so the row under the pointer stays the target. */
+.tree[data-lift-list] > li {
+  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.tree[data-lift-list] > li[data-lifted] {
+  transition: none;
+  position: relative;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.tree[data-lift-list] > li[data-lifted] > .tree__row,
+.tree[data-lift-list] > li[data-settling] > .tree__row {
+  background: var(--bg);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--border), 0 4px 12px rgb(0 0 0 / 0.14);
+}
+
+.tree[data-lift-list][data-lift-still] > li,
+.tree[data-lift-list][data-lift-still] > li[data-settling] {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree[data-lift-list] > li {
+    transition: none;
+  }
+}
+
+/* The hint under the pointer while a Files row drags by hand (D2): "Hold ⌘ to move into a folder". */
+.tree__lift-hint {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  pointer-events: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--border), 0 2px 6px rgb(0 0 0 / 0.12);
+}

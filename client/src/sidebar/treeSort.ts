@@ -1,4 +1,5 @@
 import type { FileKind, SortBy, SortMenuTab, TabSort, TreeNode, TreeResponse } from '@shared/types'
+import { inOrder } from '@shared/filesOrder'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import type { MenuSection } from './menuSections'
 
@@ -36,7 +37,14 @@ const kindRank = (node: TreeNode): number => (node.type === 'dir' ? 0 : node.kin
  * Best match (YAZ-3511 D12) is the search's alone: `best` holds the score of each row, lower first, then the newer row, then the name.
  * It puts no folder first, so the best match is on top.
  */
-export function sortLevel(nodes: readonly TreeNode[], sort: TabSort | undefined, label: (node: TreeNode) => string, best: ReadonlyMap<string, number> = NO_BEST): TreeNode[] {
+export function sortLevel(nodes: readonly TreeNode[], sort: TabSort | undefined, label: (node: TreeNode) => string, best: ReadonlyMap<string, number> = NO_BEST, listed?: readonly string[]): TreeNode[] {
+  // Files under Manual (YAZ-5916 D1, D3): the folder's own order, by item name; an item it does not name goes last, in
+  // the Name order (folders first, Kind first's groups when on). Folders and files mix as the person put them.
+  if (sort?.by === 'manual' && listed !== undefined) {
+    const named = sortLevel(nodes, { by: 'name', reverse: false, ...(sort.kinds === true ? { kinds: true } : {}) }, label)
+    const rank = new Map(named.map((node, i) => [node, i]))
+    return inOrder(nodes, (node) => node.name, listed, (a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
+  }
   const byName = (a: TreeNode, b: TreeNode): number => collator.compare(label(a), label(b))
   const byTime = (a: TreeNode, b: TreeNode): number => timeOf(b) - timeOf(a) || byName(a, b)
   if (sort?.by === 'best') {
@@ -98,8 +106,8 @@ export function withMtime(trees: ReadonlyMap<string, TreeResponse>, vault: strin
 const BY_LABEL: Record<SortBy, string> = { manual: 'Manual', name: 'Name', updated: 'Last updated', best: 'Best match' }
 /** The two ways of each sort (D4): the natural way first. Best match has one way: the best first (YAZ-3511 D12). */
 const WAYS: Partial<Record<SortBy, readonly [string, string]>> = { name: ['A to Z', 'Z to A'], updated: ['Newest first', 'Oldest first'] }
-/** What each tab sorts by (D4): Files and Search have no drag order, so no Manual (YAZ-3511 D4); Best match is Search's (D12). */
-const BYS: Record<SortMenuTab, readonly SortBy[]> = { files: ['name', 'updated'], focus: ['manual', 'name', 'updated'], favorites: ['manual', 'name', 'updated'], search: ['best', 'name', 'updated'] }
+/** What each tab sorts by (D4): Search has no drag order, so no Manual (YAZ-3511 D4); Best match is Search's (D12). Files has Manual since YAZ-5916, last: its old two keep their places. */
+const BYS: Record<SortMenuTab, readonly SortBy[]> = { files: ['name', 'updated', 'manual'], focus: ['manual', 'name', 'updated'], favorites: ['manual', 'name', 'updated'], search: ['best', 'name', 'updated'] }
 
 /**
  * The sort menu (D4): what to sort by, then, where the sort has two, which way. ✓ marks the current pick (Draw's YAZ-1835 D5).

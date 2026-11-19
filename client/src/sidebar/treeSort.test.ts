@@ -130,9 +130,21 @@ describe('sortSections (YAZ-3227 D4)', () => {
   const item = (sections: MenuSection[], label: string) => sections.flat().find((i) => i.label === label) as MenuAction
   const OFF = { on: false, set: vi.fn() }
 
-  it('Files: Name and Last updated, then the way, then "Show last updated" (YAZ-3511 D10); no Manual', () => {
-    expect(labels(sortSections('files', NAME, vi.fn(), OFF))).toEqual([['Name✓', 'Last updated'], ['A to Z✓', 'Z to A'], ['Show last updated', 'Kind first']])
-    expect(labels(sortSections('files', { by: 'updated', reverse: true }, vi.fn(), OFF))).toEqual([['Name', 'Last updated✓'], ['Newest first', 'Oldest first✓'], ['Show last updated', 'Kind first']])
+  it('Files: Name, Last updated and Manual (YAZ-5916), then the way, then "Show last updated" (YAZ-3511 D10)', () => {
+    expect(labels(sortSections('files', NAME, vi.fn(), OFF))).toEqual([['Name✓', 'Last updated', 'Manual'], ['A to Z✓', 'Z to A'], ['Show last updated', 'Kind first']])
+    expect(labels(sortSections('files', { by: 'updated', reverse: true }, vi.fn(), OFF))).toEqual([['Name', 'Last updated✓', 'Manual'], ['Newest first', 'Oldest first✓'], ['Show last updated', 'Kind first']])
+    expect(labels(sortSections('files', { by: 'manual', reverse: false }, vi.fn(), OFF))).toEqual([['Name', 'Last updated', 'Manual✓'], ['Show last updated', 'Kind first']])
+  })
+
+  it('Files under Manual (YAZ-5916 D1, D3): the folder\'s list first, unknown items last in the Name order', () => {
+    const dir = (name: string): TreeNode => ({ type: 'dir', name, path: `/v/${name}`, children: [] })
+    const file = (name: string): TreeNode => ({ type: 'file', name, path: `/v/${name}`, size: 1, kind: 'markdown', mtime: 0 })
+    const nodes = [dir('B'), file('a.md'), dir('A'), file('z.md'), file('new.md')]
+    const label = (node: TreeNode) => node.name
+    const manual = { by: 'manual' as const, reverse: false }
+    expect(sortLevel(nodes, manual, label, undefined, ['z.md', 'B']).map((n) => n.name)).toEqual(['z.md', 'B', 'A', 'a.md', 'new.md'])
+    // No list yet: the Name order.
+    expect(sortLevel(nodes, manual, label, undefined, []).map((n) => n.name)).toEqual(['A', 'B', 'a.md', 'new.md', 'z.md'])
   })
 
   it('Focus and Favorites: Manual first, and under Manual no way group, but the date row (YAZ-3511 D10, edge case 23)', () => {

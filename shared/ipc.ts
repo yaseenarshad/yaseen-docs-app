@@ -21,6 +21,7 @@ import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './ls
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
 import type { SystemHotkey } from './macosHotkeys'
 import type { VaultIcons } from './vaultIcons'
+import type { FilesOrderState, FilesSort } from './filesOrder'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -667,6 +668,20 @@ export const CONTRACT = {
     set: invoke<[root: string, icons: VaultIcons], void>('icons:set', 2),
     /** Fired in every window after any change to a vault's icons.json, own or external; filter by `root`. */
     onChanged: push<{ root: string }>('icons:changed'),
+  },
+  /**
+   * The Files tab's Manual order (YAZ-5916) over `.yaseendocs/files-order.<mac id>.json`, one file for each Mac, the
+   * newest is the order (`shared/filesOrder.ts`). Folders by absolute path; each list holds item NAMES.
+   */
+  filesOrder: {
+    /** The newest valid file's order and Files sort; none (Name, A to Z) when there is no valid file. Never creates anything. */
+    get: invoke<[root: string], FilesOrderState>('filesOrder:get', 1),
+    /** Replace one folder's order (`dir` is the vault or a folder in it, → `BAD_REQUEST` else). Writes this Mac's file only, and nothing when it did not change. */
+    setFolder: invoke<[root: string, dir: string, names: readonly string[]], void>('filesOrder:set-folder', 3),
+    /** This Mac's Files sort (Q4), written at each change: the phone sorts its tree by the newest file's (D4). */
+    setSort: invoke<[root: string, sort: FilesSort], void>('filesOrder:set-sort', 2),
+    /** Fired in every window after any change to a vault's order files, own or another Mac's; filter by `root`. */
+    onChanged: push<{ root: string }>('filesOrder:changed'),
   },
   /**
    * A vault's focus list (YAZ-2702): ONE list for each vault, kept in the vault as one file for each
