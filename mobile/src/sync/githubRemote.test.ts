@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GithubError, githubClient } from '../github/client'
 import { fakeGithub } from '../github/testing'
-import { githubRemote } from './githubRemote'
+import { MAX_BATCH_FILES, githubRemote } from './githubRemote'
 import { BRANCH, REPO, TOKEN, syncSetup } from './testing'
 
 async function failure(promise: Promise<unknown>): Promise<GithubError> {
@@ -207,5 +207,61 @@ describe('typed failures, fed with the real answers of proof 1B', () => {
     expect(JSON.stringify({ ...error, message: error.message })).not.toContain(TOKEN)
     expect(s.github.calls.every((c) => c.url.startsWith('https://api.github.com/'))).toBe(true)
     expect(s.github.answers.join('')).not.toContain(TOKEN)
+  })
+})
+
+describe('YAZ-5929: blobs, the batch call (GraphQL)', () => {
+  const shasOf = async (s: Awaited<ReturnType<typeof syncSetup>>) => {
+    const head = await s.remote.head()
+    if (head === 'unchanged') throw new Error('no')
+    return s.remote.tree(head.sha)
+  }
+
+  it('one POST /graphql gives the texts in the order asked; an unknown SHA, a binary and a cut-short blob are null', async () => {
+    const s = await syncSetup({ 'a.md': 'A text', 'b.md': 'B text', 'c.md': 'C text', 'p.png': new Uint8Array([137, 80, 0, 255]) })
+    const tree = await shasOf(s)
+    s.github.graphql.binary.add(tree.get('p.png')!)
+    s.github.graphql.truncated.add(tree.get('c.md')!)
+    const before = s.github.calls.length
+    const texts = await s.remote.blobs([tree.get('b.md')!, tree.get('a.md')!, 'f'.repeat(40), tree.get('p.png')!, tree.get('c.md')!])
+    expect(texts).toEqual(['B text', 'A text', null, null, null])
+    expect(s.github.calls.slice(before).map((c) => [c.method, c.url])).toEqual([['POST', 'https://api.github.com/graphql']])
+    expect(s.count('graphql')).toBe(1)
+    expect(s.count('write')).toBe(0)
+  })
+
+  it('at most MAX_BATCH_FILES (100) in one call, and only hex SHAs go into the query', async () => {
+    const s = await syncSetup({ 'a.md': 'A' })
+    expect(MAX_BATCH_FILES).toBe(100)
+    await expect(s.remote.blobs(Array(101).fill('a'.repeat(40)))).rejects.toThrow(/At most 100/)
+    await expect(s.remote.blobs(['a") { x } b: object(oid: "b'])).rejects.toThrow(/hex/)
+    expect(await s.remote.blobs([])).toEqual([])
+    expect(s.count('graphql')).toBe(0)
+  })
+
+  it('a query GitHub refuses as a whole (a repo the token cannot see, a plain 403) gives all null: the one-file call takes over', async () => {
+    const s = await syncSetup({ 'a.md': 'A' })
+    const sha = (await shasOf(s)).get('a.md')!
+    const other = githubRemote(githubClient(TOKEN, { fetch: s.github.fetch }), 'yaseen/other', BRANCH)
+    expect(await other.blobs([sha])).toEqual([null])
+    s.github.interrupt = (c) => (c.url.endsWith('/graphql') ? json(403, { message: 'Resource not accessible by personal access token' }) : undefined)
+    expect(await s.remote.blobs([sha])).toEqual([null])
+  })
+
+  it('a rate limit, no network, a 5xx and a bad token throw, as the one-file call does', async () => {
+    const s = await syncSetup({ 'a.md': 'A' })
+    const sha = (await shasOf(s)).get('a.md')!
+    const reset = Math.floor(Date.now() / 1000) + 600
+    s.github.graphql.limitedUntil = reset
+    expect(await failure(s.remote.blobs([sha]))).toMatchObject({ code: 'RATE_LIMITED', resetAt: reset * 1000 })
+    s.github.graphql.limitedUntil = null
+    s.github.down = true
+    expect((await failure(s.remote.blobs([sha]))).code).toBe('GITHUB_DOWN')
+    s.github.down = false
+    s.github.offline = true
+    expect((await failure(s.remote.blobs([sha]))).code).toBe('OFFLINE')
+    s.github.offline = false
+    s.github.revoke(TOKEN)
+    expect((await failure(s.remote.blobs([sha]))).code).toBe('UNAUTHORIZED')
   })
 })

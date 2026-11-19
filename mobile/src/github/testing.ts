@@ -76,6 +76,24 @@ export interface FakeGithub {
   slowDown: ((method: string, path: string) => boolean) | null
   /** The blobs the fake stored, by content: a blob with the same bytes is stored once, as in git. */
   blobs: Set<string>
+  /** YAZ-5929: how `POST /graphql` answers the blob query (`object(oid:) { ... on Blob { text isBinary isTruncated } }`). */
+  graphql: FakeGraphql
+}
+
+export interface FakeGraphql {
+  /** Blob SHAs GitHub calls binary: `text: null, isBinary: true`. */
+  binary: Set<string>
+  /** Blob SHAs whose text GitHub cuts short: half the text, `isTruncated: true`. */
+  truncated: Set<string>
+  /** Blob SHAs answered with another text (and `isTruncated: false`): the phone's SHA check must catch it. */
+  wrong: Set<string>
+  /**
+   * Seconds since 1970 when GraphQL's count resets, or null. While set, a query gets GitHub's answer for a used-up
+   * count: HTTP 200, `errors: [{ type: 'RATE_LIMITED' }]`, `x-ratelimit-remaining: 0`.
+   */
+  limitedUntil: number | null
+  /** The queries answered, with the number of blobs each one asked for. */
+  queries: number[]
 }
 
 export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: FakeRepo[] }): FakeGithub {
@@ -99,6 +117,7 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
     bodyFirst: false,
     slowDown: null,
     blobs: new Set(),
+    graphql: { binary: new Set(), truncated: new Set(), wrong: new Set(), limitedUntil: null, queries: [] },
     revoke: (token) => void tokens.delete(token),
     takeOff(token, repo) {
       const who = tokens.get(token)
@@ -186,6 +205,8 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
         }))
       }
 
+      if (method === 'POST' && path[1] === 'graphql' && path.length === 2) return graphqlRoute(fake.graphql, body, who, repos, json)
+
       if (path[1] === 'gists' && path.length === 2 && method === 'POST') {
         const files = body.files as Record<string, unknown> | undefined
         const badBody = !files || Object.keys(files).length === 0
@@ -261,6 +282,41 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
     },
   }
   return fake
+}
+
+/**
+ * YAZ-5929: GitHub's GraphQL for the one query the phone sends: `repository(owner: $owner, name: $name) { b0:
+ * object(oid: "…") { ... on Blob { text isBinary isTruncated } } … }`. As GitHub: a repo the token cannot see is
+ * `repository: null` with a `NOT_FOUND` error; an unknown SHA is `null`; a used-up count is HTTP 200 with a
+ * `RATE_LIMITED` error. More than 100 objects is refused (the phone never asks for more).
+ */
+function graphqlRoute(g: FakeGraphql, body: Record<string, unknown>, who: FakeToken, repos: Map<string, FakeRepo>, json: Json): Response {
+  const rate = (remaining: number, reset: number) => ({ 'x-ratelimit-resource': 'graphql', 'x-ratelimit-limit': '5000', 'x-ratelimit-remaining': String(remaining), 'x-ratelimit-reset': String(reset) })
+  if (g.limitedUntil !== null) return json(200, { errors: [{ type: 'RATE_LIMITED', code: 'graphql_rate_limit', message: 'API rate limit already exceeded for user ID 1.' }] }, rate(0, g.limitedUntil))
+  const query = typeof body.query === 'string' ? body.query : ''
+  const variables = (body.variables ?? {}) as { owner?: string; name?: string }
+  const asked = [...query.matchAll(/(\w+): object\(oid: "([0-9a-f]+)"\) \{ \.\.\. on Blob \{ text isBinary isTruncated \} \}/g)].map((m) => ({ alias: m[1], sha: m[2] }))
+  if (!/repository\(owner: \$owner, name: \$name\)/.test(query) || asked.length === 0) return json(200, { errors: [{ message: 'Parse error' }] }, rate(4999, 0))
+  if (asked.length > 100) return json(200, { errors: [{ type: 'MAX_NODE_LIMIT_EXCEEDED', message: 'too many objects' }] }, rate(4999, 0))
+  g.queries.push(asked.length)
+  const full = `${variables.owner}/${variables.name}`.toLowerCase()
+  const repo = repos.get(full)
+  const access = Object.entries(who.repos ?? {}).find(([r]) => r.toLowerCase() === full)?.[1]
+  if (repo?.git === undefined || ((access === undefined || access === 'none') && repo.private !== false))
+    return json(200, { data: { repository: null }, errors: [{ type: 'NOT_FOUND', path: ['repository'], message: `Could not resolve to a Repository with the name '${full}'.` }] }, rate(4999, 0))
+  const answer: Record<string, unknown> = {}
+  for (const { alias, sha } of asked) {
+    const bytes = repo.git.blobs.get(sha)
+    if (bytes === undefined) answer[alias] = null
+    else if (g.binary.has(sha)) answer[alias] = { text: null, isBinary: true, isTruncated: false }
+    else {
+      const text = new TextDecoder().decode(bytes)
+      if (g.truncated.has(sha)) answer[alias] = { text: text.slice(0, Math.floor(text.length / 2)), isBinary: false, isTruncated: true }
+      else if (g.wrong.has(sha)) answer[alias] = { text: `${text} (not the file)`, isBinary: false, isTruncated: false }
+      else answer[alias] = { text, isBinary: false, isTruncated: false }
+    }
+  }
+  return json(200, { data: { repository: answer } }, rate(4999, 0))
 }
 
 /**

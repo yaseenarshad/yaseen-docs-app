@@ -210,18 +210,21 @@ describe('edge cases that pass', () => {
 
   it('a blob 5xx mid-pass: grey off, next tick recovers with no second fetch of stored files; 401 mid-pass: attention', async () => {
     const files: Record<string, string> = {}
-    for (let i = 0; i < 20; i++) files[`p${i}.md`] = pageText(`P${i}`, `NC-${i + 1}`)
+    for (let i = 0; i < 9; i++) files[`p${i}.md`] = pageText(`P${i}`, `NC-${i + 1}`)
     const t = await setup(files)
     let n = 0
-    t.s.github.interrupt = (c) => (c.url.includes('/git/blobs/') && ++n === 8 ? new Response('boom', { status: 502 }) : undefined)
+    // 9 files: the one-file path (YAZ-5929 batches from 10). The 5th download fails.
+    t.s.github.interrupt = (c) => (c.url.includes('/git/blobs/') && ++n === 5 ? new Response('boom', { status: 502 }) : undefined)
     await t.engine.open(VAULT_ROW)
     await t.engine.idle()
     expect(t.engine.state()).toMatchObject({ status: 'off', problem: 'GITHUB_DOWN', ready: false })
     const blobs = t.s.count('blob')
+    const stored = (await t.s.store.list(VAULT)).length
     t.s.github.interrupt = null
     await t.tick(POLL_MS)
     expect(t.engine.state()).toMatchObject({ status: 'synced', ready: true })
-    expect(t.s.count('blob') - blobs).toBeLessThanOrEqual(20 - 7 + 5)
+    expect(t.s.count('blob') - blobs).toBe(9 - stored)
+    expect(t.s.count('graphql')).toBe(0)
     await t.s.git.push({ 'p1.md': 'x', 'p2.md': 'y' })
     t.s.github.interrupt = (c) => (c.url.includes('/git/blobs/') ? new Response('{"message":"Bad credentials"}', { status: 401 }) : undefined)
     await t.tick(POLL_MS)

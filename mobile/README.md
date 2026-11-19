@@ -92,7 +92,8 @@ mobile/
     screens/            4A: `Shell`, `SignIn`, `SetupGuide`, `Settings`, `FirstDownload`; `Search` is 4C's;
                         `Friends`, `Review` and `SyncStatus` load the tabs of `friends/ui/`, `review/` and `status/`
     sync/               3B: the engine (`engine.ts`: the poll, the passes, one tab at a time), a pass (`pass.ts`), what
-                        downloads first (`plan.ts`), the commit (`githubRemote.ts`), the cadence (`cadence.ts`)
+                        downloads first (`plan.ts`), the commit and the batch download of text files (YAZ-5929, GraphQL)
+                        (`githubRemote.ts`), the cadence (`cadence.ts`)
     answers/            3C: the answer list (`answers.ts`, `outbox.ts`), the actions (`ops.ts`: `CardOp`), ONE commit
                         for each send (`send.ts`), the phone's review host (`reviewHost.ts`)
     media/              3D: pictures and sounds of the cards due soon, after each pass (`ahead.ts`, `plan.ts`,
