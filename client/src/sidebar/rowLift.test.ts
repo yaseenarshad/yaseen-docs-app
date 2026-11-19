@@ -97,19 +97,28 @@ describe('rowLift drop glide (YAZ-5971)', () => {
     lift.move(0, 105, false)
     expect(lift.slot()).toBe(0)
     expect(el('a').style.transform).toBe('translateY(24px)')
-    // At the commit the settle's transition has only begun: Chromium computes the drop point's transform for d.
-    const real = window.getComputedStyle.bind(window)
-    vi.spyOn(window, 'getComputedStyle').mockImplementation((node: Element) =>
-      node === d ? ({ transform: 'matrix(1, 0, 0, 1, 0, -79)' } as CSSStyleDeclaration) : real(node),
-    )
     lift.settle()
-    // The optimistic save: React moves d first in the same task, its transforms still on.
+    // The optimistic save: React moves d first in the same task, its transforms still on (and d's settle transition lost).
     list.insertBefore(d, el('a'))
     await Promise.resolve()
     expect(glides.has('/v/a') || glides.has('/v/b') || glides.has('/v/c')).toBe(false)
     // Drawn at 93 (172 - 79), now at 100: it glides down the last 7 px.
     expect(glides.get('/v/d')).toBe('translateY(-7px)')
     expect([...list.children].every((li) => (li as HTMLElement).style.transform === '')).toBe(true)
+    list.remove()
+  })
+
+  it('a new order that comes after a frame glides from where each item is drawn then: a settled row does not move', async () => {
+    const { list, el, glides } = setup()
+    const d = el('d')
+    const lift = liftRow(d.firstElementChild as HTMLElement, 184)!
+    lift.move(0, 105, false)
+    lift.settle()
+    // A frame is drawn: d stands settled in the gap (its transform -72, jsdom has no transition), a…c still parted.
+    await new Promise((r) => requestAnimationFrame(() => r(null)))
+    list.insertBefore(d, el('a'))
+    await Promise.resolve()
+    expect(glides.size).toBe(0)
     list.remove()
   })
 

@@ -102,6 +102,14 @@ export interface RowLift {
   cancel: () => void
 }
 
+/** What a drop keeps of its list before the new order (`settle`), for the glide (`clear`). */
+interface Dropped {
+  drawn: Map<string, number>
+  base: Map<string, number>
+  listTop: number
+  painted: boolean
+}
+
 /** How long a drop waits for its new order before the parting ends anyway (`useLiveGapReorder`'s LANDING_MS). */
 const LANDING_MS = 1000
 
@@ -149,22 +157,27 @@ export function liftRow(row: HTMLElement, pressY: number): RowLift | null {
   }
   /**
    * The lift's marks and transforms off; each item glides from where it was drawn to its place in the new layout.
-   * `boxes`: each item's own box (its transform aside) as it stood before the new order, by path, and the list's top
-   * then (`settle`). Where it was drawn is that box plus the transform it is drawn with now (a CSS transition's value at
-   * this moment): read from the boxes, not from the new layout, which React may already have put under the old
-   * transforms (bug YAZ-5971: every parted row jumped by the gap and glided back). Without `boxes` (no new order: a
-   * cancel, a no-move drop, LANDING_MS gone by) the layout is the old one, and the drawn boxes are measured again.
+   * `drop`: what the drop kept of each item, by path, before the new order (`settle`): its top as drawn then, its own
+   * box (its transform aside), the list's top, and whether a frame has been drawn since. Where an item stands drawn is
+   * read from these, not from the new layout, which React may already have put under the old transforms (bug YAZ-5971:
+   * every parted row jumped by the gap and glided back). No frame since the drop: each item is where it was drawn at
+   * the drop. A frame since (a later commit): its own box plus the transform it is drawn with now (a CSS transition's
+   * value at this moment). Without `drop` (no new order: a cancel, a no-move drop, LANDING_MS gone by) the layout is
+   * the old one, and the drawn boxes are measured again.
    */
-  const clear = (boxes?: { tops: ReadonlyMap<string, number>; listTop: number }) => {
+  const clear = (drop?: Dropped) => {
     edge.stop()
     list.removeAttribute('data-lift-list')
     list.removeAttribute('data-lift-still')
     li.removeAttribute('data-lifted')
     li.removeAttribute('data-settling')
     const now = itemsOf(list)
-    const shift = boxes === undefined ? 0 : list.getBoundingClientRect().top - boxes.listTop
+    const shift = drop === undefined ? 0 : list.getBoundingClientRect().top - drop.listTop
     const drawnTop = (el: HTMLElement): number => {
-      const base = boxes?.tops.get(pathOf(el))
+      const path = pathOf(el)
+      const at = drop?.painted === false ? drop.drawn.get(path) : undefined
+      if (at !== undefined) return at + shift
+      const base = drop?.base.get(path)
       return base === undefined ? el.getBoundingClientRect().top : base + shift + translateYOf(getComputedStyle(el).transform) * zoom
     }
     const before = new Map(now.map((el) => [pathOf(el), drawnTop(el)]))
@@ -209,11 +222,18 @@ export function liftRow(row: HTMLElement, pressY: number): RowLift | null {
       }
       // The row settles into the gap, then the list waits for its new order. The drop's save is optimistic, so React
       // often moves the `li`s in this very task, UNDER the transforms still on: the new layout plus the old transform is
-      // not where an item was drawn (YAZ-5971). So each item's own box is kept here, before the save, and the new
-      // order's glide starts from that box plus the transform the item is drawn with then: the parted rows do not move,
-      // and the dropped row glides from where it is into its place (the settle's transition, cut short by the commit).
-      const listTop = list.getBoundingClientRect().top
-      const boxTops = new Map(items.map((el) => [pathOf(el), el.getBoundingClientRect().top - translateYOf(getComputedStyle(el).transform) * zoom]))
+      // not where an item was drawn (YAZ-5971), and a moved `li` loses the settle's transition. So where each item is
+      // drawn, and its own box, are kept here, before the save: the new order's glide starts from there. The parted rows
+      // do not move again, and the dropped row glides from the drop point into its place.
+      const drop: Dropped = { drawn: new Map(), base: new Map(), listTop: list.getBoundingClientRect().top, painted: false }
+      for (const el of items) {
+        const top = el.getBoundingClientRect().top
+        drop.drawn.set(pathOf(el), top)
+        drop.base.set(pathOf(el), top - translateYOf(getComputedStyle(el).transform) * zoom)
+      }
+      requestAnimationFrame(() => {
+        drop.painted = true
+      })
       li.setAttribute('data-settling', '')
       if (!still) li.style.transition = `transform ${PART_MS}ms ${EASING}`
       put(li, settleOffset(at, from, tops, heights, room))
@@ -223,7 +243,7 @@ export function liftRow(row: HTMLElement, pressY: number): RowLift | null {
         observer.disconnect()
         if (timer !== null) clearTimeout(timer)
         // LANDING_MS with no new order: the layout is the old one, so the drawn boxes are measured again.
-        clear(reordered ? { tops: boxTops, listTop } : undefined)
+        clear(reordered ? drop : undefined)
         done?.()
       }
       observer.observe(list, { childList: true })
