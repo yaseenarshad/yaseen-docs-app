@@ -115,6 +115,11 @@ vi.mock('../editor/embed/types', () => ({
       },
     }),
 }))
+/** The hover panel (YAZ-5920), stood in: it says which page it shows, its hint and its anchor. The dwell and the store are real. */
+vi.mock('../sidebar/HoverPreviewHost', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../sidebar/HoverPreviewHost')>()),
+  PreviewPanel: (p: { path: string; name: string; hint?: string }) => <div className="test-hover-preview" data-path={p.path} data-name={p.name} data-hint={p.hint} />,
+}))
 /** The comment stream and Linked mentions (round 1, item 3), stood in: each says what it was handed, and a mention click opens its page. */
 const under = vi.hoisted(() => ({ comments: [] as Array<{ path: string; content: string; order: string }>, backlinks: [] as string[] }))
 vi.mock('../comments/CommentsSection', () => ({
@@ -217,6 +222,8 @@ beforeEach(() => {
     commentsOrder: 'oldest',
     onChangeCommentsOrder: vi.fn(),
     onClose: vi.fn(),
+    exploreSize: 100,
+    onExploreSize: vi.fn(),
   }
   under.comments.length = 0
   under.backlinks.length = 0
@@ -1151,6 +1158,80 @@ describe('round 4: zoom in a page layer', () => {
     expect(value()).toBe('90%')
     expect(bodyZoom()).toBe('0.9')
     document.body.removeEventListener('yaseendocs:zoom', tab)
+  })
+})
+
+describe('YAZ-5920: a link\'s hover preview in a READING page layer', () => {
+  it('the reading Crepe hears a hover on a [[link]]: after the dwell the hover panel shows that page, with "Click to open"; leaving the link closes it', async () => {
+    const scopeOf = vi.fn(() => ({ root: '/v', wikilinks, textVars: {}, watch }))
+    props = { ...props, linkPreview: { on: () => true, scopeOf, diagramDarkColors: 'adapt' } }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    expect(top().querySelector('.explore__body--read')).not.toBeNull()
+    const reader = crepes[crepes.length - 1]
+    const hover = reader.opts.wikilinkHover as { onHover: (path: string, rect: { left: number; top: number; right: number; bottom: number }, editable: boolean) => void; onLeave: () => void } | undefined
+    expect(hover).toBeDefined()
+    act(() => hover!.onHover('/v/beta.md', { left: 100, top: 100, right: 160, bottom: 118 }, false))
+    expect(document.querySelector('.test-hover-preview')).toBeNull()
+    await act(async () => await new Promise((r) => setTimeout(r, 450)))
+    const panel = document.querySelector<HTMLElement>('.test-hover-preview')
+    expect(panel?.dataset.path).toBe('/v/beta.md')
+    expect(panel?.dataset.name).toBe('beta')
+    expect(panel?.dataset.hint).toBe('Click to open')
+    expect(scopeOf).toHaveBeenCalledWith('/v/beta.md')
+    act(() => hover!.onLeave())
+    await act(async () => await new Promise((r) => setTimeout(r, 450)))
+    expect(document.querySelector('.test-hover-preview')).toBeNull()
+  })
+
+  it('"Preview on hover" off for links: no panel', async () => {
+    props = { ...props, linkPreview: { on: () => false, scopeOf: () => ({ root: '/v', wikilinks, textVars: {}, watch }), diagramDarkColors: 'adapt' } }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const hover = crepes[crepes.length - 1].opts.wikilinkHover as { onHover: (path: string, rect: { left: number; top: number; right: number; bottom: number }, editable: boolean) => void }
+    act(() => hover.onHover('/v/beta.md', { left: 100, top: 100, right: 160, bottom: 118 }, false))
+    await act(async () => await new Promise((r) => setTimeout(r, 450)))
+    expect(document.querySelector('.test-hover-preview')).toBeNull()
+  })
+})
+
+describe('Explore size (YAZ-5881)', () => {
+  beforeEach(() => localStorage.removeItem('explore:zoom'))
+
+  it('D2: the root carries the factor and the stack places are the wider panels; D3: ⌘+ / ⌘− / ⌘0 on the search step it, on a page they zoom the page', async () => {
+    // The App's door: the setting changes, and the stack draws again with it.
+    const onExploreSize = vi.fn((percent: number) => {
+      props = { ...props, exploreSize: percent }
+      render(1)
+    })
+    props = { ...props, exploreSize: 125, onExploreSize }
+    const unclaimed = vi.fn()
+    await mount()
+    const stack = el.querySelector<HTMLElement>('.explore')!
+    expect(stack.style.getPropertyValue('--explore-size')).toBe('1.25')
+    expect(top().style.width).toBe(`${layerPlace('search', 0, window.innerWidth, 1.25).width}px`)
+    act(() => requestZoom(1, unclaimed))
+    expect(onExploreSize).toHaveBeenLastCalledWith(150)
+    expect(stack.style.getPropertyValue('--explore-size')).toBe('1.5')
+    expect(top().style.width).toBe(`${layerPlace('search', 0, window.innerWidth, 1.5).width}px`)
+    act(() => requestZoom(-1, unclaimed))
+    act(() => requestZoom(-1, unclaimed))
+    expect(onExploreSize).toHaveBeenLastCalledWith(110)
+    act(() => requestZoom(0, unclaimed))
+    expect(onExploreSize).toHaveBeenLastCalledWith(125)
+    expect(localStorage.getItem('explore:zoom')).toBeNull()
+    // A page in front: the keys zoom the page as before, and Explore size stays.
+    await typeQuery('alp')
+    await openResult()
+    const calls = onExploreSize.mock.calls.length
+    act(() => requestZoom(1, unclaimed))
+    expect(top().querySelector('.explore__head .document-zoom .document-zoom__value')?.textContent).toBe('125%')
+    expect(localStorage.getItem('explore:zoom')).toBe('125')
+    act(() => requestZoom(0, unclaimed))
+    expect(onExploreSize).toHaveBeenCalledTimes(calls)
+    expect(unclaimed).not.toHaveBeenCalled()
   })
 })
 

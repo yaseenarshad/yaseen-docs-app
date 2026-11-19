@@ -35,7 +35,7 @@ import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { isCardFileContent } from '@shared/cardFileFormat'
 import { readPagePosition, readPageSwitches, readPageWidth, type PageSwitches } from '@shared/pageSwitches'
-import type { CommentsOrder, ContentPosition, ContentWidth, PageView, PropertiesResponse } from '@shared/types'
+import type { CommentsOrder, ContentPosition, ContentWidth, DiagramDarkColors, PageView, PropertiesResponse } from '@shared/types'
 import { columnStart, contentTextWidth, positionOf, widthOf } from '../lib/contentWidth'
 import type { CardReview } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
@@ -59,6 +59,10 @@ import { usePathTitles } from '../lib/pageLabel'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from '../editor/outline/foldAllHotkeys'
 import type { MenuSection } from '../sidebar/menuSections'
 import { hrefTarget } from '../editor/pathPaste'
+import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
+import { linkOpenHint } from '../editor/linkGesture'
+import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
+import type { AnchorRect } from '../sidebar/previewPlacement'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
@@ -161,6 +165,19 @@ interface ExplorePageProps {
   onClose: () => void
   /** This layer is the top one: the body takes the focus, so E and Esc are heard. */
   active: boolean
+  /** The hover panel of the reading page's [[links]] (YAZ-5920), as a page tab has it. Absent: no panel. */
+  linkPreview?: ExploreLinkPreview & { nameOf: (path: string) => string }
+}
+
+/**
+ * What a reading page layer needs for its links' hover panel (YAZ-5920), from App: Settings › Preview on hover › Links
+ * (read at each dwell), the panel's vault scope (`previewScope`) and the diagram colours. An editing layer is the page
+ * editor, which has its own.
+ */
+export interface ExploreLinkPreview {
+  on: () => boolean
+  scopeOf: (path: string) => PreviewScope
+  diagramDarkColors: DiagramDarkColors
 }
 
 /** ‹ n/m › of a layer opened from a search (round 3): its place among the rows, whether a step each way exists, the step. */
@@ -224,7 +241,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, vault, style, frame, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, editCard = false, fromInbox = false, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, pageMenu, onClose, active }: ExplorePageProps) {
+export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, vault, style, frame, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, editCard = false, fromInbox = false, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, pageMenu, onClose, active, linkPreview }: ExplorePageProps) {
   // The layer's vault's word for a page (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const pageId = usePageId(idInTitle ? vault.wikilinks : undefined, path)
@@ -262,6 +279,24 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   // The doors, read at click time: a layer's Crepe is built once, and the stack's callbacks may change identity.
   const doors = useRef({ onOpenLink, createFolder, onFileAction, linkActions, onNotice, review: vault.review })
   doors.current = { onOpenLink, createFolder, onFileAction, linkActions, onNotice, review: vault.review }
+  /**
+   * The hover panel of the reading page's [[links]] (YAZ-5920), as the page editor wires it (`Editor.tsx`, YAZ-3403): the
+   * reading Crepe tells a hover on a resolved link, the panel shows that page beside it after the dwell. A hover's id is
+   * its page. Read only, so the card says "Click to open".
+   */
+  const linkAt = useRef<{ path: string; rect: AnchorRect } | null>(null)
+  const hoverLinks = useCardPreview(linkPreview?.on() === true, (target) => (linkAt.current?.path === target ? linkAt.current.rect : null))
+  const [linkHover] = useState<WikilinkHover>(() => ({
+    onHover: (target, rect) => {
+      linkAt.current = { path: target, rect }
+      hoverLinks.hoverCard(target, target)
+    },
+    onLeave: () => {
+      if (linkAt.current !== null) hoverLinks.leaveCard(linkAt.current.path)
+      linkAt.current = null
+    },
+  }))
+  const linkCard = (_: string, target: string) => (linkPreview === undefined ? null : { root: null, name: linkPreview.nameOf(target), hint: linkOpenHint(storage.getSettings()?.hotkeys, false) })
 
   /** The whole file as read, frontmatter included: the comment stream's truth. */
   const readRef = useRef('')
@@ -395,6 +430,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       boardEmbeds: { root },
       // The page's links, live (the read-only rule: a plain click opens, YAZ-3879 point 6). An unresolved link is made first, as everywhere.
       wikilinkNav: { ...doors.current.linkActions, root, createFolder: () => doors.current.createFolder(path), openCurrent: open, openNewTab: open, openBackground: open, onNotice: (m) => doors.current.onNotice(m), allowFileAction: (vault) => doors.current.onFileAction?.(vault) ?? Promise.resolve(true) },
+      // A hover on a link (YAZ-5920): the hover panel, as in the page tab; a Markdown link pill previews the page it opens.
+      wikilinkHover: { ...linkHover, markdownPath: (href) => hrefTarget(href, place) },
       markdownLinkNav: {
         ...doors.current.linkActions,
         open: (href) => api.shell.openLink({ href, sourcePath: path }),
@@ -439,6 +476,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     })
     return () => {
       live = false
+      // A link's hover panel of this Crepe goes with it (YAZ-5920): its link may not be there any more.
+      linkHover.onLeave()
       // A Crepe on show stays until the next one is up (or the next run takes it away); one never shown goes now.
       if (shownCrepe.current !== mine) retire(mine)
     }
@@ -961,6 +1000,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
                   <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
                   {/* The page's right-click menu (item 7): the text rows (Copy, Copy as; no Cut or Paste while reading), then the page menu. */}
                   {ready !== null && <PageMenu view={editorViewOf(ready)} extra={pageMenu} reading />}
+                  {/* The links' hover panel (YAZ-5920), on `document.body` over the stack (YAZ-5908). */}
+                  {linkPreview !== undefined && <CardPreviewHost store={hoverLinks.store} cardOf={linkCard} scopeOf={linkPreview.scopeOf} diagramDarkColors={linkPreview.diagramDarkColors} />}
                 </>
               )}
             </>

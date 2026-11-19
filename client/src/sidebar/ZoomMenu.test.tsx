@@ -16,10 +16,10 @@ afterEach(() => {
   host = null
 })
 
-function render(props: { sidebar?: number; app?: number; onSidebar?: (p: number) => void; onApp?: (p: number) => void; onOpenChange?: (open: boolean) => void } = {}): HTMLElement {
+function render(props: { sidebar?: number; app?: number; explore?: number; onSidebar?: (p: number) => void; onApp?: (p: number) => void; onExplore?: (p: number) => void; onOpenChange?: (open: boolean) => void } = {}): HTMLElement {
   host ??= document.body.appendChild(document.createElement('div'))
   root ??= createRoot(host)
-  act(() => root?.render(<ZoomMenu sidebar={props.sidebar ?? 100} onSidebar={props.onSidebar ?? vi.fn()} app={props.app ?? 100} onApp={props.onApp ?? vi.fn()} onOpenChange={props.onOpenChange} />))
+  act(() => root?.render(<ZoomMenu sidebar={props.sidebar ?? 100} onSidebar={props.onSidebar ?? vi.fn()} app={props.app ?? 100} onApp={props.onApp ?? vi.fn()} explore={props.explore ?? 125} onExplore={props.onExplore ?? vi.fn()} onOpenChange={props.onOpenChange} />))
   return host
 }
 
@@ -27,7 +27,7 @@ const chip = () => document.querySelector<HTMLButtonElement>('.zoom-chip')!
 const menu = () => document.querySelector<HTMLElement>('.zoom-menu[role="dialog"]')
 /** A button of the menu by its accessible name. */
 const button = (name: string) => menu()!.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!
-const value = (row: 'App size' | 'Sidebar zoom') => menu()!.querySelector<HTMLButtonElement>(`[role="group"][aria-label="${row}"] .zoom-stepper__value`)!
+const value = (row: 'App size' | 'Sidebar zoom' | 'Explore size') => menu()!.querySelector<HTMLButtonElement>(`[role="group"][aria-label="${row}"] .zoom-stepper__value`)!
 /** The page's zoom as Chromium shows it: `devicePixelRatio` (1 on this screen at 100%), and the resize it fires. */
 function pageZoom(z: number): void {
   Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: z })
@@ -51,9 +51,9 @@ describe('ZoomMenu', () => {
     expect(menu()!.parentElement).toBe(document.body)
     expect(chip().getAttribute('aria-expanded')).toBe('true')
     expect(chip().className).toBe('zoom-chip zoom-chip--open')
-    // App size on top, Sidebar at the bottom, next to the chip; each row the same "− 100% +".
-    expect([...menu()!.querySelectorAll('.zoom-menu__label, [role="group"]')].map((l) => l.getAttribute('aria-label') ?? l.textContent)).toEqual(['App size', 'App size', 'Sidebar', 'Sidebar zoom'])
-    expect([value('App size').textContent, value('Sidebar zoom').textContent]).toEqual(['100%', '150%'])
+    // App size on top, Sidebar, then Explore (YAZ-5881 D1); each row the same "− 100% +".
+    expect([...menu()!.querySelectorAll('.zoom-menu__label, [role="group"]')].map((l) => l.getAttribute('aria-label') ?? l.textContent)).toEqual(['App size', 'App size', 'Sidebar', 'Sidebar zoom', 'Explore', 'Explore size'])
+    expect([value('App size').textContent, value('Sidebar zoom').textContent, value('Explore size').textContent]).toEqual(['100%', '150%', '125%'])
 
     act(() => chip().click())
     expect(menu()).toBeNull()
@@ -70,6 +70,23 @@ describe('ZoomMenu', () => {
     expect(onApp).toHaveBeenCalledExactlyOnceWith(125)
     expect(onSidebar).toHaveBeenCalledTimes(1)
     expect(menu()).not.toBeNull()
+  })
+
+  it('YAZ-5881 D1: the Explore row walks the App sizes and writes Explore size only; its percent goes back to 125%; it stops at 200%', () => {
+    const onExplore = vi.fn()
+    const onApp = vi.fn()
+    render({ app: 100, explore: 125, onExplore, onApp })
+    act(() => chip().click())
+    act(() => button('Make Explore larger').click())
+    expect(onExplore).toHaveBeenLastCalledWith(150)
+    act(() => button('Make Explore smaller').click())
+    expect(onExplore).toHaveBeenLastCalledWith(110)
+    render({ app: 100, explore: 200, onExplore, onApp })
+    expect(button('Make Explore larger').disabled).toBe(true)
+    act(() => value('Explore size').click())
+    expect(onExplore).toHaveBeenLastCalledWith(125)
+    expect(value('Explore size').title).toBe('Explore size. Click for 125%')
+    expect(onApp).not.toHaveBeenCalled()
   })
 
   it('YAZ-3487: a − and a + beside the chip step the sidebar zoom in one click, with no menu; each stops at its wall', () => {

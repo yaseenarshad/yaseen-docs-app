@@ -954,6 +954,23 @@ describe('createStore: loading', () => {
     for (const zoom of [95, 160, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(false)
   })
 
+  it('exploreSize (YAZ-5881 D1): an older file without the key loads at 125; only the App sizes are kept, anything else loads at 125; the channel takes those only', async () => {
+    expect(DEFAULT_SETTINGS.exploreSize).toBe(125)
+    const { exploreSize: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    const loaded = async (exploreSize: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', exploreSize } }))
+      const { settings } = createStore(file).get()
+      expect(settings.theme).toBe('dark')
+      return settings.exploreSize
+    }
+    for (const size of APP_ZOOM_STEPS) expect(await loaded(size)).toBe(size)
+    for (const size of [105, 80, 250, 0, '150', null, true, NaN]) expect(await loaded(size)).toBe(125)
+    for (const size of APP_ZOOM_STEPS) expect(isSettings({ ...DEFAULT_SETTINGS, exploreSize: size })).toBe(true)
+    for (const size of [95, 160, NaN, '125', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, exploreSize: size })).toBe(false)
+  })
+
   it('hoverPreviewIn (YAZ-3403 D7, S37): a file from before reads every place on; a missing or broken place reads on and the others keep their values; the channel takes one boolean per place only', async () => {
     const allOn = { ...DEFAULT_SETTINGS.hoverPreviewIn }
     expect(allOn).toEqual(Object.fromEntries(HOVER_PLACES.map((place) => [place, true])))

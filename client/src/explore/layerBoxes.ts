@@ -4,7 +4,8 @@
  * its own: every layer's box is written to its style here (`layerBoxes` says where each stands), on mount, on a
  * change of the list or of the window, and on each pointer move of a drag. A pointer move writes `left`, `top`,
  * `width` and `height` and nothing else: nothing renders and no layout is read while the pointer moves (the mini
- * window's rule, `PageWindow.tsx`). The first layer's box is kept for this window (`saveLayerBox`).
+ * window's rule, `PageWindow.tsx`). The first layer's box is kept for this window (`saveLayerBox`). Explore size
+ * (`exploreSize`, a factor, YAZ-5881 D2) widens the stack places; the boxes stay in window px, so a drag follows the pointer.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
 import { layerBoxes, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, savedLayerBox, saveLayerBox, type ExploreLayer, type LayerBox } from './layers'
@@ -39,11 +40,11 @@ export interface LayerGestures {
   restack: () => void
 }
 
-export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers: readonly ExploreLayer[], W: number, H: number): LayerGestures {
+export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers: readonly ExploreLayer[], W: number, H: number, exploreSize = 1): LayerGestures {
   const layersRef = useRef(layers)
   layersRef.current = layers
-  const size = useRef({ W, H })
-  size.current = { W, H }
+  const size = useRef({ W, H, exploreSize })
+  size.current = { W, H, exploreSize }
   /** The layers moved or resized by hand, by id: each stands in its own box (`layerBoxes`). */
   const moved = useRef(new Map<number, LayerBox>())
   /** Where each layer stands now, as last written: what a drag starts from, so a press reads no layout. */
@@ -55,7 +56,7 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
   /** Every layer's box to its style: ≤ 12 style writes, no read. */
   const placeAll = useCallback(() => {
     const list = layersRef.current
-    const all = layerBoxes(list, moved.current, size.current.W, size.current.H)
+    const all = layerBoxes(list, moved.current, size.current.W, size.current.H, size.current.exploreSize)
     boxes.current.clear()
     list.forEach((layer, i) => {
       const box = all[i]
@@ -89,7 +90,7 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
     const ids = new Set(layersRef.current.map((l) => l.id))
     for (const id of [...moved.current.keys()]) if (!ids.has(id)) moved.current.delete(id)
     placeAll()
-  }, [layers, W, H, placeAll])
+  }, [layers, W, H, exploreSize, placeAll])
 
   /**
    * Before a layer behind moves (round 6: every layer you see takes the pointer): the layers over it in the list that

@@ -2573,6 +2573,12 @@ export interface SettingsState {
    */
   appZoom: number
   /**
+   * Explore size in percent (YAZ-5881 D1, D2): every Explore panel's width and all that is in it (the search, the file
+   * list, a page's head and text), on `APP_ZOOM_STEPS`; 125 by default (`EXPLORE_SIZE_DEFAULT`). The footer's zoom menu
+   * writes it, and ⌘+ / ⌘− / ⌘0 while the search panel is in front (D3). A page's own zoom works on top.
+   */
+  exploreSize: number
+  /**
    * Code files (YAZ-3449, YAZ-3438 D5): every code tab opens read only, and shows the Read only chip. One app setting
    * for all code files, never stored with a file. "Allow edits" on a tab's chip unlocks that tab until it closes.
    */
@@ -3197,6 +3203,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarZoom: 100,
   tocZoom: 100,
   appZoom: 100,
+  exploreSize: 125,
   codeReadOnly: false,
   codeWrap: true,
   codeMinimap: false,
@@ -4531,6 +4538,9 @@ export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1
 
 /** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. Up to 200% (YAZ-3487, demo round 3). */
 export const APP_ZOOM_STEPS = [90, 100, 110, 125, 150, 175, 200] as const
+
+/** Explore size's default and ⌘0 (YAZ-5881 D1, D3): one of `APP_ZOOM_STEPS`. */
+export const EXPLORE_SIZE_DEFAULT = 125
 
 /**
  * One zoom step along `steps` (ascending): the next step in `direction`. A value between two steps snaps to the next

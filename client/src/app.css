@@ -3,9 +3,11 @@
      whole window; what App draws while it shows (a sheet, a toast) stands beside it in `document.body`, so these three
      decide which is on top. A sheet (every `.confirm-overlay`: Rename, Delete, the read-only ask, ⌘N, the keys) is over
      Explore, Settings and a drawing (70), Version history and Share (80), and under the menus (90, 1000). A toast is
-     over Explore and under a sheet's scrim. */
+     over Explore and under a sheet's scrim. A link's hover preview (`.board-preview`, YAZ-5908) is over Explore, a
+     drawing and the toasts, and under a sheet and the menus: it shows over whatever holds the link. */
   --z-explore: 70;
   --z-notices: 72;
+  --z-preview: 76;
   --z-sheet: 85;
   /* A menu row's padding (YAZ-3503): the app's `.ctx-menu__item` and Monaco's right-click menu
      (`code/monacoMenuLook.ts`) both read it. Each row is this padding around one line of 13 px text at

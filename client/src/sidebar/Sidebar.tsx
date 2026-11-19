@@ -1378,6 +1378,11 @@ export function Sidebar({
     const { settings: now, onChangeSettings: write } = settingsRef.current
     if (appZoom !== now.appZoom) write({ ...now, appZoom })
   }, [])
+  // Explore size (YAZ-5881 D1): one setting per Mac, as the App size; the same value writes nothing.
+  const changeExploreSize = useCallback((exploreSize: number) => {
+    const { settings: now, onChangeSettings: write } = settingsRef.current
+    if (exploreSize !== now.exploreSize) write({ ...now, exploreSize })
+  }, [])
   // A Files window zooms its own list only (YAZ-3389 D13); a full window shares `settings.sidebarZoom`.
   const ownZoom = onFilesZoom !== undefined && filesZoom !== undefined
   const zoomValue = ownZoom ? filesZoom : settings.sidebarZoom
@@ -2413,7 +2418,7 @@ export function Sidebar({
         <SettingsButton onClick={onOpenSettings} hotkeys={settings.hotkeys} />
         {/* The zoom chip (YAZ-3432): its menu zooms the lists above (YAZ-3389: one value for every full window, a Files
             window's own, D13) and sets the App size of every window. */}
-        <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} onOpenChange={onZoomMenu} />
+        <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} explore={settings.exploreSize} onExplore={changeExploreSize} onOpenChange={onZoomMenu} />
         {onOpenDailyPage !== undefined && (
           // YAZ-3607 D7: today's daily page in one click, the same as ⌘D on "Today's daily page".
           <button type="button" className="sidebar__daily" title="Open today's daily page (⌘-click: background tab)" aria-label="Open today's daily page" onClick={(e) => onOpenDailyPage(e.metaKey)}>
