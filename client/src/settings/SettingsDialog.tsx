@@ -20,11 +20,15 @@
  * mousedown listener installed on mount would hear the cog click that opened it and close it in
  * the same tick. Bound to the overlay, it only hears what happens inside itself.
  *
+ * ⌘F FINDS IN THE OPEN SECTION (YAZ-5968): the page's find bar (`FindBar`, scope `settings`) at the top of the pane,
+ * over the words the section shows (`sectionFind.ts`). A nav click or the dialog's close ends it; ⌘F from the search
+ * box drops that search, back to the section, and opens the bar there. The bar's Esc closes the bar only.
+ *
  * Esc is layered: with a query typed it clears the search (back to the page) — the nav's first, then the
  * Hotkeys page's own (YAZ-3397 D5); with none it closes. A key recorder of the Hotkeys page (YAZ-3397 D5, D6) takes Esc before the dialog hears it. Focus goes to the search box on open, and whatever had focus before — the cog, the
  * editor ⌘, was pressed in — gets it back on close.
  */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
@@ -33,6 +37,9 @@ import { SAME_WORD, UnitContext } from '../vault/unitWord'
 import { availableSections, groupsOf, isAvailable, resolveGroupTitle, resolveHint, resolveLabel, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 import { SettingRow } from './SettingRow'
+import { createSectionFinder } from './sectionFind'
+import { createFindChannel } from '../editor/find/findChannel'
+import { FindBar } from '../editor/find/FindBar'
 import { SIDEBAR_REVEAL_MS } from '../sidebar/revealRow'
 import './settings.css'
 
@@ -54,6 +61,11 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const referencePages = sections.filter((s) => s.standalone === true)
   const paneRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  /** The open section's find (YAZ-5968): one channel per open dialog; the finder reads the pane. */
+  const [findChannel] = useState(createFindChannel)
+  useEffect(() => createSectionFinder(findChannel, () => paneRef.current, () => searchRef.current?.focus()), [findChannel])
+  const findOpen = useSyncExternalStore(findChannel.subscribe, () => findChannel.getState().open)
 
   const [query, setQuery] = useState('')
   /** The Hotkeys page's own search bar (YAZ-3397 D5): it filters that page alone, and the nav's search stays the whole dialog's. */
@@ -77,6 +89,14 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const hotkeysKey = JSON.stringify(ctx.settings.hotkeys)
   const candidates = useMemo(() => settingCandidates(ctx), [hotkeysKey, systemHotkeys]) // eslint-disable-line react-hooks/exhaustive-deps -- see above
   const searching = query.trim() !== ''
+  // ⌘F from a search (YAZ-5968): the search goes, and once the section shows again the bar finds in it.
+  useEffect(() => {
+    if (findOpen && searching) setQuery('')
+  }, [findOpen]) // eslint-disable-line react-hooks/exhaustive-deps -- on the bar's opening only
+  useEffect(() => {
+    const find = findChannel.getState()
+    if (!searching && find.open && find.query !== '') findChannel.setQuery(find.query)
+  }, [searching, findChannel])
   const hits = searching ? searchSettings(candidates, query) : []
   /** The query "Press keys to search" put in the page's box (D5): its answer shows while that query stands. */
   const [keyQuery, setKeyQuery] = useState<string | null>(null)
@@ -106,13 +126,16 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     if (e.key !== 'Escape') return
     e.preventDefault()
     e.stopPropagation()
-    if (query !== '') setQuery('')
+    // The section's find closes first (YAZ-5968), wherever in the dialog the focus stands.
+    if (findChannel.getState().open) findChannel.close()
+    else if (query !== '') setQuery('')
     else if (onHotkeys && hotkeyQuery !== '') setHotkeyQuery('')
     else onClose()
   }
 
   /** A nav click is a page swap, and the new page starts at its top; a query in progress is dropped like any other navigation. */
   const showPage = (id: SettingsSectionId): void => {
+    findChannel.close()
     setQuery('')
     setHotkeyQuery('')
     setHotkeyFilter(NO_FILTER)
@@ -209,11 +232,15 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   return (
     <UnitContext.Provider value={ctx.unitWord?.unit ?? SAME_WORD}>
     <div className="settings-overlay" tabIndex={-1} onMouseDown={onClose} onKeyDown={onKeyDown}>
-      <div className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings" onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings" onMouseDown={(e) => e.stopPropagation()}>
         <nav className="settings-nav" aria-label="Settings sections">
           <div className="settings-search">
             <SearchIcon />
-            <input ref={searchRef} type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings…" aria-label="Search settings" autoComplete="off" spellCheck={false} />
+            <input ref={searchRef} type="text" value={query} onChange={(e) => {
+                // A search across every section replaces the section's find.
+                findChannel.close()
+                setQuery(e.target.value)
+              }} placeholder="Search settings…" aria-label="Search settings" autoComplete="off" spellCheck={false} />
             {query !== '' && (
               <button
                 type="button"
@@ -243,6 +270,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
           ✕
         </button>
         <div ref={paneRef} className="settings-pane">
+          <FindBar channel={findChannel} scope="settings" hostRef={dialogRef} />
           {onHotkeys && !searching && (
             <KeySearch
               ctx={ctx}

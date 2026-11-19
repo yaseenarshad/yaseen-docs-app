@@ -2113,3 +2113,13 @@
   line-height: 1.5;
   color: var(--fg-muted);
 }
+
+/* ⌘F in the open section (YAZ-5968): the page's find bar, stuck to the pane's top and kept clear of the ✕. */
+.find-bar-dock--settings {
+  position: sticky;
+  top: 8px;
+}
+
+.find-bar-dock--settings .find-bar {
+  right: 20px;
+}

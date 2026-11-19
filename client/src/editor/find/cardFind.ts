@@ -43,7 +43,7 @@ interface Run {
 }
 
 /** The region's text as runs: adjacent text in one block; a `<br>` or a new block starts the next run. */
-function runsOf(region: Element, skip: string = NOT_TEXT): Run[] {
+function runsOf(region: Element, skip: string = NOT_TEXT, blocks: string = BLOCK): Run[] {
   const runs: Run[] = []
   let current: Run | null = null
   let block: Element | null = null
@@ -57,7 +57,7 @@ function runsOf(region: Element, skip: string = NOT_TEXT): Run[] {
     }
     const text = node as Text
     if (text.data === '') continue
-    const at = text.parentElement?.closest(BLOCK) ?? region
+    const at = text.parentElement?.closest(blocks) ?? region
     if (current === null || at !== block) {
       current = { text: '', pieces: [] }
       runs.push(current)
@@ -79,9 +79,9 @@ function pointAt(run: Run, offset: number, end: boolean): [Text, number] {
 }
 
 /** Each case-insensitive literal occurrence of `needle` (already lower case) in the region, as DOM ranges in order. */
-function regionMatches(region: Element, needle: string, skip?: string): Range[] {
+function regionMatches(region: Element, needle: string, skip?: string, blocks?: string): Range[] {
   const ranges: Range[] = []
-  for (const run of runsOf(region, skip)) {
+  for (const run of runsOf(region, skip, blocks)) {
     const haystack = run.text.toLowerCase()
     for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + needle.length)) {
       const range = region.ownerDocument.createRange()
@@ -101,6 +101,15 @@ function regionMatches(region: Element, needle: string, skip?: string): Range[] 
 export function textMatches(region: Element, query: string, skip?: string): Range[] {
   const needle = query.toLowerCase()
   return needle === '' ? [] : regionMatches(region, needle, skip === undefined ? NOT_TEXT : `${NOT_TEXT}, ${skip}`)
+}
+
+/**
+ * The same rule (case-insensitive, literal, within one block) with the caller's own `skip` and `blocks` in place of a
+ * card's: Settings' section find (YAZ-5968) reads its buttons' words, each button a block of its own.
+ */
+export function drawnTextMatches(region: Element, query: string, { skip, blocks }: { skip: string; blocks: string }): Range[] {
+  const needle = query.toLowerCase()
+  return needle === '' ? [] : regionMatches(region, needle, skip, blocks)
 }
 
 /** Every match of `query` in the card text under `root` (a card, an embed, a card file tab), in reading order. */

@@ -20,6 +20,10 @@
  * Hidden words (YAZ-5378 round 2): while the bar has a query, its host carries `data-find-query`; card.css gives a
  * shown hidden word in Highlight the Underline look there.
  *
+ * Settings (YAZ-5968): a `settings` bar finds in the Settings dialog's open section. While that dialog is open it is
+ * the only bar that claims ⌘F (the dialog is modal: the page behind it never answers), and its Esc closes the bar, not
+ * the dialog.
+ *
  * Folds (YAZ-4787): a page's bar has a fold button beside the count. Its menu sets what find does with folded bullets
  * for this page (`find-folds` in the page); "Use the default" hands it back to Settings › Editor › Find.
  */
@@ -34,8 +38,8 @@ import './find.css'
 export interface FindBarProps {
   /** The host's one channel per editor mount — the very instance `createCrepe` was given. */
   channel: FindChannel
-  /** Which part of the claim rule this bar answers CMD+F by (🔒 YAZ-967); `views`: a folder page's views (YAZ-4613). */
-  scope: 'page' | 'folder' | 'views'
+  /** Which part of the claim rule this bar answers CMD+F by (🔒 YAZ-967); `views`: a folder page's views (YAZ-4613); `settings`: the Settings dialog's open section (YAZ-5968). */
+  scope: 'page' | 'folder' | 'views' | 'settings'
   /** The Page bar's own editor mount: its claim IS focus standing inside it. Unread for `page`. */
   hostRef: RefObject<HTMLElement | null>
   /** A page's fold menu (YAZ-4787): the page's own choice (null: none), the app's, and the door that writes the page's. */
@@ -111,6 +115,9 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
       // Find's key as it is now (YAZ-3564 K4): the setting is read at each keydown.
       if (!isPageKey(event, 'page.find', storage.getSettings()?.hotkeys)) return
       const active = document.activeElement
+      // The Settings dialog is modal (YAZ-5968): while it is open ⌘F is its own section find's, never a bar's behind it.
+      const settingsOpen = document.querySelector('.settings-dialog') !== null
+      if (scope !== 'settings' && settingsOpen) return
       // In a card's editor (YAZ-5026: the card's own list has no find), ⌘F is not the page's.
       if (active instanceof Element && active.closest('.card__editor') !== null) return
       // checkVisibility is absent under jsdom, where nothing is ever hidden — hence the ?? true.
@@ -125,7 +132,9 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
       /** In the explore stack (YAZ-2571): only the layer's own bar answers; the tab's behind the stack stays shut. */
       const inExplore = active instanceof Element && active.closest('.explore') !== null && !(host?.contains(active) ?? false)
       const claims =
-        scope === 'folder'
+        scope === 'settings'
+          ? shown(host)
+          : scope === 'folder'
           ? shown(host) && ((active !== null && host !== null && host.contains(active)) || (!inCode && !otherPage()))
           : scope === 'views'
             ? // The focus in the views (not in a page editor there), or in no page, with no page showing: the first shown views.
@@ -159,7 +168,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
             ref={inputRef}
             className="find-bar__input"
             type="text"
-            aria-label={unit('Find in page')}
+            aria-label={scope === 'settings' ? 'Find in section' : unit('Find in page')}
             placeholder="Find"
             spellCheck={false}
             value={state.query}
@@ -176,6 +185,8 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
                 else channel.next()
               } else if (event.key === 'Escape') {
                 event.preventDefault()
+                // Settings' Esc closes the dialog: the bar's Esc stops here (YAZ-5968).
+                if (scope === 'settings') event.stopPropagation()
                 // An open fold menu closes first (YAZ-4787).
                 if (foldMenu) setFoldMenu(false)
                 else channel.close()
