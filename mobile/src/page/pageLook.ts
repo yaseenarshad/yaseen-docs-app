@@ -111,6 +111,7 @@ export function pageLook(data: VaultData, holder: string): PageLook {
   const source = resolveSourceOf(data)
   const asset = (src: string) => assetPath(data, holder, src)
   return {
+    review: data.review,
     link(inner): LinkShow {
       // A card's ID opens the card, with words after `|` too, as the Mac's click (`wikilinkClick.ts`); the words show.
       const card = linkCard(inner, source)

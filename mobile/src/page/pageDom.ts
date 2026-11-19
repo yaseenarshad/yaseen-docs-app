@@ -4,7 +4,7 @@ import { cardInContent, type CardAtPage } from '@client/review/cardRead'
 import { openLink, type LinkDoor, type LinkTarget } from './openLink'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
-import { headMarks, titleBand } from '../media/ui/cardHead'
+import { headMarks, titleBand, type CardMarks } from '../media/ui/cardHead'
 import { cardOf, drawCard, embedName, resolveSourceOf } from './pageLook'
 import { boardKindOf } from '../drawing/boardFiles'
 
@@ -48,8 +48,9 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
     const dot = document.createElement('span')
     dot.className = 'card-embed__dot'
     dot.textContent = '·'
-    const drawHead = (off: boolean) => head.replaceChildren(from, dot, ...headMarks({ id: card.id, title: '', off }))
-    drawHead(data.byPath[card.path]?.cards?.[card.index]?.off === true)
+    // The marks (YAZ-5915) from the index until the file is read, then off the card line.
+    const drawHead = (rec: Omit<CardMarks, 'id' | 'title'> | undefined) => head.replaceChildren(from, dot, ...headMarks({ ...rec, id: card.id, title: '' }, data.review))
+    drawHead(data.byPath[card.path]?.cards?.[card.index])
     const body = document.createElement('div')
     body.className = 'card__body card-embed__body'
     // From the index until the file is read (the Mac's `drawTitle`), then off the card line.
@@ -74,7 +75,7 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
           band = next
         }
         embedReads.set(box, read)
-        drawHead(read.off)
+        drawHead(read)
         box.classList.toggle('card--off', read.off)
         body.replaceChildren(drawCard(data, card.path, read.text))
       }),

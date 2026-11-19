@@ -58,11 +58,12 @@ import { LanguageDescription, LanguageSupport } from '@codemirror/language'
 import { commandsCtx, editorViewCtx, nodeViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { loadCardMenu, withCardMenu } from '../../review/cardMenuLoad'
+import { CARD_HEADS_REDRAW, cardHeadMarkEls } from '../../review/cardHeadMarks'
 import type { CardMenuDoors } from '../../review/cardMenuView'
 import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleChoiceOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -243,11 +244,8 @@ export class CardBlockView implements NodeView {
   dom: HTMLElement
   /** The card ID, first in the head (D20): a click copies it. Hidden while the card has none. */
   private readonly idButton: HTMLButtonElement
-  private readonly state: HTMLElement
-  /** "Title hidden in review" (YAZ-5030): shown while the line holds `notitle`; quiet, as "Archived" is. */
-  private readonly notitle: HTMLElement
-  /** "To fix" (YAZ-5097): shown while the line holds `fix`; quiet, as "Archived" is. */
-  private readonly fix: HTMLElement
+  /** The quiet marks after the ID (YAZ-5915): the review state, the title rule, "To fix" (`cardHeadMarks`, every card head's). */
+  private readonly marks: HTMLElement
   /** The "Up next" chip (YAZ-4999 D3): shown while the line holds `next`; its × removes the mark. */
   private readonly next: HTMLElement
   private readonly editButton: HTMLButtonElement
@@ -289,14 +287,8 @@ export class CardBlockView implements NodeView {
     const head = document.createElement('div')
     head.className = 'card__head'
     this.idButton = button('card__id', 'Copy card ID', '')
-    this.state = document.createElement('span')
-    this.state.className = 'card__state'
-    this.notitle = document.createElement('span')
-    this.notitle.className = 'card__state card__notitle'
-    this.notitle.textContent = 'Title hidden in review'
-    this.fix = document.createElement('span')
-    this.fix.className = 'card__state card__fix'
-    this.fix.textContent = 'To fix'
+    this.marks = document.createElement('span')
+    this.marks.className = 'card__marks'
     this.next = document.createElement('span')
     this.next.className = 'card__next'
     this.next.append('Up next', button('card__next-remove', 'Remove from Up next', '×'))
@@ -304,7 +296,7 @@ export class CardBlockView implements NodeView {
     // Preview (YAZ-5152): in Edit card's head, beside Done — the card as the Inbox shows it, with what is typed.
     this.previewButton = button('card__preview', 'Preview card', 'Preview')
     this.more = button('card__more', 'Card menu', '⋯')
-    head.append(this.idButton, this.state, this.notitle, this.fix, this.next, this.previewButton, this.editButton, this.more)
+    head.append(this.idButton, this.marks, this.next, this.previewButton, this.editButton, this.more)
     // The title band under the head (YAZ-5308 A3): the body never repeats the title. A card window's or a card file's
     // Edit card has it too (YAZ-5164): after Done, until its host's read card takes over, the card keeps the read
     // card's shape, band and all, so no line moves in between.
@@ -316,6 +308,8 @@ export class CardBlockView implements NodeView {
     this.dom.addEventListener('mousedown', this.onMouseDown)
     this.dom.addEventListener('click', this.onClick)
     this.dom.addEventListener('dblclick', this.onDoubleClick)
+    // The vault's review settings changed (YAZ-5913): the marks follow.
+    window.addEventListener(CARD_HEADS_REDRAW, this.drawMarks)
     views.set(this.dom, this)
     this.draw()
     // A card link's ⌘-click, or a card row of search, opened this page to land on this card (YAZ-5030, YAZ-5164): it
@@ -363,9 +357,7 @@ export class CardBlockView implements NodeView {
     if (id === null) delete this.dom.dataset.cardId
     else this.dom.dataset.cardId = id
     this.idButton.hidden = id === null
-    this.state.textContent = isCardOff(line) ? 'Archived' : ''
-    this.notitle.hidden = !isCardNoTitle(line)
-    this.fix.hidden = !isCardFix(line)
+    this.drawMarks()
     this.dom.classList.toggle('card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
     drawEditButton(this.editButton, this.editing)
@@ -380,6 +372,13 @@ export class CardBlockView implements NodeView {
     if (this.editing || this.drawn === text) return
     this.drawn = text
     this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderCard(text, {}, this.deps.look()))
+  }
+
+  /** The head's marks (YAZ-5915), off the card line and the vault's review settings now. */
+  private drawMarks = (): void => {
+    const line = cardLineOf(this.node)
+    const card = { off: isCardOff(line), fix: isCardFix(line), notitle: isCardNoTitle(line), titleAt: cardTitleAtOf(line), reviews: cardReviewsOf(line) }
+    this.marks.replaceChildren(...cardHeadMarkEls(card, this.deps.reviews?.settings()))
   }
 
   /** The title band (YAZ-5164 part 3); `now`: drawn at once, for a press about to click it. */
@@ -810,9 +809,59 @@ export class CardBlockView implements NodeView {
       return
     }
     if (target.closest('a[href]') !== null) return
+    // A press on the card's text (YAZ-5896 D1): the browser selects, as in the page and a card page, and ⌘C copies it.
+    // A click with no drag still selects the card whole.
+    if (target.closest('.card__sides') !== null) {
+      this.releasePageSelection()
+      // A new press starts a new selection: inside an old one the browser would drag the old words instead. A Shift-click
+      // extends it, and a double- or triple-click's second press keeps the word.
+      if (!event.shiftKey && event.detail <= 1) this.dom.ownerDocument.getSelection()?.removeAllRanges()
+      this.selectOnClick(event)
+      return
+    }
     // A press on the card selects it whole: ⌘↵ opens it, Delete removes it.
     event.preventDefault()
     this.select()
+  }
+
+  /**
+   * Before the browser selects the card's words (YAZ-5896): the page's own selection goes to a caret in the nearest text
+   * outside a card. A selected card hides the browser's selection inside it (Crepe's `.ProseMirror-selectednode
+   * ::selection`), and a lit pill elsewhere would stay lit. A collapsed caret stays where it is.
+   */
+  private releasePageSelection(): void {
+    const pos = this.pos
+    const { state } = this.view
+    if (pos === null || state.selection.empty) return
+    const { doc } = state
+    const outside = (from: number, dir: 1 | -1): Selection | null => {
+      let found = Selection.findFrom(doc.resolve(from), dir, true)
+      // A card's text is a textblock too: step over each card on the way.
+      while (found !== null && isCardNode(found.$from.parent)) found = Selection.findFrom(doc.resolve(dir > 0 ? found.$from.after() : found.$from.before()), dir, true)
+      return found
+    }
+    const caret = outside(pos + this.node.nodeSize, 1) ?? outside(pos, -1)
+    if (caret !== null) this.view.dispatch(state.tr.setSelection(caret))
+  }
+
+  /**
+   * A press on the card's text that ends with no drag (the pointer moved under 4 px, the browser's selection collapsed)
+   * selects the card whole (YAZ-5896 D1). A drag, a double-click's word or a Shift-click keeps the browser's selection.
+   */
+  private selectOnClick(down: MouseEvent): void {
+    const win = this.dom.ownerDocument.defaultView ?? window
+    const up = (event: MouseEvent): void => {
+      win.removeEventListener('mouseup', up, true)
+      if (Math.hypot(event.clientX - down.clientX, event.clientY - down.clientY) >= CLICK_SLOP) return
+      // After the browser's own mouseup, which may still change the selection.
+      setTimeout(() => {
+        if (this.view.isDestroyed || !this.dom.isConnected || this.editing) return
+        const selection = this.dom.ownerDocument.getSelection()
+        if (selection !== null && !selection.isCollapsed) return
+        this.select()
+      }, 0)
+    }
+    win.addEventListener('mouseup', up, true)
   }
 
   /** A Markdown link never navigates the window: it opens as the page's links do. */
@@ -826,6 +875,8 @@ export class CardBlockView implements NodeView {
   private onDoubleClick = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null
     if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, a[href]`) !== null) return
+    // A page that cannot be edited (YAZ-5896 D2): the browser selects the word, as outside the card; no Edit card.
+    if (!this.view.editable) return
     event.preventDefault()
     this.edit()
   }
@@ -881,6 +932,7 @@ export class CardBlockView implements NodeView {
       this.inner = null
       if (openCard === this) openCard = null
     }
+    window.removeEventListener(CARD_HEADS_REDRAW, this.drawMarks)
     this.strip?.destroy()
     this.strip = null
     this.title?.destroy()
@@ -996,6 +1048,13 @@ function cardKeyGuard() {
         props: {
           handleTextInput: (view) => selected(view.state) !== null,
           handleDOMEvents: {
+            // A drag selected words in a card (YAZ-5896): the page's own selection is elsewhere, so a key that edits
+            // would change text out of sight. It does nothing; ⌘C, ⌘A, the arrows and the other shortcuts still work.
+            keydown: (view, event) => {
+              if (!view.editable || !editsText(event) || !cardTextSelected(view)) return false
+              event.preventDefault()
+              return true
+            },
             // Dictation, the emoji picker, text replacement, a composition's end: cancelled before the browser writes
             // the text into the card. A drop stays ProseMirror's (a drag move). A composition's own updates cannot be
             // cancelled: the transaction rule refuses what they write.
@@ -1029,6 +1088,24 @@ function cardKeyGuard() {
         },
       }),
   )
+}
+
+/** A press that moves less than this many pixels is a click, not a drag (YAZ-5896). */
+const CLICK_SLOP = 4
+
+/** Does the browser's selection hold words of a card's shown text (`.card__sides`) in `view`? A drag made it (YAZ-5896). */
+function cardTextSelected(view: EditorView): boolean {
+  const selection = view.dom.ownerDocument.getSelection()
+  if (selection === null || selection.rangeCount === 0 || selection.isCollapsed) return false
+  const box = selection.getRangeAt(0).commonAncestorContainer
+  const sides = (box instanceof Element ? box : box.parentElement)?.closest('.card__sides') ?? null
+  return sides !== null && view.dom.contains(sides)
+}
+
+/** A key that types, deletes or splits text: a letter, Backspace, Delete, Enter (not a ⌘ or ⌃ shortcut). */
+function editsText(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey) return false
+  return event.key === 'Backspace' || event.key === 'Delete' || event.key === 'Enter' || event.key.length === 1
 }
 
 /** The card at the selection: the card selected, or the caret in its text. */

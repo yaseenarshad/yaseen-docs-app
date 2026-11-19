@@ -4,8 +4,9 @@
  *
  *  - ONE TITLE SPOT (YAZ-5392, Yaseen's Q46 on YAZ-5308: "model the exact same UI on the cards page itself"): the card
  *    shows as a card in a page does. Above it the folder path only, no big page title. In the card: the top bar (the
- *    card ID, a click copies it; the state — "Archived", or with the vault's Review on "New" / "Due in 3 days", "Title
- *    hidden in review", the "Up next" chip; Edit card (E); ⋯), the title band, the sides. With Review off nothing asks
+ *    card ID, a click copies it; the marks every card head has (`cardHeadMarks`, YAZ-5915) — "Archived", or with the
+ *    vault's Review on "New" / "Due in 3 days" and the title rule ("Title always (default)"), "To fix"; the "Up next"
+ *    chip; Edit card (E); ⋯), the title band, the sides. With Review off nothing asks
  *    you to review the card: no due state, no Inbox row, no Reviews.
  *  - The body is the card window's (`review/cardPane.tsx`): the card or the card editor, its Reviews, "Linked
  *    mentions (n)", and "Embedded in (n)". There is no "Open page": the tab is the card's file.
@@ -49,8 +50,7 @@ import { splitFrontmatter } from '@shared/frontmatter'
 import type { GestureAction } from '@shared/keys'
 import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
 import { tellReadOnlyEdit } from './readOnlyEdit'
-import { withCardNext, type CardReview } from '@shared/cardLine'
-import type { ReviewSettings } from '@shared/reviews'
+import { withCardNext } from '@shared/cardLine'
 import { isCardWidth, type CommentsOrder, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type ZoomStep } from '@shared/types'
 import { readPagePosition, readPageWidth, writePagePosition, writePageWidth } from '@shared/pageSwitches'
 import { cardTextWidth, columnStart, positionOf, widthOf } from '../lib/contentWidth'
@@ -63,7 +63,8 @@ import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
 import { forgetNewCard, isNewCard } from '../review/newCardFile'
 import { CardPane, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
-import { CardBand, cardFacts, cardNextReview, CardId, CardNextChip, type CardStripPart } from '../review/cardParts'
+import { CardBand, CardId, CardNextChip, type CardStripPart } from '../review/cardParts'
+import { cardHeadMarks } from '../review/cardHeadMarks'
 import { PropertiesIcon } from '../views/view/icons'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
 import type { ExploreVault } from '../explore/ExplorePage'
@@ -311,7 +312,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const id = card?.id ?? null
   const notice = shapeNotice(shape.problem, shape.cards.length)
   const outside = [shape.before, shape.after].filter((text) => text !== '')
-  const state = card === null ? null : card.off ? 'Archived' : !reviewOn || settings === undefined ? null : cardDue(card.reviews, settings)
   // The convert actions (YAZ-5037 phase 5): only in a vault with IDs (D8), never on a `readonly: true` file. Each is a
   // file action: the vault's Read only asks first. The tab reads the file again on the next index version.
   const converts = wikilinks.ids && !isPageReadOnly(content)
@@ -440,10 +440,15 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               head={
                 <div className="card__head">
                   {id !== null && <CardId id={id} onNotice={onNotice} />}
-                  {state !== null && <span className="card__state card-file__state">{state}</span>}
-                  {reviewOn && card.notitle === true && <span className="card__state card__notitle">Title hidden in review</span>}
+                  {/* The quiet marks after the ID (YAZ-5915): every card head's, from one helper. */}
+                  <span className="card__marks">
+                    {cardHeadMarks(card, settings).map((mark) => (
+                      <span key={mark.kind} className={mark.kind === 'state' ? `${mark.className} card-file__state` : mark.className}>
+                        {mark.text}
+                      </span>
+                    ))}
+                  </span>
                   {reviewOn && card.next === true && <CardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
-                  {card.fix === true && <span className="card__state card__fix">To fix</span>}
                   {(canEdit || lockedBase) && (
                     <button type="button" className="card__edit" data-card-file-edit data-tour="card-edit" onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
                       Edit card
@@ -469,13 +474,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       </div>
     </>
   )
-}
-
-/** The head's state words for a card in review: "New", or "Due in 3 days" / "Due today" / "Due 2 days ago". */
-function cardDue(reviews: readonly CardReview[], settings: ReviewSettings, now = Date.now()): string {
-  const facts = cardFacts(reviews, settings, now)
-  if (facts === null) return 'New'
-  return `Due ${cardNextReview(facts.due, facts.comesBack, now).when}`
 }
 
 /** The tab's ⋯ and its menu (the card's rows), built when it opens. */

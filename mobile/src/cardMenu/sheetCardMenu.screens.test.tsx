@@ -86,7 +86,7 @@ describe('a card in an Explore panel has the full page\'s card menu (YAZ-5548)',
     await waitFor(() => t.answers.waiting().length === 1)
     expect(t.answers.waiting().map((w) => [w.path, w.op])).toEqual([['Rivers.md', { kind: 'off', id: 'RV-1', on: true }]])
     await waitFor(() => sheet()?.querySelector('[data-card-id="RV-1"]')?.classList.contains('card--off') === true)
-    expect(sheet()!.querySelector('[data-card-id="RV-1"] .card__head')?.textContent).toBe('RV-1Archived')
+    expect(sheet()!.querySelector('[data-card-id="RV-1"] .card__head .card__review-state')?.textContent).toBe('Archived')
     expect(document.querySelector('.toast')?.textContent).toBe('Archived')
 
     t.s.github.offline = false
@@ -99,7 +99,7 @@ describe('a card in an Explore panel has the full page\'s card menu (YAZ-5548)',
     await act(async () => openSheet({ kind: 'card', path: 'cards/speed-of-light-rv-17.md', id: 'RV-17' }))
     await waitFor(() => sheet()?.querySelector('.card-view__card .card__head .card__more') != null)
     const card = sheet()!.querySelector<HTMLElement>('.card-view__card')!
-    expect(card.querySelector('.card__head')!.textContent).toBe('RV-17')
+    expect(card.querySelector('.card__head .card__id')!.textContent).toBe('RV-17')
     const menu = await openMenu(card)
     expect(rows(menu)).toEqual(MAC_ORDER)
     await tap(row(menu, 'fix'))

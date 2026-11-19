@@ -49,6 +49,7 @@ import { openCardWindow, previewCard } from './cardOpen'
 import { mountCardTitle } from './cardTitle'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
 import type { CardReviewDoorApi } from './cardBlockView'
+import { CARD_HEADS_REDRAW, cardHeadMarkEls } from '../../review/cardHeadMarks'
 import { mountReviewsStrip, type ReviewsStripHandle, type StripPart } from './reviewsStrip'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { CARD_FIND_READ } from '../find/cardFind'
@@ -194,19 +195,17 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   dot.className = 'card-embed__dot'
   dot.textContent = '·'
   const idButton = button('card__id', 'Copy card ID')
-  const state = document.createElement('span')
-  state.className = 'card__state'
-  const fixMark = document.createElement('span')
-  fixMark.className = 'card__state card__fix'
-  fixMark.textContent = 'To fix'
-  fixMark.hidden = true
+  // The quiet marks after the ID (YAZ-5915): the review state, the title rule, "To fix", as every card head has them.
+  const marks = document.createElement('span')
+  marks.className = 'card__marks'
+  let marksKey = ''
   const editButton = button('card__edit', 'Edit card')
   const more = button('card__more', 'Card menu')
   more.textContent = '⋯'
   // The title band under the head (YAZ-5164 part 3, YAZ-5308 A3), the page title's own component: a click renames a card
   // in a page in its page. A card file's shows only: its tab renames the file.
   const title = mountCardTitle()
-  head.append(from, dot, idButton, state, fixMark, editButton, more)
+  head.append(from, dot, idButton, marks, editButton, more)
   const body = document.createElement('div')
   body.className = 'card__body'
 
@@ -253,11 +252,24 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     set(fromText, `Embedded from "${embedName(card, source)}"`)
     drawTitle(card)
     set(idButton, card.id)
-    set(state, isOff ? 'Archived' : '')
-    const isFix = fix(card)
-    if (fixMark.hidden === isFix) fixMark.hidden = !isFix
+    drawMarks(card)
     drawEditButton(editButton, edit !== null)
   }
+
+  /** The head's marks (YAZ-5915), from the card as read, else its index record; written only when their words change. */
+  const drawMarks = (c: CardLink): void => {
+    const rec = read?.id === c.id ? read : recordAt(source.records, c.path)?.cards?.[c.index]
+    const els = cardHeadMarkEls({ off: off(c), fix: fix(c), notitle: rec?.notitle === true, titleAt: rec?.titleAt ?? null, reviews: rec?.reviews ?? [] }, doors.reviews?.settings())
+    const key = els.map((el) => `${el.className}:${el.textContent}`).join('\n')
+    if (key === marksKey) return
+    marksKey = key
+    marks.replaceChildren(...els)
+  }
+  /** The vault's review settings changed (YAZ-5913): the marks follow. */
+  const redrawMarks = (): void => {
+    if (card !== null) drawMarks(card)
+  }
+  window.addEventListener(CARD_HEADS_REDRAW, redrawMarks)
 
   /** Is the card a card file's (its title is its file's: only its tab renames it)? */
   const isFileCard = (c: CardLink): boolean => recordAt(source.records, c.path)?.kind === 'card'
@@ -525,6 +537,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     },
     destroy: () => {
       destroyed = true
+      window.removeEventListener(CARD_HEADS_REDRAW, redrawMarks)
       stopWatch?.()
       closeMenu?.()
       edit?.editor.destroy()
