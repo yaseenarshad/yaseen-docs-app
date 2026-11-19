@@ -667,6 +667,35 @@ button {
   --crepe-color-background: transparent;
 }
 
+/* One selection colour (YAZ-5902 D1): the Mac's highlight, as a card page, the Inbox and every Mac app show it. Crepe's
+   frame themes paint a selection with `--crepe-color-selected` (#2f2f2f in dark, close to the page).
+   - Selected text: the browser's own colour (`revert`), the same as outside the editor. It follows System Settings ›
+     Appearance › Highlight colour, light and dark.
+   - The boxes the editor paints itself (the lit link pill, `wikilink.css`; a selected list item or block; selected table
+     cells) take the token, set once on the text of every Crepe surface (a page, its cards, the hover preview,
+     Explore). Light: `Highlight`, which is exactly the browser's light selection. Dark: Chromium's `Highlight` stays
+     the LIGHT blue, so light text on it could not be read; the token is the blue the browser paints in dark instead.
+   - Three parts of the text that are not a selection keep the theme's grey (`--crepe-color-pressed`, read on
+     `.milkdown` before the text takes the new value): a quote's bar and the two pressed buttons of a table's handles.
+     The menus and toolbars sit outside `.ProseMirror`: unchanged. */
+.milkdown {
+  --crepe-color-pressed: var(--crepe-color-selected);
+}
+.milkdown .ProseMirror {
+  --crepe-color-selected: Highlight;
+}
+[data-theme='dark'] .milkdown .ProseMirror {
+  --crepe-color-selected: #3f5573;
+}
+.milkdown .ProseMirror *::selection {
+  background: revert;
+}
+.milkdown .ProseMirror blockquote::before,
+.milkdown .milkdown-table-block .cell-handle .button-group button:active,
+.milkdown .milkdown-table-block .line-handle .add-button:active {
+  background: var(--crepe-color-pressed);
+}
+
 /* Obsidian default typography (GRO-2009): system font stack, 16px / 1.5 body, Obsidian heading scale.
    Overrides Crepe's frame theme (Rubik/Noto Serif → serif fallback) via its own custom properties.
    Line height and block gap come from the settings panel via App's CSS vars (GRO-2024). */
