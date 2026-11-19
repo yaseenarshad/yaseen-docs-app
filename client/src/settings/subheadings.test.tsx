@@ -66,13 +66,21 @@ function mount() {
 }
 const clickNav = (el: HTMLElement, title: string) => act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === title)?.click())
 /** The card's children as the reader meets them: a sub-heading's label, or a row's id. */
+/** The group's sub-headings and rows in order (YAZ-5969 Q4: each sub-heading sits over its own card). */
 const cardShape = (el: HTMLElement, title: string) => {
   const group = [...el.querySelectorAll<HTMLElement>('.settings-group')].find((g) => g.dataset.groupTitle === title)
-  return [...(group?.querySelector('.settings-group__card')?.children ?? [])].map((c) => (c.matches('.settings-subheading') ? `# ${c.textContent}` : (c as HTMLElement).dataset.setting))
+  return [...(group?.children ?? [])].flatMap((c) =>
+    c.matches('.settings-subheading') ? [`# ${c.textContent}`] : c.matches('.settings-group__card') ? [...c.children].map((r) => (r as HTMLElement).dataset.setting) : [],
+  )
+}
+/** Each sub-heading is followed by its own card (Box per sub-group). */
+const cardsPerSub = (el: HTMLElement, title: string) => {
+  const group = [...el.querySelectorAll<HTMLElement>('.settings-group')].find((g) => g.dataset.groupTitle === title)
+  return [...(group?.querySelectorAll('.settings-subheading') ?? [])].every((h) => h.nextElementSibling?.matches('.settings-group__card--sub') === true)
 }
 
 describe('drawn', () => {
-  it('Drawings › New elements: each label over its rows, inside the one card', () => {
+  it('Drawings › New elements: each label over its own card of rows (Q4: Box per sub-group)', () => {
     const el = mount()
     clickNav(el, 'Drawings and diagrams')
     expect(cardShape(el, 'New elements')).toEqual([
@@ -90,6 +98,7 @@ describe('drawn', () => {
       'canvas.defaultRoughness',
       'canvas.defaultTextAlign',
     ])
+    expect(cardsPerSub(el, 'New elements')).toBe(true)
   })
 
   it('Cards › Card look: a sub-heading whose rows all hide is not drawn (the Vault row with one vault)', () => {

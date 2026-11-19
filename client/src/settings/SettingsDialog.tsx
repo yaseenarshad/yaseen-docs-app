@@ -28,7 +28,7 @@
  * Hotkeys page's own (YAZ-3397 D5); with none it closes. A key recorder of the Hotkeys page (YAZ-3397 D5, D6) takes Esc before the dialog hears it. Focus goes to the search box on open, and whatever had focus before — the cog, the
  * editor ⌘, was pressed in — gets it back on close.
  */
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
@@ -179,15 +179,19 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       {item.render(ctx)}
     </SettingRow>
   )
-  /** The rows, each sub-heading (YAZ-5969) drawn over the first of its rows that shows. */
-  const rowsOf = (g: SettingsGroup, items: readonly SettingDef[]) => {
-    let last: string | undefined
-    return items.flatMap((item) => {
+  /**
+   * The rows in runs, one per sub-heading (YAZ-5969): a run of rows with no sub-heading first (if any), then each
+   * sub-heading's rows, in the order they show. Each run is its own card (YAZ-5969 Q4, Yaseen: "Box per sub-group").
+   */
+  const runsOf = (g: SettingsGroup, items: readonly SettingDef[]) => {
+    const runs: { sub: string | undefined; items: SettingDef[] }[] = []
+    for (const item of items) {
       const sub = subheadingOf(g, item.id)
-      const head = sub !== undefined && sub !== last ? [<h4 key={`sub:${sub}`} className="settings-subheading">{sub}</h4>] : []
-      last = sub
-      return [...head, row(item)]
-    })
+      const last = runs[runs.length - 1]
+      if (last !== undefined && last.sub === sub) last.items.push(item)
+      else runs.push({ sub, items: [item] })
+    }
+    return runs
   }
   /** A per-vault page says which vault it acts on (YAZ-2602 R10), where App names one: a window with two or more. */
   const vaultLine = (className: string, of?: (ctx: SettingsCtx) => string | undefined) => ctx.vaultName !== undefined && <p className={className}>Vault: {of?.(ctx) ?? ctx.vaultName}</p>
@@ -197,7 +201,13 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{resolveGroupTitle(g, ctx)}</h3>}
       {g.vault === true && vaultLine('settings-group__hint', g.vaultOf)}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}
-      <div className={`settings-group__card${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{rowsOf(g, items)}</div>
+      {runsOf(g, items).map((run, i) => (
+        <Fragment key={run.sub ?? `run:${i}`}>
+          {/* A sub-heading over its own card (YAZ-5969 Q4): the label in the text's colour, outside the card. */}
+          {run.sub !== undefined && <h4 className="settings-subheading">{run.sub}</h4>}
+          <div className={`settings-group__card${run.sub === undefined ? '' : ' settings-group__card--sub'}${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{run.items.map(row)}</div>
+        </Fragment>
+      ))}
     </div>
   )
   const section = (s: SettingsSection) => (

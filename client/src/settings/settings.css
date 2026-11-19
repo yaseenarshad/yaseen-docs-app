@@ -2124,19 +2124,18 @@
   right: 20px;
 }
 
-/* A sub-heading in a long group (YAZ-5969): a small muted label with a thin line under it, over its rows in the card. */
+/* A sub-heading in a long group (YAZ-5969, Q4 "Box per sub-group"): each sub-group is its own card, its label above
+   it in the text's colour, as macOS System Settings groups its rows. The shapes show the groups: no line, no colour. */
 .settings-subheading {
-  margin: 18px 0 0;
-  padding: 0 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--fg-muted);
-  border-bottom: 1px solid var(--border);
+  margin: 16px 0 6px 4px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
 }
 
-.settings-subheading:first-child {
-  margin-top: 10px;
+.settings-group__card + .settings-subheading {
+  margin-top: 18px;
 }
 
 /* Link pills' icon rows (YAZ-5972): "Pages and files" and "Cards" need a wider label than one word. */
