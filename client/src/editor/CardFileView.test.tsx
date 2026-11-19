@@ -160,6 +160,16 @@ const archive = () => {
   pick('Archive card')
   pick('Click again to archive')
 }
+/** Unarchive card, twice too (YAZ-5966 round 2). */
+const unarchive = () => {
+  pick('Unarchive card')
+  pick('Click again to unarchive')
+}
+/** Fix later / Remove Fix later, twice too (YAZ-5966 round 2). */
+const fixLater = (on: boolean) => {
+  pick(on ? 'Fix later' : 'Remove Fix later')
+  pick(on ? 'Click again to mark Fix later' : 'Click again to remove Fix later')
+}
 
 describe('the card file tab (YAZ-5037 phase 3)', () => {
   it('shows the path, the title, the ID, the state, the card, and the strip`s parts "Linked mentions 1" and "Embedded in 2" (YAZ-5382); no notice; no read of its own on open', async () => {
@@ -225,9 +235,12 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await act(async () => undefined)
     expect(disk.files.get(PATH)).toBe(FILE)
     expect(converts.turnIntoPage).not.toHaveBeenCalled()
-    // Fix later stays one click: it is taken back on the same row.
+    // YAZ-5966 round 2: Fix later is click-twice too; the first click writes nothing.
     await menu()
     pick('Fix later')
+    await act(async () => undefined)
+    expect(disk.files.get(PATH)).toBe(FILE)
+    pick('Click again to mark Fix later')
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain(', fix -->'))
   })
 
@@ -301,12 +314,12 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
   it('YAZ-5097: Fix later writes `fix` on the card line; the head then says "To fix"; Remove Fix later takes it off', async () => {
     await mount(FILE)
     await menu()
-    pick('Fix later')
+    fixLater(true)
     // YAZ-5309: `fix` goes after the ID and the title.
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", fix -->')))
     await vi.waitFor(() => expect(el.querySelector('.card__head .card__fix')?.textContent).toBe('To fix'))
     expect(await menu()).toContain('Remove Fix later')
-    pick('Remove Fix later')
+    fixLater(false)
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
     await vi.waitFor(() => expect(el.querySelector('.card__head .card__fix')).toBeNull())
   })
@@ -589,7 +602,7 @@ describe('the guided tour hears the card file tab (YAZ-5123)', () => {
       ['Unarchive card', 'card-menu-unarchive'],
       ['Copy card link', 'card-copy-link'],
     ])
-    pick('Unarchive card')
+    unarchive()
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
   })
 })
@@ -1118,7 +1131,7 @@ describe('comments on a card file (YAZ-5466)', () => {
     archive()
     await vi.waitFor(() => expect(onDisk()).toBe(WITH.replace('title "Capital of France" -->', 'title "Capital of France", off -->')))
     await menu()
-    pick('Fix later')
+    fixLater(true)
     await vi.waitFor(() => expect(onDisk()).toContain(`---\nkind: card\n${ENTRIES}---\n`))
     expect(onDisk()).toContain(', fix')
   })

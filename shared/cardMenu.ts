@@ -12,17 +12,16 @@
  *   4. Copy card ID, Copy card link.
  *   5. Reset history, alone (it asks by typing, `askResetHistory`).
  *
- * THE ASK RULES (`cardAsks.ts`). CLICK TWICE (YAZ-5966, `twice`): Archive card, Move to Up next / Remove from Up next,
- * and a Title in review choice (not the one already ✓) — the first click says "Click again to …", the second runs it.
- * AN ASK IN PLACE (`ask`, Cancel first): Move to its own file and Put back into this page (two files change, no Undo),
- * Turn into a page (the file is rewritten and renamed); Reset history asks by typing. Fix later does neither: the same
- * row says "Remove …" and takes it back. Show as link does not ask: it only changes the page's text, and ⌘Z takes it
- * back. Unarchive card does not ask: it only brings a card back.
+ * THE ASK RULES (`cardAsks.ts`). CLICK TWICE (YAZ-5966, `twice`): Archive card / Unarchive card, Move to Up next /
+ * Remove from Up next, Fix later / Remove Fix later (round 2), and a Title in review choice (not the one already ✓) —
+ * the first click says "Click again to …", the second runs it. AN ASK IN PLACE (`ask`, Cancel first): Move to its own
+ * file and Put back into this page (two files change, no Undo), Turn into a page (the file is rewritten and renamed);
+ * Reset history asks by typing. Show as link does not ask: it only changes the page's text, and ⌘Z takes it back.
  *
  * The rows are data: the place runs a row by its `action` (its own writes: a page's transaction, the file, the Inbox's
  * Undo stack) and draws them with its menu (`ContextMenu`, or the page's DOM menu).
  */
-import { ARCHIVE_TWICE, nextTwice, titleChoiceTwice, type CardAsk, type CardTwice } from './cardAsks'
+import { ARCHIVE_TWICE, UNARCHIVE_TWICE, fixTwice, nextTwice, titleChoiceTwice, type CardAsk, type CardTwice } from './cardAsks'
 import { withCardFix, withCardNext, withCardOff, withCardTitleChoice, type CardLine, type CardTitleChoice, type CardTitleShow } from './cardLine'
 import { CARD_TITLE_CHOICES, cardTitleChoiceLabel, cardTitleChoiceShort } from './cardTitleAt'
 
@@ -135,10 +134,10 @@ export function cardMenu(place: CardMenuPlace): CardMenuItem[][] {
     }
     const off = !m.off
     // Chapter 11's tour (YAZ-5330): Archive card, then Unarchive card on the same row once the card is archived.
-    review.push({ action: 'off', label: off ? 'Archive card' : 'Unarchive card', tour: off ? 'card-menu-archive' : 'card-menu-unarchive', twice: off ? ARCHIVE_TWICE : undefined, on: off, disabled, change: (l) => withCardOff(l, off) })
+    review.push({ action: 'off', label: off ? 'Archive card' : 'Unarchive card', tour: off ? 'card-menu-archive' : 'card-menu-unarchive', twice: off ? ARCHIVE_TWICE : UNARCHIVE_TWICE, on: off, disabled, change: (l) => withCardOff(l, off) })
     if (place.fix !== false) {
       const fix = !m.fix
-      review.push({ action: 'fix', label: fix ? 'Fix later' : 'Remove Fix later', on: fix, disabled, change: (l) => withCardFix(l, fix) })
+      review.push({ action: 'fix', label: fix ? 'Fix later' : 'Remove Fix later', on: fix, twice: fixTwice(fix), disabled, change: (l) => withCardFix(l, fix) })
     }
     if (place.title !== false) {
       // Title in review › (YAZ-5696): the hint and the ✓ say the choice now; another choice runs on a second click.

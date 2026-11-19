@@ -416,7 +416,11 @@ describe('the ⋯ menu', () => {
     const box = boxes(root)[0]!
     expect(box.querySelector('.card__fix')).toBeNull()
     press(box.querySelector('.card__more'))
-    menuItem('Fix later')!.click()
+    // YAZ-5966 round 2: two clicks — the first says "Click again to mark Fix later" and writes nothing.
+    const fix = menuItem('Fix later')!
+    fix.click()
+    expect([fix.textContent, disk.files.get(CARD_FILE)]).toEqual(['Click again to mark Fix later', cardFileText])
+    fix.click()
     await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, title "Capital of France", fix -->'))
     // The phone's mark lands: a new version of the card file in the index.
     const marked = await mount('Plan ![[GEO-140]] end\n')

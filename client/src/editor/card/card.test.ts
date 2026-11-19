@@ -475,6 +475,10 @@ describe('the card in the page', () => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent === label)
       expect(row, label).toBeDefined()
+      // YAZ-5966 round 2: two clicks — the first says "Click again to …" and writes nothing.
+      const before = line()
+      row!.click()
+      expect([row!.textContent, line()]).toEqual([label === 'Fix later' ? 'Click again to mark Fix later' : 'Click again to remove Fix later', before])
       row!.click()
     }
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))

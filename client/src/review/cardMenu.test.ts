@@ -47,12 +47,18 @@ describe('one card menu (YAZ-5697 round 2)', () => {
       ['Put back into this page', 'Put this card back into this page?', 'Put back'],
       ['Turn into a page', 'Turn this card into a page?', 'Turn into a page'],
     ])
-    // YAZ-5966: Archive card and Move to Up next / Remove from Up next say "Click again to …"; Fix later, Unarchive do not.
+    // YAZ-5966: Archive card, Move to Up next / Remove from Up next say "Click again to …"; round 2: Unarchive card and
+    // Fix later / Remove Fix later too.
     expect(twice({ marks: NONE, upNext: true })).toEqual([
       ['Move to Up next', 'Click again to move to Up next', false],
       ['Archive card', 'Click again to archive', true],
+      ['Fix later', 'Click again to mark Fix later', false],
     ])
-    expect(twice({ marks: { ...NONE, next: true, off: true, fix: true }, upNext: true })).toEqual([['Remove from Up next', 'Click again to remove from Up next', true]])
+    expect(twice({ marks: { ...NONE, next: true, off: true, fix: true }, upNext: true })).toEqual([
+      ['Remove from Up next', 'Click again to remove from Up next', true],
+      ['Unarchive card', 'Click again to unarchive', false],
+      ['Remove Fix later', 'Click again to remove Fix later', true],
+    ])
     // Title in review ›: each choice but the one now runs on a second click; the one now (✓) does nothing.
     const title = cardMenu({ marks: { ...NONE, off: true, notitle: true } }).flat().find((r) => r.action === 'title')!
     expect([title.label, title.hint, title.twice]).toEqual(['Title in review', 'Never', undefined])

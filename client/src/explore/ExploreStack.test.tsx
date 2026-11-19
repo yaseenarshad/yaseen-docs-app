@@ -2668,6 +2668,25 @@ describe('the card window (YAZ-4962)', () => {
     props.vaultOf = () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, review: { settings: SETTINGS, deleteReview } })
   })
   const strip = () => [...top().querySelectorAll('.card-strip > *')].map((e) => e.textContent)
+  const menuRow = (words: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === words)
+  /**
+   * A click-twice row of the ⋯ (YAZ-5966): the first click turns `label` into `words` and writes nothing; the second
+   * click on the same row runs it.
+   */
+  const twice = async (label: string, words: string) => {
+    act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
+    const row = menuRow(label)
+    expect(row, label).toBeDefined()
+    const before = files[PAGE]
+    act(() => row!.click())
+    await flush()
+    const armed = menuRow(words)
+    expect(armed, words).toBeDefined()
+    expect(files[PAGE]).toBe(before)
+    act(() => armed!.click())
+    await flush()
+    await flush()
+  }
   /** The Reviews table, opened first (it starts closed: the strip says the state). */
   const tableRows = () => {
     const header = top().querySelector<HTMLButtonElement>('.card-reviews .backlinks__header')!
@@ -2770,16 +2789,13 @@ describe('the card window (YAZ-4962)', () => {
       await flush()
       await flush()
     }
-    await pick('Archive card')
-    // YAZ-5697: the row asks in place first; the first click wrote nothing.
-    expect(files[PAGE]).not.toContain(', off,')
-    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
-    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click())
-    await flush()
-    await flush()
+    // YAZ-5966: Archive card runs on a second click; the first says "Click again to archive" and writes nothing.
+    await twice('Archive card', 'Click again to archive')
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, off, 2026-01-02T09:00:00.000Z good -->')
     expect(strip()).toContain('Archived')
-    await pick('Unarchive card')
+    // Round 2: Unarchive card too.
+    await twice('Unarchive card', 'Click again to unarchive')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->')
     expect(strip()).not.toContain('Archived')
     // YAZ-5376: the last row, alone, and it asks by typing first.
     act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
@@ -2803,11 +2819,8 @@ describe('the card window (YAZ-4962)', () => {
     await flush()
     const chip = () => top().querySelector<HTMLElement>('.explore__head .card__next')
     expect(chip()).toBeNull()
-    act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
-    const put = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Move to Up next')
-    act(() => put!.click())
-    await flush()
-    await flush()
+    // YAZ-5966: two clicks.
+    await twice('Move to Up next', 'Click again to move to Up next')
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, next, 2026-01-02T09:00:00.000Z good -->')
     expect(chip()?.textContent).toBe('Up next×')
     act(() => chip()!.querySelector<HTMLButtonElement>('[aria-label="Remove from Up next"]')!.click())
@@ -2840,7 +2853,7 @@ describe('the card window (YAZ-4962)', () => {
     expect(layers().map((l) => l.dataset.kind)).toEqual(['card', 'page'])
   })
 
-  it('YAZ-5030, YAZ-5696: ⋯ Title in review › Never (after its ask, YAZ-5697) writes `notitle`; the head then says "Hidden in review"', async () => {
+  it('YAZ-5030, YAZ-5696: ⋯ Title in review › Never (on a second click, YAZ-5966) writes `notitle`; the head then says "Hidden in review"', async () => {
     files[PAGE] = page('<!-- card: WIKI-9, title "Capital of France" -->')
     writeFile.mockImplementation(async ({ path, content }) => {
       files[path] = content
@@ -2857,12 +2870,12 @@ describe('the card window (YAZ-4962)', () => {
     act(() => parent.click())
     await vi.waitFor(() => expect(document.querySelector('.ctx-menu__sub')).not.toBeNull())
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === 'Never')!.click())
-    // YAZ-5697: it asks in place first; the first click wrote nothing.
+    // YAZ-5966: the first click says "Click again to never show the title" and writes nothing; the second runs it.
     await flush()
     expect(files[PAGE]).not.toContain('notitle')
-    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
-    expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Never show the title in review?')
-    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Never')!.click())
+    const armed = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === 'Click again to never show the title')
+    expect(armed).toBeDefined()
+    act(() => armed!.click())
     await flush()
     await flush()
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, title "Capital of France", notitle -->')
@@ -2882,18 +2895,11 @@ describe('the card window (YAZ-4962)', () => {
     await flush()
     const mark = () => top().querySelector('.explore__head .card__fix')
     expect(mark()).toBeNull()
-    const pick = async (label: string) => {
-      act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
-      const item = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
-      expect(item, label).toBeDefined()
-      act(() => item!.click())
-      await flush()
-      await flush()
-    }
-    await pick('Fix later')
+    // YAZ-5966 round 2: Fix later and Remove Fix later run on a second click.
+    await twice('Fix later', 'Click again to mark Fix later')
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, fix -->')
     expect(mark()?.textContent).toBe('To fix')
-    await pick('Remove Fix later')
+    await twice('Remove Fix later', 'Click again to remove Fix later')
     expect(files[PAGE]).toContain('<!-- card: WIKI-9 -->')
     expect(mark()).toBeNull()
   })

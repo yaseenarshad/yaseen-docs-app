@@ -4,13 +4,12 @@
  * these words. Two kinds:
  *
  *  - CLICK TWICE (YAZ-5966, the app's own pattern, as the tab board's "Click again to close …"): the review rows —
- *    Archive card, Move to Up next / Remove from Up next, and a Title in review choice. The first click turns the row's
- *    words into `CardTwice.words` and keeps the menu open; a second click on the same row runs it. Leaving the row or
- *    closing the menu puts it back. The phone says "Tap again to …".
+ *    Archive card / Unarchive card, Move to Up next / Remove from Up next, Fix later / Remove Fix later (round 2), and a
+ *    Title in review choice. The first click turns the row's words into `CardTwice.words` and keeps the menu open; a
+ *    second click on the same row runs it. Leaving the row or closing the menu puts it back. The phone says "Tap again
+ *    to …".
  *  - AN ASK IN PLACE (`CardAsk`): the file rows, which change two files or rename one with no Undo — Move to its own
  *    file, Put back into this page, Turn into a page (`cardMenu.ts`). The row turns into the question, Cancel first.
- *
- * Unarchive card, Fix later and Remove Fix later do neither: each is taken back on the same row.
  */
 import type { CardTitleChoice } from './cardTitleAt'
 
@@ -29,6 +28,13 @@ export interface CardTwice {
 }
 
 export const ARCHIVE_TWICE: CardTwice = { words: 'Click again to archive', danger: true }
+/** Unarchive card (YAZ-5966 round 2, Yaseen: it should act the same as Archive card). */
+export const UNARCHIVE_TWICE: CardTwice = { words: 'Click again to unarchive' }
+
+/** Fix later (accent) / Remove Fix later (red) (YAZ-5966 round 2). */
+export function fixTwice(on: boolean): CardTwice {
+  return on ? { words: 'Click again to mark Fix later' } : { words: 'Click again to remove Fix later', danger: true }
+}
 
 /** Move to Up next (accent) / Remove from Up next (red), as the sidebar's "Click again to add" / "… to remove". */
 export function nextTwice(on: boolean): CardTwice {
