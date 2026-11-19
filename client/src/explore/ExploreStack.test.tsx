@@ -3816,6 +3816,48 @@ describe('YAZ-5974: the page controls on the title row, the window in the head',
     expect(read().style.getPropertyValue('--column-start')).toBe('0')
   })
 
+  it('Q6: reading, the cog\'s Read only row turns a page\'s own switch OFF only through the chip\'s "Allow edits?" box, as a tab; ON needs no ask', async () => {
+    let text = '---\nreadonly: true\n---\n# Alpha\n\ntext\n'
+    readFile.mockImplementation(async (path) => ({ path, content: path === '/v/alpha.md' ? text : `# ${path}\n`, mtime: 1, size: 1 }))
+    writeFile.mockReset().mockImplementation(async (req) => {
+      text = req.content
+      return { path: req.path, mtime: 2, size: 1 }
+    })
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const cog = () => act(() => top().querySelector<HTMLButtonElement>('.page-header__controls .page-settings__trigger')!.click())
+    /** The cog's "Read only" check row (a tab's): a click turns it off (asking) or on. */
+    const readOnlyRow = () => [...document.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')].find((b) => b.firstElementChild?.textContent?.startsWith('Read only') === true)!
+    // The page's own switch locks the layer: the tab's chip in the head.
+    expect(top().querySelector('.explore__head .read-only-chip')).not.toBeNull()
+    cog()
+    expect(readOnlyRow().getAttribute('aria-pressed')).toBe('true')
+    act(() => readOnlyRow().click())
+    await flush()
+    // No write: the chip's box asks, with the page's "Turn Read only off".
+    expect(writeFile).not.toHaveBeenCalled()
+    const ask = top().querySelector('.explore__head .read-only-chip__ask')
+    expect(ask).not.toBeNull()
+    const turnOff = [...ask!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Turn Read only off')
+    expect(turnOff).toBeDefined()
+    act(() => turnOff!.click())
+    await vi.waitFor(() => expect(writeFile).toHaveBeenCalledTimes(1))
+    expect(writeFile.mock.calls[0][0].content).not.toContain('readonly')
+    await flush()
+    await flush()
+    // Still reading; the chip goes with the switch.
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    expect(top().querySelector('.explore__head .read-only-chip')).toBeNull()
+    // On: written at once, no box.
+    cog()
+    expect(readOnlyRow().getAttribute('aria-pressed')).toBe('false')
+    act(() => readOnlyRow().click())
+    await vi.waitFor(() => expect(writeFile).toHaveBeenCalledTimes(2))
+    expect(writeFile.mock.calls[1][0].content).toContain('readonly: true')
+    expect(top().querySelector('.read-only-chip__ask')).toBeNull()
+  })
+
   it("editing: the editor's fold-all and cog go into the same box on its title row, with the same zoom pill; its Saved goes to the head", async () => {
     props.renderEditor = (path): ReactNode => (
       <StatusChips zoom={100} onZoom={() => {}} readOnly={null} save="saved">

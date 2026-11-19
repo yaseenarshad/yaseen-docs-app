@@ -397,7 +397,8 @@ function PageWindowEditor({ path, openLink, unlocked = false, startView }: { pat
   const propsFor = useContext(PageWindowEditorProps)
   // An Explore layer's timed "Allow edits" (YAZ-4939): the vault's Read only does not lock this editor while it runs.
   const props = propsFor?.(path)
-  const base = props === undefined || !unlocked ? props : { ...props, vaultReadOnly: false }
+  // The page's own switch too (YAZ-5974 Q6): the layer's box asked for both.
+  const base = props === undefined || !unlocked ? props : { ...props, vaultReadOnly: false, pageUnlocked: true }
   const baseOpenLink = base?.onOpenLink
   const onOpenLink = useCallback((to: string, where?: GestureAction | 'explore') => (where === undefined || where === 'thisTab' || where === 'explore' ? openLink?.(to) : baseOpenLink?.(to, where)), [openLink, baseOpenLink])
   if (base === undefined) return null

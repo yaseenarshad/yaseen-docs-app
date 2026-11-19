@@ -634,7 +634,15 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const page = fileKind(path) === 'markdown'
   // The vault's Read only (YAZ-4939): the layer edits only while its own timed unlock runs. At zero, or on Lock now,
   // an editing layer goes back to reading (its editor's save first, as Done does).
-  const locked = vault.readOnly === true
+  /**
+   * The page's own Read only switch (YAZ-5974 Q6), read with its text: the layer locks for it as for the vault's, with
+   * the same chip and "Allow edits?" box a tab has (its "Turn Read only off" writes the switch off). A card file's own
+   * switch is its view's.
+   */
+  const text = content.kind === 'body' || content.kind === 'empty' ? readRef.current : ''
+  const pageOwnLock = !cardFile && isPageReadOnly(text)
+  const vaultLocked = vault.readOnly === true
+  const locked = vaultLocked || pageOwnLock
   const leave = useRef({ mode, onToggleEdit })
   leave.current = { mode, onToggleEdit }
   const unlock = useTimedUnlock(() => {
@@ -804,6 +812,16 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
           if (rename !== null) return rename()
           if (mode === 'read') onToggleEdit()
         }}
+        // The page's own switch, in a vault that is not read only (as a tab's box): written off; the layer stays reading.
+        onTurnOff={
+          pageOwnLock && !vaultLocked
+            ? () => {
+                setAsking(false)
+                titleAsked.current = null
+                writeKey((c) => setPageReadOnly(c, false), 'Read only')
+              }
+            : undefined
+        }
         onCancel={() => {
           setAsking(false)
           titleAsked.current = null
@@ -889,7 +907,6 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
    * place, so the change shows at once. Line numbers and Heading levels live in an editor only (never saved): editing
    * has them. Settings' defaults are read as the layer draws.
    */
-  const text = content.kind === 'body' || content.kind === 'empty' ? readRef.current : ''
   const app = { ...DEFAULT_SETTINGS, ...storage.getSettings() }
   const own = readPageSwitches(text)
   const readFoldingOn = own.folding ?? app.foldingOnByDefault
@@ -909,12 +926,12 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     )
   }
   const setSwitch = (key: PageSwitchKey, row: string, on: boolean) => writeKey((c) => writePageSwitch(c, key, on), row)
-  const pageOwnLock = isPageReadOnly(text)
   const readCog = file !== null && (
     <PageSettings
-      readOnly={lockedNow || pageOwnLock}
-      // The vault's lock: Lock now while the layer's unlock runs, else its "Allow edits?" box. The page's own switch: off; else on.
-      onToggleReadOnly={() => (locked ? (unlocked ? unlock.lock() : setAsking(true)) : writeKey((c) => setPageReadOnly(c, !pageOwnLock), 'Read only'))}
+      readOnly={locked}
+      // As a tab's cog (YAZ-5974 Q6): while locked (the vault's or the page's own switch), Lock now while the layer's
+      // unlock runs, else the chip's "Allow edits?" box (its "Turn Read only off" turns the switch off); else on, no ask.
+      onToggleReadOnly={() => (locked ? (unlocked ? unlock.lock() : setAsking(true)) : writeKey((c) => setPageReadOnly(c, true), 'Read only'))}
       sectionIndent={own['section-indent'] ?? false}
       onToggleSectionIndent={() => setSwitch('section-indent', 'Section indent', !(own['section-indent'] ?? false))}
       guideLines={own['guide-lines'] ?? app.guideLinesOnByDefault}
