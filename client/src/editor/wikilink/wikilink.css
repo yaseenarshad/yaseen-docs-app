@@ -256,6 +256,7 @@
    does not take the padding; away from the title (`{name} {icon}`) it is an icon piece of an end. The picker's card row
    draws the same icon (`wikilinkPicker.css`), and so does a card file's row (YAZ-5037): `--card-link-icon` is app.css's. */
 .wikilink.wikilink--card::before,
+.wikilink.card-icon::before,
 :is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before {
   content: '';
   padding-left: 1em;

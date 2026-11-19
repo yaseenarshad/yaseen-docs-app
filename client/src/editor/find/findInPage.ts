@@ -298,7 +298,11 @@ const shownRanges = ({ from, to, hidden }: PillLink): [number, number][] => {
 /** The title widgets of the ID pills, by position: `wikilinkPlugin.ts` `decorate` draws one at the link's end, or at `from + 2` before a heading. */
 const titleWidgets = (view: EditorView): Map<number, HTMLElement> => {
   const widgets = new Map<number, HTMLElement>()
-  for (const widget of view.dom.querySelectorAll<HTMLElement>('.ProseMirror-widget.wikilink')) widgets.set(view.posAtDOM(widget, 0), widget)
+  for (const widget of view.dom.querySelectorAll<HTMLElement>('.ProseMirror-widget.wikilink, .ProseMirror-widget.wikilink-group')) {
+    // A card pill (YAZ-5792, `cardPill`) is a group that draws nothing (`display: contents`): its title is what a match paints.
+    const title = widget.classList.contains('wikilink-group') ? widget.querySelector<HTMLElement>(':scope > .wikilink:not(.link-pill__head):not(.link-pill__tail)') : widget
+    if (title !== null) widgets.set(view.posAtDOM(widget, 0), title)
+  }
   return widgets
 }
 

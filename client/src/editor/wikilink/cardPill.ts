@@ -27,8 +27,11 @@ export const WIKILINK_CARD_CLASS = 'wikilink--card'
  */
 export const WIKILINK_GROUP_CLASS = 'wikilink-group'
 
-/** The card icon as a piece of a pill's head or tail (`{icon}` away from `{name}`): its own rule in `wikilink.css`. */
-const CARD_ICON = { class: 'card-icon' }
+/**
+ * The card icon's attributes: a piece of a pill's head or tail (`{icon}` away from `{name}`), or a piped card link's
+ * words (`[[ID|words]]`, YAZ-5835, `wikilinkPlugin.ts`). Its own rules in `wikilink.css`.
+ */
+export const CARD_ICON: Readonly<Record<string, string>> = Object.freeze({ class: 'card-icon' })
 
 /** What the vault's format puts before a pill's name and after it (`pillParts`); each null when it puts nothing. */
 export interface PillEnds {
@@ -75,6 +78,6 @@ export function cardPill(title: string, ends: PillEnds, iconOnName: boolean): HT
   name.dataset.tour = 'card-link-pill'
   const group = document.createElement('span')
   group.className = WIKILINK_GROUP_CLASS
-  group.append(...pillPieces(ends, name, WIKILINK_CLASS, CARD_ICON))
+  group.append(...pillPieces(ends, name, WIKILINK_CLASS, { ...CARD_ICON }))
   return group
 }

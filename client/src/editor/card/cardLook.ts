@@ -43,9 +43,13 @@ export function cardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLin
     link: (inner) => {
       // The vault's link format (YAZ-5792): a card's links show the pieces the page's do, the icon where `{icon}` stands.
       const iconOnName = pillIconPlace(wikilinks.pills) === 'name'
-      // A link to a card (YAZ-5030): the card's pill, its title between the format's ends (`cardPill`).
-      const card = inner.includes('|') ? null : linkCard(inner, wikilinks)
-      if (card !== null) return { label: cardLinkTitle(card), resolved: true, card: card.id, ends: cardPillEnds(wikilinks, card), iconOnName }
+      // A link to a card (YAZ-5030): the card's pill, its title between the format's ends (`cardPill`). A piped one
+      // (`[[ID|words]]`, YAZ-5835) shows the words, with the card's pieces and icon, as in the page.
+      const card = linkCard(inner, wikilinks)
+      if (card !== null) {
+        const label = inner.includes('|') ? linksAsShown(`[[${inner}]]`, wikilinks, viewOnly) : cardLinkTitle(card)
+        return { label, resolved: true, card: card.id, ends: cardPillEnds(wikilinks, card), iconOnName }
+      }
       const path = linkPath(inner, wikilinks, viewOnly)
       const attrs = path === null || linkLook === undefined ? undefined : linkLook.icon(path, fileKind(basename(path)) === null)
       // A page link's ends, as the page draws them (`wikilinkPlugin.ts` `pillEnds`): the page's ID and folder.

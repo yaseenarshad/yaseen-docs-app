@@ -233,6 +233,26 @@ describe('links in and to cards follow the vault`s link format (YAZ-5792)', () =
     expect(pieces(group)).toEqual(['text: ', 'id:DEMO-126'])
   })
 
+  it('YAZ-5835: a piped card link `[[ID|words]]` shows the words with the card`s pieces and icon, in a page and inside a card', async () => {
+    const { root, crepe } = await mount('Go [[DEMO-127|my words]] now\n', formatted('{icon} {name}({number}){mark}'))
+    const words = [...root.querySelectorAll<HTMLElement>('.wikilink')].find((el) => el.textContent === 'my words')!
+    const line = words.closest('p')!
+    expect([...line.querySelectorAll('.link-pill__head > *, .link-pill__tail > *')].map((el) => (el.classList.contains('card-icon') ? 'card-icon' : el.classList.contains('link-pill__mark') ? 'mark' : `${el.className.replace('link-pill__', '')}:${el.textContent}`))).toEqual(['card-icon', 'text: ', 'text:(', 'number:127', 'text:)', 'mark'])
+    // The words stay the page's text: the file keeps the link as written.
+    expect(getMarkdownForSave(crepe)).toBe('Go [[DEMO-127|my words]] now\n')
+    const el = renderCard('[[DEMO-127|my words]]', {}, cardLook(formatted('{icon} {name}({number}){mark}'), undefined))
+    const group = el.querySelector<HTMLElement>(`.${WIKILINK_GROUP_CLASS}`)!
+    expect(group.getAttribute('data-card-link')).toBe('DEMO-127|my words')
+    expect(pieces(group)).toEqual(['card-icon', 'text: ', 'text:(', 'number:127', 'text:)', 'mark'])
+    expect(group.textContent).toBe(' my words(127)')
+  })
+
+  it('YAZ-5835: a piped card link with the card icon on the name (`{icon}{name}`): the words wear the card icon', async () => {
+    const { root } = await mount('Go [[DEMO-127|my words]] now\n', formatted('{icon}{name}'))
+    const words = [...root.querySelectorAll<HTMLElement>('.wikilink')].find((el) => el.textContent === 'my words')!
+    expect(words.classList.contains('card-icon')).toBe(true)
+  })
+
   it('a click on any piece of a formatted card pill opens the card', async () => {
     const { root } = await mount('Go [[DEMO-127]] now\n', formatted('{icon} {name}({number}){mark}'))
     const asks: CardOpenRequest[] = []

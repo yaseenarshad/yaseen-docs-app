@@ -59,7 +59,7 @@ import { basename } from '@shared/types'
 import { pathTitles } from '../../lib/pageLabel'
 import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './linkPillLook'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
-import { WIKILINK_CLASS, cardPill, cardPillEnds, endsKey } from './cardPill'
+import { CARD_ICON, WIKILINK_CLASS, cardPill, cardPillEnds, endsKey } from './cardPill'
 import './wikilink.css'
 import { tourEvent } from '../../course/tourBus'
 // The link resolution moved to its own file (YAZ-5153), so the review screen loads without this plugin; its names stay here too.
@@ -155,11 +155,14 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   // The icon where the vault's format puts it (YAZ-4924): on the name's own span (`{icon}{name}`, today's), as a
   // piece of the head or the tail, or nowhere (no `{icon}`: no lookup paid).
   const iconPlace = pillIconPlace(source.pills)
-  const found = resolved && iconPlace !== 'none' ? linkIcon(inner, source, viewOnly, look) : undefined
+  const { pipe, pageFirst } = linkSplit(inner, source)
+  // A piped link to a card (`[[ID|words]]`, YAZ-5835): the words stay the page's own text (editable, as any piped
+  // link's), with the card's pieces and the card icon (`card-icon`, `wikilink.css`), as the phone draws it.
+  const pipedCard = pipe >= 0 && resolved ? linkCard(inner, source) : null
+  const found = !resolved || iconPlace === 'none' ? undefined : pipedCard !== null ? { key: `card|${pipedCard.id}`, attrs: CARD_ICON } : linkIcon(inner, source, viewOnly, look)
   const icon = iconPlace === 'name' ? found : undefined
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
-  const { pipe, pageFirst } = linkSplit(inner, source)
   // A link to a card (YAZ-5030): the whole `[[ID]]` is syntax, and the card's pill stands at its end, as a lone ID
   // link's title does (YAZ-3916). It follows the vault's format (YAZ-5792): the format's pieces around the card's title,
   // the card icon where `{icon}` stands. `title` in the spec: what ⌘F reads.
@@ -179,7 +182,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   // An ID of another vault says which vault (S23), after the ID.
   const other = pipe >= 0 || resolved || missing !== undefined ? null : otherVaultId(inner, source, vaultsOf)
   // The pieces the vault's look adds at the pill's ends (YAZ-4924): the head goes before the first shown piece, the tail after the last.
-  const ends = pillEnds(inner, resolved, source, viewOnly, other === null ? null : (other.vault ?? 'another vault'), found !== undefined)
+  const ends = pipedCard !== null ? cardPillEnds(source, pipedCard) : pillEnds(inner, resolved, source, viewOnly, other === null ? null : (other.vault ?? 'another vault'), found !== undefined)
   let lastShown = -1
   /** The first shown piece starts at `pos`: the head stands there, before it. */
   const first = (pos: number) => {
