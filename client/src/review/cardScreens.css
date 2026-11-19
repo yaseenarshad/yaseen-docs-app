@@ -841,6 +841,34 @@ button.card-inbox__view-time:hover {
   overflow: hidden;
 }
 /* The card's edges (YAZ-5019): a thin strip on each side drags the width; a faint line shows on hover and while it drags. */
+/* The card's ⋯ (YAZ-5963): at the top right of the head band, as a card in a page has it (`.card__head .card__more`,
+   card.css), over the frame's top corner, so it has its place with or without a title (Title room "Only when it
+   shows" too). The band's title keeps clear of it. Over the width edge, under nothing. */
+.card-inbox__head-more-place {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  z-index: 3;
+}
+.card-inbox__panel .card-inbox__head-more {
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 1.2em;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.card-inbox__panel .card-inbox__head-more:hover,
+.card-inbox__panel .card-inbox__head-more[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.card-inbox__panel:has(> .card-inbox__head-more-place) > .card-band {
+  padding-right: calc(var(--inbox-card-pad, 28px) + 36px);
+}
 .card-inbox__edge {
   position: absolute;
   top: 0;

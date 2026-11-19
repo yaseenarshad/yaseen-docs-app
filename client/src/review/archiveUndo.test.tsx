@@ -120,7 +120,7 @@ const lastText = (): string => el.querySelector('.card-inbox__last')?.textConten
 const menuRow = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === label)
 /** ⋯, then its Archive card, then the ask's Archive (YAZ-5697 round 2: the ONE card menu). */
 const archive = async (): Promise<void> => {
-  await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+  await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!.click())
   await step(() => menuRow('Archive card')!.click())
   await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
   await step(() => menuRow('Archive')!.click())
@@ -147,11 +147,11 @@ afterEach(() => {
 })
 
 describe('YAZ-5621: Archive card has an Undo on the Mac, as on the phone', () => {
-  it('YAZ-5697 round 2: the Inbox ⋯ is the ONE card menu (Undo last review, then the card\'s rows); one click on Archive card never archives', async () => {
+  it('YAZ-5697 round 2: the Inbox head\'s ⋯ is the ONE card menu (the card\'s rows, YAZ-5963); one click on Archive card never archives', async () => {
     await mount()
     const first = showing()!
-    await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
-    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Undo last review', 'Open card', 'Move to Up next', 'Archive card', 'Title in review'])
+    await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!.click())
+    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review'])
     await step(() => menuRow('Archive card')!.click())
     await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Archive this card?'))
     expect(showing()).toBe(first)
