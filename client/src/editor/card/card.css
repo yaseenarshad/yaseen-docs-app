@@ -35,10 +35,11 @@
    column. A card file's tab: its card, title, strips and mentions, at the column's left edge. The Inbox sets its own
    column from the same variable, with its own sides (`cardScreens.css`).
    YAZ-5871 D3: a card narrower than its column follows the page's position (`--column-start`: 0 Left, auto Centre),
-   in a page, a card file's tab and Explore's card window. */
+   in a page, a card file's tab and Explore's card window. A card file's column is `.card-file > .card-file__page`
+   (`cardFileView.css`), so its rule outweighs `.milkdown *`'s margin reset as the other two do. */
 .milkdown .card,
 .explore__body--card > :not(.find-bar-dock--page),
-.card-file__page > * {
+.card-file > .card-file__page > * {
   max-width: calc(var(--card-text-width) + 34px);
   margin-inline: var(--column-start, auto) auto;
 }
@@ -797,6 +798,12 @@
 .card .card__rule[data-fold]:focus-visible::before {
   color: var(--fg);
   box-shadow: 0 0 0 2px var(--accent);
+}
+/* YAZ-5923: a folded side that holds an outside change (`data-outside-side`, `cardGlow.ts`): its rule's label takes the
+   glow's look, so the change shows while the side is folded. Next change opens the side (`onFoldReveal`). */
+.card .card__rule[data-fold]:has(+ .card__side[hidden][data-outside-side])::before {
+  color: var(--fg);
+  background: var(--outside-change-bg, color-mix(in srgb, var(--accent) 16%, var(--bg)));
 }
 .card .card__rule[data-fold]:last-child {
   margin-bottom: 12px;

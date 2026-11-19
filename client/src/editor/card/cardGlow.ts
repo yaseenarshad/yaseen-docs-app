@@ -18,8 +18,8 @@
  *    clears what glows, as typing in a changed line does in a page.
  *  - D3, HOW LONG: the page's Glow (Settings › Outside changes glow, the page's cog), Checked, Mark all checked.
  *    Memory only: nothing is saved to disk.
- *  - A FOLDED SIDE (the fold is another branch, YAZ-5904): the hook points are `CARD_GLOW_SIDE_ATTR` on each side that
- *    holds a glow (its side line can show a dot) and `CARD_GLOW_REVEAL`, sent from the ringed glow so a fold opens it.
+ *  - A FOLDED SIDE (YAZ-5904's fold, `cardFold.ts`): `CARD_GLOW_SIDE_ATTR` on each side that holds a glow (its folded
+ *    rule lights, `card.css`) and `CARD_GLOW_REVEAL`, sent from the ringed glow: the folded side opens (`onFoldReveal`).
  */
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { OutsideChangeGlow } from '@shared/types'
@@ -27,15 +27,16 @@ import { REWRITE_SHARE } from '../external/applyExternalMarkdown'
 import { checkOutsideChange, outsideChangeAt, outsideGlowEndsAt, outsideTipParts, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR, wordDiff, type OutsideDiffPart } from '../external/outsideChanges'
 import '../external/outsideChanges.css'
 import './cardGlow.css'
+import { FOLD_GLOW_SIDE_ATTR, FOLD_REVEAL_EVENT } from './cardFold'
 
 /** D4 (approved by Yaseen, "Yes, frame glow"): a card rewritten from outside glows its frame, not its words. */
 export const CARD_REWRITE_FRAME = true
 /** On the drawn card's root when its frame glows (D4); `card.css`'s frame reads it through `:has`. */
 export const CARD_REWRITTEN_CLASS = 'card-glow--rewritten'
 /** On a side (`.card__side`) that holds a glow or a removed mark: the fold's side line shows a dot (hook point). */
-export const CARD_GLOW_SIDE_ATTR = 'data-outside-side'
+export const CARD_GLOW_SIDE_ATTR = FOLD_GLOW_SIDE_ATTR
 /** Sent (bubbling) from the ringed glow of a card after Next change: a folded side opens (hook point). */
-export const CARD_GLOW_REVEAL = 'mdapp:card-glow-reveal'
+export const CARD_GLOW_REVEAL = FOLD_REVEAL_EVENT
 /** The Checked button in a card's head (a card in a page, an embed). */
 export const CARD_GLOW_CHECKED_CLASS = 'card-glow__checked'
 

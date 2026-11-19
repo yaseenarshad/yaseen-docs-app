@@ -47,7 +47,7 @@ import { cardSafety } from './cardSafety'
 import { cleanLocal, LOCAL_SRC, localMark, urlOf } from './localOnly'
 import { parseTableComment, type TableStyle } from '../table/tableComment'
 import { applyTableMarks } from '../table/tableMarks'
-import { onFoldClick, onFoldKey, setCardFold } from './cardFold'
+import { FOLD_REVEAL_EVENT, onFoldClick, onFoldKey, onFoldReveal, setCardFold } from './cardFold'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, CARD_AUDIO_ATTR, CARD_BOARD_ATTR, type CardBoardLook } from './cardMedia'
 
 /** How much of the card shows (the Inbox's steps, D18). Absent: everything, as in the page. */
@@ -454,6 +454,8 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
   out.addEventListener('copy', copyWithoutHidden)
   out.addEventListener('click', onFoldClick)
   out.addEventListener('keydown', onFoldKey)
+  // YAZ-5923: Next change rang a glow in a folded side: the side opens.
+  out.addEventListener(FOLD_REVEAL_EVENT, onFoldReveal)
   let from = 0
   for (let i = 0; i < count; i++) {
     const words: string[] = []

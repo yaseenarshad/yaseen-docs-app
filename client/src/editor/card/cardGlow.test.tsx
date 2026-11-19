@@ -5,6 +5,8 @@
  * a card page's bar.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { Crepe } from '@milkdown/crepe'
@@ -171,6 +173,62 @@ describe('a card in a page (D2a): the page`s change list', () => {
     expect(lit(card())).toEqual(['Nice'])
     channel.clear()
     expect(lit(card())).toEqual([])
+  })
+})
+
+describe('YAZ-5909 integration: the glow meets the fold (YAZ-5904) and the head marks (YAZ-5896)', () => {
+  const FOLDED = (word: string) => `# Page\n\n\`\`\`card\nThe capital of France\n---\nIt is ${word}.\n\`\`\`\n<!-- card: WIKI-7, fix -->\n`
+  const mounted: { crepe: Crepe; root: HTMLElement }[] = []
+  afterEach(async () => {
+    for (const m of mounted.splice(0)) {
+      await m.crepe.destroy()
+      m.root.remove()
+    }
+  })
+  async function mount() {
+    const channel = createOutsideChangesChannel()
+    const root = document.createElement('div')
+    // The page's own `card-sides` key on its mount: Fold.
+    root.dataset.cardSides = 'fold'
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: FOLDED('Lyon'), outsideChanges: channel, image: { root: '/v', pagePath: '/v/Page.md' } })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    await new Promise((done) => setTimeout(done, 0))
+    const card = () => root.querySelector('.card')!
+    const side2 = () => card().querySelector<HTMLElement>('.card__side[data-side="1"]')!
+    const rule = () => card().querySelector<HTMLElement>('.card__rule')!
+    return { crepe, channel, card, side2, rule }
+  }
+
+  it('a glow in a folded side marks that side; Next change opens it and keeps it open', async () => {
+    const { crepe, channel, side2, rule } = await mount()
+    expect(side2().hidden).toBe(true)
+    expect(applyExternalMarkdown(crepe, FOLDED('Paris'))).toBe('applied')
+    await new Promise((done) => setTimeout(done, 0))
+    expect(side2().hidden).toBe(true)
+    expect(side2().hasAttribute(CARD_GLOW_SIDE_ATTR)).toBe(true)
+    expect(rule().getAttribute('aria-expanded')).toBe('false')
+    channel.next()
+    await new Promise((done) => setTimeout(done, 0))
+    expect(side2().querySelector(`.${OUTSIDE_CHANGE_CLASS}.${OUTSIDE_ACTIVE_CLASS}`)?.textContent).toBe('Paris')
+    expect(side2().hidden).toBe(false)
+    expect(rule().getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it("the head shows its marks (YAZ-5915) and the glow's Checked together", async () => {
+    const { crepe, card } = await mount()
+    applyExternalMarkdown(crepe, FOLDED('Paris'))
+    const head = card().querySelector('.card__head')!
+    expect([...head.querySelectorAll('.card__marks > span')].map((el) => el.textContent)).toContain('To fix')
+    const checked = head.querySelector<HTMLButtonElement>(`.${CARD_GLOW_CHECKED_CLASS}`)!
+    expect(checked.hidden).toBe(false)
+    expect(checked.compareDocumentPosition(head.querySelector('.card__marks')!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+
+  it("card.css lights a folded side's rule when the side holds a glow", () => {
+    const css = readFileSync(resolve(__dirname, 'card.css'), 'utf8')
+    expect(css).toContain(".card .card__rule[data-fold]:has(+ .card__side[hidden][data-outside-side])::before")
   })
 })
 

@@ -50,7 +50,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
   })
 
   it('YAZ-5871 D3: a card narrower than its column follows the position, in a page, an embed, a card file and the card window', () => {
-    const rule = cardCss.match(/\.milkdown \.card,\s*\.explore__body--card > :not\(\.find-bar-dock--page\),\s*\.card-file__page > \*\s*\{([^}]*)\}/)?.[1]
+    const rule = cardCss.match(/\.milkdown \.card,\s*\.explore__body--card > :not\(\.find-bar-dock--page\),\s*\.card-file > \.card-file__page > \*\s*\{([^}]*)\}/)?.[1]
     expect(rule).toMatch(/max-width:\s*calc\(var\(--card-text-width\) \+ 34px\);/)
     expect(rule).toMatch(/margin-inline:\s*var\(--column-start, auto\) auto;/)
     // An embed sets only its block margins, and the card window no longer centres on its own.

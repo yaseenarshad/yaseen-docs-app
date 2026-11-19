@@ -154,6 +154,33 @@ export function openFoldedSideAt(node: Node | null): boolean {
   return true
 }
 
+/**
+ * A GLOW IN A FOLDED SIDE (YAZ-5923 with YAZ-5904): `cardGlow.ts` marks each side that holds an outside change
+ * (`FOLD_GLOW_SIDE_ATTR`; `card.css` lights its folded rule) and, after Next change, sends `FOLD_REVEAL_EVENT` from the
+ * ringed glow. `renderCard` hears it on the card: the folded side that holds the ring opens (kept open for the page, as
+ * a click), and the ring scrolls into view. A ring on the frame (a rewrite) opens every side that holds a glow. The
+ * fold of a fresh draw can come after the event (both wait a microtask): then it tries once more after the fold.
+ */
+export const FOLD_GLOW_SIDE_ATTR = 'data-outside-side'
+export const FOLD_REVEAL_EVENT = 'mdapp:card-glow-reveal'
+
+function revealAt(target: Element, sides: Element): boolean {
+  const own = target.closest('.card__side')
+  const targets = own !== null ? [own] : [...sides.querySelectorAll(`:scope > .card__side[${FOLD_GLOW_SIDE_ATTR}]`)]
+  let opened = false
+  for (const side of targets) opened = openFoldedSideAt(side) || opened
+  if (opened && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest' })
+  return opened
+}
+
+/** `FOLD_REVEAL_EVENT` on a card (`renderCard` listens on each `.card__sides`): the ringed glow's folded side opens. */
+export function onFoldReveal(event: Event): void {
+  const target = event.target
+  const sides = event.currentTarget
+  if (!(target instanceof Element) || !(sides instanceof Element)) return
+  if (!revealAt(target, sides) && !sides.hasAttribute('data-fold')) queueMicrotask(() => target.isConnected && revealAt(target, sides))
+}
+
 const listeners = new Set<() => void>()
 
 /** Runs `listener` when a fold setting or a page's `card-sides` changes. Returns the unsubscribe. */

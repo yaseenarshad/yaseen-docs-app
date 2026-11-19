@@ -56,7 +56,7 @@ describe('reserved keys: a vault that does not use IDs (YAZ-2523 V12)', () => {
   })
 
   // The folder page cog's keys (FOLDER_PAGE_KEYS) are the app's too: the cog sets them (`show_new_buttons`, YAZ-3746 13BL, the latest).
-  it('a vault that uses IDs owns all twenty-three', () => {
+  it('a vault that uses IDs owns all twenty-four', () => {
     expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, PAGE_ID_KEY, FOLDER_VALUES_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, PAGE_WIDTH_KEY, PAGE_POSITION_KEY, CARD_SIDES_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 })
