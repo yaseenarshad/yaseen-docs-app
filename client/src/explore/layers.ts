@@ -129,17 +129,17 @@ export function raiseLayer(layers: readonly { id: number }[], order: readonly nu
 }
 
 /**
- * A panel's width in a window `windowWidth` wide: its own times Explore size (`size`, a factor: 1.25 for 125%,
- * YAZ-5881 D2), cut to leave `EDGE_GAP` at each side. `custom` is Settings' Explore window width (YAZ-5976): a page or
- * board panel's width in px as is (Explore size does not scale it), cut the same; null is Default. The search keeps its own.
+ * A panel's width in a window `windowWidth` wide, cut to leave `EDGE_GAP` at each side. The search: its own times Search
+ * size (`size`, a factor: 1.25 for 125%, YAZ-5881 D2; the search alone since YAZ-5977). A page or board window: Settings'
+ * Explore window width (`custom`, YAZ-5976), else its own width; Search size never scales it.
  */
 export const panelWidth = (kind: ExploreLayer['kind'], windowWidth: number, size = 1, custom: number | null = null): number =>
-  Math.max(240, Math.min(kind !== 'search' && custom !== null ? custom : Math.round((kind === 'search' ? SEARCH_WIDTH : PAGE_WIDTH) * size), windowWidth - 2 * EDGE_GAP))
+  Math.max(240, Math.min(kind === 'search' ? Math.round(SEARCH_WIDTH * size) : (custom ?? PAGE_WIDTH), windowWidth - 2 * EDGE_GAP))
 
 /**
  * Where layer `index` stands: `left` from the window's left edge, in CSS px, and `top` added to the 10vh margin. The
  * offset is `index × 15` right and `min(index, 1) × 15` down, clamped so the panel keeps 8 px to the window's right
- * edge: a narrow window gets a smaller offset, never a panel off screen. `size` is Explore size (`panelWidth`).
+ * edge: a narrow window gets a smaller offset, never a panel off screen. `size` is Search size (`panelWidth`: the search's only).
  */
 export function layerPlace(kind: ExploreLayer['kind'], index: number, windowWidth: number, size = 1, custom: number | null = null): { left: number; top: number; width: number } {
   const width = panelWidth(kind, windowWidth, size, custom)
@@ -207,7 +207,7 @@ export function fitBox(box: LayerBox, W: number, H: number): LayerBox {
  * Where every layer stands in a window `W` × `H`: its stack place (`layerPlace`, under the 10vh margin) shifted by
  * however far the layer under it was moved from ITS stack place, so a new layer opens next to the layer under it
  * wherever that one is now; a layer moved or resized by hand (`moved`) stands in its own box. Each box fits the window.
- * `size` is Explore size (`panelWidth`): it widens the stack places only, never a box moved or resized by hand.
+ * `size` is Search size (`panelWidth`): it widens the search's stack place only, never a box moved or resized by hand.
  * `custom` is Settings' Explore window width (YAZ-5976): a fresh page or board layer's width when set.
  *
  * THE SIZE OF THE LAYER IT OPENED FROM (YAZ-5975, Yaseen: "does it not follow the same sizing that you then create for

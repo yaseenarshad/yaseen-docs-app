@@ -31,6 +31,8 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, keyInWords, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
+import { DocumentZoom } from '../editor/DocumentZoom'
+import { useExploreZoom } from '../explore/exploreZoom'
 import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, EXPLORE_WIDTH_MAX, EXPLORE_WIDTH_MIN, EXPLORE_WIDTH_START, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, PAGE_WIDTH_START, type ContentStep, type ContentWidth, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
 import type { IconRule } from '@shared/vaultIcons'
 import { appCardLook, type CardLookSettings } from '@shared/cardLook'
@@ -243,6 +245,12 @@ function ExploreWidthSetting({ value, onSet }: { value: number | null; onSet: (n
       {value !== null && <PxBox name="Window width" value={value} min={EXPLORE_WIDTH_MIN} max={EXPLORE_WIDTH_MAX} onSet={onSet} />}
     </>
   )
+}
+
+/** Appearance › Explore › Page zoom (YAZ-5977): the window's own zoom pill (`DocumentZoom`), on the one Explore page zoom. */
+function ExplorePageZoomSetting() {
+  const [zoom, setZoom] = useExploreZoom()
+  return <DocumentZoom value={zoom} onChange={setZoom} label="Explore page zoom" />
 }
 
 /**
@@ -505,6 +513,11 @@ export interface SettingDef {
   bare?: true
   /** A row that only exists in some states (the Review rows need review on); absent = always. */
   available?: (ctx: SettingsCtx) => boolean
+  /**
+   * A POINTER row (YAZ-5977): found by Settings search only, never drawn on its section's page. Its hint says where the
+   * thing lives (Search size: the zoom menu at the bottom left); it has no control.
+   */
+  searchOnly?: true
   render: (ctx: SettingsCtx) => ReactNode
 }
 
@@ -1045,12 +1058,29 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         hint: 'The search and its windows, on this Mac',
         items: [
           {
-            // YAZ-5976: the width a fresh Explore window starts at. Explore size (the footer's zoom menu) scales Default only.
+            // YAZ-5976: the width a fresh Explore window starts at. Search size (the footer's zoom menu) never scales it (YAZ-5977).
             id: 'exploreWidth',
             label: 'Window width',
-            hint: 'How wide a fresh Explore window opens. Default follows Explore size; Custom is your own width in px, cut to the window. A window opened from one you resized takes its size.',
+            hint: 'How wide a fresh Explore window opens. Custom is your own width in px, cut to the window. A window opened from one you resized takes its size.',
             keywords: ['explore', 'window', 'panel', 'layer', 'width', 'custom', 'px', 'pixels', 'default'],
             render: ({ settings, onChange }) => <ExploreWidthSetting value={settings.exploreWidth} onSet={(exploreWidth) => onChange({ ...settings, exploreWidth })} />,
+          },
+          {
+            // YAZ-5977: the one zoom of Explore's page windows, the same value as their title row's pill (`exploreZoom.ts`).
+            id: 'explorePageZoom',
+            label: 'Page zoom',
+            hint: "The text of Explore's page windows. The same zoom as the pill on a window's title row: a change at either shows at the other.",
+            keywords: ['explore', 'page zoom', 'zoom', 'text size', 'percent', '%', 'window'],
+            render: () => <ExplorePageZoomSetting />,
+          },
+          {
+            // YAZ-5977 Q3: Search size lives in the zoom menu only; a search for it finds this pointer.
+            id: 'exploreSearchSize',
+            label: 'Search size',
+            hint: 'In the zoom menu: click the % at the bottom left of the window. Search size is the row under App size.',
+            keywords: ['explore size', 'search size', 'explore zoom', 'search zoom', 'bigger search'],
+            searchOnly: true,
+            render: () => null,
           },
         ],
       },

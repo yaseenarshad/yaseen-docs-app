@@ -215,7 +215,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       <h2 className="settings-section__title">{s.title}</h2>
       {s.vault === true && vaultLine('settings-section__note')}
       {s.page !== undefined && <p className="settings-section__note">{s.page}</p>}
-      {groupsOf(s, ctx).map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx)), g.anchor ?? i, true, i))}
+      {groupsOf(s, ctx).map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx) && item.searchOnly !== true), g.anchor ?? i, true, i))}
     </section>
   )
 

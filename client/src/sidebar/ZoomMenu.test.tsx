@@ -27,7 +27,7 @@ const chip = () => document.querySelector<HTMLButtonElement>('.zoom-chip')!
 const menu = () => document.querySelector<HTMLElement>('.zoom-menu[role="dialog"]')
 /** A button of the menu by its accessible name. */
 const button = (name: string) => menu()!.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!
-const value = (row: 'App size' | 'Sidebar zoom' | 'Explore size') => menu()!.querySelector<HTMLButtonElement>(`[role="group"][aria-label="${row}"] .zoom-stepper__value`)!
+const value = (row: 'App size' | 'Sidebar zoom' | 'Search size') => menu()!.querySelector<HTMLButtonElement>(`[role="group"][aria-label="${row}"] .zoom-stepper__value`)!
 /** The page's zoom as Chromium shows it: `devicePixelRatio` (1 on this screen at 100%), and the resize it fires. */
 function pageZoom(z: number): void {
   Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: z })
@@ -52,8 +52,8 @@ describe('ZoomMenu', () => {
     expect(chip().getAttribute('aria-expanded')).toBe('true')
     expect(chip().className).toBe('zoom-chip zoom-chip--open')
     // App size on top, Sidebar, then Explore (YAZ-5881 D1); each row the same "− 100% +".
-    expect([...menu()!.querySelectorAll('.zoom-menu__label, [role="group"]')].map((l) => l.getAttribute('aria-label') ?? l.textContent)).toEqual(['App size', 'App size', 'Sidebar', 'Sidebar zoom', 'Explore', 'Explore size'])
-    expect([value('App size').textContent, value('Sidebar zoom').textContent, value('Explore size').textContent]).toEqual(['100%', '150%', '125%'])
+    expect([...menu()!.querySelectorAll('.zoom-menu__label, [role="group"]')].map((l) => l.getAttribute('aria-label') ?? l.textContent)).toEqual(['App size', 'App size', 'Sidebar', 'Sidebar zoom', 'Search size', 'Search size'])
+    expect([value('App size').textContent, value('Sidebar zoom').textContent, value('Search size').textContent]).toEqual(['100%', '150%', '125%'])
 
     act(() => chip().click())
     expect(menu()).toBeNull()
@@ -72,20 +72,20 @@ describe('ZoomMenu', () => {
     expect(menu()).not.toBeNull()
   })
 
-  it('YAZ-5881 D1: the Explore row walks the App sizes and writes Explore size only; its percent goes back to 125%; it stops at 200%', () => {
+  it('YAZ-5881 D1, YAZ-5977: the Search size row walks the App sizes and writes Explore size only; its percent goes back to 125%; it stops at 200%', () => {
     const onExplore = vi.fn()
     const onApp = vi.fn()
     render({ app: 100, explore: 125, onExplore, onApp })
     act(() => chip().click())
-    act(() => button('Make Explore larger').click())
+    act(() => button("Make Explore's search larger").click())
     expect(onExplore).toHaveBeenLastCalledWith(150)
-    act(() => button('Make Explore smaller').click())
+    act(() => button("Make Explore's search smaller").click())
     expect(onExplore).toHaveBeenLastCalledWith(110)
     render({ app: 100, explore: 200, onExplore, onApp })
-    expect(button('Make Explore larger').disabled).toBe(true)
-    act(() => value('Explore size').click())
+    expect(button("Make Explore's search larger").disabled).toBe(true)
+    act(() => value('Search size').click())
     expect(onExplore).toHaveBeenLastCalledWith(125)
-    expect(value('Explore size').title).toBe('Explore size. Click for 125%')
+    expect(value('Search size').title).toBe('Search size. Click for 125%')
     expect(onApp).not.toHaveBeenCalled()
   })
 

@@ -44,8 +44,10 @@ describe('settingCandidates', () => {
       'theme',
       'contentWidth',
       'contentPosition',
-      // YAZ-5976: Appearance › Explore.
+      // YAZ-5976, YAZ-5977: Appearance › Explore (Search size is a pointer row, found by search only).
       'exploreWidth',
+      'explorePageZoom',
+      'exploreSearchSize',
       'spacingVault',
       'lineSpacing',
       'blockGap',
@@ -336,6 +338,10 @@ describe('searchSettings', () => {
     // And a grouped folder table's Group line style (YAZ-4798), whose Thread is the sidebar's.
     expect(ids(searchSettings(settingCandidates(ctx()), 'thread'))).toEqual(['sidebarThreadColor', 'sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'folderPages.groupLineStyle'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'accent'))).toEqual(['sidebarThreadColor', 'threadColor'])
+  })
+
+  it('YAZ-5977: "search size" and "explore size" find the pointer to the zoom menu', () => {
+    for (const query of ['search size', 'explore size']) expect(ids(searchSettings(settingCandidates(ctx()), query))[0]).toBe('exploreSearchSize')
   })
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {

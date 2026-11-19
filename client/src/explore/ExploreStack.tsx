@@ -12,7 +12,8 @@
  * A menu, a picker or a pop-up that takes Esc keeps it (the mini window's rule, YAZ-4547). At most 12 layers; a
  * 13th says so and opens nothing. Each layer moves like a cell note (round 3, `layerBoxes.ts`). The layers act like
  * windows (round 6): a press on a layer behind brings it to the front (`frontOrder`); the keys and Esc go to the front one.
- * Explore size (YAZ-5881 D2) widens each panel's stack place and zooms all that is in a layer (`--explore-size`, explore.css).
+ * Search size (`exploreSize`, YAZ-5881 D2; the search alone since YAZ-5977) widens the search panel and zooms all that is in it
+ * (`--explore-size`, explore.css); the page, board and card windows keep the app's size and their own width.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { APP_ZOOM_STEPS, EXPLORE_SIZE_DEFAULT, rootOfPath, stepZoom, type CommentsOrder, type OpenStat, type PageView, type ZoomStep } from '@shared/types'
@@ -37,8 +38,9 @@ import { textCandidates } from './exploreRows'
 import { recentSections } from './recentSections'
 import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
+import { useExploreZoom } from './exploreZoom'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
-import { frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
+import { frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
 import { landOnCard, type CardPlace } from '../editor/card/cardOpen'
 import { keyText } from '@shared/keyLabel'
 import './explore.css'
@@ -93,7 +95,7 @@ export interface ExploreStackProps {
   opensOf?: (root: string) => Readonly<Record<string, OpenStat>>
   editsOf?: (root: string) => Readonly<Record<string, number>>
   /**
-   * Explore size in percent (`settings.exploreSize`, YAZ-5881 D2): each panel's width and all that is in it. ⌘+ / ⌘− /
+   * Search size in percent (`settings.exploreSize`, YAZ-5881 D2, YAZ-5977): the search panel's width and all that is in it. ⌘+ / ⌘− /
    * ⌘0 with the search panel in front step it along `APP_ZOOM_STEPS` through `onExploreSize` (D3; ⌘0: 125%).
    */
   exploreSize: number
@@ -193,14 +195,17 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const exploreSizeRef = useRef({ exploreSize, onExploreSize })
   exploreSizeRef.current = { exploreSize, onExploreSize }
   /** The one zoom of every page layer (round 4): the page zoom's pill and keys, kept in localStorage; a page tab's zoom is its own. */
-  const [zoom, setZoomState] = useState(savedExploreZoom)
+  // One value with Settings › Appearance › Explore › Page zoom (YAZ-5977, `exploreZoom.ts`): a change at either shows at the other.
+  const [zoom, setZoomState] = useExploreZoom()
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
-  const setZoom = useCallback((next: number) => {
-    zoomRef.current = next
-    setZoomState(next)
-    saveExploreZoom(next)
-  }, [])
+  const setZoom = useCallback(
+    (next: number) => {
+      zoomRef.current = next
+      setZoomState(next)
+    },
+    [setZoomState],
+  )
   /** Each search layer's rows (round 3), by layer id: what the page over it steps through. Dropped with the layer. */
   const links = useRef(new Map<number, SearchLink>())
   /** Bumped when a search's rows change under a page from it (YAZ-2571 bug): the page's ‹ n/m › is drawn again with the new rows. */

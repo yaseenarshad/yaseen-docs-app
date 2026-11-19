@@ -145,7 +145,7 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
               <ZoomStepper kind="app" value={app} onChange={onApp} />
               <span className="zoom-menu__label">Sidebar</span>
               <ZoomStepper kind="sidebar" value={sidebar} onChange={onSidebar} />
-              <span className="zoom-menu__label">Explore</span>
+              <span className="zoom-menu__label">Search size</span>
               <ZoomStepper kind="explore" value={explore} onChange={onExplore} />
             </div>
           </div>,

@@ -78,20 +78,22 @@ describe('where a layer stands (Mochi\'s offsets, clamped to the window)', () =>
     expect(tiny.width).toBe(240)
   })
 
-  it('YAZ-5881 D2: Explore size multiplies each panel\'s width, still cut to the edge gap; a box moved by hand keeps its own width', () => {
+  it('YAZ-5881 D2, YAZ-5977: Search size multiplies the SEARCH panel\'s width only, still cut to the edge gap; a page window keeps its own; a box moved by hand keeps its own width', () => {
     expect(panelWidth('search', 2000, 1.25)).toBe(625)
-    expect(panelWidth('page', 2000, 1.5)).toBe(1080)
-    expect(panelWidth('page', 2000, 0.9)).toBe(648)
+    expect(panelWidth('search', 2000, 2)).toBe(1000)
+    // A page or board window: its own width at every Search size.
+    expect(panelWidth('page', 2000, 1.5)).toBe(PAGE_WIDTH)
+    expect(panelWidth('board', 2000, 2)).toBe(PAGE_WIDTH)
     // A narrow window: the panel is cut to the window as at 100%.
-    expect(panelWidth('page', 1000, 2)).toBe(1000 - 2 * EDGE_GAP)
+    expect(panelWidth('search', 1000, 2)).toBe(1000 - 2 * EDGE_GAP)
     expect(panelWidth('search', 300, 2)).toBe(240)
-    // The stack place is centred on the wider panel.
-    expect(layerPlace('page', 0, 2000, 1.5)).toEqual({ left: Math.floor((2000 - 1080) / 2), top: 0, width: 1080 })
+    // The search's stack place is centred on the wider panel.
+    expect(layerPlace('search', 0, 2000, 1.5)).toEqual({ left: Math.floor((2000 - 750) / 2), top: 0, width: 750 })
     const list: ExploreLayer[] = [{ id: 1, kind: 'search' }, { id: 2, kind: 'page', path: '/v/a.md', mode: 'read' }]
     const own: LayerBox = { x: 40, y: 50, width: 400, height: null }
     const boxes = layerBoxes(list, new Map([[1, own]]), 2000, 1000, 1.5)
     expect(boxes[0]).toEqual(own)
-    expect(boxes[1].width).toBe(1080)
+    expect(boxes[1].width).toBe(PAGE_WIDTH)
   })
 })
 

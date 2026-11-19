@@ -10,6 +10,7 @@
  * section's page first, the way a user does: `mountOn('Files & Links', …)` is `mount(…)` and a
  * click on that nav item.
  */
+import { setExploreZoom } from '../explore/exploreZoom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -142,7 +143,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'exploreWidth', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'exploreWidth', 'explorePageZoom', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 /** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
 const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
@@ -1992,6 +1993,22 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, contentWidth: 'medium' })
     const full = mountOn('Appearance', { ...DEFAULT_SETTINGS, contentWidth: 'full', contentPosition: 'left' }, undefined, S)
     expect(rowButtons(full.el, 'contentPosition').every((b) => b.disabled)).toBe(true)
+  })
+
+  it('YAZ-5977: Appearance › Explore › Page zoom is the window\'s own zoom pill on the one Explore page zoom (explore:zoom); Search size is no row on the page', () => {
+    localStorage.removeItem('explore:zoom')
+    const { el } = mountOn('Appearance', DEFAULT_SETTINGS, undefined, S)
+    const pill = row(el, 'explorePageZoom')!.querySelector<HTMLElement>('.document-zoom')!
+    expect(row(el, 'explorePageZoom')?.closest('.settings-group')?.getAttribute('data-group-title')).toBe('Explore')
+    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('100%')
+    act(() => [...pill.querySelectorAll<HTMLButtonElement>('.document-zoom__step')][1].click())
+    expect(localStorage.getItem('explore:zoom')).toBe('125')
+    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('125%')
+    // The pill on a window's title row writes the same value: the row follows at once.
+    act(() => setExploreZoom(300))
+    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('300%')
+    expect(row(el, 'exploreSearchSize')).toBeNull()
+    localStorage.removeItem('explore:zoom')
   })
 
   it('YAZ-5976: Appearance › Explore › Window width is Default · Custom (px 400–4000, starts at 800); Default is null', () => {
