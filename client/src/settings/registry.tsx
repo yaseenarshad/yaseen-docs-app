@@ -509,7 +509,22 @@ export interface SettingsGroup {
   anchor?: string
   /** An extra class on the group's card (Settings › Hotkeys lays its rows out as boxes). */
   cardClass?: string
+  /**
+   * Sub-headings in a long group (YAZ-5969): each a small muted label, a thin line under it, over the rows it names (by
+   * id, in the group's own order). A row named by none sits under no sub-heading; a sub-heading whose rows all hide is
+   * not drawn. They only label: no fold, no map, and search and ⌘F find the rows as before.
+   */
+  subheadings?: readonly SettingsSubheading[]
 }
+
+/** One sub-heading of a group (YAZ-5969). */
+export interface SettingsSubheading {
+  title: string
+  rows: readonly string[]
+}
+
+/** The sub-heading `id`'s row sits under in `group`, if any (YAZ-5969). */
+export const subheadingOf = (group: SettingsGroup, id: string): string | undefined => group.subheadings?.find((sub) => sub.rows.includes(id))?.title
 
 export interface SettingsSection {
   id: SettingsSectionId
@@ -1230,6 +1245,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       {
         // YAZ-3440 D4: which icons the rows show, and the Line set's colours.
         title: 'File icons',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Icons', rows: ['sidebarIconSet', 'sidebarFileIcons'] },
+          { title: 'Colours', rows: ['iconColorsVault', 'sidebarIconColors.page', 'sidebarIconColors.card', 'sidebarIconColors.drawing', 'sidebarIconColors.diagram', 'sidebarIconColors.folder', 'sidebarIconColors.text', 'sidebarIconColors.pdf', 'sidebarIconColors.image'] },
+        ],
         items: [
           {
             // YAZ-3440 D4: Material Icon Theme's icons (the default), matched by name as in VS Code, or the app's own line glyphs.
@@ -1609,6 +1629,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // YAZ-4167 D16 (YAZ-4159 D16 names the group): every table. The calendar rows have their own group below (the YAZ-4163 demo).
         // "All tables" since YAZ-4775: on the Tables page a second "Tables" read as "Tables › Tables".
         title: 'All tables',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Header rows', rows: ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders'] },
+          { title: 'Size and text', rows: ['tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle'] },
+          { title: 'Row band', rows: ['tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold'] },
+          { title: 'Bullets in cells', rows: ['tableCellBulletIndent', 'tableCellBulletGap'] },
+        ],
         // YAZ-5487: the table look and new-table defaults are the vault's (table-look.json, `tableLookItems`), with the
         // Vault dropdown where the window has two or more; the phone reads them too. "Rows it marks" stays this Mac's.
         hint: "Saved in the vault's table-look.json: each vault has its own, on this Mac and on the phone. Rows it marks is this Mac's.",
@@ -1828,6 +1855,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // YAZ-4162 D6, D14 and YAZ-4163 D15; a group of its own from the YAZ-4163 demo: how a calendar table looks and starts, for every page. Never in the
         // page's file; the vault's table-look.json since YAZ-5487 (the Now button stays this Mac's).
         title: 'Calendar tables',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Now and next', rows: ['tableNowMark', 'tableSlotTime', 'tableSlotSeconds', 'tableNextShade', 'tableNextColour', 'tableNowButton'] },
+          { title: 'Past rows', rows: ['tableDimPast', 'tableShadeDarkness'] },
+          { title: 'Days and times', rows: ['tableCalendarDay', 'tableTimeFormat'] },
+        ],
         items: tableLookItems([
           {
             id: 'tableNowMark',
@@ -2099,6 +2132,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       {
         // YAZ-3403: one master switch, then each place's own. A place shows the panel only while both are on (`hoverOn`).
         title: 'Preview on hover',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Where it previews', rows: ['hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings'] },
+        ],
         items: [
           {
             // Draw's YAZ-1800 D2, ported by YAZ-3044 A20: the sidebar's hover preview, on by default.
@@ -2126,6 +2163,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'This vault',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Show IDs', rows: ['showIds', 'showIds.title', 'showIds.files'] },
+          { title: 'Links and editing', rows: ['linkClick', 'readOnlyVault'] },
+          { title: 'Page IDs', rows: ['ids', 'duplicates', 'idLetters', 'oldIds'] },
+        ],
         vault: true,
         items: [
           // YAZ-4938: one row of its own, saved in the vault (`.yaseendocs/unit-word.json`): what this vault calls a page.
@@ -2484,6 +2527,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'Card look',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Hidden words', rows: ['shownHiddenWords', 'markNextHidden', 'nextHiddenColour'] },
+          { title: 'Card size', rows: ['cardWidth', 'cardTextSize'] },
+          { title: 'Title', rows: ['cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom'] },
+          { title: 'Tables', rows: ['cardTablePosition'] },
+          { title: 'Card sides', rows: ['cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore'] },
+          { title: 'Spacing', rows: ['cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'] },
+        ],
         // YAZ-5484 (replaces YAZ-5005's "one setting for the whole app"): every row here writes the picked vault's
         // card-look.json (`cardLookItems`), with the Vault dropdown where the window has two or more; the phone draws
         // its cards with it too.

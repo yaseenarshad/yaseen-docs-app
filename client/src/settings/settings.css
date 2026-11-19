@@ -2123,3 +2123,18 @@
 .find-bar-dock--settings .find-bar {
   right: 20px;
 }
+
+/* A sub-heading in a long group (YAZ-5969): a small muted label with a thin line under it, over its rows in the card. */
+.settings-subheading {
+  margin: 18px 0 0;
+  padding: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-subheading:first-child {
+  margin-top: 10px;
+}

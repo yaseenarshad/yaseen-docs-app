@@ -34,13 +34,14 @@ import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
 import { KeySearch, NO_FILTER, type HotkeyFilter } from './hotkeysSection'
 import { SAME_WORD, UnitContext } from '../vault/unitWord'
-import { availableSections, groupsOf, isAvailable, resolveGroupTitle, resolveHint, resolveLabel, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
+import { availableSections, groupsOf, isAvailable, resolveGroupTitle, resolveHint, resolveLabel, resolveWide, subheadingOf, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 import { SettingRow } from './SettingRow'
 import { createSectionFinder } from './sectionFind'
 import { createFindChannel } from '../editor/find/findChannel'
 import { FindBar } from '../editor/find/FindBar'
 import { SIDEBAR_REVEAL_MS } from '../sidebar/revealRow'
+import { revealInScroller } from '../editor/find/leastScroll'
 import './settings.css'
 
 interface SettingsDialogProps {
@@ -147,10 +148,11 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
    * "Show in settings" (the YAZ-3818 demo), from a search hit's heading: the search goes, the page of the hit opens, and
    * its group comes into view, near the top (no scroll when it shows whole), with the sidebar's reveal flash.
    */
-  const [reveal, setReveal] = useState<{ index: number; title: string | undefined } | null>(null)
-  const showInSettings = (s: SettingsSection, g: SettingsGroup): void => {
+  const [reveal, setReveal] = useState<{ index: number; title: string | undefined; row?: string } | null>(null)
+  /** `row`: the first hit, which comes into view too when the group is taller than the pane (YAZ-5969). */
+  const showInSettings = (s: SettingsSection, g: SettingsGroup, row?: string): void => {
     showPage(s.id)
-    setReveal({ index: groupsOf(s, ctx).indexOf(g), title: resolveGroupTitle(g, ctx) })
+    setReveal({ index: groupsOf(s, ctx).indexOf(g), title: resolveGroupTitle(g, ctx), row })
   }
   useEffect(() => {
     const pane = paneRef.current
@@ -162,6 +164,8 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     const box = target.getBoundingClientRect()
     const view = pane.getBoundingClientRect()
     if (box.top < view.top || box.bottom > view.bottom) pane.scrollTop += box.top - view.top - 12
+    const hit = reveal.row === undefined ? null : target.querySelector(`[data-setting="${CSS.escape(reveal.row)}"]`)
+    if (hit !== null) revealInScroller(hit, pane, { gap: 12 })
     target.classList.add('settings-group--revealed')
     // Not this effect's cleanup: clearing `reveal` above runs it again at once.
     window.clearTimeout(revealTimer.current)
@@ -175,6 +179,16 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       {item.render(ctx)}
     </SettingRow>
   )
+  /** The rows, each sub-heading (YAZ-5969) drawn over the first of its rows that shows. */
+  const rowsOf = (g: SettingsGroup, items: readonly SettingDef[]) => {
+    let last: string | undefined
+    return items.flatMap((item) => {
+      const sub = subheadingOf(g, item.id)
+      const head = sub !== undefined && sub !== last ? [<h4 key={`sub:${sub}`} className="settings-subheading">{sub}</h4>] : []
+      last = sub
+      return [...head, row(item)]
+    })
+  }
   /** A per-vault page says which vault it acts on (YAZ-2602 R10), where App names one: a window with two or more. */
   const vaultLine = (className: string, of?: (ctx: SettingsCtx) => string | undefined) => ctx.vaultName !== undefined && <p className={className}>Vault: {of?.(ctx) ?? ctx.vaultName}</p>
   /** `titled` is false under a search breadcrumb, which already names the group. A group with no row to show is not there. */
@@ -183,7 +197,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{resolveGroupTitle(g, ctx)}</h3>}
       {g.vault === true && vaultLine('settings-group__hint', g.vaultOf)}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}
-      <div className={`settings-group__card${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{items.map(row)}</div>
+      <div className={`settings-group__card${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{rowsOf(g, items)}</div>
     </div>
   )
   const section = (s: SettingsSection) => (
@@ -216,10 +230,10 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
         <section key={i} className="settings-section">
           <h2 className="settings-section__title">
             {/* The heading and its arrow show the group on its page ("Show in settings", the YAZ-3818 demo). */}
-            <span className="settings-search__goto-text" onClick={() => showInSettings(entry.section, entry.group)}>
+            <span className="settings-search__goto-text" onClick={() => showInSettings(entry.section, entry.group, entry.items[0]?.id)}>
               {entry.group.title === undefined ? entry.section.title : `${entry.section.title} › ${resolveGroupTitle(entry.group, ctx)}`}
             </span>
-            <button type="button" className="settings-search__goto" title="Show in settings" aria-label="Show in settings" onClick={() => showInSettings(entry.section, entry.group)}>
+            <button type="button" className="settings-search__goto" title="Show in settings" aria-label="Show in settings" onClick={() => showInSettings(entry.section, entry.group, entry.items[0]?.id)}>
               <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
           </h2>

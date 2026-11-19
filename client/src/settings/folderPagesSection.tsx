@@ -151,6 +151,12 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
   groups: [
     {
       title: 'Personal',
+      // Sub-headings (YAZ-5969).
+      subheadings: [
+        { title: 'On hover', rows: ['hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand'] },
+        { title: 'Mini window', rows: ['folderPages.keepWindowPinned'] },
+        { title: 'Asking first', rows: ['folderPages.askBeforeDelete', 'folderPages.confirmChanges'] },
+      ],
       items: [
         row('weekStartsOn', 'Week starts on', WEEK_START_OPTIONS, { hint: 'The first day of the calendar view.', keywords: ['week', 'monday', 'sunday'] }),
         {
@@ -184,6 +190,14 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
     },
     {
       title: 'View defaults',
+      // Sub-headings (YAZ-5969).
+      subheadings: [
+        { title: 'Rows and columns', rows: ['folderPages.rowHeight', 'folderPages.rowNumbers', 'folderPages.columnTypeIcons', 'folderPages.showNewButtons', 'folderPages.textInCells'] },
+        { title: 'Groups', rows: ['folderPages.groupIndent', 'folderPages.stickyGroups', 'folderPages.groupLines', 'folderPages.groupLineStyle', 'folderPages.showEmptyGroups', 'folderPages.showEmptyColumns'] },
+        { title: 'Folders', rows: ['folderPages.subfolders', 'folderPages.foldersFirst', 'folderPages.folderIcons', 'folderPages.folderCounts'] },
+        { title: 'Cards', rows: ['folderPages.cardClickOpens'] },
+        { title: 'Calendar', rows: ['folderPages.calendarScale', 'folderPages.cardTitles', 'folderPages.hideWeekends', 'folderPages.weekLine', 'folderPages.dayLine'] },
+      ],
       hint: 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them. Saved in the vault\'s folder-pages.json, with the Page group and Confirm changes: each vault has its own, on this Mac and on the phone.',
       items: [
         {
