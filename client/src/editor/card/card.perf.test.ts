@@ -111,7 +111,8 @@ describe('a page with 50 cards (idea 25)', () => {
     // The sides are the same elements: no render ran; the pill follows the index.
     source.update(() => null, [], [], true, ['WIKI'])
     expect([...view.dom.querySelectorAll('.card__sides')]).toEqual(sides)
-    expect(view.dom.querySelector('[data-card-link]')?.classList.contains('wikilink--unresolved')).toBe(true)
+    // The link rides on the pill's group (YAZ-5792); the pill's name inside it wears the missing look.
+    expect(view.dom.querySelector('[data-card-link] > .wikilink')?.classList.contains('wikilink--unresolved')).toBe(true)
     // What it cost before (each card rendered again: marked + DOMPurify), for the log.
     const look = cardLook(source, undefined)
     const text = CARD(0).split('\n').slice(1, 4).join('\n')

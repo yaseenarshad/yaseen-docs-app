@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { renderPage, splitBlocks, type PageLook } from './pageRender'
+import { cardPillEnds } from '@client/editor/wikilink/cardPill'
+import { pillIconPlace } from '@client/editor/wikilink/linkPillLook'
 import { ATTACK, remoteAttributes, watchWrites } from './testing'
 import { budgetMs } from '../../../client/src/test-perf'
 
@@ -216,7 +218,8 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
       ['Trip plan', 'page', 'Trip plan.md', null, 'wikilink'],
       ['the plan', 'page', 'Trip plan.md', null, 'wikilink'],
       ['Nowhere', null, null, null, 'wikilink wikilink--unresolved'],
-      ['Capital of Spain', 'card', 'cards/capital.md', null, 'wikilink wikilink--card'],
+      // A card link holds the Mac's card pill (YAZ-5792, `cardPill`); the `<a>` draws nothing.
+      ['Capital of Spain', 'card', 'cards/capital.md', null, 'page-pill'],
       ['DEMO-99', null, null, null, 'wikilink wikilink--unresolved'],
       ['Guide.pdf', 'file', 'docs/Guide.pdf', null, 'wikilink'],
       ['web', null, null, '_blank', ''],
@@ -227,10 +230,33 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
       // YAZ-5455: a `#part` of this page: the page view lands on it.
       ['top', 'heading', null, null, ''],
     ])
+    expect(el.querySelector('a[data-open="card"] .wikilink--card')?.textContent).toBe('Capital of Spain')
     expect(el.querySelector<HTMLAnchorElement>('a[data-open="heading"]')?.dataset.heading).toBe('x')
     expect(el.querySelector('a[target="_blank"]')?.getAttribute('rel')).toBe('noopener noreferrer')
     expect(el.querySelector('.wikilink--unresolved')?.getAttribute('title')).toBeNull()
     expect([...el.querySelectorAll('.wikilink--unresolved')][1].getAttribute('aria-label')).toBe('Missing page · DEMO-99')
+  })
+
+  it('YAZ-5792: a card link follows the vault`s format, as the Mac`s card pill: the format`s pieces around the title, the card icon where `{icon}` stands', async () => {
+    const pills = { format: '{icon} {name}({number}){mark}' }
+    const card = { id: 'DEMO-40', path: 'cards/capital.md', index: 0, title: 'Capital of Spain', notitle: false }
+    const formatted: PageLook = {
+      ...look,
+      link: (inner) =>
+        inner === 'DEMO-40'
+          ? { ...look.link(inner), ends: cardPillEnds({ pills, vault: 'Mine', records: [], folders: [] }, card), iconOnName: pillIconPlace(pills) === 'name' }
+          : look.link(inner),
+    }
+    const host = document.createElement('div')
+    await renderPage('See [[DEMO-40]].', formatted, host)
+    const a = host.querySelector<HTMLAnchorElement>('a[data-open="card"]')!
+    expect(a.className).toBe('page-pill')
+    expect(a.textContent).toBe(' Capital of Spain(40)')
+    expect(a.querySelector('.link-pill__icon.card-icon')).not.toBeNull()
+    expect(a.querySelector('.link-pill__number')?.textContent).toBe('40')
+    expect(a.querySelector('.link-pill__mark')).not.toBeNull()
+    // The icon is a piece: the title has none of its own.
+    expect(a.querySelector('.wikilink--card')).toBeNull()
   })
 
   it('embeds: a card in place, a missing card as the Mac says it, a sound, a drawing to draw, a draw.io diagram to draw', async () => {

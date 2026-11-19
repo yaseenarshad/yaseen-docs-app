@@ -13,7 +13,9 @@
  * width (`--card-text-width`, `contentWidthVars`), a habit of this Mac.
  */
 import { cardLookOf, cardLookStyle } from '@shared/cardLook'
+import type { LinkPills } from '@shared/linkPills'
 import type { SettingsState } from '@shared/types'
+import { linkPillVars } from '../editor/wikilink/linkPillLook'
 import { contentWidthVars } from '../lib/contentWidth'
 import type { CSSProperties } from 'react'
 
@@ -37,4 +39,19 @@ export function vaultCardVars(look: object, settings: SettingsState, resolve: ()
     bySettings.set(settings, vars)
   }
   return vars
+}
+
+const cardSurfaceStyles = new WeakMap<LinkPills, WeakMap<CSSProperties, CSSProperties>>()
+/**
+ * The style of a surface that shows a vault's cards outside a page layer — the Inbox, Preview a card, Explore's card
+ * layer (YAZ-5792, YAZ-5822): its card look and its link pills look (`linkPillVars`), since a card's text holds link
+ * pills (`cardPill`). Cached on both objects, as App's `layerStyleOf`, so a surface's style keeps its identity between
+ * renders.
+ */
+export function cardSurfaceStyleOf(pills: LinkPills, cardVars: CSSProperties): CSSProperties {
+  let byCard = cardSurfaceStyles.get(pills)
+  if (byCard === undefined) cardSurfaceStyles.set(pills, (byCard = new WeakMap()))
+  let style = byCard.get(cardVars)
+  if (style === undefined) byCard.set(cardVars, (style = { ...linkPillVars(pills), ...cardVars } as CSSProperties))
+  return style
 }

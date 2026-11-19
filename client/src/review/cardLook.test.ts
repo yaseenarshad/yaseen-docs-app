@@ -5,7 +5,8 @@
 import { describe, expect, it } from 'vitest'
 import { CARD_LOOK_CLEAN, CARD_LOOK_DEFAULTS, appCardLook, cardLookFile, cardLookOf, cardLookSettings, sanitizeCardLook } from '@shared/cardLook'
 import { CARD_SPACING_CLEAN, DEFAULT_SETTINGS } from '@shared/types'
-import { cardLookVars, vaultCardVars } from './cardLook'
+import { cardLookVars, cardSurfaceStyleOf, vaultCardVars } from './cardLook'
+import { NO_LINK_PILLS } from '@shared/linkPills'
 
 describe('card-look.json (shared/cardLook.ts)', () => {
   it('the defaults are the app\'s (DEFAULT_SETTINGS, CARD_SPACING_CLEAN), written out for the phone\'s first load', () => {
@@ -111,5 +112,21 @@ describe('the card look as CSS variables (cardLook.ts)', () => {
     expect(vaultCardVars(look, DEFAULT_SETTINGS, () => DEFAULT_SETTINGS)).toBe(a)
     expect(a).toMatchObject({ '--shown-hidden-words': 'box' })
     expect(vaultCardVars(look, { ...DEFAULT_SETTINGS }, () => DEFAULT_SETTINGS)).not.toBe(a)
+  })
+})
+
+describe('a card surface wears the vault`s link pills look (YAZ-5822)', () => {
+  it('the Inbox, Preview a card and Explore`s card layer: the card look and the pill look, one cached style', () => {
+    const pills = { format: '{icon} {name}({number}){mark}', box: { fill: 'none' as const }, parts: { mark: { color: 'red' as const } } }
+    const cardVars = vaultCardVars({}, DEFAULT_SETTINGS, () => DEFAULT_SETTINGS)
+    const style = cardSurfaceStyleOf(pills, cardVars) as Record<string, string>
+    expect(style['--pill-bg']).toBe('transparent')
+    expect(style['--pill-mark-fg']).toBe('var(--table-text-red)')
+    // The card look rides along, untouched.
+    for (const [key, value] of Object.entries(cardVars)) expect(style[key]).toBe(value)
+    // The same two objects give the same style object: a surface keeps its style's identity between renders.
+    expect(cardSurfaceStyleOf(pills, cardVars)).toBe(style)
+    // A vault with the app's own pill look adds no pill variable.
+    expect(Object.keys(cardSurfaceStyleOf(NO_LINK_PILLS, cardVars)).some((key) => key.startsWith('--pill-'))).toBe(false)
   })
 })

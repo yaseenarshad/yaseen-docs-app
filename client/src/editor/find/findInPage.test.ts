@@ -35,6 +35,7 @@ import { createFindChannel, type FindChannel } from './findChannel'
 import { FIND_ACTIVE_CLASS, FIND_MATCH_CLASS, findThreadAnchor } from './findInPage'
 import { WIKILINK_CLASS, WIKILINK_SYNTAX_CLASS, createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
+import { linkResolver } from '../../links/folderLinks'
 import { buildViewOnlyCatalogFromEntries, type ViewOnlyEntry } from '../../links/viewOnlyCatalog'
 import { headingFoldHidden } from '../outline/headingFoldTestKit'
 
@@ -482,6 +483,20 @@ describe('pills (YAZ-3744 S9, S17)', () => {
     line.querySelectorAll(`.${WIKILINK_SYNTAX_CLASS}`).forEach((el) => el.remove())
     return line.textContent
   }
+
+  it('YAZ-5834: finds a card pill by its title and marks the title (the group around it draws nothing)', async () => {
+    const records = [{ path: '/v/verbs.md', name: 'verbs.md', basename: 'verbs', title: 'verbs', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], id: 'YAS-1', cards: [{ id: 'YAS-126', off: false, next: false, reviews: [], title: 'Ser' }] }]
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update(linkResolver(records, '/v', [], [], ['YAS']), records, [], true, ['YAS'])
+    const { root, channel } = await mountFind('pad [[YAS-126]] tail\n', { wikilinks })
+    const title = root.querySelector<HTMLElement>('.wikilink--card')!
+    expect(title.textContent).toBe('Ser')
+    channel.open()
+    channel.setQuery('ser')
+    expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })
+    expect(matchEls(root)).toEqual([title])
+    expect(activeEls(root)).toEqual([title])
+  })
 
   it('finds an ID pill by its title: one match, the title widget marked', async () => {
     const { root, channel } = await mountPills()

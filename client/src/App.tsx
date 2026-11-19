@@ -84,7 +84,7 @@ import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/hi
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
-import { cardLookVars, vaultCardVars } from './review/cardLook'
+import { cardLookVars, cardSurfaceStyleOf, vaultCardVars } from './review/cardLook'
 import { appCardLook, cardLookSettings } from '@shared/cardLook'
 import { useReviewOnRoots } from './review/useReviewSettings'
 import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
@@ -1085,11 +1085,13 @@ export function App() {
   /**
    * The card look of the vault that holds `path` (YAZ-5484), as variables for every surface that shows one of its cards
    * (page layers through `textVarsFor`, Explore's card layer, the Inbox, Preview a card): the vault's whole look over the
-   * app's settings, or none for a vault with no card-look.json (it reads `.app`'s, the app's look).
+   * app's settings, or none for a vault with no card-look.json (it reads `.app`'s, the app's look). With its link pills
+   * look too (YAZ-5792, `cardSurfaceStyleOf`): a card's links wear the vault's pill style on every one of those surfaces.
    */
   const cardVarsFor = (path: string): CSSProperties => {
     const look = scopeOf(path).cardLook.look
-    return look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
+    const cardVars = look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
+    return cardSurfaceStyleOf(scopeOf(path).linkPills.pills, cardVars)
   }
   /**
    * The text formatting of the vault that holds `path` (YAZ-3067 D12), as the style of the layer

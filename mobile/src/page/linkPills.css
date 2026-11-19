@@ -1,7 +1,9 @@
 /* The vault's link pills on the phone: the palette the Mac's pill colours name (`table.css`), which
-   `linkPillVars` reads (`--table-fill-solid-*` for a box, `--table-text-*` for a part), on the reader only. The pill's own
+   `linkPillVars` reads (`--table-fill-solid-*` for a box, `--table-text-*` for a part), on the reader and on Review's
+   card (YAZ-5792). The pill's own
    rules are the Mac's `wikilink.css`. */
-.reader {
+.reader,
+.phone-card__body {
   --table-text-red: #c0392b;
   --table-text-orange: #b45309;
   --table-text-yellow: #a16207;
@@ -23,7 +25,7 @@
   --table-fill-solid-grey: rgb(150, 150, 150);
   --table-fill-solid-brown: rgb(170, 120, 70);
 }
-:where([data-scheme='dark']) .reader {
+:where([data-scheme='dark']) :is(.reader, .phone-card__body) {
   --table-text-red: #ff7b72;
   --table-text-orange: #f0a35e;
   --table-text-yellow: #e3c04a;

@@ -152,6 +152,6 @@ describe('a board in a card (YAZ-5015)', () => {
     const card = renderCard('![[Gone.drawio]]', {}, look)
     expect(card.querySelector('.card__board')).toBeNull()
     const pill = card.querySelector('.wikilink')!
-    expect([pill.classList.contains('wikilink--unresolved'), pill.getAttribute('data-card-link')]).toEqual([true, 'Gone.drawio'])
+    expect([pill.classList.contains('wikilink--unresolved'), pill.closest('[data-card-link]')?.getAttribute('data-card-link')]).toEqual([true, 'Gone.drawio'])
   })
 })
