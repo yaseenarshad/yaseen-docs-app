@@ -229,6 +229,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                         value={row.values[key]}
                         editor={cellEditor(row.record.properties[bare], typings.get(key) ?? null)}
                         options={typings.get(key)?.options}
+                        required={typings.get(key)?.required}
                         titles={linkNames.get(key) ?? titles}
                         resolve={resolve}
                         readOnly={readOnly.has(row.record.path)}

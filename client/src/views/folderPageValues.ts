@@ -2,6 +2,7 @@
  * A FOLDER PAGE'S ROWS AS ITS VIEWS READ THEM, pure (YAZ-5460): the Mac's `FolderView` and the phone's folder page both
  * build them here, so the phone shows each value as the Mac does. No bridge, no React.
  */
+import { isCardMark } from '@shared/cardFileFormat'
 import { folderValues } from '@shared/folderValues'
 import { heldKey, keyFold, respell } from '@shared/propertyKeys'
 import { READ_ONLY_KEY } from '@shared/readOnly'
@@ -20,7 +21,7 @@ export function withTied(properties: Record<string, unknown>, row: IndexRecord, 
 
 /**
  * A row's values as the views read them (YAZ-4713 C1/C3): its file's own fields less the keys no column may have
- * (`columnReservedKeys`: the app's, and a subfolder row's settings block, D31) — but the read-only switch, which a view
+ * (`columnReservedKeys`: the app's, and a subfolder row's settings block, D31) and a card file's `kind: card` mark (YAZ-5850) — but the read-only switch, which a view
  * may still show (YAZ-3130) — and each separate column's value from this page's block. The same object when nothing changes.
  *
  * YAZ-4769 (one key, capitals ignored): each field whose key is a page column's in other capitals reads under the
@@ -31,7 +32,11 @@ export function withTied(properties: Record<string, unknown>, row: IndexRecord, 
  */
 export function rowValues(properties: Record<string, unknown>, reserved: ReadonlySet<string>, pageId: string | undefined, separate: ReadonlySet<string>, spell: ReadonlyMap<string, string>): Record<string, unknown> {
   const keys = Object.keys(properties)
-  const kept = keys.some((key) => reserved.has(key) && key !== READ_ONLY_KEY) ? Object.fromEntries(keys.filter((key) => !reserved.has(key) || key === READ_ONLY_KEY).map((key) => [key, properties[key]])) : properties
+  // YAZ-5850 root cause: a card file's `kind: card` mark is the app's, but it was no reserved key, so the Pages table showed
+  // it as a raw "Kind" column. Solution: drop exactly the mark, as the properties panel hides it (`isCardMark`). The Type
+  // column (`file.kind`) shows card files; any other `kind` value is the user's and stays.
+  const drop = (key: string): boolean => (reserved.has(key) && key !== READ_ONLY_KEY) || isCardMark(key, properties[key])
+  const kept = keys.some(drop) ? Object.fromEntries(keys.filter((key) => !drop(key)).map((key) => [key, properties[key]])) : properties
   const own = respell(kept, spell, reserved)
   if (separate.size === 0) return own
   const block = folderValues(properties, pageId)

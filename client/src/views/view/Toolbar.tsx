@@ -65,6 +65,8 @@ export interface ToolbarProps {
    * for search to filter, so neither is offered.
    */
   documentView?: boolean
+  /** The tools after the tabs (count, New, Sort, Columns, Filter, search); false while a Card table has cards off (YAZ-5839). */
+  actions?: boolean
   /** The folder's bundle, for the Properties menu: its declarations, and the door they are written back through (YAZ-895). */
   folder: FolderHost
   /** The app tab that shows this folder page: the key of the Properties popover's remembered tab (YAZ-4607 D59). Absent in the right panel. */
@@ -84,7 +86,7 @@ export const rowsLabel = (shown: number, total: number, folders?: { shown: numbe
     : `${countLabel(shown - folders.shown, total - folders.total)} · ${countLabel(folders.shown, folders.total, 'folder')}`
 
 /** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
-export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder, dateColumns = NO_COLUMNS, tabId, notice, filterAsks = 0 }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, folders, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, actions = true, folder, dateColumns = NO_COLUMNS, tabId, notice, filterAsks = 0 }: ToolbarProps) {
   const unit = useUnit()
   const [open, setOpen] = useState<Menu | null>(null)
   // A new ask from the column menu (YAZ-4919) opens the Filter popover: state set from a prop in render, no effect.
@@ -177,7 +179,8 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
           setEditing(null)
         }}
       />
-      <div className="view-toolbar__actions">
+      {/* A Card table while cards are off (YAZ-5839) has no rows to sort, filter, count or add: only its tabs show. */}
+      {actions && <div className="view-toolbar__actions">
         {notice}
         {/* The Page tab's own settings (YAZ-3746 13BM PS1): its text switches, which the folder ⚙ held before. */}
         {pageCog !== null && <PageSettings {...pageCog} trigger={PAGE_TAB_TRIGGER} />}
@@ -281,7 +284,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
           {/* A view listing cards (YAZ-5319) counts cards. */}
           {cardRowsOf(view) ? countLabel(shown, total, 'card') : rowsLabel(shown, total, folders)}
         </span>
-      </div>
+      </div>}
     </div>
   )
 }
