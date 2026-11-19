@@ -152,9 +152,9 @@ describe('YAZ-5918: open sides stay open over a full redraw', () => {
 })
 
 describe('YAZ-5874 D4: the card page cog names a real Settings place', () => {
-  // BUG YAZ-5932: the card page cog's Card width Default says "Settings › Review › Card width". Settings has no Review
-  // section: Card width is in Settings › Cards › Card look. Remove `.fails` when the tooltip names the real place.
-  it.fails('the Default tooltip of Card width is the path of the Card width row in Settings', () => {
+  // YAZ-5932 (fixed): the Default said "Settings › Review › Card width", a place Settings does not have. Card width is
+  // in Settings › Cards › Card look.
+  it('the Default tooltip of Card width is the path of the Card width row in Settings', () => {
     const source = readFileSync(resolve(__dirname, '../CardFileView.tsx'), 'utf8')
     const named = source.match(/pageWidthSettings="([^"]+)"/)?.[1]
     let real: string | undefined

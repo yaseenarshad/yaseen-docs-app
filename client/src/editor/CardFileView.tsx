@@ -31,7 +31,7 @@
  *    this tab (`useTimedUnlock`; the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
  *    While locked, Edit card asks first; at the unlock's end an open Edit card is Done first, then the tab locks. The
  *    cog has what applies to a card: "Read only", "Card width" and "Position" (YAZ-5871 D4: the file's own `page-width`
- *    and `page-position`; Default follows Settings › Review › Card width and Appearance › Page position), and the counts.
+ *    and `page-position`; Default follows Settings › Cards › Card look › Card width and Appearance › Page position), and the counts.
  *    A page's other rows (line numbers, folding, the table of contents, the code and table widths, "Turn into a card
  *    file", …) and Collapse all are not there: a card has none of them.
  *  - ⌘F (YAZ-5378): the page's find bar, over the title and the card as the tab shows them (`cardFind.ts`, the page's
@@ -126,7 +126,7 @@ export interface CardFileViewProps {
   /** The comments' order (YAZ-5466): the app's one setting, as a page's block reads it. Absent: no comments block. */
   commentsOrder?: CommentsOrder
   onChangeCommentsOrder?: (order: CommentsOrder) => void
-  /** Settings › Appearance › Content width and Page position, and Settings › Review › Card width (YAZ-5871 D4): the cog's Defaults. Absent → the app's settings now. */
+  /** Settings › Appearance › Content width and Page position, and Settings › Cards › Card look › Card width (YAZ-5871 D4): the cog's Defaults. Absent → the app's settings now. */
   contentWidth?: ContentWidth
   contentPosition?: ContentPosition
   cardWidth?: number | null
@@ -270,7 +270,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     void transformFile(path, (text) => setPageReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
   /**
    * The cog's "Card width" and "Position" (YAZ-5871 D4): the card file's own `page-width` and `page-position`, on the
-   * newest bytes. `null` removes the key: the card follows Settings › Review › Card width and Appearance › Page position.
+   * newest bytes. `null` removes the key: the card follows Settings › Cards › Card look › Card width and Appearance › Page position.
    */
   const setOwnKey = (row: string, change: (text: string) => string) =>
     void transformFile(path, change).then(read, (err: unknown) => onNotice(`${row} could not change: ${err instanceof Error ? err.message : String(err)}`))
@@ -428,7 +428,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
         )}
         <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} cardSides={cardSides} onChangeCardSides={setCardSides} cardSidesSetting="Card sides on card pages" readText={() => cardText}
           // YAZ-5871 D4: the card's own width and position, saved in the card file. Default follows Card width and Page position.
-          pageWidth={ownWidth} appContentWidth={defaultWidth} pageWidthLabel="Card width" pageWidthSettings="Review › Card width" onChangePageWidth={(next) => setOwnKey('Card width', (text) => writePageWidth(text, next))}
+          pageWidth={ownWidth} appContentWidth={defaultWidth} pageWidthLabel="Card width" pageWidthSettings="Cards › Card look › Card width" onChangePageWidth={(next) => setOwnKey('Card width', (text) => writePageWidth(text, next))}
           pagePosition={ownPosition} appContentPosition={appPosition} onChangePagePosition={(next) => setOwnKey('Position', (text) => writePagePosition(text, next))} outsideGlow={pageGlow} appGlow={outsideChangeGlow} onChangeOutsideGlow={changeGlow} />
       </StatusChips>
       <OutsideChangesBar channel={glow.channel} onKeep={() => changeGlow('until-checked')} />

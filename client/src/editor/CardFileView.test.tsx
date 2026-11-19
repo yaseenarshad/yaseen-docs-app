@@ -722,7 +722,7 @@ describe('the top bar of a card file (YAZ-5102)', () => {
     const group = (label: string) => document.querySelector<HTMLElement>(`.page-settings__menu [role="group"][aria-label="${label}"]`)!
     const pick = (label: string, choice: string) => act(() => [...group(label).querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === choice)!.click())
     expect([...group('Card width').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Default', 'Narrow', 'Medium', 'Full'])
-    expect(group('Card width').querySelector('button')!.title).toMatch(/^Default follows Settings › Review › Card width: /)
+    expect(group('Card width').querySelector('button')!.title).toMatch(/^Default follows Settings › Cards › Card look › Card width: /)
     expect([...group('Position').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Default', 'Centre', 'Left'])
     pick('Position', 'Left')
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(`---\nkind: card\npage-position: left\n---\n${CARD}`))

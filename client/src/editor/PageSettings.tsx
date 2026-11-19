@@ -104,7 +104,7 @@ export interface PageSettingsProps {
   appContentWidth?: ContentWidth
   /** Absent → no "Page width" row (a folder page's Page tab, a board, a drawing, a diagram, a code file). `null` is Default. */
   onChangePageWidth?: (width: ContentWidth | null) => void
-  /** The width row's name and the Settings row its Default follows (YAZ-5871 D4: a card file's "Card width", "Review › Card width"). Absent → "Page width", "Appearance › Content width". */
+  /** The width row's name and the Settings row its Default follows (YAZ-5871 D4: a card file's "Card width", "Cards › Card look › Card width"). Absent → "Page width", "Appearance › Content width". */
   pageWidthLabel?: string
   pageWidthSettings?: string
   /** This page's own position (YAZ-5871 D2): Centre or Left, or `null` (Default), which follows Settings › Appearance › Page position. */
