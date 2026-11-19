@@ -165,7 +165,7 @@ describe('Explore on the phone (YAZ-5472)', () => {
     expect(screen.scrollTop).toBe(431)
   })
 
-  it('with no link-click file (the Mac’s default, "open"), a row opens full screen, as before (and as with "explore": Q4)', async () => {
+  it('with no link-click file (the phone’s default, "open"; the Mac’s is "explore", YAZ-5973), a row opens full screen, as before (and as with "explore": Q4)', async () => {
     h = await openSearch(READER_FILES)
     await h.click(/^Trip plan/)
     await waitFor(h, () => h!.host.querySelector('.topbar__title')?.textContent === 'Trip plan')
