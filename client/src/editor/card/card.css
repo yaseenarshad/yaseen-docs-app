@@ -33,11 +33,15 @@
    and the card window's card, strips and mentions. In a page the card is a block: never wider than the column (its
    `width`), at the column's left edge as the other blocks. Same as pages is the pages' step, so the card fills the
    column. A card file's tab: its card, title, strips and mentions, at the column's left edge. The Inbox sets its own
-   column from the same variable, with its own sides (`cardScreens.css`). */
+   column from the same variable, with its own sides (`cardScreens.css`).
+   YAZ-5871 D3: a card narrower than its column follows the page's position (`--column-start`: 0 Left, auto Centre),
+   in a page, a card file's tab and Explore's card window. A card file's column is `.card-file > .card-file__page`
+   (`cardFileView.css`), so its rule outweighs `.milkdown *`'s margin reset as the other two do. */
 .milkdown .card,
 .explore__body--card > :not(.find-bar-dock--page),
-.card-file__page > * {
+.card-file > .card-file__page > * {
   max-width: calc(var(--card-text-width) + 34px);
+  margin-inline: var(--column-start, auto) auto;
 }
 .card.ProseMirror-selectednode {
   outline: 2px solid var(--accent);
@@ -106,6 +110,22 @@
 }
 .card__state:empty {
   display: none;
+}
+/* The head's marks (YAZ-5915, `cardHeadMarks`): the review state, the title rule, "To fix", in one quiet line after the
+   ID. A narrow card cuts them first ("…"), never the ID. */
+.card__head .card__marks {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.card__head .card__marks:empty {
+  display: none;
+}
+.card__head .card__marks > .card__state + .card__state {
+  margin-left: 6px;
 }
 /* "Up next" (YAZ-4999 D3): a small chip after the ID in the page, the card window and the Inbox; its × removes the mark. */
 :is(.card, .explore__head, .card-inbox__head) .card__next {
@@ -537,6 +557,87 @@
 .card__sides .card__side th:not([align]) {
   text-align: start;
 }
+/* YAZ-5867: THE LOOK THE PAGE SAVED, in a card's read table. `cardRender.ts` reads the table's comment with the page's
+   one reader, sets its marks after DOMPurify (`tableMarks.ts`: `data-fill`, `data-header-*`, a cell's own `text-align`
+   and `vertical-align` inline …) and the variables they name (`lookVars`: `cardTable.css`'s header and subheader row
+   variables, `--cell-fill`, `--cell-ink`). These rules paint them as `table.css` paints a page table, light and dark.
+   Not in a phone page (`.page-table`: its `tables.css` draws the same marks there), so a cell never takes two tints.
+   Where the phone Review's own rules weigh more, these name the property itself. Order: the header and subheader
+   rows, then the stripes, then the fills, so a filled cell keeps its fill. */
+.card__sides .card__table:not(.page-table) > table:is([data-header-color], [data-header-strength]) th,
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-fill] {
+  background-color: var(--table-cell-tint, transparent);
+}
+.card__sides .card__table:not(.page-table) > table[data-header-weight] th {
+  font-weight: var(--table-header-weight, bold);
+}
+.card__sides .card__table:not(.page-table) > table[data-header-text] th {
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), currentColor));
+}
+/* The table's own Align wins over Settings' (`--table-header-aligned` off: the nearest wins, as a page table's) and
+   over each header cell's own, as on the page. The subheader rows' the same. */
+.card__sides .card__table:not(.page-table) > table[data-header-align] {
+  --table-header-aligned: off;
+}
+.card__sides .card__table:not(.page-table) > table[data-header-align='left'] th { text-align: left !important; }
+.card__sides .card__table:not(.page-table) > table[data-header-align='center'] th { text-align: center !important; }
+.card__sides .card__table:not(.page-table) > table[data-header-align='right'] th { text-align: right !important; }
+/* Subheader rows (`subhead 5 12`): the table's own parts, else Settings' on `.app` (`cardTable.css`), else the Mac's
+   defaults (Medium grey, Bold, Full). */
+.card__sides .card__table:not(.page-table) > table td[data-subhead] {
+  --table-cell-tint: color-mix(in srgb, var(--table-subheader-hue, var(--crepe-color-on-background, var(--fg))) calc(var(--table-subheader-strength, 12) * var(--table-subheader-scale, 1) * 1%), transparent);
+  font-weight: var(--table-subheader-weight, bold);
+  color: var(--table-subheader-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-subheader-mute, 0) * 100%), currentColor));
+}
+.card__sides .card__table:not(.page-table) > table[data-subheader-align] {
+  --table-subheader-aligned: off;
+}
+.card__sides .card__table:not(.page-table) > table[data-subheader-align='left'] td[data-subhead] { text-align: left !important; }
+.card__sides .card__table:not(.page-table) > table[data-subheader-align='center'] td[data-subhead] { text-align: center !important; }
+.card__sides .card__table:not(.page-table) > table[data-subheader-align='right'] td[data-subhead] { text-align: right !important; }
+@container style(--table-subheader-aligned: on) {
+  .card__sides .card__table:not(.page-table) > table td[data-subhead] {
+    text-align: var(--table-subheader-align) !important;
+  }
+}
+/* Stripes: every second body row; with subheader rows, the rows `data-stripe` marks. Light, as the page's (4%). */
+.card__sides .card__table:not(.page-table) > table:where([data-stripes]:not([data-subheads])) > tbody > tr:where(:nth-child(even)) > td,
+.card__sides .card__table:not(.page-table) > table:where([data-stripes][data-subheads]) tr:where([data-stripe]) > td {
+  --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background, var(--fg)) 4%, transparent);
+}
+/* Fills and text colours: the ten names, light and dark (`cardTable.css`), or a custom `#rrggbb`: a fill at the page's
+   wash, a text colour made readable on the page in each theme (`readableInk`: `--cell-ink-light`, `--cell-ink-dark`). */
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-fill] {
+  --table-cell-tint: var(--cell-fill);
+}
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-color] {
+  color: var(--cell-ink, var(--cell-ink-light));
+}
+:where([data-theme='dark'], [data-scheme='dark']) .card__sides .card__table:not(.page-table) > table :is(th, td)[data-color^='#'] {
+  color: var(--cell-ink-dark);
+}
+/* The table's vertical alignment (a cell's own is inline, so it wins). Row height: the card's cell room is the page's
+   normal (4px and the card's gap); Compact and Tall in step, as the page's 1px and 10px. */
+.card__sides .card__table:not(.page-table) > table[data-valign='middle'] :is(th, td) { vertical-align: middle; }
+.card__sides .card__table:not(.page-table) > table[data-valign='bottom'] :is(th, td) { vertical-align: bottom; }
+.card__sides .card__table:not(.page-table) > table[data-height='compact'] :is(th, td) { padding-block: calc(1px + var(--card-gap, 0px)); }
+.card__sides .card__table:not(.page-table) > table[data-height='tall'] :is(th, td) { padding-block: calc(10px + var(--card-gap, 0px)); }
+/* The table's own border (`border 2px 40%`): its thickness and darkness of the outline colour, the page's. */
+.card__sides .card__table:not(.page-table) > table[data-border] :is(th, td) {
+  --table-border-width: var(--table-border-px);
+  --table-border-darkness: var(--table-border-dark);
+  border: var(--table-border-px) solid color-mix(in srgb, var(--crepe-color-outline, var(--table-outline)) var(--table-border-dark), transparent);
+}
+/* Clip (`nowrap`, `text 2:clip`): one line, cut with "…". A merged cell breaks a long word in its wider room. */
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-clip] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card__sides .card__table:not(.page-table) > table [data-merged] {
+  overflow-wrap: break-word;
+}
+/* End of YAZ-5867. */
 .card__body pre {
   overflow-x: auto;
 }
@@ -645,6 +746,67 @@
   height: 0;
   margin: 16px -16px;
   border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent);
+}
+/* YAZ-5904: folded card sides (`cardFold.ts`). Each card reads `--card-sides-fold`: the vault's card look (Card sides
+   in pages, `--card-sides-fold-pages`; on a card page, a card file's tab (`data-card-file`), Card sides on card pages,
+   `--card-sides-fold-card-pages`, Q1); a page's own `card-sides` key on its mount wins; in Explore, Card sides in Explore
+   (`--card-sides-fold-explore`), never the page's key (D3). Set on the card, so a surface's own variables never hide it. */
+.card {
+  --card-sides-fold: var(--card-sides-fold-pages, off);
+}
+[data-card-file] .card,
+.card[data-card-file] {
+  --card-sides-fold: var(--card-sides-fold-card-pages, off);
+}
+[data-card-sides='fold'] .card,
+.card[data-card-sides='fold'] {
+  --card-sides-fold: on;
+}
+[data-card-sides='show'] .card,
+.card[data-card-sides='show'] {
+  --card-sides-fold: off;
+}
+.explore__layer .card,
+.explore__layer [data-card-sides] .card {
+  --card-sides-fold: var(--card-sides-fold-explore, off);
+}
+/* A folded side's rule is a button: "▸ Side 2" over the dashed line, where "Side 2" stands (its words are
+   `data-fold`, so a copy and ⌘F never read them). Open, "▾". Each label has room: two folded rules never touch. */
+.card .card__sides > .card__side[hidden] {
+  display: none;
+}
+.card .card__rule[data-fold] {
+  cursor: pointer;
+  outline: none;
+}
+.card .card__rule[data-fold] + .card__side[hidden] + .card__rule {
+  margin-top: 26px;
+}
+.card .card__rule[data-fold]::before {
+  content: '▸ ' attr(data-fold);
+  pointer-events: auto;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.card .card__rule[data-fold][aria-expanded='true']::before {
+  content: '▾ ' attr(data-fold);
+}
+.card .card__rule[data-fold]:hover::before {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 8%, var(--bg));
+}
+.card .card__rule[data-fold]:focus-visible::before {
+  color: var(--fg);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+/* YAZ-5923: a folded side that holds an outside change (`data-outside-side`, `cardGlow.ts`): its rule's label takes the
+   glow's look, so the change shows while the side is folded. Next change opens the side (`onFoldReveal`). */
+.card .card__rule[data-fold]:has(+ .card__side[hidden][data-outside-side])::before {
+  color: var(--fg);
+  background: var(--outside-change-bg, color-mix(in srgb, var(--accent) 16%, var(--bg)));
+}
+.card .card__rule[data-fold]:last-child {
+  margin-bottom: 12px;
 }
 /* A hidden word, shown or not (YAZ-5013: "never jumping around"): ONE box model — inline, the real word inside, the
    same padding — so a show changes only the look and nothing on the line moves. */
@@ -782,9 +944,26 @@
 .card .card-band {
   padding: 8px 16px 9px;
 }
-/* YAZ-5696: a title that waits keeps the band's room (the card never jumps when it comes); its words are not seen. */
+/* Title room "Always" (YAZ-5880): a title that waits is in the band, unseen (its words are not read either, `aria-hidden`),
+   and fades in when it shows; an empty band (Never, no title) is one line tall, as a band with a title. Nothing moves. */
 .card-band--waiting > * {
   visibility: hidden;
+}
+.card-inbox__panel > .card-band:empty::before {
+  content: '\00a0';
+}
+.card-band--fade > * {
+  animation: card-band-in 150ms ease-out;
+}
+@keyframes card-band-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-band--fade > * {
+    animation: none;
+  }
 }
 .card-band[hidden],
 .card.card--editing > .card-band {

@@ -5,18 +5,22 @@
  *    (`editor/DocumentZoom.tsx`). ⌘+ / ⌘− / ⌘0 step it too when no page claims them.
  *  - `app` (YAZ-3432): the App size of every window (`settings.appZoom`). Mouse only.
  *  - `toc` (YAZ-3939 D7): the names of a page's table of contents (`settings.tocZoom`), on the sidebar's steps.
- * − and + walk the kind's steps (`stepZoom`) and stop at the walls; a click on the percent goes back to 100%. A step
+ *  - `explore` (YAZ-5881 D1): Explore size (`settings.exploreSize`), on the App sizes. ⌘+ / ⌘− / ⌘0 step it while the
+ *    search panel is in front (D3).
+ * − and + walk the kind's steps (`stepZoom`) and stop at the walls; a click on the percent goes back to the kind's
+ * default (`reset`: 100%, Explore size's 125%). A step
  * that reaches a wall turns its own button off, so the focus moves to the percent first: it stays in the row instead
  * of falling to the page (YAZ-3434).
  */
 import { memo, useRef, type MouseEvent } from 'react'
-import { APP_ZOOM_STEPS, SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
+import { APP_ZOOM_STEPS, EXPLORE_SIZE_DEFAULT, SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
 import { withKeys } from '@shared/keyLabel'
 
-/** Each kind's steps and words: the group's name, the accessible names and the titles of −, + and the percent. */
+/** Each kind's steps, its default and words: the group's name, the accessible names and the titles of −, + and the percent. */
 const KINDS = {
   sidebar: {
     steps: SIDEBAR_ZOOM_STEPS,
+    reset: 100,
     label: 'Sidebar zoom',
     out: 'Zoom the sidebar out',
     into: 'Zoom the sidebar in',
@@ -26,6 +30,7 @@ const KINDS = {
   },
   app: {
     steps: APP_ZOOM_STEPS,
+    reset: 100,
     label: 'App size',
     out: 'Make the app smaller',
     into: 'Make the app larger',
@@ -35,12 +40,24 @@ const KINDS = {
   },
   toc: {
     steps: SIDEBAR_ZOOM_STEPS,
+    reset: 100,
     label: 'Table of contents zoom',
     out: 'Zoom the table of contents out',
     into: 'Zoom the table of contents in',
     outTitle: withKeys('Zoom the table of contents out', '⌘−'),
     intoTitle: withKeys('Zoom the table of contents in', '⌘+'),
     valueTitle: 'Table of contents zoom. Click for 100%',
+  },
+  explore: {
+    steps: APP_ZOOM_STEPS,
+    reset: EXPLORE_SIZE_DEFAULT,
+    // YAZ-5977: Explore size is the SEARCH's size now (its panel, box and rows); the windows keep theirs.
+    label: 'Search size',
+    out: "Make Explore's search smaller",
+    into: "Make Explore's search larger",
+    outTitle: withKeys("Make Explore's search smaller", '⌘−'),
+    intoTitle: withKeys("Make Explore's search larger", '⌘+'),
+    valueTitle: `Search size. Click for ${EXPLORE_SIZE_DEFAULT}%`,
   },
 } as const
 
@@ -64,7 +81,7 @@ export const ZoomStepper = memo(function ZoomStepper({ kind, value, onChange }: 
       <button type="button" className="zoom-stepper__step" aria-label={k.out} title={k.outTitle} disabled={value <= min} onClick={(e) => step(e, -1)}>
         −
       </button>
-      <button ref={percentRef} type="button" className="zoom-stepper__value" title={k.valueTitle} onClick={() => onChange(100)}>
+      <button ref={percentRef} type="button" className="zoom-stepper__value" title={k.valueTitle} onClick={() => onChange(k.reset)}>
         {Math.round(value)}%
       </button>
       <button type="button" className="zoom-stepper__step" aria-label={k.into} title={k.intoTitle} disabled={value >= max} onClick={(e) => step(e, 1)}>

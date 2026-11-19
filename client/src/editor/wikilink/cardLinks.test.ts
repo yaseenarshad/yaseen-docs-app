@@ -219,9 +219,9 @@ describe('links in and to cards follow the vault`s link format (YAZ-5792)', () =
     const { root } = await mount('See [[DEMO-127]].\n', formatted('{icon} {name}({number}){mark}'))
     const group = root.querySelector<HTMLElement>(`.${WIKILINK_GROUP_CLASS}`)!
     expect(group.querySelector('.wikilink:not(.link-pill__head):not(.link-pill__tail)')?.textContent).toBe('Estar')
-    expect(pieces(group)).toEqual(['card-icon', 'text: ', 'text:(', 'number:127', 'text:)', 'mark'])
-    // The icon is a piece, so the title has no icon of its own.
-    expect(group.querySelector(`.${WIKILINK_CARD_CLASS}`)).toBeNull()
+    // YAZ-5894: the space after `{icon}` is its gap: the icon stays on the title, and the space is no piece.
+    expect(pieces(group)).toEqual(['text:(', 'number:127', 'text:)', 'mark'])
+    expect(group.querySelector(`.${WIKILINK_CARD_CLASS}`)?.textContent).toBe('Estar')
   })
 
   it('`{name} {icon}`: the card icon after the title; `{icon}{name} {id}`: on the title, the ID after it', async () => {
@@ -237,14 +237,15 @@ describe('links in and to cards follow the vault`s link format (YAZ-5792)', () =
     const { root, crepe } = await mount('Go [[DEMO-127|my words]] now\n', formatted('{icon} {name}({number}){mark}'))
     const words = [...root.querySelectorAll<HTMLElement>('.wikilink')].find((el) => el.textContent === 'my words')!
     const line = words.closest('p')!
-    expect([...line.querySelectorAll('.link-pill__head > *, .link-pill__tail > *')].map((el) => (el.classList.contains('card-icon') ? 'card-icon' : el.classList.contains('link-pill__mark') ? 'mark' : `${el.className.replace('link-pill__', '')}:${el.textContent}`))).toEqual(['card-icon', 'text: ', 'text:(', 'number:127', 'text:)', 'mark'])
+    expect([...line.querySelectorAll('.link-pill__head > *, .link-pill__tail > *')].map((el) => (el.classList.contains('card-icon') ? 'card-icon' : el.classList.contains('link-pill__mark') ? 'mark' : `${el.className.replace('link-pill__', '')}:${el.textContent}`))).toEqual(['text:(', 'number:127', 'text:)', 'mark'])
+    expect(words.classList.contains('card-icon')).toBe(true)
     // The words stay the page's text: the file keeps the link as written.
     expect(getMarkdownForSave(crepe)).toBe('Go [[DEMO-127|my words]] now\n')
     const el = renderCard('[[DEMO-127|my words]]', {}, cardLook(formatted('{icon} {name}({number}){mark}'), undefined))
     const group = el.querySelector<HTMLElement>(`.${WIKILINK_GROUP_CLASS}`)!
     expect(group.getAttribute('data-card-link')).toBe('DEMO-127|my words')
-    expect(pieces(group)).toEqual(['card-icon', 'text: ', 'text:(', 'number:127', 'text:)', 'mark'])
-    expect(group.textContent).toBe(' my words(127)')
+    expect(pieces(group)).toEqual(['text:(', 'number:127', 'text:)', 'mark'])
+    expect(group.textContent).toBe('my words(127)')
   })
 
   it('YAZ-5835: a piped card link with the card icon on the name (`{icon}{name}`): the words wear the card icon', async () => {
@@ -274,7 +275,7 @@ describe('links in and to cards follow the vault`s link format (YAZ-5792)', () =
     const el = renderCard('[[DEMO-126]] and [[DEMO-3]]', {}, cardLook(formatted('{icon} {name}({number}){mark}'), undefined))
     const [card, page] = [...el.querySelectorAll<HTMLElement>(`.${WIKILINK_GROUP_CLASS}`)]
     expect(card.getAttribute('data-card-link')).toBe('DEMO-126')
-    expect(pieces(card)).toEqual(['card-icon', 'text: ', 'text:(', 'number:126', 'text:)', 'mark'])
+    expect(pieces(card)).toEqual(['text:(', 'number:126', 'text:)', 'mark'])
     expect(page.getAttribute('data-card-link')).toBe('DEMO-3')
     // No icon look here (`cardLook` with none): `{icon}` and the space beside it go, as in a page with no icon.
     expect(page.textContent).toBe('Estar pages(3)')

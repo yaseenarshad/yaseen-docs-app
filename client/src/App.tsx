@@ -22,7 +22,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingPages, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
 import type { Move } from './links/shortcuts'
-import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type UndoStep } from './lib/moveHistory'
+import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type ReorderStep, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
 import { dropIndex } from './lib/dragSlot'
@@ -86,6 +86,7 @@ import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRen
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { cardLookVars, cardSurfaceStyleOf, vaultCardVars } from './review/cardLook'
 import { appCardLook, cardLookSettings } from '@shared/cardLook'
+import { tellCardFoldChange } from './editor/card/cardFold'
 import { useReviewOnRoots } from './review/useReviewSettings'
 import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
 import { QuickLook } from './search/QuickLook'
@@ -95,6 +96,7 @@ import { linkPillVars } from './editor/wikilink/linkPillLook'
 import { DEFAULT_NEW_PAGE_TITLE, plainEntryName, renderTitleTemplate } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
+import { filesOnlyAfterDelete, filesOnlyAfterRename } from './sidebar/filesOnly'
 import { dailyPageName } from '@shared/dailyPage'
 import { dailyPagesOfSettings, sameDailyPages, windowDailyPages, withDailyPages, type DailyPagesSettings } from '@shared/dailyPagesFile'
 import { newPlacesOfSettings, vaultNewPlacesFields } from '@shared/newPlaces'
@@ -395,7 +397,8 @@ function PageWindowEditor({ path, openLink, unlocked = false, startView }: { pat
   const propsFor = useContext(PageWindowEditorProps)
   // An Explore layer's timed "Allow edits" (YAZ-4939): the vault's Read only does not lock this editor while it runs.
   const props = propsFor?.(path)
-  const base = props === undefined || !unlocked ? props : { ...props, vaultReadOnly: false }
+  // The page's own switch too (YAZ-5974 Q6): the layer's box asked for both.
+  const base = props === undefined || !unlocked ? props : { ...props, vaultReadOnly: false, pageUnlocked: true }
   const baseOpenLink = base?.onOpenLink
   const onOpenLink = useCallback((to: string, where?: GestureAction | 'explore') => (where === undefined || where === 'thisTab' || where === 'explore' ? openLink?.(to) : baseOpenLink?.(to, where)), [openLink, baseOpenLink])
   if (base === undefined) return null
@@ -968,6 +971,8 @@ export function App() {
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
   // every retained editor tree on any App state change.
   const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...newPageFolderInputs.current.settings, commentsOrder: order }), [changeSettings])
+  // Explore size (YAZ-5881 D3): ⌘+ / ⌘− / ⌘0 on Explore's search panel; the same stable door.
+  const changeExploreSize = useCallback((exploreSize: number) => changeSettings({ ...newPageFolderInputs.current.settings, exploreSize }), [changeSettings])
   // The table of contents' "Pin" / "Unpin" (YAZ-2700): the same stable door.
   const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newPageFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
   // A drag of the names column's edge (YAZ-2752), on its release: the same stable door.
@@ -1093,6 +1098,9 @@ export function App() {
     const cardVars = look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
     return cardSurfaceStyleOf(scopeOf(path).linkPills.pills, cardVars)
   }
+  // YAZ-5904: Card sides in pages or in Explore changed (the app's, or a vault's card look): the shown cards fold again.
+  const cardFoldKey = [settings.cardSidesFold, settings.cardSidesFoldCardPages, settings.cardSidesFoldExplore, ...vaults.map((v) => `${v?.cardLook.look?.sidesFold}/${v?.cardLook.look?.sidesFoldCardPages}/${v?.cardLook.look?.sidesFoldExplore}`)].join()
+  useEffect(() => tellCardFoldChange(), [cardFoldKey])
   /**
    * The text formatting of the vault that holds `path` (YAZ-3067 D12), as the style of the layer
    * that shows it: two vaults in one window look different. Each variable is there only for a
@@ -2358,6 +2366,9 @@ export function App() {
   // "Hide all others" on a focus folder (YAZ-4460 F8): the one folder the Focus tab shows, by the Recents filter's rule —
   // this window's session only, never written. A folder that goes ends it (the sidebar checks it is still there).
   const [focusOnly, setFocusOnly] = useState<string | null>(null)
+  // "Hide all others" in Files (YAZ-5790): the one folder (a path) the Files tab shows, by the same rule — this window's
+  // session only, never written. A rename or a move of it follows it; a delete of it shows all again (the pushes below).
+  const [filesOnly, setFilesOnly] = useState<string | null>(null)
   // The Recents Type filter (YAZ-4450 demo), Search's types: the window's session only, as the vault pick.
   const [recentType, setRecentType] = useState<SearchType>('all')
   const recentPick = recentVault !== null && roots.length > 1 && roots.includes(recentVault) ? recentVault : null
@@ -2779,6 +2790,8 @@ export function App() {
   const previewScopeNow = useRef(boardPreviewScope)
   previewScopeNow.current = boardPreviewScope
   const editorPreviewScope = useCallback((path: string) => previewScopeNow.current(path), [])
+  /** The links' hover panel of an Explore reading page layer (YAZ-5920): the Links setting read at each dwell, the same scope door. */
+  const exploreLinkPreview = useMemo(() => ({ on: () => hoverOn(storage.getSettings(), 'links'), scopeOf: editorPreviewScope, diagramDarkColors: settings.diagramDarkColors }), [editorPreviewScope, settings.diagramDarkColors])
   /** "New window" from the tab board's empty canvas (YAZ-3343 D22): on this window's vaults, behind it. */
   const openWindowBehind = useCallback(() => api.window.openBehind(), [])
   /**
@@ -3078,6 +3091,7 @@ export function App() {
             slots.current = renameSlots(slots.current, oldPath, newPath)
           }
           renamedUnderOverview(oldPath, newPath, true)
+          setFilesOnly((only) => filesOnlyAfterRename(only, oldPath, newPath))
           renameWorkspaceDir(oldPath, newPath, moved[0] !== now.roots[0] ? moved[0] : undefined)
           if (vaultMoved) setRoots(moved)
           return
@@ -3226,6 +3240,11 @@ export function App() {
     moveHistory.current.push(gesture)
     playGestureSound('land')
     stepToast(text, 'paste', 'undo', skipped)
+  }, [stepToast])
+  /** A Manual reorder in the sidebar (YAZ-5917): on the undo list, said with Undo. Nothing moved on disk, so no sound. */
+  const recordReorder = useCallback((step: Omit<ReorderStep, 'step'>): void => {
+    moveHistory.current.push({ step: 'reorder', ...step })
+    stepToast(`Moved “${step.name}”`, 'info', 'undo')
   }, [stepToast])
   const vaultList = roots.join('\n')
   useLayoutEffect(() => {
@@ -3415,6 +3434,8 @@ export function App() {
    * the step touches, once each, as `trashMany` does. Main's own writes never come here.
    */
   const allowStep = useCallback(async (entry: UndoStep): Promise<boolean> => {
+    // A reorder (YAZ-5917) writes a list of the vault's, never a file of the person's: it asks nothing.
+    if (!isMoveStep(entry) && entry.step === 'reorder') return true
     const paths = isMoveStep(entry) ? entry.moves.flatMap((move) => [move.oldPath, move.newPath]) : entry.step === 'rename' ? [entry.path] : entry.items.map((item) => item.path)
     for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return false
     return true
@@ -3437,6 +3458,12 @@ export function App() {
         // A read-only vault asks first (YAZ-4985), as the gesture did: a Cancel keeps the step on the undo list.
         if (!(await allowStep(entry))) return moveHistory.current.redone(entry)
         // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
+        // A reorder (YAZ-5917): the order as it was, one write; then it can be redone.
+        if (!isMoveStep(entry) && entry.step === 'reorder') {
+          entry.undo()
+          moveHistory.current.undone(entry)
+          return stepToast(`Moved “${entry.name}” back`, 'info', 'redo')
+        }
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'undo') : putBackStep(entry))
         const back = await runMoves(invertMoves(entry.moves), { record: false })
         if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves) })
@@ -3473,6 +3500,11 @@ export function App() {
       try {
         // A read-only vault asks first (YAZ-4985): a Cancel keeps the step on the redo list.
         if (!(await allowStep(entry))) return moveHistory.current.undone(entry)
+        if (!isMoveStep(entry) && entry.step === 'reorder') {
+          entry.redo()
+          moveHistory.current.redone(entry)
+          return stepToast(`Moved “${entry.name}”`, 'info', 'undo')
+        }
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'redo') : deleteAgain(entry))
         const run = await runMoves(entry.moves, { record: false })
         if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves })
@@ -3598,6 +3630,7 @@ export function App() {
         dropHistoryPaths(path)
         if (kind === 'dir') {
           retireDeletedDir(path)
+          setFilesOnly((only) => filesOnlyAfterDelete(only, path))
           dropPageWindowsAt(path)
           moveExploreRecent(path, null)
           deleteWorkspaceDir(path)
@@ -3918,6 +3951,9 @@ export function App() {
       foldingOnByDefault: settings.foldingOnByDefault,
       bulletThreadingOnByDefault: settings.bulletThreading,
       contentWidth: settings.contentWidth,
+      // YAZ-5871: the pages' position, and Card width for a card file's Default.
+      contentPosition: settings.contentPosition,
+      cardWidth: settings.cardWidth,
       onChangeTableOfContents: changeTableOfContents,
       // YAZ-2752: the width of its names column is a SETTING as well.
       tableOfContentsWidth: settings.tableOfContentsWidth,
@@ -4193,7 +4229,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={settings.exploreSize} exploreWidth={settings.exploreWidth} onExploreSize={changeExploreSize} linkPreview={exploreLinkPreview} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -4255,6 +4291,8 @@ export function App() {
           onRecentVault={setRecentVault}
           focusOnly={focusOnly}
           onFocusOnly={setFocusOnly}
+          filesOnly={filesOnly}
+          onFilesOnly={setFilesOnly}
           recentType={recentType}
           onRecentType={setRecentType}
           onAddVaultFor={addVaultFor}
@@ -4314,6 +4352,7 @@ export function App() {
           onRenameFile={requestPathRename}
           onMoveEntries={requestMoves}
           onMoved={recordMoves}
+          onReordered={recordReorder}
           onRetitle={requestRetitle}
           onDeleteEntries={trashMany}
           onFileAction={allowFileAction}

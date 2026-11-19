@@ -112,6 +112,10 @@ export interface RequestOptions {
   allow?: readonly number[]
   /** The query, encoded by the client (a path may not hold `?`). Never put the token here. */
   query?: Record<string, string>
+  /**
+   * YAZ-5929: a POST that only reads (the GraphQL query): a 403 is `NO_ACCESS`, as on a GET, not `READ_ONLY`.
+   */
+  reads?: boolean
 }
 
 export interface GithubResponse {
@@ -127,7 +131,26 @@ export interface GithubResponse {
 export interface GithubClient {
   /** One call to `api.github.com`. `path` starts with `/`, as `/user` or `repoPath(…)`. */
   request(path: string, options?: RequestOptions): Promise<GithubResponse>
+  /**
+   * YAZ-5929: one GraphQL query (`POST https://api.github.com/graphql`) through `request`, so the host, the token and
+   * the HTTP error codes are the ones of every call. GraphQL has its own count (5,000 points an hour; a query of
+   * blobs costs 1 point), apart from the REST count. GitHub can answer a used-up count with HTTP 200 and an `errors`
+   * entry of type `RATE_LIMITED`: that is `RATE_LIMITED` too, with the time from `x-ratelimit-reset` (held between
+   * 1 minute and 1 hour). A 403 or 429 is mapped as on a GET (the query only reads). Other `errors` with no `data` are
+   * `UNEXPECTED` (GitHub's message in `said`). With `data`, the other errors come back in `errors`.
+   */
+  graphql<T>(query: string, variables?: Record<string, unknown>): Promise<{ data: T | null; errors: GraphqlError[] }>
 }
+
+/** The GraphQL endpoint: on the same host as the REST API, with the same token (YAZ-5929). */
+export const GRAPHQL_PATH = '/graphql'
+
+/** One entry of GraphQL's `errors` list. `type` is GitHub's code, as `RATE_LIMITED`, `NOT_FOUND` or `FORBIDDEN`. */
+export interface GraphqlError {
+  type?: string
+  message?: string
+}
+
 
 export interface ClientOptions {
   fetch?: FetchLike
@@ -156,7 +179,23 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
   /** GitHub's own message, with the token taken out, in case an answer ever quotes it. */
   const scrub = (text: string) => (token === '' ? text : text.split(token).join('[token]'))
 
-  return {
+  const client: GithubClient = {
+    async graphql<T>(query: string, variables: Record<string, unknown> = {}) {
+      const res = await client.request(GRAPHQL_PATH, { method: 'POST', body: { query, variables }, reads: true })
+      const body = (res.data ?? {}) as { data?: T | null; errors?: unknown }
+      const errors = Array.isArray(body.errors) ? (body.errors as GraphqlError[]) : []
+      const said = (e: GraphqlError | undefined) => scrub(typeof e?.message === 'string' ? e.message : String(e?.type ?? ''))
+      const limited = errors.find((e) => e?.type === 'RATE_LIMITED')
+      if (limited !== undefined)
+        throw new GithubError('RATE_LIMITED', res.status, `GitHub answered ${res.status}: ${said(limited)}`, rateLimitedUntil(res.rateLimit?.resetAt ?? null, now()), said(limited), res.rateLimit)
+      const data = body.data ?? null
+      if (data === null && errors.length > 0) {
+        const all = errors.map(said).join('; ')
+        throw new GithubError('UNEXPECTED', res.status, `GitHub answered ${res.status}: ${all}`, null, all, res.rateLimit)
+      }
+      return { data, errors }
+    },
+
     async request(path, opts = {}) {
       if (!SAFE_PATH.test(path) || path.split('/').includes('..')) throw new Error('This is not a GitHub API path')
       const method = opts.method ?? 'GET'
@@ -219,7 +258,7 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
         }
         const body = await offlineOnError(() => readJson(response, heard))
         const said = body !== null && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string' ? (body as { message: string }).message : ''
-        const error = failure(response, method, scrub(said), now(), rateLimit)
+        const error = failure(response, opts.reads === true ? 'GET' : method, scrub(said), now(), rateLimit)
         // A status in `allow` comes back as an answer (its JSON body in `data`), but a rate limit never does: a probe
         // that allows 403 must not read GitHub's "slow down" as "no access".
         if (error.code !== 'RATE_LIMITED' && (opts.allow ?? []).includes(response.status))
@@ -228,6 +267,7 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
       }
     },
   }
+  return client
 }
 
 /** A body that stops mid-way (no network, or the time limit's abort) is OFFLINE, as a request with no answer is. */

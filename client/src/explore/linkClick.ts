@@ -1,6 +1,6 @@
 /**
- * "Clicking a link" (YAZ-4936), a choice per vault: a plain click on a page pill opens the page (today, the default),
- * or opens it in Explore as a reading layer. `.yaseendocs/link-click.json` through the vault-config door, as the review
+ * "Clicking a link" (YAZ-4936), a choice per vault: a plain click on a page pill opens the page, or opens it in Explore
+ * as a reading layer (the default on the Mac since YAZ-5973; the phone keeps "open", `PHONE_DEFAULT_LINK_CLICK`). `.yaseendocs/link-click.json` through the vault-config door, as the review
  * settings are (`useReviewSettings`): re-read when the file changes, the defaults with no file, nothing written until
  * `save`. ⌘-click and the other gestures keep their doors; a board or a folder pill keeps today's click.
  */

@@ -12,9 +12,11 @@
  * A menu, a picker or a pop-up that takes Esc keeps it (the mini window's rule, YAZ-4547). At most 12 layers; a
  * 13th says so and opens nothing. Each layer moves like a cell note (round 3, `layerBoxes.ts`). The layers act like
  * windows (round 6): a press on a layer behind brings it to the front (`frontOrder`); the keys and Esc go to the front one.
+ * Search size (`exploreSize`, YAZ-5881 D2; the search alone since YAZ-5977) widens the search panel and zooms all that is in it
+ * (`--explore-size`, explore.css); the page, board and card windows keep the app's size and their own width.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { rootOfPath, type CommentsOrder, type OpenStat, type PageView, type ZoomStep } from '@shared/types'
+import { APP_ZOOM_STEPS, EXPLORE_SIZE_DEFAULT, rootOfPath, stepZoom, type CommentsOrder, type OpenStat, type PageView, type ZoomStep } from '@shared/types'
 import type { GestureAction } from '@shared/keys'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { LinkActions } from '../editor/linkMenu'
@@ -28,7 +30,7 @@ import { useSearchCandidates, type SearchVault } from '../search/useSearchResult
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { ExploreBoard } from './ExploreBoard'
 import { ExploreCard } from './ExploreCard'
-import { ExplorePage, type ExploreVault, type PageFrameDoors } from './ExplorePage'
+import { ExplorePage, type ExploreLinkPreview, type ExploreVault, type PageFrameDoors } from './ExplorePage'
 import { explorePageSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
@@ -36,8 +38,9 @@ import { textCandidates } from './exploreRows'
 import { recentSections } from './recentSections'
 import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
+import { useExploreZoom } from './exploreZoom'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
-import { frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
+import { EXPLORE_PAGE_ZOOM_DEFAULT, frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
 import { landOnCard, type CardPlace } from '../editor/card/cardOpen'
 import { keyText } from '@shared/keyLabel'
 import './explore.css'
@@ -91,6 +94,16 @@ export interface ExploreStackProps {
   /** The empty box (YAZ-4945): a vault's open history (`storage.getOpens`) and its save log (`storage.getEdits`). */
   opensOf?: (root: string) => Readonly<Record<string, OpenStat>>
   editsOf?: (root: string) => Readonly<Record<string, number>>
+  /**
+   * Search size in percent (`settings.exploreSize`, YAZ-5881 D2, YAZ-5977): the search panel's width and all that is in it. ⌘+ / ⌘− /
+   * ⌘0 with the search panel in front step it along `APP_ZOOM_STEPS` through `onExploreSize` (D3; ⌘0: 125%).
+   */
+  exploreSize: number
+  /** Settings' Explore window width (YAZ-5976): a fresh page or board layer's width in px; null or absent is Default. */
+  exploreWidth?: number | null
+  onExploreSize: (percent: number) => void
+  /** The hover panel of a reading page layer's [[links]] (YAZ-5920): the setting, the panel's scope, the diagram colours. */
+  linkPreview?: ExploreLinkPreview
 }
 
 const noLog = () => ({})
@@ -154,7 +167,7 @@ function focusCardFile(layer: HTMLElement): boolean {
   return body !== null && document.activeElement === body
 }
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false, exploreSize, exploreWidth = null, onExploreSize, linkPreview }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -177,16 +190,22 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const rootRef = useRef<HTMLDivElement>(null)
   const windowSize = useWindowSize()
   // Where each layer stands (round 3): written to the layers' style, never rendered; the head drags, the grips resize.
-  const gestures = useLayerBoxes(rootRef, layers, windowSize.width, windowSize.height)
+  const gestures = useLayerBoxes(rootRef, layers, windowSize.width, windowSize.height, exploreSize / 100, exploreWidth)
+  /** Explore size of the moment and its door (YAZ-5881 D3), for the zoom keys' listener. */
+  const exploreSizeRef = useRef({ exploreSize, onExploreSize })
+  exploreSizeRef.current = { exploreSize, onExploreSize }
   /** The one zoom of every page layer (round 4): the page zoom's pill and keys, kept in localStorage; a page tab's zoom is its own. */
-  const [zoom, setZoomState] = useState(savedExploreZoom)
+  // One value with Settings › Appearance › Explore › Page zoom (YAZ-5977, `exploreZoom.ts`): a change at either shows at the other.
+  const [zoom, setZoomState] = useExploreZoom()
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
-  const setZoom = useCallback((next: number) => {
-    zoomRef.current = next
-    setZoomState(next)
-    saveExploreZoom(next)
-  }, [])
+  const setZoom = useCallback(
+    (next: number) => {
+      zoomRef.current = next
+      setZoomState(next)
+    },
+    [setZoomState],
+  )
   /** Each search layer's rows (round 3), by layer id: what the page over it steps through. Dropped with the layer. */
   const links = useRef(new Map<number, SearchLink>())
   /** Bumped when a search's rows change under a page from it (YAZ-2571 bug): the page's ‹ n/m › is drawn again with the new rows. */
@@ -219,6 +238,8 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     }
     return door
   }
+  /** The links' hover panel of each reading page layer (YAZ-5920), with the names the trail uses. */
+  const pageLinkPreview = useMemo(() => (linkPreview === undefined ? undefined : { ...linkPreview, nameOf }), [linkPreview, nameOf])
   // One feed for every search layer; the text rows (tags, frontmatter values) ride with the records.
   const candidates = useSearchCandidates(vaults, true, textCandidates)
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
@@ -401,8 +422,9 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   topRef.current = top
 
   // ⌘+ / ⌘− / ⌘0 while Explore is open (round 4): the menu's step (`requestZoom`, App) zooms the TOP page layer, on the
-  // page zoom's key ladder; on a search layer it does nothing. Caught on the document first, so neither the tab behind
-  // nor the editor inside a layer (its own `.editor` listener) takes it, and the sidebar's fallback never runs.
+  // page zoom's key ladder (⌘0: its default, 125%, YAZ-5977); on a search layer it steps Explore size (YAZ-5881 D3; ⌘0: 125%). Caught on the document
+  // first, so neither the tab behind nor the editor inside a layer (its own `.editor` listener) takes it, and the
+  // sidebar's fallback never runs.
   useEffect(() => {
     const onZoom = (event: Event) => {
       event.preventDefault()
@@ -411,8 +433,14 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       const step = (event as CustomEvent<ZoomStep>).detail
       // A board on top (YAZ-4943): its own zoom.
       if (layer?.kind === 'board') return boardZooms.current.get(layer.id)?.(step)
+      if (layer?.kind === 'search') {
+        const { exploreSize: now, onExploreSize: write } = exploreSizeRef.current
+        const next = step === 0 ? EXPLORE_SIZE_DEFAULT : stepZoom(APP_ZOOM_STEPS, now, step)
+        if (next !== now) write(next)
+        return
+      }
       if (layer === undefined || layer.kind !== 'page') return
-      setZoom(step === 0 ? 100 : (stepZoomByKey(zoomRef.current, step) ?? zoomRef.current))
+      setZoom(step === 0 ? EXPLORE_PAGE_ZOOM_DEFAULT : (stepZoomByKey(zoomRef.current, step) ?? zoomRef.current))
     }
     document.addEventListener(ZOOM_EVENT, onZoom, true)
     return () => document.removeEventListener(ZOOM_EVENT, onZoom, true)
@@ -568,6 +596,15 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     if (event.key === 'Escape') {
       // The page menu's own Esc (the `ContextMenu` closes itself) and a menu's: nothing else closes.
       if (event.target instanceof Element && event.target.closest('.ctx-menu') !== null) return
+      // YAZ-5933: a search row's menu (or a head's) is open, but the keyboard is still in the search box: the menu does
+      // not take the focus. This Esc closes the menu alone. Without this, the Esc went on and closed the layer, and its
+      // `stopPropagation` kept the Esc from the menu's own window listener.
+      if (menu !== null) {
+        event.preventDefault()
+        event.stopPropagation()
+        setMenu(null)
+        return
+      }
       // ⇧Esc closes every layer in one key (YAZ-4926): a page in edit saves first; App gives the keyboard back.
       if (event.shiftKey) {
         event.preventDefault()
@@ -668,7 +705,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   }
 
   return (
-    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" hidden={hidden} onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
+    <div ref={rootRef} className="explore" style={{ '--explore-size': exploreSize / 100 } as CSSProperties} role="dialog" aria-modal="true" aria-label="Explore the vault" hidden={hidden} onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
       {/* The trail (YAZ-4925): one chip per layer from two layers on, in the open order, the front one bold; a click brings that layer to the front (round 6). */}
       {live.length > 1 && (
         <nav className="explore__trail" aria-label="Layers">
@@ -809,6 +846,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 pageMenu={() => pageSections(layer.path)}
                 onClose={() => close(layer.id)}
                 active={!covered}
+                linkPreview={pageLinkPreview}
               />
             )}
             {GRIPS.map((grip) => (

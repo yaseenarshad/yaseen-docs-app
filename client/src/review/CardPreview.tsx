@@ -138,9 +138,11 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
             startDrag={startDrag}
             bodyRef={bodyRef}
             band={
-              headTitle !== '' && (
-                <CardBand waiting={band.waits}>
-                  <span className="card-inbox__name">{headTitle}</span>
+              // Title room (YAZ-5880, the Inbox's): Always, a band on every card, empty with no title, the title unseen
+              // while it waits; Only when it shows (YAZ-5864), no band while the title waits.
+              ((settings?.titleRoom ?? 'always') === 'always' || (headTitle !== '' && !band.waits)) && (
+                <CardBand key={cardKey} waiting={band.waits}>
+                  {headTitle !== '' && <span className="card-inbox__name">{headTitle}</span>}
                 </CardBand>
               )
             }

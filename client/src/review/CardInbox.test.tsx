@@ -661,14 +661,39 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.move).toHaveBeenCalledTimes(3)
   })
 
-  it('YAZ-5004, YAZ-5697 round 2: ⋯ opens the ONE card menu (Undo last review, then the card\'s Inbox rows; Undo off while there is nothing to undo); each runs the hook`s own action; Archive card asks first; Esc closes it', async () => {
+  it('YAZ-5963: the card\'s ⋯ sits on the card\'s head band (a card in a page\'s `card__more`), with or without a title band; the dock\'s ⋯ stays, with Undo last review alone', () => {
     mount(TWO_SIDES)
-    const more = () => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!
+    const head = el.querySelector<HTMLButtonElement>('.card-inbox__panel .card-inbox__head-more')!
+    expect(head.classList.contains('card__more')).toBe(true)
+    expect(head.textContent).toBe('⋯')
+    expect(head.getAttribute('aria-label')).toBe('Card menu')
+    const actions = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')]
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+    expect(actions().map((b) => [b.textContent, b.disabled])).toEqual([['Undo last review', true]])
+    // The other ⋯ swaps the menu; the same ⋯ again closes it.
+    act(() => head.click())
+    expect(actions().map((b) => b.textContent)).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review'])
+    expect(head.getAttribute('aria-expanded')).toBe('true')
+    act(() => head.click())
+    expect(actions()).toEqual([])
+    session = { ...session, canUndo: true }
+    render()
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+    act(() => actions().find((b) => b.textContent === 'Undo last review')!.click())
+    expect(review.undo).toHaveBeenCalledOnce()
+    // Title room "Only when it shows" with no title: no band, the ⋯ still has its place on the frame's top right.
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'never', titleRoom: 'shown' })
+    expect(el.querySelector('.card-inbox__panel > .card-band')).toBeNull()
+    expect(el.querySelector('.card-inbox__panel .card-inbox__head-more')).not.toBeNull()
+  })
+
+  it('YAZ-5004, YAZ-5697 round 2, YAZ-5963: the head\'s ⋯ opens the ONE card menu\'s Inbox rows; each runs the hook`s own action; Archive card and Move to Up next run on a second click (YAZ-5966); Esc closes it', async () => {
+    mount(TWO_SIDES)
+    const more = () => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!
     const actions = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')]
     expect(actions()).toEqual([])
     act(() => more().click())
     expect(actions().map((b) => [b.textContent, b.disabled])).toEqual([
-      ['Undo last review', true],
       ['Open card', false],
       ['Move to Up next', false],
       ['Archive card', false],
@@ -677,21 +702,20 @@ describe('the Inbox screen (YAZ-4962)', () => {
     press('Escape')
     expect(actions()).toEqual([])
     expect(review.close).not.toHaveBeenCalled()
-    session = { ...session, canUndo: true }
-    render()
     const run = (label: string) => {
       act(() => more().click())
       act(() => actions().find((b) => b.textContent === label)!.click())
     }
-    run('Undo last review')
-    expect(review.undo).toHaveBeenCalledOnce()
     run('Archive card')
-    // One click never archives: it asks in place first.
+    // One click never archives (YAZ-5966): the row says "Click again to archive"; a second click archives.
     expect(review.turnOff).not.toHaveBeenCalled()
-    await vi.waitFor(() => expect(el.querySelector('.ctx-menu__ask')?.textContent).toContain('Archive this card?'))
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click())
+    expect(el.querySelector('.ctx-menu__ask')).toBeNull()
+    const again = (words: string) => act(() => actions().find((b) => b.textContent === words)!.click())
+    again('Click again to archive')
     expect(review.turnOff).toHaveBeenCalledOnce()
     run('Move to Up next')
+    expect(review.setNext).not.toHaveBeenCalled()
+    again('Click again to move to Up next')
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
     // YAZ-5145: Open card opens as O does: Explore's own layer.
     run('Open card')
@@ -1092,7 +1116,7 @@ describe('the guided tour hears the Inbox (YAZ-5123)', () => {
     try {
       expect(el.querySelector('.card-inbox__card')!.getAttribute('data-tour')).toBe('inbox-card')
       expect(el.querySelector('.card-inbox__answers')!.getAttribute('data-tour')).toBe('inbox-answers')
-      expect(el.querySelector('.card-inbox__more-button')!.getAttribute('data-tour')).toBe('card-menu')
+      expect(el.querySelector('.card-inbox__head-more')!.getAttribute('data-tour')).toBe('card-menu')
       press(' ')
       expect(heard).toEqual(['inbox-step-shown'])
       press(' ')
@@ -1104,7 +1128,7 @@ describe('the guided tour hears the Inbox (YAZ-5123)', () => {
       const all = heard.length
       press(' ')
       expect(heard).toHaveLength(all)
-      act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+      act(() => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!.click())
       const marks = [...el.querySelectorAll<HTMLElement>('.ctx-menu .ctx-menu__item[data-tour]')].map((b) => [b.textContent, b.dataset.tour])
       expect(marks).toEqual([['Archive card', 'card-menu-archive']])
     } finally {
@@ -1236,7 +1260,7 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
     expect(vi.mocked(props.openPage).mock.lastCall).toEqual(asked)
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-part[data-kind="page"]')!.click())
     expect(vi.mocked(props.openPage).mock.lastCall).toEqual(asked)
-    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!.click())
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].find((b) => b.textContent === 'Open card')!.click())
     expect(vi.mocked(props.openPage).mock.calls).toEqual([asked, asked, asked])
     press('e')
@@ -1310,18 +1334,48 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
   // Two hidden words on the front, one on Side 2.
   const CARD = 'A {{one}} and {{two}}\n---\n{{three}}'
   type Show = 'never' | 'always' | 'click' | 'side2'
-  const at = (titleAt: Show, own?: { titleAt?: 'always' | 'click' | 'side2'; title?: string }, text = CARD) => {
-    mount(text, { ...DEFAULT_REVIEW_SETTINGS, titleAt })
+  // These walks are Title room "Only when it shows" (YAZ-5864); Always (YAZ-5880, the default) has its own tests below.
+  const at = (titleAt: Show, own?: { titleAt?: 'always' | 'click' | 'side2'; title?: string }, text = CARD, titleRoom: 'always' | 'shown' = 'shown') => {
+    mount(text, { ...DEFAULT_REVIEW_SETTINGS, titleAt, titleRoom })
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, ...(own?.title !== undefined && { title: own.title }), ...(own?.titleAt !== undefined && { titleAt: own.titleAt }) } } }
     render()
   }
-  /** The band: 'shown' with its title, 'waits' (it keeps its room, the title not seen or read), or 'none'. */
+  /**
+   * The band: 'shown' with its title, 'none' (Only when it shows: a title that waits draws no band, the text flush with
+   * the top, YAZ-5864), 'waits' (Always: the band is there, the title in it unseen and unread, YAZ-5880), 'empty' (Always,
+   * no title shown), and '+fade' when a waited title fades in.
+   */
   const band = () => {
     const b = el.querySelector<HTMLElement>('.card-inbox__panel > .card-band')
     if (b === null) return 'none'
-    return b.classList.contains('card-band--waiting') ? `waits` : `shown: ${b.textContent}`
+    if (b.classList.contains('card-band--waiting')) return b.getAttribute('aria-hidden') === 'true' ? 'waits' : 'waits, read'
+    if (b.textContent === '') return b.getAttribute('aria-hidden') === 'true' ? 'empty' : 'empty, read'
+    return `shown: ${b.textContent}${b.classList.contains('card-band--fade') ? ' +fade' : ''}`
   }
   const click = (sel: string) => act(() => el.querySelector<HTMLElement>(sel)!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+  it('Title room Always (YAZ-5880, the default): every card has the band; a waiting title is in it unseen, then fades in; Never keeps an empty band; nothing moves', async () => {
+    expect(DEFAULT_REVIEW_SETTINGS.titleRoom).toBe('always')
+    at('click', undefined, CARD, 'always')
+    await flush()
+    expect(band()).toBe('waits')
+    press(' ')
+    expect(band()).toBe('shown: Capital of France +fade')
+    press(' ')
+    expect(band()).toBe('shown: Capital of France +fade')
+    at('side2', undefined, CARD, 'always')
+    await flush()
+    expect(walk(3)).toEqual(['one | 1 | waits', 'one+two | 1 | waits', 'one+two | 1 | shown: Capital of France +fade'])
+    // A title that shows from the front never fades: it was never away.
+    at('always', undefined, CARD, 'always')
+    await flush()
+    expect(band()).toBe('shown: Capital of France')
+    // Never (global or the card's `notitle`): the band is there, empty, at every step.
+    at('never', undefined, CARD, 'always')
+    await flush()
+    expect(walk(3).map((s) => s.split(' | ')[2])).toEqual(['empty', 'empty', 'empty'])
+    expect(band()).toBe('empty')
+  })
 
   it('Always (the default): the title shows from the front, as before', async () => {
     expect(DEFAULT_REVIEW_SETTINGS.titleAt).toBe('always')
@@ -1351,12 +1405,12 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
       return `${shown().join('+') || '-'} | ${sides()} | ${band()}`
     })
 
-  it('After the first click (YAZ-5709): the band keeps its room and waits; the first Space shows the title BY ITSELF, then the words, then Side 2', async () => {
+  it('After the first click (YAZ-5709, YAZ-5857): no band while the title waits, the text first in the frame; the first Space shows the title BY ITSELF, then the words, then Side 2', async () => {
     at('click')
     await flush()
-    expect(band()).toBe('waits')
-    const waiting = el.querySelector<HTMLElement>('.card-inbox__panel > .card-band')!
-    expect(waiting.getAttribute('aria-hidden')).toBe('true')
+    expect(band()).toBe('none')
+    // Flush with the top: nothing of the title is in the card, not even hidden.
+    expect(el.querySelector('.card-inbox__panel')?.textContent).not.toContain('Capital of France')
     expect(walk(5)).toEqual([
       '- | 1 | shown: Capital of France',
       'one | 1 | shown: Capital of France',
@@ -1374,13 +1428,13 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
     await flush()
     click('.card__blank[data-hidden="1"]')
     expect(shown()).toEqual(['two'])
-    expect(band()).toBe('waits')
+    expect(band()).toBe('none')
     press(' ')
     expect(shown()).toEqual(['two'])
     expect(band()).toBe('shown: Capital of France')
     at('click', undefined, 'Nothing hidden here.')
     await flush()
-    expect(band()).toBe('waits')
+    expect(band()).toBe('none')
     press(' ')
     expect(band()).toBe('shown: Capital of France')
   })
@@ -1388,9 +1442,9 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
   it('Before Side 2 (YAZ-5709): 2 words on the front + 1 on the back = 5 Spaces: word, word, the title, Side 2, the back word', async () => {
     at('side2')
     await flush()
-    expect(band()).toBe('waits')
+    expect(band()).toBe('none')
     const hint = () => el.querySelector('.card-inbox__hints > span')?.textContent
-    expect(walk(2)).toEqual(['one | 1 | waits', 'one+two | 1 | waits'])
+    expect(walk(2)).toEqual(['one | 1 | none', 'one+two | 1 | none'])
     // The next Space is the title, not the side: the hint says Show.
     expect(hint()).toBe('Show (Space)')
     expect(walk(1)).toEqual(['one+two | 1 | shown: Capital of France'])
@@ -1401,13 +1455,13 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
   it('Before Side 2: a card of 3 sides gets its title before Side 2, not before the last side', async () => {
     at('side2', undefined, 'A {{one}}\n---\nB {{two}}\n---\nC')
     await flush()
-    expect(walk(5)).toEqual(['one | 1 | waits', 'one | 1 | shown: Capital of France', 'one | 2 | shown: Capital of France', 'one+two | 2 | shown: Capital of France', 'one+two | 3 | shown: Capital of France'])
+    expect(walk(5)).toEqual(['one | 1 | none', 'one | 1 | shown: Capital of France', 'one | 2 | shown: Capital of France', 'one+two | 2 | shown: Capital of France', 'one+two | 3 | shown: Capital of France'])
   })
 
   it('Before Side 2: a one-sided card gets its title last, after every hidden word; with none, it is the one Space', async () => {
     at('side2', undefined, 'A {{one}} and {{two}}')
     await flush()
-    expect(walk(3)).toEqual(['one | 1 | waits', 'one+two | 1 | waits', 'one+two | 1 | shown: Capital of France'])
+    expect(walk(3)).toEqual(['one | 1 | none', 'one+two | 1 | none', 'one+two | 1 | shown: Capital of France'])
     at('side2', undefined, 'Nothing hidden here.')
     await flush()
     expect(walk(1)).toEqual(['- | 1 | shown: Capital of France'])
@@ -1416,13 +1470,13 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
   it('the card\'s own choice wins over the global one, a global Never too', async () => {
     at('always', { titleAt: 'side2' })
     await flush()
-    expect(band()).toBe('waits')
+    expect(band()).toBe('none')
     at('side2', { titleAt: 'always' })
     await flush()
     expect(band()).toBe('shown: Capital of France')
     at('never', { titleAt: 'click' })
     await flush()
-    expect(band()).toBe('waits')
+    expect(band()).toBe('none')
     press(' ')
     expect(band()).toBe('shown: Capital of France')
   })
@@ -1430,11 +1484,11 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
   it('a title with a hidden-word mark waits until the card is fully shown, Always too', async () => {
     at('always', { title: 'Capital: {{Paris}}' })
     await flush()
-    expect(band()).toBe('waits')
+    expect(band()).toBe('none')
     press(' ')
     press(' ')
     press(' ')
-    expect(band()).toBe('waits')
+    expect(band()).toBe('none')
     press(' ')
     expect(shown()).toEqual(['one', 'two', 'three'])
     expect(band()).toBe('shown: Capital: {{Paris}}')
@@ -1450,7 +1504,7 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
     render()
     session = { ...session, card: was }
     render()
-    expect(band()).toBe('waits')
+    expect(band()).toBe('none')
   })
 
   it('Before Side 2: a card that comes back (Undo of its answer) starts at its front: its title step comes again', async () => {
@@ -1463,7 +1517,7 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
     render()
     session = { ...session, card: was }
     render()
-    expect(band()).toBe('waits')
+    expect(band()).toBe('none')
     press(' ')
     expect(band()).toBe('shown: Capital of France')
   })
@@ -2080,15 +2134,15 @@ describe('YAZ-5430: To fix never shows in the Inbox (Yaseen: "As long as to fix 
   it('⋯ has no Fix later and no Remove Fix later, marked or not', () => {
     mount(TWO_SIDES)
     const labels = () => {
-      act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+      act(() => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!.click())
       const out = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)
       press('Escape')
       return out
     }
-    expect(labels()).toEqual(['Undo last review', 'Open card', 'Move to Up next', 'Archive card', 'Title in review'])
+    expect(labels()).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review'])
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, fix: true } } }
     render()
-    expect(labels()).toEqual(['Undo last review', 'Open card', 'Move to Up next', 'Archive card', 'Title in review'])
+    expect(labels()).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review'])
   })
 })
 

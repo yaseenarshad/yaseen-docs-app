@@ -1,0 +1,35 @@
+/* The outside-change glow inside a drawn card (YAZ-5925, `cardGlow.ts`). The words take the page's own looks
+   (`outside-change`, `outside-removed`, outsideChanges.css); here only the card's own parts. */
+
+/* D4: a card rewritten from outside glows its frame, not its words. */
+.card:has(.card-glow--rewritten) {
+  box-shadow: 0 0 0 3px var(--outside-change-bg);
+}
+
+.card-glow--rewritten {
+  border-radius: 4px;
+  background: var(--outside-change-bg);
+  cursor: help;
+}
+
+/* A glow in a hidden word's blank: the blank lights, its word stays hidden. */
+.card__blank.outside-change {
+  background: var(--outside-change-bg);
+}
+
+/* D8: Checked in the head of a changed card (a card in a page, an embed); right of the marks, before Edit card. */
+.card__head .card-glow__checked {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.card__head .card-glow__checked[hidden] {
+  display: none;
+}
+
+.card__head .card-glow__checked:not([hidden]) ~ :is(.card__edit, .card__preview) {
+  margin-left: 0;
+}

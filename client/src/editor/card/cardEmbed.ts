@@ -48,11 +48,16 @@ import { drawEditButton } from './cardEditKeys'
 import { openCardWindow, previewCard } from './cardOpen'
 import { mountCardTitle } from './cardTitle'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
+import { CARD_FOLD_RULE, followCardFold, onCardFoldChange } from './cardFold'
 import type { CardReviewDoorApi } from './cardBlockView'
+import { CARD_HEADS_REDRAW, cardHeadMarkEls } from '../../review/cardHeadMarks'
 import { mountReviewsStrip, type ReviewsStripHandle, type StripPart } from './reviewsStrip'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { CARD_FIND_READ } from '../find/cardFind'
 import { pathUnit } from '../../vault/unitWord'
+import { isOwnWrite } from '../../lib/twinEditors'
+import { outsideGlowAt } from '../external/outsideChanges'
+import { cardGlowChecked, CardGlowTracker, paintCardGlow } from './cardGlow'
 import './cardEmbed.css'
 
 /** How far outside the screen a box starts to read its card (the page's own scroller). */
@@ -69,6 +74,9 @@ export const cardEmbedStats = { reads: 0 }
 
 /** Each file's text by its version: the last version read of each path, shared by every box. */
 const reads = new Map<string, { version: number | undefined; text: Promise<string | null> }>()
+
+/** A press that moves less than this many pixels is a click, not a drag (YAZ-5939, as the page card's YAZ-5896). */
+const CLICK_SLOP = 4
 
 /** The text of the card's file at `version` (the index's mtime): read one time per version; null when it is gone. */
 export function cardFileText(path: string, version: number | undefined): Promise<string | null> {
@@ -194,21 +202,25 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   dot.className = 'card-embed__dot'
   dot.textContent = '·'
   const idButton = button('card__id', 'Copy card ID')
-  const state = document.createElement('span')
-  state.className = 'card__state'
-  const fixMark = document.createElement('span')
-  fixMark.className = 'card__state card__fix'
-  fixMark.textContent = 'To fix'
-  fixMark.hidden = true
+  // The quiet marks after the ID (YAZ-5915): the review state, the title rule, "To fix", as every card head has them.
+  const marks = document.createElement('span')
+  marks.className = 'card__marks'
+  let marksKey = ''
   const editButton = button('card__edit', 'Edit card')
   const more = button('card__more', 'Card menu')
   more.textContent = '⋯'
   // The title band under the head (YAZ-5164 part 3, YAZ-5308 A3), the page title's own component: a click renames a card
   // in a page in its page. A card file's shows only: its tab renames the file.
   const title = mountCardTitle()
-  head.append(from, dot, idButton, state, fixMark, editButton, more)
+  head.append(from, dot, idButton, marks, editButton, more)
   const body = document.createElement('div')
   body.className = 'card__body'
+  // YAZ-5925 (D2c): an outside change of the card's source lights its words here, until Checked or the page's Glow ends.
+  const glow = new CardGlowTracker(() => outsideGlowAt(dom), () => paint())
+  /** The card the glow is for (path and ID): another card starts it again. */
+  let glowFor: string | null = null
+  const checked = cardGlowChecked(() => glow.check())
+  editButton.before(checked)
 
   let card: CardLink | null = null
   /** The card as its file holds it, once read (or as Done wrote it). */
@@ -253,11 +265,24 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     set(fromText, `Embedded from "${embedName(card, source)}"`)
     drawTitle(card)
     set(idButton, card.id)
-    set(state, isOff ? 'Archived' : '')
-    const isFix = fix(card)
-    if (fixMark.hidden === isFix) fixMark.hidden = !isFix
+    drawMarks(card)
     drawEditButton(editButton, edit !== null)
   }
+
+  /** The head's marks (YAZ-5915), from the card as read, else its index record; written only when their words change. */
+  const drawMarks = (c: CardLink): void => {
+    const rec = read?.id === c.id ? read : recordAt(source.records, c.path)?.cards?.[c.index]
+    const els = cardHeadMarkEls({ off: off(c), fix: fix(c), notitle: rec?.notitle === true, titleAt: rec?.titleAt ?? null, reviews: rec?.reviews ?? [] }, doors.reviews?.settings())
+    const key = els.map((el) => `${el.className}:${el.textContent}`).join('\n')
+    if (key === marksKey) return
+    marksKey = key
+    marks.replaceChildren(...els)
+  }
+  /** The vault's review settings changed (YAZ-5913): the marks follow. */
+  const redrawMarks = (): void => {
+    if (card !== null) drawMarks(card)
+  }
+  window.addEventListener(CARD_HEADS_REDRAW, redrawMarks)
 
   /** Is the card a card file's (its title is its file's: only its tab renames it)? */
   const isFileCard = (c: CardLink): boolean => recordAt(source.records, c.path)?.kind === 'card'
@@ -287,9 +312,19 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const paint = (): void => {
     if (card === null || edit !== null) return
     // The head shows the title (off the card line); the card's text is its sides only (YAZ-5308).
-    body.replaceChildren(read === null ? '' : renderCard(read.text, {}, doors.look(card.path)))
+    const look = doors.look(card.path)
+    checked.hidden = glow.current === null
+    body.replaceChildren(read === null ? '' : paintCardGlow(renderCard(read.text, {}, look), read.text, glow.current, (old) => renderCard(old, {}, look)))
+    // YAZ-5918: the sides opened in this embed stay open while the page is open, by the card's ID.
+    body.firstElementChild?.setAttribute('data-fold-key', card.id)
+    // YAZ-5904: Side 2 and after folded as the page that embeds it says (`--card-sides-fold`), once it is in the page.
+    queueMicrotask(refold)
     drawReviews()
   }
+  const refold = (): void => {
+    if (!destroyed && edit === null) followCardFold(body.querySelector(':scope > .card__sides'))
+  }
+  const unfold = onCardFoldChange(refold)
 
   /** The card's strip under its text (YAZ-5380: Reviews and Properties), for the card as read: none with no door. */
   const drawReviews = (): void => {
@@ -335,6 +370,13 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       (content) => {
         if (destroyed || readKey !== key || edit !== null) return
         read = content === null ? null : cardInContent(c.path, content, c.id, c.index)
+        const who = `${c.path}\n${c.id}`
+        if (who !== glowFor) {
+          glowFor = who
+          glow.reset()
+        }
+        // The app's own write (Done here, a review, the page's save) never glows.
+        if (read !== null) glow.seen(read.text, !isOwnWrite(c.path, version))
         draw()
         paint()
       },
@@ -453,6 +495,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     }
     // A sound's player is its own (YAZ-5014).
     if (target.closest(CARD_MEDIA) !== null) return
+    // A folded side's rule (YAZ-5904) is a button: its click opens the side.
+    if (target.closest(CARD_FOLD_RULE) !== null) return
     // A pill, or a board's picture (YAZ-5015): it opens as its link does, as in the page's card.
     const pill = target.closest<HTMLElement>(CARD_OPENS)
     if (pill !== null && doors.follow !== undefined) {
@@ -462,9 +506,34 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       return
     }
     if (target.closest('a[href]') !== null) return
-    // A press on the card selects the embed whole, as on a board's window.
+    // A press on the card's text (YAZ-5939, the page card's rule of YAZ-5896 D1): the browser selects, and ⌘C copies it.
+    // The host's widget gives the browser every event and keeps ProseMirror off its selection. A new press starts a new
+    // selection; a Shift-click extends it, and a double- or triple-click's second press keeps the word. A click with no
+    // drag still selects the embed whole.
+    if (target.closest('.card__sides') !== null) {
+      if (!event.shiftKey && event.detail <= 1) dom.ownerDocument.getSelection()?.removeAllRanges()
+      selectOnClick(event)
+      return
+    }
+    // A press on the card's head or edge selects the embed whole, as on a board's window.
     event.preventDefault()
     host.select()
+  }
+  /** A press on the card's text that ends with no drag (under `CLICK_SLOP` px, the selection collapsed) selects the embed whole. */
+  const selectOnClick = (down: MouseEvent): void => {
+    const win = dom.ownerDocument.defaultView ?? window
+    const up = (event: MouseEvent): void => {
+      win.removeEventListener('mouseup', up, true)
+      if (Math.hypot(event.clientX - down.clientX, event.clientY - down.clientY) >= CLICK_SLOP) return
+      // After the browser's own mouseup, which may still change the selection.
+      setTimeout(() => {
+        if (destroyed || edit !== null || !dom.isConnected) return
+        const selection = dom.ownerDocument.getSelection()
+        if (selection !== null && !selection.isCollapsed) return
+        host.select()
+      }, 0)
+    }
+    win.addEventListener('mouseup', up, true)
   }
   /** A Markdown link never navigates the window: it opens as the page's links do. */
   const onClick = (event: MouseEvent): void => {
@@ -473,12 +542,6 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     event.preventDefault()
     doors.openHref?.(link.getAttribute('href') ?? '')
   }
-  const onDoubleClick = (event: MouseEvent): void => {
-    const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, a[href]`) !== null) return
-    event.preventDefault()
-    startEdit()
-  }
   const onContextMenu = (event: MouseEvent): void => {
     if (card === null || (event.target instanceof Element && edit?.mount.contains(event.target) === true)) return
     event.preventDefault()
@@ -486,7 +549,6 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   }
   dom.addEventListener('mousedown', onMouseDown)
   dom.addEventListener('click', onClick)
-  dom.addEventListener('dblclick', onDoubleClick)
   dom.addEventListener('contextmenu', onContextMenu)
 
   /** Near the screen: the page's scroller (`scrollRootOf`), found once the box is in it. Without an observer, at once. */
@@ -525,6 +587,9 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     },
     destroy: () => {
       destroyed = true
+      window.removeEventListener(CARD_HEADS_REDRAW, redrawMarks)
+      unfold()
+      glow.destroy()
       stopWatch?.()
       closeMenu?.()
       edit?.editor.destroy()

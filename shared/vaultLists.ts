@@ -29,6 +29,8 @@ const PREFIX = {
   focus: { vault: 'focus', workspace: 'focus-workspace' },
   'focus-folders': { vault: 'focus-folders', workspace: 'focus-folders-workspace' },
   'favorite-folders': { vault: 'favorite-folders', workspace: 'favorite-folders-workspace' },
+  // The Files tab's Manual order (YAZ-5916, `shared/filesOrder.ts`): a vault's own, so only `vault` is ever written.
+  'files-order': { vault: 'files-order', workspace: 'files-order-workspace' },
 } as const satisfies Record<string, Record<ListScope, string>>
 export type MacListFile = keyof typeof PREFIX
 
@@ -45,7 +47,7 @@ export const macListFiles = (names: readonly string[], list: MacListFile, scope:
 }
 
 /** `at` of a list file, in ms; null when it is not a time. */
-const atOf = (v: Record<string, unknown>): number | null => {
+export const atOf = (v: Record<string, unknown>): number | null => {
   const at = typeof v.at === 'string' ? Date.parse(v.at) : NaN
   return Number.isNaN(at) ? null : at
 }

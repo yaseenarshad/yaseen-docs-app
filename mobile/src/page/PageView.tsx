@@ -38,6 +38,8 @@ import { useTaskTicks } from './taskTicks'
 import { useTables } from './useTables'
 import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
 import { usePageCardMenu } from '../cardMenu/pageCardMenu'
+import { followCardFolds } from '@client/editor/card/cardFold'
+import { readCardSides } from '@shared/pageSwitches'
 
 /**
  * A PAGE, READ ONLY (4C; decision 1: stage one reads pages). The page's text from the phone's storage, drawn
@@ -134,6 +136,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   // The page's own Guide lines and Section indent, from its frontmatter (`pageSwitches.ts`).
   const switches = useMemo(() => (typeof text === 'string' ? pageSwitchAttrs(text) : {}), [text])
   const sectionIndent = switches['data-section-indent'] === 'true'
+  // YAZ-5904: the page's own card sides (`card-sides: fold | show`), as on the Mac: it wins over the vault's card look.
+  const cardSides = useMemo(() => (typeof text === 'string' ? readCardSides(text) : null), [text])
   // YAZ-5592: the vault's mobile settings (`.yaseendocs/mobile.json`, with this phone's changes not sent yet).
   const vaultMobile = useMobileSettings(data, commentsPort).settings
   // YAZ-5568: the Mac's folding: the page's own `folding: true | false`, else the vault's (on by default); the folds kept
@@ -269,6 +273,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       }
       ticksRef.current.paint()
       folds.current?.apply()
+      // YAZ-5904: Side 2 and after of each card folded as the vault's Card sides in pages, or the page's `card-sides`, says.
+      followCardFolds(el)
       const head = el.firstElementChild
       // S2 (sweep1): the reader's own title hides NOW when the page's H1 says it (`--same` takes it out of the flow, and
       // the page moves up by its height). A landing measured before React drew that put the heading under the top bar.
@@ -301,6 +307,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       const landed = scroller?.scrollTop
       if (first) await fillCardEmbeds(el, data, store, doorRef.current, () => live)
       if (!live) return
+      if (first) followCardFolds(el)
       // S2: the cards above it are drawn now and pushed it down: the same landing again, unless the person scrolled.
       if (target !== null && scroller !== null && scroller.scrollTop === landed) {
         if (heading !== undefined) scroller.scrollTop = landingTop(scroller, target)
@@ -401,7 +408,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
         {/* YAZ-5591: the layer of stuck headings (copies; the headings are in the body), zero height. */}
         <div ref={stuckLayer} className="reader__stuck" aria-hidden="true" />
-        <div className="reader__body" {...switches} data-folding={foldingOn ? undefined : 'off'} data-wide-tables={wideTablesAttr(fitTables)} ref={host} onClick={(e) => void onTap(e)} />
+        <div className="reader__body" {...switches} data-card-sides={cardSides ?? undefined} data-fold-scope={path} data-folding={foldingOn ? undefined : 'off'} data-wide-tables={wideTablesAttr(fitTables)} ref={host} onClick={(e) => void onTap(e)} />
         {/* The page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}
         {tools.sheet}

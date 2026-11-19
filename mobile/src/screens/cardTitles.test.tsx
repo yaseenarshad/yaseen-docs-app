@@ -85,12 +85,17 @@ describe('Search finds a card by the title on its card line (point 3)', () => {
 })
 
 describe('a card alone ("Open card") and an embedded card', () => {
+  /** YAZ-5913: with Review on, the head shows the card's title rule after its review state ("New" for these cards). */
+  // YAZ-5965: Title mark in the card head is Only if different by default: these cards follow the vault, so no title mark.
+  const RULE = ''
+
   it('YAZ-5437: the page Geo shows each card\'s title band under its head; a card with no title has none', async () => {
     h = await openSearch()
     await openPage(h, 'Geo')
     await waitFor(h, () => h!.host.querySelectorAll('.page-card').length === 2)
     const cards = [...h.host.querySelectorAll('.page-card')]
-    expect(cards.map((c) => c.querySelector('.card__head')?.textContent)).toEqual(['GEO-1', 'GEO-2'])
+    // YAZ-5913 / YAZ-5915 (one head for every card): the ID, then the marks — Review is on: "New" and the title rule.
+    expect(cards.map((c) => c.querySelector('.card__head')?.textContent)).toEqual(['GEO-1New' + RULE, 'GEO-2New' + RULE])
     expect(cards.map((c) => c.querySelector('.card-band')?.textContent ?? null)).toEqual(['Longest river', null])
   })
 
@@ -105,7 +110,7 @@ describe('a card alone ("Open card") and an embedded card', () => {
     await openPage(h, 'Links')
     await waitFor(h, () => h!.host.querySelectorAll('.card-embed__from').length === 3 && [...h!.host.querySelectorAll('.card-embed__body')].every((b) => b.textContent !== ''))
     const embeds = [...h.host.querySelectorAll('.card-embed')]
-    expect(embeds.map((e) => e.querySelector('.card__head')?.textContent)).toEqual(['↗Embedded from "Geo"·GEO-1', '↗Embedded from "Capital of France"·GEO-3', '↗Embedded from "GEO-4"·GEO-4'])
+    expect(embeds.map((e) => e.querySelector('.card__head')?.textContent)).toEqual(['↗Embedded from "Geo"·GEO-1New' + RULE, '↗Embedded from "Capital of France"·GEO-3New' + RULE, '↗Embedded from "GEO-4"·GEO-4New' + RULE])
     expect(embeds.map((e) => e.querySelector('.card-band')?.textContent ?? null)).toEqual(['Longest river', 'Capital of France', null])
     // The links show the title, else the ID (as the Mac's pills).
     expect(h.text()).toContain('See Capital of France and GEO-4.')
@@ -120,7 +125,7 @@ describe('a card alone ("Open card") and an embedded card', () => {
     expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Capital of France')
     expect(h.host.querySelector('.card-view__card')?.textContent).toContain('The capital is')
     // YAZ-5437: the card's box as the Mac's card window: the head (ID), then the title band.
-    expect(h.host.querySelector('.card-view__card .card__head')?.textContent).toBe('GEO-3')
+    expect(h.host.querySelector('.card-view__card .card__head')?.textContent).toBe('GEO-3New' + RULE)
     expect(h.host.querySelector('.card-view__card .card-band')?.textContent).toBe('Capital of France')
     await h.click('Back')
     await typeQuery(h, 'GEO-4')
@@ -130,7 +135,7 @@ describe('a card alone ("Open card") and an embedded card', () => {
     expect(h.host.querySelector('.card-view')?.getAttribute('aria-label')).toBe('GEO-4')
     // No title: no band; the ID in the head names it (the Mac's rule).
     expect(h.host.querySelector('.card-view__card .card-band')).toBeNull()
-    expect(h.host.querySelector('.card-view__card .card__head')?.textContent).toBe('GEO-4')
+    expect(h.host.querySelector('.card-view__card .card__head')?.textContent).toBe('GEO-4New' + RULE)
     // The question is the card's text, never its title.
     expect(h.host.querySelector('.card-view__card')?.textContent).toContain('What is the highest peak?')
   })

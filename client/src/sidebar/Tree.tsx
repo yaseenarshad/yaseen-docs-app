@@ -1,4 +1,5 @@
-import { Fragment, memo, useSyncExternalStore, type CSSProperties, type ReactElement } from 'react'
+import { Fragment, memo, useRef, useSyncExternalStore, type CSSProperties, type ReactElement } from 'react'
+import { carriedOrder } from '@shared/filesOrder'
 import type { TabSort, TreeNode } from '@shared/types'
 import type { Needle } from '../links/completion'
 import { marked } from '../search/marked'
@@ -134,8 +135,8 @@ export type ReorderOver = { path: string; edge: 'before' | 'after' }
 export interface TreeReorder {
   /** The hovered top row and which edge of it the drop lands on; null when no line shows. */
   over: ReorderOver | null
-  /** A row's `dragstart` arms the reorder: it lifts LIFT_PX from the press, as a move does. */
-  start: (path: string) => void
+  /** A row's `dragstart` arms the reorder: it lifts LIFT_PX from the press, mostly up or down (YAZ-5916 Q2). `row`: the row button, whose `li` lifts (`rowLift.ts`). */
+  start: (path: string, row?: HTMLElement) => void
 }
 
 /**
@@ -309,6 +310,13 @@ interface TreeProps {
   ids?: PathIds
   /** A tab whose top rows reorder (YAZ-2631 D3): they drag along the list instead of moving on disk. Without it no row reorders. The top level alone gets it, so a drag's line draws no level below again. */
   reorder?: TreeReorder
+  /**
+   * Files under Manual (YAZ-5916): every row's drag reorders its own folder, and ⌘ moves it into one (D2), instead of
+   * the move on disk; a vault row keeps `reorder`. Absent: no row drags this way. Every level gets it.
+   */
+  manual?: TreeReorder
+  /** Files under Manual (D1): each folder's order of item names, by its absolute path. A stable Map. */
+  manualOrder?: ReadonlyMap<string, readonly string[]>
   /** The tab's sort (YAZ-3227); the Search tab's own since YAZ-3511 (`searchSort`). */
   sort?: TabSort
   /** Each row but a vault row shows its Last updated at the right end (YAZ-3511 D6): the tab's own switch (D10). */
@@ -403,6 +411,8 @@ function TreeLevel({
   titles,
   ids,
   reorder,
+  manual,
+  manualOrder,
   sort,
   dates,
   scores,
@@ -423,7 +433,7 @@ function TreeLevel({
   const level = depth + shift
   // The course's guided tour (YAZ-5123) marks its Course Cards folder and Course page; null outside a tour.
   const tour = useSyncExternalStore(subscribeTourPlaces, tourPlaces)
-  const recurse = { shift, vaultRows, appRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, cardRows, onOpenCard, onHoverFile, tooLarge, shareBadges, icons, cardFiles, sort, dates, scores }
+  const recurse = { shift, vaultRows, appRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, cardRows, onOpenCard, onHoverFile, tooLarge, shareBadges, icons, cardFiles, sort, dates, scores, manual, manualOrder }
   /** A board or page row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -437,7 +447,14 @@ function TreeLevel({
   const here = shortcuts.get(dirPath)
   // The app's own vault row (YAZ-5108) is no vault of the person: with one vault of theirs the level sorts as before, the row last.
   const keep = sort === undefined ? here === undefined : keepsOrder(depth, sort, { keepTop, copies, vaults: vaultRows.size > appRows.size })
-  const rows = appRowsLast(nodes, depth, appRows, (level) => (keep ? level : sortLevel(here === undefined ? level : [...level, ...here], sort, shownLabel(titles), scores)))
+  // Files under Manual (YAZ-5916 D1): the folder's own order, by item name. The list this level used last carries a
+  // renamed or deleted row's place until the watcher's echo changes the tree (YAZ-5934): main writes the order first.
+  const lastListed = useRef<readonly string[] | undefined>(undefined)
+  const ownList = manualOrder === undefined ? undefined : (manualOrder.get(dirPath) ?? NO_NAMES)
+  let shown: ReadonlySet<string> | null = null
+  const listed = ownList === undefined ? undefined : carriedOrder(lastListed.current, ownList, (name) => (shown ??= new Set(nodes.map((node) => node.name))).has(name))
+  lastListed.current = listed
+  const rows = appRowsLast(nodes, depth, appRows, (level) => (keep ? level : sortLevel(here === undefined ? level : [...level, ...here], sort, shownLabel(titles), scores, listed)))
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
   // The top row a row stands under (YAZ-2845 D1): a top row is its own. It tells the copies of a row
   // that shows twice apart, and a right-click hands it to the menu, so an input mounts in that copy alone.
@@ -466,21 +483,26 @@ function TreeLevel({
     const name = depth > 0 ? undefined : [...vaultRows].find(([row]) => path.startsWith(`${row}/`))?.[1]
     return name !== undefined && <span className="tree__vault">{name}</span>
   }
-  // What a row's drag does: reorder on a top row of a tree that reorders, else move on disk (E1b; a folder too, YAZ-3251 D5).
-  const rowDrag: Pick<TreeFileMove, 'start'> = rowReorder ?? move
+  // What a row's drag does: reorder on a top row of a tree that reorders; in Files under Manual reorder its folder
+  // (YAZ-5916 D2); else move on disk (E1b; a folder too, YAZ-3251 D5).
+  const manualOf = (node: TreeNode): TreeReorder | null => (rowReorder === null && manual !== undefined && !vaultRows.has(node.path) ? manual : null)
+  /** A row inside the app's own read-only vault (YAZ-5108) keeps no order of the person's. */
+  const inAppRow = (node: TreeNode): boolean => appRows.size > 0 && [...appRows].some((row) => node.path.startsWith(`${row}/`))
   // A top row of a SORTED Focus or Favorites list does not drag at all (YAZ-3227 D6): its drag would reorder, and
   // the order is the sort's — it must not turn into a move on disk. A shortcut row never drags (YAZ-2290 D2), and
   // a vault row moves nothing on disk (YAZ-3251 S8): it drags only where its tree reorders.
-  const noDrag = (node: TreeNode): boolean => isShortcutRow(node) || (copies && depth === 0 && rowReorder === null) || (vaultRows.has(node.path) && rowReorder === null) || appRows.has(node.path)
+  const noDrag = (node: TreeNode): boolean => isShortcutRow(node) || (copies && depth === 0 && rowReorder === null) || (vaultRows.has(node.path) && rowReorder === null) || appRows.has(node.path) || (manual !== undefined && inAppRow(node))
   /**
    * A row drag begins: the move or the reorder takes it (YAZ-3251 D5). The page's own drag stops
    * here for both, and `start` arms the row: it lifts LIFT_PX from the press (YAZ-3467 D1, D2). A
    * move lifts into the OS drag (YAZ-3254 D4), which Finder can take. A reorder lifts into mouse
    * events (S15): it never leaves the window.
    */
-  const dragStart = (node: TreeNode) => (e: React.DragEvent) => {
+  const dragStart = (node: TreeNode) => (e: React.DragEvent<HTMLElement>) => {
     e.preventDefault()
-    rowDrag.start(node.path, copyOf(node))
+    const by = rowReorder ?? manualOf(node)
+    if (by !== null) by.start(node.path, e.currentTarget)
+    else move.start(node.path, copyOf(node))
   }
   /**
    * A file row takes the drop for its folder (YAZ-3251 D7) — the folder it is drawn in, so a
@@ -732,6 +754,8 @@ function TreeLevel({
               onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath, top: topOf(node) } : { ...node, top: topOf(node) }, e)}
               title={node.path}
               data-path={node.path}
+              // A shortcut row parts with its neighbours in a Manual drag, but it is no item of the folder's order (YAZ-5916).
+              data-shortcut={isShortcutRow(node) ? '' : undefined}
               data-tour={node.path === tour.page ? 'course-page' : undefined}
               // The file's icon before the name (YAZ-3440 D4), which took the place of the diagram's mark after it: its
               // kind for the Line set (a file with no viewer in the app is `other`), its Material icon by name (`data-icon`
@@ -778,6 +802,9 @@ function TreeLevel({
     </ul>
   )
 }
+
+/** A folder with no Manual order yet (YAZ-5916): its items in the Name order. */
+const NO_NAMES: readonly string[] = []
 
 /** `path` sits somewhere below `dir`. */
 const below = (path: string | null, dir: string): boolean => path !== null && path.startsWith(`${dir}/`)

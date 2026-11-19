@@ -21,6 +21,7 @@ import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './ls
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
 import type { SystemHotkey } from './macosHotkeys'
 import type { VaultIcons } from './vaultIcons'
+import type { FilesOrderState, FilesSort } from './filesOrder'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -669,6 +670,20 @@ export const CONTRACT = {
     onChanged: push<{ root: string }>('icons:changed'),
   },
   /**
+   * The Files tab's Manual order (YAZ-5916) over `.yaseendocs/files-order.<mac id>.json`, one file for each Mac, the
+   * newest is the order (`shared/filesOrder.ts`). Folders by absolute path; each list holds item NAMES.
+   */
+  filesOrder: {
+    /** The newest valid file's order and Files sort; none (Name, A to Z) when there is no valid file. Never creates anything. */
+    get: invoke<[root: string], FilesOrderState>('filesOrder:get', 1),
+    /** Replace one folder's order (`dir` is the vault or a folder in it, → `BAD_REQUEST` else). Writes this Mac's file only, and nothing when it did not change. */
+    setFolder: invoke<[root: string, dir: string, names: readonly string[]], void>('filesOrder:set-folder', 3),
+    /** This Mac's Files sort (Q4), written at each change: the phone sorts its tree by the newest file's (D4). */
+    setSort: invoke<[root: string, sort: FilesSort], void>('filesOrder:set-sort', 2),
+    /** Fired in every window after any change to a vault's order files, own or another Mac's; filter by `root`. */
+    onChanged: push<{ root: string }>('filesOrder:changed'),
+  },
+  /**
    * A vault's focus list (YAZ-2702): ONE list for each vault, kept in the vault as one file for each
    * Mac, `.yaseendocs/focus.<mac id>.json`; the newest file is the list. Absolute paths in the user's order. `scope`
    * (YAZ-4450 D1): the vault's own list, or its workspace list in `focus-workspace.<mac id>.json` by the same rules.
@@ -765,6 +780,14 @@ export const CONTRACT = {
      * skill has no `formats` folder. `vault` null: the app's copy. Never writes.
      */
     cardFormats: invoke<[vault: string | null], CardSkillFormats | null>('app:card-formats', 1),
+    /**
+     * The Mac's dark selection colour (YAZ-5941): System Settings › Appearance › Highlight colour as macOS shows it in
+     * dark, `#rrggbb`. Null when it cannot be read, off macOS, or when the Mac shows the light one (the Mac is in Light
+     * while the app is dark): the editor then keeps its fixed dark blue. A window reads it once, then follows the push.
+     */
+    selectionColour: invoke<[], string | null>('app:selection-colour', 0),
+    /** Fired in every window when the colour changes: a new Highlight colour, or a change of the Mac's or the app's appearance. */
+    onSelectionColour: push<string | null>('app:selection-colour-changed'),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {

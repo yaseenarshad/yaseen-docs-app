@@ -47,6 +47,9 @@ interface SidebarStubProps {
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
   recentVault?: string | null
   onRecentVault?: (root: string | null) => void
+  /** "Hide all others" in Files (YAZ-5790): the folder shown alone, App's for the window's session. */
+  filesOnly?: string | null
+  onFilesOnly?: (dir: string | null) => void
   /** A Files window's header button (YAZ-3357 D8): Tabs Mission Control. */
   onShowAllTabs?: () => void
   onToNormalWindow?: () => void
@@ -83,6 +86,8 @@ interface SidebarStubProps {
   onMoveEntries: (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => Promise<void>
   /** A move the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut, a Finder move-in. App records it and says it with Undo. */
   onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[] }, text: string, skipped: boolean) => void
+  /** A Manual reorder (YAZ-5917): App puts it on the undo list and says it with Undo. */
+  onReordered?: (step: { name: string; undo: () => void; redo: () => void }) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
@@ -1025,6 +1030,26 @@ describe('App Settings › Notifications (YAZ-3303)', () => {
     expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
   })
 
+  it('YAZ-5917: a Manual reorder says what moved with Undo; ⌘Z puts the order back once, and ⌘⇧Z writes it again', async () => {
+    const { el } = await open({})
+    const undo = vi.fn()
+    const redo = vi.fn()
+    act(() => captured.sidebar?.onReordered?.({ name: 'Plan', undo, redo }))
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved “Plan”')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+    const key = (shiftKey: boolean) => act(async () => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })))
+    await key(false)
+    expect(undo).toHaveBeenCalledOnce()
+    expect(redo).not.toHaveBeenCalled()
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved “Plan” back')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Redo')
+    await key(true)
+    expect(redo).toHaveBeenCalledOnce()
+    // The toast's own Undo runs the same step.
+    await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+    expect(undo).toHaveBeenCalledTimes(2)
+  })
+
   it('D2: with "Move, rename or delete" Off, a rename that fails still says why (S19)', async () => {
     const { bridge, el } = await open({ noticeUndo: false, confirmRename: false })
     bridge.file.rename.mockRejectedValueOnce({ code: 'ALREADY_EXISTS', message: 'path already exists', path: '/v/b.md' })
@@ -1308,7 +1333,7 @@ describe('App deep links (E1, GRO-2171)', () => {
   it('File › Share Link ⌘⇧L opens the Share dialog on the active board (YAZ-3037 menu, YAZ-3040 dialog)', async () => {
     const { bridge, el, emitShareLink } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/Plan.excalidraw', tabs: ['/v/Plan.excalidraw'] })
     await act(async () => emitShareLink())
-    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull())
+    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull(), { timeout: SLOW_RUNNER_MS }) // a lazy chunk: slow on a loaded CI runner
     // The dialog asks for the link after it mounts, so a slow CI runner sees the dialog before the ask.
     await vi.waitFor(() => expect(bridge.share.get).toHaveBeenCalledWith({ root: '/v', path: '/v/Plan.excalidraw' }))
   })
@@ -1381,6 +1406,29 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     await act(async () => emitFileDeleted('/v/H', 'dir'))
     expect(openPageWindow(key)).toBeUndefined()
     dropAllPageWindows()
+  })
+})
+
+describe('"Hide all others" in Files (YAZ-5790)', () => {
+  it('App keeps the folder for the window\'s session: a rename or a move of it, or of a folder above it, follows it; another folder\'s does not; a delete of it shows all again; nothing is written', async () => {
+    const { bridge, emitFileRenamed, emitFileDeleted } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(captured.sidebar?.filesOnly).toBeNull()
+    const writes = bridge.window.setIdentity.mock.calls.length
+    await act(async () => captured.sidebar?.onFilesOnly?.('/v/Docs/Plans'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Docs/Plans')
+    await act(async () => emitFileRenamed('/v/Docs/Plans', '/v/Docs/Ideas', 'dir'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Docs/Ideas')
+    await act(async () => emitFileRenamed('/v/Docs', '/v/Archive/Docs', 'dir'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Archive/Docs/Ideas')
+    await act(async () => emitFileRenamed('/v/Other', '/v/Elsewhere', 'dir'))
+    await act(async () => emitFileRenamed('/v/Archive/Docs/Ideas.md', '/v/Archive/Docs/Ideas2.md', 'file'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Archive/Docs/Ideas')
+    await act(async () => emitFileDeleted('/v/Archive/Docs/Ideas/old.md'))
+    await act(async () => emitFileDeleted('/v/Other', 'dir'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Archive/Docs/Ideas')
+    await act(async () => emitFileDeleted('/v/Archive/Docs/Ideas', 'dir'))
+    expect(captured.sidebar?.filesOnly).toBeNull()
+    expect(bridge.window.setIdentity.mock.calls.length).toBe(writes)
   })
 })
 
@@ -5624,7 +5672,7 @@ describe('App card review (YAZ-4967)', () => {
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][1].click())
     expect(layer()).toBeInstanceOf(HTMLElement)
     await act(async () => emitShareLink())
-    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull())
+    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull(), { timeout: SLOW_RUNNER_MS }) // a lazy chunk: slow on a loaded CI runner
   })
 
   it('YAZ-5041: the Inbox tab to the front tells main no page is in front, so the app menu follows no page; the page tab tells main a page is in front again', async () => {

@@ -88,11 +88,6 @@
   bottom: calc(100% + 2px);
 }
 
-/* YAZ-5697: Archive card and Title on the front ask in place (the app's ask, `Confirm`): in the menu's box, no margin. */
-.card-actions__ask .confirm {
-  margin: 2px 0;
-}
-
 /* Title in review's choices (YAZ-5696 on the phone, YAZ-5697 round 2): under it, set in, touch-sized as every row. */
 .card-actions__choice {
   padding-left: 28px;

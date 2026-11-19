@@ -11,7 +11,8 @@
 .backlinks {
   width: 100%;
   max-width: var(--content-max-width);
-  margin: 0 auto;
+  /* Page position (YAZ-5871 D2): `--column-start` is 0 for Left, auto for Centre (`lib/contentWidth.ts`). */
+  margin: 0 auto 0 var(--column-start, auto);
   padding: 0 48px;
 }
 

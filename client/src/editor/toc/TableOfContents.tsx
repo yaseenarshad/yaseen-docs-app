@@ -68,7 +68,7 @@
  */
 import { useUnit } from '../../vault/unitWord'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
-import { stepSidebarZoom, TOC_DEFAULT_W, TOC_MAX_W, type ContentWidth, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
+import { stepSidebarZoom, TOC_DEFAULT_W, TOC_MAX_W, type ContentStep, type ContentWidth, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
 import { ENOUGH_ROWS, type TocChannel, type TocRow } from './tocChannel'
 import { CollapseAllIcon, ExpandAllIcon } from '../../views/view/icons'
 import { outlineFoldKeyStem } from '../outline/outlineFoldKeys'
@@ -88,7 +88,7 @@ export const NAMES_FLOOR = 700
 /** The least pinned names leave the text, px: what it has at `NAMES_FLOOR` beside names of `TOC_WIDTH`. */
 export const TEXT_FLOOR = NAMES_FLOOR - TOC_WIDTH
 /** The widest the text column gets per content width at 100% page zoom, its sides in: app.css's `--content-max-width` (YAZ-5144: one table, `columnMax`). */
-export const COLUMN_MAX: Record<ContentWidth, number> = { narrow: columnMaxOf('narrow'), medium: columnMaxOf('medium'), full: columnMaxOf('full') }
+export const COLUMN_MAX: Record<ContentStep, number> = { narrow: columnMaxOf('narrow'), medium: columnMaxOf('medium'), full: columnMaxOf('full') }
 
 /**
  * Names, or lines? `auto` shows the names only when the text column keeps its full width beside
@@ -205,7 +205,7 @@ export interface TableOfContentsProps {
   channel: TocChannel
   /** The setting (Settings › Editor › Table of contents). */
   mode: TableOfContentsMode
-  /** The page's content width (its own `page-width`, else the setting): how wide the text column wants to be, which decides `auto`. */
+  /** The page's content width (its own `page-width`, else the setting; a step or Custom px): how wide the text column wants to be, which decides `auto`. */
   contentWidth: ContentWidth
   /**
    * The PAGE's zoom in percent (the editor's `documentZoom`), not the names' `zoom`: the text column grows with it
@@ -253,7 +253,9 @@ export function TableOfContents({ channel, mode, contentWidth, pageZoom = 100, o
   // Mirror for the scroll spy, which sets state only when the index is a new one.
   const currentRef = useRef(0)
   const { open, setOpen, hoverRef, openedAt, openCard, closeSoon, cancelGrace } = useTocCard()
-  // The column as drawn (YAZ-5640): the text width times the page zoom, plus its 96 px of sides.
+  // The column as drawn (YAZ-5640): the text width times the page zoom, plus its 96 px of sides. A step or Custom px
+  // (YAZ-5871). The room is the page less its scrollbar and the column's right edge: at Left the column starts at 0, and
+  // at Centre it centres again in what the names leave, so both give the names the same room on the right.
   const columnMax = columnMaxOf(contentWidth, pageZoom / 100)
   const names = shows && namesShow(mode, box.width, columnMax)
   // Read only while the names show: the saved width, or the room this page has when that is less.

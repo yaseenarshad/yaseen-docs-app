@@ -16,7 +16,8 @@
  * number, the vault, the folder, the path, the mark and your own text (`link-pill__<part>` pieces inside the head and
  * the tail). Every size is a share of the line's (em) or the line's own (inherit): a pill in a heading is as big as
  * the heading. The pieces
- * the format puts around the name are two widgets, `link-pill__head` and `link-pill__tail`.
+ * the format puts around the name are two widgets, `link-pill__head` and `link-pill__tail`. The icon (YAZ-5843) has a
+ * colour alone: `--pill-icon-fg`, read under `@container style(--pill-icon-on: 1)` at the end of this file.
  */
 
 .wikilink {
@@ -64,6 +65,14 @@
   padding-left: 14px;
   font-size: 14px;
   vertical-align: 0 !important;
+  /* The gap after the icon is the format's (YAZ-5894 D1), never the sidebar's 6 px (app.css, far more specific: hence
+     `!important`): `{icon} {name}` (the default) one space, 0.25em; `{icon}{name}` flush, a 1 px hairline
+     (`--pill-icon-gap`, `linkPillVars`). */
+  margin-right: var(--pill-icon-gap, 0.25em) !important;
+}
+/* An icon piece (`{icon}` away from `{name}`): the format's own text spaces it. */
+:is(.link-pill__head, .link-pill__tail) .file-icon::before {
+  margin-right: 0 !important;
 }
 /* A heading part (` > Q1`) follows its pill as plain link text. */
 .wikilink.wikilink__sub {
@@ -257,19 +266,71 @@
    draws the same icon (`wikilinkPicker.css`), and so does a card file's row (YAZ-5037): `--card-link-icon` is app.css's. */
 .wikilink.wikilink--card::before,
 .wikilink.card-icon::before,
-:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before {
+:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before,
+.wikilink .card-icon::before {
   content: '';
   padding-left: 1em;
-  margin-right: 0.25em;
-  background-color: currentColor;
+  /* The format's gap, as a file icon's (YAZ-5894 D1). */
+  margin-right: var(--pill-icon-gap, 0.25em);
+  /* The card colour, as the sidebar, the Inbox and search draw a card (YAZ-5843 D2); a picked card colour sets it. */
+  background-color: var(--kind-card, currentColor);
   mask: var(--card-link-icon) center / 0.9em 0.9em no-repeat;
 }
+/* File icons Grey greys a card's icon in the sidebar: the pill's too. */
+.app[data-sidebar-file-icons='grey'] :is(.wikilink.wikilink--card, .wikilink.card-icon, :is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon, .wikilink .card-icon)::before {
+  background-color: var(--fg-muted);
+}
+/* A React pill's card icon (the Settings preview, YAZ-5919): a `.card-icon` span inside the pill, drawn as the title's
+   own icon, not search's 14 px box (app.css). */
+.wikilink .card-icon::before {
+  display: inline;
+  width: auto;
+  height: auto;
+  vertical-align: baseline;
+}
 /* As a piece, the format's own text spaces it. */
-:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before {
+:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before,
+:is(.link-pill__head, .link-pill__tail) .link-pill__icon .card-icon::before {
   margin-right: 0;
 }
 /* The group that holds a pill's pieces (`cardPill`, a link inside a card): it draws nothing, so the head, the name and
    the tail sit side by side and the sibling rules above join them into one box (YAZ-5792). */
 .wikilink-group {
   display: contents;
+}
+
+/* The icon's own colours (YAZ-5843, Settings › Link pills › "Styling: the icon"; two rows since YAZ-5972: Pages and
+   files, and Cards). With no colour (Default) nothing here applies: each icon keeps the app's own colours, as the
+   sidebar draws them. A picked colour sets `--pill-icon-on: 1` and `--pill-icon-fg` (pages and files) or
+   `--pill-card-icon-on: 1` and `--pill-card-icon-fg` (cards) on the vault's layers (`linkPillVars`), and the pill icons
+   of that row draw as a one-colour shape in it. Pages and files: the page, file, folder, drawing and diagram icon (the
+   Line set's glyph, Material's image and an icon of the user's own as a silhouette). Cards: the card icon on the title,
+   the card icon piece, and a card file's icon (`data-kind='card'`). A style query, so the colour costs no class and no
+   redraw: the variable is all a layer carries. `!important`: app.css's icon rules are far more specific (and its light
+   theme's image rule follows them). Electron's Chromium and the phone's Safari (18 and later) both read style queries. */
+@container style(--pill-icon-on: 1) {
+  .wikilink.file-icon:not([data-kind='card'])::before,
+  .wikilink .file-icon:not([data-kind='card'])::before {
+    background: var(--pill-icon-fg) !important;
+  }
+  /* An image icon has no mask of its own: its picture is the mask, so its shape stays. The Material rules' own
+     exceptions (a page's default icon and a card draw the Line glyph there) keep their glyph. */
+  .app[data-sidebar-icon-set='material'] :is(.wikilink.file-icon, .wikilink .file-icon)[data-icon]:not([data-kind='markdown'][data-icon='markdown'], [data-kind='card'])::before,
+  :is(.wikilink.file-icon, .wikilink .file-icon)[data-icon-custom]:not([data-kind='card'])::before {
+    mask: var(--icon) center / 14px 14px no-repeat !important;
+  }
+}
+@container style(--pill-card-icon-on: 1) {
+  :is(.wikilink.file-icon, .wikilink .file-icon)[data-kind='card']::before {
+    background: var(--pill-card-icon-fg) !important;
+  }
+  :is(.wikilink.file-icon, .wikilink .file-icon)[data-kind='card'][data-icon-custom]::before {
+    mask: var(--icon) center / 14px 14px no-repeat !important;
+  }
+  .wikilink.wikilink--card::before,
+  .wikilink.card-icon::before,
+  :is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before,
+  .wikilink .card-icon::before {
+    background-color: var(--pill-card-icon-fg) !important;
+  }
 }

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { renderPiece, type PageLook } from './pageRender'
 
 /**
  * YAZ-5437: a card in a page shows its title as the Mac's read card does (`cardBlockView.ts`, `cardTitle.ts`): the head
- * (ID, "Archived", "Title hidden in review"), then the title band off the card line (YAZ-5308); no title: no band.
+ * (ID, then the marks every card head has, YAZ-5915: "New" or "Archived", the title rule), then the title band off the card line (YAZ-5308); no title: no band.
  */
 const look: PageLook = {
   link: (inner) => ({ label: inner, open: null }),
@@ -15,12 +16,13 @@ const look: PageLook = {
     el.textContent = text
     return el
   },
+  review: DEFAULT_REVIEW_SETTINGS,
 }
 const block = (text: string, line: string | null) => `\`\`\`card\n${text}\n\`\`\`${line === null ? '' : `\n<!-- card: ${line} -->`}`
 
-function cards(md: string) {
+function cards(md: string, at: PageLook = look) {
   const root = document.createElement('div')
-  root.append(renderPiece(md, look))
+  root.append(renderPiece(md, at))
   return [...root.querySelectorAll('.page-card')].map((c) => ({
     head: c.querySelector('.card__head')?.textContent ?? null,
     band: c.querySelector('.card-band')?.textContent ?? null,
@@ -38,14 +40,19 @@ describe('a card in a page shows its title (YAZ-5437)', () => {
     ].join('\n\nWords between.\n\n')
     const got = cards(md)
     expect(got.map((c) => c.band)).toEqual(['Longest river', null, 'Highest "peak"'])
-    expect(got.map((c) => c.head)).toEqual(['NC-1', 'NC-2', 'NC-3ArchivedTitle hidden in review'])
+    // YAZ-5965: Title mark in the card head, Only if different (the default): only NC-3, with a title rule of its own.
+    expect(got.map((c) => c.head)).toEqual(['NC-1New', 'NC-2New', 'NC-3ArchivedTitle hidden in review'])
+    // The vault's review.json says Always or Never: the phone follows it.
+    const heads = (titleMark: 'always' | 'never') => cards(md, { ...look, review: { ...DEFAULT_REVIEW_SETTINGS, titleMark } }).map((c) => c.head)
+    expect(heads('always')).toEqual(['NC-1NewTitle always (default)', 'NC-2NewTitle always (default)', 'NC-3ArchivedTitle hidden in review'])
+    expect(heads('never')).toEqual(['NC-1New', 'NC-2New', 'NC-3Archived'])
     // The Mac's order: head, band, body. The title is never in the body.
     expect(got[0].order).toEqual(['card__head', 'card-band', 'card__body'])
     expect(got[0].body).not.toContain('Longest river')
   })
 
-  it('a card with no card line: no head, no band, its text only', () => {
-    expect(cards(block('Just a card', null))).toEqual([{ head: null, band: null, body: 'Just a card', order: ['card__body'] }])
+  it('a card with no card line: no band; with Review on its head has the marks only (YAZ-5915)', () => {
+    expect(cards(block('Just a card', null))).toEqual([{ head: 'New', band: null, body: 'Just a card', order: ['card__head', 'card__body'] }])
   })
 
   it('a title the card line holds is text, never markup', () => {

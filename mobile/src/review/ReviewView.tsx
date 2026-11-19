@@ -95,6 +95,12 @@ export interface ReviewViewProps {
    * the session stays; the answer timer and the Wake Lock rest. Default true.
    */
   shown?: boolean
+  /**
+   * Title room (YAZ-5880, D4 on YAZ-5858; `mobile.json`'s `titleRoom`): true (Always) keeps a waiting title's room in the
+   * head line, unseen and unread, and fades it in when it shows; false (the default, Only when it shows) gives a waiting
+   * title no room, as before.
+   */
+  titleRoom?: boolean
 }
 
 interface Setup {
@@ -165,7 +171,7 @@ type Step = Reveal & { key: string | null }
 /** `words` and `rating`: the hint line's "✓ Remembered · Capital of Spain · back in 9 days · Undo", right after the answer (the Mac's, YAZ-5693). */
 type Line = { kind: 'answer'; count: number; path: string; id: string; words: AnswerWords; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
-function ReviewSession({ link, vault, vaultName, unit, open, showInSearch, source, host, media, pick: firstPick, order: firstOrder, shown = true }: ReviewViewProps & Setup) {
+function ReviewSession({ link, vault, vaultName, unit, open, showInSearch, source, host, media, pick: firstPick, order: firstOrder, shown = true, titleRoom = false }: ReviewViewProps & Setup) {
   const { ready, settings: vaultSettings } = useSourceState(source)
   // Where new cards come from — the Mac's rule (`setNewFrom` → `saveSettings` → `newFrom`), this phone's pick.
   const [pick, setPick] = useState(firstPick)
@@ -238,7 +244,7 @@ function ReviewSession({ link, vault, vaultName, unit, open, showInSearch, sourc
       </div>
     )
   if (session === null) return <Waiting />
-  return <SessionScreen {...{ link, unit, open, showInSearch, source, host, media, retry, review, session, answers, notice, setNotice, shown, cardLook }} />
+  return <SessionScreen {...{ link, unit, open, showInSearch, source, host, media, retry, review, session, answers, notice, setNotice, shown, cardLook, titleRoom }} />
 }
 
 function SessionScreen({
@@ -257,6 +263,7 @@ function SessionScreen({
   setNotice,
   shown,
   cardLook,
+  titleRoom,
 }: {
   link: ReviewLink
   unit: UnitText
@@ -274,6 +281,8 @@ function SessionScreen({
   shown: boolean
   /** The vault's card look: the Mac's card variables, on the card. */
   cardLook: Record<string, string>
+  /** Title room (YAZ-5880): true keeps a waiting title's room. */
+  titleRoom: boolean
 }) {
   // The end of Due today has its own screen (`DueTodayEnd`, in `DoneScreen`); the YAZ-5465 shim that went on at once is gone.
   const card = session.card
@@ -290,6 +299,8 @@ function SessionScreen({
   const cardFile = record?.kind === 'card'
   // A card that comes back (YAZ-5594: same place, "3 / 3") is a new turn: the answers so far tell the two apart.
   const cardKey = card === null ? null : `${session.answered.length}\n${card.path}\n${card.id}`
+  // YAZ-5880: the card turn whose title waited in its room (Title room Always), so its coming fades in.
+  const titleWaited = useRef<string | null>(null)
 
   // The step (D18; YAZ-5415 follows the Mac's `cardSteps.ts`): a tap shows the MARKED part (the next
   // hidden one), else the next side; a tap ON a hidden part shows THAT part, and the mark goes on after it.
@@ -572,6 +583,11 @@ function SessionScreen({
   const canUndo = shownLine?.undo === true || session.canUndo
 
   const headTitle = titleShows({ title: titleText, at: titleAt, counts, sides: step.sides, open: step.open, titled: step.titled }) ? titleText : ''
+  // YAZ-5880 Title room: a title that waits (it has words, and its card shows it later). With `titleRoom` it keeps its
+  // room in the head line unseen; when it shows it fades in (`review__title--in`), so the ID beside it never moves.
+  const titleWaits = titleText !== '' && headTitle === ''
+  const titleKept = titleRoom && titleWaited.current === cardKey && headTitle !== ''
+  if (titleRoom && titleWaits) titleWaited.current = cardKey
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
   // The crumb (YAZ-5132's place, from the first folder, YAZ-5682): "LEARNING / Memory", inside the card, on the chip's line;
   // too long, it folds from the start (YAZ-5713, `ReviewCrumb`).
@@ -735,11 +751,22 @@ function SessionScreen({
                 )}
               </div>
               <p className="review__head">
-                {headTitle !== '' && (
+                {headTitle !== '' ? (
                   <>
-                    <span className="review__title">{headTitle}</span>
+                    {/* A title that waited in its room is a new span when it shows: it fades in once. */}
+                    <span className={`review__title${titleKept ? ' review__title--in' : ''}`}>
+                      {headTitle}
+                    </span>
                     <span aria-hidden> · </span>
                   </>
+                ) : (
+                  titleRoom &&
+                  titleWaits && (
+                    <span className="review__title-room" aria-hidden="true">
+                      <span className="review__title">{titleText}</span>
+                      <span> · </span>
+                    </span>
+                  )
                 )}
                 <span className="review__id">{card.id}</span>
               </p>

@@ -3,7 +3,8 @@ import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/loc
 import { parseAlt } from '@client/editor/image/imageSrc'
 import type { PillEnd } from '@client/editor/wikilink/linkPillLook'
 import { cardPill, pillPieces } from '@client/editor/wikilink/cardPill'
-import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
+import { cardIdOf, cardReviewsOf, cardTitleAtOf, cardTitleOf, isCardFix, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
+import type { ReviewSettings } from '@shared/reviews'
 import { Renderer, type RendererExtension, type Token, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
 import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
@@ -88,6 +89,8 @@ export interface PageLook {
   card(text: string): HTMLElement
   /** The vault's table look (`table-look.json`); absent or null: the Mac's defaults. */
   tables?: PhoneTableLook | null
+  /** The vault's review settings, for the card heads' marks (YAZ-5915); absent: only Archived and To fix. */
+  review?: ReviewSettings
 }
 
 export type Slice = () => Promise<void>
@@ -234,7 +237,7 @@ markdown.use({
         const last = parse.cards.at(-1)
         const line = parseCardLine(text.trim())
         if (last !== undefined && !last.lined && line !== null) {
-          Object.assign(last, { lined: true, id: cardIdOf(line), title: cardTitleOf(line), off: isCardOff(line), notitle: isCardNoTitle(line) })
+          Object.assign(last, { lined: true, id: cardIdOf(line), title: cardTitleOf(line), off: isCardOff(line), notitle: isCardNoTitle(line), titleAt: cardTitleAtOf(line), fix: isCardFix(line), reviews: cardReviewsOf(line) })
         }
         return ''
       }
@@ -442,7 +445,7 @@ function drawCards(root: DocumentFragment, look: PageLook, cards: Parse['cards']
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(look.card(card.text))
-    const head = cardHead(card)
+    const head = cardHead(card, look.review)
     // A card with an ID has its ⋯ (the card actions) at the right of its head.
     if (head !== null && card.id !== null) head.append(cardMoreButton(card.id, card.title))
     for (const part of [head, titleBand(card.title)]) if (part !== null) slot.append(part)

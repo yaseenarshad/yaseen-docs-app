@@ -128,16 +128,21 @@ export function raiseLayer(layers: readonly { id: number }[], order: readonly nu
   return [...ids.filter((x) => x !== id), id]
 }
 
-/** A panel's width in a window `windowWidth` wide: its own, cut to leave `EDGE_GAP` at each side. */
-export const panelWidth = (kind: ExploreLayer['kind'], windowWidth: number): number => Math.max(240, Math.min(kind === 'search' ? SEARCH_WIDTH : PAGE_WIDTH, windowWidth - 2 * EDGE_GAP))
+/**
+ * A panel's width in a window `windowWidth` wide, cut to leave `EDGE_GAP` at each side. The search: its own times Search
+ * size (`size`, a factor: 1.25 for 125%, YAZ-5881 D2; the search alone since YAZ-5977). A page or board window: Settings'
+ * Explore window width (`custom`, YAZ-5976), else its own width; Search size never scales it.
+ */
+export const panelWidth = (kind: ExploreLayer['kind'], windowWidth: number, size = 1, custom: number | null = null): number =>
+  Math.max(240, Math.min(kind === 'search' ? Math.round(SEARCH_WIDTH * size) : (custom ?? PAGE_WIDTH), windowWidth - 2 * EDGE_GAP))
 
 /**
  * Where layer `index` stands: `left` from the window's left edge, in CSS px, and `top` added to the 10vh margin. The
  * offset is `index × 15` right and `min(index, 1) × 15` down, clamped so the panel keeps 8 px to the window's right
- * edge: a narrow window gets a smaller offset, never a panel off screen.
+ * edge: a narrow window gets a smaller offset, never a panel off screen. `size` is Search size (`panelWidth`: the search's only).
  */
-export function layerPlace(kind: ExploreLayer['kind'], index: number, windowWidth: number): { left: number; top: number; width: number } {
-  const width = panelWidth(kind, windowWidth)
+export function layerPlace(kind: ExploreLayer['kind'], index: number, windowWidth: number, size = 1, custom: number | null = null): { left: number; top: number; width: number } {
+  const width = panelWidth(kind, windowWidth, size, custom)
   const centred = Math.max(0, Math.floor((windowWidth - width) / 2))
   const room = Math.max(0, windowWidth - 8 - width - centred)
   return { left: centred + Math.min(index * LAYER_STEP, room), top: Math.min(index, 1) * LAYER_STEP, width }
@@ -202,16 +207,30 @@ export function fitBox(box: LayerBox, W: number, H: number): LayerBox {
  * Where every layer stands in a window `W` × `H`: its stack place (`layerPlace`, under the 10vh margin) shifted by
  * however far the layer under it was moved from ITS stack place, so a new layer opens next to the layer under it
  * wherever that one is now; a layer moved or resized by hand (`moved`) stands in its own box. Each box fits the window.
+ * `size` is Search size (`panelWidth`): it widens the search's stack place only, never a box moved or resized by hand.
+ * `custom` is Settings' Explore window width (YAZ-5976): a fresh page or board layer's width when set.
+ *
+ * THE SIZE OF THE LAYER IT OPENED FROM (YAZ-5975, Yaseen: "does it not follow the same sizing that you then create for
+ * the previous window?"): a page or board layer opened on a page, board or card layer whose box was set by hand (moved or
+ * resized), or took its size that way, takes that layer's width and height, `LAYER_STEP` right and down of it. So each
+ * link followed from a window made narrow opens as narrow. A layer on a search keeps its stack place (the search is
+ * another shape); a layer sized by hand keeps its own box.
  */
-export function layerBoxes(layers: readonly ExploreLayer[], moved: ReadonlyMap<number, LayerBox>, W: number, H: number): LayerBox[] {
+export function layerBoxes(layers: readonly ExploreLayer[], moved: ReadonlyMap<number, LayerBox>, W: number, H: number, size = 1, custom: number | null = null): LayerBox[] {
   const margin = Math.round(H * 0.1)
   const out: LayerBox[] = []
   let dx = 0
   let dy = 0
+  /** The layer under this one had a box set by hand, or one taken from such a box. */
+  let sized = false
   layers.forEach((layer, index) => {
-    const base = layerPlace(layer.kind, index, W)
+    const base = layerPlace(layer.kind, index, W, size, custom)
     const own = moved.get(layer.id)
-    const box = fitBox(own ?? { x: base.left + dx, y: margin + base.top + dy, width: base.width, height: null }, W, H)
+    const under = index > 0 ? layers[index - 1] : undefined
+    const prev = out[index - 1]
+    const inherit = own === undefined && sized && prev !== undefined && under !== undefined && under.kind !== 'search' && layer.kind !== 'search'
+    const box = fitBox(own ?? (inherit ? { x: prev.x + LAYER_STEP, y: prev.y + LAYER_STEP, width: prev.width, height: prev.height } : { x: base.left + dx, y: margin + base.top + dy, width: base.width, height: null }), W, H)
+    sized = own !== undefined || inherit
     dx = box.x - base.left
     dy = box.y - (margin + base.top)
     out.push(box)
@@ -242,12 +261,25 @@ export function savedLayerBox(kind: ExploreLayer['kind']): LayerBox | null {
   }
 }
 /**
+ * The first layer's box as a stack opens (YAZ-5976): its kept box (`savedLayerBox`), but with Settings' Explore window
+ * width set (`custom`), a page or board layer starts at that width, at the kept place and height. Yaseen: "set the
+ * default for all of them, even a fresh one". Null: no kept box (the stack place, which takes the width too).
+ */
+export function firstLayerBox(kind: ExploreLayer['kind'], custom: number | null): LayerBox | null {
+  const kept = savedLayerBox(kind)
+  return kept === null || custom === null || kind === 'search' ? kept : { ...kept, width: custom }
+}
+
+/**
  * The ONE zoom of every explore page layer (round 4), kept across restarts in this window's localStorage: a whole
- * percent in the page zoom's range (50–400), 100 by default. A page tab's zoom is its own and never this one.
+ * percent in the page zoom's range (50–400), 125 by default (YAZ-5977 Q6, Yaseen: "125%, keep the old look": the look
+ * the pages had when Search size still scaled them). The default is no entry; a saved value (100 too) stays. ⌘0 goes
+ * back to it. A page tab's zoom is its own and never this one.
  */
 const ZOOM_KEY = 'explore:zoom'
-export const savedExploreZoom = (): number => savedZoom(ZOOM_KEY)
-export const saveExploreZoom = (zoom: number): void => saveZoom(ZOOM_KEY, zoom)
+export const EXPLORE_PAGE_ZOOM_DEFAULT = 125
+export const savedExploreZoom = (): number => savedZoom(ZOOM_KEY, EXPLORE_PAGE_ZOOM_DEFAULT)
+export const saveExploreZoom = (zoom: number): void => saveZoom(ZOOM_KEY, zoom, EXPLORE_PAGE_ZOOM_DEFAULT)
 
 export function saveLayerBox(kind: ExploreLayer['kind'], box: LayerBox | null): void {
   try {

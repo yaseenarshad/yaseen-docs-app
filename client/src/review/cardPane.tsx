@@ -26,7 +26,7 @@ import type { ExploreVault } from '../explore/ExplorePage'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
-import { CardBody, CardStrip, type CardLinkDoors, type CardStripPart } from './cardParts'
+import { CardBody, CardStrip, type CardBodyGlow, type CardLinkDoors, type CardStripPart } from './cardParts'
 
 /**
  * Runs `run` on each new version of `path` in the index (its mtime): an answer in the Inbox, an agent's write or a
@@ -103,6 +103,8 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
 }
 
 interface CardPaneProps {
+  /** YAZ-5925: the read card's outside-change glow (a card page). Absent: none. */
+  glow?: CardBodyGlow
   card: CardAtPage
   /** The file the card is in: its images and links resolve against it. */
   path: string
@@ -134,10 +136,12 @@ interface CardPaneProps {
   /** The strip's open part, held by the caller (YAZ-5383: the card file tab's properties button opens Properties); absent: the strip holds it. */
   stripOpen?: CardStripPart | null
   onStripToggle?: (part: CardStripPart) => void
+  /** YAZ-5904: Side 2 and after may fold, as the surface's `--card-sides-fold` says (a card page, Explore's card layer). */
+  fold?: boolean
 }
 
 /** The card's body: the card or its editor, its strip (Reviews, Properties, Linked mentions and, in a tab, Embedded in: YAZ-5382), then the facts strip. */
-export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head, onChangeLine, onNotice, stripOpen, onStripToggle }: CardPaneProps) {
+export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head, onChangeLine, onNotice, stripOpen, onStripToggle, fold, glow }: CardPaneProps) {
   const swap = useCardSwap(editing)
   // The band shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
   return (
@@ -151,7 +155,7 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
         <div ref={swap.readRef} className={`card card-screen${swap.shown === 'read' ? '' : ' card-pane__incoming'}`}>
           {head}
           {band}
-          <CardBody text={card.text} path={path} vault={vault} doors={doors} />
+          <CardBody text={card.text} path={path} vault={vault} doors={doors} fold={fold} glow={glow} />
           {swap.shown !== 'read' && <ReadCardUp onUp={swap.readUp} />}
         </div>
       )}

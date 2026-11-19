@@ -14,7 +14,7 @@
  *    draw reads the pieces, never the string. The ID and the folder come from the index snapshot through `pathInfo`,
  *    a Map built once per snapshot, as `pathTitles` is.
  */
-import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_PARTS, parseLinkPillFormat, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
+import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_PARTS, linkPillIconColors, parseLinkPillFormat, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
 import { idNumber } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
 import { dirname } from '../../lib/paths'
@@ -22,8 +22,14 @@ import { dirname } from '../../lib/paths'
 /** The wash of a palette fill at each strength (a card's, `views.css`). */
 const STRENGTH_PERCENT = { light: 15, medium: 30, strong: 50 } as const
 
-/** A part's colour as CSS. */
-const colorValue = (color: LinkPillPartColor): string => (color === 'accent' ? 'var(--accent)' : color === 'same' ? 'currentColor' : color === 'muted' ? 'var(--fg-muted)' : `var(--table-text-${color})`)
+/**
+ * A part's colour as CSS. A custom `#rrggbb` (YAZ-5972) is itself, in light and dark alike. `kind` never reaches here:
+ * it is the icon's Default, which sets no variable.
+ */
+const colorValue = (color: LinkPillPartColor): string =>
+  color === 'accent' ? 'var(--accent)' : color === 'same' ? 'currentColor' : color === 'muted' ? 'var(--fg-muted)' : color.startsWith('#') ? color : `var(--table-text-${color})`
+/** An icon's colour as CSS: its "Text" is the page's text colour (inside the icon, `currentColor` is the name's). */
+const iconValue = (color: LinkPillPartColor): string => (color === 'same' ? 'var(--fg)' : colorValue(color))
 
 /** The custom properties of the changed fields, for example `{ '--pill-bg': 'transparent' }`. `{}` sets none. */
 export function linkPillVars(pills: LinkPills): Record<string, string> {
@@ -33,7 +39,11 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
     if (box.fill === 'none') {
       vars['--pill-bg'] = 'transparent'
       vars['--pill-pad'] = '0'
-    } else if (box.fill !== undefined) vars['--pill-bg'] = `color-mix(in srgb, var(--table-fill-solid-${box.fill}) ${STRENGTH_PERCENT[box.strength ?? 'medium']}%, transparent)`
+    } else if (box.fill !== undefined) {
+      // A custom fill (YAZ-5972) washes at the same strengths as a palette fill.
+      const solid = box.fill.startsWith('#') ? box.fill : `var(--table-fill-solid-${box.fill})`
+      vars['--pill-bg'] = `color-mix(in srgb, ${solid} ${STRENGTH_PERCENT[box.strength ?? 'medium']}%, transparent)`
+    }
     if (box.shape === 'square') vars['--pill-radius'] = '0'
     else if (box.shape === 'underline') {
       vars['--pill-bg'] = 'transparent'
@@ -42,10 +52,25 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
       vars['--pill-decoration'] = 'underline'
     }
   }
+  // The icon's colours (YAZ-5843, YAZ-5972): `wikilink.css` draws a page, folder or file icon of a pill as a one-colour
+  // shape in `--pill-icon-fg` under a style query on `--pill-icon-on`, and a card's icon in `--pill-card-icon-fg` under
+  // `--pill-card-icon-on`. Default (`kind`) sets neither: the app's own icon colours.
+  const { pages, cards } = linkPillIconColors(pills)
+  if (pages !== 'kind') {
+    vars['--pill-icon-fg'] = iconValue(pages)
+    vars['--pill-icon-on'] = '1'
+  }
+  if (cards !== 'kind') {
+    vars['--pill-card-icon-fg'] = iconValue(cards)
+    vars['--pill-card-icon-on'] = '1'
+  }
+  // The gap after the icon on the name (YAZ-5894 D1): the format's space is it (`{icon} {name}`, the default: the CSS's
+  // own 0.25em); `{icon}{name}` is flush, a 1 px hairline.
+  if (pills.format !== undefined && compiled(pills).icon === 'name' && !compiled(pills).gap) vars['--pill-icon-gap'] = '1px'
   if (pills.parts !== undefined)
     for (const part of LINK_PILL_PARTS) {
       const style = pills.parts[part]
-      if (style === undefined) continue
+      if (style === undefined || part === 'icon') continue
       if (style.bold) vars[`--pill-${part}-weight`] = 'bold'
       if (style.italic) vars[`--pill-${part}-style`] = 'italic'
       if (style.underline) vars[`--pill-${part}-decoration`] = 'underline'
@@ -116,6 +141,12 @@ export type PillIconPlace = 'name' | 'piece' | 'none'
 interface Compiled {
   segments: readonly LinkPillSegment[]
   icon: PillIconPlace
+  /**
+   * The icon on the name with spaces only between them (`{icon} {name}`, YAZ-5894 D1): the gap is one space, drawn by
+   * the CSS (`--pill-icon-gap`), not as text; the index of that space segment, or -1 (`{icon}{name}`: flush).
+   */
+  gapAt: number
+  gap: boolean
   /** Whether a pill needs the index: `{id}`, `{number}`, `{folder}` or `{path}` in the format. Else no lookup is paid. */
   needsInfo: boolean
   hasVault: boolean
@@ -126,9 +157,12 @@ function compile(format: string): Compiled {
   const tokens = new Set<LinkPillToken>()
   segments.forEach((s) => 'token' in s && tokens.add(s.token))
   const iconAt = segments.findIndex((s) => 'token' in s && s.token === 'icon')
+  const isName = (s: LinkPillSegment | undefined) => s !== undefined && 'token' in s && s.token === 'name'
   const next = segments[iconAt + 1]
-  const icon: PillIconPlace = iconAt < 0 ? 'none' : next !== undefined && 'token' in next && next.token === 'name' ? 'name' : 'piece'
-  return { segments, icon, needsInfo: tokens.has('id') || tokens.has('number') || tokens.has('folder') || tokens.has('path'), hasVault: tokens.has('vault') }
+  // Spaces only between the icon and the name keep the icon on the name, with one space as its gap (YAZ-5894 D1).
+  const spaced = next !== undefined && 'text' in next && /^ +$/.test(next.text) && isName(segments[iconAt + 2])
+  const icon: PillIconPlace = iconAt < 0 ? 'none' : isName(next) || spaced ? 'name' : 'piece'
+  return { segments, icon, gapAt: spaced ? iconAt + 1 : -1, gap: spaced, needsInfo: tokens.has('id') || tokens.has('number') || tokens.has('folder') || tokens.has('path'), hasVault: tokens.has('vault') }
 }
 
 const DEFAULT_COMPILED = compile(DEFAULT_LINK_PILL_FORMAT)
@@ -210,7 +244,9 @@ const CLOSE = [')', ']', '}', '»', '>', '”']
 export function pillParts(pills: LinkPills, meta: PillMeta, ownVault: string | null, icon = true): { head: PillEnd | null; tail: PillEnd | null } {
   const c = compiled(pills)
   let items: Item[] = c.segments.map((seg) => ({ seg, text: 'token' in seg ? tokenText(seg.token, pills, meta, ownVault) : seg.text }))
-  if (!icon && c.icon !== 'none') {
+  // The space of `{icon} {name}` is the icon's gap (the CSS's), never text. With no icon to draw it goes with the icon below.
+  if (icon && c.gap) items = items.filter((_, i) => i !== c.gapAt)
+  else if (!icon && c.icon !== 'none') {
     const at = items.findIndex((it) => 'token' in it.seg && it.seg.token === 'icon')
     const after = items[at + 1]
     const before = items[at - 1]

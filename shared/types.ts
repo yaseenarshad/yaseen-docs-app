@@ -1315,7 +1315,7 @@ export const isHighlightHex = (v: unknown): v is `#${string}` => typeof v === 's
 export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
   typeof v === 'object' && v !== null && isHighlightHex((v as HighlightCustomColor).color) &&
   Number.isInteger((v as HighlightCustomColor).uses) && (v as HighlightCustomColor).uses >= 1
-/** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. `best` is Search's alone (YAZ-3511 D12). */
+/** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites, and of Files since YAZ-5916 (each folder's order in the vault, `shared/filesOrder.ts`). `best` is Search's alone (YAZ-3511 D12). */
 export type SortBy = 'manual' | 'name' | 'updated' | 'best'
 /**
  * One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first.
@@ -1377,7 +1377,33 @@ export function defaultRightPanelIdentity(): RightPanelIdentity {
 
 /** Global content-width presets, ordered exactly as shown in Settings (YAZ-1176). */
 export const CONTENT_WIDTHS = ['narrow', 'medium', 'full'] as const
-export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
+/** A step of Content width by its name. */
+export type ContentStep = (typeof CONTENT_WIDTHS)[number]
+/**
+ * Content width (YAZ-5871 D1): a step by its name, or Custom, whole px of text from `PAGE_WIDTH_MIN` to `PAGE_WIDTH_MAX`.
+ * Settings' `contentWidth` and a page's `page-width` hold one. An old value (a step) stays valid; an old app copy reads a
+ * number as Narrow.
+ */
+export type ContentWidth = ContentStep | number
+export const PAGE_WIDTH_MIN = 400
+/** Settings' Explore window width (YAZ-5976): the Custom px box's range and its start. The window cuts it further. */
+export const EXPLORE_WIDTH_MIN = 400
+export const EXPLORE_WIDTH_MAX = 4000
+export const EXPLORE_WIDTH_START = 800
+export const isExploreWidth = (v: unknown): v is number | null => v === null || (typeof v === 'number' && Number.isInteger(v) && v >= EXPLORE_WIDTH_MIN && v <= EXPLORE_WIDTH_MAX)
+export const PAGE_WIDTH_MAX = 2400
+/** Custom's start in the controls: Medium's px. */
+export const PAGE_WIDTH_START = 900
+export const isContentWidth = (v: unknown): v is ContentWidth =>
+  (typeof v === 'string' && (CONTENT_WIDTHS as readonly string[]).includes(v)) || (typeof v === 'number' && Number.isInteger(v) && v >= PAGE_WIDTH_MIN && v <= PAGE_WIDTH_MAX)
+/**
+ * Page position (YAZ-5871 D2): where a page's column sits when the window is wider than it. Centre (the default, the look
+ * before) or Left. Full has no position: its column fills the window. Settings' `contentPosition` and a page's
+ * `page-position` hold one.
+ */
+export const CONTENT_POSITIONS = ['center', 'left'] as const
+export type ContentPosition = (typeof CONTENT_POSITIONS)[number]
+export const isContentPosition = (v: unknown): v is ContentPosition => typeof v === 'string' && (CONTENT_POSITIONS as readonly string[]).includes(v)
 /**
  * Each Content width step as the widest the text gets, px; `null` is the whole window (YAZ-5144, Yaseen: "even though
  * its set to "narrow" it doesnt look like there's a big change bw the options?"). The steps were the shell's 1040 px
@@ -1386,7 +1412,7 @@ export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
  * is about 250 px apart at a common window. The pages' column adds its 48 px sides (`--content-max-width`); Card
  * width uses the same steps for a card's text (`--card-text-width`).
  */
-export const CONTENT_TEXT_WIDTHS: Readonly<Record<ContentWidth, number | null>> = { narrow: 640, medium: 900, full: null }
+export const CONTENT_TEXT_WIDTHS: Readonly<Record<ContentStep, number | null>> = { narrow: 640, medium: 900, full: null }
 /**
  * Settings › Review › Card width, Custom (YAZ-5144 round 2, Yaseen: "custom gives you a px that you can adjust"): the
  * card's text at most this many px. It starts at Narrow's 640; Clean sets Mochi's line, about 62 letters (31em of the
@@ -2181,8 +2207,10 @@ export interface SettingsState {
   foldingOnByDefault: boolean
   /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
   theme: Theme
-  /** Global reading surface width (YAZ-1176): its text at most `CONTENT_TEXT_WIDTHS` (YAZ-5144: 640 px, 900 px, or the window). */
+  /** Global reading surface width (YAZ-1176): its text at most `CONTENT_TEXT_WIDTHS` (YAZ-5144: 640 px, 900 px, or the window), or Custom px (YAZ-5871). */
   contentWidth: ContentWidth
+  /** Settings › Appearance › Page position (YAZ-5871 D2): the pages' column at Centre (the default) or at the Left. Off with Full. */
+  contentPosition: ContentPosition
   /** Files & Links (Links C2-, GRO-2240): where a BARE unresolved `[[link]]` creates its page. */
   newPageLocation: NewPageLocation
   /** Root-relative folder for `newPageLocation: 'folder'` ('' = the vault root); ignored otherwise. Interpreted per-vault against each window's root. */
@@ -2306,6 +2334,16 @@ export interface SettingsState {
    * the one flash every way to a card in its page has (Explore's page layer `card`, `landOn`, YAZ-5164). A card file and E do not change.
    */
   inboxOpenAt: InboxOpenAt
+  /**
+   * Settings › Cards › Card look › Card sides in pages (YAZ-5904 D1): `true` folds Side 2 and after of a card in a page,
+   * an embed, the hover preview and the phone's page (`--card-sides-fold-pages`). A page's `card-sides` key wins.
+   * `false` (the default) shows all. Never the Inbox, Preview, Review or Edit card.
+   */
+  cardSidesFold: boolean
+  /** Card look › Card sides on card pages (YAZ-5904 Q1): the same fold on a card page, a card file's tab (`--card-sides-fold-card-pages`). Its `card-sides` key wins. Default `false`, Show all. */
+  cardSidesFoldCardPages: boolean
+  /** Card look › Card sides in Explore (YAZ-5904 D3): the same fold in Explore's page and card layers (`--card-sides-fold-explore`). Default `false`, Show all. */
+  cardSidesFoldExplore: boolean
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
   cardLineSpacing: number
   /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
@@ -2538,6 +2576,13 @@ export interface SettingsState {
    */
   sidebarZoom: number
   /**
+   * Settings › Sidebar › Row spacing (YAZ-5885 D1–D3): the height of one row of the sidebar's lists in CSS px, before
+   * the sidebar zoom. Compact 22 (VS Code) · Default 25.5 (the look before) · Roomy 30 · any Custom px within 20–40
+   * (`SIDEBAR_ROW_HEIGHT_MIN` / `_MAX`). It sizes the Files, Favorites, Focus and Recents rows and the search results,
+   * a Files window too, through `--tree-row-h` on `.sidebar__body`. Stays on this Mac (`LOCAL_SETTINGS`).
+   */
+  sidebarRowHeight: number
+  /**
    * The zoom of a page's table of contents in percent (YAZ-3939 D7–D11): its names and their fold arrows, never its
    * header or the rail. One value for every page and window; the code Outline keeps 100%. The steps are the sidebar's
    * (`SIDEBAR_ZOOM_STEPS`); a stored value is kept within 50–200.
@@ -2549,6 +2594,21 @@ export interface SettingsState {
    * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a page's zoom stack on it.
    */
   appZoom: number
+  /**
+   * Search size in percent (YAZ-5881 D1, D2; named Explore size before YAZ-5977, the key kept): the search panel's
+   * width and all that is in it (its input, its rows), on `APP_ZOOM_STEPS`; 125 by default (`EXPLORE_SIZE_DEFAULT`).
+   * Page, board and card windows keep the app's size (their text has the Explore page zoom alone). The footer's zoom
+   * menu writes it, and ⌘+ / ⌘− / ⌘0 while the search panel is in front (D3).
+   */
+  exploreSize: number
+  /**
+   * Explore window width (YAZ-5976): the width, in px, a fresh Explore page or board window starts at — `null` (Default)
+   * is the page panel's own width (`PAGE_WIDTH`, explore/layers.ts); a number (`EXPLORE_WIDTH_MIN`–`EXPLORE_WIDTH_MAX`)
+   * is that width. Both are cut to the window, and Search size scales neither (YAZ-5977). The search panel keeps its own
+   * width. A window opened from a window sized by hand takes that one's size (YAZ-5975); a window resized by hand keeps
+   * its box.
+   */
+  exploreWidth: number | null
   /**
    * Code files (YAZ-3449, YAZ-3438 D5): every code tab opens read only, and shows the Read only chip. One app setting
    * for all code files, never stored with a file. "Allow edits" on a tab's chip unlocks that tab until it closes.
@@ -2616,7 +2676,7 @@ export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
  * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. So does the code tab's helper switch
  * (YAZ-3500): its helpers are a download on this Mac. Every other field travels.
  */
-export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder']
+export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder', 'sidebarRowHeight']
 
 /**
  * The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover.
@@ -3059,6 +3119,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   foldingOnByDefault: true,
   theme: 'system',
   contentWidth: 'narrow',
+  contentPosition: 'center',
   newPageLocation: 'current',
   newPageFolder: '',
   confirmDelete: true,
@@ -3095,6 +3156,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   cardTitleSize: null,
   cardTablePosition: 'pages',
   inboxOpenAt: 'top',
+  cardSidesFold: false,
+  cardSidesFoldCardPages: false,
+  cardSidesFoldExplore: false,
   ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,
@@ -3171,8 +3235,11 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hotkeys: {},
   hotkeysAside: {},
   sidebarZoom: 100,
+  sidebarRowHeight: 25.5,
   tocZoom: 100,
   appZoom: 100,
+  exploreSize: 125,
+  exploreWidth: null,
   codeReadOnly: false,
   codeWrap: true,
   codeMinimap: false,
@@ -4505,8 +4572,20 @@ export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
 export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
 export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
 
+/**
+ * Settings › Sidebar › Row spacing (YAZ-5885 D1): the three named heights of a sidebar row in CSS px, and the range of
+ * a Custom one. A row is its 13px * 1.5 line plus equal padding above and below (app.css `.tree__row`).
+ */
+export const SIDEBAR_ROW_HEIGHTS = { compact: 22, default: 25.5, roomy: 30 } as const
+export const SIDEBAR_ROW_HEIGHT_DEFAULT = SIDEBAR_ROW_HEIGHTS.default
+export const SIDEBAR_ROW_HEIGHT_MIN = 20
+export const SIDEBAR_ROW_HEIGHT_MAX = 40
+
 /** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. Up to 200% (YAZ-3487, demo round 3). */
 export const APP_ZOOM_STEPS = [90, 100, 110, 125, 150, 175, 200] as const
+
+/** Explore size's default and ⌘0 (YAZ-5881 D1, D3): one of `APP_ZOOM_STEPS`. */
+export const EXPLORE_SIZE_DEFAULT = 125
 
 /**
  * One zoom step along `steps` (ascending): the next step in `direction`. A value between two steps snaps to the next

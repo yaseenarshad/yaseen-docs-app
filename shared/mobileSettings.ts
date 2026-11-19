@@ -13,6 +13,9 @@ import { isRecord } from './guards'
  *  - `fitTables` (default off, YAZ-5658): Wide tables. Off: Same as Desktop, each column the width saved in the file
  *    (else a readable width) and the first column in place; on: Fit Screen, the text columns share the screen by how much text each holds. A page's
  *    own `fit-tables: true | false` wins (none: Mobile Vault Default).
+ *  - `titleRoom` (default off, YAZ-5880, D4 on YAZ-5858): Title room in Review. Off: Only when it shows, a waiting title
+ *    takes no room (phone screens are short). On: Always, the title's room is kept and the title fades in, as the Mac's
+ *    default (`review.json`'s `titleRoom`, which the phone does not read: the phone has its own).
  *
  * The file holds only what differs from the defaults, beside a version: `{ "version": 1, "stickyHeadings": false }`. A
  * key left out is the default; a value that is not a boolean is the default too. Every other top-level key of the file
@@ -25,13 +28,14 @@ export interface MobileSettings {
   folding: boolean
   stickyHeadings: boolean
   fitTables: boolean
+  titleRoom: boolean
 }
 export type MobileSettingKey = keyof MobileSettings
 
-export const DEFAULT_MOBILE_SETTINGS: Readonly<MobileSettings> = Object.freeze({ folding: true, stickyHeadings: true, fitTables: false })
+export const DEFAULT_MOBILE_SETTINGS: Readonly<MobileSettings> = Object.freeze({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false })
 /** The keys this build's writer owns: every other key of the file is kept on a write. */
-export const MOBILE_SETTINGS_KEYS: readonly string[] = ['version', 'folding', 'stickyHeadings', 'fitTables']
-const SETTING_KEYS: readonly MobileSettingKey[] = ['folding', 'stickyHeadings', 'fitTables']
+export const MOBILE_SETTINGS_KEYS: readonly string[] = ['version', 'folding', 'stickyHeadings', 'fitTables', 'titleRoom']
+const SETTING_KEYS: readonly MobileSettingKey[] = ['folding', 'stickyHeadings', 'fitTables', 'titleRoom']
 
 /** What the file holds, the default for anything else (no file, not JSON, not an object, not a boolean). */
 export function sanitizeMobileSettings(raw: unknown): MobileSettings {

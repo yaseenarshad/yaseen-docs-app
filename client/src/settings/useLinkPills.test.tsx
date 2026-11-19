@@ -87,10 +87,10 @@ describe('useLinkPills (YAZ-4924)', () => {
   it('a version 1 file reads converted, in memory; it is written as version 2 only on a save', async () => {
     read.mockResolvedValue({ version: 1, background: 'none', bold: true, before: '(', after: ')' })
     await mount('/v')
-    expect(state.pills).toEqual({ format: '({icon}{name} ({vault}))', box: { fill: 'none' }, parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } } })
+    expect(state.pills).toEqual({ format: '({icon} {name} ({vault}))', box: { fill: 'none' }, parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } } })
     expect(write).not.toHaveBeenCalled()
     await act(async () => state.save({ ...state.pills, vault: 'never' }))
-    expect(write).toHaveBeenCalledWith('/v', LINK_PILLS_FILE, { version: 2, format: '({icon}{name} ({vault}))', box: { fill: 'none' }, parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } }, vault: 'never' }, LINK_PILLS_KEYS)
+    expect(write).toHaveBeenCalledWith('/v', LINK_PILLS_FILE, { version: 2, format: '({icon} {name} ({vault}))', box: { fill: 'none' }, parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } }, vault: 'never' }, LINK_PILLS_KEYS)
   })
 
   it("a change broadcast of this vault's file reads it again; another file or vault does nothing", async () => {

@@ -11,7 +11,8 @@ import { openFoldersOf, revealDone, revealOf } from './searchState'
 import { SIDEBAR_REVEAL_MS } from '@client/sidebar/revealRow'
 import { ICON_KIND, RowIcon } from './rowIcon'
 import { TreeIconsContext, useTreeIcons } from './treeIcons'
-import { buildTree, visibleRows, type TreeRow } from './vaultTree'
+import { buildTree, visibleRows, type TreeRow, type TreeView } from './vaultTree'
+import { useFilesOrder } from './filesOrder'
 import type { Scope } from './lists'
 import { ListTree } from './ListTree'
 import { bumpFolds, flipsOf, forgetFlips, searchKey, setFlips, useFolds } from './folds'
@@ -44,11 +45,12 @@ export const kindWord = (kind: TreeRow['kind'], page: string): string => (kind =
  * YAZ-5596 (13): the vault's tree and its folder rows, built once for each vault data (a new object when the index,
  * the commit or the settings change): a return to Search, or another draw, builds nothing again.
  */
-const trees = new WeakMap<VaultData, ReturnType<typeof buildTree>>()
-const treeOf = (data: VaultData) => {
-  let tree = trees.get(data)
-  if (tree === undefined) trees.set(data, (tree = buildTree(recordsWithBoards(data), data.folders)))
-  return tree
+const trees = new WeakMap<VaultData, { order: TreeView | null; tree: ReturnType<typeof buildTree> }>()
+/** YAZ-5916 D4, Q4: the tree in the Mac's Files sort (`order`: the vault's newest order file), built again when it changes. */
+const treeOf = (data: VaultData, order: TreeView | null = null) => {
+  let held = trees.get(data)
+  if (held === undefined || held.order !== order) trees.set(data, (held = { order, tree: buildTree(recordsWithBoards(data), data.folders, order) }))
+  return held.tree
 }
 const folderRowsCache = new WeakMap<VaultData, SearchCandidate[]>()
 const folderRowsFor = (data: VaultData) => {
@@ -76,7 +78,9 @@ function FullTree({ data, cards, shown, onMore, onReach }: { data: VaultData; ca
   const { hold, layer } = useFolderHold()
   // The vault's own icons and colours (icons.json).
   const icons = useTreeIcons(app.services.store, data)
-  const tree = treeOf(data)
+  // The Mac's Files sort (YAZ-5916 Q4), and under Manual its order (D4).
+  const order = useFilesOrder(app.services.store, data)
+  const tree = treeOf(data, order)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => visibleRows(tree, open, cards ? undefined : (r) => r.kind !== 'card'), [tree, open, cards, turn])
   const toggle = useCallback(

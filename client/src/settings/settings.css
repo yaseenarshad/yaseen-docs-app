@@ -147,8 +147,8 @@
   right: 12px;
   /* The pane comes later in the tree, so a positioned box in it (a dropdown's wrapper) that scrolls
      under the button would otherwise paint OVER it and eat the click (DL8, found when the pane
-     itself was positioned). */
-  z-index: 1;
+     itself was positioned). Over the open find bar's band (z-index 3, YAZ-5978) too. */
+  z-index: 4;
   display: flex;
   padding: 6px 9px;
   border-radius: 6px;
@@ -2112,4 +2112,68 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--fg-muted);
+}
+
+/* ⌘F in the open section (YAZ-5968): the page's find bar at the pane's top, kept clear of the ✕. While open the dock is
+   a band of its own in the pane's flow (YAZ-5978): it pushes the section down, so no row starts under the bar, and it
+   sticks opaque to the pane's top as the pane scrolls, so a row goes under the band whole, as past the pane's edge.
+   The negative margins take the band over the pane's padding to its edges; its padding puts the bar where it was. */
+.find-bar-dock--settings.find-bar-dock--open {
+  position: sticky;
+  top: -24px;
+  z-index: 3;
+  display: flex;
+  justify-content: flex-end;
+  height: auto;
+  margin: -24px -28px 8px;
+  padding: 8px 48px 8px 28px;
+  background: var(--bg);
+}
+
+.find-bar-dock--settings.find-bar-dock--open .find-bar {
+  position: static;
+}
+
+/* A sub-heading in a long group (YAZ-5969, Q4 "Box per sub-group"): each sub-group is its own card, its label above
+   it in the text's colour, as macOS System Settings groups its rows. The shapes show the groups: no line, no colour. */
+.settings-subheading {
+  margin: 16px 0 6px 4px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.settings-group__card + .settings-subheading {
+  margin-top: 18px;
+}
+
+/* Link pills' icon rows (YAZ-5972): "Pages and files" and "Cards" need a wider label than one word. */
+.pill-toolbar .pill-toolbar__label--wide {
+  flex-basis: 96px;
+}
+/* "Custom colour…" (YAZ-5972) at the end of a pill colour row: the words until a custom colour is picked, then its
+   swatch. Its colour box opens on a line of its own under the swatches, the width of the table's. */
+.pill-toolbar .pill-toolbar__custom {
+  white-space: nowrap;
+}
+.pill-toolbar__custom-box {
+  flex: 0 0 100%;
+}
+.pill-toolbar__custom-box[hidden] {
+  display: none;
+}
+.pill-toolbar__custom-box .colour-box {
+  width: 190px;
+  margin: 4px 0 2px;
+}
+/* With the box open the row is tall: its label lines up with the row's first line of buttons (one button high, 28 px),
+   not the row's middle beside the box. */
+.pill-toolbar__row:has(.pill-toolbar__custom-box:not([hidden])) {
+  align-items: flex-start;
+}
+.pill-toolbar__row:has(.pill-toolbar__custom-box:not([hidden])) > .pill-toolbar__label {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
 }

@@ -251,12 +251,12 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     await renderPage('See [[DEMO-40]].', formatted, host)
     const a = host.querySelector<HTMLAnchorElement>('a[data-open="card"]')!
     expect(a.className).toBe('page-pill')
-    expect(a.textContent).toBe(' Capital of Spain(40)')
-    expect(a.querySelector('.link-pill__icon.card-icon')).not.toBeNull()
+    expect(a.textContent).toBe('Capital of Spain(40)')
     expect(a.querySelector('.link-pill__number')?.textContent).toBe('40')
     expect(a.querySelector('.link-pill__mark')).not.toBeNull()
-    // The icon is a piece: the title has none of its own.
-    expect(a.querySelector('.wikilink--card')).toBeNull()
+    // YAZ-5894: `{icon} {name}` keeps the icon on the title; its space is the gap, not a piece.
+    expect(a.querySelector('.wikilink--card')?.textContent).toBe('Capital of Spain')
+    expect(a.querySelector('.link-pill__icon')).toBeNull()
   })
 
   it('embeds: a card in place, a missing card as the Mac says it, a sound, a drawing to draw, a draw.io diagram to draw', async () => {

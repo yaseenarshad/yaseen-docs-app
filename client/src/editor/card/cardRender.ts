@@ -17,6 +17,8 @@
  *  - `show.sides`: how many sides show (default all); `show.shown`: how many hidden words show, in page order over
  *    the whole card (default all); the blank the next Space shows has `data-next` (YAZ-5053 round 3). The page shows everything (idea 21 is later); the Inbox steps one word, then one
  *    side, at a time (D18).
+ *  - `show.fold` (YAZ-5904, `cardFold.ts`): Side 2 and after start hidden, each rule a button ("▸ Side 2")
+ *    that opens its side. Every side is drawn all the same: the hidden words keep their numbers, and ⌘F finds in them.
  *  - `[[link]]` is a pill: a group that holds `data-card-link="inner"`, with the label, the unresolved class, the
  *    icon attributes and the vault format's ends `look.link` gives (the page's own pill rules, `wikilinkPlugin.ts`;
  *    YAZ-5792); an `![[embed]]` stays its text; a link to a card (YAZ-5030, `look.link` gives `card`) is the card pill
@@ -25,7 +27,9 @@
  *    is the width. Without `look`, a link shows its text and an image keeps its source.
  *  - A GFM table (YAZ-5136) is a real table, its hidden words as anywhere else, in a box that scrolls sideways
  *    (`.card__table`); DOMPurify's HTML profile keeps the table tags and `align`, and drops a handler as anywhere.
- *    `card.css` and `table.css` draw it as the page's tables.
+ *    `card.css` and `table.css` draw it as the page's tables. YAZ-5867: the comment after it (`<!-- table: … -->`)
+ *    gives its widths and its whole look — each cell's alignment, fill, text colour, merges, the header row… — as the
+ *    page saved them (`tableMarks.ts`, the phone's page's reader too).
  *  - A sound (`![](x.mp3)`, `![[x.mp3]]`; YAZ-5014) is the one-line player, its URL by `look.image`; a board embed
  *    (`![[x.excalidraw]]`, `![[x.drawio]]`; YAZ-5015) is the board's still picture, its file by `look.board` (no
  *    `look.board`: its text; it does not resolve: the unresolved pill). Both are built AFTER DOMPurify from a marker
@@ -41,7 +45,9 @@ import { WIKILINK_CLASS, WIKILINK_GROUP_CLASS, cardPill, pillPieces, type PillEn
 import { linkClickAction } from '../linkGesture'
 import { cardSafety } from './cardSafety'
 import { cleanLocal, LOCAL_SRC, localMark, urlOf } from './localOnly'
-import { parseTableComment } from '../table/tableComment'
+import { parseTableComment, type TableStyle } from '../table/tableComment'
+import { applyTableMarks } from '../table/tableMarks'
+import { FOLD_REVEAL_EVENT, onFoldClick, onFoldKey, onFoldReveal, setCardFold } from './cardFold'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, CARD_AUDIO_ATTR, CARD_BOARD_ATTR, type CardBoardLook } from './cardMedia'
 
 /** How much of the card shows (the Inbox's steps, D18). Absent: everything, as in the page. */
@@ -54,6 +60,12 @@ export interface CardShow {
   picked?: readonly number[]
   /** The blank the next Space shows (`data-next`), when it is not the first hidden one (round 4: after a click). */
   next?: number
+  /**
+   * Side 2 and after start folded (YAZ-5904, `cardFold.ts`): each rule is a button, "▸ Side 2". Only the
+   * main tabs ask (a page, an embed, a card page, the hover preview, the phone's page, Explore by its own setting); never
+   * the Inbox, Preview, Review or Edit card.
+   */
+  fold?: boolean
 }
 
 /** What a `[[link]]` shows: its label, whether it resolves, and the icon attributes of its page (`LinkLook`). */
@@ -146,58 +158,96 @@ const inlineOf = (text: string): DocumentFragment => sanitize(markdown.parseInli
 /** A column's least width in the page's tables, px (`tableColumnResize.ts`: prosemirror-tables' `cellMinWidth`). */
 const CELL_MIN_WIDTH = 24
 
+/** A raw HTML `<table>` in the text: a table of the render that has no comment of the page's. */
+const HTML_TABLE = /<table\b/gi
+
 /**
- * The column widths the page editor saved for each table of `tokens`, in page order (YAZ-5136 round 2, Yaseen: "if u
- * edit the size of the card in the editor, it doesnt preserve the size in the viewer?"): the `widths` part of the
- * `<!-- table: … -->` comment right after a table (`tableComment.ts`, the page's one reader). `null`: no widths.
+ * The look the page editor saved for each table of `tokens`, in page order: the `<!-- table: … -->` comment right
+ * after a table (`tableComment.ts`, the page's one reader), whole (YAZ-5867: it was its `widths` only, YAZ-5136
+ * round 2). `null`: no comment. A raw HTML table counts as a table with none, so the next ones keep their own.
  */
-function tableWidths(tokens: readonly Token[], out: Array<ReadonlyArray<number | null> | null> = []): Array<ReadonlyArray<number | null> | null> {
+function tableStyles(tokens: readonly Token[], out: Array<TableStyle | null> = []): Array<TableStyle | null> {
   tokens.forEach((token, at) => {
     if (token.type === 'table') {
       const next = tokens[at + 1]
-      const widths = next?.type === 'html' ? (parseTableComment(next.raw)?.widths ?? []) : []
-      out.push(widths.some((w) => w !== null) ? widths : null)
+      out.push(next?.type === 'html' ? parseTableComment(next.raw) : null)
       return
     }
-    if (token.type === 'list') for (const item of (token as Tokens.List).items) tableWidths(item.tokens, out)
-    else if ('tokens' in token && Array.isArray(token.tokens)) tableWidths(token.tokens, out)
+    if (token.type === 'html') out.push(...Array<null>(token.raw.match(HTML_TABLE)?.length ?? 0).fill(null))
+    if (token.type === 'list') for (const item of (token as Tokens.List).items) tableStyles(item.tokens, out)
+    else if ('tokens' in token && Array.isArray(token.tokens)) tableStyles(token.tokens, out)
   })
   return out
 }
 
 /**
- * The saved widths on the read tables, as the page's tables take them (prosemirror-tables): a `<col>` per column, and
+ * The saved widths on a read table, as the page's tables take them (prosemirror-tables): a `<col>` per column, and
  * a fixed layout; a table with every column sized is their sum wide, one with an `auto` column fills its box and is
  * at least the sum (an `auto` column counted at `CELL_MIN_WIDTH`). Set after DOMPurify, from numbers only.
  */
-function sizeTables(root: ParentNode, widths: ReadonlyArray<ReadonlyArray<number | null> | null>): void {
-  root.querySelectorAll('table').forEach((table, at) => {
-    const own = widths[at]
-    if (own == null) return
-    const columns = table.rows[0]?.cells.length ?? 0
-    const group = document.createElement('colgroup')
-    let sum = 0
-    for (let c = 0; c < columns; c++) {
-      const w = own[c] ?? null
-      const col = document.createElement('col')
-      if (w !== null) col.style.width = `${w}px`
-      group.append(col)
-      sum += w ?? CELL_MIN_WIDTH
-    }
-    table.prepend(group)
-    table.dataset.sized = ''
-    if (Array.from({ length: columns }, (_, c) => own[c] ?? null).every((w) => w !== null)) table.style.width = `${sum}px`
-    else table.style.minWidth = `${sum}px`
-  })
+function sizeTable(table: HTMLTableElement, own: ReadonlyArray<number | null>): void {
+  if (!own.some((w) => w !== null)) return
+  const columns = table.rows[0]?.cells.length ?? 0
+  const group = document.createElement('colgroup')
+  let sum = 0
+  for (let c = 0; c < columns; c++) {
+    const w = own[c] ?? null
+    const col = document.createElement('col')
+    if (w !== null) col.style.width = `${w}px`
+    group.append(col)
+    sum += w ?? CELL_MIN_WIDTH
+  }
+  table.prepend(group)
+  table.dataset.sized = ''
+  if (Array.from({ length: columns }, (_, c) => own[c] ?? null).every((w) => w !== null)) table.style.width = `${sum}px`
+  else table.style.minWidth = `${sum}px`
 }
 
-/** One side's Markdown as a sanitised fragment, its tables sized as the page saved them. */
+/**
+ * One side's Markdown as a sanitised fragment, each table with the look the page saved (YAZ-5867): its widths, then
+ * its marks (`tableMarks.ts`, the phone's page reads them too; `card.css` draws them). Both after DOMPurify, from the
+ * parser's values only. The widths first: a merge takes cells out of the header row they count.
+ */
 function sideOf(text: string): DocumentFragment {
   const tokens = markdown.lexer(text)
-  const widths = tableWidths(tokens)
+  const styles = tableStyles(tokens)
   const fragment = sanitize(markdown.parser(tokens))
-  sizeTables(fragment, widths)
+  fragment.querySelectorAll('table').forEach((table, at) => {
+    const style = styles[at]
+    if (style == null) return
+    sizeTable(table, style.widths)
+    applyTableMarks(table, style)
+    lookVars(table)
+  })
   return fragment
+}
+
+/** The variable a header part's value sets (`cardTable.css`'s mapping, as values: the eager CSS stays small). */
+const HEADER_VARS: Record<string, (value: string) => Record<string, string>> = {
+  color: (v) => ({ hue: v === 'gray' ? 'initial' : `var(--table-fill-solid-${v})`, scale: v === 'gray' ? '1' : v === 'black' ? '5' : '2.5' }),
+  strength: (v) => ({ strength: String({ off: 0, light: 6, medium: 12, strong: 20 }[v] ?? 6) }),
+  weight: (v) => ({ weight: v === 'regular' ? '400' : 'initial' }),
+  text: (v): Record<string, string> => (v === 'muted' || v === 'full' ? { mute: v === 'muted' ? '1' : '0', ink: 'initial' } : { ink: v === 'white' ? '#fff' : `var(--table-text-${v})` }),
+}
+
+/**
+ * A card's read table (YAZ-5867): the variables its marks name, set from the parser's values. The header and subheader
+ * rows' parts as `cardTable.css`'s variables (`--table-header-hue` …, `--table-subheader-hue` …), which its header rule
+ * and `card.css` paint; each cell's fill and named text colour as `--cell-fill` and `--cell-ink` (`card.css`). A phone
+ * page's own rules (`tables.css`) read none of them.
+ */
+function lookVars(table: HTMLTableElement): void {
+  for (const row of ['header', 'subheader'])
+    for (const [part, vars] of Object.entries(HEADER_VARS)) {
+      const value = table.getAttribute(`data-${row}-${part}`)
+      if (value !== null) for (const [name, v] of Object.entries(vars(value))) table.style.setProperty(`--table-${row}-${name}`, v)
+    }
+  for (const cell of table.querySelectorAll<HTMLElement>('[data-fill], [data-color]')) {
+    const fill = cell.getAttribute('data-fill')
+    if (fill !== null) cell.style.setProperty('--cell-fill', fill.startsWith('#') ? `color-mix(in srgb, ${fill} var(--table-fill-wash, 35%), transparent)` : `var(--table-fill-${fill})`)
+    const color = cell.getAttribute('data-color')
+    if (color !== null && !color.startsWith('#')) cell.style.setProperty('--cell-ink', `var(--table-text-${color})`)
+  }
 }
 
 /** Each table of `root` in a box that scrolls sideways (YAZ-5136): a wide table scrolls in the card, not the view. */
@@ -274,16 +324,21 @@ function plainText(node: Node): string {
  * A copy of a selection over a blank (YAZ-5013): the blank's word stays out. `user-select: none` keeps it out of the
  * browser's own copy; this covers a selection that starts or ends inside it. A selection with no blank is the browser's.
  */
+/** A folded side (YAZ-5904, `cardFold.ts`). */
+const FOLDED = '.card__side[hidden]'
+
 export function copyWithoutHidden(event: ClipboardEvent): void {
   const box = event.currentTarget
   const selection = document.getSelection()
   if (!(box instanceof Element) || selection === null || selection.rangeCount === 0 || event.clipboardData === null) return
   const range = selection.getRangeAt(0)
-  if (![...box.querySelectorAll(BLANK)].some((blank) => range.intersectsNode(blank))) return
+  if (![...box.querySelectorAll(`${BLANK}, ${FOLDED}`)].some((blank) => range.intersectsNode(blank))) return
   const common = range.commonAncestorContainer
-  const inBlank = (common instanceof Element ? common : common.parentElement)?.closest(BLANK) != null
+  const inBlank = (common instanceof Element ? common : common.parentElement)?.closest(`${BLANK}, ${FOLDED}`) != null
   const part = inBlank ? document.createDocumentFragment() : range.cloneContents()
   for (const blank of part.querySelectorAll(BLANK)) blank.replaceChildren()
+  // YAZ-5904: a folded side does not show, so it does not copy.
+  for (const side of part.querySelectorAll(FOLDED)) side.remove()
   const html = document.createElement('div')
   html.append(part.cloneNode(true))
   event.preventDefault()
@@ -397,6 +452,10 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
   const out = document.createElement('div')
   out.className = 'card__sides'
   out.addEventListener('copy', copyWithoutHidden)
+  out.addEventListener('click', onFoldClick)
+  out.addEventListener('keydown', onFoldKey)
+  // YAZ-5923: Next change rang a glow in a folded side: the side opens.
+  out.addEventListener(FOLD_REVEAL_EVENT, onFoldReveal)
   let from = 0
   for (let i = 0; i < count; i++) {
     const words: string[] = []
@@ -424,5 +483,6 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
     out.append(side)
     from += hiddenCount(sides[i])
   }
+  if (show.fold === true) setCardFold(out, true)
   return out
 }

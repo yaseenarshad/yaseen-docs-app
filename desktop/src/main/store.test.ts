@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ROW_HEIGHT_DEFAULT, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
 import { createStore, isCanvasPanel, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs, sanitizeToolbarPrefs, sanitizeHighlightCustomColors } from './store'
@@ -250,6 +250,23 @@ describe('createStore: loading', () => {
 
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentWidth: 'wide' } }))
     expect(createStore(file).get().settings).toMatchObject({ contentWidth: 'narrow' })
+    // YAZ-5871 D1: Custom whole px, 400–2400, survives; out of range, not whole, or a number as text falls back.
+    for (const contentWidth of [400, 760, 2400]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentWidth } }))
+      expect(createStore(file).get().settings).toMatchObject({ contentWidth })
+    }
+    for (const contentWidth of [399, 2401, 760.5, '760']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentWidth } }))
+      expect(createStore(file).get().settings, String(contentWidth)).toMatchObject({ contentWidth: 'narrow' })
+    }
+    // YAZ-5871 D2: Page position, Centre by default (a legacy file too), Left kept, junk falls back.
+    const { contentPosition: _none, ...noPosition } = DEFAULT_SETTINGS
+    await seed(valid({ settings: noPosition }))
+    expect(createStore(file).get().settings).toMatchObject({ contentPosition: 'center' })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentPosition: 'left' } }))
+    expect(createStore(file).get().settings).toMatchObject({ contentPosition: 'left' })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentPosition: 'right' } }))
+    expect(createStore(file).get().settings).toMatchObject({ contentPosition: 'center' })
   })
 
   it('Settings › Notifications (YAZ-3303 D1): a file from before 3303 reads 4 s, every toast type on and the sounds on; each value survives; junk falls back field by field (S1, S2)', async () => {
@@ -530,7 +547,12 @@ describe('createStore: loading', () => {
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarSort: sorted } }))
     expect(createStore(file).get().settings.sidebarSort).toEqual(sorted)
 
-    for (const bad of [{ ...sorted, files: { by: 'manual', reverse: false } }, { ...sorted, focus: { by: 'created', reverse: false } }, { ...sorted, favorites: { by: 'name' } }, { files: sorted.files }, 'name']) {
+    // Files sorts by hand too since YAZ-5916.
+    const manualFiles = { ...sorted, files: { by: 'manual', reverse: false } }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarSort: manualFiles } }))
+    expect(createStore(file).get().settings.sidebarSort).toEqual(manualFiles)
+
+    for (const bad of [{ ...sorted, files: { by: 'best', reverse: false } }, { ...sorted, focus: { by: 'created', reverse: false } }, { ...sorted, favorites: { by: 'name' } }, { files: sorted.files }, 'name']) {
       await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarSort: bad } }))
       expect(createStore(file).get().settings.sidebarSort).toEqual(DEFAULT_SIDEBAR_SORT)
       expect(isSettings({ ...DEFAULT_SETTINGS, sidebarSort: bad })).toBe(false) // the IPC boundary refuses it too
@@ -896,6 +918,29 @@ describe('createStore: loading', () => {
     for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(false)
   })
 
+  it('sidebarRowHeight (YAZ-5885 D1, D3): an older file without the key loads Default (25.5); junk loads 25.5; a number inside 20–40 is kept, one outside is clamped; the channel takes 20–40 only; it stays on this Mac', async () => {
+    expect(DEFAULT_SETTINGS.sidebarRowHeight).toBe(SIDEBAR_ROW_HEIGHT_DEFAULT)
+    expect(SIDEBAR_ROW_HEIGHT_DEFAULT).toBe(25.5)
+    const { sidebarRowHeight: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    const loaded = async (sidebarRowHeight: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', sidebarRowHeight } }))
+      const { settings } = createStore(file).get()
+      expect(settings.theme).toBe('dark') // one bad field costs that field only
+      return settings.sidebarRowHeight
+    }
+    for (const px of [20, 22, 25.5, 27.5, 30, 40]) expect(await loaded(px)).toBe(px)
+    for (const px of ['22', null, true, {}]) expect(await loaded(px)).toBe(25.5)
+    expect(await loaded(4)).toBe(20)
+    expect(await loaded(400)).toBe(40)
+    for (const px of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarRowHeight: px }).sidebarRowHeight).toBe(25.5)
+    for (const px of [20, 33.3, 40]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarRowHeight: px })).toBe(true)
+    for (const px of [19.9, 40.5, NaN, '25.5', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarRowHeight: px })).toBe(false)
+    // Per Mac (D1): a settings folder never carries it to another Mac.
+    expect(LOCAL_SETTINGS).toContain('sidebarRowHeight')
+  })
+
   it('tocZoom (YAZ-3939 D9): the sidebar zoom\'s rule: an older file without the key loads at 100; junk loads at 100; a number inside 50–200 is kept, one outside is clamped; the channel takes 50–200 only', async () => {
     expect(DEFAULT_SETTINGS.tocZoom).toBe(100)
     const { tocZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
@@ -935,6 +980,23 @@ describe('createStore: loading', () => {
 
     for (const zoom of APP_ZOOM_STEPS) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(true)
     for (const zoom of [95, 160, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(false)
+  })
+
+  it('exploreSize (YAZ-5881 D1): an older file without the key loads at 125; only the App sizes are kept, anything else loads at 125; the channel takes those only', async () => {
+    expect(DEFAULT_SETTINGS.exploreSize).toBe(125)
+    const { exploreSize: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    const loaded = async (exploreSize: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', exploreSize } }))
+      const { settings } = createStore(file).get()
+      expect(settings.theme).toBe('dark')
+      return settings.exploreSize
+    }
+    for (const size of APP_ZOOM_STEPS) expect(await loaded(size)).toBe(size)
+    for (const size of [105, 80, 250, 0, '150', null, true, NaN]) expect(await loaded(size)).toBe(125)
+    for (const size of APP_ZOOM_STEPS) expect(isSettings({ ...DEFAULT_SETTINGS, exploreSize: size })).toBe(true)
+    for (const size of [95, 160, NaN, '125', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, exploreSize: size })).toBe(false)
   })
 
   it('hoverPreviewIn (YAZ-3403 D7, S37): a file from before reads every place on; a missing or broken place reads on and the others keep their values; the channel takes one boolean per place only', async () => {

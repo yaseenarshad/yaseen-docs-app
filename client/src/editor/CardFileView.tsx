@@ -4,8 +4,9 @@
  *
  *  - ONE TITLE SPOT (YAZ-5392, Yaseen's Q46 on YAZ-5308: "model the exact same UI on the cards page itself"): the card
  *    shows as a card in a page does. Above it the folder path only, no big page title. In the card: the top bar (the
- *    card ID, a click copies it; the state — "Archived", or with the vault's Review on "New" / "Due in 3 days", "Title
- *    hidden in review", the "Up next" chip; Edit card (E); ⋯), the title band, the sides. With Review off nothing asks
+ *    card ID, a click copies it; the marks every card head has (`cardHeadMarks`, YAZ-5915) — "Archived", or with the
+ *    vault's Review on "New" / "Due in 3 days" and the title rule ("Title always (default)"), "To fix"; the "Up next"
+ *    chip; Edit card (E); ⋯), the title band, the sides. With Review off nothing asks
  *    you to review the card: no due state, no Inbox row, no Reviews.
  *  - The body is the card window's (`review/cardPane.tsx`): the card or the card editor, its Reviews, "Linked
  *    mentions (n)", and "Embedded in (n)". There is no "Open page": the tab is the card's file.
@@ -29,10 +30,13 @@
  *    vault or the file is read only, Sync and Saved. The chip turns Read only off as on a page: a time choice unlocks
  *    this tab (`useTimedUnlock`; the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
  *    While locked, Edit card asks first; at the unlock's end an open Edit card is Done first, then the tab locks. The
- *    cog has what applies to a card: "Read only" and the counts. A page's rows (line numbers, folding, the table of
- *    contents, the widths, "Turn into a card file", …) and Collapse all are not there: a card has none of them.
+ *    cog has what applies to a card: "Read only", "Card width" and "Position" (YAZ-5871 D4: the file's own `page-width`
+ *    and `page-position`; Default follows Settings › Cards › Card look › Card width and Appearance › Page position), and the counts.
+ *    A page's other rows (line numbers, folding, the table of contents, the code and table widths, "Turn into a card
+ *    file", …) and Collapse all are not there: a card has none of them.
  *  - ⌘F (YAZ-5378): the page's find bar, over the title and the card as the tab shows them (`cardFind.ts`, the page's
- *    own card search), the Edit card editor's text while it is open.
+ *    own card search), the Edit card editor's text while it is open. Its fold menu (YAZ-5970) is a page's: the card
+ *    page's own `find-folds` key, else Settings › Editor › Find, and folded card sides follow it.
  *  - COMMENTS (YAZ-5466): the page's one comments block (`CommentsSection`, the file's front matter `comments`), under the
  *    card and its strip, where a page has it: write, reply, edit your own, resolve, delete, the order setting. `comments`
  *    is the file's (decision D): it stays in the front matter beside `kind: card`, never on the card line, never a card
@@ -47,9 +51,11 @@ import { splitFrontmatter } from '@shared/frontmatter'
 import type { GestureAction } from '@shared/keys'
 import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
 import { tellReadOnlyEdit } from './readOnlyEdit'
-import { withCardNext, type CardReview } from '@shared/cardLine'
-import type { ReviewSettings } from '@shared/reviews'
-import type { CommentsOrder, FileResponse, GithubSyncStatus, ZoomStep } from '@shared/types'
+import { withCardNext } from '@shared/cardLine'
+import { DEFAULT_SETTINGS, isCardWidth, type CommentsOrder, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type ZoomStep } from '@shared/types'
+import { readPagePosition, readPageWidth, writePagePosition, writePageWidth } from '@shared/pageSwitches'
+import { cardTextWidth, columnStart, positionOf, widthOf } from '../lib/contentWidth'
+import { storage } from '../lib/storage'
 import { CommentsSection } from '../comments/CommentsSection'
 import type { SaveStatus } from '../lib/autosave'
 import { transformFile } from '../views/writeProperty'
@@ -58,7 +64,8 @@ import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
 import { forgetNewCard, isNewCard } from '../review/newCardFile'
 import { CardPane, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
-import { CardBand, cardFacts, cardNextReview, CardId, CardNextChip, type CardStripPart } from '../review/cardParts'
+import { CardBand, CardId, CardNextChip, type CardStripPart } from '../review/cardParts'
+import { cardHeadMarks } from '../review/cardHeadMarks'
 import { PropertiesIcon } from '../views/view/icons'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
 import type { ExploreVault } from '../explore/ExplorePage'
@@ -71,7 +78,10 @@ import { CardFileNotice } from './CardFileNotice'
 import { stepZoomByKey, useKeptZoom } from './DocumentZoom'
 import { cardBlockViewOfDom } from './card/cardBlockView'
 import { PageSettings } from './PageSettings'
+import { readCardSides, writeCardSides, type CardSides } from '@shared/pageSwitches'
+import { tellCardFoldChange } from './card/cardFold'
 import { PageTitle } from './PageTitle'
+import { TitleRowControls } from './PageFrame'
 import { StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
 import { ZOOM_EVENT } from './zoomRequest'
@@ -87,6 +97,11 @@ import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { createCardFinder } from './find/cardFind'
 import { tourEvent } from '../course/tourBus'
+import { readFindFolds, readOutsideGlow, writeFindFolds, writeOutsideGlow } from '@shared/pageSwitches'
+import type { FindFolds } from '@shared/types'
+import { useReviewOn } from '../review/useReviewSettings'
+import { OutsideChangesBar } from './external/OutsideChangesBar'
+import { useCardFileGlow } from './card/useCardFileGlow'
 
 export interface CardFileViewProps {
   /** The file as the tab's one read gave it (`useFile`): a card file. */
@@ -115,6 +130,14 @@ export interface CardFileViewProps {
   /** The comments' order (YAZ-5466): the app's one setting, as a page's block reads it. Absent: no comments block. */
   commentsOrder?: CommentsOrder
   onChangeCommentsOrder?: (order: CommentsOrder) => void
+  /** Settings › Appearance › Content width and Page position, and Settings › Cards › Card look › Card width (YAZ-5871 D4): the cog's Defaults. Absent → the app's settings now. */
+  contentWidth?: ContentWidth
+  contentPosition?: ContentPosition
+  cardWidth?: number | null
+  /** Settings › Outside changes glow (YAZ-5925): how long an outside change of the card glows; the cog's row overrides it. */
+  outsideChangeGlow?: OutsideChangeGlow
+  /** Settings › Editor › Find (YAZ-5970): what ⌘F does with folds; the card page's own `find-folds` key wins. */
+  findFolds?: FindFolds
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
@@ -136,7 +159,7 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, contentWidth, contentPosition, cardWidth, outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow, findFolds = DEFAULT_SETTINGS.findFolds }: CardFileViewProps) {
   const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
@@ -144,6 +167,12 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const turning = useRef(false)
   const onPageRef = useRef<(next: FileResponse) => void>(onPage)
   onPageRef.current = (next) => (turning.current && onReread !== undefined ? onReread() : onPage(next))
+  /** YAZ-5925 (D2b): an outside write of the card lights its words, and the page's bar counts it. */
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const pageGlow = useMemo(() => (content === null ? null : readOutsideGlow(content)), [content])
+  const glow = useCardFileGlow(path, content === null ? null : (cardInContent(path, content, null, 0)?.text ?? null), pageGlow ?? outsideChangeGlow, bodyRef)
+  const glowSeen = useRef(glow.seen)
+  glowSeen.current = glow.seen
 
   /** Reads the file again: a card file shows; one that lost its mark goes to the page view; a deleted one says so. */
   const read = useCallback(() => {
@@ -151,8 +180,9 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     api.readFile(path).then(
       (next) => {
         if (!live) return
-        if (isCardFileContent(next.content)) setContent(next.content)
-        else onPageRef.current(next)
+        if (!isCardFileContent(next.content)) return onPageRef.current(next)
+        glowSeen.current(cardInContent(path, next.content, null, 0)?.text ?? null, next.mtime)
+        setContent(next.content)
       },
       (err: unknown) => {
         if (live && err instanceof BridgeRequestError && err.code === 'NOT_FOUND') setContent(null)
@@ -181,6 +211,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const settings = useVaultReviewSettings(root)
   const reviewOn = settings?.enabled === true
   const door = useContext(CardReviewDoor)
+  /** An Explore layer's page controls (YAZ-5974): on the card's top line. Null in a tab. */
+  const titleRowControls = useContext(TitleRowControls)
   const vaultScope = useContext(VaultReadOnly)
   const vaultLocked = vaultScope.on
   /** The file's own switch (`readonly: true`) or the vault's: the top bar's "Read only" chip shows while this is true. */
@@ -194,7 +226,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const [editing, setEditing] = useState(fresh)
   const editingRef = useRef(editing)
   editingRef.current = editing
-  const bodyRef = useRef<HTMLDivElement>(null)
   // ⌘F (YAZ-5378): the page's bar and channel, over the card as the tab shows it (`createCardFinder`); Esc gives the keys back.
   const findChannel = useMemo(() => createFindChannel(), [])
   useEffect(() => createCardFinder(findChannel, () => bodyRef.current, () => bodyRef.current?.focus({ preventScroll: true })), [findChannel])
@@ -245,7 +276,32 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   /** The cog's row and the chip's "Turn Read only off": the file's own `readonly` key, on the newest bytes. */
   const setReadOnly = (on: boolean) =>
     void transformFile(path, (text) => setPageReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
+  /**
+   * The cog's "Card width" and "Position" (YAZ-5871 D4): the card file's own `page-width` and `page-position`, on the
+   * newest bytes. `null` removes the key: the card follows Settings › Cards › Card look › Card width and Appearance › Page position.
+   */
+  const setOwnKey = (row: string, change: (text: string) => string) =>
+    void transformFile(path, change).then(read, (err: unknown) => onNotice(`${row} could not change: ${err instanceof Error ? err.message : String(err)}`))
+  /**
+   * YAZ-5904: this card page's "Card sides" (the cog), its own `card-sides` key, on the newest bytes. The key sets the
+   * card's fold on the tab (`data-card-sides`); Default follows Settings › Cards › Card look › Card sides on card pages (Q1).
+   */
+  const cardSides = content === null ? null : readCardSides(content)
+  useEffect(() => tellCardFoldChange(), [cardSides])
+  const setCardSides = (sides: CardSides | null) =>
+    void transformFile(path, (text) => writeCardSides(text, sides)).then(read, (err: unknown) => onNotice(`Card sides could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
+  /**
+   * ⌘F's fold menu (YAZ-5970), as a page's (YAZ-4787): the card page's own `find-folds` key in its front matter, as its
+   * other own keys are, else Settings › Editor › Find. Its words name card sides while the vault's cards are on.
+   */
+  const ownFindFolds = content === null ? null : readFindFolds(content)
+  useEffect(() => findChannel.setFolds(ownFindFolds ?? findFolds), [findChannel, ownFindFolds, findFolds])
+  const cardsOn = useReviewOn(root)
+  const findFoldsMenu = { own: ownFindFolds, app: findFolds, cards: cardsOn, cardPage: true, onChange: (folds: FindFolds | null) => setOwnKey('Find folded bullets', (text) => writeFindFolds(text, folds)) }
+  /** The cog's "Outside changes glow" (YAZ-5925, D3): this file's own key, on the newest bytes; null follows Settings. */
+  const changeGlow = (next: OutsideChangeGlow | null) =>
+    void transformFile(path, (text) => writeOutsideGlow(text, next)).then(read, (err: unknown) => onNotice(`Outside changes glow could not change: ${err instanceof Error ? err.message : String(err)}`))
   /** Done: the card's text, its sides only. The band is the only title: Edit card shows it, with no field (YAZ-5392). */
   const editDone = (text: string) => {
     setSave('saving')
@@ -296,7 +352,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const id = card?.id ?? null
   const notice = shapeNotice(shape.problem, shape.cards.length)
   const outside = [shape.before, shape.after].filter((text) => text !== '')
-  const state = card === null ? null : card.off ? 'Archived' : !reviewOn || settings === undefined ? null : cardDue(card.reviews, settings)
   // The convert actions (YAZ-5037 phase 5): only in a vault with IDs (D8), never on a `readonly: true` file. Each is a
   // file action: the vault's Read only asks first. The tab reads the file again on the next index version.
   const converts = wikilinks.ids && !isPageReadOnly(content)
@@ -350,6 +405,20 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
         onReturn: giveKeysBack,
       }
   const cardText = card?.text ?? ''
+  // The card's width and position (YAZ-5871 D4): its own keys, else Card width (Same as pages is Content width) and Page position.
+  const app = storage.getSettings()
+  const appCardWidth = cardWidth !== undefined ? cardWidth : app?.cardWidth
+  const defaultWidth: ContentWidth = isCardWidth(appCardWidth) ? appCardWidth : widthOf(contentWidth ?? app?.contentWidth)
+  const appPosition = positionOf(contentPosition ?? app?.contentPosition)
+  const ownWidth = readPageWidth(content)
+  const ownPosition = readPagePosition(content)
+  const width = ownWidth ?? defaultWidth
+  // Its own width sets its card's `--card-text-width`, and the column as wide (its 48 px sides), so Full fills the window.
+  const fileStyle = {
+    '--document-zoom': zoom / 100,
+    '--column-start': columnStart(ownPosition ?? appPosition, width),
+    ...(ownWidth !== null && { '--card-text-width': cardTextWidth(ownWidth), '--content-max-width': `calc(${cardTextWidth(ownWidth)} + 96px)` }),
+  } as CSSProperties
   const propertyCount = Object.keys(card?.properties ?? {}).length
   const propertiesLabel = propertyCount > 0 ? `Properties (${propertyCount})` : 'Properties'
 
@@ -373,14 +442,26 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
             {propertyCount > 0 && <span className="frontmatter-panel__count">{propertyCount}</span>}
           </button>
         )}
-        <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} readText={() => cardText} />
+        <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} cardSides={cardSides} onChangeCardSides={setCardSides} cardSidesSetting="Card sides on card pages" readText={() => cardText}
+          // YAZ-5871 D4: the card's own width and position, saved in the card file. Default follows Card width and Page position.
+          pageWidth={ownWidth} appContentWidth={defaultWidth} pageWidthLabel="Card width" pageWidthSettings="Cards › Card look › Card width" onChangePageWidth={(next) => setOwnKey('Card width', (text) => writePageWidth(text, next))}
+          pagePosition={ownPosition} appContentPosition={appPosition} onChangePagePosition={(next) => setOwnKey('Position', (text) => writePagePosition(text, next))} outsideGlow={pageGlow} appGlow={outsideChangeGlow} onChangeOutsideGlow={changeGlow} />
       </StatusChips>
-      <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
+      <OutsideChangesBar channel={glow.channel} onKeep={() => changeGlow('until-checked')} />
+      <FindBar channel={findChannel} scope="page" hostRef={bodyRef} folds={findFoldsMenu} />
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
-      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
+      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body data-card-sides={cardSides ?? undefined} data-fold-scope={path} onKeyDown={onKeyDown} style={fileStyle}>
         <div className="card-file__page">
           {/* YAZ-5392: above the card, the folder path only. The title lives in the card's band, as in a page. YAZ-5402: the folder icon says it is a folder. */}
-          <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
+          {titleRowControls === null ? (
+            <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
+          ) : (
+            // In an Explore layer (YAZ-5974): the page controls on the card's top line, right of the folder path.
+            <div className="card-file__top">
+              <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
+              {titleRowControls}
+            </div>
+          )}
           {outside.length > 0 && (
             <div className="card-file__outside">
               {outside.map((text, i) => (
@@ -404,14 +485,21 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               stripOpen={stripPart}
               onStripToggle={(part) => setStripPart((open) => (open === part ? null : part))}
               embeds
+              fold
+              glow={glow.body}
               titleField="show"
               head={
                 <div className="card__head">
                   {id !== null && <CardId id={id} onNotice={onNotice} />}
-                  {state !== null && <span className="card__state card-file__state">{state}</span>}
-                  {reviewOn && card.notitle === true && <span className="card__state card__notitle">Title hidden in review</span>}
+                  {/* The quiet marks after the ID (YAZ-5915): every card head's, from one helper. */}
+                  <span className="card__marks">
+                    {cardHeadMarks(card, settings).map((mark) => (
+                      <span key={mark.kind} className={mark.kind === 'state' ? `${mark.className} card-file__state` : mark.className}>
+                        {mark.text}
+                      </span>
+                    ))}
+                  </span>
                   {reviewOn && card.next === true && <CardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
-                  {card.fix === true && <span className="card__state card__fix">To fix</span>}
                   {(canEdit || lockedBase) && (
                     <button type="button" className="card__edit" data-card-file-edit data-tour="card-edit" onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
                       Edit card
@@ -437,13 +525,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       </div>
     </>
   )
-}
-
-/** The head's state words for a card in review: "New", or "Due in 3 days" / "Due today" / "Due 2 days ago". */
-function cardDue(reviews: readonly CardReview[], settings: ReviewSettings, now = Date.now()): string {
-  const facts = cardFacts(reviews, settings, now)
-  if (facts === null) return 'New'
-  return `Due ${cardNextReview(facts.due, facts.comesBack, now).when}`
 }
 
 /** The tab's ⋯ and its menu (the card's rows), built when it opens. */

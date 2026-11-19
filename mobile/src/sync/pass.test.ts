@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { budgetMs } from '../../../client/src/test-perf'
 import { GithubError } from '../github/client'
 import { INDEX_STATE, type PhoneIndex } from './phoneIndex'
-import { syncPass, type PassProgress } from './pass'
+import { BATCH_BYTES, BATCH_FROM, packBatches, syncPass, type PassProgress } from './pass'
 import { BRANCH, VAULT, cardFileText, pageText, syncSetup, type SyncSetup } from './testing'
 
 const noYield = async () => {}
@@ -205,7 +205,8 @@ describe('the sync pass (October 2E)', () => {
       if (c.url.includes('/git/blobs/') && ++blobs > 12) throw new TypeError('Load failed')
       return undefined
     }
-    await expect(pass(s, { parallel: 1 })).rejects.toMatchObject({ code: 'OFFLINE' })
+    // The one-file path (YAZ-5929: `batchFrom` keeps the batches out): the batched path has its own test below.
+    await expect(pass(s, { parallel: 1, batchFrom: Infinity })).rejects.toMatchObject({ code: 'OFFLINE' })
     expect(await s.store.checkpoint(VAULT)).toBeNull()
     const stored = (await s.store.list(VAULT)).map((e) => e.path)
     expect(stored).toHaveLength(12)
@@ -216,7 +217,7 @@ describe('the sync pass (October 2E)', () => {
       return undefined
     }
     const progress: PassProgress[] = []
-    await pass(s, { onProgress: (p) => progress.push({ ...p }) })
+    await pass(s, { onProgress: (p) => progress.push({ ...p }), batchFrom: Infinity })
     expect(fetched).toHaveLength(18)
     expect(progress.at(-1)).toEqual({ done: 30, total: 30 })
     expect(Object.keys((await index(s)).records)).toHaveLength(30)
@@ -233,10 +234,10 @@ describe('the sync pass (October 2E)', () => {
       if (c.url.includes('/git/blobs/') && ++blobs > 4) return new Response('down', { status: 502 })
       return undefined
     }
-    await expect(pass(s, { parallel: 1 })).rejects.toBeInstanceOf(GithubError)
+    await expect(pass(s, { parallel: 1, batchFrom: Infinity })).rejects.toBeInstanceOf(GithubError)
     s.github.interrupt = null
     const before = s.count('blob')
-    await pass(s)
+    await pass(s, { batchFrom: Infinity })
     expect(s.count('blob') - before).toBe(6)
     expect(await text(s, 'p9.md')).toBe('v2 9')
     expect(await text(s, 'p0.md')).toBe('v2 0')
@@ -261,6 +262,149 @@ describe('the sync pass (October 2E)', () => {
     await pass(s)
     expect(Object.keys((await index(s)).records)).toHaveLength(4)
     expect(await s.store.list(VAULT)).toHaveLength(6)
+  })
+})
+
+describe('YAZ-5929: text files download in batches (GitHub GraphQL)', () => {
+  const cards = (n: number, from = 0) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`cards/c-nc-${from + i}.md`, cardFileText(`Card ${from + i}`, `NC-${from + i}`)]))
+  /** What the pass wrote, to check that no text with a wrong SHA reached the store. */
+  const recording = (s: SyncSetup) => {
+    const writes: { path: string; content: unknown }[] = []
+    const store = { ...s.store, write: async (vault: string, path: string, content: string | Uint8Array) => (writes.push({ path, content }), s.store.write(vault, path, content)) }
+    return { store, writes }
+  }
+
+  it('a 2,500-card first download takes at most 30 calls to GitHub (it was 2,502); every file is right', async () => {
+    const files = cards(2500)
+    const s = await syncSetup(files)
+    const progress: PassProgress[] = []
+    const result = await pass(s, { onProgress: (p) => progress.push({ ...p }) })
+    if (result.kind !== 'synced') throw new Error('no')
+    const calls = s.github.calls.length
+    console.log(`[YAZ-5929] 2,500 text files: ${calls} calls (${s.count('ref')} head, ${s.count('tree')} tree, ${s.count('graphql')} GraphQL batches, ${s.count('blob')} one-file); batch sizes ${JSON.stringify(s.github.graphql.queries)}`)
+    expect(calls).toBeLessThanOrEqual(30)
+    expect(s.count('blob')).toBe(0)
+    expect(s.github.graphql.queries.every((n) => n <= 100)).toBe(true)
+    expect(result.fetched).toBe(2500)
+    expect(progress.at(-1)).toEqual({ done: 2500, total: 2500 })
+    expect(await s.store.list(VAULT)).toHaveLength(2500)
+    expect(await text(s, 'cards/c-nc-1234.md')).toBe(files['cards/c-nc-1234.md'])
+    expect(Object.keys((await index(s)).records)).toHaveLength(2500)
+    expect((await index(s)).records['cards/c-nc-7.md']).toMatchObject({ kind: 'card', title: 'Card 7' })
+  })
+
+  it('a binary, a cut-short and a wrong-SHA file fall back to the one-file call; nothing with a wrong SHA is written', async () => {
+    const files = { ...cards(12), 'odd.md': 'odd \u0000 bytes', 'long.md': 'long text', 'wrong.md': 'the true text' }
+    const s = await syncSetup(files)
+    const shas = await s.git.filesAt(s.git.branches.get(BRANCH)!).then(() => s.git.trees.get(s.git.commits.get(s.git.branches.get(BRANCH)!)!.tree)!)
+    s.github.graphql.binary.add(shas.get('odd.md')!)
+    s.github.graphql.truncated.add(shas.get('long.md')!)
+    s.github.graphql.wrong.add(shas.get('wrong.md')!)
+    const { store, writes } = recording(s)
+    await syncPass({ remote: s.remote, store, vault: VAULT, yieldToUi: noYield })
+    expect([s.count('graphql'), s.count('blob')]).toEqual([1, 3])
+    const oneFile = s.github.calls.filter((c) => c.url.includes('/git/blobs/')).map((c) => c.url.split('/').at(-1)).sort()
+    expect(oneFile).toEqual([shas.get('odd.md'), shas.get('long.md'), shas.get('wrong.md')].sort())
+    expect(writes.some((w) => typeof w.content === 'string' && w.content.includes('(not the file)'))).toBe(false)
+    expect(writes.filter((w) => w.path === 'wrong.md')).toEqual([{ path: 'wrong.md', content: 'the true text' }])
+    expect(await text(s, 'long.md')).toBe('long text')
+    expect(await text(s, 'odd.md')).toBe(files['odd.md'])
+  })
+
+  it(`under ${BATCH_FROM} files: the one-file path as before (9 files: 9 calls, no GraphQL); ${BATCH_FROM} files: one batch`, async () => {
+    expect(BATCH_FROM).toBe(10)
+    const nine = await syncSetup(cards(9))
+    await pass(nine)
+    expect([nine.count('graphql'), nine.count('blob')]).toEqual([0, 9])
+    const ten = await syncSetup(cards(10))
+    await pass(ten)
+    expect([ten.count('graphql'), ten.count('blob')]).toEqual([1, 0])
+  })
+
+  it('a later pull of many changes batches too (an agent edits hundreds of cards on the Mac); a few changes do not', async () => {
+    const s = await syncSetup(cards(300))
+    await pass(s)
+    const [g, b] = [s.count('graphql'), s.count('blob')]
+    await s.git.push(Object.fromEntries(Array.from({ length: 250 }, (_, i) => [`cards/c-nc-${i}.md`, cardFileText(`Edited ${i}`, `NC-${i}`)])))
+    await pass(s)
+    expect([s.count('graphql') - g, s.count('blob') - b]).toEqual([3, 0])
+    expect((await index(s)).records['cards/c-nc-249.md'].title).toBe('Edited 249')
+    await s.git.push({ 'cards/c-nc-1.md': cardFileText('Again', 'NC-1'), 'cards/c-nc-2.md': cardFileText('Again 2', 'NC-2') })
+    await pass(s)
+    expect([s.count('graphql') - g, s.count('blob') - b]).toEqual([3, 2])
+  })
+
+  it('a renamed file with many changes is taken from the stored copy: it is not in a batch', async () => {
+    const s = await syncSetup(cards(20))
+    await pass(s)
+    const before = s.github.graphql.queries.reduce((a, n) => a + n, 0)
+    await s.git.push({ 'cards/c-nc-0.md': null, 'moved/c-nc-0.md': cardFileText('Card 0', 'NC-0'), ...cards(15, 100) })
+    await pass(s)
+    expect(s.github.graphql.queries.reduce((a, n) => a + n, 0) - before).toBe(15)
+    expect(await text(s, 'moved/c-nc-0.md')).toBe(cardFileText('Card 0', 'NC-0'))
+  })
+
+  it('a GraphQL rate limit fails the pass as RATE_LIMITED at GitHub\'s reset: nothing lost; the next pass gets every file', async () => {
+    const s = await syncSetup(cards(40))
+    const reset = Math.floor(Date.now() / 1000) + 600
+    s.github.graphql.limitedUntil = reset
+    await expect(pass(s)).rejects.toMatchObject({ code: 'RATE_LIMITED', resetAt: reset * 1000 })
+    expect(await s.store.checkpoint(VAULT)).toBeNull()
+    expect(s.count('blob')).toBe(0)
+    s.github.graphql.limitedUntil = null
+    await pass(s)
+    expect(await s.store.list(VAULT)).toHaveLength(40)
+    expect(await s.store.checkpoint(VAULT)).not.toBeNull()
+  })
+
+  it('F5 with batches: an interrupted first download continues; the stored files are not fetched again', async () => {
+    const s = await syncSetup(cards(300))
+    let queries = 0
+    s.github.interrupt = (c) => {
+      if (c.url.endsWith('/graphql') && ++queries === 2) throw new TypeError('Load failed')
+      return undefined
+    }
+    await expect(pass(s, { parallel: 1 })).rejects.toMatchObject({ code: 'OFFLINE' })
+    expect(await s.store.checkpoint(VAULT)).toBeNull()
+    expect(await s.store.list(VAULT)).toHaveLength(100)
+    s.github.interrupt = null
+    const asked = s.github.graphql.queries.length
+    const progress: PassProgress[] = []
+    await pass(s, { onProgress: (p) => progress.push({ ...p }) })
+    expect(s.github.graphql.queries.slice(asked)).toEqual([100, 100])
+    expect(s.count('blob')).toBe(0)
+    expect(progress.at(-1)).toEqual({ done: 300, total: 300 })
+    expect(Object.keys((await index(s)).records)).toHaveLength(300)
+  })
+
+  it('a failure in one batch: no file writes after it (the other lanes stop at their next file)', async () => {
+    const s = await syncSetup(cards(500))
+    let queries = 0
+    s.github.interrupt = (c) => (c.url.endsWith('/graphql') && ++queries === 2 ? new Response('down', { status: 502 }) : undefined)
+    const { store, writes } = recording(s)
+    await expect(syncPass({ remote: s.remote, store, vault: VAULT, yieldToUi: noYield })).rejects.toMatchObject({ code: 'GITHUB_DOWN' })
+    // Three lanes: batches 1 and 3 were in flight; each stops at its next file. Batches 4 and 5 never start.
+    expect(writes.length).toBeLessThan(200)
+    const late = new Set(Object.keys(cards(500)).sort().slice(300))
+    expect(writes.some((w) => late.has(w.path))).toBe(false)
+    expect(s.github.graphql.queries.length).toBeLessThanOrEqual(3)
+    expect(await s.store.checkpoint(VAULT)).toBeNull()
+  })
+
+  it('packBatches: at most 100 files and about 1 MB a batch, in order; a file over 1 MB goes alone (one-file call)', async () => {
+    const sizes: Record<string, number> = { big: BATCH_BYTES + 1 }
+    const paths = Array.from({ length: 250 }, (_, i) => `p${i}`)
+    for (const p of paths) sizes[p] = 100
+    sizes.p5 = 600_000
+    sizes.p6 = 600_000
+    const { batches, alone } = packBatches([...paths.slice(0, 10), 'big', ...paths.slice(10)], (p) => sizes[p])
+    expect(alone).toEqual(['big'])
+    expect(batches.flat()).toEqual(paths)
+    expect(batches.every((b) => b.length <= 100 && b.reduce((a, p) => a + sizes[p], 0) <= BATCH_BYTES)).toBe(true)
+    expect(batches[0]).toEqual(paths.slice(0, 6))
+    const s = await syncSetup({ ...cards(11), 'long.md': 'x'.repeat(BATCH_BYTES + 10) })
+    await pass(s)
+    expect([s.count('graphql'), s.count('blob')]).toEqual([1, 1])
   })
 })
 
@@ -348,7 +492,8 @@ describe('nothing heavy on the UI thread: a made-up 1,700-file vault', () => {
       const s = await syncSetup(files)
       const calm = await measure(() => new Promise((r) => setTimeout(r, 100)))
       const f = await measure(() => pass(s, { yieldToUi: realYield }))
-      expect(s.count('blob')).toBe(611)
+      // YAZ-5929: 611 text files come in batches of up to 100 (about 1 MB), not 611 one-file calls.
+      expect([s.count('blob'), s.count('graphql')]).toEqual([0, 7])
       await s.git.push(Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`pages/p${i}.md`, pageText(`Changed ${i}`, `NC-${i + 1}`)])))
       const r = await measure(() => pass(s, { yieldToUi: realYield }))
       if (f.longest < first.longest) first = { ...f, cpu: Math.min(f.cpu, first.cpu) }

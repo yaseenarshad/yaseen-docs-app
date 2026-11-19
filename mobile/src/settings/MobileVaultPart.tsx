@@ -18,16 +18,23 @@ const WIDE_TABLES: Choice[] = [
   { value: true, label: 'Fit Screen' },
 ]
 
+/** YAZ-5880: Title room in Review (`titleRoom`): Only when it shows (the default; phone screens are short) or Always. */
+const TITLE_ROOM: Choice[] = [
+  { value: true, label: 'Always' },
+  { value: false, label: 'Only when it shows' },
+]
+
 const ROWS: { key: MobileSettingKey; label: string; choices: Choice[] }[] = [
   { key: 'folding', label: 'Folding', choices: ON_OFF },
   { key: 'stickyHeadings', label: 'Sticky headings', choices: ON_OFF },
   { key: 'fitTables', label: 'Wide tables', choices: WIDE_TABLES },
+  { key: 'titleRoom', label: 'Title room', choices: TITLE_ROOM },
 ]
 
 /**
  * Settings › "This vault on mobile" (YAZ-5592), its own chunk: the vault's mobile settings (`.yaseendocs/mobile.json`,
  * `shared/mobileSettings.ts`), the same on every phone that opens the vault: Folding and Sticky headings, on by default;
- * YAZ-5658 Wide tables, Same as Desktop by default. YAZ-5666: each a choice row (two taps to change it, `ChoiceRow.tsx`).
+ * YAZ-5658 Wide tables, Same as Desktop by default; YAZ-5880 Title room, Only when it shows by default. YAZ-5666: each a choice row (two taps to change it, `ChoiceRow.tsx`).
  * A page's own setting (its ⋯) wins. A change shows at once and goes the comments' safe path (`mobileWrite.ts`); the
  * dot counts it until GitHub holds it. With no write path, the rows show the setting and are not changed here.
  */

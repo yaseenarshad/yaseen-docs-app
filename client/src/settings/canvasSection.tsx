@@ -134,6 +134,11 @@ export const CANVAS_SECTION: SettingsSection = {
   groups: [
     {
       title: 'Drawing aids',
+      // Sub-headings (YAZ-5969).
+      subheadings: [
+        { title: 'Snapping', rows: ['canvas.gridModeEnabled', 'canvas.objectsSnapModeEnabled', 'canvas.snapToMidpoints', 'canvas.arrowBinding'] },
+        { title: 'Selecting', rows: ['canvas.selectOn', 'canvas.hoverOutline', 'canvas.textEdgeDoubleClick'] },
+      ],
       hint: 'Applies to every Excalidraw drawing, in every window.',
       items: [
         toggle('gridModeEnabled', 'Grid', undefined, ['grid mode']),
@@ -172,6 +177,12 @@ export const CANVAS_SECTION: SettingsSection = {
     },
     {
       title: 'New elements',
+      // Sub-headings (YAZ-5969).
+      subheadings: [
+        { title: 'Shapes and lines', rows: ['canvas.newElementStyle', 'canvas.newShapesMatchZoom', 'canvas.fillSetsTextColor', 'canvas.writingStrokeWidth', 'canvas.vectorStrokeWidth'] },
+        { title: 'Text', rows: ['canvas.defaultFontFamily', 'canvas.newTextScreenSize', 'canvas.newTextWrapMargin'] },
+        { title: 'Default look', rows: ['canvas.defaultRoughness', 'canvas.defaultTextAlign'] },
+      ],
       hint: 'What a shape or a line is born with; the toolbar still changes anything you have selected.',
       items: [
         {

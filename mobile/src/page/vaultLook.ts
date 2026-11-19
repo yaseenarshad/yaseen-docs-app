@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { linkPillVars } from '@client/editor/wikilink/linkPillLook'
 import { textVars } from '@client/settings/headingStyles'
-import { DEFAULT_LINK_CLICK, LINK_CLICK_FILE, sanitizeLinkClick, type LinkClick } from '@shared/linkClick'
+import { LINK_CLICK_FILE, PHONE_DEFAULT_LINK_CLICK, sanitizeLinkClick, type LinkClick } from '@shared/linkClick'
 import { LINK_PILLS_FILE, NO_LINK_PILLS, isDefaultLinkPills, sanitizeLinkPills, type LinkPills } from '@shared/linkPills'
 import { TEXT_FORMATTING_FILE, sanitizeTextFormatting, spacingVars } from '@shared/textFormatting'
 import { TABLE_LOOK_FILE, sanitizeTableLook, tableLookSettings } from '@shared/tableLook'
@@ -41,7 +41,7 @@ export interface VaultLook {
   table: PhoneTableLook | null
 }
 
-export const NO_LOOK: VaultLook = { pills: NO_LINK_PILLS, click: DEFAULT_LINK_CLICK.click, style: {}, table: null }
+export const NO_LOOK: VaultLook = { pills: NO_LINK_PILLS, click: PHONE_DEFAULT_LINK_CLICK, style: {}, table: null }
 
 async function readJson(store: VaultStore, vault: string, name: string): Promise<unknown> {
   const file = await store.read(vault, `${VAULT_CONFIG_DIR}/${name}`)
@@ -66,7 +66,7 @@ export function loadVaultLook(store: VaultStore, data: VaultData): Promise<Vault
       const pills = isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean
       const text = sanitizeTextFormatting(rawText)
       const table = rawTable === undefined ? null : tableLookSettings(sanitizeTableLook(rawTable))
-      return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...textVars(text), ...spacingVars(text.spacing), ...card, ...tableLookVars(table) }, table }
+      return { pills, click: sanitizeLinkClick(rawClick, PHONE_DEFAULT_LINK_CLICK).click, style: { ...linkPillVars(pills), ...textVars(text), ...spacingVars(text.spacing), ...card, ...tableLookVars(table) }, table }
     })().catch(() => NO_LOOK)
     looks.set(data, held)
     void held.then((look) => {

@@ -18,20 +18,20 @@ export const zoomByKey = (value: number, step: ZoomStep): number => (step === 0 
 
 /**
  * A zoom kept across restarts in localStorage under `key` (the app's origin: every window): a whole percent in the
- * page zoom's range (50–400), 100 by default and never written. Explore's page layers (`explore:zoom`) and the Inbox
- * (`inbox:zoom`, YAZ-5372) each keep one; a page tab's zoom is its own, in its tab.
+ * page zoom's range (50–400), `fallback` (100) by default and never written. Explore's page layers (`explore:zoom`, 125
+ * by default: YAZ-5977) and the Inbox (`inbox:zoom`, YAZ-5372) each keep one; a page tab's zoom is its own, in its tab.
  */
-export function savedZoom(key: string): number {
+export function savedZoom(key: string, fallback = 100): number {
   try {
     const n = Number(localStorage.getItem(key))
-    return Number.isInteger(n) && n >= ZOOM_MIN && n <= ZOOM_MAX ? n : 100
+    return Number.isInteger(n) && n >= ZOOM_MIN && n <= ZOOM_MAX ? n : fallback
   } catch {
-    return 100
+    return fallback
   }
 }
-export function saveZoom(key: string, zoom: number): void {
+export function saveZoom(key: string, zoom: number, fallback = 100): void {
   try {
-    if (zoom === 100) localStorage.removeItem(key)
+    if (zoom === fallback) localStorage.removeItem(key)
     else localStorage.setItem(key, String(zoom))
   } catch {
     // No storage: the zoom lasts the run.

@@ -1,5 +1,5 @@
-import { existsSync, type Stats } from 'node:fs'
-import { mkdir, readFile, stat } from 'node:fs/promises'
+import { existsSync, unwatchFile, watch as fsWatch, watchFile as watchStat, type FSWatcher, type Stats } from 'node:fs'
+import { lstat, mkdir, readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { keepUnknownKeys } from '@shared/configMerge'
 import { VAULT_CONFIG_DIR, type VaultConfigChange } from '@shared/types'
@@ -24,11 +24,21 @@ import { watchTree, type TreeWatcher } from './fs/treeWatcher'
  * idioms as `fs/watchers.ts`: one watcher per root, shared listener set, closed on the last
  * unsubscribe.
  *
+ * A WATCH ON EACH FILE TOO (YAZ-5912): on macOS the folder watch is FSEvents, and with the Mac
+ * busy FSEvents is seconds late or says nothing at all (measured: 0.5–6.5 s, and 3 of 6 writes
+ * never heard). So every `*.json` file directly in the dotfolder also has its own `fs.watch` —
+ * kqueue on macOS, 0–3 ms, one fd per file, a dozen files a vault. A write by rename (an agent's
+ * tmp + rename, `atomicWrite`) gives the name a new inode, so the file's watch is opened again on
+ * the name. A NEW file has no watch yet: the folder's mtime moves when a name comes or goes, so a
+ * stat of the folder every `FOLDER_POLL_MS` finds it (also a folder that is not there yet) and
+ * opens its watch. The folder watch stays as well; it is usually first.
+ *
  * Echo policy: `writeConfig` notifies this process's subscribers synchronously (so every window
- * of the vault hears about a write from any of them), and the watcher's later echo of that same
+ * of the vault hears about a write from any of them), and the watchers' later echo of that same
  * write is dropped by mtime — the app's standard echo-suppression pattern (CONTRACTS.md,
  * multi-window). A genuinely external edit has a different mtime and notifies as usual,
- * debounced/deduped to one `{ root, name }` per file.
+ * debounced/deduped to one `{ root, name }` per file. The same mtime check makes the two
+ * watches one: whichever hears a write first notifies, and the other's event for it is dropped.
  */
 
 /**
@@ -38,14 +48,30 @@ import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 export { VAULT_CONFIG_DIR }
 
 const NOTIFY_DEBOUNCE_MS = 50
+/** How long a file's own watch waits for quiet before it looks: a file written in pieces is read when whole. */
+const FILE_SETTLE_MS = 50
+/** How often the dotfolder itself is stat'ed for a new file (YAZ-5912): one stat, nothing read. */
+const FOLDER_POLL_MS = 500
 
 type Listener = (change: VaultConfigChange) => void
 
 interface Entry {
+  root: string
+  /** `<root>/.yaseendocs`. */
+  dir: string
   watcher: TreeWatcher
   listeners: Set<Listener>
-  /** name → mtime of this process's last write, so the watcher echo of an own write is dropped. */
-  ownMtimes: Map<string, number>
+  /**
+   * name → the mtime the subscribers last heard of (an own write or an outside one), null once they heard it go. An
+   * event that brings nothing new — the echo of an own write, the second watch's event for one write — is dropped.
+   */
+  heard: Map<string, number | null>
+  /** name → the watch on that file itself (YAZ-5912), and its settle timer. */
+  files: Map<string, FSWatcher>
+  fileTimers: Map<string, ReturnType<typeof setTimeout>>
+  /** The `*.json` names of the folder's last listing: only a name not in it is new. Null until the first listing. */
+  listed: Set<string> | null
+  closed: boolean
   /** Names with a watcher event waiting for the debounce flush. */
   pending: Set<string>
   timer: ReturnType<typeof setTimeout> | null
@@ -168,7 +194,8 @@ function announce(r: string, n: string, mtime: number): void {
   const dir = path.join(r, VAULT_CONFIG_DIR)
   const entry = entries.get(r)
   if (entry !== undefined) {
-    entry.ownMtimes.set(n, mtime)
+    entry.heard.set(n, mtime)
+    watchFile(entry, n)
     if (!entry.anchored) {
       // The watcher attached while the folder was still missing; this write created it, possibly
       // during the watcher's initialisation (where polling loses the path for good). Re-anchor once.
@@ -182,27 +209,108 @@ function announce(r: string, n: string, mtime: number): void {
 function createEntry(root: string): Entry {
   const dir = path.join(root, VAULT_CONFIG_DIR)
   const watcher = watchTree(dir)
-  const entry: Entry = { watcher, listeners: new Set(), ownMtimes: new Map(), pending: new Set(), timer: null, anchored: existsSync(dir) }
-  const schedule = (p: string, stats?: Stats) => {
+  const entry: Entry = { root, dir, watcher, listeners: new Set(), heard: new Map(), files: new Map(), fileTimers: new Map(), listed: null, closed: false, pending: new Set(), timer: null, anchored: existsSync(dir) }
+  const onEvent = (p: string, stats?: Stats) => {
     // Only config files directly in the dotfolder count — atomicWrite tmp files and subdirs don't.
     if (path.dirname(p) !== dir || !p.endsWith('.json')) return
     const name = path.basename(p)
-    if (stats !== undefined && stats.mtimeMs === entry.ownMtimes.get(name)) return // echo of an own write
-    entry.pending.add(name)
-    if (entry.timer !== null) clearTimeout(entry.timer)
-    entry.timer = setTimeout(() => {
-      entry.timer = null
-      const names = [...entry.pending]
-      entry.pending.clear()
-      for (const n of names) entry.listeners.forEach((l) => l({ root, name: n }))
-    }, NOTIFY_DEBOUNCE_MS)
+    if (stats !== undefined) watchFile(entry, name)
+    schedule(entry, name, stats)
   }
   watcher
-    .on('add', (p, stats) => schedule(p, stats))
-    .on('change', (p, stats) => schedule(p, stats))
-    .on('unlink', (p) => schedule(p))
+    .on('add', (p, stats) => onEvent(p, stats))
+    .on('change', (p, stats) => onEvent(p, stats))
+    .on('unlink', (p) => onEvent(p))
     .on('error', (err) => console.warn(`[vaultConfig] watcher error under ${dir}: ${String(err)}`))
+  listFolder(entry)
+  watchStat(dir, { persistent: false, interval: FOLDER_POLL_MS }, () => listFolder(entry))
   return entry
+}
+
+/** `name` changed (`stats`) or went (none): queued for the subscribers, unless they already heard of exactly this. */
+function schedule(entry: Entry, name: string, stats?: Stats): void {
+  const now = stats === undefined ? null : stats.mtimeMs
+  if (entry.heard.get(name) === now) return // an own write's echo, or the other watch already told
+  entry.heard.set(name, now)
+  entry.pending.add(name)
+  if (entry.timer !== null) clearTimeout(entry.timer)
+  entry.timer = setTimeout(() => {
+    entry.timer = null
+    const names = [...entry.pending]
+    entry.pending.clear()
+    for (const n of names) entry.listeners.forEach((l) => l({ root: entry.root, name: n }))
+  }, NOTIFY_DEBOUNCE_MS)
+}
+
+/** Opens the watch on `<dotfolder>/name` itself (YAZ-5912), once. A file that is not there, or cannot be watched, is left to the folder watch. */
+function watchFile(entry: Entry, name: string): void {
+  if (entry.closed || entry.files.has(name)) return
+  const file = path.join(entry.dir, name)
+  let w: FSWatcher
+  try {
+    w = fsWatch(file, { persistent: false }, (type) => {
+      if (type === 'rename') {
+        // The name has a new inode now (a rename write) or none (a delete): this watch hears the old inode only.
+        closeFile(entry, name, w)
+        watchFile(entry, name)
+      }
+      settleFile(entry, name)
+    })
+  } catch {
+    return
+  }
+  w.on('error', () => closeFile(entry, name, w))
+  entry.files.set(name, w)
+}
+
+/**
+ * Lists the folder: every `*.json` file gets its watch. One not in the last listing is new (or came back), and the
+ * subscribers hear of it — but not on the first listing, which is what was there at the subscribe.
+ */
+function listFolder(entry: Entry): void {
+  void readdir(entry.dir).then(
+    (all) => all.filter((n) => n.endsWith('.json')),
+    () => [] as string[],
+  ).then((names) => {
+    if (entry.closed) return
+    const before = entry.listed
+    entry.listed = new Set(names)
+    for (const n of names) {
+      // YAZ-5931: a name that was deleted and written again between two stats is in both listings, but its watch went
+      // with the deleted file. The subscribers heard it go (`heard` null) and it is here again: look at it too. Not "no
+      // watch open": with `fs.watch` unavailable (the polling fallback) no file ever has one, and every listing would
+      // tell of every file.
+      const back = entry.heard.get(n) === null
+      watchFile(entry, n)
+      if (before !== null && (!before.has(n) || back)) settleFile(entry, n)
+    }
+  })
+}
+
+function closeFile(entry: Entry, name: string, w: FSWatcher): void {
+  w.close()
+  if (entry.files.get(name) === w) entry.files.delete(name)
+}
+
+/** The file went quiet: what is on disk now is a change, or the file went. */
+function settleFile(entry: Entry, name: string): void {
+  clearTimeout(entry.fileTimers.get(name))
+  entry.fileTimers.set(
+    name,
+    setTimeout(() => {
+      entry.fileTimers.delete(name)
+      void lstat(path.join(entry.dir, name)).then(
+        (st) => {
+          if (entry.closed || !st.isFile()) return
+          watchFile(entry, name)
+          schedule(entry, name, st)
+        },
+        () => {
+          if (!entry.closed) schedule(entry, name)
+        },
+      )
+    }, FILE_SETTLE_MS),
+  )
 }
 
 /** Subscribes to config changes under `root`; returns an unsubscribe fn. Attaching creates nothing on disk. */
@@ -218,7 +326,12 @@ export function subscribeConfig(root: string, listener: Listener): () => void {
     entry.listeners.delete(listener)
     if (entry.listeners.size === 0 && entries.get(r) === entry) {
       entries.delete(r)
+      entry.closed = true
       if (entry.timer !== null) clearTimeout(entry.timer)
+      entry.fileTimers.forEach(clearTimeout)
+      entry.files.forEach((w) => w.close())
+      entry.files.clear()
+      unwatchFile(entry.dir)
       void entry.watcher.close()
     }
   }

@@ -12,7 +12,7 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 // Settings › Review (YAZ-4967, D14): the card settings.
-const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', 'githubToken', 'friendsSend']
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', 'githubToken', 'friendsSend']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
@@ -43,6 +43,11 @@ describe('settingCandidates', () => {
       'vaultOpensOn',
       'theme',
       'contentWidth',
+      'contentPosition',
+      // YAZ-5976, YAZ-5977: Appearance › Explore (Search size is a pointer row, found by search only).
+      'exploreWidth',
+      'explorePageZoom',
+      'exploreSearchSize',
       'spacingVault',
       'lineSpacing',
       'blockGap',
@@ -52,6 +57,8 @@ describe('settingCandidates', () => {
       'commentsResolved',
       'commentsHint',
       // Settings › Sidebar (YAZ-3440 D7), after Appearance. The Line set's colour rows show only with that set.
+      // Row spacing (YAZ-5885) first, in its Rows group.
+      'sidebarRowHeight',
       'sidebarLines',
       'sidebarLineStyle',
       'sidebarThreadColor',
@@ -322,7 +329,8 @@ describe('searchSettings', () => {
 
   it('the sidebar\'s level lines (YAZ-3309 D6, D7, D9, S12): "sidebar" finds the three rows of the group first; "folder", "tree" and "indent" find Show, not the TOC row; "thread" finds Style and Thread colour beside Bullet threading; "accent" finds the two colour pickers', () => {
     // The hover preview's Sidebar row (YAZ-3403) and "Sidebar remembers" (YAZ-5701) start with "Sidebar", so they lead.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 5)).toEqual(['sidebarPlace', 'hoverPreviewIn.sidebar', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+    // Row spacing (YAZ-5885), the first row of the Sidebar page, comes before them.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 6)).toEqual(['sidebarPlace', 'hoverPreviewIn.sidebar', 'sidebarRowHeight', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     for (const query of ['folder', 'tree', 'indent']) {
       expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('sidebarLines')
       expect(ids(searchSettings(settingCandidates(ctx()), query))).not.toContain('tocLines')
@@ -332,10 +340,15 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'accent'))).toEqual(['sidebarThreadColor', 'threadColor'])
   })
 
+  it('YAZ-5977: "search size" and "explore size" find the pointer to the zoom menu', () => {
+    for (const query of ['search size', 'explore size']) expect(ids(searchSettings(settingCandidates(ctx()), query))[0]).toBe('exploreSearchSize')
+  })
+
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'section indent'))).toEqual(['sectionStep', 'sectionLines'])
     // The page's bullet spacing (the YAZ-3818 demo) says "spacing" too.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'pageBulletIndent', 'pageBulletGap'])
+    // The sidebar's Row spacing (YAZ-5885) too, on its page after Appearance.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'sidebarRowHeight', 'pageBulletIndent', 'pageBulletGap'])
   })
 
   it('matches on the group hint too: "guide lines" finds the three guide line rows of Outline (YAZ-4094); "threading" finds the three threading rows and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {

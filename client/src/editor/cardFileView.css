@@ -12,11 +12,11 @@
 .card-file > .card-file__page {
   padding-top: 8px;
 }
+/* As wide as the card and at its place (`card.css`'s Card width rule sets the max-width and the sides' margins, YAZ-5871
+   D3), so the path stays over the card's left edge at Centre and at Left. */
 .card-file__path {
   display: flex;
-  width: fit-content;
-  max-width: 100%;
-  margin: 0 0 8px;
+  margin-bottom: 8px;
   font-size: 12px;
   color: var(--fg-muted);
 }
@@ -25,7 +25,7 @@
 }
 /* The text outside the card of a file that is not valid: shown, never deleted, muted under the notice. */
 .card-file__outside {
-  margin: 0 0 16px;
+  margin-bottom: 16px;
   padding: 8px 12px;
   border-left: 2px solid var(--border);
   color: var(--fg-muted);

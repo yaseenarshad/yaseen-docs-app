@@ -25,6 +25,7 @@ import { desktopBoardPicture } from '../editor/card/boardPictureDesktop'
 import { copyText } from '../lib/copyText'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from '../editor/card/cardMedia'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardShow } from '../editor/card/cardRender'
+import { followCardFold, onCardFoldChange } from '../editor/card/cardFold'
 import { hrefTarget } from '../editor/pathLinks'
 import { cardResolverOf, linkCard, linkPath, type WikilinkResolveSource } from '../editor/wikilink/linkResolve'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
@@ -72,15 +73,22 @@ export function CardId({ id, onNotice }: { id: string; onNotice: (message: strin
  * bold, a long title wrapping. Read, no label, and nothing at all for a card with no title. Explore's card, the Inbox
  * and its Preview; a card in a page and an embed draw the same band without React.
  */
-export function CardBand({ children, waiting = false }: { children: ReactNode; waiting?: boolean }) {
-  // YAZ-5696: a title that waits (`titleShows`) keeps the band's room, so the card never moves down when it comes; the
-  // words are not seen and not read until then.
-  return waiting ? (
-    <div className="card-band card-band--waiting" aria-hidden="true">
+export function CardBand({ children, waiting = false }: { children?: ReactNode; waiting?: boolean }) {
+  // Title room (YAZ-5880). "Only when it shows" (YAZ-5864): the caller leaves the band out while the title waits.
+  // "Always": the band is there on every card. A waiting title sits in it unseen and unread (`waiting`); when it shows,
+  // it fades in (`card-band--fade`, card.css), so nothing moves. A card with no title shown has an empty band. The
+  // caller keys the band by its card, so a fade is only ever this card's wait ending, never the next card's arrival.
+  const waited = useRef(waiting)
+  const fade = useRef(false)
+  if (waited.current !== waiting) {
+    fade.current = waited.current
+    waited.current = waiting
+  }
+  const empty = children === undefined || children === null || children === false
+  return (
+    <div className={`card-band${waiting ? ' card-band--waiting' : fade.current ? ' card-band--fade' : ''}`} aria-hidden={waiting || empty ? 'true' : undefined}>
       {children}
     </div>
-  ) : (
-    <div className="card-band">{children}</div>
   )
 }
 
@@ -127,6 +135,19 @@ interface CardBodyProps {
   vault: ExploreVault
   show?: CardShow
   doors: CardLinkDoors
+  /**
+   * May Side 2 and after fold here (YAZ-5904)? A card page and Explore's card layer: yes, as the surface's
+   * `--card-sides-fold` says (`cardFold.ts`). Absent: never (the Inbox, Preview).
+   */
+  fold?: boolean
+  /** YAZ-5925: an outside change lit in the drawn card (a card page, `cardGlow.ts`); a new `key` draws it again. */
+  glow?: CardBodyGlow
+}
+
+/** A drawn card lit by its host: `render` draws another text (the old one) with the same look. */
+export interface CardBodyGlow {
+  key: string
+  paint: (drawn: HTMLElement, text: string, render: (text: string) => HTMLElement) => HTMLElement
 }
 
 /**
@@ -134,7 +155,7 @@ interface CardBodyProps {
  * render; an index change redraws only the pills (`refreshCardLook`). A pill and a Markdown link open as the
  * page's do (idea 6, `cardLinkWhere`).
  */
-export function CardBody({ text, path, vault, show, doors }: CardBodyProps) {
+export function CardBody({ text, path, vault, show, doors, fold = false, glow }: CardBodyProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const icons = useContext(IconsContext)
   const { root, wikilinks, viewOnlyLinks } = vault
@@ -147,10 +168,19 @@ export function CardBody({ text, path, vault, show, doors }: CardBodyProps) {
   const iconsRef = useRef(icons)
   iconsRef.current = icons
   const lookOf = useCallback(() => cardLook(wikilinks, viewOnlyLinks, { root, pagePath: path, boardPicture: desktopBoardPicture }, { icon: (target, folder) => fileIconDecoration(iconsRef.current, target, folder) }), [wikilinks, viewOnlyLinks, root, path])
+  const glowRef = useRef(glow)
+  glowRef.current = glow
+  const glowKey = glow?.key ?? ''
   useEffect(() => {
     const picked = pickedKey === '' ? undefined : pickedKey.split(',').map(Number)
-    boxRef.current?.replaceChildren(renderCard(text, { sides, shown, picked, next }, lookOf()))
-  }, [text, sides, shown, pickedKey, next, lookOf])
+    const look = lookOf()
+    const drawn = renderCard(text, { sides, shown, picked, next }, look)
+    const paint = glowRef.current?.paint
+    boxRef.current?.replaceChildren(paint === undefined ? drawn : paint(drawn, text, (old) => renderCard(old, { sides, shown, picked, next }, look)))
+    if (fold) followCardFold(boxRef.current?.querySelector(':scope > .card__sides'))
+  }, [text, sides, shown, pickedKey, next, lookOf, fold, glowKey])
+  // YAZ-5904: a change of the card look or of the page's `card-sides` folds or unfolds the card as drawn.
+  useEffect(() => (fold ? onCardFoldChange(() => followCardFold(boxRef.current?.querySelector(':scope > .card__sides'))) : undefined), [fold])
   // The pills follow the index: on each snapshot only they draw again.
   const hasLink = text.includes('[[')
   useEffect(() => (hasLink ? wikilinks.subscribe(() => boxRef.current !== null && refreshCardLook(boxRef.current, lookOf())) : undefined), [hasLink, wikilinks, lookOf])

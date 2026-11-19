@@ -1,7 +1,7 @@
 /** The explore stack's model (YAZ-2571): the layer list, its cap, the top page, and where each layer stands. */
 import { describe, expect, it } from 'vitest'
 import { exploreRecents, MAX_EXPLORE_RECENTS, moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
-import { EDGE_GAP, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, PAGE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, layerKindOf, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type LayerBox } from './layers'
+import { EDGE_GAP, firstLayerBox, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, PAGE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, layerKindOf, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type LayerBox } from './layers'
 
 const search = (): ExploreLayer => ({ id: newLayerId(), kind: 'search' })
 const page = (path: string): ExploreLayer => ({ id: newLayerId(), kind: 'page', path, mode: 'read' })
@@ -77,6 +77,24 @@ describe('where a layer stands (Mochi\'s offsets, clamped to the window)', () =>
     expect(tiny.left + tiny.width).toBeLessThanOrEqual(300)
     expect(tiny.width).toBe(240)
   })
+
+  it('YAZ-5881 D2, YAZ-5977: Search size multiplies the SEARCH panel\'s width only, still cut to the edge gap; a page window keeps its own; a box moved by hand keeps its own width', () => {
+    expect(panelWidth('search', 2000, 1.25)).toBe(625)
+    expect(panelWidth('search', 2000, 2)).toBe(1000)
+    // A page or board window: its own width at every Search size.
+    expect(panelWidth('page', 2000, 1.5)).toBe(PAGE_WIDTH)
+    expect(panelWidth('board', 2000, 2)).toBe(PAGE_WIDTH)
+    // A narrow window: the panel is cut to the window as at 100%.
+    expect(panelWidth('search', 1000, 2)).toBe(1000 - 2 * EDGE_GAP)
+    expect(panelWidth('search', 300, 2)).toBe(240)
+    // The search's stack place is centred on the wider panel.
+    expect(layerPlace('search', 0, 2000, 1.5)).toEqual({ left: Math.floor((2000 - 750) / 2), top: 0, width: 750 })
+    const list: ExploreLayer[] = [{ id: 1, kind: 'search' }, { id: 2, kind: 'page', path: '/v/a.md', mode: 'read' }]
+    const own: LayerBox = { x: 40, y: 50, width: 400, height: null }
+    const boxes = layerBoxes(list, new Map([[1, own]]), 2000, 1000, 1.5)
+    expect(boxes[0]).toEqual(own)
+    expect(boxes[1].width).toBe(PAGE_WIDTH)
+  })
 })
 
 describe('‹ › through the search (round 3)', () => {
@@ -145,6 +163,69 @@ describe('layers that move like a cell note (round 3)', () => {
     expect(again[2].x).toBe(base2.left + (600 - base1.left))
   })
 
+  it('YAZ-5975: a layer opened on a page layer resized by hand takes its width and height, LAYER_STEP right and down; the next one too', () => {
+    const list = [search(), page('/v/a.md'), page('/v/b.md'), page('/v/c.md')]
+    const narrow: LayerBox = { x: 300, y: 120, width: 500, height: 600 }
+    const moved = new Map<number, LayerBox>([[list[1].id, narrow]])
+    const boxes = layerBoxes(list, moved, W, H)
+    expect(boxes[1]).toEqual(narrow)
+    expect(boxes[2]).toEqual({ x: 300 + LAYER_STEP, y: 120 + LAYER_STEP, width: 500, height: 600 })
+    // A layer opened on that one (itself sized by the rule) keeps the size too.
+    expect(boxes[3]).toEqual({ x: 300 + 2 * LAYER_STEP, y: 120 + 2 * LAYER_STEP, width: 500, height: 600 })
+    // A layer resized by hand keeps its own box; the one on it takes that size.
+    moved.set(list[2].id, { x: 100, y: 100, width: 700, height: null })
+    const again = layerBoxes(list, moved, W, H)
+    expect(again[2]).toEqual({ x: 100, y: 100, width: 700, height: null })
+    expect(again[3]).toEqual({ x: 100 + LAYER_STEP, y: 100 + LAYER_STEP, width: 700, height: null })
+  })
+
+  it('YAZ-5975: with nothing set by hand, a new layer has the default size; a layer on a search keeps its stack place; the box still fits the window', () => {
+    const list = [search(), page('/v/a.md'), page('/v/b.md')]
+    const boxes = layerBoxes(list, new Map(), W, H)
+    expect(boxes[2].width).toBe(PAGE_WIDTH)
+    expect(boxes[2].height).toBeNull()
+    // A search resized narrow: the page on it is a page's width (the search is another shape).
+    const onSearch = layerBoxes(list, new Map([[list[0].id, { x: 300, y: 50, width: 300, height: 200 }]]), W, H)
+    expect(onSearch[1].width).toBe(PAGE_WIDTH)
+    expect(onSearch[1].height).toBeNull()
+    // Explore size widens the default only, never a size taken from a hand-set box.
+    const sized = layerBoxes(list, new Map([[list[1].id, { x: 300, y: 120, width: 500, height: 600 }]]), W, H, 1.5)
+    expect(sized[2].width).toBe(500)
+    // Near the window's corner the taken box is fitted: on screen, the size cut to the window.
+    const corner = layerBoxes(list, new Map([[list[1].id, { x: W - 500, y: H - 300, width: 500, height: 300 }]]), W, H)
+    expect(corner[2].x).toBe(W - 500)
+    expect(corner[2].x + corner[2].width).toBeLessThanOrEqual(W)
+    expect(corner[2].y + (corner[2].height ?? 0)).toBeLessThanOrEqual(H)
+  })
+
+  it('YAZ-5976: Explore window width (custom px) is a fresh page or board layer\'s width, unscaled by Explore size, cut to the window; the search keeps its own', () => {
+    expect(panelWidth('page', 2000, 1.5, 520)).toBe(520)
+    expect(panelWidth('board', 2000, 1, 520)).toBe(520)
+    expect(panelWidth('search', 2000, 1.25, 520)).toBe(panelWidth('search', 2000, 1.25))
+    expect(panelWidth('page', 600, 1, 1200)).toBe(600 - 2 * EDGE_GAP)
+    const list = [search(), page('/v/a.md'), page('/v/b.md')]
+    const boxes = layerBoxes(list, new Map(), W, H, 1.25, 520)
+    expect(boxes[0].width).toBe(panelWidth('search', W, 1.25))
+    // The first page from the search starts at the custom width; so does the next fresh one.
+    expect(boxes[1].width).toBe(520)
+    expect(boxes[2].width).toBe(520)
+    // A layer opened on one resized by hand takes that size (YAZ-5975), not the custom width; the resized one keeps its box.
+    const resized = layerBoxes(list, new Map([[list[1].id, { x: 200, y: 100, width: 700, height: 500 }]]), W, H, 1, 520)
+    expect(resized[1].width).toBe(700)
+    expect(resized[2]).toEqual({ x: 200 + LAYER_STEP, y: 100 + LAYER_STEP, width: 700, height: 500 })
+  })
+
+  it('YAZ-5976: a fresh first page layer starts at the custom width, at its kept place and height; Default keeps the kept box; a search keeps its own', () => {
+    saveLayerBox('page', { x: 30, y: 40, width: 1000, height: 600 })
+    expect(firstLayerBox('page', 520)).toEqual({ x: 30, y: 40, width: 520, height: 600 })
+    expect(firstLayerBox('page', null)).toEqual({ x: 30, y: 40, width: 1000, height: 600 })
+    saveLayerBox('search', { x: 10, y: 20, width: 500, height: null })
+    expect(firstLayerBox('search', 520)).toEqual({ x: 10, y: 20, width: 500, height: null })
+    saveLayerBox('page', null)
+    saveLayerBox('search', null)
+    expect(firstLayerBox('page', 520)).toBeNull()
+  })
+
   it('every box fits the window: the size cut to it, the corner kept on screen, never smaller than the least size', () => {
     const list = [page('/v/a.md')]
     const moved = new Map<number, LayerBox>([[list[0].id, { x: 2000, y: -30, width: 3000, height: 5000 }]])
@@ -184,12 +265,12 @@ describe('the recent pages', () => {
 })
 
 describe('"Clicking a link" (YAZ-4936)', () => {
-  it('reads the vault file, the default for anything else', async () => {
+  it('reads the vault file, the default (Explore, YAZ-5973) for anything else', async () => {
     const { sanitizeLinkClick } = await import('./linkClick')
     expect(sanitizeLinkClick({ click: 'explore' })).toEqual({ click: 'explore' })
     expect(sanitizeLinkClick({ click: 'open' })).toEqual({ click: 'open' })
-    expect(sanitizeLinkClick({ click: 'x' })).toEqual({ click: 'open' })
-    expect(sanitizeLinkClick(null)).toEqual({ click: 'open' })
-    expect(sanitizeLinkClick('explore')).toEqual({ click: 'open' })
+    expect(sanitizeLinkClick({ click: 'x' })).toEqual({ click: 'explore' })
+    expect(sanitizeLinkClick(null)).toEqual({ click: 'explore' })
+    expect(sanitizeLinkClick('explore')).toEqual({ click: 'explore' })
   })
 })

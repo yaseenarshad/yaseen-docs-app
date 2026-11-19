@@ -684,8 +684,13 @@ describe('resume in the middle of a chapter: the voice plays for that clip (YAZ-
   const O2 = /^app:\/\/course-voice\/one\/o2\.m4a\?v=[0-9a-f]{8}$/
 
   afterEach(async () => {
+    // The course's open and close write `state.json` into the folder (mkdir, a tmp file, a rename). This hook runs
+    // before the file's unmount, so the rm raced those writes (ENOTEMPTY on a busy CI runner). Close the course
+    // first, let its writes finish, then remove the folder; rm also retries a folder that a last write refilled.
+    act(() => root.unmount())
+    await act(async () => new Promise((done) => setTimeout(done, 50)))
     ;(window as unknown as { yaseenDocs: unknown }).yaseenDocs = bridgeBefore
-    if (dir !== '') await (await import('node:fs/promises')).rm(dir, { recursive: true, force: true })
+    if (dir !== '') await (await import('node:fs/promises')).rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
     dir = ''
   })
 

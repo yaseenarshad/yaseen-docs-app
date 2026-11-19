@@ -126,3 +126,18 @@ describe('YAZ-5831: the "Not counted" tag never widens a narrow Reviews table', 
     expect(inContainer(400, '.card-reviews__answer .card-reviews__word')).toMatchObject({ display: 'none' })
   })
 })
+
+describe('YAZ-5963 nit: with no title band, the first line keeps clear of the card`s ⋯', () => {
+  // Measured live (hidden app, a line of short words): with no room the first line ran to 13 px past the ⋯'s left edge.
+  it('a float at the body`s top right takes the ⋯`s place for the first line only, only when there is no band', () => {
+    const sel = '.card-inbox__panel:has(> .card-inbox__head-more-place):not(:has(> .card-band)) > .card-inbox__body::before'
+    const rule = rules(cards).find((r) => r.selectors.includes(sel))
+    expect(rule).toBeDefined()
+    expect(rule!.decls['float']).toBe('right')
+    expect(rule!.decls['content']).toBe("''")
+    // The ⋯ ends 50 px in from the frame's right edge (its 10 px inset, its width, a gap): the room past the side padding.
+    expect(rule!.decls['width']).toBe('max(0px, calc(50px - var(--inbox-card-pad, 28px)))')
+    // One line high: the lines under it take the full width.
+    expect(rule!.decls['height']).toBe('1.2em')
+  })
+})

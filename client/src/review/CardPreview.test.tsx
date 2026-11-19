@@ -90,41 +90,57 @@ describe('Preview a card (YAZ-5152)', () => {
     editor.remove()
   })
 
-  it('YAZ-5695: a title hidden in review is the Inbox\'s: no band and no title at any step, fully shown too; the bar names the card by its ID', () => {
+  it('YAZ-5695: a title hidden in review is the Inbox\'s: no title at any step, fully shown too (Title room Always, YAZ-5880: an empty band; Only when it shows: none); the bar names the card by its ID', () => {
     mount(TEXT, 'Secret title', true)
     const band = () => el.querySelector('.card-inbox__panel > .card-band')
-    expect(band()).toBeNull()
+    expect([band()?.textContent, band()?.getAttribute('aria-hidden')]).toEqual(['', 'true'])
     press(' ')
-    expect(band()).toBeNull()
+    expect(band()?.textContent).toBe('')
     press(' ')
     expect(sides()).toBe(2)
+    press(' ')
+    expect(band()?.textContent).toBe('')
+    act(() => root?.unmount())
+    el.remove()
+    mount(TEXT, 'Secret title', true, undefined, { ...DEFAULT_REVIEW_SETTINGS, titleRoom: 'shown' })
+    expect(band()).toBeNull()
+    press(' ')
+    press(' ')
     press(' ')
     expect(band()).toBeNull()
     expect(el.querySelector('.card-preview__what')?.textContent).toBe('· WIKI-9 · nothing is saved')
     expect(el.textContent).not.toContain('Secret title')
   })
 
-  it('YAZ-5696, YAZ-5709: the Preview follows "when the title shows": the global choice, and the card\'s own over it', () => {
+  it('YAZ-5696, YAZ-5709, YAZ-5857: the Preview follows "when the title shows": no band while the title waits; the global choice, and the card\'s own over it', () => {
     const band = () => el.querySelector('.card-inbox__panel > .card-band')
-    mount(TEXT, 'Secret title', false, undefined, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'side2' })
-    expect(band()?.classList.contains('card-band--waiting')).toBe(true)
+    mount(TEXT, 'Secret title', false, undefined, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'side2', titleRoom: 'shown' })
+    expect(band()).toBeNull()
     press(' ')
-    expect(band()?.classList.contains('card-band--waiting')).toBe(true)
+    expect(band()).toBeNull()
     // YAZ-5709 Before Side 2: the title is its own Space, just before Side 2.
     press(' ')
     expect(sides()).toBe(1)
-    expect(band()?.classList.contains('card-band--waiting')).toBe(false)
+    expect(band()).not.toBeNull()
     expect(band()?.textContent).toBe('Secret title')
     press(' ')
     expect(sides()).toBe(2)
     act(() => root?.unmount())
     el.remove()
-    mount(TEXT, 'Secret title', false, 'click')
-    expect(band()?.classList.contains('card-band--waiting')).toBe(true)
+    mount(TEXT, 'Secret title', false, 'click', { ...DEFAULT_REVIEW_SETTINGS, titleRoom: 'shown' })
+    expect(band()).toBeNull()
     // YAZ-5709 After the first click: the first Space is the title, by itself.
     press(' ')
-    expect(band()?.classList.contains('card-band--waiting')).toBe(false)
+    expect(band()).not.toBeNull()
     expect(el.querySelectorAll('.card__hidden').length).toBe(0)
+  })
+
+  it('YAZ-5880: Title room Always (the default): the band is there while the title waits, its title unseen and unread, and fades in when it shows', () => {
+    const band = () => el.querySelector('.card-inbox__panel > .card-band')
+    mount(TEXT, 'Secret title', false, 'click')
+    expect([band()?.className, band()?.getAttribute('aria-hidden'), band()?.textContent]).toEqual(['card-band card-band--waiting', 'true', 'Secret title'])
+    press(' ')
+    expect([band()?.className, band()?.getAttribute('aria-hidden'), band()?.textContent]).toEqual(['card-band card-band--fade', null, 'Secret title'])
   })
 
   it('YAZ-5152 A: no title: the bar names the card by its ID', () => {

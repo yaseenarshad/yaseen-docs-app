@@ -15,13 +15,24 @@ export interface RemoteTree extends Map<string, string> {
   readonly bytes: ReadonlyMap<string, number>
 }
 
-/** The phone's whole conversation with GitHub: six calls, no git on the device. */
+/** The most blobs in one GraphQL query (YAZ-5929). GitHub's own limit on the nodes of one query is far above it. */
+export const MAX_BATCH_FILES = 100
+
+/** The phone's whole conversation with GitHub: seven calls, no git on the device. */
 export interface GithubRemote {
   /** Branch head; passing the last `etag` makes an unchanged answer free (HTTP 304). */
   head(etag?: string): Promise<{ sha: string; etag: string } | 'unchanged'>
   /** Every path and its blob SHA at `commit`, in one request. Rejects `TREE_TRUNCATED` when GitHub cut it short (F6). */
   tree(commit: string): Promise<RemoteTree>
   blob(sha: string): Promise<Uint8Array>
+  /**
+   * YAZ-5929: the text of up to `MAX_BATCH_FILES` blobs in ONE GraphQL query, in the order of `shas`. Null for a blob
+   * that GitHub calls binary, cut short (`isTruncated`), or does not give. The caller checks each text with
+   * `gitBlobSha` and gets each null or wrong one with `blob(sha)`. A query that GitHub refuses as a whole (no access
+   * to GraphQL, a missing repo, an odd answer) gives all null, so the pass works as before; a rate limit, no network,
+   * a 5xx or a bad token throws, as `blob` does.
+   */
+  blobs(shas: readonly string[]): Promise<(string | null)[]>
   /**
    * One atomic commit; rejects `STALE_HEAD` when GitHub has moved past `parent`. Resolves with the new commit SHA.
    * `made` hears the new commit's SHA once GitHub made it, BEFORE the branch moves to it, and the move waits for it
@@ -57,6 +68,8 @@ interface TreeEntry {
  * - head: `GET git/ref/heads/{branch}` with `If-None-Match` (a 304 did not lower the rate count);
  * - tree: `GET git/trees/{commit}?recursive=1` (the commit SHA works, so no `GET git/commits` first);
  * - blob: `GET git/blobs/{sha}` with the raw media type (bytes, not base64);
+ * - blobs (YAZ-5929): `POST /graphql`, `repository(owner, name) { b0: object(oid: "…") { ... on Blob { text isBinary
+ *   isTruncated } } … }`: up to 100 text files in one call, on GraphQL's own count, not the 5,000 REST calls an hour;
  * - contains: `GET compare/{commit}...{head}` (does the branch hold an answer's commit, after a lost answer);
  * - commit: `GET git/commits/{parent}` for its tree, `POST git/blobs` for bytes only, `POST git/trees` with
  *   `base_tree` (text inline: a Markdown commit is 3 writes, not 5), `POST git/commits`, then `PATCH git/refs/heads/
@@ -92,6 +105,31 @@ export function githubRemote(client: GithubClient, repo: string, branch: string)
     async blob(sha) {
       const res = await client.request(git('blobs', sha), { accept: 'application/vnd.github.raw+json', raw: true })
       return res.data as Uint8Array
+    },
+
+    async blobs(shas) {
+      if (shas.length === 0) return []
+      if (shas.length > MAX_BATCH_FILES) throw new Error(`At most ${MAX_BATCH_FILES} blobs in one query`)
+      // A SHA goes into the query text: only hex (SHA-1 or SHA-256) is allowed, so nothing can change the query.
+      if (shas.some((sha) => !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(sha))) throw new Error('A blob SHA is hex')
+      const [owner, name] = repo.split('/')
+      const fields = shas.map((sha, i) => `b${i}: object(oid: "${sha}") { ... on Blob { text isBinary isTruncated } }`).join(' ')
+      const query = `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${fields} } }`
+      type Blob = { text?: unknown; isBinary?: unknown; isTruncated?: unknown } | null
+      let data: { repository?: Record<string, Blob> | null } | null
+      try {
+        data = (await client.graphql<{ repository?: Record<string, Blob> | null }>(query, { owner, name })).data
+      } catch (error) {
+        // GitHub refused the query itself: the one-file call gets each file, as before YAZ-5929.
+        if (error instanceof GithubError && (error.code === 'UNEXPECTED' || error.code === 'NO_ACCESS' || error.code === 'NOT_FOUND')) return shas.map(() => null)
+        throw error
+      }
+      const found = data?.repository ?? null
+      return shas.map((_, i) => {
+        const blob = found?.[`b${i}`] ?? null
+        if (blob === null || blob.isBinary !== false || blob.isTruncated !== false || typeof blob.text !== 'string') return null
+        return blob.text
+      })
     },
 
     async contains(commit, head) {

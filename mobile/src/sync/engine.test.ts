@@ -184,6 +184,33 @@ describe('the sync engine: failures and the status for 4D', () => {
     expect(t.engine.state().status).toBe('synced')
   })
 
+  it('YAZ-5929: a GraphQL "slow down" in a batched first download: amber until the reset; then it retries and gets every file', async () => {
+    const files = Object.fromEntries(Array.from({ length: 150 }, (_, i) => [`p${i}.md`, pageText(`P${i}`, `NC-${i + 1}`)]))
+    const t = await setup(files)
+    const reset = Math.floor(t.clock.now() / 1000) + 600
+    let batches = 0
+    // The second batch query finds GraphQL's count used up (HTTP 200, an error of type RATE_LIMITED).
+    t.s.github.interrupt = (c) => {
+      if (!c.url.endsWith('/graphql') || ++batches !== 2) return undefined
+      t.s.github.graphql.limitedUntil = reset
+      return undefined
+    }
+    await t.engine.open(VAULT_ROW)
+    await t.engine.idle()
+    expect(t.engine.state()).toMatchObject({ status: 'slowed', problem: 'RATE_LIMITED', retryAt: reset * 1000 })
+    expect(await t.s.store.checkpoint(VAULT)).toBeNull()
+    const calls = t.s.github.calls.length
+    await t.tick(POLL_MS * 4)
+    expect(t.s.github.calls.length).toBe(calls)
+    t.s.github.interrupt = null
+    t.s.github.graphql.limitedUntil = null
+    await t.tick(reset * 1000 - t.clock.now())
+    expect(t.engine.state().status).toBe('synced')
+    expect(await t.s.store.list(VAULT)).toHaveLength(150)
+    expect(Object.keys(t.engine.index()!.records)).toHaveLength(150)
+    expect(t.s.count('blob')).toBe(0)
+  })
+
   it('round 10 item 20: GitHub\'s "slow down" with Retry-After waits that long', async () => {
     const t = await setup()
     await t.engine.open(VAULT_ROW)

@@ -18,7 +18,7 @@ import type { CardSpacing, CardTablePosition, SettingsState, ShownHiddenWords } 
 export const CARD_LOOK_FILE = 'card-look.json'
 export const CARD_LOOK_VERSION = 1
 /** The keys this build's writer owns: every other key of the file (a later version's) is kept on a save. */
-export const CARD_LOOK_KEYS: readonly string[] = ['version', 'hiddenWords', 'markNext', 'nextColour', 'width', 'textSize', 'titleSize', 'tables', 'spacing', 'custom']
+export const CARD_LOOK_KEYS: readonly string[] = ['version', 'hiddenWords', 'markNext', 'nextColour', 'width', 'textSize', 'titleSize', 'tables', 'spacing', 'custom', 'sidesFold', 'sidesFoldCardPages', 'sidesFoldExplore']
 
 /** Card spacing's own values (Custom), in the file's names. */
 export interface CardLookCustom {
@@ -40,12 +40,18 @@ export interface CardLook {
   tables?: CardTablePosition
   spacing?: CardSpacing
   custom?: CardLookCustom
+  /** Card sides in pages (YAZ-5904): `true` folds Side 2 and after. */
+  sidesFold?: boolean
+  /** Card sides on card pages (YAZ-5904 Q1): `true` folds Side 2 and after on a card page. */
+  sidesFoldCardPages?: boolean
+  /** Card sides in Explore (YAZ-5904 D3): `true` folds Side 2 and after there. */
+  sidesFoldExplore?: boolean
 }
 
 /** The 13 settings, by their app names (`SettingsState`). */
 export type CardLookSettings = Pick<
   SettingsState,
-  'shownHiddenWords' | 'markNextHidden' | 'nextHiddenColour' | 'cardWidth' | 'cardTextSize' | 'cardTitleSize' | 'cardTablePosition' | 'cardSpacing' | 'cardLineSpacing' | 'cardBlockGap' | 'cardBulletIndent' | 'cardBulletGap' | 'cardBulletSpace'
+  'shownHiddenWords' | 'markNextHidden' | 'nextHiddenColour' | 'cardWidth' | 'cardTextSize' | 'cardTitleSize' | 'cardTablePosition' | 'cardSpacing' | 'cardLineSpacing' | 'cardBlockGap' | 'cardBulletIndent' | 'cardBulletGap' | 'cardBulletSpace' | 'cardSidesFold' | 'cardSidesFoldCardPages' | 'cardSidesFoldExplore'
 >
 
 /**
@@ -67,6 +73,9 @@ export const CARD_LOOK_DEFAULTS: Readonly<CardLookSettings> = /*#__PURE__*/ Obje
   cardBulletIndent: 34,
   cardBulletGap: 10,
   cardBulletSpace: 0,
+  cardSidesFold: false,
+  cardSidesFoldCardPages: false,
+  cardSidesFoldExplore: false,
 })
 
 /** The Mac's `CARD_SPACING_CLEAN` (Clean's spacing), in the app's names. */
@@ -86,6 +95,9 @@ const OK = {
   titleSize: (v: unknown): v is number => whole(v, 12, 40),
   tables: oneOf<CardTablePosition>(['pages', 'left', 'center']),
   spacing: oneOf<CardSpacing>(['pages', 'clean', 'custom']),
+  sidesFold: (v: unknown): v is boolean => typeof v === 'boolean',
+  sidesFoldCardPages: (v: unknown): v is boolean => typeof v === 'boolean',
+  sidesFoldExplore: (v: unknown): v is boolean => typeof v === 'boolean',
 }
 /** Custom's fields: line 1–3; gap and space 0–CARD_BLOCK_GAP_MAX; indent PAGE_BULLET_INDENT_MIN–MAX; bullet gap PAGE_BULLET_GAP_MIN–MAX. */
 const CUSTOM_OK: { [K in keyof Required<CardLookCustom>]: (v: unknown) => v is number } = {
@@ -127,6 +139,9 @@ export function cardLookSettings(look: CardLook): CardLookSettings {
     cardBulletIndent: c.indent ?? d.cardBulletIndent,
     cardBulletGap: c.bulletGap ?? d.cardBulletGap,
     cardBulletSpace: c.bulletSpace ?? d.cardBulletSpace,
+    cardSidesFold: look.sidesFold ?? d.cardSidesFold,
+    cardSidesFoldCardPages: look.sidesFoldCardPages ?? d.cardSidesFoldCardPages,
+    cardSidesFoldExplore: look.sidesFoldExplore ?? d.cardSidesFoldExplore,
   }
 }
 
@@ -153,6 +168,9 @@ export function cardLookOf(s: Partial<CardLookSettings>): CardLook {
     ...(differs('cardTablePosition') && { tables: s.cardTablePosition }),
     ...(differs('cardSpacing') && { spacing: s.cardSpacing }),
     ...(custom !== undefined && { custom }),
+    ...(differs('cardSidesFold') && { sidesFold: s.cardSidesFold }),
+    ...(differs('cardSidesFoldCardPages') && { sidesFoldCardPages: s.cardSidesFoldCardPages }),
+    ...(differs('cardSidesFoldExplore') && { sidesFoldExplore: s.cardSidesFoldExplore }),
   })
 }
 
@@ -174,7 +192,9 @@ export function cardLookFile(look: CardLook): { version: number } & CardLook {
  *    `.app` before YAZ-5484; the nearest value wins, so two vaults never clash);
  *  - `--card-next-hidden`: the picked next colour over the theme's `--next-hidden`;
  *  - Card spacing (Clean's values or Custom's; none for Same as pages) and Clean's `--inbox-card-pad`;
- *  - `--card-text-size`, `--card-title-size` (Custom only, YAZ-5387), `--card-text-width`, `--card-table-inline`.
+ *  - `--card-text-size`, `--card-title-size` (Custom only, YAZ-5387), `--card-text-width`, `--card-table-inline`;
+ *  - `--card-sides-fold-pages`, `--card-sides-fold-card-pages`, `--card-sides-fold-explore` (YAZ-5904): `on` folds Side 2 and after where a surface may
+ *    fold its card (`client/src/editor/card/cardFold.ts`); `card.css` picks one for each card, or a page's `card-sides`.
  */
 export function cardLookStyle(look: CardLook): Record<string, string> {
   const s = cardLookSettings(look)
@@ -196,5 +216,9 @@ export function cardLookStyle(look: CardLook): Record<string, string> {
     '--card-title-size': px(s.cardTitleSize),
     '--card-text-width': px(s.cardWidth),
     '--card-table-inline': s.cardTablePosition === 'left' ? '0' : s.cardTablePosition === 'center' ? 'auto' : 'initial',
+    // Show all is `initial` (none): `card.css` reads `off` then, and a whole surface still hides an ancestor's `on`.
+    '--card-sides-fold-pages': s.cardSidesFold ? 'on' : 'initial',
+    '--card-sides-fold-card-pages': s.cardSidesFoldCardPages ? 'on' : 'initial',
+    '--card-sides-fold-explore': s.cardSidesFoldExplore ? 'on' : 'initial',
   }
 }

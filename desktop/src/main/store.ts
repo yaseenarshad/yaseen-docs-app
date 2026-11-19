@@ -12,7 +12,9 @@ import {
   COMMENTS_ORDERS,
   COMMENTS_RESOLVED_PLACES,
   isCommentProfile,
-  CONTENT_WIDTHS,
+  isContentPosition,
+  isContentWidth,
+  isExploreWidth,
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
   DEFAULT_SIDEBAR_TABS,
@@ -112,6 +114,8 @@ import {
   SIDEBAR_MIN_W,
   SIDEBAR_ZOOM_MAX,
   SIDEBAR_ZOOM_MIN,
+  SIDEBAR_ROW_HEIGHT_MAX,
+  SIDEBAR_ROW_HEIGHT_MIN,
   SIDEBAR_BUTTONS,
   SIDEBAR_TABS,
   STARTUP_WINDOWS,
@@ -149,7 +153,6 @@ import {
   type CommentsOrder,
   type CommentsResolvedPlace,
   type CommentProfile,
-  type ContentWidth,
   type FolderPatch,
   type FolderState,
   type GoToPlace,
@@ -433,7 +436,7 @@ export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
 /** One tab's sort (YAZ-3227 D1): Files has no manual order. `kinds` (YAZ-4614 D66) is a boolean or absent; anything else fails the sort. */
 const isTabSort = (v: unknown, manual: boolean, best = false): v is TabSort =>
   isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best')) && (v.kinds === undefined || typeof v.kinds === 'boolean')
-const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, false) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
+const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, true) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
 
 /** A list of known names, each once (YAZ-3273 D8). */
 const isNameSet = <T,>(v: unknown, known: readonly T[]): v is T[] => Array.isArray(v) && v.every((x) => known.includes(x as T)) && new Set(v).size === v.length
@@ -692,7 +695,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   guideLineDarkness: (v): v is number => isFiniteNumber(v) && v >= GUIDE_LINE_DARKNESS_MIN && v <= GUIDE_LINE_DARKNESS_MAX && v % GUIDE_LINE_DARKNESS_STEP === 0,
   foldingOnByDefault: (v): v is boolean => typeof v === 'boolean',
   theme: (v): v is Theme => typeof v === 'string' && (THEMES as readonly string[]).includes(v),
-  contentWidth: (v): v is ContentWidth => typeof v === 'string' && (CONTENT_WIDTHS as readonly string[]).includes(v),
+  contentWidth: isContentWidth,
+  contentPosition: isContentPosition,
   newPageLocation: (v): v is NewPageLocation => typeof v === 'string' && (NEW_PAGE_LOCATIONS as readonly string[]).includes(v),
   newPageFolder: (v): v is string => typeof v === 'string' && isValidNewPageFolder(v),
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
@@ -729,6 +733,9 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   cardTextSize: (v): v is number | null => v === null || isCardTextSize(v),
   cardTitleSize: (v): v is number | null => v === null || isCardTitleSize(v),
   cardTablePosition: (v): v is CardTablePosition => typeof v === 'string' && (CARD_TABLE_POSITIONS as readonly string[]).includes(v),
+  cardSidesFold: (v): v is boolean => typeof v === 'boolean',
+  cardSidesFoldCardPages: (v): v is boolean => typeof v === 'boolean',
+  cardSidesFoldExplore: (v): v is boolean => typeof v === 'boolean',
   inboxOpenAt: (v): v is InboxOpenAt => typeof v === 'string' && (INBOX_OPEN_AT as readonly string[]).includes(v),
   cardLineSpacing: (v): v is number => isFiniteNumber(v) && v >= 1 && v <= 3,
   cardBlockGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= 0 && v <= CARD_BLOCK_GAP_MAX,
@@ -816,9 +823,15 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   hotkeys: isHotkeyOverrides,
   hotkeysAside: isHotkeyAside,
   sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
+  // YAZ-5885 D1: a row height in CSS px, 20–40 (Compact 22 · Default 25.5 · Roomy 30 · any Custom px in the range).
+  sidebarRowHeight: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ROW_HEIGHT_MIN && v <= SIDEBAR_ROW_HEIGHT_MAX,
   tocZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
   // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
   appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
+  // YAZ-5881: Explore size, on the App sizes too; a stored value off them loads as 125 (the default).
+  exploreSize: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
+  // YAZ-5976: Default (null) or a whole px in the Custom range; anything else loads as Default.
+  exploreWidth: isExploreWidth,
   codeReadOnly: (v): v is boolean => typeof v === 'boolean',
   codeWrap: (v): v is boolean => typeof v === 'boolean',
   codeMinimap: (v): v is boolean => typeof v === 'boolean',
@@ -869,6 +882,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
   // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
+  // YAZ-5885 D3: the sidebar zoom's rule. A number outside 20–40 is clamped; missing or not a number reads Default (25.5).
+  if (isFiniteNumber(src.sidebarRowHeight)) out.sidebarRowHeight = Math.min(SIDEBAR_ROW_HEIGHT_MAX, Math.max(SIDEBAR_ROW_HEIGHT_MIN, src.sidebarRowHeight))
   if (isFiniteNumber(src.tocZoom)) out.tocZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.tocZoom))
   // YAZ-3558 D2: a store from before the split said Off in `tableOfContents`. It reads as "Table of contents default" Off, and "Pin default" Off (`auto`).
   if (src.tableOfContents === 'off' && typeof src.tocOnByDefault !== 'boolean') out.tocOnByDefault = false

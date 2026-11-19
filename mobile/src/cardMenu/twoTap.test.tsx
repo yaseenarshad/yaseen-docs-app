@@ -8,7 +8,7 @@ import { cardActions, type CardAction, type CardActionMarks } from './cardAction
 import { TWO_TAP_MS, UNARMED, twoTap } from './twoTap'
 
 /**
- * YAZ-5505: every card setting on the phone needs TWO taps. The first turns the row into "Tap again to …" in place (YAZ-5697: Archive card and a Title in review choice ask in place instead);
+ * YAZ-5505: every card setting on the phone needs TWO taps. The first turns the row into "Tap again to …" in place (YAZ-5966: Archive card and a Title in review choice too, as the Mac's click-twice rows);
  * the second within about 3 s does it; anything else cancels. VoiceOver's double tap is ONE activation. Made-up data.
  */
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -87,36 +87,26 @@ describe('the rows on the screen', () => {
   const click = (el: Element) => act(() => (el as HTMLElement).click())
   const down = (el: Element) => act(() => void el.dispatchEvent(new Event('pointerdown', { bubbles: true })))
 
-  it('YAZ-5697: Archive card and a Title in review choice ask in place instead (the Mac\'s words): Cancel first and focused, then the answer; no time limit; Cancel, a tap outside or Escape run nothing', () => {
+  it('YAZ-5966: Archive card and a Title in review choice are two taps too (the Mac\'s card menu is click-twice there): "Tap again to …"; no ask; the choice now (✓) does nothing', () => {
     draw()
-    const ask = () => host.querySelector<HTMLElement>('[role="alertdialog"]')
-    const answers = () => [...(ask()?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
     click(row('off'))
     expect(done).toEqual([])
-    expect(ask()?.textContent).toContain('Archive this card?')
-    expect(answers().map((b) => b.textContent)).toEqual(['Cancel', 'Archive'])
-    expect(document.activeElement).toBe(answers()[0])
-    // Touch-sized: the phone's wide buttons.
-    expect(answers().every((b) => b.classList.contains('btn--wide'))).toBe(true)
-    act(() => void vi.advanceTimersByTime(TWO_TAP_MS * 3))
-    expect(ask()).not.toBeNull()
-    click(answers()[0])
-    expect(ask()).toBeNull()
-    expect(row('off').textContent).toBe('Archive card')
-    click(row('off'))
+    expect(host.querySelector('[role="alertdialog"]')).toBeNull()
+    expect([row('off').textContent, live()]).toEqual(['Tap again to archive', 'Tap again to archive'])
+    // A tap outside cancels.
     down(document.body)
-    expect(ask()).toBeNull()
+    expect(row('off').textContent).toBe('Archive card')
     click(row('title'))
     click(row('title-never'))
-    expect(ask()?.textContent).toContain('Never show the title in review?')
-    expect(answers().map((b) => b.textContent)).toEqual(['Cancel', 'Never'])
+    expect(row('title-never').textContent).toBe('Tap again to never show the title')
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
-    expect(ask()).toBeNull()
-    expect(done).toEqual([])
+    expect(row('title-never').textContent).toBe('Never')
+    click(row('title-default'))
+    expect(row('title-default').hasAttribute('data-armed')).toBe(false)
     click(row('title-never'))
-    click(answers()[1])
+    click(row('title-never'))
     click(row('off'))
-    click(answers()[1])
+    click(row('off'))
     expect(done.map((a) => [a.key, a.on])).toEqual([['title-never', true], ['off', true]])
   })
 

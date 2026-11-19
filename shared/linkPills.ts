@@ -10,9 +10,11 @@ import { isRecord } from './guards'
  * and in what order — `{icon}` `{name}` `{id}` `{number}` (the ID's number alone) `{vault}` `{folder}` (the parent
  * folder) `{path}` (the whole path from the vault) `{mark}` (a small icon, round 5); any other text shows as typed. The
  * box (shape, fill, strength) and each PART (the name, the ID, the number, the vault, the folder, the path, the mark,
- * your own text: bold / italic / underline, colour, size; the mark's icon) have their own style. The file
+ * your own text: bold / italic / underline, colour, size; the mark's icon; the icon: its colour alone, YAZ-5843, one for
+ * pages and files and one for cards, YAZ-5972) have their own style. Every colour can also be a custom `#rrggbb`
+ * (YAZ-5972, Settings' "Custom colour…"), stored lowercase. The file
  * holds only what differs from the default, beside the version:
- * `{ "version": 2, "format": "{icon}{name} ({id})", "box": { "fill": "none" }, "parts": { "name": { "bold": true } } }`.
+ * `{ "version": 2, "format": "{icon} {name} ({id})", "box": { "fill": "none" }, "parts": { "name": { "bold": true } } }`.
  * A missing file, or `{}`, is the app's own look: the default format with every part at its own default draws exactly
  * today's pill, the other vault's name in brackets after it (YAZ-3609 D22) included. A version 1 file (the fields of
  * the first round: background, before / after, icon, bold…) is read and converted in memory (`fromV1`); it is written
@@ -34,8 +36,11 @@ export type LinkPillStrength = (typeof LINK_PILL_STRENGTHS)[number]
 /** The tokens a format may hold, in the order the chips show them. */
 export const LINK_PILL_TOKENS = ['icon', 'name', 'id', 'number', 'vault', 'folder', 'path', 'mark'] as const
 export type LinkPillToken = (typeof LINK_PILL_TOKENS)[number]
-/** The parts a reader can style: each token but the icon, and `text` for every piece of their own text. The icon has no style. */
-export const LINK_PILL_PARTS = ['name', 'id', 'number', 'vault', 'folder', 'path', 'mark', 'text'] as const
+/**
+ * The parts a reader can style: each token, and `text` for every piece of their own text. The icon (YAZ-5843) has a
+ * colour only: no bold, italic, underline or size (`sanitizePart`).
+ */
+export const LINK_PILL_PARTS = ['name', 'id', 'number', 'vault', 'folder', 'path', 'mark', 'icon', 'text'] as const
 export type LinkPillPart = (typeof LINK_PILL_PARTS)[number]
 /** The icons `{mark}` can draw (round 5), in the order the style panel shows them; the first is the default. */
 export const LINK_PILL_MARKS = ['arrow-up-right', 'arrow-right', 'link', 'return', 'dot', 'diamond', 'star', 'bookmark'] as const
@@ -43,11 +48,27 @@ export type LinkPillMark = (typeof LINK_PILL_MARKS)[number]
 export const DEFAULT_LINK_PILL_MARK: LinkPillMark = 'arrow-up-right'
 /** The longest format. */
 export const LINK_PILL_FORMAT_MAX = 60
-/** Today's pill: the icon on the name, then the other vault's name in brackets (empty, with its brackets, on a pill of this vault). */
-export const DEFAULT_LINK_PILL_FORMAT = '{icon}{name} ({vault})'
+/**
+ * Today's pill: the icon on the name, one space after it, then the other vault's name in brackets (empty, with its
+ * brackets, on a pill of this vault). The space is the gap after the icon (YAZ-5894 D1): `{icon}{name}` is flush.
+ */
+export const DEFAULT_LINK_PILL_FORMAT = '{icon} {name} ({vault})'
+/** The default before YAZ-5894 (no space after the icon): a file that holds it is read as the default (D2), not as flush. */
+const OLD_DEFAULT_LINK_PILL_FORMAT = '{icon}{name} ({vault})'
 
-/** A part's colour: the accent, the text around the pill, the muted grey, or a palette colour's text colour. */
-export type LinkPillPartColor = 'accent' | 'same' | 'muted' | LinkPillColor
+/** A custom colour (YAZ-5972): `#rrggbb`, lowercase; used as is in light and dark. */
+export type LinkPillHex = `#${string}`
+/** `v` as a custom colour, lowercase, or undefined: six hex digits after `#`, nothing else (no `#abc`, no alpha). */
+export const linkPillHex = (v: unknown): LinkPillHex | undefined => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? (v.toLowerCase() as LinkPillHex) : undefined)
+export const isLinkPillHex = (v: unknown): v is LinkPillHex => linkPillHex(v) !== undefined
+
+/**
+ * A part's colour: the accent, the text around the pill, the muted grey, a palette colour's text colour, or a custom
+ * `#rrggbb` (YAZ-5972). `kind` (YAZ-5843, the icon only): the app's own icon colours, as the sidebar draws them (a page
+ * grey, a card purple). It is the icon's default, so it is never stored as the icon's `color`; as its `cardColor` it is
+ * stored only when the pages' colour is not Default (see `LinkPillPartStyle.cardColor`).
+ */
+export type LinkPillPartColor = 'accent' | 'same' | 'muted' | 'kind' | LinkPillColor | LinkPillHex
 export type LinkPillSize = 'normal' | 'small'
 /** One part's style. Every field absent is the part's own default (`LINK_PILL_PART_DEFAULTS`). */
 export interface LinkPillPartStyle {
@@ -58,14 +79,21 @@ export interface LinkPillPartStyle {
   size?: LinkPillSize
   /** The mark's icon (the mark only); `DEFAULT_LINK_PILL_MARK` when absent. */
   icon?: LinkPillMark
+  /**
+   * The icon only (YAZ-5972): the colour of a CARD's icon. The icon's `color` is then the colour of the other icons (a
+   * page, a folder, a file, an Excalidraw drawing, a draw.io diagram). Absent: the cards' icons take `color` too, so a
+   * file written before YAZ-5972 (one colour) reads as both rows. `'kind'` (the app's card colour) is stored only beside
+   * a `color`; a value equal to the effective default (`color`, else `kind`) is dropped. `linkPillIconColors` reads both.
+   */
+  cardColor?: LinkPillPartColor
 }
 /** The pill's box. Absent: today's rounded box with the accent's 10 % tint. */
 export interface LinkPillBox {
   /** Rounded (absent), square, or no box and a line under the pill. */
   shape?: 'square' | 'underline'
-  /** The accent's tint (absent), none, or a palette colour. */
-  fill?: 'none' | LinkPillColor
-  /** A palette fill's strength; medium when absent. Meaningless with no palette fill. */
+  /** The accent's tint (absent), none, a palette colour, or a custom `#rrggbb` (YAZ-5972). */
+  fill?: 'none' | LinkPillColor | LinkPillHex
+  /** A palette or custom fill's strength; medium when absent. Meaningless with no such fill. */
   strength?: Exclude<LinkPillStrength, 'medium'>
 }
 
@@ -93,6 +121,7 @@ export const LINK_PILL_PART_DEFAULTS: Record<LinkPillPart, { color: LinkPillPart
   folder: { color: 'muted', size: 'small' },
   path: { color: 'muted', size: 'small' },
   mark: { color: 'accent', size: 'normal' },
+  icon: { color: 'kind', size: 'normal' },
 }
 
 /** The look of a vault that changed nothing: the same object every time, so a layer's style can be cached on it. */
@@ -101,22 +130,33 @@ export const NO_LINK_PILLS: LinkPills = Object.freeze({})
 /** A ready format of the dropdown: its label, the format, and the style of your own text where the text should read as the name. */
 export interface LinkPillReady {
   label: string
-  format: string
-  /** Applied over the current look's parts and box: Plain is a format and a look. */
+  /** The format; absent keeps the current one (Plain, YAZ-5961: a look in one click, the format stays). */
+  format?: string
+  /** Applied over the current look's parts and box: Plain is a look. */
   parts?: LinkPills['parts']
   box?: LinkPillBox
 }
 export const LINK_PILL_READY: readonly LinkPillReady[] = [
   { label: 'Name', format: DEFAULT_LINK_PILL_FORMAT },
-  { label: 'Name (ID)', format: '{icon}{name} ({id})' },
-  { label: 'Name #Number', format: '{icon}{name} #{number}' },
-  { label: 'Name · Folder', format: '{icon}{name} · {folder}' },
-  { label: 'Vault › Name', format: '{vault} › {icon}{name}' },
-  { label: '(Name)', format: '({icon}{name})', parts: { text: { color: 'accent', size: 'normal' } } },
-  { label: '→ Name', format: '→ {icon}{name}', parts: { text: { color: 'accent', size: 'normal' } } },
+  { label: 'Name (ID)', format: '{icon} {name} ({id})' },
+  { label: 'Name #Number', format: '{icon} {name} #{number}' },
+  { label: 'Name · Folder', format: '{icon} {name} · {folder}' },
+  { label: 'Vault › Name', format: '{vault} › {icon} {name}' },
+  { label: '(Name)', format: '({icon} {name})', parts: { text: { color: 'accent', size: 'normal' } } },
+  { label: '→ Name', format: '→ {icon} {name}', parts: { text: { color: 'accent', size: 'normal' } } },
   { label: 'Name ↗', format: '{name}{mark}' },
-  { label: 'Plain', format: '{name}', box: { fill: 'none' }, parts: { name: { color: 'same' } } },
+  // Plain (YAZ-5961): every part the text's colour and size, no box; the format and the icon's colour stay.
+  { label: 'Plain', box: { fill: 'none' }, parts: Object.fromEntries(LINK_PILL_PARTS.filter((p) => p !== 'icon').map((p) => [p, { color: 'same', size: 'normal' }])) },
 ]
+
+/**
+ * The ready formats before YAZ-5894 (no space after the icon) → the same ready format today. A vault that picked one
+ * of them keeps its gap after the icon (D2: no default look jumps). Only these exact strings: a format the user typed
+ * with `{icon}{name}` stays flush.
+ */
+const OLD_READY_LINK_PILL_FORMATS: ReadonlyMap<string, string> = new Map(
+  LINK_PILL_READY.flatMap((r) => (r.format?.includes('{icon} {name}') && r.format !== DEFAULT_LINK_PILL_FORMAT ? [[r.format.replace('{icon} {name}', '{icon}{name}'), r.format] as const] : [])),
+)
 
 // ---------- the format ----------
 
@@ -178,21 +218,32 @@ const oneOf =
   <T extends string>(choices: readonly T[]) =>
   (v: unknown): v is T =>
     typeof v === 'string' && (choices as readonly string[]).includes(v)
-const isColor = oneOf(['accent', 'same', 'muted', ...LINK_PILL_COLORS])
+const isNamedColor = oneOf(['accent', 'same', 'muted', 'kind', ...LINK_PILL_COLORS])
+/** `v` as a colour: a named one, or a custom `#rrggbb` lowercased (YAZ-5972); undefined when it is neither. */
+const colorOf = (v: unknown): LinkPillPartColor | undefined => (isNamedColor(v) ? v : linkPillHex(v))
 const isSize = oneOf(['normal', 'small'])
 const isMark = oneOf(LINK_PILL_MARKS)
 
 /**
  * `raw` as a part's style with only its changes: a bad field falls back alone, a default is dropped. `undefined` when
- * nothing is left. `color`: the part's default colour (the mark's is the name's).
+ * nothing is left. `color`: the part's default colour (the mark's is the name's). The icon keeps its colour alone, and
+ * only one that is not `kind`; `kind` on any other part is no colour of that part and drops.
  */
 function sanitizePart(part: LinkPillPart, raw: unknown, color: LinkPillPartColor = LINK_PILL_PART_DEFAULTS[part].color): LinkPillPartStyle | undefined {
   if (!isRecord(raw)) return undefined
   const out: LinkPillPartStyle = {}
+  const own = colorOf(raw.color)
+  if (part === 'icon') {
+    // Pages and files, then cards (YAZ-5972): the cards' colour is dropped when it is what they would take anyway.
+    if (own !== undefined && own !== 'kind') out.color = own
+    const card = colorOf(raw.cardColor)
+    if (card !== undefined && card !== (out.color ?? 'kind')) out.cardColor = card
+    return Object.keys(out).length === 0 ? undefined : out
+  }
   if (raw.bold === true) out.bold = true
   if (raw.italic === true) out.italic = true
   if (raw.underline === true) out.underline = true
-  if (isColor(raw.color) && raw.color !== color) out.color = raw.color
+  if (own !== undefined && own !== 'kind' && own !== color) out.color = own
   if (isSize(raw.size) && raw.size !== LINK_PILL_PART_DEFAULTS[part].size) out.size = raw.size
   if (part === 'mark' && isMark(raw.icon) && raw.icon !== DEFAULT_LINK_PILL_MARK) out.icon = raw.icon
   return Object.keys(out).length === 0 ? undefined : out
@@ -203,6 +254,7 @@ function sanitizeBox(raw: unknown): LinkPillBox | undefined {
   const out: LinkPillBox = {}
   if (oneOf(['square', 'underline'])(raw.shape)) out.shape = raw.shape
   if (oneOf(['none', ...LINK_PILL_COLORS])(raw.fill)) out.fill = raw.fill
+  else if (isLinkPillHex(raw.fill)) out.fill = linkPillHex(raw.fill)
   if (oneOf(['light', 'strong'])(raw.strength) && out.fill !== undefined && out.fill !== 'none') out.strength = raw.strength
   return Object.keys(out).length === 0 ? undefined : out
 }
@@ -210,7 +262,8 @@ function sanitizeBox(raw: unknown): LinkPillBox | undefined {
 /** A version 2 file, or a look in memory, with only its valid changes. */
 function sanitizeV2(raw: Record<string, unknown>): LinkPills {
   const out: LinkPills = {}
-  if (typeof raw.format === 'string' && raw.format !== DEFAULT_LINK_PILL_FORMAT && linkPillFormatProblem(raw.format) === null) out.format = raw.format
+  const format = typeof raw.format === 'string' ? (OLD_READY_LINK_PILL_FORMATS.get(raw.format) ?? raw.format) : undefined
+  if (format !== undefined && format !== DEFAULT_LINK_PILL_FORMAT && format !== OLD_DEFAULT_LINK_PILL_FORMAT && linkPillFormatProblem(format) === null) out.format = format
   const box = sanitizeBox(raw.box)
   if (box !== undefined) out.box = box
   if (isRecord(raw.parts)) {
@@ -243,7 +296,7 @@ export function fromV1(raw: Record<string, unknown>): LinkPills {
   const format =
     before +
     (vaultBefore ? '{vault} › ' : '') +
-    (raw.icon === 'hide' ? '' : '{icon}') +
+    (raw.icon === 'hide' ? '' : '{icon} ') +
     '{name}' +
     (raw.id === 'show' ? ' {id}' : '') +
     (raw.folder === 'parent' ? ' {folder}' : raw.folder === 'full' ? ' {path}' : '') +
@@ -299,14 +352,31 @@ export function withLinkPillPart(pills: LinkPills, part: LinkPillPart, patch: { 
   return withLinkPills(pills, { parts: { ...pills.parts, [part]: { ...pills.parts?.[part], ...patch } } })
 }
 
+/** The icon's two colours (YAZ-5972): pages and files, and cards; `kind` is the app's own icon colours (Default). */
+export function linkPillIconColors(pills: LinkPills): { pages: LinkPillPartColor; cards: LinkPillPartColor } {
+  const pages = pills.parts?.icon?.color ?? 'kind'
+  return { pages, cards: pills.parts?.icon?.cardColor ?? pages }
+}
+
+/**
+ * `pills` with one of the icon's two colours set (`kind`: Default), the other row left as it LOOKS: a new pages colour
+ * pins the cards' colour they had, so picking pages red never turns the cards red (a file with no `cardColor` gives
+ * them the pages' colour).
+ */
+export function withLinkPillIconColor(pills: LinkPills, row: 'pages' | 'cards', color: LinkPillPartColor): LinkPills {
+  const now = linkPillIconColors(pills)
+  const next = { ...now, [row]: color }
+  return withLinkPillPart(pills, 'icon', { color: next.pages === 'kind' ? undefined : next.pages, cardColor: next.cards })
+}
+
 /** `pills` with the box patched. */
 export function withLinkPillBox(pills: LinkPills, patch: { [K in keyof LinkPillBox]?: LinkPillBox[K] | undefined }): LinkPills {
   return withLinkPills(pills, { box: { ...pills.box, ...patch } })
 }
 
-/** `pills` under a ready format: its format, and its parts and box over the current ones. */
+/** `pills` under a ready format: its format (if it has one), and its parts and box over the current ones. */
 export function withLinkPillReady(pills: LinkPills, ready: LinkPillReady): LinkPills {
   const parts = { ...pills.parts }
   for (const part of LINK_PILL_PARTS) if (ready.parts?.[part] !== undefined) parts[part] = { ...parts[part], ...ready.parts[part] }
-  return withLinkPills(pills, { format: ready.format, parts, box: ready.box === undefined ? pills.box : { ...pills.box, ...ready.box } })
+  return withLinkPills(pills, { format: ready.format ?? pills.format, parts, box: ready.box === undefined ? pills.box : { ...pills.box, ...ready.box } })
 }

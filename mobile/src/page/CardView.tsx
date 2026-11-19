@@ -15,6 +15,8 @@ import { openLink, type LinkDoor } from './openLink'
 import { heldText, holdText } from './heldText'
 import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
+import { followCardFolds } from '@client/editor/card/cardFold'
+import { readCardSides } from '@shared/pageSwitches'
 import { useTables } from './useTables'
 import { PageComments, PageCommentsCount } from './comments/PageComments'
 import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
@@ -113,14 +115,14 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   // The top bar's ⋯ holds the page tools only (the full title, Find in card); the card's own ⋯ is on its head.
   const tools = usePageTools(host, { title, path, label: 'Card tools', find: 'Find in card', headings: false })
   const cardMenu = usePageCardMenu(host, { path, answers, upNext: reviewOn })
-  const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}`
+  const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${card.notitle === true}\n${card.titleAt ?? ''}\n${card.fix === true}\n${card.reviews.length}\n${reviewOn}\n${data?.review.titleAt}`
   useEffect(() => {
     const el = host.current
     if (el === null || data === null || card === null) return
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(drawCard(data, path, card.text))
-    const top = cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: reviewOn && card.notitle === true })
+    const top = cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: card.notitle, titleAt: card.titleAt ?? null, fix: card.fix === true, reviews: card.reviews }, data.review)
     // The card's own ⋯ at the right of its head, as a card in a page (only a card with its own ID: it is what the actions write by).
     if (top !== null && card.id !== null) top.append(cardMoreButton(card.id, card.title))
     if (card.id !== null) el.dataset.cardId = card.id
@@ -128,6 +130,9 @@ export default function CardView({ path, id }: { path: string; id: string }) {
     const parts = [top, titleBand(card.title), body]
     el.replaceChildren(...parts.filter((part): part is HTMLElement => part !== null))
     el.classList.toggle('card--off', card.off)
+    // YAZ-5904 Q1: a card file's card folds Side 2 and after as Card sides on card pages says (`data-card-file`), a card
+    // of a page as Card sides in pages; the file's own `card-sides` wins (`card.css`).
+    followCardFolds(el)
     // `card.text` and the head's words are what is drawn: a new read with the same ones draws nothing again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, path, card?.text, head])
@@ -166,7 +171,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         )}
         {text === null && <p className="muted">This card is not on the phone.</p>}
         {text !== undefined && text !== null && card === null && shape === null && <p className="muted">{`Missing card · ${id}`}</p>}
-        <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
+        <div className="card card-view__card" ref={host} data-card-file={isFile ? '' : undefined} data-fold-scope={path} data-card-sides={(typeof text === 'string' ? readCardSides(text) : null) ?? undefined} hidden={card === null} onClick={(e) => void onTap(e)} />
         {/* The Mac's strip, tucked under the card and closed: Reviews, Properties, Linked mentions (and a card
             file's Embedded in), each opening its drawer. Review off: none, as the Mac. */}
         {card !== null && data !== null && reviewOn && (

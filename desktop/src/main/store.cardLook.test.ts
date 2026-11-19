@@ -41,6 +41,10 @@ const CARD_LOOK: { [K in keyof SettingsState]?: readonly SettingsState[K][] } = 
   cardBulletIndent: [PAGE_BULLET_INDENT_MIN, CARD_SPACING_CLEAN.cardBulletIndent, PAGE_BULLET_INDENT_MAX],
   cardBulletGap: [PAGE_BULLET_GAP_MIN, CARD_SPACING_CLEAN.cardBulletGap, PAGE_BULLET_GAP_MAX],
   cardBulletSpace: [0, 2, 4, 8],
+  // YAZ-5904: Card sides in pages and in Explore, Show all (false) · Fold Side 2 and after (true).
+  cardSidesFold: [false, true],
+  cardSidesFoldCardPages: [false, true],
+  cardSidesFoldExplore: [false, true],
 }
 const CASES = Object.entries(CARD_LOOK).flatMap(([key, vals]) => (vals as unknown[]).map((value) => [key, value] as const))
 
@@ -86,8 +90,17 @@ describe('YAZ-5053 round 4: each Card look setting is saved and reads back', () 
     expect(createStore(file).get().settings[key as keyof SettingsState]).toEqual(value)
   })
 
+  it('YAZ-5904: Card sides in pages, on card pages and in Explore are Show all by default; a value that is not a boolean does not pass the door', () => {
+    expect([DEFAULT_SETTINGS.cardSidesFold, DEFAULT_SETTINGS.cardSidesFoldCardPages, DEFAULT_SETTINGS.cardSidesFoldExplore]).toEqual([false, false, false])
+    for (const v of ['fold', 1, null]) {
+      expect(isSettings({ ...DEFAULT_SETTINGS, cardSidesFold: v }), String(v)).toBe(false)
+      expect(isSettings({ ...DEFAULT_SETTINGS, cardSidesFoldCardPages: v }), String(v)).toBe(false)
+      expect(isSettings({ ...DEFAULT_SETTINGS, cardSidesFoldExplore: v }), String(v)).toBe(false)
+    }
+  })
+
   it('every Card look row is in the list above', () => {
-    expect(Object.keys(CARD_LOOK).sort()).toEqual(['cardBlockGap', 'cardBulletGap', 'cardBulletIndent', 'cardBulletSpace', 'cardLineSpacing', 'cardSpacing', 'cardTablePosition', 'cardTextSize', 'cardTitleSize', 'cardWidth', 'markNextHidden', 'nextHiddenColour', 'shownHiddenWords'])
+    expect(Object.keys(CARD_LOOK).sort()).toEqual(['cardBlockGap', 'cardBulletGap', 'cardBulletIndent', 'cardBulletSpace', 'cardLineSpacing', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardTablePosition', 'cardTextSize', 'cardTitleSize', 'cardWidth', 'markNextHidden', 'nextHiddenColour', 'shownHiddenWords'])
   })
 })
 

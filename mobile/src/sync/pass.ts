@@ -1,7 +1,7 @@
 import { MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
 import { kindOnPhone, type FileContent, type VaultStore } from '../store'
 import { gitBlobSha } from './gitSha'
-import type { GithubRemote } from './githubRemote'
+import { MAX_BATCH_FILES, type GithubRemote } from './githubRemote'
 import { INDEX_RULES, INDEX_STATE, ofTheseRules, phoneRecord, type PhoneIndex } from './phoneIndex'
 import { diffTrees, isEager, isIndexed, type TreeDiff } from './plan'
 import { uiSlicer, yieldToUi as defaultYield } from './yieldToUi'
@@ -24,6 +24,45 @@ export interface PassOptions {
   /** Downloads at one time. Proof 1B: six at a time made the first download 3 times faster. */
   parallel?: number
   onProgress?: (progress: PassProgress) => void
+  /** From this many files to download, text files come in batches (default `BATCH_FROM`). Tests of the one-file path raise it. */
+  batchFrom?: number
+}
+
+/**
+ * YAZ-5929 (decision D1 on YAZ-5928): from this many text files to download in one pass, they come in batches of one
+ * GraphQL query each (`GithubRemote.blobs`). Under it, each file is one `GET git/blobs/{sha}`, as before.
+ */
+export const BATCH_FROM = 10
+/**
+ * One batch holds at most `MAX_BATCH_FILES` (100) files and about 1 MB of text, by the sizes in the tree. A file over
+ * 1 MB is not batched: it uses the one-file call (GitHub may cut a long text short in GraphQL).
+ */
+export const BATCH_BYTES = 1024 * 1024
+/** Batch queries at one time. Each is up to 100 files, so few lanes keep the first download fast; GitHub asks for few. */
+export const BATCH_LANES = 3
+
+/** The files to download, packed in order into batches by count and bytes; the files too large for a batch go `alone`. */
+export function packBatches(paths: readonly string[], bytesOf: (path: string) => number): { batches: string[][]; alone: string[] } {
+  const batches: string[][] = []
+  const alone: string[] = []
+  let current: string[] = []
+  let bytes = 0
+  for (const path of paths) {
+    const size = bytesOf(path)
+    if (size > BATCH_BYTES) {
+      alone.push(path)
+      continue
+    }
+    if (current.length >= MAX_BATCH_FILES || (current.length > 0 && bytes + size > BATCH_BYTES)) {
+      batches.push(current)
+      current = []
+      bytes = 0
+    }
+    current.push(path)
+    bytes += size
+  }
+  if (current.length > 0) batches.push(current)
+  return { batches, alone }
 }
 
 export type PassResult =
@@ -54,6 +93,11 @@ const decoder = new TextDecoder('utf-8', { ignoreBOM: true }) // keep a BOM, as 
  * 4. Get each eager file that is not stored at its SHA yet. A stored copy is checked with git's own hash first, and a
  *    rename or copy is taken from the stored file, so an interrupted pass continues without a second fetch (F5).
  *    A page over the size limit is not downloaded (F7). Media that changed or went loses its kept copy (R7).
+ *    YAZ-5929: when `BATCH_FROM` (10) or more files must download, the stored copies are checked first; then the
+ *    files to download come in batches (`packBatches`: up to 100 files, about 1 MB), one GraphQL query each
+ *    (`GithubRemote.blobs`). A text is kept only when its git SHA is the tree's SHA (`gitBlobSha`). A file that
+ *    GitHub calls binary, cut short, or gives with another SHA downloads alone (`GET git/blobs/{sha}`), so nothing
+ *    wrong is written and the worst case is the old path. A 2,500-file first download is about 27 calls, not 2,502.
  * 5. Store the files; then the index (`indexRecord`, 2B); then the checkpoint, LAST (F5).
  */
 export async function syncPass(options: PassOptions): Promise<PassResult> {
@@ -102,41 +146,94 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
     const file = await store.read(vault, path)
     return file !== null && (await gitBlobSha(file.content)) === sha ? file.content : null
   }
-  async function getOne(path: string) {
-    const sha = tree.get(path)!
-    let content = stored.has(path) ? await storedAt(path, sha) : null
-    if (content === null) {
-      const source = localBySha.get(sha)
-      if (source !== undefined && source !== path) content = await storedAt(source, sha)
-      if (content === null) {
-        const bytes = await remote.blob(sha)
-        fetched++
-        content = isEager(path) ? decoder.decode(bytes) : bytes
-      }
-      await store.write(vault, path, content)
+  /** The stored copy at `sha`: the file itself, or the source of a rename or a copy (written to `path`). Null: download it. */
+  async function fromStore(path: string, sha: string): Promise<FileContent | null> {
+    const own = stored.has(path) ? await storedAt(path, sha) : null
+    if (own !== null) return own
+    const source = localBySha.get(sha)
+    const copy = source !== undefined && source !== path ? await storedAt(source, sha) : null
+    if (copy !== null) await store.write(vault, path, copy)
+    return copy
+  }
+  /** `text`: the batch's text, checked against `sha`. Without it, the one-file call. */
+  async function download(path: string, sha: string, text?: string): Promise<FileContent> {
+    let content: FileContent
+    if (text !== undefined) content = text
+    else {
+      const bytes = await remote.blob(sha)
+      content = isEager(path) ? decoder.decode(bytes) : bytes
     }
+    fetched++
+    await store.write(vault, path, content)
+    return content
+  }
+  async function finish(path: string, content: FileContent) {
     if (isIndexed(path) && typeof content === 'string') built.set(path, phoneRecord(path, tree.bytes.get(path) ?? 0, content, times(path)))
     progress.done++
     report()
     await slice()
   }
+  async function getOne(path: string) {
+    const sha = tree.get(path)!
+    await finish(path, (await fromStore(path, sha)) ?? (await download(path, sha)))
+  }
+  /** One GraphQL query for the batch; each text is kept only at its tree SHA; each other file downloads alone. */
+  async function getBatch(paths: readonly string[]) {
+    const shas = [...new Set(paths.map((path) => tree.get(path)!))]
+    const texts = await remote.blobs(shas)
+    const checked = new Map<string, string>()
+    for (let i = 0; i < shas.length; i++) {
+      const text = texts[i]
+      if (text !== null && text !== undefined && (await gitBlobSha(text)) === shas[i]) checked.set(shas[i], text)
+      await slice()
+    }
+    for (const path of paths) {
+      // Nothing writes after a failure in another lane.
+      if (failure !== null) return
+      const sha = tree.get(path)!
+      await finish(path, await download(path, sha, checked.get(sha)))
+    }
+  }
 
-  // `parallel` downloads at one time. On the first failure no new file starts; the pass waits for the ones in flight,
+  // `width` lanes at one time. On the first failure no new item starts; the pass waits for the ones in flight,
   // so nothing writes after it has failed (the next pass may start at once).
-  let next = 0
   let failure: { error: unknown } | null = null
-  await Promise.all(
-    Array.from({ length: Math.min(parallel, todo.length) }, async () => {
-      while (failure === null && next < todo.length) {
-        try {
-          await getOne(todo[next++])
-        } catch (error) {
-          failure ??= { error }
+  async function lanes<T>(items: readonly T[], width: number, work: (item: T) => Promise<void>) {
+    let next = 0
+    await Promise.all(
+      Array.from({ length: Math.min(width, items.length) }, async () => {
+        while (failure === null && next < items.length) {
+          try {
+            await work(items[next++])
+          } catch (error) {
+            failure ??= { error }
+          }
         }
-      }
-    }),
-  )
-  if (failure !== null) throw (failure as { error: unknown }).error
+      }),
+    )
+    if (failure !== null) throw (failure as { error: unknown }).error
+  }
+
+  const batchFrom = options.batchFrom ?? BATCH_FROM
+  if (todo.length < batchFrom) await lanes(todo, parallel, getOne)
+  else {
+    // The stored copies first (an interrupted download, a rename): only the rest downloads.
+    const local = new Set<string>()
+    await lanes(todo, parallel, async (path) => {
+      const content = await fromStore(path, tree.get(path)!)
+      if (content === null) return
+      local.add(path)
+      await finish(path, content)
+    })
+    const missing = todo.filter((path) => !local.has(path))
+    const alone = async (path: string) => finish(path, await download(path, tree.get(path)!))
+    if (missing.length < batchFrom) await lanes(missing, parallel, alone)
+    else {
+      const packed = packBatches(missing, (path) => tree.bytes.get(path) ?? 0)
+      await lanes(packed.batches, Math.min(parallel, BATCH_LANES), getBatch)
+      await lanes(packed.alone, parallel, alone)
+    }
+  }
 
   // Gone, too large, or a picture or sound that changed: the kept copy goes (R5, F7, R7).
   for (const path of stored) {

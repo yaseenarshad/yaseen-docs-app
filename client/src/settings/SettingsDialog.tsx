@@ -20,20 +20,29 @@
  * mousedown listener installed on mount would hear the cog click that opened it and close it in
  * the same tick. Bound to the overlay, it only hears what happens inside itself.
  *
+ * ⌘F FINDS IN THE OPEN SECTION (YAZ-5968): the page's find bar (`FindBar`, scope `settings`) at the top of the pane,
+ * over the words the section shows (`sectionFind.ts`). A nav click or the dialog's close ends it; ⌘F from the search
+ * box drops that search, back to the section, and opens the bar there. The bar's Esc closes the bar only.
+ *
  * Esc is layered: with a query typed it clears the search (back to the page) — the nav's first, then the
  * Hotkeys page's own (YAZ-3397 D5); with none it closes. A key recorder of the Hotkeys page (YAZ-3397 D5, D6) takes Esc before the dialog hears it. Focus goes to the search box on open, and whatever had focus before — the cog, the
  * editor ⌘, was pressed in — gets it back on close.
  */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
 import { KeySearch, NO_FILTER, type HotkeyFilter } from './hotkeysSection'
 import { SAME_WORD, UnitContext } from '../vault/unitWord'
-import { availableSections, groupsOf, isAvailable, resolveGroupTitle, resolveHint, resolveLabel, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
+import { availableSections, groupsOf, isAvailable, resolveGroupTitle, resolveHint, resolveLabel, resolveWide, subheadingOf, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 import { SettingRow } from './SettingRow'
+import { createSectionFinder } from './sectionFind'
+import { createFindChannel } from '../editor/find/findChannel'
+import { FindBar } from '../editor/find/FindBar'
 import { SIDEBAR_REVEAL_MS } from '../sidebar/revealRow'
+import { revealInScroller } from '../editor/find/leastScroll'
+import { unit } from './unitLabel'
 import './settings.css'
 
 interface SettingsDialogProps {
@@ -54,6 +63,11 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const referencePages = sections.filter((s) => s.standalone === true)
   const paneRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  /** The open section's find (YAZ-5968): one channel per open dialog; the finder reads the pane. */
+  const [findChannel] = useState(createFindChannel)
+  useEffect(() => createSectionFinder(findChannel, () => paneRef.current, () => searchRef.current?.focus()), [findChannel])
+  const findOpen = useSyncExternalStore(findChannel.subscribe, () => findChannel.getState().open)
 
   const [query, setQuery] = useState('')
   /** The Hotkeys page's own search bar (YAZ-3397 D5): it filters that page alone, and the nav's search stays the whole dialog's. */
@@ -77,6 +91,14 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const hotkeysKey = JSON.stringify(ctx.settings.hotkeys)
   const candidates = useMemo(() => settingCandidates(ctx), [hotkeysKey, systemHotkeys]) // eslint-disable-line react-hooks/exhaustive-deps -- see above
   const searching = query.trim() !== ''
+  // ⌘F from a search (YAZ-5968): the search goes, and once the section shows again the bar finds in it.
+  useEffect(() => {
+    if (findOpen && searching) setQuery('')
+  }, [findOpen]) // eslint-disable-line react-hooks/exhaustive-deps -- on the bar's opening only
+  useEffect(() => {
+    const find = findChannel.getState()
+    if (!searching && find.open && find.query !== '') findChannel.setQuery(find.query)
+  }, [searching, findChannel])
   const hits = searching ? searchSettings(candidates, query) : []
   /** The query "Press keys to search" put in the page's box (D5): its answer shows while that query stands. */
   const [keyQuery, setKeyQuery] = useState<string | null>(null)
@@ -106,13 +128,16 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     if (e.key !== 'Escape') return
     e.preventDefault()
     e.stopPropagation()
-    if (query !== '') setQuery('')
+    // The section's find closes first (YAZ-5968), wherever in the dialog the focus stands.
+    if (findChannel.getState().open) findChannel.close()
+    else if (query !== '') setQuery('')
     else if (onHotkeys && hotkeyQuery !== '') setHotkeyQuery('')
     else onClose()
   }
 
   /** A nav click is a page swap, and the new page starts at its top; a query in progress is dropped like any other navigation. */
   const showPage = (id: SettingsSectionId): void => {
+    findChannel.close()
     setQuery('')
     setHotkeyQuery('')
     setHotkeyFilter(NO_FILTER)
@@ -124,10 +149,11 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
    * "Show in settings" (the YAZ-3818 demo), from a search hit's heading: the search goes, the page of the hit opens, and
    * its group comes into view, near the top (no scroll when it shows whole), with the sidebar's reveal flash.
    */
-  const [reveal, setReveal] = useState<{ index: number; title: string | undefined } | null>(null)
-  const showInSettings = (s: SettingsSection, g: SettingsGroup): void => {
+  const [reveal, setReveal] = useState<{ index: number; title: string | undefined; row?: string } | null>(null)
+  /** `row`: the first hit, which comes into view too when the group is taller than the pane (YAZ-5969). */
+  const showInSettings = (s: SettingsSection, g: SettingsGroup, row?: string): void => {
     showPage(s.id)
-    setReveal({ index: groupsOf(s, ctx).indexOf(g), title: resolveGroupTitle(g, ctx) })
+    setReveal({ index: groupsOf(s, ctx).indexOf(g), title: resolveGroupTitle(g, ctx), row })
   }
   useEffect(() => {
     const pane = paneRef.current
@@ -139,6 +165,8 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     const box = target.getBoundingClientRect()
     const view = pane.getBoundingClientRect()
     if (box.top < view.top || box.bottom > view.bottom) pane.scrollTop += box.top - view.top - 12
+    const hit = reveal.row === undefined ? null : target.querySelector(`[data-setting="${CSS.escape(reveal.row)}"]`)
+    if (hit !== null) revealInScroller(hit, pane, { gap: 12 })
     target.classList.add('settings-group--revealed')
     // Not this effect's cleanup: clearing `reveal` above runs it again at once.
     window.clearTimeout(revealTimer.current)
@@ -152,6 +180,20 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       {item.render(ctx)}
     </SettingRow>
   )
+  /**
+   * The rows in runs, one per sub-heading (YAZ-5969): a run of rows with no sub-heading first (if any), then each
+   * sub-heading's rows, in the order they show. Each run is its own card (YAZ-5969 Q4, Yaseen: "Box per sub-group").
+   */
+  const runsOf = (g: SettingsGroup, items: readonly SettingDef[]) => {
+    const runs: { sub: string | undefined; items: SettingDef[] }[] = []
+    for (const item of items) {
+      const sub = subheadingOf(g, item.id)
+      const last = runs[runs.length - 1]
+      if (last !== undefined && last.sub === sub) last.items.push(item)
+      else runs.push({ sub, items: [item] })
+    }
+    return runs
+  }
   /** A per-vault page says which vault it acts on (YAZ-2602 R10), where App names one: a window with two or more. */
   const vaultLine = (className: string, of?: (ctx: SettingsCtx) => string | undefined) => ctx.vaultName !== undefined && <p className={className}>Vault: {of?.(ctx) ?? ctx.vaultName}</p>
   /** `titled` is false under a search breadcrumb, which already names the group. A group with no row to show is not there. */
@@ -160,7 +202,13 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{resolveGroupTitle(g, ctx)}</h3>}
       {g.vault === true && vaultLine('settings-group__hint', g.vaultOf)}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}
-      <div className={`settings-group__card${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{items.map(row)}</div>
+      {runsOf(g, items).map((run, i) => (
+        <Fragment key={run.sub ?? `run:${i}`}>
+          {/* A sub-heading over its own card (YAZ-5969 Q4): the label in the text's colour, outside the card. */}
+          {run.sub !== undefined && <h4 className="settings-subheading">{unit(ctx, run.sub)}</h4>}
+          <div className={`settings-group__card${run.sub === undefined ? '' : ' settings-group__card--sub'}${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{run.items.map(row)}</div>
+        </Fragment>
+      ))}
     </div>
   )
   const section = (s: SettingsSection) => (
@@ -168,7 +216,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       <h2 className="settings-section__title">{s.title}</h2>
       {s.vault === true && vaultLine('settings-section__note')}
       {s.page !== undefined && <p className="settings-section__note">{s.page}</p>}
-      {groupsOf(s, ctx).map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx)), g.anchor ?? i, true, i))}
+      {groupsOf(s, ctx).map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx) && item.searchOnly !== true), g.anchor ?? i, true, i))}
     </section>
   )
 
@@ -193,10 +241,10 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
         <section key={i} className="settings-section">
           <h2 className="settings-section__title">
             {/* The heading and its arrow show the group on its page ("Show in settings", the YAZ-3818 demo). */}
-            <span className="settings-search__goto-text" onClick={() => showInSettings(entry.section, entry.group)}>
+            <span className="settings-search__goto-text" onClick={() => showInSettings(entry.section, entry.group, entry.items[0]?.id)}>
               {entry.group.title === undefined ? entry.section.title : `${entry.section.title} › ${resolveGroupTitle(entry.group, ctx)}`}
             </span>
-            <button type="button" className="settings-search__goto" title="Show in settings" aria-label="Show in settings" onClick={() => showInSettings(entry.section, entry.group)}>
+            <button type="button" className="settings-search__goto" title="Show in settings" aria-label="Show in settings" onClick={() => showInSettings(entry.section, entry.group, entry.items[0]?.id)}>
               <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
           </h2>
@@ -209,11 +257,15 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   return (
     <UnitContext.Provider value={ctx.unitWord?.unit ?? SAME_WORD}>
     <div className="settings-overlay" tabIndex={-1} onMouseDown={onClose} onKeyDown={onKeyDown}>
-      <div className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings" onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings" onMouseDown={(e) => e.stopPropagation()}>
         <nav className="settings-nav" aria-label="Settings sections">
           <div className="settings-search">
             <SearchIcon />
-            <input ref={searchRef} type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings…" aria-label="Search settings" autoComplete="off" spellCheck={false} />
+            <input ref={searchRef} type="text" value={query} onChange={(e) => {
+                // A search across every section replaces the section's find.
+                findChannel.close()
+                setQuery(e.target.value)
+              }} placeholder="Search settings…" aria-label="Search settings" autoComplete="off" spellCheck={false} />
             {query !== '' && (
               <button
                 type="button"
@@ -243,6 +295,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
           ✕
         </button>
         <div ref={paneRef} className="settings-pane">
+          <FindBar channel={findChannel} scope="settings" hostRef={dialogRef} />
           {onHotkeys && !searching && (
             <KeySearch
               ctx={ctx}

@@ -82,7 +82,7 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
   const hint = item.onToggle !== undefined ? (checked ? '✓' : undefined) : item.radio !== undefined ? (radioOn ? '✓' : undefined) : item.hint
   // A two-click check row (`twoClick`): armed, it says what the second click does — add (accent) or remove (red).
   const shown = armed && item.twoClick === true ? (checked ? 'Click again to remove' : 'Click again to add') : label
-  const armedClass = !armed ? '' : item.twoClick === true && !checked ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
+  const armedClass = !armed ? '' : (item.twoClick === true && !checked) || (item.confirm !== undefined && item.confirmAdd === true) ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
   // An ask in place (`ask`, YAZ-5697): Cancel gives the keyboard back to the row.
   const row = useRef<HTMLButtonElement>(null)
   const refocus = useRef(false)
@@ -144,6 +144,11 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
           setArmed(false)
           setChecked(!checked)
           return item.onToggle(!checked)
+        }
+        if (item.radio !== undefined && item.confirm !== undefined) {
+          // A two-click radio row (YAZ-5966): the second click picks it and closes the menu.
+          if (!radioOn) item.onSelect()
+          return onClose()
         }
         if (item.radio !== undefined) {
           // A radio row keeps the menu open, and its ✓ moves here.

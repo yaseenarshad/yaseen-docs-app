@@ -54,8 +54,8 @@ export interface SyncSetup {
   store: VaultStore
   tokens: TokenStore
   remote: GithubRemote
-  /** Calls by kind, from the fake's log. */
-  count(kind: 'ref' | 'tree' | 'blob' | 'write'): number
+  /** Calls by kind, from the fake's log. `graphql`: the batch queries of YAZ-5929 (a POST, so `write` leaves them out). */
+  count(kind: 'ref' | 'tree' | 'blob' | 'write' | 'graphql'): number
 }
 
 export async function syncSetup(files: Record<string, string | Uint8Array>, options: { access?: 'read' | 'write' } = {}): Promise<SyncSetup> {
@@ -66,9 +66,10 @@ export async function syncSetup(files: Record<string, string | Uint8Array>, opti
   const tokens = tokenStoreOn(backend)
   await tokens.write(VAULT, TOKEN)
   const remote = githubRemote(githubClient(TOKEN, { fetch: github.fetch }), REPO, BRANCH)
-  const count = (kind: 'ref' | 'tree' | 'blob' | 'write') =>
+  const isGraphql = (c: { method: string; url: string }) => c.method === 'POST' && c.url.endsWith('/graphql')
+  const count = (kind: 'ref' | 'tree' | 'blob' | 'write' | 'graphql') =>
     github.calls.filter((c) =>
-      kind === 'write' ? c.method !== 'GET' : c.method === 'GET' && c.url.includes(kind === 'ref' ? '/git/ref/' : kind === 'tree' ? '/git/trees/' : '/git/blobs/'),
+      kind === 'graphql' ? isGraphql(c) : kind === 'write' ? c.method !== 'GET' && !isGraphql(c) : c.method === 'GET' && c.url.includes(kind === 'ref' ? '/git/ref/' : kind === 'tree' ? '/git/trees/' : '/git/blobs/'),
     ).length
   return { github, git, store, tokens, remote, count }
 }

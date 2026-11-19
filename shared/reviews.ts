@@ -1,4 +1,4 @@
-import { CARD_TITLE_SHOW, OLD_TITLE_AT, type CardTitleShow } from './cardTitleAt'
+import { CARD_TITLE_MARK_SHOW, CARD_TITLE_SHOW, OLD_TITLE_AT, type CardTitleMarkShow, type CardTitleShow } from './cardTitleAt'
 import { isRecord } from './guards'
 
 /**
@@ -94,9 +94,24 @@ export interface ReviewSettings {
    * (`cardTitleAtOf`); `notitle` never shows it. Round 1's `once` and `front` read as Always and After the first click.
    */
   titleAt: CardTitleShow
+  /**
+   * The title band's room in Review (YAZ-5880, D3 on YAZ-5858; Settings › Cards › Card look › "Title room"): `always`
+   * (the default), every card in the Inbox and Preview has the band, empty when its title does not show, and a waiting
+   * title fades in, so nothing moves; `shown`, no band until the title shows, the text flush with the top (YAZ-5864).
+   */
+  titleRoom: TitleRoom
+  /**
+   * The title mark in a card's head (YAZ-5965, Settings › Cards › "Title mark in the card head"): `always`, `different`
+   * (the default: only a card with a title rule of its own) or `never` (`cardTitleMarkShows`). Every head reads it: a
+   * card in a page, an embed, a card page and the phone.
+   */
+  titleMark: CardTitleMarkShow
   /** The FSRS weights: 21 numbers (FSRS-6); 17 or 19 are read too (ts-fsrs fills in the rest). */
   weights: number[]
 }
+
+/** The title band's room in Review (YAZ-5880): every card (`always`), or only while its title shows (`shown`). */
+export type TitleRoom = 'always' | 'shown'
 
 /** Yaseen's 21 Mochi weights (YAZ-2322, YAZ-4948 "Approved: run to the end"). */
 export const DEFAULT_CARD_WEIGHTS: readonly number[] = Object.freeze([
@@ -118,6 +133,8 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   pauseAfter: 60,
   timeSoFar: 'hidden',
   titleAt: 'always',
+  titleRoom: 'always',
+  titleMark: 'different',
   weights: [...DEFAULT_CARD_WEIGHTS],
 }) as ReviewSettings
 
@@ -158,6 +175,9 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     pauseAfter: (PAUSE_AFTER_CHOICES as readonly unknown[]).includes(r.pauseAfter) ? (r.pauseAfter as PauseAfter) : d.pauseAfter,
     timeSoFar: (TIME_SO_FAR_CHOICES as readonly unknown[]).includes(r.timeSoFar) ? (r.timeSoFar as TimeSoFar) : d.timeSoFar,
     titleAt: (CARD_TITLE_SHOW as readonly unknown[]).includes(r.titleAt) ? (r.titleAt as CardTitleShow) : typeof r.titleAt === 'string' && Object.hasOwn(OLD_TITLE_AT, r.titleAt) ? OLD_TITLE_AT[r.titleAt] : d.titleAt,
+    // Anything but 'shown' is the default, Always.
+    titleRoom: r.titleRoom === 'shown' ? 'shown' : d.titleRoom,
+    titleMark: (CARD_TITLE_MARK_SHOW as readonly unknown[]).includes(r.titleMark) ? (r.titleMark as CardTitleMarkShow) : d.titleMark,
     weights: isWeights(r.weights) ? [...r.weights] : [...d.weights],
   }
 }

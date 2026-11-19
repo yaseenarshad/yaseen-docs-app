@@ -13,8 +13,9 @@ import drawingCss from './drawings/drawingModal.css?inline'
 import historyCss from './history/history.css?inline'
 import shareCss from './share/share.css?inline'
 import viewsCss from './views/views.css?inline'
+import previewCss from './sidebar/boardPreview.css?inline'
 
-const sheets = [appCss, exploreCss, settingsCss, drawingCss, historyCss, shareCss, viewsCss].map((css) => css.replace(/\/\*.*?\*\//gs, '')).join('\n')
+const sheets = [appCss, exploreCss, settingsCss, drawingCss, historyCss, shareCss, viewsCss, previewCss].map((css) => css.replace(/\/\*.*?\*\//gs, '')).join('\n')
 /** The app's stacking variables (`--z-…` on `:root`). */
 const vars = new Map([...sheets.matchAll(/(--z-[\w-]+):\s*(\d+)\s*;/g)].map(([, name, z]) => [name, Number(z)]))
 
@@ -41,6 +42,13 @@ describe('every ask and notice App draws shows over the Explore window (YAZ-4987
 
   it('a table cell\'s "Confirm changes" ask (an Explore layer in edit) is over Explore', () => {
     expect(zOf('.change-ask')).toBeGreaterThan(explore())
+  })
+
+  it('YAZ-5908: a link\'s hover preview (a page, a board, a code file: `.board-preview`, on `document.body`) is over Explore and its toasts, and under a sheet (so under the menus too)', () => {
+    const preview = zOf('.board-preview')
+    expect(preview).toBeGreaterThan(explore())
+    expect(preview).toBeGreaterThan(zOf('.corner-notices'))
+    expect(preview).toBeLessThan(zOf('.confirm-overlay'))
   })
 
   it('a sheet is over the other big windows too (Settings, a drawing, Version history, Share), and under the menus', () => {

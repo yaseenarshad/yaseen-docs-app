@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CODE_WIDTH_KEY, readBlockWidth, readOutsideGlow, readPageSwitches, readPageWidth, PAGE_SWITCH_KEYS, writeBlockWidth, writeOutsideGlow, writePageSwitch, writePageWidth, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
+import { CODE_WIDTH_KEY, readBlockWidth, readOutsideGlow, readPagePosition, readPageSwitches, readPageWidth, PAGE_SWITCH_KEYS, writeBlockWidth, writeOutsideGlow, writePagePosition, writePageSwitch, writePageWidth, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
 import { CONTENT_WIDTHS, OUTSIDE_CHANGE_GLOWS } from '@shared/types'
 
 /**
@@ -100,7 +100,7 @@ describe("the page's own width (YAZ-5640)", () => {
   it('reads `page-width`: narrow, medium or full; any other value, a block that does not parse, and no key are null', () => {
     expect(readPageWidth(PAGE)).toBeNull()
     expect(readPageWidth('# Body\npage-width: narrow\n')).toBeNull()
-    for (const value of ['wide', 'Narrow', '640', 'true', '""', '']) expect(readPageWidth(`---\npage-width: ${value}\n---\n`), value).toBeNull()
+    for (const value of ['wide', 'Narrow', '"640"', '399', '2401', '760.5', 'true', '""', '']) expect(readPageWidth(`---\npage-width: ${value}\n---\n`), value).toBeNull()
     expect(readPageWidth('---\npage-width: narrow\n  bad: [\n---\n')).toBeNull()
   })
 
@@ -115,5 +115,32 @@ describe("the page's own width (YAZ-5640)", () => {
     expect(readPageWidth(writePageWidth(writePageWidth(PAGE, 'narrow'), 'full'))).toBe('full')
     expect(writePageWidth(PAGE, null)).toBe(PAGE)
     expect(readPageWidth(writePageWidth('# Body\n', 'medium'))).toBe('medium')
+  })
+
+  it('YAZ-5871 D1: Custom whole px, 400–2400, is a width too; a step after it, and back', () => {
+    for (const px of [400, 760, 2400]) expect(readPageWidth(`---\npage-width: ${px}\n---\n`), String(px)).toBe(px)
+    const set = writePageWidth(PAGE, 760)
+    expect(set).toBe(`---\n# the owner's comment\ntags: [a, b]\nstatus: "draft"\npage-width: 760\n---\n# Body\n\ntext\n`)
+    expect(writePageWidth(set, 760)).toBe(set)
+    expect(readPageWidth(writePageWidth(set, 'medium'))).toBe('medium')
+    expect(readPageWidth(writePageWidth(writePageWidth(set, 'medium'), 1200))).toBe(1200)
+    expect(writePageWidth(set, null)).toBe(PAGE)
+  })
+})
+
+describe("the page's own position (YAZ-5871 D2)", () => {
+  it('reads `page-position`: center or left; any other value and no key are null; writes keep every other byte', () => {
+    expect(readPagePosition(PAGE)).toBeNull()
+    for (const value of ['right', 'Left', 'centre', 'true', '']) expect(readPagePosition(`---\npage-position: ${value}\n---\n`), value).toBeNull()
+    for (const position of ['center', 'left'] as const) {
+      const set = writePagePosition(PAGE, position)
+      expect(set).toBe(`---\n# the owner's comment\ntags: [a, b]\nstatus: "draft"\npage-position: ${position}\n---\n# Body\n\ntext\n`)
+      expect(readPagePosition(set)).toBe(position)
+      expect(writePagePosition(set, position)).toBe(set)
+      expect(writePagePosition(set, null)).toBe(PAGE)
+    }
+    // The two keys live side by side, each its own.
+    const both = writePagePosition(writePageWidth(PAGE, 900), 'left')
+    expect([readPageWidth(both), readPagePosition(both)]).toEqual([900, 'left'])
   })
 })

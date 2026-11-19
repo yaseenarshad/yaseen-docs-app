@@ -30,7 +30,10 @@
  *    at any step, fully shown too, and the answer line names the card by its ID (`reviewTitleOf`).
  *  - WHEN A TITLE SHOWS (YAZ-5696): Never, Always, After the first click or Before Side 2 (YAZ-5709: the title then has its own Space) — the card's own choice
  *    (⋯ › Title in review, its line's `title-click`…), else Settings › Cards › Show card titles (`bandTitle`,
- *    `titleShows`). While it waits the band keeps its room, empty to the eye and to VoiceOver, so the card never jumps.
+ *    `titleShows`). TITLE ROOM (YAZ-5880, Settings › Cards › Card look, `titleRoom`): Always (the default), every card
+ *    has the band, empty when no title shows (Never, `notitle`), and a waiting title sits in it unseen and fades in, so
+ *    nothing moves; Only when it shows (YAZ-5864), no band while the title waits, the text flush with the top, and the
+ *    band comes in at once when the title shows.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -39,7 +42,7 @@
  *    Mochi's (YAZ-5018); the hover says when the card comes back ("Remembered · 9 days"; "Forgot · later today" when
  *    the card comes back in this session: a ✕, or a new card's first ✓, YAZ-5702).
  *  - The keys (`cardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O, E, ← → (YAZ-5004: the card before
- *    or after, no answer), ⌘↵ (the page in a background tab: the review stays), Esc (only the ⋯ row; then the Esc order
+ *    or after, no answer), ⌘↵ (the page in a background tab: the review stays), Esc (only an open ⋯ menu; then the Esc order
  *    goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu is open (Explore is a dialog), is not the
  *    Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
  *  - O AND E OPEN EXPLORE'S OWN VIEW (YAZ-5145, Yaseen: "shuld be exactly the same ... we're just going to reuse
@@ -60,9 +63,12 @@
  *  - FAST ← → (YAZ-5029): the buttons are the setting's, always mounted, the same size from card to card; only their
  *    hover waits for the card's answers. The hook reads the cards around this one ahead and keeps the card before on show
  *    until the next one's text is ready, so the card never empties and nothing under it moves.
- *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens the
- *    ONE card menu (YAZ-5697 round 2, `cardMenuView.ts`): Undo last review (⌘Z), then the card's Inbox rows — Open card,
- *    Move to Up next / Remove from Up next, Archive card (YAZ-5046; it asks first), Title in review ›.
+ *  - THE CARD'S ⋯ (YAZ-5963, as a card in a page has it): at the top right of the card's head band, over the frame's top
+ *    corner (`InboxCardPanel`'s `more`), so it has its place with or without a title. It opens the ONE card menu's Inbox
+ *    rows (YAZ-5697 round 2, `cardMenuView.ts`): Open card, Move to Up next / Remove from Up next, Archive card
+ *    (YAZ-5046), Title in review ›. No Preview, no Fix later (YAZ-5430).
+ *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. That ⋯ is the
+ *    Inbox's own (YAZ-5963: kept as the place for more of them later): Undo last review (⌘Z), alone for now.
  *  - THE LAST ANSWER'S LINE (YAZ-5025 round 2; no toast): one quiet line, centred under the answer buttons, "✓ Remembered ·
  *    DEMO-51 · back in 9 days · Undo ⌘Z" (YAZ-5433: the card's title alone, its ID with no title; all grey, a Forgot's ✕ only red), in the button hover's words. It stays until the next answer
  *    replaces it; its Undo is the hook's own undo, as ⌘Z; an undo clears it. It shows only once the session counts the
@@ -306,10 +312,18 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   }, [cardKey, shown])
 
   const ratings = answerRatings(review.settings)
-  // The ⋯ row (YAZ-5004): open or closed; it closes with the card, Esc and a press outside it.
-  const [moreState, setMore] = useState<string | null>(null)
+  // The two ⋯ (YAZ-5004, YAZ-5963): the card's on its head band, and the dock's under the card. One open at a time, for
+  // this card; it closes with the card, Esc and a press outside it.
+  const [moreState, setMore] = useState<{ key: string; which: 'head' | 'dock' } | null>(null)
   const [moreAt, setMoreAt] = useState<{ x: number; y: number } | null>(null)
-  const moreOpen = moreState !== null && moreState === cardKey
+  const moreOpen = moreState !== null && moreState.key === cardKey
+  const moreWhich = moreOpen ? moreState.which : null
+  /** A ⋯'s click: its menu under the button, at its left; a second click on the same ⋯ closes it. */
+  const toggleMore = (which: 'head' | 'dock', button: HTMLElement): void => {
+    const box = button.getBoundingClientRect()
+    setMoreAt({ x: box.left, y: box.bottom + 4 })
+    setMore(moreWhich === which || cardKey === null ? null : { key: cardKey, which })
+  }
   const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode })
   live.current = { steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode }
 
@@ -442,11 +456,11 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   }
   const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide, lineUndo: session.lastAdd !== null || archivedLine || line !== null })
   /**
-   * The ⋯ (YAZ-5004): Undo last review, then the ONE card menu's Inbox rows (YAZ-5697 round 2: Open card, Move to Up next
-   * (YAZ-5697), Archive card, Title in review ›; no Fix later, YAZ-5430). Archive card asks first, then goes on the hook's
-   * Undo stack (YAZ-5621); the other marks are the hook's own writes.
+   * The head's ⋯ (YAZ-5963): the ONE card menu's Inbox rows (YAZ-5697 round 2: Open card, Move to Up next (YAZ-5697),
+   * Archive card, Title in review ›; no Preview, no Fix later, YAZ-5430). Archive card goes on the hook's Undo stack
+   * (YAZ-5621); the other marks are the hook's own writes.
    */
-  const moreSections = (): MenuSection[] =>
+  const headSections = (): MenuSection[] =>
     card === null
       ? []
       : cardMenuSections({
@@ -458,7 +472,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
           change: (change) => void review.setMark(card.path, card.id, change),
           onNotice,
           openCard: () => openCard(card, cardFile),
-          first: { id: 'undo', label: 'Undo last review', hint: '⌘Z', disabled: !session.canUndo, onSelect: () => void review.undo() },
           runOwn: (item) => {
             if (item.action === 'off' && item.on === true) {
               setArchivedAt({})
@@ -472,6 +485,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
             return false
           },
         })
+  /** The dock's ⋯ (YAZ-5963: kept as the place for the Inbox's own rows): Undo last review (⌘Z), alone for now. */
+  const dockSections = (): MenuSection[] => [[{ id: 'undo', label: 'Undo last review', hint: '⌘Z', disabled: !session.canUndo, onSelect: () => void review.undo() }]]
 
   return (
     <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ ...(card !== null && cardVarsOf?.(card.path)), '--document-zoom': zoom / 100 } as CSSProperties}>
@@ -511,12 +526,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
           bodyRef={bodyRef}
           band={
             card !== null &&
-            headTitle !== '' && (
+            (review.settings.titleRoom === 'always' || (headTitle !== '' && !band.waits)) && (
               // The title band at the top of the card's frame (YAZ-5308 A3), no label. A card file's title opens its tab; a
               // card in a page's is the page title's own component, a click renames the card (its card line), as in the
-              // page's card (YAZ-5164 part 3). In a Read only vault it shows only.
-              <CardBand waiting={band.waits}>
-                {band.waits ? (
+              // page's card (YAZ-5164 part 3). In a Read only vault it shows only. Title room (YAZ-5880): Always keeps
+              // the band on every card, empty with no title, the title unseen while it waits.
+              <CardBand key={cardKey} waiting={band.waits}>
+                {headTitle === '' ? null : band.waits ? (
                   <span className="card-inbox__name">{headTitle}</span>
                 ) : cardFile ? (
                   <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openFile(card.path)}>
@@ -530,6 +546,16 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
                   <span className="card-inbox__name">{headTitle}</span>
                 )}
               </CardBand>
+            )
+          }
+          more={
+            card !== null && (
+              // YAZ-5963: the card's ⋯ at the top right of its head band, as a card in a page has it (`card__more`).
+              <HoverTip text="Card menu" className="card-inbox__head-more-place">
+                <button type="button" className="card__more card-inbox__head-more" data-tour="card-menu" aria-label="Card menu" aria-expanded={moreWhich === 'head'} onMouseDown={(e) => e.preventDefault()} onClick={(e) => toggleMore('head', e.currentTarget)}>
+                  ⋯
+                </button>
+              </HoverTip>
             )
           }
         >
@@ -602,13 +628,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
               })}
             </div>
             <div className="card-inbox__more">
-              {moreOpen && moreAt !== null && <ContextMenu x={moreAt.x} y={moreAt.y} sections={moreSections()} onClose={() => setMore(null)} />}
+              {moreOpen && moreAt !== null && <ContextMenu x={moreAt.x} y={moreAt.y} sections={moreWhich === 'head' ? headSections() : dockSections()} onClose={() => setMore(null)} />}
               <HoverTip text="More">
-                <button type="button" className="explore__button card-inbox__more-button" data-tour="card-menu" aria-label="More" aria-expanded={moreOpen} onMouseDown={(e) => e.preventDefault()} onClick={(e) => {
-                    const box = e.currentTarget.getBoundingClientRect()
-                    setMoreAt({ x: box.left, y: box.bottom + 4 })
-                    setMore(moreOpen ? null : cardKey)
-                  }}>
+                <button type="button" className="explore__button card-inbox__more-button" aria-label="More" aria-expanded={moreWhich === 'dock'} onMouseDown={(e) => e.preventDefault()} onClick={(e) => toggleMore('dock', e.currentTarget)}>
                   ⋯
                 </button>
               </HoverTip>

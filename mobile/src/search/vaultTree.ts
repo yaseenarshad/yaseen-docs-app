@@ -1,4 +1,5 @@
 import type { IndexRecord } from '@shared/types'
+import { inOrder, type FilesSort, type FolderOrders } from '@shared/filesOrder'
 import { boardKindOf } from '../drawing/boardFiles'
 
 /**
@@ -24,6 +25,16 @@ export interface TreeFolder {
   name: string
   folders: Map<string, TreeFolder>
   files: IndexRecord[]
+  /** The Mac's Files sort (YAZ-5916 Q4, the vault's newest `files-order.<mac id>.json`); absent: Name, A to Z. */
+  sort?: FilesSort
+  /** Under Manual: this folder's items by name, in the Mac's order (D4). */
+  order?: readonly string[]
+}
+
+/** What the phone's tree follows of the Mac's Files tab (YAZ-5916 D4, Q4): its sort, and under Manual each folder's order. */
+export interface TreeView {
+  sort: FilesSort
+  folders: FolderOrders
 }
 
 export interface TreeRow {
@@ -43,8 +54,11 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'bas
 const hidden = (part: string) => part.startsWith('.')
 
 /** The tree of `records` (pages and card files); `folders` are the `.folder.md` records that name a folder. */
-export function buildTree(records: readonly IndexRecord[], folders: readonly IndexRecord[] = []): TreeFolder {
-  const root: TreeFolder = { path: '', name: '', folders: new Map(), files: [] }
+export function buildTree(records: readonly IndexRecord[], folders: readonly IndexRecord[] = [], view?: TreeView | null): TreeFolder {
+  const sort = view === null || view === undefined || (view.sort.by === 'name' && !view.sort.reverse) ? undefined : view.sort
+  const orders = sort?.by === 'manual' ? view?.folders : undefined
+  const viewOf = (path: string) => ({ ...(sort !== undefined && { sort }), ...(orders?.[path] !== undefined && { order: orders[path] }) })
+  const root: TreeFolder = { path: '', name: '', folders: new Map(), files: [], ...viewOf('') }
   const titles = new Map<string, string>()
   for (const f of folders) {
     const dir = f.path.slice(0, Math.max(0, f.path.lastIndexOf('/')))
@@ -58,7 +72,7 @@ export function buildTree(records: readonly IndexRecord[], folders: readonly Ind
       let next = at.folders.get(parts[i])
       if (next === undefined) {
         const path = parts.slice(0, i + 1).join('/')
-        next = { path, name: titles.get(path) ?? parts[i], folders: new Map(), files: [] }
+        next = { path, name: titles.get(path) ?? parts[i], folders: new Map(), files: [], ...viewOf(path) }
         at.folders.set(parts[i], next)
       }
       at = next
@@ -77,16 +91,38 @@ export const fileKind = (record: IndexRecord): TreeKind => (record.kind === 'car
 interface Level {
   folders: TreeFolder[]
   files: { record: IndexRecord; label: string }[]
+  /** The Mac's Manual order (YAZ-5916): folders and files mixed as the person put them; unnamed items last, in the Name order. */
+  mixed?: ({ folder: TreeFolder } | { record: IndexRecord; label: string })[]
 }
+
+/** A folder's own name on disk (its row may show its title). */
+const dirName = (folder: TreeFolder): string => folder.path.slice(folder.path.lastIndexOf('/') + 1)
 const levels = new WeakMap<TreeFolder, Level>()
+
+/** A folder's time for Last updated: its newest file anywhere inside (the Mac's `timeOf`), once per folder. */
+const times = new WeakMap<TreeFolder, number>()
+function timeOf(folder: TreeFolder): number {
+  let time = times.get(folder)
+  if (time === undefined) {
+    time = Math.max(0, ...folder.files.map((r) => r.mtime), ...[...folder.folders.values()].map(timeOf))
+    times.set(folder, time)
+  }
+  return time
+}
 
 /** One level in the Mac's order, sorted once. */
 export function levelOf(folder: TreeFolder): Level {
   let level = levels.get(folder)
   if (level === undefined) {
-    const folders = [...folder.folders.values()].sort((a, b) => collator.compare(a.name, b.name))
-    const files = folder.files.map((record) => ({ record, label: fileLabel(record) })).sort((a, b) => collator.compare(a.label, b.label))
-    levels.set(folder, (level = { folders, files }))
+    // The Mac's sort (Q4): Name or Last updated, each way; folders first, then files, as on the Mac. Manual: Name, then the order.
+    const by = folder.sort?.by === 'updated' ? 'updated' : 'name'
+    const way = folder.sort?.reverse === true && folder.sort.by !== 'manual' ? -1 : 1
+    const folders = [...folder.folders.values()].sort((a, b) => way * (by === 'updated' ? timeOf(b) - timeOf(a) || collator.compare(a.name, b.name) : collator.compare(a.name, b.name)))
+    const files = folder.files.map((record) => ({ record, label: fileLabel(record) })).sort((a, b) => way * (by === 'updated' ? b.record.mtime - a.record.mtime || collator.compare(a.label, b.label) : collator.compare(a.label, b.label)))
+    const named = [...folders.map((f) => ({ folder: f })), ...files]
+    const rank = new Map(named.map((item, i) => [item, i]))
+    const mixed = folder.order === undefined ? undefined : inOrder(named, (item) => ('folder' in item ? dirName(item.folder) : item.record.name), folder.order, (a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
+    levels.set(folder, (level = { folders, files, ...(mixed !== undefined && { mixed }) }))
   }
   return level
 }
@@ -99,12 +135,16 @@ export function visibleRows(root: TreeFolder, open: ReadonlySet<string>, files: 
   const rows: TreeRow[] = []
   const walk = (folder: TreeFolder, depth: number) => {
     const level = levelOf(folder)
-    for (const sub of level.folders) {
-      const isOpen = open.has(sub.path)
-      rows.push({ kind: 'folder', path: sub.path, label: sub.name, depth, open: isOpen })
-      if (isOpen) walk(sub, depth + 1)
-    }
-    for (const { record, label } of level.files) {
+    const items = level.mixed ?? [...level.folders.map((f) => ({ folder: f })), ...level.files]
+    for (const item of items) {
+      if ('folder' in item) {
+        const sub = item.folder
+        const isOpen = open.has(sub.path)
+        rows.push({ kind: 'folder', path: sub.path, label: sub.name, depth, open: isOpen })
+        if (isOpen) walk(sub, depth + 1)
+        continue
+      }
+      const { record, label } = item
       if (!files(record)) continue
       const kind = fileKind(record)
       const id = kind === 'card' ? (record.cards?.find((c) => c.id !== null)?.id ?? undefined) : undefined

@@ -13,6 +13,13 @@ An AI agent, another app, a sync pull or a copy of the page in another tab write
 
 The contracts are rules 44 and the "⚡ AMENDED by YAZ-3704" pages in `docs/CONTRACTS.md`.
 
+## Cards (YAZ-5925)
+
+A card is drawn (`renderCard`), not edited, so the decorations above cannot reach its words. `card/cardGlow.ts` draws the old text off screen, compares the VISIBLE words of both drawings with `wordDiff` (exported here), and puts the same looks (`outside-change`, `outside-removed`) on the new drawing's text nodes. When 80% (`REWRITE_SHARE`) or more of the old visible words went, the frame glows instead ("Rewritten", `CARD_REWRITE_FRAME`). The box under the mouse reads a card glow's parts from `outsideTipParts`; `mountOutsideTip` puts the same box on a card file's tab, which is no editor.
+
+- **A card in a page** is one textblock, so the plugin already keeps one change for it, with its Before (`outsideChangeAt`). The card's node view lights its drawing from that change and shows **Checked** in its head (`checkOutsideChange`); the bar, Next change and Mark all checked work as for any line. Next's ring is a lit word of the card.
+- **A card file's tab and an embed** keep their last drawn text (`CardGlowTracker`). A read with new text glows unless its mtime is the app's own write (`isOwnWrite` in `lib/twinEditors.ts`: an `announcedWrite`, or an editor's save). The tab gives the bar a channel of its own (`card/useCardFileGlow.ts`); an embed has Checked in its head and the Glow of its page (`outsideGlowAt`).
+
 ## Why there is no `prosemirror-collab`
 
 `prosemirror-collab` is built for edits that arrive as steps from a server, with a version number and a client id. Here every outside edit arrives as a whole file, so the edit is a diff of two files either way, and the file's mtime is the only version. ProseMirror's history already maps your undo steps through an `addToHistory: false` transaction, so ⌘Z keeps undoing only your typing. If edits ever arrive as steps (an edit tool that talks to the app, a live cursor), port `prosemirror-collab` then and replace `mergeExternal.ts`: the other two parts stay.

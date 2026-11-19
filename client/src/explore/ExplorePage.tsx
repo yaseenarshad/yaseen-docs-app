@@ -20,8 +20,9 @@
  * ONE PAGE SHAPE EVERYWHERE (YAZ-5164 Option A, Yaseen: "what you see is what you get, both in a tab and an explorer").
  * The layer draws the page tab's frame (`PageFrame`) in read and in edit: the title and Properties in the page (read
  * only while reading; a click on the title renames, "Allow edits?" first in a Read only vault), the page's own 48 px
- * sides. The editor has no row of its own here: its cog, Read only chip, Sync and Saved stand in the head
- * (`HeadChipsSlot`), as the fold-all and zoom do. A CARD FILE is one card frame in read and in edit: the card file's own
+ * sides. The editor has no row of its own here (YAZ-5974): its fold-all and cog stand on the page's TITLE ROW with the
+ * layer's zoom pill (`TitleRowControls`, `HeadChipsSlot.controls`), as the reading layer's own do; its Read only chip,
+ * Sync and Saved stand in the head, the Explore window's bar (`HeadChipsSlot.status`). A CARD FILE is one card frame in read and in edit: the card file's own
  * view (`CardFileView` through the editor) in both, E its Edit card, Done its Done. Nothing on screen moves on a switch.
  * THE HEAD'S TITLE (Q50, Yaseen: "left the title at the top in the explore, so that way when you scroll down you can
  * still see what page you're on"): a slot of fixed height, see-through while the page's title (a card file's title
@@ -34,16 +35,15 @@ import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { isCardFileContent } from '@shared/cardFileFormat'
-import { readPageSwitches, readPageWidth, type PageSwitches } from '@shared/pageSwitches'
-import type { CommentsOrder, ContentWidth, PageView, PropertiesResponse } from '@shared/types'
-import { contentTextWidth } from '../lib/contentWidth'
+import { CODE_WIDTH_KEY, readBlockWidth, readCardSides, readOutsideGlow, readPagePosition, readPageSwitches, readPageWidth, TABLE_WIDTH_KEY, writeBlockWidth, writeCardSides, writeOutsideGlow, writePagePosition, writePageSwitch, writePageWidth, type PageSwitchKey, type PageSwitches } from '@shared/pageSwitches'
+import type { CommentsOrder, ContentPosition, ContentWidth, DiagramDarkColors, PageView, PropertiesResponse } from '@shared/types'
+import { columnStart, contentTextWidth, positionOf, widthOf } from '../lib/contentWidth'
 import type { CardReview } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
-import { createCrepe, editorViewOf } from '../editor/createCrepe'
+import { createCrepe, editorViewOf, getPlainText } from '../editor/createCrepe'
 import { DocumentZoom } from '../editor/DocumentZoom'
-import { stepZoom } from '../editor/zoomSteps'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
 import { FindBar } from '../editor/find/FindBar'
@@ -51,7 +51,11 @@ import { createFindChannel } from '../editor/find/findChannel'
 import { FoldAllButton } from '../editor/FoldAllButton'
 import { copyText, type LinkActions } from '../editor/linkMenu'
 import { PageMenu } from '../editor/pageMenu'
-import { PageFrame } from '../editor/PageFrame'
+import { PageFrame, TitleRowControls } from '../editor/PageFrame'
+import { PageSettings } from '../editor/PageSettings'
+import { transformFile } from '../views/writeProperty'
+import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
+import { tellCardFoldChange } from '../editor/card/cardFold'
 import { PageTitle } from '../editor/PageTitle'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
 import { HeadChipsSlot, LAYER_ESCAPE, LayerZoom } from '../editor/StatusChips'
@@ -59,6 +63,10 @@ import { usePathTitles } from '../lib/pageLabel'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from '../editor/outline/foldAllHotkeys'
 import type { MenuSection } from '../sidebar/menuSections'
 import { hrefTarget } from '../editor/pathPaste'
+import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
+import { linkOpenHint } from '../editor/linkGesture'
+import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
+import type { AnchorRect } from '../sidebar/previewPlacement'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
@@ -67,6 +75,7 @@ import { BacklinksSection } from '../links/BacklinksSection'
 import { savedFirst } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
 import { editingLabel, ReadOnlyChip } from '../editor/ReadOnlyChip'
+import { DEFAULT_SETTINGS } from '@shared/types'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { landOn } from '../editor/toc/tocMotion'
@@ -161,6 +170,19 @@ interface ExplorePageProps {
   onClose: () => void
   /** This layer is the top one: the body takes the focus, so E and Esc are heard. */
   active: boolean
+  /** The hover panel of the reading page's [[links]] (YAZ-5920), as a page tab has it. Absent: no panel. */
+  linkPreview?: ExploreLinkPreview & { nameOf: (path: string) => string }
+}
+
+/**
+ * What a reading page layer needs for its links' hover panel (YAZ-5920), from App: Settings › Preview on hover › Links
+ * (read at each dwell), the panel's vault scope (`previewScope`) and the diagram colours. An editing layer is the page
+ * editor, which has its own.
+ */
+export interface ExploreLinkPreview {
+  on: () => boolean
+  scopeOf: (path: string) => PreviewScope
+  diagramDarkColors: DiagramDarkColors
 }
 
 /** ‹ n/m › of a layer opened from a search (round 3): its place among the rows, whether a step each way exists, the step. */
@@ -224,7 +246,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, vault, style, frame, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, editCard = false, fromInbox = false, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, pageMenu, onClose, active }: ExplorePageProps) {
+export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, vault, style, frame, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, editCard = false, fromInbox = false, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, pageMenu, onClose, active, linkPreview }: ExplorePageProps) {
   // The layer's vault's word for a page (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const pageId = usePageId(idInTitle ? vault.wikilinks : undefined, path)
@@ -239,6 +261,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const [content, setContent] = useState<Content>({ kind: 'loading' })
   /** The page's own width (YAZ-5640), read with the text: reading draws the column as the editor does, so a switch moves nothing. */
   const [pageWidth, setPageWidth] = useState<ContentWidth | null>(null)
+  /** The page's own position (YAZ-5871 D2), read with the text as its width. */
+  const [pagePosition, setPagePosition] = useState<ContentPosition | null>(null)
   /** The read-only Crepe once it is up, for the fold-all button (round 1, item 4); null while loading or editing. */
   const [ready, setReady] = useState<ReturnType<typeof createCrepe> | null>(null)
   /**
@@ -260,6 +284,24 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   // The doors, read at click time: a layer's Crepe is built once, and the stack's callbacks may change identity.
   const doors = useRef({ onOpenLink, createFolder, onFileAction, linkActions, onNotice, review: vault.review })
   doors.current = { onOpenLink, createFolder, onFileAction, linkActions, onNotice, review: vault.review }
+  /**
+   * The hover panel of the reading page's [[links]] (YAZ-5920), as the page editor wires it (`Editor.tsx`, YAZ-3403): the
+   * reading Crepe tells a hover on a resolved link, the panel shows that page beside it after the dwell. A hover's id is
+   * its page. Read only, so the card says "Click to open".
+   */
+  const linkAt = useRef<{ path: string; rect: AnchorRect } | null>(null)
+  const hoverLinks = useCardPreview(linkPreview?.on() === true, (target) => (linkAt.current?.path === target ? linkAt.current.rect : null))
+  const [linkHover] = useState<WikilinkHover>(() => ({
+    onHover: (target, rect) => {
+      linkAt.current = { path: target, rect }
+      hoverLinks.hoverCard(target, target)
+    },
+    onLeave: () => {
+      if (linkAt.current !== null) hoverLinks.leaveCard(linkAt.current.path)
+      linkAt.current = null
+    },
+  }))
+  const linkCard = (_: string, target: string) => (linkPreview === undefined ? null : { root: null, name: linkPreview.nameOf(target), hint: linkOpenHint(storage.getSettings()?.hotkeys, false) })
 
   /** The whole file as read, frontmatter included: the comment stream's truth. */
   const readRef = useRef('')
@@ -289,6 +331,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
         const body = splitFrontmatter(file.content).body
         const switches = readPageSwitches(file.content)
         setPageWidth(readPageWidth(file.content))
+        setPagePosition(readPagePosition(file.content))
         setContent((prev) =>
           body.trim() === '' ? { kind: 'empty' } : prev.kind === 'body' && prev.body === body && JSON.stringify(prev.switches) === JSON.stringify(switches) ? prev : { kind: 'body', body, switches },
         )
@@ -392,6 +435,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       boardEmbeds: { root },
       // The page's links, live (the read-only rule: a plain click opens, YAZ-3879 point 6). An unresolved link is made first, as everywhere.
       wikilinkNav: { ...doors.current.linkActions, root, createFolder: () => doors.current.createFolder(path), openCurrent: open, openNewTab: open, openBackground: open, onNotice: (m) => doors.current.onNotice(m), allowFileAction: (vault) => doors.current.onFileAction?.(vault) ?? Promise.resolve(true) },
+      // A hover on a link (YAZ-5920): the hover panel, as in the page tab; a Markdown link pill previews the page it opens.
+      wikilinkHover: { ...linkHover, markdownPath: (href) => hrefTarget(href, place) },
       markdownLinkNav: {
         ...doors.current.linkActions,
         open: (href) => api.shell.openLink({ href, sourcePath: path }),
@@ -436,6 +481,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     })
     return () => {
       live = false
+      // A link's hover panel of this Crepe goes with it (YAZ-5920): its link may not be there any more.
+      linkHover.onLeave()
       // A Crepe on show stays until the next one is up (or the next run takes it away); one never shown goes now.
       if (shownCrepe.current !== mine) retire(mine)
     }
@@ -462,7 +509,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     },
     [ready],
   )
-  const foldAll = ready !== null && mode === 'read' && (
+  const foldAll = ready !== null && (
     <FoldAllButton
       read={() => (ready === null ? 'none' : nextDocumentFold(editorViewOf(ready).state))}
       run={(collapse) => {
@@ -587,7 +634,15 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const page = fileKind(path) === 'markdown'
   // The vault's Read only (YAZ-4939): the layer edits only while its own timed unlock runs. At zero, or on Lock now,
   // an editing layer goes back to reading (its editor's save first, as Done does).
-  const locked = vault.readOnly === true
+  /**
+   * The page's own Read only switch (YAZ-5974 Q6), read with its text: the layer locks for it as for the vault's, with
+   * the same chip and "Allow edits?" box a tab has (its "Turn Read only off" writes the switch off). A card file's own
+   * switch is its view's.
+   */
+  const text = content.kind === 'body' || content.kind === 'empty' ? readRef.current : ''
+  const pageOwnLock = !cardFile && isPageReadOnly(text)
+  const vaultLocked = vault.readOnly === true
+  const locked = vaultLocked || pageOwnLock
   const leave = useRef({ mode, onToggleEdit })
   leave.current = { mode, onToggleEdit }
   const unlock = useTimedUnlock(() => {
@@ -757,6 +812,16 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
           if (rename !== null) return rename()
           if (mode === 'read') onToggleEdit()
         }}
+        // The page's own switch, in a vault that is not read only (as a tab's box): written off; the layer stays reading.
+        onTurnOff={
+          pageOwnLock && !vaultLocked
+            ? () => {
+                setAsking(false)
+                titleAsked.current = null
+                writeKey((c) => setPageReadOnly(c, false), 'Read only')
+              }
+            : undefined
+        }
         onCancel={() => {
           setAsking(false)
           titleAsked.current = null
@@ -777,8 +842,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       />
     </span>
   )
-  /** Where the editor's chips stand (YAZ-5164 Option A): the head's slot, once it is drawn. */
-  const [chipsSlot, setChipsSlot] = useState<HTMLElement | null>(null)
+  /** Where the editor's window status stands (YAZ-5974): the page's own Read only chip, Sync and Saved, in the top bar. */
+  const [statusSlot, setStatusSlot] = useState<HTMLElement | null>(null)
   /**
    * The head's title (Q50): shown while the page's own title (`.page-header`; a card file's title band) is out of view,
    * above the top of the body on show. Read on each scroll of the body and each change in it, at most once a frame.
@@ -811,40 +876,139 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   /** The text formatting of the vault, and the zoom as the page tab's scroller carries it (`--document-zoom`, app.css): the same rules scale the page's content. */
   const bodyStyle = { ...style, '--document-zoom': zoom / 100 } as CSSProperties
   /** Reading's frame, which IS the page's scroller: the page's own width on it too (YAZ-5640), as the editor puts it on its own. */
-  const readStyle = pageWidth === null ? bodyStyle : ({ ...bodyStyle, '--content-text-width': contentTextWidth(pageWidth) } as CSSProperties)
-  /** ⋯ of a folded head (YAZ-4956): what the folded parts do, built when the menu opens. */
-  const moreSections = (): MenuSection[] => {
-    const view = ready !== null && mode === 'read' ? editorViewOf(ready) : null
-    const fold = view === null ? null : nextDocumentFold(view.state)
-    const zoomIn = stepZoom(zoom, 1)
-    const zoomOut = stepZoom(zoom, -1)
-    const pageRows: MenuSection = [
-      ...(fold === null ? [] : [{ id: 'fold-all', label: fold === 'expand' ? 'Expand all' : 'Collapse all', disabled: fold === 'none', onSelect: () => view !== null && setAllDocumentFolds(fold === 'collapse')(view.state, view.dispatch) }]),
+  const readStyle =
+    pageWidth === null && pagePosition === null
+      ? bodyStyle
+      : ({
+          ...bodyStyle,
+          ...(pageWidth !== null && { '--content-text-width': contentTextWidth(pageWidth) }),
+          // Its own position (YAZ-5871 D2): a key of its own, else Settings' (`.app` holds Settings' own width's start).
+          '--column-start': columnStart(pagePosition ?? positionOf(storage.getSettings()?.contentPosition), pageWidth ?? widthOf(storage.getSettings()?.contentWidth)),
+        } as CSSProperties)
+  /**
+   * ⋯ of a folded head (YAZ-4956), built when the menu opens: the Explore WINDOW's actions only (YAZ-5974 Q2): ‹ ›,
+   * Lock now / Allow edits…, Edit / Done, Open in a tab, Copy ID. The page's controls (fold-all, cog, zoom) stand on the
+   * title row and never fold into it.
+   */
+  const moreSections = (): MenuSection[] => [
+    steps === undefined ? [] : stepRows(steps),
+    [
       ...(!page || !locked ? [] : unlocked ? [{ id: 'lock', label: 'Lock now', hint: unlock.until === null ? undefined : editingLabel(unlock.until, Date.now()), onSelect: unlock.lock }] : mode === 'read' ? [{ id: 'allow', label: 'Allow edits…', onSelect: () => setAsking(true) }] : []),
       ...(!page ? [] : mode === 'read' ? [{ id: 'edit', label: 'Edit', hint: 'E', onSelect: edit }] : [{ id: 'done', label: 'Done', hint: 'esc', onSelect: leaveEdit }]),
-    ]
-    return [
-      steps === undefined ? [] : stepRows(steps),
-      [
-        { id: 'zoom', label: `Zoom ${zoom}%`, heading: true, onSelect: () => {} },
-        { id: 'zoom-in', label: 'Zoom in', hint: '⌘+', disabled: zoomIn === null, onSelect: () => zoomIn !== null && onZoom(zoomIn) },
-        { id: 'zoom-out', label: 'Zoom out', hint: '⌘−', disabled: zoomOut === null, onSelect: () => zoomOut !== null && onZoom(zoomOut) },
-        { id: 'zoom-reset', label: 'Zoom to 100%', hint: '⌘0', disabled: zoom === 100, onSelect: () => onZoom(100) },
-      ],
-      pageRows,
-      openRows(onOpenInTab, pageId, onNotice),
-    ]
-  }
-  /** The page frame's header (YAZ-5164 Option A): the tab's title and Properties, read only while reading. */
+    ],
+    openRows(onOpenInTab, pageId, onNotice),
+  ]
   const lockedNow = locked && !unlocked
+  /**
+   * THE READING COG (YAZ-5974): the page tab's own cog (`PageSettings`) while the layer reads, with the rows a page
+   * keeps in its file (Read only, Section indent, Guide lines, Folding, Bullet threading, Table of contents, TOC made
+   * from, Outside changes glow, Page width, Position, Code block width, Table width, Card sides). A row writes its key
+   * (`transformFile`, as the editor's cog does, with no typing to save first) and the layer reads the page again in
+   * place, so the change shows at once. Line numbers and Heading levels live in an editor only (never saved): editing
+   * has them. Settings' defaults are read as the layer draws.
+   */
+  const app = { ...DEFAULT_SETTINGS, ...storage.getSettings() }
+  const own = readPageSwitches(text)
+  const readFoldingOn = own.folding ?? app.foldingOnByDefault
+  const readCodeWidth = readBlockWidth(text, CODE_WIDTH_KEY)
+  const readTableWidth = readBlockWidth(text, TABLE_WIDTH_KEY)
+  const readCardSidesOwn = readCardSides(text)
+  useEffect(() => tellCardFoldChange(), [readCardSidesOwn])
+  const [, setTocTick] = useState(0)
+  const writeKey = (transform: (content: string) => string, row: string): void => {
+    transformFile(path, transform).then(
+      (landed) => {
+        readRef.current = landed.content
+        rereading.current = true
+        setReread((n) => n + 1)
+      },
+      (err: unknown) => onNotice(`${row} could not change: ${err instanceof Error ? err.message : String(err)}`),
+    )
+  }
+  const setSwitch = (key: PageSwitchKey, row: string, on: boolean) => writeKey((c) => writePageSwitch(c, key, on), row)
+  const readCog = file !== null && (
+    <PageSettings
+      readOnly={locked}
+      // As a tab's cog (YAZ-5974 Q6): while locked (the vault's or the page's own switch), Lock now while the layer's
+      // unlock runs, else the chip's "Allow edits?" box (its "Turn Read only off" turns the switch off); else on, no ask.
+      onToggleReadOnly={() => (locked ? (unlocked ? unlock.lock() : setAsking(true)) : writeKey((c) => setPageReadOnly(c, true), 'Read only'))}
+      sectionIndent={own['section-indent'] ?? false}
+      onToggleSectionIndent={() => setSwitch('section-indent', 'Section indent', !(own['section-indent'] ?? false))}
+      guideLines={own['guide-lines'] ?? app.guideLinesOnByDefault}
+      onToggleGuideLines={() => setSwitch('guide-lines', 'Guide lines', !(own['guide-lines'] ?? app.guideLinesOnByDefault))}
+      folding={readFoldingOn}
+      onToggleFolding={() => setSwitch('folding', 'Folding', !readFoldingOn)}
+      bulletThreading={own['bullet-threading'] ?? app.bulletThreading}
+      onToggleBulletThreading={() => setSwitch('bullet-threading', 'Bullet threading', !(own['bullet-threading'] ?? app.bulletThreading))}
+      tableOfContents={own.toc ?? app.tocOnByDefault}
+      onToggleTableOfContents={() => setSwitch('toc', 'Table of contents', !(own.toc ?? app.tocOnByDefault))}
+      tocSource={storage.getTocSource(root, path)}
+      onChangeTocSource={
+        (own.toc ?? app.tocOnByDefault)
+          ? (source) => {
+              storage.setTocSource(root, path, source)
+              setTocTick((n) => n + 1)
+            }
+          : undefined
+      }
+      outsideGlow={readOutsideGlow(text)}
+      appGlow={app.outsideChangeGlow}
+      onChangeOutsideGlow={(glow) => writeKey((c) => writeOutsideGlow(c, glow), 'Outside changes glow')}
+      pageWidth={pageWidth}
+      appContentWidth={widthOf(app.contentWidth)}
+      onChangePageWidth={(width) => writeKey((c) => writePageWidth(c, width), unit('Page width'))}
+      pagePosition={pagePosition}
+      appContentPosition={positionOf(app.contentPosition)}
+      onChangePagePosition={(position) => writeKey((c) => writePagePosition(c, position), 'Position')}
+      codeWidth={readCodeWidth}
+      onChangeCodeWidth={(width) => writeKey((c) => writeBlockWidth(c, CODE_WIDTH_KEY, width), 'Code block width')}
+      tableWidth={readTableWidth}
+      onChangeTableWidth={(width) => writeKey((c) => writeBlockWidth(c, TABLE_WIDTH_KEY, width), 'Table width')}
+      cardSides={readCardSidesOwn}
+      onChangeCardSides={(sides) => writeKey((c) => writeCardSides(c, sides), 'Card sides')}
+      readText={() => (ready === null ? '' : getPlainText(ready))}
+    />
+  )
+  /** The layer's zoom pill (round 4), on the title row (YAZ-5974): one value for every page layer. */
+  const zoomPill = <DocumentZoom value={zoom} onChange={onZoom} />
+  /**
+   * THE TITLE ROW'S PAGE CONTROLS (YAZ-5974 Q4): fold-all, the cog, the zoom pill, right of the title and before the
+   * Properties chip. The same three in reading (the layer's own, on its Crepe) and in editing (the editor's own fold-all
+   * and cog, put in `controlsSlot`), in one box, so nothing moves on Edit / Done. A card file's are its own (its cog,
+   * its Properties button) on the card's top line.
+   */
+  const readControls = (
+    <span className="page-header__controls" data-explore-controls="">
+      <span className="page-header__chips">
+        {readFoldingOn && foldAll}
+        {readCog}
+      </span>
+      {zoomPill}
+    </span>
+  )
+  const [controlsSlot, setControlsSlot] = useState<HTMLElement | null>(null)
+  const editControls = (
+    <span className="page-header__controls" data-explore-controls="">
+      <span ref={setControlsSlot} className="page-header__chips" />
+      {zoomPill}
+    </span>
+  )
+  /** The page frame's header (YAZ-5164 Option A): the tab's title and Properties, read only while reading. */
   const header = (
     <>
       <PageTitle path={path} titles={titles} readOnly={frame === undefined || lockedNow} locked={lockedNow} id={pageId} onNotice={onNotice} onRetitle={(next) => frame?.onRetitle(next)} onArrowDown={() => bodyRef.current?.focus({ preventScroll: true })} />
+      {readControls}
       {file !== null && <FrontmatterPanel file={{ ...file, mtime: 0 }} root={root} properties={frame?.properties} wikilinks={wikilinks} readOnly onNotice={onNotice} />}
     </>
   )
   /** The editor, made only where it shows: the reading layer makes none. */
-  const editor = () => <Fragment key={path}>{renderEditor(path, onOpenLink, unlocked, start.current?.path === path ? start.current.view : undefined)}</Fragment>
+  /** The editor's slots in this layer (YAZ-5974): its page controls on the title row, its status in the top bar. */
+  const headSlots = useMemo(() => ({ controls: controlsSlot, status: statusSlot }), [controlsSlot, statusSlot])
+  const editor = () => (
+    <TitleRowControls.Provider value={editControls}>
+      <Fragment key={path}>{renderEditor(path, onOpenLink, unlocked, start.current?.path === path ? start.current.view : undefined)}</Fragment>
+    </TitleRowControls.Provider>
+  )
   return (
     <UnitContext.Provider value={unit}>
       <div
@@ -868,18 +1032,9 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
             title, the ID and × stay. `display: contents`, so a wide head is laid out as before. */}
         <span className="explore__fold">
           {steps !== undefined && <ExploreSteps steps={steps} />}
-          {/* The page zoom's pill (round 4): one value for every page layer; a press on it is the pill's, not a drag. */}
-          <span className="explore__part" data-fold-part="zoom">
-            <DocumentZoom value={zoom} onChange={onZoom} />
-          </span>
-          {/* The page's own chips (YAZ-5164 Option A): the editor's fold-all, cog, Read only chip, Sync and Saved, here
-              and not in a row over the page. Shown once the editor is on show: never two fold-all buttons at once. */}
-          <span ref={setChipsSlot} className="explore__part explore__chips" data-fold-part={cardFile || shown === 'edit' ? 'chips' : undefined} hidden={!cardFile && shown !== 'edit'} onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
-          {foldAll !== false && shown === 'read' && !cardFile && (
-            <span className="explore__part" data-fold-part="fold-all">
-              {foldAll}
-            </span>
-          )}
+          {/* The editor's window status (YAZ-5974): the page's own Read only chip, Sync and Saved, while it edits. Reading
+              has no editor, so none (as before). A press in it is not the head's drag. */}
+          <span ref={setStatusSlot} className="explore__part explore__status" data-fold-part={cardFile || shown === 'edit' ? 'status' : undefined} hidden={!cardFile && shown !== 'edit'} onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
           {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit (E)" says what you can do. */}
           {mode === 'read' ? (
             <>
@@ -916,7 +1071,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       </div>
       {/* Both bodies while a switch is under way (YAZ-5164): the incoming one see-through under the one on show. A card
           file has one body: its own view, in read and in Edit card. */}
-      <HeadChipsSlot.Provider value={chipsSlot}>
+      <HeadChipsSlot.Provider value={headSlots}>
         <LayerZoom.Provider value={zoom}>
         <div className="explore__bodies">
           {cardFile ? (
@@ -935,7 +1090,15 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
                 <>
                   {/* The page tab's frame (YAZ-5164 Option A), read only: the same title, Properties, sides and blocks as the editor's. */}
                   <PageFrame ref={bodyRef} className={`explore__body explore__body--read${shown === 'read' ? '' : ' explore__body--incoming'}`} style={readStyle} tabIndex={-1} data-explore-read="" header={header}>
-                    <div ref={mountRef} className="editor-mount" />
+                    {/* The page's own widths and card sides on the mount, as the editor puts them on its own (YAZ-5974: the cog's rows show while reading). */}
+                    <div
+                      ref={mountRef}
+                      className="editor-mount"
+                      data-code-block-width={readCodeWidth === null ? undefined : ''}
+                      data-table-width={readTableWidth === null ? undefined : ''}
+                      data-card-sides={readCardSidesOwn ?? undefined}
+                      style={{ ...(readCodeWidth !== null && { '--code-block-width': `${readCodeWidth}px` }), ...(readTableWidth !== null && { '--table-width': `${readTableWidth}px` }) } as CSSProperties}
+                    />
                     {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}
                     {content.kind === 'empty' && <p className="editor-msg">{unit('Empty page')}</p>}
                     {/* Under the page, as in its tab (round 1, item 3): the comment stream, then "Linked mentions"; a mention opens on top. */}
@@ -950,6 +1113,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
                   <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
                   {/* The page's right-click menu (item 7): the text rows (Copy, Copy as; no Cut or Paste while reading), then the page menu. */}
                   {ready !== null && <PageMenu view={editorViewOf(ready)} extra={pageMenu} reading />}
+                  {/* The links' hover panel (YAZ-5920), on `document.body` over the stack (YAZ-5908). */}
+                  {linkPreview !== undefined && <CardPreviewHost store={hoverLinks.store} cardOf={linkCard} scopeOf={linkPreview.scopeOf} diagramDarkColors={linkPreview.diagramDarkColors} />}
                 </>
               )}
             </>

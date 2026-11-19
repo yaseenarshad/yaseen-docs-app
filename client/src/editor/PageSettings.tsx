@@ -1,10 +1,11 @@
 import { type FocusEvent, Fragment, type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Dropdown } from '../views/view/Dropdown'
 import { createPortal } from 'react-dom'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, type ContentWidth, type OutsideChangeGlow, type TocSource } from '@shared/types'
-import { CONTENT_WIDTH_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, type ContentPosition, type ContentWidth, type OutsideChangeGlow, type TocSource } from '@shared/types'
+import { CONTENT_POSITION_OPTIONS, CONTENT_WIDTH_OPTIONS, contentWidthLabel, OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
 import { CogIcon } from '../components/CogIcon'
 import { useUnit } from '../vault/unitWord'
+import type { CardSides } from '@shared/pageSwitches'
 
 /** "TOC made from" (YAZ-2700 D14): Auto is the absence of a choice, `null`, and stands first — it is what a page has until the reader chooses. */
 const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] = [
@@ -103,6 +104,15 @@ export interface PageSettingsProps {
   appContentWidth?: ContentWidth
   /** Absent → no "Page width" row (a folder page's Page tab, a board, a drawing, a diagram, a code file). `null` is Default. */
   onChangePageWidth?: (width: ContentWidth | null) => void
+  /** The width row's name and the Settings row its Default follows (YAZ-5871 D4: a card file's "Card width", "Cards › Card look › Card width"). Absent → "Page width", "Appearance › Content width". */
+  pageWidthLabel?: string
+  pageWidthSettings?: string
+  /** This page's own position (YAZ-5871 D2): Centre or Left, or `null` (Default), which follows Settings › Appearance › Page position. */
+  pagePosition?: ContentPosition | null
+  /** Settings' Page position, which Default's tooltip names. */
+  appContentPosition?: ContentPosition
+  /** Absent → no "Position" row. `null` is Default. The row is off while the page's width (its own, else Settings') is Full. */
+  onChangePagePosition?: (position: ContentPosition | null) => void
   /** This page's width for every code block (YAZ-4783 layer 2): whole px, or `null` (Default), which follows Settings › Editor › Code blocks › Width. */
   codeWidth?: number | null
   /** Absent → no "Code block width" row (a board, a drawing, a diagram, a code file). `null` is Default. */
@@ -111,6 +121,12 @@ export interface PageSettingsProps {
   tableWidth?: number | null
   /** Absent → no "Table width" row. `null` is Default. */
   onChangeTableWidth?: (width: number | null) => void
+  /** This page's card sides (YAZ-5904): `fold`, `show`, or `null` (Default), which follows Settings › Cards › Card look › Card sides in pages. */
+  cardSides?: CardSides | null
+  /** Absent → no "Card sides" row (a board, a drawing, a diagram, a code file). `null` is Default. */
+  onChangeCardSides?: (sides: CardSides | null) => void
+  /** The Card look row Default follows (YAZ-5904 Q1): a card page's is "Card sides on card pages". Absent → "Card sides in pages". */
+  cardSidesSetting?: string
   /** Plain rows after "Read only" (a code tab's three, YAZ-3449); absent or empty → none. */
   switches?: readonly PageSwitch[]
   /** A small heading over `switches`, which then form one group (a code tab: "All code files"), and a line after it. */
@@ -185,7 +201,59 @@ function BlockWidthRow({ label, value, settingsRow, onChange }: { label: string;
   </>
 }
 
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, pageWidth = null, appContentWidth = 'narrow', onChangePageWidth, codeWidth = null, onChangeCodeWidth, tableWidth = null, onChangeTableWidth, switches, switchesHeading, rows, readText, trigger }: PageSettingsProps) {
+/**
+ * "Page width" (YAZ-5640), and a card file's "Card width" (YAZ-5871 D4): Default, the three steps, and Custom, the px
+ * typed beside them (YAZ-5871 D1), kept on ⏎ or blur and clamped to `PAGE_WIDTH_MIN`–`PAGE_WIDTH_MAX`. An empty box on a
+ * Custom width is Default again; an empty box on a step changes nothing.
+ */
+function PageWidthRow({ label, value, defaultTitle, onChange }: { label: string; value: ContentWidth | null; defaultTitle: string; onChange: (width: ContentWidth | null) => void }) {
+  const own = typeof value === 'number' ? value : null
+  const [draft, setDraft] = useState(own === null ? '' : String(own))
+  useEffect(() => setDraft(own === null ? '' : String(own)), [own])
+  const keep = () => {
+    if (draft === '') {
+      if (own !== null) onChange(null)
+      return
+    }
+    const next = Math.min(PAGE_WIDTH_MAX, Math.max(PAGE_WIDTH_MIN, Number.parseInt(draft, 10)))
+    setDraft(String(next))
+    if (next !== value) onChange(next)
+  }
+  return <>
+    <p className="page-settings__label">{label}:</p>
+    <div className="page-settings__choices page-settings__choices--width" role="group" aria-label={label}>
+      <button type="button" aria-pressed={value === null} title={defaultTitle} onClick={() => onChange(null)}>Default</button>
+      {CONTENT_WIDTH_OPTIONS.map(({ label: step, value: width }) => (
+        <button key={width} type="button" aria-pressed={width === value} onClick={() => onChange(width)}>{step}</button>
+      ))}
+      <label className="page-settings__px" data-own={own === null ? undefined : ''} title="Custom: your own width in px">
+        <input aria-label={`${label} in px`} inputMode="numeric" placeholder={`Custom: ${PAGE_WIDTH_MIN}–${PAGE_WIDTH_MAX}`} value={draft} spellCheck={false}
+          onChange={(event) => setDraft(event.target.value.replace(/[^0-9]/g, ''))} onBlur={keep}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') keep()
+          }} />
+        px
+      </label>
+    </div>
+  </>
+}
+
+/**
+ * "Position" (YAZ-5871 D2): Default, Centre, Left. Off while the width is Full, which fills the window and has no position.
+ */
+function PagePositionRow({ value, defaultTitle, full, onChange }: { value: ContentPosition | null; defaultTitle: string; full: boolean; onChange: (position: ContentPosition | null) => void }) {
+  return <>
+    <p className="page-settings__label">Position:</p>
+    <div className="page-settings__choices" role="group" aria-label="Position" title={full ? 'Full fills the window: it has no position' : undefined}>
+      <button type="button" aria-pressed={value === null} disabled={full} title={defaultTitle} onClick={() => onChange(null)}>Default</button>
+      {CONTENT_POSITION_OPTIONS.map(({ label, value: position }) => (
+        <button key={position} type="button" aria-pressed={position === value} disabled={full} onClick={() => onChange(position)}>{label}</button>
+      ))}
+    </div>
+  </>
+}
+
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, pageWidth = null, appContentWidth = 'narrow', onChangePageWidth, pageWidthLabel, pageWidthSettings = 'Appearance › Content width', pagePosition = null, appContentPosition = 'center', onChangePagePosition, codeWidth = null, onChangeCodeWidth, tableWidth = null, onChangeTableWidth, cardSides = null, onChangeCardSides, cardSidesSetting = 'Card sides in pages', switches, switchesHeading, rows, readText, trigger }: PageSettingsProps) {
   const unit = useUnit()
   // The text counted at the open IS the open state: the counts cannot drift while the menu shows.
   // A board has no text to count: its open menu holds '' and shows no counts.
@@ -478,19 +546,23 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
             {OUTSIDE_CHANGE_GLOW_OPTIONS.map(({ label, value }) => <option key={value} value={value}>{label}</option>)}
           </select>
         </>}
-        {/* This page's widths, saved in the page: its own Content width (YAZ-5640), then its code blocks' and its tables' (YAZ-4783 layer 2). */}
-        {(onChangePageWidth !== undefined || onChangeCodeWidth !== undefined || onChangeTableWidth !== undefined) && <div className="page-settings__divider" aria-hidden="true" />}
-        {onChangePageWidth !== undefined && <>
-          <p className="page-settings__label">{unit('Page width:')}</p>
-          <div className="page-settings__choices" role="group" aria-label={unit('Page width')}>
-            <button type="button" aria-pressed={pageWidth === null} title={`Default follows Settings › Appearance › Content width: ${CONTENT_WIDTH_OPTIONS.find((option) => option.value === appContentWidth)?.label ?? 'Narrow'}`} onClick={() => onChangePageWidth(null)}>Default</button>
-            {CONTENT_WIDTH_OPTIONS.map(({ label, value }) => (
-              <button key={value} type="button" aria-pressed={value === pageWidth} onClick={() => onChangePageWidth(value)}>{label}</button>
-            ))}
-          </div>
-        </>}
+        {/* This page's widths, saved in the page: its own Content width (YAZ-5640, Custom px YAZ-5871) and position (YAZ-5871), then its code blocks' and its tables' (YAZ-4783 layer 2). */}
+        {(onChangePageWidth !== undefined || onChangePagePosition !== undefined || onChangeCodeWidth !== undefined || onChangeTableWidth !== undefined) && <div className="page-settings__divider" aria-hidden="true" />}
+        {onChangePageWidth !== undefined && <PageWidthRow label={pageWidthLabel ?? unit('Page width')} value={pageWidth} defaultTitle={`Default follows Settings › ${pageWidthSettings}: ${contentWidthLabel(appContentWidth)}`} onChange={onChangePageWidth} />}
+        {onChangePagePosition !== undefined && <PagePositionRow value={pagePosition} full={(pageWidth ?? appContentWidth) === 'full'}
+          defaultTitle={`Default follows Settings › Appearance › Page position: ${CONTENT_POSITION_OPTIONS.find((option) => option.value === appContentPosition)?.label ?? 'Centre'}`} onChange={onChangePagePosition} />}
         {onChangeCodeWidth !== undefined && <BlockWidthRow label="Code block width" value={codeWidth} settingsRow="Editor › Code blocks › Width" onChange={onChangeCodeWidth} />}
         {onChangeTableWidth !== undefined && <BlockWidthRow label="Table width" value={tableWidth} settingsRow="Tables › All tables › Width" onChange={onChangeTableWidth} />}
+        {/* YAZ-5904: this page's card sides, saved in the page (`card-sides`): Default (the card look's), Show all or Fold. */}
+        {onChangeCardSides !== undefined && <>
+          <div className="page-settings__divider" aria-hidden="true" />
+          <p className="page-settings__label">Card sides:</p>
+          <div className="page-settings__choices" role="group" aria-label="Card sides">
+            <button type="button" aria-pressed={cardSides === null} title={`Default follows Settings › Cards › Card look › ${cardSidesSetting}`} onClick={() => onChangeCardSides(null)}>Default</button>
+            <button type="button" aria-pressed={cardSides === 'show'} onClick={() => onChangeCardSides('show')}>Show all</button>
+            <button type="button" aria-pressed={cardSides === 'fold'} title="Side 2 and after start folded" onClick={() => onChangeCardSides('fold')}>Fold</button>
+          </div>
+        </>}
         {readText !== undefined && <>
           <div className="page-settings__divider" aria-hidden="true" />
           <p>{(text.match(/\S+/g)?.length ?? 0).toLocaleString()} words</p>

@@ -31,7 +31,9 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, keyInWords, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
+import { DocumentZoom } from '../editor/DocumentZoom'
+import { useExploreZoom } from '../explore/exploreZoom'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, EXPLORE_WIDTH_MAX, EXPLORE_WIDTH_MIN, EXPLORE_WIDTH_START, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, PAGE_WIDTH_START, type ContentStep, type ContentWidth, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
 import type { IconRule } from '@shared/vaultIcons'
 import { appCardLook, type CardLookSettings } from '@shared/cardLook'
 import { appTableLook, type TableLookSettings } from '@shared/tableLook'
@@ -52,6 +54,7 @@ import { CODE_SECTION } from './codeSection'
 import { FOLDER_PAGES_SECTION } from './folderPagesSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented, Select, Stepper } from './controls'
+import { RowSpacingControl } from './RowSpacingControl'
 import { UnitWordControl } from './UnitWordControl'
 import { ProfileControl } from './ProfileControl'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
@@ -83,7 +86,22 @@ import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
 import { CARD_TITLE_SHOW_OPTIONS } from '@shared/cardTitleShows'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_SLOT_TIME_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_PLACE_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import type { TitleRoom } from '@shared/reviews'
+import type { CardTitleMarkShow } from '@shared/cardTitleAt'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_POSITION_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_SLOT_TIME_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_PLACE_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+
+/** Settings › Cards › Card look › Title room (YAZ-5880): Always, the default, first. */
+const TITLE_ROOM_OPTIONS: readonly { label: string; value: TitleRoom }[] = [
+  { label: 'Always', value: 'always' },
+  { label: 'Only when it shows', value: 'shown' },
+]
+
+/** Settings › Cards › Title mark in the card head (YAZ-5965): Only if different is the default. */
+const TITLE_MARK_OPTIONS: readonly { label: string; value: CardTitleMarkShow }[] = [
+  { label: 'Always', value: 'always' },
+  { label: 'Only if different', value: 'different' },
+  { label: 'Never', value: 'never' },
+]
 
 /** A cell bullet's px setting (the YAZ-3818 demo), or the lines of a cell note's hover box (YAZ-5717): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step, unit }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap' | 'tableCellNotePreviewLines'; name: string; min: number; max: number; step: number; unit?: 'px' | 'lines' }) {
@@ -163,27 +181,10 @@ function PxSetting({ name, value, fallback, min, max, step, onSet }: { name: str
  * at `start`. Card width (YAZ-5144 round 2) is the same control in its own words (`options`), with Reset to `start`.
  */
 function BlockWidthSetting({ name, value, start, onSet, options = BLOCK_WIDTH_OPTIONS, min = BLOCK_WIDTH_MIN, max = BLOCK_WIDTH_MAX, reset = false }: { name: string; value: number | null; start: number; onSet: (next: number | null) => void; options?: typeof BLOCK_WIDTH_OPTIONS; min?: number; max?: number; reset?: boolean }) {
-  const [draft, setDraft] = useState(value === null ? '' : String(value))
-  useEffect(() => setDraft(value === null ? '' : String(value)), [value])
-  const keep = () => {
-    const n = Number.parseInt(draft, 10)
-    const next = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : value
-    setDraft(next === null ? '' : String(next))
-    if (next !== value) onSet(next)
-  }
   return (
     <>
       <Segmented options={options} value={value === null ? 'column' : 'px'} onChange={(mode) => onSet(mode === 'column' ? null : (value ?? start))} ariaLabel={name} />
-      {value !== null && (
-        <span className="settings__percent">
-          <input className="settings__input settings__input--number" aria-label={`${name} in px`} inputMode="numeric" value={draft} spellCheck={false}
-            onChange={(event) => setDraft(event.target.value.replace(/[^0-9]/g, ''))} onBlur={keep}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') keep()
-            }} />
-          px
-        </span>
-      )}
+      {value !== null && <PxBox name={name} value={value} min={min} max={max} onSet={onSet} />}
       {reset && value !== null && value !== start && (
         <button type="button" className="settings__option" onClick={() => onSet(start)}>
           Reset
@@ -191,6 +192,65 @@ function BlockWidthSetting({ name, value, start, onSet, options = BLOCK_WIDTH_OP
       )}
     </>
   )
+}
+
+/** The px typed beside a width control's Custom (Pixels), kept on ⏎ or blur and clamped to `min`–`max`; an empty box keeps the value. */
+function PxBox({ name, value, min, max, onSet }: { name: string; value: number; min: number; max: number; onSet: (next: number) => void }) {
+  const [draft, setDraft] = useState(String(value))
+  useEffect(() => setDraft(String(value)), [value])
+  const keep = () => {
+    const n = Number.parseInt(draft, 10)
+    const next = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : value
+    setDraft(String(next))
+    if (next !== value) onSet(next)
+  }
+  return (
+    <span className="settings__percent">
+      <input className="settings__input settings__input--number" aria-label={`${name} in px`} inputMode="numeric" value={draft} spellCheck={false}
+        onChange={(event) => setDraft(event.target.value.replace(/[^0-9]/g, ''))} onBlur={keep}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') keep()
+        }} />
+      px
+    </span>
+  )
+}
+
+/**
+ * Appearance › Content width (YAZ-5871 D1): Narrow · Medium · Full · Custom, the Card width control's way: Custom shows
+ * its px box (`PAGE_WIDTH_MIN`–`PAGE_WIDTH_MAX`), and starts at `PAGE_WIDTH_START`. A step is saved by its name.
+ */
+const CONTENT_WIDTH_CHOICES: readonly { label: string; value: ContentStep | 'custom' }[] = [...CONTENT_WIDTH_OPTIONS, { label: 'Custom', value: 'custom' as const }]
+function ContentWidthSetting({ value, onSet }: { value: ContentWidth; onSet: (next: ContentWidth) => void }) {
+  return (
+    <>
+      <Segmented<ContentStep | 'custom'> options={CONTENT_WIDTH_CHOICES} value={typeof value === 'number' ? 'custom' : value} onChange={(choice) => onSet(choice === 'custom' ? (typeof value === 'number' ? value : PAGE_WIDTH_START) : choice)} ariaLabel="Content width" />
+      {typeof value === 'number' && <PxBox name="Content width" value={value} min={PAGE_WIDTH_MIN} max={PAGE_WIDTH_MAX} onSet={onSet} />}
+    </>
+  )
+}
+
+/**
+ * Appearance › Explore window width (YAZ-5976): Default · Custom, Content width's way: Custom shows its px box
+ * (`EXPLORE_WIDTH_MIN`–`EXPLORE_WIDTH_MAX`; the window cuts it further) and starts at `EXPLORE_WIDTH_START`. Default is null.
+ */
+const EXPLORE_WIDTH_CHOICES: readonly { label: string; value: 'default' | 'custom' }[] = [
+  { label: 'Default', value: 'default' },
+  { label: 'Custom', value: 'custom' },
+]
+function ExploreWidthSetting({ value, onSet }: { value: number | null; onSet: (next: number | null) => void }) {
+  return (
+    <>
+      <Segmented<'default' | 'custom'> options={EXPLORE_WIDTH_CHOICES} value={value === null ? 'default' : 'custom'} onChange={(choice) => onSet(choice === 'default' ? null : (value ?? EXPLORE_WIDTH_START))} ariaLabel="Window width" />
+      {value !== null && <PxBox name="Window width" value={value} min={EXPLORE_WIDTH_MIN} max={EXPLORE_WIDTH_MAX} onSet={onSet} />}
+    </>
+  )
+}
+
+/** Appearance › Explore › Page zoom (YAZ-5977): the window's own zoom pill (`DocumentZoom`), on the one Explore page zoom. */
+function ExplorePageZoomSetting({ ctx }: { ctx: SettingsCtx }) {
+  const [zoom, setZoom] = useExploreZoom()
+  return <DocumentZoom value={zoom} onChange={setZoom} label={unit(ctx, 'Explore page zoom')} />
 }
 
 /**
@@ -453,6 +513,11 @@ export interface SettingDef {
   bare?: true
   /** A row that only exists in some states (the Review rows need review on); absent = always. */
   available?: (ctx: SettingsCtx) => boolean
+  /**
+   * A POINTER row (YAZ-5977): found by Settings search only, never drawn on its section's page. Its hint says where the
+   * thing lives (Search size: the zoom menu at the bottom left); it has no control.
+   */
+  searchOnly?: true
   render: (ctx: SettingsCtx) => ReactNode
 }
 
@@ -474,7 +539,22 @@ export interface SettingsGroup {
   anchor?: string
   /** An extra class on the group's card (Settings › Hotkeys lays its rows out as boxes). */
   cardClass?: string
+  /**
+   * Sub-headings in a long group (YAZ-5969): each a small muted label, a thin line under it, over the rows it names (by
+   * id, in the group's own order). A row named by none sits under no sub-heading; a sub-heading whose rows all hide is
+   * not drawn. They only label: no fold, no map, and search and ⌘F find the rows as before.
+   */
+  subheadings?: readonly SettingsSubheading[]
 }
+
+/** One sub-heading of a group (YAZ-5969). */
+export interface SettingsSubheading {
+  title: string
+  rows: readonly string[]
+}
+
+/** The sub-heading `id`'s row sits under in `group`, if any (YAZ-5969). */
+export const subheadingOf = (group: SettingsGroup, id: string): string | undefined => group.subheadings?.find((sub) => sub.rows.includes(id))?.title
 
 export interface SettingsSection {
   id: SettingsSectionId
@@ -611,6 +691,11 @@ function cardLookCtx(ctx: SettingsCtx): SettingsCtx {
   if (look === undefined) return ctx
   return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appCardLook(next)) }
 }
+/** Card sides in pages / in Explore (YAZ-5904): Show all (the default) or Fold Side 2 and after. */
+const CARD_SIDES_FOLD_OPTIONS: readonly { label: string; value: boolean }[] = [
+  { label: 'Show all', value: false },
+  { label: 'Fold Side 2 and after', value: true },
+]
 function cardLookItems(items: readonly SettingDef[]): SettingDef[] {
   const vaultRow: SettingDef = {
     id: 'cardLookVault',
@@ -951,10 +1036,52 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'contentWidth',
             label: 'Content width',
-            keywords: ['readable line length', 'narrow', 'medium', 'full'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={CONTENT_WIDTH_OPTIONS} value={settings.contentWidth} onChange={(contentWidth) => onChange({ ...settings, contentWidth })} ariaLabel="Content width" />
+            hint: "How wide a page's text reads. Custom is your own width in px. Each page's cog can set its own.",
+            keywords: ['readable line length', 'narrow', 'medium', 'full', 'custom', 'px', 'pixels', 'page width'],
+            render: ({ settings, onChange }) => <ContentWidthSetting value={settings.contentWidth} onSet={(contentWidth) => onChange({ ...settings, contentWidth })} />,
+          },
+          {
+            // YAZ-5871 D2: where the pages' column sits in a wider window. Off with Full, which fills the window.
+            id: 'contentPosition',
+            label: (ctx) => unit(ctx, 'Page position'),
+            hint: "Where a page's column sits when there is room beside it. Full takes all the room, so it has no position. Each page's cog can set its own.",
+            keywords: ['position', 'centre', 'center', 'left', 'align', 'page width', 'content width'],
+            render: (ctx) => (
+              <Segmented options={CONTENT_POSITION_OPTIONS} value={ctx.settings.contentPosition} disabled={ctx.settings.contentWidth === 'full'} onChange={(contentPosition) => ctx.onChange({ ...ctx.settings, contentPosition })} ariaLabel={unit(ctx, 'Page position')} />
             ),
+          },
+        ],
+      },
+      {
+        // YAZ-5977 (with YAZ-5976): Explore's own settings, in their own box. Search size lives only in the zoom menu.
+        title: 'Explore',
+        hint: 'The search and its windows, on this Mac',
+        items: [
+          {
+            // YAZ-5976: the width a fresh Explore window starts at. Search size (the footer's zoom menu) never scales it (YAZ-5977).
+            id: 'exploreWidth',
+            label: 'Window width',
+            hint: 'How wide a fresh Explore window opens. Custom is your own width in px, cut to the window. A window opened from one you resized takes its size.',
+            keywords: ['explore', 'window', 'panel', 'layer', 'width', 'custom', 'px', 'pixels', 'default'],
+            render: ({ settings, onChange }) => <ExploreWidthSetting value={settings.exploreWidth} onSet={(exploreWidth) => onChange({ ...settings, exploreWidth })} />,
+          },
+          {
+            // YAZ-5977: the one zoom of Explore's page windows, the same value as their title row's pill (`exploreZoom.ts`).
+            id: 'explorePageZoom',
+            label: (ctx) => unit(ctx, 'Page zoom'),
+            hint: "The text of Explore's page windows. The same zoom as the pill on a window's title row: a change at either shows at the other.",
+            keywords: ['explore', 'page zoom', 'zoom', 'text size', 'percent', '%', 'window'],
+            render: (ctx) => <ExplorePageZoomSetting ctx={ctx} />,
+          },
+          {
+            // YAZ-5977 Q3: Search size lives in the zoom menu only; a search for it finds this pointer. YAZ-5982: it is the menu's
+            // last row; the hint names no other row, so a search for "sidebar" or "app size" does not find it.
+            id: 'exploreSearchSize',
+            label: 'Search size',
+            hint: 'In the zoom menu: click the % at the bottom left of the window. Search size is the last row.',
+            keywords: ['explore size', 'search size', 'explore zoom', 'search zoom', 'bigger search'],
+            searchOnly: true,
+            render: () => null,
           },
         ],
       },
@@ -1054,6 +1181,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'sidebar',
     title: 'Sidebar',
     groups: [
+      {
+        // YAZ-5885 D1, D2: how tall every row of the sidebar's lists is (Files, Favorites, Focus, Recents, the search
+        // results), a Files window too. The text keeps its size; the sidebar zoom scales on top.
+        title: 'Rows',
+        items: [
+          {
+            id: 'sidebarRowHeight',
+            label: 'Row spacing',
+            hint: 'How tall each row of the sidebar is. Compact is as tight as VS Code. Custom is your own height, 20–40 px.',
+            keywords: ['sidebar', 'tree', 'row', 'rows', 'spacing', 'height', 'density', 'compact', 'roomy', 'tight', 'padding', 'gap', 'px'],
+            // Wide always: the label keeps its width while Custom adds its field beside the buttons.
+            wide: () => true,
+            render: ({ settings, onChange }) => <RowSpacingControl value={settings.sidebarRowHeight} onSet={(sidebarRowHeight) => onChange({ ...settings, sidebarRowHeight })} />,
+          },
+        ],
+      },
       {
         // YAZ-3309 D6: the level lines' rows keep the shape of Editor › Bullet threading: when, then how the line looks.
         title: 'Level lines',
@@ -1165,6 +1308,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       {
         // YAZ-3440 D4: which icons the rows show, and the Line set's colours.
         title: 'File icons',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Icons', rows: ['sidebarIconSet', 'sidebarFileIcons'] },
+          { title: 'Colours', rows: ['iconColorsVault', 'sidebarIconColors.page', 'sidebarIconColors.card', 'sidebarIconColors.drawing', 'sidebarIconColors.diagram', 'sidebarIconColors.folder', 'sidebarIconColors.text', 'sidebarIconColors.pdf', 'sidebarIconColors.image'] },
+        ],
         items: [
           {
             // YAZ-3440 D4: Material Icon Theme's icons (the default), matched by name as in VS Code, or the app's own line glyphs.
@@ -1480,8 +1628,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         items: [
           {
             id: 'findFolds',
-            label: 'Folded bullets',
-            hint: 'Keep folded finds only the text that shows.',
+            // YAZ-5970: folded card sides follow the same choice; the words name them only while the vault's cards are on.
+            label: (ctx) => (reviewOn(ctx) ? 'Folded bullets and card sides' : 'Folded bullets'),
+            hint: (ctx) => (reviewOn(ctx) ? 'Folded card sides follow the same choice. Keep folded finds only the text that shows.' : 'Keep folded finds only the text that shows.'),
             keywords: ['find', 'search', 'cmd f', 'fold', 'collapse', 'expand', 'bullets'],
             render: ({ settings, onChange }) => (
               <Segmented options={FIND_FOLDS_OPTIONS} value={settings.findFolds} onChange={(findFolds) => onChange({ ...settings, findFolds })} ariaLabel="Folded bullets" />
@@ -1544,6 +1693,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // YAZ-4167 D16 (YAZ-4159 D16 names the group): every table. The calendar rows have their own group below (the YAZ-4163 demo).
         // "All tables" since YAZ-4775: on the Tables page a second "Tables" read as "Tables › Tables".
         title: 'All tables',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Header rows', rows: ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders'] },
+          { title: 'Size and text', rows: ['tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle'] },
+          { title: 'Row band', rows: ['tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold'] },
+          { title: 'Bullets in cells', rows: ['tableCellBulletIndent', 'tableCellBulletGap'] },
+        ],
         // YAZ-5487: the table look and new-table defaults are the vault's (table-look.json, `tableLookItems`), with the
         // Vault dropdown where the window has two or more; the phone reads them too. "Rows it marks" stays this Mac's.
         hint: "Saved in the vault's table-look.json: each vault has its own, on this Mac and on the phone. Rows it marks is this Mac's.",
@@ -1763,6 +1919,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // YAZ-4162 D6, D14 and YAZ-4163 D15; a group of its own from the YAZ-4163 demo: how a calendar table looks and starts, for every page. Never in the
         // page's file; the vault's table-look.json since YAZ-5487 (the Now button stays this Mac's).
         title: 'Calendar tables',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Now and next', rows: ['tableNowMark', 'tableSlotTime', 'tableSlotSeconds', 'tableNextShade', 'tableNextColour', 'tableNowButton'] },
+          { title: 'Past rows', rows: ['tableDimPast', 'tableShadeDarkness'] },
+          { title: 'Days and times', rows: ['tableCalendarDay', 'tableTimeFormat'] },
+        ],
         items: tableLookItems([
           {
             id: 'tableNowMark',
@@ -2034,6 +2196,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       {
         // YAZ-3403: one master switch, then each place's own. A place shows the panel only while both are on (`hoverOn`).
         title: 'Preview on hover',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Where it previews', rows: ['hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings'] },
+        ],
         items: [
           {
             // Draw's YAZ-1800 D2, ported by YAZ-3044 A20: the sidebar's hover preview, on by default.
@@ -2061,6 +2227,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'This vault',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Show IDs', rows: ['showIds', 'showIds.title', 'showIds.files'] },
+          { title: 'Links and editing', rows: ['linkClick', 'readOnlyVault'] },
+          { title: 'Page IDs', rows: ['ids', 'duplicates', 'idLetters', 'oldIds'] }, // drawn through the vault's word: unit(ctx, title), SettingsDialog
+        ],
         vault: true,
         items: [
           // YAZ-4938: one row of its own, saved in the vault (`.yaseendocs/unit-word.json`): what this vault calls a page.
@@ -2194,7 +2366,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'linkPills',
             label: 'Link pills',
-            hint: "The default look of every link in this vault. Right-click a link to style that one. Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {number} {vault} {folder} {path} {mark} and your own text. Click a part of the sample pill in the preview to style it; click its icon for the box. Every link to a page shows this way in this vault's pages, folder pages and the explore stack. The default look changes no page: it keeps its [[Name]].",
+            hint: "The default look of every link in this vault. Right-click a link to style that one. Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {number} {vault} {folder} {path} {mark} and your own text. Click a part of a sample pill in the preview (a page and a card) to style it; click its icon for the icon's colour, and the pill's edge for the box. Every link to a page shows this way in this vault's pages, folder pages and the explore stack. The default look changes no page: it keeps its [[Name]].",
             keywords: LINK_PILL_WORDS,
             wide: true,
             available: (ctx) => ctx.linkPills !== undefined,
@@ -2419,6 +2591,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'Card look',
+        // Sub-headings (YAZ-5969).
+        subheadings: [
+          { title: 'Hidden words', rows: ['shownHiddenWords', 'markNextHidden', 'nextHiddenColour'] },
+          { title: 'Card size', rows: ['cardWidth', 'cardTextSize'] },
+          { title: 'Title', rows: ['cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom'] },
+          { title: 'Tables', rows: ['cardTablePosition'] },
+          { title: 'Card sides', rows: ['cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore'] },
+          { title: 'Spacing', rows: ['cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'] },
+        ],
         // YAZ-5484 (replaces YAZ-5005's "one setting for the whole app"): every row here writes the picked vault's
         // card-look.json (`cardLookItems`), with the Vault dropdown where the window has two or more; the phone draws
         // its cards with it too.
@@ -2528,6 +2709,28 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               ),
           },
           {
+            // YAZ-5965: the head's "Title always (default)" / "Title after first click" (YAZ-5913). In review.json as
+            // `titleMark`, so the phone's heads follow it; a page's heads redraw at a change (`Editor.tsx`, `CARD_HEADS_REDRAW`).
+            id: 'cardTitleMark',
+            label: 'Title mark in the card head',
+            hint: "The grey words after a card's ID that say when its title shows in Review. Only if different: only on a card with its own ⋯ › Title in review.",
+            keywords: [...REVIEW_KEYWORDS, 'title', 'mark', 'head', 'header', 'grey', 'default', 'different', 'always', 'never', 'title always', 'after first click'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && <Segmented options={TITLE_MARK_OPTIONS} value={review.settings.titleMark} onChange={(titleMark) => review.save({ ...review.settings, titleMark })} ariaLabel="Title mark in the card head" />,
+          },
+          {
+            // YAZ-5880 (D3 on YAZ-5858, Yaseen: "ALL the cards got the blank title area ... so then its more of a fade in
+            // ... and nothing ever pops or changes", "lets make always the default"): in review.json as `titleRoom`.
+            id: 'cardTitleRoom',
+            label: 'Title room',
+            hint: "Always: every card in Review keeps room for its title, so nothing moves; a title that waits fades in. Only when it shows: no title band until the title shows, and the text starts at the top.",
+            keywords: [...REVIEW_KEYWORDS, 'title', 'band', 'room', 'space', 'empty', 'jump', 'move', 'fade', 'always', 'only when it shows', 'flush'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && <Segmented options={TITLE_ROOM_OPTIONS} value={review.settings.titleRoom} onChange={(titleRoom) => review.save({ ...review.settings, titleRoom })} ariaLabel="Title room" />,
+          },
+          {
             // YAZ-5136 round 3 (Yaseen: "a separate table setting so you can put a "same as pages" or ... center ... on cards
             // in particular"): the app's settings, Card width's pattern. Read anywhere and in Edit card.
             id: 'cardTablePosition',
@@ -2537,6 +2740,43 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: reviewOn,
             render: (ctx) => (
               <Segmented options={cardTablePositionOptions((text) => unit(ctx, text))} value={ctx.settings.cardTablePosition ?? 'pages'} onChange={(cardTablePosition) => ctx.onChange({ ...ctx.settings, cardTablePosition })} ariaLabel="Card tables" />
+            ),
+          },
+          {
+            // YAZ-5904 D1 (Yaseen: "a global setting in cards and then a per page setting that would allow for us to collapse
+            // the sides (all of them side 2+)"): the vault's, in card-look.json, so the phone's page folds too. A page's own
+            // cog (Card sides: Default · Show all · Fold) wins.
+            id: 'cardSidesFold',
+            label: (ctx) => unit(ctx, 'Card sides in pages'),
+            hint: "Fold Side 2 and after of each card in a page, an embed and the hover preview. A click on \"Side 2\" opens it. A page's cog › Card sides wins. Never in the Inbox or Review.",
+            keywords: [...REVIEW_KEYWORDS, 'sides', 'side 2', 'fold', 'collapse', 'expand', 'long', 'show all', 'back'],
+            available: reviewOn,
+            render: (ctx) => (
+              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={ctx.settings.cardSidesFold === true} onChange={(cardSidesFold) => ctx.onChange({ ...ctx.settings, cardSidesFold })} ariaLabel={unit(ctx, 'Card sides in pages')} />
+            ),
+          },
+          {
+            // YAZ-5904 Q1 (Yaseen: "on a card page speifically u might want to go to the ard page and see the whole content
+            // there vs on a page that a card is on"): a card page's own choice, Show all by default. Its cog wins.
+            id: 'cardSidesFoldCardPages',
+            label: (ctx) => unit(ctx, 'Card sides on card pages'),
+            hint: "The same fold on a card page (a card file's tab). A card page's cog › Card sides wins.",
+            keywords: [...REVIEW_KEYWORDS, 'sides', 'side 2', 'fold', 'collapse', 'expand', 'card page', 'card file', 'show all'],
+            available: reviewOn,
+            render: (ctx) => (
+              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={ctx.settings.cardSidesFoldCardPages === true} onChange={(cardSidesFoldCardPages) => ctx.onChange({ ...ctx.settings, cardSidesFoldCardPages })} ariaLabel={unit(ctx, 'Card sides on card pages')} />
+            ),
+          },
+          {
+            // YAZ-5904 D3 (Yaseen: "for explore we can always have expanded caus that the purpose of you going there"):
+            // Explore's own choice, Show all by default. The page's key does not reach Explore.
+            id: 'cardSidesFoldExplore',
+            label: 'Card sides in Explore',
+            hint: "The same fold in Explore's pages and card window. Show all reads the whole card.",
+            keywords: [...REVIEW_KEYWORDS, 'sides', 'side 2', 'fold', 'collapse', 'expand', 'explore', 'show all'],
+            available: reviewOn,
+            render: ({ settings, onChange }) => (
+              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={settings.cardSidesFoldExplore === true} onChange={(cardSidesFoldExplore) => onChange({ ...settings, cardSidesFoldExplore })} ariaLabel="Card sides in Explore" />
             ),
           },
           {

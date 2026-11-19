@@ -39,6 +39,8 @@ vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), remov
 vi.mock('../focus', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 // The vault's own icons (YAZ-3440 D8) ride the same handlers too; `icons.test.ts` owns their disk behaviour.
 vi.mock('../icons', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
+// Files' Manual order (YAZ-5916) rides the same handlers; `filesOrder.test.ts` owns its disk behaviour.
+vi.mock('../filesOrder', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<Envelope<unknown>>
 const registered = (door: { channel: string }): Handler => {

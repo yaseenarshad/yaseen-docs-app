@@ -302,7 +302,7 @@ it('YAZ-5144 round 3: Card width is ONE rule for a card in a page (written there
   const screens = read('../../review/cardScreens.css')
   const width = rules(cardCss, '.card').filter((r) => /max-width:\s*calc\(var\(--card-text-width\)/.test(r.body))
   expect(width).toHaveLength(1)
-  expect(width[0].selector.split(/,\s*/)).toEqual(['.milkdown .card', '.explore__body--card > :not(.find-bar-dock--page)', '.card-file__page > *'])
+  expect(width[0].selector.split(/,\s*/)).toEqual(['.milkdown .card', '.explore__body--card > :not(.find-bar-dock--page)', '.card-file > .card-file__page > *'])
   expect(width[0].body).toMatch(/max-width:\s*calc\(var\(--card-text-width\) \+ 34px\)/)
   // No other place sets it: the window only centres; a card in a page keeps its left edge.
   expect(rules(screens, '.explore__body--card').some((r) => /max-width/.test(r.body))).toBe(false)

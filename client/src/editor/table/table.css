@@ -101,9 +101,11 @@
 }
 
 /* Stripes: every second body row. Row 1 of the tbody is the header row. A table with subheader rows (`data-table-subheads`)
-   starts them again after each subheader row (YAZ-4899): `table-stripe-row` from `tableSubhead.ts` in place of `nth-child`. */
-.milkdown .ProseMirror .milkdown-table-block[data-table-stripes]:not([data-table-subheads]) :where(tr:nth-child(2n + 3)) > td,
-.milkdown .ProseMirror .milkdown-table-block[data-table-stripes][data-table-subheads] .table-stripe-row > td {
+   starts them again after each subheader row (YAZ-4899): `table-stripe-row` from `tableSubhead.ts` in place of `nth-child`.
+   YAZ-5938: the same weight as a fill (4 classes, 1 element; the rest in `:where`), so the fills after it win on a
+   striped row (`tableFillWinsCss.test.ts`). It was heavier, and a fill on row 3, 5, … did not show. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes]:where(:not([data-table-subheads])) :where(tr:nth-child(2n + 3)) > td,
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes]:where([data-table-subheads]) :where(.table-stripe-row) > td {
   --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 4%, transparent);
 }
 

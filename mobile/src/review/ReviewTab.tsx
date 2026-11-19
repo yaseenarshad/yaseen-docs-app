@@ -1,4 +1,6 @@
 import { useVaultMedia } from '../media/ui/useVaultMedia'
+import { useMobileSettings } from '../page/mobileSettings'
+import { useVaultData } from '../search/vaultData'
 import type { ReviewLink } from './link'
 import { ReviewView, type ReviewViewProps } from './ReviewView'
 
@@ -11,5 +13,8 @@ export type ReviewTabProps = Omit<ReviewViewProps, 'media'> & { link: ReviewLink
 export function ReviewTab(props: ReviewTabProps) {
   // `shown` passes through: the shell keeps the tab mounted while it is off the screen.
   const media = useVaultMedia()
-  return <ReviewView {...props} media={media} />
+  // YAZ-5880: the vault's Title room on the phone (`mobile.json`'s `titleRoom`, Only when it shows until it is read).
+  // Read only: no comments port (Review never loads the comments code); a sync's new data reads it again.
+  const titleRoom = useMobileSettings(useVaultData(), null).settings?.titleRoom ?? false
+  return <ReviewView {...props} media={media} titleRoom={titleRoom} />
 }
