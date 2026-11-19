@@ -6,11 +6,12 @@ import { defaultLabel, propertyKeys, runView } from './engine'
 import { allPropertyKeys } from './view/properties'
 import { propertyValues } from './view/filterRows'
 import { typeWord } from './view/typeWord'
+import { cardRowRecords } from './cardRows'
 
 /**
- * The folder tables' card counts (YAZ-4967, idea 2): "Cards" (`file.cards`) and "Due" (`file.due`), one row per
- * page, read off the index's `cards` — no file read. Opt-in like the other file fields: offered among the hidden
- * columns only where a row holds a card. Blank, not 0, where there is nothing to count.
+ * The folder tables' card counts (YAZ-4967, idea 2; YAZ-5046) — "Cards" (`file.cards`), "Due" (`file.due`) and
+ * "Archived" (`file.archived`) — left the Pages table with YAZ-5793 (D3): card facts are the Card table's. A saved
+ * Pages view that names one drops it silently (`GONE_PAGE_KEYS`), with no error and no write.
  */
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
 const page = (name: string, cards?: CardRecord[]): IndexRecord => ({
@@ -28,52 +29,37 @@ const RECORDS = [
   page('Learned', [{ id: 'V-5', off: false, next: false, reviews: [{ at: '2026-11-12T07:00:00.000Z', rating: 'good' }, { at: '2026-11-12T07:01:00.000Z', rating: 'good' }] }]),
   page('Plain'),
 ]
-const VIEW = { type: 'table' as const, name: 'T', order: ['file.name', 'file.cards', 'file.due'] }
-const cells = (opts: Parameters<typeof runView>[3]) =>
-  runView({ views: [VIEW] }, VIEW, RECORDS, { now: NOW, ...opts }).rows.map((r) => [r.values['file.name'], r.values['file.cards'], r.values['file.due']])
+const GONE = ['file.cards', 'file.due', 'file.archived']
 
-describe('YAZ-5046: the Archived column', () => {
-  const AV = { type: 'table' as const, name: 'T', order: ['file.name', 'file.archived'] }
-  const archived = (view: typeof AV & { sort?: unknown }) => runView({ views: [view as never] }, view as never, RECORDS, { now: NOW }).rows.map((r) => [r.values['file.name'], r.values['file.archived']])
-
-  it('counts each page\'s archived cards (the line\'s `off`), with or without review settings; none: blank; its name is "Archived"', () => {
-    expect(archived(AV)).toEqual([['Mixed', 1], ['Learned', null], ['Plain', null]])
-    expect(defaultLabel('file.archived')).toBe('Archived')
-  })
-
-  it('sorts as the Cards and Due columns do: by the number', () => {
-    const recs = [...RECORDS, page('Two', [{ id: 'V-8', off: true, next: false, reviews: [] }, { id: 'V-9', off: true, next: false, reviews: [] }])]
-    const view = { ...AV, sort: [{ property: 'file.archived', direction: 'DESC' as const }] }
-    expect(runView({ views: [view] }, view, recs, { now: NOW }).rows.slice(0, 2).map((r) => [r.values['file.name'], r.values['file.archived']])).toEqual([['Two', 2], ['Mixed', 1]])
-  })
-
-  it('is offered as a hidden column only where a row holds a card, as Cards and Due are', () => {
+describe('YAZ-5793 (D3): the Pages table no longer has Cards, Due or Archived (YAZ-4967, YAZ-5046)', () => {
+  it('none is offered, not even where a row holds a card', () => {
     const plain = { type: 'table' as const, name: 'T' }
-    expect(allPropertyKeys({ views: [plain] }, plain, RECORDS)).toEqual(expect.arrayContaining(['file.cards', 'file.due', 'file.archived']))
-    expect(allPropertyKeys({ views: [plain] }, plain, [page('Plain')])).not.toContain('file.archived')
-  })
-})
-
-describe('Cards and Due columns (YAZ-4967, idea 2)', () => {
-  it('count each page\'s cards and its reviewed cards due now (a new card is not "due": the daily limit is the vault\'s); none: blank', () => {
-    expect(cells({ cardSettings: DEFAULT_REVIEW_SETTINGS })).toEqual([
-      ['Mixed', 4, 1],
-      ['Learned', 1, null],
-      ['Plain', null, null],
-    ])
-    expect([defaultLabel('file.cards'), defaultLabel('file.due')]).toEqual(['Cards', 'Due'])
+    const keys = allPropertyKeys({ views: [plain] }, plain, RECORDS)
+    for (const key of GONE) expect(keys).not.toContain(key)
+    expect(propertyKeys({ views: [plain] }, plain, RECORDS).filter((k) => GONE.includes(k))).toEqual([])
   })
 
-  it('with review off, or no settings for the vault, "Due" is blank and "Cards" still counts', () => {
-    for (const cardSettings of [{ ...DEFAULT_REVIEW_SETTINGS, enabled: false }, undefined]) {
-      expect(cells({ cardSettings }).map(([, cards, due]) => [cards, due])).toEqual([[4, null], [1, null], [null, null]])
+  it('a saved order with `file.due` (and the others) renders without them, with no error; its other columns stay in order', () => {
+    const view = { type: 'table' as const, name: 'T', order: ['file.name', 'file.cards', 'file.due', 'file.archived', 'file.folder'] }
+    const def = { views: [view] }
+    expect(propertyKeys(def, view, RECORDS)).toEqual(['file.name', 'file.folder'])
+    for (const cardSettings of [DEFAULT_REVIEW_SETTINGS, undefined]) {
+      const out = runView(def, view, RECORDS, { now: NOW, cardSettings })
+      expect(out.errors).toEqual([])
+      expect(out.rows.map((r) => r.values['file.name'])).toEqual(['Mixed', 'Learned', 'Plain'])
+      for (const r of out.rows) for (const key of GONE) expect(r.values[key] ?? null).toBeNull()
     }
+    // The saved view is not rewritten by a read: its order is written again only with the next change.
+    expect(view.order).toEqual(['file.name', 'file.cards', 'file.due', 'file.archived', 'file.folder'])
   })
 
-  it('are offered as hidden columns only where a row holds a card', () => {
-    const plain = { type: 'table' as const, name: 'T' }
-    expect(allPropertyKeys({ views: [plain] }, plain, RECORDS)).toEqual(expect.arrayContaining(['file.cards', 'file.due']))
-    expect(allPropertyKeys({ views: [plain] }, plain, [page('Plain')])).not.toContain('file.cards')
+  it('a saved sort on `file.due` or `file.archived` runs with no error and keeps every page', () => {
+    for (const property of ['file.due', 'file.archived']) {
+      const view = { type: 'table' as const, name: 'T', order: ['file.name', property], sort: [{ property, direction: 'DESC' as const }] }
+      const out = runView({ views: [view] }, view, RECORDS, { now: NOW, cardSettings: DEFAULT_REVIEW_SETTINGS })
+      expect(out.errors).toEqual([])
+      expect(out.rows.map((r) => r.values['file.name']).sort()).toEqual(['Learned', 'Mixed', 'Plain'])
+    }
   })
 })
 
@@ -113,10 +99,9 @@ describe('YAZ-5047: the Type column (`file.kind`): Page, Card, Folder', () => {
     expect(propertyValues('file.kind', [page('Plain')], null)).toEqual(['page', 'folder'])
   })
 
-  it('Cards, Due and Archived count the cards that live in the file, never the cards it embeds', () => {
+  it('YAZ-5793: a Card table lists the cards that live in a file, never the cards it embeds (the card counts it replaces counted the same)', () => {
     const embedder: IndexRecord = { ...page('Embeds'), embeds: ['GEO-140'] }
-    const view = { type: 'table' as const, name: 'T', order: ['file.name', 'file.cards', 'file.archived'] }
-    const rows = runView({ views: [view] }, view, [embedder, cardFile('Capital of France', 'GEO-140')], { now: NOW }).rows.map((r) => [r.record.title, r.values['file.cards'], r.values['file.archived']])
-    expect(rows).toEqual([['Embeds', null, null], ['Capital of France', 1, null]])
+    const rows = cardRowRecords([embedder, cardFile('Capital of France', 'GEO-140')])
+    expect(rows.map((r) => [r.path, r.title])).toEqual([['/v/Deck/Capital of France.md', 'Capital of France']])
   })
 })

@@ -32,7 +32,7 @@ import { folderTitleOf } from './folderTitle'
  *    page's values as the views read them (`rowValues`: the app's keys out, the column spellings, separate values);
  *    the direct subfolders as rows (`subfolderRows`) for a view whose "Subfolders" asks for them;
  *  - a view: Settings › Folder pages filled in (`withDefaults`, here the Mac's defaults: those settings live on the Mac,
- *    not in the vault), the cards lens for "Show cards as rows" (`cardLensOn`), and the Mac's engine (`runView`): the
+ *    not in the vault), the cards lens for a Card table (`cardLensOn`), and the Mac's engine (`runView`): the
  *    same filter, sort, groups, and the same columns (`propertyKeys`) and cell text (`exportView`'s `cellText`).
  *
  * What the phone does not have: the Mac's own Settings (it uses their defaults), the window's folder link resolver

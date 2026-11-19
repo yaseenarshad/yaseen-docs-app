@@ -142,7 +142,7 @@ export interface TableViewProps {
   /** The read-only pages (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
   /**
-   * The rows are cards (YAZ-5319, Show cards as rows): no row moves (a drag onto a group or to Other files), and the
+   * The rows are cards (YAZ-5319, a Card table): no row moves (a drag onto a group or to Other files), and the
    * Name cell is the card's title, which no title edit renames. Card status and Card up next still edit.
    */
   cardRows?: boolean
