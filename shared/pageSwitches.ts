@@ -152,3 +152,25 @@ export function readBlockWidth(content: string, key: BlockWidthKey): number | nu
 export function writeBlockWidth(content: string, key: BlockWidthKey, width: number | null): string {
   return readBlockWidth(content, key) === width ? content : setFrontmatterProperty(content, key, width ?? undefined)
 }
+
+/**
+ * This page's card sides (YAZ-5904 D1): `card-sides: fold | show`. The page cog's and a card page's cog's "Card sides"
+ * row writes it; "Default" removes the key, and the page follows Settings › Cards › Card look › Card sides in pages
+ * again. `fold` starts Side 2 and after of each card folded; `show` shows every side. Explore never reads it (D3).
+ */
+export const CARD_SIDES_KEY = 'card-sides'
+export const CARD_SIDES = ['fold', 'show'] as const
+export type CardSides = (typeof CARD_SIDES)[number]
+
+/** The page's own card sides, or null: no key, or a value that is not one (the block is parsed only when it names the key). */
+export function readCardSides(content: string): CardSides | null {
+  const { frontmatter } = splitFrontmatter(content)
+  if (!frontmatter.includes(CARD_SIDES_KEY)) return null
+  const value = parseFrontmatter(frontmatter).properties[CARD_SIDES_KEY]
+  return CARD_SIDES.includes(value as CardSides) ? (value as CardSides) : null
+}
+
+/** The page with its own card sides; `null` removes the key, so the page follows the card look again. */
+export function writeCardSides(content: string, sides: CardSides | null): string {
+  return readCardSides(content) === sides ? content : setFrontmatterProperty(content, CARD_SIDES_KEY, sides ?? undefined)
+}

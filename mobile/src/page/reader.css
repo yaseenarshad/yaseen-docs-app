@@ -659,6 +659,31 @@
   max-width: calc(var(--card-text-width, 100vw) + 34px);
 }
 
+/* YAZ-5904 Q2: a folded card side's line ("▸ Side 2", `cardFold.ts`) is a finger's target on the phone: the
+   whole line, 44 px tall, across the card (an invisible box over the dashed line), with room above and below so it never
+   covers the text. A tap opens the side (▾), a second tap folds it. The Mac keeps its slim line (`card.css`). */
+.reader .card .card__rule[data-fold] {
+  margin-top: 30px;
+  margin-bottom: 30px;
+  -webkit-tap-highlight-color: transparent;
+}
+.reader .card .card__rule[data-fold]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -22px;
+  height: 44px;
+}
+.reader .card .card__rule[data-fold]::before {
+  font-size: 13px;
+  line-height: 20px;
+  padding: 0 8px;
+}
+.reader .card .card__rule[data-fold] + .card__side[hidden] + .card__rule {
+  margin-top: 30px;
+}
+
 /* STICKY HEADINGS (YAZ-5591, `stickyHeadings.ts`), phone only: the layer of stuck headings, a zero-height box just before
    the page's body that sticks at the scroller's top edge, under the top bar (`.screen` has 12px of top padding, and a
    sticky box stops below it, so `top` takes it back, as Search's `.tree__stuck`; an Explore panel's has none). It is as

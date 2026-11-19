@@ -638,6 +638,11 @@ function cardLookCtx(ctx: SettingsCtx): SettingsCtx {
   if (look === undefined) return ctx
   return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appCardLook(next)) }
 }
+/** Card sides in pages / in Explore (YAZ-5904): Show all (the default) or Fold Side 2 and after. */
+const CARD_SIDES_FOLD_OPTIONS: readonly { label: string; value: boolean }[] = [
+  { label: 'Show all', value: false },
+  { label: 'Fold Side 2 and after', value: true },
+]
 function cardLookItems(items: readonly SettingDef[]): SettingDef[] {
   const vaultRow: SettingDef = {
     id: 'cardLookVault',
@@ -2600,6 +2605,43 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: reviewOn,
             render: (ctx) => (
               <Segmented options={cardTablePositionOptions((text) => unit(ctx, text))} value={ctx.settings.cardTablePosition ?? 'pages'} onChange={(cardTablePosition) => ctx.onChange({ ...ctx.settings, cardTablePosition })} ariaLabel="Card tables" />
+            ),
+          },
+          {
+            // YAZ-5904 D1 (Yaseen: "a global setting in cards and then a per page setting that would allow for us to collapse
+            // the sides (all of them side 2+)"): the vault's, in card-look.json, so the phone's page folds too. A page's own
+            // cog (Card sides: Default · Show all · Fold) wins.
+            id: 'cardSidesFold',
+            label: 'Card sides in pages',
+            hint: "Fold Side 2 and after of each card in a page, an embed and the hover preview. A click on \"Side 2\" opens it. A page's cog › Card sides wins. Never in the Inbox or Review.",
+            keywords: [...REVIEW_KEYWORDS, 'sides', 'side 2', 'fold', 'collapse', 'expand', 'long', 'show all', 'back'],
+            available: reviewOn,
+            render: ({ settings, onChange }) => (
+              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={settings.cardSidesFold === true} onChange={(cardSidesFold) => onChange({ ...settings, cardSidesFold })} ariaLabel="Card sides in pages" />
+            ),
+          },
+          {
+            // YAZ-5904 Q1 (Yaseen: "on a card page speifically u might want to go to the ard page and see the whole content
+            // there vs on a page that a card is on"): a card page's own choice, Show all by default. Its cog wins.
+            id: 'cardSidesFoldCardPages',
+            label: 'Card sides on card pages',
+            hint: "The same fold on a card page (a card file's tab). A card page's cog › Card sides wins.",
+            keywords: [...REVIEW_KEYWORDS, 'sides', 'side 2', 'fold', 'collapse', 'expand', 'card page', 'card file', 'show all'],
+            available: reviewOn,
+            render: ({ settings, onChange }) => (
+              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={settings.cardSidesFoldCardPages === true} onChange={(cardSidesFoldCardPages) => onChange({ ...settings, cardSidesFoldCardPages })} ariaLabel="Card sides on card pages" />
+            ),
+          },
+          {
+            // YAZ-5904 D3 (Yaseen: "for explore we can always have expanded caus that the purpose of you going there"):
+            // Explore's own choice, Show all by default. The page's key does not reach Explore.
+            id: 'cardSidesFoldExplore',
+            label: 'Card sides in Explore',
+            hint: "The same fold in Explore's pages and card window. Show all reads the whole card.",
+            keywords: [...REVIEW_KEYWORDS, 'sides', 'side 2', 'fold', 'collapse', 'expand', 'explore', 'show all'],
+            available: reviewOn,
+            render: ({ settings, onChange }) => (
+              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={settings.cardSidesFoldExplore === true} onChange={(cardSidesFoldExplore) => onChange({ ...settings, cardSidesFoldExplore })} ariaLabel="Card sides in Explore" />
             ),
           },
           {

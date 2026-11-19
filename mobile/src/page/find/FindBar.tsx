@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { paintFindRanges, textMatches } from '@client/editor/find/cardFind'
+import { openFoldedSideAt } from '@client/editor/card/cardFold'
 import { landingTop } from '../headings'
 import { foldsOf, HIDDEN_ATTR } from '../folds'
 
@@ -41,6 +42,8 @@ export default function FindBar({ host, onClose }: { host: RefObject<HTMLElement
     const range = matches[active] ?? null
     const mode = foldMode()
     if (mode !== 'keep') foldsOf(host.current)?.peek(mode === 'all' ? matches.map((m) => m.startContainer) : range === null ? [] : [range.startContainer])
+    // YAZ-5904: a match in a folded card side opens that side, as on the Mac.
+    if (range !== null) openFoldedSideAt(range.startContainer)
     paintFindRanges(owner.current, matches, range)
     setResult({ total: matches.length, active })
     const scroller = host.current?.closest<HTMLElement>('.screen') ?? null

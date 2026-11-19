@@ -232,6 +232,8 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
             onDeleteReview={writes.deleteReview}
             onChangeLine={changeLine}
             onNotice={onNotice}
+            // YAZ-5904 D3: Side 2 and after fold here by Card sides in Explore (`card.css`), never by the page's key.
+            fold
           />
         )}
       </div>

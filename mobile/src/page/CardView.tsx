@@ -15,6 +15,8 @@ import { openLink, type LinkDoor } from './openLink'
 import { heldText, holdText } from './heldText'
 import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
+import { followCardFolds } from '@client/editor/card/cardFold'
+import { readCardSides } from '@shared/pageSwitches'
 import { useTables } from './useTables'
 import { PageComments, PageCommentsCount } from './comments/PageComments'
 import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
@@ -128,6 +130,9 @@ export default function CardView({ path, id }: { path: string; id: string }) {
     const parts = [top, titleBand(card.title), body]
     el.replaceChildren(...parts.filter((part): part is HTMLElement => part !== null))
     el.classList.toggle('card--off', card.off)
+    // YAZ-5904 Q1: a card file's card folds Side 2 and after as Card sides on card pages says (`data-card-file`), a card
+    // of a page as Card sides in pages; the file's own `card-sides` wins (`card.css`).
+    followCardFolds(el)
     // `card.text` and the head's words are what is drawn: a new read with the same ones draws nothing again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, path, card?.text, head])
@@ -166,7 +171,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         )}
         {text === null && <p className="muted">This card is not on the phone.</p>}
         {text !== undefined && text !== null && card === null && shape === null && <p className="muted">{`Missing card · ${id}`}</p>}
-        <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
+        <div className="card card-view__card" ref={host} data-card-file={isFile ? '' : undefined} data-fold-scope={path} data-card-sides={(typeof text === 'string' ? readCardSides(text) : null) ?? undefined} hidden={card === null} onClick={(e) => void onTap(e)} />
         {/* The Mac's strip, tucked under the card and closed: Reviews, Properties, Linked mentions (and a card
             file's Embedded in), each opening its drawer. Review off: none, as the Mac. */}
         {card !== null && data !== null && reviewOn && (

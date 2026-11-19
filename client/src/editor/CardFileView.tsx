@@ -77,6 +77,8 @@ import { CardFileNotice } from './CardFileNotice'
 import { stepZoomByKey, useKeptZoom } from './DocumentZoom'
 import { cardBlockViewOfDom } from './card/cardBlockView'
 import { PageSettings } from './PageSettings'
+import { readCardSides, writeCardSides, type CardSides } from '@shared/pageSwitches'
+import { tellCardFoldChange } from './card/cardFold'
 import { PageTitle } from './PageTitle'
 import { StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
@@ -261,6 +263,14 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
    */
   const setOwnKey = (row: string, change: (text: string) => string) =>
     void transformFile(path, change).then(read, (err: unknown) => onNotice(`${row} could not change: ${err instanceof Error ? err.message : String(err)}`))
+  /**
+   * YAZ-5904: this card page's "Card sides" (the cog), its own `card-sides` key, on the newest bytes. The key sets the
+   * card's fold on the tab (`data-card-sides`); Default follows Settings › Cards › Card look › Card sides on card pages (Q1).
+   */
+  const cardSides = content === null ? null : readCardSides(content)
+  useEffect(() => tellCardFoldChange(), [cardSides])
+  const setCardSides = (sides: CardSides | null) =>
+    void transformFile(path, (text) => writeCardSides(text, sides)).then(read, (err: unknown) => onNotice(`Card sides could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
   /** Done: the card's text, its sides only. The band is the only title: Edit card shows it, with no field (YAZ-5392). */
   const editDone = (text: string) => {
@@ -402,14 +412,14 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
             {propertyCount > 0 && <span className="frontmatter-panel__count">{propertyCount}</span>}
           </button>
         )}
-        <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} readText={() => cardText}
+        <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} cardSides={cardSides} onChangeCardSides={setCardSides} cardSidesSetting="Card sides on card pages" readText={() => cardText}
           // YAZ-5871 D4: the card's own width and position, saved in the card file. Default follows Card width and Page position.
           pageWidth={ownWidth} appContentWidth={defaultWidth} pageWidthLabel="Card width" pageWidthSettings="Review › Card width" onChangePageWidth={(next) => setOwnKey('Card width', (text) => writePageWidth(text, next))}
           pagePosition={ownPosition} appContentPosition={appPosition} onChangePagePosition={(next) => setOwnKey('Position', (text) => writePagePosition(text, next))} />
       </StatusChips>
       <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
-      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown} style={fileStyle}>
+      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body data-card-sides={cardSides ?? undefined} data-fold-scope={path} onKeyDown={onKeyDown} style={fileStyle}>
         <div className="card-file__page">
           {/* YAZ-5392: above the card, the folder path only. The title lives in the card's band, as in a page. YAZ-5402: the folder icon says it is a folder. */}
           <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
@@ -436,6 +446,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               stripOpen={stripPart}
               onStripToggle={(part) => setStripPart((open) => (open === part ? null : part))}
               embeds
+              fold
               titleField="show"
               head={
                 <div className="card__head">

@@ -10,8 +10,8 @@ import { NO_LINK_PILLS } from '@shared/linkPills'
 
 describe('card-look.json (shared/cardLook.ts)', () => {
   it('the defaults are the app\'s (DEFAULT_SETTINGS, CARD_SPACING_CLEAN), written out for the phone\'s first load', () => {
-    const { shownHiddenWords, markNextHidden, nextHiddenColour, cardWidth, cardTextSize, cardTitleSize, cardTablePosition, cardSpacing, cardLineSpacing, cardBlockGap, cardBulletIndent, cardBulletGap, cardBulletSpace } = DEFAULT_SETTINGS
-    expect(CARD_LOOK_DEFAULTS).toEqual({ shownHiddenWords, markNextHidden, nextHiddenColour, cardWidth, cardTextSize, cardTitleSize, cardTablePosition, cardSpacing, cardLineSpacing, cardBlockGap, cardBulletIndent, cardBulletGap, cardBulletSpace })
+    const { shownHiddenWords, markNextHidden, nextHiddenColour, cardWidth, cardTextSize, cardTitleSize, cardTablePosition, cardSpacing, cardLineSpacing, cardBlockGap, cardBulletIndent, cardBulletGap, cardBulletSpace, cardSidesFold, cardSidesFoldCardPages, cardSidesFoldExplore } = DEFAULT_SETTINGS
+    expect(CARD_LOOK_DEFAULTS).toEqual({ shownHiddenWords, markNextHidden, nextHiddenColour, cardWidth, cardTextSize, cardTitleSize, cardTablePosition, cardSpacing, cardLineSpacing, cardBlockGap, cardBulletIndent, cardBulletGap, cardBulletSpace, cardSidesFold, cardSidesFoldCardPages, cardSidesFoldExplore })
     expect(CARD_LOOK_CLEAN).toEqual(CARD_SPACING_CLEAN)
   })
 

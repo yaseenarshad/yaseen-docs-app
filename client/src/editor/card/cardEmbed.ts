@@ -48,6 +48,7 @@ import { drawEditButton } from './cardEditKeys'
 import { openCardWindow, previewCard } from './cardOpen'
 import { mountCardTitle } from './cardTitle'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
+import { CARD_FOLD_RULE, followCardFold, onCardFoldChange } from './cardFold'
 import type { CardReviewDoorApi } from './cardBlockView'
 import { CARD_HEADS_REDRAW, cardHeadMarkEls } from '../../review/cardHeadMarks'
 import { mountReviewsStrip, type ReviewsStripHandle, type StripPart } from './reviewsStrip'
@@ -300,8 +301,16 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     if (card === null || edit !== null) return
     // The head shows the title (off the card line); the card's text is its sides only (YAZ-5308).
     body.replaceChildren(read === null ? '' : renderCard(read.text, {}, doors.look(card.path)))
+    // YAZ-5918: the sides opened in this embed stay open while the page is open, by the card's ID.
+    body.firstElementChild?.setAttribute('data-fold-key', card.id)
+    // YAZ-5904: Side 2 and after folded as the page that embeds it says (`--card-sides-fold`), once it is in the page.
+    queueMicrotask(refold)
     drawReviews()
   }
+  const refold = (): void => {
+    if (!destroyed && edit === null) followCardFold(body.querySelector(':scope > .card__sides'))
+  }
+  const unfold = onCardFoldChange(refold)
 
   /** The card's strip under its text (YAZ-5380: Reviews and Properties), for the card as read: none with no door. */
   const drawReviews = (): void => {
@@ -465,6 +474,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     }
     // A sound's player is its own (YAZ-5014).
     if (target.closest(CARD_MEDIA) !== null) return
+    // A folded side's rule (YAZ-5904) is a button: its click opens the side.
+    if (target.closest(CARD_FOLD_RULE) !== null) return
     // A pill, or a board's picture (YAZ-5015): it opens as its link does, as in the page's card.
     const pill = target.closest<HTMLElement>(CARD_OPENS)
     if (pill !== null && doors.follow !== undefined) {
@@ -487,7 +498,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   }
   const onDoubleClick = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, a[href]`) !== null) return
+    if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, ${CARD_FOLD_RULE}, a[href]`) !== null) return
     event.preventDefault()
     startEdit()
   }
@@ -538,6 +549,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     destroy: () => {
       destroyed = true
       window.removeEventListener(CARD_HEADS_REDRAW, redrawMarks)
+      unfold()
       stopWatch?.()
       closeMenu?.()
       edit?.editor.destroy()

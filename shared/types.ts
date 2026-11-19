@@ -2329,6 +2329,16 @@ export interface SettingsState {
    * the one flash every way to a card in its page has (Explore's page layer `card`, `landOn`, YAZ-5164). A card file and E do not change.
    */
   inboxOpenAt: InboxOpenAt
+  /**
+   * Settings › Cards › Card look › Card sides in pages (YAZ-5904 D1): `true` folds Side 2 and after of a card in a page,
+   * an embed, the hover preview and the phone's page (`--card-sides-fold-pages`). A page's `card-sides` key wins.
+   * `false` (the default) shows all. Never the Inbox, Preview, Review or Edit card.
+   */
+  cardSidesFold: boolean
+  /** Card look › Card sides on card pages (YAZ-5904 Q1): the same fold on a card page, a card file's tab (`--card-sides-fold-card-pages`). Its `card-sides` key wins. Default `false`, Show all. */
+  cardSidesFoldCardPages: boolean
+  /** Card look › Card sides in Explore (YAZ-5904 D3): the same fold in Explore's page and card layers (`--card-sides-fold-explore`). Default `false`, Show all. */
+  cardSidesFoldExplore: boolean
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
   cardLineSpacing: number
   /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
@@ -3132,6 +3142,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   cardTitleSize: null,
   cardTablePosition: 'pages',
   inboxOpenAt: 'top',
+  cardSidesFold: false,
+  cardSidesFoldCardPages: false,
+  cardSidesFoldExplore: false,
   ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,

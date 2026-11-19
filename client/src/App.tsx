@@ -86,6 +86,7 @@ import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRen
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { cardLookVars, cardSurfaceStyleOf, vaultCardVars } from './review/cardLook'
 import { appCardLook, cardLookSettings } from '@shared/cardLook'
+import { tellCardFoldChange } from './editor/card/cardFold'
 import { useReviewOnRoots } from './review/useReviewSettings'
 import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
 import { QuickLook } from './search/QuickLook'
@@ -1096,6 +1097,9 @@ export function App() {
     const cardVars = look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
     return cardSurfaceStyleOf(scopeOf(path).linkPills.pills, cardVars)
   }
+  // YAZ-5904: Card sides in pages or in Explore changed (the app's, or a vault's card look): the shown cards fold again.
+  const cardFoldKey = [settings.cardSidesFold, settings.cardSidesFoldCardPages, settings.cardSidesFoldExplore, ...vaults.map((v) => `${v?.cardLook.look?.sidesFold}/${v?.cardLook.look?.sidesFoldCardPages}/${v?.cardLook.look?.sidesFoldExplore}`)].join()
+  useEffect(() => tellCardFoldChange(), [cardFoldKey])
   /**
    * The text formatting of the vault that holds `path` (YAZ-3067 D12), as the style of the layer
    * that shows it: two vaults in one window look different. Each variable is there only for a

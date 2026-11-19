@@ -84,6 +84,7 @@ import type { WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { isEmptyNewCard, newCardFormatHint } from './cardFormatHint'
 import { mountCardTitle, type CardTitleHandle } from './cardTitle'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
+import { CARD_FOLD_RULE, followCardFold, onCardFoldChange } from './cardFold'
 import './card.css'
 
 // The open hook (D13) lives with the card's other doors (`cardOpen.ts`): a card link's click sends it too (YAZ-5030).
@@ -263,6 +264,8 @@ export class CardBlockView implements NodeView {
   /** What the body last drew: redrawn only when it changes. */
   private drawn: string | null = null
   private readonly unsubscribe: (() => void) | undefined
+  /** YAZ-5904: the fold of Side 2 and after follows a change of the card look or of the page's `card-sides`. */
+  private readonly unfold: () => void
   /** This card's door to a landing asked while it shows (YAZ-5164, `watchCardLanding`). */
   private readonly unwatchLanding: () => void
   private closeMenu: (() => void) | null = null
@@ -324,6 +327,12 @@ export class CardBlockView implements NodeView {
       // An index change redraws only the pills of a card with a link: no Markdown render again.
       if (!this.editing && this.node.textContent.includes('[[')) refreshCardLook(this.body, this.deps.look())
     })
+    this.unfold = onCardFoldChange(() => this.refold())
+  }
+
+  /** YAZ-5904: Side 2 and after folded as the page says (`--card-sides-fold`, `cardFold.ts`); none while edited. */
+  private refold(): void {
+    if (!this.editing) followCardFold(this.body.querySelector(':scope > .card__sides'))
   }
 
   get editing(): boolean {
@@ -372,6 +381,8 @@ export class CardBlockView implements NodeView {
     if (this.editing || this.drawn === text) return
     this.drawn = text
     this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderCard(text, {}, this.deps.look()))
+    // YAZ-5904: the page's fold is read once the card is in the page (a new card view is not yet): before it paints.
+    queueMicrotask(() => this.refold())
   }
 
   /** The head's marks (YAZ-5915), off the card line and the vault's review settings now. */
@@ -800,6 +811,8 @@ export class CardBlockView implements NodeView {
     }
     // A sound's player is its own (YAZ-5014): its click plays, and the card is not selected.
     if (target.closest(CARD_MEDIA) !== null) return
+    // A folded side's rule (YAZ-5904) is a button: its click opens the side, and the card is not selected.
+    if (target.closest(CARD_FOLD_RULE) !== null) return
     // A pill, or a board's picture (YAZ-5015): it opens as its link does.
     const pill = target.closest<HTMLElement>(CARD_OPENS)
     if (pill !== null && this.deps.follow !== undefined) {
@@ -874,7 +887,7 @@ export class CardBlockView implements NodeView {
 
   private onDoubleClick = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, a[href]`) !== null) return
+    if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, ${CARD_FOLD_RULE}, a[href]`) !== null) return
     // A page that cannot be edited (YAZ-5896 D2): the browser selects the word, as outside the card; no Edit card.
     if (!this.view.editable) return
     event.preventDefault()
@@ -938,6 +951,7 @@ export class CardBlockView implements NodeView {
     this.title?.destroy()
     this.closeMenu?.()
     this.unsubscribe?.()
+    this.unfold()
     this.unwatchLanding()
     this.code?.destroy?.()
     views.delete(this.dom)
