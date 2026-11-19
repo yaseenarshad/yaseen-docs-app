@@ -12,8 +12,8 @@
  *
  * ON THE SCREEN. `codeMarkDecorations` (in every code block's CodeMirror extensions, `createCrepe.ts`) draws the spans
  * as CodeMirror mark decorations and maps them while the user types. The plugin's view sends a block's spans to its
- * CodeMirror when its attribute changes (a button, a key, an undo, a reload), and a CodeMirror that starts (Crepe
- * starts one when its block scrolls into view) reads them itself.
+ * CodeMirror when the block changed (a button, a key, an undo, an outside edit: YAZ-5876), and a CodeMirror that starts
+ * (Crepe starts one when its block scrolls into view) reads them itself.
  *
  * THE TOOLBAR AND THE KEYS (D3, D4). Crepe copies CodeMirror's selection to the page, so a selection in the code is a
  * page `TextSelection` inside the `code_block` (`codeSelection`). The page toolbar shows for it (the vendored Crepe
@@ -249,8 +249,8 @@ const markField = StateField.define<DecorationSet>({
 
 /** The page editor of each `.ProseMirror`, so a CodeMirror inside it finds its block. */
 const pageViews = new WeakMap<Element, EditorView>()
-/** Each page editor's started CodeMirrors, and the `marks` attribute each one last drew. */
-const started = new WeakMap<EditorView, Map<CodeMirrorView, unknown>>()
+/** Each page editor's started CodeMirrors, and the block node each one last drew (`null`: none yet). */
+const started = new WeakMap<EditorView, Map<CodeMirrorView, ProseNode | null>>()
 
 /** The page editor and the block of a CodeMirror, or null (not drawn by a page editor). */
 function blockOf(cm: CodeMirrorView): { view: EditorView; pos: number; node: ProseNode } | null {
@@ -264,9 +264,13 @@ function blockOf(cm: CodeMirrorView): { view: EditorView; pos: number; node: Pro
 }
 
 /** Draw a block's spans in its CodeMirror when its `marks` attribute is not the one it drew. */
-function sendSpans(cm: CodeMirrorView, node: ProseNode, drawn: Map<CodeMirrorView, unknown>): void {
-  if (drawn.get(cm) === node.attrs.marks) return
-  drawn.set(cm, node.attrs.marks)
+function sendSpans(cm: CodeMirrorView, node: ProseNode, drawn: Map<CodeMirrorView, ProseNode | null>): void {
+  const last = drawn.get(cm) ?? null
+  // The same node is drawn. A block with no marks, before and now, has nothing to draw: a key in a plain block sends
+  // nothing. Any other change of the node is sent (YAZ-5876): an outside edit replaces CodeMirror's text as ONE change
+  // over the marks, which wipes their drawing, though the fitted `marks` can be the same value as before.
+  if (last === node || (node.attrs.marks === null && (last === null || last.attrs.marks === null))) return
+  drawn.set(cm, node)
   cm.dispatch({ effects: setSpans.of(codeSpansOf(node)) })
 }
 
@@ -354,7 +358,7 @@ export const codeMarksPlugin = $prose(
  * differs from `before` is walked (ProseMirror's own fragment diff, which shares the untouched nodes), and a block
  * whose attribute is the one its CodeMirror drew is skipped. A key in a plain block finds nothing to send.
  */
-function redrawChanged(view: EditorView, before: ProseNode, drawn: Map<CodeMirrorView, unknown>): void {
+function redrawChanged(view: EditorView, before: ProseNode, drawn: Map<CodeMirrorView, ProseNode | null>): void {
   const doc = view.state.doc
   const start = doc.content.findDiffStart(before.content)
   const end = doc.content.findDiffEnd(before.content)

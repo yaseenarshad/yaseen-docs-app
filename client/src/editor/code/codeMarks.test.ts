@@ -409,3 +409,29 @@ describe('checker round 1 bugs', () => {
     expect(marksFromSpans(node.textContent, node.attrs.marks ?? []).map((m) => `${m.kind} ${m.text}`)).toEqual(['bold fetchUser'])
   })
 })
+
+describe('checker round 2 bug', () => {
+  it('YAZ-5876: an outside edit that keeps the same marks still redraws them in the CodeMirror', async () => {
+    const PAD = Array.from({ length: 40 }, (_, i) => `Paragraph number ${i} with some words to keep the page big.`).join('\n\n')
+    const comment = '<!-- code: bold 2:22 "fetchUser", highlight-green 3:10 "user.name" -->'
+    const page = (code: string) => `\`\`\`js\n${code}\n\`\`\`\n${comment}\n\n${PAD}\n`
+    const { crepe, view } = await mount(page(CODE))
+    // A real CodeMirror in the block's box with the app's mark extensions, as Crepe starts one in the app.
+    const box = view.dom.querySelector<HTMLElement>('.milkdown-code-block')!
+    const cm = new CodeMirrorView({ state: CodeMirrorState.create({ doc: CODE, extensions: [codeMarkDecorations] }), parent: box })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const sent: unknown[] = []
+    const dispatch = cm.dispatch.bind(cm)
+    cm.dispatch = ((...args: Parameters<typeof cm.dispatch>) => {
+      sent.push(args[0])
+      dispatch(...args)
+    }) as typeof cm.dispatch
+    // The outside edit changes lines 1 and 4: the fit keeps both marks, so the block's `marks` attribute is the same.
+    const marksBefore = block(view).node.attrs.marks
+    expect(applyExternalMarkdown(crepe, page(CODE.replace('load', 'read').replace('}', '};')))).toBe('applied')
+    expect(block(view).node.attrs.marks).toEqual(marksBefore)
+    // Crepe replaced the CodeMirror text as one change, which wiped the drawn marks: the page must send them again.
+    expect(sent.length).toBeGreaterThan(0)
+    cm.destroy()
+  })
+})
