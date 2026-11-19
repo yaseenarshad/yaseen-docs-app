@@ -282,7 +282,10 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
   it('kept: the names, two buttons (four as a setting); no learning steps (days only, YAZ-5702)', () => {
     expect(answerRatings(S).map((r) => answerLabel(r, S))).toEqual(['Forgot', 'Remembered'])
     expect(answerRatings({ ...S, buttons: 4 }).map((r) => answerLabel(r, { ...S, buttons: 4 }))).toEqual(['Again', 'Hard', 'Good', 'Easy'])
-    // A ✕ and a new card's first ✓ come back today; every wait FSRS gives is whole days.
-    expect(cardHistory([{ at: '2026-11-12T09:00:00.000Z', rating: 'again' }], S).map((r) => [r.comesBack, r.interval >= 1])).toEqual([[true, true]])
+    // A ✕ and a new card's first ✓ come back today; every wait FSRS gives is whole days. YAZ-5789: a NEW card's ✕ is
+    // recorded, not counted (wait 0: later today); a learned card's ✕ is counted, with whole days.
+    expect(cardHistory([{ at: '2026-11-12T09:00:00.000Z', rating: 'again' }], S).map((r) => [r.comesBack, r.interval, r.counted])).toEqual([[true, 0, false]])
+    const learned = cardHistory([{ at: '2026-11-10T09:00:00.000Z', rating: 'good' }, { at: '2026-11-12T09:00:00.000Z', rating: 'again' }], S)
+    expect(learned.map((r) => [r.comesBack, r.interval >= 1, r.counted])).toEqual([[true, true, true], [true, true, true]])
   })
 })
