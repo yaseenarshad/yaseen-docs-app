@@ -128,16 +128,19 @@ export function raiseLayer(layers: readonly { id: number }[], order: readonly nu
   return [...ids.filter((x) => x !== id), id]
 }
 
-/** A panel's width in a window `windowWidth` wide: its own, cut to leave `EDGE_GAP` at each side. */
-export const panelWidth = (kind: ExploreLayer['kind'], windowWidth: number): number => Math.max(240, Math.min(kind === 'search' ? SEARCH_WIDTH : PAGE_WIDTH, windowWidth - 2 * EDGE_GAP))
+/**
+ * A panel's width in a window `windowWidth` wide: its own times Explore size (`size`, a factor: 1.25 for 125%,
+ * YAZ-5881 D2), cut to leave `EDGE_GAP` at each side.
+ */
+export const panelWidth = (kind: ExploreLayer['kind'], windowWidth: number, size = 1): number => Math.max(240, Math.min(Math.round((kind === 'search' ? SEARCH_WIDTH : PAGE_WIDTH) * size), windowWidth - 2 * EDGE_GAP))
 
 /**
  * Where layer `index` stands: `left` from the window's left edge, in CSS px, and `top` added to the 10vh margin. The
  * offset is `index × 15` right and `min(index, 1) × 15` down, clamped so the panel keeps 8 px to the window's right
- * edge: a narrow window gets a smaller offset, never a panel off screen.
+ * edge: a narrow window gets a smaller offset, never a panel off screen. `size` is Explore size (`panelWidth`).
  */
-export function layerPlace(kind: ExploreLayer['kind'], index: number, windowWidth: number): { left: number; top: number; width: number } {
-  const width = panelWidth(kind, windowWidth)
+export function layerPlace(kind: ExploreLayer['kind'], index: number, windowWidth: number, size = 1): { left: number; top: number; width: number } {
+  const width = panelWidth(kind, windowWidth, size)
   const centred = Math.max(0, Math.floor((windowWidth - width) / 2))
   const room = Math.max(0, windowWidth - 8 - width - centred)
   return { left: centred + Math.min(index * LAYER_STEP, room), top: Math.min(index, 1) * LAYER_STEP, width }
@@ -202,14 +205,15 @@ export function fitBox(box: LayerBox, W: number, H: number): LayerBox {
  * Where every layer stands in a window `W` × `H`: its stack place (`layerPlace`, under the 10vh margin) shifted by
  * however far the layer under it was moved from ITS stack place, so a new layer opens next to the layer under it
  * wherever that one is now; a layer moved or resized by hand (`moved`) stands in its own box. Each box fits the window.
+ * `size` is Explore size (`panelWidth`): it widens the stack places only, never a box moved or resized by hand.
  */
-export function layerBoxes(layers: readonly ExploreLayer[], moved: ReadonlyMap<number, LayerBox>, W: number, H: number): LayerBox[] {
+export function layerBoxes(layers: readonly ExploreLayer[], moved: ReadonlyMap<number, LayerBox>, W: number, H: number, size = 1): LayerBox[] {
   const margin = Math.round(H * 0.1)
   const out: LayerBox[] = []
   let dx = 0
   let dy = 0
   layers.forEach((layer, index) => {
-    const base = layerPlace(layer.kind, index, W)
+    const base = layerPlace(layer.kind, index, W, size)
     const own = moved.get(layer.id)
     const box = fitBox(own ?? { x: base.left + dx, y: margin + base.top + dy, width: base.width, height: null }, W, H)
     dx = box.x - base.left

@@ -819,6 +819,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tocZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
   // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
   appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
+  // YAZ-5881: Explore size, on the App sizes too; a stored value off them loads as 125 (the default).
+  exploreSize: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
   codeReadOnly: (v): v is boolean => typeof v === 'boolean',
   codeWrap: (v): v is boolean => typeof v === 'boolean',
   codeMinimap: (v): v is boolean => typeof v === 'boolean',

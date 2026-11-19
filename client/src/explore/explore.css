@@ -37,6 +37,12 @@
 .explore__layer--board {
   height: 80vh;
 }
+/* Explore size (YAZ-5881 D2): all that is in a layer grows, page text too (the page zoom works on top). The stack's
+   root carries the factor (`ExploreStack`); the layer's box, its grips and its place stay in window px, so a drag and a
+   resize follow the pointer. The panel's width grows with it in `panelWidth`. */
+.explore__layer > :not(.explore__grip) {
+  zoom: var(--explore-size, 1);
+}
 /* The 8 resize grips (round 3), inside the edges (the layer clips at its rounded corners). */
 .explore__grip {
   position: absolute;

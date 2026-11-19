@@ -968,6 +968,8 @@ export function App() {
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
   // every retained editor tree on any App state change.
   const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...newPageFolderInputs.current.settings, commentsOrder: order }), [changeSettings])
+  // Explore size (YAZ-5881 D3): ⌘+ / ⌘− / ⌘0 on Explore's search panel; the same stable door.
+  const changeExploreSize = useCallback((exploreSize: number) => changeSettings({ ...newPageFolderInputs.current.settings, exploreSize }), [changeSettings])
   // The table of contents' "Pin" / "Unpin" (YAZ-2700): the same stable door.
   const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newPageFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
   // A drag of the names column's edge (YAZ-2752), on its release: the same stable door.
@@ -4190,7 +4192,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={settings.exploreSize} onExploreSize={changeExploreSize} />
         </Suspense>
       )}
       {whatsNewOpen && (

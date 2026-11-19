@@ -217,6 +217,8 @@ beforeEach(() => {
     commentsOrder: 'oldest',
     onChangeCommentsOrder: vi.fn(),
     onClose: vi.fn(),
+    exploreSize: 100,
+    onExploreSize: vi.fn(),
   }
   under.comments.length = 0
   under.backlinks.length = 0
@@ -1151,6 +1153,44 @@ describe('round 4: zoom in a page layer', () => {
     expect(value()).toBe('90%')
     expect(bodyZoom()).toBe('0.9')
     document.body.removeEventListener('yaseendocs:zoom', tab)
+  })
+})
+
+describe('Explore size (YAZ-5881)', () => {
+  beforeEach(() => localStorage.removeItem('explore:zoom'))
+
+  it('D2: the root carries the factor and the stack places are the wider panels; D3: ⌘+ / ⌘− / ⌘0 on the search step it, on a page they zoom the page', async () => {
+    // The App's door: the setting changes, and the stack draws again with it.
+    const onExploreSize = vi.fn((percent: number) => {
+      props = { ...props, exploreSize: percent }
+      render(1)
+    })
+    props = { ...props, exploreSize: 125, onExploreSize }
+    const unclaimed = vi.fn()
+    await mount()
+    const stack = el.querySelector<HTMLElement>('.explore')!
+    expect(stack.style.getPropertyValue('--explore-size')).toBe('1.25')
+    expect(top().style.width).toBe(`${layerPlace('search', 0, window.innerWidth, 1.25).width}px`)
+    act(() => requestZoom(1, unclaimed))
+    expect(onExploreSize).toHaveBeenLastCalledWith(150)
+    expect(stack.style.getPropertyValue('--explore-size')).toBe('1.5')
+    expect(top().style.width).toBe(`${layerPlace('search', 0, window.innerWidth, 1.5).width}px`)
+    act(() => requestZoom(-1, unclaimed))
+    act(() => requestZoom(-1, unclaimed))
+    expect(onExploreSize).toHaveBeenLastCalledWith(110)
+    act(() => requestZoom(0, unclaimed))
+    expect(onExploreSize).toHaveBeenLastCalledWith(125)
+    expect(localStorage.getItem('explore:zoom')).toBeNull()
+    // A page in front: the keys zoom the page as before, and Explore size stays.
+    await typeQuery('alp')
+    await openResult()
+    const calls = onExploreSize.mock.calls.length
+    act(() => requestZoom(1, unclaimed))
+    expect(top().querySelector('.explore__head .document-zoom .document-zoom__value')?.textContent).toBe('125%')
+    expect(localStorage.getItem('explore:zoom')).toBe('125')
+    act(() => requestZoom(0, unclaimed))
+    expect(onExploreSize).toHaveBeenCalledTimes(calls)
+    expect(unclaimed).not.toHaveBeenCalled()
   })
 })
 
