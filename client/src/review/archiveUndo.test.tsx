@@ -118,12 +118,11 @@ const showing = (): string | null => review.session?.card?.id ?? null
 /** The line under the buttons. */
 const lastText = (): string => el.querySelector('.card-inbox__last')?.textContent ?? ''
 const menuRow = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === label)
-/** ⋯, then its Archive card, then the ask's Archive (YAZ-5697 round 2: the ONE card menu). */
+/** ⋯, then its Archive card twice (YAZ-5966: the first click says "Click again to archive"). */
 const archive = async (): Promise<void> => {
   await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!.click())
   await step(() => menuRow('Archive card')!.click())
-  await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
-  await step(() => menuRow('Archive')!.click())
+  await step(() => menuRow('Click again to archive')!.click())
 }
 const cmdZ = async (): Promise<void> => {
   await step(() => void (el.querySelector('.card-inbox') ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true, cancelable: true })))
@@ -153,10 +152,11 @@ describe('YAZ-5621: Archive card has an Undo on the Mac, as on the phone', () =>
     await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!.click())
     expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review'])
     await step(() => menuRow('Archive card')!.click())
-    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Archive this card?'))
+    expect(menuRow('Click again to archive')).toBeDefined()
     expect(showing()).toBe(first)
     expect(lineOf(first)).not.toContain(', off')
-    await step(() => menuRow('Cancel')!.click())
+    await step(() => void menuRow('Click again to archive')!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+    expect(menuRow('Archive card')).toBeDefined()
     expect(showing()).toBe(first)
     expect(lineOf(first)).not.toContain(', off')
   })

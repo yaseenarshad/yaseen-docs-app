@@ -363,16 +363,18 @@ describe('Edit card writes the original', () => {
 })
 
 describe('the ⋯ menu', () => {
-  it('YAZ-5697 round 2: the embed\'s ⋯ is the ONE card menu; one click on Archive card never archives', async () => {
+  it('YAZ-5697 round 2, YAZ-5966: the embed\'s ⋯ is the ONE card menu; one click on Archive card never archives: it says "Click again to archive"', async () => {
     const { root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
     press(box.querySelector('.card__more'))
     expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID'])
-    menuItem('Archive card')!.click()
-    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
+    const archive = menuItem('Archive card')!
+    archive.click()
     await new Promise((r) => setTimeout(r, 20))
     expect(disk.files.get(CARD_FILE)).not.toContain(', off')
-    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click()
+    expect([archive.isConnected, archive.textContent]).toEqual([true, 'Click again to archive'])
+    expect(document.querySelector('.ctx-menu__ask')).toBeNull()
+    archive.click()
     await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, title "Capital of France", off -->'))
   })
 
@@ -390,8 +392,10 @@ describe('the ⋯ menu', () => {
     expect(opened).toEqual([{ path: CARD_FILE, cardId: 'GEO-140', index: 0 }])
     // Archive card: the card line of the card file.
     press(box.querySelector('.card__more'))
-    menuItem('Archive card')!.click()
-    await yes('Archive')
+    // YAZ-5966: two clicks on the row.
+    const archive = menuItem('Archive card')!
+    archive.click()
+    archive.click()
     await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, title "Capital of France", off -->'))
     // Show as link: the embed becomes the card's link, in the page.
     press(box.querySelector('.card__more'))

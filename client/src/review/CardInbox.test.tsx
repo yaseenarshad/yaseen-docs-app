@@ -687,7 +687,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.card-inbox__panel .card-inbox__head-more')).not.toBeNull()
   })
 
-  it('YAZ-5004, YAZ-5697 round 2, YAZ-5963: the head\'s ⋯ opens the ONE card menu\'s Inbox rows; each runs the hook`s own action; Archive card asks first; Esc closes it', async () => {
+  it('YAZ-5004, YAZ-5697 round 2, YAZ-5963: the head\'s ⋯ opens the ONE card menu\'s Inbox rows; each runs the hook`s own action; Archive card and Move to Up next run on a second click (YAZ-5966); Esc closes it', async () => {
     mount(TWO_SIDES)
     const more = () => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!
     const actions = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')]
@@ -707,12 +707,15 @@ describe('the Inbox screen (YAZ-4962)', () => {
       act(() => actions().find((b) => b.textContent === label)!.click())
     }
     run('Archive card')
-    // One click never archives: it asks in place first.
+    // One click never archives (YAZ-5966): the row says "Click again to archive"; a second click archives.
     expect(review.turnOff).not.toHaveBeenCalled()
-    await vi.waitFor(() => expect(el.querySelector('.ctx-menu__ask')?.textContent).toContain('Archive this card?'))
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click())
+    expect(el.querySelector('.ctx-menu__ask')).toBeNull()
+    const again = (words: string) => act(() => actions().find((b) => b.textContent === words)!.click())
+    again('Click again to archive')
     expect(review.turnOff).toHaveBeenCalledOnce()
     run('Move to Up next')
+    expect(review.setNext).not.toHaveBeenCalled()
+    again('Click again to move to Up next')
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
     // YAZ-5145: Open card opens as O does: Explore's own layer.
     run('Open card')

@@ -1,6 +1,5 @@
 import { useEffect, useId, useState } from 'react'
 import type { CardTitleShow } from '@shared/cardTitleAt'
-import { Confirm } from '../screens/Confirm'
 import { cardActions, type CardAction, type CardActionMarks } from './cardActions'
 import { useTwoTap } from './twoTap'
 import './cardMenu.css'
@@ -30,35 +29,18 @@ export interface CardActionRowsProps {
  * the second, within about 3 s, does it. A tap anywhere but this row, Escape, or the menu closing cancels.
  * No wrapper: the rows are the host menu's own `menuitem`s; the live line (VoiceOver) goes first, so a host's
  * `:last-child` rule still finds its last row.
- *
- * A row with an `ask` (YAZ-5697: Archive card, a Title in review choice) asks in place instead, as the Mac's card menu
- * does: the first tap turns the row into the app's ask (`Confirm`: the question, Cancel first with the focus, then the
- * answer, touch-sized). It waits with no time limit; Cancel, a tap outside it, Escape or the menu closing run nothing.
+ * Archive card and a Title in review choice are two taps too (YAZ-5966: the Mac's card menu is click-twice there, no
+ * longer an ask in place); the choice already ✓ does nothing.
  * Title in review › (YAZ-5696, YAZ-5697 round 2): a tap opens its choices under it, touch-sized, the one now with ✓.
  */
 export default function CardActionRows({ marks, upNext, fix = true, onAction, disabled = false, rowClassName = 'card-actions__row', ms, titleGlobal }: CardActionRowsProps) {
   const group = useId()
   const { armed, tap, cancel } = useTwoTap({ ms })
-  const [asking, setAsking] = useState<string | null>(null)
   const [titleOpen, setTitleOpen] = useState(false)
   const rows = cardActions(marks ?? { off: false, next: false, fix: false, notitle: false }, { upNext, fix, titleGlobal })
   // The rows that show: Title in review's choices under it while it is open.
   const shown = rows.flatMap((r) => (r.children !== undefined && titleOpen ? [r, ...r.children] : [r]))
   const wait = disabled || marks === null
-  // An ask in place: a tap outside it cancels (Escape is the ask's own Cancel).
-  useEffect(() => {
-    if (asking === null) return
-    const down = (e: Event) => {
-      const at = e.target instanceof Element ? e.target.closest('[data-two-tap]') : null
-      if (at === null || at.getAttribute('data-two-tap') !== group || at.getAttribute('data-action') !== asking) setAsking(null)
-    }
-    document.addEventListener('pointerdown', down, true)
-    return () => document.removeEventListener('pointerdown', down, true)
-  }, [asking, group])
-  const askRow = shown.find((r) => r.key === asking && r.ask !== undefined) ?? null
-  useEffect(() => {
-    if (asking !== null && (askRow === null || wait)) setAsking(null)
-  }, [asking, askRow, wait])
   // Anything else cancels: a tap outside these rows, or Escape.
   useEffect(() => {
     if (armed === null) return
@@ -85,12 +67,7 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
       return setTitleOpen((open) => !open)
     }
     if (row.checked === true) return
-    if (row.ask === undefined) {
-      if (tap(row.key)) onAction(row)
-      return
-    }
-    cancel()
-    setAsking(row.key)
+    if (tap(row.key)) onAction(row)
   }
   return (
     <>
@@ -99,21 +76,6 @@ export default function CardActionRows({ marks, upNext, fix = true, onAction, di
       </span>
       {shown.map((row) => {
         const on = armed === row.key
-        if (row === askRow && row.ask !== undefined)
-          return (
-            <div key={row.key} className="card-actions__ask" data-two-tap={group} data-action={row.key}>
-              <Confirm
-                question={row.ask.question}
-                yes={row.ask.yes}
-                danger={row.ask.danger === true}
-                onNo={() => setAsking(null)}
-                onYes={() => {
-                  setAsking(null)
-                  onAction(row)
-                }}
-              />
-            </div>
-          )
         return (
           <button
             key={row.key}
