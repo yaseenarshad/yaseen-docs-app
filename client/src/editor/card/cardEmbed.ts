@@ -75,6 +75,9 @@ export const cardEmbedStats = { reads: 0 }
 /** Each file's text by its version: the last version read of each path, shared by every box. */
 const reads = new Map<string, { version: number | undefined; text: Promise<string | null> }>()
 
+/** A press that moves less than this many pixels is a click, not a drag (YAZ-5939, as the page card's YAZ-5896). */
+const CLICK_SLOP = 4
+
 /** The text of the card's file at `version` (the index's mtime): read one time per version; null when it is gone. */
 export function cardFileText(path: string, version: number | undefined): Promise<string | null> {
   const held = reads.get(path)
@@ -503,9 +506,34 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       return
     }
     if (target.closest('a[href]') !== null) return
-    // A press on the card selects the embed whole, as on a board's window.
+    // A press on the card's text (YAZ-5939, the page card's rule of YAZ-5896 D1): the browser selects, and ⌘C copies it.
+    // The host's widget gives the browser every event and keeps ProseMirror off its selection. A new press starts a new
+    // selection; a Shift-click extends it, and a double- or triple-click's second press keeps the word. A click with no
+    // drag still selects the embed whole.
+    if (target.closest('.card__sides') !== null) {
+      if (!event.shiftKey && event.detail <= 1) dom.ownerDocument.getSelection()?.removeAllRanges()
+      selectOnClick(event)
+      return
+    }
+    // A press on the card's head or edge selects the embed whole, as on a board's window.
     event.preventDefault()
     host.select()
+  }
+  /** A press on the card's text that ends with no drag (under `CLICK_SLOP` px, the selection collapsed) selects the embed whole. */
+  const selectOnClick = (down: MouseEvent): void => {
+    const win = dom.ownerDocument.defaultView ?? window
+    const up = (event: MouseEvent): void => {
+      win.removeEventListener('mouseup', up, true)
+      if (Math.hypot(event.clientX - down.clientX, event.clientY - down.clientY) >= CLICK_SLOP) return
+      // After the browser's own mouseup, which may still change the selection.
+      setTimeout(() => {
+        if (destroyed || edit !== null || !dom.isConnected) return
+        const selection = dom.ownerDocument.getSelection()
+        if (selection !== null && !selection.isCollapsed) return
+        host.select()
+      }, 0)
+    }
+    win.addEventListener('mouseup', up, true)
   }
   /** A Markdown link never navigates the window: it opens as the page's links do. */
   const onClick = (event: MouseEvent): void => {
@@ -517,6 +545,9 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const onDoubleClick = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null
     if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, ${CARD_FOLD_RULE}, a[href]`) !== null) return
+    // A page that cannot be edited (YAZ-5939, the page card's YAZ-5896 D2): the browser selects the word; no Edit card,
+    // and no "Allow edits" question.
+    if (!host.editable()) return
     event.preventDefault()
     startEdit()
   }

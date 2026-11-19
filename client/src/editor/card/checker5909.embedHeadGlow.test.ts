@@ -214,10 +214,9 @@ describe('YAZ-5925 D2c: an outside change of an embedded card lights its words; 
 })
 
 describe('YAZ-5896 D1, D2 in an embed (a card shown in a page by `![[ID]]`)', () => {
-  // BUG YAZ-5939: a card in a page lets the browser select its words; an embed still ends every press on its text with
-  // preventDefault (the embed is selected whole), and a double-click in a Read only page asks "Allow edits" instead of
-  // selecting the word. Seen live in the hidden app: a drag on an embed's words selects nothing.
-  it.fails('a press on the embed`s text leaves the browser free to select; a double-click in a Read only page asks nothing', async () => {
+  // YAZ-5939 (fixed): an embed ended every press on its text with preventDefault (the embed selected whole), and a
+  // double-click in a Read only page asked "Allow edits" instead of selecting the word. Now it follows the page card.
+  it('a press on the embed`s text leaves the browser free to select; a double-click in a Read only page asks nothing', async () => {
     const { root, crepe } = await mount('Plan\n\n![[GEO-140]]\n')
     const view = crepe.editor.ctx.get(editorViewCtx)
     const box = boxes(root)[0]!
@@ -233,5 +232,23 @@ describe('YAZ-5896 D1, D2 in an embed (a card shown in a page by `![[ID]]`)', ()
     text.dispatchEvent(dbl)
     expect(asked).toHaveLength(0)
     expect(dbl.defaultPrevented).toBe(false)
+  })
+
+  it('YAZ-5939: a click on the embed`s text with no drag selects the embed whole; a drag of 10 px does not', async () => {
+    const { root, crepe } = await mount('Plan\n\n![[GEO-140]]\n')
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const box = boxes(root)[0]!
+    await vi.waitFor(() => expect(box.querySelector('.card__body')?.textContent).toContain('Paris'))
+    const text = box.querySelector('.card__body p')!
+    const embedText = () => view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)
+    // A drag: the press and the release 10 px apart. The page's selection stays where it was.
+    text.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 1, clientX: 10, clientY: 10 }))
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, clientX: 20, clientY: 10 }))
+    await new Promise((done) => setTimeout(done, 5))
+    expect(embedText()).not.toBe('![[GEO-140]]')
+    // A click: the same place.
+    text.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 1, clientX: 10, clientY: 10 }))
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, clientX: 11, clientY: 10 }))
+    await vi.waitFor(() => expect(embedText()).toBe('![[GEO-140]]'))
   })
 })
