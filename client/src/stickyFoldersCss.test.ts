@@ -29,16 +29,21 @@ describe('sticky folder rows CSS contract (YAZ-3440 D1, D2, D3, D10)', () => {
   const rules = stuck.rest
   const bodies = (selector: string) => rules.filter((rule) => rule.selectors.includes(selector)).map((rule) => rule.body)
   const STICKY = ".tree > li[aria-expanded='true'] > .tree__row--sticky"
-  // The row's height, read from the sheet: 13px * 1.5 + 2 * 3px. The cap's script measures the same row (stickyFolders.ts).
+  // The row's height, read from the sheet: `--tree-row-h` (Row spacing, YAZ-5885), 25.5px by default, around its
+  // 13px * 1.5 line. The cap's script measures the same row (stickyFolders.ts).
   const row = bodies('.tree__row').find((b) => /line-height/.test(b)) ?? ''
-  const rowHeight = Number(/font-size:\s*([\d.]+)px/.exec(row)?.[1]) * Number(/line-height:\s*([\d.]+);/.exec(row)?.[1]) + 2 * Number(/padding:\s*([\d.]+)px/.exec(row)?.[1])
+  const line = Number(/font-size:\s*([\d.]+)px/.exec(row)?.[1]) * Number(/line-height:\s*([\d.]+);/.exec(row)?.[1])
+  const pad = /padding:\s*calc\(\(var\(--tree-row-h, ([\d.]+)px\) - ([\d.]+)px\) \/ 2\) 8px;/.exec(row)
+  const rowHeight = Number(pad?.[1])
+  const ROW_H = `var\\(--tree-row-h, ${rowHeight}px\\)`
 
   it("an open folder's row sticks one row per level below the list's top padding, the shallower row on top", () => {
     expect(rowHeight).toBe(TREE_ROW_H)
+    expect(Number(pad?.[2])).toBe(line)
     const [sticky] = bodies(STICKY)
     expect(sticky).toMatch(/position:\s*sticky;/)
     // Chromium sticks below the padding, so `top` takes it back and the stack starts flush at the top edge (D10).
-    expect(sticky).toMatch(new RegExp(`top:\\s*calc\\(var\\(--tree-depth, 0\\) \\* ${rowHeight}px - var\\(--sidebar-pad-top, 0px\\)\\);`))
+    expect(sticky).toMatch(new RegExp(`top:\\s*calc\\(var\\(--tree-depth, 0\\) \\* ${ROW_H} - var\\(--sidebar-pad-top, 0px\\)\\);`))
     expect(sticky).toMatch(/z-index:\s*calc\(10 - var\(--tree-depth, 0\)\);/)
     const list = bodies('.sidebar__body').join('')
     expect(list).toMatch(/--sidebar-pad-top:\s*6px;/)
@@ -91,7 +96,7 @@ describe('sticky folder rows CSS contract (YAZ-3440 D1, D2, D3, D10)', () => {
   it('a row or li scrolled into view lands below the rows stuck above it, up to the cap (D2, D3)', () => {
     const margin = rules.filter((rule) => /scroll-margin-top/.test(rule.body))
     expect(margin.map((rule) => rule.selectors)).toEqual([['.tree__row', '.tree > li']])
-    expect(margin[0].body).toMatch(new RegExp(`scroll-margin-top:\\s*calc\\(min\\(var\\(--tree-depth, 0\\), var\\(--sticky-levels, 7\\)\\) \\* ${rowHeight}px\\);`))
+    expect(margin[0].body).toMatch(new RegExp(`scroll-margin-top:\\s*calc\\(min\\(var\\(--tree-depth, 0\\), var\\(--sticky-levels, 7\\)\\) \\* ${ROW_H}\\);`))
   })
 
   it('`data-sticky-levels` on the list stops each folder row N levels deep or more, and never more than 7 stick (D2)', () => {

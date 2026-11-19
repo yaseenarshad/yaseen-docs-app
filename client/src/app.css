@@ -2789,7 +2789,8 @@ body.drag-held iframe {
 .search-results__row {
   display: flex;
   flex-direction: column;
-  padding: 3px 8px;
+  /* Row spacing (YAZ-5885 D2): the tree row's height, `--tree-row-h`, around the 19.5px line. */
+  padding: calc((var(--tree-row-h, 25.5px) - 19.5px) / 2) 8px;
   font-size: 13px;
   line-height: 1.5;
   border-radius: 4px;
@@ -3405,6 +3406,19 @@ body.drag-held iframe {
   padding-right: 8px;
 }
 
+/* Row spacing (YAZ-5885): in the sidebar's lists a name box holds its row's height, so the rows below stay put while
+   you type, and the field (21px) never pokes out of a 20px row. */
+.sidebar__body .create-inline {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--tree-row-h);
+}
+
+.sidebar__body .create-inline__input {
+  max-height: var(--tree-row-h);
+}
+
 .create-inline__input {
   width: 100%;
   padding: 2px 6px;
@@ -3470,7 +3484,7 @@ body.drag-held iframe {
    Each li on the hover path (every ancestor li of the row under the mouse is `:hover`) draws one piece: a line
    from far above it down to the middle of its own row, then an elbow into its chevron (folder) or its name (file).
    Each nested level clips what pokes above its top, so the pieces join into one path, as in the editor. A row is
-   13px * 1.5 + 2 * 3px tall, so its middle is 12.75px down. Each level is its own stacking context, so the grey
+   `--tree-row-h` tall (25.5px by default, YAZ-5885), so its middle is half of that down (12.75px). Each level is its own stacking context, so the grey
    line (z 1) stays over the row fills and the thread (z 2) over the grey line, without leaking out of the tree. A
    nested level is z 3 in its parent's (YAZ-3440 D10): a row stuck inside it stays over the parent's
    lines and thread, which pass behind it.
@@ -3506,7 +3520,7 @@ body.drag-held iframe {
   left: calc(var(--tree-depth) * 14px + 1px - var(--thread-width) / 2);
   box-sizing: border-box;
   width: calc(18px + var(--thread-width) / 2);
-  height: calc(100000px + 12.75px + var(--thread-width) / 2);
+  height: calc(100000px + var(--tree-row-h, 25.5px) / 2 + var(--thread-width) / 2);
   border-left: var(--thread-width) solid var(--sidebar-thread);
   border-bottom: var(--thread-width) solid var(--sidebar-thread);
   border-bottom-left-radius: 6px;
@@ -3530,15 +3544,16 @@ body.drag-held iframe {
 
 /* The chevrons on the path take the thread colour (D7), as the bullets on the editor's path do. The coloured
    arrow is the folder li's own `::after`, a copy of `.tree__chevron::before` laid exactly on it, so a `:hover`
-   change restyles that li alone (bug YAZ-3329). The chevron sits (25.5px - 14px) / 2 = 5.75px down its row and
-   8 + depth * 14 px in; its arrow is 4px in and 3px down (1px open). A folder in inline rename (`data-renaming`,
+   change restyles that li alone (bug YAZ-3329). The chevron sits (`--tree-row-h` - 14px) / 2 down its row (5.75px at
+   the default 25.5px, YAZ-5885) and 8 + depth * 14 px in; its arrow is 4px in and 3px down (1px open), so its top is
+   half the row less 4px (closed) or less 6px (open). A folder in inline rename (`data-renaming`,
    Tree.tsx) has no chevron, so it has no copy either (bug YAZ-3342). */
 .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:not([data-renaming])::after {
   content: '';
   position: absolute;
   z-index: 2;
   left: calc(var(--tree-depth, 0) * 14px + 12px);
-  top: 8.75px;
+  top: calc(var(--tree-row-h, 25.5px) / 2 - 4px);
   width: 7px;
   height: 7px;
   border-right: 1.75px solid var(--sidebar-thread);
@@ -3549,7 +3564,7 @@ body.drag-held iframe {
 }
 
 .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming])::after {
-  top: 6.75px;
+  top: calc(var(--tree-row-h, 25.5px) / 2 - 6px);
   transform: rotate(45deg);
 }
 
@@ -3575,7 +3590,7 @@ body.drag-held iframe {
     left: calc(var(--tree-depth) * 14px + 1px - var(--thread-width) / 2);
     box-sizing: border-box;
     width: calc(9px + var(--thread-width) / 2);
-    height: calc(12.75px + var(--thread-width) / 2);
+    height: calc(var(--tree-row-h, 25.5px) / 2 + var(--thread-width) / 2);
     border-left: var(--thread-width) solid var(--sidebar-thread);
     border-bottom: var(--thread-width) solid var(--sidebar-thread);
     border-bottom-left-radius: 6px;
@@ -3591,7 +3606,7 @@ body.drag-held iframe {
     content: '';
     position: absolute;
     left: calc(var(--tree-depth, 0) * 14px + 12px);
-    top: 6.75px;
+    top: calc(var(--tree-row-h, 25.5px) / 2 - 6px);
     width: 7px;
     height: 7px;
     border-right: 1.75px solid var(--sidebar-thread);
@@ -3656,7 +3671,9 @@ body.drag-held iframe {
   align-items: center;
   gap: 4px;
   width: 100%;
-  padding: 3px 8px;
+  /* Row spacing (YAZ-5885 D1): `--tree-row-h` on `.sidebar__body` (Sidebar.tsx) is the row's height, 25.5px by
+     default; the 13px * 1.5 = 19.5px line sits in the middle, with the rest as equal padding above and below. */
+  padding: calc((var(--tree-row-h, 25.5px) - 19.5px) / 2) 8px;
   font-size: 13px;
   line-height: 1.5;
   text-align: left;
@@ -3668,7 +3685,7 @@ body.drag-held iframe {
    rows that stick above it: one per level above it, up to the cap (D2). `--sticky-levels` comes from the cap. */
 .tree__row,
 .tree > li {
-  scroll-margin-top: calc(min(var(--tree-depth, 0), var(--sticky-levels, 7)) * 25.5px);
+  scroll-margin-top: calc(min(var(--tree-depth, 0), var(--sticky-levels, 7)) * var(--tree-row-h, 25.5px));
 }
 
 /* The keyboard walk (YAZ-921) needs a visible "you are here" — the hover wash, plus an inset
@@ -3688,7 +3705,7 @@ body.drag-held iframe {
 }
 
 /* Sticky folders (YAZ-3440 D1, VS Code's sticky scroll): each OPEN folder's row sticks at the top of the list while
-   its rows scroll under it, one row below the folder that holds it (a row is 13px * 1.5 + 2 * 3px = 25.5px tall),
+   its rows scroll under it, one row below the folder that holds it (a row is `--tree-row-h` tall, 25.5px by default, YAZ-5885),
    and leaves with its last row; a closed folder has nothing to scroll under it, so it stays an ordinary row. CSS
    alone: no script runs on a scroll. Chromium sticks below the list's top padding, so `top` takes that padding back
    (`--sidebar-pad-top`) and the stack starts flush at the top edge (D10). The shallower row stays on top, and
@@ -3698,7 +3715,7 @@ body.drag-held iframe {
    colour back it, with a copy of its fill, edge and corners on top and the thin line under it (D10). */
 .tree > li[aria-expanded='true'] > .tree__row--sticky {
   position: sticky;
-  top: calc(var(--tree-depth, 0) * 25.5px - var(--sidebar-pad-top, 0px));
+  top: calc(var(--tree-depth, 0) * var(--tree-row-h, 25.5px) - var(--sidebar-pad-top, 0px));
   z-index: calc(10 - var(--tree-depth, 0));
 }
 

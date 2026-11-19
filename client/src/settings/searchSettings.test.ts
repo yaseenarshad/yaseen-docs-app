@@ -53,6 +53,8 @@ describe('settingCandidates', () => {
       'commentsResolved',
       'commentsHint',
       // Settings › Sidebar (YAZ-3440 D7), after Appearance. The Line set's colour rows show only with that set.
+      // Row spacing (YAZ-5885) first, in its Rows group.
+      'sidebarRowHeight',
       'sidebarLines',
       'sidebarLineStyle',
       'sidebarThreadColor',
@@ -323,7 +325,8 @@ describe('searchSettings', () => {
 
   it('the sidebar\'s level lines (YAZ-3309 D6, D7, D9, S12): "sidebar" finds the three rows of the group first; "folder", "tree" and "indent" find Show, not the TOC row; "thread" finds Style and Thread colour beside Bullet threading; "accent" finds the two colour pickers', () => {
     // The hover preview's Sidebar row (YAZ-3403) and "Sidebar remembers" (YAZ-5701) start with "Sidebar", so they lead.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 5)).toEqual(['sidebarPlace', 'hoverPreviewIn.sidebar', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+    // Row spacing (YAZ-5885), the first row of the Sidebar page, comes before them.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 6)).toEqual(['sidebarPlace', 'hoverPreviewIn.sidebar', 'sidebarRowHeight', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     for (const query of ['folder', 'tree', 'indent']) {
       expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('sidebarLines')
       expect(ids(searchSettings(settingCandidates(ctx()), query))).not.toContain('tocLines')
@@ -336,7 +339,8 @@ describe('searchSettings', () => {
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'section indent'))).toEqual(['sectionStep', 'sectionLines'])
     // The page's bullet spacing (the YAZ-3818 demo) says "spacing" too.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'pageBulletIndent', 'pageBulletGap'])
+    // The sidebar's Row spacing (YAZ-5885) too, on its page after Appearance.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'sidebarRowHeight', 'pageBulletIndent', 'pageBulletGap'])
   })
 
   it('matches on the group hint too: "guide lines" finds the three guide line rows of Outline (YAZ-4094); "threading" finds the three threading rows and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {

@@ -1,3 +1,5 @@
+import { SIDEBAR_ROW_HEIGHT_DEFAULT } from '@shared/types'
+
 /**
  * How many levels of folder rows stick at the top of the sidebar's list (YAZ-3440 D2), written on
  * `.sidebar__body` for app.css: `data-sticky-levels="N"`, so a folder row deeper than N - 1 does not stick, and
@@ -13,8 +15,8 @@
  * Returns the cleanup, which also clears both.
  */
 
-/** A tree row's height in CSS px: 13px * 1.5 + 2 * 3px (app.css `.tree__row`). */
-export const TREE_ROW_H = 25.5
+/** A tree row's height in CSS px at the default Row spacing (YAZ-5885 D3): 13px * 1.5 + 2 * 3px (app.css `.tree__row`). */
+export const TREE_ROW_H = SIDEBAR_ROW_HEIGHT_DEFAULT
 
 /** The most of the list's height the stuck rows may cover (VS Code's 40%). */
 const STICKY_MAX_SHARE = 0.4
@@ -29,11 +31,15 @@ export function stickyCap(levels: number, listHeight: number, rowHeight: number)
   return Math.max(0, Math.min(levels, Math.floor((STICKY_MAX_SHARE * listHeight) / rowHeight)))
 }
 
-/** Writes the cap on `body` now and on each resize. `zoom` is the sidebar zoom as a factor (1 = 100%): the row height while the list has no row to measure. */
-export function stickyFolders(body: HTMLElement, levels: number, zoom: number): () => void {
+/**
+ * Writes the cap on `body` now and on each resize. `zoom` is the sidebar zoom as a factor (1 = 100%) and `rowHeight` the
+ * Row spacing setting in CSS px (`settings.sidebarRowHeight`, YAZ-5885): together they are the row height while the list
+ * has no row to measure.
+ */
+export function stickyFolders(body: HTMLElement, levels: number, zoom: number, rowHeight: number = TREE_ROW_H): () => void {
   const write = () => {
     const row = body.querySelector('.tree__row')?.getBoundingClientRect().height ?? 0
-    const cap = String(stickyCap(levels, body.getBoundingClientRect().height, row > 0 ? row : TREE_ROW_H * zoom))
+    const cap = String(stickyCap(levels, body.getBoundingClientRect().height, row > 0 ? row : rowHeight * zoom))
     if (body.getAttribute('data-sticky-levels') === cap) return
     body.setAttribute('data-sticky-levels', cap)
     body.style.setProperty('--sticky-levels', cap)

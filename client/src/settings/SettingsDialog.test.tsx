@@ -147,7 +147,7 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'lineSpacin
 /** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
 const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
 /** Settings › Sidebar with Material and "Colour" (the defaults), no vault open: a colour row per kind Material draws in one colour. */
-const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarPlace', 'sidebarIconSet', 'sidebarFileIcons', ...colourRows('page', 'drawing', 'diagram', 'folder'), 'sidebarIconRules', 'goTo']
+const SIDEBAR_ROWS = ['sidebarRowHeight', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarPlace', 'sidebarIconSet', 'sidebarFileIcons', ...colourRows('page', 'drawing', 'diagram', 'folder'), 'sidebarIconRules', 'goTo']
 const SIDEBAR_ROWS_BARE = SIDEBAR_ROWS.filter((id) => !id.startsWith('sidebarIconColors.'))
 /** The same with a vault whose Review is on: the Card colour row too. */
 const SIDEBAR_ROWS_REVIEW = SIDEBAR_ROWS.flatMap((id) => (id === 'sidebarIconColors.page' ? [id, 'sidebarIconColors.card'] : [id]))
@@ -435,7 +435,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     // Sidebar (YAZ-3440 D7): its four groups; the Icon rules are a setting, so they need no vault (D9). Go to is ⌘D's place (YAZ-3556 D8).
     clickNav(el, 'Sidebar')
-    expect(groupTitles(el)).toEqual(['Level lines', 'Folders', 'File icons', 'Icon rules', 'Show in sidebar'])
+    expect(groupTitles(el)).toEqual(['Rows', 'Level lines', 'Folders', 'File icons', 'Icon rules', 'Show in sidebar'])
     expect(hints()).toEqual([])
 
     clickNav(el, 'Editor')
@@ -2228,10 +2228,10 @@ describe('SettingsDialog search (D6)', () => {
       ]),
     )
     type(searchInput(el), 'spacing')
-    // The page's bullet spacing (the YAZ-3818 demo) too, under Outline.
-    expect(headings(el)).toEqual(['Appearance › Spacing', 'Editor › Outline'])
+    // The page's bullet spacing (the YAZ-3818 demo) too, under Outline. The sidebar's Row spacing (YAZ-5885) between them.
+    expect(headings(el)).toEqual(['Appearance › Spacing', 'Sidebar › Rows', 'Editor › Outline'])
     // YAZ-5050 round 2: the Spacing preview with its rows.
-    expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'pageBulletIndent', 'pageBulletGap'])
+    expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'sidebarRowHeight', 'pageBulletIndent', 'pageBulletGap'])
     // Comments is a group of Appearance now, so its breadcrumb says so.
     type(searchInput(el), 'comments')
     // A code key's row says "comment" too (YAZ-3564). General › You (YAZ-4615 D7, who you comment as) leads, then the Appearance group.
@@ -2272,8 +2272,9 @@ describe('SettingsDialog search (D6)', () => {
       const { el } = mount()
       type(searchInput(el), 'spacing')
       const arrows = [...el.querySelectorAll<HTMLButtonElement>('.settings-search__goto')]
-      expect(arrows.map((b) => b.getAttribute('aria-label'))).toEqual(['Show in settings', 'Show in settings'])
-      act(() => arrows[1]!.click())
+      // Appearance › Spacing, Sidebar › Rows (YAZ-5885), Editor › Outline.
+      expect(arrows.map((b) => b.getAttribute('aria-label'))).toEqual(['Show in settings', 'Show in settings', 'Show in settings'])
+      act(() => arrows[2]!.click())
       expect(searchInput(el).value).toBe('')
       expect(headings(el)).toEqual(['Editor'])
       const outline = row(el, 'pageBulletGap')?.closest('.settings-group')
