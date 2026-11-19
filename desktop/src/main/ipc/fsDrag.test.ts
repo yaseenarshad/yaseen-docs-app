@@ -214,14 +214,17 @@ describe('fs:drag-out (YAZ-3254 D4)', () => {
     expect(order).toEqual(['drag', 'watch'])
     expect(sender.send).not.toHaveBeenCalled()
     const released = vi.mocked(whenMouseUp).mock.calls[0][0]
-    released()
-    expect(sender.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.file.onDragEnded.channel, { paths })
+    released(true)
+    expect(sender.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.file.onDragEnded.channel, { paths, overFinder: true })
+    // A release over another app carries that word too (YAZ-5840 D1): the window asks nothing.
+    released(false)
+    expect(sender.send).toHaveBeenLastCalledWith(CONTRACT.file.onDragEnded.channel, { paths, overFinder: false })
     expect(otherWindow.send).not.toHaveBeenCalled()
     // A window closed before the release hears nothing.
     vi.mocked(whenMouseUp).mockClear()
     const closed = { ...sender, isDestroyed: () => true, send: vi.fn() }
     await registered(CONTRACT.file.dragOut)({ sender: closed }, { paths, icon: PNG })
-    vi.mocked(whenMouseUp).mock.calls[0][0]()
+    vi.mocked(whenMouseUp).mock.calls[0][0](true)
     expect(closed.send).not.toHaveBeenCalled()
   })
 

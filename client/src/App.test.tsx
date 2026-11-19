@@ -7655,23 +7655,42 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('asks with the count of the pages that link to the items (S26); a later toast does not hide it (S32); ✕ closes it and changes nothing (S28)', async () => {
     const { bridge, el } = await mountVault()
     await draggedOut('/v/B.md', '/v/Docs')
-    expect(boxText(el)).toBe('Copied 1 folder and 1 file (B.md, Docs) to Finder? 2 pages link to them.')
+    expect(boxText(el)).toBe('Finder got a copy of 1 folder and 1 file (B.md, Docs). Your vault did not change. 2 pages link to them.')
     expect(el.querySelector('.link-notice')).toBeNull() // its own slot, not the toast
     act(() => captured.sidebar?.onNotice('Copied path'))
     expect(el.querySelector('.link-notice')?.textContent).toBe('Copied path')
-    expect(boxText(el)).toBe('Copied 1 folder and 1 file (B.md, Docs) to Finder? 2 pages link to them.')
+    expect(boxText(el)).toBe('Finder got a copy of 1 folder and 1 file (B.md, Docs). Your vault did not change. 2 pages link to them.')
     await act(async () => button(el, 'Keep in vault')?.click())
     expect(box(el)).toBeNull()
+    expect(bridge.file.delete).not.toHaveBeenCalled()
+  })
+
+  it('the box offers "Keep in vault" first, then "Remove from vault", as text buttons (YAZ-5840 D2)', async () => {
+    const { el } = await mountVault()
+    await draggedOut('/v/R.md')
+    expect([...el.querySelectorAll('.drag-out-ask button')].map((b) => b.textContent)).toEqual(['Keep in vault', 'Remove from vault'])
+  })
+
+  it('a read-only vault shows the same words as a toast that fades, with no box and no offer to remove (YAZ-5840 D3)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true })
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+    })
+    await draggedOut('/v/R.md')
+    expect(box(el)).toBeNull()
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Finder got a copy of 1 file (R.md). Your vault did not change.')
+    expect([...el.querySelectorAll('.corner-notices button')].map((b) => b.textContent)).not.toContain('Remove from vault')
     expect(bridge.file.delete).not.toHaveBeenCalled()
   })
 
   it('one item says "it"; a second drag out replaces the box (S32); an item no page links to says no count', async () => {
     const { el } = await mountVault()
     await draggedOut('/v/B.md')
-    expect(boxText(el)).toBe('Copied 1 file (B.md) to Finder? 1 page links to it.')
+    expect(boxText(el)).toBe('Finder got a copy of 1 file (B.md). Your vault did not change. 1 page links to it.')
     await draggedOut('/v/R.md')
     expect(el.querySelectorAll('.drag-out-ask')).toHaveLength(1)
-    expect(boxText(el)).toBe('Copied 1 file (R.md) to Finder?')
+    expect(boxText(el)).toBe('Finder got a copy of 1 file (R.md). Your vault did not change.')
   })
 
   it('"Remove from vault" sends each item to the Trash through the delete door, with no second sheet (S27)', async () => {
@@ -7714,7 +7733,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it.
     await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     expect(box(el)?.getAttribute('role')).toBe('alertdialog')
-    expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 file (A.md) to Finder? 1 page links to it.')
+    expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Finder got a copy of 1 file (A.md). Your vault did not change. 1 page links to it.')
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(box(el)).toBeNull()
     expect(bridge.file.delete).not.toHaveBeenCalled()
@@ -7745,7 +7764,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it (as in the alert dialog test).
     await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     act(() => emitDragLanded(['/v/B.md']))
-    expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 page links to it.')
+    expect(boxText(el)).toBe('Finder got a copy of 1 file (A.md). Your vault did not change. 1 page links to it.')
     act(() => emitDragLanded(['/v/A.md']))
     expect(box(el)).toBeNull()
     // The word comes while the box reads the trees: it never shows.
@@ -7760,7 +7779,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     const { el } = await mountVault()
     await draggedOut('/v/gone.md', '/v/A.md')
     await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
-    expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 page links to it.')
+    expect(boxText(el)).toBe('Finder got a copy of 1 file (A.md). Your vault did not change. 1 page links to it.')
     await act(async () => button(el, 'Keep in vault')?.click())
     await draggedOut('/v/gone.md')
     expect(box(el)).toBeNull()

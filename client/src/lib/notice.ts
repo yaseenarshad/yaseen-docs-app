@@ -124,7 +124,7 @@ export function noticeMs(notice: Notice, length: NoticeLength = '4s'): number | 
 
 /**
  * The box after rows were dragged out to Finder (YAZ-3254 D9B): Finder took copies, and the box asks
- * whether the vault keeps the items. Its own slot beside the toast, so a later toast does not hide it
+ * whether the vault keeps the items. Since YAZ-5840 D1 it shows only after a release over Finder. Its own slot beside the toast, so a later toast does not hide it
  * (S32); it stays until answered, and a second drag out replaces it. `links`: the pages outside the
  * items that link to them, off the window's index snapshot.
  */
@@ -135,10 +135,15 @@ export interface DragOutAsk {
   links: number
 }
 
-/** "Copied 2 files (Todo.md, Plan.md) to Finder? 3 pages link to them." — with no second sentence when no page links (one item: "1 page links to it"). The box asks; it does not claim (S29). */
+/**
+ * "Finder got a copy of 2 files (Todo.md, Plan.md). Your vault did not change. 3 pages link to them." — with no
+ * last sentence when no page links (one item: "1 page links to it"). YAZ-5840 D2: the box shows only after a release
+ * over Finder (D1), so it says what happened, and that the vault is as it was. The read-only toast (D3) says the same.
+ */
 export function dragOutText({ paths, kinds, links }: DragOutAsk, unit: UnitText = SAME_WORD): string {
   const items = namedItems(paths.map((path, i) => onDisk(path, kinds[i])))
   const them = paths.length === 1 ? 'it' : 'them'
   const pages = unit(links === 1 ? '1 page links' : `${links} pages link`)
-  return links > 0 ? `Copied ${items} to Finder? ${pages} to ${them}.` : `Copied ${items} to Finder?`
+  const said = `Finder got a copy of ${items}. Your vault did not change.`
+  return links > 0 ? `${said} ${pages} to ${them}.` : said
 }

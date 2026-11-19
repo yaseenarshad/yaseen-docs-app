@@ -92,7 +92,7 @@ describe('namedItems (YAZ-3274 D22, YAZ-3293 D23): the items of a gesture by kin
   })
 
   it('the drag-out box names the items it asks about by kind and by name on disk (S76)', () => {
-    expect(dragOutText({ paths: ['/v/Projects'], kinds: ['dir'], links: 0 })).toBe('Copied 1 folder (Projects) to Finder?')
-    expect(dragOutText({ paths: ['/v/A.md', '/v/B.md', '/v/C', '/v/D.md'], kinds: ['file', 'file', 'dir', 'file'], links: 2 })).toBe('Copied 1 folder and 3 files (A.md, B.md, C + 1 more) to Finder? 2 pages link to them.')
+    expect(dragOutText({ paths: ['/v/Projects'], kinds: ['dir'], links: 0 })).toBe('Finder got a copy of 1 folder (Projects). Your vault did not change.')
+    expect(dragOutText({ paths: ['/v/A.md', '/v/B.md', '/v/C', '/v/D.md'], kinds: ['file', 'file', 'dir', 'file'], links: 2 })).toBe('Finder got a copy of 1 folder and 3 files (A.md, B.md, C + 1 more). Your vault did not change. 2 pages link to them.')
   })
 })

@@ -410,7 +410,8 @@ export function useTreeDrag(
    * the app took left too, but main says so (`file:drag-landed`, YAZ-3263): it counts as a drop inside.
    *
    * On macOS main also watches the button (YAZ-3294 D24): at the release it pushes `file:drag-ended`
-   * with the drag's paths, and that ends the drag at once, the pointer still over Finder (S80). The
+   * with the drag's paths, and that ends the drag at once, the pointer still over Finder (S80). It
+   * also says whether the release was over Finder or the desktop: a drop anywhere else asks nothing (YAZ-5840 D1). The
    * first move stays the fallback (S82). One end per drag: whichever comes first; the other finds
    * no drag and does nothing. A push of other paths is no end of this drag.
    */
@@ -427,9 +428,11 @@ export function useTreeDrag(
     const left = (e: DragEvent) => {
       if (e.relatedTarget === null) leftWindow.current = true
     }
-    const ended = () => {
+    // `overFinder`: main's word at the release (YAZ-5840 D1). A drop on another app, the Dock or the menu bar
+    // made no copy, and asks nothing. The first move, the fallback (S82), has no such word: it asks as before.
+    const ended = (overFinder = true) => {
       const paths = dragging.current
-      const outside = leftWindow.current && !droppedInside.current
+      const outside = leftWindow.current && !droppedInside.current && overFinder
       fileMove.end()
       if (outside) live.current.finder.onDraggedOut(paths)
     }
@@ -504,8 +507,8 @@ export function useTreeDrag(
     const offLanded = api.file.onDragLanded(({ paths }) => {
       if (dragging.current.length > 0 && sameItems(dragging.current, paths)) droppedInside.current = true
     })
-    const offEnded = api.file.onDragEnded(({ paths }) => {
-      if (dragging.current.length > 0 && sameItems(dragging.current, paths)) ended()
+    const offEnded = api.file.onDragEnded(({ paths, overFinder }) => {
+      if (dragging.current.length > 0 && sameItems(dragging.current, paths)) ended(overFinder)
     })
     return () => {
       offLanded()
