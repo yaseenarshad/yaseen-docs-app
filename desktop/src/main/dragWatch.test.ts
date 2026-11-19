@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFile } from 'node:child_process'
-import { MOUSE_UP_SCRIPT, whenMouseUp } from './dragWatch'
+import { FINDER_ID, MOUSE_UP_SCRIPT, whenMouseUp } from './dragWatch'
 
 vi.mock('node:child_process', () => ({ execFile: vi.fn() }))
 
@@ -13,7 +13,7 @@ const exec = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const onPlatform = (name: NodeJS.Platform) => Object.defineProperty(process, 'platform', { ...platform, value: name })
 /** The exit of the one `osascript` that ran: `null` is the button up; an error is a helper that failed or ran out of time. */
-const exit = (err: (Error & { code?: number | string }) | null) => (exec.mock.calls.at(-1)![3] as Done)(err, '', '')
+const exit = (err: (Error & { code?: number | string }) | null, stdout = '') => (exec.mock.calls.at(-1)![3] as Done)(err, stdout, '')
 
 beforeEach(() => {
   exec.mockReset()
@@ -39,6 +39,15 @@ describe('whenMouseUp (YAZ-3294 D24)', () => {
     expect(done).not.toHaveBeenCalled()
     exit(null)
     expect(done).toHaveBeenCalledOnce()
+  })
+
+  it('the release names the app under the pointer: only Finder (its windows and the desktop) is a drop on Finder (YAZ-5840 D1)', () => {
+    const done = vi.fn()
+    for (const [stdout] of [[`${FINDER_ID}\n`], ['com.apple.dock\n'], ['com.google.Chrome\n'], ['']]) {
+      whenMouseUp(done)
+      exit(null, stdout)
+    }
+    expect(done.mock.calls).toEqual([[true], [false], [false], [false]])
   })
 
   it('a helper that fails or runs out of time says nothing: the pointer coming back ends the drag, as before (S82)', () => {
@@ -78,6 +87,36 @@ describe('whenMouseUp (YAZ-3294 D24)', () => {
     }
     new Function('ObjC', '$', 'delay', MOUSE_UP_SCRIPT)(ObjC, $, delay)
     expect(waits).toBe(0)
+  })
+
+  it('the script names the owner of the TOP visible window under the pointer, in window-list space (YAZ-5840 D1)', () => {
+    // A stand-in bridge: a 1000 pt main screen, the pointer at Cocoa (100, 900), so at y 100 from the top.
+    const wrap = (v: unknown) => ({ js: v })
+    const win = (pid: number, alpha: number, X: number, Y: number, Width: number, Height: number) => {
+      const fields: Record<string, unknown> = { kCGWindowOwnerPID: wrap(pid), kCGWindowAlpha: wrap(alpha), kCGWindowBounds: { objectForKey: (k: string) => wrap(({ X, Y, Width, Height } as Record<string, number>)[k]) } }
+      return { objectForKey: (k: string) => fields[k] }
+    }
+    const run = (windows: ReturnType<typeof win>[]) => {
+      const apps: Record<number, string> = { 1: 'com.apple.finder', 2: 'com.google.Chrome', 3: 'com.example.overlay' }
+      const $ = {
+        NSEvent: { pressedMouseButtons: new String('0'), mouseLocation: { x: 100, y: 900 } },
+        NSScreen: { screens: { objectAtIndex: () => ({ frame: { size: { height: 1000 } } }) } },
+        CGWindowListCopyWindowInfo: () => 'ref',
+        kCGWindowListOptionOnScreenOnly: 1,
+        NSRunningApplication: { runningApplicationWithProcessIdentifier: (pid: number) => ({ isNil: () => !(pid in apps), bundleIdentifier: wrap(apps[pid]) }) },
+      }
+      const ObjC = { import: () => undefined, castRefToObject: () => ({ count: windows.length, objectAtIndex: (i: number) => windows[i] }) }
+      return new Function('ObjC', '$', 'delay', 'script', 'return eval(script)')(ObjC, $, () => undefined, MOUSE_UP_SCRIPT) as string
+    }
+    // The desktop alone: Finder.
+    expect(run([win(1, 1, 0, 0, 1000, 1000)])).toBe('com.apple.finder')
+    // Chrome over the desktop, under the pointer: Chrome. A window beside the pointer does not count.
+    expect(run([win(1, 1, 300, 0, 200, 200), win(2, 1, 0, 0, 500, 500), win(1, 1, 0, 0, 1000, 1000)])).toBe('com.google.Chrome')
+    // An invisible overlay (alpha 0) on top is skipped.
+    expect(run([win(3, 0, 0, 0, 1000, 1000), win(1, 1, 0, 0, 1000, 1000)])).toBe('com.apple.finder')
+    // No window there, or an owner that is gone: nothing.
+    expect(run([win(1, 1, 500, 500, 10, 10)])).toBe('')
+    expect(run([win(9, 1, 0, 0, 1000, 1000)])).toBe('')
   })
 
   it('the script waits while a button is down and ends when it comes up (checker gap, YAZ-3294)', () => {

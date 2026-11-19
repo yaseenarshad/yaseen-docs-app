@@ -1031,6 +1031,8 @@ export interface DragLandedEvent {
  */
 export interface DragEndedEvent {
   paths: string[]
+  /** The release was over a Finder window or the desktop (YAZ-5840 D1): only there did Finder take a copy. */
+  overFinder: boolean
 }
 
 /**

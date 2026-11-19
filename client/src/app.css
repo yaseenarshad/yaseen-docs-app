@@ -1812,17 +1812,16 @@ button {
   background: var(--bg-hover);
 }
 
-.drag-out-ask__close {
+.drag-out-ask__keep {
   flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  color: var(--fg-muted);
-  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
-.drag-out-ask__close:hover {
-  color: var(--fg);
+.drag-out-ask__keep:hover {
   background: var(--bg-hover);
 }
 

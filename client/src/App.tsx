@@ -3724,8 +3724,11 @@ export function App() {
       if (root === null) continue
       for (const page of linkingPages({ ids: wikilinks.ids, root, oldPath: path, kind, records: wikilinks.records, folders: wikilinks.folders, dirs })) if (!inside(page)) linking.add(page)
     }
-    setDragOutAsk({ paths: left, kinds, links: linking.size })
-  }, [scopeOf, stillThere])
+    const ask = { paths: left, kinds, links: linking.size }
+    // A read-only vault (YAZ-5840 D3): the same words as a toast that fades, with no offer to remove. A delete still asks its sheet.
+    if (left.every((path) => scopeOf(path).readOnlyVault.locked)) return void notify(dragOutText(ask, vaultUnit(scopeOf(left[0]).root)), 'copy')
+    setDragOutAsk(ask)
+  }, [scopeOf, stillThere, notify])
   /**
    * "Remove from vault": each item to the Trash through the delete door — the door AFTER the delete
    * sheet, since the box was the question (S27). The items are read again at the click, and one gone
@@ -4149,14 +4152,14 @@ export function App() {
         // above the toast, however many lines the toast wraps to. The column places; each child styles.
         <div className="corner-notices">
           {dragOutAsk !== null && (
-            // The box after a drag out to Finder (YAZ-3254 D9B): it stays until answered, and ✕ or Esc keeps everything (S28).
+            // The box after a drag out to Finder (YAZ-3254 D9B): it stays until answered, and "Keep in vault" or Esc keeps everything (S28, YAZ-5840 D2).
             <div className="drag-out-ask" role="alertdialog" aria-labelledby="drag-out-ask-text">
               <span id="drag-out-ask-text" className="drag-out-ask__text">{dragOutText(dragOutAsk, vaultUnit(scopeOf(dragOutAsk.paths[0]).root))}</span>
+              <button type="button" className="drag-out-ask__keep" onClick={() => setDragOutAsk(null)}>
+                Keep in vault
+              </button>
               <button type="button" className="drag-out-ask__remove" onClick={() => void removeDraggedOut()}>
                 Remove from vault
-              </button>
-              <button type="button" className="drag-out-ask__close" aria-label="Keep in vault" onClick={() => setDragOutAsk(null)}>
-                ✕
               </button>
             </div>
           )}
