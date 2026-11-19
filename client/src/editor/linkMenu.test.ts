@@ -402,3 +402,36 @@ describe('the menus of a missing page and an ID of another vault (YAZ-3905; thei
     expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['Open', 'Open in new tab', '──', 'Copy name', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
   })
 })
+
+describe('a menu inside a zoomed layer (YAZ-5962)', () => {
+  // An Explore layer at 150% puts CSS `zoom` on its content (YAZ-5881): a fixed menu inside it has its `left` and `top`
+  // scaled by that zoom, so `openMenuAt` writes the screen place divided by it (`lib/fitMenu.ts`).
+  afterEach(() => {
+    delete (HTMLElement.prototype as { currentCSSZoom?: number }).currentCSSZoom
+    document.body.replaceChildren()
+  })
+
+  it('lands at the click: left = x / zoom, top = y / zoom', () => {
+    const layer = document.body.appendChild(document.createElement('div'))
+    layer.className = 'zoomed'
+    Object.defineProperty(HTMLElement.prototype, 'currentCSSZoom', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.closest('.zoomed') === null ? 1 : 1.5
+      },
+    })
+    const close = openMenuAt(layer, 300, 120, [{ label: 'Open', run: () => {} }])
+    const menu = layer.querySelector<HTMLElement>('.ctx-menu--editor')!
+    expect(menu.style.left).toBe('200px')
+    expect(menu.style.top).toBe('80px')
+    close()
+  })
+
+  it('without a zoom it lands at the click as before', () => {
+    const close = openMenuAt(document.body, 300, 120, [{ label: 'Open', run: () => {} }])
+    const menu = document.querySelector<HTMLElement>('.ctx-menu--editor')!
+    expect(menu.style.left).toBe('300px')
+    expect(menu.style.top).toBe('120px')
+    close()
+  })
+})

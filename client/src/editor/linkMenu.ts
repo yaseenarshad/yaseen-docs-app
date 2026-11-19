@@ -31,6 +31,7 @@ import { fileKind } from '@shared/fileKind'
 import { closeSubmenu, renderMenu, type MenuRow } from './blockHandleMenu'
 import type { ListState } from '../lists/useVaultListsHere'
 import { copyText } from '../lib/copyText'
+import { fitMenu } from '../lib/fitMenu'
 
 // `copyText` moved to its own file (YAZ-5153), so the card screens load without the editor; it is given out here as before.
 export { copyText }
@@ -150,7 +151,7 @@ export function placeRows(path: string, actions: LinkActions | undefined, onNoti
 }
 
 /**
- * Opens `rows` in `parent` at the pointer, clamped to the viewport. Closes on a row click, an
+ * Opens `rows` in `parent` at the pointer (screen px), made to fit the window by `fitMenu` (YAZ-5962: in its zoom). Closes on a row click, an
  * outside mousedown, a scroll, Escape and window blur; returns the close for the caller's own reasons.
  * One at a time is the caller's to keep. `rebuild` (YAZ-4924 round 5, "Pill style ›"): a `stay` flyout's pick runs,
  * then the menu is drawn again in its place from `rebuild()`, the flyout that was open opened again, as the block
@@ -186,9 +187,11 @@ export function openMenuAt(parent: HTMLElement, x: number, y: number, rows: Menu
           if (flyout !== null) [...popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === flyout)?.click()
         }
   let popup = renderMenu(parent, rows, close, refresh)
-  const rect = popup.getBoundingClientRect()
-  popup.style.left = `${Math.max(0, Math.min(x, window.innerWidth - rect.width))}px`
-  popup.style.top = `${Math.max(0, Math.min(y, window.innerHeight - rect.height))}px`
+  // `x`, `y` are screen px; inside a zoomed layer (an Explore layer's `zoom`, YAZ-5881) the fixed menu's own `left` and
+  // `top` are scaled by that zoom again, so `fitMenu` divides by it and keeps the menu in the window (YAZ-5962).
+  const { left, top } = fitMenu(popup, x, y)
+  popup.style.left = `${left}px`
+  popup.style.top = `${top}px`
   document.addEventListener('mousedown', onMouseDown, true)
   document.addEventListener('scroll', close, true)
   window.addEventListener('keydown', onKeyDown)
