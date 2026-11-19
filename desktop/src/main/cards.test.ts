@@ -158,7 +158,11 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     for (let i = 0; i < 5; i++) expect(cardState(log, { ...DEFAULT_REVIEW_SETTINGS })).toEqual(first)
     expect(cardState([...log].reverse(), fuzzed)).toEqual(first)
     expect(first).toMatchObject({ isNew: false, lastReview: '2026-01-21T10:30:00.000Z', lapses: 1 })
-    expect(first.due).toBe(Date.parse('2026-01-21T10:30:00.000Z') + first.interval * DAY)
+    // YAZ-5789: the last ✓ (the day after the ✕, before its due day) is recorded, not counted: the ✕ sets the date.
+    const fuzzedRows = cardHistory(log, fuzzed)
+    expect(fuzzedRows.map((r) => r.counted)).toEqual([true, true, true, false])
+    expect(first.due).toBe(Date.parse('2026-01-20T09:00:00.000Z') + fuzzedRows[2].interval * DAY)
+    expect(first.due).toBe(fuzzedRows[3].due)
     // Fuzz moves the date only within its range: off, the same log may land on another day, but near.
     const plain = cardState(log, { ...DEFAULT_REVIEW_SETTINGS, fuzz: false })
     expect(Math.abs(plain.interval - first.interval)).toBeLessThanOrEqual(Math.max(2, Math.ceil(plain.interval * 0.15)))
@@ -416,22 +420,23 @@ describe('YAZ-5702: days only, as Mochi (YAZ-5703) — a ✕ and a new card`s fi
     expect(back(same)).toEqual([true, false])
   })
 
-  it('a ✕ comes back today; the ✓ after it is done for today, with FSRS`s days', () => {
+  it('a ✕ comes back today; the ✓ after it is done for today, and the ✕ keeps its days (YAZ-5789: the ✓ is not counted)', () => {
     const frr = log([0, 'again'], [1, 'good'], [2, 'good'])
     expect(back(frr)).toEqual([true, true, false])
     const l = log([0, 'good'], [1, 'again'], [2, 'good'])
     expect(back(l)).toEqual([true, true, false])
-    expect(lastWait(l)).toBe(daysOnly(l))
+    expect(cardHistory(l, s).map((r) => r.counted)).toEqual([true, true, false])
+    expect(lastWait(l)).toBe(daysOnly(l.slice(0, 2)))
     expect(isCardDue(cardState(l, s).due!, t0 + 3 * 60_000)).toBe(false)
   })
 
-  it('known → Forgot → Remembered: a lapse; the Forgot comes back today, the Remembered gives days', () => {
+  it('known → Forgot → Remembered: a lapse; the Forgot comes back today and sets the days; the Remembered ends it, not counted', () => {
     const known: [number, CardReview['rating']][] = [[0, 'good'], [1, 'good'], [3 * D, 'good'], [15 * D, 'good'], [55 * D, 'good']]
     expect(cardHistory(log(...known), s).at(-1)!.interval).toBeGreaterThan(30)
     const fr = log(...known, [95 * D, 'again'], [95 * D + 1, 'good'])
     expect(back(fr).slice(-2)).toEqual([true, false])
     expect(cardState(fr, s)).toMatchObject({ lapses: 1, comesBack: false })
-    expect(lastWait(fr)).toBe(daysOnly(fr))
+    expect(lastWait(fr)).toBe(daysOnly(fr.slice(0, -1)))
   })
 
   it('the replay stays deterministic: the same log gives the same state; two answers in one minute replay in line order', () => {

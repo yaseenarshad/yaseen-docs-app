@@ -307,6 +307,18 @@
 .card-reviews__chance {
   margin-left: auto;
 }
+/* YAZ-5789: an answer that is recorded, not counted (a ✓ before a miss's date, a new card's ✕): the row is muted and
+   its answer carries a small "Not counted" after the word, or under it in a narrow table (YAZ-5831), also when the
+   word hides at 400 px (YAZ-5833). */
+.card-reviews__row--uncounted td {
+  color: var(--fg-muted);
+}
+.card-reviews__tag {
+  margin-left: 6px;
+  font-size: 0.85em;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
 .card-reviews__delete {
   display: inline-flex;
   padding: 2px;
@@ -337,7 +349,16 @@
     display: none;
   }
 }
+/* YAZ-5831: a narrow table puts "Not counted" under the answer, and lets it wrap, so it never widens the table. */
+@container (max-width: 540px) {
+  .card-reviews__answer .card-reviews__tag {
+    display: block;
+    margin-left: 0;
+    white-space: normal;
+  }
+}
 @container (max-width: 400px) {
+  /* The answer is its glyph alone here. "Not counted" stays under it (YAZ-5833): it wraps, so the table still fits. */
   .card-reviews__answer .card-reviews__word {
     display: none;
   }

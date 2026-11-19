@@ -49,6 +49,10 @@ export function cardFacts(reviews: readonly CardReview[], settings: ReviewSettin
 /** The (i) of the recall chance (YAZ-5032; round 2, plain words): the strip's one help. */
 export const RECALL_HELP = 'How likely you are to remember this card today. It drops the longer the card waits. A review brings it back up.'
 
+/** YAZ-5789: the Reviews table's tag on an answer that is recorded, not counted, and its hover. */
+export const NOT_COUNTED = 'Not counted'
+export const NOT_COUNTED_HELP = 'Recorded, not counted. A miss sets the next date, and an answer before that date does not move it. A new card’s schedule starts at its first ✓.'
+
 /** Whole local days from today to the day of `ms`: 0 today, 1 tomorrow, -3 three days ago. */
 const daysUntil = (ms: number, now: number): number => Math.round((new Date(ms).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
 
