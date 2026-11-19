@@ -41,6 +41,7 @@ import { folderShortcuts } from './folderShortcuts'
 import { folderPageRows, showFolderPageFiles } from './folderPageRows'
 import { askPageTab } from '../views/pageTabRequest'
 import { datedSeed, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
+import { FILES_ONLY_GRACE_MS, inFolder } from './filesOnly'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
@@ -280,6 +281,9 @@ interface SidebarProps {
   /** "Hide all others" (YAZ-4460 F8): App's, for the window's session — the one focus folder the Focus tab shows; null shows all. */
   focusOnly?: string | null
   onFocusOnly?: (id: string | null) => void
+  /** "Hide all others" in Files (YAZ-5790): App's, for the window's session — the one folder (a path) the Files tab shows; null shows all. */
+  filesOnly?: string | null
+  onFilesOnly?: (dir: string | null) => void
   /** The Recents Type filter (YAZ-4450 demo): App's, for the window's session; 'all' for all types. */
   recentType?: SearchType
   onRecentType?: (type: SearchType) => void
@@ -570,6 +574,12 @@ export interface MenuTargets {
    */
   shortcutDir: string | null
   /**
+   * "Hide all others" on a folder row of the Files tab (YAZ-5790): the folder, and whether it is the one shown alone
+   * now (`on`: the item reads "Show all"). Null or absent on Search, Focus, Favorites, a vault row, a shortcut row,
+   * a folder page row, blank space and inside a 2+ selection.
+   */
+  hideOthers?: { dir: string; on: boolean } | null
+  /**
    * "Remove shortcut" — a SHORTCUT row only (YAZ-2290 E5): the page and the folder it stands in.
    * Such a row has no `deletePaths` (it is deleted from where it lives), no `renamePath` (the inline
    * input is the real row's) and no `clipPaths` (it is not a file in this folder), whatever the
@@ -746,6 +756,8 @@ export function Sidebar({
   onAddVaultFor,
   focusOnly = null,
   onFocusOnly,
+  filesOnly = null,
+  onFilesOnly,
   recentType = 'all',
   onRecentType,
   onSessionNameConsumed,
@@ -819,6 +831,20 @@ export function Sidebar({
   const places = useSameList(ownRoots.map((vault, i) => vaults[i]?.folder ?? vault))
   /** The top of what a window with one vault shows: the vault, or the folder of it that the window is (YAZ-4922 D3). Blank space makes and drops there. */
   const top = vaults[0]?.folder ?? root
+  // "Hide all others" in Files (YAZ-5790): the folder the Files tab shows alone, while the tree holds it.
+  const filesAlone = useMemo(() => (filesOnly === null || forest === null ? null : findDirNode(forest, filesOnly)), [filesOnly, forest])
+  // A folder shown alone that the tree does not hold (deleted or moved outside the app): all shows again after a short
+  // wait. App's `file:renamed` follows an in-app move in that wait, and its `file:deleted` ends the view at once.
+  const aloneGone = filesOnly !== null && loaded && forest !== null && filesAlone === null
+  useEffect(() => {
+    if (!aloneGone) return
+    const id = window.setTimeout(() => onFilesOnly?.(null), FILES_ONLY_GRACE_MS)
+    return () => window.clearTimeout(id)
+  }, [aloneGone, filesOnly, onFilesOnly])
+  // The folder shown alone is open: the folders above it too, and its vault's row (`openTo`'s synthetic child).
+  useEffect(() => {
+    if (filesOnly !== null) openTo(`${filesOnly}/x`)
+  }, [filesOnly, openTo])
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
   const multi = ownRoots.length > 1
   // The vaults' own icons (YAZ-3440 D8, D9): `.yaseendocs/icons.json` of each vault of the window, for the tree's rows. App's (D11).
@@ -1031,7 +1057,9 @@ export function Sidebar({
   const tabDirs = lens === 'favorites' ? favoriteDirs : focusDirs
   const listDirs = useMemo(() => (stackDirs.length === 0 ? tabDirs : [...new Set([...tabDirs, ...stackDirs])]), [tabDirs, stackDirs])
   // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
-  const bodyDirs = lens === 'favorites' || lens === 'focus' ? listDirs : lens === 'sessions' || lens === 'recents' ? NO_DIRS : dirs
+  // With a folder shown alone in Files (YAZ-5790), only the folders in it.
+  const filesDirs = useMemo(() => (filesOnly === null ? dirs : dirs.filter((dir) => inFolder(filesOnly, dir))), [dirs, filesOnly])
+  const bodyDirs = lens === 'favorites' || lens === 'focus' ? listDirs : lens === 'sessions' || lens === 'recents' ? NO_DIRS : filesDirs
   // Enter in the search bar, on a file: the highlighted row's page opens as a tab.
   // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
   // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
@@ -1396,6 +1424,10 @@ export function Sidebar({
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
   placeSelected.current = selectedPaths
+  // A folder shown alone in Files (YAZ-5790): a selected row outside it is off screen, so it leaves the selection.
+  useEffect(() => {
+    if (filesOnly !== null && lens === 'files') dispatchSelection({ type: 'prune', exists: (path) => inFolder(filesOnly, path) })
+  }, [filesOnly, lens, dispatchSelection])
   // A tab's own selected rows come back with its place (YAZ-5769), once its sidebar tab shows and every tree has landed:
   // after `useSelection`'s clear on a tab change, and before its prune drops a row the vault no longer has.
   useEffect(() => {
@@ -1446,6 +1478,14 @@ export function Sidebar({
   // (YAZ-2662 D1), a DIR of the tree. Both questions are asked once here and read by the two steps
   // below — of the tree of the vault that holds the target (YAZ-2602 S17). A vault's row is a dir
   // of the tree too: the cut tree of a search draws it, with its menu (A9).
+  // A reveal in Files of a row outside the folder shown alone (YAZ-5790): all shows again, so the row is on screen. A quiet
+  // reveal (YAZ-3440 D13) is no request of the user's, so it changes nothing.
+  const filesOnlyNow = useRef(filesOnly)
+  filesOnlyNow.current = filesOnly
+  useEffect(() => {
+    const only = filesOnlyNow.current
+    if (pendingReveal !== null && pendingReveal.quiet !== true && only !== null && !inFolder(only, pendingReveal.path)) onFilesOnly?.(null)
+  }, [pendingReveal, onFilesOnly])
   const revealRoot = pendingReveal === null ? root : rootOf(pendingReveal.path)
   const revealTree = trees.get(revealRoot) ?? null
   const revealIsDir = pendingReveal !== null && (dirs.includes(pendingReveal.path) || vaultRows.has(pendingReveal.path))
@@ -1559,8 +1599,10 @@ export function Sidebar({
       const listLens = !asSearch && (lens === 'focus' || lens === 'favorites') ? lens : null
       const listTab = listLens === 'focus' ? listsNow.current.focusTab : listsNow.current.favoritesTab
       const shownAlone = listLens === null ? undefined : listTab.folders.find((folder) => folder.id === focusOnly)
+      // The folder Files shows alone (YAZ-5790): its blank space is that folder, in a window with one vault or more.
+      const filesAloneDir = !asSearch && lens === 'files' ? filesOnly : null
       // Blank space of a window with two or more vaults is a vault's root on Focus and Favorites alone (YAZ-4782).
-      const targetDir = node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top)
+      const targetDir = node === null && filesAloneDir !== null ? filesAloneDir : node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top)
       const place: CreatePlace | null =
         listLens === null ? null
         : node === null ? { list: listLens, folder: shownAlone?.id ?? null, after: null }
@@ -1628,6 +1670,8 @@ export function Sidebar({
         reviewCard: pageRecord?.kind === 'card',
         // A shortcut is a folder's ID on a page: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
         shortcutDir: home.index.ids && plural === null && node?.type === 'dir' && vaultRow === null ? node.path : null,
+        // "Hide all others" (YAZ-5790): a folder row of the Files tree itself, outside a 2+ selection; "Show all" on the one shown alone.
+        hideOthers: !asSearch && lens === 'files' && plural === null && node?.type === 'dir' && vaultRow === null && shortcutIn === null && node.pageOf === undefined ? { dir: node.path, on: node.path === filesOnly } : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
         // The known vaults that are not in this window (YAZ-2602 D2), in the order of the ⌘O list, read as the menu opens.
         addVaults: node !== null ? null : storage.listVaults().flatMap(({ path, name }) => (roots.includes(path) ? [] : [{ path, name }])),
@@ -1640,7 +1684,7 @@ export function Sidebar({
         ...(skillRow !== null ? { cardSkill: skillRow, ...cardSkillTargets(skillRow) } : inSkill ? READ_ONLY_APP_ROW : {}),
       })
     },
-    [root, roots, appRoots, cardSkillTargets, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly],
+    [root, roots, appRoots, cardSkillTargets, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly, filesOnly],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -1963,7 +2007,11 @@ export function Sidebar({
     }
 
   // Blank space is one vault's root only in a window with one vault, and only on a tab that has a tree of it (YAZ-3247 D12).
-  const blankDrop = !multi && !searching && lens !== 'sessions' && lens !== 'recents'
+  // With a folder shown alone in Files (YAZ-5790), blank space is that folder, and its row lights.
+  const blankAlone = lens === 'files' && !searching ? filesOnly : null
+  const blankDrop = (blankAlone !== null || !multi) && !searching && lens !== 'sessions' && lens !== 'recents'
+  const blankDir = blankAlone ?? top
+  const blankLight = (): HTMLElement | null => (blankAlone === null ? headerRef.current : (bodyRef.current?.querySelector<HTMLElement>(`.tree__row[data-path="${CSS.escape(blankAlone)}"]`) ?? null))
 
   // The active vault's word for a page (YAZ-4938), for the panel's own words; a row's menu and its delete ask read the row's vault.
   const unit = useVaultUnit(root)
@@ -2147,18 +2195,18 @@ export function Sidebar({
         // Blank space takes a drop for the vault ROOT, as its paste does, and the header lights (YAZ-3247 D12) — one
         // vault only (YAZ-2602 S10). A row handles its own drop: a drag over a row reaches here only when the row refused it.
         onDragOver={(e) => {
-          if (!blankDrop || onRow(e) || !fileMove.accepts(root, hasFiles(e))) return
+          if (!blankDrop || onRow(e) || !fileMove.accepts(blankAlone ?? root, hasFiles(e))) return
           e.preventDefault()
           if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-          fileMove.hover(root, headerRef.current)
+          fileMove.hover(blankAlone ?? root, blankLight())
         }}
         onDragLeave={(e) => {
-          if (blankDrop && leftTarget(e)) fileMove.leave(top)
+          if (blankDrop && leftTarget(e)) fileMove.leave(blankDir)
         }}
         onDrop={(e) => {
           if (!blankDrop || onRow(e)) return
           e.preventDefault()
-          dropOn(fileMove, e, top)
+          dropOn(fileMove, e, blankDir)
         }}
         // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
         // selected the key still belongs to everyone else listening for it, so this must neither
@@ -2409,11 +2457,22 @@ export function Sidebar({
           <>
             {errorLines}
             {forest === null && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
-            {forest !== null && forest.length === 0 && pending === null && (
+            {filesOnly !== null && forest !== null && (
+              // "Hide all others" (YAZ-5790): the one folder, and the way back — the Focus tab's bar (YAZ-4460 F8).
+              <div className="sidebar__focus-bar">
+                <span>Only {filesAlone === null ? basename(filesOnly) : nameOf(filesAlone.path)}</span>
+                <button type="button" className="sidebar__focus-clear" onClick={() => onFilesOnly?.(null)}>
+                  Show all
+                </button>
+              </div>
+            )}
+            {filesOnly === null && forest !== null && forest.length === 0 && pending === null && (
               <p className="sidebar__msg">{unit('No pages here.')}</p>
             )}
-            {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5). */}
-            {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} sort={sort} />}
+            {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5).
+                A folder shown alone (YAZ-5790): that folder's row alone, at the top; other vaults hide too. */}
+            {forest !== null && filesOnly === null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} sort={sort} />}
+            {filesAlone !== null && <Tree {...treeProps} nodes={[filesAlone]} move={fileMove} sort={sort} />}
           </>
         )}
       </div>
@@ -2579,6 +2638,7 @@ export function Sidebar({
               onReviewFolder,
               onReviewPage,
               onAddShortcut: setPickingShortcut,
+              onHideOthers: onFilesOnly,
               // A removal clears no value (YAZ-4713 C9): it runs at once, with no sheet.
               onRemoveShortcut: (path, dir) => removeShortcutRow(path, dir),
               onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir', top: menu.top })),

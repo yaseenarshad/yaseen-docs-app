@@ -700,6 +700,29 @@ describe('Add page shortcut item (YAZ-2290 D2)', () => {
   })
 })
 
+/** "Hide all others" in Files (YAZ-5790): a Files folder row's view item, in Yaseen's place. */
+describe('"Hide all others" on a Files folder row (YAZ-5790)', () => {
+  const FOLDER: Partial<MenuSectionTargets> = { rowKind: 'dir', shortcutDir: '/v/Projects', favoritePaths: ['/v/Projects'], revealPath: '/v/Projects' }
+
+  it('stands right after "Add to favorites", before "Add page shortcut"; it hands the folder, and on the folder shown alone it reads "Show all", which hands null', () => {
+    const onHideOthers = vi.fn()
+    const hide = build({ ...FOLDER, hideOthers: { dir: '/v/Projects', on: false } }, { onHideOthers })
+    expect(hide[4].map((i) => i.label)).toEqual(['Add to favorites', 'Hide all others', 'Add page shortcut', 'Open in'])
+    select(hide, 'Hide all others')
+    expect(onHideOthers).toHaveBeenLastCalledWith('/v/Projects')
+    const shown = build({ ...FOLDER, hideOthers: { dir: '/v/Projects', on: true } }, { onHideOthers })
+    expect(shown[4].map((i) => i.label)).toEqual(['Add to favorites', 'Show all', 'Add page shortcut', 'Open in'])
+    expect(allLabelsOf(shown)).not.toContain('Hide all others')
+    select(shown, 'Show all')
+    expect(onHideOthers).toHaveBeenLastCalledWith(null)
+  })
+
+  it('no target or no handler: no item (a file row, blank space, the other tabs)', () => {
+    expect(allLabelsOf(build(FOLDER, { onHideOthers: vi.fn() }))).not.toContain('Hide all others')
+    expect(allLabelsOf(build({ ...FOLDER, hideOthers: { dir: '/v/Projects', on: false } }))).not.toContain('Hide all others')
+  })
+})
+
 /**
  * A SHORTCUT row (YAZ-2290 E5): the page shown in a folder it does not live in. "Remove
  * shortcut" stands where Delete would, and the file clipboard is withheld — the row is not a file
