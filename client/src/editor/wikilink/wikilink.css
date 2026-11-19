@@ -266,7 +266,8 @@
    draws the same icon (`wikilinkPicker.css`), and so does a card file's row (YAZ-5037): `--card-link-icon` is app.css's. */
 .wikilink.wikilink--card::before,
 .wikilink.card-icon::before,
-:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before {
+:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before,
+.wikilink .card-icon::before {
   content: '';
   padding-left: 1em;
   /* The format's gap, as a file icon's (YAZ-5894 D1). */
@@ -276,11 +277,20 @@
   mask: var(--card-link-icon) center / 0.9em 0.9em no-repeat;
 }
 /* File icons Grey greys a card's icon in the sidebar: the pill's too. */
-.app[data-sidebar-file-icons='grey'] :is(.wikilink.wikilink--card, .wikilink.card-icon, :is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon)::before {
+.app[data-sidebar-file-icons='grey'] :is(.wikilink.wikilink--card, .wikilink.card-icon, :is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon, .wikilink .card-icon)::before {
   background-color: var(--fg-muted);
 }
+/* A React pill's card icon (the Settings preview, YAZ-5919): a `.card-icon` span inside the pill, drawn as the title's
+   own icon, not search's 14 px box (app.css). */
+.wikilink .card-icon::before {
+  display: inline;
+  width: auto;
+  height: auto;
+  vertical-align: baseline;
+}
 /* As a piece, the format's own text spaces it. */
-:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before {
+:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before,
+:is(.link-pill__head, .link-pill__tail) .link-pill__icon .card-icon::before {
   margin-right: 0;
 }
 /* The group that holds a pill's pieces (`cardPill`, a link inside a card): it draws nothing, so the head, the name and
@@ -309,7 +319,8 @@
   }
   .wikilink.wikilink--card::before,
   .wikilink.card-icon::before,
-  :is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before {
+  :is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before,
+  .wikilink .card-icon::before {
     background-color: var(--pill-icon-fg) !important;
   }
 }

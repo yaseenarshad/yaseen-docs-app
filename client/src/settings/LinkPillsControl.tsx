@@ -7,8 +7,9 @@
  *     no `{name}`, too long) keeps the STORED format, marks the box red and says why. The token chips insert at the
  *     caret and keep at once. A dropdown of ready formats beside it. The vault rule (other vaults only · always ·
  *     never) shows only while the format has `{vault}`.
- *  2. **Preview:** a muted "Preview" label and ONE sample pill, "Roadmap" (round 4: the sentence of four read as real
- *     text), drawn by the folder page's pill (`PillEnds`, the same pieces the page's widgets draw) under the look's
+ *  2. **Preview:** a muted "Preview" label and two sample pills (round 4: the sentence of four read as real text): a
+ *     page, "Roadmap", with the page icon the sidebar draws, and a card, "Capital of France", with the card icon
+ *     (YAZ-5919), drawn by the folder page's pill (`PillEnds`, the same pieces the page's widgets draw) under the look's
  *     variables. The sample page has every part (an ID, a folder, a path, a vault), so each token of the format shows.
  *  3. **Click to style:** a click on a part of a pill (the name, the ID, the number, the vault, the folder, the path,
  *     your own text) opens the style panel under the preview, titled "Styling: the name" (the title is a quiet dropdown:
@@ -222,8 +223,16 @@ function BoxRows({ look }: { look: LinkPillsState }) {
   )
 }
 
-/** The sample page: every part a format can show, so each token has text on it. */
-const SAMPLE = { text: 'Roadmap', path: '/preview/Roadmap.md', info: { id: 'YAS-12', folder: 'Projects/Plans' } }
+/**
+ * The sample page: every part a format can show, so each token has text on it. Its icon is a plain page's (YAZ-5919):
+ * the path is no name Material has an icon of its own for (`Roadmap.md` drew Material's roadmap icon, not the page's).
+ */
+const SAMPLE = { text: 'Roadmap', path: '/preview/sample page.md', info: { id: 'YAS-12', folder: 'Projects/Plans' } }
+/**
+ * The sample card (YAZ-5919): a card pill beside the page pill, so the card icon's colour shows too. A card is in this
+ * vault (`cardPillEnds`: never another vault's name); its ID and folder are its own.
+ */
+const SAMPLE_CARD = { text: 'Capital of France', info: { id: 'YAS-34', folder: 'Projects/Plans' } }
 /** The sample's vault name where the app has none for this vault. */
 const SAMPLE_VAULT = 'Wiki'
 
@@ -232,9 +241,9 @@ const SAMPLE_VAULT = 'Wiki'
  * icon is the icon (YAZ-5843 D3); the pill's own span, its padding around the pieces, is the box.
  */
 function targetAt(el: Element): Target | null {
-  const hit = el.closest('.link-pill__text, .link-pill__id, .link-pill__number, .link-pill__vault, .link-pill__folder, .link-pill__path, .link-pill__mark, .file-icon, .link-pill__icon, .link-pills-preview__name, .wikilink')
+  const hit = el.closest('.link-pill__text, .link-pill__id, .link-pill__number, .link-pill__vault, .link-pill__folder, .link-pill__path, .link-pill__mark, .file-icon, .card-icon, .link-pill__icon, .link-pills-preview__name, .wikilink')
   if (hit === null) return null
-  if (hit.classList.contains('file-icon') || hit.classList.contains('link-pill__icon')) return { kind: 'part', part: 'icon' }
+  if (hit.classList.contains('file-icon') || hit.classList.contains('card-icon') || hit.classList.contains('link-pill__icon')) return { kind: 'part', part: 'icon' }
   if (hit.classList.contains('link-pills-preview__name')) return { kind: 'part', part: 'name' }
   if (hit.classList.contains('wikilink')) return { kind: 'box' }
   const part = hit.className.replace('link-pill__', '') as LinkPillPart
@@ -338,6 +347,10 @@ export function LinkPillsControl({ look, vault }: { look: LinkPillsState; vault:
               and "always" alike; "never" still hides it. */}
           <span className="wikilink view-link-pill">
             <PillEnds text={<span className="link-pills-preview__name">{SAMPLE.text}</span>} info={SAMPLE.info} otherVault={vault ?? SAMPLE_VAULT} icon={<FileIcon path={SAMPLE.path} />} />
+          </span>
+          {/* YAZ-5919: a card pill too, with the card icon (the card colour by default), as a link to a card draws. */}
+          <span className="wikilink view-link-pill link-pills-preview__card">
+            <PillEnds text={<span className="link-pills-preview__name">{SAMPLE_CARD.text}</span>} info={SAMPLE_CARD.info} icon={<span className="card-icon" aria-hidden />} />
           </span>
         </p>
       </PillLook.Provider>

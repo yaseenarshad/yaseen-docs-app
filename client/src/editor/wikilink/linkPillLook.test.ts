@@ -37,6 +37,11 @@ describe('linkPillVars (YAZ-4924)', () => {
     expect(css).toMatch(/\.wikilink \.file-icon::before \{[^}]*margin-right: var\(--pill-icon-gap, 0\.25em\) !important;/)
     expect(css).toMatch(/:is\(\.link-pill__head, \.link-pill__tail\) \.file-icon::before \{\s*margin-right: 0 !important;/)
     expect(css).toMatch(/\.wikilink\.wikilink--card::before,[^{]*\{[^}]*margin-right: var\(--pill-icon-gap, 0\.25em\);/)
+    // YAZ-5919: a React pill's card icon (`.wikilink .card-icon`, the Settings preview) wears the same rules: the default,
+    // the icon's colour under the query, and the format's gap; an inline glyph, not search's 14 px box.
+    const rule = (sel: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1].split(',').map((x) => x.trim()).includes(sel)).map((m) => m[2]).join(';')
+    expect(rule('.wikilink .card-icon::before')).toMatch(/margin-right: var\(--pill-icon-gap, 0\.25em\);[\s\S]*background-color: var\(--kind-card, currentColor\);[\s\S]*display: inline;/)
+    expect(rule('.wikilink .card-icon::before')).toMatch(/background-color: var\(--pill-icon-fg\) !important;/)
   })
 
   it("the icon's colour (YAZ-5843): --pill-icon-fg and --pill-icon-on, nothing else; Default sets none; Text is the page's text colour", () => {

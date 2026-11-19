@@ -47,7 +47,9 @@ const type = (input: HTMLInputElement, value: string) =>
 const enter = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
 const formatBox = (row: HTMLElement) => row.querySelector<HTMLInputElement>('input[aria-label="Link pill format"]') as HTMLInputElement
 const preview = (row: HTMLElement) => row.querySelector('.link-pills-preview') as HTMLElement
-const pillTexts = (row: HTMLElement) => [...preview(row).querySelectorAll('.wikilink')].map((p) => p.textContent)
+/** The sample page pill's text (the card pill, YAZ-5919, has its own tests). */
+const pillTexts = (row: HTMLElement) => [...preview(row).querySelectorAll('.wikilink:not(.link-pills-preview__card)')].map((p) => p.textContent)
+const cardPill = (row: HTMLElement) => preview(row).querySelector<HTMLElement>('.link-pills-preview__card')
 const toolbar = (row: HTMLElement) => row.querySelector<HTMLElement>('.pill-toolbar')
 /** The panel's rows, by their labels on the left. */
 const rows = (bar: HTMLElement) => [...bar.querySelectorAll('.pill-toolbar__row')].map((r) => r.querySelector('.pill-toolbar__label')?.textContent)
@@ -70,11 +72,15 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(formatBox(row).maxLength).toBe(60)
     expect(select(row, 'Vault name on a link pill')?.selectedOptions[0]?.textContent).toBe('Vault name: other vaults only')
     expect([...row.querySelectorAll<HTMLButtonElement>('.link-pills-chip')].map((b) => b.textContent)).toEqual(['{icon}', '{name}', '{id}', '{number}', '{vault}', '{folder}', '{path}', '{mark}'])
-    // The preview (round 4): a muted "Preview" label and ONE sample pill, found, with its icon; the format has {vault},
-    // so the sample shows its vault's name even under "other vaults only". No sentence around it.
+    // The preview (round 4): a muted "Preview" label and two sample pills (YAZ-5919): a page with the sidebar's page
+    // icon, and a card with the card icon. The format has {vault}, so the page shows its vault's name even under "other
+    // vaults only"; a card is in this vault, so it shows none. No sentence around them.
     expect(preview(row).querySelector('.link-pills-preview__label')?.textContent).toBe('Preview')
-    expect([...preview(row).querySelectorAll('.wikilink')].map((p) => [p.textContent, p.classList.contains('wikilink--unresolved'), p.querySelector('.file-icon') !== null])).toEqual([['Roadmap (Mine)', false, true]])
-    expect(preview(row).textContent).toBe('PreviewRoadmap (Mine)')
+    expect([...preview(row).querySelectorAll('.wikilink')].map((p) => [p.textContent, p.querySelector('.file-icon')?.getAttribute('data-kind') ?? null, p.querySelector('.card-icon') !== null])).toEqual([
+      ['Roadmap (Mine)', 'markdown', false],
+      ['Capital of France', null, true],
+    ])
+    expect(preview(row).textContent).toBe('PreviewRoadmap (Mine)Capital of France')
     expect(preview(row).title).toBe('Click a part of a pill to style it')
     expect(toolbar(row)).toBeNull()
     expect(button(row, 'Reset')).toBeUndefined()
@@ -337,6 +343,29 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     const plain = mount({ format: '{name}' })
     click(preview(plain.row).querySelector('.link-pills-preview__name') as Element)
     expect([...(select(toolbar(plain.row) as HTMLElement, 'What to style') as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['the name', 'the box'])
+  })
+
+  it("YAZ-5919: the card pill follows the format and its icon opens 'Styling: the icon'; its edge the box", () => {
+    const { row, save } = mount({ format: '{icon}{name} #{number}{mark}', parts: { icon: { color: 'red' } } })
+    const card = cardPill(row)!
+    expect(card.textContent).toBe('Capital of France #34')
+    expect([card.querySelector('.link-pill__number')?.textContent, card.querySelector('.link-pill__mark') !== null]).toEqual(['34', true])
+    // The colour and the gap reach both pills: they ride on the preview, as on a page's layer.
+    expect([preview(row).style.getPropertyValue('--pill-icon-fg'), preview(row).style.getPropertyValue('--pill-icon-gap')]).toEqual(['var(--table-text-red)', '1px'])
+    click(card.querySelector('.card-icon') as Element)
+    expect(title(toolbar(row) as HTMLElement)).toBe('Styling: the icon')
+    click(button(toolbar(row) as HTMLElement, 'Muted'))
+    expect(save).toHaveBeenLastCalledWith({ format: '{icon}{name} #{number}{mark}', parts: { icon: { color: 'muted' } } })
+    click(card.querySelector('.link-pills-preview__name') as Element)
+    expect(title(toolbar(row) as HTMLElement)).toBe('Styling: the name')
+    click(card)
+    expect(title(toolbar(row) as HTMLElement)).toBe('Styling: the box')
+    // The icon as a piece (`{name} · {icon}`): the card icon stands in the tail and still opens the icon.
+    const piece = mount({ format: '{name} · {icon}' }).row
+    click(cardPill(piece)!.querySelector('.link-pill__icon .card-icon') as Element)
+    expect(title(toolbar(piece) as HTMLElement)).toBe('Styling: the icon')
+    // No {icon}: no card icon.
+    expect(cardPill(mount({ format: '{name}' }).row)!.querySelector('.card-icon')).toBeNull()
   })
 
   it("the mark's Icon row shows the saved icon; its colour is the name's until it has its own", () => {
