@@ -28,7 +28,7 @@ import { inFolder } from './types'
  *
  * RECORDED, NOT COUNTED (YAZ-5789, Mochi's dates; Mochi's sandbox and history, `mochi-site-sandbox` findings 1–8):
  * every answer stays on the line, but FSRS skips two kinds, as Mochi never saves them:
- *  - Rule 1: a ✓ that follows a ✕ BEFORE the ✕'s real due day (the missed pass, or a later day). The ✕ sets the date;
+ *  - Rule 1: a ✓ after a counted ✕, BEFORE the ✕'s real due day (the missed pass, a later day, Up next). The ✕ sets the date;
  *    the ✓ only ends the card's coming back. A ✓ on or after that day is a normal review.
  *  - Rule 2: a NEW card's ✕ (no ✓ yet). The card stays new; its first ✓ starts FSRS from an empty card.
  * A skipped answer is a step with `counted: false` that keeps the last counted FSRS card and its real due date. Every
@@ -120,8 +120,9 @@ function steps(reviews: readonly CardReview[], s: ReviewSettings): ReplayStep[] 
       out.push({ review, card: createEmptyCard(local), due: at, comesBack: true, realDue: at, counted: false })
       continue
     }
-    // YAZ-5789 rule 1: a ✓ right after a ✕, before the ✕'s real due day, is recorded, not counted. The ✕'s date stays.
-    if (fsrs !== undefined && review.rating !== 'again' && out.at(-1)?.review.rating === 'again' && localDay(at) < localDay(fsrs.realDue)) {
+    // YAZ-5789 rule 1: after a counted ✕, a ✓ before the ✕'s real due day is recorded, not counted (also a second one,
+    // from Up next): the ✕'s date stays. A ✓ on or after that day counts.
+    if (fsrs !== undefined && review.rating !== 'again' && fsrs.review.rating === 'again' && localDay(at) < localDay(fsrs.realDue)) {
       out.push({ review, card: fsrs.card, due: fsrs.realDue, comesBack: false, realDue: fsrs.realDue, counted: false })
       continue
     }

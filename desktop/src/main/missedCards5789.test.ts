@@ -38,6 +38,12 @@ describe('YAZ-5789 rule 1: after a miss, a ✓ before the due date is recorded, 
     expect(dueOf(log)).toBe(MISS_DATE)
   })
 
+  it('✕ on Nov 17, ✓ the same day, then a second ✓ on Nov 18 (Up next): neither ✓ counts; the date stays', () => {
+    const log = [...KNOWN, MISS, r(L(10, 17, 9, 20), 'good'), r(L(10, 18), 'good')]
+    expect(cardHistory(log, S).map((x) => x.counted)).toEqual([true, true, true, true, false, false])
+    expect(dueOf(log)).toBe(MISS_DATE)
+  })
+
   it('✕ on Nov 17 and no answer: the card stays in Due today on Nov 18 and Nov 19 (no change)', () => {
     const log = [...KNOWN, MISS]
     for (const now of [L(10, 18, 8), L(10, 19, 8)]) expect(queued(log, now)).toMatchObject({ isNew: false })
