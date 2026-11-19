@@ -152,7 +152,9 @@ describe('YAZ-5032 round 2: the strip, the (i) and the ask before a remove', () 
 
 describe('YAZ-5789: the Reviews table marks an answer that is recorded, not counted', () => {
   it('a ✓ in the missed pass: its row is muted and says "Not counted", with the reason on hover; the other rows do not', () => {
+    vi.useFakeTimers()
     const box = document.createElement('div')
+    document.body.append(box)
     const root = createRoot(box)
     const reviews = [
       { at: '2026-10-30T16:00:00.000Z', rating: 'good' as const },
@@ -166,11 +168,17 @@ describe('YAZ-5789: the Reviews table marks an answer that is recorded, not coun
     expect(rows.map((tr) => tr.classList.contains('card-reviews__row--uncounted'))).toEqual([false, false, false, false, true])
     const tag = rows[4].querySelector('.card-reviews__tag')!
     expect(tag.textContent).toBe('Not counted')
-    expect(tag.getAttribute('title')).toBe(NOT_COUNTED_HELP)
     expect(box.querySelectorAll('.card-reviews__tag')).toHaveLength(1)
+    // The reason is the app's own hover box (a native title shows nothing in the app).
+    expect(tag.getAttribute('title')).toBe('')
+    act(() => void tag.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+    act(() => void vi.advanceTimersByTime(400))
+    expect(document.body.querySelector('.hover-tip[role="tooltip"]')?.textContent).toBe(NOT_COUNTED_HELP)
     // The ✓ keeps the ✕'s date: its "Next due" is the ✕ row's real date, not a new wait from the ✓.
     const cells = (tr: Element) => [...tr.querySelectorAll('td')].map((td) => td.textContent)
     expect(cells(rows[4])[4]).not.toBe(cells(rows[4])[0])
     act(() => root.unmount())
+    box.remove()
+    vi.useRealTimers()
   })
 })

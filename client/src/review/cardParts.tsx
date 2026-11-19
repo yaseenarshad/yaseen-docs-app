@@ -19,6 +19,7 @@ import type { GestureAction } from '@shared/keys'
 import { api } from '../api'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { InfoTip } from '../components/InfoTip'
+import { HoverTip } from '../components/HoverTip'
 import { cardLook } from '../editor/card/cardLook'
 import { desktopBoardPicture } from '../editor/card/boardPictureDesktop'
 import { copyText } from '../lib/copyText'
@@ -503,10 +504,11 @@ export function CardReviewsTable({ reviews, settings, onDelete, now = Date.now()
               <td className="card-reviews__answer">
                 <CardAnswerView review={row.review} settings={settings} />
                 <span className="card-reviews__word">{answerLabel(row.review.rating, settings)}</span>
+                {/* YAZ-5789: the app's own hover box (a native title shows nothing in the app, YAZ-4772). */}
                 {!row.counted && (
-                  <span className="card-reviews__tag" title={NOT_COUNTED_HELP}>
+                  <HoverTip className="card-reviews__tag" text={NOT_COUNTED_HELP}>
                     {NOT_COUNTED}
-                  </span>
+                  </HoverTip>
                 )}
               </td>
               <td>{i === 0 ? '' : <Gap n={row.elapsed} />}</td>
