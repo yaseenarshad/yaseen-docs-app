@@ -575,18 +575,76 @@ describe('the card in the page', () => {
     expect(root.querySelector('.card .cm-editor')).toBeNull()
   })
 
-  it('YAZ-5145 round 2: Edit card in a page locked by Read only is an edit attempt that carries itself; once the page is editable, the attempt opens Edit card, with no second double-click', async () => {
-    const { crepe, root } = await mount(CARD)
-    crepe.setReadonly(true)
-    const told: ReadOnlyEditEvent[] = []
-    root.addEventListener(READ_ONLY_EDIT, (e) => told.push(e as ReadOnlyEditEvent))
-    root.querySelector('.card__body')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
-    expect(told.map((e) => e.detail)).toEqual(['card'])
-    expect(root.querySelector('.card--editing')).toBeNull()
-    // The chip's "Allow edits" unlocks the page, then runs what the attempt carried.
-    crepe.setReadonly(false)
-    told[0].resume?.()
-    await vi.waitFor(() => expect(root.querySelector('.card--editing')).not.toBeNull())
+  describe('YAZ-5896: the text of a card in a page selects as the page text does', () => {
+    /** Presses the card's front text at `x`, lets go at `upX`; `drag` puts a browser selection over its words first. */
+    const press = (root: HTMLElement, x: number, upX: number, drag: boolean): boolean => {
+      const words = root.querySelector('.card__side p')!
+      const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: 10 })
+      words.dispatchEvent(down)
+      const selection = document.getSelection()!
+      selection.removeAllRanges()
+      const range = document.createRange()
+      if (drag) range.selectNodeContents(words)
+      else range.setStart(words.firstChild!, 2)
+      selection.addRange(range)
+      words.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, clientX: upX, clientY: 10 }))
+      return down.defaultPrevented
+    }
+    const after = () => new Promise((resolve) => setTimeout(resolve, 0))
+    const cardSelected = (view: EditorView) => view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'code_block'
+
+    it('a drag selects words and not the card; a click with no drag selects the card whole (D1), in a Read only page too', async () => {
+      for (const readonly of [false, true]) {
+        const { crepe, root, view } = await mount(`Intro\n\n${CARD}`)
+        crepe.setReadonly(readonly)
+        expect(press(root, 10, 60, true)).toBe(false) // the browser starts its selection
+        expect(document.getSelection()!.toString()).toContain('capital')
+        await after()
+        expect(cardSelected(view)).toBe(false)
+        expect(press(root, 10, 12, false)).toBe(false)
+        await after()
+        expect(cardSelected(view)).toBe(true)
+        // A drag in the selected card: the page's selection lets the card go (its selected look hides the words' colour).
+        press(root, 10, 60, true)
+        await after()
+        expect(cardSelected(view)).toBe(false)
+        expect(root.querySelector('.card.ProseMirror-selectednode')).toBeNull()
+      }
+    })
+
+    it('with words selected in a card, a key that edits does nothing in the page; ⌘C is left to the browser', async () => {
+      const { root, view } = await mount(`Intro\n\n${CARD}`)
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)))
+      press(root, 10, 60, true)
+      const before = view.state.doc.toJSON()
+      for (const key of ['Backspace', 'x', 'Enter']) {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+        view.dom.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+      }
+      expect(view.state.doc.toJSON()).toEqual(before)
+      const copy = new KeyboardEvent('keydown', { key: 'c', metaKey: true, bubbles: true, cancelable: true })
+      view.dom.dispatchEvent(copy)
+      expect(copy.defaultPrevented).toBe(false)
+    })
+
+    it('a double-click on the text: in a Read only page the browser selects the word, no Edit card and no ask (D2); in a page you can edit, Edit card', async () => {
+      const { crepe, root } = await mount(CARD)
+      crepe.setReadonly(true)
+      const told: ReadOnlyEditEvent[] = []
+      root.addEventListener(READ_ONLY_EDIT, (e) => told.push(e as ReadOnlyEditEvent))
+      const twice = () => {
+        const event = new MouseEvent('dblclick', { bubbles: true, cancelable: true })
+        root.querySelector('.card__side p')!.dispatchEvent(event)
+        return event.defaultPrevented
+      }
+      expect(twice()).toBe(false)
+      expect(told).toEqual([])
+      expect(root.querySelector('.card--editing')).toBeNull()
+      crepe.setReadonly(false)
+      expect(twice()).toBe(true)
+      await vi.waitFor(() => expect(root.querySelector('.card--editing')).not.toBeNull())
+    })
   })
 
   it('YAZ-5145 round 3: the Edit card BUTTON of a card in a page locked by Read only asks too, and opens Edit card once the page is editable', async () => {

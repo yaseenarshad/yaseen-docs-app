@@ -58,7 +58,7 @@ import { LanguageDescription, LanguageSupport } from '@codemirror/language'
 import { commandsCtx, editorViewCtx, nodeViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
@@ -810,9 +810,59 @@ export class CardBlockView implements NodeView {
       return
     }
     if (target.closest('a[href]') !== null) return
+    // A press on the card's text (YAZ-5896 D1): the browser selects, as in the page and a card page, and ⌘C copies it.
+    // A click with no drag still selects the card whole.
+    if (target.closest('.card__sides') !== null) {
+      this.releasePageSelection()
+      // A new press starts a new selection: inside an old one the browser would drag the old words instead. A Shift-click
+      // extends it, and a double- or triple-click's second press keeps the word.
+      if (!event.shiftKey && event.detail <= 1) this.dom.ownerDocument.getSelection()?.removeAllRanges()
+      this.selectOnClick(event)
+      return
+    }
     // A press on the card selects it whole: ⌘↵ opens it, Delete removes it.
     event.preventDefault()
     this.select()
+  }
+
+  /**
+   * Before the browser selects the card's words (YAZ-5896): the page's own selection goes to a caret in the nearest text
+   * outside a card. A selected card hides the browser's selection inside it (Crepe's `.ProseMirror-selectednode
+   * ::selection`), and a lit pill elsewhere would stay lit. A collapsed caret stays where it is.
+   */
+  private releasePageSelection(): void {
+    const pos = this.pos
+    const { state } = this.view
+    if (pos === null || state.selection.empty) return
+    const { doc } = state
+    const outside = (from: number, dir: 1 | -1): Selection | null => {
+      let found = Selection.findFrom(doc.resolve(from), dir, true)
+      // A card's text is a textblock too: step over each card on the way.
+      while (found !== null && isCardNode(found.$from.parent)) found = Selection.findFrom(doc.resolve(dir > 0 ? found.$from.after() : found.$from.before()), dir, true)
+      return found
+    }
+    const caret = outside(pos + this.node.nodeSize, 1) ?? outside(pos, -1)
+    if (caret !== null) this.view.dispatch(state.tr.setSelection(caret))
+  }
+
+  /**
+   * A press on the card's text that ends with no drag (the pointer moved under 4 px, the browser's selection collapsed)
+   * selects the card whole (YAZ-5896 D1). A drag, a double-click's word or a Shift-click keeps the browser's selection.
+   */
+  private selectOnClick(down: MouseEvent): void {
+    const win = this.dom.ownerDocument.defaultView ?? window
+    const up = (event: MouseEvent): void => {
+      win.removeEventListener('mouseup', up, true)
+      if (Math.hypot(event.clientX - down.clientX, event.clientY - down.clientY) >= CLICK_SLOP) return
+      // After the browser's own mouseup, which may still change the selection.
+      setTimeout(() => {
+        if (this.view.isDestroyed || !this.dom.isConnected || this.editing) return
+        const selection = this.dom.ownerDocument.getSelection()
+        if (selection !== null && !selection.isCollapsed) return
+        this.select()
+      }, 0)
+    }
+    win.addEventListener('mouseup', up, true)
   }
 
   /** A Markdown link never navigates the window: it opens as the page's links do. */
@@ -826,6 +876,8 @@ export class CardBlockView implements NodeView {
   private onDoubleClick = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null
     if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, a[href]`) !== null) return
+    // A page that cannot be edited (YAZ-5896 D2): the browser selects the word, as outside the card; no Edit card.
+    if (!this.view.editable) return
     event.preventDefault()
     this.edit()
   }
@@ -996,6 +1048,13 @@ function cardKeyGuard() {
         props: {
           handleTextInput: (view) => selected(view.state) !== null,
           handleDOMEvents: {
+            // A drag selected words in a card (YAZ-5896): the page's own selection is elsewhere, so a key that edits
+            // would change text out of sight. It does nothing; ⌘C, ⌘A, the arrows and the other shortcuts still work.
+            keydown: (view, event) => {
+              if (!view.editable || !editsText(event) || !cardTextSelected(view)) return false
+              event.preventDefault()
+              return true
+            },
             // Dictation, the emoji picker, text replacement, a composition's end: cancelled before the browser writes
             // the text into the card. A drop stays ProseMirror's (a drag move). A composition's own updates cannot be
             // cancelled: the transaction rule refuses what they write.
@@ -1029,6 +1088,24 @@ function cardKeyGuard() {
         },
       }),
   )
+}
+
+/** A press that moves less than this many pixels is a click, not a drag (YAZ-5896). */
+const CLICK_SLOP = 4
+
+/** Does the browser's selection hold words of a card's shown text (`.card__sides`) in `view`? A drag made it (YAZ-5896). */
+function cardTextSelected(view: EditorView): boolean {
+  const selection = view.dom.ownerDocument.getSelection()
+  if (selection === null || selection.rangeCount === 0 || selection.isCollapsed) return false
+  const box = selection.getRangeAt(0).commonAncestorContainer
+  const sides = (box instanceof Element ? box : box.parentElement)?.closest('.card__sides') ?? null
+  return sides !== null && view.dom.contains(sides)
+}
+
+/** A key that types, deletes or splits text: a letter, Backspace, Delete, Enter (not a ⌘ or ⌃ shortcut). */
+function editsText(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey) return false
+  return event.key === 'Backspace' || event.key === 'Delete' || event.key === 'Enter' || event.key.length === 1
 }
 
 /** The card at the selection: the card selected, or the caret in its text. */
