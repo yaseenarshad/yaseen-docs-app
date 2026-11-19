@@ -3,11 +3,13 @@
  * behind the dialog stays shut; Enter / ⇧Enter step; Esc closes the bar and not the dialog; ⌘F again selects the
  * bar's text; a nav click, a search or the dialog's close ends it; ⌘F from the search box drops the search.
  */
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import { rules } from '../editor/cssRules'
 import { paintedFindRanges } from '../editor/find/cardFind'
 import { createFindChannel } from '../editor/find/findChannel'
 import { FindBar } from '../editor/find/FindBar'
@@ -166,5 +168,36 @@ describe('⌘F in Settings', () => {
     pressCmdF(document.body)
     expect(pageChannel.getState().open).toBe(true)
     act(() => pageChannel.close())
+  })
+})
+
+// YAZ-5978: the open bar floated over the pane's top row (Hotkeys' "Press keys to search" button sat under it). jsdom
+// lays out no CSS, so the rules are read as text: while open, the dock is a band in the pane's flow that pushes the
+// section down and stays opaque at the top when the pane scrolls; the bar sits in the band, not over the rows.
+describe('the open find bar takes its own room at the top of the pane (YAZ-5978)', () => {
+  const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
+  const css = read('./settings.css')
+  const body = (selector: string) => rules(css, selector).find((r) => r.selector === selector)?.body ?? ''
+
+  it('the dock is marked open only while the bar shows', () => {
+    const { el } = mount()
+    clickNav(el, 'Hotkeys')
+    const dock = el.querySelector('.find-bar-dock--settings') as HTMLElement
+    expect(dock.classList.contains('find-bar-dock--open')).toBe(false)
+    pressCmdF()
+    expect(dock.classList.contains('find-bar-dock--open')).toBe(true)
+    // The dock comes first in the pane, above the Hotkeys search row, so its room pushes that row down.
+    const pane = el.querySelector('.settings-pane') as HTMLElement
+    expect(pane.firstElementChild).toBe(dock)
+    key(barInput(el), { key: 'Escape' })
+    expect(dock.classList.contains('find-bar-dock--open')).toBe(false)
+  })
+
+  it('the open dock is an opaque sticky band with height, and the bar sits in its flow', () => {
+    const open = body('.find-bar-dock--settings.find-bar-dock--open')
+    expect(open).toMatch(/position:\s*sticky/)
+    expect(open).toMatch(/height:\s*auto/)
+    expect(open).toMatch(/background:\s*var\(--bg\)/)
+    expect(body('.find-bar-dock--settings.find-bar-dock--open .find-bar')).toMatch(/position:\s*static/)
   })
 })

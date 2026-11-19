@@ -37,13 +37,13 @@ export function sectionMatches(root: Element, query: string): Range[] {
   })
 }
 
-/** Brings a match into the pane by ⌘F's least-scroll rule, below the find bar that sticks to the pane's top. */
+/** Brings a match into the pane by ⌘F's least-scroll rule, below the find bar's band that sticks to the pane's top (YAZ-5978). */
 export function revealMatch(range: Range, pane: HTMLElement): void {
   const el = shownElement(range)
   const box = el instanceof HTMLSelectElement || typeof range.getBoundingClientRect !== 'function' ? el?.getBoundingClientRect() : range.getBoundingClientRect()
   if (box === undefined) return
   const view = pane.getBoundingClientRect()
-  const bar = pane.querySelector('.find-bar')?.getBoundingClientRect()
+  const bar = (pane.querySelector('.find-bar-dock--open') ?? pane.querySelector('.find-bar'))?.getBoundingClientRect()
   const top = bar === undefined ? view.top : Math.max(view.top, bar.bottom)
   const dy = leastScroll({ start: box.top, end: box.bottom }, { start: top, end: view.bottom }, SHOW_GAP)
   if (dy !== 0) pane.scrollTop += dy / cssZoom(pane)

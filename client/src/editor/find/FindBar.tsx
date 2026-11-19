@@ -174,9 +174,10 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
   const hold = (event: MouseEvent): void => event.preventDefault()
 
   // Keep the zero-height dock mounted while closed: the Page tab's editor appends itself in an effect,
-  // so this existing first child is what gives the Page's sticky bar its top anchor (YAZ-4584).
+  // so this existing first child is what gives the Page's sticky bar its top anchor (YAZ-4584). `--open` while the bar
+  // shows: Settings' dock then takes its own room at the pane's top (YAZ-5978).
   return (
-    <div className={`find-bar-dock find-bar-dock--${scope}`}>
+    <div className={`find-bar-dock find-bar-dock--${scope}${state.open ? ' find-bar-dock--open' : ''}`}>
       {state.open && (
         <div className="find-bar">
           <input

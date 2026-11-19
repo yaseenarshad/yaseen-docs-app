@@ -147,8 +147,8 @@
   right: 12px;
   /* The pane comes later in the tree, so a positioned box in it (a dropdown's wrapper) that scrolls
      under the button would otherwise paint OVER it and eat the click (DL8, found when the pane
-     itself was positioned). */
-  z-index: 1;
+     itself was positioned). Over the open find bar's band (z-index 3, YAZ-5978) too. */
+  z-index: 4;
   display: flex;
   padding: 6px 9px;
   border-radius: 6px;
@@ -2114,14 +2114,24 @@
   color: var(--fg-muted);
 }
 
-/* ⌘F in the open section (YAZ-5968): the page's find bar, stuck to the pane's top and kept clear of the ✕. */
-.find-bar-dock--settings {
+/* ⌘F in the open section (YAZ-5968): the page's find bar at the pane's top, kept clear of the ✕. While open the dock is
+   a band of its own in the pane's flow (YAZ-5978): it pushes the section down, so no row starts under the bar, and it
+   sticks opaque to the pane's top as the pane scrolls, so a row goes under the band whole, as past the pane's edge.
+   The negative margins take the band over the pane's padding to its edges; its padding puts the bar where it was. */
+.find-bar-dock--settings.find-bar-dock--open {
   position: sticky;
-  top: 8px;
+  top: -24px;
+  z-index: 3;
+  display: flex;
+  justify-content: flex-end;
+  height: auto;
+  margin: -24px -28px 8px;
+  padding: 8px 48px 8px 28px;
+  background: var(--bg);
 }
 
-.find-bar-dock--settings .find-bar {
-  right: 20px;
+.find-bar-dock--settings.find-bar-dock--open .find-bar {
+  position: static;
 }
 
 /* A sub-heading in a long group (YAZ-5969, Q4 "Box per sub-group"): each sub-group is its own card, its label above
