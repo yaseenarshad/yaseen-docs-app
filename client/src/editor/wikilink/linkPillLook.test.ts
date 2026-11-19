@@ -41,25 +41,57 @@ describe('linkPillVars (YAZ-4924)', () => {
     // the icon's colour under the query, and the format's gap; an inline glyph, not search's 14 px box.
     const rule = (sel: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1].split(',').map((x) => x.trim()).includes(sel)).map((m) => m[2]).join(';')
     expect(rule('.wikilink .card-icon::before')).toMatch(/margin-right: var\(--pill-icon-gap, 0\.25em\);[\s\S]*background-color: var\(--kind-card, currentColor\);[\s\S]*display: inline;/)
-    expect(rule('.wikilink .card-icon::before')).toMatch(/background-color: var\(--pill-icon-fg\) !important;/)
+    expect(rule('.wikilink .card-icon::before')).toMatch(/background-color: var\(--pill-card-icon-fg\) !important;/)
   })
 
-  it("the icon's colour (YAZ-5843): --pill-icon-fg and --pill-icon-on, nothing else; Default sets none; Text is the page's text colour", () => {
-    expect(linkPillVars({ parts: { icon: { color: 'teal' } } })).toEqual({ '--pill-icon-fg': 'var(--table-text-teal)', '--pill-icon-on': '1' })
-    expect(linkPillVars({ parts: { icon: { color: 'accent' } } })).toEqual({ '--pill-icon-fg': 'var(--accent)', '--pill-icon-on': '1' })
-    expect(linkPillVars({ parts: { icon: { color: 'muted' } } })).toEqual({ '--pill-icon-fg': 'var(--fg-muted)', '--pill-icon-on': '1' })
-    expect(linkPillVars({ parts: { icon: { color: 'same' } } })).toEqual({ '--pill-icon-fg': 'var(--fg)', '--pill-icon-on': '1' })
+  it("the icon's colour (YAZ-5843): one colour (a file before YAZ-5972) is both rows' variables; Default sets none; Text is the page's text colour", () => {
+    const both = (fg: string) => ({ '--pill-icon-fg': fg, '--pill-icon-on': '1', '--pill-card-icon-fg': fg, '--pill-card-icon-on': '1' })
+    expect(linkPillVars({ parts: { icon: { color: 'teal' } } })).toEqual(both('var(--table-text-teal)'))
+    expect(linkPillVars({ parts: { icon: { color: 'accent' } } })).toEqual(both('var(--accent)'))
+    expect(linkPillVars({ parts: { icon: { color: 'muted' } } })).toEqual(both('var(--fg-muted)'))
+    expect(linkPillVars({ parts: { icon: { color: 'same' } } })).toEqual(both('var(--fg)'))
     expect(linkPillVars({ parts: { name: { bold: true } } })).toEqual({ '--pill-name-weight': 'bold' })
+  })
+
+  it('pages and cards apart (YAZ-5972): pages red, cards teal; cards alone; pages alone with cards at Default; a custom colour as is', () => {
+    expect(linkPillVars({ parts: { icon: { color: 'red', cardColor: 'teal' } } })).toEqual({
+      '--pill-icon-fg': 'var(--table-text-red)',
+      '--pill-icon-on': '1',
+      '--pill-card-icon-fg': 'var(--table-text-teal)',
+      '--pill-card-icon-on': '1',
+    })
+    expect(linkPillVars({ parts: { icon: { cardColor: 'teal' } } })).toEqual({ '--pill-card-icon-fg': 'var(--table-text-teal)', '--pill-card-icon-on': '1' })
+    expect(linkPillVars({ parts: { icon: { color: 'red', cardColor: 'kind' } } })).toEqual({ '--pill-icon-fg': 'var(--table-text-red)', '--pill-icon-on': '1' })
+    expect(linkPillVars({ parts: { icon: { cardColor: '#12ab9f' } } })).toEqual({ '--pill-card-icon-fg': '#12ab9f', '--pill-card-icon-on': '1' })
+  })
+
+  it('a custom colour (YAZ-5972): a part is the hex as is; a custom fill washes at the strengths of a palette fill', () => {
+    expect(linkPillVars({ parts: { name: { color: '#ff00aa' }, mark: { color: '#00ff00' } } })).toEqual({ '--pill-name-fg': '#ff00aa', '--pill-mark-fg': '#00ff00' })
+    expect(linkPillVars({ box: { fill: '#336699' } })).toEqual({ '--pill-bg': 'color-mix(in srgb, #336699 30%, transparent)' })
+    expect(linkPillVars({ box: { fill: '#336699', strength: 'light' } })['--pill-bg']).toBe('color-mix(in srgb, #336699 15%, transparent)')
+    expect(linkPillVars({ box: { fill: '#336699', strength: 'strong' } })['--pill-bg']).toBe('color-mix(in srgb, #336699 50%, transparent)')
+  })
+
+  it("the CSS: pages and files under --pill-icon-on, never a card's icon; cards (the title's, a piece, a card file's) under --pill-card-icon-on (YAZ-5972)", () => {
+    const css = readFileSync(join(__dirname, 'wikilink.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const pages = css.slice(css.indexOf('@container style(--pill-icon-on: 1)'), css.indexOf('@container style(--pill-card-icon-on: 1)'))
+    const cards = css.slice(css.indexOf('@container style(--pill-card-icon-on: 1)'))
+    expect(pages).toContain(".wikilink.file-icon:not([data-kind='card'])::before")
+    expect(pages).not.toContain('card-icon')
+    expect(pages).not.toContain('wikilink--card')
+    for (const sel of [".wikilink .file-icon)[data-kind='card']::before", '.wikilink.wikilink--card::before', '.wikilink.card-icon::before', ':is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before', '.wikilink .card-icon::before']) expect(cards).toContain(sel)
+    expect(cards).not.toContain('--pill-icon-fg')
+    expect(cards).toMatch(/background-color: var\(--pill-card-icon-fg\) !important;/)
   })
 
   it("the CSS reads the icon's colour under a style query: every pill icon (the file icon, the card icon on the title and as a piece) in --pill-icon-fg; the card icon's Default is the card colour", () => {
     const css = readFileSync(join(__dirname, 'wikilink.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
     const query = css.slice(css.indexOf('@container style(--pill-icon-on: 1)'))
     expect(query).not.toBe('')
-    for (const sel of ['.wikilink.file-icon::before', '.wikilink .file-icon::before', '.wikilink.wikilink--card::before', '.wikilink.card-icon::before', ':is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before']) expect(query).toContain(sel)
+    for (const sel of ['.wikilink.file-icon:not([data-kind=\'card\'])::before', '.wikilink .file-icon:not([data-kind=\'card\'])::before', '.wikilink.wikilink--card::before', '.wikilink.card-icon::before', ':is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before']) expect(query).toContain(sel)
     expect(query).toMatch(/background: var\(--pill-icon-fg\) !important;/)
-    expect(query).toMatch(/background-color: var\(--pill-icon-fg\) !important;/)
-    expect(query).toMatch(/\[data-icon-custom\]::before \{\s*mask: var\(--icon\) center \/ 14px 14px no-repeat !important;/)
+    expect(query).toMatch(/background-color: var\(--pill-card-icon-fg\) !important;/)
+    expect(query).toMatch(/\[data-icon-custom\]:not\(\[data-kind='card'\]\)::before \{\s*mask: var\(--icon\) center \/ 14px 14px no-repeat !important;/)
     expect(css).toMatch(/\.wikilink\.wikilink--card::before,[^{]*\{[^}]*background-color: var\(--kind-card, currentColor\);/)
   })
 

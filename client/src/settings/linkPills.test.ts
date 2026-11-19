@@ -16,8 +16,10 @@ import {
   isDefaultLinkPills,
   linkPillFormatProblem,
   linkPillFormatTokens,
+  linkPillIconColors,
   linkPillsFile,
   parseLinkPillFormat,
+  withLinkPillIconColor,
   sanitizeLinkPills,
   withLinkPillBox,
   withLinkPillPart,
@@ -126,6 +128,43 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
     expect(linkPillsFile({ parts: { icon: { color: 'red' } } })).toEqual({ version: 2, parts: { icon: { color: 'red' } } })
     // No icon change: the file keeps the old form.
     expect(linkPillsFile({ parts: { name: { bold: true } } })).toEqual({ version: 2, parts: { name: { bold: true } } })
+  })
+
+  it('the icon in two rows (YAZ-5972): an old file\'s one colour reads as both; cardColor apart; a default dropped', () => {
+    // A file written before YAZ-5972: one colour, both rows.
+    const old = sanitizeLinkPills({ version: 2, parts: { icon: { color: 'red' } } })
+    expect(linkPillIconColors(old)).toEqual({ pages: 'red', cards: 'red' })
+    expect(linkPillIconColors({})).toEqual({ pages: 'kind', cards: 'kind' })
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { color: 'red', cardColor: 'teal' } } })).toEqual({ parts: { icon: { color: 'red', cardColor: 'teal' } } })
+    // The cards' default is the pages' colour, else Default: equal to it, it drops.
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { color: 'red', cardColor: 'red' } } })).toEqual({ parts: { icon: { color: 'red' } } })
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { cardColor: 'kind' } } })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { color: 'red', cardColor: 'kind' } } })).toEqual({ parts: { icon: { color: 'red', cardColor: 'kind' } } })
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { cardColor: 'mauve', color: 'kind' } } })).toEqual({})
+    // cardColor is the icon's alone.
+    expect(sanitizeLinkPills({ version: 2, parts: { name: { cardColor: 'red', bold: true } } })).toEqual({ parts: { name: { bold: true } } })
+    // A row's pick leaves the other row as it looks: pages red on an empty look keeps cards at Default.
+    const pagesRed = withLinkPillIconColor({}, 'pages', 'red')
+    expect(pagesRed).toEqual({ parts: { icon: { color: 'red', cardColor: 'kind' } } })
+    expect(linkPillIconColors(pagesRed)).toEqual({ pages: 'red', cards: 'kind' })
+    const both = withLinkPillIconColor(pagesRed, 'cards', 'teal')
+    expect(both).toEqual({ parts: { icon: { color: 'red', cardColor: 'teal' } } })
+    expect(withLinkPillIconColor(both, 'pages', 'kind')).toEqual({ parts: { icon: { cardColor: 'teal' } } })
+    expect(withLinkPillIconColor(withLinkPillIconColor(both, 'pages', 'kind'), 'cards', 'kind')).toEqual({})
+    // The old file's pages pick keeps the cards at the old colour.
+    expect(withLinkPillIconColor(old, 'pages', 'blue')).toEqual({ parts: { icon: { color: 'blue', cardColor: 'red' } } })
+    expect(linkPillsFile(both)).toEqual({ version: 2, parts: { icon: { color: 'red', cardColor: 'teal' } } })
+  })
+
+  it('a custom colour (YAZ-5972): #rrggbb kept lowercase on every part, both icon rows and the box fill; anything else drops', () => {
+    expect(sanitizeLinkPills({ version: 2, parts: { name: { color: '#FF00AA' }, id: { color: '#12ab9f' }, mark: { color: '#000000' }, icon: { color: '#ABCDEF', cardColor: '#00Ff00' } } })).toEqual({
+      parts: { name: { color: '#ff00aa' }, id: { color: '#12ab9f' }, mark: { color: '#000000' }, icon: { color: '#abcdef', cardColor: '#00ff00' } },
+    })
+    expect(sanitizeLinkPills({ version: 2, box: { fill: '#3366CC', strength: 'strong' } })).toEqual({ box: { fill: '#3366cc', strength: 'strong' } })
+    for (const bad of ['#abc', '#abcdefff', 'abcdef', '#ggggggg', '#gggggg', ' #abcdef', 'rgb(1, 2, 3)', 123])
+      expect(sanitizeLinkPills({ version: 2, box: { fill: bad }, parts: { name: { color: bad }, icon: { color: bad, cardColor: bad } } })).toEqual({})
+    // The mark's default is the name's, a custom one too.
+    expect(sanitizeLinkPills({ version: 2, parts: { name: { color: '#ff00aa' }, mark: { color: '#FF00AA' } } })).toEqual({ parts: { name: { color: '#ff00aa' } } })
   })
 
   it('YAZ-5894 D2: the default and every ready format put a space after {icon}; the old default (no space) reads as the default; a typed {icon}{name} stays, flush', () => {

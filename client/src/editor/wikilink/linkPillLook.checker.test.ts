@@ -43,7 +43,8 @@ describe('link pill look, end to end through the file (checker)', () => {
     expect(old).toEqual({})
     expect(linkPillVars(old)).toEqual({})
     const flush = sanitizeLinkPills({ version: 2, format: '{icon}{name}({number})', parts: { icon: { color: 'teal' }, name: { color: 'same' } } })
-    expect(linkPillVars(flush)).toEqual({ '--pill-icon-fg': 'var(--table-text-teal)', '--pill-icon-on': '1', '--pill-icon-gap': '1px', '--pill-name-fg': 'currentColor' })
+    // One icon colour (a file before YAZ-5972) colours both rows: pages and files, and cards.
+    expect(linkPillVars(flush)).toEqual({ '--pill-icon-fg': 'var(--table-text-teal)', '--pill-icon-on': '1', '--pill-card-icon-fg': 'var(--table-text-teal)', '--pill-card-icon-on': '1', '--pill-icon-gap': '1px', '--pill-name-fg': 'currentColor' })
     expect(texts(pillParts(flush, meta, 'Mine').tail).join('')).toBe('(12)')
     expect(texts(pillParts(flush, meta, 'Mine').head)).toEqual([])
     // A space between the icon and the name in a stored format is the gap, not text, and sets no variable.

@@ -16,11 +16,14 @@
  *     the second way to pick a part), with three labelled rows — Text (B I U), Colour (ONE row: Accent · Text · Muted,
  *     then the ten palette swatches), Size (Normal · Small). The mark (round 5) has Icon (its eight small icons), Colour
  *     (the name's until it has its own) and Size: B I U mean nothing on an icon. A click on the pill's icon opens the
- *     icon's (YAZ-5843 D3, D4): one Colour row, **Default** first (the app's own icon colours, never stored), then
- *     Accent · Text · Muted · the swatches. A click on the pill's edge (its padding: the pill's own span, not a piece)
- *     opens the box's: Shape, Fill (Tint · None · the
- *     swatches), Strength (only with a palette fill). The dropdown reaches the box too. Each button writes one field through `withLinkPillPart` /
- *     `withLinkPillBox`, so the file holds only changes.
+ *     icon's (YAZ-5843 D3, D4; two rows since YAZ-5972): **Pages and files** and **Cards**, each **Default** first (the
+ *     app's own icon colours), then Accent · Text · Muted · the swatches (`withLinkPillIconColor`: a row's pick leaves
+ *     the other as it looks). A click on the pill's edge (its padding: the pill's own span, not a piece) opens the
+ *     box's: Shape, Fill (Tint · None · the swatches), Strength (only with a palette or custom fill). The dropdown
+ *     reaches the box too. Every colour row ends with **Custom colour…** (YAZ-5972): it opens the app's own colour box
+ *     (`highlightColourBox.ts`) under the row; each finished pick stores `#rrggbb`, and the swatch then shows that
+ *     colour and is the selected one. Each button writes one field through `withLinkPillPart` / `withLinkPillBox`, so
+ *     the file holds only changes.
  * Reset brings today's look back. Every default is today's look.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
@@ -37,11 +40,15 @@ import {
   linkPillFormatProblem,
   linkPillFormatTokens,
   parseLinkPillFormat,
+  isLinkPillHex,
+  linkPillIconColors,
   withLinkPillBox,
+  withLinkPillIconColor,
   withLinkPillPart,
   withLinkPillReady,
   withLinkPills,
   type LinkPillColor,
+  type LinkPillHex,
   type LinkPillMark,
   type LinkPillPart,
   type LinkPillPartColor,
@@ -50,6 +57,7 @@ import {
 import { LINK_PILL_MARK_SVG, linkPillVars, pillsShowVault } from '../editor/wikilink/linkPillLook'
 import { PillEnds, PillLook } from '../editor/wikilink/LinkPillParts'
 import { capital, fillSwatch, textSwatch } from '../editor/table/colours'
+import { ColourBox } from '../editor/highlightColourBox'
 import { FileIcon } from '../sidebar/FileIcon'
 import { useUnit } from '../vault/unitWord'
 import { Segmented, Select } from './controls'
@@ -87,11 +95,33 @@ const STRENGTH_OPTIONS: readonly Option<'light' | 'medium' | 'strong'>[] = [
 const READY_PICK = -1
 const READY_OPTIONS: readonly Option<number>[] = [{ label: 'Ready formats…', value: READY_PICK }, ...LINK_PILL_READY.map((r, i) => ({ label: r.label, value: i }))]
 
-/** The palette colour a part's colour is, or undefined (a named colour, or none). */
-const swatchOf = (color: LinkPillPartColor | undefined): LinkPillColor | undefined => ((LINK_PILL_COLORS as readonly string[]).includes(color ?? '') ? (color as LinkPillColor) : undefined)
+/** Where the colour box opens when the row holds no custom colour, as the table's "Custom colour…" does. */
+const CUSTOM_START: LinkPillHex = '#000000'
 
-/** The ten palette swatches as a radio row (the Band colour row's look). */
-function Swatches({ label, value, swatch, onPick }: { label: string; value: LinkPillColor | undefined; swatch: (c: LinkPillColor) => string; onPick: (c: LinkPillColor) => void }) {
+/**
+ * The ten palette swatches as a radio row (the Band colour row's look), then **Custom colour…** (YAZ-5972): a radio of
+ * its own, checked while the value is a `#rrggbb`, showing that colour (else the words). A click opens the app's colour
+ * box (`ColourBox`) on its own line under the swatches, at the custom colour (else black); each finished pick calls
+ * `onPick` with the hex, and the box stays for the next; a second click or Escape in its R G B fields closes it.
+ */
+function Swatches({ label, value, swatch, onPick }: { label: string; value: string | undefined; swatch: (c: LinkPillColor) => string; onPick: (c: LinkPillColor | LinkPillHex) => void }) {
+  const custom = isLinkPillHex(value) ? value : undefined
+  const [open, setOpen] = useState(false)
+  const holder = useRef<HTMLSpanElement>(null)
+  const box = useRef<ColourBox | null>(null)
+  const pick = useRef(onPick)
+  pick.current = onPick
+  const startAt = useRef(custom)
+  startAt.current = custom
+  useEffect(() => {
+    if (!open) return
+    if (box.current === null) {
+      box.current = new ColourBox(document, { preview: () => {}, pick: (hex) => pick.current(hex.toLowerCase() as LinkPillHex), close: () => setOpen(false) })
+      holder.current?.append(box.current.el)
+    }
+    box.current.show(startAt.current ?? CUSTOM_START)
+    return () => box.current?.hide()
+  }, [open])
   return (
     <span className="settings__band-colours" role="radiogroup" aria-label={label}>
       {LINK_PILL_COLORS.map((c) => (
@@ -99,6 +129,19 @@ function Swatches({ label, value, swatch, onPick }: { label: string; value: Link
           <span className="settings__band-swatch" style={{ background: swatch(c) }} aria-hidden />
         </button>
       ))}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={custom !== undefined}
+        aria-expanded={open}
+        aria-label={custom === undefined ? 'Custom colour…' : `Custom colour… (${custom})`}
+        title={custom === undefined ? 'Custom colour…' : `Custom colour… ${custom}`}
+        className="settings__band-colour pill-toolbar__custom"
+        onClick={() => setOpen(!open)}
+      >
+        {custom === undefined ? 'Custom…' : <span className="settings__band-swatch" style={{ background: custom }} aria-hidden />}
+      </button>
+      <span ref={holder} className="pill-toolbar__custom-box" hidden={!open} />
     </span>
   )
 }
@@ -112,31 +155,48 @@ function Tool({ label, on, mark, onClick, className = '' }: { label: string; on:
   )
 }
 
-/** One row of the panel: its short label on the left, its controls after. */
-function Row({ label, children }: { label: string; children: ReactNode }) {
+/** One row of the panel: its short label on the left, its controls after. `wide`: a longer label (the icon's rows). */
+function Row({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
   return (
     <div className="pill-toolbar__row">
-      <span className="pill-toolbar__label">{label}</span>
+      <span className={`pill-toolbar__label${wide ? ' pill-toolbar__label--wide' : ''}`}>{label}</span>
       {children}
     </div>
   )
 }
 
-/** The icon's one row (YAZ-5843 D4): Colour, Default first (no colour stored), then the named colours and the swatches. */
+/** The icon's rows (YAZ-5843 D4, YAZ-5972): what each colours and its label. */
+const ICON_ROWS = [
+  { row: 'pages', label: 'Pages and files', who: 'pages and files' },
+  { row: 'cards', label: 'Cards', who: 'cards' },
+] as const
+
+/**
+ * The icon's two rows (YAZ-5972): Pages and files (the page, folder, file, drawing and diagram icons), then Cards. Each
+ * is Default first (the app's own icon colours), then the named colours, the swatches and Custom colour…. A file of one
+ * colour (before YAZ-5972) shows it in both; a row's pick leaves the other as it looks (`withLinkPillIconColor`).
+ */
 function IconRows({ look }: { look: LinkPillsState }) {
   const { pills, save } = look
-  const color = pills.parts?.icon?.color
-  const pick = (c: LinkPillPartColor | undefined) => save(withLinkPillPart(pills, 'icon', { color: c }))
+  const colors = linkPillIconColors(pills)
   return (
-    <Row label="Colour">
-      <span className="pill-toolbar__group" role="group" aria-label="Colour (the icon)">
-        <Tool label="Default: the app's icon colours" on={color === undefined} mark="Default" onClick={() => pick(undefined)} />
-        <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => pick('accent')} />
-        <Tool label="Same as text" on={color === 'same'} mark="Text" onClick={() => pick('same')} />
-        <Tool label="Muted" on={color === 'muted'} mark="Muted" onClick={() => pick('muted')} />
-        <Swatches label="Palette (the icon)" value={swatchOf(color)} swatch={textSwatch} onPick={pick} />
-      </span>
-    </Row>
+    <>
+      {ICON_ROWS.map(({ row, label, who }) => {
+        const color = colors[row]
+        const pick = (c: LinkPillPartColor) => save(withLinkPillIconColor(pills, row, c))
+        return (
+          <Row key={row} label={label} wide>
+            <span className="pill-toolbar__group" role="group" aria-label={`Colour (${who})`}>
+              <Tool label="Default: the app's icon colours" on={color === 'kind'} mark="Default" onClick={() => pick('kind')} />
+              <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => pick('accent')} />
+              <Tool label="Same as text" on={color === 'same'} mark="Text" onClick={() => pick('same')} />
+              <Tool label="Muted" on={color === 'muted'} mark="Muted" onClick={() => pick('muted')} />
+              <Swatches label={`Palette (${who})`} value={color} swatch={textSwatch} onPick={pick} />
+            </span>
+          </Row>
+        )
+      })}
+    </>
   )
 }
 
@@ -187,7 +247,7 @@ function PartRows({ look, part }: { look: LinkPillsState; part: LinkPillPart }) 
           <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => save(withLinkPillPart(pills, part, { color: named('accent') }))} />
           <Tool label="Same as text" on={color === 'same'} mark="Text" onClick={() => save(withLinkPillPart(pills, part, { color: named('same') }))} />
           <Tool label="Muted" on={color === 'muted'} mark="Muted" onClick={() => save(withLinkPillPart(pills, part, { color: named('muted') }))} />
-          <Swatches label={`Palette (${who})`} value={swatchOf(color)} swatch={textSwatch} onPick={(c) => save(withLinkPillPart(pills, part, { color: named(c) }))} />
+          <Swatches label={`Palette (${who})`} value={color} swatch={textSwatch} onPick={(c) => save(withLinkPillPart(pills, part, { color: named(c) }))} />
         </span>
       </Row>
       <Row label="Size">
@@ -211,7 +271,7 @@ function BoxRows({ look }: { look: LinkPillsState }) {
         <span className="pill-toolbar__group" role="group" aria-label="Fill">
           <Tool label="Accent tint" on={fill === undefined} mark="Tint" onClick={() => save(withLinkPillBox(pills, { fill: undefined, strength: undefined }))} />
           <Tool label="No fill" on={fill === 'none'} mark="None" onClick={() => save(withLinkPillBox(pills, { fill: 'none', strength: undefined }))} />
-          <Swatches label="Palette (the box)" value={fill === undefined || fill === 'none' ? undefined : fill} swatch={fillSwatch} onPick={(c) => save(withLinkPillBox(pills, { fill: c }))} />
+          <Swatches label="Palette (the box)" value={fill} swatch={fillSwatch} onPick={(c) => save(withLinkPillBox(pills, { fill: c }))} />
         </span>
       </Row>
       {fill !== undefined && fill !== 'none' && (

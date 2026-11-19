@@ -2138,3 +2138,23 @@
 .settings-subheading:first-child {
   margin-top: 10px;
 }
+
+/* Link pills' icon rows (YAZ-5972): "Pages and files" and "Cards" need a wider label than one word. */
+.pill-toolbar .pill-toolbar__label--wide {
+  flex-basis: 96px;
+}
+/* "Custom colour…" (YAZ-5972) at the end of a pill colour row: the words until a custom colour is picked, then its
+   swatch. Its colour box opens on a line of its own under the swatches, the width of the table's. */
+.pill-toolbar .pill-toolbar__custom {
+  white-space: nowrap;
+}
+.pill-toolbar__custom-box {
+  flex: 0 0 100%;
+}
+.pill-toolbar__custom-box[hidden] {
+  display: none;
+}
+.pill-toolbar__custom-box .colour-box {
+  width: 190px;
+  margin: 4px 0 2px;
+}
