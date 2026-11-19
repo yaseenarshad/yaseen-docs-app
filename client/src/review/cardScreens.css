@@ -840,7 +840,6 @@ button.card-inbox__view-time:hover {
     0 10px 30px rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
-/* The card's edges (YAZ-5019): a thin strip on each side drags the width; a faint line shows on hover and while it drags. */
 /* The card's ⋯ (YAZ-5963): at the top right of the head band, as a card in a page has it (`.card__head .card__more`,
    card.css), over the frame's top corner, so it has its place with or without a title (Title room "Only when it
    shows" too). The band's title keeps clear of it. Over the width edge, under nothing. */
@@ -869,6 +868,16 @@ button.card-inbox__view-time:hover {
 .card-inbox__panel:has(> .card-inbox__head-more-place) > .card-band {
   padding-right: calc(var(--inbox-card-pad, 28px) + 36px);
 }
+/* No band (Title room "Only when it shows", the title not shown yet): the card's first line keeps clear of the ⋯. A
+   float one line high at the body's top right takes the ⋯'s place: the ⋯ ends 50 px in from the frame's right edge (its
+   10 px inset, its width, a gap), so the float is that less the side padding. The lines under it take the full width. */
+.card-inbox__panel:has(> .card-inbox__head-more-place):not(:has(> .card-band)) > .card-inbox__body::before {
+  content: '';
+  float: right;
+  width: max(0px, calc(50px - var(--inbox-card-pad, 28px)));
+  height: 1.2em;
+}
+/* The card's edges (YAZ-5019): a thin strip on each side drags the width; a faint line shows on hover and while it drags. */
 .card-inbox__edge {
   position: absolute;
   top: 0;
