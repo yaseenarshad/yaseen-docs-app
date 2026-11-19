@@ -289,6 +289,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     if (card === null || edit !== null) return
     // The head shows the title (off the card line); the card's text is its sides only (YAZ-5308).
     body.replaceChildren(read === null ? '' : renderCard(read.text, {}, doors.look(card.path)))
+    // YAZ-5918: the sides opened in this embed stay open while the page is open, by the card's ID.
+    body.firstElementChild?.setAttribute('data-fold-key', card.id)
     // YAZ-5904: Side 2 and after folded as the page that embeds it says (`--card-sides-fold`), once it is in the page.
     queueMicrotask(refold)
     drawReviews()

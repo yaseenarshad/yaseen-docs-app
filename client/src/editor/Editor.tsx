@@ -1584,6 +1584,8 @@ function CrepeHost({
     'data-table-width': pageTableWidth === null ? undefined : '',
     // YAZ-5904: this page's card sides (`card.css`).
     'data-card-sides': pageCardSides ?? undefined,
+    // YAZ-5918: the card sides opened here stay open while this page is open in this tab (`cardFold.ts`).
+    'data-fold-scope': file.path,
     style: { ...(pageCodeWidth !== null && { '--code-block-width': `${pageCodeWidth}px` }), ...(pageTableWidth !== null && { '--table-width': `${pageTableWidth}px` }) } as CSSProperties,
   }
 

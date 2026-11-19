@@ -17,7 +17,7 @@ import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { CardBody } from '../../review/cardParts'
 import type { ExploreVault } from '../../explore/ExplorePage'
-import { foldAt, foldLabel, setCardFold, tellCardFoldChange } from './cardFold'
+import { FOLD_SCOPE_ATTR, foldAt, foldLabel, followCardFold, setCardFold, tellCardFoldChange } from './cardFold'
 import { copyWithoutHidden, renderCard } from './cardRender'
 import { cardLookOf, cardLookSettings, cardLookStyle, sanitizeCardLook } from '@shared/cardLook'
 import { CARD_SIDES_KEY, readCardSides, writeCardSides } from '@shared/pageSwitches'
@@ -126,6 +126,71 @@ describe('renderCard with `fold` (YAZ-5904 D2)', () => {
   })
 })
 
+describe('opened sides stay open while the page is open (YAZ-5918)', () => {
+  /** A page's scope (a tab's editor mount, a card page, the phone's page) with one card in it, folded. */
+  const draw = (scope: HTMLElement, id: string | null, text = LONG): HTMLElement => {
+    const card = document.createElement('div')
+    if (id !== null) card.dataset.cardId = id
+    card.append(renderCard(text, { fold: false }))
+    scope.replaceChildren(card)
+    followCardFold(card.firstElementChild)
+    return card
+  }
+  const pageScope = (path: string): HTMLElement => {
+    const scope = document.createElement('div')
+    scope.setAttribute(FOLD_SCOPE_ATTR, path)
+    scope.style.setProperty('--card-sides-fold', 'on')
+    document.body.append(scope)
+    return scope
+  }
+
+  it('a redraw of the card (an outside save, its text, a setting) keeps the side the reader opened; the others fold', () => {
+    const scope = pageScope('/v/Page.md')
+    let card = draw(scope, 'WIKI-7')
+    rulesOf(card)[1].click()
+    expect(sidesOf(card).map((s) => s.hidden)).toEqual([false, true, false])
+    card = draw(scope, 'WIKI-7', LONG.replace('Back', 'Back, edited by an agent'))
+    expect(sidesOf(card).map((s) => s.hidden)).toEqual([false, true, false])
+    expect(rulesOf(card).map((r) => r.getAttribute('aria-expanded'))).toEqual(['false', 'true'])
+    // Folded again by the reader: it stays folded at the next redraw.
+    rulesOf(card)[1].click()
+    card = draw(scope, 'WIKI-7')
+    expect(sidesOf(card).map((s) => s.hidden)).toEqual([false, true, true])
+    // A setting turned to Show all, then back to Fold: the side opened before is still open.
+    rulesOf(card)[0].click()
+    setCardFold(card.firstElementChild!, false)
+    followCardFold(card.firstElementChild)
+    expect(sidesOf(card).map((s) => s.hidden)).toEqual([false, false, true])
+  })
+
+  it('by the card: another card, a card with no ID by its place; ⌘F\'s open is kept too', () => {
+    const scope = pageScope('/v/Page.md')
+    rulesOf(draw(scope, 'WIKI-7'))[0].click()
+    expect(sidesOf(draw(scope, 'WIKI-8')).map((s) => s.hidden)).toEqual([false, true, true])
+    rulesOf(draw(scope, null))[1].click()
+    expect(sidesOf(draw(scope, null)).map((s) => s.hidden)).toEqual([false, true, false])
+    const card = draw(scope, 'WIKI-9')
+    const range = document.createRange()
+    range.selectNodeContents(sidesOf(card)[1])
+    scrollToRange(range)
+    expect(sidesOf(draw(scope, 'WIKI-9')).map((s) => s.hidden)).toEqual([false, false, true])
+  })
+
+  it('a new scope (the tab closed, the page opened again), another page in the scope, or no scope starts from the setting; nothing is stored', () => {
+    const scope = pageScope('/v/Page.md')
+    rulesOf(draw(scope, 'WIKI-7'))[0].click()
+    expect(sidesOf(draw(pageScope('/v/Page.md'), 'WIKI-7')).map((s) => s.hidden)).toEqual([false, true, true])
+    scope.setAttribute(FOLD_SCOPE_ATTR, '/v/Other.md')
+    expect(sidesOf(draw(scope, 'WIKI-7')).map((s) => s.hidden)).toEqual([false, true, true])
+    const loose = document.createElement('div')
+    loose.style.setProperty('--card-sides-fold', 'on')
+    document.body.append(loose)
+    rulesOf(draw(loose, 'WIKI-7'))[0].click()
+    expect(sidesOf(draw(loose, 'WIKI-7')).map((s) => s.hidden)).toEqual([false, true, true])
+    expect(localStorage.length).toBe(0)
+  })
+})
+
 describe('who folds (YAZ-5904 D1, D3)', () => {
   it('the card look: three fields in card-look.json (pages, card pages, Explore), Show all by default, written only when they differ', () => {
     expect(cardLookSettings({})).toMatchObject({ cardSidesFold: false, cardSidesFoldCardPages: false, cardSidesFoldExplore: false })
@@ -218,6 +283,26 @@ describe('the surfaces (YAZ-5904 D3)', () => {
     host.dataset.cardSides = 'show'
     tellCardFoldChange()
     expect(sidesOf(card).map((s) => s.hidden)).toEqual([false, false, false])
+  })
+
+  it('YAZ-5918: a side opened in a page stays open when the card\'s text changes from outside (a redraw)', async () => {
+    const host = document.createElement('div')
+    host.dataset.cardSides = 'fold'
+    host.setAttribute(FOLD_SCOPE_ATTR, '/v/Page.md')
+    document.body.append(host)
+    const crepe = await mountPage('```card\n' + LONG + '\n```\n', host)
+    await Promise.resolve()
+    const card = () => host.querySelector<HTMLElement>('.card')!
+    rulesOf(card())[0].click()
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    let end = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'code_block') end = pos + node.nodeSize - 1
+    })
+    view.dispatch(view.state.tr.insertText(' more', end))
+    await Promise.resolve()
+    expect(sidesOf(card()).at(-1)!.textContent).toContain('more')
+    expect(sidesOf(card()).map((s) => s.hidden)).toEqual([false, false, true])
   })
 
   it('`CardBody`: the Inbox (no `fold`) never folds, even where the look says fold; a card page (`fold`) does', () => {

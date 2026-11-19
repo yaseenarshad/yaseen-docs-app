@@ -408,7 +408,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
         {/* YAZ-5591: the layer of stuck headings (copies; the headings are in the body), zero height. */}
         <div ref={stuckLayer} className="reader__stuck" aria-hidden="true" />
-        <div className="reader__body" {...switches} data-card-sides={cardSides ?? undefined} data-folding={foldingOn ? undefined : 'off'} data-wide-tables={wideTablesAttr(fitTables)} ref={host} onClick={(e) => void onTap(e)} />
+        <div className="reader__body" {...switches} data-card-sides={cardSides ?? undefined} data-fold-scope={path} data-folding={foldingOn ? undefined : 'off'} data-wide-tables={wideTablesAttr(fitTables)} ref={host} onClick={(e) => void onTap(e)} />
         {/* The page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}
         {tools.sheet}

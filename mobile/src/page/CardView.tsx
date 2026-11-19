@@ -171,7 +171,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         )}
         {text === null && <p className="muted">This card is not on the phone.</p>}
         {text !== undefined && text !== null && card === null && shape === null && <p className="muted">{`Missing card · ${id}`}</p>}
-        <div className="card card-view__card" ref={host} data-card-file={isFile ? '' : undefined} data-card-sides={(typeof text === 'string' ? readCardSides(text) : null) ?? undefined} hidden={card === null} onClick={(e) => void onTap(e)} />
+        <div className="card card-view__card" ref={host} data-card-file={isFile ? '' : undefined} data-fold-scope={path} data-card-sides={(typeof text === 'string' ? readCardSides(text) : null) ?? undefined} hidden={card === null} onClick={(e) => void onTap(e)} />
         {/* The Mac's strip, tucked under the card and closed: Reviews, Properties, Linked mentions (and a card
             file's Embedded in), each opening its drawer. Review off: none, as the Mac. */}
         {card !== null && data !== null && reviewOn && (

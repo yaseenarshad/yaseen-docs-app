@@ -36,11 +36,50 @@ const sideOf = (rule: Element): HTMLElement | null => {
   return next instanceof HTMLElement && next.classList.contains('card__side') ? next : null
 }
 
-/** Opens (`open`) or folds the side after `rule`. */
-function setRuleOpen(rule: HTMLElement, open: boolean): void {
+/**
+ * OPEN SIDES STAY OPEN WHILE THE PAGE IS OPEN (YAZ-5918; Yaseen: "only when the page is open"). A side the reader opens
+ * is kept in memory on the page's scope, the nearest `[data-fold-scope]` (a tab's editor mount, a card page, the phone's
+ * page): its value is the page's path, and the memory lives as long as that element, by the card's ID (or its
+ * `data-fold-key`, else its place on the page) and the side's number. A redraw of the card (an outside save, an agent's
+ * edit, its text, a setting) folds it again with those sides open. A new scope (the tab closed, the page opened again)
+ * starts from the setting. Nothing is written to disk.
+ */
+export const FOLD_SCOPE_ATTR = 'data-fold-scope'
+const remembered = new WeakMap<Element, { page: string; open: Set<string> }>()
+
+/** The open sides of the page around `el`, or null outside a scope (a preview, Explore: each draw starts from the setting). */
+function memoryAt(el: Element): Set<string> | null {
+  const scope = el.closest(`[${FOLD_SCOPE_ATTR}]`)
+  if (scope === null) return null
+  const page = scope.getAttribute(FOLD_SCOPE_ATTR) ?? ''
+  let memory = remembered.get(scope)
+  if (memory === undefined || memory.page !== page) remembered.set(scope, (memory = { page, open: new Set() }))
+  return memory.open
+}
+
+/** "WIKI-7:1": the card (its `data-fold-key`, its ID, else its place among the page's cards) and the side's number. */
+function sideKey(sides: Element, side: HTMLElement): string {
+  const own = sides.getAttribute('data-fold-key') ?? sides.closest('[data-card-id]')?.getAttribute('data-card-id')
+  let card = own ?? null
+  if (card === null) {
+    const scope = sides.closest(`[${FOLD_SCOPE_ATTR}]`)
+    card = `#${scope === null ? 0 : [...scope.querySelectorAll('.card__sides')].indexOf(sides)}`
+  }
+  return `${card.toLowerCase()}:${side.dataset.side ?? ''}`
+}
+
+/** Opens (`open`) or folds the side after `rule`; the reader's choice is kept for the page (`remember`). */
+function setRuleOpen(rule: HTMLElement, open: boolean, remember = true): void {
   const side = sideOf(rule)
   rule.setAttribute('aria-expanded', String(open))
-  if (side !== null) side.hidden = !open
+  if (side === null) return
+  side.hidden = !open
+  const sides = rule.parentElement
+  const memory = remember && sides !== null ? memoryAt(sides) : null
+  if (memory === null || sides === null) return
+  const key = sideKey(sides, side)
+  if (open) memory.add(key)
+  else memory.delete(key)
 }
 
 /**
@@ -51,6 +90,8 @@ function setRuleOpen(rule: HTMLElement, open: boolean): void {
 export function setCardFold(sides: Element, fold: boolean): void {
   if (sides.hasAttribute('data-fold') === fold) return
   sides.toggleAttribute('data-fold', fold)
+  // YAZ-5918: the sides the reader opened on this page, while it stays open.
+  const memory = fold ? memoryAt(sides) : null
   for (const rule of sides.querySelectorAll<HTMLElement>(':scope > .card__rule')) {
     const side = sideOf(rule)
     if (fold) {
@@ -59,7 +100,7 @@ export function setCardFold(sides: Element, fold: boolean): void {
       rule.setAttribute('role', 'button')
       rule.tabIndex = 0
       rule.setAttribute('aria-label', label)
-      setRuleOpen(rule, false)
+      setRuleOpen(rule, side !== null && memory?.has(sideKey(sides, side)) === true, false)
     } else {
       delete rule.dataset.fold
       rule.setAttribute('role', 'separator')

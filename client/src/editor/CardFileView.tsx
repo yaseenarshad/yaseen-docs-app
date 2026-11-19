@@ -387,7 +387,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       </StatusChips>
       <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
-      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body data-card-sides={cardSides ?? undefined} onKeyDown={onKeyDown} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
+      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body data-card-sides={cardSides ?? undefined} data-fold-scope={path} onKeyDown={onKeyDown} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
         <div className="card-file__page">
           {/* YAZ-5392: above the card, the folder path only. The title lives in the card's band, as in a page. YAZ-5402: the folder icon says it is a folder. */}
           <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
