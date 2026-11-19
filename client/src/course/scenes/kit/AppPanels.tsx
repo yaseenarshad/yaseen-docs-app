@@ -4,8 +4,10 @@
  *
  * - `LinkPicker`: the `[[` list (`wikilinkPicker.ts`: `.wikilink-picker`, `.wikilink-picker__item`, the card row's
  *   `.wikilink-picker__card-icon`), pages first, then cards with the card icon.
- * - `CardPill`: a link to a card, as `wikilinkPlugin.ts` `cardPillSpan` draws it (`.wikilink.wikilink--card`, its ID in
- *   `.wikilink__card-id`): the kit's one pill (a card's text draws its own through `renderCard`).
+ * - `CardPill`: a link to a card as the app drew it before YAZ-5792 (`.wikilink.wikilink--card`, its ID in
+ *   `.wikilink__card-id`, styled by `kit.css`): the kit's one pill (a card's text draws its own through `renderCard`).
+ *   The app's card pill now follows the vault's link format (`cardPill.ts`); the course keeps this look on purpose
+ *   (Yaseen, YAZ-5792: "leave the tour").
  * - `LinkedMentions`: "Linked mentions (n)" under a card (`cardPane.tsx`: `.card-backlinks`).
  * - `FilterMenu`: the Inbox's All cards menu (`CardInboxBar.tsx`: its rows, counts, the line above Archived, and
  *   "Add [10] more new cards").
