@@ -3,7 +3,7 @@
  * popover at every width. A `1fr` track does not go below its content, so "Side by side" and "Grid + centre" pushed
  * Stack 21 px past the border; each track may now shrink to zero, its picture shrinks with it, and its name wraps.
  */
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -103,5 +103,35 @@ describe('YAZ-5974: the page controls on the title row', () => {
   it('a card file: the controls on the card\'s top line, right of the folder path', () => {
     expect(rule('.card-file__top')['display']).toBe('flex')
     expect(rule('.card-file__top > .card-file__path')['flex']).toBe('1 1 0')
+  })
+})
+
+describe('YAZ-5977: Search size zooms the search window alone', () => {
+  /** Every rule in the client's CSS that reads `--explore-size`, as `[file, selector, declarations]`. */
+  const uses = readdirSync(path.join(__dirname, '..'), { recursive: true, encoding: 'utf8' })
+    .filter((file) => file.endsWith('.css'))
+    .flatMap((file) => {
+      const text = readFileSync(path.join(__dirname, '..', file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+      return [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[2]!.includes('--explore-size')).map((m) => [file, m[1]!.trim(), m[2]!.trim()])
+    })
+
+  it('one rule in the client reads it: the zoom in explore.css', () => {
+    expect(uses).toEqual([[path.join('explore', 'explore.css'), '.explore__layer--search > :not(.explore__grip, .explore__head)', 'zoom: var(--explore-size, 1);']])
+  })
+
+  /** A layer as `ExploreStack` draws it: its kind's class, then its parts (a file window's head is its top bar), then its 8 grips. */
+  function layer(kind: 'search' | 'page' | 'board' | 'card'): HTMLElement {
+    const el = document.createElement('div')
+    el.className = `explore__layer explore__layer--${kind} explore__layer--in`
+    const parts = kind === 'search' ? ['explore__grab', 'explore-search'] : ['explore__head', 'explore__body']
+    for (const name of [...parts, ...Array.from({ length: 8 }, () => 'explore__grip')]) el.appendChild(document.createElement('div')).className = name
+    return el
+  }
+
+  it('it zooms the search\'s parts, never its grips; in a page, board or card window it zooms nothing: not the top bar, not the body', () => {
+    const selector = uses[0]![1]
+    const zoomed = (kind: Parameters<typeof layer>[0]) => [...layer(kind).children].filter((child) => child.matches(selector)).map((child) => child.className)
+    expect(zoomed('search')).toEqual(['explore__grab', 'explore-search'])
+    for (const kind of ['page', 'board', 'card'] as const) expect(zoomed(kind)).toEqual([])
   })
 })
