@@ -6,7 +6,8 @@
 
 .board-preview {
   position: fixed;
-  z-index: 40;
+  /* Over Explore and a drawing (70), under a sheet (YAZ-5908; app.css `:root`). It was 40, under the Explore stack. */
+  z-index: var(--z-preview);
   display: flex;
   flex-direction: column;
   overflow: hidden;
