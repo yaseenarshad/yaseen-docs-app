@@ -4551,7 +4551,7 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     } finally {
       spy.mockRestore()
     }
-    expect(appCss).toMatch(/\.tree__row,\n\.tree > li \{\n {2}scroll-margin-top: calc\(min\(var\(--tree-depth, 0\), var\(--sticky-levels, 7\)\) \* 25\.5px\);/)
+    expect(appCss).toMatch(/\.tree__row,\n\.tree > li \{\n {2}scroll-margin-top: calc\(min\(var\(--tree-depth, 0\), var\(--sticky-levels, 7\)\) \* var\(--tree-row-h, 25\.5px\)\);/)
   })
 
   it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D10: on the %s tab, with the keyboard on nothing or on a tab button of the sidebar, ↓ or ↑ puts the focus on a row, and → asks for the new tab page; a field, a modifier and a row keep their keys', async (lens) => {
@@ -9286,6 +9286,18 @@ describe('update pill (YAZ-2976 D4)', () => {
     act(() => document.querySelector<HTMLButtonElement>('.zoom-menu button[aria-label="Zoom the sidebar in"]')!.click())
     expect(onFilesZoom).toHaveBeenCalledExactlyOnceWith(200)
     expect(props.onChangeSettings).not.toHaveBeenCalled()
+  })
+
+  it('Row spacing (YAZ-5885 D1–D3): the lists take `--tree-row-h` from `sidebarRowHeight`, 25.5px by default, a Files window too, beside the zoom', async () => {
+    const { el, rerender } = await mount({ settings: DEFAULT_SETTINGS })
+    const body = () => el.querySelector<HTMLElement>('.sidebar__body')!
+    expect(body().style.getPropertyValue('--tree-row-h')).toBe('25.5px')
+    await rerender({ settings: { ...DEFAULT_SETTINGS, sidebarRowHeight: 22 } })
+    expect(body().style.getPropertyValue('--tree-row-h')).toBe('22px')
+    // A Files window has its own zoom and the shared row height: the two stack.
+    await rerender({ settings: { ...DEFAULT_SETTINGS, sidebarRowHeight: 30 }, filesZoom: 150, onFilesZoom: vi.fn(), onToNormalWindow: vi.fn() })
+    expect(body().style.getPropertyValue('--tree-row-h')).toBe('30px')
+    expect(body().style.getPropertyValue('--sidebar-zoom')).toBe('1.5')
   })
 })
 

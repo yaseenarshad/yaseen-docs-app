@@ -1385,7 +1385,9 @@ export function Sidebar({
   // Sticky folders (YAZ-3440 D2): how many levels stick, cut to 40% of the list, as one attribute on the list written
   // on the node and not through state, so a resize renders no level of the tree. A zoom change resizes the rows alone.
   const stickyLevels = settings.sidebarStickyLevels
-  useEffect(() => (bodyRef.current !== null ? stickyFolders(bodyRef.current, stickyLevels, zoomValue / 100) : undefined), [stickyLevels, zoomValue])
+  // Row spacing (YAZ-5885 D1): a new height resizes the rows and not the list, as a zoom change does, so the cap runs again.
+  const rowHeight = settings.sidebarRowHeight
+  useEffect(() => (bodyRef.current !== null ? stickyFolders(bodyRef.current, stickyLevels, zoomValue / 100, rowHeight) : undefined), [stickyLevels, zoomValue, rowHeight])
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
   placeSelected.current = selectedPaths
@@ -2133,7 +2135,8 @@ export function Sidebar({
         ref={bodyRef}
         className="sidebar__body"
         // The sidebar zoom (YAZ-3389): only the lists scale; the header, the tab row and the footer never do.
-        style={{ '--sidebar-zoom': zoomValue / 100 } as CSSProperties}
+        // Row spacing (YAZ-5885 D1): every row of the lists is `--tree-row-h` tall, before the zoom (app.css `.tree__row`).
+        style={{ '--sidebar-zoom': zoomValue / 100, '--tree-row-h': `${rowHeight}px` } as CSSProperties}
         // The Sessions and Recents tabs have no vault behind their blank space either (YAZ-3147 D4, YAZ-3235 S20): their rows have their own menus.
         onContextMenu={(e) => (searching || lens === 'sessions' || lens === 'recents' ? e.preventDefault() : openMenu(null, e))}
         // Blank space takes a drop for the vault ROOT, as its paste does, and the header lights (YAZ-3247 D12) — one

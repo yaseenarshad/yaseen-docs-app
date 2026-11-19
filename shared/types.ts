@@ -2536,6 +2536,13 @@ export interface SettingsState {
    */
   sidebarZoom: number
   /**
+   * Settings › Sidebar › Row spacing (YAZ-5885 D1–D3): the height of one row of the sidebar's lists in CSS px, before
+   * the sidebar zoom. Compact 22 (VS Code) · Default 25.5 (the look before) · Roomy 30 · any Custom px within 20–40
+   * (`SIDEBAR_ROW_HEIGHT_MIN` / `_MAX`). It sizes the Files, Favorites, Focus and Recents rows and the search results,
+   * a Files window too, through `--tree-row-h` on `.sidebar__body`. Stays on this Mac (`LOCAL_SETTINGS`).
+   */
+  sidebarRowHeight: number
+  /**
    * The zoom of a page's table of contents in percent (YAZ-3939 D7–D11): its names and their fold arrows, never its
    * header or the rail. One value for every page and window; the code Outline keeps 100%. The steps are the sidebar's
    * (`SIDEBAR_ZOOM_STEPS`); a stored value is kept within 50–200.
@@ -2614,7 +2621,7 @@ export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
  * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. So does the code tab's helper switch
  * (YAZ-3500): its helpers are a download on this Mac. Every other field travels.
  */
-export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder']
+export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder', 'sidebarRowHeight']
 
 /**
  * The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover.
@@ -3169,6 +3176,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hotkeys: {},
   hotkeysAside: {},
   sidebarZoom: 100,
+  sidebarRowHeight: 25.5,
   tocZoom: 100,
   appZoom: 100,
   codeReadOnly: false,
@@ -4502,6 +4510,15 @@ export type ZoomStep = -1 | 0 | 1
 export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
 export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
 export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
+
+/**
+ * Settings › Sidebar › Row spacing (YAZ-5885 D1): the three named heights of a sidebar row in CSS px, and the range of
+ * a Custom one. A row is its 13px * 1.5 line plus equal padding above and below (app.css `.tree__row`).
+ */
+export const SIDEBAR_ROW_HEIGHTS = { compact: 22, default: 25.5, roomy: 30 } as const
+export const SIDEBAR_ROW_HEIGHT_DEFAULT = SIDEBAR_ROW_HEIGHTS.default
+export const SIDEBAR_ROW_HEIGHT_MIN = 20
+export const SIDEBAR_ROW_HEIGHT_MAX = 40
 
 /** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. Up to 200% (YAZ-3487, demo round 3). */
 export const APP_ZOOM_STEPS = [90, 100, 110, 125, 150, 175, 200] as const

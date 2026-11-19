@@ -52,6 +52,7 @@ import { CODE_SECTION } from './codeSection'
 import { FOLDER_PAGES_SECTION } from './folderPagesSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented, Select, Stepper } from './controls'
+import { RowSpacingControl } from './RowSpacingControl'
 import { UnitWordControl } from './UnitWordControl'
 import { ProfileControl } from './ProfileControl'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
@@ -1054,6 +1055,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'sidebar',
     title: 'Sidebar',
     groups: [
+      {
+        // YAZ-5885 D1, D2: how tall every row of the sidebar's lists is (Files, Favorites, Focus, Recents, the search
+        // results), a Files window too. The text keeps its size; the sidebar zoom scales on top.
+        title: 'Rows',
+        items: [
+          {
+            id: 'sidebarRowHeight',
+            label: 'Row spacing',
+            hint: 'How tall each row of the sidebar is. Compact is as tight as VS Code. Custom is your own height, 20–40 px.',
+            keywords: ['sidebar', 'tree', 'row', 'rows', 'spacing', 'height', 'density', 'compact', 'roomy', 'tight', 'padding', 'gap', 'px'],
+            // Wide always: the label keeps its width while Custom adds its field beside the buttons.
+            wide: () => true,
+            render: ({ settings, onChange }) => <RowSpacingControl value={settings.sidebarRowHeight} onSet={(sidebarRowHeight) => onChange({ ...settings, sidebarRowHeight })} />,
+          },
+        ],
+      },
       {
         // YAZ-3309 D6: the level lines' rows keep the shape of Editor › Bullet threading: when, then how the line looks.
         title: 'Level lines',
