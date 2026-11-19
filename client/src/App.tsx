@@ -95,6 +95,7 @@ import { linkPillVars } from './editor/wikilink/linkPillLook'
 import { DEFAULT_NEW_PAGE_TITLE, plainEntryName, renderTitleTemplate } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
+import { filesOnlyAfterDelete, filesOnlyAfterRename } from './sidebar/filesOnly'
 import { dailyPageName } from '@shared/dailyPage'
 import { dailyPagesOfSettings, sameDailyPages, windowDailyPages, withDailyPages, type DailyPagesSettings } from '@shared/dailyPagesFile'
 import { newPlacesOfSettings, vaultNewPlacesFields } from '@shared/newPlaces'
@@ -2358,6 +2359,9 @@ export function App() {
   // "Hide all others" on a focus folder (YAZ-4460 F8): the one folder the Focus tab shows, by the Recents filter's rule —
   // this window's session only, never written. A folder that goes ends it (the sidebar checks it is still there).
   const [focusOnly, setFocusOnly] = useState<string | null>(null)
+  // "Hide all others" in Files (YAZ-5790): the one folder (a path) the Files tab shows, by the same rule — this window's
+  // session only, never written. A rename or a move of it follows it; a delete of it shows all again (the pushes below).
+  const [filesOnly, setFilesOnly] = useState<string | null>(null)
   // The Recents Type filter (YAZ-4450 demo), Search's types: the window's session only, as the vault pick.
   const [recentType, setRecentType] = useState<SearchType>('all')
   const recentPick = recentVault !== null && roots.length > 1 && roots.includes(recentVault) ? recentVault : null
@@ -3078,6 +3082,7 @@ export function App() {
             slots.current = renameSlots(slots.current, oldPath, newPath)
           }
           renamedUnderOverview(oldPath, newPath, true)
+          setFilesOnly((only) => filesOnlyAfterRename(only, oldPath, newPath))
           renameWorkspaceDir(oldPath, newPath, moved[0] !== now.roots[0] ? moved[0] : undefined)
           if (vaultMoved) setRoots(moved)
           return
@@ -3598,6 +3603,7 @@ export function App() {
         dropHistoryPaths(path)
         if (kind === 'dir') {
           retireDeletedDir(path)
+          setFilesOnly((only) => filesOnlyAfterDelete(only, path))
           dropPageWindowsAt(path)
           moveExploreRecent(path, null)
           deleteWorkspaceDir(path)
@@ -4252,6 +4258,8 @@ export function App() {
           onRecentVault={setRecentVault}
           focusOnly={focusOnly}
           onFocusOnly={setFocusOnly}
+          filesOnly={filesOnly}
+          onFilesOnly={setFilesOnly}
           recentType={recentType}
           onRecentType={setRecentType}
           onAddVaultFor={addVaultFor}

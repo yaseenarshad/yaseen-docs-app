@@ -203,6 +203,8 @@ export interface MenuHandlers {
   onReviewPage: (path: string) => void
   /** "Add page shortcut" on a folder row (YAZ-2290 D2): the caller opens the picker for that folder. */
   onAddShortcut: (dir: string) => void
+  /** "Hide all others" / "Show all" on a Files folder row (YAZ-5790): the folder to show alone, or null to show all. */
+  onHideOthers?: (dir: string | null) => void
   /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the page, and the folder it stops appearing in. */
   onRemoveShortcut: (path: string, dir: string) => void
   onRename: (path: string) => void
@@ -565,6 +567,18 @@ const toggleFavorite: Item = (t, h) => {
 }
 
 /**
+ * "Hide all others" (YAZ-5790) — a FOLDER row of the Files tab: the Files tab shows that folder alone, as the Focus
+ * tab's folder item does (YAZ-4460 F8). On the folder already shown alone it reads "Show all". Right after the favorite
+ * toggle (Yaseen's place). A VIEW verb: nothing on disk changes, and nothing is saved.
+ */
+const hideOthers: Leaf = (t, h) => {
+  const row = t.hideOthers
+  const set = h.onHideOthers
+  if (row == null || set === undefined) return null
+  return row.on ? { id: 'files-show-all', label: 'Show all', onSelect: () => set(null) } : { id: 'files-hide-others', label: 'Hide all others', onSelect: () => set(row.dir) }
+}
+
+/**
  * "Add page shortcut" (YAZ-2290 D2) — a FOLDER row outside a plural selection: pick one
  * note that lives elsewhere, and it also appears in this folder. Under the favorite toggle: the
  * other item that shows a page in a second place.
@@ -736,7 +750,7 @@ const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, openInN
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newPageMenu, newCard, newDrawingMenu, newFolderMenu]
 const ROW_GROUP: readonly Item[] = [reviewFolder, reviewPage, rename, changeIcon]
-const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
+const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, hideOthers, addShortcut,openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */

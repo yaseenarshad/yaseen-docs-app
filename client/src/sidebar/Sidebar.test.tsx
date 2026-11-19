@@ -84,6 +84,7 @@ import { useVaultListsHere } from '../lists/useVaultListsHere'
 import { useVaultIcons } from './useVaultIcons'
 import { loadMaterialIcons } from './materialIcons'
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
+import { FILES_ONLY_GRACE_MS } from './filesOnly'
 import { useCardFiles } from './cardFiles'
 import { IconsContext } from './FileIcon'
 import { DATE_TIP_MS } from './RowDateTip'
@@ -7185,6 +7186,70 @@ describe('favorites (YAZ-1766)', () => {
     expect(bar()?.querySelector('span')?.textContent).toBe('Only Client files')
     await act(async () => [...(bar()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Show all')?.click())
     expect(props.onFocusOnly).toHaveBeenCalledExactlyOnceWith(null)
+  })
+  describe('"Hide all others" in Files (YAZ-5790)', () => {
+    const menuLabels = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)
+    const bar = (el: HTMLElement) => el.querySelector('.sidebar__focus-bar')
+
+    it('a folder row\'s menu offers it after "Add to favorites"; the tree then shows that folder alone, open, under "Only <folder> · Show all"; its own menu reads "Show all", a sub-folder\'s narrows; Show all shows everything again', async () => {
+      const { el, v, props, rerender } = await mountVault({ lens: 'files', onFilesOnly: vi.fn() })
+      expect(topLabels(el)).toEqual(['Pages', 'Projects', 'top'])
+      rightClick(rowByPath(el, `${v}/Projects`))
+      const labels = menuLabels()
+      expect(labels.indexOf('Hide all others')).toBe(labels.indexOf('Add to favorites') + 1)
+      await act(async () => itemByLabel(el, 'Hide all others')?.click())
+      expect(props.onFilesOnly).toHaveBeenLastCalledWith(`${v}/Projects`)
+      await rerender({ filesOnly: `${v}/Projects` })
+      expect(bar(el)?.querySelector('span')?.textContent).toBe('Only Projects')
+      expect(topLabels(el)).toEqual(['Projects'])
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      expect(rowByPath(el, `${v}/Projects/p.md`)).not.toBeNull()
+      expect(rowByPath(el, `${v}/Pages`)).toBeNull()
+      expect(rowByPath(el, `${v}/top.md`)).toBeNull()
+      rightClick(rowByPath(el, `${v}/Projects`))
+      expect(menuLabels()).toContain('Show all')
+      expect(menuLabels()).not.toContain('Hide all others')
+      await act(async () => itemByLabel(el, 'Show all')?.click())
+      expect(props.onFilesOnly).toHaveBeenLastCalledWith(null)
+      await pick(el, `${v}/Projects/Alpha`, 'Hide all others')
+      expect(props.onFilesOnly).toHaveBeenLastCalledWith(`${v}/Projects/Alpha`)
+      await act(async () => [...(bar(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Show all')?.click())
+      expect(props.onFilesOnly).toHaveBeenLastCalledWith(null)
+      await rerender({ filesOnly: null })
+      expect(bar(el)).toBeNull()
+      expect(topLabels(el)).toEqual(['Pages', 'Projects', 'top'])
+    })
+
+    it('blank space\'s New page makes the page in the folder shown alone, its field inside that folder', async () => {
+      const { el, v, props, rerender } = await mountVault({ lens: 'files' })
+      await rerender({ filesOnly: `${v}/Projects` })
+      rightClick(el.querySelector('.sidebar__body'))
+      await act(async () => itemByLabel(el, 'New page')?.click())
+      const field = el.querySelector<HTMLInputElement>('.create-inline__input')
+      expect(field?.closest('[role="treeitem"]')?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${v}/Projects`))
+      await act(async () => {
+        field!.value = 'Fresh'
+        field!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      })
+      const made = vi.mocked(props.onOpenFile).mock.calls.at(-1)?.[0] ?? ''
+      expect(made.slice(0, made.lastIndexOf('/'))).toBe(`${v}/Projects`)
+    })
+
+    it('a folder the tree no longer holds: only the bar shows, then after a short wait the full tree comes back', async () => {
+      const { el, v, props, rerender } = await mountVault({ lens: 'files', onFilesOnly: vi.fn() })
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        await rerender({ filesOnly: `${v}/Gone` })
+        expect(bar(el)?.querySelector('span')?.textContent).toBe('Only Gone')
+        expect(topLabels(el)).toEqual([])
+        await act(() => vi.advanceTimersByTimeAsync(FILES_ONLY_GRACE_MS - 1))
+        expect(props.onFilesOnly).not.toHaveBeenCalled()
+        await act(() => vi.advanceTimersByTimeAsync(1))
+        expect(props.onFilesOnly).toHaveBeenCalledExactlyOnceWith(null)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
   it('YAZ-5664: on Favorites too, Collapse all closes both stack folders and the real folder inside; Expand all opens them all again', async () => {
     const ids = ['yaz5664-fav-a', 'yaz5664-fav-b'] as const

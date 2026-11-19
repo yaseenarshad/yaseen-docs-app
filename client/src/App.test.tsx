@@ -47,6 +47,9 @@ interface SidebarStubProps {
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
   recentVault?: string | null
   onRecentVault?: (root: string | null) => void
+  /** "Hide all others" in Files (YAZ-5790): the folder shown alone, App's for the window's session. */
+  filesOnly?: string | null
+  onFilesOnly?: (dir: string | null) => void
   /** A Files window's header button (YAZ-3357 D8): Tabs Mission Control. */
   onShowAllTabs?: () => void
   onToNormalWindow?: () => void
@@ -1381,6 +1384,29 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     await act(async () => emitFileDeleted('/v/H', 'dir'))
     expect(openPageWindow(key)).toBeUndefined()
     dropAllPageWindows()
+  })
+})
+
+describe('"Hide all others" in Files (YAZ-5790)', () => {
+  it('App keeps the folder for the window\'s session: a rename or a move of it, or of a folder above it, follows it; another folder\'s does not; a delete of it shows all again; nothing is written', async () => {
+    const { bridge, emitFileRenamed, emitFileDeleted } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(captured.sidebar?.filesOnly).toBeNull()
+    const writes = bridge.window.setIdentity.mock.calls.length
+    await act(async () => captured.sidebar?.onFilesOnly?.('/v/Docs/Plans'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Docs/Plans')
+    await act(async () => emitFileRenamed('/v/Docs/Plans', '/v/Docs/Ideas', 'dir'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Docs/Ideas')
+    await act(async () => emitFileRenamed('/v/Docs', '/v/Archive/Docs', 'dir'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Archive/Docs/Ideas')
+    await act(async () => emitFileRenamed('/v/Other', '/v/Elsewhere', 'dir'))
+    await act(async () => emitFileRenamed('/v/Archive/Docs/Ideas.md', '/v/Archive/Docs/Ideas2.md', 'file'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Archive/Docs/Ideas')
+    await act(async () => emitFileDeleted('/v/Archive/Docs/Ideas/old.md'))
+    await act(async () => emitFileDeleted('/v/Other', 'dir'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Archive/Docs/Ideas')
+    await act(async () => emitFileDeleted('/v/Archive/Docs/Ideas', 'dir'))
+    expect(captured.sidebar?.filesOnly).toBeNull()
+    expect(bridge.window.setIdentity.mock.calls.length).toBe(writes)
   })
 })
 
