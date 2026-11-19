@@ -589,6 +589,15 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     if (event.key === 'Escape') {
       // The page menu's own Esc (the `ContextMenu` closes itself) and a menu's: nothing else closes.
       if (event.target instanceof Element && event.target.closest('.ctx-menu') !== null) return
+      // YAZ-5933: a search row's menu (or a head's) is open, but the keyboard is still in the search box: the menu does
+      // not take the focus. This Esc closes the menu alone. Without this, the Esc went on and closed the layer, and its
+      // `stopPropagation` kept the Esc from the menu's own window listener.
+      if (menu !== null) {
+        event.preventDefault()
+        event.stopPropagation()
+        setMenu(null)
+        return
+      }
       // ⇧Esc closes every layer in one key (YAZ-4926): a page in edit saves first; App gives the keyboard back.
       if (event.shiftKey) {
         event.preventDefault()

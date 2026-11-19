@@ -585,6 +585,23 @@ describe('the explore stack', () => {
     expect(layers()).toHaveLength(before)
   })
 
+  it('YAZ-5933: Esc with a search row\'s menu open (the caret still in the search box) closes the menu alone; the next Esc closes the layer', async () => {
+    await mount()
+    await typeQuery('alp')
+    const before = layers().length
+    const row = top().querySelector<HTMLElement>('.search-results__row') as HTMLElement
+    act(() => void row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    expect(el.querySelector('.ctx-menu')).not.toBeNull()
+    // The row takes no focus (its mousedown is prevented), so the Esc starts in the search box, as in the app.
+    expect(document.activeElement?.closest('.ctx-menu')).toBeFalsy()
+    escape()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(props.onClose).not.toHaveBeenCalled()
+    expect(layers()).toHaveLength(before)
+    escape()
+    expect(before > 1 ? layers().length === before - 1 : vi.mocked(props.onClose).mock.calls.length === 1).toBe(true)
+  })
+
   it('leaving edit flushes the editor\'s pending save FIRST and reads after it: Esc at once shows the typed text; a close in edit flushes too', async () => {
     await mount()
     await typeQuery('alp')
