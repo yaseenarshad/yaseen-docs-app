@@ -1,7 +1,8 @@
 import { isAudioRef, isBoardRef } from '@client/editor/card/cardMedia'
 import { onlyLocalMedia } from '@client/editor/card/cardSafety'
 import { cardLinkTitle, createWikilinkResolveSource, linkCard, linkPageName, linkPath, linkSplit, linksAsShown, missingId, type MutableWikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
-import { pathInfo, pillParts, pillsNeedInfo } from '@client/editor/wikilink/linkPillLook'
+import { pathInfo, pillIconPlace, pillParts, pillsNeedInfo } from '@client/editor/wikilink/linkPillLook'
+import { cardPillEnds } from '@client/editor/wikilink/cardPill'
 import { makeAssetResolver } from '@shared/assetLookup'
 import { NO_LINK_PILLS } from '@shared/linkPills'
 import type { CardLink } from '@shared/cardLinks'
@@ -114,7 +115,8 @@ export function pageLook(data: VaultData, holder: string): PageLook {
       // A card's ID opens the card, with words after `|` too, as the Mac's click (`wikilinkClick.ts`); the words show.
       const card = linkCard(inner, source)
       const label = card !== null && !inner.includes('|') ? cardLinkTitle(card) : linksAsShown(`[[${inner}]]`, source)
-      if (card !== null) return { label, open: { kind: 'card', path: card.path, id: card.id } }
+      // A card link follows the vault's format as on the Mac (YAZ-5792, `cardPill`): its ends, the card icon where `{icon}` stands.
+      if (card !== null) return { label, open: { kind: 'card', path: card.path, id: card.id }, ends: cardPillEnds(source, card), iconOnName: pillIconPlace(source.pills) === 'name' }
       // A `#heading` goes with the page (`[[Page#Goals]]`); alone (`[[#Goals]]`) it is this page's heading.
       const heading = linkSplit(inner, source).hash.replace(/^#/, '')
       const page = linkPageName(inner, source)

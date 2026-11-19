@@ -10,6 +10,7 @@ import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
 import { readCardLook } from '../media/ui/cardDraw'
+import { resolveSourceOf } from './pageLook'
 import './linkPills.css'
 
 /**
@@ -68,7 +69,14 @@ export function loadVaultLook(store: VaultStore, data: VaultData): Promise<Vault
       return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...textVars(text), ...spacingVars(text.spacing), ...card, ...tableLookVars(table) }, table }
     })().catch(() => NO_LOOK)
     looks.set(data, held)
-    void held.then((look) => read.set(data, look))
+    void held.then((look) => {
+      read.set(data, look)
+      // YAZ-5792: every place that draws this data's links reads the format off its one link source (`resolveSourceOf`):
+      // the page, the card view, Explore's sheet and the folder table, not only a page that was opened first. The name of
+      // the vault stays as a page set it (`PageView`).
+      const source = resolveSourceOf(data)
+      if (source.pills !== look.pills) source.setLook(look.pills, source.vault)
+    })
   }
   return held
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { CARD_MEDIA, CARD_OPENS } from '@client/editor/card/cardMedia'
 import { CARD_LINK_ATTR, type CardShow } from '@client/editor/card/cardRender'
 import { linkCard, linkPath, type WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
+import { linkPillVars } from '@client/editor/wikilink/linkPillLook'
 // `cardRender.ts` draws the card but brings no styles: the phone loads the Mac's card, table and card-screen
 // styles itself, so a table, a pill, a hidden word and a sound look as on the Mac. Of the Mac's table look, only the
 // part that reaches a table outside its editor (`cardTable.css`): the rest matches only inside the editor.
@@ -12,6 +13,8 @@ import '../page/tables.css'
 import '@client/review/cardScreens.css'
 // The media line ("Picture · … · Needs a connection") on a card, as on a page.
 import '../media/mediaLine.css'
+// The vault's link pills palette (YAZ-5792): the colours the pill style names, on the card as on the reader.
+import '../page/linkPills.css'
 import { drawLocalCard } from '../media/ui/cardDraw'
 import { guardLink } from '../media/ui/safeLinks'
 import { watchMedia, type VaultMedia } from '../media/ui/vaultMedia'
@@ -34,6 +37,8 @@ export function PhoneCard({ text, holder, show, links, files, media, retry, onOp
   const box = useRef<HTMLDivElement>(null)
   // The pills follow the index: a new snapshot draws the card again.
   const snapshot = useSyncExternalStore(links.subscribe, () => links.records)
+  // The vault's link pills look (YAZ-5792): its format draws the pills, its style is the body's variables, as on the Mac.
+  const pills = useSyncExternalStore(links.subscribe, () => links.pills)
   const { sides, shown, next } = show
   // Words shown out of order (a tap on a hidden part shows THAT part, as the Mac's click): by value.
   const picked = show.picked?.join(',') ?? ''
@@ -56,7 +61,7 @@ export function PhoneCard({ text, holder, show, links, files, media, retry, onOp
     // The phone's ONE card drawing: the same as the card view's and the page's, local media only.
     const drawn = drawLocalCard(text, { sides, shown, picked: picked === '' ? [] : picked.split(',').map(Number), next }, { links, files, holder })
     el.replaceChildren(drawn)
-  }, [text, holder, sides, shown, picked, next, links, snapshot, files])
+  }, [text, holder, sides, shown, picked, next, links, snapshot, pills, files])
 
   const onClick = (event: React.MouseEvent) => {
     const target = event.target instanceof Element ? event.target : null
@@ -74,5 +79,5 @@ export function PhoneCard({ text, holder, show, links, files, media, retry, onOp
     if (path !== null) onOpen({ kind: 'page', path })
   }
 
-  return <div ref={box} className="phone-card__body" onClick={onClick} />
+  return <div ref={box} className="phone-card__body" style={linkPillVars(pills) as React.CSSProperties} onClick={onClick} />
 }

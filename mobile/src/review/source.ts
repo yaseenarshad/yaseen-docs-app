@@ -1,6 +1,7 @@
 import { createWikilinkResolveSource, type WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
 import { makeResolver } from '@shared/linkResolver'
 import { IDS_FILE, idLettersOf, idsAnswer } from '@shared/pageId'
+import { LINK_PILLS_FILE, NO_LINK_PILLS, isDefaultLinkPills, sanitizeLinkPills } from '@shared/linkPills'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import type { PhoneIndex } from '../sync/phoneIndex'
@@ -10,6 +11,8 @@ import type { ReviewLink } from './link'
 export const REVIEW_SETTINGS_PATH = `${VAULT_CONFIG_DIR}/${REVIEW_SETTINGS_FILE}`
 /** The vault's ID letters (`.yaseendocs/ids.json`): the new-card order reads them, as on the Mac. */
 export const IDS_PATH = `${VAULT_CONFIG_DIR}/${IDS_FILE}`
+/** The vault's link pills look (`.yaseendocs/link-pills.json`): a card's links follow its format, as on the Mac (YAZ-5792). */
+export const LINK_PILLS_PATH = `${VAULT_CONFIG_DIR}/${LINK_PILLS_FILE}`
 
 /**
  * The open vault as the Review tab reads it, with no second due list (decision 3): the engine's index, with the
@@ -68,7 +71,11 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
   const wake = () => listeners.forEach((l) => l())
 
   async function readConfig(): Promise<void> {
-    const [review, ids] = await Promise.all([store.read(vault, REVIEW_SETTINGS_PATH), store.read(vault, IDS_PATH)])
+    const [review, ids, pills] = await Promise.all([store.read(vault, REVIEW_SETTINGS_PATH), store.read(vault, IDS_PATH), store.read(vault, LINK_PILLS_PATH)])
+    // YAZ-5792: the card's links follow the vault's link format (`cardPill`); the same look object while the file holds still.
+    const clean = sanitizeLinkPills(parse(pills?.content))
+    const look = isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean
+    if (JSON.stringify(look) !== JSON.stringify(links.pills)) links.setLook(look, vaultName)
     const next = sanitizeReviewSettings(parse(review?.content))
     // ONE settings object while the file holds still: the hook's plan follows its identity.
     if (JSON.stringify(next) !== JSON.stringify(settings)) settings = next
