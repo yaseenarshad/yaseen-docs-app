@@ -1,4 +1,4 @@
-import { DEFAULT_LINK_CLICK as MAC_DEFAULT, LINK_CLICK_FILE, sanitizeLinkClick as sanitizeSettings, type LinkClick } from '@shared/linkClick'
+import { PHONE_DEFAULT_LINK_CLICK, LINK_CLICK_FILE, sanitizeLinkClick as sanitizeSettings, type LinkClick } from '@shared/linkClick'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { AppModel } from '../app/AppState'
 import type { Route } from '../app/nav'
@@ -28,11 +28,11 @@ import { isSheetRoute, openSheet } from './sheets'
 /** The Mac's own words, file and default (`@shared/linkClick`, which the Mac's `client/src/explore/linkClick.ts` reads too). */
 export type { LinkClick }
 export const LINK_CLICK_PATH = `${VAULT_CONFIG_DIR}/${LINK_CLICK_FILE}`
-/** With no file, a link opens the page: the Mac's `DEFAULT_LINK_CLICK`. */
-export const DEFAULT_LINK_CLICK: LinkClick = MAC_DEFAULT.click
+/** With no file, a link opens full screen: the phone's own default (YAZ-5973; the Mac's is Explore). */
+export const DEFAULT_LINK_CLICK: LinkClick = PHONE_DEFAULT_LINK_CLICK
 
 /** What the file holds, or the default for anything else (the Mac's `sanitizeLinkClick`). */
-export const sanitizeLinkClick = (raw: unknown): LinkClick => sanitizeSettings(raw).click
+export const sanitizeLinkClick = (raw: unknown): LinkClick => sanitizeSettings(raw, PHONE_DEFAULT_LINK_CLICK).click
 
 /** Each vault's choice, as the host read it last (`ExploreHost`): read at each tap, with no wait. */
 const choices = new Map<string, LinkClick>()

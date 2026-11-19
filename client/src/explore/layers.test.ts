@@ -200,12 +200,12 @@ describe('the recent pages', () => {
 })
 
 describe('"Clicking a link" (YAZ-4936)', () => {
-  it('reads the vault file, the default for anything else', async () => {
+  it('reads the vault file, the default (Explore, YAZ-5973) for anything else', async () => {
     const { sanitizeLinkClick } = await import('./linkClick')
     expect(sanitizeLinkClick({ click: 'explore' })).toEqual({ click: 'explore' })
     expect(sanitizeLinkClick({ click: 'open' })).toEqual({ click: 'open' })
-    expect(sanitizeLinkClick({ click: 'x' })).toEqual({ click: 'open' })
-    expect(sanitizeLinkClick(null)).toEqual({ click: 'open' })
-    expect(sanitizeLinkClick('explore')).toEqual({ click: 'open' })
+    expect(sanitizeLinkClick({ click: 'x' })).toEqual({ click: 'explore' })
+    expect(sanitizeLinkClick(null)).toEqual({ click: 'explore' })
+    expect(sanitizeLinkClick('explore')).toEqual({ click: 'explore' })
   })
 })
