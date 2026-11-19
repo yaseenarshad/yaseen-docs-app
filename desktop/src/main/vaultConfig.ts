@@ -276,8 +276,12 @@ function listFolder(entry: Entry): void {
     const before = entry.listed
     entry.listed = new Set(names)
     for (const n of names) {
+      // YAZ-5931: a name that was deleted and written again between two stats is in both listings, but its watch went
+      // with the deleted file. A watch that this listing must open again marks a file that came back: look at it too.
+      // `schedule` drops it if its mtime brings nothing new.
+      const reopened = before !== null && !entry.files.has(n)
       watchFile(entry, n)
-      if (before !== null && !before.has(n)) settleFile(entry, n)
+      if (before !== null && (!before.has(n) || reopened)) settleFile(entry, n)
     }
   })
 }

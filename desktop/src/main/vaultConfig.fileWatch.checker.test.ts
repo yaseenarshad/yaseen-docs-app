@@ -72,11 +72,11 @@ describe('YAZ-5912 (checker): outside writes with the folder watch deaf', () => 
     expect(changes).toEqual([{ root, name: 'link-pills.json' }])
   })
 
-  // BUG YAZ-5931: fails now. The delete closes the file's watch, and the folder stat sees no new name, so the new file
-  // is heard only by the folder watch (FSEvents: late or never).
+  // YAZ-5931 (fixed): the delete closes the file's watch, and the folder stat must open it again and look at the file;
+  // before the fix the new file was heard only by the folder watch (FSEvents: late or never).
   // An editor or a tool that writes by delete + create (not a rename over the name): the delete is heard; the file that
   // comes back must be heard too, also when both fall between two stats of the folder.
-  it.fails('a delete and then a new file of the same name, 50 ms later: both are heard within 1 s', async () => {
+  it('a delete and then a new file of the same name, 50 ms later: both are heard within 1 s', async () => {
     const { root, file } = await vault()
     const changes = listen(root)
     await sleep(700)
