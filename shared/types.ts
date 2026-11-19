@@ -1375,7 +1375,28 @@ export function defaultRightPanelIdentity(): RightPanelIdentity {
 
 /** Global content-width presets, ordered exactly as shown in Settings (YAZ-1176). */
 export const CONTENT_WIDTHS = ['narrow', 'medium', 'full'] as const
-export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
+/** A step of Content width by its name. */
+export type ContentStep = (typeof CONTENT_WIDTHS)[number]
+/**
+ * Content width (YAZ-5871 D1): a step by its name, or Custom, whole px of text from `PAGE_WIDTH_MIN` to `PAGE_WIDTH_MAX`.
+ * Settings' `contentWidth` and a page's `page-width` hold one. An old value (a step) stays valid; an old app copy reads a
+ * number as Narrow.
+ */
+export type ContentWidth = ContentStep | number
+export const PAGE_WIDTH_MIN = 400
+export const PAGE_WIDTH_MAX = 2400
+/** Custom's start in the controls: Medium's px. */
+export const PAGE_WIDTH_START = 900
+export const isContentWidth = (v: unknown): v is ContentWidth =>
+  (typeof v === 'string' && (CONTENT_WIDTHS as readonly string[]).includes(v)) || (typeof v === 'number' && Number.isInteger(v) && v >= PAGE_WIDTH_MIN && v <= PAGE_WIDTH_MAX)
+/**
+ * Page position (YAZ-5871 D2): where a page's column sits when the window is wider than it. Centre (the default, the look
+ * before) or Left. Full has no position: its column fills the window. Settings' `contentPosition` and a page's
+ * `page-position` hold one.
+ */
+export const CONTENT_POSITIONS = ['center', 'left'] as const
+export type ContentPosition = (typeof CONTENT_POSITIONS)[number]
+export const isContentPosition = (v: unknown): v is ContentPosition => typeof v === 'string' && (CONTENT_POSITIONS as readonly string[]).includes(v)
 /**
  * Each Content width step as the widest the text gets, px; `null` is the whole window (YAZ-5144, Yaseen: "even though
  * its set to "narrow" it doesnt look like there's a big change bw the options?"). The steps were the shell's 1040 px
@@ -1384,7 +1405,7 @@ export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
  * is about 250 px apart at a common window. The pages' column adds its 48 px sides (`--content-max-width`); Card
  * width uses the same steps for a card's text (`--card-text-width`).
  */
-export const CONTENT_TEXT_WIDTHS: Readonly<Record<ContentWidth, number | null>> = { narrow: 640, medium: 900, full: null }
+export const CONTENT_TEXT_WIDTHS: Readonly<Record<ContentStep, number | null>> = { narrow: 640, medium: 900, full: null }
 /**
  * Settings › Review › Card width, Custom (YAZ-5144 round 2, Yaseen: "custom gives you a px that you can adjust"): the
  * card's text at most this many px. It starts at Narrow's 640; Clean sets Mochi's line, about 62 letters (31em of the
@@ -2179,8 +2200,10 @@ export interface SettingsState {
   foldingOnByDefault: boolean
   /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
   theme: Theme
-  /** Global reading surface width (YAZ-1176): its text at most `CONTENT_TEXT_WIDTHS` (YAZ-5144: 640 px, 900 px, or the window). */
+  /** Global reading surface width (YAZ-1176): its text at most `CONTENT_TEXT_WIDTHS` (YAZ-5144: 640 px, 900 px, or the window), or Custom px (YAZ-5871). */
   contentWidth: ContentWidth
+  /** Settings › Appearance › Page position (YAZ-5871 D2): the pages' column at Centre (the default) or at the Left. Off with Full. */
+  contentPosition: ContentPosition
   /** Files & Links (Links C2-, GRO-2240): where a BARE unresolved `[[link]]` creates its page. */
   newPageLocation: NewPageLocation
   /** Root-relative folder for `newPageLocation: 'folder'` ('' = the vault root); ignored otherwise. Interpreted per-vault against each window's root. */
@@ -3057,6 +3080,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   foldingOnByDefault: true,
   theme: 'system',
   contentWidth: 'narrow',
+  contentPosition: 'center',
   newPageLocation: 'current',
   newPageFolder: '',
   confirmDelete: true,

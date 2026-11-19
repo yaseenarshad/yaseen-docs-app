@@ -142,7 +142,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 /** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
 const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
@@ -1961,6 +1961,32 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     unmount()
     const round1 = mountOn('Cards', { ...DEFAULT_SETTINGS, cardTitleSize: 'large' as never }, undefined, S)
     expect(rowButtons(round1.el, 'cardTitleSize').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+  })
+
+  it('YAZ-5871: Content width is Narrow · Medium · Full · Custom (px 400–2400, starts at 900); Page position is Centre · Left, off with Full', () => {
+    const { el, onChange } = mountOn('Appearance', DEFAULT_SETTINGS, undefined, S)
+    expect(rowButtons(el, 'contentWidth').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Narrow', 'true'], ['Medium', 'false'], ['Full', 'false'], ['Custom', 'false']])
+    expect(row(el, 'contentWidth')?.querySelector('input')).toBeNull()
+    act(() => rowButtons(el, 'contentWidth')[3].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, contentWidth: 900 })
+    expect(rowButtons(el, 'contentPosition').map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.disabled])).toEqual([['Centre', 'true', false], ['Left', 'false', false]])
+    act(() => rowButtons(el, 'contentPosition')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, contentPosition: 'left' })
+    const custom = { ...DEFAULT_SETTINGS, contentWidth: 760 }
+    const second = mountOn('Appearance', custom, undefined, S)
+    expect(rowButtons(second.el, 'contentWidth').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false', 'true'])
+    const px = row(second.el, 'contentWidth')!.querySelector<HTMLInputElement>('input[aria-label="Content width in px"]')!
+    expect(px.value).toBe('760')
+    type(px, '9000')
+    pressEnter(px)
+    expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, contentWidth: 2400 })
+    type(px, '10')
+    blur(px)
+    expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, contentWidth: 400 })
+    act(() => rowButtons(second.el, 'contentWidth')[1].click())
+    expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, contentWidth: 'medium' })
+    const full = mountOn('Appearance', { ...DEFAULT_SETTINGS, contentWidth: 'full', contentPosition: 'left' }, undefined, S)
+    expect(rowButtons(full.el, 'contentPosition').every((b) => b.disabled)).toBe(true)
   })
 
   it('YAZ-5144 round 2: Custom shows its px, typed and kept on Enter, held to 400–1600; Reset goes back to 640; Same as pages goes back', () => {

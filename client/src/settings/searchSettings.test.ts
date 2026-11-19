@@ -43,6 +43,7 @@ describe('settingCandidates', () => {
       'vaultOpensOn',
       'theme',
       'contentWidth',
+      'contentPosition',
       'spacingVault',
       'lineSpacing',
       'blockGap',

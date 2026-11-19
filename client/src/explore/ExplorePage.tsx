@@ -34,9 +34,9 @@ import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { isCardFileContent } from '@shared/cardFileFormat'
-import { readPageSwitches, readPageWidth, type PageSwitches } from '@shared/pageSwitches'
-import type { CommentsOrder, ContentWidth, PageView, PropertiesResponse } from '@shared/types'
-import { contentTextWidth } from '../lib/contentWidth'
+import { readPagePosition, readPageSwitches, readPageWidth, type PageSwitches } from '@shared/pageSwitches'
+import type { CommentsOrder, ContentPosition, ContentWidth, PageView, PropertiesResponse } from '@shared/types'
+import { columnStart, contentTextWidth, positionOf, widthOf } from '../lib/contentWidth'
 import type { CardReview } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import { api } from '../api'
@@ -239,6 +239,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const [content, setContent] = useState<Content>({ kind: 'loading' })
   /** The page's own width (YAZ-5640), read with the text: reading draws the column as the editor does, so a switch moves nothing. */
   const [pageWidth, setPageWidth] = useState<ContentWidth | null>(null)
+  /** The page's own position (YAZ-5871 D2), read with the text as its width. */
+  const [pagePosition, setPagePosition] = useState<ContentPosition | null>(null)
   /** The read-only Crepe once it is up, for the fold-all button (round 1, item 4); null while loading or editing. */
   const [ready, setReady] = useState<ReturnType<typeof createCrepe> | null>(null)
   /**
@@ -289,6 +291,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
         const body = splitFrontmatter(file.content).body
         const switches = readPageSwitches(file.content)
         setPageWidth(readPageWidth(file.content))
+        setPagePosition(readPagePosition(file.content))
         setContent((prev) =>
           body.trim() === '' ? { kind: 'empty' } : prev.kind === 'body' && prev.body === body && JSON.stringify(prev.switches) === JSON.stringify(switches) ? prev : { kind: 'body', body, switches },
         )
@@ -811,7 +814,15 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   /** The text formatting of the vault, and the zoom as the page tab's scroller carries it (`--document-zoom`, app.css): the same rules scale the page's content. */
   const bodyStyle = { ...style, '--document-zoom': zoom / 100 } as CSSProperties
   /** Reading's frame, which IS the page's scroller: the page's own width on it too (YAZ-5640), as the editor puts it on its own. */
-  const readStyle = pageWidth === null ? bodyStyle : ({ ...bodyStyle, '--content-text-width': contentTextWidth(pageWidth) } as CSSProperties)
+  const readStyle =
+    pageWidth === null && pagePosition === null
+      ? bodyStyle
+      : ({
+          ...bodyStyle,
+          ...(pageWidth !== null && { '--content-text-width': contentTextWidth(pageWidth) }),
+          // Its own position (YAZ-5871 D2): a key of its own, else Settings' (`.app` holds Settings' own width's start).
+          '--column-start': columnStart(pagePosition ?? positionOf(storage.getSettings()?.contentPosition), pageWidth ?? widthOf(storage.getSettings()?.contentWidth)),
+        } as CSSProperties)
   /** ⋯ of a folded head (YAZ-4956): what the folded parts do, built when the menu opens. */
   const moreSections = (): MenuSection[] => {
     const view = ready !== null && mode === 'read' ? editorViewOf(ready) : null

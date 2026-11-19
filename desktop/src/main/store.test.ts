@@ -250,6 +250,23 @@ describe('createStore: loading', () => {
 
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentWidth: 'wide' } }))
     expect(createStore(file).get().settings).toMatchObject({ contentWidth: 'narrow' })
+    // YAZ-5871 D1: Custom whole px, 400–2400, survives; out of range, not whole, or a number as text falls back.
+    for (const contentWidth of [400, 760, 2400]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentWidth } }))
+      expect(createStore(file).get().settings).toMatchObject({ contentWidth })
+    }
+    for (const contentWidth of [399, 2401, 760.5, '760']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentWidth } }))
+      expect(createStore(file).get().settings, String(contentWidth)).toMatchObject({ contentWidth: 'narrow' })
+    }
+    // YAZ-5871 D2: Page position, Centre by default (a legacy file too), Left kept, junk falls back.
+    const { contentPosition: _none, ...noPosition } = DEFAULT_SETTINGS
+    await seed(valid({ settings: noPosition }))
+    expect(createStore(file).get().settings).toMatchObject({ contentPosition: 'center' })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentPosition: 'left' } }))
+    expect(createStore(file).get().settings).toMatchObject({ contentPosition: 'left' })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentPosition: 'right' } }))
+    expect(createStore(file).get().settings).toMatchObject({ contentPosition: 'center' })
   })
 
   it('Settings › Notifications (YAZ-3303 D1): a file from before 3303 reads 4 s, every toast type on and the sounds on; each value survives; junk falls back field by field (S1, S2)', async () => {

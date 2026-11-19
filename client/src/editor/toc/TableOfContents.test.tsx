@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, Profiler } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
+import { TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W, type ContentStep, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import appCss from '../../app.css?inline'
 import { COLUMN_MAX, foldable, MAX_ROWS, namesRoom, namesShow, NAMES_FLOOR, pathLines, railPitch, shownRows, TableOfContents, TEXT_FLOOR, tocFoldKeys, TOC_WIDTH, unfoldedRows } from './TableOfContents'
 import tocCss from './toc.css?inline'
@@ -34,7 +34,7 @@ describe('namesShow: names or lines', () => {
   })
 
   it('pinned shows them down to the floor, whatever the content width', () => {
-    for (const width of ['narrow', 'medium', 'full'] as ContentWidth[]) {
+    for (const width of ['narrow', 'medium', 'full'] as ContentStep[]) {
       expect(namesShow('pinned', NAMES_FLOOR, COLUMN_MAX[width])).toBe(true)
       expect(namesShow('pinned', NAMES_FLOOR - 1, COLUMN_MAX[width])).toBe(false)
     }

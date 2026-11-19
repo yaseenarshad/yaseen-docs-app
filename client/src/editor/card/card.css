@@ -33,11 +33,14 @@
    and the card window's card, strips and mentions. In a page the card is a block: never wider than the column (its
    `width`), at the column's left edge as the other blocks. Same as pages is the pages' step, so the card fills the
    column. A card file's tab: its card, title, strips and mentions, at the column's left edge. The Inbox sets its own
-   column from the same variable, with its own sides (`cardScreens.css`). */
+   column from the same variable, with its own sides (`cardScreens.css`).
+   YAZ-5871 D3: a card narrower than its column follows the page's position (`--column-start`: 0 Left, auto Centre),
+   in a page, a card file's tab and Explore's card window. */
 .milkdown .card,
 .explore__body--card > :not(.find-bar-dock--page),
 .card-file__page > * {
   max-width: calc(var(--card-text-width) + 34px);
+  margin-inline: var(--column-start, auto) auto;
 }
 .card.ProseMirror-selectednode {
   outline: 2px solid var(--accent);

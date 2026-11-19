@@ -20,13 +20,13 @@ import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './fr
 import { inLineEnds } from './lineEnds'
 import { PAGE_ID_KEY } from './pageId'
 import { TITLE_KEY } from './pageName'
-import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS, PAGE_WIDTH_KEY, TABLE_WIDTH_KEY } from './pageSwitches'
+import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_POSITION_KEY, PAGE_SWITCH_KEYS, PAGE_WIDTH_KEY, TABLE_WIDTH_KEY } from './pageSwitches'
 import { keyFold } from './propertyKeys'
 import { READ_ONLY_KEY } from './readOnly'
 
 /** The keys that are the file's, not the card's: they stay in a card file's front matter. */
 const FILE_KEYS: ReadonlySet<string> = new Set(
-  [CARD_KIND_KEY, PAGE_ID_KEY, TITLE_KEY, FOLDER_VALUES_KEY, ALSO_IN_KEY, 'aliases', COMMENTS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, PAGE_WIDTH_KEY].map(keyFold),
+  [CARD_KIND_KEY, PAGE_ID_KEY, TITLE_KEY, FOLDER_VALUES_KEY, ALSO_IN_KEY, 'aliases', COMMENTS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, PAGE_WIDTH_KEY, PAGE_POSITION_KEY].map(keyFold),
 )
 
 /** A value the card line holds: one scalar (or none), or a list of scalars. */
