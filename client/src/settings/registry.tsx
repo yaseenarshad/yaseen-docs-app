@@ -990,11 +990,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             // YAZ-5871 D2: where the pages' column sits in a wider window. Off with Full, which fills the window.
             id: 'contentPosition',
-            label: 'Page position',
+            label: (ctx) => unit(ctx, 'Page position'),
             hint: "Where a page's column sits when there is room beside it. Full takes all the room, so it has no position. Each page's cog can set its own.",
             keywords: ['position', 'centre', 'center', 'left', 'align', 'page width', 'content width'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={CONTENT_POSITION_OPTIONS} value={settings.contentPosition} disabled={settings.contentWidth === 'full'} onChange={(contentPosition) => onChange({ ...settings, contentPosition })} ariaLabel="Page position" />
+            render: (ctx) => (
+              <Segmented options={CONTENT_POSITION_OPTIONS} value={ctx.settings.contentPosition} disabled={ctx.settings.contentWidth === 'full'} onChange={(contentPosition) => ctx.onChange({ ...ctx.settings, contentPosition })} ariaLabel={unit(ctx, 'Page position')} />
             ),
           },
         ],
@@ -2612,24 +2612,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // the sides (all of them side 2+)"): the vault's, in card-look.json, so the phone's page folds too. A page's own
             // cog (Card sides: Default · Show all · Fold) wins.
             id: 'cardSidesFold',
-            label: 'Card sides in pages',
+            label: (ctx) => unit(ctx, 'Card sides in pages'),
             hint: "Fold Side 2 and after of each card in a page, an embed and the hover preview. A click on \"Side 2\" opens it. A page's cog › Card sides wins. Never in the Inbox or Review.",
             keywords: [...REVIEW_KEYWORDS, 'sides', 'side 2', 'fold', 'collapse', 'expand', 'long', 'show all', 'back'],
             available: reviewOn,
-            render: ({ settings, onChange }) => (
-              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={settings.cardSidesFold === true} onChange={(cardSidesFold) => onChange({ ...settings, cardSidesFold })} ariaLabel="Card sides in pages" />
+            render: (ctx) => (
+              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={ctx.settings.cardSidesFold === true} onChange={(cardSidesFold) => ctx.onChange({ ...ctx.settings, cardSidesFold })} ariaLabel={unit(ctx, 'Card sides in pages')} />
             ),
           },
           {
             // YAZ-5904 Q1 (Yaseen: "on a card page speifically u might want to go to the ard page and see the whole content
             // there vs on a page that a card is on"): a card page's own choice, Show all by default. Its cog wins.
             id: 'cardSidesFoldCardPages',
-            label: 'Card sides on card pages',
+            label: (ctx) => unit(ctx, 'Card sides on card pages'),
             hint: "The same fold on a card page (a card file's tab). A card page's cog › Card sides wins.",
             keywords: [...REVIEW_KEYWORDS, 'sides', 'side 2', 'fold', 'collapse', 'expand', 'card page', 'card file', 'show all'],
             available: reviewOn,
-            render: ({ settings, onChange }) => (
-              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={settings.cardSidesFoldCardPages === true} onChange={(cardSidesFoldCardPages) => onChange({ ...settings, cardSidesFoldCardPages })} ariaLabel="Card sides on card pages" />
+            render: (ctx) => (
+              <Segmented options={CARD_SIDES_FOLD_OPTIONS} value={ctx.settings.cardSidesFoldCardPages === true} onChange={(cardSidesFoldCardPages) => ctx.onChange({ ...ctx.settings, cardSidesFoldCardPages })} ariaLabel={unit(ctx, 'Card sides on card pages')} />
             ),
           },
           {
