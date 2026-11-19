@@ -658,7 +658,7 @@ describe('the card in the page', () => {
       expect(copy.defaultPrevented).toBe(false)
     })
 
-    it('a double-click on the text: in a Read only page the browser selects the word, no Edit card and no ask (D2); in a page you can edit, Edit card', async () => {
+    it('a double-click on the text never opens Edit card (YAZ-5964): the browser selects the word, in a Read only page and in a page you can edit; no ask', async () => {
       const { crepe, root } = await mount(CARD)
       crepe.setReadonly(true)
       const told: ReadOnlyEditEvent[] = []
@@ -672,8 +672,9 @@ describe('the card in the page', () => {
       expect(told).toEqual([])
       expect(root.querySelector('.card--editing')).toBeNull()
       crepe.setReadonly(false)
-      expect(twice()).toBe(true)
-      await vi.waitFor(() => expect(root.querySelector('.card--editing')).not.toBeNull())
+      expect(twice()).toBe(false)
+      await new Promise((done) => setTimeout(done, 20))
+      expect(root.querySelector('.card--editing')).toBeNull()
     })
   })
 

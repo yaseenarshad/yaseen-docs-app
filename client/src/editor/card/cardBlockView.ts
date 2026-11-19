@@ -315,7 +315,6 @@ export class CardBlockView implements NodeView {
     if (deps.reviews !== undefined) this.dom.classList.add('card--reviews')
     this.dom.addEventListener('mousedown', this.onMouseDown)
     this.dom.addEventListener('click', this.onClick)
-    this.dom.addEventListener('dblclick', this.onDoubleClick)
     // The vault's review settings changed (YAZ-5913): the marks follow.
     window.addEventListener(CARD_HEADS_REDRAW, this.drawMarks)
     views.set(this.dom, this)
@@ -889,15 +888,6 @@ export class CardBlockView implements NodeView {
     if (link === null) return
     event.preventDefault()
     this.deps.openHref?.(link.getAttribute('href') ?? '')
-  }
-
-  private onDoubleClick = (event: MouseEvent): void => {
-    const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, ${CARD_FOLD_RULE}, a[href]`) !== null) return
-    // A page that cannot be edited (YAZ-5896 D2): the browser selects the word, as outside the card; no Edit card.
-    if (!this.view.editable) return
-    event.preventDefault()
-    this.edit()
   }
 
   update(node: ProseNode, decorations: readonly Decoration[], inner: DecorationSource): boolean {

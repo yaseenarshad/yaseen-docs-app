@@ -542,15 +542,6 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     event.preventDefault()
     doors.openHref?.(link.getAttribute('href') ?? '')
   }
-  const onDoubleClick = (event: MouseEvent): void => {
-    const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('.card__body') == null || target.closest(`${CARD_OPENS}, ${CARD_MEDIA}, ${CARD_FOLD_RULE}, a[href]`) !== null) return
-    // A page that cannot be edited (YAZ-5939, the page card's YAZ-5896 D2): the browser selects the word; no Edit card,
-    // and no "Allow edits" question.
-    if (!host.editable()) return
-    event.preventDefault()
-    startEdit()
-  }
   const onContextMenu = (event: MouseEvent): void => {
     if (card === null || (event.target instanceof Element && edit?.mount.contains(event.target) === true)) return
     event.preventDefault()
@@ -558,7 +549,6 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   }
   dom.addEventListener('mousedown', onMouseDown)
   dom.addEventListener('click', onClick)
-  dom.addEventListener('dblclick', onDoubleClick)
   dom.addEventListener('contextmenu', onContextMenu)
 
   /** Near the screen: the page's scroller (`scrollRootOf`), found once the box is in it. Without an observer, at once. */

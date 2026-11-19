@@ -232,6 +232,13 @@ describe('YAZ-5896 D1, D2 in an embed (a card shown in a page by `![[ID]]`)', ()
     text.dispatchEvent(dbl)
     expect(asked).toHaveLength(0)
     expect(dbl.defaultPrevented).toBe(false)
+    // YAZ-5964: in a page you can edit too, a double-click selects the word; only Edit card edits.
+    view.setProps({ editable: () => true })
+    const again = new MouseEvent('dblclick', { bubbles: true, cancelable: true, button: 0, detail: 2 })
+    text.dispatchEvent(again)
+    expect(again.defaultPrevented).toBe(false)
+    await new Promise((done) => setTimeout(done, 20))
+    expect(box.querySelector('.card--editing')).toBeNull()
   })
 
   it('YAZ-5939: a click on the embed`s text with no drag selects the embed whole; a drag of 10 px does not', async () => {
