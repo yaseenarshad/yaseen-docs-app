@@ -1,8 +1,9 @@
-/** The footer's zoom menu (YAZ-3432): the chip shows the sidebar zoom and opens the menu; App size on top, Sidebar at the bottom, each − % +. */
+/** The footer's zoom menu (YAZ-3432): the chip shows the sidebar zoom and opens the menu; App size on top, Sidebar, then Search size at the bottom, each − % +. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
+import { DEFAULT_SETTINGS, SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
+import { settingCandidates } from '../settings/searchSettings'
 import { ZoomMenu } from './ZoomMenu'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -190,5 +191,15 @@ describe('ZoomMenu', () => {
     root = null
     expect(onOpenChange).toHaveBeenLastCalledWith(false)
     expect(onOpenChange).toHaveBeenCalledTimes(10)
+  })
+
+  it('YAZ-5982: the Settings pointer for Search size names its real place in this menu: the last row, and no other row', () => {
+    render()
+    act(() => chip().click())
+    const labels = [...menu()!.querySelectorAll('.zoom-menu__label')].map((l) => l.textContent)
+    expect(labels.at(-1)).toBe('Search size')
+    const pointer = settingCandidates({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined }).find((h) => h.item.id === 'exploreSearchSize')!
+    expect(pointer.item.hint).toContain('Search size is the last row.')
+    for (const other of labels.slice(0, -1)) expect(pointer.item.hint).not.toContain(other!)
   })
 })

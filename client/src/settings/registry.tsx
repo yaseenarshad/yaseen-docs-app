@@ -1074,10 +1074,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: () => <ExplorePageZoomSetting />,
           },
           {
-            // YAZ-5977 Q3: Search size lives in the zoom menu only; a search for it finds this pointer.
+            // YAZ-5977 Q3: Search size lives in the zoom menu only; a search for it finds this pointer. YAZ-5982: it is the menu's
+            // last row; the hint names no other row, so a search for "sidebar" or "app size" does not find it.
             id: 'exploreSearchSize',
             label: 'Search size',
-            hint: 'In the zoom menu: click the % at the bottom left of the window. Search size is the row under App size.',
+            hint: 'In the zoom menu: click the % at the bottom left of the window. Search size is the last row.',
             keywords: ['explore size', 'search size', 'explore zoom', 'search zoom', 'bigger search'],
             searchOnly: true,
             render: () => null,
