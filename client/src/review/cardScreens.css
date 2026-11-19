@@ -308,8 +308,8 @@
   margin-left: auto;
 }
 /* YAZ-5789: an answer that is recorded, not counted (a ✓ before a miss's date, a new card's ✕): the row is muted and
-   its answer carries a small "Not counted" after the word (under it in a narrow table; hidden with the word at 400 px,
-   where the grey row says it, YAZ-5831). */
+   its answer carries a small "Not counted" after the word, or under it in a narrow table (YAZ-5831), also when the
+   word hides at 400 px (YAZ-5833). */
 .card-reviews__row--uncounted td {
   color: var(--fg-muted);
 }
@@ -358,9 +358,8 @@
   }
 }
 @container (max-width: 400px) {
-  /* YAZ-5831: the answer is its glyph alone here; the row's grey says "not counted", and the tag would widen it. */
-  .card-reviews__answer .card-reviews__word,
-  .card-reviews__answer .card-reviews__tag {
+  /* The answer is its glyph alone here. "Not counted" stays under it (YAZ-5833): it wraps, so the table still fits. */
+  .card-reviews__answer .card-reviews__word {
     display: none;
   }
   .card-reviews__answer .card-answer {

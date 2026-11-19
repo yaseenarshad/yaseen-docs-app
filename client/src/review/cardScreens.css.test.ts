@@ -120,9 +120,9 @@ describe('YAZ-5831: the "Not counted" tag never widens a narrow Reviews table', 
     return rules(block).find((r) => r.selectors.includes(selector))?.decls
   }
 
-  it('up to 540 px the tag goes under the answer and may wrap; up to 400 px it hides with the answer word', () => {
+  it('up to 540 px the tag goes under the answer and may wrap; at 400 px the word hides, the tag stays (YAZ-5833)', () => {
     expect(inContainer(540, '.card-reviews__answer .card-reviews__tag')).toMatchObject({ display: 'block', 'white-space': 'normal' })
-    expect(inContainer(400, '.card-reviews__answer .card-reviews__tag')).toMatchObject({ display: 'none' })
+    expect(inContainer(400, '.card-reviews__answer .card-reviews__tag')).toBeUndefined()
     expect(inContainer(400, '.card-reviews__answer .card-reviews__word')).toMatchObject({ display: 'none' })
   })
 })
