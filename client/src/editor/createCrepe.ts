@@ -497,6 +497,11 @@ export interface CreateCrepeOptions {
   outlineZoom?: boolean
   /** Cell notes' button, preview, card and keys (YAZ-3818). False in the card editor (YAZ-5026). Absent → on. */
   cellNotes?: boolean
+  /**
+   * Formatting inside a code block (YAZ-5794): its marks, the toolbar in code and the keys. False in the card editor:
+   * the Inbox cannot draw them. Absent → on.
+   */
+  codeMarks?: boolean
   /** A NON-page instance's own `/` rows (YAZ-5026: the card editor's "New side"), added after the Drawing row. */
   extendSlash?: (builder: SlashMenuGroups) => void
 }
@@ -665,7 +670,7 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       groups.splice(groups.findIndex((group) => group.key === place.after) + 1, 0, own)
     }
   }
-  codeButtons(groups, inCode?.value === true)
+  if (inCode !== undefined) codeButtons(groups, inCode.value)
   if (hidden.length === 0) return
   for (const group of groups) group.items = group.items.filter((item) => !hidden.includes(item.key))
   groups.splice(0, groups.length, ...groups.filter((group) => group.items.length > 0))
@@ -718,6 +723,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
         }
   const slashMenu = createSlashMenu(slashRows, opts.hidden?.slash, cardSlash)
   // YAZ-5794: true while this editor's selection is in a code block (`codeToolbarCtx`); the toolbar reads it.
+  const codeMarksOn = opts.codeMarks !== false
   const inCode = shallowRef(false)
   const crepe = new Crepe({
     root: opts.root,
@@ -739,7 +745,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // markdown stays the source of truth; these call the same commands typing `##` does.
       // YAZ-1480 adds Highlight into Crepe's own Formatting group from the same builder.
       // YAZ-5794: in a code block, the Text style group only, on the code's own marks (`inCode`, `codeButtons`).
-      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar, opts.extendToolbar, inCode) },
+      [CrepeFeature.Toolbar]: {
+        buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar, opts.extendToolbar, codeMarksOn ? inCode : undefined),
+        // The vendored Crepe patch: a selection in a code block's CodeMirror shows the toolbar; a card's never does.
+        inNestedEditor: (view) => codeMarksOn && codeSelection(view.state) !== null,
+      },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
@@ -748,7 +758,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // `addLineCodeKeys` (YAZ-4800 demo): ⌘↵ / ⌘⇧↵ add a line below / above the code block, before Crepe's exit-code.
       // `cardCodeKeys` (YAZ-4961): in a card's editor ⌘↵ opens the card and Esc is Done, before `addLineCodeKeys`.
       // The `card` language: Markdown with spell check (idea 8).
-      [CrepeFeature.CodeMirror]: { theme: codeTheme, languages: [...codeLanguages, cardLanguage], extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, codeMarkDecorations, codeMarkKeys(opts.hotkeys), cardCodeKeys, addLineCodeKeys] },
+      [CrepeFeature.CodeMirror]: { theme: codeTheme, languages: [...codeLanguages, cardLanguage], extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, ...(codeMarksOn ? [codeMarkDecorations, codeMarkKeys(opts.hotkeys)] : []), cardCodeKeys, addLineCodeKeys] },
     },
   })
   crepe.editor.use(
@@ -779,7 +789,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.config(codeCommentStringify)
   // Formatting inside a code block (YAZ-5794): the marks follow typing, CodeMirror draws them, the toolbar knows code.
   crepe.editor.config((ctx) => void ctx.inject(codeToolbarCtx, inCode))
-  crepe.editor.use(codeMarksPlugin)
+  if (codeMarksOn) crepe.editor.use(codeMarksPlugin)
   // Cell notes (YAZ-3818 D4, D12): a `cell-N` footnote is a `cell_note`, hidden, and it stays under its table. Before
   // `inlineBreaks`: its remark step reads a footnote's `<br />` line first.
   crepe.editor.use(cellNotes)

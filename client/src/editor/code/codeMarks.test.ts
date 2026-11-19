@@ -16,7 +16,14 @@ import { setHighlightCommand } from '../marks/highlight'
 import { commandsCtx } from '@milkdown/kit/core'
 import { budgetMs } from '../../test-perf'
 import { cleanSpans, fitMarks, formatCodeComment, formatMarkPart, marksFromSpans, parseCodeComment, parseMarkPart, spansFromMarks, type CodeMark } from './codeComment'
-import { clearCodeMarks, codeMarkCommand, codeSelection } from './codeMarks'
+import { clearCodeMarks, codeMarkCommand, codeMarkDecorations, codeMarkKeys, codeSelection } from './codeMarks'
+import { applyHighlight, highlightSchema, removeHighlight } from '../marks/highlight'
+import { DOMParser as ProseDOMParser } from '@milkdown/kit/prose/model'
+import { EditorState as CodeMirrorState } from '@codemirror/state'
+import { EditorView as CodeMirrorView } from '@codemirror/view'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { createCrepe } from '../createCrepe'
+import { IS_MAC } from '../marks/markTestKit'
 import * as toolbar from '../toolbarTestKit'
 
 afterEach(async () => {
@@ -50,6 +57,16 @@ function typeInCode(view: EditorView, offset: number, text: string, deleteCount 
   if (text === '') tr.delete(start, start + deleteCount)
   else tr.replaceWith(start, start + deleteCount, view.state.schema.text(text))
   view.dispatch(tr)
+}
+/**
+ * The focus in the block's own editor, as CodeMirror holds it in the app: CodeMirror does not start in jsdom, so a
+ * stand-in inside the block's DOM holds it. With the focus on the page instead, ProseMirror reads the DOM selection
+ * back and drops a selection inside the block.
+ */
+function focusCode(view: EditorView): void {
+  const stand = Object.assign(document.createElement('div'), { contentEditable: 'true', tabIndex: 0 })
+  ;(view.nodeDOM(block(view).pos) as HTMLElement).appendChild(stand)
+  stand.focus()
 }
 const run = (view: EditorView, command: ReturnType<typeof codeMarkCommand>) => command(view.state, view.dispatch)
 
@@ -197,11 +214,18 @@ describe('code marks in a real editor', () => {
     const marks = Array.from({ length: 200 }, (_, i) => `bold ${i * 10 + 1}:7 "value${i * 10}"`).join(', ')
     const { view } = await mount(`\`\`\`js\n${lines.join('\n')}\n\`\`\`\n<!-- code: ${marks} -->\n`)
     expect(spansIn(view)).toHaveLength(200)
+    // The marks' own work on a key: the plugin's appendTransaction (map, check, one attribute step). Timed alone,
+    // warm, because the whole key on a 2,000-line page in jsdom costs ms and varies by more than this work.
+    const plugin = view.state.plugins.find((p) => String((p as unknown as { key: string }).key).startsWith('mdapp-code-marks'))!
+    const append = plugin.spec.appendTransaction!.bind(plugin)
+    const key = view.state.tr.insertText('x', block(view).pos + 1)
+    const after = view.state.apply(key)
+    for (let i = 0; i < 5; i++) append([key], view.state, after)
     const t0 = performance.now()
+    for (let i = 0; i < 20; i++) append([key], view.state, after)
+    expect((performance.now() - t0) / 20).toBeLessThan(budgetMs(1))
     for (let i = 0; i < 20; i++) typeInCode(view, 0, 'x')
-    const perKey = (performance.now() - t0) / 20
     expect(spansIn(view)[0].from).toBe(26)
-    expect(perKey).toBeLessThan(budgetMs(8))
     // A key in a block with marks appends ONE transaction (the marks' move); with no marks, none.
     const markSteps = (v: EditorView) =>
       v.state
@@ -219,10 +243,7 @@ describe('the page toolbar in code (D3, D4)', () => {
     const { view } = await toolbar.mount(`${FENCE}\nplain text here\n`)
     await toolbar.select(view, 'plain text')
     expect(toolbar.order()).toContain('h1')
-    // The focus in the block's own editor, as in the app: CodeMirror does not start in jsdom, so a stand-in holds it.
-    const codeEditor = Object.assign(document.createElement('div'), { contentEditable: 'true', tabIndex: 0 })
-    view.dom.querySelector('.milkdown-code-block')!.appendChild(codeEditor)
-    codeEditor.focus()
+    focusCode(view)
     selectCode(view, 'fetchUser')
     await toolbar.settle()
     expect(toolbar.order()).toEqual(['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more'])
@@ -238,5 +259,109 @@ describe('the page toolbar in code (D3, D4)', () => {
     view.focus()
     await toolbar.select(view, 'plain text')
     expect(toolbar.order()).toContain('h1')
+  })
+})
+
+describe('where the code marks do not go (D3, D4, YAZ-5827)', () => {
+  const shown = () => document.querySelector('.milkdown-toolbar')?.getAttribute('data-show') === 'true'
+
+  it('no toolbar: an empty selection, a card block, a read-only page, or an editor with code marks off', async () => {
+    const { view } = await toolbar.mount(FENCE)
+    focusCode(view)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, block(view).pos + 3)))
+    await toolbar.settle()
+    expect(shown()).toBe(false)
+    selectCode(view, 'fetchUser')
+    await toolbar.settle()
+    expect(shown()).toBe(true)
+    view.setProps({ editable: () => false })
+    selectCode(view, 'user.name')
+    await toolbar.settle()
+    expect(shown()).toBe(false)
+    await toolbar.unmountAll()
+
+    const card = await toolbar.mount('```card\nfront side\n```\n')
+    focusCode(card.view)
+    selectCode(card.view, 'front')
+    await toolbar.settle()
+    expect(shown()).toBe(false)
+    expect(run(card.view, codeMarkCommand('bold'))).toBe(false)
+
+    const root = document.body.appendChild(document.createElement('div'))
+    const off = createCrepe({ root, defaultValue: FENCE, codeMarks: false })
+    await off.create()
+    const offView = off.editor.action((ctx) => ctx.get(editorViewCtx))
+    focusCode(offView)
+    selectCode(offView, 'fetchUser')
+    await toolbar.settle()
+    expect([...root.querySelectorAll('.milkdown-toolbar')].some((el) => el.getAttribute('data-show') === 'true')).toBe(false)
+    await off.destroy()
+    root.remove()
+  })
+
+  it("the keys in a code block run the code marks, with the user's own key, and not on a read-only page", async () => {
+    const { view } = await mount(FENCE)
+    // A real CodeMirror in the block's box, with the app's code mark extensions, as Crepe starts one in the app.
+    const box = view.dom.querySelector<HTMLElement>('.milkdown-code-block')!
+    const cm = new CodeMirrorView({
+      state: CodeMirrorState.create({ doc: block(view).node.textContent, extensions: [codeMarkDecorations, codeMarkKeys({ 'page.italic': 'CmdOrCtrl+Alt+I' })] }),
+      parent: box,
+    })
+    const press = (key: string, extra: KeyboardEventInit = {}) =>
+      cm.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...(IS_MAC ? { metaKey: true } : { ctrlKey: true }), ...extra }))
+    const kinds = () => (spansIn(view) ?? []).map((s: { kind: string }) => s.kind).sort()
+    selectCode(view, 'fetchUser')
+    press('b')
+    press('u')
+    press('x', { shiftKey: true })
+    press('h', { shiftKey: true })
+    expect(kinds()).toEqual(['bold', 'highlight', 'strike', 'underline'])
+    // The user moved Italic to ⌘⌥I: ⌘I does nothing in code, ⌘⌥I runs it.
+    press('i')
+    expect(kinds()).not.toContain('italic')
+    press('i', { altKey: true })
+    expect(kinds()).toContain('italic')
+    press('\\')
+    expect(spansIn(view)).toBeNull()
+    view.setProps({ editable: () => false })
+    press('b')
+    expect(spansIn(view)).toBeNull()
+    cm.destroy()
+  })
+
+  it("a custom colour and the ▾ panel's None work in code", async () => {
+    const { crepe, view } = await mount(FENCE)
+    const type = crepe.editor.action((ctx) => highlightSchema.type(ctx))
+    focusCode(view)
+    selectCode(view, 'fetchUser')
+    expect(applyHighlight(type, '#a1b2c3')(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toContain('<!-- code: highlight-#a1b2c3 2:22 "fetchUser" -->')
+    expect(removeHighlight(type)(view.state, view.dispatch)).toBe(true)
+    expect(spansIn(view)).toBeNull()
+    expect(removeHighlight(type)(view.state, view.dispatch)).toBe(false)
+  })
+
+  it('a colour this build does not know is no mark: it stays as text in the comment', async () => {
+    const page = `${FENCE}<!-- code: highlight-teal 2:22 "fetchUser" -->\n`
+    const { crepe, view } = await mount(page)
+    expect(spansIn(view)).toBeNull()
+    expect(getMarkdownForSave(crepe)).toBe(page)
+  })
+
+  it('a paste of part of a block: each mark is fitted to the pasted code, and never lands on other text', async () => {
+    const { view } = await mount('x\n')
+    const html = (marks: string, code: string) => {
+      const div = document.createElement('div')
+      const pre = div.appendChild(document.createElement('pre'))
+      pre.setAttribute('data-code-marks', marks)
+      pre.appendChild(document.createElement('code')).textContent = code
+      return ProseDOMParser.fromSchema(view.state.schema).parse(div).firstChild!
+    }
+    // Copied from line 2 of a block: the marks still name lines of the whole block, so they do not fit and go.
+    const part = html('bold 2:22 "fetchUser"\nitalic 1:1 "async"', '  return user.name')
+    expect(part.attrs.marks).toBeNull()
+    // The whole block: each mark fits.
+    const whole = html('bold 2:22 "fetchUser"', CODE)
+    expect(marksFromSpans(whole.textContent, whole.attrs.marks).map((m) => m.text)).toEqual(['fetchUser'])
   })
 })

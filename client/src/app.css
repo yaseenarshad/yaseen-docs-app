@@ -77,7 +77,8 @@
   --code-function: #8250df;
   --code-type: #953800;
   --code-key: #0550ae;
-  --code-selection: rgba(9, 105, 218, 0.18);
+  /* A code block's selection (YAZ-5837): see-through, drawn over the text, clear in both themes. */
+  --code-selection: rgba(9, 105, 218, 0.25);
 }
 
 /* Dark palette (Desktop K, GRO-2218): the SAME tokens, near-black surfaces. App.tsx resolves the
@@ -122,7 +123,7 @@
   --code-function: #61afef;
   --code-type: #e5c07b;
   --code-key: #e06c75;
-  --code-selection: #3e4451;
+  --code-selection: rgba(97, 175, 239, 0.32);
 }
 
 *,

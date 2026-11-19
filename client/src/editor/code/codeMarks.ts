@@ -28,21 +28,22 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { Prec, StateEffect, StateField, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView as CodeMirrorView, ViewPlugin, keymap, type DecorationSet } from '@codemirror/view'
-import { shallowRef, type ShallowRef } from 'vue'
+import type { ShallowRef } from 'vue'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { CARD_LANGUAGE } from '../card/cardBlockLine'
+import { MORE_KEY } from '../highlightPanel'
 import { pageKeys } from '../pageKeys'
 import { cleanSpans, sameSpans, type CodeMarkKind, type CodeSpan } from './codeComment'
-import { blockPos, codeSpansOf, marksAttr, mayChangeCodeAttrs } from './codeWidth'
+import { blockPos, codeSpansOf, marksAttr } from './codeWidth'
 
 /** The toolbar buttons a selection in code keeps (D4): the Text style group. The others hide there. */
-export const CODE_TOOLBAR_KEYS: readonly string[] = ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more']
+export const CODE_TOOLBAR_KEYS: readonly string[] = ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', MORE_KEY]
 
 /** The mark each code toolbar button and key runs; the highlight buttons run through `marks/highlight.ts`. */
 export const CODE_BUTTON_KINDS: Readonly<Record<string, CodeMarkKind>> = { bold: 'bold', italic: 'italic', underline: 'underline', strikethrough: 'strike' }
 
 /** True while this editor's selection is in a code block: the toolbar then shows only `CODE_TOOLBAR_KEYS`. `createCrepe` injects one per editor. */
-export const codeToolbarCtx = createSlice<ShallowRef<boolean>, 'codeToolbar'>(shallowRef(false), 'codeToolbar')
+export const codeToolbarCtx = createSlice<ShallowRef<boolean> | null, 'codeToolbar'>(null, 'codeToolbar')
 
 /** A code block that takes marks: not a note card. */
 const takesMarks = (node: ProseNode): boolean => node.type.name === 'code_block' && node.attrs.language !== CARD_LANGUAGE
@@ -105,14 +106,15 @@ function writeSpans(state: EditorState, range: CodeRange, next: CodeSpan[], disp
  * Declines outside code, and when nothing changes.
  */
 export const codeMarkCommand =
-  (kind: CodeMarkKind, color: string | null | undefined = null, mode: 'toggle' | 'apply' | 'remove' = 'toggle'): Command =>
+  (kind: CodeMarkKind, color?: string | null, mode: 'toggle' | 'apply' | 'remove' = 'toggle'): Command =>
   (state, dispatch) => {
     const range = codeSelection(state)
     if (range === null) return false
     const spans = codeSpansOf(range.node)
-    const off = mode === 'remove' || (mode === 'toggle' && codeHasMark(range, kind, kind === 'highlight' ? color : undefined))
+    const off = mode === 'remove' || (mode === 'toggle' && codeHasMark(range, kind, kind === 'highlight' ? (color ?? null) : undefined))
     const drop = (span: CodeSpan) => span.kind === kind && (!off || color === undefined || kind !== 'highlight' || span.color === color)
     const next = cut(spans, range.from, range.to, drop)
+    // `undefined` means every colour only for `remove`; to put a highlight on, it is yellow (`null`).
     if (!off) next.push({ from: range.from, to: range.to, kind, color: kind === 'highlight' ? (color ?? null) : null })
     return writeSpans(state, range, next, dispatch)
   }
@@ -148,28 +150,32 @@ function touchedRanges(trs: readonly Transaction[]): Array<[number, number]> {
  */
 function mapTypedSpans(trs: readonly Transaction[], oldState: EditorState, newState: EditorState): Transaction | null {
   if (!trs.some((tr) => tr.docChanged)) return null
+  // The blocks with marks that the change touched; most changes (a key in a paragraph, in a plain block) find none.
+  const touched: Array<{ node: ProseNode; pos: number }> = []
+  const seen = new Set<number>()
+  for (const [from, to] of touchedRanges(trs))
+    newState.doc.nodesBetween(Math.max(0, from), Math.min(newState.doc.content.size, to), (node, pos) => {
+      if (node.type.name !== 'code_block') return !node.isTextblock && !node.isAtom
+      if (node.attrs.marks !== null && !seen.has(pos)) touched.push({ node, pos })
+      seen.add(pos)
+      return false
+    })
+  if (touched.length === 0) return null
   const mapping = new Mapping()
   for (const tr of trs) mapping.appendMapping(tr.mapping)
   const back = mapping.invert()
-  const seen = new Set<number>()
   let out: Transaction | null = null
-  for (const [from, to] of touchedRanges(trs)) {
-    newState.doc.nodesBetween(Math.max(0, from), Math.min(newState.doc.content.size, to), (node, pos) => {
-      if (node.type.name !== 'code_block') return !node.isTextblock && !node.isAtom
-      if (node.attrs.marks === null || seen.has(pos)) return false
-      seen.add(pos)
-      const oldPos = back.map(pos, -1)
-      const old = oldState.doc.nodeAt(oldPos)
-      if (old === null || old.type !== node.type || old.attrs.marks !== node.attrs.marks || old.textContent === node.textContent) return false
-      const mapped = codeSpansOf(old).map((span) => ({
-        ...span,
-        from: mapping.map(oldPos + 1 + span.from, 1) - pos - 1,
-        to: mapping.map(oldPos + 1 + span.to, 1) - pos - 1,
-      }))
-      const clean = cleanSpans(node.textContent, mapped)
-      if (!sameSpans(clean, codeSpansOf(node))) out = (out ?? newState.tr).setNodeAttribute(pos, 'marks', marksAttr(clean))
-      return false
-    })
+  for (const { node, pos } of touched) {
+    const oldPos = back.map(pos, -1)
+    const old = oldState.doc.nodeAt(oldPos)
+    if (old === null || old.type !== node.type || old.attrs.marks !== node.attrs.marks || old.textContent === node.textContent) continue
+    const mapped = codeSpansOf(old).map((span) => ({
+      ...span,
+      from: mapping.map(oldPos + 1 + span.from, 1) - pos - 1,
+      to: mapping.map(oldPos + 1 + span.to, 1) - pos - 1,
+    }))
+    const clean = cleanSpans(node.textContent, mapped)
+    if (!sameSpans(clean, codeSpansOf(node))) out = (out ?? newState.tr).setNodeAttribute(pos, 'marks', marksAttr(clean))
   }
   return out
 }
@@ -228,9 +234,12 @@ function sendSpans(cm: CodeMirrorView, node: ProseNode, drawn: Map<CodeMirrorVie
 const startWithBlock = ViewPlugin.fromClass(
   class {
     private page: EditorView | null = null
+    private destroyed = false
     constructor(private readonly cm: CodeMirrorView) {
-      // A CodeMirror cannot take a transaction while it is being made: the first draw waits a microtask.
+      // A CodeMirror cannot take a transaction while it is being made: the first draw waits a microtask. Crepe can
+      // stop it before then (its block scrolled away): then it never registers.
       queueMicrotask(() => {
+        if (this.destroyed) return
         const block = blockOf(cm)
         if (block === null) return
         this.page = block.view
@@ -241,6 +250,7 @@ const startWithBlock = ViewPlugin.fromClass(
       })
     }
     destroy(): void {
+      this.destroyed = true
       if (this.page !== null) started.get(this.page)?.delete(this.cm)
     }
   },
@@ -271,36 +281,23 @@ export function codeMarkKeys(hotkeys: HotkeyOverrides | undefined): Extension {
   return Prec.high(keymap.of(rows.flatMap(([row, command]) => pageKeys(row, hotkeys).map((key) => ({ key, run: run(command) })))))
 }
 
-/** The plugin's state: how many transactions so far could change a block's attributes. Its view redraws on a change. */
-const pluginKey = new PluginKey<number>('mdapp-code-marks')
-
 /** The page side: typing maps the spans; a changed attribute redraws in CodeMirror; the toolbar learns it is in code. */
 export const codeMarksPlugin = $prose(
   (ctx: Ctx) =>
-    new Plugin<number>({
-      key: pluginKey,
-      state: {
-        init: () => 0,
-        apply: (tr, count) => (tr.docChanged && mayChangeCodeAttrs(tr) ? count + 1 : count),
-      },
+    new Plugin({
+      key: new PluginKey('mdapp-code-marks'),
       appendTransaction: mapTypedSpans,
       view: (view) => {
         pageViews.set(view.dom, view)
-        const inCode = ctx.isInjected(codeToolbarCtx) ? ctx.get(codeToolbarCtx) : null
-        let seen = pluginKey.getState(view.state) ?? 0
+        const inCode = ctx.get(codeToolbarCtx)
         return {
-          update(view) {
+          update(view, prev) {
             const inside = codeSelection(view.state) !== null
             if (inCode !== null && inCode.value !== inside) inCode.value = inside
-            const count = pluginKey.getState(view.state) ?? 0
-            if (count === seen) return
-            seen = count
+            if (view.state.doc === prev.doc) return
             const drawn = started.get(view)
-            if (drawn === undefined) return
-            for (const cm of drawn.keys()) {
-              const block = blockOf(cm)
-              if (block !== null) sendSpans(cm, block.node, drawn)
-            }
+            if (drawn === undefined || drawn.size === 0) return
+            redrawChanged(view, prev.doc, drawn)
           },
           destroy() {
             pageViews.delete(view.dom)
@@ -310,3 +307,22 @@ export const codeMarksPlugin = $prose(
       },
     }),
 )
+
+/**
+ * Send new spans to the started CodeMirrors of the blocks whose `marks` changed: only the part of the page that
+ * differs from `before` is walked (ProseMirror's own fragment diff, which shares the untouched nodes), and a block
+ * whose attribute is the one its CodeMirror drew is skipped. A key in a plain block finds nothing to send.
+ */
+function redrawChanged(view: EditorView, before: ProseNode, drawn: Map<CodeMirrorView, unknown>): void {
+  const doc = view.state.doc
+  const start = doc.content.findDiffStart(before.content)
+  const end = doc.content.findDiffEnd(before.content)
+  if (start === null || end === null) return
+  doc.nodesBetween(start, Math.max(start, end.a), (node, pos) => {
+    if (node.type.name !== 'code_block') return !node.isTextblock && !node.isAtom
+    const box = view.nodeDOM(pos)
+    const cm = box instanceof HTMLElement ? CodeMirrorView.findFromDOM(box) : null
+    if (cm !== null && drawn.has(cm)) sendSpans(cm, node, drawn)
+    return false
+  })
+}

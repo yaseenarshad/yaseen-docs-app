@@ -19,15 +19,17 @@ diff --git a/lib/index.js b/lib/index.js
  var TooltipProvider = class {
  	#debounce;
  	#shouldShow;
-@@ -12,6 +23,7 @@ var TooltipProvider = class {
+@@ -12,7 +23,9 @@ var TooltipProvider = class {
  	#root;
  	#initialized;
  	#cleanupAutoUpdate;
 +	#lastState;
  	#offset;
++	#nestedSelection;
  	#shift;
  	#updater;
-@@ -45,12 +57,14 @@ var TooltipProvider = class {
+ 	constructor(options) {
+@@ -45,12 +58,14 @@ var TooltipProvider = class {
  			const { ranges } = selection;
  			const from = Math.min(...ranges.map((range) => range.$from.pos));
  			const to = Math.max(...ranges.map((range) => range.$to.pos));
@@ -43,22 +45,41 @@ diff --git a/lib/index.js b/lib/index.js
  			this.#cleanupAutoUpdate?.();
  			this.#cleanupAutoUpdate = void 0;
  			if (!this.#shouldShow(view, prevState)) {
-@@ -58,7 +72,7 @@ var TooltipProvider = class {
+@@ -58,7 +73,7 @@ var TooltipProvider = class {
  				return;
  			}
  			const virtualEl = {
 -				getBoundingClientRect: () => posToDOMRect(view, from, to),
-+				getBoundingClientRect: () => nestedSelectionRect(view) ?? posToDOMRect(view, from, to),
++				getBoundingClientRect: () => (this.#nestedSelection ? nestedSelectionRect(view) : null) ?? posToDOMRect(view, from, to),
  				contextElement: view.dom
  			};
  			if (this.#shouldAutoUpdate(view)) this.#cleanupAutoUpdate = autoUpdate(virtualEl, this.element, () => this.#updatePosition(virtualEl));
-@@ -143,5 +157,3 @@ function tooltipFactory(id) {
+@@ -105,6 +120,7 @@ var TooltipProvider = class {
+ 		this.#debounce = options.debounce ?? 200;
+ 		this.#shouldShow = options.shouldShow ?? this.#_shouldShow;
+ 		this.#offset = options.offset;
++		this.#nestedSelection = options.nestedSelection ?? false;
+ 		this.#shift = options.shift;
+ 		this.#middleware = options.middleware ?? [];
+ 		this.#floatingUIOptions = options.floatingUIOptions ?? {};
+@@ -143,5 +159,3 @@ function tooltipFactory(id) {
  }
  //#endregion
  export { TooltipProvider, tooltipFactory };
 -
 -//# sourceMappingURL=index.js.map
 \ No newline at end of file
+diff --git a/lib/tooltip-provider.d.ts b/lib/tooltip-provider.d.ts
+--- a/lib/tooltip-provider.d.ts
++++ b/lib/tooltip-provider.d.ts
+@@ -5,6 +5,7 @@ export interface TooltipProviderOptions {
+     content: HTMLElement;
+     debounce?: number;
+     shouldShow?: (view: EditorView, prevState?: EditorState) => boolean;
++    nestedSelection?: boolean;
+     offset?: OffsetOptions;
+     shift?: ShiftOptions;
+     middleware?: Middleware[];
 diff --git a/src/tooltip-provider.ts b/src/tooltip-provider.ts
 --- a/src/tooltip-provider.ts
 +++ b/src/tooltip-provider.ts
@@ -95,7 +116,18 @@ diff --git a/src/tooltip-provider.ts b/src/tooltip-provider.ts
  /// Options for tooltip provider.
  export interface TooltipProviderOptions {
    /// The tooltip content.
-@@ -62,6 +88,12 @@ export class TooltipProvider {
+@@ -27,6 +53,10 @@ export interface TooltipProviderOptions {
+   debounce?: number
+   /// The function to determine whether the tooltip should be shown.
+   shouldShow?: (view: EditorView, prevState?: EditorState) => boolean
++  /// YAZ-5794: place the tooltip over the DOM selection of an editor nested
++  /// in the view (a code block's CodeMirror) while the focus is there.
++  /// Default false.
++  nestedSelection?: boolean
+   /// The offset to get the block. Default is 0.
+   offset?: OffsetOptions
+   /// The amount to shift options the block by.
+@@ -62,9 +92,18 @@ export class TooltipProvider {
    /// @internal
    #cleanupAutoUpdate?: () => void
  
@@ -108,7 +140,21 @@ diff --git a/src/tooltip-provider.ts b/src/tooltip-provider.ts
    /// @internal
    readonly #offset?: OffsetOptions
  
-@@ -129,8 +161,9 @@ export class TooltipProvider {
++  /// YAZ-5794: see `TooltipProviderOptions.nestedSelection`.
++  readonly #nestedSelection: boolean
++
+   /// @internal
+   readonly #shift?: ShiftOptions
+ 
+@@ -88,6 +127,7 @@ export class TooltipProvider {
+     this.#debounce = options.debounce ?? 200
+     this.#shouldShow = options.shouldShow ?? this.#_shouldShow
+     this.#offset = options.offset
++    this.#nestedSelection = options.nestedSelection ?? false
+     this.#shift = options.shift
+     this.#middleware = options.middleware ?? []
+     this.#floatingUIOptions = options.floatingUIOptions ?? {}
+@@ -129,8 +169,9 @@ export class TooltipProvider {
      const { ranges } = selection
      const from = Math.min(...ranges.map((range) => range.$from.pos))
      const to = Math.max(...ranges.map((range) => range.$to.pos))
@@ -120,7 +166,7 @@ diff --git a/src/tooltip-provider.ts b/src/tooltip-provider.ts
  
      if (!this.#initialized) {
        const root = this.#root ?? view.dom.parentElement ?? document.body
-@@ -139,6 +172,7 @@ export class TooltipProvider {
+@@ -139,6 +180,7 @@ export class TooltipProvider {
      }
  
      if (composing || isSame) return
@@ -128,13 +174,14 @@ diff --git a/src/tooltip-provider.ts b/src/tooltip-provider.ts
  
      this.#cleanupAutoUpdate?.()
      this.#cleanupAutoUpdate = void 0
-@@ -149,7 +183,8 @@ export class TooltipProvider {
+@@ -149,7 +191,9 @@ export class TooltipProvider {
      }
  
      const virtualEl: VirtualElement = {
 -      getBoundingClientRect: () => posToDOMRect(view, from, to),
 +      getBoundingClientRect: () =>
-+        nestedSelectionRect(view) ?? posToDOMRect(view, from, to),
++        (this.#nestedSelection ? nestedSelectionRect(view) : null) ??
++        posToDOMRect(view, from, to),
        contextElement: view.dom,
      }
  

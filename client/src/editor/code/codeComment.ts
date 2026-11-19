@@ -1,12 +1,13 @@
 /**
  * The code block comment itself (YAZ-4783): the one reader and writer of `<!-- code: … -->`, the line right under a
  * code block's closing fence that holds the block's own width, as `<!-- table: … -->` holds a table's look
- * (`table/tableComment.ts`) and `<!-- line: … -->` a line's (`line/lineComment.ts`). No editor imports, on purpose: the
+ * (`table/tableComment.ts`) and `<!-- line: … -->` a line's (`line/lineComment.ts`). No editor imports (the colour list is plain data), on purpose: the
  * line-number worker (`lineNumbers/blockLines.ts`) reads the same comment to know that it is no block of the page.
  * `codeWidth.ts` joins it to the block on load and writes it back on save.
  *
- * ONE PART today: `width 1300`, the box's width in px at 100% document zoom, a whole number from `CODE_WIDTH_MIN` to
- * `CODE_WIDTH_MAX` with no leading zero. No width writes no comment: a plain code block keeps the bytes of before.
+ * TWO KINDS of part: `width 1300`, the box's width in px at 100% document zoom, a whole number from `CODE_WIDTH_MIN`
+ * to `CODE_WIDTH_MAX` with no leading zero; and the marks below. A block with neither writes no comment: a plain code
+ * block keeps the bytes of before.
  *
  * The reader is tolerant, as the table's is (YAZ-4161, YAZ-4176): a part it does not know, and a `width` it cannot read
  * (`width 100`, `width wide`), are KEPT as their text, so an older or a newer build never deletes what it cannot read.
@@ -20,10 +21,13 @@
  * `bold 2:22 "fetchUser"`, `highlight-green 3:10 "user.name"`, `highlight-#a1b2c3 1:1 "x"` (a plain `highlight` is
  * yellow). Line and column count from 1, in UTF-16 units as the editor counts. One mark covers one line. The text is a
  * JSON string with `,` as `\u002c` and `>` as `\u003e`, because the comment splits on `,` and ends at `-->`. It is kept
- * so that a load can check the mark still stands on its text (`code/codeMarks.ts` `fitMarks`, D2). An older build keeps
- * a mark part as an unknown part, with its bytes. Order on save: the parts before the width, the width, the marks, the
- * parts after the width.
+ * so that a load can check the mark still stands on its text (`fitMarks` below, D2). A highlight colour is one of
+ * `HIGHLIGHT_COLORS` or a lowercase `#rrggbb`; a part with another colour is no mark of this build. An older build keeps
+ * a mark part as an unknown part, with its bytes. Order on save: the parts before the width, the width, the marks in
+ * the code's order, the parts after the width. A comment this build wrote saves with the same bytes; a hand-made one
+ * with its marks in another order or place is rewritten in this order at its first save.
  */
+import { HIGHLIGHT_COLORS } from '../marks/highlightColours'
 
 /** The narrowest a code block can be dragged or read, in px at 100% zoom. */
 export const CODE_WIDTH_MIN = 240
@@ -123,6 +127,7 @@ export function parseMarkPart(part: string): CodeMark | null {
   }
   if (typeof text !== 'string' || text === '' || /[\r\n]/.test(text)) return null
   const highlight = match[1].startsWith('highlight')
+  if (highlight && match[2] !== undefined && !markColor(match[2])) return null
   return { kind: highlight ? 'highlight' : (match[1] as CodeMarkKind), color: highlight ? (match[2] ?? null) : null, line: Number(match[3]), col: Number(match[4]), text }
 }
 
@@ -137,8 +142,9 @@ export interface CodeSpan {
   color: string | null
 }
 
-/** A highlight colour a mark can hold: a name (`green`) or a lowercase `#rrggbb`. */
-const MARK_COLOR = /^([a-z]+|#[0-9a-f]{6})$/
+/** A highlight colour a mark can hold: a named one (`green`) or a lowercase `#rrggbb`; `null` is yellow. */
+const markColor = (value: unknown): value is string =>
+  typeof value === 'string' && ((HIGHLIGHT_COLORS as readonly string[]).includes(value) || /^#[0-9a-f]{6}$/.test(value))
 
 /** The offset where each line of `code` starts. */
 function lineStarts(code: string): number[] {
@@ -159,7 +165,7 @@ export function cleanSpans(code: string, value: unknown): CodeSpan[] {
     const { from, to, kind, color } = (raw ?? {}) as Partial<Record<keyof CodeSpan, unknown>>
     if (typeof from !== 'number' || typeof to !== 'number' || !Number.isInteger(from) || !Number.isInteger(to)) continue
     if (!(CODE_MARK_KINDS as readonly unknown[]).includes(kind)) continue
-    const style = { kind: kind as CodeMarkKind, color: kind === 'highlight' && typeof color === 'string' && MARK_COLOR.test(color) ? color : null }
+    const style = { kind: kind as CodeMarkKind, color: kind === 'highlight' && markColor(color) ? color : null }
     const end = Math.min(code.length, to)
     for (let start = Math.max(0, from); start < end; ) {
       const lineEnd = code.indexOf('\n', start)

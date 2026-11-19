@@ -58,7 +58,7 @@ import { cssZoom } from '../../lib/cssZoom'
 import { blockRightEdge } from '../blockRoom'
 import { joinNextComment } from '../joinComment'
 import { CARD_LINE_ATTR, cleanCardLine, isCardCode, CARD_LANGUAGE } from '../card/cardBlockLine'
-import { CODE_WIDTH_MAX, CODE_WIDTH_MIN, cleanSpans, codeWidth, formatCodeComment, marksFromSpans, parseCodeComment, spansFromMarks, type CodeLook, type CodeSpan, type CodeUnknownPart } from './codeComment'
+import { CODE_WIDTH_MAX, CODE_WIDTH_MIN, cleanSpans, codeWidth, formatCodeComment, formatMarkPart, marksFromSpans, parseCodeComment, parseMarkPart, spansFromMarks, type CodeLook, type CodeSpan, type CodeUnknownPart } from './codeComment'
 
 export * from './codeComment'
 
@@ -72,7 +72,7 @@ export const CODE_GRIP_CLASS = 'code-width-grip'
 export const CODE_DRAGGING_CLASS = 'code-width-dragging'
 const BLOCK = '.milkdown-code-block'
 const PARTS_ATTR = 'data-code-parts'
-/** On the `<pre>` of a copied block: its marks (YAZ-5794), as JSON spans, so a paste inside the app keeps them. */
+/** On the `<pre>` of a copied block: its marks (YAZ-5794), one mark part per line, so a paste inside the app keeps them. */
 const MARKS_ATTR = 'data-code-marks'
 
 /**
@@ -121,8 +121,20 @@ function cleanParts(value: unknown): CodeUnknownPart[] {
   })
 }
 
+/** Each code block node's checked spans: a node never changes, so one check serves every read of it. */
+const spansCache = new WeakMap<ProseNode, CodeSpan[]>()
+
 /** A code block's spans (YAZ-5794), checked against its code. None for a card: a card's text is no code. */
-export const codeSpansOf = (node: ProseNode): CodeSpan[] => (node.attrs.language === CARD_LANGUAGE ? [] : cleanSpans(node.textContent, node.attrs.marks))
+export function codeSpansOf(node: ProseNode): CodeSpan[] {
+  if (node.attrs.marks === null || node.attrs.language === CARD_LANGUAGE) return []
+  let spans = spansCache.get(node)
+  if (spans === undefined) spansCache.set(node, (spans = cleanSpans(node.textContent, node.attrs.marks)))
+  return spans
+}
+
+/** Whether a code block writes the `<!-- code: … -->` comment: a width, a mark or a kept part. */
+export const hasCodeComment = (node: ProseNode): boolean =>
+  codeWidth(node.attrs.width) !== null || codeSpansOf(node).length > 0 || cleanParts(node.attrs.unknownParts).length > 0
 
 /** A code block's look, every value checked; its marks as the file writes them. */
 export const codeLookOf = (node: ProseNode): CodeLook => ({
@@ -195,20 +207,21 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
           } catch {
             // A broken attribute is no parts.
           }
-          let marks: unknown = null
-          try {
-            marks = JSON.parse(pre.getAttribute(MARKS_ATTR) ?? 'null')
-          } catch {
-            // Broken marks are no marks.
+          // The marks travel as the file holds them, each with its text, and are fitted to the pasted code (D2): a
+          // copy of part of a block keeps the offsets of the whole one, and a mark must never land on other text.
+          const marks = (pre.getAttribute(MARKS_ATTR) ?? '').split('\n').flatMap((part) => parseMarkPart(part) ?? [])
+          return {
+            language: pre.dataset.language,
+            ...lookAttrs({ width: codeWidth(Number(pre.getAttribute(CODE_WIDTH_ATTR))), marks, unknownParts: cleanParts(parts) }, pre.textContent ?? ''),
+            cardLine: cleanCardLine(pre.getAttribute(CARD_LINE_ATTR)),
           }
-          const look = lookAttrs({ width: codeWidth(Number(pre.getAttribute(CODE_WIDTH_ATTR))), marks: [], unknownParts: cleanParts(parts) }, '')
-          return { language: pre.dataset.language, ...look, marks: marksAttr(cleanSpans(pre.textContent ?? '', marks)), cardLine: cleanCardLine(pre.getAttribute(CARD_LINE_ATTR)) }
         },
       },
     ],
     toDOM: (node) => {
       const [tag, attrs, ...content] = base.toDOM!(node) as [string, Record<string, string>, ...DOMOutputSpec[]]
-      const { width, unknownParts } = codeLookOf(node)
+      const width = codeWidth(node.attrs.width)
+      const unknownParts = cleanParts(node.attrs.unknownParts)
       const spans = codeSpansOf(node)
       const cardLine = cleanCardLine(node.attrs.cardLine)
       return [
@@ -217,7 +230,7 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
           ...attrs,
           ...(width !== null && { [CODE_WIDTH_ATTR]: String(width) }),
           ...(unknownParts.length > 0 && { [PARTS_ATTR]: JSON.stringify(unknownParts) }),
-          ...(spans.length > 0 && { [MARKS_ATTR]: JSON.stringify(spans) }),
+          ...(spans.length > 0 && { [MARKS_ATTR]: marksFromSpans(node.textContent, spans).map(formatMarkPart).join('\n') }),
           ...(cardLine !== null && { [CARD_LINE_ATTR]: cardLine }),
         },
         ...content,
@@ -260,8 +273,8 @@ function decorate(doc: ProseNode, from: number, to: number, out: Decoration[]): 
   })
 }
 
-/** A step that can bring or change a code block's attributes (its width, its marks): an attribute step, or one whose slice holds a code block. */
-export function mayChangeCodeAttrs(tr: Transaction): boolean {
+/** A step that can bring or change a width: an attribute step, or one whose slice holds a code block. */
+function mayChangeWidth(tr: Transaction): boolean {
   return tr.steps.some((step) => {
     if (step instanceof AttrStep) return true
     if (!(step instanceof ReplaceStep || step instanceof ReplaceAroundStep)) return false
@@ -433,7 +446,7 @@ export const codeWidthPlugin = $prose(
         apply: (tr, set, oldState) => {
           if (!tr.docChanged) return set
           const mapped = set.map(tr.mapping, tr.doc)
-          if (!mayChangeCodeAttrs(tr)) return mapped
+          if (!mayChangeWidth(tr)) return mapped
           // Only the changed stretch is looked at again: from where the two documents part to where they meet.
           const start = oldState.doc.content.findDiffStart(tr.doc.content)
           const end = oldState.doc.content.findDiffEnd(tr.doc.content)
