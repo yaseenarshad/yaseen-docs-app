@@ -91,6 +91,33 @@ export function inOrder<T>(items: readonly T[], nameOf: (item: T) => string, lis
   return [...known, ...unknown.sort(rest)]
 }
 
+/**
+ * A folder's list while the tree catches up (YAZ-5934): main writes the order of a rename or a delete before the
+ * watcher's echo changes the tree, so for a moment the tree shows an item that the new list (`listed`) no longer
+ * names. Each name of the list used before (`was`) that `listed` does not name, but the tree still shows
+ * (`shown`), keeps its place: after the name that stood before it in `was`. A name the tree no longer shows drops,
+ * so a new item of that name later is unknown (last), as D1 has it. The same list back when nothing is carried.
+ */
+export function carriedOrder(was: readonly string[] | undefined, listed: readonly string[], shown: (name: string) => boolean): readonly string[] {
+  if (was === undefined || was === listed) return listed
+  const named = new Set(listed)
+  if (!was.some((name) => !named.has(name) && shown(name))) return listed
+  const out = [...listed]
+  was.forEach((name, i) => {
+    if (named.has(name) || !shown(name)) return
+    let at = 0
+    for (let j = i - 1; j >= 0; j--) {
+      const k = out.indexOf(was[j])
+      if (k >= 0) {
+        at = k + 1
+        break
+      }
+    }
+    out.splice(at, 0, name)
+  })
+  return out
+}
+
 const parentOf = (rel: string): string => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '')
 const nameOf = (rel: string): string => rel.slice(rel.lastIndexOf('/') + 1)
 const isAtOrBelow = (key: string, rel: string): boolean => key === rel || key.startsWith(`${rel}/`)

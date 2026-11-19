@@ -13037,7 +13037,7 @@ describe('checker (YAZ-5916, YAZ-5917): the smooth drag with a layout', () => {
 
     // BUG YAZ-5934: main writes the order file BEFORE it says `file:renamed`, so the new order (with the new name) reaches
     // the tree while the tree still holds the old name: the row stands at the end of its folder, then jumps back.
-    it.fails('a rename keeps the row in its place while the new order arrives before the tree\'s rename (BUG YAZ-5934)', async () => {
+    it('a rename keeps the row in its place while the new order arrives before the tree\'s rename (YAZ-5934)', async () => {
       const { el, v, bridge } = await mountManual()
       const changed = vi.mocked(bridge.filesOrder.onChanged).mock.calls.at(-1)?.[0]
       // Main's repair after `c.md` → `see.md`: the order names the new file first; the tree has not heard of it yet.
@@ -13045,6 +13045,50 @@ describe('checker (YAZ-5916, YAZ-5917): the smooth drag with a layout', () => {
       await act(async () => changed?.({ root: v }))
       await act(async () => undefined)
       expect(topLabels(el)).toEqual(['c', 'Projects', 'b', 'Archive'])
+    })
+
+    it('a rename and a delete keep the row in its place until the tree hears of them; then the new name has the old place, and a new item of the old name goes last (YAZ-5934)', async () => {
+      const v = '/v-checker-manual-echo'
+      let emit: ((ev: WatchEvent) => void) | undefined
+      const watch = {
+        subscribe: (l: (ev: WatchEvent) => void) => {
+          emit = l
+          return () => undefined
+        },
+      }
+      const order = (names: string[]) => ({ sort: { by: 'manual', reverse: false }, folders: { [v]: names } }) as const
+      const nodes = (...names: string[]) => names.map((name) => (name.endsWith('.md') ? page(`${v}/${name}`, name) : ({ type: 'dir', name, path: `${v}/${name}`, children: [] }) as TreeNode))
+      const { el, bridge } = await mount({ root: v, lens: 'files', settings: MANUAL, watch, onReordered: vi.fn() }, async (b) => {
+        b.tree.mockResolvedValue({ root: v, tree: nodes('Archive', 'Projects', 'b.md', 'c.md'), generatedAt: 1 } as never)
+        b.filesOrder.get.mockResolvedValue(order(['c.md', 'Projects', 'b.md', 'Archive']))
+        b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+        await storage.init()
+      })
+      await act(async () => undefined)
+      const changed = vi.mocked(bridge.filesOrder.onChanged).mock.calls.at(-1)?.[0]
+      // The rename: the order first, then the tree.
+      bridge.filesOrder.get.mockResolvedValue(order(['see.md', 'Projects', 'b.md', 'Archive']))
+      await act(async () => changed?.({ root: v }))
+      await act(async () => undefined)
+      expect(topLabels(el)).toEqual(['c', 'Projects', 'b', 'Archive'])
+      bridge.tree.mockResolvedValue({ root: v, tree: nodes('Archive', 'Projects', 'b.md', 'see.md'), generatedAt: 2 } as never)
+      await act(async () => emit?.({ type: 'unlink', path: `${v}/c.md` }))
+      await afterQuiet()
+      expect(topLabels(el)).toEqual(['see', 'Projects', 'b', 'Archive'])
+      // The delete of `b.md`: the order first, then the tree.
+      bridge.filesOrder.get.mockResolvedValue(order(['see.md', 'Projects', 'Archive']))
+      await act(async () => changed?.({ root: v }))
+      await act(async () => undefined)
+      expect(topLabels(el)).toEqual(['see', 'Projects', 'b', 'Archive'])
+      bridge.tree.mockResolvedValue({ root: v, tree: nodes('Archive', 'Projects', 'see.md'), generatedAt: 3 } as never)
+      await act(async () => emit?.({ type: 'unlink', path: `${v}/b.md` }))
+      await afterQuiet()
+      expect(topLabels(el)).toEqual(['see', 'Projects', 'Archive'])
+      // A new `c.md` and `b.md` are new items: the order does not name them, so they go last, by name.
+      bridge.tree.mockResolvedValue({ root: v, tree: nodes('Archive', 'Projects', 'b.md', 'c.md', 'see.md'), generatedAt: 4 } as never)
+      await act(async () => emit?.({ type: 'add', path: `${v}/c.md`, mtime: 1 }))
+      await afterQuiet()
+      expect(topLabels(el)).toEqual(['see', 'Projects', 'Archive', 'b', 'c'])
     })
   })
 
