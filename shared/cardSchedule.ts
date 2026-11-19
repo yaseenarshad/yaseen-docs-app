@@ -138,15 +138,22 @@ function steps(reviews: readonly CardReview[], s: ReviewSettings): ReplayStep[] 
   return out
 }
 
+/**
+ * The wait a step set, in whole days: FSRS's for a counted answer; for one not counted (YAZ-5789), the days from it to
+ * the date it keeps (0: today, a new card's ✕).
+ */
+const stepWait = ({ card, review, due, counted }: ReplayStep): number =>
+  counted ? card.scheduled_days : Math.max(0, localDay(due) - localDay(Date.parse(review.at)))
+
 /** Replays `reviews` through FSRS: one row per review, in time order. */
 export function cardHistory(reviews: readonly CardReview[], s: ReviewSettings): CardHistoryRow[] {
-  return steps(reviews, s).map(({ review, card, due, comesBack, counted }, i, all) => {
+  return steps(reviews, s).map((step, i, all) => {
+    const { review, due, comesBack, counted } = step
     const at = Date.parse(review.at)
     return {
       review,
       elapsed: i === 0 ? 0 : Math.max(0, Math.round((at - Date.parse(all[i - 1].review.at)) / DAY)),
-      // One not counted waits for the date it keeps: the days from this answer to it (0: today, a new card's ✕).
-      interval: counted ? card.scheduled_days : Math.max(0, localDay(due) - localDay(at)),
+      interval: stepWait(step),
       due,
       comesBack,
       counted,
@@ -176,10 +183,8 @@ export interface CardState {
 export function cardState(reviews: readonly CardReview[], s: ReviewSettings): CardState {
   const last = replay(reviews, s)
   if (last === null) return { isNew: true, due: null, interval: 0, lastReview: null, lapses: 0, comesBack: false }
-  const { card, review, due, comesBack, counted } = last
-  // YAZ-5789: after an answer that was not counted, the wait is the days left to the date it keeps (as `cardHistory`).
-  const interval = counted ? card.scheduled_days : Math.max(0, localDay(due) - localDay(Date.parse(review.at)))
-  return { isNew: false, due, interval, lastReview: review.at, lapses: card.lapses, comesBack }
+  const { card, review, due, comesBack } = last
+  return { isNew: false, due, interval: stepWait(last), lastReview: review.at, lapses: card.lapses, comesBack }
 }
 
 /**
