@@ -154,6 +154,21 @@ describe('the "Card" slash row (D1, idea 9)', () => {
     expect(root.querySelector('.card')).toBeNull()
     expect(root.querySelector('.milkdown-code-block')).not.toBeNull()
   })
+
+  it('YAZ-5937: a page drawn before the index lands (the page open at startup) draws its card as a card when the index says the vault gives IDs; a vault that says no IDs draws it as code again', async () => {
+    // The app's source before the first index: no resolver, `ids` false.
+    const source = createWikilinkResolveSource()
+    const { root } = await mount(`${CARD}<!-- card: WIKI-7 -->\n`, { wikilinks: source, cards: { path: '/v/Page.md' } })
+    source.update((target) => (target === 'France' ? '/v/France.md' : null), [], [], true, ['WIKI'])
+    await tick(10)
+    expect(root.querySelector('.card')).not.toBeNull()
+    expect(root.querySelector('.card .card__id')?.textContent).toBe('WIKI-7')
+    // The vault's IDs go off (Settings): the block is a code block again (D8).
+    source.update((target) => (target === 'France' ? '/v/France.md' : null), [], [], false, [])
+    await tick(10)
+    expect(root.querySelector('.card')).toBeNull()
+    expect(root.querySelector('.milkdown-code-block')).not.toBeNull()
+  })
 })
 
 describe('the card line (load and save)', () => {

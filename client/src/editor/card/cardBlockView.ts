@@ -59,7 +59,7 @@ import { commandsCtx, editorViewCtx, nodeViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
-import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type DecorationSource, type EditorView, type NodeView, type NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { loadCardMenu, withCardMenu } from '../../review/cardMenuLoad'
@@ -964,20 +964,93 @@ export class CardBlockView implements NodeView {
   }
 }
 
+/**
+ * YAZ-5937: each ```card block's view, by its editor, with what `ids()` said when it was made (a card, or a code block).
+ * Before the first index the source says no IDs, so the page open at startup made code blocks. ProseMirror keeps a node
+ * view while its node is the same, so nothing made them again when the index said yes: they stayed code until a reload.
+ */
+const cardBlockViews = new WeakMap<EditorView, Map<NodeView, boolean>>()
+const CARD_IDS_KEY = new PluginKey<boolean>('mdapp-card-ids')
+
+/** Does a ```card block in `editor` have a view made for the other answer of `ids()`? */
+const staleCardViews = (editor: EditorView, ids: boolean): boolean => [...(cardBlockViews.get(editor)?.values() ?? [])].some((made) => made !== ids)
+
 /** The code block's node view: a card for the language `card`, else Crepe's own, unchanged. */
 function cardNodeView(deps: CardDeps) {
   const view = $view(codeWidthSchema.node, (ctx: Ctx): NodeViewConstructor => {
     const ours: NodeViewConstructor = (node, editor, getPos, decorations, inner) => {
       // Crepe's factory, registered before this one (`Object.fromEntries` takes the last, ours).
       const crepe = ctx.get(nodeViewCtx).find(([id, make]) => id === 'code_block' && make !== ours)?.[1] ?? null
+      if (!isCardNode(node)) return crepe === null ? (undefined as unknown as NodeView) : crepe(node, editor, getPos, decorations, inner)
       // A vault that gives no IDs has no cards (D8): its ```card block is a code block, as the index reads it.
-      if (!isCardNode(node) || deps.ids?.() === false) return crepe === null ? (undefined as unknown as NodeView) : crepe(node, editor, getPos, decorations, inner)
+      const made = deps.ids?.() !== false
       const makeCode = crepe === null ? null : (n: ProseNode) => crepe(n, editor, getPos, decorations, inner)
-      return new CardBlockView(node, editor, getPos, deps, makeCode)
+      const nodeView: NodeView | null = made ? new CardBlockView(node, editor, getPos, deps, makeCode) : (makeCode?.(node) ?? null)
+      if (nodeView === null) return undefined as unknown as NodeView
+      // YAZ-5937: the view is made again (`update` says no) once `ids()` says the other thing; `cardIdsPlugin` wakes it.
+      const views = cardBlockViews.get(editor) ?? new Map<NodeView, boolean>()
+      cardBlockViews.set(editor, views)
+      views.set(nodeView, made)
+      const update = nodeView.update?.bind(nodeView)
+      const destroy = nodeView.destroy?.bind(nodeView)
+      nodeView.update = (n, d, i) => (isCardNode(n) && (deps.ids?.() !== false) !== made ? false : (update?.(n, d, i) ?? false))
+      nodeView.destroy = () => {
+        views.delete(nodeView)
+        destroy?.()
+      }
+      return nodeView
     }
     return ours
   })
   return view
+}
+
+/**
+ * YAZ-5937: when the vault's answer to "IDs?" changes (the first index lands, or Settings turns IDs on or off), every
+ * ```card block made for the old answer gets a node decoration that names the new one. A new decoration makes
+ * ProseMirror ask the view to `update`, the view says no, and ProseMirror makes it again: a card, or a code block. No
+ * view is stale on a keystroke, so the plugin then gives no decorations and walks nothing.
+ */
+function cardIdsPlugin(deps: CardDeps) {
+  let editor: EditorView | null = null
+  return $prose(
+    () =>
+      new Plugin<boolean>({
+        key: CARD_IDS_KEY,
+        state: {
+          init: () => deps.ids?.() !== false,
+          apply: (tr, value) => tr.getMeta(CARD_IDS_KEY) ?? value,
+        },
+        view: (view) => {
+          editor = view
+          let last = deps.ids?.() !== false
+          const off = deps.subscribe?.(() => {
+            const now = deps.ids?.() !== false
+            if (now === last) return
+            last = now
+            if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(CARD_IDS_KEY, now).setMeta('addToHistory', false))
+          })
+          return {
+            destroy: () => {
+              off?.()
+              editor = null
+            },
+          }
+        },
+        props: {
+          decorations(state) {
+            const ids = CARD_IDS_KEY.getState(state) ?? true
+            if (editor === null || !staleCardViews(editor, ids)) return DecorationSet.empty
+            const decos: Decoration[] = []
+            state.doc.descendants((node, pos) => {
+              if (isCardNode(node)) decos.push(Decoration.node(pos, pos + node.nodeSize, {}, { cardIds: ids }))
+              return !node.isTextblock
+            })
+            return DecorationSet.create(state.doc, decos)
+          },
+        },
+      }),
+  )
 }
 
 /**
@@ -1408,5 +1481,5 @@ function cardCopies(deps: CardDeps) {
 
 /** The card's plugins for one editor (`createCrepe`): its view, the caret rule, the copy rule, ⌘↵. */
 export function cardBlockPlugins(deps: CardDeps) {
-  return [cardNodeView(deps), cardSelection(), cardKeyGuard(), cardCopies(deps), cardKeys(deps)].flat()
+  return [cardNodeView(deps), cardIdsPlugin(deps), cardSelection(), cardKeyGuard(), cardCopies(deps), cardKeys(deps)].flat()
 }
