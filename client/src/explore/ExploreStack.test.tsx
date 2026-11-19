@@ -34,6 +34,7 @@ import { registerPageView } from '../lib/pageView'
 import { tellReadOnlyEdit } from '../editor/readOnlyEdit'
 import { confirmResetHistory } from '../editor/card/testResetHistory'
 import { placeOf } from '../test-placeName'
+import { openMenuAt } from '../editor/linkMenu'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -614,6 +615,34 @@ describe('the explore stack', () => {
     expect(props.onClose).not.toHaveBeenCalled()
     expect(layers()).toHaveLength(before)
     escape()
+    expect(before > 1 ? layers().length === before - 1 : vi.mocked(props.onClose).mock.calls.length === 1).toBe(true)
+  })
+
+  // YAZ-5980: the editor's menus (a card's ⋯, a link's right-click, an image's, a board's: all `openMenuAt`) closed on a
+  // window listener that ran after the stack's, and did not take the key, so one Esc closed the menu AND the layer.
+  it('YAZ-5980: Esc with an editor menu (openMenuAt) open in a page layer closes the menu alone; the editor`s Esc does not run; the next Esc closes the layer', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const before = layers().length
+    const body = top().querySelector<HTMLElement>('.explore__body') as HTMLElement
+    // The editor's own Esc (createCrepe: the keyboard to the sidebar): it must not run while a menu is open.
+    const field = document.createElement('div')
+    field.tabIndex = -1
+    body.appendChild(field)
+    act(() => field.focus())
+    const editorEsc = vi.fn()
+    field.addEventListener('keydown', (e) => e.key === 'Escape' && editorEsc())
+    act(() => void openMenuAt(body, 40, 50, [{ label: 'Open card', run: () => {} }]))
+    expect(document.querySelector('.ctx-menu')).not.toBeNull()
+    escape()
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    expect(editorEsc).not.toHaveBeenCalled()
+    expect(layers()).toHaveLength(before)
+    expect(props.onClose).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(field)
+    escape()
+    expect(editorEsc).toHaveBeenCalledOnce()
     expect(before > 1 ? layers().length === before - 1 : vi.mocked(props.onClose).mock.calls.length === 1).toBe(true)
   })
 
