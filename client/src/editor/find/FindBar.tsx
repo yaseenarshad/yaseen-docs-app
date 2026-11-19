@@ -24,7 +24,8 @@
  * the only bar that claims ⌘F (the dialog is modal: the page behind it never answers), and its Esc closes the bar, not
  * the dialog.
  *
- * Folds (YAZ-4787): a page's bar has a fold button beside the count. Its menu sets what find does with folded bullets
+ * Folds (YAZ-4787): a page's bar, and a card page's (YAZ-5970), has a fold button beside the count. With the vault's cards on its
+ * words name folded card sides too, which follow the same choice. Its menu sets what find does with folded bullets
  * for this page (`find-folds` in the page); "Use the default" hands it back to Settings › Editor › Find.
  */
 import { useUnit } from '../../vault/unitWord'
@@ -43,7 +44,15 @@ export interface FindBarProps {
   /** The Page bar's own editor mount: its claim IS focus standing inside it. Unread for `page`. */
   hostRef: RefObject<HTMLElement | null>
   /** A page's fold menu (YAZ-4787): the page's own choice (null: none), the app's, and the door that writes the page's. */
-  folds?: { own: FindFolds | null; app: FindFolds; onChange: (folds: FindFolds | null) => void }
+  folds?: {
+    own: FindFolds | null
+    app: FindFolds
+    onChange: (folds: FindFolds | null) => void
+    /** The vault's cards are on (YAZ-5970): the menu's words name folded card sides too. */
+    cards?: boolean
+    /** A card page's menu (YAZ-5970): its own choice is the card page's. */
+    cardPage?: boolean
+  }
 }
 
 /** The fold menu's rows (YAZ-4787), in Settings' order. */
@@ -52,6 +61,12 @@ const FOLD_CHOICES: { value: FindFolds; label: string; hint: string }[] = [
   { value: 'all', label: 'Open every match', hint: 'Every folded bullet that holds a match opens.' },
   { value: 'keep', label: 'Keep folded', hint: 'Finds only what shows. Text in folded bullets does not count.' },
 ]
+/** The same rows' words where the vault's cards are on (YAZ-5970): a folded card side folds as a bullet does. */
+const CARD_FOLD_HINTS: Record<FindFolds, string> = {
+  current: 'Every match counts. Only the current one opens, and it folds again when you move on.',
+  all: 'Every folded bullet or card side that holds a match opens.',
+  keep: 'Finds only what shows. Text in folded bullets or card sides does not count.',
+}
 const foldLabel = (folds: FindFolds): string => FOLD_CHOICES.find((choice) => choice.value === folds)?.label ?? ''
 
 /** The fold button's glyph: a fold chevron pair. */
@@ -200,7 +215,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
               <button
                 type="button"
                 className={`find-bar__btn find-bar__btn--folds${foldMenu ? ' find-bar__btn--on' : ''}`}
-                aria-label="Folded bullets"
+                aria-label={folds.cards === true ? "Folded bullets and card sides" : "Folded bullets"}
                 aria-haspopup="menu"
                 aria-expanded={foldMenu}
                 onMouseDown={hold}
@@ -209,8 +224,8 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
                 <FoldGlyph />
               </button>
               {foldMenu && (
-                <div className="find-folds" role="menu" aria-label="Folded bullets while finding">
-                  <div className="find-folds__head">Folded bullets while finding</div>
+                <div className="find-folds" role="menu" aria-label={folds.cards === true ? 'Folded bullets and card sides while finding' : 'Folded bullets while finding'}>
+                  <div className="find-folds__head">{folds.cards === true ? 'Folded bullets and card sides while finding' : 'Folded bullets while finding'}</div>
                   {FOLD_CHOICES.map((choice) => (
                     <button
                       key={choice.value}
@@ -231,13 +246,13 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
                       </span>
                       <span className="find-folds__text">
                         <span className="find-folds__label">{choice.label}</span>
-                        <span className="find-folds__hint">{choice.hint}</span>
+                        <span className="find-folds__hint">{folds.cards === true ? CARD_FOLD_HINTS[choice.value] : choice.hint}</span>
                       </span>
                     </button>
                   ))}
                   <div className="find-folds__rule" />
                   {folds.own === null ? (
-                    <div className="find-folds__foot">{unit('For this page. The default is in Settings › Editor › Find.')}</div>
+                    <div className="find-folds__foot">{folds.cardPage === true ? 'For this card page. The default is in Settings › Editor › Find.' : unit('For this page. The default is in Settings › Editor › Find.')}</div>
                   ) : (
                     <button
                       type="button"

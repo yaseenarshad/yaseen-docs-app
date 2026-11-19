@@ -1565,8 +1565,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         items: [
           {
             id: 'findFolds',
-            label: 'Folded bullets',
-            hint: 'Keep folded finds only the text that shows.',
+            // YAZ-5970: folded card sides follow the same choice; the words name them only while the vault's cards are on.
+            label: (ctx) => (reviewOn(ctx) ? 'Folded bullets and card sides' : 'Folded bullets'),
+            hint: (ctx) => (reviewOn(ctx) ? 'Folded card sides follow the same choice. Keep folded finds only the text that shows.' : 'Keep folded finds only the text that shows.'),
             keywords: ['find', 'search', 'cmd f', 'fold', 'collapse', 'expand', 'bullets'],
             render: ({ settings, onChange }) => (
               <Segmented options={FIND_FOLDS_OPTIONS} value={settings.findFolds} onChange={(findFolds) => onChange({ ...settings, findFolds })} ariaLabel="Folded bullets" />

@@ -154,6 +154,23 @@ export function openFoldedSideAt(node: Node | null): boolean {
   return true
 }
 
+/** The side holding `node` that a fold rule folds (open or folded now), or null (YAZ-5970: ⌘F's fold choice). */
+export function foldableSideAt(node: Node | null): HTMLElement | null {
+  const el = node instanceof Element ? node : (node?.parentElement ?? null)
+  const side = el?.closest<HTMLElement>('.card__side') ?? null
+  const rule = side?.previousElementSibling
+  return side !== null && rule instanceof HTMLElement && rule.matches(CARD_FOLD_RULE) ? side : null
+}
+
+/**
+ * Opens or folds a foldable `side` (YAZ-5970: ⌘F opens it, and folds it again). `remember` false: a passing open, which a
+ * redraw does not keep; ⌘F remembers only the side it lands on, as a click would.
+ */
+export function setSideOpen(side: HTMLElement, open: boolean, remember = true): void {
+  const rule = side.previousElementSibling
+  if (rule instanceof HTMLElement && rule.matches(CARD_FOLD_RULE)) setRuleOpen(rule, open, remember)
+}
+
 /**
  * A GLOW IN A FOLDED SIDE (YAZ-5923 with YAZ-5904): `cardGlow.ts` marks each side that holds an outside change
  * (`FOLD_GLOW_SIDE_ATTR`; `card.css` lights its folded rule) and, after Next change, sends `FOLD_REVEAL_EVENT` from the

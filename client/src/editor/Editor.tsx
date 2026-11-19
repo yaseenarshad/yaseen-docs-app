@@ -467,7 +467,7 @@ function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, wat
       {wasCard && <CardFileNotice text="This file is no longer a card file." />}
       {file !== null && cardFile && (
         <Suspense fallback={null}>
-          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} outsideChangeGlow={outsideChangeGlow} />
+          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} />
         </Suspense>
       )}
       {file !== null && !cardFile && (
@@ -1361,7 +1361,7 @@ function CrepeHost({
   const toggleThreading = () => void setPageSwitch('bullet-threading', 'Bullet threading', !threadingOn)
   const changeOutsideGlow = (glow: OutsideChangeGlow | null) => void writeOwnKey((content) => writeOutsideGlow(content, glow), 'Outside changes glow')
   /** The find bar's fold menu (YAZ-4787): this page's choice, or null to follow Settings again. */
-  const findFoldsMenu = { own: pageFindFolds, app: findFolds, onChange: (folds: FindFolds | null) => void writeOwnKey((content) => writeFindFolds(content, folds), 'Find folded bullets') }
+  const findFoldsMenu = { own: pageFindFolds, app: findFolds, cards: reviewOn, onChange: (folds: FindFolds | null) => void writeOwnKey((content) => writeFindFolds(content, folds), 'Find folded bullets') }
   /** The cog's "Code block width" / "Table width" (YAZ-4783 layer 2): this page's px, or null to follow Settings again. */
   const changeCodeWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, CODE_WIDTH_KEY, width), 'Code block width')
   const changeTableWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, TABLE_WIDTH_KEY, width), 'Table width')
