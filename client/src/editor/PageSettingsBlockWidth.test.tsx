@@ -112,3 +112,67 @@ describe('the cog’s "Page width" row (YAZ-5640)', () => {
     }
   })
 })
+
+describe('the cog’s "Page width" Custom px and "Position" (YAZ-5871)', () => {
+  type Props = Parameters<typeof PageSettings>[0]
+  function open(props: Props) {
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<PageSettings {...props} />))
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  }
+  const buttons = (label: string) => [...group(label)!.querySelectorAll<HTMLButtonElement>('button')]
+  const press = (button: HTMLButtonElement) => act(() => void button.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+  it('D1: a typed px is the page’s own width, clamped to 400–2400; an empty box on a step changes nothing; an emptied Custom is Default', () => {
+    const onChangePageWidth = vi.fn()
+    open({ pageWidth: 'medium', appContentWidth: 'narrow', onChangePageWidth })
+    expect(field('Page width').value).toBe('')
+    expect(buttons('Page width').find((b) => b.textContent === 'Medium')!.getAttribute('aria-pressed')).toBe('true')
+    enter(field('Page width'))
+    expect(onChangePageWidth).not.toHaveBeenCalled()
+    type(field('Page width'), '760')
+    enter(field('Page width'))
+    expect(onChangePageWidth).toHaveBeenLastCalledWith(760)
+    type(field('Page width'), '99999')
+    enter(field('Page width'))
+    expect(onChangePageWidth).toHaveBeenLastCalledWith(2400)
+    type(field('Page width'), '12')
+    enter(field('Page width'))
+    expect(onChangePageWidth).toHaveBeenLastCalledWith(400)
+    act(() => root.unmount())
+    container.remove()
+    onChangePageWidth.mockClear()
+    open({ pageWidth: 1200, appContentWidth: 760, onChangePageWidth })
+    expect(field('Page width').value).toBe('1200')
+    expect(field('Page width').closest('label')!.hasAttribute('data-own')).toBe(true)
+    expect(buttons('Page width').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false', 'false'])
+    expect(buttons('Page width')[0]!.title).toBe('Default follows Settings › Appearance › Content width: 760 px')
+    type(field('Page width'), '')
+    enter(field('Page width'))
+    expect(onChangePageWidth).toHaveBeenLastCalledWith(null)
+  })
+
+  it('D2: Position is Default · Centre · Left; a pick hands the position, Default hands null; Full (its own or Settings’) turns the row off', () => {
+    const onChangePagePosition = vi.fn()
+    open({ pageWidth: null, appContentWidth: 'narrow', onChangePageWidth: () => undefined, pagePosition: 'left', appContentPosition: 'center', onChangePagePosition })
+    expect(buttons('Position').map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.disabled])).toEqual([['Default', 'false', false], ['Centre', 'false', false], ['Left', 'true', false]])
+    expect(buttons('Position')[0]!.title).toBe('Default follows Settings › Appearance › Page position: Centre')
+    press(buttons('Position')[1]!)
+    expect(onChangePagePosition).toHaveBeenLastCalledWith('center')
+    press(buttons('Position')[0]!)
+    expect(onChangePagePosition).toHaveBeenLastCalledWith(null)
+    act(() => root.unmount())
+    container.remove()
+    for (const [pageWidth, appContentWidth] of [['full', 'narrow'], [null, 'full']] as const) {
+      open({ pageWidth, appContentWidth, onChangePageWidth: () => undefined, pagePosition: null, onChangePagePosition })
+      expect(buttons('Position').every((b) => b.disabled), `${pageWidth} ${appContentWidth}`).toBe(true)
+      act(() => root.unmount())
+      container.remove()
+    }
+    // A page of its own Narrow under Settings' Full has a position again.
+    open({ pageWidth: 'narrow', appContentWidth: 'full', onChangePageWidth: () => undefined, pagePosition: null, onChangePagePosition })
+    expect(buttons('Position').some((b) => b.disabled)).toBe(false)
+  })
+})

@@ -3918,6 +3918,9 @@ export function App() {
       foldingOnByDefault: settings.foldingOnByDefault,
       bulletThreadingOnByDefault: settings.bulletThreading,
       contentWidth: settings.contentWidth,
+      // YAZ-5871: the pages' position, and Card width for a card file's Default.
+      contentPosition: settings.contentPosition,
+      cardWidth: settings.cardWidth,
       onChangeTableOfContents: changeTableOfContents,
       // YAZ-2752: the width of its names column is a SETTING as well.
       tableOfContentsWidth: settings.tableOfContentsWidth,

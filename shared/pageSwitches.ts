@@ -13,7 +13,8 @@
  * The cog's one choice that is not on/off lives here too, by the same rules: `outside-glow` (YAZ-4272 D2), this page's
  * glow for outside changes, one of `OUTSIDE_CHANGE_GLOWS`. So does `find-folds` (YAZ-4787), this page's ⌘F fold choice,
  * one of `FIND_FOLDS`, set from the find bar. So do `code-width` and `table-width` (YAZ-4783), this page's width for its
- * code blocks and its tables, whole px. So does `page-width` (YAZ-5640), this page's Content width, one of `CONTENT_WIDTHS`.
+ * code blocks and its tables, whole px. So does `page-width` (YAZ-5640), this page's Content width, one of `CONTENT_WIDTHS`
+ * or Custom whole px (YAZ-5871), and `page-position` (YAZ-5871), this page's position, one of `CONTENT_POSITIONS`.
  *
  * NO KEY MEANS "FOLLOW THE APP DEFAULT", so old files and files from other tools need no migration.
  * Both `true` and `false` are stored: the page's choice wins over the default in both directions. Any
@@ -21,7 +22,7 @@
  * nothing. Pure: no fs, no DOM. Tests: `pageSwitches.test.ts`.
  */
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { CONTENT_WIDTHS, FIND_FOLDS, isBlockWidth, OUTSIDE_CHANGE_GLOWS, type ContentWidth, type FindFolds, type OutsideChangeGlow } from './types'
+import { FIND_FOLDS, isBlockWidth, isContentPosition, isContentWidth, OUTSIDE_CHANGE_GLOWS, type ContentPosition, type ContentWidth, type FindFolds, type OutsideChangeGlow } from './types'
 
 export const PAGE_SWITCH_KEYS = ['toc', 'section-indent', 'guide-lines', 'folding', 'bullet-threading'] as const
 export type PageSwitchKey = (typeof PAGE_SWITCH_KEYS)[number]
@@ -89,23 +90,44 @@ export function writeOutsideGlow(content: string, glow: OutsideChangeGlow | null
 }
 
 /**
- * This page's own Content width (YAZ-5640): `page-width: narrow | medium | full`. The page cog's "Page width" writes it;
+ * This page's own Content width (YAZ-5640): `page-width: narrow | medium | full`, or Custom, whole px from
+ * `PAGE_WIDTH_MIN` to `PAGE_WIDTH_MAX` (`page-width: 760`, YAZ-5871 D1). The page cog's "Page width" writes it;
  * "Default" removes the key, and the page follows Settings › Appearance › Content width again. It sizes the page's title
- * row, text, comments, linked mentions and table of contents.
+ * row, text, comments, linked mentions and table of contents. A card file holds it too (YAZ-5871 D4): its card's width.
  */
 export const PAGE_WIDTH_KEY = 'page-width'
 
-/** The page's own width, or null: no key, or a value that is not a step (the block is parsed only when it names the key). */
+/** The page's own width, or null: no key, or a value that is not a step or Custom px (the block is parsed only when it names the key). */
 export function readPageWidth(content: string): ContentWidth | null {
   const { frontmatter } = splitFrontmatter(content)
   if (!frontmatter.includes(PAGE_WIDTH_KEY)) return null
   const value = parseFrontmatter(frontmatter).properties[PAGE_WIDTH_KEY]
-  return CONTENT_WIDTHS.includes(value as ContentWidth) ? (value as ContentWidth) : null
+  return isContentWidth(value) ? value : null
 }
 
 /** The page with its own width; `null` removes the key, so the page follows the app setting again. */
 export function writePageWidth(content: string, width: ContentWidth | null): string {
   return readPageWidth(content) === width ? content : setFrontmatterProperty(content, PAGE_WIDTH_KEY, width ?? undefined)
+}
+
+/**
+ * This page's own position (YAZ-5871 D2): `page-position: center | left`. The page cog's "Position" writes it; "Default"
+ * removes the key, and the page follows Settings › Appearance › Page position again. Off with Full. A card file holds it
+ * too (D4).
+ */
+export const PAGE_POSITION_KEY = 'page-position'
+
+/** The page's own position, or null: no key, or a value that is not a position (parsed only when the block names the key). */
+export function readPagePosition(content: string): ContentPosition | null {
+  const { frontmatter } = splitFrontmatter(content)
+  if (!frontmatter.includes(PAGE_POSITION_KEY)) return null
+  const value = parseFrontmatter(frontmatter).properties[PAGE_POSITION_KEY]
+  return isContentPosition(value) ? value : null
+}
+
+/** The page with its own position; `null` removes the key, so the page follows the app setting again. */
+export function writePagePosition(content: string, position: ContentPosition | null): string {
+  return readPagePosition(content) === position ? content : setFrontmatterProperty(content, PAGE_POSITION_KEY, position ?? undefined)
 }
 
 /**

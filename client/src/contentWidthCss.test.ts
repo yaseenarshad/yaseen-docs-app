@@ -3,6 +3,9 @@ import appCss from './app.css?inline'
 import commentsCss from './comments/comments.css?inline'
 import backlinksCss from './links/backlinks.css?inline'
 import folderViewCss from './views/folderView.css?inline'
+import cardCss from './editor/card/card.css?inline'
+import cardEmbedCss from './editor/card/cardEmbed.css?inline'
+import cardScreensCss from './review/cardScreens.css?inline'
 
 const maxWidthFor = (css: string, selector: string): string | undefined => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -29,6 +32,30 @@ describe('content-width CSS contract (YAZ-1176)', () => {
     expect(maxWidthFor(folderViewCss, '.folder-view')).toBe('var(--content-max-width)')
     expect(maxWidthFor(commentsCss, '.comments')).toBe('var(--content-max-width)')
     expect(maxWidthFor(backlinksCss, '.backlinks')).toBe('var(--content-max-width)')
+  })
+
+  it('YAZ-5871 D2: the five column rules start at `--column-start` (0 Left, auto Centre), and keep their right margin auto', () => {
+    const marginOf = (css: string, selector: string) => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return css.replace(/\/\*[\s\S]*?\*\//g, '').match(new RegExp(`${escaped}\\s*\\{[^}]*?\\bmargin:\\s*([^;]+);`, 's'))?.[1].trim()
+    }
+    for (const [css, selector] of [
+      [appCss, '.page-header'],
+      [appCss, '.card-file__page,\n.editor-instance'],
+      [commentsCss, '.comments'],
+      [backlinksCss, '.backlinks'],
+      [folderViewCss, '.folder-view'],
+    ] as const) expect(marginOf(css, selector), selector).toBe('0 auto 0 var(--column-start, auto)')
+    expect(appCss.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/max-width:\s*var\(--content-max-width\);\s*margin:\s*0 auto;/)
+  })
+
+  it('YAZ-5871 D3: a card narrower than its column follows the position, in a page, an embed, a card file and the card window', () => {
+    const rule = cardCss.match(/\.milkdown \.card,\s*\.explore__body--card > :not\(\.find-bar-dock--page\),\s*\.card-file__page > \*\s*\{([^}]*)\}/)?.[1]
+    expect(rule).toMatch(/max-width:\s*calc\(var\(--card-text-width\) \+ 34px\);/)
+    expect(rule).toMatch(/margin-inline:\s*var\(--column-start, auto\) auto;/)
+    // An embed sets only its block margins, and the card window no longer centres on its own.
+    expect(cardEmbedCss).toMatch(/\.milkdown \.card\.card-embed\s*\{\s*margin-block:\s*4px;\s*\}/)
+    expect(cardScreensCss.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/\.explore__body--card > :not\(\.find-bar-dock--page\)\s*\{/)
   })
 
   it('the scroller owns the page\'s ONE tail; the blocks under the page carry no tail and no hairline (YAZ-1680)', () => {

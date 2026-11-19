@@ -374,11 +374,8 @@
 .explore__body--card {
   padding-top: 16px;
 }
-/* Card width (YAZ-5144): the card, its strips and its mentions, as wide as `card.css`'s Card width rule lets them,
-   centred in a wider window. */
-.explore__body--card > :not(.find-bar-dock--page) {
-  margin-inline: auto;
-}
+/* Card width (YAZ-5144): the card, its strips and its mentions, as wide as `card.css`'s Card width rule lets them, at
+   the page position in a wider window (YAZ-5871 D3: `card.css` sets the margin). */
 /* Edit card in the card window (YAZ-5003): the page card's editor; the window's head has the ID, so the card's head
    keeps only "Done esc ⌘↵". */
 .explore-card__edit .card .card__id,

@@ -3,10 +3,11 @@
  * few rules. Each rule that sets a margin or a padding has the weight of two classes, to beat Crepe's reset
  * (`.milkdown * { margin: 0; padding: 0 }`), as the card's own rules do.
  */
-/* In the board host's box, a little closer to its neighbours (the box has its own room). The head says where the card
+/* In the board host's box, a little closer to its neighbours (the box has its own room). Its sides' margins are the
+   page position's (`card.css`, YAZ-5871 D3). The head says where the card
    is from, quietly; a long name ends in "…". */
 .milkdown .card.card-embed {
-  margin: 4px 0;
+  margin-block: 4px;
 }
 .card__head .card-embed__from {
   flex: 0 1 auto;

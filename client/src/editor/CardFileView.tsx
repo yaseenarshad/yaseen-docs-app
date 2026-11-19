@@ -29,8 +29,10 @@
  *    vault or the file is read only, Sync and Saved. The chip turns Read only off as on a page: a time choice unlocks
  *    this tab (`useTimedUnlock`; the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
  *    While locked, Edit card asks first; at the unlock's end an open Edit card is Done first, then the tab locks. The
- *    cog has what applies to a card: "Read only" and the counts. A page's rows (line numbers, folding, the table of
- *    contents, the widths, "Turn into a card file", …) and Collapse all are not there: a card has none of them.
+ *    cog has what applies to a card: "Read only", "Card width" and "Position" (YAZ-5871 D4: the file's own `page-width`
+ *    and `page-position`; Default follows Settings › Review › Card width and Appearance › Page position), and the counts.
+ *    A page's other rows (line numbers, folding, the table of contents, the code and table widths, "Turn into a card
+ *    file", …) and Collapse all are not there: a card has none of them.
  *  - ⌘F (YAZ-5378): the page's find bar, over the title and the card as the tab shows them (`cardFind.ts`, the page's
  *    own card search), the Edit card editor's text while it is open.
  *  - COMMENTS (YAZ-5466): the page's one comments block (`CommentsSection`, the file's front matter `comments`), under the
@@ -49,7 +51,10 @@ import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
 import { tellReadOnlyEdit } from './readOnlyEdit'
 import { withCardNext, type CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
-import type { CommentsOrder, FileResponse, GithubSyncStatus, ZoomStep } from '@shared/types'
+import { isCardWidth, type CommentsOrder, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type ZoomStep } from '@shared/types'
+import { readPagePosition, readPageWidth, writePagePosition, writePageWidth } from '@shared/pageSwitches'
+import { cardTextWidth, columnStart, positionOf, widthOf } from '../lib/contentWidth'
+import { storage } from '../lib/storage'
 import { CommentsSection } from '../comments/CommentsSection'
 import type { SaveStatus } from '../lib/autosave'
 import { transformFile } from '../views/writeProperty'
@@ -115,6 +120,10 @@ export interface CardFileViewProps {
   /** The comments' order (YAZ-5466): the app's one setting, as a page's block reads it. Absent: no comments block. */
   commentsOrder?: CommentsOrder
   onChangeCommentsOrder?: (order: CommentsOrder) => void
+  /** Settings › Appearance › Content width and Page position, and Settings › Review › Card width (YAZ-5871 D4): the cog's Defaults. Absent → the app's settings now. */
+  contentWidth?: ContentWidth
+  contentPosition?: ContentPosition
+  cardWidth?: number | null
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
@@ -136,7 +145,7 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, contentWidth, contentPosition, cardWidth }: CardFileViewProps) {
   const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
@@ -245,6 +254,12 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   /** The cog's row and the chip's "Turn Read only off": the file's own `readonly` key, on the newest bytes. */
   const setReadOnly = (on: boolean) =>
     void transformFile(path, (text) => setPageReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
+  /**
+   * The cog's "Card width" and "Position" (YAZ-5871 D4): the card file's own `page-width` and `page-position`, on the
+   * newest bytes. `null` removes the key: the card follows Settings › Review › Card width and Appearance › Page position.
+   */
+  const setOwnKey = (row: string, change: (text: string) => string) =>
+    void transformFile(path, change).then(read, (err: unknown) => onNotice(`${row} could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
   /** Done: the card's text, its sides only. The band is the only title: Edit card shows it, with no field (YAZ-5392). */
   const editDone = (text: string) => {
@@ -350,6 +365,20 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
         onReturn: giveKeysBack,
       }
   const cardText = card?.text ?? ''
+  // The card's width and position (YAZ-5871 D4): its own keys, else Card width (Same as pages is Content width) and Page position.
+  const app = storage.getSettings()
+  const appCardWidth = cardWidth !== undefined ? cardWidth : app?.cardWidth
+  const defaultWidth: ContentWidth = isCardWidth(appCardWidth) ? appCardWidth : widthOf(contentWidth ?? app?.contentWidth)
+  const appPosition = positionOf(contentPosition ?? app?.contentPosition)
+  const ownWidth = readPageWidth(content)
+  const ownPosition = readPagePosition(content)
+  const width = ownWidth ?? defaultWidth
+  // Its own width sets its card's `--card-text-width`, and the column as wide (its 48 px sides), so Full fills the window.
+  const fileStyle = {
+    '--document-zoom': zoom / 100,
+    '--column-start': columnStart(ownPosition ?? appPosition, width),
+    ...(ownWidth !== null && { '--card-text-width': cardTextWidth(ownWidth), '--content-max-width': `calc(${cardTextWidth(ownWidth)} + 96px)` }),
+  } as CSSProperties
   const propertyCount = Object.keys(card?.properties ?? {}).length
   const propertiesLabel = propertyCount > 0 ? `Properties (${propertyCount})` : 'Properties'
 
@@ -373,11 +402,14 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
             {propertyCount > 0 && <span className="frontmatter-panel__count">{propertyCount}</span>}
           </button>
         )}
-        <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} readText={() => cardText} />
+        <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} readText={() => cardText}
+          // YAZ-5871 D4: the card's own width and position, saved in the card file. Default follows Card width and Page position.
+          pageWidth={ownWidth} appContentWidth={defaultWidth} pageWidthLabel="Card width" pageWidthSettings="Review › Card width" onChangePageWidth={(next) => setOwnKey('Card width', (text) => writePageWidth(text, next))}
+          pagePosition={ownPosition} appContentPosition={appPosition} onChangePagePosition={(next) => setOwnKey('Position', (text) => writePagePosition(text, next))} />
       </StatusChips>
       <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
-      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
+      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown} style={fileStyle}>
         <div className="card-file__page">
           {/* YAZ-5392: above the card, the folder path only. The title lives in the card's band, as in a page. YAZ-5402: the folder icon says it is a folder. */}
           <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />

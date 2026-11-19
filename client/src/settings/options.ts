@@ -5,7 +5,7 @@
  * resolution, the folder for a new page). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
 import type { UnitText } from '../vault/unitWord'
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarPlace, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TablePosition, type CardTablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentPosition, type ContentStep, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarPlace, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TablePosition, type CardTablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 import type { TableSlotTime } from '@shared/tableLook'
 
 export interface Option<T> {
@@ -21,10 +21,20 @@ export const THEME_OPTIONS: readonly Option<Theme>[] = [
 ]
 
 /** Global reading-surface width presets (YAZ-1176); App owns their exact CSS mapping. */
-export const CONTENT_WIDTH_OPTIONS: readonly Option<ContentWidth>[] = [
+export const CONTENT_WIDTH_OPTIONS: readonly Option<ContentStep>[] = [
   { label: 'Narrow', value: 'narrow' },
   { label: 'Medium', value: 'medium' },
   { label: 'Full', value: 'full' },
+]
+
+/** A width's name in words (YAZ-5871): a step's label, or Custom's px. */
+export const contentWidthLabel = (width: ContentWidth): string =>
+  typeof width === 'number' ? `${width} px` : (CONTENT_WIDTH_OPTIONS.find((option) => option.value === width)?.label ?? 'Narrow')
+
+/** Settings › Appearance › Page position and the page cog's "Position" (YAZ-5871 D2). */
+export const CONTENT_POSITION_OPTIONS: readonly Option<ContentPosition>[] = [
+  { label: 'Centre', value: 'center' },
+  { label: 'Left', value: 'left' },
 ]
 
 /** draw.io diagrams in dark mode (YAZ-3037; Draw's 🔒 YAZ-1802 D16): the default for every diagram. */

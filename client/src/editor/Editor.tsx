@@ -1,6 +1,6 @@
 import { useUnit } from '../vault/unitWord'
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
-import { DEFAULT_SETTINGS, folderSettingsPath, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type FindFolds, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { DEFAULT_SETTINGS, folderSettingsPath, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type FindFolds, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, HotkeyAside } from '@shared/keys'
@@ -50,8 +50,8 @@ import './outline/sectionIndent.css'
 import './softBreaks.css'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { withLf } from '@shared/lineEnds'
-import { CODE_WIDTH_KEY, readBlockWidth, readFindFolds, readOutsideGlow, readPageSwitches, readPageWidth, writeBlockWidth, writeFindFolds, writeOutsideGlow, writePageSwitch, writePageWidth, TABLE_WIDTH_KEY, type PageSwitchKey } from '@shared/pageSwitches'
-import { contentTextWidth } from '../lib/contentWidth'
+import { CODE_WIDTH_KEY, readBlockWidth, readFindFolds, readOutsideGlow, readPageSwitches, readPagePosition, readPageWidth, writeBlockWidth, writeFindFolds, writeOutsideGlow, writePagePosition, writePageSwitch, writePageWidth, TABLE_WIDTH_KEY, type PageSwitchKey } from '@shared/pageSwitches'
+import { columnStart, contentTextWidth } from '../lib/contentWidth'
 import { watchBlockRoom } from './blockRoom'
 import { undo } from '@milkdown/kit/prose/history'
 import { CODE_WIDTH_DRAGGED, codeBlockCount, codeWidthsToPage, type CodeWidthDragged } from './code/codeWidth'
@@ -234,6 +234,10 @@ interface EditorProps {
   bulletThreadingOnByDefault?: boolean
   /** The content width setting: with the page's own width it decides whether `auto` shows names or lines. Absent → `narrow`, the default. */
   contentWidth?: ContentWidth
+  /** Settings › Appearance › Page position (YAZ-5871 D2): the page's position when it has no `page-position`. Absent → `center`, the default. */
+  contentPosition?: ContentPosition
+  /** Settings › Review › Card width (YAZ-5144): a card file's Default (YAZ-5871 D4); `null` follows `contentWidth`. Absent → `null`. */
+  cardWidth?: number | null
   /** The table of contents' own "Pin" / "Unpin" write the SETTING through this. */
   onChangeTableOfContents?: (mode: TableOfContentsMode) => void
   /** The width setting of the table of contents' names column (YAZ-2752), px. Absent → `TOC_DEFAULT_W`. */
@@ -339,7 +343,7 @@ export function Editor(props: EditorProps) {
   )
 }
 
-function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderPageEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
+function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderPageEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -355,7 +359,7 @@ function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFold
       // The Page tab (YAZ-4584 D38): the page editor on the folder's `.folder.md`, with this tab's link, sync and page
       // props. No Back steps (`tabId`, `zoomKey`, `onZoom`) and no start view: those are the folder tab's.
       const renderPage = () => (
-        <MarkdownEditor inFolderPage drawingSettings={drawingSettings} root={root} path={folderSettingsPath(path)} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
+        <MarkdownEditor inFolderPage drawingSettings={drawingSettings} root={root} path={folderSettingsPath(path)} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
       )
       return (
         <section className="editor">
@@ -413,7 +417,7 @@ function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFold
       </section>
     )
   }
-  return <MarkdownEditor drawingSettings={drawingSettings} root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
+  return <MarkdownEditor drawingSettings={drawingSettings} root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
 }
 
 /**
@@ -434,7 +438,7 @@ interface FolderPageMode {
  * card file.", until the tab reads the file again. A second card is the card view's own notice, never the page. A
  * folder page's Page tab is never a card file.
  */
-function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps & FolderPageMode & { drawingSettings: DrawingAppSettings }) {
+function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps & FolderPageMode & { drawingSettings: DrawingAppSettings }) {
   // A convert that kept the file's name (YAZ-5037: a page turned into a card file, or back) reads it again: the right view.
   const [revision, setRevision] = useState(0)
   const reread = useCallback(() => setRevision((n) => n + 1), [])
@@ -454,11 +458,11 @@ function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, wat
       {wasCard && <CardFileNotice text="This file is no longer a card file." />}
       {file !== null && cardFile && (
         <Suspense fallback={null}>
-          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
+          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} />
         </Suspense>
       )}
       {file !== null && !cardFile && (
-        <CrepeHost key={file.path} inFolderPage={inFolderPage} {...drawingSettings} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} onReread={reread} />
+        <CrepeHost key={file.path} inFolderPage={inFolderPage} {...drawingSettings} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} onReread={reread} />
       )}
     </>
   )
@@ -505,6 +509,7 @@ function CrepeHost({
   foldingOnByDefault = DEFAULT_SETTINGS.foldingOnByDefault,
   bulletThreadingOnByDefault = DEFAULT_SETTINGS.bulletThreading,
   contentWidth = 'narrow',
+  contentPosition = 'center',
   onChangeTableOfContents = noTableOfContentsChange,
   tableOfContentsWidth = TOC_DEFAULT_W,
   onChangeTableOfContentsWidth = noTableOfContentsChange,
@@ -564,6 +569,7 @@ function CrepeHost({
   foldingOnByDefault?: boolean
   bulletThreadingOnByDefault?: boolean
   contentWidth?: ContentWidth
+  contentPosition?: ContentPosition
   onChangeTableOfContents?: (mode: TableOfContentsMode) => void
   tableOfContentsWidth?: number
   onChangeTableOfContentsWidth?: (width: number) => void
@@ -850,6 +856,9 @@ function CrepeHost({
    */
   const diskPageWidth = useMemo(() => readPageWidth(disk), [disk])
   const pageWidth = inFolderPage ? null : diskPageWidth
+  /** This page's own position (YAZ-5871 D2): its `page-position` key, as `page-width`. With Full there is none (`columnStart`). */
+  const diskPagePosition = useMemo(() => readPagePosition(disk), [disk])
+  const pagePosition = inFolderPage ? null : diskPagePosition
   // Read by the editor's mount (createCrepe), which must not re-run when the switch turns: the effect below sends the change.
   const foldingOnRef = useRef(foldingOn)
   foldingOnRef.current = foldingOn
@@ -1342,6 +1351,8 @@ function CrepeHost({
   const changeTableWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, TABLE_WIDTH_KEY, width), 'Table width')
   /** The cog's "Page width" (YAZ-5640): this page's step, or null to follow Settings again. */
   const changePageWidth = (width: ContentWidth | null) => void writeOwnKey((content) => writePageWidth(content, width), unit('Page width'))
+  /** The cog's "Position" (YAZ-5871 D2): this page's Centre or Left, or null to follow Settings again. */
+  const changePagePosition = (position: ContentPosition | null) => void writeOwnKey((content) => writePagePosition(content, position), 'Position')
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
@@ -1556,7 +1567,7 @@ function CrepeHost({
     />
   )
   /** The cog's page switches: a page's own cog, or the folder page's for its Page tab (YAZ-4584 D38). */
-  const cog: FolderPageTab['cog'] = { lineNumbers: lineNumbersOn, onToggleLineNumbers: () => setLineNumbersOn((on) => !on), sectionIndent: sectionIndentOn, onToggleSectionIndent: toggleSectionIndent, guideLines: guideLinesOn, onToggleGuideLines: toggleGuideLines, folding: foldingOn, onToggleFolding: toggleFolding, bulletThreading: threadingOn, onToggleBulletThreading: toggleThreading, headingLevels: headingLevelsOn, onToggleHeadingLevels: () => setHeadingLevelsOn((on) => !on), tableOfContents: tableOfContentsOn, onToggleTableOfContents: toggleTableOfContents, tocSource, onChangeTocSource: tableOfContentsOn ? changeTocSource : undefined, outsideGlow: pageGlow, appGlow: outsideChangeGlow, onChangeOutsideGlow: changeOutsideGlow, ...(!inFolderPage && { pageWidth, appContentWidth: contentWidth, onChangePageWidth: changePageWidth }), codeWidth: pageCodeWidth, onChangeCodeWidth: changeCodeWidth, tableWidth: pageTableWidth, onChangeTableWidth: changeTableWidth, readText: () => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '') }
+  const cog: FolderPageTab['cog'] = { lineNumbers: lineNumbersOn, onToggleLineNumbers: () => setLineNumbersOn((on) => !on), sectionIndent: sectionIndentOn, onToggleSectionIndent: toggleSectionIndent, guideLines: guideLinesOn, onToggleGuideLines: toggleGuideLines, folding: foldingOn, onToggleFolding: toggleFolding, bulletThreading: threadingOn, onToggleBulletThreading: toggleThreading, headingLevels: headingLevelsOn, onToggleHeadingLevels: () => setHeadingLevelsOn((on) => !on), tableOfContents: tableOfContentsOn, onToggleTableOfContents: toggleTableOfContents, tocSource, onChangeTocSource: tableOfContentsOn ? changeTocSource : undefined, outsideGlow: pageGlow, appGlow: outsideChangeGlow, onChangeOutsideGlow: changeOutsideGlow, ...(!inFolderPage && { pageWidth, appContentWidth: contentWidth, onChangePageWidth: changePageWidth, pagePosition, appContentPosition: contentPosition, onChangePagePosition: changePagePosition }), codeWidth: pageCodeWidth, onChangeCodeWidth: changeCodeWidth, tableWidth: pageTableWidth, onChangeTableWidth: changeTableWidth, readText: () => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '') }
   // The Page tab hands its switches, save state and fold-all button to the folder page's toolbar while it shows, again
   // on each render (a switch or the save state moved), and takes them back as it goes (YAZ-4584 D38, YAZ-3746 D35, 10D).
   // A render is a save cycle or a switch, never a keystroke.
@@ -1616,7 +1627,8 @@ function CrepeHost({
         <PageFrame
           {...scrollerData}
           // The page's own width (YAZ-5640) over Settings' on `.app`: app.css works out `--content-max-width` from it here.
-          style={{ '--document-zoom': documentZoom / 100, ...(pageWidth !== null && { '--content-text-width': contentTextWidth(pageWidth) }) } as CSSProperties}
+          // Its own position (YAZ-5871 D2) too, as `--column-start`: only when the page has a key of its own, else it inherits `.app`'s.
+          style={{ '--document-zoom': documentZoom / 100, ...(pageWidth !== null && { '--content-text-width': contentTextWidth(pageWidth) }), ...((pageWidth !== null || pagePosition !== null) && { '--column-start': columnStart(pagePosition ?? contentPosition, pageWidth ?? contentWidth) }) } as CSSProperties}
           header={
             <>
               <PageTitle

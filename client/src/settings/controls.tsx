@@ -17,9 +17,11 @@ interface ChoiceProps<T> {
   value: T
   onChange: (value: T) => void
   ariaLabel?: string
+  /** Every choice greyed out, with no click (YAZ-5871: Page position while Content width is Full). */
+  disabled?: boolean
 }
 
-export function Segmented<T>({ options, value, onChange, ariaLabel }: ChoiceProps<T>) {
+export function Segmented<T>({ options, value, onChange, ariaLabel, disabled }: ChoiceProps<T>) {
   return (
     <div className="settings__options" role="group" aria-label={ariaLabel}>
       {options.map((option) => (
@@ -28,6 +30,7 @@ export function Segmented<T>({ options, value, onChange, ariaLabel }: ChoiceProp
           type="button"
           className={`settings__option${option.value === value ? ' settings__option--active' : ''}`}
           aria-pressed={option.value === value}
+          disabled={disabled}
           onClick={() => onChange(option.value)}
         >
           {option.label}

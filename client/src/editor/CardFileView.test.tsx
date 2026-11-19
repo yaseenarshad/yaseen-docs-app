@@ -712,6 +712,35 @@ describe('the top bar of a card file (YAZ-5102)', () => {
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
   })
 
+  it('YAZ-5871 D4: the cog has Card width and Position, saved in the card file; its own width sizes its card and column; Full turns Position off', async () => {
+    await mount(FILE)
+    const file = () => el.querySelector<HTMLElement>('[data-card-file]')!
+    // No keys of its own: the card inherits Card width; Settings' position (Centre) is its start.
+    expect(file().style.getPropertyValue('--card-text-width')).toBe('')
+    expect(file().style.getPropertyValue('--column-start')).toBe('auto')
+    cogRows()
+    const group = (label: string) => document.querySelector<HTMLElement>(`.page-settings__menu [role="group"][aria-label="${label}"]`)!
+    const pick = (label: string, choice: string) => act(() => [...group(label).querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === choice)!.click())
+    expect([...group('Card width').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Default', 'Narrow', 'Medium', 'Full'])
+    expect(group('Card width').querySelector('button')!.title).toMatch(/^Default follows Settings › Review › Card width: /)
+    expect([...group('Position').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Default', 'Centre', 'Left'])
+    pick('Position', 'Left')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(`---\nkind: card\npage-position: left\n---\n${CARD}`))
+    await vi.waitFor(() => expect(file().style.getPropertyValue('--column-start')).toBe('0'))
+    pick('Card width', 'Medium')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('page-width: medium'))
+    await vi.waitFor(() => expect(file().style.getPropertyValue('--card-text-width')).toBe('900px'))
+    expect(file().style.getPropertyValue('--content-max-width')).toBe('calc(900px + 96px)')
+    pick('Card width', 'Full')
+    await vi.waitFor(() => expect(file().style.getPropertyValue('--card-text-width')).toBe('100vw'))
+    expect(file().style.getPropertyValue('--column-start')).toBe('auto')
+    expect([...group('Position').querySelectorAll('button')].every((b) => b.disabled)).toBe(true)
+    // The keys are the app's: they are not card properties.
+    expect(el.querySelector('.card-file__properties .frontmatter-panel__count')).toBeNull()
+    pick('Card width', 'Default')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(`---\nkind: card\npage-position: left\n---\n${CARD}`))
+  })
+
   it('the zoom: Zoom in sizes the card up, as a page`s text', async () => {
     await mount(FILE)
     act(() => bar()!.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!.click())

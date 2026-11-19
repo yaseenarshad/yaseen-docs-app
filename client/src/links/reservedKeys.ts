@@ -4,12 +4,12 @@ import { HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, SHOW_OTHER_FILES_KE
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { PAGE_ID_KEY } from '@shared/pageId'
 import { TITLE_KEY } from '@shared/pageName'
-import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS, PAGE_WIDTH_KEY, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
+import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_POSITION_KEY, PAGE_SWITCH_KEYS, PAGE_WIDTH_KEY, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 
 // `show_page_file` (YAZ-3746 D37), `hover_preview` (YAZ-4601 D51; legacy), `hover_rows` and `hover_links` (demo 13D), `show_other_files` (YAZ-4597), `confirm_changes` (13AN), `inherit_columns` (YAZ-4713 C12), `column_marks` (C11) and `show_new_buttons` (13BL): a folder page's cog sets them, as a page's cog sets its page switches.
-const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, PAGE_WIDTH_KEY, SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, COLUMN_MARKS_KEY, SHOW_NEW_BUTTONS_KEY])
+const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, PAGE_WIDTH_KEY, PAGE_POSITION_KEY, SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, COLUMN_MARKS_KEY, SHOW_NEW_BUTTONS_KEY])
 const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, PAGE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY])
 
 /**
