@@ -12926,3 +12926,196 @@ describe('Files under Manual (YAZ-5916)', () => {
     expect(el.querySelector('.tree__row--drop')).toBeNull()
   })
 })
+
+/**
+ * Checker tests for PR #278 (YAZ-5916, YAZ-5917): the smooth drag with a real layout. jsdom draws no box, so the other
+ * tests of the drag take the no-layout path (`liftRow` returns null). Here each `li` of a list gets a 24 px box, so
+ * the lift, the gap and the drop's slot run as they do in the app.
+ */
+describe('checker (YAZ-5916, YAZ-5917): the smooth drag with a layout', () => {
+  const ROW = 24
+  const TOP = 100
+  /** Each `li` of a `ul.tree` is ROW px tall, one below the other from TOP; a row has its `li`'s box; anything else has none. */
+  const withLayout = () =>
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const box = (top: number, height: number) => ({ x: 0, y: top, top, left: 0, right: 200, bottom: top + height, width: 200, height, toJSON: () => ({}) }) as DOMRect
+      const li = this.matches('li') ? this : this.matches('.tree__row') ? this.closest('li') : null
+      if (this.matches('ul.tree')) return box(TOP, this.querySelectorAll(':scope > li').length * ROW)
+      if (li !== null && li.parentElement?.matches('ul.tree') === true) return box(TOP + [...li.parentElement.children].indexOf(li) * ROW, ROW)
+      return box(0, 0)
+    })
+  const page = (path: string, name: string): TreeNode => ({ type: 'file', name, path, size: 1, mtime: 1, kind: 'markdown' })
+  const mouse = (target: EventTarget | null | undefined, type: string, init: MouseEventInit = {}) => act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })))
+  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const topLabels = (el: HTMLElement) => [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)
+  const liOf = (el: HTMLElement, path: string) => rowByPath(el, path)?.closest('li') ?? null
+  /** The middle of the item at `i` of the list. */
+  const mid = (i: number) => TOP + i * ROW + ROW / 2
+
+  describe('Files under Manual', () => {
+    const MANUAL: SettingsState = { ...TEST_SETTINGS, sidebarSort: { ...TEST_SETTINGS.sidebarSort, files: { by: 'manual', reverse: false } } }
+    let n = 0
+    const mountManual = async () => {
+      const v = `/v-checker-manual-${++n}`
+      const m = await mount({ root: v, lens: 'files', settings: MANUAL, onReordered: vi.fn() }, async (b) => {
+        b.tree.mockResolvedValue({ root: v, tree: [{ type: 'dir', name: 'Archive', path: `${v}/Archive`, children: [] }, { type: 'dir', name: 'Projects', path: `${v}/Projects`, children: [] }, page(`${v}/b.md`, 'b.md'), page(`${v}/c.md`, 'c.md')], generatedAt: 1 } as never)
+        b.filesOrder.get.mockResolvedValue({ sort: { by: 'manual', reverse: false }, folders: { [v]: ['c.md', 'Projects', 'b.md', 'Archive'] } })
+        b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+        await storage.init()
+      })
+      await act(async () => undefined)
+      return { ...m, v }
+    }
+
+    it('a press that moves 9 px, or 12 px sideways, is no drag; 10 px down lifts the row, the rows it passes slide up to open the gap, and the drop writes that one order and moves nothing on disk', async () => {
+      const { el, v, bridge, props } = await mountManual()
+      const layout = withLayout()
+      try {
+        expect(topLabels(el)).toEqual(['c', 'Projects', 'b', 'Archive'])
+        const c = () => rowByPath(el, `${v}/c.md`)
+        const press = () => {
+          mouse(window, 'mousedown', { clientX: 40, clientY: mid(0) })
+          mouse(c(), 'dragstart')
+        }
+        // 9 px straight down: still a click.
+        press()
+        mouse(c(), 'mousemove', { clientX: 40, clientY: mid(0) + 9, buttons: 1 })
+        expect(el.querySelector('li[data-lifted]')).toBeNull()
+        mouse(c(), 'mouseup', { clientX: 40, clientY: mid(0) + 9 })
+        // 12 px sideways and 3 px down (12.4 px): a wobble, no drag.
+        press()
+        mouse(c(), 'mousemove', { clientX: 52, clientY: mid(0) + 3, buttons: 1 })
+        expect(el.querySelector('li[data-lifted]')).toBeNull()
+        mouse(c(), 'mouseup', { clientX: 52, clientY: mid(0) + 3 })
+        expect(bridge.filesOrder.setFolder).not.toHaveBeenCalled()
+        // 10 px down: it lifts.
+        press()
+        mouse(c(), 'mousemove', { clientX: 40, clientY: mid(0) + 10, buttons: 1 })
+        expect(liOf(el, `${v}/c.md`)?.hasAttribute('data-lifted')).toBe(true)
+        // Past the middle of b: the gap opens before Archive; Projects and b slide up by one row, Archive stays.
+        const y = mid(2) + 4
+        mouse(rowByPath(el, `${v}/b.md`), 'mousemove', { clientX: 40, clientY: y, buttons: 1 })
+        expect(liOf(el, `${v}/Projects`)?.style.transform).toBe(`translateY(${-ROW}px)`)
+        expect(liOf(el, `${v}/b.md`)?.style.transform).toBe(`translateY(${-ROW}px)`)
+        expect(liOf(el, `${v}/Archive`)?.style.transform).toBe('')
+        expect(liOf(el, `${v}/c.md`)?.style.transform).toBe(`translateY(${y - mid(0)}px)`)
+        mouse(rowByPath(el, `${v}/b.md`), 'mouseup', { clientX: 40, clientY: y })
+        expect(bridge.filesOrder.setFolder).toHaveBeenCalledExactlyOnceWith(v, v, ['Projects', 'b.md', 'c.md', 'Archive'])
+        expect(props.onRenameFile).not.toHaveBeenCalled()
+        expect(props.onMoveEntries).not.toHaveBeenCalled()
+        await act(async () => undefined)
+        expect(topLabels(el)).toEqual(['Projects', 'b', 'c', 'Archive'])
+      } finally {
+        layout.mockRestore()
+      }
+    })
+
+    it('Esc during a lifted drag puts every row back and writes nothing; the release after it drops nothing', async () => {
+      const { el, v, bridge } = await mountManual()
+      const layout = withLayout()
+      try {
+        mouse(window, 'mousedown', { clientX: 40, clientY: mid(3) })
+        mouse(rowByPath(el, `${v}/Archive`), 'dragstart')
+        mouse(rowByPath(el, `${v}/Archive`), 'mousemove', { clientX: 40, clientY: mid(3) - 10, buttons: 1 })
+        mouse(rowByPath(el, `${v}/c.md`), 'mousemove', { clientX: 40, clientY: mid(0) - 4, buttons: 1 })
+        expect(liOf(el, `${v}/c.md`)?.style.transform).toBe(`translateY(${ROW}px)`)
+        const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+        act(() => void document.body.dispatchEvent(esc))
+        expect(esc.defaultPrevented).toBe(true)
+        // Reduced motion in jsdom (no matchMedia): everything is home in the next task.
+        await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+        expect(el.querySelector('li[data-lifted]')).toBeNull()
+        expect(el.querySelector('ul[data-lift-list]')).toBeNull()
+        expect([...el.querySelectorAll<HTMLElement>('ul.tree > li')].map((li) => li.style.transform)).toEqual(['', '', '', ''])
+        mouse(rowByPath(el, `${v}/c.md`), 'mouseup', { clientX: 40, clientY: mid(0) - 4 })
+        expect(bridge.filesOrder.setFolder).not.toHaveBeenCalled()
+        expect(topLabels(el)).toEqual(['c', 'Projects', 'b', 'Archive'])
+      } finally {
+        layout.mockRestore()
+      }
+    })
+
+    // BUG YAZ-5934: main writes the order file BEFORE it says `file:renamed`, so the new order (with the new name) reaches
+    // the tree while the tree still holds the old name: the row stands at the end of its folder, then jumps back.
+    it.fails('a rename keeps the row in its place while the new order arrives before the tree\'s rename (BUG YAZ-5934)', async () => {
+      const { el, v, bridge } = await mountManual()
+      const changed = vi.mocked(bridge.filesOrder.onChanged).mock.calls.at(-1)?.[0]
+      // Main's repair after `c.md` → `see.md`: the order names the new file first; the tree has not heard of it yet.
+      bridge.filesOrder.get.mockResolvedValue({ sort: { by: 'manual', reverse: false }, folders: { [v]: ['see.md', 'Projects', 'b.md', 'Archive'] } })
+      await act(async () => changed?.({ root: v }))
+      await act(async () => undefined)
+      expect(topLabels(el)).toEqual(['c', 'Projects', 'b', 'Archive'])
+    })
+  })
+
+  it('Hide all others and Manual together: a drag inside the folder shown alone reorders that folder, and the bar stays', async () => {
+    const v = '/v-checker-alone'
+    const MANUAL: SettingsState = { ...TEST_SETTINGS, sidebarSort: { ...TEST_SETTINGS.sidebarSort, files: { by: 'manual', reverse: false } } }
+    const { el, bridge, props } = await mount({ root: v, lens: 'files', settings: MANUAL, filesOnly: `${v}/Projects`, onFilesOnly: vi.fn() }, async (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: [{ type: 'dir', name: 'Projects', path: `${v}/Projects`, children: [page(`${v}/Projects/p1.md`, 'p1.md'), page(`${v}/Projects/p2.md`, 'p2.md')] }, page(`${v}/top.md`, 'top.md')], generatedAt: 1 } as never)
+      b.filesOrder.get.mockResolvedValue({ sort: { by: 'manual', reverse: false }, folders: { [`${v}/Projects`]: ['p1.md', 'p2.md'] } })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+      await storage.init()
+    })
+    await act(async () => undefined)
+    expect(el.querySelector('.sidebar__focus-bar span')?.textContent).toBe('Only Projects')
+    expect(rowByPath(el, `${v}/top.md`)).toBeNull()
+    // No layout here: the drop lands on the half of the row under the pointer (jsdom's zero box reads y < 0 as "before").
+    mouse(window, 'mousedown', { clientX: 0, clientY: 0 })
+    mouse(rowByPath(el, `${v}/Projects/p2.md`), 'dragstart')
+    mouse(window, 'mousemove', { clientY: -10, buttons: 1 })
+    mouse(rowByPath(el, `${v}/Projects/p1.md`), 'mousemove', { clientY: -1, buttons: 1 })
+    mouse(rowByPath(el, `${v}/Projects/p1.md`), 'mouseup', { clientY: -1 })
+    expect(bridge.filesOrder.setFolder).toHaveBeenCalledExactlyOnceWith(v, `${v}/Projects`, ['p2.md', 'p1.md'])
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+    await act(async () => undefined)
+    expect([...el.querySelectorAll(`.tree__row[data-path^="${v}/Projects/"]`)].map((r) => r.getAttribute('data-path'))).toEqual([`${v}/Projects/p2.md`, `${v}/Projects/p1.md`])
+    expect(el.querySelector('.sidebar__focus-bar span')?.textContent).toBe('Only Projects')
+  })
+
+  describe('Favorites (regression: the top rows reorder as before)', () => {
+    let n = 0
+    const mountFav = async () => {
+      const v = `/v-checker-fav-${++n}`
+      const m = await mount({ root: v, lens: 'favorites', onReordered: vi.fn() }, async (b) => {
+        b.tree.mockResolvedValue({ root: v, tree: [{ type: 'dir', name: 'Pages', path: `${v}/Pages`, children: [] }, page(`${v}/top.md`, 'top.md'), page(`${v}/z.md`, 'z.md')], generatedAt: 1 } as never)
+        b.favorites.get.mockResolvedValue([`${v}/Pages`, `${v}/top.md`, `${v}/z.md`])
+        b.favoriteFolders.get.mockResolvedValue([])
+        b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'favorites' })
+        b.focus.get.mockResolvedValue([])
+        await storage.init()
+      })
+      await act(async () => undefined)
+      return { ...m, v }
+    }
+
+    it('a lifted top row dropped in the gap writes the list in the new order once, says it with Undo, and its undo writes the old order', async () => {
+      const { el, v, bridge, props } = await mountFav()
+      const layout = withLayout()
+      try {
+        expect(topLabels(el)).toEqual(['Pages', 'top', 'z'])
+        const z = () => rowByPath(el, `${v}/z.md`)
+        mouse(window, 'mousedown', { clientX: 40, clientY: mid(2) })
+        mouse(z(), 'dragstart')
+        mouse(z(), 'mousemove', { clientX: 40, clientY: mid(2) - 10, buttons: 1 })
+        expect(liOf(el, `${v}/z.md`)?.hasAttribute('data-lifted')).toBe(true)
+        // Over its own list the row itself is the picture: the pill hides, and no line draws.
+        expect(document.querySelector<HTMLImageElement>('.tree__reorder-pill')?.style.visibility).toBe('hidden')
+        const writes = bridge.favorites.set.mock.calls.length
+        mouse(rowByPath(el, `${v}/Pages`), 'mousemove', { clientX: 40, clientY: mid(0) - 2, buttons: 1 })
+        expect(el.querySelector('.tree__row--drop-before, .tree__row--drop-after')).toBeNull()
+        mouse(rowByPath(el, `${v}/Pages`), 'mouseup', { clientX: 40, clientY: mid(0) - 2 })
+        expect(bridge.favorites.set.mock.calls.length).toBe(writes + 1)
+        expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/z.md`, `${v}/Pages`, `${v}/top.md`], 'vault')
+        expect(props.onRenameFile).not.toHaveBeenCalled()
+        expect(props.onReordered).toHaveBeenCalledOnce()
+        const step = vi.mocked(props.onReordered!).mock.calls[0][0]
+        expect(step.name).toBe('z')
+        act(() => step.undo())
+        expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/Pages`, `${v}/top.md`, `${v}/z.md`], 'vault')
+      } finally {
+        layout.mockRestore()
+      }
+    })
+  })
+})
