@@ -239,7 +239,7 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
 
   it('YAZ-5792: a card link follows the vault`s format, as the Mac`s card pill: the format`s pieces around the title, the card icon where `{icon}` stands', async () => {
     const pills = { format: '{icon} {name}({number}){mark}' }
-    const card = { id: 'DEMO-40', path: 'cards/capital.md', index: 0, title: 'Capital of Spain' }
+    const card = { id: 'DEMO-40', path: 'cards/capital.md', index: 0, title: 'Capital of Spain', notitle: false }
     const formatted: PageLook = {
       ...look,
       link: (inner) =>

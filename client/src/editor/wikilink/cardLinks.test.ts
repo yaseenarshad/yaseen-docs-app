@@ -64,6 +64,9 @@ describe('a card link in a page (YAZ-5030)', () => {
     const cards = [...root.querySelectorAll<HTMLElement>(`.${WIKILINK_CARD_CLASS}`)]
     expect(cards.map((c) => c.textContent)).toEqual(['Estar', 'Old card'])
     expect(cards[0].closest(`.${WIKILINK_GROUP_CLASS}`)?.textContent).toBe('Estar')
+    // The guided tour's mark is on the title, which has a box (the group is `display: contents`).
+    expect(cards[0].dataset.tour).toBe('card-link-pill')
+    expect(cards[0].closest(`.${WIKILINK_GROUP_CLASS}`)?.hasAttribute('data-tour')).toBe(false)
     expect(cards[0].classList.contains('wikilink--unresolved')).toBe(false)
     // A page's ID stays a page pill, by its title.
     expect([...root.querySelectorAll('.wikilink')].some((s) => s.textContent === 'Estar pages')).toBe(true)

@@ -70,10 +70,11 @@ export function cardPill(title: string, ends: PillEnds, iconOnName: boolean): HT
   name.className = iconOnName ? `${WIKILINK_CLASS} ${WIKILINK_CARD_CLASS}` : WIKILINK_CLASS
   name.spellcheck = false
   name.textContent = title
+  // A target of the course's guided tour (YAZ-5123): a click on a card pill. On the title, not the group: the tour
+  // measures its target's box, and a `display: contents` group has none.
+  name.dataset.tour = 'card-link-pill'
   const group = document.createElement('span')
   group.className = WIKILINK_GROUP_CLASS
-  // A target of the course's guided tour (YAZ-5123): a click on a card pill.
-  group.dataset.tour = 'card-link-pill'
   group.append(...pillPieces(ends, name, WIKILINK_CLASS, CARD_ICON))
   return group
 }

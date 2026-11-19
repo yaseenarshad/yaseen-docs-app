@@ -68,7 +68,7 @@ export type { LinkLook, MutableWikilinkResolveSource, ResolveLink, VaultsOfLette
 import { cardLinkTitle, idLinkTitle, linkCard, linkDisplayText, linkIsResolved, type LinkLook, linkPath, linkSplit, missingId, otherVaultId, pageTrim, type VaultsOfLetters, type WikilinkResolveSource } from './linkResolve'
 
 // The card pill moved to its own file (YAZ-5067), so the card drawing loads without this plugin; its names stay here too.
-export { WIKILINK_CARD_CLASS, WIKILINK_CLASS, WIKILINK_GROUP_CLASS, cardPill } from './cardPill'
+export { WIKILINK_CARD_CLASS, WIKILINK_CLASS, WIKILINK_GROUP_CLASS } from './cardPill'
 export const WIKILINK_UNRESOLVED_CLASS = 'wikilink--unresolved'
 export const WIKILINK_SYNTAX_CLASS = 'wikilink__syntax'
 export const WIKILINK_SUB_CLASS = 'wikilink__sub'

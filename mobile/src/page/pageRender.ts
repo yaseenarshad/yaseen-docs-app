@@ -1,8 +1,8 @@
 import { isAudioRef } from '@client/editor/card/cardMedia'
 import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/localOnly'
 import { parseAlt } from '@client/editor/image/imageSrc'
-import { headSpan, tailSpan, type PillEnd } from '@client/editor/wikilink/linkPillLook'
-import { cardPill } from '@client/editor/wikilink/cardPill'
+import type { PillEnd } from '@client/editor/wikilink/linkPillLook'
+import { cardPill, pillPieces } from '@client/editor/wikilink/cardPill'
 import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
 import { Renderer, type RendererExtension, type Token, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
@@ -325,7 +325,7 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
         const name = document.createElement('span')
         name.className = cls
         name.textContent = show.label
-        a.replaceChildren(...[head === null ? null : headSpan(cls, head), name, tail === null ? null : tailSpan(cls, tail)].filter((el): el is HTMLElement => el !== null))
+        a.replaceChildren(...pillPieces({ head, tail }, name, cls))
         a.className = show.open === null ? 'page-pill page-pill--missing' : 'page-pill'
       }
       // A missing page's link is plain and dim, and no link: a tap on it does nothing.
