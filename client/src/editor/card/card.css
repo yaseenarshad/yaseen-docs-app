@@ -646,6 +646,61 @@
   margin: 16px -16px;
   border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent);
 }
+/* YAZ-5904: folded card sides (`cardFold.ts`). Each card reads `--card-sides-fold`: the vault's card look (Card sides
+   in pages, `--card-sides-fold-pages`; on a card page, a card file's tab (`data-card-file`), Card sides on card pages,
+   `--card-sides-fold-card-pages`, Q1); a page's own `card-sides` key on its mount wins; in Explore, Card sides in Explore
+   (`--card-sides-fold-explore`), never the page's key (D3). Set on the card, so a surface's own variables never hide it. */
+.card {
+  --card-sides-fold: var(--card-sides-fold-pages, off);
+}
+[data-card-file] .card,
+.card[data-card-file] {
+  --card-sides-fold: var(--card-sides-fold-card-pages, off);
+}
+[data-card-sides='fold'] .card,
+.card[data-card-sides='fold'] {
+  --card-sides-fold: on;
+}
+[data-card-sides='show'] .card,
+.card[data-card-sides='show'] {
+  --card-sides-fold: off;
+}
+.explore__layer .card,
+.explore__layer [data-card-sides] .card {
+  --card-sides-fold: var(--card-sides-fold-explore, off);
+}
+/* A folded side's rule is a button: "▸ Side 2" over the dashed line, where "Side 2" stands (its words are
+   `data-fold`, so a copy and ⌘F never read them). Open, "▾". Each label has room: two folded rules never touch. */
+.card .card__sides > .card__side[hidden] {
+  display: none;
+}
+.card .card__rule[data-fold] {
+  cursor: pointer;
+  outline: none;
+}
+.card .card__rule[data-fold] + .card__side[hidden] + .card__rule {
+  margin-top: 26px;
+}
+.card .card__rule[data-fold]::before {
+  content: '▸ ' attr(data-fold);
+  pointer-events: auto;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.card .card__rule[data-fold][aria-expanded='true']::before {
+  content: '▾ ' attr(data-fold);
+}
+.card .card__rule[data-fold]:hover::before {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 8%, var(--bg));
+}
+.card .card__rule[data-fold]:focus-visible::before {
+  color: var(--fg);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.card .card__rule[data-fold]:last-child {
+  margin-bottom: 12px;
+}
 /* A hidden word, shown or not (YAZ-5013: "never jumping around"): ONE box model — inline, the real word inside, the
    same padding — so a show changes only the look and nothing on the line moves. */
 .card .card__hidden,

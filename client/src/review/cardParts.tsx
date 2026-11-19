@@ -25,6 +25,7 @@ import { desktopBoardPicture } from '../editor/card/boardPictureDesktop'
 import { copyText } from '../lib/copyText'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from '../editor/card/cardMedia'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardShow } from '../editor/card/cardRender'
+import { followCardFold, onCardFoldChange } from '../editor/card/cardFold'
 import { hrefTarget } from '../editor/pathLinks'
 import { cardResolverOf, linkCard, linkPath, type WikilinkResolveSource } from '../editor/wikilink/linkResolve'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
@@ -127,6 +128,11 @@ interface CardBodyProps {
   vault: ExploreVault
   show?: CardShow
   doors: CardLinkDoors
+  /**
+   * May Side 2 and after fold here (YAZ-5904)? A card page and Explore's card layer: yes, as the surface's
+   * `--card-sides-fold` says (`cardFold.ts`). Absent: never (the Inbox, Preview).
+   */
+  fold?: boolean
 }
 
 /**
@@ -134,7 +140,7 @@ interface CardBodyProps {
  * render; an index change redraws only the pills (`refreshCardLook`). A pill and a Markdown link open as the
  * page's do (idea 6, `cardLinkWhere`).
  */
-export function CardBody({ text, path, vault, show, doors }: CardBodyProps) {
+export function CardBody({ text, path, vault, show, doors, fold = false }: CardBodyProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const icons = useContext(IconsContext)
   const { root, wikilinks, viewOnlyLinks } = vault
@@ -150,7 +156,10 @@ export function CardBody({ text, path, vault, show, doors }: CardBodyProps) {
   useEffect(() => {
     const picked = pickedKey === '' ? undefined : pickedKey.split(',').map(Number)
     boxRef.current?.replaceChildren(renderCard(text, { sides, shown, picked, next }, lookOf()))
-  }, [text, sides, shown, pickedKey, next, lookOf])
+    if (fold) followCardFold(boxRef.current?.querySelector(':scope > .card__sides'))
+  }, [text, sides, shown, pickedKey, next, lookOf, fold])
+  // YAZ-5904: a change of the card look or of the page's `card-sides` folds or unfolds the card as drawn.
+  useEffect(() => (fold ? onCardFoldChange(() => followCardFold(boxRef.current?.querySelector(':scope > .card__sides'))) : undefined), [fold])
   // The pills follow the index: on each snapshot only they draw again.
   const hasLink = text.includes('[[')
   useEffect(() => (hasLink ? wikilinks.subscribe(() => boxRef.current !== null && refreshCardLook(boxRef.current, lookOf())) : undefined), [hasLink, wikilinks, lookOf])

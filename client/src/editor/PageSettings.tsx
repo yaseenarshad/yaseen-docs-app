@@ -5,6 +5,7 @@ import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, type ContentWidth, type OutsideChange
 import { CONTENT_WIDTH_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
 import { CogIcon } from '../components/CogIcon'
 import { useUnit } from '../vault/unitWord'
+import type { CardSides } from '@shared/pageSwitches'
 
 /** "TOC made from" (YAZ-2700 D14): Auto is the absence of a choice, `null`, and stands first — it is what a page has until the reader chooses. */
 const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] = [
@@ -111,6 +112,12 @@ export interface PageSettingsProps {
   tableWidth?: number | null
   /** Absent → no "Table width" row. `null` is Default. */
   onChangeTableWidth?: (width: number | null) => void
+  /** This page's card sides (YAZ-5904): `fold`, `show`, or `null` (Default), which follows Settings › Cards › Card look › Card sides in pages. */
+  cardSides?: CardSides | null
+  /** Absent → no "Card sides" row (a board, a drawing, a diagram, a code file). `null` is Default. */
+  onChangeCardSides?: (sides: CardSides | null) => void
+  /** The Card look row Default follows (YAZ-5904 Q1): a card page's is "Card sides on card pages". Absent → "Card sides in pages". */
+  cardSidesSetting?: string
   /** Plain rows after "Read only" (a code tab's three, YAZ-3449); absent or empty → none. */
   switches?: readonly PageSwitch[]
   /** A small heading over `switches`, which then form one group (a code tab: "All code files"), and a line after it. */
@@ -185,7 +192,7 @@ function BlockWidthRow({ label, value, settingsRow, onChange }: { label: string;
   </>
 }
 
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, pageWidth = null, appContentWidth = 'narrow', onChangePageWidth, codeWidth = null, onChangeCodeWidth, tableWidth = null, onChangeTableWidth, switches, switchesHeading, rows, readText, trigger }: PageSettingsProps) {
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, pageWidth = null, appContentWidth = 'narrow', onChangePageWidth, codeWidth = null, onChangeCodeWidth, tableWidth = null, onChangeTableWidth, cardSides = null, onChangeCardSides, cardSidesSetting = 'Card sides in pages', switches, switchesHeading, rows, readText, trigger }: PageSettingsProps) {
   const unit = useUnit()
   // The text counted at the open IS the open state: the counts cannot drift while the menu shows.
   // A board has no text to count: its open menu holds '' and shows no counts.
@@ -491,6 +498,16 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         </>}
         {onChangeCodeWidth !== undefined && <BlockWidthRow label="Code block width" value={codeWidth} settingsRow="Editor › Code blocks › Width" onChange={onChangeCodeWidth} />}
         {onChangeTableWidth !== undefined && <BlockWidthRow label="Table width" value={tableWidth} settingsRow="Tables › All tables › Width" onChange={onChangeTableWidth} />}
+        {/* YAZ-5904: this page's card sides, saved in the page (`card-sides`): Default (the card look's), Show all or Fold. */}
+        {onChangeCardSides !== undefined && <>
+          <div className="page-settings__divider" aria-hidden="true" />
+          <p className="page-settings__label">Card sides:</p>
+          <div className="page-settings__choices" role="group" aria-label="Card sides">
+            <button type="button" aria-pressed={cardSides === null} title={`Default follows Settings › Cards › Card look › ${cardSidesSetting}`} onClick={() => onChangeCardSides(null)}>Default</button>
+            <button type="button" aria-pressed={cardSides === 'show'} onClick={() => onChangeCardSides('show')}>Show all</button>
+            <button type="button" aria-pressed={cardSides === 'fold'} title="Side 2 and after start folded" onClick={() => onChangeCardSides('fold')}>Fold</button>
+          </div>
+        </>}
         {readText !== undefined && <>
           <div className="page-settings__divider" aria-hidden="true" />
           <p>{(text.match(/\S+/g)?.length ?? 0).toLocaleString()} words</p>

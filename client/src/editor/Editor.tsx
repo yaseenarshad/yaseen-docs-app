@@ -63,6 +63,8 @@ import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './ou
 import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
 import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
+import { readCardSides, writeCardSides, type CardSides } from '@shared/pageSwitches'
+import { tellCardFoldChange } from './card/cardFold'
 import { HeadChipsSlot, LAYER_ESCAPE, LayerZoom, StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
 import { NO_VAULT_READ_ONLY, VaultReadOnly, type BeforeVaultLock, type VaultReadOnlyScope } from '../vault/readOnlyVault'
@@ -850,6 +852,13 @@ function CrepeHost({
    */
   const diskPageWidth = useMemo(() => readPageWidth(disk), [disk])
   const pageWidth = inFolderPage ? null : diskPageWidth
+  /**
+   * This page's own card sides (YAZ-5904): its `card-sides` key, read off `disk` as the cog's other rows. On the editor's
+   * mount (`data-card-sides`) it wins over Settings › Cards › Card look › Card sides in pages (`card.css`); the cards fold
+   * again at each change (`tellCardFoldChange`).
+   */
+  const pageCardSides = useMemo(() => readCardSides(disk), [disk])
+  useEffect(() => tellCardFoldChange(), [pageCardSides])
   // Read by the editor's mount (createCrepe), which must not re-run when the switch turns: the effect below sends the change.
   const foldingOnRef = useRef(foldingOn)
   foldingOnRef.current = foldingOn
@@ -1342,6 +1351,8 @@ function CrepeHost({
   const changeTableWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, TABLE_WIDTH_KEY, width), 'Table width')
   /** The cog's "Page width" (YAZ-5640): this page's step, or null to follow Settings again. */
   const changePageWidth = (width: ContentWidth | null) => void writeOwnKey((content) => writePageWidth(content, width), unit('Page width'))
+  /** The cog's "Card sides" (YAZ-5904): this page's fold of its cards' Side 2 and after, or null to follow the card look again. */
+  const changeCardSides = (sides: CardSides | null) => void writeOwnKey((content) => writeCardSides(content, sides), 'Card sides')
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
@@ -1560,6 +1571,9 @@ function CrepeHost({
   // The Page tab hands its switches, save state and fold-all button to the folder page's toolbar while it shows, again
   // on each render (a switch or the save state moved), and takes them back as it goes (YAZ-4584 D38, YAZ-3746 D35, 10D).
   // A render is a save cycle or a switch, never a keystroke.
+  // YAZ-5904: the cog's "Card sides" row, this page's `card-sides`.
+  cog.cardSides = pageCardSides
+  cog.onChangeCardSides = changeCardSides
   useEffect(() => {
     folderChips?.set({ page: { cog, save: autosave.status, foldAll: foldAllButton || null } })
   })
@@ -1568,6 +1582,8 @@ function CrepeHost({
   const mountWidths = {
     'data-code-block-width': pageCodeWidth === null ? undefined : '',
     'data-table-width': pageTableWidth === null ? undefined : '',
+    // YAZ-5904: this page's card sides (`card.css`).
+    'data-card-sides': pageCardSides ?? undefined,
     style: { ...(pageCodeWidth !== null && { '--code-block-width': `${pageCodeWidth}px` }), ...(pageTableWidth !== null && { '--table-width': `${pageTableWidth}px` }) } as CSSProperties,
   }
 

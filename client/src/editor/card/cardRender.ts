@@ -17,6 +17,8 @@
  *  - `show.sides`: how many sides show (default all); `show.shown`: how many hidden words show, in page order over
  *    the whole card (default all); the blank the next Space shows has `data-next` (YAZ-5053 round 3). The page shows everything (idea 21 is later); the Inbox steps one word, then one
  *    side, at a time (D18).
+ *  - `show.fold` (YAZ-5904, `cardFold.ts`): Side 2 and after start hidden, each rule a button ("▸ Side 2")
+ *    that opens its side. Every side is drawn all the same: the hidden words keep their numbers, and ⌘F finds in them.
  *  - `[[link]]` is a pill: a group that holds `data-card-link="inner"`, with the label, the unresolved class, the
  *    icon attributes and the vault format's ends `look.link` gives (the page's own pill rules, `wikilinkPlugin.ts`;
  *    YAZ-5792); an `![[embed]]` stays its text; a link to a card (YAZ-5030, `look.link` gives `card`) is the card pill
@@ -42,6 +44,7 @@ import { linkClickAction } from '../linkGesture'
 import { cardSafety } from './cardSafety'
 import { cleanLocal, LOCAL_SRC, localMark, urlOf } from './localOnly'
 import { parseTableComment } from '../table/tableComment'
+import { onFoldClick, onFoldKey, setCardFold } from './cardFold'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, CARD_AUDIO_ATTR, CARD_BOARD_ATTR, type CardBoardLook } from './cardMedia'
 
 /** How much of the card shows (the Inbox's steps, D18). Absent: everything, as in the page. */
@@ -54,6 +57,12 @@ export interface CardShow {
   picked?: readonly number[]
   /** The blank the next Space shows (`data-next`), when it is not the first hidden one (round 4: after a click). */
   next?: number
+  /**
+   * Side 2 and after start folded (YAZ-5904, `cardFold.ts`): each rule is a button, "▸ Side 2". Only the
+   * main tabs ask (a page, an embed, a card page, the hover preview, the phone's page, Explore by its own setting); never
+   * the Inbox, Preview, Review or Edit card.
+   */
+  fold?: boolean
 }
 
 /** What a `[[link]]` shows: its label, whether it resolves, and the icon attributes of its page (`LinkLook`). */
@@ -274,16 +283,21 @@ function plainText(node: Node): string {
  * A copy of a selection over a blank (YAZ-5013): the blank's word stays out. `user-select: none` keeps it out of the
  * browser's own copy; this covers a selection that starts or ends inside it. A selection with no blank is the browser's.
  */
+/** A folded side (YAZ-5904, `cardFold.ts`). */
+const FOLDED = '.card__side[hidden]'
+
 export function copyWithoutHidden(event: ClipboardEvent): void {
   const box = event.currentTarget
   const selection = document.getSelection()
   if (!(box instanceof Element) || selection === null || selection.rangeCount === 0 || event.clipboardData === null) return
   const range = selection.getRangeAt(0)
-  if (![...box.querySelectorAll(BLANK)].some((blank) => range.intersectsNode(blank))) return
+  if (![...box.querySelectorAll(`${BLANK}, ${FOLDED}`)].some((blank) => range.intersectsNode(blank))) return
   const common = range.commonAncestorContainer
-  const inBlank = (common instanceof Element ? common : common.parentElement)?.closest(BLANK) != null
+  const inBlank = (common instanceof Element ? common : common.parentElement)?.closest(`${BLANK}, ${FOLDED}`) != null
   const part = inBlank ? document.createDocumentFragment() : range.cloneContents()
   for (const blank of part.querySelectorAll(BLANK)) blank.replaceChildren()
+  // YAZ-5904: a folded side does not show, so it does not copy.
+  for (const side of part.querySelectorAll(FOLDED)) side.remove()
   const html = document.createElement('div')
   html.append(part.cloneNode(true))
   event.preventDefault()
@@ -397,6 +411,8 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
   const out = document.createElement('div')
   out.className = 'card__sides'
   out.addEventListener('copy', copyWithoutHidden)
+  out.addEventListener('click', onFoldClick)
+  out.addEventListener('keydown', onFoldKey)
   let from = 0
   for (let i = 0; i < count; i++) {
     const words: string[] = []
@@ -424,5 +440,6 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
     out.append(side)
     from += hiddenCount(sides[i])
   }
+  if (show.fold === true) setCardFold(out, true)
   return out
 }

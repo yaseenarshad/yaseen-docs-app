@@ -15,6 +15,7 @@
  * (`paintFindRanges`), and the highlights are their union.
  */
 import type { FindChannel, FindController, FindResult } from './findChannel'
+import { openFoldedSideAt } from '../card/cardFold'
 
 /** A box that reads its card lazily (a card embed) reads it now: find asked (`cardEmbed.ts` listens). */
 export const CARD_FIND_READ = 'mdapp:card-find-read'
@@ -138,8 +139,12 @@ export function paintFindRanges(owner: object, ranges: readonly Range[], active:
   registry.set('find-match-active', top)
 }
 
-/** Centres a match: its text's element, as the page centres its highlight. jsdom has no `scrollIntoView`. */
+/**
+ * Centres a match: its text's element, as the page centres its highlight. jsdom has no `scrollIntoView`. A match in a
+ * folded card side (YAZ-5904) opens that side first: find reads every side, and the one it lands on shows.
+ */
 export function scrollToRange(range: Range): void {
+  openFoldedSideAt(range.startContainer)
   const node = range.startContainer
   const element = node instanceof Element ? node : node.parentElement
   element?.scrollIntoView?.({ block: 'center' })

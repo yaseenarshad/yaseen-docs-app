@@ -9,13 +9,13 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { splitFrontmatter } from '@shared/frontmatter'
-import { readPageSwitches, type PageSwitches } from '@shared/pageSwitches'
+import { readCardSides, readPageSwitches, type CardSides, type PageSwitches } from '@shared/pageSwitches'
 import { api } from '../api'
 import { useReadOnlyPage } from './useReadOnlyPage'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { useUnit } from '../vault/unitWord'
 
-type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
+type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches; cardSides: CardSides | null } | { kind: 'empty' } | { kind: 'gone' }
 
 /**
  * The top of `body` (C17): at most `maxChars`, cut at the last line end before the limit, so no
@@ -50,7 +50,7 @@ export function ReadOnlyPage({ path, wikilinks, className, unreadable, maxChars 
         if (!live) return
         const body = splitFrontmatter(file.content).body
         // The page's own Guide lines and Folding (YAZ-4094 G4) come with its body: the frontmatter holds them.
-        setContent(body.trim() === '' ? { kind: 'empty' } : { kind: 'body', body: cutAtLineEnd(body, maxChars), switches: readPageSwitches(file.content) })
+        setContent(body.trim() === '' ? { kind: 'empty' } : { kind: 'body', body: cutAtLineEnd(body, maxChars), switches: readPageSwitches(file.content), cardSides: readCardSides(file.content) })
       },
       () => live && setContent({ kind: 'gone' }),
     )
@@ -62,7 +62,8 @@ export function ReadOnlyPage({ path, wikilinks, className, unreadable, maxChars 
   useReadOnlyPage(hostRef, content.kind === 'body' ? content.body : null, wikilinks, content.kind === 'body' ? content.switches : undefined)
 
   return (
-    <div className={className} ref={hostRef}>
+    // YAZ-5904: the page's own `card-sides` folds its cards' Side 2 and after here too (`card.css`).
+    <div className={className} ref={hostRef} data-card-sides={content.kind === 'body' ? (content.cardSides ?? undefined) : undefined}>
       {content.kind === 'gone' && <p className="editor-msg">{unreadable}</p>}
       {content.kind === 'empty' && <p className="editor-msg">{unit('Empty page')}</p>}
     </div>
