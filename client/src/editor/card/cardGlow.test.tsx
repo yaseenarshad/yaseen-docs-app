@@ -47,6 +47,12 @@ describe('glowCard lights only the changed visible words (D1)', () => {
     expect(drawn.querySelector(`.${OUTSIDE_CHANGE_CLASS}`)?.getAttribute(OUTSIDE_TIP_ATTR)).toMatch(/^Before: The capital of France is Lyon/)
   })
 
+  it('YAZ-5925 nit: a new word before others lights without the space after it ("river", not "river ")', () => {
+    const { drawn } = glow('The Nile is long.', 'The Nile river is a rusty long one.')
+    expect(lit(drawn)).toEqual(['river', 'a rusty', 'one'])
+    expect(drawn.textContent).toContain('The Nile river is a rusty long one.')
+  })
+
   it('bold: the word inside the bold lights inside the <strong>, no Markdown star counts', () => {
     const { drawn } = glow('A **very big** dog with more words around it', 'A **very small** dog with more words around it')
     expect(lit(drawn)).toEqual(['small'])

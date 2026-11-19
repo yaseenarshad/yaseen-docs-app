@@ -126,7 +126,10 @@ function planOf(old: string, now: string): Plan {
   for (const part of parts) {
     if (part.kind === 'same') at += part.text.length
     else if (part.kind === 'ins') {
-      ins.push([at, at + part.text.length])
+      // The lit span is the words alone: a space before or after them is no new word (YAZ-5925 nit, "river ").
+      const lead = part.text.length - part.text.trimStart().length
+      const trail = part.text.length - part.text.trimEnd().length
+      if (lead + trail < part.text.length) ins.push([at + lead, at + part.text.length - trail])
       at += part.text.length
     } else {
       dels.push({ at, text: part.text })
