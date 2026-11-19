@@ -29,6 +29,7 @@ import { resolveAll } from 'micromark-util-resolve-all'
 import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokenizer } from 'micromark-util-types'
 import { isHighlightHex } from '@shared/types'
 import { rgbOf, solidHex } from '../../lib/colour'
+import { codeColorsIn, codeMarkCommand, codeSelection } from '../code/codeMarks'
 import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
 import { HIGHLIGHT_COLORS, HIGHLIGHT_HEX, type CustomHighlight, type HighlightColor } from './highlightColours'
@@ -250,6 +251,9 @@ export const highlightSchema = $markSchema('highlight', () => ({
  * caret: the marks it would type with.
  */
 export const rangeHasHighlight = (state: EditorState, type: MarkType, color: HighlightColor): boolean => {
+  // In a code block (YAZ-5794 D4) the colour is a code mark: lit when any of the selected code has it.
+  const code = codeSelection(state)
+  if (code !== null) return codeColorsIn(code).includes(color)
   const { empty, $from } = state.selection
   const mark = type.create({ color })
   if (empty) return mark.isInSet(state.storedMarks ?? $from.marks())
@@ -276,6 +280,8 @@ const markApplies = (state: EditorState, type: MarkType): boolean => {
  * selected declines.
  */
 const setHighlight = (type: MarkType, color: HighlightColor, always = false): Command => (state, dispatch) => {
+  // In a code block (YAZ-5794 D4): the same flip, on the code's own marks.
+  if (codeSelection(state) !== null) return codeMarkCommand('highlight', color, always ? 'apply' : 'toggle')(state, dispatch)
   const ranges = visibleRanges(state)
   if (!markApplies(state, type) || (!state.selection.empty && ranges.length === 0)) return false
   const mark = type.create({ color })
@@ -313,6 +319,7 @@ export const applyHighlight = (type: MarkType, color: HighlightColor): Command =
  * caret would type with. Declines where there is no highlight to remove.
  */
 export const removeHighlight = (type: MarkType): Command => (state, dispatch) => {
+  if (codeSelection(state) !== null) return codeMarkCommand('highlight', undefined, 'remove')(state, dispatch)
   if (state.selection.empty) {
     if (type.isInSet(state.storedMarks ?? state.selection.$from.marks()) === undefined) return false
     dispatch?.(state.tr.removeStoredMark(type))
@@ -327,6 +334,8 @@ export const removeHighlight = (type: MarkType): Command => (state, dispatch) =>
 
 /** Every highlight colour on the visible selection (at a caret: the marks it would type with), in no set order. */
 export function highlightColorsIn(state: EditorState, type: MarkType): HighlightColor[] {
+  const code = codeSelection(state)
+  if (code !== null) return codeColorsIn(code) as HighlightColor[]
   const found = new Set<HighlightColor>()
   const add = (marks: readonly Mark[]) => {
     for (const mark of marks) if (mark.type === type) found.add((mark.attrs.color ?? null) as HighlightColor)
@@ -345,6 +354,8 @@ export function highlightColorsIn(state: EditorState, type: MarkType): Highlight
  * `test`. The walk stops at the first one: the toolbar's ▾ asks on each update, also after ⌘A on a long page.
  */
 export function someHighlightColor(state: EditorState, type: MarkType, test: (color: HighlightColor) => boolean): boolean {
+  const code = codeSelection(state)
+  if (code !== null) return (codeColorsIn(code) as HighlightColor[]).some(test)
   const hit = (marks: readonly Mark[]) => marks.some((mark) => mark.type === type && test((mark.attrs.color ?? null) as HighlightColor))
   if (state.selection.empty) return hit(state.storedMarks ?? state.selection.$from.marks())
   let found = false

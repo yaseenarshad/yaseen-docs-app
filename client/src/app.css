@@ -77,7 +77,8 @@
   --code-function: #8250df;
   --code-type: #953800;
   --code-key: #0550ae;
-  --code-selection: rgba(9, 105, 218, 0.18);
+  /* A code block's selection (YAZ-5837): see-through, drawn over the text, clear in both themes. */
+  --code-selection: rgba(9, 105, 218, 0.25);
 }
 
 /* Dark palette (Desktop K, GRO-2218): the SAME tokens, near-black surfaces. App.tsx resolves the
@@ -122,7 +123,7 @@
   --code-function: #61afef;
   --code-type: #e5c07b;
   --code-key: #e06c75;
-  --code-selection: #3e4451;
+  --code-selection: rgba(97, 175, 239, 0.32);
 }
 
 *,
@@ -690,6 +691,22 @@ button {
 .milkdown .ProseMirror mark.highlight-purple { background: var(--mark-bg-purple); }
 .milkdown .ProseMirror mark.highlight-red { background: var(--mark-bg-red); }
 .milkdown .ProseMirror mark.highlight-gray { background: var(--mark-bg-gray); }
+
+/* Formatting inside a code block (YAZ-5794, `editor/code/codeMarks.ts`): CodeMirror mark decorations on the code's own
+   text, drawn as the page draws its marks. A highlight's colour is `--code-mark-bg`: a named colour's token, or a custom
+   colour's wash set on the span itself. */
+.cm-code-mark-bold { font-weight: bold; }
+.cm-code-mark-italic { font-style: italic; }
+.cm-code-mark-underline { text-decoration: underline; }
+.cm-code-mark-strike { text-decoration: line-through; }
+.cm-code-mark-highlight { background: var(--code-mark-bg, var(--mark-bg)); }
+.cm-code-mark-highlight.highlight-green { --code-mark-bg: var(--mark-bg-green); }
+.cm-code-mark-highlight.highlight-blue { --code-mark-bg: var(--mark-bg-blue); }
+.cm-code-mark-highlight.highlight-pink { --code-mark-bg: var(--mark-bg-pink); }
+.cm-code-mark-highlight.highlight-orange { --code-mark-bg: var(--mark-bg-orange); }
+.cm-code-mark-highlight.highlight-purple { --code-mark-bg: var(--mark-bg-purple); }
+.cm-code-mark-highlight.highlight-red { --code-mark-bg: var(--mark-bg-red); }
+.cm-code-mark-highlight.highlight-gray { --code-mark-bg: var(--mark-bg-gray); }
 
 /* The highlight buttons and their ▾ are the board toolbar's tiles (YAZ-4445): `editor/swatchTile.css`. */
 

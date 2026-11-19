@@ -1,7 +1,12 @@
 # Milkdown tooltip patch (a throttled update never skips a real change)
 
 `milkdown-plugin-tooltip-7.22.1-yaz2238.tgz` is a version-pinned build of
-`@milkdown/plugin-tooltip@7.22.1` with one fix:
+`@milkdown/plugin-tooltip@7.22.1` with one fix and one option:
+
+- YAZ-5794: the option `nestedSelection` (default false). With it, a tooltip whose focus is in an editor
+  nested in the view (a code block's CodeMirror) is placed over that editor's DOM selection
+  (`nestedSelectionRect`). ProseMirror cannot measure a position inside a node view with no content
+  DOM: it gives the block's edge. Only Crepe's selection toolbar sets it (the Crepe patch).
 
 - YAZ-2238: `TooltipProvider` throttles its updates (20 ms for Crepe's floating toolbar). The
   throttle's trailing call carries only the LAST call's `prevState`, and the provider skipped any
