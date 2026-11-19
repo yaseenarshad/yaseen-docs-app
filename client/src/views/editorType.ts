@@ -24,7 +24,8 @@ import { CARD_FIX_STATUSES, CARD_STATUS_EDITS } from './cardRows'
 export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link' | 'select' | 'multi-select' | 'image'
 
 /** Per-column typing facts; null = the column is read-only (`file.*` / `formula.*`). `target` rides along from a declared link/multi-link property to constrain the picker. */
-export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null; target?: string; options?: readonly string[] } | null
+/** `required`: a Select that always holds one of its options (Status, YAZ-5856): no Clear, and no "Existing value" row. */
+export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null; target?: string; options?: readonly string[]; required?: boolean } | null
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ].*)?$/
 const WIKILINK = /^\[\[[^[\]]+\]\]$/
@@ -73,7 +74,8 @@ const DECLARED_KIND: Record<Exclude<PropertyKind, 'mentions'>, EditorKind> = {
 }
 
 // Status's Select offers what a cell can write (YAZ-5838): Active or Archived. A filter still offers New, from the rows' own values.
-const CARD_STATUS_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_STATUS_EDITS }
+// YAZ-5856 root cause: the generic Select footer offered Clear, which unarchived a card and showed "Empty". Solution: `required`.
+const CARD_STATUS_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_STATUS_EDITS, required: true }
 const CARD_FIX_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_FIX_STATUSES }
 const CARD_UP_NEXT_TYPING: ColumnTyping = { assigned: 'checkbox', dominant: null }
 

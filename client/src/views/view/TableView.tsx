@@ -2017,6 +2017,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     value={shown !== null ? fromYaml(shown.raw) : v}
                     editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
                     options={typings[c]?.options}
+                    required={typings[c]?.required}
                     titles={linkNames[c] ?? titles}
                     resolve={resolve}
                     readOnly={locked}

@@ -268,6 +268,20 @@ describe('YAZ-5319: a table that lists cards', () => {
     expect(toArchived({ parts: [{ kind: 'id', id: 'GEO-2' }] })).toEqual({ parts: [{ kind: 'id', id: 'GEO-2' }, { kind: 'off' }] })
   })
 
+  it('YAZ-5856: the Status picker has no Clear (a card is always Active or Archived), and a New card lists no "New · Existing value"', () => {
+    const { el } = mount(FULL_VIEW)
+    for (const row of [0, 1, 2]) {
+      doubleClick(cell(el, row, 2))
+      const footer = [...document.querySelectorAll<HTMLElement>('.property-value-picker__footer button')].map((b) => b.textContent)
+      expect(footer).not.toContain('Clear')
+      const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((o) => o.textContent)
+      expect(options.every((o) => o?.startsWith('Active') || o?.startsWith('Archived'))).toBe(true)
+      act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+      const input = document.querySelector<HTMLElement>('.property-value-picker input')
+      if (input !== null) act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    }
+  })
+
   it('YAZ-5430: Fix status shows "Needs fixing" for a marked card, blank for the rest; Needs fixing writes `fix`, Clear takes it off', async () => {
     const { el } = mount(FULL_VIEW)
     // Blank is the table's own muted "Empty", as any empty cell of an editable column shows.
