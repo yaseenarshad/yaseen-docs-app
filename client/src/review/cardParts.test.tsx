@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { cardState } from '@shared/cardSchedule'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { CardFacts, CardReviewsTable, RECALL_HELP, cardDueWords, cardFullDate, cardNextReview, cardRemoveOutcome } from './cardParts'
+import { NOT_COUNTED_HELP } from './cardWords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -21,7 +22,8 @@ describe('YAZ-5032: the review history in words', () => {
     expect([...box.querySelectorAll('th')].map((th) => th.textContent)).toEqual(['Reviewed on', 'Answer', 'Gap', 'Time', 'Next due', ''])
     const rows = [...box.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent))
     expect(rows.slice(0, 3).map((r) => r.slice(0, 2))).toEqual([
-      ['Nov 1, 2026', 'Forgot'],
+      // YAZ-5789: a new card's ✕ is recorded, not counted.
+      ['Nov 1, 2026', 'ForgotNot counted'],
       ['Nov 1, 2026', 'Remembered'],
       ['Nov 2, 2026', 'Remembered'],
     ])
@@ -145,5 +147,30 @@ describe('YAZ-5032 round 2: the strip, the (i) and the ask before a remove', () 
     expect(box.querySelector('.card-reviews__scroll > .card-reviews__table')).not.toBeNull()
     expect(box.querySelector('.card-reviews__answer .card-reviews__word')?.textContent).toBe('Remembered')
     unmount()
+  })
+})
+
+describe('YAZ-5789: the Reviews table marks an answer that is recorded, not counted', () => {
+  it('a ✓ in the missed pass: its row is muted and says "Not counted", with the reason on hover; the other rows do not', () => {
+    const box = document.createElement('div')
+    const root = createRoot(box)
+    const reviews = [
+      { at: '2026-10-30T16:00:00.000Z', rating: 'good' as const },
+      { at: '2026-10-30T16:10:00.000Z', rating: 'good' as const },
+      { at: '2026-11-03T16:00:00.000Z', rating: 'good' as const },
+      { at: '2026-11-17T16:00:00.000Z', rating: 'again' as const },
+      { at: '2026-11-17T16:20:00.000Z', rating: 'good' as const },
+    ]
+    act(() => root.render(<CardReviewsTable reviews={reviews} settings={DEFAULT_REVIEW_SETTINGS} now={Date.parse('2026-11-17T17:00:00.000Z')} />))
+    const rows = [...box.querySelectorAll('tbody tr')].slice(0, 5)
+    expect(rows.map((tr) => tr.classList.contains('card-reviews__row--uncounted'))).toEqual([false, false, false, false, true])
+    const tag = rows[4].querySelector('.card-reviews__tag')!
+    expect(tag.textContent).toBe('Not counted')
+    expect(tag.getAttribute('title')).toBe(NOT_COUNTED_HELP)
+    expect(box.querySelectorAll('.card-reviews__tag')).toHaveLength(1)
+    // The ✓ keeps the ✕'s date: its "Next due" is the ✕ row's real date, not a new wait from the ✓.
+    const cells = (tr: Element) => [...tr.querySelectorAll('td')].map((td) => td.textContent)
+    expect(cells(rows[4])[4]).not.toBe(cells(rows[4])[0])
+    act(() => root.unmount())
   })
 })

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { cardDueWords, cardFullDate, cardNextReview, reviewsTitle } from '@client/review/cardWords'
+import { NOT_COUNTED, NOT_COUNTED_HELP, cardDueWords, cardFullDate, cardNextReview, reviewsTitle } from '@client/review/cardWords'
 import { cardResolverOf } from '@client/editor/wikilink/linkResolve'
 import type { CardPropertyValue, CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
@@ -167,9 +167,17 @@ function ReviewsTable({ reviews, settings, now }: { reviews: readonly CardReview
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i}>
+            <tr key={i} className={row.counted ? undefined : 'card-reviews__row--uncounted'}>
               <td>{cardFullDate(Date.parse(row.review.at))}</td>
-              <td>{answerLabel(row.review.rating, settings)}</td>
+              <td>
+                {answerLabel(row.review.rating, settings)}
+                {/* YAZ-5789: recorded, not counted (the phone has no hover; the words say it). */}
+                {!row.counted && (
+                  <span className="card-reviews__tag" aria-description={NOT_COUNTED_HELP}>
+                    {NOT_COUNTED}
+                  </span>
+                )}
+              </td>
               <td>{cardFullDate(row.due)}</td>
             </tr>
           ))}

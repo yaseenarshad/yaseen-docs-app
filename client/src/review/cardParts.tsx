@@ -41,7 +41,7 @@ import { reviewDuration } from './reviewTime'
 import { ReviewsIcon, TrashIcon } from './cardInboxIcons'
 import '../editor/card/card.css'
 import './cardScreens.css'
-import { cardDueWords, cardFacts, cardFullDate, cardNextReview, cardOverdue, cardRemoveOutcome, reviewsTitle, RECALL_HELP, REVIEW_COLUMNS } from './cardWords'
+import { cardDueWords, cardFacts, cardFullDate, cardNextReview, cardOverdue, cardRemoveOutcome, reviewsTitle, NOT_COUNTED, NOT_COUNTED_HELP, RECALL_HELP, REVIEW_COLUMNS } from './cardWords'
 
 // The words of the card screens moved to `cardWords.ts` (YAZ-5161), so the phone's Review screen reads them with no
 // bridge; their names stay here too.
@@ -498,11 +498,16 @@ export function CardReviewsTable({ reviews, settings, onDelete, now = Date.now()
         <tbody>
           {/* Keyed by place: each review is one row. */}
           {rows.map((row, i) => (
-            <tr key={i}>
+            <tr key={i} className={row.counted ? undefined : 'card-reviews__row--uncounted'}>
               <td>{cardFullDate(Date.parse(row.review.at))}</td>
               <td className="card-reviews__answer">
                 <CardAnswerView review={row.review} settings={settings} />
                 <span className="card-reviews__word">{answerLabel(row.review.rating, settings)}</span>
+                {!row.counted && (
+                  <span className="card-reviews__tag" title={NOT_COUNTED_HELP}>
+                    {NOT_COUNTED}
+                  </span>
+                )}
               </td>
               <td>{i === 0 ? '' : <Gap n={row.elapsed} />}</td>
               <td className="card-reviews__time">{reviewDuration(row.review.seconds)}</td>

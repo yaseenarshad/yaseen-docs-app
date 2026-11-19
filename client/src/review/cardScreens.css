@@ -307,6 +307,17 @@
 .card-reviews__chance {
   margin-left: auto;
 }
+/* YAZ-5789: an answer that is recorded, not counted (a ✓ before a miss's date, a new card's ✕): the row is muted and
+   its answer carries a small "Not counted" after the word. It stays when a narrow table hides the word. */
+.card-reviews__row--uncounted td {
+  color: var(--fg-muted);
+}
+.card-reviews__tag {
+  margin-left: 6px;
+  font-size: 0.85em;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
 .card-reviews__delete {
   display: inline-flex;
   padding: 2px;
