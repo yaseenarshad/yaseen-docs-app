@@ -29,7 +29,7 @@ import { useSearchCandidates, type SearchVault } from '../search/useSearchResult
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { ExploreBoard } from './ExploreBoard'
 import { ExploreCard } from './ExploreCard'
-import { ExplorePage, type ExploreVault, type PageFrameDoors } from './ExplorePage'
+import { ExplorePage, type ExploreLinkPreview, type ExploreVault, type PageFrameDoors } from './ExplorePage'
 import { explorePageSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
@@ -98,6 +98,8 @@ export interface ExploreStackProps {
    */
   exploreSize: number
   onExploreSize: (percent: number) => void
+  /** The hover panel of a reading page layer's [[links]] (YAZ-5920): the setting, the panel's scope, the diagram colours. */
+  linkPreview?: ExploreLinkPreview
 }
 
 const noLog = () => ({})
@@ -161,7 +163,7 @@ function focusCardFile(layer: HTMLElement): boolean {
   return body !== null && document.activeElement === body
 }
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false, exploreSize, onExploreSize }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false, exploreSize, onExploreSize, linkPreview }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -229,6 +231,8 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     }
     return door
   }
+  /** The links' hover panel of each reading page layer (YAZ-5920), with the names the trail uses. */
+  const pageLinkPreview = useMemo(() => (linkPreview === undefined ? undefined : { ...linkPreview, nameOf }), [linkPreview, nameOf])
   // One feed for every search layer; the text rows (tags, frontmatter values) ride with the records.
   const candidates = useSearchCandidates(vaults, true, textCandidates)
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
@@ -826,6 +830,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 pageMenu={() => pageSections(layer.path)}
                 onClose={() => close(layer.id)}
                 active={!covered}
+                linkPreview={pageLinkPreview}
               />
             )}
             {GRIPS.map((grip) => (

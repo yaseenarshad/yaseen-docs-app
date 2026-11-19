@@ -2781,6 +2781,8 @@ export function App() {
   const previewScopeNow = useRef(boardPreviewScope)
   previewScopeNow.current = boardPreviewScope
   const editorPreviewScope = useCallback((path: string) => previewScopeNow.current(path), [])
+  /** The links' hover panel of an Explore reading page layer (YAZ-5920): the Links setting read at each dwell, the same scope door. */
+  const exploreLinkPreview = useMemo(() => ({ on: () => hoverOn(storage.getSettings(), 'links'), scopeOf: editorPreviewScope, diagramDarkColors: settings.diagramDarkColors }), [editorPreviewScope, settings.diagramDarkColors])
   /** "New window" from the tab board's empty canvas (YAZ-3343 D22): on this window's vaults, behind it. */
   const openWindowBehind = useCallback(() => api.window.openBehind(), [])
   /**
@@ -4192,7 +4194,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={settings.exploreSize} onExploreSize={changeExploreSize} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={settings.exploreSize} onExploreSize={changeExploreSize} linkPreview={exploreLinkPreview} />
         </Suspense>
       )}
       {whatsNewOpen && (

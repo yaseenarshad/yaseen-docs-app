@@ -115,6 +115,11 @@ vi.mock('../editor/embed/types', () => ({
       },
     }),
 }))
+/** The hover panel (YAZ-5920), stood in: it says which page it shows, its hint and its anchor. The dwell and the store are real. */
+vi.mock('../sidebar/HoverPreviewHost', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../sidebar/HoverPreviewHost')>()),
+  PreviewPanel: (p: { path: string; name: string; hint?: string }) => <div className="test-hover-preview" data-path={p.path} data-name={p.name} data-hint={p.hint} />,
+}))
 /** The comment stream and Linked mentions (round 1, item 3), stood in: each says what it was handed, and a mention click opens its page. */
 const under = vi.hoisted(() => ({ comments: [] as Array<{ path: string; content: string; order: string }>, backlinks: [] as string[] }))
 vi.mock('../comments/CommentsSection', () => ({
@@ -1153,6 +1158,42 @@ describe('round 4: zoom in a page layer', () => {
     expect(value()).toBe('90%')
     expect(bodyZoom()).toBe('0.9')
     document.body.removeEventListener('yaseendocs:zoom', tab)
+  })
+})
+
+describe('YAZ-5920: a link\'s hover preview in a READING page layer', () => {
+  it('the reading Crepe hears a hover on a [[link]]: after the dwell the hover panel shows that page, with "Click to open"; leaving the link closes it', async () => {
+    const scopeOf = vi.fn(() => ({ root: '/v', wikilinks, textVars: {}, watch }))
+    props = { ...props, linkPreview: { on: () => true, scopeOf, diagramDarkColors: 'adapt' } }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    expect(top().querySelector('.explore__body--read')).not.toBeNull()
+    const reader = crepes[crepes.length - 1]
+    const hover = reader.opts.wikilinkHover as { onHover: (path: string, rect: { left: number; top: number; right: number; bottom: number }, editable: boolean) => void; onLeave: () => void } | undefined
+    expect(hover).toBeDefined()
+    act(() => hover!.onHover('/v/beta.md', { left: 100, top: 100, right: 160, bottom: 118 }, false))
+    expect(document.querySelector('.test-hover-preview')).toBeNull()
+    await act(async () => await new Promise((r) => setTimeout(r, 450)))
+    const panel = document.querySelector<HTMLElement>('.test-hover-preview')
+    expect(panel?.dataset.path).toBe('/v/beta.md')
+    expect(panel?.dataset.name).toBe('beta')
+    expect(panel?.dataset.hint).toBe('Click to open')
+    expect(scopeOf).toHaveBeenCalledWith('/v/beta.md')
+    act(() => hover!.onLeave())
+    await act(async () => await new Promise((r) => setTimeout(r, 450)))
+    expect(document.querySelector('.test-hover-preview')).toBeNull()
+  })
+
+  it('"Preview on hover" off for links: no panel', async () => {
+    props = { ...props, linkPreview: { on: () => false, scopeOf: () => ({ root: '/v', wikilinks, textVars: {}, watch }), diagramDarkColors: 'adapt' } }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const hover = crepes[crepes.length - 1].opts.wikilinkHover as { onHover: (path: string, rect: { left: number; top: number; right: number; bottom: number }, editable: boolean) => void }
+    act(() => hover.onHover('/v/beta.md', { left: 100, top: 100, right: 160, bottom: 118 }, false))
+    await act(async () => await new Promise((r) => setTimeout(r, 450)))
+    expect(document.querySelector('.test-hover-preview')).toBeNull()
   })
 })
 
