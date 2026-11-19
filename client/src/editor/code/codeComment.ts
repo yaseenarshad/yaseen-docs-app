@@ -86,7 +86,9 @@ export function parseCodeComment(value: string): CodeLook | null {
     const mark = width === null ? parseMarkPart(text) : null
     if (width !== null) look.width = width
     else if (mark !== null) look.marks.push(mark)
-    else look.unknownParts.push({ afterWidth: look.width !== null, text })
+    // A part after the width OR after a mark stays after them (YAZ-5854): with the width taken away, a part that
+    // followed it still follows the marks, so the comment saves the same bytes again.
+    else look.unknownParts.push({ afterWidth: look.width !== null || look.marks.length > 0, text })
   }
   return look
 }

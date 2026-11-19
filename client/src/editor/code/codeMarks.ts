@@ -18,10 +18,11 @@
  * THE TOOLBAR AND THE KEYS (D3, D4). Crepe copies CodeMirror's selection to the page, so a selection in the code is a
  * page `TextSelection` inside the `code_block` (`codeSelection`). The page toolbar shows for it (the vendored Crepe
  * patch) with the Text style group only (`CODE_TOOLBAR_KEYS`, `createCrepe.ts`), and its buttons and the page's keys
- * (`codeMarkKeys`) run `codeMarkCommand` there. A note card (`card` language) takes no marks.
+ * (`codeMarkKeys`) run `codeMarkCommand` there. A card (`card` language) takes no marks.
  */
 import { createSlice, type Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { Slice } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import { AttrStep, Mapping } from '@milkdown/kit/prose/transform'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -33,7 +34,7 @@ import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { CARD_LANGUAGE } from '../card/cardBlockLine'
 import { MORE_KEY } from '../highlightPanel'
 import { pageKeys } from '../pageKeys'
-import { cleanSpans, sameSpans, type CodeMarkKind, type CodeSpan } from './codeComment'
+import { cleanSpans, marksFromSpans, sameSpans, spansFromMarks, type CodeMarkKind, type CodeSpan } from './codeComment'
 import { blockPos, codeSpansOf, marksAttr } from './codeWidth'
 
 /** The toolbar buttons a selection in code keeps (D4): the Text style group. The others hide there. */
@@ -45,7 +46,7 @@ export const CODE_BUTTON_KINDS: Readonly<Record<string, CodeMarkKind>> = { bold:
 /** True while this editor's selection is in a code block: the toolbar then shows only `CODE_TOOLBAR_KEYS`. `createCrepe` injects one per editor. */
 export const codeToolbarCtx = createSlice<ShallowRef<boolean> | null, 'codeToolbar'>(null, 'codeToolbar')
 
-/** A code block that takes marks: not a note card. */
+/** A code block that takes marks: not a card. */
 const takesMarks = (node: ProseNode): boolean => node.type.name === 'code_block' && node.attrs.language !== CARD_LANGUAGE
 
 /** A selection inside one code block: the block's position and node, and the selection as offsets into its code. */
@@ -143,6 +144,12 @@ function touchedRanges(trs: readonly Transaction[]): Array<[number, number]> {
 }
 
 /**
+ * The stamp the app puts on a change that came from outside (`EXTERNAL_EDIT_META`, `external/applyExternalMarkdown.ts`;
+ * not imported: that module imports `createCrepe`, which imports this one). The test pins the two together.
+ */
+export const OUTSIDE_EDIT = 'external-edit'
+
+/**
  * The spans of each code block a change typed into, mapped through it, as ONE appended transaction (same undo step).
  * Only a block that had marks and kept the same `marks` attribute: a transaction that set the attribute itself (a
  * button, an undo) already holds the right spans. A span keeps its start before a key typed at it and grows with a
@@ -164,20 +171,53 @@ function mapTypedSpans(trs: readonly Transaction[], oldState: EditorState, newSt
   const mapping = new Mapping()
   for (const tr of trs) mapping.appendMapping(tr.mapping)
   const back = mapping.invert()
+  // An outside edit (Claude, git, another editor) is no typing (YAZ-5851): each mark is fitted to the new code as a
+  // fresh load fits it (D2), by its text on its line. Mapped like typing, a mark grew over new text next to it, or went
+  // with a range the outside edit rewrote around it.
+  const outside = trs.some((tr) => tr.getMeta(OUTSIDE_EDIT) === true)
   let out: Transaction | null = null
   for (const { node, pos } of touched) {
     const oldPos = back.map(pos, -1)
     const old = oldState.doc.nodeAt(oldPos)
     if (old === null || old.type !== node.type || old.attrs.marks !== node.attrs.marks || old.textContent === node.textContent) continue
-    const mapped = codeSpansOf(old).map((span) => ({
-      ...span,
-      from: mapping.map(oldPos + 1 + span.from, 1) - pos - 1,
-      to: mapping.map(oldPos + 1 + span.to, 1) - pos - 1,
-    }))
-    const clean = cleanSpans(node.textContent, mapped)
+    const clean = outside
+      ? spansFromMarks(node.textContent, marksFromSpans(old.textContent, codeSpansOf(old)))
+      : cleanSpans(
+          node.textContent,
+          codeSpansOf(old).map((span) => ({
+            ...span,
+            from: mapping.map(oldPos + 1 + span.from, 1) - pos - 1,
+            to: mapping.map(oldPos + 1 + span.to, 1) - pos - 1,
+          })),
+        )
     if (!sameSpans(clean, codeSpansOf(node))) out = (out ?? newState.tr).setNodeAttribute(pos, 'marks', marksAttr(clean))
   }
   return out
+}
+
+/**
+ * A copy that starts inside a code block (YAZ-5853): ProseMirror cuts the block and keeps its attributes, so the
+ * spans still count from the WHOLE block's start. They move back by the cut, and a span outside the copied code goes,
+ * before the copy is written (`toDOM` writes each mark with its text). A copy that starts elsewhere is unchanged.
+ */
+function trimCopiedSpans(slice: Slice, state: EditorState): Slice {
+  const { $from } = state.selection
+  if (slice.openStart === 0 || $from.parent.type.name !== 'code_block') return slice
+  const cut = $from.parentOffset
+  // The cut block is the deepest node down the slice's open start (its first child at each open level).
+  const trim = (node: ProseNode, depth: number): ProseNode => {
+    if (depth < slice.openStart) {
+      const child = node.firstChild
+      return child === null ? node : node.copy(node.content.replaceChild(0, trim(child, depth + 1)))
+    }
+    if (node.type.name !== 'code_block' || node.attrs.marks === null) return node
+    const spans = cleanSpans(node.textContent, (node.attrs.marks as CodeSpan[]).map((s) => ({ ...s, from: s.from - cut, to: s.to - cut })))
+    return node.type.create({ ...node.attrs, marks: marksAttr(spans) }, node.content, node.marks)
+  }
+  const first = slice.content.firstChild
+  if (first === null) return slice
+  const trimmed = trim(first, 1)
+  return trimmed === first ? slice : new Slice(slice.content.replaceChild(0, trimmed), slice.openStart, slice.openEnd)
 }
 
 /** CodeMirror: the spans of its block, sent by the plugin's view (or read at start). */
@@ -287,6 +327,7 @@ export const codeMarksPlugin = $prose(
     new Plugin({
       key: new PluginKey('mdapp-code-marks'),
       appendTransaction: mapTypedSpans,
+      props: { transformCopied: (slice, view) => trimCopiedSpans(slice, view.state) },
       view: (view) => {
         pageViews.set(view.dom, view)
         const inCode = ctx.get(codeToolbarCtx)

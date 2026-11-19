@@ -21,7 +21,7 @@ a copy without it.
 And one more toolbar change (YAZ-5794, the toolbar in a code block): `ToolbarFeatureConfig` gets
 `inNestedEditor(view)`. When it returns true and the focus is inside the page's DOM (a code block's
 CodeMirror holds it), `shouldShow` no longer hides the toolbar for "the page has no focus". The app
-answers `codeSelection(view.state) !== null` (`createCrepe.ts`), so a note card's code never asks.
+answers `codeSelection(view.state) !== null` (`createCrepe.ts`), so a card's code never asks.
 The toolbar's `TooltipProvider` is made with `nestedSelection: true` (the tooltip patch): it is
 placed over CodeMirror's own selection. Absent `inNestedEditor`: as upstream.
 `client/src/editor/code/codeMarks.test.ts` fails on a copy without it.

@@ -23,6 +23,8 @@ import { EditorState as CodeMirrorState } from '@codemirror/state'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe } from '../createCrepe'
+import { applyExternalMarkdown, EXTERNAL_EDIT_META } from '../external/applyExternalMarkdown'
+import { OUTSIDE_EDIT } from './codeMarks'
 import { IS_MAC } from '../marks/markTestKit'
 import * as toolbar from '../toolbarTestKit'
 
@@ -363,5 +365,47 @@ describe('where the code marks do not go (D3, D4, YAZ-5827)', () => {
     // The whole block: each mark fits.
     const whole = html('bold 2:22 "fetchUser"', CODE)
     expect(marksFromSpans(whole.textContent, whole.attrs.marks).map((m) => m.text)).toEqual(['fetchUser'])
+  })
+})
+
+describe('checker round 1 bugs', () => {
+  const PAD = Array.from({ length: 40 }, (_, i) => `Paragraph number ${i} with some words to keep the page big.`).join('\n\n')
+  const page = (code: string, comment: string) => `\`\`\`js\n${code}\n\`\`\`\n${comment}\n\n${PAD}\n`
+
+  it('YAZ-5851: an outside edit fits the marks as a fresh load does (D2), never as typing', async () => {
+    for (const [comment, edit] of [
+      ['<!-- code: highlight 3:10 "user.name" -->', (c: string) => c.replace('user.name', 'user.nameFull')],
+      ['<!-- code: bold 2:22 "fetchUser" -->', (c: string) => c.replace('fetchUser', 'fetchUserById')],
+      ['<!-- code: bold 2:22 "fetchUser", highlight-green 3:10 "user.name" -->', (c: string) => c.replace('load', 'read').replace('}', '};')],
+    ] as const) {
+      const { crepe } = await mount(page(CODE, comment))
+      const next = page(edit(CODE), comment)
+      expect(applyExternalMarkdown(crepe, next)).toBe('applied')
+      const fresh = await mount(next)
+      expect(getMarkdownForSave(crepe)).toBe(getMarkdownForSave(fresh.crepe))
+    }
+  })
+
+  it('the outside-edit stamp is the one the app puts on an outside edit', () => expect(OUTSIDE_EDIT).toBe(EXTERNAL_EDIT_META))
+
+  it('YAZ-5854: a comment with no width, a mark and a part after it saves the same bytes twice', () => {
+    const look = parseCodeComment('<!-- code: width 900, bold 2:22 "fetchUser", theme dark -->')!
+    const written = formatCodeComment({ ...look, width: null })!
+    expect(formatCodeComment(parseCodeComment(written)!)).toBe(written)
+  })
+
+  it('YAZ-5853: a copy that starts inside a code block keeps each mark on its own text', async () => {
+    const { view } = await mount(page(CODE, '<!-- code: bold 2:22 "fetchUser", italic 1:1 "async" -->'))
+    const start = block(view).pos + 1 + CODE.indexOf('const')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, start, view.state.doc.content.size - 2)))
+    const { dom } = (view as unknown as { serializeForClipboard: (s: unknown) => { dom: HTMLElement } }).serializeForClipboard(view.state.selection.content())
+    const back = ProseDOMParser.fromSchema(view.state.schema).parse(dom)
+    let pasted: ProseNode | null = null
+    back.descendants((n) => {
+      if (pasted === null && n.type.name === 'code_block') pasted = n
+      return pasted === null
+    })
+    const node = pasted as unknown as ProseNode
+    expect(marksFromSpans(node.textContent, node.attrs.marks ?? []).map((m) => `${m.kind} ${m.text}`)).toEqual(['bold fetchUser'])
   })
 })
