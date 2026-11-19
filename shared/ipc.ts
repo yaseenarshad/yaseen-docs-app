@@ -780,6 +780,14 @@ export const CONTRACT = {
      * skill has no `formats` folder. `vault` null: the app's copy. Never writes.
      */
     cardFormats: invoke<[vault: string | null], CardSkillFormats | null>('app:card-formats', 1),
+    /**
+     * The Mac's dark selection colour (YAZ-5941): System Settings › Appearance › Highlight colour as macOS shows it in
+     * dark, `#rrggbb`. Null when it cannot be read, off macOS, or when the Mac shows the light one (the Mac is in Light
+     * while the app is dark): the editor then keeps its fixed dark blue. A window reads it once, then follows the push.
+     */
+    selectionColour: invoke<[], string | null>('app:selection-colour', 0),
+    /** Fired in every window when the colour changes: a new Highlight colour, or a change of the Mac's or the app's appearance. */
+    onSelectionColour: push<string | null>('app:selection-colour-changed'),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {

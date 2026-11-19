@@ -1,5 +1,5 @@
 import { rendererUrlFor } from './rendererUrl'
-import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
+import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { hostname } from 'node:os'
@@ -47,6 +47,8 @@ import { cardSkillStamp, ensureCardSkill, shippedCardSkill } from './cardSkill'
 import { setCardSkillVault } from '@shared/appVaults'
 import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
+import { watchSelectionColour } from './selectionColour'
+import { registerSelectionColourIpc } from './ipc/selectionColour'
 import { appZoomFactor, subscribeAppZoom } from './appZoom'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
@@ -321,6 +323,29 @@ app.whenReady().then(() => {
   subscribeNativeTheme(store, (theme) => {
     nativeTheme.themeSource = theme
   })
+  // The Mac's selection colour for the editor in dark (YAZ-5941): read now, and again when the Highlight colour changes
+  // (`AppleColorPreferencesChangedNotification`) or the appearance does (`updated`, the app's setting too); every
+  // window hears a change. `getColor` follows the Mac's appearance only: see selectionColour.ts.
+  const selection = watchSelectionColour(
+    {
+      read: () => systemPreferences.getColor('selected-text-background'),
+      subscribe: (changed) => {
+        nativeTheme.on('updated', changed)
+        // Read again a moment later too, in case AppKit's colour lags the notification; a read that finds no change sends nothing.
+        const later = () => {
+          changed()
+          setTimeout(changed, 500)
+        }
+        const id = process.platform === 'darwin' ? systemPreferences.subscribeNotification('AppleColorPreferencesChangedNotification', later) : undefined
+        return () => {
+          nativeTheme.off('updated', changed)
+          if (id !== undefined) systemPreferences.unsubscribeNotification(id)
+        }
+      },
+    },
+    (colour) => broadcastAll(CONTRACT.app.onSelectionColour.channel, colour),
+  )
+  registerSelectionColourIpc(selection.current)
   // The App size (YAZ-3432): every window at once, the Files windows (an origin of their own) and their popups too.
   // First each Files window takes its new width, so its page keeps its width (YAZ-3441).
   subscribeAppZoom(store, (factor, before) => {

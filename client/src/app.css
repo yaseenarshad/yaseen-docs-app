@@ -678,7 +678,13 @@ button {
    - The boxes the editor paints itself (the lit link pill, `wikilink.css`; a selected list item or block; selected table
      cells) take the token, set once on the text of every Crepe surface (a page, its cards, the hover preview,
      Explore). Light: `Highlight`, which is exactly the browser's light selection. Dark: Chromium's `Highlight` stays
-     the LIGHT blue, so light text on it could not be read; the token is the blue the browser paints in dark instead.
+     the LIGHT blue, so light text on it could not be read. So in dark the token is what the browser paints selected
+     text with (YAZ-5941): the Mac's dark highlight colour at 0.8 alpha. Main reads that colour from macOS
+     (`selected-text-background`, desktop/src/main/selectionColour.ts) and puts it on the root as `--mac-selection`
+     (lib/macSelection.ts), again on each change of the Highlight colour or the appearance. With no colour (a test,
+     the phone, the web; or the Mac in Light while the app is dark, as macOS then gives only its light colour) the
+     token is #3f5573: the default blue at 0.8 over the dark page. `--mac-selection-tint` is invalid when
+     `--mac-selection` is unset, which is what makes the fallback apply.
    - Three parts of the text that are not a selection keep the theme's grey (`--crepe-color-pressed`, read on
      `.milkdown` before the text takes the new value): a quote's bar and the two pressed buttons of a table's handles.
      The menus and toolbars sit outside `.ProseMirror`: unchanged. */
@@ -689,7 +695,8 @@ button {
   --crepe-color-selected: Highlight;
 }
 [data-theme='dark'] .milkdown .ProseMirror {
-  --crepe-color-selected: #3f5573;
+  --mac-selection-tint: rgb(from var(--mac-selection) r g b / 0.8);
+  --crepe-color-selected: var(--mac-selection-tint, #3f5573);
 }
 .milkdown .ProseMirror *::selection {
   background: revert;
