@@ -62,6 +62,20 @@ export function levelItems(list: HTMLElement): { paths: string[]; fixed: boolean
   const items = itemsOf(list)
   return { paths: items.map(pathOf), fixed: items.map((el) => el.querySelector(':scope > .tree__row[data-shortcut]') !== null) }
 }
+/**
+ * The y move of a computed `transform`, in the element's own px: a matrix's (Chromium's computed value, a transition's
+ * value at this moment) or a translateY's (as written; jsdom computes none); 0 for none.
+ */
+export function translateYOf(transform: string): number {
+  const m = /^matrix(3d)?\(([^)]*)\)$/.exec(transform.trim())
+  if (m !== null) {
+    const v = m[2].split(',').map(Number)
+    const y = m[1] === undefined ? v[5] : v[13]
+    return Number.isFinite(y) ? y : 0
+  }
+  const t = /translateY\((-?[\d.]+(?:e-?\d+)?)px\)/.exec(transform)
+  return t === null ? 0 : Number(t[1])
+}
 const pathOf = (li: HTMLElement): string => li.querySelector<HTMLElement>(':scope > .tree__row[data-path]')?.dataset.path ?? ''
 /** The zoom the list is drawn at: Chromium's `currentCSSZoom` (the product of every zoom above it); 1 elsewhere. */
 const zoomOf = (el: HTMLElement): number => {
@@ -133,15 +147,27 @@ export function liftRow(row: HTMLElement, pressY: number): RowLift | null {
     })
     put(li, away ? 0 : y - pressY - scrolled)
   }
-  /** The lift's marks and transforms off; `glideFrom`: where each item was drawn, so the new layout glides from there. */
-  const clear = () => {
+  /**
+   * The lift's marks and transforms off; each item glides from where it was drawn to its place in the new layout.
+   * `boxes`: each item's own box (its transform aside) as it stood before the new order, by path, and the list's top
+   * then (`settle`). Where it was drawn is that box plus the transform it is drawn with now (a CSS transition's value at
+   * this moment): read from the boxes, not from the new layout, which React may already have put under the old
+   * transforms (bug YAZ-5971: every parted row jumped by the gap and glided back). Without `boxes` (no new order: a
+   * cancel, a no-move drop, LANDING_MS gone by) the layout is the old one, and the drawn boxes are measured again.
+   */
+  const clear = (boxes?: { tops: ReadonlyMap<string, number>; listTop: number }) => {
     edge.stop()
     list.removeAttribute('data-lift-list')
     list.removeAttribute('data-lift-still')
     li.removeAttribute('data-lifted')
     li.removeAttribute('data-settling')
     const now = itemsOf(list)
-    const before = new Map(now.map((el) => [pathOf(el), el.getBoundingClientRect().top]))
+    const shift = boxes === undefined ? 0 : list.getBoundingClientRect().top - boxes.listTop
+    const drawnTop = (el: HTMLElement): number => {
+      const base = boxes?.tops.get(pathOf(el))
+      return base === undefined ? el.getBoundingClientRect().top : base + shift + translateYOf(getComputedStyle(el).transform) * zoom
+    }
+    const before = new Map(now.map((el) => [pathOf(el), drawnTop(el)]))
     for (const el of [...items, ...now]) {
       el.style.transition = 'none'
       el.style.transform = ''
@@ -181,21 +207,27 @@ export function liftRow(row: HTMLElement, pressY: number): RowLift | null {
         }, still ? 0 : PART_MS)
         return
       }
-      // The row settles into the gap, then the list waits for its new order: React moves the `li`s, the transforms come
-      // off in the same task, and every item already stands where it was drawn.
+      // The row settles into the gap, then the list waits for its new order. The drop's save is optimistic, so React
+      // often moves the `li`s in this very task, UNDER the transforms still on: the new layout plus the old transform is
+      // not where an item was drawn (YAZ-5971). So each item's own box is kept here, before the save, and the new
+      // order's glide starts from that box plus the transform the item is drawn with then: the parted rows do not move,
+      // and the dropped row glides from where it is into its place (the settle's transition, cut short by the commit).
+      const listTop = list.getBoundingClientRect().top
+      const boxTops = new Map(items.map((el) => [pathOf(el), el.getBoundingClientRect().top - translateYOf(getComputedStyle(el).transform) * zoom]))
       li.setAttribute('data-settling', '')
       if (!still) li.style.transition = `transform ${PART_MS}ms ${EASING}`
       put(li, settleOffset(at, from, tops, heights, room))
       let timer: ReturnType<typeof setTimeout> | null = null
-      const observer = new MutationObserver(() => finish())
-      const finish = () => {
+      const observer = new MutationObserver(() => finish(true))
+      const finish = (reordered: boolean) => {
         observer.disconnect()
         if (timer !== null) clearTimeout(timer)
-        clear()
+        // LANDING_MS with no new order: the layout is the old one, so the drawn boxes are measured again.
+        clear(reordered ? { tops: boxTops, listTop } : undefined)
         done?.()
       }
       observer.observe(list, { childList: true })
-      timer = setTimeout(finish, LANDING_MS)
+      timer = setTimeout(() => finish(false), LANDING_MS)
     },
     cancel: () => {
       if (ended) return
