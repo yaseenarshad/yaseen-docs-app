@@ -277,11 +277,12 @@ function listFolder(entry: Entry): void {
     entry.listed = new Set(names)
     for (const n of names) {
       // YAZ-5931: a name that was deleted and written again between two stats is in both listings, but its watch went
-      // with the deleted file. A watch that this listing must open again marks a file that came back: look at it too.
-      // `schedule` drops it if its mtime brings nothing new.
-      const reopened = before !== null && !entry.files.has(n)
+      // with the deleted file. The subscribers heard it go (`heard` null) and it is here again: look at it too. Not "no
+      // watch open": with `fs.watch` unavailable (the polling fallback) no file ever has one, and every listing would
+      // tell of every file.
+      const back = entry.heard.get(n) === null
       watchFile(entry, n)
-      if (before !== null && (!before.has(n) || reopened)) settleFile(entry, n)
+      if (before !== null && (!before.has(n) || back)) settleFile(entry, n)
     }
   })
 }
