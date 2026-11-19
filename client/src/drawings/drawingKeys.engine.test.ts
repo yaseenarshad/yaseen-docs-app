@@ -58,7 +58,8 @@ beforeAll(async () => {
   React = (await import('../../../node_modules/react/index.js' as string)) as ReactLike
   createRoot = ((await import('../../../node_modules/react-dom/client.js' as string)) as { createRoot: typeof createRoot }).createRoot
   engine = (await import('@excalidraw/excalidraw')) as unknown as typeof engine
-})
+  // Loading the real engine took over the 10 s hook default under load, as Monaco's does in `codeKeys.test.ts`.
+}, 60_000)
 
 let host: HTMLElement | null = null
 let unmount: (() => void) | null = null
@@ -89,7 +90,8 @@ async function mount(hotkeys: HotkeyOverrides = {}, aside?: Record<string, boole
       ),
     )
   await render(hotkeys)
-  await React.act(() => new Promise((r) => setTimeout(r, 50)))
+  // Wait for the engine to hand over its API, not for a fixed time: a loaded CI runner took longer than 50 ms.
+  for (const until = Date.now() + 10_000; api === null && Date.now() < until; ) await React.act(() => new Promise((r) => setTimeout(r, 10)))
   if (api === null) throw new Error('the engine did not mount')
   const live: Api = api
   await React.act(() => live.updateScene({ elements: engine.convertToExcalidrawElements([{ type: 'rectangle', id: 'box', x: 0, y: 0, width: 80, height: 60 }], { regenerateIds: false }) }))

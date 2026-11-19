@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { EMPTY_COMPONENTS_INDEX } from '@shared/savedComponents'
 import { COMPONENTS_INDEX_FILE, LIBRARY_COMPONENTS_DIR, type ComponentsIndexFile } from '@shared/types'
 import { createComponentStore, type ComponentStore } from './componentStore'
 
@@ -235,6 +236,15 @@ describe('createComponentStore — watching (🔒 YAZ-1775 D5: one library, ever
   it('an OWN save notifies exactly once — the watcher echo of its three writes is dropped', async () => {
     const seen = vi.fn()
     store.onChanged(seen)
+    // The watcher hears first (YAZ-4278): on a slow CI runner the save ran during the watcher's start, whose walk
+    // announced a file before the store had noted it as its own. An outside write of the empty index is heard once the
+    // start is done; one the start took as already there is never announced, so then it is written again, longer.
+    for (let i = 0; i < 5 && seen.mock.calls.length === 0; i++) {
+      await writeFile(indexFile(), `${JSON.stringify(EMPTY_COMPONENTS_INDEX)}${' '.repeat(i)}\n`)
+      await until(() => seen.mock.calls.length > 0, 5000).catch(() => undefined)
+    }
+    expect(seen).toHaveBeenCalled()
+    seen.mockClear()
     await store.save({ name: 'A card', fragmentJson: fragment(), previewPng: PNG })
     expect(seen).toHaveBeenCalledTimes(1)
     await settle()

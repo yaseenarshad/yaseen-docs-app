@@ -19,6 +19,7 @@ import { registerMemoryIpc } from './main/ipc/memory'
 import { registerSpellerIpc } from './main/ipc/speller'
 import { registerCourseAudioIpc } from './main/ipc/courseAudio'
 import { LIBRARY_MARKER_FILE } from './main/library/copyLibrary'
+import { MEDIA_CACHE_DIR } from './main/media/cachePolicy'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
 
@@ -47,9 +48,11 @@ const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlus
 
 const dir = await mkdtemp(path.join(tmpdir(), 'yd-contract-'))
 // The library mover writes its marker into the data folder after registration (YAZ-4463): the folder goes only after it settled.
+// The media cache makes its folder there too, detached (YAZ-1818): the removal waits for that as well (YAZ-4278).
 let registered: ReturnType<typeof registerIpc> | undefined
 afterAll(async () => {
   await registered?.libraryMoves.settled()
+  await vi.waitFor(() => expect(existsSync(path.join(dir, MEDIA_CACHE_DIR))).toBe(true), { timeout: 10_000 })
   await rm(dir, { recursive: true, force: true })
 })
 
