@@ -167,7 +167,7 @@ function Row({ label, children, wide = false }: { label: string; children: React
 
 /** The icon's rows (YAZ-5843 D4, YAZ-5972): what each colours and its label. */
 const ICON_ROWS = [
-  { row: 'pages', label: 'Pages and files', who: 'pages and files' },
+  { row: 'pages', label: 'Pages and files', who: 'pages and files' }, // drawn through the vault's word: unit(label), `IconRows`
   { row: 'cards', label: 'Cards', who: 'cards' },
 ] as const
 
@@ -177,6 +177,7 @@ const ICON_ROWS = [
  * colour (before YAZ-5972) shows it in both; a row's pick leaves the other as it looks (`withLinkPillIconColor`).
  */
 function IconRows({ look }: { look: LinkPillsState }) {
+  const unit = useUnit()
   const { pills, save } = look
   const colors = linkPillIconColors(pills)
   return (
@@ -185,8 +186,8 @@ function IconRows({ look }: { look: LinkPillsState }) {
         const color = colors[row]
         const pick = (c: LinkPillPartColor) => save(withLinkPillIconColor(pills, row, c))
         return (
-          <Row key={row} label={label} wide>
-            <span className="pill-toolbar__group" role="group" aria-label={`Colour (${who})`}>
+          <Row key={row} label={unit(label)} wide>
+            <span className="pill-toolbar__group" role="group" aria-label={`Colour (${unit(who)})`}>
               <Tool label="Default: the app's icon colours" on={color === 'kind'} mark="Default" onClick={() => pick('kind')} />
               <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => pick('accent')} />
               <Tool label="Same as text" on={color === 'same'} mark="Text" onClick={() => pick('same')} />

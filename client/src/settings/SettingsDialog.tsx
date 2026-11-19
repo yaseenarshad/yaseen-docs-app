@@ -42,6 +42,7 @@ import { createFindChannel } from '../editor/find/findChannel'
 import { FindBar } from '../editor/find/FindBar'
 import { SIDEBAR_REVEAL_MS } from '../sidebar/revealRow'
 import { revealInScroller } from '../editor/find/leastScroll'
+import { unit } from './unitLabel'
 import './settings.css'
 
 interface SettingsDialogProps {
@@ -204,7 +205,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       {runsOf(g, items).map((run, i) => (
         <Fragment key={run.sub ?? `run:${i}`}>
           {/* A sub-heading over its own card (YAZ-5969 Q4): the label in the text's colour, outside the card. */}
-          {run.sub !== undefined && <h4 className="settings-subheading">{run.sub}</h4>}
+          {run.sub !== undefined && <h4 className="settings-subheading">{unit(ctx, run.sub)}</h4>}
           <div className={`settings-group__card${run.sub === undefined ? '' : ' settings-group__card--sub'}${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{run.items.map(row)}</div>
         </Fragment>
       ))}

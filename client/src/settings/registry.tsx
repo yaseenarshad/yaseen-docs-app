@@ -248,9 +248,9 @@ function ExploreWidthSetting({ value, onSet }: { value: number | null; onSet: (n
 }
 
 /** Appearance › Explore › Page zoom (YAZ-5977): the window's own zoom pill (`DocumentZoom`), on the one Explore page zoom. */
-function ExplorePageZoomSetting() {
+function ExplorePageZoomSetting({ ctx }: { ctx: SettingsCtx }) {
   const [zoom, setZoom] = useExploreZoom()
-  return <DocumentZoom value={zoom} onChange={setZoom} label="Explore page zoom" />
+  return <DocumentZoom value={zoom} onChange={setZoom} label={unit(ctx, 'Explore page zoom')} />
 }
 
 /**
@@ -1068,10 +1068,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             // YAZ-5977: the one zoom of Explore's page windows, the same value as their title row's pill (`exploreZoom.ts`).
             id: 'explorePageZoom',
-            label: 'Page zoom',
+            label: (ctx) => unit(ctx, 'Page zoom'),
             hint: "The text of Explore's page windows. The same zoom as the pill on a window's title row: a change at either shows at the other.",
             keywords: ['explore', 'page zoom', 'zoom', 'text size', 'percent', '%', 'window'],
-            render: () => <ExplorePageZoomSetting />,
+            render: (ctx) => <ExplorePageZoomSetting ctx={ctx} />,
           },
           {
             // YAZ-5977 Q3: Search size lives in the zoom menu only; a search for it finds this pointer. YAZ-5982: it is the menu's
@@ -2231,7 +2231,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         subheadings: [
           { title: 'Show IDs', rows: ['showIds', 'showIds.title', 'showIds.files'] },
           { title: 'Links and editing', rows: ['linkClick', 'readOnlyVault'] },
-          { title: 'Page IDs', rows: ['ids', 'duplicates', 'idLetters', 'oldIds'] },
+          { title: 'Page IDs', rows: ['ids', 'duplicates', 'idLetters', 'oldIds'] }, // drawn through the vault's word: unit(ctx, title), SettingsDialog
         ],
         vault: true,
         items: [
