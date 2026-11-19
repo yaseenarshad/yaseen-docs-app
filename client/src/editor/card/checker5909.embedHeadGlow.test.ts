@@ -143,7 +143,7 @@ const withAnswer = (answer: string) => cardFileText.replace('Paris', answer)
 
 describe('YAZ-5913, YAZ-5915: an embed shows the one head (review state, title rule, To fix)', () => {
   it('Review on: "New", the title rule with "(default)", "To fix", in that order; the vault`s Show card titles redraws them; Review off: none', async () => {
-    let settings: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true, titleAt: 'always' }
+    let settings: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true, titleAt: 'always', titleMark: 'always' }
     // A version of its own: the embeds keep one read per file version across tests (`cardFileText`).
     const list = records({ cardFile: { mtime: 21, cards: [card('GEO-140', 'Capital of France', { fix: true })] } })
     // The file and the index agree: the card line holds `fix`.
@@ -156,12 +156,18 @@ describe('YAZ-5913, YAZ-5915: an embed shows the one head (review state, title r
     settings = { ...settings, titleAt: 'side2' }
     redrawCardHeads()
     expect(headMarks(box)).toEqual(['GEO-140', 'New', 'Title before Side 2 (default)', 'To fix'])
+    // YAZ-5965: Only if different (the default): the card follows the vault, so no title mark; Never: none.
+    for (const titleMark of ['different', 'never'] as const) {
+      settings = { ...settings, titleMark }
+      redrawCardHeads()
+      expect(headMarks(box)).toEqual(['GEO-140', 'New', 'To fix'])
+    }
     settings = { ...settings, enabled: false }
     redrawCardHeads()
     expect(headMarks(box)).toEqual(['GEO-140', 'To fix'])
   })
 
-  it('a card`s own title choice shows with no "(default)"; Never says "Title hidden in review"', async () => {
+  it('a card`s own title choice shows with no "(default)"; Never says "Title hidden in review"; Only if different (the default, YAZ-5965) shows these two and not a card that follows the vault', async () => {
     const settings: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true, titleAt: 'always' }
     const list = records({ cardFile: { mtime: 22, cards: [card('GEO-140', 'Capital of France', { titleAt: 'click' })] }, europe: { mtime: 22, cards: [card('GEO-1', 'Largest country?', { notitle: true }), card('GEO-2', 'Smallest country?', { off: true })] } })
     const file = cardFileText.replace('title "Capital of France" -->', 'title "Capital of France", title-click -->')
@@ -172,7 +178,7 @@ describe('YAZ-5913, YAZ-5915: an embed shows the one head (review state, title r
     await vi.waitFor(() => expect(headMarks(own!)).toEqual(['GEO-140', 'New', 'Title after first click']))
     await vi.waitFor(() => expect(headMarks(never!)).toEqual(['GEO-1', 'New', 'Title hidden in review']))
     // An archived card says "Archived" in the place of the review state.
-    await vi.waitFor(() => expect(headMarks(archived!)).toEqual(['GEO-2', 'Archived', 'Title always (default)']))
+    await vi.waitFor(() => expect(headMarks(archived!)).toEqual(['GEO-2', 'Archived']))
   })
 })
 
@@ -232,6 +238,13 @@ describe('YAZ-5896 D1, D2 in an embed (a card shown in a page by `![[ID]]`)', ()
     text.dispatchEvent(dbl)
     expect(asked).toHaveLength(0)
     expect(dbl.defaultPrevented).toBe(false)
+    // YAZ-5964: in a page you can edit too, a double-click selects the word; only Edit card edits.
+    view.setProps({ editable: () => true })
+    const again = new MouseEvent('dblclick', { bubbles: true, cancelable: true, button: 0, detail: 2 })
+    text.dispatchEvent(again)
+    expect(again.defaultPrevented).toBe(false)
+    await new Promise((done) => setTimeout(done, 20))
+    expect(box.querySelector('.card--editing')).toBeNull()
   })
 
   it('YAZ-5939: a click on the embed`s text with no drag selects the embed whole; a drag of 10 px does not', async () => {

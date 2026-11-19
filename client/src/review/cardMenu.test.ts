@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cardMenu, type CardMenuMarks, type CardMenuPlace } from '@shared/cardMenu'
+import { ARCHIVE_TWICE, tapWords } from '@shared/cardAsks'
 
 /**
  * YAZ-5697 round 2: ONE card menu. Every place's ⋯ is this list; each place shows the rows that fit it, in the same
@@ -7,6 +8,7 @@ import { cardMenu, type CardMenuMarks, type CardMenuPlace } from '@shared/cardMe
  */
 const NONE: CardMenuMarks = { off: false, next: false, fix: false, notitle: false, reviews: 1 }
 const labels = (place: CardMenuPlace) => cardMenu(place).map((group) => group.map((r) => r.label))
+const twice = (place: CardMenuPlace) => cardMenu(place).flat().filter((r) => r.twice !== undefined).map((r) => [r.label, r.twice!.words, r.twice!.danger === true])
 const asks = (place: CardMenuPlace) => cardMenu(place).flat().filter((r) => r.ask !== undefined).map((r) => [r.label, r.ask!.question, r.ask!.yes])
 
 describe('one card menu (YAZ-5697 round 2)', () => {
@@ -39,22 +41,33 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect(labels({ open: 'card', marks: NONE, upNext: true, fix: false })).toEqual([['Open card'], ['Move to Up next', 'Archive card', 'Title in review']])
   })
 
-  it('THE ONE ASK RULE: every row that changes the card or its file and that the same row does not take back asks', () => {
+  it('THE ASK RULES: the file rows ask in place (Cancel first); the review rows run on a second click (YAZ-5966)', () => {
     expect(asks({ open: 'card', preview: true, showAsLink: true, moveOut: true, putBack: true, toPage: true, marks: NONE, upNext: true, copyId: 'DEMO-7', reset: true })).toEqual([
       ['Move to its own file', 'Move this card to its own file?', 'Move'],
       ['Put back into this page', 'Put this card back into this page?', 'Put back'],
       ['Turn into a page', 'Turn this card into a page?', 'Turn into a page'],
-      ['Archive card', 'Archive this card?', 'Archive'],
     ])
-    // Title in review ›: each choice but the one now asks; the phone's Title on the front asks too.
+    // YAZ-5966: Archive card, Move to Up next / Remove from Up next say "Click again to …"; round 2: Unarchive card and
+    // Fix later / Remove Fix later too.
+    expect(twice({ marks: NONE, upNext: true })).toEqual([
+      ['Move to Up next', 'Click again to move to Up next', false],
+      ['Archive card', 'Click again to archive', true],
+      ['Fix later', 'Click again to mark Fix later', false],
+    ])
+    expect(twice({ marks: { ...NONE, next: true, off: true, fix: true }, upNext: true })).toEqual([
+      ['Remove from Up next', 'Click again to remove from Up next', true],
+      ['Unarchive card', 'Click again to unarchive', false],
+      ['Remove Fix later', 'Click again to remove Fix later', true],
+    ])
+    // Title in review ›: each choice but the one now runs on a second click; the one now (✓) does nothing.
     const title = cardMenu({ marks: { ...NONE, off: true, notitle: true } }).flat().find((r) => r.action === 'title')!
-    expect([title.label, title.hint]).toEqual(['Title in review', 'Never'])
-    expect(title.children!.map((c) => [c.label, c.checked, c.ask?.question ?? null])).toEqual([
-      ['Default', false, 'Use the default from Settings › Cards?'],
-      ['Never', true, null],
-      ['Always', false, 'Always show the title?'],
-      ['After the first click', false, 'Show the title after the first click?'],
-      ['Before Side 2', false, 'Show the title before Side 2?'],
+    expect([title.label, title.hint, title.twice]).toEqual(['Title in review', 'Never', undefined])
+    expect(title.children!.map((c) => [c.label, c.checked, c.twice?.words ?? null, c.ask ?? null])).toEqual([
+      ['Default', false, 'Click again to use the default', null],
+      ['Never', true, null, null],
+      ['Always', false, 'Click again to always show the title', null],
+      ['After the first click', false, 'Click again to show the title after a click', null],
+      ['Before Side 2', false, 'Click again to show the title before Side 2', null],
     ])
     // YAZ-5696 round 2: with the vault's Show card titles, Default says what it means now ("Default (On)" of the table
     // menu); the row has the eye's help (`help`).
@@ -63,8 +76,8 @@ describe('one card menu (YAZ-5697 round 2)', () => {
     expect([known.hint, known.children![0].label, 'help' in known]).toEqual(['Default', 'Default (Before Side 2)', false])
     const click = cardMenu({ marks: { ...NONE, titleAt: 'click' }, titleGlobal: 'always' }).flat().find((r) => r.action === 'title')!
     expect(click.hint).toBe('After first click')
-    // Archived: Unarchive card does not ask.
-    expect(asks({ marks: { ...NONE, off: true } })).toEqual([])
+    // The phone says "Tap again to …".
+    expect(tapWords(ARCHIVE_TWICE)).toBe('Tap again to archive')
   })
 
   it('the vault\'s word for a page; one Up next word; a read-only page\'s rows wait; no marks, no review rows', () => {

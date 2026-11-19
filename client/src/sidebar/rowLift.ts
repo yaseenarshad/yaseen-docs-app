@@ -62,6 +62,20 @@ export function levelItems(list: HTMLElement): { paths: string[]; fixed: boolean
   const items = itemsOf(list)
   return { paths: items.map(pathOf), fixed: items.map((el) => el.querySelector(':scope > .tree__row[data-shortcut]') !== null) }
 }
+/**
+ * The y move of a computed `transform`, in the element's own px: a matrix's (Chromium's computed value, a transition's
+ * value at this moment) or a translateY's (as written; jsdom computes none); 0 for none.
+ */
+export function translateYOf(transform: string): number {
+  const m = /^matrix(3d)?\(([^)]*)\)$/.exec(transform.trim())
+  if (m !== null) {
+    const v = m[2].split(',').map(Number)
+    const y = m[1] === undefined ? v[5] : v[13]
+    return Number.isFinite(y) ? y : 0
+  }
+  const t = /translateY\((-?[\d.]+(?:e-?\d+)?)px\)/.exec(transform)
+  return t === null ? 0 : Number(t[1])
+}
 const pathOf = (li: HTMLElement): string => li.querySelector<HTMLElement>(':scope > .tree__row[data-path]')?.dataset.path ?? ''
 /** The zoom the list is drawn at: Chromium's `currentCSSZoom` (the product of every zoom above it); 1 elsewhere. */
 const zoomOf = (el: HTMLElement): number => {
@@ -86,6 +100,14 @@ export interface RowLift {
   settle: (done?: () => void) => void
   /** Esc, a release with no move: everything slides home. */
   cancel: () => void
+}
+
+/** What a drop keeps of its list before the new order (`settle`), for the glide (`clear`). */
+interface Dropped {
+  drawn: Map<string, number>
+  base: Map<string, number>
+  listTop: number
+  painted: boolean
 }
 
 /** How long a drop waits for its new order before the parting ends anyway (`useLiveGapReorder`'s LANDING_MS). */
@@ -133,15 +155,32 @@ export function liftRow(row: HTMLElement, pressY: number): RowLift | null {
     })
     put(li, away ? 0 : y - pressY - scrolled)
   }
-  /** The lift's marks and transforms off; `glideFrom`: where each item was drawn, so the new layout glides from there. */
-  const clear = () => {
+  /**
+   * The lift's marks and transforms off; each item glides from where it was drawn to its place in the new layout.
+   * `drop`: what the drop kept of each item, by path, before the new order (`settle`): its top as drawn then, its own
+   * box (its transform aside), the list's top, and whether a frame has been drawn since. Where an item stands drawn is
+   * read from these, not from the new layout, which React may already have put under the old transforms (bug YAZ-5971:
+   * every parted row jumped by the gap and glided back). No frame since the drop: each item is where it was drawn at
+   * the drop. A frame since (a later commit): its own box plus the transform it is drawn with now (a CSS transition's
+   * value at this moment). Without `drop` (no new order: a cancel, a no-move drop, LANDING_MS gone by) the layout is
+   * the old one, and the drawn boxes are measured again.
+   */
+  const clear = (drop?: Dropped) => {
     edge.stop()
     list.removeAttribute('data-lift-list')
     list.removeAttribute('data-lift-still')
     li.removeAttribute('data-lifted')
     li.removeAttribute('data-settling')
     const now = itemsOf(list)
-    const before = new Map(now.map((el) => [pathOf(el), el.getBoundingClientRect().top]))
+    const shift = drop === undefined ? 0 : list.getBoundingClientRect().top - drop.listTop
+    const drawnTop = (el: HTMLElement): number => {
+      const path = pathOf(el)
+      const at = drop?.painted === false ? drop.drawn.get(path) : undefined
+      if (at !== undefined) return at + shift
+      const base = drop?.base.get(path)
+      return base === undefined ? el.getBoundingClientRect().top : base + shift + translateYOf(getComputedStyle(el).transform) * zoom
+    }
+    const before = new Map(now.map((el) => [pathOf(el), drawnTop(el)]))
     for (const el of [...items, ...now]) {
       el.style.transition = 'none'
       el.style.transform = ''
@@ -181,21 +220,34 @@ export function liftRow(row: HTMLElement, pressY: number): RowLift | null {
         }, still ? 0 : PART_MS)
         return
       }
-      // The row settles into the gap, then the list waits for its new order: React moves the `li`s, the transforms come
-      // off in the same task, and every item already stands where it was drawn.
+      // The row settles into the gap, then the list waits for its new order. The drop's save is optimistic, so React
+      // often moves the `li`s in this very task, UNDER the transforms still on: the new layout plus the old transform is
+      // not where an item was drawn (YAZ-5971), and a moved `li` loses the settle's transition. So where each item is
+      // drawn, and its own box, are kept here, before the save: the new order's glide starts from there. The parted rows
+      // do not move again, and the dropped row glides from the drop point into its place.
+      const drop: Dropped = { drawn: new Map(), base: new Map(), listTop: list.getBoundingClientRect().top, painted: false }
+      for (const el of items) {
+        const top = el.getBoundingClientRect().top
+        drop.drawn.set(pathOf(el), top)
+        drop.base.set(pathOf(el), top - translateYOf(getComputedStyle(el).transform) * zoom)
+      }
+      requestAnimationFrame(() => {
+        drop.painted = true
+      })
       li.setAttribute('data-settling', '')
       if (!still) li.style.transition = `transform ${PART_MS}ms ${EASING}`
       put(li, settleOffset(at, from, tops, heights, room))
       let timer: ReturnType<typeof setTimeout> | null = null
-      const observer = new MutationObserver(() => finish())
-      const finish = () => {
+      const observer = new MutationObserver(() => finish(true))
+      const finish = (reordered: boolean) => {
         observer.disconnect()
         if (timer !== null) clearTimeout(timer)
-        clear()
+        // LANDING_MS with no new order: the layout is the old one, so the drawn boxes are measured again.
+        clear(reordered ? drop : undefined)
         done?.()
       }
       observer.observe(list, { childList: true })
-      timer = setTimeout(finish, LANDING_MS)
+      timer = setTimeout(() => finish(false), LANDING_MS)
     },
     cancel: () => {
       if (ended) return

@@ -1,5 +1,5 @@
 /**
- * One selection colour (YAZ-5902 D1): the text of every Crepe surface shows the Mac's highlight, as a card page does.
+ * One selection colour (YAZ-5902 D1, YAZ-5941): the text of every Crepe surface shows the Mac's highlight, as a card page does.
  * Read as text: jsdom computes no imported sheet.
  */
 import { readFileSync } from 'node:fs'
@@ -16,10 +16,14 @@ it('selected text in the editor takes the browser`s own colour, as outside it; C
   expect(body(appCss, '.milkdown .ProseMirror *::selection')).toMatch(/background:\s*revert;/)
 })
 
-it('the boxes the editor paints (the lit pill) take `Highlight`, and in dark the blue the browser paints there', () => {
+it('the boxes the editor paints (the lit pill, selected cells) take `Highlight`, and in dark the Mac`s colour at 0.8, as the browser paints selected text', () => {
   expect(body(appCss, '.milkdown .ProseMirror')).toMatch(/--crepe-color-selected:\s*Highlight;/)
-  expect(body(appCss, "[data-theme='dark'] .milkdown .ProseMirror")).toMatch(/--crepe-color-selected:\s*#3f5573;/)
+  const dark = body(appCss, "[data-theme='dark'] .milkdown .ProseMirror")
+  // YAZ-5941: `--mac-selection` (lib/macSelection.ts) at 0.8 alpha; unset, the tint is invalid and the fixed blue applies.
+  expect(dark).toMatch(/--mac-selection-tint:\s*rgb\(from var\(--mac-selection\) r g b \/ 0\.8\);/)
+  expect(dark).toMatch(/--crepe-color-selected:\s*var\(--mac-selection-tint, #3f5573\);/)
   expect(body(read('./wikilink/wikilink.css'), '.wikilink.wikilink--selected')).toContain('var(--crepe-color-selected)')
+  expect(read('./table/table.css').match(/var\(--crepe-color-selected\)/g)?.length).toBeGreaterThanOrEqual(2)
 })
 
 it('a quote`s bar keeps the theme`s grey, and the menu strip keeps its own hover token', () => {

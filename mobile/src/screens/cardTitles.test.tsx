@@ -86,7 +86,8 @@ describe('Search finds a card by the title on its card line (point 3)', () => {
 
 describe('a card alone ("Open card") and an embedded card', () => {
   /** YAZ-5913: with Review on, the head shows the card's title rule after its review state ("New" for these cards). */
-  const RULE = 'Title always (default)'
+  // YAZ-5965: Title mark in the card head is Only if different by default: these cards follow the vault, so no title mark.
+  const RULE = ''
 
   it('YAZ-5437: the page Geo shows each card\'s title band under its head; a card with no title has none', async () => {
     h = await openSearch()

@@ -155,10 +155,20 @@ async function menu(): Promise<string[]> {
   return [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent ?? '')
 }
 const pick = (label: string) => act(() => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label)!.click())
-/** ⋯'s Archive card, then its ask's Archive (YAZ-5697). */
+/** ⋯'s Archive card, twice (YAZ-5966: the first click says "Click again to archive"). */
 const archive = () => {
   pick('Archive card')
-  pick('Archive')
+  pick('Click again to archive')
+}
+/** Unarchive card, twice too (YAZ-5966 round 2). */
+const unarchive = () => {
+  pick('Unarchive card')
+  pick('Click again to unarchive')
+}
+/** Fix later / Remove Fix later, twice too (YAZ-5966 round 2). */
+const fixLater = (on: boolean) => {
+  pick(on ? 'Fix later' : 'Remove Fix later')
+  pick(on ? 'Click again to mark Fix later' : 'Click again to remove Fix later')
 }
 
 describe('the card file tab (YAZ-5037 phase 3)', () => {
@@ -199,12 +209,17 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })
 
-  it('YAZ-5697: Archive card and Turn into a page ask in place first ("Archive this card?", Cancel first and focused); the first click writes nothing, Cancel leaves the card as it was', async () => {
+  it('YAZ-5697, YAZ-5966: Turn into a page asks in place first (Cancel first and focused); Archive card says "Click again to archive" and the pointer leaving puts it back; the first click writes nothing', async () => {
     await mount(FILE)
-    for (const [row, question, yes] of [
-      ['Archive card', 'Archive this card?', 'Archive'],
-      ['Turn into a page', 'Turn this card into a page?', 'Turn into a page'],
-    ]) {
+    await menu()
+    pick('Archive card')
+    const armed = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) => b.textContent === 'Click again to archive')!
+    expect(armed.classList.contains('ctx-menu__item--armed')).toBe(true)
+    expect(document.querySelector('.ctx-menu__ask')).toBeNull()
+    act(() => armed.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+    expect(armed.textContent).toBe('Archive card')
+    act(() => document.querySelector<HTMLElement>('.ctx-overlay')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    for (const [row, question, yes] of [['Turn into a page', 'Turn this card into a page?', 'Turn into a page']]) {
       await menu()
       pick(row)
       await act(async () => undefined)
@@ -220,13 +235,16 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await act(async () => undefined)
     expect(disk.files.get(PATH)).toBe(FILE)
     expect(converts.turnIntoPage).not.toHaveBeenCalled()
-    // Move to Up next and Fix later stay one click: each is taken back on the same row (and Undo, in the Inbox).
+    // YAZ-5966 round 2: Fix later is click-twice too; the first click writes nothing.
     await menu()
     pick('Fix later')
+    await act(async () => undefined)
+    expect(disk.files.get(PATH)).toBe(FILE)
+    pick('Click again to mark Fix later')
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain(', fix -->'))
   })
 
-  it('YAZ-5696: ⋯ Title in review › Default · Never · Always · After the first click · Before Side 2; a change asks in place first (YAZ-5697), then writes the card line', async () => {
+  it('YAZ-5696, YAZ-5966: ⋯ Title in review › Default · Never · Always · After the first click · Before Side 2; a change runs on a second click, then writes the card line', async () => {
     await mount(FILE)
     const line = () => disk.files.get(PATH)!.split('\n').find((l) => l.startsWith('<!-- card'))
     const flyoutRows = () => [...document.querySelectorAll<HTMLElement>('.ctx-menu__sub [role="menuitem"]')]
@@ -244,37 +262,45 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(parent.dataset.hint).toBe('Default')
     expect(parent.querySelector('.card-title-help, svg')).toBeNull()
     expect(choices()).toEqual([['Default (Always)', '✓'], ['Never', ''], ['Always', ''], ['After the first click', ''], ['Before Side 2', '']])
-    // Before Side 2: it asks first; Cancel writes nothing.
+    // Before Side 2: the first click says what the second does, in the accent colour; leaving the row writes nothing.
     act(() => flyoutRows()[4].click())
-    await act(async () => undefined)
-    const ask = () => document.querySelector<HTMLElement>('.ctx-menu__ask')
-    expect(ask()?.textContent).toContain('Show the title before Side 2?')
-    const answers = () => [...ask()!.querySelectorAll<HTMLButtonElement>('button')]
-    expect(answers().map((b) => b.textContent)).toEqual(['Cancel', 'Before Side 2'])
-    act(() => answers()[0].click())
+    expect([flyoutRows()[4].textContent, flyoutRows()[4].classList.contains('ctx-menu__item--armed-add')]).toEqual(['Click again to show the title before Side 2', true])
+    expect(document.querySelector('.ctx-menu__ask')).toBeNull()
+    act(() => flyoutRows()[4].dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+    expect(flyoutRows()[4].textContent).toBe('Before Side 2')
     await act(async () => undefined)
     expect(disk.files.get(PATH)).toBe(FILE)
-    // Yes: the line takes `title-side2`.
+    // Twice: the line takes `title-side2`, and the menu closes.
     act(() => flyoutRows()[4].click())
-    await act(async () => undefined)
-    act(() => answers()[1].click())
+    act(() => flyoutRows()[4].click())
+    expect(document.querySelector('.ctx-menu')).toBeNull()
     await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-9, title "Capital of France", title-side2 -->'))
     act(() => document.querySelector<HTMLElement>('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     // The menu says the choice now; Never takes its place (`notitle`), Default takes both away.
     expect((await open()).dataset.hint).toBe('Before Side 2')
     expect(choices()[4]).toEqual(['Before Side 2', '✓'])
     act(() => flyoutRows()[1].click())
-    await act(async () => undefined)
-    expect(ask()?.textContent).toContain('Never show the title in review?')
-    act(() => answers()[1].click())
+    expect(flyoutRows()[1].textContent).toBe('Click again to never show the title')
+    act(() => flyoutRows()[1].click())
     await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-9, title "Capital of France", notitle -->'))
     await vi.waitFor(() => expect(el.querySelector('.card__notitle')?.textContent).toBe('Title hidden in review'))
     act(() => document.querySelector<HTMLElement>('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     await open()
     act(() => flyoutRows()[0].click())
-    await act(async () => undefined)
-    act(() => answers()[1].click())
+    act(() => flyoutRows()[0].click())
     await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-9, title "Capital of France" -->'))
+  })
+
+  it('YAZ-5965: Title mark in the card head — Only if different (the default) shows no title mark on a card that follows the vault; Always shows "Title always (default)"', async () => {
+    await mount(FILE)
+    await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
+    expect(el.querySelector('.card__title-mark')).toBeNull()
+    act(() => root?.unmount())
+    root = null
+    el.remove()
+    disk.review = { enabled: true, titleMark: 'always' }
+    await mount(FILE)
+    await vi.waitFor(() => expect(el.querySelector('.card__title-mark')?.textContent).toBe('Title always (default)'))
   })
 
   it('Archive card writes `off` on the card line once its ask says yes; the head then says "Archived"', async () => {
@@ -288,12 +314,12 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
   it('YAZ-5097: Fix later writes `fix` on the card line; the head then says "To fix"; Remove Fix later takes it off', async () => {
     await mount(FILE)
     await menu()
-    pick('Fix later')
+    fixLater(true)
     // YAZ-5309: `fix` goes after the ID and the title.
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", fix -->')))
     await vi.waitFor(() => expect(el.querySelector('.card__head .card__fix')?.textContent).toBe('To fix'))
     expect(await menu()).toContain('Remove Fix later')
-    pick('Remove Fix later')
+    fixLater(false)
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
     await vi.waitFor(() => expect(el.querySelector('.card__head .card__fix')).toBeNull())
   })
@@ -576,7 +602,7 @@ describe('the guided tour hears the card file tab (YAZ-5123)', () => {
       ['Unarchive card', 'card-menu-unarchive'],
       ['Copy card link', 'card-copy-link'],
     ])
-    pick('Unarchive card')
+    unarchive()
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
   })
 })
@@ -1105,7 +1131,7 @@ describe('comments on a card file (YAZ-5466)', () => {
     archive()
     await vi.waitFor(() => expect(onDisk()).toBe(WITH.replace('title "Capital of France" -->', 'title "Capital of France", off -->')))
     await menu()
-    pick('Fix later')
+    fixLater(true)
     await vi.waitFor(() => expect(onDisk()).toContain(`---\nkind: card\n${ENTRIES}---\n`))
     expect(onDisk()).toContain(', fix')
   })

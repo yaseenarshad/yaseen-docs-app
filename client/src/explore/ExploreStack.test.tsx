@@ -6,7 +6,9 @@
  * per page layer with the stack's link doors, and nothing writes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { act, useEffect, useState, type ReactNode } from 'react'
+import { act, useContext, useEffect, useState, type ReactNode } from 'react'
+import { TitleRowControls } from '../editor/PageFrame'
+import { StatusChips } from '../editor/StatusChips'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord, PageView } from '@shared/types'
 import { CrepeFeature } from '../editor/crepe'
@@ -32,6 +34,7 @@ import { registerPageView } from '../lib/pageView'
 import { tellReadOnlyEdit } from '../editor/readOnlyEdit'
 import { confirmResetHistory } from '../editor/card/testResetHistory'
 import { placeOf } from '../test-placeName'
+import { openMenuAt } from '../editor/linkMenu'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -77,6 +80,8 @@ vi.mock('../editor/createCrepe', () => ({
   cardLook: () => ({}),
   // The fold-all button reads the view: the stand-in's document, a state the fold stand-ins below ignore.
   editorViewOf: (crepe: Crepe) => ({ dom: crepe.opts.root.firstChild, state: {}, dispatch: folds.dispatch }),
+  // The reading cog's counts (YAZ-5974): the stand-in's text.
+  getPlainText: (crepe: Crepe) => crepe.opts.defaultValue ?? '',
 }))
 /** Where the reading layer stands (YAZ-5164): jsdom draws no boxes; the real reading is in pagePlace.test.ts. */
 vi.mock('../editor/pagePlace', () => ({
@@ -152,6 +157,16 @@ const vaults: SearchVault[] = [{ root: '/v', watch, dirs: ['/v/sub'], files: [] 
 const candidates = { candidates: [], subscribe: () => () => undefined }
 const viewOnly = { resolve: null, subscribe: () => () => undefined } as unknown as import('../editor/wikilink/viewOnlyLinkSource').ViewOnlyLinkSource
 
+/** The page editor's stand-in: its header's title row holds the layer's page controls, as the editor's does (YAZ-5974). */
+function StubEditor({ path }: { path: string }) {
+  const controls = useContext(TitleRowControls)
+  return (
+    <div className="editor" data-editor={path}>
+      <div className="page-header">{controls}</div>
+    </div>
+  )
+}
+
 let root: Root | null = null
 let el: HTMLElement
 let props: ExploreStackProps
@@ -212,7 +227,7 @@ beforeEach(() => {
     textVarsFor: () => ({}),
     renderEditor: (path): ReactNode => {
       editors.push(path)
-      return <div className="editor" data-editor={path} />
+      return <StubEditor path={path} />
     },
     createFolder: () => '',
     openInTab: vi.fn(),
@@ -493,10 +508,11 @@ describe('the explore stack', () => {
     expect(under.comments.at(-1)?.content).toContain('# /v/alpha.md')
     expect(under.backlinks).toContain('/v/alpha.md')
     expect(top().querySelector('.explore__body--read .comments')).not.toBeNull()
-    // The fold-all button, the page tab's own, in the head: its command runs on this layer's view.
-    const fold = top().querySelector<HTMLButtonElement>('.explore__head .fold-all__trigger')
+    // The fold-all button, the page tab's own, on the title row (YAZ-5974): its command runs on this layer's view; the cog after it.
+    expect(top().querySelector('.explore__head .fold-all__trigger')).toBeNull()
+    const fold = top().querySelector<HTMLButtonElement>('.explore__body--read .page-header > .page-header__controls .fold-all__trigger')
     expect(fold).not.toBeNull()
-    expect(fold?.closest('[data-fold-part]')?.nextElementSibling?.textContent).toContain('Edit')
+    expect(fold?.closest('.page-header__chips')?.querySelector('.page-settings__trigger')).not.toBeNull()
     act(() => fold?.click())
     await flush()
     expect(folds.runs).toEqual([true])
@@ -599,6 +615,34 @@ describe('the explore stack', () => {
     expect(props.onClose).not.toHaveBeenCalled()
     expect(layers()).toHaveLength(before)
     escape()
+    expect(before > 1 ? layers().length === before - 1 : vi.mocked(props.onClose).mock.calls.length === 1).toBe(true)
+  })
+
+  // YAZ-5980: the editor's menus (a card's ⋯, a link's right-click, an image's, a board's: all `openMenuAt`) closed on a
+  // window listener that ran after the stack's, and did not take the key, so one Esc closed the menu AND the layer.
+  it('YAZ-5980: Esc with an editor menu (openMenuAt) open in a page layer closes the menu alone; the editor`s Esc does not run; the next Esc closes the layer', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const before = layers().length
+    const body = top().querySelector<HTMLElement>('.explore__body') as HTMLElement
+    // The editor's own Esc (createCrepe: the keyboard to the sidebar): it must not run while a menu is open.
+    const field = document.createElement('div')
+    field.tabIndex = -1
+    body.appendChild(field)
+    act(() => field.focus())
+    const editorEsc = vi.fn()
+    field.addEventListener('keydown', (e) => e.key === 'Escape' && editorEsc())
+    act(() => void openMenuAt(body, 40, 50, [{ label: 'Open card', run: () => {} }]))
+    expect(document.querySelector('.ctx-menu')).not.toBeNull()
+    escape()
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    expect(editorEsc).not.toHaveBeenCalled()
+    expect(layers()).toHaveLength(before)
+    expect(props.onClose).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(field)
+    escape()
+    expect(editorEsc).toHaveBeenCalledOnce()
     expect(before > 1 ? layers().length === before - 1 : vi.mocked(props.onClose).mock.calls.length === 1).toBe(true)
   })
 
@@ -1075,7 +1119,7 @@ describe('round 3: ‹ › through the search, and layers that move like a cell 
 })
 
 describe('round 4: zoom in a page layer', () => {
-  const pill = (layer: HTMLElement = top()) => layer.querySelector<HTMLElement>('.explore__head .document-zoom')
+  const pill = (layer: HTMLElement = top()) => layer.querySelector<HTMLElement>('.page-header__controls .document-zoom')
   const value = () => pill()?.querySelector('.document-zoom__value')?.textContent
   const bodyZoom = () => top().querySelector<HTMLElement>('.explore__body')?.style.getPropertyValue('--document-zoom')
   const setInput = (field: HTMLInputElement, text: string) => {
@@ -1091,15 +1135,16 @@ describe('round 4: zoom in a page layer', () => {
     await typeQuery('alp')
     await openResult()
     expect(pill()).not.toBeNull()
-    expect(value()).toBe('100%')
-    expect(bodyZoom()).toBe('1')
+    // YAZ-5977 Q6: nothing saved is 125% (Yaseen: "125%, keep the old look").
+    expect(value()).toBe('125%')
+    expect(bodyZoom()).toBe('1.25')
     const buttons = () => [...(pill()?.querySelectorAll<HTMLButtonElement>('.document-zoom__step') ?? [])]
     act(() => buttons()[0].click())
-    expect(value()).toBe('90%')
-    expect(bodyZoom()).toBe('0.9')
+    expect(value()).toBe('100%')
+    expect(bodyZoom()).toBe('1')
     act(() => buttons()[1].click())
     act(() => buttons()[1].click())
-    expect(value()).toBe('125%')
+    expect(value()).toBe('150%')
     // The menu: a typed value.
     act(() => pill()?.querySelector<HTMLButtonElement>('.document-zoom__trigger')?.click())
     const field = pill()?.querySelector('input') as HTMLInputElement
@@ -1123,7 +1168,7 @@ describe('round 4: zoom in a page layer', () => {
     const read = top().querySelector<HTMLElement>('.explore__body--read')!
     expect(read.classList.contains('editor-host')).toBe(true)
     expect(read.style.getPropertyValue('--content-text-width')).toBe('900px')
-    expect(read.style.getPropertyValue('--document-zoom')).toBe('1')
+    expect(read.style.getPropertyValue('--document-zoom')).toBe('1.25')
     readFile.mockImplementation(async (path) => ({ path, content: `# ${path}\n\nno key\n`, mtime: 1, size: 1 }))
     key(read, { key: 'Escape' })
     await flush()
@@ -1143,21 +1188,25 @@ describe('round 4: zoom in a page layer', () => {
     expect(localStorage.getItem('explore:zoom')).toBeNull()
     await typeQuery('alp')
     await openResult()
-    act(() => requestZoom(1, unclaimed))
     expect(value()).toBe('125%')
     act(() => requestZoom(1, unclaimed))
     expect(value()).toBe('150%')
+    act(() => requestZoom(1, unclaimed))
+    expect(value()).toBe('200%')
     act(() => requestZoom(-1, unclaimed))
-    expect(value()).toBe('125%')
+    expect(value()).toBe('150%')
     // A page over it, from a link, opens at the same zoom; a step there is the one value.
     act(() => crepes[0].opts.wikilinkNav?.openCurrent('/v/beta.md'))
     await flush()
     await flush()
-    expect(value()).toBe('125%')
+    expect(value()).toBe('150%')
+    // ⌘0: back to the default, 125% (YAZ-5977), which is no entry.
     act(() => requestZoom(0, unclaimed))
-    expect(value()).toBe('100%')
+    expect(value()).toBe('125%')
+    expect(localStorage.getItem('explore:zoom')).toBeNull()
     await escape()
-    expect(value()).toBe('100%')
+    expect(value()).toBe('125%')
+    act(() => requestZoom(-1, unclaimed))
     act(() => requestZoom(-1, unclaimed))
     expect(value()).toBe('90%')
     expect(unclaimed).not.toHaveBeenCalled()
@@ -1244,8 +1293,8 @@ describe('Explore size (YAZ-5881)', () => {
     await openResult()
     const calls = onExploreSize.mock.calls.length
     act(() => requestZoom(1, unclaimed))
-    expect(top().querySelector('.explore__head .document-zoom .document-zoom__value')?.textContent).toBe('125%')
-    expect(localStorage.getItem('explore:zoom')).toBe('125')
+    expect(top().querySelector('.page-header__controls .document-zoom .document-zoom__value')?.textContent).toBe('150%')
+    expect(localStorage.getItem('explore:zoom')).toBe('150')
     act(() => requestZoom(0, unclaimed))
     expect(onExploreSize).toHaveBeenCalledTimes(calls)
     expect(unclaimed).not.toHaveBeenCalled()
@@ -2425,14 +2474,19 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     const close = h.querySelector('[aria-label="Close this layer"]') as HTMLElement
     expect(close).not.toBeNull()
     expect(fold.contains(close)).toBe(false)
-    // In the fold: ‹ n/m ›, the zoom pill, the fold-all button, Edit and ↗.
-    for (const sel of ['.explore__steps', '.document-zoom', '[aria-label="Open in a tab"]']) expect(fold.querySelector(sel), sel).not.toBeNull()
+    // In the fold: ‹ n/m ›, Edit and ↗ (the window's parts).
+    for (const sel of ['.explore__steps', '[aria-label="Open in a tab"]']) expect(fold.querySelector(sel), sel).not.toBeNull()
     expect([...fold.querySelectorAll('.explore__button')].some((b) => b.textContent?.startsWith('Edit'))).toBe(true)
+    // YAZ-5974: the page's controls are no part of the head: they stay on the title row, never in ⋯.
+    for (const sel of ['.document-zoom', '.fold-all__trigger', '.page-settings__trigger']) {
+      expect(h.querySelector(sel), sel).toBeNull()
+      expect(top().querySelector(`.explore__body--read .page-header__controls ${sel}`), sel).not.toBeNull()
+    }
     // ⋯ just before ×.
     expect(more().nextElementSibling).toBe(close)
   })
 
-  it('⋯ in a folded page head: Previous / Next result, zoom, Collapse all, Edit / Done, Open in a tab; each one works', async () => {
+  it('⋯ in a folded page head: Previous / Next result, Edit / Done, Open in a tab (no zoom rows, no Collapse all: YAZ-5974); each one works', async () => {
     const TITLE_PATH: Record<string, string> = { Alpha: '/v/alpha.md', Beta: '/v/beta.md', 'conjecture (vocab)': '/v/conjecture.md' }
     await mount()
     await typeQuery('a')
@@ -2446,11 +2500,6 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
       '# Result 1/3',
       'Previous result [←] (off)',
       'Next result [→]',
-      '# Zoom 100%',
-      'Zoom in [⌘+]',
-      'Zoom out [⌘−]',
-      'Zoom to 100% [⌘0] (off)',
-      'Collapse all',
       'Edit [E]',
       'Open in a tab [⌘↵]',
     ])
@@ -2464,20 +2513,13 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     await flush()
     expect(readFile).toHaveBeenLastCalledWith(paths[1])
     expect(top().querySelector('.explore__count')?.textContent).toBe('2/3')
-    // Zoom in: 100 → 125, on the body.
-    pick('Zoom in')
-    expect(top().querySelector<HTMLElement>('.explore__body')?.style.getPropertyValue('--document-zoom')).toBe('1.25')
-    pick('Zoom to 100%')
-    expect(top().querySelector<HTMLElement>('.explore__body')?.style.getPropertyValue('--document-zoom')).toBe('1')
-    // Collapse all: the page's fold-all command.
-    pick('Collapse all')
-    expect(folds.runs).toEqual([true])
     // Edit, then Done.
     pick('Edit')
     await flush()
     expect(top().querySelector('.explore__body--edit')).not.toBeNull()
     act(() => more().click())
     expect(items()).toContain('Done [esc]')
+    expect(items().some((i) => i.startsWith('Zoom') || i.includes('Collapse'))).toBe(false)
     act(() => more().click())
     pick('Done')
     await flush()
@@ -2555,40 +2597,38 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     }
   })
 
-  it('YAZ-4986: the parts leave ONE BY ONE as the layer narrows, least important first: zoom, Collapse all, ‹ › , ↗, the chip\'s word, the chip, Edit last', async () => {
+  it('YAZ-4986: the parts leave ONE BY ONE as the layer narrows, least important first: ‹ › , ↗, the chip\'s word, the chip, Edit last (the page controls are on the title row, YAZ-5974)', async () => {
     props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }) }
     await mount()
     await typeQuery('alp')
     await openResult()
-    // Six parts (‹ ›, zoom, fold-all, chip with its word, Edit, ↗): 40 px each, the word 30 more; 120 px the rest.
-    const rest = 120 + 6 * PART + WORD
+    // Four parts (‹ ›, chip with its word, Edit, ↗): 40 px each, the word 30 more; 120 px the rest.
+    const rest = 120 + 4 * PART + WORD
     const full = rest + TITLE_ROOM
     layout(full, rest)
     expect(folded()).toEqual([])
     expect(compact()).toBe(false)
     // Each step narrower by one part's width (and ⋯'s, once) folds exactly the next part in the order.
     const seen: string[][] = []
-    for (const w of [full - 1, full - PART - 1 + MORE, full - 2 * PART - 1 + MORE, full - 3 * PART - 1 + MORE, full - 4 * PART - 1 + MORE, full - 4 * PART - WORD - 1 + MORE, full - 5 * PART - WORD - 1 + MORE]) {
+    for (const w of [full - 1, full - PART - 1 + MORE, full - 2 * PART - 1 + MORE, full - 2 * PART - WORD - 1 + MORE, full - 3 * PART - WORD - 1 + MORE]) {
       layout(w, rest)
       seen.push(folded())
     }
     expect(seen.map((f) => f.join(' '))).toEqual([
-      'zoom',
-      'zoom fold-all',
-      'steps zoom fold-all',
-      'steps zoom fold-all open',
-      'steps zoom fold-all chip-word open',
-      'steps zoom fold-all chip chip-word open',
-      'steps zoom fold-all chip chip-word edit open',
+      'steps',
+      'steps open',
+      'steps chip-word open',
+      'steps chip chip-word open',
+      'steps chip chip-word edit open',
     ])
     // The chip's lock stays alone before the chip goes: its word folded, the chip still shown.
-    layout(full - 4 * PART - 1 + MORE, rest)
+    layout(full - 2 * PART - 1 + MORE, rest)
     expect(head().querySelector('[data-fold-part="chip"]')?.hasAttribute('data-folded')).toBe(false)
     expect(head().querySelector('.read-only-chip__button > span')?.hasAttribute('data-folded')).toBe(true)
     // ⋯ shows from the first fold, and still holds every action.
     expect(compact()).toBe(true)
     act(() => more().click())
-    expect(items()).toEqual(expect.arrayContaining(['Zoom in [⌘+]', 'Edit [E]', 'Open in a tab [⌘↵]', 'Allow edits…']))
+    expect(items()).toEqual(expect.arrayContaining(['Edit [E]', 'Open in a tab [⌘↵]', 'Allow edits…']))
     act(() => more().click())
     // Wide again: everything back, in one step.
     layout(full + 50, rest)
@@ -2668,6 +2708,25 @@ describe('the card window (YAZ-4962)', () => {
     props.vaultOf = () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, review: { settings: SETTINGS, deleteReview } })
   })
   const strip = () => [...top().querySelectorAll('.card-strip > *')].map((e) => e.textContent)
+  const menuRow = (words: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === words)
+  /**
+   * A click-twice row of the ⋯ (YAZ-5966): the first click turns `label` into `words` and writes nothing; the second
+   * click on the same row runs it.
+   */
+  const twice = async (label: string, words: string) => {
+    act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
+    const row = menuRow(label)
+    expect(row, label).toBeDefined()
+    const before = files[PAGE]
+    act(() => row!.click())
+    await flush()
+    const armed = menuRow(words)
+    expect(armed, words).toBeDefined()
+    expect(files[PAGE]).toBe(before)
+    act(() => armed!.click())
+    await flush()
+    await flush()
+  }
   /** The Reviews table, opened first (it starts closed: the strip says the state). */
   const tableRows = () => {
     const header = top().querySelector<HTMLButtonElement>('.card-reviews .backlinks__header')!
@@ -2770,16 +2829,13 @@ describe('the card window (YAZ-4962)', () => {
       await flush()
       await flush()
     }
-    await pick('Archive card')
-    // YAZ-5697: the row asks in place first; the first click wrote nothing.
-    expect(files[PAGE]).not.toContain(', off,')
-    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
-    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Archive')!.click())
-    await flush()
-    await flush()
+    // YAZ-5966: Archive card runs on a second click; the first says "Click again to archive" and writes nothing.
+    await twice('Archive card', 'Click again to archive')
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, off, 2026-01-02T09:00:00.000Z good -->')
     expect(strip()).toContain('Archived')
-    await pick('Unarchive card')
+    // Round 2: Unarchive card too.
+    await twice('Unarchive card', 'Click again to unarchive')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, 2026-01-02T09:00:00.000Z good -->')
     expect(strip()).not.toContain('Archived')
     // YAZ-5376: the last row, alone, and it asks by typing first.
     act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
@@ -2803,11 +2859,8 @@ describe('the card window (YAZ-4962)', () => {
     await flush()
     const chip = () => top().querySelector<HTMLElement>('.explore__head .card__next')
     expect(chip()).toBeNull()
-    act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
-    const put = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Move to Up next')
-    act(() => put!.click())
-    await flush()
-    await flush()
+    // YAZ-5966: two clicks.
+    await twice('Move to Up next', 'Click again to move to Up next')
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, next, 2026-01-02T09:00:00.000Z good -->')
     expect(chip()?.textContent).toBe('Up next×')
     act(() => chip()!.querySelector<HTMLButtonElement>('[aria-label="Remove from Up next"]')!.click())
@@ -2840,7 +2893,7 @@ describe('the card window (YAZ-4962)', () => {
     expect(layers().map((l) => l.dataset.kind)).toEqual(['card', 'page'])
   })
 
-  it('YAZ-5030, YAZ-5696: ⋯ Title in review › Never (after its ask, YAZ-5697) writes `notitle`; the head then says "Hidden in review"', async () => {
+  it('YAZ-5030, YAZ-5696: ⋯ Title in review › Never (on a second click, YAZ-5966) writes `notitle`; the head then says "Hidden in review"', async () => {
     files[PAGE] = page('<!-- card: WIKI-9, title "Capital of France" -->')
     writeFile.mockImplementation(async ({ path, content }) => {
       files[path] = content
@@ -2857,12 +2910,12 @@ describe('the card window (YAZ-4962)', () => {
     act(() => parent.click())
     await vi.waitFor(() => expect(document.querySelector('.ctx-menu__sub')).not.toBeNull())
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === 'Never')!.click())
-    // YAZ-5697: it asks in place first; the first click wrote nothing.
+    // YAZ-5966: the first click says "Click again to never show the title" and writes nothing; the second runs it.
     await flush()
     expect(files[PAGE]).not.toContain('notitle')
-    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
-    expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Never show the title in review?')
-    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')].find((b) => b.textContent === 'Never')!.click())
+    const armed = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === 'Click again to never show the title')
+    expect(armed).toBeDefined()
+    act(() => armed!.click())
     await flush()
     await flush()
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, title "Capital of France", notitle -->')
@@ -2882,18 +2935,11 @@ describe('the card window (YAZ-4962)', () => {
     await flush()
     const mark = () => top().querySelector('.explore__head .card__fix')
     expect(mark()).toBeNull()
-    const pick = async (label: string) => {
-      act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
-      const item = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
-      expect(item, label).toBeDefined()
-      act(() => item!.click())
-      await flush()
-      await flush()
-    }
-    await pick('Fix later')
+    // YAZ-5966 round 2: Fix later and Remove Fix later run on a second click.
+    await twice('Fix later', 'Click again to mark Fix later')
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, fix -->')
     expect(mark()?.textContent).toBe('To fix')
-    await pick('Remove Fix later')
+    await twice('Remove Fix later', 'Click again to remove Fix later')
     expect(files[PAGE]).toContain('<!-- card: WIKI-9 -->')
     expect(mark()).toBeNull()
   })
@@ -3318,8 +3364,8 @@ describe('YAZ-4990: Explore follows a page that changes', () => {
       const next = crepes.at(-1)!
       expect([...(next.opts.folding as { seedCollapsedKeys: () => Set<string> }).seedCollapsedKeys()]).toEqual(['b:one'])
       expect([...(next.opts.headingFolding as { seedCollapsedKeys: () => Set<string> }).seedCollapsedKeys()]).toEqual(['h:two'])
-      // Never "loading" on the way: the head's fold-all button stayed.
-      expect(top().querySelector('.explore__head .fold-all__trigger')).not.toBeNull()
+      // Never "loading" on the way: the title row's fold-all button stayed.
+      expect(top().querySelector('.page-header__controls .fold-all__trigger')).not.toBeNull()
     })
 
     it('deleted outside the app: after a short wait it reads again, then says it is gone; a save through a temporary file does not', async () => {
@@ -3755,5 +3801,128 @@ describe('YAZ-5881 and YAZ-5920 (checker, PR #278)', () => {
     await flush()
     await act(async () => await new Promise((r) => setTimeout(r, 450)))
     expect(document.querySelector('.test-hover-preview')).toBeNull()
+  })
+})
+
+describe('YAZ-5974: the page controls on the title row, the window in the head', () => {
+  /** The title row's children, by their first class: the title, the controls, Properties. */
+  const rowOf = (body: Element | null) => [...(body?.querySelector('.page-header')?.children ?? [])].map((c) => c.classList[0])
+
+  it('reading: fold-all, the cog and the zoom pill stand on the title row, after the title and before Properties; the head has none of them', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const read = top().querySelector('.explore__body--read')
+    expect(rowOf(read).slice(0, 2)).toEqual(['page-title', 'page-header__controls'])
+    // Properties after the controls (its panel dissolves into the row: `display: contents`).
+    const row = read?.querySelector('.page-header')
+    const controls = row?.querySelector('.page-header__controls')
+    const properties = row?.querySelector('.frontmatter-panel')
+    if (properties != null) expect(controls?.compareDocumentPosition(properties)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    const order = [...(controls?.querySelectorAll('.fold-all__trigger, .page-settings__trigger, .document-zoom') ?? [])].map((e) => e.classList[0])
+    expect(order).toEqual(['fold-all__trigger', 'page-settings__trigger', 'document-zoom'])
+    for (const sel of ['.fold-all__trigger', '.page-settings__trigger', '.document-zoom']) expect(top().querySelector(`.explore__head ${sel}`), sel).toBeNull()
+  })
+
+  it("reading: the cog is the page tab's own; Position › Left writes the page's key and the layer reads it again with the column at the left", async () => {
+    let text = '# Alpha\n\ntext\n'
+    readFile.mockImplementation(async (path) => ({ path, content: path === '/v/alpha.md' ? text : `# ${path}\n`, mtime: 1, size: 1 }))
+    writeFile.mockReset().mockImplementation(async (req) => {
+      text = req.content
+      return { path: req.path, mtime: 2, size: 1 }
+    })
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const read = () => top().querySelector<HTMLElement>('.explore__body--read')!
+    expect(read().style.getPropertyValue('--column-start')).toBe('')
+    act(() => top().querySelector<HTMLButtonElement>('.page-header__controls .page-settings__trigger')!.click())
+    const position = document.querySelector('[role="group"][aria-label="Position"]')
+    expect(position).not.toBeNull()
+    // No editor-only rows while reading: Line numbers and Heading levels live in an editor.
+    expect(document.body.textContent).not.toContain('Line numbers')
+    act(() => [...position!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Left')!.click())
+    await vi.waitFor(() => expect(writeFile).toHaveBeenCalled())
+    expect(writeFile.mock.calls[0][0].content).toContain('page-position: left')
+    await flush()
+    await flush()
+    await flush()
+    expect(read().style.getPropertyValue('--column-start')).toBe('0')
+  })
+
+  it('Q6: reading, the cog\'s Read only row turns a page\'s own switch OFF only through the chip\'s "Allow edits?" box, as a tab; ON needs no ask', async () => {
+    let text = '---\nreadonly: true\n---\n# Alpha\n\ntext\n'
+    readFile.mockImplementation(async (path) => ({ path, content: path === '/v/alpha.md' ? text : `# ${path}\n`, mtime: 1, size: 1 }))
+    writeFile.mockReset().mockImplementation(async (req) => {
+      text = req.content
+      return { path: req.path, mtime: 2, size: 1 }
+    })
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const cog = () => act(() => top().querySelector<HTMLButtonElement>('.page-header__controls .page-settings__trigger')!.click())
+    /** The cog's "Read only" check row (a tab's): a click turns it off (asking) or on. */
+    const readOnlyRow = () => [...document.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')].find((b) => b.firstElementChild?.textContent?.startsWith('Read only') === true)!
+    // The page's own switch locks the layer: the tab's chip in the head.
+    expect(top().querySelector('.explore__head .read-only-chip')).not.toBeNull()
+    cog()
+    expect(readOnlyRow().getAttribute('aria-pressed')).toBe('true')
+    act(() => readOnlyRow().click())
+    await flush()
+    // No write: the chip's box asks, with the page's "Turn Read only off".
+    expect(writeFile).not.toHaveBeenCalled()
+    const ask = top().querySelector('.explore__head .read-only-chip__ask')
+    expect(ask).not.toBeNull()
+    const turnOff = [...ask!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Turn Read only off')
+    expect(turnOff).toBeDefined()
+    act(() => turnOff!.click())
+    await vi.waitFor(() => expect(writeFile).toHaveBeenCalledTimes(1))
+    expect(writeFile.mock.calls[0][0].content).not.toContain('readonly')
+    await flush()
+    await flush()
+    // Still reading; the chip goes with the switch.
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    expect(top().querySelector('.explore__head .read-only-chip')).toBeNull()
+    // On: written at once, no box.
+    cog()
+    expect(readOnlyRow().getAttribute('aria-pressed')).toBe('false')
+    act(() => readOnlyRow().click())
+    await vi.waitFor(() => expect(writeFile).toHaveBeenCalledTimes(2))
+    expect(writeFile.mock.calls[1][0].content).toContain('readonly: true')
+    expect(top().querySelector('.read-only-chip__ask')).toBeNull()
+  })
+
+  it("editing: the editor's fold-all and cog go into the same box on its title row, with the same zoom pill; its Saved goes to the head", async () => {
+    props.renderEditor = (path): ReactNode => (
+      <StatusChips zoom={100} onZoom={() => {}} readOnly={null} save="saved">
+        <button type="button" className="fold-all__trigger" data-editor-fold={path} />
+        <button type="button" className="page-settings__trigger" data-editor-cog={path} />
+      </StatusChips>
+    )
+    const base = props.renderEditor
+    props.renderEditor = (path, openLink, unlocked, start) => (
+      <>
+        {base(path, openLink, unlocked, start)}
+        <StubEditor path={path} />
+      </>
+    )
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const readBox = top().querySelector('.explore__body--read .page-header__controls')!
+    const shape = (box: Element) => [...box.children].map((c) => c.className)
+    key(top().querySelector('.explore__body') as HTMLElement, { key: 'e' })
+    await flush()
+    const edit = top().querySelector('.explore__body--edit')!
+    const editBox = edit.querySelector('.page-header__controls')!
+    // The same box: the chips, then the pill; the editor's own buttons in the chips.
+    expect(shape(editBox)).toEqual(shape(readBox))
+    expect(editBox.querySelector('.page-header__chips [data-editor-fold]')).not.toBeNull()
+    expect(editBox.querySelector('.page-header__chips [data-editor-cog]')).not.toBeNull()
+    expect(editBox.querySelector('.document-zoom')).not.toBeNull()
+    // Saved is the window's: in the head's status, never on the title row.
+    expect(editBox.querySelector('.save-indicator')).toBeNull()
+    await act(async () => await new Promise((r) => setTimeout(r, 50)))
+    expect(top().querySelector('.explore__head .explore__status .save-indicator')).not.toBeNull()
   })
 })

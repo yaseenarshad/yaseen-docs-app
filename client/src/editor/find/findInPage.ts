@@ -42,6 +42,8 @@
  * place and count (`CardSpot`); the state puts that many matches at the card's place, in page order with the text, and
  * drops the card block's raw text. A card edited in the raw-text fallback is a code block (its CodeMirror is find's).
  * Their paint is the shared highlight (`paintFindRanges`); the folds, the step, the count and the landing are the page's.
+ * Folded card sides (YAZ-5904) follow the same fold choice (YAZ-5970, `createCardSideFolds`): `all` opens each one that
+ * holds a match, `current` the active match's (folded again on the next step), `keep` none, and their text does not count.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
@@ -62,7 +64,7 @@ import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { FindChannel, FindController, FindResult } from './findChannel'
 import type { EditorView as CodeMirrorView } from '@codemirror/view'
 import { paintCodeBlocks, scrollCodeMatch } from './codeBlockFind'
-import { CARD_FIND_READ, cardMatches, paintFindRanges, scrollToRange } from './cardFind'
+import { CARD_FIND_READ, cardMatches, createCardSideFolds, paintFindRanges, scrollToRange } from './cardFind'
 import { isCardNode } from '../card/cardBlockLine'
 
 export const FIND_MATCH_CLASS = 'find-match'
@@ -270,14 +272,14 @@ const cardPlace = (view: EditorView, el: Element): number | null => {
 }
 
 /** Every drawn card's matches of `query`, in page order. An embed that has not read its card yet is asked to. */
-const scanCards = (view: EditorView, query: string): ScannedCard[] => {
+const scanCards = (view: EditorView, query: string, shownOnly = false): ScannedCard[] => {
   if (query === '') return []
   const scanned: ScannedCard[] = []
   for (const el of drawnCards(view)) {
     const pos = cardPlace(view, el)
     if (pos === null) continue
     if (el.classList.contains('card-embed') && el.querySelector('.card__body')?.hasChildNodes() !== true) el.dispatchEvent(new Event(CARD_FIND_READ))
-    const ranges = cardMatches(el, query)
+    const ranges = cardMatches(el, query, shownOnly)
     scanned.push({ pos, count: ranges.length, ranges })
   }
   return scanned.sort((a, b) => a.pos - b.pos)
@@ -360,6 +362,8 @@ const rangeOf = (scan: CardScan, match: Match | undefined): Range | null =>
 
 const createController = (view: EditorView, channel: FindChannel, scan: CardScan): FindController => {
   const findState = (): FindState => findKey.getState(view.state) ?? EMPTY
+  /** The folded card sides find opened (YAZ-5970): the same fold choice as the bullets'. */
+  const sides = createCardSideFolds()
   const result = (): FindResult => {
     const { matches, activeIndex } = findState()
     return { total: matches.length, activeIndex }
@@ -413,6 +417,7 @@ const createController = (view: EditorView, channel: FindChannel, scan: CardScan
       dispatchMeta({ type: 'revealed', revealed, revealedHeadings })
     if (folds !== 'keep' && active !== null) openTableRun(active.from)
     followCellNotes()
+    sides.follow(folds, scan.scanned.flatMap((card) => card.ranges), rangeOf(scan, active ?? undefined))
   }
   /**
    * A match in a folded table row (a collapsed subheader section, YAZ-4899 item 20, or a "Fold N rows" run) opens the
@@ -482,7 +487,10 @@ const createController = (view: EditorView, channel: FindChannel, scan: CardScan
   }
   return {
     search: (query) => {
-      scan.scanned = scanCards(view, query)
+      const keep = channel.getState().folds === 'keep'
+      // "Keep folded" counts what shows: the card sides find opened fold first (YAZ-5970).
+      if (keep) sides.follow('keep', [], null)
+      scan.scanned = scanCards(view, query, keep)
       dispatchMeta({ type: 'query', query, cards: spotsOf(scan.scanned) })
       reveal()
       scrollToActive()
@@ -497,6 +505,7 @@ const createController = (view: EditorView, channel: FindChannel, scan: CardScan
     close: () => {
       const { revealed, revealedHeadings } = findState()
       const match = activeMatch()
+      sides.land(rangeOf(scan, match ?? undefined))
       fold([...revealed], true)
       foldHeadings([...revealedHeadings], true)
       // The landing stays open: whatever hides the active match is opened straight back.
@@ -612,7 +621,7 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
           /** The cards counted again; a count or a place that changed goes to the state, which paints through `sync`. */
           const rescan = () => {
             const find = findKey.getState(editorView.state) ?? EMPTY
-            scan.scanned = scanCards(editorView, find.query)
+            scan.scanned = scanCards(editorView, find.query, channel.getState().folds === 'keep')
             const spots = spotsOf(scan.scanned)
             if (sameCards(spots, find.cards)) return paintCards()
             // Not inside the view's own update: the state takes the new count one task later.
@@ -639,7 +648,8 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
                 if (!destroyed) rescan()
               })
             })
-            observer.observe(editorView.dom, { childList: true, subtree: true, characterData: true })
+            // A card side that folds or opens changes what "Keep folded" counts (YAZ-5970).
+            observer.observe(editorView.dom, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden'] })
           }
           /**
            * The title widgets this search marked (S9). Marked again when the find state or the doc changed, or when a redraw

@@ -23,6 +23,7 @@ import { CARD_PREVIEW, landOnCard, pageCardIn, takeCardLanding, type CardPreview
 import { FLASH_FRAMES } from '../toc/tocMotion'
 import { pageCards } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+import type { CardTitleMarkShow } from '@shared/cardTitleAt'
 import { redrawCardHeads } from '../../review/cardHeadMarks'
 
 
@@ -99,8 +100,15 @@ function cardPos(view: EditorView): number {
 
 const CARD = '```card\nWhat is the capital of {{France}}?\n---\nParis\n```\n'
 
-/** A row that asks in place (YAZ-5697): its answer, once the ask shows (the ask is a lazy chunk). */
-async function answerAsk(): Promise<void> {
+/** A click-twice row (YAZ-5966): armed by its first click, it says "Click again to …"; a second click runs it. */
+const armed = (row: HTMLElement): boolean => row.isConnected && /ctx-menu__item--armed/.test(row.className)
+
+/**
+ * After a row's first click: a click-twice row (YAZ-5966) gets its second click; a row that asks in place (YAZ-5697,
+ * the file rows) gets its answer, once the ask shows (the ask is a lazy chunk).
+ */
+async function answerAsk(row?: HTMLElement): Promise<void> {
+  if (row !== undefined && armed(row)) return row.click()
   await new Promise((r) => setTimeout(r, 0))
   await vi.waitFor(() => void 0)
   const ask = document.querySelector('.ctx-menu__ask')
@@ -333,19 +341,25 @@ describe('the card in the page', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
-  it('YAZ-5697 round 2: the ⋯ is the ONE card menu; one click on Archive card never archives: it asks in place, Cancel first', async () => {
+  it('YAZ-5697 round 2, YAZ-5966: the ⋯ is the ONE card menu; one click on Archive card never archives: it says "Click again to archive"; leaving the row puts it back; a second click archives', async () => {
     const { crepe, root } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' } })
     root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
-    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Open card', 'Preview', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Reset history'])
+    const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')]
+    expect(rows().map((b) => b.textContent)).toEqual(['Open card', 'Preview', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Reset history'])
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
-    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].find((b) => b.textContent === 'Archive card')!.click()
-    await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
+    const archive = rows().find((b) => b.textContent === 'Archive card')!
+    archive.click()
     expect(line()).toBe('<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->')
-    const answers = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')]
-    expect(answers.map((b) => b.textContent)).toEqual(['Cancel', 'Archive'])
-    expect(document.activeElement).toBe(answers[0])
-    answers[1].click()
+    expect(archive.isConnected).toBe(true)
+    expect([archive.textContent, archive.classList.contains('ctx-menu__item--armed')]).toEqual(['Click again to archive', true])
+    expect(document.querySelector('.ctx-menu__ask')).toBeNull()
+    // Leaving the row puts it back; the next click arms it again.
+    archive.dispatchEvent(new MouseEvent('mouseleave'))
+    expect([archive.textContent, archive.className]).toEqual(['Archive card', 'ctx-menu__item'])
+    archive.click()
+    archive.click()
     expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05:00.000Z good -->')
+    expect(archive.isConnected).toBe(false)
   })
 
   it('the ⋯ menu changes the card line in one undo step each; Copy card ID; Open card sends the one hook', async () => {
@@ -354,7 +368,7 @@ describe('the card in the page', () => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith(label))!
       row.click()
-      await answerAsk()
+      await answerAsk(row)
     }
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
     await run('Archive card')
@@ -386,8 +400,8 @@ describe('the card in the page', () => {
     expect(opened).toEqual([{ path: '/v/Page.md', cardId: 'WIKI-7', index: 0 }])
   })
 
-  it('YAZ-5030, YAZ-5696, YAZ-5913: ⋯ Title in review › Never asks in place first (YAZ-5697), then sets `notitle` in one undo step; Before Side 2 writes `title-side2`; the head says the title rule each time; the card still shows its title', async () => {
-    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' }, cardReviews: { settings: () => DEFAULT_REVIEW_SETTINGS, deleteReview: vi.fn() } })
+  it('YAZ-5030, YAZ-5696, YAZ-5913, YAZ-5966: ⋯ Title in review › Never runs on a second click, then sets `notitle` in one undo step; Before Side 2 writes `title-side2`; the head says the title rule each time; the card still shows its title', async () => {
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' }, cardReviews: { settings: () => ({ ...DEFAULT_REVIEW_SETTINGS, titleMark: 'always' }), deleteReview: vi.fn() } })
     const parentOf = () => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent === 'Title in review')!
@@ -396,9 +410,9 @@ describe('the card in the page', () => {
       parentOf().click()
       const sub = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub button')]
       expect(sub.map((b) => b.textContent)).toEqual(['Default', 'Never', 'Always', 'After the first click', 'Before Side 2'])
-      sub.find((b) => b.textContent === label)!.click()
-      await vi.waitFor(() => expect(document.querySelector('.ctx-menu__ask')).not.toBeNull())
-      return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__ask button')]
+      const row = sub.find((b) => b.textContent === label)!
+      row.click()
+      return row
     }
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
     const mark = () => root.querySelector<HTMLElement>('.card__title-mark')?.textContent
@@ -407,16 +421,15 @@ describe('the card in the page', () => {
     // Round 3: no eye in the row (it stays by Settings › Cards › Show card titles).
     expect(document.querySelector('.ctx-menu .card-title-help')).toBeNull()
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    // Never: it asks first, Cancel first and focused; Cancel writes nothing.
-    let answers = await choose('Never')
-    expect(document.querySelector('.ctx-menu__ask')?.textContent).toContain('Never show the title in review?')
-    expect(answers.map((b) => b.textContent)).toEqual(['Cancel', 'Never'])
-    expect(document.activeElement).toBe(answers[0])
-    answers[0].click()
+    // Never: the first click says "Click again to never show the title"; leaving the row writes nothing.
+    let never = await choose('Never')
+    expect([never.textContent, never.classList.contains('ctx-menu__item--armed-add')]).toEqual(['Click again to never show the title', true])
+    never.dispatchEvent(new MouseEvent('mouseleave'))
+    expect(never.textContent).toBe('Never')
     expect(line()).toBe('<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->')
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    answers = await choose('Never')
-    answers[1].click()
+    never = await choose('Never')
+    never.click()
     expect(line()).toBe('<!-- card: WIKI-7, notitle, 2026-11-12T14:05:00.000Z good -->')
     expect(mark()).toBe('Title hidden in review')
     expect(root.querySelector('.card__notitle')).not.toBeNull()
@@ -427,17 +440,27 @@ describe('the card in the page', () => {
     undo(view.state, view.dispatch)
     expect([line(), mark()]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', 'Title always (default)'])
     const side2 = await choose('Before Side 2')
-    expect(side2.map((b) => b.textContent)).toEqual(['Cancel', 'Before Side 2'])
-    side2[1].click()
+    expect(side2.textContent).toBe('Click again to show the title before Side 2')
+    side2.click()
     await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-7, title-side2, 2026-11-12T14:05:00.000Z good -->'))
     expect(mark()).toBe('Title before Side 2')
   })
 
   it('YAZ-5913, YAZ-5915: the head shows the review state and the title rule after the ID; a change of the vault`s settings redraws them', async () => {
-    let settings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true, titleAt: 'always' as const }
+    let settings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true, titleAt: 'always' as const, titleMark: 'always' as CardTitleMarkShow }
     const { root } = await mount(`${CARD}<!-- card: WIKI-7, fix -->\n`, { cards: { path: '/v/Page.md' }, cardReviews: { settings: () => settings, deleteReview: vi.fn() } })
     const head = () => [...root.querySelectorAll('.card__head > .card__id, .card__head > .card__marks > span')].map((el) => el.textContent)
     expect(head()).toEqual(['WIKI-7', 'New', 'Title always (default)', 'To fix'])
+    // YAZ-5965: Title mark in the card head — Only if different (the default): a card that follows the vault says none;
+    // Never: none; a change redraws the head.
+    settings = { ...settings, titleMark: 'different' }
+    redrawCardHeads()
+    expect(head()).toEqual(['WIKI-7', 'New', 'To fix'])
+    settings = { ...settings, titleMark: 'never' }
+    redrawCardHeads()
+    expect(head()).toEqual(['WIKI-7', 'New', 'To fix'])
+    settings = { ...settings, titleMark: 'always' }
+    redrawCardHeads()
     settings = { ...settings, titleAt: 'click' as never }
     redrawCardHeads()
     expect(head()).toEqual(['WIKI-7', 'New', 'Title after first click (default)', 'To fix'])
@@ -452,6 +475,10 @@ describe('the card in the page', () => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent === label)
       expect(row, label).toBeDefined()
+      // YAZ-5966 round 2: two clicks — the first says "Click again to …" and writes nothing.
+      const before = line()
+      row!.click()
+      expect([row!.textContent, line()]).toEqual([label === 'Fix later' ? 'Click again to mark Fix later' : 'Click again to remove Fix later', before])
       row!.click()
     }
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
@@ -477,14 +504,22 @@ describe('the card in the page', () => {
     const chip = () => root.querySelector<HTMLElement>('.card__next')!
     const remove = () => chip().querySelector('.card__next-remove')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
     expect(chip().hidden).toBe(true)
-    rowOf('Move to Up next')!.click()
+    // YAZ-5966: two clicks — the first says "Click again to move to Up next" and writes nothing.
+    const first = rowOf('Move to Up next')!
+    first.click()
+    expect([first.textContent, line()]).toEqual(['Click again to move to Up next', '<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->'])
+    first.click()
     expect(line()).toBe('<!-- card: WIKI-7, next, 2026-11-12T14:05:00.000Z good -->')
     expect([chip().hidden, chip().textContent]).toEqual([false, 'Up next×'])
     expect(chip().querySelector('button')?.getAttribute('aria-label')).toBe('Remove from Up next')
     undo(view.state, view.dispatch)
     expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', true])
-    rowOf('Move to Up next')!.click()
-    expect(rowOf('Remove from Up next')).toBeDefined()
+    const again = rowOf('Move to Up next')!
+    again.click()
+    again.click()
+    const off = rowOf('Remove from Up next')!
+    off.click()
+    expect([off.textContent, off.classList.contains('ctx-menu__item--armed')]).toEqual(['Click again to remove from Up next', true])
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     remove()
     expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->', true])
@@ -507,7 +542,7 @@ describe('the card in the page', () => {
       const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith(label))!
       expect(row.disabled).toBe(false)
       row.click()
-      await answerAsk()
+      await answerAsk(row)
     }
     await run('Archive card')
     await run('Reset history')
@@ -658,7 +693,7 @@ describe('the card in the page', () => {
       expect(copy.defaultPrevented).toBe(false)
     })
 
-    it('a double-click on the text: in a Read only page the browser selects the word, no Edit card and no ask (D2); in a page you can edit, Edit card', async () => {
+    it('a double-click on the text never opens Edit card (YAZ-5964): the browser selects the word, in a Read only page and in a page you can edit; no ask', async () => {
       const { crepe, root } = await mount(CARD)
       crepe.setReadonly(true)
       const told: ReadOnlyEditEvent[] = []
@@ -672,8 +707,9 @@ describe('the card in the page', () => {
       expect(told).toEqual([])
       expect(root.querySelector('.card--editing')).toBeNull()
       crepe.setReadonly(false)
-      expect(twice()).toBe(true)
-      await vi.waitFor(() => expect(root.querySelector('.card--editing')).not.toBeNull())
+      expect(twice()).toBe(false)
+      await new Promise((done) => setTimeout(done, 20))
+      expect(root.querySelector('.card--editing')).toBeNull()
     })
   })
 

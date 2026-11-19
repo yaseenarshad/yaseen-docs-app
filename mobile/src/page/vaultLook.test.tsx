@@ -73,6 +73,17 @@ describe('YAZ-5455: the vault look and the link door', () => {
     expect(trip.querySelector('.link-pill__id')?.textContent).toBe('DEMO-3')
   })
 
+  it('YAZ-5972: custom #rrggbb colours (lowercased) and the two icon rows reach the reader as the Mac\'s variables', async () => {
+    h = await openSpanish({
+      '.yaseendocs/link-pills.json': JSON.stringify({ version: 2, box: { fill: '#3366CC', strength: 'light' }, parts: { name: { color: '#FF00AA' }, icon: { color: 'red', cardColor: 'teal' } } }),
+    })
+    const reader = h.host.querySelector<HTMLElement>('.reader')!
+    expect(reader.style.getPropertyValue('--pill-name-fg')).toBe('#ff00aa')
+    expect(reader.style.getPropertyValue('--pill-bg')).toBe('color-mix(in srgb, #3366cc 15%, transparent)')
+    expect([reader.style.getPropertyValue('--pill-icon-fg'), reader.style.getPropertyValue('--pill-icon-on')]).toEqual(['var(--table-text-red)', '1'])
+    expect([reader.style.getPropertyValue('--pill-card-icon-fg'), reader.style.getPropertyValue('--pill-card-icon-on')]).toEqual(['var(--table-text-teal)', '1'])
+  })
+
   it('YAZ-5485: text-formatting.json\'s spacing as the Mac\'s variables on the reader; no spacing: none (the reader\'s defaults)', async () => {
     h = await openSpanish({ '.yaseendocs/text-formatting.json': JSON.stringify({ version: 2, spacing: { line: 2, blockGap: 8, bulletGap: 14 } }) })
     const reader = h.host.querySelector<HTMLElement>('.reader')!

@@ -63,3 +63,15 @@ const MARKS: Readonly<Record<CardTitleShow, string>> = { never: 'Title hidden in
  * of its own the vault's Show card titles (`global`) in the same words plus "(default)": "Title always (default)".
  */
 export const cardTitleMark = (choice: CardTitleChoice, global: CardTitleShow): string => (choice === 'default' ? `${MARKS[global]} (default)` : MARKS[choice])
+
+/**
+ * Settings › Cards › "Title mark in the card head" (YAZ-5965; review.json `titleMark`, so the phone follows it): `always`
+ * every head says its title rule (YAZ-5913's look); `different` (the default) only a card with a title rule of its own
+ * (⋯ › Title in review, or `notitle`) — a card that follows the vault's Show card titles says nothing; `never` no head
+ * says it.
+ */
+export type CardTitleMarkShow = 'always' | 'different' | 'never'
+export const CARD_TITLE_MARK_SHOW: readonly CardTitleMarkShow[] = ['always', 'different', 'never']
+
+/** Does a head show the title mark for a card whose choice is `choice` (`'default'`: it follows the vault)? */
+export const cardTitleMarkShows = (choice: CardTitleChoice, show: CardTitleMarkShow): boolean => show === 'always' || (show === 'different' && choice !== 'default')

@@ -55,9 +55,12 @@ export interface MenuAction extends MenuItemBase {
   tip?: string
   /**
    * A two-click row (YAZ-4460 demo, the tab board's Close, YAZ-3343): the first click turns it red with these words
-   * and keeps the menu open; the second runs it. The pointer leaving the row puts it back.
+   * and keeps the menu open; the second runs it. The pointer leaving the row puts it back. With `radio`, the second
+   * click picks it and closes the menu (YAZ-5966: a card's Title in review choice).
    */
   confirm?: string
+  /** An armed `confirm` row in the accent colour, not red: it adds or sets, it takes nothing away (YAZ-5966). */
+  confirmAdd?: boolean
   /**
    * A row that asks in place (YAZ-5697: the card ⋯'s Archive card, Title on the front, Turn into a page): the first
    * click turns the row into `question` with Cancel (first, focused) and `yes`; only `yes` runs it. Cancel, the focus

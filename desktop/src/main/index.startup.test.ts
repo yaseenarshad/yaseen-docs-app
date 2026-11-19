@@ -106,7 +106,9 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => h.s.windows, getFocusedWindow: () => null },
   clipboard: { readText: vi.fn(), writeText: vi.fn() },
   Menu: { buildFromTemplate: vi.fn(), setApplicationMenu: vi.fn() },
-  nativeTheme: { shouldUseDarkColors: false },
+  // `on`/`off`: the selection colour re-reads on an appearance change (YAZ-5941).
+  nativeTheme: { shouldUseDarkColors: false, on: vi.fn(), off: vi.fn() },
+  systemPreferences: { getColor: vi.fn(() => '#3F638BFF'), subscribeNotification: vi.fn(() => 1), unsubscribeNotification: vi.fn() },
   powerMonitor: { on: vi.fn() },
   screen: { getPrimaryDisplay: vi.fn(), getAllDisplays: vi.fn(() => []) },
   shell: { openExternal: vi.fn(), showItemInFolder: vi.fn() },
@@ -384,14 +386,16 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith('update:state-changed', { kind: 'ready', version: '1.0.13' })
   })
 
-  it('on ready registers the four update doors (and the memory meter\'s, YAZ-3737 D1; the spell checker\'s, YAZ-4464) before the windows restore, then starts the timer (D7)', async () => {
+  it('on ready registers the four update doors (and the memory meter\'s, YAZ-3737 D1; the spell checker\'s, YAZ-4464; the selection colour\'s, YAZ-5941) before the windows restore, then starts the timer (D7)', async () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['course-audio:chapter', 'course-audio:chapter-starting', 'course-audio:open', 'memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['app:selection-colour', 'course-audio:chapter', 'course-audio:chapter-starting', 'course-audio:open', 'memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })
+    // The Mac's dark highlight, as getColor answers it (#RRGGBBAA), lands as #rrggbb.
+    await expect(invoke('app:selection-colour')).resolves.toEqual({ ok: true, value: '#3f638b' })
   })
 
   it('YAZ-5652: with Friends off, the friends sender never starts and `friends:status` is not there', async () => {

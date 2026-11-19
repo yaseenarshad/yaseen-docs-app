@@ -4,6 +4,7 @@ import { App } from './App'
 import { warmEngineFor } from './drawings/engine'
 import { storage } from './lib/storage'
 import { loadMaterialIcons } from './sidebar/materialIcons'
+import { followMacSelection } from './lib/macSelection'
 // Crepe's common theme file by file, in its own order, minus latex (KaTeX's stylesheet and its 59
 // fonts), top-bar, ai and diff (AI diff review): features that never load (YAZ-2184).
 // image-block.css stays, as it did through style.css.
@@ -27,6 +28,8 @@ import './app.css'
 // turn as the CSS) means even the pre-React body paints in the right palette; App re-resolves
 // and keeps it live once the state loads.
 document.documentElement.dataset.theme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+// The Mac's selection colour (YAZ-5941): `--mac-selection` on the root, for the editor's boxes in dark (app.css).
+followMacSelection()
 
 function render(): void {
   ReactDOM.createRoot(document.getElementById('root')!).render(

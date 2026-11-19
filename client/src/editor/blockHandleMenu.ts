@@ -58,6 +58,12 @@ export interface MenuRow {
    */
   ask?: { question: string; yes: string; danger?: boolean }
   /**
+   * A click-twice row (YAZ-5966, as ContextMenu's `confirm`; a card's Archive card, Up next, Title in review choice): the
+   * first click turns its words into `twice.words` (red with `danger`, else the accent) and keeps the menu open; a
+   * second click on it runs it. The pointer or the focus leaving the row puts it back.
+   */
+  twice?: { words: string; danger?: boolean }
+  /**
    * A parent row ("Open in ▸", YAZ-3901): its flyout's rows, in groups with a line between two. One level: a child
    * has no children. Hover, a click and ArrowRight open it; ArrowLeft and Escape close it; a child runs and closes
    * the whole menu. `run` is not called.
@@ -377,10 +383,32 @@ function rowButton(row: MenuRow, close: () => void, refresh?: (run: () => void) 
   }
   if (row.hint !== undefined) item.dataset.hint = row.hint
   item.addEventListener('mousedown', (e) => e.preventDefault())
+  // A click-twice row (YAZ-5966): armed, it says "Click again to …" with no hint; leaving it puts its words back.
+  const twice = row.twice
+  let armed = false
+  const words = [...item.childNodes]
+  const disarm = () => {
+    if (!armed) return
+    armed = false
+    item.classList.remove('ctx-menu__item--armed', 'ctx-menu__item--armed-add')
+    item.replaceChildren(...words)
+    if (row.hint !== undefined) item.dataset.hint = row.hint
+  }
+  if (twice !== undefined) {
+    item.addEventListener('mouseleave', disarm)
+    item.addEventListener('blur', disarm)
+  }
   // A row that asks first (YAZ-5697): its chunk comes as the menu draws it, so the first click asks at once.
   const ask = row.ask
   if (ask !== undefined) void loadRowAsk()
   item.addEventListener('click', () => {
+    if (twice !== undefined && !armed) {
+      armed = true
+      item.classList.add(twice.danger === true ? 'ctx-menu__item--armed' : 'ctx-menu__item--armed-add')
+      item.textContent = twice.words
+      delete item.dataset.hint
+      return
+    }
     if (ask !== undefined)
       return void loadRowAsk().then(({ askInPlace }) =>
         askInPlace(item, ask, () => {

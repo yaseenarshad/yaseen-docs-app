@@ -1,5 +1,5 @@
 import { useUnit } from '../vault/unitWord'
-import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { DEFAULT_SETTINGS, folderSettingsPath, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type FindFolds, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -31,7 +31,7 @@ import { TableOfContents } from './toc/TableOfContents'
 import { createTocChannel } from './toc/tocChannel'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
-import { PageFrame } from './PageFrame'
+import { PageFrame, TitleRowControls } from './PageFrame'
 import { usePageId } from '../search/showIds'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { redrawWikilinks, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -173,6 +173,8 @@ interface EditorProps {
   idInTitle?: boolean
   /** This vault's Read only (YAZ-4939): every page this editor draws opens read only, with a timed "Allow edits". Absent = off. False while the vault's unlock runs (YAZ-5581). */
   vaultReadOnly?: boolean
+  /** An Explore layer's timed "Allow edits" runs (YAZ-5974 Q6): the page's own Read only switch does not lock this editor either; the layer's chip counts and locks. */
+  pageUnlocked?: boolean
   /** The vault's relock asks each surface here to save first (YAZ-5581, `ReadOnlyVaultState.beforeLock`). Stable. */
   onVaultLock?: BeforeVaultLock
   /** This vault's card review settings (YAZ-5000): the "Reviews (n)" table under each card in the page. Absent → no section. */
@@ -326,6 +328,9 @@ interface EditorProps {
 }
 
 /** The vault's Read only (YAZ-4939) reaches every page the editor draws — a page, a board, a code tab, a folder page and its cells — through one context. */
+/** `EditorProps.pageUnlocked` for the page's editor inside (YAZ-5974 Q6). */
+const PageUnlocked = createContext(false)
+
 export function Editor(props: EditorProps) {
   const { vaultReadOnly = false, onFileAction, onVaultLock, cardReviewSettings, onDeleteCardReview } = props
   const vault = useMemo(
@@ -342,11 +347,13 @@ export function Editor(props: EditorProps) {
   useEffect(() => {
     if (firstSettings.current) firstSettings.current = false
     else redrawCardHeads()
-  }, [cardReviewSettings?.enabled, cardReviewSettings?.titleAt])
+  }, [cardReviewSettings?.enabled, cardReviewSettings?.titleAt, cardReviewSettings?.titleMark])
   return (
     <VaultReadOnly.Provider value={vault}>
       <CardReviewDoor.Provider value={cardReviews}>
-        <EditorBody {...props} />
+        <PageUnlocked.Provider value={props.pageUnlocked === true}>
+          <EditorBody {...props} />
+        </PageUnlocked.Provider>
       </CardReviewDoor.Provider>
     </VaultReadOnly.Provider>
   )
@@ -467,7 +474,7 @@ function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, wat
       {wasCard && <CardFileNotice text="This file is no longer a card file." />}
       {file !== null && cardFile && (
         <Suspense fallback={null}>
-          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} outsideChangeGlow={outsideChangeGlow} />
+          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} />
         </Suspense>
       )}
       {file !== null && !cardFile && (
@@ -800,6 +807,8 @@ function CrepeHost({
   const chipsHere = useContext(FolderPageChips)
   /** In an Explore layer (YAZ-5164 Option A): its head holds this page's chips, and Esc is the layer's (back to reading). */
   const inExplore = useContext(HeadChipsSlot) !== null
+  /** An Explore layer's title-row controls (YAZ-5974): drawn in the page's header, before Properties. */
+  const titleRowControls = useContext(TitleRowControls)
   // The page zoom as drawn (YAZ-5640): an Explore layer's zoom wins over this editor's own on its scroller (explore.css).
   const drawnZoom = useContext(LayerZoom) ?? documentZoom
   const folderChips = inFolderPage ? chipsHere : null
@@ -816,7 +825,9 @@ function CrepeHost({
   const fileDoor = useRef(vaultScope.allowFileAction)
   fileDoor.current = vaultScope.allowFileAction
   /** The page is under Read only: its own switch, its folder page's, or the vault's. The chip shows while this is true. */
-  const lockedBase = diskReadOnly || folderLocked || vaultLocked
+  /** An Explore layer's timed unlock runs (YAZ-5974 Q6): the page's own switch does not lock this editor either. */
+  const pageUnlocked = useContext(PageUnlocked) && !inFolderPage
+  const lockedBase = (diskReadOnly && !pageUnlocked) || folderLocked || vaultLocked
   /** The convert actions (YAZ-5037 phase 5): its cards' "Move to its own file", its embeds' "Put back", the cog's "Turn into a card file". */
   const diskRef = useRef(disk)
   diskRef.current = disk
@@ -1361,7 +1372,7 @@ function CrepeHost({
   const toggleThreading = () => void setPageSwitch('bullet-threading', 'Bullet threading', !threadingOn)
   const changeOutsideGlow = (glow: OutsideChangeGlow | null) => void writeOwnKey((content) => writeOutsideGlow(content, glow), 'Outside changes glow')
   /** The find bar's fold menu (YAZ-4787): this page's choice, or null to follow Settings again. */
-  const findFoldsMenu = { own: pageFindFolds, app: findFolds, onChange: (folds: FindFolds | null) => void writeOwnKey((content) => writeFindFolds(content, folds), 'Find folded bullets') }
+  const findFoldsMenu = { own: pageFindFolds, app: findFolds, cards: reviewOn, onChange: (folds: FindFolds | null) => void writeOwnKey((content) => writeFindFolds(content, folds), 'Find folded bullets') }
   /** The cog's "Code block width" / "Table width" (YAZ-4783 layer 2): this page's px, or null to follow Settings again. */
   const changeCodeWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, CODE_WIDTH_KEY, width), 'Code block width')
   const changeTableWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, TABLE_WIDTH_KEY, width), 'Table width')
@@ -1668,6 +1679,8 @@ function CrepeHost({
                   if (crepe !== null) focusEditor(crepe)
                 }}
               />
+              {/* An Explore layer's page controls (YAZ-5974): on the title row, before Properties. */}
+              {titleRowControls}
               {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
                   folder view — ONE registry, so a type declared in a row types the same column in
                   every folder's views. */}

@@ -3,7 +3,8 @@
  * renderers — `ContextMenu`'s sections (the card window, a card file's tab, the Inbox) and the page's DOM menu
  * (`openMenuAt`: a card in a page, a card embed) — and the one way to run a row. A place gives its doors: a door that
  * is there puts its row in the menu (Open card, Move to its own file, …); `change` writes the card line its own way
- * (a page's transaction, the file, the Inbox's marks). Both renderers ask in place first on a row with `ask`.
+ * (a page's transaction, the file, the Inbox's marks). Both renderers ask in place first on a row with `ask` (the file
+ * rows), and run a row with `twice` on a second click, the first saying "Click again to …" (YAZ-5966: the review rows).
  */
 import { cardMenu, type CardMenuItem, type CardMenuMarks } from '@shared/cardMenu'
 import { withoutCardReviews, type CardLine } from '@shared/cardLine'
@@ -117,9 +118,9 @@ export function cardMenuSections(d: CardMenuDoors): MenuSection[] {
             id: 'title-review',
             label: item.label,
             hint: item.hint,
-            children: [item.children.map((c) => ({ id: `title-${c.label}`, label: c.label, radio: { group: 'title-review', on: c.checked === true }, ask: c.ask, disabled: c.disabled, onSelect: () => runCardMenuItem(c, d) }))],
+            children: [item.children.map((c) => ({ id: `title-${c.label}`, label: c.label, radio: { group: 'title-review', on: c.checked === true }, ask: c.ask, confirm: c.twice?.words, confirmAdd: c.twice !== undefined && c.twice.danger !== true ? true : undefined, disabled: c.disabled, onSelect: () => runCardMenuItem(c, d) }))],
           }
-        : { id: item.action, label: item.label, hint: item.hint, tour: item.tour, danger: item.danger, disabled: item.disabled, ask: item.ask, onSelect: () => runCardMenuItem(item, d) },
+        : { id: item.action, label: item.label, hint: item.hint, tour: item.tour, danger: item.danger, disabled: item.disabled, ask: item.ask, confirm: item.twice?.words, confirmAdd: item.twice !== undefined && item.twice.danger !== true ? true : undefined, onSelect: () => runCardMenuItem(item, d) },
     ),
   )
   if (d.first !== undefined) sections.unshift([d.first])
@@ -136,10 +137,11 @@ export function cardMenuRows(d: CardMenuDoors): MenuRow[] {
         danger: item.danger,
         disabled: item.disabled,
         ask: item.ask,
+        twice: item.twice,
         divider: g > 0 && i === 0 ? true : undefined,
         run: () => runCardMenuItem(item, d),
         ...(item.children !== undefined && {
-          children: [item.children.map((c): MenuRow => ({ label: c.label, hint: c.checked === true ? '✓' : undefined, ask: c.ask, disabled: c.disabled, run: () => runCardMenuItem(c, d) }))],
+          children: [item.children.map((c): MenuRow => ({ label: c.label, hint: c.checked === true ? '✓' : undefined, ask: c.ask, twice: c.twice, disabled: c.disabled, run: () => runCardMenuItem(c, d) }))],
         }),
       }),
     ),

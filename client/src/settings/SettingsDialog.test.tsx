@@ -10,6 +10,7 @@
  * section's page first, the way a user does: `mountOn('Files & Links', …)` is `mount(…)` and a
  * click on that nav item.
  */
+import { setExploreZoom } from '../explore/exploreZoom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -142,7 +143,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'exploreWidth', 'explorePageZoom', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 /** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
 const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
@@ -181,7 +182,7 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
-const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /**
  * Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row. The Mac's send of the numbers (YAZ-5086, `friendsSend`)
  * shows only with Friends on (`shared/features.ts`, off for now; `friendsSend.test.tsx` turns it on).
@@ -425,8 +426,9 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Appearance')
     // Appearance with no vault: Spacing, Comments (the sidebar's groups have their own page since YAZ-3440 D7). draw.io
     // diagrams (YAZ-3037) is on "Drawings and diagrams" since YAZ-4748 D11. Text formatting needs a vault (YAZ-3068).
-    expect(groupTitles(el)).toEqual(['Spacing', 'Comments'])
-    expect(hints()).toEqual([])
+    // YAZ-5977: the Explore group (its own box, with its hint) after the first rows.
+    expect(groupTitles(el)).toEqual(['Explore', 'Spacing', 'Comments'])
+    expect(hints()).toEqual(['The search and its windows, on this Mac'])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
     // It starts with an untitled group: Theme and Content width sit straight under the section title.
@@ -1293,7 +1295,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
     it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
       const { el } = mountTf([vaultOf('/pages', 'Pages')])
-      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments'])
+      expect(groupTitles(el)).toEqual(['Explore', 'Spacing', 'Text formatting', 'Comments'])
       const group = tf(el).closest('.settings-group') as HTMLElement
       expect(group.querySelector('.settings-group__hint')?.textContent).toBe(TEXT_FORMATTING_HINT)
       // No "Vault: name" line: the dropdown replaces it (D15), and with one vault there is none.
@@ -1776,7 +1778,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Cards', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual([...ALL, ...FRIENDS_ROWS])
-    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Show card titles', 'Title room', 'Card tables', 'Card sides in pages', 'Card sides on card pages', 'Card sides in Explore', 'Card spacing'])
+    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Show card titles', 'Title mark in the card head', 'Title room', 'Card tables', 'Card sides in pages', 'Card sides on card pages', 'Card sides in Explore', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
     expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', 'GitHub'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why. YAZ-5708: the
@@ -1875,7 +1877,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('YAZ-5144 round 2: Card width sits before Card spacing: Same as pages · Custom; Custom starts at 640 px; an app setting', () => {
     const { el, onChange, save } = mountOn('Cards', { ...DEFAULT_SETTINGS, contentWidth: 'full' }, undefined, S)
     const ids = reviewRows(el)
-    expect(ids.slice(ids.indexOf('cardWidth'), ids.indexOf('cardWidth') + 10)).toEqual(['cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing'])
+    expect(ids.slice(ids.indexOf('cardWidth'), ids.indexOf('cardWidth') + 11)).toEqual(['cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing'])
     expect(row(el, 'cardWidth')?.querySelector('.setting__label')?.textContent).toBe('Card width')
     expect(rowButtons(el, 'cardWidth').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Custom', 'false']])
     expect(row(el, 'cardWidth')?.querySelector('input')).toBeNull()
@@ -1993,6 +1995,52 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(rowButtons(full.el, 'contentPosition').every((b) => b.disabled)).toBe(true)
   })
 
+  it('YAZ-5977: Appearance › Explore › Page zoom is the window\'s own zoom pill on the one Explore page zoom (explore:zoom); Search size is no row on the page', () => {
+    localStorage.removeItem('explore:zoom')
+    const { el } = mountOn('Appearance', DEFAULT_SETTINGS, undefined, S)
+    const pill = row(el, 'explorePageZoom')!.querySelector<HTMLElement>('.document-zoom')!
+    expect(row(el, 'explorePageZoom')?.closest('.settings-group')?.getAttribute('data-group-title')).toBe('Explore')
+    // YAZ-5977 Q6: nothing saved is 125%, and 125% is no entry.
+    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('125%')
+    const steps = () => [...pill.querySelectorAll<HTMLButtonElement>('.document-zoom__step')]
+    act(() => steps()[1].click())
+    expect(localStorage.getItem('explore:zoom')).toBe('150')
+    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('150%')
+    // A saved 100% stays 100% (it is no longer the default).
+    act(() => steps()[0].click())
+    act(() => steps()[0].click())
+    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('100%')
+    expect(localStorage.getItem('explore:zoom')).toBe('100')
+    act(() => steps()[1].click())
+    expect(localStorage.getItem('explore:zoom')).toBeNull()
+    // The pill on a window's title row writes the same value: the row follows at once.
+    act(() => setExploreZoom(300))
+    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('300%')
+    expect(row(el, 'exploreSearchSize')).toBeNull()
+    localStorage.removeItem('explore:zoom')
+  })
+
+  it('YAZ-5976: Appearance › Explore › Window width is Default · Custom (px 400–4000, starts at 800); Default is null', () => {
+    const { el, onChange } = mountOn('Appearance', DEFAULT_SETTINGS, undefined, S)
+    expect(row(el, 'exploreWidth')?.closest('.settings-group')?.getAttribute('data-group-title')).toBe('Explore')
+    expect(rowButtons(el, 'exploreWidth').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Default', 'true'], ['Custom', 'false']])
+    expect(row(el, 'exploreWidth')?.querySelector('input')).toBeNull()
+    act(() => rowButtons(el, 'exploreWidth')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, exploreWidth: 800 })
+    const custom = { ...DEFAULT_SETTINGS, exploreWidth: 520 }
+    const second = mountOn('Appearance', custom, undefined, S)
+    const px = row(second.el, 'exploreWidth')!.querySelector<HTMLInputElement>('input[aria-label="Window width in px"]')!
+    expect(px.value).toBe('520')
+    type(px, '9000')
+    pressEnter(px)
+    expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, exploreWidth: 4000 })
+    type(px, '10')
+    blur(px)
+    expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, exploreWidth: 400 })
+    act(() => rowButtons(second.el, 'exploreWidth')[0].click())
+    expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, exploreWidth: null })
+  })
+
   it('YAZ-5144 round 2: Custom shows its px, typed and kept on Enter, held to 400–1600; Reset goes back to 640; Same as pages goes back', () => {
     const custom = { ...DEFAULT_SETTINGS, cardWidth: 720 }
     const { el, onChange } = mountOn('Cards', custom, undefined, S)
@@ -2095,6 +2143,12 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(eye.getAttribute('aria-label')).toBe('What the choices mean')
     act(() => eye.focus())
     expect(document.querySelector('.card-title-help__box')?.textContent).toBe('Never: The title never shows in Review.Always: The title shows as soon as the card shows.After the first click: The title shows on its own, with your first Space or tap on the card.Before Side 2: The title shows on its own Space or tap, just before Side 2.')
+    // YAZ-5965: Title mark in the card head — Always, Only if different (the default), Never; saved in review.json.
+    expect(rowButtons(el, 'cardTitleMark').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Always', 'false'], ['Only if different', 'true'], ['Never', 'false']])
+    act(() => rowButtons(el, 'cardTitleMark')[2].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, titleMark: 'never' })
+    act(() => rowButtons(el, 'cardTitleMark')[0].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, titleMark: 'always' })
     act(() => rowButtons(el, 'enabled')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, enabled: false })
     expect(onChange).not.toHaveBeenCalled()

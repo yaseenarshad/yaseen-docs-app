@@ -35,7 +35,8 @@
  *    A page's other rows (line numbers, folding, the table of contents, the code and table widths, "Turn into a card
  *    file", …) and Collapse all are not there: a card has none of them.
  *  - ⌘F (YAZ-5378): the page's find bar, over the title and the card as the tab shows them (`cardFind.ts`, the page's
- *    own card search), the Edit card editor's text while it is open.
+ *    own card search), the Edit card editor's text while it is open. Its fold menu (YAZ-5970) is a page's: the card
+ *    page's own `find-folds` key, else Settings › Editor › Find, and folded card sides follow it.
  *  - COMMENTS (YAZ-5466): the page's one comments block (`CommentsSection`, the file's front matter `comments`), under the
  *    card and its strip, where a page has it: write, reply, edit your own, resolve, delete, the order setting. `comments`
  *    is the file's (decision D): it stays in the front matter beside `kind: card`, never on the card line, never a card
@@ -80,6 +81,7 @@ import { PageSettings } from './PageSettings'
 import { readCardSides, writeCardSides, type CardSides } from '@shared/pageSwitches'
 import { tellCardFoldChange } from './card/cardFold'
 import { PageTitle } from './PageTitle'
+import { TitleRowControls } from './PageFrame'
 import { StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
 import { ZOOM_EVENT } from './zoomRequest'
@@ -95,7 +97,9 @@ import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { createCardFinder } from './find/cardFind'
 import { tourEvent } from '../course/tourBus'
-import { readOutsideGlow, writeOutsideGlow } from '@shared/pageSwitches'
+import { readFindFolds, readOutsideGlow, writeFindFolds, writeOutsideGlow } from '@shared/pageSwitches'
+import type { FindFolds } from '@shared/types'
+import { useReviewOn } from '../review/useReviewSettings'
 import { OutsideChangesBar } from './external/OutsideChangesBar'
 import { useCardFileGlow } from './card/useCardFileGlow'
 
@@ -132,6 +136,8 @@ export interface CardFileViewProps {
   cardWidth?: number | null
   /** Settings › Outside changes glow (YAZ-5925): how long an outside change of the card glows; the cog's row overrides it. */
   outsideChangeGlow?: OutsideChangeGlow
+  /** Settings › Editor › Find (YAZ-5970): what ⌘F does with folds; the card page's own `find-folds` key wins. */
+  findFolds?: FindFolds
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
@@ -153,7 +159,7 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, contentWidth, contentPosition, cardWidth, outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, contentWidth, contentPosition, cardWidth, outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow, findFolds = DEFAULT_SETTINGS.findFolds }: CardFileViewProps) {
   const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
@@ -205,6 +211,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const settings = useVaultReviewSettings(root)
   const reviewOn = settings?.enabled === true
   const door = useContext(CardReviewDoor)
+  /** An Explore layer's page controls (YAZ-5974): on the card's top line. Null in a tab. */
+  const titleRowControls = useContext(TitleRowControls)
   const vaultScope = useContext(VaultReadOnly)
   const vaultLocked = vaultScope.on
   /** The file's own switch (`readonly: true`) or the vault's: the top bar's "Read only" chip shows while this is true. */
@@ -283,6 +291,14 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const setCardSides = (sides: CardSides | null) =>
     void transformFile(path, (text) => writeCardSides(text, sides)).then(read, (err: unknown) => onNotice(`Card sides could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
+  /**
+   * ⌘F's fold menu (YAZ-5970), as a page's (YAZ-4787): the card page's own `find-folds` key in its front matter, as its
+   * other own keys are, else Settings › Editor › Find. Its words name card sides while the vault's cards are on.
+   */
+  const ownFindFolds = content === null ? null : readFindFolds(content)
+  useEffect(() => findChannel.setFolds(ownFindFolds ?? findFolds), [findChannel, ownFindFolds, findFolds])
+  const cardsOn = useReviewOn(root)
+  const findFoldsMenu = { own: ownFindFolds, app: findFolds, cards: cardsOn, cardPage: true, onChange: (folds: FindFolds | null) => setOwnKey('Find folded bullets', (text) => writeFindFolds(text, folds)) }
   /** The cog's "Outside changes glow" (YAZ-5925, D3): this file's own key, on the newest bytes; null follows Settings. */
   const changeGlow = (next: OutsideChangeGlow | null) =>
     void transformFile(path, (text) => writeOutsideGlow(text, next)).then(read, (err: unknown) => onNotice(`Outside changes glow could not change: ${err instanceof Error ? err.message : String(err)}`))
@@ -432,12 +448,20 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
           pagePosition={ownPosition} appContentPosition={appPosition} onChangePagePosition={(next) => setOwnKey('Position', (text) => writePagePosition(text, next))} outsideGlow={pageGlow} appGlow={outsideChangeGlow} onChangeOutsideGlow={changeGlow} />
       </StatusChips>
       <OutsideChangesBar channel={glow.channel} onKeep={() => changeGlow('until-checked')} />
-      <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
+      <FindBar channel={findChannel} scope="page" hostRef={bodyRef} folds={findFoldsMenu} />
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
       <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body data-card-sides={cardSides ?? undefined} data-fold-scope={path} onKeyDown={onKeyDown} style={fileStyle}>
         <div className="card-file__page">
           {/* YAZ-5392: above the card, the folder path only. The title lives in the card's band, as in a page. YAZ-5402: the folder icon says it is a folder. */}
-          <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
+          {titleRowControls === null ? (
+            <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
+          ) : (
+            // In an Explore layer (YAZ-5974): the page controls on the card's top line, right of the folder path.
+            <div className="card-file__top">
+              <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
+              {titleRowControls}
+            </div>
+          )}
           {outside.length > 0 && (
             <div className="card-file__outside">
               {outside.map((text, i) => (

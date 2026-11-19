@@ -3,8 +3,8 @@
  * and a + that step the sidebar zoom in one click, with no menu (YAZ-3487, demo round 3: as before YAZ-3432). A click
  * opens a small menu upward with three rows, each the same "− 100% +" (`ZoomStepper`): App size on top, the App size
  * of every window (`settings.appZoom`, along `APP_ZOOM_STEPS`); Sidebar, the zoom of the sidebar's lists (YAZ-3389; a
- * Files window's own zoom there, D13); and Explore (YAZ-5881 D1), Explore size (`settings.exploreSize`, the same steps).
- * The keys never reach the App size: ⌘+ / ⌘− / ⌘0 zoom a page or the sidebar (`zoomRequest.ts`), and Explore size
+ * Files window's own zoom there, D13); and last, Search size (YAZ-5881 D1, YAZ-5977: `settings.exploreSize`, the same
+ * steps). The keys never reach the App size: ⌘+ / ⌘− / ⌘0 zoom a page or the sidebar (`zoomRequest.ts`), and Search size
  * while Explore's search panel is in front (`ExploreStack`).
  *
  * The menu goes to `document.body`: a fixed box inside a zoomed one scales and moves (`SessionList`). It is zoomed by
@@ -145,7 +145,7 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
               <ZoomStepper kind="app" value={app} onChange={onApp} />
               <span className="zoom-menu__label">Sidebar</span>
               <ZoomStepper kind="sidebar" value={sidebar} onChange={onSidebar} />
-              <span className="zoom-menu__label">Explore</span>
+              <span className="zoom-menu__label">Search size</span>
               <ZoomStepper kind="explore" value={explore} onChange={onExplore} />
             </div>
           </div>,

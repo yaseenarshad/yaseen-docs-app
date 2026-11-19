@@ -31,6 +31,7 @@ import { fileKind } from '@shared/fileKind'
 import { closeSubmenu, renderMenu, type MenuRow } from './blockHandleMenu'
 import type { ListState } from '../lists/useVaultListsHere'
 import { copyText } from '../lib/copyText'
+import { fitMenu } from '../lib/fitMenu'
 
 // `copyText` moved to its own file (YAZ-5153), so the card screens load without the editor; it is given out here as before.
 export { copyText }
@@ -150,7 +151,7 @@ export function placeRows(path: string, actions: LinkActions | undefined, onNoti
 }
 
 /**
- * Opens `rows` in `parent` at the pointer, clamped to the viewport. Closes on a row click, an
+ * Opens `rows` in `parent` at the pointer (screen px), made to fit the window by `fitMenu` (YAZ-5962: in its zoom). Closes on a row click, an
  * outside mousedown, a scroll, Escape and window blur; returns the close for the caller's own reasons.
  * One at a time is the caller's to keep. `rebuild` (YAZ-4924 round 5, "Pill style ›"): a `stay` flyout's pick runs,
  * then the menu is drawn again in its place from `rebuild()`, the flyout that was open opened again, as the block
@@ -161,7 +162,7 @@ export function openMenuAt(parent: HTMLElement, x: number, y: number, rows: Menu
     closeSubmenu(popup) // its wait for the pointer goes with it
     document.removeEventListener('mousedown', onMouseDown, true)
     document.removeEventListener('scroll', close, true)
-    window.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('keydown', onKeyDown, true)
     window.removeEventListener('blur', close)
     popup.remove()
   }
@@ -169,8 +170,14 @@ export function openMenuAt(parent: HTMLElement, x: number, y: number, rows: Menu
     if (!(event.target instanceof Node && popup.contains(event.target))) close()
   }
   // Escape's first press closes an open flyout alone, as in the sidebar's menu (YAZ-3901); the next closes the menu.
+  // The menu is the top thing, so it TAKES the Esc (the Esc order, `escapeOrder.ts` step 1): read in the window's capture
+  // phase, before the editor's own Esc (the keyboard to the sidebar) and an Explore layer's (YAZ-5980: one Esc closed
+  // the menu and the layer; as a bubble listener on window it ran after React's, with the key not taken).
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && !closeSubmenu(popup)) close()
+    if (event.key !== 'Escape' || event.isComposing) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (!closeSubmenu(popup)) close()
   }
   const refresh =
     rebuild === undefined
@@ -186,12 +193,14 @@ export function openMenuAt(parent: HTMLElement, x: number, y: number, rows: Menu
           if (flyout !== null) [...popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === flyout)?.click()
         }
   let popup = renderMenu(parent, rows, close, refresh)
-  const rect = popup.getBoundingClientRect()
-  popup.style.left = `${Math.max(0, Math.min(x, window.innerWidth - rect.width))}px`
-  popup.style.top = `${Math.max(0, Math.min(y, window.innerHeight - rect.height))}px`
+  // `x`, `y` are screen px; inside a zoomed layer (an Explore layer's `zoom`, YAZ-5881) the fixed menu's own `left` and
+  // `top` are scaled by that zoom again, so `fitMenu` divides by it and keeps the menu in the window (YAZ-5962).
+  const { left, top } = fitMenu(popup, x, y)
+  popup.style.left = `${left}px`
+  popup.style.top = `${top}px`
   document.addEventListener('mousedown', onMouseDown, true)
   document.addEventListener('scroll', close, true)
-  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('blur', close)
   return close
 }

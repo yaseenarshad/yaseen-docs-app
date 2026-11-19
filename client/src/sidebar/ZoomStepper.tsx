@@ -51,12 +51,13 @@ const KINDS = {
   explore: {
     steps: APP_ZOOM_STEPS,
     reset: EXPLORE_SIZE_DEFAULT,
-    label: 'Explore size',
-    out: 'Make Explore smaller',
-    into: 'Make Explore larger',
-    outTitle: withKeys('Make Explore smaller', '⌘−'),
-    intoTitle: withKeys('Make Explore larger', '⌘+'),
-    valueTitle: `Explore size. Click for ${EXPLORE_SIZE_DEFAULT}%`,
+    // YAZ-5977: Explore size is the SEARCH's size now (its panel, box and rows); the windows keep theirs.
+    label: 'Search size',
+    out: "Make Explore's search smaller",
+    into: "Make Explore's search larger",
+    outTitle: withKeys("Make Explore's search smaller", '⌘−'),
+    intoTitle: withKeys("Make Explore's search larger", '⌘+'),
+    valueTitle: `Search size. Click for ${EXPLORE_SIZE_DEFAULT}%`,
   },
 } as const
 

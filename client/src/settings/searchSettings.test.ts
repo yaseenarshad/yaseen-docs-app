@@ -12,7 +12,7 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 // Settings › Review (YAZ-4967, D14): the card settings.
-const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', 'githubToken', 'friendsSend']
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', 'githubToken', 'friendsSend']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
@@ -44,6 +44,10 @@ describe('settingCandidates', () => {
       'theme',
       'contentWidth',
       'contentPosition',
+      // YAZ-5976, YAZ-5977: Appearance › Explore (Search size is a pointer row, found by search only).
+      'exploreWidth',
+      'explorePageZoom',
+      'exploreSearchSize',
       'spacingVault',
       'lineSpacing',
       'blockGap',
@@ -334,6 +338,10 @@ describe('searchSettings', () => {
     // And a grouped folder table's Group line style (YAZ-4798), whose Thread is the sidebar's.
     expect(ids(searchSettings(settingCandidates(ctx()), 'thread'))).toEqual(['sidebarThreadColor', 'sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'folderPages.groupLineStyle'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'accent'))).toEqual(['sidebarThreadColor', 'threadColor'])
+  })
+
+  it('YAZ-5977: "search size" and "explore size" find the pointer to the zoom menu', () => {
+    for (const query of ['search size', 'explore size']) expect(ids(searchSettings(settingCandidates(ctx()), query))[0]).toBe('exploreSearchSize')
   })
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {

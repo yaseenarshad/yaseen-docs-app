@@ -1,4 +1,4 @@
-import { CARD_TITLE_SHOW, OLD_TITLE_AT, type CardTitleShow } from './cardTitleAt'
+import { CARD_TITLE_MARK_SHOW, CARD_TITLE_SHOW, OLD_TITLE_AT, type CardTitleMarkShow, type CardTitleShow } from './cardTitleAt'
 import { isRecord } from './guards'
 
 /**
@@ -100,6 +100,12 @@ export interface ReviewSettings {
    * title fades in, so nothing moves; `shown`, no band until the title shows, the text flush with the top (YAZ-5864).
    */
   titleRoom: TitleRoom
+  /**
+   * The title mark in a card's head (YAZ-5965, Settings › Cards › "Title mark in the card head"): `always`, `different`
+   * (the default: only a card with a title rule of its own) or `never` (`cardTitleMarkShows`). Every head reads it: a
+   * card in a page, an embed, a card page and the phone.
+   */
+  titleMark: CardTitleMarkShow
   /** The FSRS weights: 21 numbers (FSRS-6); 17 or 19 are read too (ts-fsrs fills in the rest). */
   weights: number[]
 }
@@ -128,6 +134,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   timeSoFar: 'hidden',
   titleAt: 'always',
   titleRoom: 'always',
+  titleMark: 'different',
   weights: [...DEFAULT_CARD_WEIGHTS],
 }) as ReviewSettings
 
@@ -170,6 +177,7 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     titleAt: (CARD_TITLE_SHOW as readonly unknown[]).includes(r.titleAt) ? (r.titleAt as CardTitleShow) : typeof r.titleAt === 'string' && Object.hasOwn(OLD_TITLE_AT, r.titleAt) ? OLD_TITLE_AT[r.titleAt] : d.titleAt,
     // Anything but 'shown' is the default, Always.
     titleRoom: r.titleRoom === 'shown' ? 'shown' : d.titleRoom,
+    titleMark: (CARD_TITLE_MARK_SHOW as readonly unknown[]).includes(r.titleMark) ? (r.titleMark as CardTitleMarkShow) : d.titleMark,
     weights: isWeights(r.weights) ? [...r.weights] : [...d.weights],
   }
 }

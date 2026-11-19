@@ -14,8 +14,10 @@ import { createCrepe, type CreateCrepeOptions } from '../createCrepe'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { loadCardEmbed } from '../card/embedCard'
 import { setCardEditorKind } from '../card/cardBlockView'
+import { setCardFold } from '../card/cardFold'
 import { createFindChannel } from './findChannel'
-import { cardMatches, paintedFindRanges } from './cardFind'
+import { cardMatches, createCardFinder, paintedFindRanges } from './cardFind'
+import { renderCard } from '../card/cardRender'
 import { FIND_MATCH_CLASS } from './findInPage'
 
 const files = vi.hoisted(() => new Map<string, string>())
@@ -178,5 +180,126 @@ describe('cardMatches', () => {
     el.innerHTML = '<div class="card__body"><p>one <b>tw</b>o</p><p>two</p><button>two</button></div>'
     expect(cardMatches(el, 'two').map((r) => r.toString())).toEqual(['two', 'two'])
     expect(cardMatches(el, 'twotwo')).toHaveLength(0)
+  })
+})
+
+describe('⌘F`s fold choice on folded card sides in a page (YAZ-5970)', () => {
+  /** The page's card with Side 2 folded, as Settings › Card sides in pages folds it. */
+  async function folded() {
+    const mountedFind = await mountFind(PAGE)
+    const sides = mountedFind.root.querySelector('.card[data-page-card] .card__sides') as HTMLElement
+    setCardFold(sides, true)
+    const side2 = () => sides.querySelectorAll<HTMLElement>(':scope > .card__side')[1]
+    expect(side2().hidden).toBe(true)
+    return { ...mountedFind, sides, side2 }
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it('Keep folded: the folded side`s text does not count and nothing opens; the reader opening it counts again', async () => {
+    const { channel, sides, side2 } = await folded()
+    channel.setFolds('keep')
+    channel.open()
+    channel.setQuery('lima')
+    // Page text 1, the title, side 1, page text 2: not side 2's "Lima, by the sea".
+    expect(channel.getState().total).toBe(4)
+    for (let i = 0; i < 4; i++) channel.next()
+    expect(side2().hidden).toBe(true)
+    ;(sides.querySelector('.card__rule[data-fold]') as HTMLElement).click()
+    await settle()
+    await settle()
+    expect(channel.getState().total).toBe(5)
+  })
+
+  it('Open the one you are on: the side opens while its match is current, folds again on the next step, and stays open as the landing', async () => {
+    const { channel, side2 } = await folded()
+    channel.setFolds('current')
+    channel.open()
+    channel.setQuery('lima')
+    expect(channel.getState().total).toBe(5)
+    expect(side2().hidden).toBe(true)
+    channel.next()
+    channel.next()
+    channel.next()
+    expect(channel.getState().activeIndex).toBe(3)
+    expect(side2().hidden).toBe(false)
+    channel.next()
+    expect(side2().hidden).toBe(true)
+    channel.prev()
+    expect(side2().hidden).toBe(false)
+    channel.close()
+    expect(side2().hidden).toBe(false)
+  })
+
+  it('Open every match: every folded side that holds a match opens at once; on close it folds again unless it is the landing', async () => {
+    const { channel, side2 } = await folded()
+    channel.setFolds('all')
+    channel.open()
+    channel.setQuery('lima')
+    expect(channel.getState().activeIndex).toBe(0)
+    expect(side2().hidden).toBe(false)
+    channel.close()
+    expect(side2().hidden).toBe(true)
+  })
+
+  it('a side the reader opened stays open when find moves off it', async () => {
+    const { channel, sides, side2 } = await folded()
+    ;(sides.querySelector('.card__rule[data-fold]') as HTMLElement).click()
+    channel.setFolds('current')
+    channel.open()
+    channel.setQuery('lima')
+    for (let i = 0; i < 4; i++) channel.next()
+    expect(side2().hidden).toBe(false)
+    channel.close()
+    expect(side2().hidden).toBe(false)
+  })
+})
+
+describe('⌘F`s fold choice on a card page (YAZ-5970, `createCardFinder`)', () => {
+  const LONG = 'Front {{one}}\n---\nBack {{two}}\nline three\n---\nSide three {{three}}'
+  function cardPage() {
+    const host = document.createElement('div')
+    host.setAttribute('data-fold-scope', '/v/card.md')
+    // A card as a card page draws it: the sides in the card's body.
+    const card = document.createElement('div')
+    card.className = 'card'
+    const body = document.createElement('div')
+    body.className = 'card__body'
+    body.append(renderCard(LONG, { fold: true }))
+    card.append(body)
+    host.append(card)
+    document.body.append(host)
+    const channel = createFindChannel()
+    const unbind = createCardFinder(channel, () => host)
+    const sides = () => [...host.querySelectorAll<HTMLElement>('.card__side')].map((s) => s.hidden)
+    return { host, channel, sides, done: () => (unbind(), host.remove()) }
+  }
+
+  it('Keep folded counts only what shows; Open the one you are on opens and folds again; Open every match opens all', () => {
+    const { channel, sides, done } = cardPage()
+    channel.setFolds('keep')
+    channel.open()
+    channel.setQuery('three')
+    expect(channel.getState().total).toBe(0)
+    expect(sides()).toEqual([false, true, true])
+
+    channel.setFolds('current')
+    // "line three" (Side 2), "Side three" and the hidden word "three" (Side 3).
+    expect(channel.getState().total).toBe(3)
+    expect(sides()).toEqual([false, false, true])
+    channel.next()
+    expect(sides()).toEqual([false, true, false])
+
+    // Back to Keep folded while find stands in a side it opened: that side folds first, and nothing in it counts.
+    channel.setFolds('keep')
+    expect(channel.getState().total).toBe(0)
+    expect(sides()).toEqual([false, true, true])
+
+    channel.setFolds('all')
+    expect(sides()).toEqual([false, false, false])
+    channel.next()
+    channel.close()
+    // The landing (Side 3's) stays open; Side 2, opened by find, folds again.
+    expect(sides()).toEqual([false, true, false])
+    done()
   })
 })

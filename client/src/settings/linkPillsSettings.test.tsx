@@ -128,7 +128,13 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     pick(ready, '(Name)')
     expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } }, format: '({icon} {name})' })
     pick(ready, 'Plain')
-    expect(save).toHaveBeenLastCalledWith({ format: '{name}', parts: { name: { bold: true, color: 'same' } }, box: { fill: 'none' } })
+    // Plain (YAZ-5961): the format stays (the mounted look has none: the default); every part but the icon in the
+    // text's colour and size; no box.
+    const same = { color: 'same', size: 'normal' }
+    expect(save).toHaveBeenLastCalledWith({
+      parts: { name: { bold: true, color: 'same' }, id: same, number: same, vault: same, folder: same, path: same, text: same },
+      box: { fill: 'none' },
+    })
   })
 
   it('the vault rule shows only while the format has {vault}, and writes the rule', () => {
@@ -152,7 +158,7 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     // ONE colour row: the three named colours, then the ten swatches, the current one marked.
     const colour = rowOf(bar, 'Colour')
     expect([...colour.querySelectorAll('button[aria-pressed]')].map((b) => b.textContent)).toEqual(['Accent', 'Text', 'Muted'])
-    expect(colour.querySelectorAll('[role="radio"]')).toHaveLength(10)
+    expect(colour.querySelectorAll('[role="radio"]')).toHaveLength(11)
     expect(colour.querySelector('[aria-pressed="true"]')?.textContent).toBe('Accent')
     expect([...rowOf(bar, 'Size').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Normal', 'Small'])
     click(button(bar, 'Bold'))
@@ -209,7 +215,7 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(rows(bar)).toEqual(['Shape', 'Fill'])
     expect([...rowOf(bar, 'Shape').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Round', 'Square', 'Underline'])
     expect([...rowOf(bar, 'Fill').querySelectorAll('button[aria-pressed]')].map((b) => b.textContent)).toEqual(['Tint', 'None'])
-    expect(rowOf(bar, 'Fill').querySelectorAll('[role="radio"]')).toHaveLength(10)
+    expect(rowOf(bar, 'Fill').querySelectorAll('[role="radio"]')).toHaveLength(11)
     expect([button(bar, 'Round').getAttribute('aria-pressed'), button(bar, 'Accent tint').getAttribute('aria-pressed'), button(bar, 'Strong')]).toEqual(['true', 'true', undefined])
     click(button(bar, 'Square'))
     expect(save).toHaveBeenLastCalledWith({ box: { shape: 'square' } })
@@ -318,31 +324,95 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(save).toHaveBeenLastCalledWith({ format: '{icon}{name} #{number}{mark}', parts: { mark: { size: 'small' } } })
   })
 
-  it("a click on the pill's icon opens 'Styling: the icon' (YAZ-5843): ONE Colour row, Default on; a pick saves parts.icon.color, Default removes it; no icon in the format, no 'the icon'", () => {
+  it("a click on the pill's icon opens 'Styling: the icon' (YAZ-5843, YAZ-5972): two Colour rows, Pages and files then Cards, Default on in each; a pick sets its row alone; no icon in the format, no 'the icon'", () => {
     const { row, save } = mount(NO_LINK_PILLS)
     click(preview(row).querySelector('.file-icon') as Element)
     const bar = toolbar(row) as HTMLElement
     expect(bar.getAttribute('aria-label')).toBe('Styling: the icon')
-    expect(rows(bar)).toEqual(['Colour'])
-    const colour = rowOf(bar, 'Colour')
-    expect([...colour.querySelectorAll('button[aria-pressed]')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Default', 'true'], ['Accent', 'false'], ['Text', 'false'], ['Muted', 'false']])
-    expect(colour.querySelectorAll('[role="radio"]')).toHaveLength(10)
+    expect(rows(bar)).toEqual(['Pages and files', 'Cards'])
+    for (const label of ['Pages and files', 'Cards']) {
+      const colour = rowOf(bar, label)
+      expect([...colour.querySelectorAll('button[aria-pressed]')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Default', 'true'], ['Accent', 'false'], ['Text', 'false'], ['Muted', 'false']])
+      // The ten swatches, then Custom colour… last.
+      const radios = [...colour.querySelectorAll('[role="radio"]')]
+      expect(radios).toHaveLength(11)
+      expect([radios[10].getAttribute('aria-label'), radios[10].getAttribute('aria-checked')]).toEqual(['Custom colour…', 'false'])
+    }
     expect(bar.querySelector('button[aria-label="Bold"]')).toBeNull()
-    click(colour.querySelector('[role="radio"][title="Teal"]') as Element)
-    expect(save).toHaveBeenLastCalledWith({ parts: { icon: { color: 'teal' } } })
-    click(button(bar, 'Accent colour'))
-    expect(save).toHaveBeenLastCalledWith({ parts: { icon: { color: 'accent' } } })
-    // A stored colour shows as picked, and Default takes it away.
+    click(rowOf(bar, 'Pages and files').querySelector('[role="radio"][title="Teal"]') as Element)
+    expect(save).toHaveBeenLastCalledWith({ parts: { icon: { color: 'teal', cardColor: 'kind' } } })
+    click(rowOf(bar, 'Cards').querySelector('[role="radio"][title="Teal"]') as Element)
+    expect(save).toHaveBeenLastCalledWith({ parts: { icon: { cardColor: 'teal' } } })
+    click(button(rowOf(bar, 'Cards'), 'Accent colour'))
+    expect(save).toHaveBeenLastCalledWith({ parts: { icon: { cardColor: 'accent' } } })
+    // A file of one colour (before YAZ-5972) shows it in both rows; Default on pages keeps the cards' colour.
     const coloured = mount({ parts: { icon: { color: 'teal' }, name: { bold: true } } })
     click(preview(coloured.row).querySelector('.file-icon') as Element)
     const bar2 = toolbar(coloured.row) as HTMLElement
-    expect([button(bar2, "Default: the app's icon colours").getAttribute('aria-pressed'), rowOf(bar2, 'Colour').querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('title')]).toEqual(['false', 'Teal'])
-    expect(preview(coloured.row).style.getPropertyValue('--pill-icon-fg')).toBe('var(--table-text-teal)')
-    click(button(bar2, "Default: the app's icon colours"))
-    expect(coloured.save).toHaveBeenLastCalledWith({ parts: { name: { bold: true } } })
+    for (const label of ['Pages and files', 'Cards'])
+      expect([button(rowOf(bar2, label), "Default: the app's icon colours").getAttribute('aria-pressed'), rowOf(bar2, label).querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('title')]).toEqual(['false', 'Teal'])
+    expect([preview(coloured.row).style.getPropertyValue('--pill-icon-fg'), preview(coloured.row).style.getPropertyValue('--pill-card-icon-fg')]).toEqual(['var(--table-text-teal)', 'var(--table-text-teal)'])
+    click(button(rowOf(bar2, 'Pages and files'), "Default: the app's icon colours"))
+    expect(coloured.save).toHaveBeenLastCalledWith({ parts: { name: { bold: true }, icon: { cardColor: 'teal' } } })
     const plain = mount({ format: '{name}' })
     click(preview(plain.row).querySelector('.link-pills-preview__name') as Element)
     expect([...(select(toolbar(plain.row) as HTMLElement, 'What to style') as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['the name', 'the box'])
+  })
+
+  it('pages red and cards teal (YAZ-5972): the preview carries each row\'s variable; each row shows its own', () => {
+    const { row } = mount({ parts: { icon: { color: 'red', cardColor: 'teal' } } })
+    expect([preview(row).style.getPropertyValue('--pill-icon-fg'), preview(row).style.getPropertyValue('--pill-card-icon-fg')]).toEqual(['var(--table-text-red)', 'var(--table-text-teal)'])
+    click(cardPill(row)!.querySelector('.card-icon') as Element)
+    const bar = toolbar(row) as HTMLElement
+    expect(['Pages and files', 'Cards'].map((l) => rowOf(bar, l).querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('title'))).toEqual(['Red', 'Teal'])
+  })
+
+  it('Custom colour… (YAZ-5972) ends every colour row: it opens the colour box; a pick saves #rrggbb; a hex shows on the swatch, selected', () => {
+    const { row, save } = mount(NO_LINK_PILLS)
+    click(preview(row).querySelector('.link-pills-preview__name') as Element)
+    const bar = toolbar(row) as HTMLElement
+    const custom = rowOf(bar, 'Colour').querySelector<HTMLElement>('.pill-toolbar__custom') as HTMLElement
+    expect([custom.textContent, custom.getAttribute('aria-checked'), custom.getAttribute('aria-expanded')]).toEqual(['Custom…', 'false', 'false'])
+    click(custom)
+    expect(custom.getAttribute('aria-expanded')).toBe('true')
+    const box = rowOf(bar, 'Colour').querySelector<HTMLElement>('.colour-box') as HTMLElement
+    expect(box.hidden).toBe(false)
+    // Type R G B and press Enter: one finished pick.
+    const fields = [...box.querySelectorAll<HTMLInputElement>('.colour-box__rgb input')]
+    act(() => {
+      ;['255', '0', '170'].forEach((v, i) => {
+        setter?.call(fields[i], v)
+        fields[i].dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      fields[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { color: '#ff00aa' } } })
+    click(custom)
+    expect(box.hidden).toBe(true)
+
+    // A stored hex: the swatch shows it and is the selected one; the named colours and swatches are not.
+    const hexed = mount({ parts: { name: { color: '#ff00aa' } }, box: { fill: '#3366cc' } })
+    expect(preview(hexed.row).style.getPropertyValue('--pill-name-fg')).toBe('#ff00aa')
+    click(preview(hexed.row).querySelector('.link-pills-preview__name') as Element)
+    const bar2 = toolbar(hexed.row) as HTMLElement
+    const checked = rowOf(bar2, 'Colour').querySelectorAll('[role="radio"][aria-checked="true"]')
+    expect([...checked].map((r) => r.getAttribute('aria-label'))).toEqual(['Custom colour… (#ff00aa)'])
+    expect((checked[0].querySelector('.settings__band-swatch') as HTMLElement).style.background).toMatch(/#ff00aa|rgb\(255, 0, 170\)/)
+    expect(rowOf(bar2, 'Colour').querySelector('button[aria-pressed="true"]')).toBeNull()
+    // The box: its Fill row too, and Strength shows for a custom fill.
+    pick(select(bar2, 'What to style') as HTMLSelectElement, 'the box')
+    expect(rowOf(bar2, 'Fill').querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('aria-label')).toBe('Custom colour… (#3366cc)')
+    expect(rows(bar2)).toContain('Strength')
+    // The mark, every part and the icon's rows end with it too.
+    const marked = mount({ format: '{icon} {name} {id}{mark}' })
+    for (const part of ['the mark', 'the ID', 'the icon']) {
+      click(preview(marked.row).querySelector('.link-pills-preview__name') as Element)
+      const b = toolbar(marked.row) as HTMLElement
+      pick(select(b, 'What to style') as HTMLSelectElement, part)
+      const colourRows = [...b.querySelectorAll<HTMLElement>('.pill-toolbar__row')].filter((r) => r.querySelector('.settings__band-colours') !== null)
+      expect(colourRows.length).toBeGreaterThan(0)
+      for (const r of colourRows) expect([...r.querySelectorAll('[role="radio"]')].at(-1)?.classList.contains('pill-toolbar__custom')).toBe(true)
+    }
   })
 
   it("YAZ-5919: the card pill follows the format and its icon opens 'Styling: the icon'; its edge the box", () => {
@@ -354,8 +424,8 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect([preview(row).style.getPropertyValue('--pill-icon-fg'), preview(row).style.getPropertyValue('--pill-icon-gap')]).toEqual(['var(--table-text-red)', '1px'])
     click(card.querySelector('.card-icon') as Element)
     expect(title(toolbar(row) as HTMLElement)).toBe('Styling: the icon')
-    click(button(toolbar(row) as HTMLElement, 'Muted'))
-    expect(save).toHaveBeenLastCalledWith({ format: '{icon}{name} #{number}{mark}', parts: { icon: { color: 'muted' } } })
+    click(button(rowOf(toolbar(row) as HTMLElement, 'Cards'), 'Muted'))
+    expect(save).toHaveBeenLastCalledWith({ format: '{icon}{name} #{number}{mark}', parts: { icon: { color: 'red', cardColor: 'muted' } } })
     click(card.querySelector('.link-pills-preview__name') as Element)
     expect(title(toolbar(row) as HTMLElement)).toBe('Styling: the name')
     click(card)

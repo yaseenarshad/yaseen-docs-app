@@ -1386,6 +1386,11 @@ export type ContentStep = (typeof CONTENT_WIDTHS)[number]
  */
 export type ContentWidth = ContentStep | number
 export const PAGE_WIDTH_MIN = 400
+/** Settings' Explore window width (YAZ-5976): the Custom px box's range and its start. The window cuts it further. */
+export const EXPLORE_WIDTH_MIN = 400
+export const EXPLORE_WIDTH_MAX = 4000
+export const EXPLORE_WIDTH_START = 800
+export const isExploreWidth = (v: unknown): v is number | null => v === null || (typeof v === 'number' && Number.isInteger(v) && v >= EXPLORE_WIDTH_MIN && v <= EXPLORE_WIDTH_MAX)
 export const PAGE_WIDTH_MAX = 2400
 /** Custom's start in the controls: Medium's px. */
 export const PAGE_WIDTH_START = 900
@@ -2590,11 +2595,20 @@ export interface SettingsState {
    */
   appZoom: number
   /**
-   * Explore size in percent (YAZ-5881 D1, D2): every Explore panel's width and all that is in it (the search, the file
-   * list, a page's head and text), on `APP_ZOOM_STEPS`; 125 by default (`EXPLORE_SIZE_DEFAULT`). The footer's zoom menu
-   * writes it, and ⌘+ / ⌘− / ⌘0 while the search panel is in front (D3). A page's own zoom works on top.
+   * Search size in percent (YAZ-5881 D1, D2; named Explore size before YAZ-5977, the key kept): the search panel's
+   * width and all that is in it (its input, its rows), on `APP_ZOOM_STEPS`; 125 by default (`EXPLORE_SIZE_DEFAULT`).
+   * Page, board and card windows keep the app's size (their text has the Explore page zoom alone). The footer's zoom
+   * menu writes it, and ⌘+ / ⌘− / ⌘0 while the search panel is in front (D3).
    */
   exploreSize: number
+  /**
+   * Explore window width (YAZ-5976): the width, in px, a fresh Explore page or board window starts at — `null` (Default)
+   * is the page panel's own width (`PAGE_WIDTH`, explore/layers.ts); a number (`EXPLORE_WIDTH_MIN`–`EXPLORE_WIDTH_MAX`)
+   * is that width. Both are cut to the window, and Search size scales neither (YAZ-5977). The search panel keeps its own
+   * width. A window opened from a window sized by hand takes that one's size (YAZ-5975); a window resized by hand keeps
+   * its box.
+   */
+  exploreWidth: number | null
   /**
    * Code files (YAZ-3449, YAZ-3438 D5): every code tab opens read only, and shows the Read only chip. One app setting
    * for all code files, never stored with a file. "Allow edits" on a tab's chip unlocks that tab until it closes.
@@ -3225,6 +3239,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tocZoom: 100,
   appZoom: 100,
   exploreSize: 125,
+  exploreWidth: null,
   codeReadOnly: false,
   codeWrap: true,
   codeMinimap: false,

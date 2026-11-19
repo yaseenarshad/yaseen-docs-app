@@ -18,6 +18,7 @@ import { registerUpdateIpc } from './main/ipc/update'
 import { registerMemoryIpc } from './main/ipc/memory'
 import { registerSpellerIpc } from './main/ipc/speller'
 import { registerCourseAudioIpc } from './main/ipc/courseAudio'
+import { registerSelectionColourIpc } from './main/ipc/selectionColour'
 import { LIBRARY_MARKER_FILE } from './main/library/copyLibrary'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
@@ -58,6 +59,8 @@ it('main handles every invoke exactly once and listens on exactly the send chann
   registerCourseAudioIpc({ userData: dir, isPackaged: true, fetchImpl: vi.fn() })
   registerMemoryIpc({ report: vi.fn() })
   registerSpellerIpc({ guesses: vi.fn() })
+  // The Mac's selection colour (YAZ-5941), registered on `ready` beside the appearance.
+  registerSelectionColourIpc(() => null)
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', checks: true, releases: [] }), check: async () => ({ kind: 'idle' }), checks: true }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), write: vi.fn(), readText: vi.fn(), readHTML: vi.fn(), revealImage: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
   // The Mac's send of the numbers (YAZ-5086): its status door, registered on `ready` after `registerIpc`.

@@ -12,16 +12,16 @@
  *   4. Copy card ID, Copy card link.
  *   5. Reset history, alone (it asks by typing, `askResetHistory`).
  *
- * THE ONE ASK RULE: a row that changes the card or its file, and that the same row does not take back, asks in place
- * first (`ask`, Cancel first). Archive card (only Unarchive takes it back), a Title in review choice, Move to its own file and
- * Put back into this page (two files change, no Undo), Turn into a page (the file is rewritten and renamed). Move to Up
- * next and Fix later do not ask: the same row says "Remove …" and takes it back. Show as link does not ask: it only
- * changes the page's text, and ⌘Z takes it back. Unarchive card does not ask: it only brings a card back.
+ * THE ASK RULES (`cardAsks.ts`). CLICK TWICE (YAZ-5966, `twice`): Archive card / Unarchive card, Move to Up next /
+ * Remove from Up next, Fix later / Remove Fix later (round 2), and a Title in review choice (not the one already ✓) —
+ * the first click says "Click again to …", the second runs it. AN ASK IN PLACE (`ask`, Cancel first): Move to its own
+ * file and Put back into this page (two files change, no Undo), Turn into a page (the file is rewritten and renamed);
+ * Reset history asks by typing. Show as link does not ask: it only changes the page's text, and ⌘Z takes it back.
  *
  * The rows are data: the place runs a row by its `action` (its own writes: a page's transaction, the file, the Inbox's
  * Undo stack) and draws them with its menu (`ContextMenu`, or the page's DOM menu).
  */
-import { ARCHIVE_ASK, titleChoiceAsk, type CardAsk } from './cardAsks'
+import { ARCHIVE_TWICE, UNARCHIVE_TWICE, fixTwice, nextTwice, titleChoiceTwice, type CardAsk, type CardTwice } from './cardAsks'
 import { withCardFix, withCardNext, withCardOff, withCardTitleChoice, type CardLine, type CardTitleChoice, type CardTitleShow } from './cardLine'
 import { CARD_TITLE_CHOICES, cardTitleChoiceLabel, cardTitleChoiceShort } from './cardTitleAt'
 
@@ -59,8 +59,10 @@ export interface CardMenuItem {
   label: string
   /** The right-hand word: a key, the card's ID, or Title in review's choice now. */
   hint?: string
-  /** It asks in place first (the one ask rule). */
+  /** It asks in place first (the file rows). */
   ask?: CardAsk
+  /** It runs on a second click (YAZ-5966): the first says these words (the review rows). */
+  twice?: CardTwice
   danger?: boolean
   /** Waits: the place cannot change the card line now (a read-only page, a card with no ID). */
   disabled?: boolean
@@ -70,7 +72,7 @@ export interface CardMenuItem {
   change?: (line: CardLine) => CardLine
   /** A review row: the mark after it (true sets the word). */
   on?: boolean
-  /** Title in review ›: its choices, one picked (`checked`); a pick of another asks first. */
+  /** Title in review ›: its choices, one picked (`checked`); another runs on a second click. */
   children?: CardMenuItem[]
   checked?: boolean
 }
@@ -128,19 +130,19 @@ export function cardMenu(place: CardMenuPlace): CardMenuItem[][] {
     if (place.upNext === true) {
       const on = !m.next
       const label = on ? 'Move to Up next' : 'Remove from Up next'
-      review.push({ action: 'next', label, on, disabled, change: (l) => withCardNext(l, on) })
+      review.push({ action: 'next', label, on, twice: nextTwice(on), disabled, change: (l) => withCardNext(l, on) })
     }
     const off = !m.off
     // Chapter 11's tour (YAZ-5330): Archive card, then Unarchive card on the same row once the card is archived.
-    review.push({ action: 'off', label: off ? 'Archive card' : 'Unarchive card', tour: off ? 'card-menu-archive' : 'card-menu-unarchive', ask: off ? ARCHIVE_ASK : undefined, on: off, disabled, change: (l) => withCardOff(l, off) })
+    review.push({ action: 'off', label: off ? 'Archive card' : 'Unarchive card', tour: off ? 'card-menu-archive' : 'card-menu-unarchive', twice: off ? ARCHIVE_TWICE : UNARCHIVE_TWICE, on: off, disabled, change: (l) => withCardOff(l, off) })
     if (place.fix !== false) {
       const fix = !m.fix
-      review.push({ action: 'fix', label: fix ? 'Fix later' : 'Remove Fix later', on: fix, disabled, change: (l) => withCardFix(l, fix) })
+      review.push({ action: 'fix', label: fix ? 'Fix later' : 'Remove Fix later', on: fix, twice: fixTwice(fix), disabled, change: (l) => withCardFix(l, fix) })
     }
     if (place.title !== false) {
-      // Title in review › (YAZ-5696): the hint and the ✓ say the choice now; another choice asks first.
+      // Title in review › (YAZ-5696): the hint and the ✓ say the choice now; another choice runs on a second click.
       const now: CardTitleChoice = m.titleAt ?? (m.notitle ? 'never' : 'default')
-      const children = CARD_TITLE_CHOICES.map(({ choice }): CardMenuItem => ({ action: 'title-choice', label: cardTitleChoiceLabel(choice, place.titleGlobal), checked: choice === now, ask: choice === now ? undefined : titleChoiceAsk(choice), disabled, change: (l) => withCardTitleChoice(l, choice) }))
+      const children = CARD_TITLE_CHOICES.map(({ choice }): CardMenuItem => ({ action: 'title-choice', label: cardTitleChoiceLabel(choice, place.titleGlobal), checked: choice === now, twice: choice === now ? undefined : titleChoiceTwice(choice), disabled, change: (l) => withCardTitleChoice(l, choice) }))
       review.push({ action: 'title', label: 'Title in review', hint: cardTitleChoiceShort(now), disabled, children })
     }
   }

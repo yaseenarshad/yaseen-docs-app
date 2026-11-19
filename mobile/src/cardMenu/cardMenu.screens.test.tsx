@@ -86,7 +86,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     // At the right of the head (its last thing), as a card in a page; the head's words stay the card's own.
     expect(head.lastElementChild?.classList.contains('card__more-box')).toBe(true)
     expect(head.querySelector('.card__id')?.textContent).toBe('RV-17')
-    expect(head.querySelector('.card__marks')?.textContent).toBe('NewTitle always (default)')
+    expect(head.querySelector('.card__marks')?.textContent).toBe('New') // YAZ-5965: no title mark for a card that follows the vault
     expect(head.querySelector('.card__more')!.getAttribute('aria-label')).toBe('Card actions: Speed of light')
     const menu = await openMenu()
     expect(menu.getAttribute('aria-label')).toBe('Card actions: RV-17')
@@ -104,7 +104,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(h!.host.querySelector('[data-action]')).toBeNull()
   })
 
-  it('a card of a page, opened alone: the same ⋯; one tap only asks ("Archive this card?", YAZ-5697); its Archive archives; the card shows Archived at once', async () => {
+  it('a card of a page, opened alone: the same ⋯; one tap only arms ("Tap again to archive", YAZ-5966); the second archives; the card shows Archived at once', async () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
     const menu = await openMenu()
@@ -112,9 +112,10 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(h!.button(/Headings/)).toBeNull()
 
     await tap(row(menu, 'off'))
-    expect(menu.querySelector('[role="alertdialog"]')?.textContent).toContain('Archive this card?')
+    expect(row(menu, 'off').textContent).toBe('Tap again to archive')
+    expect(menu.querySelector('[role="alertdialog"]')).toBeNull()
     expect(t.answers.waiting()).toEqual([])
-    await tap([...menu.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Archive')!)
+    await tap(row(menu, 'off'))
     await waitFor(() => t.answers.waiting().length === 1)
     expect(t.answers.waiting().map((w) => [w.path, w.op])).toEqual([['Rivers.md', { kind: 'off', id: 'RV-1', on: true }]])
     // The menu closed; the card reads archived at once (before any send); the toast says so.
@@ -128,7 +129,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(rows(again)).toContain('Unarchive card')
   })
 
-  it('Title in review › (YAZ-5696, YAZ-5697 round 2): its choices open under it; Never asks first, then hides it ("Title hidden in review"); a tap outside cancels the ask', async () => {
+  it('Title in review › (YAZ-5696, YAZ-5697 round 2): its choices open under it; Never is two taps (YAZ-5966), then hides it ("Title hidden in review"); a tap outside cancels', async () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
     let menu = await openMenu()
@@ -143,7 +144,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     // Round 3: no eye by Title in review (it stays by the Mac's Settings › Cards › Show card titles).
     expect(menu.querySelector('.card-actions__help, .card-title-help__box')).toBeNull()
     await tap(row(menu, 'title-never'))
-    expect(menu.querySelector('[role="alertdialog"]')?.textContent).toContain('Never show the title in review?')
+    expect(row(menu, 'title-never').textContent).toBe('Tap again to never show the title')
     await act(async () => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
     await h!.settle()
     // The tap outside cancels and (the reader's rule) closes the menu: nothing was written.
@@ -153,7 +154,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(row(menu, 'title').textContent).toBe('Title in reviewDefault ›')
     await tap(row(menu, 'title'))
     await tap(row(menu, 'title-never'))
-    await tap([...menu.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Never')!)
+    await tap(row(menu, 'title-never'))
     await waitFor(() => t.answers.waiting().length === 1)
     expect(t.answers.waiting()[0].op).toEqual({ kind: 'notitle', id: 'RV-1', on: true })
     await waitFor(() => h!.host.querySelector('.card-view__card .card__notitle') !== null)
@@ -202,12 +203,12 @@ describe('a page card\'s ⋯ (YAZ-5504)', () => {
     await tap(cards[2].querySelector<HTMLElement>('.card__more')!)
     expect(h!.host.querySelector('.card-menu')).toBeNull()
 
-    // The second card: archive it through its ask (YAZ-5697); only RV-2 changes, at once.
+    // The second card: archive it with two taps (YAZ-5966); only RV-2 changes, at once.
     await tap(cards[1].querySelector<HTMLElement>('.card__more')!)
     await waitFor(() => cards[1].querySelector('[data-action="off"]') !== null && !row(cards[1], 'off').disabled)
     await tap(row(cards[1], 'off'))
     expect(t.answers.waiting()).toEqual([])
-    await tap([...cards[1].querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent === 'Archive')!)
+    await tap(row(cards[1], 'off'))
     await waitFor(() => t.answers.waiting().length === 1)
     expect(t.answers.waiting().map((w) => [w.path, w.op])).toEqual([['Rivers.md', { kind: 'off', id: 'RV-2', on: true }]])
     await waitFor(() => h!.host.querySelector('[data-card-id="RV-2"]')?.classList.contains('card--off') === true)

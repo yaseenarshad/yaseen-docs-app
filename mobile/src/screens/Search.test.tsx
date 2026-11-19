@@ -252,11 +252,12 @@ describe('a page, read only (YAZ-5079)', () => {
     // Round 15, item 1: the embedded card in place, read only, under its head.
     await waitFor(h, () => body.querySelector('.card-embed__from') !== null && body.querySelector('.card-embed__body')?.textContent !== '')
     // YAZ-5437: the Mac's embed head, then the card's title band. YAZ-5913 / YAZ-5915 (one head for every card): after
-    // the ID, the marks (`.card__marks`) — the review state (it moves with the clock) and the title rule.
+    // the ID, the marks (`.card__marks`) — the review state (it moves with the clock); no title rule (YAZ-5965: Only if
+    // different, the default, and the card follows the vault).
     const embedHead = body.querySelector('.card-embed .card__head')
     const embedMarks = embedHead?.querySelector('.card__marks')?.textContent ?? ''
     expect(embedHead?.textContent).toBe(`↗Embedded from "Capital of Spain"·DEMO-40${embedMarks}`)
-    expect(embedMarks).toMatch(/^(New|Due .+)Title always \(default\)$/)
+    expect(embedMarks).toMatch(/^(New|Due .+)$/)
     expect(body.querySelector('.card-embed .card-band')?.textContent).toBe('Capital of Spain')
     expect(body.querySelector('.card-embed__body')?.textContent).toContain('Madrid')
     expect(body.querySelector('.card-embed--missing')?.textContent).toBe('Missing card · DEMO-77')

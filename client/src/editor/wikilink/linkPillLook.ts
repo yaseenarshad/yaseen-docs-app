@@ -14,7 +14,7 @@
  *    draw reads the pieces, never the string. The ID and the folder come from the index snapshot through `pathInfo`,
  *    a Map built once per snapshot, as `pathTitles` is.
  */
-import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_PARTS, parseLinkPillFormat, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
+import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_PARTS, linkPillIconColors, parseLinkPillFormat, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
 import { idNumber } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
 import { dirname } from '../../lib/paths'
@@ -22,8 +22,14 @@ import { dirname } from '../../lib/paths'
 /** The wash of a palette fill at each strength (a card's, `views.css`). */
 const STRENGTH_PERCENT = { light: 15, medium: 30, strong: 50 } as const
 
-/** A part's colour as CSS. `kind` is never stored (the icon's default), so it never reaches a variable. */
-const colorValue = (color: LinkPillPartColor): string => (color === 'accent' ? 'var(--accent)' : color === 'same' ? 'currentColor' : color === 'muted' ? 'var(--fg-muted)' : `var(--table-text-${color})`)
+/**
+ * A part's colour as CSS. A custom `#rrggbb` (YAZ-5972) is itself, in light and dark alike. `kind` never reaches here:
+ * it is the icon's Default, which sets no variable.
+ */
+const colorValue = (color: LinkPillPartColor): string =>
+  color === 'accent' ? 'var(--accent)' : color === 'same' ? 'currentColor' : color === 'muted' ? 'var(--fg-muted)' : color.startsWith('#') ? color : `var(--table-text-${color})`
+/** An icon's colour as CSS: its "Text" is the page's text colour (inside the icon, `currentColor` is the name's). */
+const iconValue = (color: LinkPillPartColor): string => (color === 'same' ? 'var(--fg)' : colorValue(color))
 
 /** The custom properties of the changed fields, for example `{ '--pill-bg': 'transparent' }`. `{}` sets none. */
 export function linkPillVars(pills: LinkPills): Record<string, string> {
@@ -33,7 +39,11 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
     if (box.fill === 'none') {
       vars['--pill-bg'] = 'transparent'
       vars['--pill-pad'] = '0'
-    } else if (box.fill !== undefined) vars['--pill-bg'] = `color-mix(in srgb, var(--table-fill-solid-${box.fill}) ${STRENGTH_PERCENT[box.strength ?? 'medium']}%, transparent)`
+    } else if (box.fill !== undefined) {
+      // A custom fill (YAZ-5972) washes at the same strengths as a palette fill.
+      const solid = box.fill.startsWith('#') ? box.fill : `var(--table-fill-solid-${box.fill})`
+      vars['--pill-bg'] = `color-mix(in srgb, ${solid} ${STRENGTH_PERCENT[box.strength ?? 'medium']}%, transparent)`
+    }
     if (box.shape === 'square') vars['--pill-radius'] = '0'
     else if (box.shape === 'underline') {
       vars['--pill-bg'] = 'transparent'
@@ -42,12 +52,17 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
       vars['--pill-decoration'] = 'underline'
     }
   }
-  // The icon's colour (YAZ-5843): `wikilink.css` draws every pill icon as a one-colour shape in `--pill-icon-fg` under a
-  // style query on `--pill-icon-on`. Its "Text" is the page's text colour: inside the icon, `currentColor` is the name's.
-  const icon = pills.parts?.icon?.color
-  if (icon !== undefined) {
-    vars['--pill-icon-fg'] = icon === 'same' ? 'var(--fg)' : colorValue(icon)
+  // The icon's colours (YAZ-5843, YAZ-5972): `wikilink.css` draws a page, folder or file icon of a pill as a one-colour
+  // shape in `--pill-icon-fg` under a style query on `--pill-icon-on`, and a card's icon in `--pill-card-icon-fg` under
+  // `--pill-card-icon-on`. Default (`kind`) sets neither: the app's own icon colours.
+  const { pages, cards } = linkPillIconColors(pills)
+  if (pages !== 'kind') {
+    vars['--pill-icon-fg'] = iconValue(pages)
     vars['--pill-icon-on'] = '1'
+  }
+  if (cards !== 'kind') {
+    vars['--pill-card-icon-fg'] = iconValue(cards)
+    vars['--pill-card-icon-on'] = '1'
   }
   // The gap after the icon on the name (YAZ-5894 D1): the format's space is it (`{icon} {name}`, the default: the CSS's
   // own 0.25em); `{icon}{name}` is flush, a 1 px hairline.

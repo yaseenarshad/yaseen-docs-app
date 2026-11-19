@@ -10,6 +10,8 @@ on menu:paste-as
 on menu:copy-as
 app.cardFormats/1: invoke app:card-formats ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 app.home/0: invoke app:home []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+app.onSelectionColour/1: on app:selection-colour-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off app:selection-colour-changed
+app.selectionColour/0: invoke app:selection-colour []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 app.sound/1: invoke app:sound ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 boardHead/1: invoke fs:board-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 cardSkill.duplicate/2: invoke card-skill:duplicate ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
