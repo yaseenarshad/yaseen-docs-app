@@ -6,7 +6,8 @@
  */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { rules } from '../cssRules'
+import { beats, rules, specificity } from '../cssRules'
+import { INK_CONTRAST, PAGE_BG, contrast } from '../table/tableMarks'
 import { renderCard } from './cardRender'
 
 const TABLE = '| Urdu | Roman | English |\n|:--|:-:|--:|\n| {{آپ کو}} | {{Aap ko}} | to you |\n| {{آتی ہے}} | {{aati hai}} | is known |'
@@ -69,6 +70,105 @@ describe('renderCard: a table (YAZ-5136)', () => {
   })
 })
 
+describe('renderCard: the table look the page saved (YAZ-5867)', () => {
+  it('a cell centred by the comment`s `align` keeps `text-align: center`', () => {
+    const el = renderCard('| a | b |\n|---|---|\n| 1 | 2 |\n<!-- table: align B2 center -->')
+    const cells = [...el.querySelectorAll<HTMLElement>('tbody td')]
+    expect(cells[1].style.textAlign).toBe('center')
+    expect(cells[0].style.textAlign).toBe('')
+  })
+
+  const T3 = '| h1 | h2 | h3 |\n|---|---|---|\n| {{a}} | b | c |\n| d | e | f |\n| g | h | i |'
+  const table = (comment: string, text = T3) => renderCard(`${text}\n<!-- table: ${comment} -->`).querySelector<HTMLTableElement>('.card__table > table')!
+  const at = (t: HTMLTableElement, r: number, c: number) => t.rows[r]!.cells[c] as HTMLTableCellElement
+
+  it('fill: a named fill and a custom one (its wash colour on the cell)', () => {
+    const t = table('fill A2 blue B3 #ff8800')
+    expect(at(t, 1, 0).dataset.fill).toBe('blue')
+    expect(at(t, 2, 1).dataset.fill).toBe('#ff8800')
+    expect(at(t, 2, 1).style.getPropertyValue('--table-fill-custom')).toBe('#ff8800')
+    expect(at(t, 1, 1).hasAttribute('data-fill')).toBe(false)
+    expect(at(t, 1, 0).style.getPropertyValue('--cell-fill')).toBe('var(--table-fill-blue)')
+    expect(at(t, 2, 1).style.getPropertyValue('--cell-fill')).toBe('color-mix(in srgb, #ff8800 var(--table-fill-wash, 35%), transparent)')
+  })
+
+  it('text colour: a name, and a custom colour made readable in light and in dark', () => {
+    const t = table('color A1 red C2 #222222')
+    expect(at(t, 0, 0).dataset.color).toBe('red')
+    expect(at(t, 0, 0).style.getPropertyValue('--cell-ink')).toBe('var(--table-text-red)')
+    expect(at(t, 1, 2).style.getPropertyValue('--cell-ink')).toBe('')
+    const ink = at(t, 1, 2)
+    expect(ink.dataset.color).toBe('#222222')
+    expect(ink.style.getPropertyValue('--cell-ink-light')).toBe('#222222')
+    const dark = ink.style.getPropertyValue('--cell-ink-dark')
+    expect(dark).not.toBe('#222222')
+    expect(contrast(dark, PAGE_BG.dark)).toBeGreaterThanOrEqual(INK_CONTRAST)
+  })
+
+  it('merge: the top-left cell spans the range, the covered cells go; a range past the table is dropped', () => {
+    const t = table('merge B2:C3 A3:A9')
+    expect([at(t, 1, 1).colSpan, at(t, 1, 1).rowSpan]).toEqual([2, 2])
+    expect(at(t, 1, 1).hasAttribute('data-merged')).toBe(true)
+    expect([...t.rows].map((r) => r.cells.length)).toEqual([3, 2, 1, 3])
+  })
+
+  it('the header row look, the table`s valign, stripes, border, height, Clip and subheads', () => {
+    const t = table('valign middle A2 bottom, border 3px 40%, header red strong regular text-blue align-center, stripes, height tall, nowrap, subhead 3')
+    expect(Object.fromEntries(['color', 'strength', 'weight', 'text', 'align'].map((p) => [p, t.getAttribute(`data-header-${p}`)]))).toEqual({
+      color: 'red',
+      strength: 'strong',
+      weight: 'regular',
+      text: 'blue',
+      align: 'center',
+    })
+    expect([t.dataset.valign, t.dataset.height, t.hasAttribute('data-stripes'), t.hasAttribute('data-border')]).toEqual(['middle', 'tall', true, true])
+    // The Mac's border as saved: a card is no phone page (2 px at most there).
+    expect(t.style.getPropertyValue('--table-border-px')).toBe('3px')
+    expect(t.style.getPropertyValue('--table-border-dark')).toBe('40%')
+    expect(at(t, 1, 0).style.verticalAlign).toBe('bottom')
+    expect(at(t, 1, 0).hasAttribute('data-clip')).toBe(true)
+    expect(t.rows[2]!.classList.contains('table-subhead-row')).toBe(true)
+    expect(at(t, 2, 0).hasAttribute('data-subhead')).toBe(true)
+    // The variables `cardTable.css`'s header rule paints (its mapping, as values).
+    expect(['hue', 'scale', 'strength', 'weight', 'ink'].map((v) => t.style.getPropertyValue(`--table-header-${v}`))).toEqual(['var(--table-fill-solid-red)', '2.5', '20', '400', 'var(--table-text-blue)'])
+  })
+
+  it('a hidden word in a styled cell is still a blank, and shows in its turn', () => {
+    const blank = renderCard(`${T3}\n<!-- table: fill A2 yellow, align A2 right -->`, { shown: 0 }).querySelector<HTMLTableElement>('table')!
+    expect(at(blank, 1, 0).firstElementChild?.className).toBe('card__blank')
+    expect(at(blank, 1, 0).style.textAlign).toBe('right')
+    const shown = renderCard(`${T3}\n<!-- table: fill A2 yellow -->`, { shown: 1 }).querySelector('tbody td')!
+    expect(shown.firstElementChild?.className).toBe('card__hidden')
+  })
+
+  it('no comment and a widths-only comment: the look of before; the widths still size the table', () => {
+    const none = renderCard(T3).querySelector('table')!
+    expect([...none.querySelectorAll('*')].some((el) => [...el.attributes].some((a) => a.name.startsWith('data-') && a.name !== 'data-hidden'))).toBe(false)
+    const widths = table('widths 100 auto 80')
+    expect(widths.dataset.sized).toBe('')
+    expect([...widths.attributes].map((a) => a.name).sort()).toEqual(['data-sized', 'style'])
+  })
+
+  it('merged header cells keep the widths of every column (the widths go first)', () => {
+    const t = table('widths 100 120 80, merge A1:B1')
+    expect([...t.querySelectorAll('col')].map((c) => c.style.width)).toEqual(['100px', '120px', '80px'])
+    expect(t.rows[0]!.cells).toHaveLength(2)
+  })
+
+  it('a raw HTML table before a GFM table does not take its look', () => {
+    const el = renderCard(`<table><tr><td>raw</td></tr></table>\n\n${T3}\n<!-- table: fill A2 blue -->`)
+    const [raw, gfm] = [...el.querySelectorAll('table')]
+    expect(raw.querySelector('[data-fill]')).toBeNull()
+    expect(gfm.querySelector('td')?.dataset.fill).toBe('blue')
+  })
+
+  it('stays safe: a comment`s text never reaches the DOM as markup; only the parser`s values are set', () => {
+    const el = renderCard(`${T3}\n<!-- table: fill A2 "><img src=x onerror=alert(1)>, align A2 center -->`)
+    expect(el.querySelector('img, [onerror]')).toBeNull()
+    expect(el.querySelector<HTMLElement>('tbody td')!.style.textAlign).toBe('center')
+  })
+})
+
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 describe('card.css: a card`s table looks like the page`s (YAZ-5136)', () => {
@@ -119,5 +219,35 @@ describe('card.css: a card`s table looks like the page`s (YAZ-5136)', () => {
     expect(box).toBeDefined()
     // Round 2: a table the page sized lays out as the page's: fixed.
     expect(rules(cardCss, '.card__sides .card__side table[data-sized]').some((r) => /table-layout:\s*fixed/.test(r.body))).toBe(true)
+  })
+})
+
+describe('card.css: the saved look`s marks in a card`s table (YAZ-5867)', () => {
+  const cardCss = read('./card.css')
+  const own = rules(cardCss, '.card__table:not(.page-table) > table')
+
+  it('each mark has its rule, inside `.card__table` and never in a phone page`s table box (its `tables.css` draws it)', () => {
+    for (const mark of ['[data-fill]', '[data-color]', "[data-color^='#']", '[data-header-color]', "[data-header-align='center']", '[data-stripes]', '[data-border]', "[data-height='tall']", "[data-valign='middle']", '[data-clip]', 'td[data-subhead]'])
+      expect(own.some((r) => r.selector.includes(mark)), mark).toBe(true)
+    expect(rules(cardCss, '[data-fill').every((r) => r.selector.includes('.card__table:not(.page-table)'))).toBe(true)
+  })
+
+  it('a text colour reads `--cell-ink` (a name), else `--cell-ink-light`, and `--cell-ink-dark` in dark (the Mac`s and the phone`s theme marks)', () => {
+    expect(own.find((r) => r.selector.endsWith('[data-color]'))?.body).toMatch(/color:\s*var\(--cell-ink, var\(--cell-ink-light\)\)/)
+    const dark = own.find((r) => r.selector.includes("[data-color^='#']"))!
+    expect(dark.selector).toMatch(/\[data-theme='dark'\]/)
+    expect(dark.selector).toMatch(/\[data-scheme='dark'\]/)
+    expect(dark.body).toMatch(/color:\s*var\(--cell-ink-dark\)/)
+  })
+
+  it('a fill beats the stripes, the subheader rows and the header row`s shade (it is later, and weighs as much or more)', () => {
+    const fill = own.find((r) => r.body.includes('--table-cell-tint: var(--cell-fill)'))!
+    for (const other of [own.find((r) => r.body.includes('4%'))!, own.find((r) => r.selector.endsWith('td[data-subhead]') && r.body.includes('--table-cell-tint'))!]) {
+      expect(cardCss.lastIndexOf(fill.selector)).toBeGreaterThan(cardCss.indexOf(other.selector.split(',')[0]!))
+      // `:where()` weighs nothing (the helper reads no `:where`).
+      for (const sel of other.selector.split(',')) expect(beats(specificity(sel.trim().replace(/:where\((?:[^()]|\([^()]*\))*\)/g, '')), specificity(fill.selector))).toBe(false)
+    }
+    const header = rules(read('../table/cardTable.css'), '.card__sides .card__side th').find((r) => r.body.includes('--table-cell-tint'))!
+    expect(beats(specificity(fill.selector), specificity(header.selector.split(',').at(-1)!.trim()))).toBe(true)
   })
 })

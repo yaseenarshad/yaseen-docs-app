@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { CODE_LINKS, EIGHT_SPARSE, NARROW, NUMBERS, SIX_WIDE, TABLE_PAGE, TWO_LONG } from '../dev/tableFixtures'
+import { renderCard } from '@client/editor/card/cardRender'
 import { renderPage, type PageLook } from './pageRender'
 import { FIT_MAX, GROW_MAX, GROW_MIN, GROW_MIN_LONG, PAD, STICKY_MAX, columnsOf, textEm } from './tableLayout'
 import { SWIPE_CLOSE, showTable } from './tableView'
@@ -195,6 +196,22 @@ describe('the look (YAZ-5471)', () => {
     await renderPage('```card\nQ\n---\nA\n```', card, body)
     const scroll = body.querySelector('.page-table-box > .page-table-frame > .card__table.page-table > table[data-cols="3"]')
     expect(scroll).not.toBeNull()
+  })
+
+  it("YAZ-5867: a card's table in a page shows the look the page saved; the phone's page rules draw it, not the card's", async () => {
+    const card: PageLook = { ...look, card: (text) => renderCard(text) }
+    const body = document.createElement('div')
+    body.className = 'reader__body'
+    document.body.append(body)
+    await renderPage('```card\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n<!-- table: fill A2 blue, align B2 center, merge A3:B3, header red -->\n```', card, body)
+    const table = body.querySelector<HTMLTableElement>('.page-table-box .card__table.page-table > table')!
+    expect(table.getAttribute('data-header-color')).toBe('red')
+    const [fill, centred] = [...table.rows[1]!.cells]
+    expect(fill.dataset.fill).toBe('blue')
+    expect(centred.style.textAlign).toBe('center')
+    expect([...table.rows].map((r) => r.cells.length)).toEqual([2, 2, 1])
+    expect(fill.matches(".page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='blue']")).toBe(true)
+    expect(fill.matches(".card__sides .card__table:not(.page-table) > table :is(th, td)[data-fill='blue']")).toBe(false)
   })
 })
 

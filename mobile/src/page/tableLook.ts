@@ -13,7 +13,7 @@ import { calendarLook, type CalendarLook } from './calendarLook'
  *  - Header row: each part a table does not set itself (`data-header-*`, `tables.css`), when the vault's differs from
  *    the Mac's default (so a vault with the default look draws as before);
  *  - Subheader row and Sticky subheaders: as the header row, each part a table does not set itself
- *    (`data-subheader-*`), and Off when the table says nothing (`tableSubheads.ts`, `tables.css`);
+ *    (`data-subheader-*`), and Off when the table says nothing (`tableMarks.ts` `applySubheads`, `tables.css`);
  *  - the cell bullets' indent and gap and the Table position: CSS variables on the reader (`tableLookVars`);
  *  - the calendar look (`calendarLook()`): Mark the current time, Shade the next time slot and its colour, Time in
  *    slot and Show seconds (YAZ-5606),

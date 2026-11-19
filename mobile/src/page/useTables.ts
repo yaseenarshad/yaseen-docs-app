@@ -78,7 +78,7 @@ export function measureFreeze(box: HTMLElement, screen: number): void {
 }
 
 /**
- * YAZ-5567: each sticky subheader row's run (`tableSubheads.ts`, the Mac's `SubheadPinner`), in layout px from the
+ * YAZ-5567: each sticky subheader row's run (`tableMarks.ts` `applySubheads`, the Mac's `SubheadPinner`), in layout px from the
  * frame's top (no transform counts): it starts to move when the page has scrolled past the frame's top by its place less
  * the frozen rows' bottom (`--sub-from`: then it is right under them), and moves until it meets the next subheader row
  * or the table's end (`--pin-run`). Marked `data-sub-pin` only when it has a run; a table that is not sticky, none.

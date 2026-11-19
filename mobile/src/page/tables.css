@@ -147,7 +147,7 @@
 .page-table-box .page-table-frame .page-table table :is(th, td) {
   background-image: linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
 }
-/* SUBHEADER ROWS (YAZ-5567, `tableSubheads.ts`; the Mac's `table.css`): the table's own parts (`data-subheader-*`, from
+/* SUBHEADER ROWS (YAZ-5567, `tableMarks.ts` `applySubheads`; the Mac's `table.css`): the table's own parts (`data-subheader-*`, from
    its comment), else the vault's (`table-look.json`, set on the table by `tableLook.ts`), else the Mac's defaults:
    grey at Medium (12% of the text colour), bold, the text's full colour, the column's alignment. The same scale as the
    header's: a colour is its fill at 2.5 times the strength, Black 5 times. Before the stripes and the fills: a cell's
@@ -189,7 +189,7 @@
 .page-table-box .page-table-frame .page-table table[data-subheader-align='center'] td[data-subhead] { text-align: center !important; }
 .page-table-box .page-table-frame .page-table table[data-subheader-align='right'] td[data-subhead] { text-align: right !important; }
 /* Stripes: every second body row, as the Mac's. With subheader rows they start again after each one (`data-stripe`,
-   YAZ-5567, `tableSubheads.ts`). */
+   YAZ-5567, `tableMarks.ts` `applySubheads`). */
 .page-table-box .page-table-frame .page-table table[data-stripes]:not([data-subheads]) tbody tr:nth-child(even) > td,
 .page-table-box .page-table-frame .page-table table[data-stripes][data-subheads] tr[data-stripe] > td {
   --cell-tint: color-mix(in srgb, var(--fg) 4%, transparent);
