@@ -278,6 +278,18 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await vi.waitFor(() => expect(line()).toBe('<!-- card: WIKI-9, title "Capital of France" -->'))
   })
 
+  it('YAZ-5965: Title mark in the card head — Only if different (the default) shows no title mark on a card that follows the vault; Always shows "Title always (default)"', async () => {
+    await mount(FILE)
+    await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
+    expect(el.querySelector('.card__title-mark')).toBeNull()
+    act(() => root?.unmount())
+    root = null
+    el.remove()
+    disk.review = { enabled: true, titleMark: 'always' }
+    await mount(FILE)
+    await vi.waitFor(() => expect(el.querySelector('.card__title-mark')?.textContent).toBe('Title always (default)'))
+  })
+
   it('Archive card writes `off` on the card line once its ask says yes; the head then says "Archived"', async () => {
     await mount(FILE)
     await menu()

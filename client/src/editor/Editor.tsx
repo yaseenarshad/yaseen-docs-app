@@ -342,7 +342,7 @@ export function Editor(props: EditorProps) {
   useEffect(() => {
     if (firstSettings.current) firstSettings.current = false
     else redrawCardHeads()
-  }, [cardReviewSettings?.enabled, cardReviewSettings?.titleAt])
+  }, [cardReviewSettings?.enabled, cardReviewSettings?.titleAt, cardReviewSettings?.titleMark])
   return (
     <VaultReadOnly.Provider value={vault}>
       <CardReviewDoor.Provider value={cardReviews}>

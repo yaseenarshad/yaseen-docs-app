@@ -469,7 +469,7 @@ describe('YAZ-5702: days only, as Mochi (YAZ-5703) — a ✕ and a new card`s fi
 
 describe('the settings (D14)', () => {
   it('defaults to two buttons, 90%, 365 days, 10 new a day, fuzz on and the Mochi weights; each bad field falls back alone', () => {
-    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', newFrom: [], allCardsOrder: 'due-first', dueTodayOrder: 'shuffle', fuzz: true, pauseAfter: 60, timeSoFar: 'hidden', titleAt: 'always', titleRoom: 'always', weights: [...DEFAULT_CARD_WEIGHTS] })
+    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', newFrom: [], allCardsOrder: 'due-first', dueTodayOrder: 'shuffle', fuzz: true, pauseAfter: 60, timeSoFar: 'hidden', titleAt: 'always', titleRoom: 'always', titleMark: 'different', weights: [...DEFAULT_CARD_WEIGHTS] })
     expect(DEFAULT_CARD_WEIGHTS).toHaveLength(21)
     const weights = Array.from({ length: 19 }, (_, i) => i / 10)
     expect(sanitizeReviewSettings({ enabled: false, buttons: 4, retention: 0.85, maxDays: 30, newPerDay: 0, fuzz: false, weights, algorithm: 'upkeep', baseDays: 3 })).toEqual({
@@ -488,6 +488,7 @@ describe('the settings (D14)', () => {
       timeSoFar: 'hidden',
       titleAt: 'always',
       titleRoom: 'always',
+      titleMark: 'different',
       weights,
     })
     // YAZ-5130: Time so far is hidden, shown or off; anything else is the default, hidden.

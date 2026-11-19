@@ -85,12 +85,20 @@ import { TextFormattingControl, type TextFormattingVault } from './TextFormattin
 import { ToolbarArrange } from './ToolbarArrange'
 import { CARD_TITLE_SHOW_OPTIONS } from '@shared/cardTitleShows'
 import type { TitleRoom } from '@shared/reviews'
+import type { CardTitleMarkShow } from '@shared/cardTitleAt'
 import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_POSITION_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_SLOT_TIME_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_PLACE_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** Settings › Cards › Card look › Title room (YAZ-5880): Always, the default, first. */
 const TITLE_ROOM_OPTIONS: readonly { label: string; value: TitleRoom }[] = [
   { label: 'Always', value: 'always' },
   { label: 'Only when it shows', value: 'shown' },
+]
+
+/** Settings › Cards › Title mark in the card head (YAZ-5965): Only if different is the default. */
+const TITLE_MARK_OPTIONS: readonly { label: string; value: CardTitleMarkShow }[] = [
+  { label: 'Always', value: 'always' },
+  { label: 'Only if different', value: 'different' },
+  { label: 'Never', value: 'never' },
 ]
 
 /** A cell bullet's px setting (the YAZ-3818 demo), or the lines of a cell note's hover box (YAZ-5717): the stepper, and Reset when it is not the default. */
@@ -2583,6 +2591,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   </Suspense>
                 </span>
               ),
+          },
+          {
+            // YAZ-5965: the head's "Title always (default)" / "Title after first click" (YAZ-5913). In review.json as
+            // `titleMark`, so the phone's heads follow it; a page's heads redraw at a change (`Editor.tsx`, `CARD_HEADS_REDRAW`).
+            id: 'cardTitleMark',
+            label: 'Title mark in the card head',
+            hint: "The grey words after a card's ID that say when its title shows in Review. Only if different: only on a card with its own ⋯ › Title in review.",
+            keywords: [...REVIEW_KEYWORDS, 'title', 'mark', 'head', 'header', 'grey', 'default', 'different', 'always', 'never', 'title always', 'after first click'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && <Segmented options={TITLE_MARK_OPTIONS} value={review.settings.titleMark} onChange={(titleMark) => review.save({ ...review.settings, titleMark })} ariaLabel="Title mark in the card head" />,
           },
           {
             // YAZ-5880 (D3 on YAZ-5858, Yaseen: "ALL the cards got the blank title area ... so then its more of a fade in

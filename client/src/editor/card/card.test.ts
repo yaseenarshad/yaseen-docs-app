@@ -23,6 +23,7 @@ import { CARD_PREVIEW, landOnCard, pageCardIn, takeCardLanding, type CardPreview
 import { FLASH_FRAMES } from '../toc/tocMotion'
 import { pageCards } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+import type { CardTitleMarkShow } from '@shared/cardTitleAt'
 import { redrawCardHeads } from '../../review/cardHeadMarks'
 
 
@@ -400,7 +401,7 @@ describe('the card in the page', () => {
   })
 
   it('YAZ-5030, YAZ-5696, YAZ-5913, YAZ-5966: ⋯ Title in review › Never runs on a second click, then sets `notitle` in one undo step; Before Side 2 writes `title-side2`; the head says the title rule each time; the card still shows its title', async () => {
-    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' }, cardReviews: { settings: () => DEFAULT_REVIEW_SETTINGS, deleteReview: vi.fn() } })
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05:00.000Z good -->\n`, { cards: { path: '/v/Page.md' }, cardReviews: { settings: () => ({ ...DEFAULT_REVIEW_SETTINGS, titleMark: 'always' }), deleteReview: vi.fn() } })
     const parentOf = () => {
       root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
       return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent === 'Title in review')!
@@ -446,10 +447,20 @@ describe('the card in the page', () => {
   })
 
   it('YAZ-5913, YAZ-5915: the head shows the review state and the title rule after the ID; a change of the vault`s settings redraws them', async () => {
-    let settings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true, titleAt: 'always' as const }
+    let settings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true, titleAt: 'always' as const, titleMark: 'always' as CardTitleMarkShow }
     const { root } = await mount(`${CARD}<!-- card: WIKI-7, fix -->\n`, { cards: { path: '/v/Page.md' }, cardReviews: { settings: () => settings, deleteReview: vi.fn() } })
     const head = () => [...root.querySelectorAll('.card__head > .card__id, .card__head > .card__marks > span')].map((el) => el.textContent)
     expect(head()).toEqual(['WIKI-7', 'New', 'Title always (default)', 'To fix'])
+    // YAZ-5965: Title mark in the card head — Only if different (the default): a card that follows the vault says none;
+    // Never: none; a change redraws the head.
+    settings = { ...settings, titleMark: 'different' }
+    redrawCardHeads()
+    expect(head()).toEqual(['WIKI-7', 'New', 'To fix'])
+    settings = { ...settings, titleMark: 'never' }
+    redrawCardHeads()
+    expect(head()).toEqual(['WIKI-7', 'New', 'To fix'])
+    settings = { ...settings, titleMark: 'always' }
+    redrawCardHeads()
     settings = { ...settings, titleAt: 'click' as never }
     redrawCardHeads()
     expect(head()).toEqual(['WIKI-7', 'New', 'Title after first click (default)', 'To fix'])

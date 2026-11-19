@@ -1,14 +1,16 @@
 /**
  * ONE HEAD FOR EVERY CARD (YAZ-5915 Q1, YAZ-5913 Q2): the quiet marks after a card's ID, in this order —
  *  1. its review state: "Archived", else (Review on) "New", "Due today", "Due in 3 days", "Due 2 days ago";
- *  2. (Review on) its title rule: "Title after first click", or with no choice of its own "Title always (default)";
+ *  2. (Review on) its title rule: "Title after first click", or with no choice of its own "Title always (default)" — as
+ *     Settings › Cards › Title mark in the card head says (YAZ-5965, `titleMark`): Always, Only if different (the
+ *     default: only a card with a rule of its own) or Never;
  *  3. "To fix".
  * A card page (`CardFileView.tsx`), a card in a page (`cardBlockView.ts`), an embed (`cardEmbed.ts`) and the phone
  * (`mobile/src/media/ui/cardHead.ts`) all draw these marks from here, so the four heads say the same words. No React,
  * no HTML: the words and their classes (`.card__state`, grey and quiet, `card.css`).
  */
 import type { CardReview } from '@shared/cardLine'
-import { cardTitleMark, type CardTitleAt } from '@shared/cardTitleAt'
+import { cardTitleMark, cardTitleMarkShows, type CardTitleAt } from '@shared/cardTitleAt'
 import type { ReviewSettings } from '@shared/reviews'
 import { cardFacts, cardNextReview } from './cardWords'
 
@@ -42,7 +44,9 @@ export function cardHeadMarks(card: CardHeadCard, settings: ReviewSettings | und
   else if (review !== undefined) out.push({ kind: 'state', text: cardReviewState(card.reviews ?? [], review, now), className: 'card__state card__review-state' })
   if (review !== undefined) {
     const choice = card.notitle === true ? 'never' : (card.titleAt ?? 'default')
-    out.push({ kind: 'title', text: cardTitleMark(choice, review.titleAt), className: `card__state card__title-mark${choice === 'never' ? ' card__notitle' : ''}` })
+    // A review.json from before YAZ-5965 sanitized elsewhere may lack it: the default.
+    if (cardTitleMarkShows(choice, review.titleMark ?? 'different'))
+      out.push({ kind: 'title', text: cardTitleMark(choice, review.titleAt), className: `card__state card__title-mark${choice === 'never' ? ' card__notitle' : ''}` })
   }
   if (card.fix === true) out.push({ kind: 'fix', text: 'To fix', className: 'card__state card__fix' })
   return out

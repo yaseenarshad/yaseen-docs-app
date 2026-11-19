@@ -181,7 +181,7 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
-const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /**
  * Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row. The Mac's send of the numbers (YAZ-5086, `friendsSend`)
  * shows only with Friends on (`shared/features.ts`, off for now; `friendsSend.test.tsx` turns it on).
@@ -1776,7 +1776,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Cards', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual([...ALL, ...FRIENDS_ROWS])
-    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Show card titles', 'Title room', 'Card tables', 'Card sides in pages', 'Card sides on card pages', 'Card sides in Explore', 'Card spacing'])
+    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Show card titles', 'Title mark in the card head', 'Title room', 'Card tables', 'Card sides in pages', 'Card sides on card pages', 'Card sides in Explore', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
     expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', 'GitHub'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why. YAZ-5708: the
@@ -1875,7 +1875,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('YAZ-5144 round 2: Card width sits before Card spacing: Same as pages · Custom; Custom starts at 640 px; an app setting', () => {
     const { el, onChange, save } = mountOn('Cards', { ...DEFAULT_SETTINGS, contentWidth: 'full' }, undefined, S)
     const ids = reviewRows(el)
-    expect(ids.slice(ids.indexOf('cardWidth'), ids.indexOf('cardWidth') + 10)).toEqual(['cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing'])
+    expect(ids.slice(ids.indexOf('cardWidth'), ids.indexOf('cardWidth') + 11)).toEqual(['cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing'])
     expect(row(el, 'cardWidth')?.querySelector('.setting__label')?.textContent).toBe('Card width')
     expect(rowButtons(el, 'cardWidth').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Custom', 'false']])
     expect(row(el, 'cardWidth')?.querySelector('input')).toBeNull()
@@ -2095,6 +2095,12 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(eye.getAttribute('aria-label')).toBe('What the choices mean')
     act(() => eye.focus())
     expect(document.querySelector('.card-title-help__box')?.textContent).toBe('Never: The title never shows in Review.Always: The title shows as soon as the card shows.After the first click: The title shows on its own, with your first Space or tap on the card.Before Side 2: The title shows on its own Space or tap, just before Side 2.')
+    // YAZ-5965: Title mark in the card head — Always, Only if different (the default), Never; saved in review.json.
+    expect(rowButtons(el, 'cardTitleMark').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Always', 'false'], ['Only if different', 'true'], ['Never', 'false']])
+    act(() => rowButtons(el, 'cardTitleMark')[2].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, titleMark: 'never' })
+    act(() => rowButtons(el, 'cardTitleMark')[0].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, titleMark: 'always' })
     act(() => rowButtons(el, 'enabled')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, enabled: false })
     expect(onChange).not.toHaveBeenCalled()

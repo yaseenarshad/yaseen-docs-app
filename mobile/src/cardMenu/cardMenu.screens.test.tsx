@@ -86,7 +86,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     // At the right of the head (its last thing), as a card in a page; the head's words stay the card's own.
     expect(head.lastElementChild?.classList.contains('card__more-box')).toBe(true)
     expect(head.querySelector('.card__id')?.textContent).toBe('RV-17')
-    expect(head.querySelector('.card__marks')?.textContent).toBe('NewTitle always (default)')
+    expect(head.querySelector('.card__marks')?.textContent).toBe('New') // YAZ-5965: no title mark for a card that follows the vault
     expect(head.querySelector('.card__more')!.getAttribute('aria-label')).toBe('Card actions: Speed of light')
     const menu = await openMenu()
     expect(menu.getAttribute('aria-label')).toBe('Card actions: RV-17')
