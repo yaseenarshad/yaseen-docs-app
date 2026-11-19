@@ -279,10 +279,22 @@ describe('Review rules v1 (YAZ-5655, built in YAZ-5657)', () => {
     expect(reviewsOf('A.md', 'DUE-1').slice(-2).map((r) => r.at)).toEqual([cardTime(NOW), cardTime(NOW + 1)])
   })
 
+  it('rule 18: recorded, not counted — a ✓ before the ✕`s due day and a new card`s ✕ stay on the line, FSRS skips them', () => {
+    const day = (d: number, h = 9) => cardTime(new Date(2026, 10, d, h).getTime())
+    const known: CardReview[] = [{ at: day(1), rating: 'good' }, { at: day(1, 10), rating: 'good' }, { at: day(5), rating: 'good' }]
+    const missed: CardReview[] = [...known, { at: day(20), rating: 'again' }, { at: day(20, 10), rating: 'good' }]
+    expect(cardHistory(missed, S).map((r) => r.counted)).toEqual([true, true, true, true, false])
+    const fresh: CardReview[] = [{ at: day(20), rating: 'again' }, { at: day(20, 10), rating: 'good' }]
+    expect(cardHistory(fresh, S).map((r) => r.counted)).toEqual([false, true])
+  })
+
   it('kept: the names, two buttons (four as a setting); no learning steps (days only, YAZ-5702)', () => {
     expect(answerRatings(S).map((r) => answerLabel(r, S))).toEqual(['Forgot', 'Remembered'])
     expect(answerRatings({ ...S, buttons: 4 }).map((r) => answerLabel(r, { ...S, buttons: 4 }))).toEqual(['Again', 'Hard', 'Good', 'Easy'])
-    // A ✕ and a new card's first ✓ come back today; every wait FSRS gives is whole days.
-    expect(cardHistory([{ at: '2026-11-12T09:00:00.000Z', rating: 'again' }], S).map((r) => [r.comesBack, r.interval >= 1])).toEqual([[true, true]])
+    // A ✕ and a new card's first ✓ come back today; every wait FSRS gives is whole days. YAZ-5789: a NEW card's ✕ is
+    // recorded, not counted (wait 0: later today); a learned card's ✕ is counted, with whole days.
+    expect(cardHistory([{ at: '2026-11-12T09:00:00.000Z', rating: 'again' }], S).map((r) => [r.comesBack, r.interval, r.counted])).toEqual([[true, 0, false]])
+    const learned = cardHistory([{ at: '2026-11-10T09:00:00.000Z', rating: 'good' }, { at: '2026-11-12T09:00:00.000Z', rating: 'again' }], S)
+    expect(learned.map((r) => [r.comesBack, r.interval >= 1, r.counted])).toEqual([[true, true, true], [true, true, true]])
   })
 })

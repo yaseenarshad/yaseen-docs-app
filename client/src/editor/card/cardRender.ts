@@ -17,9 +17,10 @@
  *  - `show.sides`: how many sides show (default all); `show.shown`: how many hidden words show, in page order over
  *    the whole card (default all); the blank the next Space shows has `data-next` (YAZ-5053 round 3). The page shows everything (idea 21 is later); the Inbox steps one word, then one
  *    side, at a time (D18).
- *  - `[[link]]` is a pill: `<span class="wikilink" data-card-link="inner">` with the label, the unresolved class
- *    and the icon attributes `look.link` gives (the page's own pill rules, `wikilinkPlugin.ts`); an `![[embed]]` stays
- *    its text; a link to a card (YAZ-5030, `look.link` gives `card`) is the card pill, title, ID and card icon.
+ *  - `[[link]]` is a pill: a group that holds `data-card-link="inner"`, with the label, the unresolved class, the
+ *    icon attributes and the vault format's ends `look.link` gives (the page's own pill rules, `wikilinkPlugin.ts`;
+ *    YAZ-5792); an `![[embed]]` stays its text; a link to a card (YAZ-5030, `look.link` gives `card`) is the card pill
+ *    (`cardPill`): its title between the format's ends, with the card icon.
  *    `look.image` gives an image's URL (the vault's `app://vault/…`, `imageSrc.ts`); Obsidian's `alt|300`
  *    is the width. Without `look`, a link shows its text and an image keeps its source.
  *  - A GFM table (YAZ-5136) is a real table, its hidden words as anywhere else, in a box that scrolls sideways
@@ -36,7 +37,7 @@ import { cardSides, hiddenCount, markHidden } from '@shared/cardText'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
-import { cardPillSpan } from '../wikilink/cardPill'
+import { WIKILINK_CLASS, WIKILINK_GROUP_CLASS, cardPill, pillPieces, type PillEnds } from '../wikilink/cardPill'
 import { linkClickAction } from '../linkGesture'
 import { cardSafety } from './cardSafety'
 import { cleanLocal, LOCAL_SRC, localMark, urlOf } from './localOnly'
@@ -60,8 +61,12 @@ export interface CardRenderLink {
   label: string
   resolved: boolean
   attrs?: Record<string, string>
-  /** A link to a card (YAZ-5030): the card's ID, drawn small after the title, with the card icon (`cardPillSpan`). */
+  /** A link to a card (YAZ-5030): the card's ID. Its pill is `cardPill`. */
   card?: string
+  /** The vault format's pieces before and after the label (YAZ-5792, `pillParts`). Absent: none. */
+  ends?: PillEnds
+  /** The icon stands on the label (`{icon}{name}`, `pillIconPlace` 'name'); else it is a piece of an end, or nowhere. Absent: on the label. */
+  iconOnName?: boolean
 }
 
 /** The host's look-ups: the page's link pills and its image URLs. Each absent one leaves the text as written. */
@@ -287,28 +292,37 @@ export function copyWithoutHidden(event: ClipboardEvent): void {
   event.clipboardData.setData('text/html', html.innerHTML)
 }
 
+const NO_ENDS: PillEnds = { head: null, tail: null }
+
 /**
- * The pills of `root` drawn again by `look`: each pill is made new — `wikilink`, `wikilink--unresolved` when it does
- * not resolve, and the icon's attributes, its `class` ADDED to those (YAZ-4974: it replaced `wikilink`, so the pill
- * lost its look). A pill made new drops the icon of the page it no longer opens.
+ * The pills of `root` drawn again by `look`: each pill is made new, a group (`wikilink-group`) that holds the link
+ * (`data-card-link`, what a click finds) and the pill's pieces — the format's head, the name, its tail (YAZ-5792). The
+ * name: `wikilink`, `wikilink--unresolved` when it does not resolve, and the icon's attributes, its `class` ADDED to
+ * those (YAZ-4974: it replaced `wikilink`, so the pill lost its look) when the icon stands on the name; else the icon is
+ * a piece of an end. A link to a card is the card pill (`cardPill`). A pill made new drops the icon of the page it no
+ * longer opens.
  */
 export function refreshCardLook(root: ParentNode, look: CardLook | undefined): void {
   if (look?.link === undefined) return
   for (const pill of root.querySelectorAll<HTMLElement>(`[${CARD_LINK_ATTR}]`)) {
     const inner = pill.getAttribute(CARD_LINK_ATTR) ?? ''
     const shown = look.link(inner)
-    if (shown.card !== undefined) {
-      const next = cardPillSpan(shown.label, shown.card)
-      next.setAttribute(CARD_LINK_ATTR, inner)
-      pill.replaceWith(next)
-      continue
+    const ends = shown.ends ?? NO_ENDS
+    const onName = shown.iconOnName ?? true
+    let next: HTMLElement
+    if (shown.card !== undefined) next = cardPill(shown.label, ends, onName)
+    else {
+      const { class: icon, ...attrs } = shown.attrs ?? {}
+      const cls = shown.resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} wikilink--unresolved`
+      const name = document.createElement('span')
+      if (onName) for (const [key, value] of Object.entries(attrs)) name.setAttribute(key, value)
+      name.className = onName && icon !== undefined ? `${cls} ${icon}` : cls
+      name.textContent = shown.label
+      next = document.createElement('span')
+      next.className = WIKILINK_GROUP_CLASS
+      next.append(...pillPieces(ends, name, cls, shown.attrs))
     }
-    const { class: icon, ...attrs } = shown.attrs ?? {}
-    const next = document.createElement('span')
-    for (const [name, value] of Object.entries(attrs)) next.setAttribute(name, value)
     next.setAttribute(CARD_LINK_ATTR, inner)
-    next.className = ['wikilink', shown.resolved ? '' : 'wikilink--unresolved', icon ?? ''].filter((c) => c !== '').join(' ')
-    next.textContent = shown.label
     pill.replaceWith(next)
   }
 }

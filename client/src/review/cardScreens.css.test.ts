@@ -112,3 +112,17 @@ describe('the answer buttons are neutral (YAZ-5716, Yaseen: no colour on remembe
     expect(cards).toMatch(/\.card-inbox__answers \.card-inbox__answer:hover \{[^}]*background:/)
   })
 })
+
+describe('YAZ-5831: the "Not counted" tag never widens a narrow Reviews table', () => {
+  /** The declarations for `selector` inside `@container (max-width: <px>px)`. */
+  const inContainer = (px: number, selector: string) => {
+    const block = [...cards.matchAll(/@container \(max-width: (\d+)px\) \{([\s\S]*?)\}\s*\}/g)].filter((m) => Number(m[1]) === px).map((m) => m[2] + '}').join('')
+    return rules(block).find((r) => r.selectors.includes(selector))?.decls
+  }
+
+  it('up to 540 px the tag goes under the answer and may wrap; at 400 px the word hides, the tag stays (YAZ-5833)', () => {
+    expect(inContainer(540, '.card-reviews__answer .card-reviews__tag')).toMatchObject({ display: 'block', 'white-space': 'normal' })
+    expect(inContainer(400, '.card-reviews__answer .card-reviews__tag')).toBeUndefined()
+    expect(inContainer(400, '.card-reviews__answer .card-reviews__word')).toMatchObject({ display: 'none' })
+  })
+})

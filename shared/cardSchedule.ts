@@ -22,9 +22,17 @@ import { inFolder } from './types'
  *    Due today keeps it). A ✕ in the missed pass brings it back again; its ✓ there is done for today.
  *  - A due card's ✓ is done for today. Nothing else comes back the same day.
  * Both are one flag, `comesBack`: the card is due at its review's own time (due now, also in an Inbox opened again and
- * on the other device), whatever wait FSRS gave; `interval` keeps FSRS's wait. FSRS only sees the reviews.
+ * on the other device), whatever wait FSRS gave; `interval` keeps FSRS's wait.
  * Reviews keep their full time on the line (YAZ-5642: to the millisecond, so no two share one); they replay in time
  * order. "Due" is due before local midnight tonight (`isCardDue`).
+ *
+ * RECORDED, NOT COUNTED (YAZ-5789, Mochi's dates; Mochi's sandbox and history, `mochi-site-sandbox` findings 1–8):
+ * every answer stays on the line, but FSRS skips two kinds, as Mochi never saves them:
+ *  - Rule 1: a ✓ after a counted ✕, BEFORE the ✕'s real due day (the missed pass, a later day, Up next). The ✕ sets the date;
+ *    the ✓ only ends the card's coming back. A ✓ on or after that day is a normal review.
+ *  - Rule 2: a NEW card's ✕ (no ✓ yet). The card stays new; its first ✓ starts FSRS from an empty card.
+ * A skipped answer is a step with `counted: false` that keeps the last counted FSRS card and its real due date. Every
+ * answer is kept, so a later rule (trained weights, YAZ-4958) can count more of them and old answers follow.
  *
  * The LOCAL day (Review rules v1, rule 14, YAZ-5655; Anki's way): ts-fsrs counts the days between two reviews by their
  * UTC dates, so in Phoenix an evening ✓ after 17:00 was "the next day". The replay hands FSRS each time moved by the
@@ -70,53 +78,88 @@ export interface CardHistoryRow {
   review: CardReview
   /** Whole days since the review before; 0 for the first. */
   elapsed: number
-  /** The wait FSRS gave this review, in whole days (days only, YAZ-5702). */
+  /** The wait FSRS gave this review, in whole days (days only, YAZ-5702); for one not counted, the days left to its date. */
   interval: number
   /** When this review made the card due (ms): its own time when it `comesBack`. */
   due: number
   /** The card comes back today (YAZ-5702): a ✕, or a new card's first ✓ (added to today's reviews, Mochi's "Added"). */
   comesBack: boolean
+  /** FSRS counted this answer (YAZ-5789): false for a ✓ before a ✕'s due day and for a new card's ✕. */
+  counted: boolean
 }
 
 /**
- * One step of the replay: the review, the FSRS card after it (in the local frame, rule 14), its real due time, and
- * whether the card comes back today (a ✕, or a new card's first ✓).
+ * One step of the replay: the review, the FSRS card after it (in the local frame, rule 14), its due time, whether the
+ * card comes back today (a ✕, or a new card's first ✓), FSRS's own due time (also while the card comes back), and
+ * whether FSRS counted it (YAZ-5789).
  */
 interface ReplayStep {
   review: CardReview
   card: Card
   due: number
   comesBack: boolean
+  realDue: number
+  counted: boolean
 }
+
+/** Rule 14: the local calendar day of time `t`, as a day number. */
+const localDay = (t: number): number => Math.floor(localFrame(t) / DAY)
 
 /** The FSRS card after each review of `reviews`, in time order, with its review: the ONE replay loop. */
 function steps(reviews: readonly CardReview[], s: ReviewSettings): ReplayStep[] {
   const f = schedulerOf(s)
   const out: ReplayStep[] = []
+  /** The last step FSRS counted: the card the next counted answer steps from. */
+  let fsrs: ReplayStep | undefined
   let learned = false
   for (const review of inOrder(reviews)) {
     const at = Date.parse(review.at)
     const local = localFrame(at)
+    // YAZ-5789 rule 2: a new card's ✕ is recorded, not counted. It stays new and comes back in today's new-card run.
+    if (!learned && review.rating === 'again') {
+      out.push({ review, card: createEmptyCard(local), due: at, comesBack: true, realDue: at, counted: false })
+      continue
+    }
+    // YAZ-5789 rule 1: after a counted ✕, a ✓ before the ✕'s real due day is recorded, not counted (also a second one,
+    // from Up next): the ✕'s date stays. A ✓ on or after that day counts.
+    if (fsrs !== undefined && review.rating !== 'again' && fsrs.review.rating === 'again' && localDay(at) < localDay(fsrs.realDue)) {
+      out.push({ review, card: fsrs.card, due: fsrs.realDue, comesBack: false, realDue: fsrs.realDue, counted: false })
+      continue
+    }
     seedAt = at
-    const card = f.next(out.at(-1)?.card ?? createEmptyCard(local), local, GRADES[review.rating]).card
+    const card = f.next(fsrs?.card ?? createEmptyCard(local), local, GRADES[review.rating]).card
     // YAZ-5702: a ✕, or a new card's first ✓ (added to today's reviews), comes back today: due at once.
     const comesBack = review.rating === 'again' || !learned
     learned ||= review.rating !== 'again'
-    // Else back from the local frame by the review's own offset: the due date is the review time plus the wait.
-    out.push({ review, card, due: comesBack ? at : card.due.getTime() + (at - local), comesBack })
+    // Back from the local frame by the review's own offset: FSRS's date is the review time plus the wait.
+    const realDue = card.due.getTime() + (at - local)
+    fsrs = { review, card, due: comesBack ? at : realDue, comesBack, realDue, counted: true }
+    out.push(fsrs)
   }
   return out
 }
 
+/**
+ * The wait a step set, in whole days: FSRS's for a counted answer; for one not counted (YAZ-5789), the days from it to
+ * the date it keeps (0: today, a new card's ✕).
+ */
+const stepWait = ({ card, review, due, counted }: ReplayStep): number =>
+  counted ? card.scheduled_days : Math.max(0, localDay(due) - localDay(Date.parse(review.at)))
+
 /** Replays `reviews` through FSRS: one row per review, in time order. */
 export function cardHistory(reviews: readonly CardReview[], s: ReviewSettings): CardHistoryRow[] {
-  return steps(reviews, s).map(({ review, card, due, comesBack }, i, all) => ({
-    review,
-    elapsed: i === 0 ? 0 : Math.max(0, Math.round((Date.parse(review.at) - Date.parse(all[i - 1].review.at)) / DAY)),
-    interval: card.scheduled_days,
-    due,
-    comesBack,
-  }))
+  return steps(reviews, s).map((step, i, all) => {
+    const { review, due, comesBack, counted } = step
+    const at = Date.parse(review.at)
+    return {
+      review,
+      elapsed: i === 0 ? 0 : Math.max(0, Math.round((at - Date.parse(all[i - 1].review.at)) / DAY)),
+      interval: stepWait(step),
+      due,
+      comesBack,
+      counted,
+    }
+  })
 }
 
 /** The FSRS card after `reviews`, and the last review; null for a card never reviewed. */
@@ -142,7 +185,7 @@ export function cardState(reviews: readonly CardReview[], s: ReviewSettings): Ca
   const last = replay(reviews, s)
   if (last === null) return { isNew: true, due: null, interval: 0, lastReview: null, lapses: 0, comesBack: false }
   const { card, review, due, comesBack } = last
-  return { isNew: false, due, interval: card.scheduled_days, lastReview: review.at, lapses: card.lapses, comesBack }
+  return { isNew: false, due, interval: stepWait(last), lastReview: review.at, lapses: card.lapses, comesBack }
 }
 
 /**

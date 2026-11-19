@@ -19,6 +19,7 @@ import type { GestureAction } from '@shared/keys'
 import { api } from '../api'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { InfoTip } from '../components/InfoTip'
+import { HoverTip } from '../components/HoverTip'
 import { cardLook } from '../editor/card/cardLook'
 import { desktopBoardPicture } from '../editor/card/boardPictureDesktop'
 import { copyText } from '../lib/copyText'
@@ -41,7 +42,7 @@ import { reviewDuration } from './reviewTime'
 import { ReviewsIcon, TrashIcon } from './cardInboxIcons'
 import '../editor/card/card.css'
 import './cardScreens.css'
-import { cardDueWords, cardFacts, cardFullDate, cardNextReview, cardOverdue, cardRemoveOutcome, reviewsTitle, RECALL_HELP, REVIEW_COLUMNS } from './cardWords'
+import { cardDueWords, cardFacts, cardFullDate, cardNextReview, cardOverdue, cardRemoveOutcome, reviewsTitle, NOT_COUNTED, NOT_COUNTED_HELP, RECALL_HELP, REVIEW_COLUMNS } from './cardWords'
 
 // The words of the card screens moved to `cardWords.ts` (YAZ-5161), so the phone's Review screen reads them with no
 // bridge; their names stay here too.
@@ -498,11 +499,17 @@ export function CardReviewsTable({ reviews, settings, onDelete, now = Date.now()
         <tbody>
           {/* Keyed by place: each review is one row. */}
           {rows.map((row, i) => (
-            <tr key={i}>
+            <tr key={i} className={row.counted ? undefined : 'card-reviews__row--uncounted'}>
               <td>{cardFullDate(Date.parse(row.review.at))}</td>
               <td className="card-reviews__answer">
                 <CardAnswerView review={row.review} settings={settings} />
                 <span className="card-reviews__word">{answerLabel(row.review.rating, settings)}</span>
+                {/* YAZ-5789: the app's own hover box (a native title shows nothing in the app, YAZ-4772). */}
+                {!row.counted && (
+                  <HoverTip className="card-reviews__tag" text={NOT_COUNTED_HELP}>
+                    {NOT_COUNTED}
+                  </HoverTip>
+                )}
               </td>
               <td>{i === 0 ? '' : <Gap n={row.elapsed} />}</td>
               <td className="card-reviews__time">{reviewDuration(row.review.seconds)}</td>

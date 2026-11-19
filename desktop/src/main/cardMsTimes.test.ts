@@ -54,8 +54,9 @@ describe('the reader: the written form, and any other valid ISO 8601 time (YAZ-5
     const minutes = cardState(cardReviewsOf(line('NC-1, 2026-10-20T09:00Z good, 2026-10-24T09:00Z good, 2026-11-03T09:00Z good, 2026-11-15T15:39Z again, 2026-11-15T15:41Z good')), DEFAULT_REVIEW_SETTINGS)
     expect(new Date(converted.due!).toISOString()).toBe(new Date(minutes.due!).toISOString())
     expect(converted.interval).toBe(minutes.interval)
-    expect(new Date(converted.due!).toISOString()).toBe('2026-11-19T15:41:00.000Z')
-    expect(converted.interval).toBe(4)
+    // YAZ-5789: the ✓ two minutes after the ✕ is recorded, not counted, so the ✕ sets the date (3 days after it).
+    expect(new Date(converted.due!).toISOString()).toBe('2026-11-18T15:39:00.000Z')
+    expect(converted.interval).toBe(3)
   })
 })
 
@@ -89,11 +90,12 @@ describe('the merge: two answers in one minute (or one second) on two devices ar
   })
 
   it('both ✕ count: the card is due sooner than with one ✕ (one ✕ lost gives the wrong date)', () => {
-    // FSRS in whole days (YAZ-5702): two ✕ then ✓ give 3 days, one ✕ then ✓ gives 6.
+    // FSRS in whole days (YAZ-5702). YAZ-5789: the ✓ after the misses is recorded, not counted, so the last ✕ sets the
+    // date: two ✕ give 1 day after the second, one ✕ gives 5 days after it.
     const before = 'NC-1, 2026-10-20T09:00:00.000Z good, 2026-10-24T09:00:00.000Z good, 2026-11-03T09:00:00.000Z good'
     const due = (h: string) => new Date(cardState(cardReviewsOf(line(h)), DEFAULT_REVIEW_SETTINGS).due!).toISOString()
-    expect(due(`${before}, ${PHONE} again, ${MAC} again, 2026-11-15T15:41:05.120Z good`)).toBe('2026-11-18T15:41:05.120Z')
-    expect(due(`${before}, ${PHONE} again, 2026-11-15T15:41:05.120Z good`)).toBe('2026-11-21T15:41:05.120Z')
+    expect(due(`${before}, ${PHONE} again, ${MAC} again, 2026-11-15T15:41:05.120Z good`)).toBe('2026-11-16T15:39:41.802Z')
+    expect(due(`${before}, ${PHONE} again, 2026-11-15T15:41:05.120Z good`)).toBe('2026-11-20T15:39:12.345Z')
   })
 })
 

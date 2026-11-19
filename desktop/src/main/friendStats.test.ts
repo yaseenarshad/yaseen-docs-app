@@ -35,21 +35,24 @@ const stats = (cards: CardRecord[], now = NOW) => friendStats([vault(cards)], no
 const dayOf = (s: ReturnType<typeof stats>, day: string) => s.days.find((d) => d.day === day)
 
 /**
- * Card S: learned on 1 November, due 5 November; Forgot and then Remembered on 5 November; due 8 November and
- * answered then (days only, YAZ-5702); due again today (13 November, 15:00Z). The test checks these dates first, so a change in FSRS shows here.
+ * Card S: learned on 1 November, due 5 November; Forgot and then Remembered on 5 November (the ✓ is recorded, not
+ * counted: the ✕ sets 6 November, YAZ-5789); Hard on 6 November, due 8 November and answered then (days only,
+ * YAZ-5702); due again today (13 November, 15:02Z). The test checks these dates first, so a change in FSRS shows here.
  */
 const S_REVIEWS: R[] = [
   ['2026-11-01T15:00:00.000Z', 'good'],
   ['2026-11-01T15:02:00.000Z', 'good'],
-  ['2026-11-05T15:00:00.000Z', 'again'],
-  ['2026-11-05T15:05:00.000Z', 'good'],
-  ['2026-11-08T15:00:00.000Z', 'good'],
+  ['2026-11-05T15:02:00.000Z', 'again'],
+  ['2026-11-05T15:07:00.000Z', 'good'],
+  ['2026-11-06T15:02:00.000Z', 'hard'],
+  ['2026-11-08T15:02:00.000Z', 'good'],
 ]
 
 describe('friendStats (YAZ-5069)', () => {
   it('the schedule of card S is as the streak tests expect', () => {
     const rows = cardHistory(card('GEO-1', S_REVIEWS).reviews, S)
-    expect(rows.map((r) => new Date(r.due).toISOString().slice(0, 10))).toEqual(['2026-11-01', '2026-11-05', '2026-11-05', '2026-11-08', '2026-11-13'])
+    expect(rows.map((r) => new Date(r.due).toISOString().slice(0, 10))).toEqual(['2026-11-01', '2026-11-05', '2026-11-05', '2026-11-06', '2026-11-08', '2026-11-13'])
+    expect(rows.map((r) => r.counted)).toEqual([true, true, true, false, true, true])
     expect(rows.at(-1)!.comesBack).toBe(false)
   })
 

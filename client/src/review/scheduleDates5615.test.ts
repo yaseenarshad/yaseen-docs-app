@@ -93,7 +93,9 @@ describe('YAZ-5615: the next review of each answer (days only, as Mochi: YAZ-570
         const shown = previewAnswers(reviews, NO_FUZZ, now).find((a) => a.review.rating === rating)!
         reviews.push(shown.review)
         const row = cardHistory(reviews, NO_FUZZ).at(-1)!
-        now = shown.comesBack ? now + 20_000 : shown.due
+        // The simulator answers each card on its due day. YAZ-5789: a ✕'s date is FSRS's wait from the ✕ (an answer
+        // before it is recorded, not counted), so the next answer comes then; an "Added" ✓ comes back 20 s later.
+        now = shown.comesBack ? (rating === 'again' ? Date.parse(shown.review.at) + shown.interval * DAY : now + 20_000) : shown.due
         return shown.comesBack && rating !== 'again' ? 'Added' : row.interval
       })
     }
@@ -125,16 +127,22 @@ describe('YAZ-5615: the next review of each answer (days only, as Mochi: YAZ-570
         // A run over many days: each answer on the day the card is due (or 20 s later when it comes back today).
         const reviews: CardReview[] = []
         let now = NOW
+        /** The date FSRS set at the last counted ✕ (YAZ-5789: a ✓ before it is recorded, not counted, and keeps it). */
+        let missDate = 0
         for (const rating of ratings) {
           const shown = previewAnswers(reviews, s, now).find((a) => a.review.rating === rating)!
           reviews.push(shown.review)
           const after = cardState(reviews, s)
+          const counted = cardHistory(reviews, s).at(-1)!.counted
           expect(after.due, `${ratings.join(' ')} @ ${shown.review.at}`).toBe(shown.due)
           expect(after.interval).toBe(shown.interval)
           expect(after.comesBack).toBe(shown.comesBack)
-          // A card that comes back is due at its answer's time; else a wait of days is that many whole days.
+          // A card that comes back is due at its answer's time; a counted wait of days is that many whole days; one not
+          // counted keeps the ✕'s date.
           if (shown.comesBack) expect(shown.due).toBe(Date.parse(shown.review.at))
-          else expect(shown.due - Date.parse(shown.review.at)).toBe(shown.interval * DAY)
+          else if (counted) expect(shown.due - Date.parse(shown.review.at)).toBe(shown.interval * DAY)
+          else expect(shown.due).toBe(missDate)
+          if (rating === 'again' && counted) missDate = Date.parse(shown.review.at) + shown.interval * DAY
           now = shown.comesBack ? now + 20_000 : shown.due
         }
         // The Reviews table replays the same dates (`cardHistory`).

@@ -102,10 +102,12 @@ export function wikilinkInnerAt(doc: ProseNode, pos: number): string | null {
 /**
  * The document position a link's rendered span stands for, for `wikilinkMatchAt`. A widget reads as its own position,
  * and an ID link's title is drawn at the link's END (YAZ-3916): one before it is inside the link, never in a next one.
+ * A piece INSIDE a widget (a card pill's title or end, YAZ-5792 `cardPill`) reads as its widget.
  */
 export function linkPosAtDOM(view: EditorView, span: Element): number {
-  const pos = view.posAtDOM(span, 0)
-  return span.classList.contains('ProseMirror-widget') ? pos - 1 : pos
+  const widget = span.closest('.ProseMirror-widget')
+  if (widget !== null) return view.posAtDOM(widget, 0) - 1
+  return view.posAtDOM(span, 0)
 }
 
 /** The match at `pos` of `wikilinkInnerAt`, with its range: what the link menu edits and removes (YAZ-3609 D23). */

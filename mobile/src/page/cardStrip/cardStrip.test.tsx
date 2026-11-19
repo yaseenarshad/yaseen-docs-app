@@ -195,6 +195,23 @@ describe('the card strip on the phone (YAZ-5508)', () => {
     expect(h.host.querySelector('.reader__title')?.textContent).toBe('Geography')
   })
 
+  it('YAZ-5789: an answer that is recorded, not counted, says "Not counted" in the phone\'s Reviews table', async () => {
+    const files = {
+      ...FILES,
+      'cards/missed-geo-5.md': `---\nkind: card\n---\n\n${block(
+        'Which river runs through Lisbon?\n---\nThe Tagus',
+        'GEO-5, title "Missed river", 2026-10-20T08:00:00.000Z good, 2026-10-20T08:10:00.000Z good, 2026-10-24T08:00:00.000Z good, 2026-11-10T08:00:00.000Z again, 2026-11-10T08:20:00.000Z good'
+      )}\n`,
+    }
+    h = await open(files, 'missed river', /^Missed river/)
+    const s = strip(h)
+    await tap(h, toggle(s, 'reviews'))
+    const rows = [...s.querySelectorAll('.card-view__table tbody tr')].slice(0, 5)
+    expect(rows.map((r) => r.classList.contains('card-reviews__row--uncounted'))).toEqual([false, false, false, false, true])
+    expect(rows[4].querySelector('.card-reviews__tag')?.textContent).toBe('Not counted')
+    expect(s.querySelectorAll('.card-reviews__tag')).toHaveLength(1)
+  })
+
   it('Review off: no strip, as the Mac', async () => {
     h = await open({ ...FILES, '.yaseendocs/review.json': '{"enabled": false}' }, 'capital of spain', /^Capital of Spain/)
     expect(h.host.querySelector('.phone-strip')).toBeNull()
