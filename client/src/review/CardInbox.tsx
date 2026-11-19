@@ -100,7 +100,7 @@
  *  - TO FIX (YAZ-5097, "Fix later") never shows in the Inbox (YAZ-5430, Yaseen: "As long as to fix doesn't show up in
  *    the inbox"): no To fix row, no Fix later in ⋯, no "To fix" on the head. A marked card stays in review. The mark
  *    shows on the card everywhere else (a page, an embed, its file tab, Explore) and in the Cards table's Card fix status.
- *  - ARCHIVED cards are not listed here (YAZ-5319): a folder page's table shows them (Show cards as rows, Card status
+ *  - ARCHIVED cards are not listed here (YAZ-5319): a folder page's table shows them (+ › Card table, Status
  *    is Archived), and a card's ⋯ menu unarchives it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'

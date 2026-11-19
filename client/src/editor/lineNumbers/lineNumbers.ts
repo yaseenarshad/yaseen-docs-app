@@ -5,7 +5,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { codeLookOf, formatCodeComment } from '../code/codeWidth'
+import { hasCodeComment } from '../code/codeWidth'
 import type { BlockLines } from './blockLines'
 import { cleanCardLine, isCardNode } from '../card/cardBlockLine'
 import { CODE_LINE_ATTR, syncCodeLines } from './codeLines'
@@ -55,7 +55,7 @@ const build = (doc: ProseNode, blocks: ShownLines): DecorationSet => {
       const attrs: Record<string, string> = { 'data-line': String(line) }
       if (end > line) attrs['data-line-end'] = String(end)
       // The lines under the closing fence that are the block's own: a code comment, and a card's card line.
-      const comment = fence === undefined ? 0 : (formatCodeComment(codeLookOf(node)) !== null ? 1 : 0) + (isCardNode(node) && cleanCardLine(node.attrs.cardLine) !== null ? 1 : 0)
+      const comment = fence === undefined ? 0 : (hasCodeComment(node) ? 1 : 0) + (isCardNode(node) && cleanCardLine(node.attrs.cardLine) !== null ? 1 : 0)
       if (fence !== undefined && node.textContent.split('\n').length === end - line + 1 - 2 * fence - comment) attrs[CODE_LINE_ATTR] = String(line + fence)
       decorations.push(Decoration.node(pos, pos + node.nodeSize, attrs))
       index++

@@ -1,7 +1,9 @@
 /**
- * YAZ-5319: "Show cards as rows" in a folder page's table. ViewsPane mounted with react-dom in jsdom: the setting is
- * offered only while the vault has Cards and IDs on; a table listing cards shows a row per card with its Page, which
- * opens the page landed on the card; Card status and Card up next edit the card's line (`changeCardLine`).
+ * YAZ-5319: a folder page's table that lists cards; YAZ-5793: the Card table, made from "+" › Card table (the old
+ * View › "Show cards as rows" switch is gone). ViewsPane mounted with react-dom in jsdom: Card table is offered only
+ * while the vault has Cards and IDs on, and with either off a Card table says so and lists nothing. A row per card with
+ * its Page, which opens the page landed on the card; Status, Fix status and Up next status edit the card's line
+ * (`changeCardLine`).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -37,6 +39,8 @@ const RECORDS = [
 ]
 const CARDS_VIEW = 'views:\n  - type: table\n    name: T\n    rows: cards\n'
 const PAGES_VIEW = 'views:\n  - type: table\n    name: T\n'
+/** A Card table that shows the columns YAZ-5793 hides by default too: Page, Fix status, Reviews, Success rate, Up next status, ID. */
+const FULL_VIEW = `${CARDS_VIEW}    cardView:\n      order: [file.name, card.page, card.status, card.fix, card.nextReview, card.lastReview, card.reviews, card.successRate, card.upNext, card.id]\n`
 
 let root: Root | null = null
 let container: HTMLElement | null = null
@@ -67,7 +71,7 @@ function mount(text: string, ids = true) {
       ),
     )
   draw()
-  return { el: container, onOpenFile, yaml: () => serializeViews(parsed) }
+  return { el: container, onOpenFile, yaml: () => serializeViews(parsed), def: () => parsed.def }
 }
 
 beforeEach(() => {
@@ -102,56 +106,144 @@ const viewSettings = (el: ParentNode): HTMLElement => {
   click(q(el, '.view-menu__tab[data-tab="view"]'))
   return q(el, '.view-popover--properties')
 }
+const press = (el: Element, key: string): void => act(() => void el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
+/** "+"'s picker: its items, in order. */
+const addMenu = (el: ParentNode): HTMLElement => {
+  click(q(el, '[aria-label="Add view"]'))
+  return q(el, '.view-popover--menu')
+}
+const menuItems = (menu: ParentNode): string[] => [...menu.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent ?? '')
+/** "+" › Card table; the new tab opens in rename, which Escape leaves with the given name. */
+const addCardTable = (el: ParentNode): void => {
+  click([...addMenu(el).querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) => b.textContent === 'Card table')!)
+  press(q(el, '[aria-label="View name"]'), 'Escape')
+}
+const tabNames = (el: ParentNode): string[] => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent ?? '')
+const CARDS_OFF = 'Cards are off. Turn them on in Settings › Cards.'
 
-describe('YAZ-5319: Show cards as rows', () => {
-  it('the View settings offer it only while the vault has Cards and IDs on; a pick lists the cards', () => {
-    const { el, yaml } = mount(PAGES_VIEW)
-    const seg = q(viewSettings(el), '[aria-label="Show cards as rows"]')
-    expect([...seg.querySelectorAll('button')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Pages', 'true'], ['Cards', 'false']])
-    click(seg.querySelectorAll('button')[1])
-    expect(yaml()).toContain('rows: cards')
-    expect(body(el).map((r) => r[0])).toEqual(['Capital of Spain', 'GEO-2', 'Longest river'])
+describe('YAZ-5793: "+" › Card table', () => {
+  it('"+" offers Card table last, only while the vault has Cards and IDs on', () => {
+    let { el } = mount(PAGES_VIEW)
+    const menu = addMenu(el)
+    expect(menuItems(menu).at(-1)).toBe('Card table')
+    expect(menuItems(menu).filter((t) => t === 'Card table')).toHaveLength(1)
+    for (const [settings, ids] of [[{ ...DEFAULT_REVIEW_SETTINGS, enabled: false }, true], [DEFAULT_REVIEW_SETTINGS, false], [undefined, true]] as const) {
+      act(() => root?.unmount())
+      container?.remove()
+      cardSettings = settings
+      ;({ el } = mount(PAGES_VIEW, ids))
+      expect(menuItems(addMenu(el))).not.toContain('Card table')
+    }
   })
 
-  it('is not offered with Cards off, nor with IDs off; a view that lists cards then lists its pages', () => {
+  it('picking it adds a Table that lists cards, named "Card table", open in rename; it lists the cards', () => {
+    const { el, def } = mount(PAGES_VIEW)
+    click([...addMenu(el).querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) => b.textContent === 'Card table')!)
+    const field = q<HTMLInputElement>(el, '[aria-label="View name"]')
+    expect(field.value).toBe('Card table')
+    press(field, 'Escape')
+    expect(def().views.at(-1)).toEqual({ type: 'table', rows: 'cards', name: 'Card table' })
+    expect(tabNames(el)).toEqual(['T', 'Card table'])
+    expect(q(el, '[role="tab"][aria-selected="true"]').textContent).toBe('Card table')
+    expect(body(el).map((r) => r[0])).toEqual(['Capital of Spain', 'GEO-2', 'Longest river'])
+    expect(headers(el)[0]).toBe('Title')
+  })
+
+  it('a second one is "Card table 2"', () => {
+    const { el, def } = mount(PAGES_VIEW)
+    addCardTable(el)
+    addCardTable(el)
+    expect(tabNames(el)).toEqual(['T', 'Card table', 'Card table 2'])
+    expect(def().views.at(-1)).toEqual({ type: 'table', rows: 'cards', name: 'Card table 2' })
+  })
+
+  it('View settings no longer offer "Show cards as rows", in a Pages table or a Card table', () => {
+    for (const text of [PAGES_VIEW, CARDS_VIEW]) {
+      const { el } = mount(text)
+      const panel = viewSettings(el)
+      expect(panel.querySelector('[aria-label="Show cards as rows"]')).toBeNull()
+      expect(panel.textContent).not.toContain('Show as rows')
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
+
+  it('a Card table with Cards off, or IDs off, says "Cards are off…", lists no pages and shows no table tools (YAZ-5839); its saved setting stays', () => {
+    for (const [settings, ids] of [[{ ...DEFAULT_REVIEW_SETTINGS, enabled: false }, true], [DEFAULT_REVIEW_SETTINGS, false], [undefined, true]] as const) {
+      cardSettings = settings
+      const { el, yaml } = mount(FULL_VIEW, ids)
+      expect(q(el, '.views-pane__cards-off').textContent).toBe(CARDS_OFF)
+      expect(el.querySelector('.view-table')).toBeNull()
+      expect(body(el)).toEqual([])
+      expect(el.textContent).not.toContain('Europe trip')
+      expect(yaml()).toContain('rows: cards')
+      // YAZ-5839: no Pages table tools over the line: no count, no New, no Sort, Columns or Filter. The view tabs stay.
+      expect(el.querySelector('.view-toolbar__actions')).toBeNull()
+      expect(el.querySelector('.view-tab__add')).not.toBeNull()
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
+
+  it('with Cards on and IDs on the same view lists its cards; a Pages table never says "Cards are off"', () => {
     cardSettings = { ...DEFAULT_REVIEW_SETTINGS, enabled: false }
-    let { el } = mount(CARDS_VIEW)
-    expect(viewSettings(el).querySelector('[aria-label="Show cards as rows"]')).toBeNull()
+    const { el } = mount(PAGES_VIEW)
+    expect(el.querySelector('.views-pane__cards-off')).toBeNull()
     expect(body(el).map((r) => r[0])).toEqual(['Europe trip', 'Longest river'])
     act(() => root?.unmount())
     container?.remove()
     cardSettings = DEFAULT_REVIEW_SETTINGS
-    ;({ el } = mount(CARDS_VIEW, false))
-    expect(viewSettings(el).querySelector('[aria-label="Show cards as rows"]')).toBeNull()
-    expect(body(el).map((r) => r[0])).toEqual(['Europe trip', 'Longest river'])
+    const on = mount(CARDS_VIEW).el
+    expect(on.querySelector('.views-pane__cards-off')).toBeNull()
+    expect(body(on).map((r) => r[0])).toEqual(['Capital of Spain', 'GEO-2', 'Longest river'])
   })
+})
 
-  it('one row per card, each kind, with the card columns; a page\'s columns are hidden; the count says cards', () => {
+describe('YAZ-5319: a table that lists cards', () => {
+  it('one row per card, each kind, with the card columns (YAZ-5793: the seven of a new Card table); a page\'s columns are hidden; the count says cards', () => {
     const { el } = mount(CARDS_VIEW)
-    expect(headers(el)).toEqual(['Name', 'Page', 'Card status', 'Card fix status', 'Card next review', 'Card last review', 'Card reviews', 'Card success rate', 'Card up next', 'Card ID'])
+    expect(headers(el)).toEqual(['Title', 'Status', 'Next review date', 'Wait time', 'Times forgotten', 'Recall chance', 'Last review date'])
     const rows = body(el)
-    expect(rows.map((r) => [r[0], r[1], r[2], r[9]])).toEqual([
+    // No ✓ yet: New (YAZ-5793); the archived card is Archived whatever its reviews.
+    expect(rows.map((r) => [r[0], r[1]])).toEqual([
+      ['Capital of Spain', 'Archived'],
+      ['GEO-2', 'New'],
+      ['Longest river', 'New'],
+    ])
+    // Shown with the hidden columns: the Page and the ID.
+    const full = mount(FULL_VIEW).el
+    expect(headers(full)).toEqual(['Title', 'Page', 'Status', 'Fix status', 'Next review date', 'Last review date', 'Reviews', 'Success rate', 'Up next status', 'ID'])
+    expect(body(full).map((r) => [r[0], r[1], r[2], r[9]])).toEqual([
       ['Capital of Spain', 'Europe trip', 'Archived', 'GEO-1'],
-      ['GEO-2', 'Europe trip', 'Active', 'GEO-2'],
-      ['Longest river', '', 'Active', 'GEO-3'],
+      ['GEO-2', 'Europe trip', 'New', 'GEO-2'],
+      ['Longest river', '', 'New', 'GEO-3'],
     ])
     expect(q(el, '.view-toolbar__count').textContent).toBe('3 cards')
     // "+ New" makes a card (YAZ-5349 follow-up: a row of this table is a card).
     expect(el.querySelector('.view-toolbar__new')).not.toBeNull()
   })
 
-  it('the Page cell opens the page, landed on the card', () => {
-    const { el, onOpenFile } = mount(CARDS_VIEW)
-    click(q(cell(el, 0, 1), '.view-card-page'))
+  it('the Page cell opens the page, landed on the card (YAZ-5793: Page is hidden; Columns ⚙ shows it)', () => {
+    const { el, onOpenFile, yaml } = mount(CARDS_VIEW)
+    expect(headers(el)).not.toContain('Page')
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q<HTMLInputElement>(el, '.view-popover--properties input[aria-label="Show Page"]'))
+    expect(yaml()).toContain('card.page')
+    const at = headers(el).indexOf('Page')
+    expect(at).toBeGreaterThan(0)
+    click(q(cell(el, 0, at), '.view-card-page'))
     expect(landOnCard).toHaveBeenCalledExactlyOnceWith(TRIP, 'GEO-1')
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(TRIP)
   })
 
-  it('Card status edits: Active writes the line without `off`, through the card line of its page', async () => {
-    const { el } = mount(CARDS_VIEW)
+  it('Status edits (YAZ-5838, the locked D2): its Select offers only Active and Archived, never New (worked out from the answers); Active writes the line without `off`, through the card line of its page', async () => {
+    const { el } = mount(FULL_VIEW)
     doubleClick(cell(el, 0, 2))
-    const option = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.startsWith('Active'))!
-    await act(async () => void (option as HTMLElement).click())
+    const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+    for (const word of ['Active', 'Archived']) expect(options.some((o) => o.textContent?.startsWith(word))).toBe(true)
+    expect(options.some((o) => o.textContent?.startsWith('New'))).toBe(false)
+    const option = options.find((o) => o.textContent?.startsWith('Active'))!
+    await act(async () => void option.click())
     expect(changeCardLine).toHaveBeenCalledOnce()
     const [path, id, change, index] = vi.mocked(changeCardLine).mock.calls[0]
     expect([path, id, index]).toEqual([TRIP, 'GEO-1', 0])
@@ -159,8 +251,39 @@ describe('YAZ-5319: Show cards as rows', () => {
     expect(change(off)).toEqual({ parts: [{ kind: 'id', id: 'GEO-1' }] })
   })
 
-  it('YAZ-5430: Card fix status shows "Needs fixing" for a marked card, blank for the rest; Needs fixing writes `fix`, Clear takes it off', async () => {
-    const { el } = mount(CARDS_VIEW)
+  it('YAZ-5838: the Status cell writes only Active (clears `off`) or Archived (sets it); New is never offered', async () => {
+    const { el } = mount(FULL_VIEW)
+    const pick = async (row: number, word: string) => {
+      doubleClick(cell(el, row, 2))
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((o) => o.textContent?.startsWith(word))!
+      await act(async () => void option.click())
+    }
+    await pick(0, 'Active')
+    const [, id, toActive] = vi.mocked(changeCardLine).mock.calls[0]
+    expect(id).toBe('GEO-1')
+    expect(toActive({ parts: [{ kind: 'id', id: 'GEO-1' }, { kind: 'off' }] })).toEqual({ parts: [{ kind: 'id', id: 'GEO-1' }] })
+    await pick(1, 'Archived')
+    const [, id2, toArchived] = vi.mocked(changeCardLine).mock.calls[1]
+    expect(id2).toBe('GEO-2')
+    expect(toArchived({ parts: [{ kind: 'id', id: 'GEO-2' }] })).toEqual({ parts: [{ kind: 'id', id: 'GEO-2' }, { kind: 'off' }] })
+  })
+
+  it('YAZ-5856: the Status picker has no Clear (a card is always Active or Archived), and a New card lists no "New · Existing value"', () => {
+    const { el } = mount(FULL_VIEW)
+    for (const row of [0, 1, 2]) {
+      doubleClick(cell(el, row, 2))
+      const footer = [...document.querySelectorAll<HTMLElement>('.property-value-picker__footer button')].map((b) => b.textContent)
+      expect(footer).not.toContain('Clear')
+      const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((o) => o.textContent)
+      expect(options.every((o) => o?.startsWith('Active') || o?.startsWith('Archived'))).toBe(true)
+      act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+      const input = document.querySelector<HTMLElement>('.property-value-picker input')
+      if (input !== null) act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    }
+  })
+
+  it('YAZ-5430: Fix status shows "Needs fixing" for a marked card, blank for the rest; Needs fixing writes `fix`, Clear takes it off', async () => {
+    const { el } = mount(FULL_VIEW)
     // Blank is the table's own muted "Empty", as any empty cell of an editable column shows.
     expect(body(el).map((r) => r[3])).toEqual(['Empty', 'Empty', 'Needs fixing'])
     doubleClick(cell(el, 0, 3))
@@ -181,8 +304,8 @@ describe('YAZ-5319: Show cards as rows', () => {
     expect(cleared({ parts: [{ kind: 'id', id: 'GEO-3' }, { kind: 'fix' }] })).toEqual({ parts: [{ kind: 'id', id: 'GEO-3' }] })
   })
 
-  it('Card up next edits: a check writes `next` on the card file\'s line', async () => {
-    const { el } = mount(CARDS_VIEW)
+  it('Up next status edits: a check writes `next` on the card file\'s line', async () => {
+    const { el } = mount(FULL_VIEW)
     await act(async () => doubleClick(cell(el, 2, 8)))
     expect(changeCardLine).toHaveBeenCalledOnce()
     const [path, id, change] = vi.mocked(changeCardLine).mock.calls[0]
@@ -192,8 +315,11 @@ describe('YAZ-5319: Show cards as rows', () => {
 
   it('the review numbers are read only, and the name opens no title edit', () => {
     const { el } = mount(CARDS_VIEW)
-    doubleClick(cell(el, 0, 5))
-    expect(el.querySelector('[data-editing]')).toBeNull()
+    // Wait time, Times forgotten, Recall chance, Last review date (YAZ-5793's defaults): none opens an editor.
+    for (const c of [2, 3, 4, 5, 6]) {
+      doubleClick(cell(el, 0, c))
+      expect(el.querySelector('[data-editing]')).toBeNull()
+    }
     doubleClick(cell(el, 0, 0))
     expect(el.querySelector('[aria-label="Edit title"]')).toBeNull()
   })

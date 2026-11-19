@@ -46,6 +46,9 @@ const pick = (o: Record<string, unknown>, keys: readonly string[]): Record<strin
 const omit = (o: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> => Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k)))
 const filled = (o: Record<string, unknown> | undefined): o is Record<string, unknown> => o !== undefined && Object.keys(o).length > 0
 
+/** Whether `def` is seen through the card lens (`cardLensOn`): the open view is a Card table (YAZ-5793 reads it for the labels). */
+export const isCardLens = (def: ViewSet): boolean => def.views.some((v) => isRecord((v as ViewDef & Record<string, unknown>)[PAGE_TABLE]))
+
 /** A view's cards' table as stored; a YAZ-5319 view's `cardOrder` reads as its order. */
 export function cardTableOf(view: ViewDef): CardTable {
   const stored = view[CARD_TABLE]

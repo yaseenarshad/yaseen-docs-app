@@ -4,7 +4,7 @@ import type { ViewSet, ViewDef } from '../viewSchema'
 import type { ColumnDecl } from '../folderSettingsRead'
 import { defaultKeys, propertyKeys, propertyLabel } from '../engine'
 import { canonicalKey } from './keys'
-import { DEFAULT_CARD_ORDER, cardPropertyKeys, cardRowsOf } from '../cardRows'
+import { CARD_KEYS, DEFAULT_CARD_ORDER, cardPropertyKeys, cardRowsOf } from '../cardRows'
 
 /**
  * Every key the menus can offer (GRO-2135): the view's shown keys first (as written, so
@@ -12,8 +12,8 @@ import { DEFAULT_CARD_ORDER, cardPropertyKeys, cardRowsOf } from '../cardRows'
  * any page carries a value for it; since YAZ-1549 `propertyKeys` itself shows it by default), then every other field
  * the rows hold — Columns ⚙'s "Other properties in these pages" (YAZ-4713 C4) — then "File name" (`file.basename`,
  * YAZ-2420 🔒 D18), Folder (`file.folder`, a column since YAZ-4564 D26), Type (`file.kind`, YAZ-5047) where a row is a card
- * file or a folder row, Cards, Due and Archived (`file.cards`, `file.due`, YAZ-4967; `file.archived`, YAZ-5046)
- * where a row holds a card, and the formulas; de-duplicated by canonical
+ * file or a folder row, and the formulas (the page's card counts left with YAZ-5793 D3: card facts are the Card
+ * table's); de-duplicated by canonical
  * key. The rows are the pages' own fields less the app's keys (the folder host's `columnReservedKeys`, C1).
  */
 export function allPropertyKeys(
@@ -37,6 +37,8 @@ export function allPropertyKeys(
   // properties are no card's.
   if (cardRowsOf(view)) {
     for (const k of DEFAULT_CARD_ORDER) add(k)
+    // The card columns a new Card table hides (YAZ-5793): offered here, one click away.
+    for (const k of CARD_KEYS) add(k)
     for (const k of Object.keys(columns)) add(`note.${k}`)
     for (const k of cardPropertyKeys(records)) add(k)
     add('file.folder')
@@ -54,12 +56,6 @@ export function allPropertyKeys(
   add('file.folder')
   // The Type column (YAZ-5047): offered where it tells rows apart — a card file (YAZ-5037) or a folder row among them; off by default.
   if (records.some((r) => r.kind === 'card' || r.name === FOLDER_SETTINGS_FILE)) add('file.kind')
-  // The card counts (YAZ-4967, idea 2): offered only where a row holds a card, hidden until the reader shows them.
-  if (records.some((r) => r.cards !== undefined && r.cards.length > 0)) {
-    add('file.cards')
-    add('file.due')
-    add('file.archived')
-  }
   for (const name of Object.keys(def.formulas ?? {})) add(`formula.${name}`)
   return out
 }

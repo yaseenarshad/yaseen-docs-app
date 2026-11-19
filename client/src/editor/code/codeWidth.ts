@@ -58,7 +58,7 @@ import { cssZoom } from '../../lib/cssZoom'
 import { blockRightEdge } from '../blockRoom'
 import { joinNextComment } from '../joinComment'
 import { CARD_LINE_ATTR, cleanCardLine, isCardCode, CARD_LANGUAGE } from '../card/cardBlockLine'
-import { CODE_WIDTH_MAX, CODE_WIDTH_MIN, codeWidth, formatCodeComment, parseCodeComment, type CodeLook, type CodeUnknownPart } from './codeComment'
+import { CODE_WIDTH_MAX, CODE_WIDTH_MIN, cleanSpans, codeWidth, formatCodeComment, formatMarkPart, marksFromSpans, parseCodeComment, parseMarkPart, spansFromMarks, type CodeLook, type CodeSpan, type CodeUnknownPart } from './codeComment'
 
 export * from './codeComment'
 
@@ -72,6 +72,8 @@ export const CODE_GRIP_CLASS = 'code-width-grip'
 export const CODE_DRAGGING_CLASS = 'code-width-dragging'
 const BLOCK = '.milkdown-code-block'
 const PARTS_ATTR = 'data-code-parts'
+/** On the `<pre>` of a copied block: its marks (YAZ-5794), one mark part per line, so a paste inside the app keeps them. */
+const MARKS_ATTR = 'data-code-marks'
 
 /**
  * Sent from `.ProseMirror` (it bubbles) after a drag of a block's edge wrote a width (YAZ-4783 layer 2): the editor host
@@ -119,11 +121,37 @@ function cleanParts(value: unknown): CodeUnknownPart[] {
   })
 }
 
-/** A code block's look, every value checked. */
-export const codeLookOf = (node: ProseNode): CodeLook => ({ width: codeWidth(node.attrs.width), unknownParts: cleanParts(node.attrs.unknownParts) })
+/** Each code block node's checked spans: a node never changes, so one check serves every read of it. */
+const spansCache = new WeakMap<ProseNode, CodeSpan[]>()
 
-/** The attributes for a look: `null` for what is not set. */
-const lookAttrs = (look: CodeLook) => ({ width: look.width, unknownParts: look.unknownParts.length === 0 ? null : look.unknownParts })
+/** A code block's spans (YAZ-5794), checked against its code. None for a card: a card's text is no code. */
+export function codeSpansOf(node: ProseNode): CodeSpan[] {
+  if (node.attrs.marks === null || node.attrs.language === CARD_LANGUAGE) return []
+  let spans = spansCache.get(node)
+  if (spans === undefined) spansCache.set(node, (spans = cleanSpans(node.textContent, node.attrs.marks)))
+  return spans
+}
+
+/** Whether a code block writes the `<!-- code: … -->` comment: a width, a mark or a kept part. */
+export const hasCodeComment = (node: ProseNode): boolean =>
+  codeWidth(node.attrs.width) !== null || codeSpansOf(node).length > 0 || cleanParts(node.attrs.unknownParts).length > 0
+
+/** A code block's look, every value checked; its marks as the file writes them. */
+export const codeLookOf = (node: ProseNode): CodeLook => ({
+  width: codeWidth(node.attrs.width),
+  marks: marksFromSpans(node.textContent, codeSpansOf(node)),
+  unknownParts: cleanParts(node.attrs.unknownParts),
+})
+
+/** The attribute for spans: `null` for none, so a plain block's attributes stay the defaults. */
+export const marksAttr = (spans: readonly CodeSpan[]): CodeSpan[] | null => (spans.length === 0 ? null : [...spans])
+
+/** The attributes for a look and the code it is under: `null` for what is not set. */
+const lookAttrs = (look: CodeLook, code: string) => ({
+  width: look.width,
+  marks: marksAttr(spansFromMarks(code, look.marks)),
+  unknownParts: look.unknownParts.length === 0 ? null : look.unknownParts,
+})
 
 interface CodeData {
   codeLook?: CodeLook
@@ -166,7 +194,7 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
   const base = prev(ctx)
   return {
     ...base,
-    attrs: { ...base.attrs, width: { default: null }, unknownParts: { default: null }, cardLine: { default: null } },
+    attrs: { ...base.attrs, width: { default: null }, marks: { default: null }, unknownParts: { default: null }, cardLine: { default: null } },
     parseDOM: [
       {
         tag: 'pre',
@@ -179,13 +207,22 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
           } catch {
             // A broken attribute is no parts.
           }
-          return { language: pre.dataset.language, ...lookAttrs({ width: codeWidth(Number(pre.getAttribute(CODE_WIDTH_ATTR))), unknownParts: cleanParts(parts) }), cardLine: cleanCardLine(pre.getAttribute(CARD_LINE_ATTR)) }
+          // The marks travel as the file holds them, each with its text, and are fitted to the pasted code (D2): a
+          // copy of part of a block keeps the offsets of the whole one, and a mark must never land on other text.
+          const marks = (pre.getAttribute(MARKS_ATTR) ?? '').split('\n').flatMap((part) => parseMarkPart(part) ?? [])
+          return {
+            language: pre.dataset.language,
+            ...lookAttrs({ width: codeWidth(Number(pre.getAttribute(CODE_WIDTH_ATTR))), marks, unknownParts: cleanParts(parts) }, pre.textContent ?? ''),
+            cardLine: cleanCardLine(pre.getAttribute(CARD_LINE_ATTR)),
+          }
         },
       },
     ],
     toDOM: (node) => {
       const [tag, attrs, ...content] = base.toDOM!(node) as [string, Record<string, string>, ...DOMOutputSpec[]]
-      const { width, unknownParts } = codeLookOf(node)
+      const width = codeWidth(node.attrs.width)
+      const unknownParts = cleanParts(node.attrs.unknownParts)
+      const spans = codeSpansOf(node)
       const cardLine = cleanCardLine(node.attrs.cardLine)
       return [
         tag,
@@ -193,6 +230,7 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
           ...attrs,
           ...(width !== null && { [CODE_WIDTH_ATTR]: String(width) }),
           ...(unknownParts.length > 0 && { [PARTS_ATTR]: JSON.stringify(unknownParts) }),
+          ...(spans.length > 0 && { [MARKS_ATTR]: marksFromSpans(node.textContent, spans).map(formatMarkPart).join('\n') }),
           ...(cardLine !== null && { [CARD_LINE_ATTR]: cardLine }),
         },
         ...content,
@@ -204,7 +242,7 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
         const look = (node.data as CodeData | undefined)?.codeLook
         const value = node.value as string | null
         const cardLine = (node.data as CodeData | undefined)?.cardLine
-        state.openNode(type, { language: (node.lang as string | null | undefined) ?? '', ...(look && lookAttrs(look)), ...(cardLine !== undefined && { cardLine }) })
+        state.openNode(type, { language: (node.lang as string | null | undefined) ?? '', ...(look && lookAttrs(look, value ?? '')), ...(cardLine !== undefined && { cardLine }) })
         if (value) state.addText(value)
         state.closeNode()
       },
@@ -250,7 +288,7 @@ function mayChangeWidth(tr: Transaction): boolean {
 }
 
 /** The position of the code block a box draws, or null. */
-function blockPos(view: EditorView, block: HTMLElement): number | null {
+export function blockPos(view: EditorView, block: HTMLElement): number | null {
   if (!view.dom.contains(block)) return null
   let inside: number
   try {

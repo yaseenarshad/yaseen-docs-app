@@ -1649,7 +1649,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
   })
   it('main\'s `file:drag-ended` at the release ends the drag: a drag that left asks at once, with the pointer still over Finder; the later move asks nothing more (YAZ-3294 D24, S80)', async () => {
     const { bridge, props, el } = await mount()
-    const ended = (paths: string[]) => act(() => (bridge.file.onDragEnded.mock.calls.at(-1)?.[0] as (ev: { paths: string[] }) => void)({ paths }))
+    const ended = (paths: string[], overFinder = true) => act(() => (bridge.file.onDragEnded.mock.calls.at(-1)?.[0] as (ev: { paths: string[]; overFinder: boolean }) => void)({ paths, overFinder }))
     const leave = () => act(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: null })))
     fire(fileRow(el), 'dragstart')
     leave()
@@ -1672,9 +1672,27 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     expect(props.onDraggedOut).toHaveBeenCalledTimes(3)
   })
 
+  it('a release over another app, the Dock or the menu bar ends the drag and asks nothing: Finder made no copy (YAZ-5840 D1)', async () => {
+    const { bridge, props, el } = await mount()
+    const ended = (paths: string[], overFinder = true) => act(() => (bridge.file.onDragEnded.mock.calls.at(-1)?.[0] as (ev: { paths: string[]; overFinder: boolean }) => void)({ paths, overFinder }))
+    const leave = () => act(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: null })))
+    fire(fileRow(el), 'dragstart')
+    leave()
+    ended(['/v/a.md'], false)
+    expect(props.onDraggedOut).not.toHaveBeenCalled()
+    // The drag is over: the later move finds no drag, and asks nothing either.
+    move(0)
+    expect(props.onDraggedOut).not.toHaveBeenCalled()
+    // The next drag that ends over Finder asks, as before.
+    fire(fileRow(el), 'dragstart')
+    leave()
+    ended(['/v/a.md'], true)
+    expect(props.onDraggedOut).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+  })
+
   it('a push of the release after a drop back inside the window asks nothing (YAZ-3294 S81)', async () => {
     const { bridge, props, el } = await mount()
-    const ended = (paths: string[]) => act(() => (bridge.file.onDragEnded.mock.calls.at(-1)?.[0] as (ev: { paths: string[] }) => void)({ paths }))
+    const ended = (paths: string[], overFinder = true) => act(() => (bridge.file.onDragEnded.mock.calls.at(-1)?.[0] as (ev: { paths: string[]; overFinder: boolean }) => void)({ paths, overFinder }))
     const leave = () => act(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: null })))
     fire(fileRow(el), 'dragstart')
     leave()

@@ -36,7 +36,7 @@ import { TableView } from './view/TableView'
 import { PageWindow, type PageWindowMemory, dropPageWindow, keepPageWindow, pageWindowKey, pageWindowLink, pageWindowMemory, openPageWindow, renamePageWindowView, savePageWindowBox, savedPageWindowBox } from './view/PageWindow'
 import { onPageWindowRequest } from './pageWindowRequest'
 import { Toolbar } from './view/Toolbar'
-import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
+import { CARD_TABLE_ITEM, type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, readOnlyTip, writableKey } from './readOnlyRows'
 import { type CardRow, cardLineChange, cardRowOfRecord, cardRowRecords, cardRowsOf } from './cardRows'
@@ -399,7 +399,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const index = Math.max(0, Math.min(active, views.length - 1))
   // The vault's card settings (YAZ-4967): the "Due" column counts with them; published by the vault's scope, off while IDs are.
   const cardSettings = useVaultReviewSettings(root)
-  // "Show cards as rows" (YAZ-5319) is offered while the vault has Cards and IDs on; off, a view that lists cards lists its pages.
+  // A Card table (YAZ-5319, YAZ-5793) needs the vault's Cards and IDs on; off, it says so and lists nothing.
   const cardsOffered = cardSettings?.enabled === true && pageHost.wikilinks.ids
   /**
    * A view that lists cards is a table OF CARDS (YAZ-5349 follow-up): every reader below sees the def through the card
@@ -419,6 +419,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     return filled.rows === 'cards' && !cardsOffered ? { ...filled, rows: undefined } : filled
   }, [own, defaults, cardsOffered])
   const cards = cardRowsOf(view)
+  /** A Card table while cards are off (YAZ-5793): it shows one line in place of the table. */
+  const cardsOff = !cardsOffered && cardRowsOf(withDefaults(own, defaults))
   // "Subfolders: As rows / Both" (YAZ-4579 D30/D31): this view's records are the pages and a row per direct subfolder.
   // Every use below reads these — the engine, the menus' columns, a move's raw — so a folder row is a row like a page.
   // Listing cards (YAZ-5319), they are a row per card of the pages, and no folder row.
@@ -672,7 +674,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // A card row's Page cell (YAZ-5319) opens the page through this render's `openRow`: one context value per switch.
   const latestOpenRow = useRef(openRow)
   latestOpenRow.current = openRow
-  const cardRowsValue = useMemo<CardRowsValue>(() => ({ offered: cardsOffered, openPage: (path) => latestOpenRow.current(path) }), [cardsOffered])
+  const cardRowsValue = useMemo<CardRowsValue>(() => ({ openPage: (path) => latestOpenRow.current(path) }), [])
   /**
    * A click on a link pill (YAZ-4601 D47) opens the LINKED page by the page links' rule (⌘ a background tab, ⌥ the right
    * panel) and nothing else: in the capture phase, so the cell under it neither selects nor edits and its card does not
@@ -1175,6 +1177,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const tabs: ViewTabsProps = {
     views,
     active: index,
+    cardsOffered,
     onSelect: setActive,
     onMove: (from, to) => {
       update((d) => d.views.splice(to, 0, ...d.views.splice(from, 1)))
@@ -1184,7 +1187,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       setActive(order.indexOf(index))
     },
     onAdd: (type) => {
-      update((d) => d.views.push({ type, name: freeName(viewTypeLabel(type), taken()) }))
+      // "+" › Card table (YAZ-5793 D1): a Table that lists cards.
+      update((d) => d.views.push(type === CARD_TABLE_ITEM ? { type: 'table', rows: 'cards', name: freeName('Card table', taken()) } : { type, name: freeName(viewTypeLabel(type), taken()) }))
       setActive(views.length)
     },
     onRename: (i, name) => {
@@ -1253,6 +1257,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         tabs={tabs}
         properties={properties}
         documentView={isPage}
+        actions={!cardsOff}
         folder={folder}
         dateColumns={calendarColumns}
         tabId={tabId}
@@ -1280,6 +1285,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       {isPage ? (
         // The page editor replaces the view body (YAZ-4584 D38): it saves the `.folder.md` body itself, never a settings write.
         <div className="view-page">{folder.renderPage?.()}</div>
+      ) : cardsOff ? (
+        // A Card table while the vault's Cards or IDs are off (YAZ-5793 D1): it says why it is empty, never lists pages.
+        <p className="views-pane__cards-off" role="note">Cards are off. Turn them on in Settings › Cards.</p>
       ) : view.type === 'table' ? (
         <TableView
           onOpenFilter={openFilter}

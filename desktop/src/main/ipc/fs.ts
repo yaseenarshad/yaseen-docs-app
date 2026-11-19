@@ -446,7 +446,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
    * In the hidden e2e mode (`YASEEN_DOCS_E2E_HIDDEN`, YAZ-3028) the OS drag would take the real mouse
    * of the person at the Mac: the paths go on `globalThis.e2eDragOuts` for the e2e to read instead.
    * After the OS drag main watches the mouse button (YAZ-3294 D24, `../dragWatch`): at the release
-   * the calling window hears `file:drag-ended` with the drag's paths, so its box asks at once.
+   * the calling window hears `file:drag-ended` with the drag's paths, so its box asks at once, and
+   * whether the release was over Finder or the desktop (YAZ-5840 D1): only then does the box ask.
    */
   handleWithEvent(CONTRACT.file.dragOut, async (e, req: unknown) => {
     const { paths, icon } = requireRequest(req)
@@ -469,8 +470,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const { scaleFactor } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
     e.sender.startDrag({ file: files[0], files, icon: nativeImage.createFromBuffer(Buffer.from(icon.slice(PNG.length), 'base64'), { scaleFactor }) })
     const sender = e.sender
-    whenMouseUp(() => {
-      if (!sender.isDestroyed()) sender.send(CONTRACT.file.onDragEnded.channel, { paths: files })
+    whenMouseUp((overFinder) => {
+      if (!sender.isDestroyed()) sender.send(CONTRACT.file.onDragEnded.channel, { paths: files, overFinder })
     })
   })
   /**

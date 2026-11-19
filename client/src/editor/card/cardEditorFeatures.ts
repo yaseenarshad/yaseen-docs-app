@@ -32,6 +32,8 @@ export const CARD_EDITOR_FEATURES = {
   calendarTables: false,
   tableZoom: false,
   cellNotes: false,
+  /** Bold, highlight and the others on the text of a code block (YAZ-5794): the Inbox cannot draw them. */
+  codeMarks: false,
   cardInCard: false,
   folding: false,
   zoom: false,
@@ -87,6 +89,7 @@ export function cardEditorOptions(outer: CreateCrepeOptions, root: HTMLElement):
     foldingOn: () => f.folding,
     outlineZoom: f.zoom,
     cellNotes: f.cellNotes,
+    codeMarks: f.codeMarks,
     tableZoomPill: f.tableZoom,
     cardBlocks: f.cardInCard,
     hidden: { toolbar: CARD_EDITOR_HIDDEN_TOOLBAR, slash: CARD_EDITOR_HIDDEN_SLASH },

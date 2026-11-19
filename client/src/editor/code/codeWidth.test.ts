@@ -45,22 +45,22 @@ const CODE = '```js\nconst a = 1\nconst b = 2\n```\n'
 
 describe('the code comment', () => {
   it('reads and writes the width', () => {
-    expect(parseCodeComment('<!-- code: width 900 -->')).toEqual({ width: 900, unknownParts: [] })
-    expect(formatCodeComment({ width: 900, unknownParts: [] })).toBe('<!-- code: width 900 -->')
+    expect(parseCodeComment('<!-- code: width 900 -->')).toEqual({ width: 900, marks: [], unknownParts: [] })
+    expect(formatCodeComment({ width: 900, marks: [], unknownParts: [] })).toBe('<!-- code: width 900 -->')
     expect(formatCodeComment(PLAIN_CODE)).toBeNull()
   })
 
   it('keeps the parts it does not read, each on its side of the width', () => {
     const comment = '<!-- code: wrap, width 1300, theme dark -->'
     const look = parseCodeComment(comment)!
-    expect(look).toEqual({ width: 1300, unknownParts: [{ afterWidth: false, text: 'wrap' }, { afterWidth: true, text: 'theme dark' }] })
+    expect(look).toEqual({ width: 1300, marks: [], unknownParts: [{ afterWidth: false, text: 'wrap' }, { afterWidth: true, text: 'theme dark' }] })
     expect(formatCodeComment(look)).toBe(comment)
     expect(formatCodeComment({ ...look, width: null })).toBe('<!-- code: wrap, theme dark -->')
   })
 
   it('keeps a width it cannot read as text, until it writes a width itself', () => {
     const look = parseCodeComment('<!-- code: width 100 -->')!
-    expect(look).toEqual({ width: null, unknownParts: [{ afterWidth: false, text: 'width 100' }] })
+    expect(look).toEqual({ width: null, marks: [], unknownParts: [{ afterWidth: false, text: 'width 100' }] })
     expect(formatCodeComment(look)).toBe('<!-- code: width 100 -->')
     expect(formatCodeComment({ ...look, width: 500 })).toBe('<!-- code: width 500 -->')
   })

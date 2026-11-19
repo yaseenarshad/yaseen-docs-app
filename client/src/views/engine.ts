@@ -1,4 +1,3 @@
-import { pageCardCounts } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { keyFold, spellings } from '@shared/propertyKeys'
@@ -11,6 +10,7 @@ import {
 } from './expr'
 import { summarize } from './summaries'
 import { CARD_FIELD_LABELS, DEFAULT_CARD_ORDER, cardPropertyKeys, cardRowOfRecord, cardRowsOf, cardValues, isCardKey } from './cardRows'
+import { isCardLens } from './cardView'
 
 /**
  * Query engine for one Bases view (GRO-2133): filters → values → sort → limit → group → summaries
@@ -120,8 +120,8 @@ export interface RunOptions {
   /** An Image column (YAZ-4802): its sort goes by the picture's file name, not the folder it is in. */
   byFileName?: (property: string) => boolean
   /**
-   * The vault's card review settings (YAZ-4967, idea 2): the "Due" column (`file.due`) counts with them. Absent
-   * (a vault no scope has open), "Due" is blank; "Cards" (`file.cards`) and "Archived" (`file.archived`, YAZ-5046) need none.
+   * The vault's card review settings (YAZ-4967): a Card table's review columns (`cardValues`) and the Type column read
+   * them. Absent (a vault no scope has open), the review columns are blank.
    */
   cardSettings?: ReviewSettings
   /**
@@ -237,11 +237,6 @@ function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettin
     const name = key.slice(5)
     return (scope) => (scope.card !== undefined && Object.hasOwn(scope.card, name) ? scope.card[name] : null)
   }
-  // The card counts (YAZ-4967, idea 2): read off the index's `cards`, no file read. Blank, not 0, where there are none.
-  if (key === 'file.cards') return (scope) => cardCount(scope.file, null, 0)
-  if (key === 'file.due') return (scope) => (cardSettings === undefined ? null : cardCount(scope.file, cardSettings, scope.now ?? Date.now()))
-  // YAZ-5046: the page's archived cards (the line's `off`); no settings needed, as "Cards".
-  if (key === 'file.archived') return (scope) => archivedCount(scope.file)
   // The Type column (YAZ-5047): a card file is a Card only while the vault's Review is on (YAZ-5037); with it off, a page.
   if (key === 'file.kind') {
     const expr = member('file', 'kind')
@@ -266,20 +261,6 @@ function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettin
   }
   const name = key.startsWith('note.') ? key.slice(5) : key
   return scope => fromYaml(Object.hasOwn(scope.page, name) ? scope.page[name] : undefined)
-}
-
-/** A page's card count, or with `s` its due count; null (a blank cell) for none. */
-function cardCount(file: FileValue | null, s: ReviewSettings | null, now: number): Value {
-  const cards = (file?.record as IndexRecord | undefined)?.cards
-  if (cards === undefined || cards.length === 0) return null
-  const n = s === null ? cards.length : pageCardCounts(file!.record as IndexRecord, s, now).due
-  return n === 0 ? null : n
-}
-
-/** A page's archived cards (YAZ-5046); null (a blank cell) for none. */
-function archivedCount(file: FileValue | null): Value {
-  const n = (file?.record as IndexRecord | undefined)?.cards?.filter((c) => c.off).length ?? 0
-  return n === 0 ? null : n
 }
 
 // ---------- ordering ----------
@@ -430,8 +411,9 @@ export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly Ind
     if (view.order !== undefined) return view.order.filter((key) => key.startsWith('file.') || key.startsWith('formula.') || isCardKey(key) || own.includes(key))
     return [...DEFAULT_CARD_ORDER, ...own]
   }
-  // A page's view shows no card column: a card's are its rows' alone.
-  if (view.order) return (declared.length === 0 ? [...view.order] : orderInColumnSpelling(view.order, spellings(declared))).filter((key) => !isCardKey(key))
+  // A page's view shows no card column: a card's are its rows' alone. Nor the page's card counts, which left with
+  // YAZ-5793 (D3): a view saved with one drops it here, and its order is written again only with the next change.
+  if (view.order) return (declared.length === 0 ? [...view.order] : orderInColumnSpelling(view.order, spellings(declared))).filter((key) => !isCardKey(key) && !GONE_PAGE_KEYS.has(key))
   // A calendar card is small (YAZ-4857 item 4): with no column choice it shows the name alone, and the Columns panel says "Shown · 1".
   if (view.type === 'calendar') return ['file.name']
   return defaultKeys(records, declared)
@@ -472,18 +454,29 @@ const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
   'file.tags': 'Tags',
   'file.links': 'Links',
   'file.embeds': 'Embeds',
-  // The card counts (YAZ-4967, idea 2).
-  'file.cards': 'Cards',
-  'file.due': 'Due',
-  'file.archived': 'Archived',
 }
 
-/** `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else `defaultLabel(key)`. */
+/**
+ * `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else `defaultLabel(key)`. In a
+ * Card table (`isCardLens`, YAZ-5793) the name column is "Title", and a card's own column that would wear a card
+ * column's name says so: "Status (card property)".
+ */
 export function propertyLabel(def: ViewSet, key: string): string {
   const bare = key.startsWith('note.') ? key.slice(5) : key
   const props = def.properties
-  return props?.[key]?.displayName ?? props?.[bare]?.displayName ?? props?.[`note.${bare}`]?.displayName ?? defaultLabel(key)
+  const named = props?.[key]?.displayName ?? props?.[bare]?.displayName ?? props?.[`note.${bare}`]?.displayName
+  if (named !== undefined) return named
+  if (!isCardLens(def)) return defaultLabel(key)
+  if (key === 'file.name') return 'Title'
+  const label = defaultLabel(key)
+  return key.startsWith('note.') && CARD_LABEL_NAMES.has(label.toLowerCase()) ? `${label} (card property)` : label
 }
+
+/** The card columns' names, lower case: a card's own column with one of them gets "(card property)" (YAZ-5793). */
+const CARD_LABEL_NAMES: ReadonlySet<string> = new Set(['title', ...Object.values(CARD_FIELD_LABELS).map((l) => l.toLowerCase())])
+
+/** The page columns that left the Pages table (YAZ-5793 D3): the card counts. A saved order that names one skips it. */
+const GONE_PAGE_KEYS: ReadonlySet<string> = new Set(['file.cards', 'file.due', 'file.archived'])
 
 export function runView(def: ViewSet, view: ViewDef, records: readonly IndexRecord[], opts: RunOptions = {}): ViewResult {
   const errors: EngineError[] = []
@@ -533,7 +526,7 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     const scope: Scope = { page: pageOf(records[i]), file: files[i], formulas, this: null, resolve, now, weekStartsOn }
     // A card row (YAZ-5319) carries its card's columns: `card.status`, `card.nextReview`, …
     const card = cardRowOfRecord(records[i])
-    if (card !== undefined) scope.card = cardValues(card, opts.cardSettings)
+    if (card !== undefined) scope.card = cardValues(card, opts.cardSettings, now)
     if (baseFilter && !baseFilter(scope)) continue
     if (viewFilter && !viewFilter(scope)) continue
     const row: Row = { record: records[i], file: files[i], values: {} }
