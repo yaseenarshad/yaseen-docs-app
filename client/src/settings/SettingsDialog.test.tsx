@@ -142,7 +142,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'exploreWidth', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 /** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
 const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
@@ -425,8 +425,9 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Appearance')
     // Appearance with no vault: Spacing, Comments (the sidebar's groups have their own page since YAZ-3440 D7). draw.io
     // diagrams (YAZ-3037) is on "Drawings and diagrams" since YAZ-4748 D11. Text formatting needs a vault (YAZ-3068).
-    expect(groupTitles(el)).toEqual(['Spacing', 'Comments'])
-    expect(hints()).toEqual([])
+    // YAZ-5977: the Explore group (its own box, with its hint) after the first rows.
+    expect(groupTitles(el)).toEqual(['Explore', 'Spacing', 'Comments'])
+    expect(hints()).toEqual(['The search and its windows, on this Mac'])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
     // It starts with an untitled group: Theme and Content width sit straight under the section title.
@@ -1293,7 +1294,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
     it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
       const { el } = mountTf([vaultOf('/pages', 'Pages')])
-      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments'])
+      expect(groupTitles(el)).toEqual(['Explore', 'Spacing', 'Text formatting', 'Comments'])
       const group = tf(el).closest('.settings-group') as HTMLElement
       expect(group.querySelector('.settings-group__hint')?.textContent).toBe(TEXT_FORMATTING_HINT)
       // No "Vault: name" line: the dropdown replaces it (D15), and with one vault there is none.
@@ -1991,6 +1992,27 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, contentWidth: 'medium' })
     const full = mountOn('Appearance', { ...DEFAULT_SETTINGS, contentWidth: 'full', contentPosition: 'left' }, undefined, S)
     expect(rowButtons(full.el, 'contentPosition').every((b) => b.disabled)).toBe(true)
+  })
+
+  it('YAZ-5976: Appearance › Explore › Window width is Default · Custom (px 400–4000, starts at 800); Default is null', () => {
+    const { el, onChange } = mountOn('Appearance', DEFAULT_SETTINGS, undefined, S)
+    expect(row(el, 'exploreWidth')?.closest('.settings-group')?.getAttribute('data-group-title')).toBe('Explore')
+    expect(rowButtons(el, 'exploreWidth').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Default', 'true'], ['Custom', 'false']])
+    expect(row(el, 'exploreWidth')?.querySelector('input')).toBeNull()
+    act(() => rowButtons(el, 'exploreWidth')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, exploreWidth: 800 })
+    const custom = { ...DEFAULT_SETTINGS, exploreWidth: 520 }
+    const second = mountOn('Appearance', custom, undefined, S)
+    const px = row(second.el, 'exploreWidth')!.querySelector<HTMLInputElement>('input[aria-label="Window width in px"]')!
+    expect(px.value).toBe('520')
+    type(px, '9000')
+    pressEnter(px)
+    expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, exploreWidth: 4000 })
+    type(px, '10')
+    blur(px)
+    expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, exploreWidth: 400 })
+    act(() => rowButtons(second.el, 'exploreWidth')[0].click())
+    expect(second.onChange).toHaveBeenLastCalledWith({ ...custom, exploreWidth: null })
   })
 
   it('YAZ-5144 round 2: Custom shows its px, typed and kept on Enter, held to 400–1600; Reset goes back to 640; Same as pages goes back', () => {

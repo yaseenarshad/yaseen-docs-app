@@ -97,6 +97,8 @@ export interface ExploreStackProps {
    * ⌘0 with the search panel in front step it along `APP_ZOOM_STEPS` through `onExploreSize` (D3; ⌘0: 125%).
    */
   exploreSize: number
+  /** Settings' Explore window width (YAZ-5976): a fresh page or board layer's width in px; null or absent is Default. */
+  exploreWidth?: number | null
   onExploreSize: (percent: number) => void
   /** The hover panel of a reading page layer's [[links]] (YAZ-5920): the setting, the panel's scope, the diagram colours. */
   linkPreview?: ExploreLinkPreview
@@ -163,7 +165,7 @@ function focusCardFile(layer: HTMLElement): boolean {
   return body !== null && document.activeElement === body
 }
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false, exploreSize, onExploreSize, linkPreview }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false, exploreSize, exploreWidth = null, onExploreSize, linkPreview }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -186,7 +188,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const rootRef = useRef<HTMLDivElement>(null)
   const windowSize = useWindowSize()
   // Where each layer stands (round 3): written to the layers' style, never rendered; the head drags, the grips resize.
-  const gestures = useLayerBoxes(rootRef, layers, windowSize.width, windowSize.height, exploreSize / 100)
+  const gestures = useLayerBoxes(rootRef, layers, windowSize.width, windowSize.height, exploreSize / 100, exploreWidth)
   /** Explore size of the moment and its door (YAZ-5881 D3), for the zoom keys' listener. */
   const exploreSizeRef = useRef({ exploreSize, onExploreSize })
   exploreSizeRef.current = { exploreSize, onExploreSize }

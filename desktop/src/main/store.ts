@@ -14,6 +14,7 @@ import {
   isCommentProfile,
   isContentPosition,
   isContentWidth,
+  isExploreWidth,
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
   DEFAULT_SIDEBAR_TABS,
@@ -829,6 +830,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
   // YAZ-5881: Explore size, on the App sizes too; a stored value off them loads as 125 (the default).
   exploreSize: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
+  // YAZ-5976: Default (null) or a whole px in the Custom range; anything else loads as Default.
+  exploreWidth: isExploreWidth,
   codeReadOnly: (v): v is boolean => typeof v === 'boolean',
   codeWrap: (v): v is boolean => typeof v === 'boolean',
   codeMinimap: (v): v is boolean => typeof v === 'boolean',

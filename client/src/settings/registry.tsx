@@ -31,7 +31,7 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, keyInWords, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, PAGE_WIDTH_START, type ContentStep, type ContentWidth, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, EXPLORE_WIDTH_MAX, EXPLORE_WIDTH_MIN, EXPLORE_WIDTH_START, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, PAGE_WIDTH_START, type ContentStep, type ContentWidth, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
 import type { IconRule } from '@shared/vaultIcons'
 import { appCardLook, type CardLookSettings } from '@shared/cardLook'
 import { appTableLook, type TableLookSettings } from '@shared/tableLook'
@@ -224,6 +224,23 @@ function ContentWidthSetting({ value, onSet }: { value: ContentWidth; onSet: (ne
     <>
       <Segmented<ContentStep | 'custom'> options={CONTENT_WIDTH_CHOICES} value={typeof value === 'number' ? 'custom' : value} onChange={(choice) => onSet(choice === 'custom' ? (typeof value === 'number' ? value : PAGE_WIDTH_START) : choice)} ariaLabel="Content width" />
       {typeof value === 'number' && <PxBox name="Content width" value={value} min={PAGE_WIDTH_MIN} max={PAGE_WIDTH_MAX} onSet={onSet} />}
+    </>
+  )
+}
+
+/**
+ * Appearance › Explore window width (YAZ-5976): Default · Custom, Content width's way: Custom shows its px box
+ * (`EXPLORE_WIDTH_MIN`–`EXPLORE_WIDTH_MAX`; the window cuts it further) and starts at `EXPLORE_WIDTH_START`. Default is null.
+ */
+const EXPLORE_WIDTH_CHOICES: readonly { label: string; value: 'default' | 'custom' }[] = [
+  { label: 'Default', value: 'default' },
+  { label: 'Custom', value: 'custom' },
+]
+function ExploreWidthSetting({ value, onSet }: { value: number | null; onSet: (next: number | null) => void }) {
+  return (
+    <>
+      <Segmented<'default' | 'custom'> options={EXPLORE_WIDTH_CHOICES} value={value === null ? 'default' : 'custom'} onChange={(choice) => onSet(choice === 'default' ? null : (value ?? EXPLORE_WIDTH_START))} ariaLabel="Window width" />
+      {value !== null && <PxBox name="Window width" value={value} min={EXPLORE_WIDTH_MIN} max={EXPLORE_WIDTH_MAX} onSet={onSet} />}
     </>
   )
 }
@@ -1019,6 +1036,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: (ctx) => (
               <Segmented options={CONTENT_POSITION_OPTIONS} value={ctx.settings.contentPosition} disabled={ctx.settings.contentWidth === 'full'} onChange={(contentPosition) => ctx.onChange({ ...ctx.settings, contentPosition })} ariaLabel={unit(ctx, 'Page position')} />
             ),
+          },
+        ],
+      },
+      {
+        // YAZ-5977 (with YAZ-5976): Explore's own settings, in their own box. Search size lives only in the zoom menu.
+        title: 'Explore',
+        hint: 'The search and its windows, on this Mac',
+        items: [
+          {
+            // YAZ-5976: the width a fresh Explore window starts at. Explore size (the footer's zoom menu) scales Default only.
+            id: 'exploreWidth',
+            label: 'Window width',
+            hint: 'How wide a fresh Explore window opens. Default follows Explore size; Custom is your own width in px, cut to the window. A window opened from one you resized takes its size.',
+            keywords: ['explore', 'window', 'panel', 'layer', 'width', 'custom', 'px', 'pixels', 'default'],
+            render: ({ settings, onChange }) => <ExploreWidthSetting value={settings.exploreWidth} onSet={(exploreWidth) => onChange({ ...settings, exploreWidth })} />,
           },
         ],
       },

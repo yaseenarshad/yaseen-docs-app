@@ -1,7 +1,7 @@
 /** The explore stack's model (YAZ-2571): the layer list, its cap, the top page, and where each layer stands. */
 import { describe, expect, it } from 'vitest'
 import { exploreRecents, MAX_EXPLORE_RECENTS, moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
-import { EDGE_GAP, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, PAGE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, layerKindOf, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type LayerBox } from './layers'
+import { EDGE_GAP, firstLayerBox, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, PAGE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, layerKindOf, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type LayerBox } from './layers'
 
 const search = (): ExploreLayer => ({ id: newLayerId(), kind: 'search' })
 const page = (path: string): ExploreLayer => ({ id: newLayerId(), kind: 'page', path, mode: 'read' })
@@ -194,6 +194,34 @@ describe('layers that move like a cell note (round 3)', () => {
     expect(corner[2].x).toBe(W - 500)
     expect(corner[2].x + corner[2].width).toBeLessThanOrEqual(W)
     expect(corner[2].y + (corner[2].height ?? 0)).toBeLessThanOrEqual(H)
+  })
+
+  it('YAZ-5976: Explore window width (custom px) is a fresh page or board layer\'s width, unscaled by Explore size, cut to the window; the search keeps its own', () => {
+    expect(panelWidth('page', 2000, 1.5, 520)).toBe(520)
+    expect(panelWidth('board', 2000, 1, 520)).toBe(520)
+    expect(panelWidth('search', 2000, 1.25, 520)).toBe(panelWidth('search', 2000, 1.25))
+    expect(panelWidth('page', 600, 1, 1200)).toBe(600 - 2 * EDGE_GAP)
+    const list = [search(), page('/v/a.md'), page('/v/b.md')]
+    const boxes = layerBoxes(list, new Map(), W, H, 1.25, 520)
+    expect(boxes[0].width).toBe(panelWidth('search', W, 1.25))
+    // The first page from the search starts at the custom width; so does the next fresh one.
+    expect(boxes[1].width).toBe(520)
+    expect(boxes[2].width).toBe(520)
+    // A layer opened on one resized by hand takes that size (YAZ-5975), not the custom width; the resized one keeps its box.
+    const resized = layerBoxes(list, new Map([[list[1].id, { x: 200, y: 100, width: 700, height: 500 }]]), W, H, 1, 520)
+    expect(resized[1].width).toBe(700)
+    expect(resized[2]).toEqual({ x: 200 + LAYER_STEP, y: 100 + LAYER_STEP, width: 700, height: 500 })
+  })
+
+  it('YAZ-5976: a fresh first page layer starts at the custom width, at its kept place and height; Default keeps the kept box; a search keeps its own', () => {
+    saveLayerBox('page', { x: 30, y: 40, width: 1000, height: 600 })
+    expect(firstLayerBox('page', 520)).toEqual({ x: 30, y: 40, width: 520, height: 600 })
+    expect(firstLayerBox('page', null)).toEqual({ x: 30, y: 40, width: 1000, height: 600 })
+    saveLayerBox('search', { x: 10, y: 20, width: 500, height: null })
+    expect(firstLayerBox('search', 520)).toEqual({ x: 10, y: 20, width: 500, height: null })
+    saveLayerBox('page', null)
+    saveLayerBox('search', null)
+    expect(firstLayerBox('page', 520)).toBeNull()
   })
 
   it('every box fits the window: the size cut to it, the corner kept on screen, never smaller than the least size', () => {

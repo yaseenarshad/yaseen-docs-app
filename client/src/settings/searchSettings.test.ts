@@ -44,6 +44,8 @@ describe('settingCandidates', () => {
       'theme',
       'contentWidth',
       'contentPosition',
+      // YAZ-5976: Appearance › Explore.
+      'exploreWidth',
       'spacingVault',
       'lineSpacing',
       'blockGap',

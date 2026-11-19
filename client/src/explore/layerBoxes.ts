@@ -8,7 +8,7 @@
  * (`exploreSize`, a factor, YAZ-5881 D2) widens the stack places; the boxes stay in window px, so a drag follows the pointer.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
-import { layerBoxes, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, savedLayerBox, saveLayerBox, type ExploreLayer, type LayerBox } from './layers'
+import { firstLayerBox, layerBoxes, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, saveLayerBox, type ExploreLayer, type LayerBox } from './layers'
 
 /** The eight resize grips: an edge or a corner, and its sides (-1 left or top, 1 right or bottom). */
 export const GRIPS: ReadonlyArray<{ name: string; x: -1 | 0 | 1; y: -1 | 0 | 1; cursor: string }> = [
@@ -40,11 +40,12 @@ export interface LayerGestures {
   restack: () => void
 }
 
-export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers: readonly ExploreLayer[], W: number, H: number, exploreSize = 1): LayerGestures {
+/** `exploreWidth`: Settings' Explore window width (YAZ-5976), px or null (Default): a fresh page or board layer's width. */
+export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers: readonly ExploreLayer[], W: number, H: number, exploreSize = 1, exploreWidth: number | null = null): LayerGestures {
   const layersRef = useRef(layers)
   layersRef.current = layers
-  const size = useRef({ W, H, exploreSize })
-  size.current = { W, H, exploreSize }
+  const size = useRef({ W, H, exploreSize, exploreWidth })
+  size.current = { W, H, exploreSize, exploreWidth }
   /** The layers moved or resized by hand, by id: each stands in its own box (`layerBoxes`). */
   const moved = useRef(new Map<number, LayerBox>())
   /** Where each layer stands now, as last written: what a drag starts from, so a press reads no layout. */
@@ -56,7 +57,7 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
   /** Every layer's box to its style: ≤ 12 style writes, no read. */
   const placeAll = useCallback(() => {
     const list = layersRef.current
-    const all = layerBoxes(list, moved.current, size.current.W, size.current.H, size.current.exploreSize)
+    const all = layerBoxes(list, moved.current, size.current.W, size.current.H, size.current.exploreSize, size.current.exploreWidth)
     boxes.current.clear()
     list.forEach((layer, i) => {
       const box = all[i]
@@ -83,14 +84,14 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
     const first = layersRef.current[0]
     if (first !== undefined && !seeded.current) {
       seeded.current = true
-      const kept = savedLayerBox(first.kind)
+      const kept = firstLayerBox(first.kind, size.current.exploreWidth)
       if (kept !== null) moved.current.set(first.id, kept)
     }
     // A layer that left takes its box with it: the map holds the layers on screen only.
     const ids = new Set(layersRef.current.map((l) => l.id))
     for (const id of [...moved.current.keys()]) if (!ids.has(id)) moved.current.delete(id)
     placeAll()
-  }, [layers, W, H, exploreSize, placeAll])
+  }, [layers, W, H, exploreSize, exploreWidth, placeAll])
 
   /**
    * Before a layer behind moves (round 6: every layer you see takes the pointer): the layers over it in the list that
@@ -214,7 +215,7 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
     moved.current.clear()
     // The first layer's stack place is its kept box, as when the stack opened.
     const first = layersRef.current[0]
-    const kept = first === undefined ? null : savedLayerBox(first.kind)
+    const kept = first === undefined ? null : firstLayerBox(first.kind, size.current.exploreWidth)
     if (first !== undefined && kept !== null) moved.current.set(first.id, kept)
     placeAll()
   }, [placeAll])
