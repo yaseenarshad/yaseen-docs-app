@@ -31,7 +31,7 @@ import { TableOfContents } from './toc/TableOfContents'
 import { createTocChannel } from './toc/tocChannel'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
-import { PageFrame } from './PageFrame'
+import { PageFrame, TitleRowControls } from './PageFrame'
 import { usePageId } from '../search/showIds'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { redrawWikilinks, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -800,6 +800,8 @@ function CrepeHost({
   const chipsHere = useContext(FolderPageChips)
   /** In an Explore layer (YAZ-5164 Option A): its head holds this page's chips, and Esc is the layer's (back to reading). */
   const inExplore = useContext(HeadChipsSlot) !== null
+  /** An Explore layer's title-row controls (YAZ-5974): drawn in the page's header, before Properties. */
+  const titleRowControls = useContext(TitleRowControls)
   // The page zoom as drawn (YAZ-5640): an Explore layer's zoom wins over this editor's own on its scroller (explore.css).
   const drawnZoom = useContext(LayerZoom) ?? documentZoom
   const folderChips = inFolderPage ? chipsHere : null
@@ -1668,6 +1670,8 @@ function CrepeHost({
                   if (crepe !== null) focusEditor(crepe)
                 }}
               />
+              {/* An Explore layer's page controls (YAZ-5974): on the title row, before Properties. */}
+              {titleRowControls}
               {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
                   folder view — ONE registry, so a type declared in a row types the same column in
                   every folder's views. */}

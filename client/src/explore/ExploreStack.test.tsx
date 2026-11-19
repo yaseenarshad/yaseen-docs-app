@@ -6,7 +6,9 @@
  * per page layer with the stack's link doors, and nothing writes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { act, useEffect, useState, type ReactNode } from 'react'
+import { act, useContext, useEffect, useState, type ReactNode } from 'react'
+import { TitleRowControls } from '../editor/PageFrame'
+import { StatusChips } from '../editor/StatusChips'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord, PageView } from '@shared/types'
 import { CrepeFeature } from '../editor/crepe'
@@ -77,6 +79,8 @@ vi.mock('../editor/createCrepe', () => ({
   cardLook: () => ({}),
   // The fold-all button reads the view: the stand-in's document, a state the fold stand-ins below ignore.
   editorViewOf: (crepe: Crepe) => ({ dom: crepe.opts.root.firstChild, state: {}, dispatch: folds.dispatch }),
+  // The reading cog's counts (YAZ-5974): the stand-in's text.
+  getPlainText: (crepe: Crepe) => crepe.opts.defaultValue ?? '',
 }))
 /** Where the reading layer stands (YAZ-5164): jsdom draws no boxes; the real reading is in pagePlace.test.ts. */
 vi.mock('../editor/pagePlace', () => ({
@@ -152,6 +156,16 @@ const vaults: SearchVault[] = [{ root: '/v', watch, dirs: ['/v/sub'], files: [] 
 const candidates = { candidates: [], subscribe: () => () => undefined }
 const viewOnly = { resolve: null, subscribe: () => () => undefined } as unknown as import('../editor/wikilink/viewOnlyLinkSource').ViewOnlyLinkSource
 
+/** The page editor's stand-in: its header's title row holds the layer's page controls, as the editor's does (YAZ-5974). */
+function StubEditor({ path }: { path: string }) {
+  const controls = useContext(TitleRowControls)
+  return (
+    <div className="editor" data-editor={path}>
+      <div className="page-header">{controls}</div>
+    </div>
+  )
+}
+
 let root: Root | null = null
 let el: HTMLElement
 let props: ExploreStackProps
@@ -212,7 +226,7 @@ beforeEach(() => {
     textVarsFor: () => ({}),
     renderEditor: (path): ReactNode => {
       editors.push(path)
-      return <div className="editor" data-editor={path} />
+      return <StubEditor path={path} />
     },
     createFolder: () => '',
     openInTab: vi.fn(),
@@ -493,10 +507,11 @@ describe('the explore stack', () => {
     expect(under.comments.at(-1)?.content).toContain('# /v/alpha.md')
     expect(under.backlinks).toContain('/v/alpha.md')
     expect(top().querySelector('.explore__body--read .comments')).not.toBeNull()
-    // The fold-all button, the page tab's own, in the head: its command runs on this layer's view.
-    const fold = top().querySelector<HTMLButtonElement>('.explore__head .fold-all__trigger')
+    // The fold-all button, the page tab's own, on the title row (YAZ-5974): its command runs on this layer's view; the cog after it.
+    expect(top().querySelector('.explore__head .fold-all__trigger')).toBeNull()
+    const fold = top().querySelector<HTMLButtonElement>('.explore__body--read .page-header > .page-header__controls .fold-all__trigger')
     expect(fold).not.toBeNull()
-    expect(fold?.closest('[data-fold-part]')?.nextElementSibling?.textContent).toContain('Edit')
+    expect(fold?.closest('.page-header__chips')?.querySelector('.page-settings__trigger')).not.toBeNull()
     act(() => fold?.click())
     await flush()
     expect(folds.runs).toEqual([true])
@@ -1075,7 +1090,7 @@ describe('round 3: ‹ › through the search, and layers that move like a cell 
 })
 
 describe('round 4: zoom in a page layer', () => {
-  const pill = (layer: HTMLElement = top()) => layer.querySelector<HTMLElement>('.explore__head .document-zoom')
+  const pill = (layer: HTMLElement = top()) => layer.querySelector<HTMLElement>('.page-header__controls .document-zoom')
   const value = () => pill()?.querySelector('.document-zoom__value')?.textContent
   const bodyZoom = () => top().querySelector<HTMLElement>('.explore__body')?.style.getPropertyValue('--document-zoom')
   const setInput = (field: HTMLInputElement, text: string) => {
@@ -1244,7 +1259,7 @@ describe('Explore size (YAZ-5881)', () => {
     await openResult()
     const calls = onExploreSize.mock.calls.length
     act(() => requestZoom(1, unclaimed))
-    expect(top().querySelector('.explore__head .document-zoom .document-zoom__value')?.textContent).toBe('125%')
+    expect(top().querySelector('.page-header__controls .document-zoom .document-zoom__value')?.textContent).toBe('125%')
     expect(localStorage.getItem('explore:zoom')).toBe('125')
     act(() => requestZoom(0, unclaimed))
     expect(onExploreSize).toHaveBeenCalledTimes(calls)
@@ -2425,14 +2440,19 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     const close = h.querySelector('[aria-label="Close this layer"]') as HTMLElement
     expect(close).not.toBeNull()
     expect(fold.contains(close)).toBe(false)
-    // In the fold: ‹ n/m ›, the zoom pill, the fold-all button, Edit and ↗.
-    for (const sel of ['.explore__steps', '.document-zoom', '[aria-label="Open in a tab"]']) expect(fold.querySelector(sel), sel).not.toBeNull()
+    // In the fold: ‹ n/m ›, Edit and ↗ (the window's parts).
+    for (const sel of ['.explore__steps', '[aria-label="Open in a tab"]']) expect(fold.querySelector(sel), sel).not.toBeNull()
     expect([...fold.querySelectorAll('.explore__button')].some((b) => b.textContent?.startsWith('Edit'))).toBe(true)
+    // YAZ-5974: the page's controls are no part of the head: they stay on the title row, never in ⋯.
+    for (const sel of ['.document-zoom', '.fold-all__trigger', '.page-settings__trigger']) {
+      expect(h.querySelector(sel), sel).toBeNull()
+      expect(top().querySelector(`.explore__body--read .page-header__controls ${sel}`), sel).not.toBeNull()
+    }
     // ⋯ just before ×.
     expect(more().nextElementSibling).toBe(close)
   })
 
-  it('⋯ in a folded page head: Previous / Next result, zoom, Collapse all, Edit / Done, Open in a tab; each one works', async () => {
+  it('⋯ in a folded page head: Previous / Next result, Edit / Done, Open in a tab (no zoom rows, no Collapse all: YAZ-5974); each one works', async () => {
     const TITLE_PATH: Record<string, string> = { Alpha: '/v/alpha.md', Beta: '/v/beta.md', 'conjecture (vocab)': '/v/conjecture.md' }
     await mount()
     await typeQuery('a')
@@ -2446,11 +2466,6 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
       '# Result 1/3',
       'Previous result [←] (off)',
       'Next result [→]',
-      '# Zoom 100%',
-      'Zoom in [⌘+]',
-      'Zoom out [⌘−]',
-      'Zoom to 100% [⌘0] (off)',
-      'Collapse all',
       'Edit [E]',
       'Open in a tab [⌘↵]',
     ])
@@ -2464,20 +2479,13 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     await flush()
     expect(readFile).toHaveBeenLastCalledWith(paths[1])
     expect(top().querySelector('.explore__count')?.textContent).toBe('2/3')
-    // Zoom in: 100 → 125, on the body.
-    pick('Zoom in')
-    expect(top().querySelector<HTMLElement>('.explore__body')?.style.getPropertyValue('--document-zoom')).toBe('1.25')
-    pick('Zoom to 100%')
-    expect(top().querySelector<HTMLElement>('.explore__body')?.style.getPropertyValue('--document-zoom')).toBe('1')
-    // Collapse all: the page's fold-all command.
-    pick('Collapse all')
-    expect(folds.runs).toEqual([true])
     // Edit, then Done.
     pick('Edit')
     await flush()
     expect(top().querySelector('.explore__body--edit')).not.toBeNull()
     act(() => more().click())
     expect(items()).toContain('Done [esc]')
+    expect(items().some((i) => i.startsWith('Zoom') || i.includes('Collapse'))).toBe(false)
     act(() => more().click())
     pick('Done')
     await flush()
@@ -2555,40 +2563,38 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     }
   })
 
-  it('YAZ-4986: the parts leave ONE BY ONE as the layer narrows, least important first: zoom, Collapse all, ‹ › , ↗, the chip\'s word, the chip, Edit last', async () => {
+  it('YAZ-4986: the parts leave ONE BY ONE as the layer narrows, least important first: ‹ › , ↗, the chip\'s word, the chip, Edit last (the page controls are on the title row, YAZ-5974)', async () => {
     props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }) }
     await mount()
     await typeQuery('alp')
     await openResult()
-    // Six parts (‹ ›, zoom, fold-all, chip with its word, Edit, ↗): 40 px each, the word 30 more; 120 px the rest.
-    const rest = 120 + 6 * PART + WORD
+    // Four parts (‹ ›, chip with its word, Edit, ↗): 40 px each, the word 30 more; 120 px the rest.
+    const rest = 120 + 4 * PART + WORD
     const full = rest + TITLE_ROOM
     layout(full, rest)
     expect(folded()).toEqual([])
     expect(compact()).toBe(false)
     // Each step narrower by one part's width (and ⋯'s, once) folds exactly the next part in the order.
     const seen: string[][] = []
-    for (const w of [full - 1, full - PART - 1 + MORE, full - 2 * PART - 1 + MORE, full - 3 * PART - 1 + MORE, full - 4 * PART - 1 + MORE, full - 4 * PART - WORD - 1 + MORE, full - 5 * PART - WORD - 1 + MORE]) {
+    for (const w of [full - 1, full - PART - 1 + MORE, full - 2 * PART - 1 + MORE, full - 2 * PART - WORD - 1 + MORE, full - 3 * PART - WORD - 1 + MORE]) {
       layout(w, rest)
       seen.push(folded())
     }
     expect(seen.map((f) => f.join(' '))).toEqual([
-      'zoom',
-      'zoom fold-all',
-      'steps zoom fold-all',
-      'steps zoom fold-all open',
-      'steps zoom fold-all chip-word open',
-      'steps zoom fold-all chip chip-word open',
-      'steps zoom fold-all chip chip-word edit open',
+      'steps',
+      'steps open',
+      'steps chip-word open',
+      'steps chip chip-word open',
+      'steps chip chip-word edit open',
     ])
     // The chip's lock stays alone before the chip goes: its word folded, the chip still shown.
-    layout(full - 4 * PART - 1 + MORE, rest)
+    layout(full - 2 * PART - 1 + MORE, rest)
     expect(head().querySelector('[data-fold-part="chip"]')?.hasAttribute('data-folded')).toBe(false)
     expect(head().querySelector('.read-only-chip__button > span')?.hasAttribute('data-folded')).toBe(true)
     // ⋯ shows from the first fold, and still holds every action.
     expect(compact()).toBe(true)
     act(() => more().click())
-    expect(items()).toEqual(expect.arrayContaining(['Zoom in [⌘+]', 'Edit [E]', 'Open in a tab [⌘↵]', 'Allow edits…']))
+    expect(items()).toEqual(expect.arrayContaining(['Edit [E]', 'Open in a tab [⌘↵]', 'Allow edits…']))
     act(() => more().click())
     // Wide again: everything back, in one step.
     layout(full + 50, rest)
@@ -3324,8 +3330,8 @@ describe('YAZ-4990: Explore follows a page that changes', () => {
       const next = crepes.at(-1)!
       expect([...(next.opts.folding as { seedCollapsedKeys: () => Set<string> }).seedCollapsedKeys()]).toEqual(['b:one'])
       expect([...(next.opts.headingFolding as { seedCollapsedKeys: () => Set<string> }).seedCollapsedKeys()]).toEqual(['h:two'])
-      // Never "loading" on the way: the head's fold-all button stayed.
-      expect(top().querySelector('.explore__head .fold-all__trigger')).not.toBeNull()
+      // Never "loading" on the way: the title row's fold-all button stayed.
+      expect(top().querySelector('.page-header__controls .fold-all__trigger')).not.toBeNull()
     })
 
     it('deleted outside the app: after a short wait it reads again, then says it is gone; a save through a temporary file does not', async () => {
@@ -3761,5 +3767,86 @@ describe('YAZ-5881 and YAZ-5920 (checker, PR #278)', () => {
     await flush()
     await act(async () => await new Promise((r) => setTimeout(r, 450)))
     expect(document.querySelector('.test-hover-preview')).toBeNull()
+  })
+})
+
+describe('YAZ-5974: the page controls on the title row, the window in the head', () => {
+  /** The title row's children, by their first class: the title, the controls, Properties. */
+  const rowOf = (body: Element | null) => [...(body?.querySelector('.page-header')?.children ?? [])].map((c) => c.classList[0])
+
+  it('reading: fold-all, the cog and the zoom pill stand on the title row, after the title and before Properties; the head has none of them', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const read = top().querySelector('.explore__body--read')
+    expect(rowOf(read).slice(0, 2)).toEqual(['page-title', 'page-header__controls'])
+    // Properties after the controls (its panel dissolves into the row: `display: contents`).
+    const row = read?.querySelector('.page-header')
+    const controls = row?.querySelector('.page-header__controls')
+    const properties = row?.querySelector('.frontmatter-panel')
+    if (properties != null) expect(controls?.compareDocumentPosition(properties)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    const order = [...(controls?.querySelectorAll('.fold-all__trigger, .page-settings__trigger, .document-zoom') ?? [])].map((e) => e.classList[0])
+    expect(order).toEqual(['fold-all__trigger', 'page-settings__trigger', 'document-zoom'])
+    for (const sel of ['.fold-all__trigger', '.page-settings__trigger', '.document-zoom']) expect(top().querySelector(`.explore__head ${sel}`), sel).toBeNull()
+  })
+
+  it("reading: the cog is the page tab's own; Position › Left writes the page's key and the layer reads it again with the column at the left", async () => {
+    let text = '# Alpha\n\ntext\n'
+    readFile.mockImplementation(async (path) => ({ path, content: path === '/v/alpha.md' ? text : `# ${path}\n`, mtime: 1, size: 1 }))
+    writeFile.mockReset().mockImplementation(async (req) => {
+      text = req.content
+      return { path: req.path, mtime: 2, size: 1 }
+    })
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const read = () => top().querySelector<HTMLElement>('.explore__body--read')!
+    expect(read().style.getPropertyValue('--column-start')).toBe('')
+    act(() => top().querySelector<HTMLButtonElement>('.page-header__controls .page-settings__trigger')!.click())
+    const position = document.querySelector('[role="group"][aria-label="Position"]')
+    expect(position).not.toBeNull()
+    // No editor-only rows while reading: Line numbers and Heading levels live in an editor.
+    expect(document.body.textContent).not.toContain('Line numbers')
+    act(() => [...position!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Left')!.click())
+    await vi.waitFor(() => expect(writeFile).toHaveBeenCalled())
+    expect(writeFile.mock.calls[0][0].content).toContain('page-position: left')
+    await flush()
+    await flush()
+    await flush()
+    expect(read().style.getPropertyValue('--column-start')).toBe('0')
+  })
+
+  it("editing: the editor's fold-all and cog go into the same box on its title row, with the same zoom pill; its Saved goes to the head", async () => {
+    props.renderEditor = (path): ReactNode => (
+      <StatusChips zoom={100} onZoom={() => {}} readOnly={null} save="saved">
+        <button type="button" className="fold-all__trigger" data-editor-fold={path} />
+        <button type="button" className="page-settings__trigger" data-editor-cog={path} />
+      </StatusChips>
+    )
+    const base = props.renderEditor
+    props.renderEditor = (path, openLink, unlocked, start) => (
+      <>
+        {base(path, openLink, unlocked, start)}
+        <StubEditor path={path} />
+      </>
+    )
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const readBox = top().querySelector('.explore__body--read .page-header__controls')!
+    const shape = (box: Element) => [...box.children].map((c) => c.className)
+    key(top().querySelector('.explore__body') as HTMLElement, { key: 'e' })
+    await flush()
+    const edit = top().querySelector('.explore__body--edit')!
+    const editBox = edit.querySelector('.page-header__controls')!
+    // The same box: the chips, then the pill; the editor's own buttons in the chips.
+    expect(shape(editBox)).toEqual(shape(readBox))
+    expect(editBox.querySelector('.page-header__chips [data-editor-fold]')).not.toBeNull()
+    expect(editBox.querySelector('.page-header__chips [data-editor-cog]')).not.toBeNull()
+    expect(editBox.querySelector('.document-zoom')).not.toBeNull()
+    // Saved is the window's: in the head's status, never on the title row.
+    expect(editBox.querySelector('.save-indicator')).toBeNull()
+    await act(async () => await new Promise((r) => setTimeout(r, 50)))
+    expect(top().querySelector('.explore__head .explore__status .save-indicator')).not.toBeNull()
   })
 })

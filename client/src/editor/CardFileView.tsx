@@ -81,6 +81,7 @@ import { PageSettings } from './PageSettings'
 import { readCardSides, writeCardSides, type CardSides } from '@shared/pageSwitches'
 import { tellCardFoldChange } from './card/cardFold'
 import { PageTitle } from './PageTitle'
+import { TitleRowControls } from './PageFrame'
 import { StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
 import { ZOOM_EVENT } from './zoomRequest'
@@ -210,6 +211,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const settings = useVaultReviewSettings(root)
   const reviewOn = settings?.enabled === true
   const door = useContext(CardReviewDoor)
+  /** An Explore layer's page controls (YAZ-5974): on the card's top line. Null in a tab. */
+  const titleRowControls = useContext(TitleRowControls)
   const vaultScope = useContext(VaultReadOnly)
   const vaultLocked = vaultScope.on
   /** The file's own switch (`readonly: true`) or the vault's: the top bar's "Read only" chip shows while this is true. */
@@ -450,7 +453,15 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body data-card-sides={cardSides ?? undefined} data-fold-scope={path} onKeyDown={onKeyDown} style={fileStyle}>
         <div className="card-file__page">
           {/* YAZ-5392: above the card, the folder path only. The title lives in the card's band, as in a page. YAZ-5402: the folder icon says it is a folder. */}
-          <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
+          {titleRowControls === null ? (
+            <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
+          ) : (
+            // In an Explore layer (YAZ-5974): the page controls on the card's top line, right of the folder path.
+            <div className="card-file__top">
+              <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
+              {titleRowControls}
+            </div>
+          )}
           {outside.length > 0 && (
             <div className="card-file__outside">
               {outside.map((text, i) => (

@@ -81,3 +81,27 @@ describe('the folded head of a narrow layer (YAZ-4956)', () => {
     expect(rule('.explore__head .explore__more--always')['display']).toBe('block')
   })
 })
+
+describe('YAZ-5974: the page controls on the title row', () => {
+  it('the title takes the room left and wraps there; the controls never shrink and stand at the row\'s right, before Properties', () => {
+    const title = rule('.page-header:has(> .page-header__controls) > .page-title')
+    expect(title['flex']).toBe('1 1 0')
+    expect(title['min-width']).toBe('96px')
+    const controls = rule('.page-header__controls')
+    expect(controls['flex']).toBe('none')
+    expect(controls['margin-left']).toBe('auto')
+    expect(controls['align-self']).toBe('flex-start')
+    // Properties follows the controls with no gap of its own (its `margin-left: auto` would split the room).
+    expect(rule('.page-header:has(> .page-header__controls) .frontmatter-panel__header')['margin-left']).toBe('0')
+  })
+
+  it('a very narrow layer: the zoom pill shrinks to its % (its − and + go); nothing folds into ⋯', () => {
+    expect(css).toMatch(/@container \(max-width: 420px\)\s*\{\s*\.page-header__controls \.document-zoom__step\s*\{\s*display: none;/)
+    expect(rule('.page-header:has(> .page-header__controls)')['container-type']).toBe('inline-size')
+  })
+
+  it('a card file: the controls on the card\'s top line, right of the folder path', () => {
+    expect(rule('.card-file__top')['display']).toBe('flex')
+    expect(rule('.card-file__top > .card-file__path')['flex']).toBe('1 1 0')
+  })
+})

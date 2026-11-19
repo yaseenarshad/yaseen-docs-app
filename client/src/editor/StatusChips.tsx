@@ -27,11 +27,16 @@ export interface ReadOnlyChipState {
 }
 
 /**
- * ONE FRAME, NO ROW OF ITS OWN (YAZ-5164 Option A): inside an Explore layer the page's toolbar is not a row above the
- * page. Its chips (the cog, Read only, Sync, Saved; a page's fold-all button) stand in the layer's head, in this slot,
- * so the page starts where the reading layer's page starts. The layer's head has the zoom pill already. Null: a row.
+ * ONE FRAME, NO ROW OF ITS OWN (YAZ-5164 Option A, YAZ-5974): inside an Explore layer the page's toolbar is not a row
+ * above the page. Its page controls (a page's fold-all button and cog; a card file's Properties button and cog) stand on
+ * the page's TITLE ROW (`controls`, before the Properties chip), next to the layer's zoom pill; its window status (the
+ * page's own Read only chip, Sync, Saved) stands in the layer's top bar (`status`). Null: a row, as in a tab.
  */
-export const HeadChipsSlot = createContext<HTMLElement | null>(null)
+export interface HeadSlots {
+  controls: HTMLElement | null
+  status: HTMLElement | null
+}
+export const HeadChipsSlot = createContext<HeadSlots | null>(null)
 
 /**
  * The zoom of an Explore layer, percent (YAZ-5640): the layer's body carries it, and it wins over the editor's own zoom
@@ -60,14 +65,19 @@ export function StatusChips({ children, zoom, onZoom, readOnly, sync, onSyncNow,
 }) {
   const slot = useContext(HeadChipsSlot)
   if (slot !== null)
-    return createPortal(
+    return (
       <>
-        {children}
-        {readOnly !== null && <ReadOnlyChip asking={readOnly.asking} onAsk={readOnly.onAsk} onAllow={readOnly.onAllow} onCancel={readOnly.onCancel} onTurnOff={readOnly.onTurnOff} editingUntil={readOnly.editingUntil} onLock={readOnly.onLock} lockKeys={readOnly.lockKeys} onReturn={readOnly.onReturn} />}
-        {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
-        <SaveIndicator status={save} />
-      </>,
-      slot,
+        {slot.controls !== null && createPortal(children, slot.controls)}
+        {slot.status !== null &&
+          createPortal(
+            <>
+              {readOnly !== null && <ReadOnlyChip asking={readOnly.asking} onAsk={readOnly.onAsk} onAllow={readOnly.onAllow} onCancel={readOnly.onCancel} onTurnOff={readOnly.onTurnOff} editingUntil={readOnly.editingUntil} onLock={readOnly.onLock} lockKeys={readOnly.lockKeys} onReturn={readOnly.onReturn} />}
+              {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
+              <SaveIndicator status={save} />
+            </>,
+            slot.status,
+          )}
+      </>
     )
   return (
     <div className="status-chips">

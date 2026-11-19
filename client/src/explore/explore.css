@@ -295,16 +295,89 @@
     transition: none;
   }
 }
-/* The page's own chips in the head (YAZ-5164 Option A): the editor's fold-all, cog, Read only chip, Sync and Saved. */
-.explore__chips {
+/* The editor's window status in the head (YAZ-5974): the page's own Read only chip, Sync and Saved, while it edits. */
+.explore__status {
   gap: 8px;
 }
-.explore__chips[hidden] {
+.explore__status[hidden] {
   display: none;
 }
 /* While the layer's own chip holds the vault's Read only, the card file's chip for the same lock does not show twice. */
-.explore__head[data-layer-lock] .explore__chips .read-only-chip {
+.explore__head[data-layer-lock] .explore__status .read-only-chip {
   display: none;
+}
+
+/* THE TITLE ROW'S PAGE CONTROLS (YAZ-5974 Q4): fold-all, the page's cog and the zoom pill, right of the title and
+   before the Properties chip (› ⚙ n, at the far right), the same box in reading and in editing so nothing moves on
+   Edit / Done. The title takes the room that is left and wraps there (its basis is 0, so a long title never sends the
+   controls or Properties under it); the controls stay at the row's top right, on the title's first line. They are the
+   layer's chrome: drawn at 100%, not at the page zoom (a tab's toolbar row is not zoomed either). */
+.page-header:has(> .page-header__controls) {
+  flex-wrap: wrap;
+  column-gap: 12px;
+  container-type: inline-size;
+}
+.page-header:has(> .page-header__controls) > .page-title {
+  flex: 1 1 0;
+  min-width: 96px;
+}
+.editor-host > .page-header > .page-header__controls,
+.card-file__page > .card-file__top > .page-header__controls {
+  zoom: 1;
+}
+.page-header__controls {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  align-self: flex-start;
+  /* On the title's first line: the title's text is 1.802em at 1.3 (app.css) of 16px, zoomed with the page. */
+  margin-top: calc((16px * 1.802 * 1.3 * var(--document-zoom, 1) - 28px) / 2 + 2px);
+}
+.page-header:has(> .page-header__controls) .frontmatter-panel__header {
+  margin-left: 0;
+  align-self: flex-start;
+  margin-top: calc((16px * 1.802 * 1.3 * var(--document-zoom, 1) - 28px) / 2 + 2px);
+}
+.page-header__chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.page-header__chips:empty {
+  display: none;
+}
+/* A card file's Properties button stands last, as a page's Properties chip does. */
+.page-header__chips > .card-file__properties {
+  order: 1;
+}
+/* A very narrow (tiled) layer (Q4): the title keeps its room; the zoom pill shrinks to its %. Nothing folds into ⋯. */
+@container (max-width: 420px) {
+  .page-header__controls .document-zoom__step {
+    display: none;
+  }
+}
+/* A card file (YAZ-5974): the controls on the card's top line, right of the folder path. */
+.card-file__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  container-type: inline-size;
+}
+.card-file__top > .card-file__path {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-bottom: 0;
+  zoom: var(--document-zoom, 1);
+}
+.card-file__page > .card-file__top {
+  zoom: 1;
+}
+.card-file__top > .page-header__controls {
+  margin-top: 0;
+  align-self: center;
 }
 .explore__mode {
   font-size: 11px;
@@ -334,10 +407,6 @@
   white-space: nowrap;
 }
 .explore__results .explore__id {
-  flex: none;
-}
-/* The fold-all button in the head (item 4): the page tab's own, at the head's size. */
-.explore__head .fold-all__trigger {
   flex: none;
 }
 .explore__button {
@@ -405,10 +474,6 @@
    a card file's view too: the layer's value wins. */
 .explore__body--frame :is(.editor-host, .card-file) {
   --document-zoom: inherit !important;
-}
-/* The pill in the head, at the head's size. */
-.explore__head .document-zoom {
-  flex: none;
 }
 
 /* YAZ-4956, YAZ-4986: a layer narrower than its head folds the head's parts ONE BY ONE, the least important first
