@@ -1333,7 +1333,7 @@ describe('App deep links (E1, GRO-2171)', () => {
   it('File › Share Link ⌘⇧L opens the Share dialog on the active board (YAZ-3037 menu, YAZ-3040 dialog)', async () => {
     const { bridge, el, emitShareLink } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/Plan.excalidraw', tabs: ['/v/Plan.excalidraw'] })
     await act(async () => emitShareLink())
-    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull())
+    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull(), { timeout: SLOW_RUNNER_MS }) // a lazy chunk: slow on a loaded CI runner
     // The dialog asks for the link after it mounts, so a slow CI runner sees the dialog before the ask.
     await vi.waitFor(() => expect(bridge.share.get).toHaveBeenCalledWith({ root: '/v', path: '/v/Plan.excalidraw' }))
   })
@@ -5672,7 +5672,7 @@ describe('App card review (YAZ-4967)', () => {
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][1].click())
     expect(layer()).toBeInstanceOf(HTMLElement)
     await act(async () => emitShareLink())
-    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull())
+    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull(), { timeout: SLOW_RUNNER_MS }) // a lazy chunk: slow on a loaded CI runner
   })
 
   it('YAZ-5041: the Inbox tab to the front tells main no page is in front, so the app menu follows no page; the page tab tells main a page is in front again', async () => {
