@@ -85,6 +85,7 @@ import { isEmptyNewCard, newCardFormatHint } from './cardFormatHint'
 import { mountCardTitle, type CardTitleHandle } from './cardTitle'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { CARD_FOLD_RULE, followCardFold, onCardFoldChange } from './cardFold'
+import { PageCardGlow } from './cardGlow'
 import './card.css'
 
 // The open hook (D13) lives with the card's other doors (`cardOpen.ts`): a card link's click sends it too (YAZ-5030).
@@ -273,6 +274,8 @@ export class CardBlockView implements NodeView {
   private strip: ReviewsStripHandle | null = null
   /** The title band under the head (YAZ-5164 part 3, YAZ-5308 A3): the page title's component; none in the card window or a card file's tab (they draw their own). */
   private readonly title: CardTitleHandle | null
+  /** The page's outside change of this card, lit in its drawn words (YAZ-5925, `cardGlow.ts`), and its Checked. */
+  private readonly glow: PageCardGlow
 
   constructor(
     private node: ProseNode,
@@ -300,6 +303,8 @@ export class CardBlockView implements NodeView {
     this.previewButton = button('card__preview', 'Preview card', 'Preview')
     this.more = button('card__more', 'Card menu', '⋯')
     head.append(this.idButton, this.marks, this.next, this.previewButton, this.editButton, this.more)
+    this.glow = new PageCardGlow(view)
+    this.previewButton.before(this.glow.checked)
     // The title band under the head (YAZ-5308 A3): the body never repeats the title. A card window's or a card file's
     // Edit card has it too (YAZ-5164): after Done, until its host's read card takes over, the card keeps the read
     // card's shape, band and all, so no line moves in between.
@@ -378,9 +383,10 @@ export class CardBlockView implements NodeView {
     this.drawReviews()
     // The title band, off the card line (YAZ-5308); the body is the card's text, its sides only.
     this.drawTitle(cardTitleOf(line))
-    if (this.editing || this.drawn === text) return
+    if (this.editing || (this.drawn === text && !this.glow.moved(this.pos, text))) return
     this.drawn = text
-    this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderCard(text, {}, this.deps.look()))
+    const look = this.deps.look()
+    this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : this.glow.paint(renderCard(text, {}, look), this.pos, text, (old) => renderCard(old, {}, look)))
     // YAZ-5904: the page's fold is read once the card is in the page (a new card view is not yet): before it paints.
     queueMicrotask(() => this.refold())
   }

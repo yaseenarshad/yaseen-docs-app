@@ -157,7 +157,7 @@ describe('the embed and its head (Q4, locked)', () => {
     // ↗, "Embedded from "<name>" · GEO-140", Edit card, ⋯ — the name is the card's title for a card file.
     expect(file!.querySelector('.card-embed__from')?.textContent).toBe('↗Embedded from "Capital of France"')
     expect(file!.querySelector('.card__id')?.textContent).toBe('GEO-140')
-    expect([...file!.querySelectorAll('.card__head button')].map((b) => b.textContent)).toEqual(['↗Embedded from "Capital of France"', 'GEO-140', 'Edit card', '⋯'])
+    expect([...file!.querySelectorAll('.card__head button:not([hidden])')].map((b) => b.textContent)).toEqual(['↗Embedded from "Capital of France"', 'GEO-140', 'Edit card', '⋯'])
     // A card in a page: the page's title; an archived card says so, as the page's card does.
     expect(inPage!.querySelector('.card-embed__from')?.textContent).toBe('↗Embedded from "Europe, week 3"')
     expect(inPage!.querySelector('.card__state')?.textContent).toBe('Archived')

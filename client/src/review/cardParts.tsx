@@ -140,6 +140,14 @@ interface CardBodyProps {
    * `--card-sides-fold` says (`cardFold.ts`). Absent: never (the Inbox, Preview).
    */
   fold?: boolean
+  /** YAZ-5925: an outside change lit in the drawn card (a card page, `cardGlow.ts`); a new `key` draws it again. */
+  glow?: CardBodyGlow
+}
+
+/** A drawn card lit by its host: `render` draws another text (the old one) with the same look. */
+export interface CardBodyGlow {
+  key: string
+  paint: (drawn: HTMLElement, text: string, render: (text: string) => HTMLElement) => HTMLElement
 }
 
 /**
@@ -147,7 +155,7 @@ interface CardBodyProps {
  * render; an index change redraws only the pills (`refreshCardLook`). A pill and a Markdown link open as the
  * page's do (idea 6, `cardLinkWhere`).
  */
-export function CardBody({ text, path, vault, show, doors, fold = false }: CardBodyProps) {
+export function CardBody({ text, path, vault, show, doors, fold = false, glow }: CardBodyProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const icons = useContext(IconsContext)
   const { root, wikilinks, viewOnlyLinks } = vault
@@ -160,11 +168,17 @@ export function CardBody({ text, path, vault, show, doors, fold = false }: CardB
   const iconsRef = useRef(icons)
   iconsRef.current = icons
   const lookOf = useCallback(() => cardLook(wikilinks, viewOnlyLinks, { root, pagePath: path, boardPicture: desktopBoardPicture }, { icon: (target, folder) => fileIconDecoration(iconsRef.current, target, folder) }), [wikilinks, viewOnlyLinks, root, path])
+  const glowRef = useRef(glow)
+  glowRef.current = glow
+  const glowKey = glow?.key ?? ''
   useEffect(() => {
     const picked = pickedKey === '' ? undefined : pickedKey.split(',').map(Number)
-    boxRef.current?.replaceChildren(renderCard(text, { sides, shown, picked, next }, lookOf()))
+    const look = lookOf()
+    const drawn = renderCard(text, { sides, shown, picked, next }, look)
+    const paint = glowRef.current?.paint
+    boxRef.current?.replaceChildren(paint === undefined ? drawn : paint(drawn, text, (old) => renderCard(old, { sides, shown, picked, next }, look)))
     if (fold) followCardFold(boxRef.current?.querySelector(':scope > .card__sides'))
-  }, [text, sides, shown, pickedKey, next, lookOf, fold])
+  }, [text, sides, shown, pickedKey, next, lookOf, fold, glowKey])
   // YAZ-5904: a change of the card look or of the page's `card-sides` folds or unfolds the card as drawn.
   useEffect(() => (fold ? onCardFoldChange(() => followCardFold(boxRef.current?.querySelector(':scope > .card__sides'))) : undefined), [fold])
   // The pills follow the index: on each snapshot only they draw again.

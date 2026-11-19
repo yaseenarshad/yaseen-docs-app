@@ -34,10 +34,16 @@ export function onTwinSave(path: string, listener: TwinSaveListener): () => void
 
 /** A save of `path` landed on disk with `mtime`: tell every editor of that path. O(copies of the path). */
 export function announceTwinSave(path: string, mtime: number): void {
+  saved.delete(path)
+  saved.set(path, mtime)
+  if (saved.size > 500) saved.delete(saved.keys().next().value!)
   const set = listeners.get(path)
   if (set === undefined) return
   for (const listener of [...set]) listener(mtime)
 }
+
+/** The mtime of this window's last save of each path (`announceTwinSave`): the card glow's "own write" (YAZ-5925). */
+const saved = new Map<string, number>()
 
 /** The paths with an app write of `announcedWrite` in flight, and how many. */
 const writing = new Map<string, number>()
@@ -71,8 +77,15 @@ export async function announcedWrite<T extends { mtime: number }>(path: string, 
 /** Is the watcher's change of `path` at `mtime` an `announcedWrite` (one in flight, or the last one's mtime)? */
 export const isAnnouncedWrite = (path: string, mtime: number): boolean => writing.has(path) || announced.get(path) === mtime
 
+/**
+ * Is the version of `path` at `mtime` this window's own write (YAZ-5925): an `announcedWrite`, or a save of a page's
+ * editor? A card page and an embed glow only for what is not.
+ */
+export const isOwnWrite = (path: string, mtime: number | undefined): boolean => mtime !== undefined && (isAnnouncedWrite(path, mtime) || saved.get(path) === mtime)
+
 /** Test hook. */
 export function _resetTwinEditors(): void {
+  saved.clear()
   listeners.clear()
   writing.clear()
   announced.clear()

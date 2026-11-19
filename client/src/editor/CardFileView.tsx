@@ -51,7 +51,7 @@ import type { GestureAction } from '@shared/keys'
 import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
 import { tellReadOnlyEdit } from './readOnlyEdit'
 import { withCardNext } from '@shared/cardLine'
-import { isCardWidth, type CommentsOrder, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, isCardWidth, type CommentsOrder, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type ZoomStep } from '@shared/types'
 import { readPagePosition, readPageWidth, writePagePosition, writePageWidth } from '@shared/pageSwitches'
 import { cardTextWidth, columnStart, positionOf, widthOf } from '../lib/contentWidth'
 import { storage } from '../lib/storage'
@@ -95,6 +95,9 @@ import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { createCardFinder } from './find/cardFind'
 import { tourEvent } from '../course/tourBus'
+import { readOutsideGlow, writeOutsideGlow } from '@shared/pageSwitches'
+import { OutsideChangesBar } from './external/OutsideChangesBar'
+import { useCardFileGlow } from './card/useCardFileGlow'
 
 export interface CardFileViewProps {
   /** The file as the tab's one read gave it (`useFile`): a card file. */
@@ -127,6 +130,8 @@ export interface CardFileViewProps {
   contentWidth?: ContentWidth
   contentPosition?: ContentPosition
   cardWidth?: number | null
+  /** Settings › Outside changes glow (YAZ-5925): how long an outside change of the card glows; the cog's row overrides it. */
+  outsideChangeGlow?: OutsideChangeGlow
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
@@ -148,7 +153,7 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, contentWidth, contentPosition, cardWidth }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, contentWidth, contentPosition, cardWidth, outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow }: CardFileViewProps) {
   const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
@@ -156,6 +161,12 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const turning = useRef(false)
   const onPageRef = useRef<(next: FileResponse) => void>(onPage)
   onPageRef.current = (next) => (turning.current && onReread !== undefined ? onReread() : onPage(next))
+  /** YAZ-5925 (D2b): an outside write of the card lights its words, and the page's bar counts it. */
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const pageGlow = useMemo(() => (content === null ? null : readOutsideGlow(content)), [content])
+  const glow = useCardFileGlow(path, content === null ? null : (cardInContent(path, content, null, 0)?.text ?? null), pageGlow ?? outsideChangeGlow, bodyRef)
+  const glowSeen = useRef(glow.seen)
+  glowSeen.current = glow.seen
 
   /** Reads the file again: a card file shows; one that lost its mark goes to the page view; a deleted one says so. */
   const read = useCallback(() => {
@@ -163,8 +174,9 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     api.readFile(path).then(
       (next) => {
         if (!live) return
-        if (isCardFileContent(next.content)) setContent(next.content)
-        else onPageRef.current(next)
+        if (!isCardFileContent(next.content)) return onPageRef.current(next)
+        glowSeen.current(cardInContent(path, next.content, null, 0)?.text ?? null, next.mtime)
+        setContent(next.content)
       },
       (err: unknown) => {
         if (live && err instanceof BridgeRequestError && err.code === 'NOT_FOUND') setContent(null)
@@ -206,7 +218,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const [editing, setEditing] = useState(fresh)
   const editingRef = useRef(editing)
   editingRef.current = editing
-  const bodyRef = useRef<HTMLDivElement>(null)
   // ⌘F (YAZ-5378): the page's bar and channel, over the card as the tab shows it (`createCardFinder`); Esc gives the keys back.
   const findChannel = useMemo(() => createFindChannel(), [])
   useEffect(() => createCardFinder(findChannel, () => bodyRef.current, () => bodyRef.current?.focus({ preventScroll: true })), [findChannel])
@@ -272,6 +283,9 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const setCardSides = (sides: CardSides | null) =>
     void transformFile(path, (text) => writeCardSides(text, sides)).then(read, (err: unknown) => onNotice(`Card sides could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
+  /** The cog's "Outside changes glow" (YAZ-5925, D3): this file's own key, on the newest bytes; null follows Settings. */
+  const changeGlow = (next: OutsideChangeGlow | null) =>
+    void transformFile(path, (text) => writeOutsideGlow(text, next)).then(read, (err: unknown) => onNotice(`Outside changes glow could not change: ${err instanceof Error ? err.message : String(err)}`))
   /** Done: the card's text, its sides only. The band is the only title: Edit card shows it, with no field (YAZ-5392). */
   const editDone = (text: string) => {
     setSave('saving')
@@ -415,8 +429,9 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
         <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} cardSides={cardSides} onChangeCardSides={setCardSides} cardSidesSetting="Card sides on card pages" readText={() => cardText}
           // YAZ-5871 D4: the card's own width and position, saved in the card file. Default follows Card width and Page position.
           pageWidth={ownWidth} appContentWidth={defaultWidth} pageWidthLabel="Card width" pageWidthSettings="Review › Card width" onChangePageWidth={(next) => setOwnKey('Card width', (text) => writePageWidth(text, next))}
-          pagePosition={ownPosition} appContentPosition={appPosition} onChangePagePosition={(next) => setOwnKey('Position', (text) => writePagePosition(text, next))} />
+          pagePosition={ownPosition} appContentPosition={appPosition} onChangePagePosition={(next) => setOwnKey('Position', (text) => writePagePosition(text, next))} outsideGlow={pageGlow} appGlow={outsideChangeGlow} onChangeOutsideGlow={changeGlow} />
       </StatusChips>
+      <OutsideChangesBar channel={glow.channel} onKeep={() => changeGlow('until-checked')} />
       <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
       <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body data-card-sides={cardSides ?? undefined} data-fold-scope={path} onKeyDown={onKeyDown} style={fileStyle}>
@@ -447,6 +462,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               onStripToggle={(part) => setStripPart((open) => (open === part ? null : part))}
               embeds
               fold
+              glow={glow.body}
               titleField="show"
               head={
                 <div className="card__head">
