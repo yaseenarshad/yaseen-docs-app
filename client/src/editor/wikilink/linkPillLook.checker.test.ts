@@ -15,7 +15,7 @@ const texts = (end: PillEnd | null) => (end === null ? [] : end.pieces.map((p) =
 
 describe('link pill look, end to end through the file (checker)', () => {
   it('the default and each ready format with {icon}: the icon sits on the name, no blank piece, no gap variable (the CSS 0.25em); the same with a picked icon colour', () => {
-    const formats = [DEFAULT_LINK_PILL_FORMAT, ...LINK_PILL_READY.map((r) => r.format)].filter((f) => f.includes('{icon}'))
+    const formats = [DEFAULT_LINK_PILL_FORMAT, ...LINK_PILL_READY.map((r) => r.format)].filter((f): f is string => f?.includes('{icon}') === true)
     expect(formats.length).toBeGreaterThanOrEqual(7)
     for (const format of formats) {
       const look = roundTrip(withLinkPills({}, { format }))

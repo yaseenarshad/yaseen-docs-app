@@ -130,8 +130,8 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
 
   it('YAZ-5894 D2: the default and every ready format put a space after {icon}; the old default (no space) reads as the default; a typed {icon}{name} stays, flush', () => {
     expect(DEFAULT_LINK_PILL_FORMAT).toBe('{icon} {name} ({vault})')
-    expect(LINK_PILL_READY.filter((r) => r.format.includes('{icon}')).every((r) => r.format.includes('{icon} {name}'))).toBe(true)
-    expect(LINK_PILL_READY.some((r) => r.format.includes('{icon}{name}'))).toBe(false)
+    expect(LINK_PILL_READY.filter((r) => r.format?.includes('{icon}')).every((r) => r.format?.includes('{icon} {name}'))).toBe(true)
+    expect(LINK_PILL_READY.some((r) => r.format?.includes('{icon}{name}'))).toBe(false)
     expect(sanitizeLinkPills({ version: 2, format: '{icon}{name} ({vault})' })).toEqual({})
     expect(sanitizeLinkPills({ version: 2, format: '{icon} {name} ({vault})' })).toEqual({})
     expect(sanitizeLinkPills({ version: 2, format: '{icon}{name}({number})' })).toEqual({ format: '{icon}{name}({number})' })
@@ -180,7 +180,13 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
     const current: LinkPills = { parts: { name: { bold: true } }, box: { shape: 'square' } }
     expect(withLinkPillReady(current, nameId!)).toEqual({ ...current, format: '{icon} {name} ({id})' })
     expect(withLinkPillReady(current, brackets!)).toEqual({ ...current, format: '({icon} {name})', parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } } })
-    expect(withLinkPillReady(current, plain!)).toEqual({ format: '{name}', parts: { name: { bold: true, color: 'same' } }, box: { shape: 'square', fill: 'none' } })
+    // Plain (YAZ-5961): every part but the icon in the text's colour and size, no box; the format and the icon stay.
+    const same = { color: 'same', size: 'normal' } as const
+    expect(withLinkPillReady({ ...current, format: '{icon} {name} #{number}', parts: { ...current.parts, icon: { color: 'teal' } } }, plain!)).toEqual({
+      format: '{icon} {name} #{number}',
+      parts: { name: { bold: true, color: 'same' }, id: same, number: same, vault: same, folder: same, path: same, icon: { color: 'teal' }, text: same },
+      box: { shape: 'square', fill: 'none' },
+    })
     expect(withLinkPillReady({ format: '{name}' }, name!)).toEqual({})
   })
 

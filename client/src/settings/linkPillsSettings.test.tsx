@@ -128,7 +128,13 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     pick(ready, '(Name)')
     expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } }, format: '({icon} {name})' })
     pick(ready, 'Plain')
-    expect(save).toHaveBeenLastCalledWith({ format: '{name}', parts: { name: { bold: true, color: 'same' } }, box: { fill: 'none' } })
+    // Plain (YAZ-5961): the format stays (the mounted look has none: the default); every part but the icon in the
+    // text's colour and size; no box.
+    const same = { color: 'same', size: 'normal' }
+    expect(save).toHaveBeenLastCalledWith({
+      parts: { name: { bold: true, color: 'same' }, id: same, number: same, vault: same, folder: same, path: same, text: same },
+      box: { fill: 'none' },
+    })
   })
 
   it('the vault rule shows only while the format has {vault}, and writes the rule', () => {

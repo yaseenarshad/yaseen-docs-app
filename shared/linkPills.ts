@@ -115,8 +115,9 @@ export const NO_LINK_PILLS: LinkPills = Object.freeze({})
 /** A ready format of the dropdown: its label, the format, and the style of your own text where the text should read as the name. */
 export interface LinkPillReady {
   label: string
-  format: string
-  /** Applied over the current look's parts and box: Plain is a format and a look. */
+  /** The format; absent keeps the current one (Plain, YAZ-5961: a look in one click, the format stays). */
+  format?: string
+  /** Applied over the current look's parts and box: Plain is a look. */
   parts?: LinkPills['parts']
   box?: LinkPillBox
 }
@@ -129,7 +130,8 @@ export const LINK_PILL_READY: readonly LinkPillReady[] = [
   { label: '(Name)', format: '({icon} {name})', parts: { text: { color: 'accent', size: 'normal' } } },
   { label: '→ Name', format: '→ {icon} {name}', parts: { text: { color: 'accent', size: 'normal' } } },
   { label: 'Name ↗', format: '{name}{mark}' },
-  { label: 'Plain', format: '{name}', box: { fill: 'none' }, parts: { name: { color: 'same' } } },
+  // Plain (YAZ-5961): every part the text's colour and size, no box; the format and the icon's colour stay.
+  { label: 'Plain', box: { fill: 'none' }, parts: Object.fromEntries(LINK_PILL_PARTS.filter((p) => p !== 'icon').map((p) => [p, { color: 'same', size: 'normal' }])) },
 ]
 
 /**
@@ -138,7 +140,7 @@ export const LINK_PILL_READY: readonly LinkPillReady[] = [
  * with `{icon}{name}` stays flush.
  */
 const OLD_READY_LINK_PILL_FORMATS: ReadonlyMap<string, string> = new Map(
-  LINK_PILL_READY.filter((r) => r.format.includes('{icon} {name}') && r.format !== DEFAULT_LINK_PILL_FORMAT).map((r) => [r.format.replace('{icon} {name}', '{icon}{name}'), r.format]),
+  LINK_PILL_READY.flatMap((r) => (r.format?.includes('{icon} {name}') && r.format !== DEFAULT_LINK_PILL_FORMAT ? [[r.format.replace('{icon} {name}', '{icon}{name}'), r.format] as const] : [])),
 )
 
 // ---------- the format ----------
@@ -330,9 +332,9 @@ export function withLinkPillBox(pills: LinkPills, patch: { [K in keyof LinkPillB
   return withLinkPills(pills, { box: { ...pills.box, ...patch } })
 }
 
-/** `pills` under a ready format: its format, and its parts and box over the current ones. */
+/** `pills` under a ready format: its format (if it has one), and its parts and box over the current ones. */
 export function withLinkPillReady(pills: LinkPills, ready: LinkPillReady): LinkPills {
   const parts = { ...pills.parts }
   for (const part of LINK_PILL_PARTS) if (ready.parts?.[part] !== undefined) parts[part] = { ...parts[part], ...ready.parts[part] }
-  return withLinkPills(pills, { format: ready.format, parts, box: ready.box === undefined ? pills.box : { ...pills.box, ...ready.box } })
+  return withLinkPills(pills, { format: ready.format ?? pills.format, parts, box: ready.box === undefined ? pills.box : { ...pills.box, ...ready.box } })
 }
