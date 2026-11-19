@@ -138,6 +138,27 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
     expect(fromV1({ id: 'show' })).toEqual({ format: '{icon} {name} {id} ({vault})' })
   })
 
+  it('YAZ-5894 D2: a ready format stored before the space (by an older app) reads as today\'s ready format; a typed one that is not a ready string stays flush', () => {
+    const old: Array<[string, string]> = [
+      ['{icon}{name} ({id})', '{icon} {name} ({id})'],
+      ['{icon}{name} #{number}', '{icon} {name} #{number}'],
+      ['{icon}{name} · {folder}', '{icon} {name} · {folder}'],
+      ['{vault} › {icon}{name}', '{vault} › {icon} {name}'],
+      ['({icon}{name})', '({icon} {name})'],
+      ['→ {icon}{name}', '→ {icon} {name}'],
+    ]
+    for (const [stored, today] of old) {
+      expect(LINK_PILL_READY.some((r) => r.format === today)).toBe(true)
+      expect(sanitizeLinkPills({ version: 2, format: stored })).toEqual({ format: today })
+      // The look built from the file has the space: the icon gets the gap, not the flush 1px.
+      expect(sanitizeLinkPills({ version: 2, format: stored, parts: { name: { bold: true } } })).toEqual({ format: today, parts: { name: { bold: true } } })
+    }
+    // Not a ready string: the user's own flush format stays as typed.
+    expect(sanitizeLinkPills({ version: 2, format: '{icon}{name} #{number}{mark}' })).toEqual({ format: '{icon}{name} #{number}{mark}' })
+    expect(sanitizeLinkPills({ version: 2, format: '{icon}{name}#{number}' })).toEqual({ format: '{icon}{name}#{number}' })
+    expect(sanitizeLinkPills({ version: 2, format: '{icon}{name} ({id}) ' })).toEqual({ format: '{icon}{name} ({id}) ' })
+  })
+
   it('a strength needs a palette fill', () => {
     expect(sanitizeLinkPills({ version: 2, box: { strength: 'light' } })).toEqual({})
     expect(sanitizeLinkPills({ version: 2, box: { strength: 'light', fill: 'none' } })).toEqual({ box: { fill: 'none' } })

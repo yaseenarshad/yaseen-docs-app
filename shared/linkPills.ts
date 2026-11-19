@@ -13,7 +13,7 @@ import { isRecord } from './guards'
  * your own text: bold / italic / underline, colour, size; the mark's icon; the icon: its colour alone, YAZ-5843) have
  * their own style. The file
  * holds only what differs from the default, beside the version:
- * `{ "version": 2, "format": "{icon}{name} ({id})", "box": { "fill": "none" }, "parts": { "name": { "bold": true } } }`.
+ * `{ "version": 2, "format": "{icon} {name} ({id})", "box": { "fill": "none" }, "parts": { "name": { "bold": true } } }`.
  * A missing file, or `{}`, is the app's own look: the default format with every part at its own default draws exactly
  * today's pill, the other vault's name in brackets after it (YAZ-3609 D22) included. A version 1 file (the fields of
  * the first round: background, before / after, icon, bold…) is read and converted in memory (`fromV1`); it is written
@@ -132,6 +132,15 @@ export const LINK_PILL_READY: readonly LinkPillReady[] = [
   { label: 'Plain', format: '{name}', box: { fill: 'none' }, parts: { name: { color: 'same' } } },
 ]
 
+/**
+ * The ready formats before YAZ-5894 (no space after the icon) → the same ready format today. A vault that picked one
+ * of them keeps its gap after the icon (D2: no default look jumps). Only these exact strings: a format the user typed
+ * with `{icon}{name}` stays flush.
+ */
+const OLD_READY_LINK_PILL_FORMATS: ReadonlyMap<string, string> = new Map(
+  LINK_PILL_READY.filter((r) => r.format.includes('{icon} {name}') && r.format !== DEFAULT_LINK_PILL_FORMAT).map((r) => [r.format.replace('{icon} {name}', '{icon}{name}'), r.format]),
+)
+
 // ---------- the format ----------
 
 /** One piece of a parsed format: a known token, or text as typed. */
@@ -226,7 +235,8 @@ function sanitizeBox(raw: unknown): LinkPillBox | undefined {
 /** A version 2 file, or a look in memory, with only its valid changes. */
 function sanitizeV2(raw: Record<string, unknown>): LinkPills {
   const out: LinkPills = {}
-  if (typeof raw.format === 'string' && raw.format !== DEFAULT_LINK_PILL_FORMAT && raw.format !== OLD_DEFAULT_LINK_PILL_FORMAT && linkPillFormatProblem(raw.format) === null) out.format = raw.format
+  const format = typeof raw.format === 'string' ? (OLD_READY_LINK_PILL_FORMATS.get(raw.format) ?? raw.format) : undefined
+  if (format !== undefined && format !== DEFAULT_LINK_PILL_FORMAT && format !== OLD_DEFAULT_LINK_PILL_FORMAT && linkPillFormatProblem(format) === null) out.format = format
   const box = sanitizeBox(raw.box)
   if (box !== undefined) out.box = box
   if (isRecord(raw.parts)) {
