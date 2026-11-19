@@ -91,17 +91,65 @@ export function inOrder<T>(items: readonly T[], nameOf: (item: T) => string, lis
   return [...known, ...unknown.sort(rest)]
 }
 
+/**
+ * A folder's list while the tree catches up (YAZ-5934): main writes the order of a rename or a delete before the
+ * watcher's echo changes the tree, so for a moment the tree shows an item that the new list (`listed`) no longer
+ * names. Each name of the list used before (`was`) that `listed` does not name, but the tree still shows
+ * (`shown`), keeps its place: after the name that stood before it in `was`. A name the tree no longer shows drops,
+ * so a new item of that name later is unknown (last), as D1 has it. The same list back when nothing is carried.
+ */
+export function carriedOrder(was: readonly string[] | undefined, listed: readonly string[], shown: (name: string) => boolean): readonly string[] {
+  if (was === undefined || was === listed) return listed
+  const named = new Set(listed)
+  if (!was.some((name) => !named.has(name) && shown(name))) return listed
+  const out = [...listed]
+  was.forEach((name, i) => {
+    if (named.has(name) || !shown(name)) return
+    let at = 0
+    for (let j = i - 1; j >= 0; j--) {
+      const k = out.indexOf(was[j])
+      if (k >= 0) {
+        at = k + 1
+        break
+      }
+    }
+    out.splice(at, 0, name)
+  })
+  return out
+}
+
 const parentOf = (rel: string): string => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '')
 const nameOf = (rel: string): string => rel.slice(rel.lastIndexOf('/') + 1)
 const isAtOrBelow = (key: string, rel: string): boolean => key === rel || key.startsWith(`${rel}/`)
+
+/** Where an item stood in its folder's list when a move took it out (YAZ-5935): the name before it (null: first) and its index. */
+export interface LeftPlace {
+  before: string | null
+  index: number
+}
+
+/** The place in `list` for an item back from a move: after the name that stood before it, else at its old index. */
+const placeIn = (list: readonly string[], back: LeftPlace): number => {
+  if (back.before === null) return 0
+  const i = list.indexOf(back.before)
+  return i >= 0 ? i + 1 : Math.min(back.index, list.length)
+}
+
+/** Where the item at `rel` stands in its folder's list, as a move out of the folder leaves it; null when the list does not name it. */
+export function placeOf(folders: FolderOrders, rel: string): LeftPlace | null {
+  const list = folders[parentOf(rel)]
+  const index = list?.indexOf(nameOf(rel)) ?? -1
+  return list === undefined || index < 0 ? null : { before: index > 0 ? list[index - 1] : null, index }
+}
 
 /**
  * The orders after a rename or a move of the item at `oldRel` (vault-relative) to `newRel` (D1): a rename in its folder
  * keeps its place; a move to another folder takes it out of the old list and puts it last in the new folder's list,
  * when that folder has one (else it is unknown there, so last anyway). A folder's own orders, and every order below
- * it, follow it. `newRel` null: the item left the vault (out of every list). Null: nothing changed.
+ * it, follow it. `newRel` null: the item left the vault (out of every list). `back`: the move brings the item back to
+ * the folder that it left (an Undo, YAZ-5935), so it takes its old place, not the last one. Null: nothing changed.
  */
-export function renamedOrders(folders: FolderOrders, oldRel: string, newRel: string | null): Record<string, string[]> | null {
+export function renamedOrders(folders: FolderOrders, oldRel: string, newRel: string | null, back?: LeftPlace): Record<string, string[]> | null {
   if (oldRel === '' || oldRel === newRel) return null
   const out: Record<string, string[]> = {}
   let changed = false
@@ -134,7 +182,7 @@ export function renamedOrders(folders: FolderOrders, oldRel: string, newRel: str
     const to = parentOf(newRel)
     const there = out[to]
     if (there !== undefined && !there.includes(nameOf(newRel))) {
-      there.push(nameOf(newRel))
+      there.splice(back === undefined ? there.length : placeIn(there, back), 0, nameOf(newRel))
       changed = true
     }
   }

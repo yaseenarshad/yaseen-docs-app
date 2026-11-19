@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filesOrderOf, inOrder, renamedOrders } from '@shared/filesOrder'
+import { carriedOrder, filesOrderOf, inOrder, renamedOrders } from '@shared/filesOrder'
 
 describe('the Files Manual order (YAZ-5916)', () => {
   it('reads only a valid file, with safe keys and names', () => {
@@ -21,5 +21,17 @@ describe('the Files Manual order (YAZ-5916)', () => {
     expect(renamedOrders(folders, 'P', 'Q')).toEqual({ '': ['z.md', 'Q', 'a.md'], Q: ['q.md'], 'Q/Deep': ['d.md'] })
     expect(renamedOrders(folders, 'P', null)).toEqual({ '': ['z.md', 'a.md'] })
     expect(renamedOrders(folders, 'nope.md', 'nope2.md')).toBeNull()
+  })
+
+  it('a name the new list lost keeps its old place while the tree still shows it (YAZ-5934)', () => {
+    const shows = (...names: string[]) => (name: string) => names.includes(name)
+    const now = ['see.md', 'P', 'b.md']
+    // The rename's order came first: `c.md` stands where it stood, before the new name.
+    expect(carriedOrder(['c.md', 'P', 'b.md'], now, shows('c.md', 'P', 'b.md'))).toEqual(['c.md', 'see.md', 'P', 'b.md'])
+    // A delete: `P` keeps its place after `see.md`.
+    expect(carriedOrder(['see.md', 'P', 'b.md'], ['see.md', 'b.md'], shows('see.md', 'P', 'b.md'))).toEqual(['see.md', 'P', 'b.md'])
+    // The tree no longer shows it: nothing is carried, and the same list comes back.
+    expect(carriedOrder(['c.md', 'see.md', 'P', 'b.md'], now, shows('see.md', 'P', 'b.md'))).toBe(now)
+    expect(carriedOrder(undefined, now, shows('x.md'))).toBe(now)
   })
 })

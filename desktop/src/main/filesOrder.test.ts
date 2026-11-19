@@ -77,3 +77,63 @@ describe('files-order.<mac id>.json', () => {
     expect((await fileOf(A)).folders).toEqual({ '': ['a.md'] })
   })
 })
+
+/** Checker tests for PR #278 (YAZ-5916, YAZ-5917): the repairs that a ⌘ move, its undo and another Mac's file need. */
+describe('checker: files-order repairs', () => {
+  it('a move into another vault takes the item out of its old vault\'s order; a move into a folder with no order writes no list for that folder', async () => {
+    await actAs(A)
+    const other = path.join(base, 'other')
+    await mkdir(other, { recursive: true })
+    await setFolderOrder(root, root, ['c.md', 'Projects', 'a.md'])
+    await renamePath([root, other], path.join(root, 'c.md'), path.join(other, 'c.md'))
+    expect((await fileOf(A)).folders).toEqual({ '': ['Projects', 'a.md'] })
+    await renamePath([root, other], path.join(root, 'a.md'), path.join(root, 'Projects', 'a.md'))
+    expect((await fileOf(A)).folders).toEqual({ '': ['Projects'] })
+  })
+
+  it('a write on this Mac starts from the newest file of any Mac: the other Mac\'s folders stay, and the sort becomes Manual', async () => {
+    await actAs(B)
+    await setFolderOrder(root, path.join(root, 'Projects'), ['y.md', 'x.md'])
+    await setFilesSort(root, { by: 'updated', reverse: true })
+    await actAs(A)
+    await setFolderOrder(root, root, ['Projects', 'top.md'])
+    expect(await fileOf(A)).toEqual(expect.objectContaining({ sort: 'manual', reverse: false, folders: { Projects: ['y.md', 'x.md'], '': ['Projects', 'top.md'] } }))
+    expect(Date.parse((await fileOf(A)).at as string)).toBeGreaterThan(Date.parse((await fileOf(B)).at as string))
+  })
+
+  // BUG YAZ-5935: a ⌘-drag into a folder is a move on disk, and its Undo is the move back (YAZ-5917). The move takes the
+  // item out of its folder's order, and the move back puts it LAST: the Undo does not give the item its old place.
+  it('a move into a folder and the move back (its Undo) give the item its old place (YAZ-5935)', async () => {
+    await actAs(A)
+    await setFolderOrder(root, root, ['c.md', 'Projects', 'a.md'])
+    await renamePath([root], path.join(root, 'c.md'), path.join(root, 'Projects', 'c.md'))
+    await renamePath([root], path.join(root, 'Projects', 'c.md'), path.join(root, 'c.md'))
+    expect((await fileOf(A)).folders).toEqual({ '': ['c.md', 'Projects', 'a.md'] })
+  })
+
+  it('the move back takes the old place after a Redo too, after the name before it; a rename at the new place forgets the place (YAZ-5935)', async () => {
+    await actAs(A)
+    await setFolderOrder(root, root, ['a.md', 'c.md', 'Projects', 'z.md'])
+    const top = path.join(root, 'c.md')
+    const inside = path.join(root, 'Projects', 'c.md')
+    // ⌘-drag, Undo, Redo, Undo.
+    await renamePath([root], top, inside)
+    await renamePath([root], inside, top)
+    expect((await fileOf(A)).folders).toEqual({ '': ['a.md', 'c.md', 'Projects', 'z.md'] })
+    await renamePath([root], top, inside)
+    await renamePath([root], inside, top)
+    expect((await fileOf(A)).folders).toEqual({ '': ['a.md', 'c.md', 'Projects', 'z.md'] })
+    // The list changed while the item was away: it lands after the name that stood before it.
+    await renamePath([root], top, inside)
+    await setFolderOrder(root, root, ['Projects', 'z.md', 'a.md'])
+    await renamePath([root], inside, top)
+    expect((await fileOf(A)).folders).toEqual({ '': ['Projects', 'z.md', 'a.md', 'c.md'] })
+    await setFolderOrder(root, root, ['c.md', 'Projects', 'z.md', 'a.md'])
+    // A rename in the new folder forgets the place: that move out is a plain move, last.
+    await renamePath([root], top, inside)
+    await renamePath([root], inside, path.join(root, 'Projects', 'see.md'))
+    await renamePath([root], path.join(root, 'Projects', 'see.md'), path.join(root, 'see.md'))
+    expect((await fileOf(A)).folders).toEqual({ '': ['Projects', 'z.md', 'a.md', 'see.md'] })
+  })
+})
+

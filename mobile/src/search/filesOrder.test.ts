@@ -39,3 +39,14 @@ describe('the phone reads the Mac\'s Files sort (YAZ-5916)', () => {
     expect(labels(null)).toEqual(['Work', 'Zed', 'a', 'b', 'c'])
   })
 })
+
+/** Checker test for PR #278 (YAZ-5916 D4): the phone follows the Mac's order inside a folder too, by names on disk. */
+describe('checker: the phone\'s Files list follows the Mac\'s Manual order in every folder', () => {
+  it('a sub-folder draws its own saved order by the names on disk, also when a folder shows its title; folders and pages mix; a folder with no list keeps the Name order', () => {
+    const recs = [rec('Work/b.md'), rec('Work/a.md'), rec('Work/Zeta/z.md'), rec('Work/Alpha/x.md'), rec('Other/o2.md'), rec('Other/o1.md')]
+    const folders = [{ path: 'Work/Zeta/.folder.md', title: 'Last folder' }] as unknown as IndexRecord[]
+    const view = { sort: { by: 'manual' as const, reverse: false }, folders: { '': ['Other', 'Work'], Work: ['b.md', 'Zeta', 'a.md'] } }
+    const rows = visibleRows(buildTree(recs, folders, view), new Set(['Work', 'Other']))
+    expect(rows.map((r) => r.label)).toEqual(['Other', 'o1', 'o2', 'Work', 'b', 'Last folder', 'a', 'Alpha'])
+  })
+})

@@ -12,6 +12,19 @@
   pointer-events: none;
 }
 
+/* A folder's list that holds the lifted row stands over every sticky folder row (z 10 and less, app.css), so the row
+   lifted to the top of its folder shows over that folder's own row (bug YAZ-5936). The Thread lines make each folder's
+   list its own context at z 3 and clip its top; during the lift the list clips nothing, and its rows' thread pieces,
+   which reach far above each row, hide. The `.app .sidebar__body` prefix outweighs the Thread rules. */
+.app .sidebar__body .tree[role='group'][data-lift-list] {
+  z-index: 11;
+  overflow-y: visible;
+}
+
+.app .sidebar__body .tree[role='group'][data-lift-list] > li::before {
+  opacity: 0 !important;
+}
+
 .tree[data-lift-list] > li[data-lifted] > .tree__row,
 .tree[data-lift-list] > li[data-settling] > .tree__row {
   background: var(--bg);

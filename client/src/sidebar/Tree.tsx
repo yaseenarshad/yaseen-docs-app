@@ -1,4 +1,5 @@
-import { Fragment, memo, useSyncExternalStore, type CSSProperties, type ReactElement } from 'react'
+import { Fragment, memo, useRef, useSyncExternalStore, type CSSProperties, type ReactElement } from 'react'
+import { carriedOrder } from '@shared/filesOrder'
 import type { TabSort, TreeNode } from '@shared/types'
 import type { Needle } from '../links/completion'
 import { marked } from '../search/marked'
@@ -446,8 +447,13 @@ function TreeLevel({
   const here = shortcuts.get(dirPath)
   // The app's own vault row (YAZ-5108) is no vault of the person: with one vault of theirs the level sorts as before, the row last.
   const keep = sort === undefined ? here === undefined : keepsOrder(depth, sort, { keepTop, copies, vaults: vaultRows.size > appRows.size })
-  // Files under Manual (YAZ-5916 D1): the folder's own order, by item name.
-  const listed = manualOrder === undefined ? undefined : (manualOrder.get(dirPath) ?? NO_NAMES)
+  // Files under Manual (YAZ-5916 D1): the folder's own order, by item name. The list this level used last carries a
+  // renamed or deleted row's place until the watcher's echo changes the tree (YAZ-5934): main writes the order first.
+  const lastListed = useRef<readonly string[] | undefined>(undefined)
+  const ownList = manualOrder === undefined ? undefined : (manualOrder.get(dirPath) ?? NO_NAMES)
+  let shown: ReadonlySet<string> | null = null
+  const listed = ownList === undefined ? undefined : carriedOrder(lastListed.current, ownList, (name) => (shown ??= new Set(nodes.map((node) => node.name))).has(name))
+  lastListed.current = listed
   const rows = appRowsLast(nodes, depth, appRows, (level) => (keep ? level : sortLevel(here === undefined ? level : [...level, ...here], sort, shownLabel(titles), scores, listed)))
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
   // The top row a row stands under (YAZ-2845 D1): a top row is its own. It tells the copies of a row

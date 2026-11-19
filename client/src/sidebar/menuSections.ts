@@ -750,7 +750,7 @@ const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, openInN
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newPageMenu, newCard, newDrawingMenu, newFolderMenu]
 const ROW_GROUP: readonly Item[] = [reviewFolder, reviewPage, rename, changeIcon]
-const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, hideOthers, addShortcut,openAlone, openIn, addVault]
+const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, hideOthers, addShortcut, openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
