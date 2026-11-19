@@ -103,11 +103,37 @@ describe('checker: files-order repairs', () => {
 
   // BUG YAZ-5935: a ⌘-drag into a folder is a move on disk, and its Undo is the move back (YAZ-5917). The move takes the
   // item out of its folder's order, and the move back puts it LAST: the Undo does not give the item its old place.
-  it.fails('a move into a folder and the move back (its Undo) give the item its old place (BUG YAZ-5935)', async () => {
+  it('a move into a folder and the move back (its Undo) give the item its old place (YAZ-5935)', async () => {
     await actAs(A)
     await setFolderOrder(root, root, ['c.md', 'Projects', 'a.md'])
     await renamePath([root], path.join(root, 'c.md'), path.join(root, 'Projects', 'c.md'))
     await renamePath([root], path.join(root, 'Projects', 'c.md'), path.join(root, 'c.md'))
     expect((await fileOf(A)).folders).toEqual({ '': ['c.md', 'Projects', 'a.md'] })
   })
+
+  it('the move back takes the old place after a Redo too, after the name before it; a rename at the new place forgets the place (YAZ-5935)', async () => {
+    await actAs(A)
+    await setFolderOrder(root, root, ['a.md', 'c.md', 'Projects', 'z.md'])
+    const top = path.join(root, 'c.md')
+    const inside = path.join(root, 'Projects', 'c.md')
+    // ⌘-drag, Undo, Redo, Undo.
+    await renamePath([root], top, inside)
+    await renamePath([root], inside, top)
+    expect((await fileOf(A)).folders).toEqual({ '': ['a.md', 'c.md', 'Projects', 'z.md'] })
+    await renamePath([root], top, inside)
+    await renamePath([root], inside, top)
+    expect((await fileOf(A)).folders).toEqual({ '': ['a.md', 'c.md', 'Projects', 'z.md'] })
+    // The list changed while the item was away: it lands after the name that stood before it.
+    await renamePath([root], top, inside)
+    await setFolderOrder(root, root, ['Projects', 'z.md', 'a.md'])
+    await renamePath([root], inside, top)
+    expect((await fileOf(A)).folders).toEqual({ '': ['Projects', 'z.md', 'a.md', 'c.md'] })
+    await setFolderOrder(root, root, ['c.md', 'Projects', 'z.md', 'a.md'])
+    // A rename in the new folder forgets the place: that move out is a plain move, last.
+    await renamePath([root], top, inside)
+    await renamePath([root], inside, path.join(root, 'Projects', 'see.md'))
+    await renamePath([root], path.join(root, 'Projects', 'see.md'), path.join(root, 'see.md'))
+    expect((await fileOf(A)).folders).toEqual({ '': ['Projects', 'z.md', 'a.md', 'see.md'] })
+  })
 })
+

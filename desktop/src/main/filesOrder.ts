@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { DEFAULT_FILES_SORT, filesOrderFile, type FilesOrderState, type FilesSort, filesOrderFiles, filesOrderOf, renamedOrders, sameOrders, withFolderOrder, type FilesOrder, type FolderOrders } from '@shared/filesOrder'
+import { DEFAULT_FILES_SORT, filesOrderFile, type FilesOrderState, type FilesSort, filesOrderFiles, filesOrderOf, placeOf, renamedOrders, sameOrders, type LeftPlace, withFolderOrder, type FilesOrder, type FolderOrders } from '@shared/filesOrder'
 import { pickNewest } from '@shared/vaultLists'
 import { owningRoot, toAbs, toRel, under } from './favorites'
 import { BridgeFailure, createRootChain, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
@@ -16,7 +16,8 @@ import { macId } from './vaultIndex/mint'
  * (`writeConfig`: atomic, tmp + rename); an order that did not change writes nothing.
  *
  * The bridge speaks ABSOLUTE folder paths; the file speaks vault-relative ones ('' for the top). Repair: a rename or a
- * move in the app keeps the item's place in its folder, or puts it last in the new folder; a folder's orders follow
+ * move in the app keeps the item's place in its folder, or puts it last in the new folder (the move back of an Undo:
+ * in its old place, YAZ-5935); a folder's orders follow
  * it; a delete takes the item and its folder's orders out. A rename outside the app loses its place (the item is then
  * unknown in the list: last).
  */
@@ -84,18 +85,42 @@ export function subscribeFilesOrder(root: string, listener: (change: { root: str
   })
 }
 
+/**
+ * Where each item that a move took out of its folder's list stood (YAZ-5935), by vault, then by the item's new
+ * vault-relative path. The Undo of a ⌘-drag into a folder is the move back (`invertMoves`); it finds the place here,
+ * so the item lands where it was, not last. Any other repair of that path forgets it. This run of the app only.
+ */
+const lefts = new Map<string, Map<string, LeftPlace & { from: string }>>()
+const MAX_LEFT = 200
+
+const parentRel = (rel: string): string => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '')
+const atOrBelow = (key: string, rel: string): boolean => key === rel || key.startsWith(`${rel}/`)
+
 function repair(roots: readonly string[], oldPath: string, newPath: string | null): Promise<void> {
   const root = owningRoot(roots, oldPath)
   if (root === null || root === oldPath) return Promise.resolve()
   return chained(root, async () => {
+    const oldRel = toRel(root, oldPath)
+    const newRel = newPath !== null && under(root, newPath) && newPath !== root ? toRel(root, newPath) : null
+    const mine = lefts.get(root) ?? new Map<string, LeftPlace & { from: string }>()
+    lefts.set(root, mine)
+    const left = mine.get(oldRel)
+    for (const key of [...mine.keys()]) if (atOrBelow(key, oldRel)) mine.delete(key)
     const held = await readNewest(root)
     if (held === null) return
-    const next = renamedOrders(held.folders, toRel(root, oldPath), newPath !== null && under(root, newPath) && newPath !== root ? toRel(root, newPath) : null)
+    // A move to another folder: remember the place that the item leaves, for the move back.
+    const leaves = newRel !== null && parentRel(newRel) !== parentRel(oldRel) ? placeOf(held.folders, oldRel) : null
+    if (leaves !== null && newRel !== null) {
+      mine.set(newRel, { ...leaves, from: oldRel })
+      if (mine.size > MAX_LEFT) mine.delete(mine.keys().next().value as string)
+    }
+    const back = left !== undefined && left.from === newRel ? left : undefined
+    const next = renamedOrders(held.folders, oldRel, newRel, back)
     if (next !== null) await save(root, next, held.sort, held)
   })
 }
 
-/** An item keeps its place through a rename; a move puts it last in its new folder; a folder's orders follow it. */
+/** An item keeps its place through a rename; a move puts it last in its new folder, or back in its old place (YAZ-5935); a folder's orders follow it. */
 export function renamePath(roots: readonly string[], oldPath: string, newPath: string): Promise<void> {
   return repair(roots, oldPath, newPath)
 }
