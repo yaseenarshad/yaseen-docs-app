@@ -2167,3 +2167,13 @@
   width: 190px;
   margin: 4px 0 2px;
 }
+/* With the box open the row is tall: its label lines up with the row's first line of buttons (one button high, 28 px),
+   not the row's middle beside the box. */
+.pill-toolbar__row:has(.pill-toolbar__custom-box:not([hidden])) {
+  align-items: flex-start;
+}
+.pill-toolbar__row:has(.pill-toolbar__custom-box:not([hidden])) > .pill-toolbar__label {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
