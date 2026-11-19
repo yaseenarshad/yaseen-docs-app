@@ -1315,7 +1315,7 @@ export const isHighlightHex = (v: unknown): v is `#${string}` => typeof v === 's
 export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
   typeof v === 'object' && v !== null && isHighlightHex((v as HighlightCustomColor).color) &&
   Number.isInteger((v as HighlightCustomColor).uses) && (v as HighlightCustomColor).uses >= 1
-/** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. `best` is Search's alone (YAZ-3511 D12). */
+/** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites, and of Files since YAZ-5916 (each folder's order in the vault, `shared/filesOrder.ts`). `best` is Search's alone (YAZ-3511 D12). */
 export type SortBy = 'manual' | 'name' | 'updated' | 'best'
 /**
  * One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first.

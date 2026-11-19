@@ -86,6 +86,8 @@ interface SidebarStubProps {
   onMoveEntries: (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => Promise<void>
   /** A move the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut, a Finder move-in. App records it and says it with Undo. */
   onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[] }, text: string, skipped: boolean) => void
+  /** A Manual reorder (YAZ-5917): App puts it on the undo list and says it with Undo. */
+  onReordered?: (step: { name: string; undo: () => void; redo: () => void }) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
@@ -1026,6 +1028,26 @@ describe('App Settings › Notifications (YAZ-3303)', () => {
     act(() => captured.sidebar?.onMoved(gesture, 'Moved 1 file (a.md), skipped 1: b.md — already exists', true))
     expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved 1 file (a.md), skipped 1: b.md — already exists')
     expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+  })
+
+  it('YAZ-5917: a Manual reorder says what moved with Undo; ⌘Z puts the order back once, and ⌘⇧Z writes it again', async () => {
+    const { el } = await open({})
+    const undo = vi.fn()
+    const redo = vi.fn()
+    act(() => captured.sidebar?.onReordered?.({ name: 'Plan', undo, redo }))
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved “Plan”')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+    const key = (shiftKey: boolean) => act(async () => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })))
+    await key(false)
+    expect(undo).toHaveBeenCalledOnce()
+    expect(redo).not.toHaveBeenCalled()
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved “Plan” back')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Redo')
+    await key(true)
+    expect(redo).toHaveBeenCalledOnce()
+    // The toast's own Undo runs the same step.
+    await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+    expect(undo).toHaveBeenCalledTimes(2)
   })
 
   it('D2: with "Move, rename or delete" Off, a rename that fails still says why (S19)', async () => {

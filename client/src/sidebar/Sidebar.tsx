@@ -29,6 +29,7 @@ import { threadPath } from './threadPath'
 import { stickyFolders } from './stickyFolders'
 import { IconPicker } from './IconPicker'
 import type { VaultIconsHere } from './useVaultIcons'
+import { useFilesOrder } from './useFilesOrder'
 import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES, type IconRule } from '@shared/vaultIcons'
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { IconsContext } from './FileIcon'
@@ -317,6 +318,8 @@ interface SidebarProps {
    * are never handed here.
    */
   onMoved: (gesture: MovedGesture, text: string, skipped: boolean) => void
+  /** A Manual reorder of Files, Focus or Favorites (YAZ-5917): App puts it on the window's undo list and says it with Undo. */
+  onReordered?: (step: { name: string; undo: () => void; redo: () => void }) => void
   /**
    * Rows dragged out to Finder, and the drag ended outside the window with no drop inside it
    * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
@@ -766,6 +769,7 @@ export function Sidebar({
   onRenameFile,
   onMoveEntries,
   onMoved,
+  onReordered,
   onDraggedOut,
   onRetitle,
   onDeleteEntries,
@@ -1922,10 +1926,19 @@ export function Sidebar({
           const shown = src.items.map((item) => resolveItem(item, roots)).flatMap((r) => ('path' in r ? [r.path] : []))
           const without = shown.filter((p) => p !== from)
           const i = without.indexOf(over.path)
-          if (i >= 0) tab.reorder(src.id, [...without.slice(0, over.edge === 'before' ? i : i + 1), from, ...without.slice(over.edge === 'before' ? i : i + 1)])
+          if (i < 0) return true
+          const next = [...without.slice(0, over.edge === 'before' ? i : i + 1), from, ...without.slice(over.edge === 'before' ? i : i + 1)]
+          if (next.every((p, at) => p === shown[at])) return true
+          tab.reorder(src.id, next)
+          // A reorder inside a focus or favorite folder is a step of the undo list too (YAZ-5917).
+          onReordered?.({ name: nameOf(from), undo: () => tab.reorder(src.id, shown), redo: () => tab.reorder(src.id, next) })
           return true
         }
-  const { fileMove, reorder } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag, folderDrop)
+  // Files under Manual (YAZ-5916): each folder's order, kept in the vault; read only while Files sorts by hand.
+  const filesManual = settings.sidebarSort.files.by === 'manual'
+  const filesOrder = useFilesOrder(ownRoots, filesManual, onNotice)
+  const reordered = useCallback((name: string, undo: () => void, redo: () => void) => onReordered?.({ name, undo, redo }), [onReordered])
+  const { fileMove, reorder, manual } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag, folderDrop, filesOrder.save, reordered)
 
   // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
   // identity until a list really changes — the memoised levels compare it by identity.
@@ -2471,8 +2484,9 @@ export function Sidebar({
             )}
             {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5).
                 A folder shown alone (YAZ-5790): that folder's row alone, at the top; other vaults hide too. */}
-            {forest !== null && filesOnly === null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} sort={sort} />}
-            {filesAlone !== null && <Tree {...treeProps} nodes={[filesAlone]} move={fileMove} sort={sort} />}
+            {/* Under Manual (YAZ-5916) every row reorders its own folder, and ⌘ moves it into one. */}
+            {forest !== null && filesOnly === null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} sort={sort} manual={filesManual ? manual : undefined} manualOrder={filesManual ? filesOrder.orders : undefined} />}
+            {filesAlone !== null && <Tree {...treeProps} nodes={[filesAlone]} move={fileMove} sort={sort} manual={filesManual ? manual : undefined} manualOrder={filesManual ? filesOrder.orders : undefined} />}
           </>
         )}
       </div>
@@ -2559,7 +2573,11 @@ export function Sidebar({
           sections={sortSections(
             sortTab,
             sort,
-            (next) => onChangeSettings(sortTab === 'search' ? { ...settings, searchSort: next } : { ...settings, sidebarSort: { ...settings.sidebarSort, [sortTab]: next } }),
+            (next) => {
+              onChangeSettings(sortTab === 'search' ? { ...settings, searchSort: next } : { ...settings, sidebarSort: { ...settings.sidebarSort, [sortTab]: next } })
+              // The vault keeps this Mac's Files sort (YAZ-5916 Q4): the phone sorts its tree by it.
+              if (sortTab === 'files' && next.by !== 'best' && (next.by !== sort.by || next.reverse !== sort.reverse)) filesOrder.setSort({ by: next.by, reverse: next.reverse })
+            },
             // The tab's date switch (YAZ-3511 D7, D10), and on Search its filters (D13, D14).
             { on: settings.rowDates[sortTab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortTab]: on } }) },
             sortTab === 'search' ? filterSection(searchFilter, setSearchFilter, reviewRoots.size > 0) : undefined,

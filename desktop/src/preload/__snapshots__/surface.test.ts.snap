@@ -62,6 +62,10 @@ file.putBack/1: invoke fs:put-back ["a0"]; => "answer"; !> {"code":"NOT_FOUND","
 file.rename/1: invoke fs:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.repairRename/1: invoke file:repair-rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.retitle/1: invoke fs:retitle ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+filesOrder.get/1: invoke filesOrder:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+filesOrder.onChanged/1: on filesOrder:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off filesOrder:changed
+filesOrder.setFolder/3: invoke filesOrder:set-folder ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+filesOrder.setSort/2: invoke filesOrder:set-sort ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 focus.get/2: invoke focus:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 focus.onChanged/1: on focus:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off focus:changed
 focus.set/3: invoke focus:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

@@ -7,6 +7,7 @@ import { dropLanded, rememberDragOut } from '../dragLanding'
 import { whenMouseUp } from '../dragWatch'
 import * as favorites from '../favorites'
 import * as icons from '../icons'
+import * as filesOrder from '../filesOrder'
 import { fileClip, type FileClip } from '../fileClip'
 import * as focus from '../focus'
 import { readAsset, writeAsset } from '../fs/assets'
@@ -53,6 +54,7 @@ const repairFavorites = (p: Promise<void>): Promise<void> => p.catch((err: unkno
 const repairFocus = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[focus] repair failed: ${String(err)}`))
 /** The vault's own icons (YAZ-3440 D8), by the same rule: a pick follows a rename or a move and leaves with a delete; a repair that fails is warned about. */
 const repairIcons = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[icons] repair failed: ${String(err)}`))
+const repairOrder = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[files-order] repair failed: ${String(err)}`))
 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
 export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor' | 'vaultNotice'>): void {
@@ -146,6 +148,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairFocus(focus.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairIcons(icons.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    await repairOrder(filesOrder.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairShares(shareFsHooks.renamed(rootsOf(store.get()), res.oldPath, res.newPath))
     broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
@@ -251,6 +254,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     await repairFavorites(favorites.removePath(rootsOf(store.get()), res.path))
     await repairFocus(focus.removePath(rootsOf(store.get()), res.path))
     await repairIcons(icons.removePath(rootsOf(store.get()), res.path))
+    await repairOrder(filesOrder.removePath(rootsOf(store.get()), res.path))
     await repairShares(shareFsHooks.deleted(rootsOf(store.get()), res.path))
     broadcastAll(CONTRACT.file.onDeleted.channel, { path: res.path, kind: res.kind })
     return res
@@ -281,6 +285,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairFocus(focus.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairIcons(icons.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    await repairOrder(filesOrder.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairShares(shareFsHooks.renamed(rootsOf(store.get()), res.oldPath, res.newPath))
     broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res

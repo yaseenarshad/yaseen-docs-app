@@ -547,7 +547,12 @@ describe('createStore: loading', () => {
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarSort: sorted } }))
     expect(createStore(file).get().settings.sidebarSort).toEqual(sorted)
 
-    for (const bad of [{ ...sorted, files: { by: 'manual', reverse: false } }, { ...sorted, focus: { by: 'created', reverse: false } }, { ...sorted, favorites: { by: 'name' } }, { files: sorted.files }, 'name']) {
+    // Files sorts by hand too since YAZ-5916.
+    const manualFiles = { ...sorted, files: { by: 'manual', reverse: false } }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarSort: manualFiles } }))
+    expect(createStore(file).get().settings.sidebarSort).toEqual(manualFiles)
+
+    for (const bad of [{ ...sorted, files: { by: 'best', reverse: false } }, { ...sorted, focus: { by: 'created', reverse: false } }, { ...sorted, favorites: { by: 'name' } }, { files: sorted.files }, 'name']) {
       await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarSort: bad } }))
       expect(createStore(file).get().settings.sidebarSort).toEqual(DEFAULT_SIDEBAR_SORT)
       expect(isSettings({ ...DEFAULT_SETTINGS, sidebarSort: bad })).toBe(false) // the IPC boundary refuses it too
