@@ -204,7 +204,7 @@ export function recallChance(reviews: readonly CardReview[], s: ReviewSettings, 
 
 /** What the Card table shows of a card's memory (YAZ-5793). */
 export interface CardMemory {
-  /** The wait the last review set, in whole days (Anki's Interval). */
+  /** The wait the last review set, in whole days (Anki's Interval): the card window's, `stepWait`. */
   wait: number
   /** How many times the card was forgotten after it was learned (FSRS lapses). */
   forgotten: number
@@ -227,7 +227,9 @@ export function cardMemory(reviews: readonly CardReview[], s: ReviewSettings, no
     map.set(key, (last = replay(reviews, s)))
   }
   if (last === null) return null
-  return { wait: last.card.scheduled_days, forgotten: last.card.lapses, recall: schedulerOf(s).get_retrievability(last.card, localFrame(now), false) }
+  // YAZ-5855 root cause: main's YAZ-5789 rules made some answers "not counted", and the card window's wait became `stepWait`,
+  // but this kept FSRS's `scheduled_days`, so the Card table's Wait time could differ from the window. Solution: the same helper.
+  return { wait: stepWait(last), forgotten: last.card.lapses, recall: schedulerOf(s).get_retrievability(last.card, localFrame(now), false) }
 }
 
 /** The ratings the review buttons write, left to right (D5): two buttons by default, four by the setting. */

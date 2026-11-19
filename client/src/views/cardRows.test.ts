@@ -303,19 +303,19 @@ describe('YAZ-5793: Wait time, Times forgotten, Recall chance, Days overdue, Fil
     { at: at(1, 13), rating: 'good' },
     { at: at(5), rating: 'good' },
     { at: at(15), rating: 'again' },
-    { at: at(16), rating: 'good' },
+    { at: at(17), rating: 'good' }, // the ✕'s due day: counted (YAZ-5789 rule 1)
   ]
   const rowOf = (c: CardRecord, over: Partial<IndexRecord> = {}) => cardRowOfRecord(cardRowRecords([record('Trip', { cards: [c], ...over })])[0])!
   const DUE = cardDueAt(REVIEWS, S)
 
-  it('the history is due Oct 20 at noon, 4 days after its last ✓', () => {
-    expect(DUE).toBe(new Date(2026, 9, 20, 12, 0).getTime())
+  it('the history is due Oct 23 at noon, 6 days after its last ✓', () => {
+    expect(DUE).toBe(new Date(2026, 9, 23, 12, 0).getTime())
   })
 
-  it('3 days past the due date: wait 4 days, forgotten once, 86% recall, 3 days overdue; File name is the page`s file', () => {
-    const now = new Date(2026, 9, 23, 12, 0).getTime()
+  it('3 days past the due date: wait 6 days, forgotten once, 87% recall, 3 days overdue; File name is the page`s file', () => {
+    const now = new Date(2026, 9, 26, 12, 0).getTime()
     const v = cardValues(rowOf(card('GEO-1', { reviews: REVIEWS })), S, now)
-    expect([v.status, v.wait, v.forgotten, v.recall, v.overdue, v.file]).toEqual(['Active', 4, 1, 86, 3, 'Trip.md'])
+    expect([v.status, v.wait, v.forgotten, v.recall, v.overdue, v.file]).toEqual(['Active', 6, 1, 87, 3, 'Trip.md'])
     // The same numbers as the schedule's own: the interval, the lapses, the recall chance in whole percent.
     const state = cardState(REVIEWS, S)
     expect([v.wait, v.forgotten, v.recall]).toEqual([state.interval, state.lapses, Math.round(100 * recallChance(REVIEWS, S, now)!)])
@@ -324,18 +324,18 @@ describe('YAZ-5793: Wait time, Times forgotten, Recall chance, Days overdue, Fil
 
   it('Days overdue: 0 on the due day (before or after its hour), blank the day before', () => {
     const value = (now: number) => cardValues(rowOf(card('GEO-1', { reviews: REVIEWS })), S, now).overdue
-    expect(value(new Date(2026, 9, 20, 0, 30).getTime())).toBe(0)
-    expect(value(new Date(2026, 9, 20, 23, 30).getTime())).toBe(0)
-    expect(value(new Date(2026, 9, 21, 0, 30).getTime())).toBe(1)
-    expect(value(new Date(2026, 9, 19, 23, 30).getTime())).toBeNull()
+    expect(value(new Date(2026, 9, 23, 0, 30).getTime())).toBe(0)
+    expect(value(new Date(2026, 9, 23, 23, 30).getTime())).toBe(0)
+    expect(value(new Date(2026, 9, 24, 0, 30).getTime())).toBe(1)
+    expect(value(new Date(2026, 9, 22, 23, 30).getTime())).toBeNull()
     expect(value(DUE - 10 * DAY)).toBeNull()
   })
 
   it('Recall chance falls as time passes, and reads off `now`', () => {
     const recall = (now: number) => cardValues(rowOf(card('GEO-1', { reviews: REVIEWS })), S, now).recall as number
-    expect(recall(DUE - DAY)).toBe(93)
-    expect(recall(DUE)).toBe(91)
-    expect(recall(DUE + 3 * DAY)).toBe(86)
+    expect(recall(DUE - DAY)).toBe(91)
+    expect(recall(DUE)).toBe(90)
+    expect(recall(DUE + 3 * DAY)).toBe(87)
   })
 
   it('blank for a New card, an Archived one, and with no settings; File name still reads', () => {
@@ -365,14 +365,14 @@ describe('YAZ-5793: Wait time, Times forgotten, Recall chance, Days overdue, Fil
   it('a run reads them at its `now`: sort by Days overdue, filter Recall chance 90 and up', () => {
     const pages = [
       record('Trip', {
-        cards: [card('GEO-1', { title: 'Late', reviews: REVIEWS }), card('GEO-2', { title: 'Soon', reviews: [{ at: at(22), rating: 'good' }, { at: at(22, 13), rating: 'good' }] }), card('GEO-4', { title: 'Fresh' })],
+        cards: [card('GEO-1', { title: 'Late', reviews: REVIEWS }), card('GEO-2', { title: 'Soon', reviews: [{ at: at(25), rating: 'good' }, { at: at(25, 13), rating: 'good' }] }), card('GEO-4', { title: 'Fresh' })],
       }),
     ]
     const view: ViewDef = { ...CARDS, order: ['file.name', 'card.overdue', 'card.recall'], sort: [{ property: 'card.overdue', direction: 'DESC' }] }
     const now = DUE + 3 * DAY
     const out = runView({ views: [view] }, view, cardRowRecords(pages), { now, cardSettings: S })
     expect(out.rows.map((r) => [r.record.title, r.values['card.overdue']])).toEqual([['Late', 3], ['Soon', null], ['Fresh', null]])
-    // Late is at 86%, Soon (learned Oct 22) higher; a New card has none.
+    // Late is at 87%, Soon (learned Oct 25) higher; a New card has none.
     const high: ViewDef = { ...view, filters: 'card.recall >= 90' }
     expect(runView({ views: [high] }, high, cardRowRecords(pages), { now, cardSettings: S }).rows.map((r) => r.record.title)).toEqual(['Soon'])
   })
