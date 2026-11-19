@@ -218,3 +218,49 @@ describe('the one backoff (YAZ-5092 A4): the sync engine, the answer list and th
     expect([1, 2, 3, 30].map((n) => staleUntil(n, 0))).toEqual([MIN_RATE_WAIT_MS, 2 * MIN_RATE_WAIT_MS, 4 * MIN_RATE_WAIT_MS, MAX_RATE_WAIT_MS])
   })
 })
+
+describe('YAZ-5929: graphql, on the same client', () => {
+  const NOW = Date.UTC(2026, 10, 13, 12)
+  const rate = (remaining: number, reset: number) => ({ 'x-ratelimit-resource': 'graphql', 'x-ratelimit-remaining': String(remaining), 'x-ratelimit-reset': String(reset) })
+
+  it('POSTs the query and its variables to api.github.com/graphql, with the token in the header only', async () => {
+    const { fetch, calls } = recorder(() => json(200, { data: { viewer: { login: 'yaseen' } } }, rate(4999, NOW / 1000 + 600)))
+    const answer = await githubClient(TOKEN, { fetch, now: () => NOW }).graphql<{ viewer: { login: string } }>('query { viewer { login } }', { a: 1 })
+    expect(answer).toEqual({ data: { viewer: { login: 'yaseen' } }, errors: [] })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(`${GITHUB_API}/graphql`)
+    expect(calls[0].init.method).toBe('POST')
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ query: 'query { viewer { login } }', variables: { a: 1 } })
+    expect(new Headers(calls[0].init.headers).get('authorization')).toBe(`Bearer ${TOKEN}`)
+    expect(calls[0].url).not.toContain(TOKEN)
+  })
+
+  it('a used-up count answered as HTTP 200 with an error of type RATE_LIMITED is RATE_LIMITED at x-ratelimit-reset', async () => {
+    const { fetch } = recorder(() => json(200, { errors: [{ type: 'RATE_LIMITED', message: 'API rate limit already exceeded for user ID 1.' }] }, rate(0, NOW / 1000 + 600)))
+    const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).graphql('query { viewer { login } }'))
+    expect(error).toMatchObject({ code: 'RATE_LIMITED', resetAt: NOW + 600_000, said: 'API rate limit already exceeded for user ID 1.' })
+  })
+
+  it('RATE_LIMITED with no reset header waits the floor (1 minute), and a far reset waits the ceiling (1 hour)', async () => {
+    const limited = (headers: Record<string, string>) => recorder(() => json(200, { errors: [{ type: 'RATE_LIMITED', message: 'slow' }] }, headers)).fetch
+    expect(await failure(githubClient(TOKEN, { fetch: limited({}), now: () => NOW }).graphql('q'))).toMatchObject({ resetAt: NOW + MIN_RATE_WAIT_MS })
+    expect(await failure(githubClient(TOKEN, { fetch: limited(rate(0, NOW / 1000 + 86_400)), now: () => NOW }).graphql('q'))).toMatchObject({ resetAt: NOW + MAX_RATE_WAIT_MS })
+  })
+
+  it('403 or 429 with the rate headers is RATE_LIMITED; a plain 403 is NO_ACCESS (the query only reads), never READ_ONLY', async () => {
+    const hourly = recorder(() => json(403, { message: 'API rate limit exceeded' }, rate(0, NOW / 1000 + 900))).fetch
+    expect(await failure(githubClient(TOKEN, { fetch: hourly, now: () => NOW }).graphql('q'))).toMatchObject({ code: 'RATE_LIMITED', resetAt: NOW + 900_000 })
+    const secondary = recorder(() => json(429, { message: 'You have exceeded a secondary rate limit.' }, { 'retry-after': '120' })).fetch
+    expect(await failure(githubClient(TOKEN, { fetch: secondary, now: () => NOW }).graphql('q'))).toMatchObject({ code: 'RATE_LIMITED', resetAt: NOW + 120_000 })
+    const refused = recorder(() => json(403, { message: 'Resource not accessible by personal access token' })).fetch
+    expect((await failure(githubClient(TOKEN, { fetch: refused }).graphql('q'))).code).toBe('NO_ACCESS')
+    expect((await failure(githubClient(TOKEN, { fetch: recorder(() => json(401, { message: 'Bad credentials' })).fetch }).graphql('q'))).code).toBe('UNAUTHORIZED')
+  })
+
+  it('errors with no data are UNEXPECTED; errors with data come back with the data', async () => {
+    const none = recorder(() => json(200, { errors: [{ type: 'FORBIDDEN', message: 'no' }] })).fetch
+    expect(await failure(githubClient(TOKEN, { fetch: none }).graphql('q'))).toMatchObject({ code: 'UNEXPECTED', said: 'no' })
+    const some = recorder(() => json(200, { data: { repository: null }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve' }] })).fetch
+    expect(await githubClient(TOKEN, { fetch: some }).graphql('q')).toEqual({ data: { repository: null }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve' }] })
+  })
+})

@@ -265,6 +265,9 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       head: (etag) => call(() => remote.head(etag)),
       tree: (commit) => call(() => remote.tree(commit)),
       blob: (sha) => call(() => remote.blob(sha)),
+      // YAZ-5929: one request for up to 100 files. Its answer is long, but each part of it is a sign (`onActivity`),
+      // so only silence ends it, as for one large file.
+      blobs: (shas) => call(() => remote.blobs(shas)),
       // A commit is up to 5 requests in a row, and its files go UP with no sign: the time they need at the
       // client's floor speed is added, as the client adds it for each request.
       commit: (parent, changes, message, made) => call(() => remote.commit(parent, changes, message, made), REQUEST_TIMEOUT_MS * 5 + uploadAllowanceMs(changeBytes(changes))),
