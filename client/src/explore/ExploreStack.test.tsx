@@ -3671,3 +3671,72 @@ describe('YAZ-5164: the reading layer goes into edit where you are', () => {
     })
   })
 })
+
+describe('YAZ-5881 and YAZ-5920 (checker, PR #278)', () => {
+  const mouse = (target: EventTarget, type: string, x: number, y: number) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y })))
+  beforeEach(() => {
+    localStorage.removeItem('explore:zoom')
+    localStorage.removeItem('explore:box:search')
+    localStorage.removeItem('explore:box:page')
+  })
+
+  it('YAZ-5881: ⌘+ at 200% and ⌘− at 90% on the search write nothing; a size change moves the stack places, and a layer dragged by hand keeps its box', async () => {
+    const onExploreSize = vi.fn()
+    const unclaimed = vi.fn()
+    props = { ...props, exploreSize: 200, onExploreSize }
+    await mount()
+    act(() => requestZoom(1, unclaimed))
+    props = { ...props, exploreSize: 90 }
+    render(1)
+    act(() => requestZoom(-1, unclaimed))
+    expect(onExploreSize).not.toHaveBeenCalled()
+    expect(unclaimed).not.toHaveBeenCalled()
+
+    props = { ...props, exploreSize: 100 }
+    render(1)
+    await typeQuery('alp')
+    await openResult()
+    const [search, page] = live()
+    const head = page.querySelector('.explore__head') as HTMLElement
+    mouse(head, 'mousedown', 100, 100)
+    mouse(window, 'mousemove', 130, 120)
+    mouse(window, 'mouseup', 130, 120)
+    const dragged = [page.style.left, page.style.top, page.style.width]
+    // The setting changes while the stack is open (the footer's Explore row).
+    props = { ...props, exploreSize: 110 }
+    render(1)
+    expect(el.querySelector<HTMLElement>('.explore')!.style.getPropertyValue('--explore-size')).toBe('1.1')
+    expect(search.style.width).toBe(`${layerPlace('search', 0, window.innerWidth, 1.1).width}px`)
+    expect([page.style.left, page.style.top, page.style.width]).toEqual(dragged)
+  })
+
+  it('YAZ-5920: the hover panel of a reading layer goes when the layer switches to Edit, and when Esc closes the layer', async () => {
+    props = { ...props, linkPreview: { on: () => true, scopeOf: () => ({ root: '/v', wikilinks, textVars: {}, watch }), diagramDarkColors: 'adapt' } }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    const show = async () => {
+      const hover = crepes[crepes.length - 1].opts.wikilinkHover as { onHover: (path: string, rect: { left: number; top: number; right: number; bottom: number }, editable: boolean) => void }
+      act(() => hover.onHover('/v/beta.md', { left: 100, top: 100, right: 160, bottom: 118 }, false))
+      await act(async () => await new Promise((r) => setTimeout(r, 450)))
+      expect(document.querySelector('.test-hover-preview')).not.toBeNull()
+    }
+    await show()
+    key(top().querySelector('.explore__body') as HTMLElement, { key: 'e' })
+    await flush()
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
+    await act(async () => await new Promise((r) => setTimeout(r, 450)))
+    expect(document.querySelector('.test-hover-preview')).toBeNull()
+
+    // Back to reading, a new panel, then Esc closes the page layer: the panel goes with it.
+    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--read')).not.toBeNull()
+    await show()
+    escape()
+    await flush()
+    await act(async () => await new Promise((r) => setTimeout(r, 450)))
+    expect(document.querySelector('.test-hover-preview')).toBeNull()
+  })
+})
