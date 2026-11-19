@@ -1310,17 +1310,48 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
   // Two hidden words on the front, one on Side 2.
   const CARD = 'A {{one}} and {{two}}\n---\n{{three}}'
   type Show = 'never' | 'always' | 'click' | 'side2'
-  const at = (titleAt: Show, own?: { titleAt?: 'always' | 'click' | 'side2'; title?: string }, text = CARD) => {
-    mount(text, { ...DEFAULT_REVIEW_SETTINGS, titleAt })
+  // These walks are Title room "Only when it shows" (YAZ-5864); Always (YAZ-5880, the default) has its own tests below.
+  const at = (titleAt: Show, own?: { titleAt?: 'always' | 'click' | 'side2'; title?: string }, text = CARD, titleRoom: 'always' | 'shown' = 'shown') => {
+    mount(text, { ...DEFAULT_REVIEW_SETTINGS, titleAt, titleRoom })
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, ...(own?.title !== undefined && { title: own.title }), ...(own?.titleAt !== undefined && { titleAt: own.titleAt }) } } }
     render()
   }
-  /** The band: 'shown' with its title, or 'none' (YAZ-5857: a title that waits draws no band, so the text is flush with the top). */
+  /**
+   * The band: 'shown' with its title, 'none' (Only when it shows: a title that waits draws no band, the text flush with
+   * the top, YAZ-5864), 'waits' (Always: the band is there, the title in it unseen and unread, YAZ-5880), 'empty' (Always,
+   * no title shown), and '+fade' when a waited title fades in.
+   */
   const band = () => {
     const b = el.querySelector<HTMLElement>('.card-inbox__panel > .card-band')
-    return b === null ? 'none' : `shown: ${b.textContent}`
+    if (b === null) return 'none'
+    if (b.classList.contains('card-band--waiting')) return b.getAttribute('aria-hidden') === 'true' ? 'waits' : 'waits, read'
+    if (b.textContent === '') return b.getAttribute('aria-hidden') === 'true' ? 'empty' : 'empty, read'
+    return `shown: ${b.textContent}${b.classList.contains('card-band--fade') ? ' +fade' : ''}`
   }
   const click = (sel: string) => act(() => el.querySelector<HTMLElement>(sel)!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+  it('Title room Always (YAZ-5880, the default): every card has the band; a waiting title is in it unseen, then fades in; Never keeps an empty band; nothing moves', async () => {
+    expect(DEFAULT_REVIEW_SETTINGS.titleRoom).toBe('always')
+    at('click', undefined, CARD, 'always')
+    await flush()
+    expect(band()).toBe('waits')
+    press(' ')
+    expect(band()).toBe('shown: Capital of France +fade')
+    press(' ')
+    expect(band()).toBe('shown: Capital of France +fade')
+    at('side2', undefined, CARD, 'always')
+    await flush()
+    expect(walk(3)).toEqual(['one | 1 | waits', 'one+two | 1 | waits', 'one+two | 1 | shown: Capital of France +fade'])
+    // A title that shows from the front never fades: it was never away.
+    at('always', undefined, CARD, 'always')
+    await flush()
+    expect(band()).toBe('shown: Capital of France')
+    // Never (global or the card's `notitle`): the band is there, empty, at every step.
+    at('never', undefined, CARD, 'always')
+    await flush()
+    expect(walk(3).map((s) => s.split(' | ')[2])).toEqual(['empty', 'empty', 'empty'])
+    expect(band()).toBe('empty')
+  })
 
   it('Always (the default): the title shows from the front, as before', async () => {
     expect(DEFAULT_REVIEW_SETTINGS.titleAt).toBe('always')

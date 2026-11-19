@@ -147,6 +147,26 @@ describe('when a title shows (YAZ-5696, YAZ-5709: Never · Always · After the f
     expect(await walk(4)).toEqual(['A one and _ | Numbers · TI-20', 'A one and two | Numbers · TI-20', 'A one and two _ | Numbers · TI-20', 'A one and two three | Numbers · TI-20'])
   })
 
+  it('Title room (YAZ-5880, mobile.json `titleRoom`): off (the default) gives a waiting title no room; on keeps its room unseen and unread, then it fades in', async () => {
+    h = await reviewSetup(withGlobal('click', 'TI-26, title "Numbers"'))
+    expect(h.host.querySelector('.review__title-room')).toBeNull()
+    h.unmount()
+    h = await reviewSetup(withGlobal('click', 'TI-26, title "Numbers"'), { titleRoom: true })
+    const room = h.host.querySelector('.review__title-room')
+    expect([room?.textContent, room?.getAttribute('aria-hidden')]).toEqual(['Numbers · ', 'true'])
+    expect(spoken()).not.toContain('Numbers')
+    expect(await walk(1)).toEqual(['A _ and _ | Numbers · TI-26'])
+    expect(h.host.querySelector('.review__title-room')).toBeNull()
+    expect(h.host.querySelector('.review__title')?.classList.contains('review__title--in')).toBe(true)
+    // A title that shows from the front never fades, and Never keeps no room.
+    h.unmount()
+    h = await reviewSetup(withGlobal('always', 'TI-27, title "Numbers"'), { titleRoom: true })
+    expect(h.host.querySelector('.review__title')?.classList.contains('review__title--in')).toBe(false)
+    h.unmount()
+    h = await reviewSetup(withGlobal('never', 'TI-28, title "Numbers"'), { titleRoom: true })
+    expect(h.host.querySelector('.review__title-room, .review__title')).toBeNull()
+  })
+
   it('After the first click: a one-sided card with nothing hidden: the title is the one tap', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': JSON.stringify({ titleAt: 'click' }), 'p.md': page('Geography', cardBlock('Nothing hidden here.', 'TI-25, title "Numbers"')) })
     expect(h.head()).toBe('TI-25')

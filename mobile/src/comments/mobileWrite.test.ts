@@ -18,15 +18,19 @@ const on = (key: MobileSettingKey) => ({ file: 'mobile' as const, key, on: true 
 
 describe('YAZ-5592: the schema (shared/mobileSettings.ts)', () => {
   it('defaults on, on; anything that is not a boolean is the default', () => {
-    expect(DEFAULT_MOBILE_SETTINGS).toEqual({ folding: true, stickyHeadings: true, fitTables: false })
-    for (const raw of [undefined, null, 'x', 3, [], {}, { folding: 'no', stickyHeadings: 0 }]) expect(sanitizeMobileSettings(raw)).toEqual({ folding: true, stickyHeadings: true, fitTables: false })
-    expect(sanitizeMobileSettings({ version: 1, folding: false })).toEqual({ folding: false, stickyHeadings: true, fitTables: false })
-    expect(sanitizeMobileSettings({ stickyHeadings: false, later: { a: 1 } })).toEqual({ folding: true, stickyHeadings: false, fitTables: false })
+    expect(DEFAULT_MOBILE_SETTINGS).toEqual({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false })
+    for (const raw of [undefined, null, 'x', 3, [], {}, { folding: 'no', stickyHeadings: 0 }]) expect(sanitizeMobileSettings(raw)).toEqual({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false })
+    expect(sanitizeMobileSettings({ version: 1, folding: false })).toEqual({ folding: false, stickyHeadings: true, fitTables: false, titleRoom: false })
+    expect(sanitizeMobileSettings({ stickyHeadings: false, later: { a: 1 } })).toEqual({ folding: true, stickyHeadings: false, fitTables: false, titleRoom: false })
+    // YAZ-5880: Title room, Only when it shows (false) by default; true is Always, and the file keeps it.
+    expect(sanitizeMobileSettings({ titleRoom: true }).titleRoom).toBe(true)
+    expect(sanitizeMobileSettings({ titleRoom: 'yes' }).titleRoom).toBe(false)
+    expect(withMobileSetting(null, 'titleRoom', true)).toBe('{\n  "version": 1,\n  "titleRoom": true\n}\n')
   })
 
   it('the file holds only what differs from the defaults, beside its version', () => {
-    expect(mobileSettingsValue({ folding: true, stickyHeadings: true, fitTables: false })).toEqual({ version: 1 })
-    expect(mobileSettingsValue({ folding: false, stickyHeadings: true, fitTables: false })).toEqual({ version: 1, folding: false })
+    expect(mobileSettingsValue({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false })).toEqual({ version: 1 })
+    expect(mobileSettingsValue({ folding: false, stickyHeadings: true, fitTables: false, titleRoom: false })).toEqual({ version: 1, folding: false })
     expect(withMobileSetting(null, 'stickyHeadings', false)).toBe('{\n  "version": 1,\n  "stickyHeadings": false\n}\n')
     expect(withMobileSetting('{"version":1,"stickyHeadings":false}', 'stickyHeadings', true)).toBe('{\n  "version": 1\n}\n')
   })
@@ -40,7 +44,7 @@ describe('YAZ-5592: the schema (shared/mobileSettings.ts)', () => {
 
   it('YAZ-5658: Wide tables, Same as Desktop by default (`fitTables` off); Fit Screen is written, the other keys stay', () => {
     expect(DEFAULT_MOBILE_SETTINGS.fitTables).toBe(false)
-    expect(sanitizeMobileSettings({ fitTables: true })).toEqual({ folding: true, stickyHeadings: true, fitTables: true })
+    expect(sanitizeMobileSettings({ fitTables: true })).toEqual({ folding: true, stickyHeadings: true, fitTables: true, titleRoom: false })
     expect(sanitizeMobileSettings({ fitTables: 'yes' }).fitTables).toBe(false)
     const later = '{\n  "version": 1,\n  "tablet": { "columns": 2 },\n  "folding": false\n}\n'
     const out = withMobileSetting(later, 'fitTables', true)
@@ -70,12 +74,13 @@ describe('YAZ-5592: the write (mobileWrite.ts), pure and idempotent', () => {
 
   it('a waiting change shows at once over the file; a refused one does not', () => {
     const w = (setting: WaitingComment['setting'], refused?: WaitingComment['refused']): WaitingComment => ({ id: 'x', path: MOBILE_SETTINGS_PATH, body: '', at: '', madeAt: 0, notBefore: 0, setting, ...(refused ? { refused } : {}) })
-    expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false }, [w(off('stickyHeadings'))])).toEqual({ folding: true, stickyHeadings: false, fitTables: false })
-    expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false }, [w(off('stickyHeadings')), w(on('stickyHeadings'))])).toEqual({ folding: true, stickyHeadings: true, fitTables: false })
-    expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false }, [w(off('folding'), 'invalid')])).toEqual({ folding: true, stickyHeadings: true, fitTables: false })
+    expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false }, [w(off('stickyHeadings'))])).toEqual({ folding: true, stickyHeadings: false, fitTables: false, titleRoom: false })
+    expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false }, [w(off('stickyHeadings')), w(on('stickyHeadings'))])).toEqual({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false })
+    expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false }, [w(off('folding'), 'invalid')])).toEqual({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false })
     expect(notSentWords(w(off('stickyHeadings')))).toBe('This vault on mobile, Sticky headings: Off')
     expect(notSentWords(w(on('fitTables')))).toBe('This vault on mobile, Wide tables: Fit Screen')
-    expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false }, [w(on('fitTables'))]).fitTables).toBe(true)
+    expect(notSentWords(w(on('titleRoom')))).toBe('This vault on mobile, Title room: Always')
+    expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false, titleRoom: false }, [w(on('fitTables'))]).fitTables).toBe(true)
   })
 })
 
@@ -86,7 +91,7 @@ describe('YAZ-5592: the round trip on the safe path (fake GitHub, made-up vault)
     await t.settle()
     const file = (await t.remote(MOBILE_SETTINGS_PATH))!
     expect(file).toBe('{\n  "version": 1,\n  "stickyHeadings": false\n}\n')
-    expect(sanitizeMobileSettings(JSON.parse(file))).toEqual({ folding: true, stickyHeadings: false, fitTables: false })
+    expect(sanitizeMobileSettings(JSON.parse(file))).toEqual({ folding: true, stickyHeadings: false, fitTables: false, titleRoom: false })
     expect(t.patches()).toBe(1)
     expect(t.s.github.calls.some((c) => c.method === 'PATCH' && c.url.includes('force=true'))).toBe(false)
     expect(t.port.waiting()).toEqual([])

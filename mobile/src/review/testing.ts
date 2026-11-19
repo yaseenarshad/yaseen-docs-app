@@ -42,12 +42,12 @@ export const cardFile = (title: string, block: string, extra = '') => `---\nkind
 
 const named = (el: Element) => (el.getAttribute('aria-label') ?? el.textContent ?? '').replace(/\s+/g, ' ').trim()
 
-export async function reviewSetup(files: Record<string, string>, options: { media?: VaultMedia; dueShuffle?: boolean; fetch?: Parameters<typeof answersSetup>[0] extends infer O ? (O extends { fetch?: infer F } ? F : never) : never } = {}) {
+export async function reviewSetup(files: Record<string, string>, options: { media?: VaultMedia; titleRoom?: boolean; dueShuffle?: boolean; fetch?: Parameters<typeof answersSetup>[0] extends infer O ? (O extends { fetch?: infer F } ? F : never) : never } = {}) {
   return mountReview(await answersSetup({ files, fetch: options.fetch, dueShuffle: options.dueShuffle }), options)
 }
 
 /** The screen on a vault that is set up already (the 3,000-card test measures the screen alone). */
-export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, options: { media?: VaultMedia } = {}) {
+export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, options: { media?: VaultMedia; titleRoom?: boolean } = {}) {
   const link: ReviewLink = { engine: t.engine, answers: t.answers, store: t.store, media: options.media }
   const opened: CardLinkOpen[] = []
   const host = document.createElement('div')
@@ -56,7 +56,7 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
   const settle = async () => {
     for (let i = 0; i < 6; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 0))))
   }
-  await act(async () => root.render(createElement(ReviewView, { link, vault: VAULT, vaultName: 'vault', unit: SAME_WORD, open: (to) => void opened.push(to) })))
+  await act(async () => root.render(createElement(ReviewView, { link, vault: VAULT, vaultName: 'vault', unit: SAME_WORD, open: (to) => void opened.push(to), titleRoom: options.titleRoom })))
   await settle()
   const buttons = () => [...host.querySelectorAll<HTMLButtonElement>('button')]
   const button = (name: string | RegExp) => buttons().find((b) => (typeof name === 'string' ? named(b) === name : name.test(named(b)))) ?? null

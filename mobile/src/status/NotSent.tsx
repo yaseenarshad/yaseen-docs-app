@@ -27,6 +27,8 @@ export const notSentWords = (c: WaitingComment): string =>
 function settingWords(s: NonNullable<WaitingComment['setting']>): string {
   // YAZ-5658: Wide tables is a choice, not On / Off.
   const wide = s.key === 'fitTables' || s.key === 'fit-tables'
+  // YAZ-5880: Title room is a choice too.
+  if ('file' in s && s.key === 'titleRoom') return `This vault on mobile, Title room: ${s.on ? 'Always' : 'Only when it shows'}`
   const to = wide ? (s.on === null ? 'Mobile Vault Default' : s.on ? 'Fit Screen' : 'Same as Desktop') : s.on ? 'On' : 'Off'
   if ('file' in s) return `This vault on mobile, ${wide ? 'Wide tables' : s.key === 'folding' ? 'Folding' : 'Sticky headings'}: ${to}`
   return `${wide ? 'Wide tables' : s.key === 'sticky-headings' ? 'Sticky headings' : 'Folding'} on this page: ${to}`

@@ -637,6 +637,25 @@
   white-space: nowrap;
 }
 
+/* Title room Always (YAZ-5880, `mobile.json`'s `titleRoom`): a title that waits keeps its room in the head line, unseen
+   (and unread: `aria-hidden`), so the ID beside it never moves; when it shows it fades in, the Mac's 150 ms. */
+.review__title-room {
+  visibility: hidden;
+}
+.review__title--in {
+  animation: review-title-in 150ms ease-out;
+}
+@keyframes review-title-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .review__title--in {
+    animation: none;
+  }
+}
+
 .review__fix {
   margin: 0 0 8px;
   font-size: calc(14px * var(--review-zoom, 1));

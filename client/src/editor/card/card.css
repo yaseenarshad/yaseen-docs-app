@@ -782,6 +782,27 @@
 .card .card-band {
   padding: 8px 16px 9px;
 }
+/* Title room "Always" (YAZ-5880): a title that waits is in the band, unseen (its words are not read either, `aria-hidden`),
+   and fades in when it shows; an empty band (Never, no title) is one line tall, as a band with a title. Nothing moves. */
+.card-band--waiting > * {
+  visibility: hidden;
+}
+.card-inbox__panel > .card-band:empty::before {
+  content: '\00a0';
+}
+.card-band--fade > * {
+  animation: card-band-in 150ms ease-out;
+}
+@keyframes card-band-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-band--fade > * {
+    animation: none;
+  }
+}
 .card-band[hidden],
 .card.card--editing > .card-band {
   display: none;

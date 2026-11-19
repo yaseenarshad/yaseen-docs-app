@@ -128,6 +128,15 @@ describe('the global default (review.json `titleAt`)', () => {
   })
 })
 
+describe("Title room (YAZ-5880, review.json `titleRoom`)", () => {
+  it("is Always by default; 'shown' is kept; anything else reads Always", () => {
+    expect(DEFAULT_REVIEW_SETTINGS.titleRoom).toBe('always')
+    expect(sanitizeReviewSettings({}).titleRoom).toBe('always')
+    expect(sanitizeReviewSettings({ titleRoom: 'shown' }).titleRoom).toBe('shown')
+    for (const raw of ['always', 'never', true, 1, null]) expect(sanitizeReviewSettings({ titleRoom: raw }).titleRoom).toBe('always')
+  })
+})
+
 describe('the words: the choices, "Default (Always)", and the eye\'s help', () => {
   it('Default names what it means now; then Never · Always · After the first click · Before Side 2 (YAZ-5709)', () => {
     expect(CARD_TITLE_CHOICES.map((c) => c.choice)).toEqual(['default', 'never', 'always', 'click', 'side2'])

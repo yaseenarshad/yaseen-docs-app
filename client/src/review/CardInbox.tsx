@@ -30,8 +30,10 @@
  *    at any step, fully shown too, and the answer line names the card by its ID (`reviewTitleOf`).
  *  - WHEN A TITLE SHOWS (YAZ-5696): Never, Always, After the first click or Before Side 2 (YAZ-5709: the title then has its own Space) — the card's own choice
  *    (⋯ › Title in review, its line's `title-click`…), else Settings › Cards › Show card titles (`bandTitle`,
- *    `titleShows`). While it waits there is no band (YAZ-5857 D1): the text starts flush with the top of the card, and
- *    the band comes in at once, with no animation, when the title shows (D2), as on the phone.
+ *    `titleShows`). TITLE ROOM (YAZ-5880, Settings › Cards › Card look, `titleRoom`): Always (the default), every card
+ *    has the band, empty when no title shows (Never, `notitle`), and a waiting title sits in it unseen and fades in, so
+ *    nothing moves; Only when it shows (YAZ-5864), no band while the title waits, the text flush with the top, and the
+ *    band comes in at once when the title shows.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -512,13 +514,15 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
           bodyRef={bodyRef}
           band={
             card !== null &&
-            headTitle !== '' &&
-            !band.waits && (
+            (review.settings.titleRoom === 'always' || (headTitle !== '' && !band.waits)) && (
               // The title band at the top of the card's frame (YAZ-5308 A3), no label. A card file's title opens its tab; a
               // card in a page's is the page title's own component, a click renames the card (its card line), as in the
-              // page's card (YAZ-5164 part 3). In a Read only vault it shows only.
-              <CardBand>
-                {cardFile ? (
+              // page's card (YAZ-5164 part 3). In a Read only vault it shows only. Title room (YAZ-5880): Always keeps
+              // the band on every card, empty with no title, the title unseen while it waits.
+              <CardBand key={cardKey} waiting={band.waits}>
+                {headTitle === '' ? null : band.waits ? (
+                  <span className="card-inbox__name">{headTitle}</span>
+                ) : cardFile ? (
                   <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openFile(card.path)}>
                     {headTitle}
                   </button>

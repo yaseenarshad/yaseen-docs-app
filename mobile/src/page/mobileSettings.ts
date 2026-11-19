@@ -83,7 +83,7 @@ export function useMobileSettings(data: VaultData | null, port: CommentsPort | n
   return { settings: value, set }
 }
 
-const sameSettings = (a: MobileSettings, b: MobileSettings) => a.folding === b.folding && a.stickyHeadings === b.stickyHeadings && a.fitTables === b.fitTables
+const sameSettings = (a: MobileSettings, b: MobileSettings) => a.folding === b.folding && a.stickyHeadings === b.stickyHeadings && a.fitTables === b.fitTables && a.titleRoom === b.titleRoom
 
 /**
  * YAZ-5591: the settings read ahead with the reader (`warmPage`), so the first page or panel of a session draws with the
