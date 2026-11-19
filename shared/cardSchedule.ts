@@ -202,6 +202,36 @@ export function recallChance(reviews: readonly CardReview[], s: ReviewSettings, 
   return last === null ? null : schedulerOf(s).get_retrievability(last.card, localFrame(now), false)
 }
 
+/** What the Card table shows of a card's memory (YAZ-5793). */
+export interface CardMemory {
+  /** The wait the last review set, in whole days (Anki's Interval): the card window's, `stepWait`. */
+  wait: number
+  /** How many times the card was forgotten after it was learned (FSRS lapses). */
+  forgotten: number
+  /** The chance to remember the card at `now`, 0 to 1 (FSRS retrievability). */
+  recall: number
+}
+
+/** Each review list's last replay step, by settings: a Card table reads one per row on every run (YAZ-5793). */
+const stepCache = new WeakMap<ReviewSettings, Map<string, ReplayStep | null>>()
+
+/** A card's wait, lapses and recall chance at `now` from ONE cached replay; null for a card with no review. */
+export function cardMemory(reviews: readonly CardReview[], s: ReviewSettings, now: number): CardMemory | null {
+  if (reviews.length === 0) return null
+  let map = stepCache.get(s)
+  if (map === undefined) stepCache.set(s, (map = new Map()))
+  const key = reviewsKey(reviews)
+  let last = map.get(key)
+  if (last === undefined) {
+    if (map.size >= CACHE_MAX) map.clear()
+    map.set(key, (last = replay(reviews, s)))
+  }
+  if (last === null) return null
+  // YAZ-5855 root cause: main's YAZ-5789 rules made some answers "not counted", and the card window's wait became `stepWait`,
+  // but this kept FSRS's `scheduled_days`, so the Card table's Wait time could differ from the window. Solution: the same helper.
+  return { wait: stepWait(last), forgotten: last.card.lapses, recall: schedulerOf(s).get_retrievability(last.card, localFrame(now), false) }
+}
+
 /** The ratings the review buttons write, left to right (D5): two buttons by default, four by the setting. */
 export const answerRatings = (s: ReviewSettings): CardRating[] => (s.buttons === 4 ? ['again', 'hard', 'good', 'easy'] : ['again', 'good'])
 
@@ -270,12 +300,18 @@ const dueCache = new WeakMap<ReviewSettings, Map<string, number>>()
 /** A cap so a long session cannot grow the log map without end: past it, the map starts again. Each answer adds a log. */
 const CACHE_MAX = 20_000
 
+/** A review list as one text: the key of `dueCache` and `stepCache`. */
+function reviewsKey(reviews: readonly CardReview[]): string {
+  let key = ''
+  for (const r of reviews) key += `${r.at} ${r.rating},`
+  return key
+}
+
 export function cardDueAt(reviews: readonly CardReview[], s: ReviewSettings): number {
   if (reviews.length === 0) return Number.NaN
   let map = dueCache.get(s)
   if (map === undefined) dueCache.set(s, (map = new Map()))
-  let key = ''
-  for (const r of reviews) key += `${r.at} ${r.rating},`
+  const key = reviewsKey(reviews)
   let due = map.get(key)
   if (due === undefined) {
     if (map.size >= CACHE_MAX) map.clear()

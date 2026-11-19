@@ -142,7 +142,7 @@ export interface TableViewProps {
   /** The read-only pages (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
   /**
-   * The rows are cards (YAZ-5319, Show cards as rows): no row moves (a drag onto a group or to Other files), and the
+   * The rows are cards (YAZ-5319, a Card table): no row moves (a drag onto a group or to Other files), and the
    * Name cell is the card's title, which no title edit renames. Card status and Card up next still edit.
    */
   cardRows?: boolean
@@ -2017,6 +2017,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     value={shown !== null ? fromYaml(shown.raw) : v}
                     editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
                     options={typings[c]?.options}
+                    required={typings[c]?.required}
                     titles={linkNames[c] ?? titles}
                     resolve={resolve}
                     readOnly={locked}

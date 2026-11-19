@@ -33,7 +33,7 @@ import { tourEvent } from '../course/tourBus'
  * and takes the card out of the queue.
  *
  * Archived cards (YAZ-5046) are never in the queue. The Inbox lists none (YAZ-5319): a folder page's table finds them
- * (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
+ * (+ › Card table, Status), and a card's ⋯ menu unarchives it.
  *
  * Fix later (YAZ-5097): a marked card stays in review: the mark changes no count and no queue. The Inbox never shows or
  * sets it (YAZ-5430): a card's ⋯ elsewhere does, and a folder page's Cards table has Card fix status.

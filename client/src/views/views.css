@@ -3928,3 +3928,6 @@
 
 /* "None" in a picker list (YAZ-4799 demo): a quiet dash where a type icon would be. */
 .type-picker__none { display: inline-flex; justify-content: center; width: 14px; color: var(--fg-muted); }
+
+/* A Card table while the vault's Cards or IDs are off (YAZ-5793 D1). */
+.views-pane__cards-off { margin: 16px 0; color: var(--fg-muted); font-size: 14px; }

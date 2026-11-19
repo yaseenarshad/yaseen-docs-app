@@ -13,6 +13,8 @@ const VIEW_TYPES = ['table', 'board', 'calendar', 'cards', 'list', PAGE_VIEW_TYP
 /** This strip's own drag payload (TabBar's `WORKSPACE_PAGE_MIME` idiom); never `text/plain`. */
 const VIEW_TAB_MIME = 'application/x-yaseen-view-tab'
 export const viewTypeLabel = (type: string): string => type.charAt(0).toUpperCase() + type.slice(1)
+/** "+" › Card table (YAZ-5793 D1): a Table that lists one row per card under the folder (`rows: cards`, YAZ-5319). */
+export const CARD_TABLE_ITEM = 'cardTable'
 
 export interface ViewTabsProps {
   views: ViewDef[]
@@ -34,6 +36,8 @@ export interface ViewTabsProps {
   onSettings?: (index: number) => void
   /** "Export as CSV…" / "Copy as table" (YAZ-4594 S30): the view's shown rows and columns as text. Absent = no items. */
   onExport?: (index: number, as: 'csv' | 'copy') => void
+  /** "+" offers Card table (YAZ-5793): only while the vault has Cards and IDs on. */
+  cardsOffered?: boolean
 }
 
 /**
@@ -44,7 +48,7 @@ export interface ViewTabsProps {
  * (YAZ-4585 D41, YAZ-4594 S30), "+" picks a
  * type. Every change is ONE `update` in ViewsPane; which view is active stays session state.
  */
-export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onDuplicate, onDelete, defaultView, onSetDefault, onSettings, onExport }: ViewTabsProps) {
+export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onDuplicate, onDelete, defaultView, onSetDefault, onSettings, onExport, cardsOffered }: ViewTabsProps) {
   // The tab bar's drag (YAZ-4606 D58): the tabs part live, the slot is read from the layout, and the strip scrolls at its ends.
   const live = useLiveGapReorder<HTMLDivElement>({ axis: 'x', keys: views.map((v) => v.name), onMove })
   const [menu, setMenu] = useState<{ x: number; y: number; i: number } | null>(null)
@@ -150,6 +154,21 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
                   {viewTypeLabel(type)}
                 </button>
               ))}
+              {cardsOffered === true && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="view-popover__item"
+                  onClick={() => {
+                    setAdding(null)
+                    onAdd(CARD_TABLE_ITEM)
+                    setRenaming(views.length)
+                  }}
+                >
+                  <ViewTypeIcon type="table" />
+                  Card table
+                </button>
+              )}
             </div>
           </Popover>
         )}
