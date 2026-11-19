@@ -296,6 +296,8 @@ import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
 import { tableStyle } from './table/tableStyle'
 import { codeBlockWidth, codeCommentStringify } from './code/codeWidth'
+import { CODE_BUTTON_KINDS, CODE_TOOLBAR_KEYS, codeHasMark, codeMarkCommand, codeMarkDecorations, codeMarkKeys, codeMarksPlugin, codeSelection, codeToolbarCtx } from './code/codeMarks'
+import { shallowRef, type ShallowRef } from 'vue'
 import { cellBlocksOnly } from './table/cellBlocks'
 import { cellNotes, withoutEmptyCellNotes } from './table/cellNotes'
 import { cellNoteButton } from './table/cellNoteButton'
@@ -511,6 +513,33 @@ export interface ToolbarBuilder {
 }
 
 const viewState = (ctx: Ctx) => ctx.get(editorViewCtx).state
+
+type BuiltItem = { key: string; onRun?: (ctx: Ctx) => void; active?: (ctx: Ctx) => boolean }
+
+/**
+ * The toolbar in a code block (YAZ-5794 D3, D4). Bold, Italic, Underline and Strikethrough run the code's own marks
+ * when the selection is in code, and light from them; elsewhere they run as before. The highlight buttons and their
+ * ▾ need nothing here: their commands know code (`marks/highlight.ts`). While the selection is in code (`inCode`, a
+ * Vue ref the toolbar's `computed` reads, so the strip rebuilds when it flips) only the Text style group shows:
+ * `CODE_TOOLBAR_KEYS`, in the user's order, and a group left empty goes with its divider. The builder's own array is
+ * changed in place, as `arrangeToolbar` does.
+ */
+function codeButtons(groups: ReturnType<ToolbarBuilder['build']>, inCode: boolean): void {
+  for (const group of groups)
+    for (const item of group.items as BuiltItem[]) {
+      const kind = CODE_BUTTON_KINDS[item.key]
+      const { onRun, active } = item
+      if (kind === undefined || onRun === undefined) continue
+      item.onRun = (ctx) => (codeSelection(viewState(ctx)) !== null ? runOnView(ctx, codeMarkCommand(kind)) : onRun(ctx))
+      item.active = (ctx) => {
+        const range = codeSelection(viewState(ctx))
+        return range !== null ? codeHasMark(range, kind) : (active?.(ctx) ?? false)
+      }
+    }
+  if (!inCode) return
+  for (const group of groups) group.items = group.items.filter((item) => CODE_TOOLBAR_KEYS.includes(item.key))
+  for (let i = groups.length - 1; i >= 0; i--) if (groups[i].items.length === 0) groups.splice(i, 1)
+}
 /** Run a ProseMirror command on the editor's view, as Crepe's own buttons do through their commands. */
 const runOnView = (ctx: Ctx, command: Command): void => {
   const view = ctx.get(editorViewCtx)
@@ -561,7 +590,7 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * would keep Crepe's order and raise nothing; `headingToolbar.test.ts` reads the strip of a real
  * editor and fails on it.
  */
-function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: CreateCrepeOptions['extendToolbar']): void {
+function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: CreateCrepeOptions['extendToolbar'], inCode?: ShallowRef<boolean>): void {
   const formatting = builder.getGroup('formatting')
   for (const color of [null, ...QUICK_HIGHLIGHTS] as HighlightColor[]) {
     const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue')
@@ -636,6 +665,7 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       groups.splice(groups.findIndex((group) => group.key === place.after) + 1, 0, own)
     }
   }
+  codeButtons(groups, inCode?.value === true)
   if (hidden.length === 0) return
   for (const group of groups) group.items = group.items.filter((item) => !hidden.includes(item.key))
   groups.splice(0, groups.length, ...groups.filter((group) => group.items.length > 0))
@@ -687,6 +717,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
           extendSlash(builder)
         }
   const slashMenu = createSlashMenu(slashRows, opts.hidden?.slash, cardSlash)
+  // YAZ-5794: true while this editor's selection is in a code block (`codeToolbarCtx`); the toolbar reads it.
+  const inCode = shallowRef(false)
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
@@ -706,7 +738,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
       // YAZ-1480 adds Highlight into Crepe's own Formatting group from the same builder.
-      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar, opts.extendToolbar) },
+      // YAZ-5794: in a code block, the Text style group only, on the code's own marks (`inCode`, `codeButtons`).
+      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar, opts.extendToolbar, inCode) },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
@@ -715,7 +748,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // `addLineCodeKeys` (YAZ-4800 demo): ⌘↵ / ⌘⇧↵ add a line below / above the code block, before Crepe's exit-code.
       // `cardCodeKeys` (YAZ-4961): in a card's editor ⌘↵ opens the card and Esc is Done, before `addLineCodeKeys`.
       // The `card` language: Markdown with spell check (idea 8).
-      [CrepeFeature.CodeMirror]: { theme: codeTheme, languages: [...codeLanguages, cardLanguage], extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, cardCodeKeys, addLineCodeKeys] },
+      [CrepeFeature.CodeMirror]: { theme: codeTheme, languages: [...codeLanguages, cardLanguage], extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, codeMarkDecorations, codeMarkKeys(opts.hotkeys), cardCodeKeys, addLineCodeKeys] },
     },
   })
   crepe.editor.use(
@@ -744,6 +777,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // edge's grip and its drag. The join rule keeps the comment on the line under the fence.
   crepe.editor.use(codeBlockWidth)
   crepe.editor.config(codeCommentStringify)
+  // Formatting inside a code block (YAZ-5794): the marks follow typing, CodeMirror draws them, the toolbar knows code.
+  crepe.editor.config((ctx) => void ctx.inject(codeToolbarCtx, inCode))
+  crepe.editor.use(codeMarksPlugin)
   // Cell notes (YAZ-3818 D4, D12): a `cell-N` footnote is a `cell_note`, hidden, and it stays under its table. Before
   // `inlineBreaks`: its remark step reads a footnote's `<br />` line first.
   crepe.editor.use(cellNotes)

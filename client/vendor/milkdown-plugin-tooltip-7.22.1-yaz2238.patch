@@ -1,41 +1,25 @@
---- a/src/tooltip-provider.ts
-+++ b/src/tooltip-provider.ts
-@@ -63,6 +63,12 @@
-   #cleanupAutoUpdate?: () => void
- 
-   /// @internal
-+  /// The state the last evaluated update saw. Updates are throttled, so a trailing call carries
-+  /// only the LAST call's `prevState`; comparing against it alone let a no-op transaction hide the
-+  /// real change before it (the tooltip stayed shown for a selection that was gone).
-+  #lastState?: EditorState
-+
-+  /// @internal
-   readonly #offset?: OffsetOptions
- 
-   /// @internal
-@@ -129,8 +135,9 @@
-     const { ranges } = selection
-     const from = Math.min(...ranges.map((range) => range.$from.pos))
-     const to = Math.max(...ranges.map((range) => range.$to.pos))
--    const isSame =
--      prevState && prevState.doc.eq(doc) && prevState.selection.eq(selection)
-+    const unchanged = (other?: EditorState) =>
-+      !!other && other.doc.eq(doc) && other.selection.eq(selection)
-+    const isSame = unchanged(prevState) && unchanged(this.#lastState)
- 
-     if (!this.#initialized) {
-       const root = this.#root ?? view.dom.parentElement ?? document.body
-@@ -139,6 +146,7 @@
-     }
- 
-     if (composing || isSame) return
-+    this.#lastState = state
- 
-     this.#cleanupAutoUpdate?.()
-     this.#cleanupAutoUpdate = void 0
+diff --git a/lib/index.js b/lib/index.js
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -12,6 +12,7 @@
+@@ -4,6 +4,17 @@ import { Plugin, PluginKey, TextSelection } from "@milkdown/prose/state";
+ import { throttle } from "lodash-es";
+ import { $ctx, $prose } from "@milkdown/utils";
+ //#region src/tooltip-provider.ts
++function nestedSelectionRect(view) {
++	const root = view.root;
++	const active = root.activeElement;
++	if (!(active instanceof HTMLElement) || active === view.dom || !view.dom.contains(active) || !active.isContentEditable) return null;
++	const selection = "getSelection" in root && typeof root.getSelection === "function" ? root.getSelection() : document.getSelection();
++	if (selection === null || selection.rangeCount === 0) return null;
++	const range = selection.getRangeAt(0);
++	if (!active.contains(range.commonAncestorContainer)) return null;
++	const rect = range.getBoundingClientRect();
++	return rect.width === 0 && rect.height === 0 ? null : rect;
++}
+ var TooltipProvider = class {
+ 	#debounce;
+ 	#shouldShow;
+@@ -12,6 +23,7 @@ var TooltipProvider = class {
  	#root;
  	#initialized;
  	#cleanupAutoUpdate;
@@ -43,7 +27,7 @@
  	#offset;
  	#shift;
  	#updater;
-@@ -45,12 +46,14 @@
+@@ -45,12 +57,14 @@ var TooltipProvider = class {
  			const { ranges } = selection;
  			const from = Math.min(...ranges.map((range) => range.$from.pos));
  			const to = Math.max(...ranges.map((range) => range.$to.pos));
@@ -59,10 +43,98 @@
  			this.#cleanupAutoUpdate?.();
  			this.#cleanupAutoUpdate = void 0;
  			if (!this.#shouldShow(view, prevState)) {
-@@ -143,5 +146,3 @@
+@@ -58,7 +72,7 @@ var TooltipProvider = class {
+ 				return;
+ 			}
+ 			const virtualEl = {
+-				getBoundingClientRect: () => posToDOMRect(view, from, to),
++				getBoundingClientRect: () => nestedSelectionRect(view) ?? posToDOMRect(view, from, to),
+ 				contextElement: view.dom
+ 			};
+ 			if (this.#shouldAutoUpdate(view)) this.#cleanupAutoUpdate = autoUpdate(virtualEl, this.element, () => this.#updatePosition(virtualEl));
+@@ -143,5 +157,3 @@ function tooltipFactory(id) {
  }
  //#endregion
  export { TooltipProvider, tooltipFactory };
 -
 -//# sourceMappingURL=index.js.map
 \ No newline at end of file
+diff --git a/src/tooltip-provider.ts b/src/tooltip-provider.ts
+--- a/src/tooltip-provider.ts
++++ b/src/tooltip-provider.ts
+@@ -19,6 +19,32 @@ import { posToDOMRect } from '@milkdown/prose'
+ import { TextSelection } from '@milkdown/prose/state'
+ import { throttle } from 'lodash-es'
+ 
++/// YAZ-5794: the rect of the DOM selection when the focus is in an editor
++/// nested inside the view, such as a code block's CodeMirror. ProseMirror
++/// cannot measure a position inside a node view that has no content DOM:
++/// it gives the edge of the block. The nested editor keeps the DOM
++/// selection on its own text, so its rect is the selected text.
++function nestedSelectionRect(view: EditorView): DOMRect | null {
++  const root = view.root as Document | ShadowRoot
++  const active = root.activeElement
++  if (
++    !(active instanceof HTMLElement) ||
++    active === view.dom ||
++    !view.dom.contains(active) ||
++    !active.isContentEditable
++  )
++    return null
++  const selection =
++    'getSelection' in root && typeof root.getSelection === 'function'
++      ? root.getSelection()
++      : document.getSelection()
++  if (selection === null || selection.rangeCount === 0) return null
++  const range = selection.getRangeAt(0)
++  if (!active.contains(range.commonAncestorContainer)) return null
++  const rect = range.getBoundingClientRect()
++  return rect.width === 0 && rect.height === 0 ? null : rect
++}
++
+ /// Options for tooltip provider.
+ export interface TooltipProviderOptions {
+   /// The tooltip content.
+@@ -62,6 +88,12 @@ export class TooltipProvider {
+   /// @internal
+   #cleanupAutoUpdate?: () => void
+ 
++  /// @internal
++  /// The state the last evaluated update saw. Updates are throttled, so a trailing call carries
++  /// only the LAST call's `prevState`; comparing against it alone let a no-op transaction hide the
++  /// real change before it (the tooltip stayed shown for a selection that was gone).
++  #lastState?: EditorState
++
+   /// @internal
+   readonly #offset?: OffsetOptions
+ 
+@@ -129,8 +161,9 @@ export class TooltipProvider {
+     const { ranges } = selection
+     const from = Math.min(...ranges.map((range) => range.$from.pos))
+     const to = Math.max(...ranges.map((range) => range.$to.pos))
+-    const isSame =
+-      prevState && prevState.doc.eq(doc) && prevState.selection.eq(selection)
++    const unchanged = (other?: EditorState) =>
++      !!other && other.doc.eq(doc) && other.selection.eq(selection)
++    const isSame = unchanged(prevState) && unchanged(this.#lastState)
+ 
+     if (!this.#initialized) {
+       const root = this.#root ?? view.dom.parentElement ?? document.body
+@@ -139,6 +172,7 @@ export class TooltipProvider {
+     }
+ 
+     if (composing || isSame) return
++    this.#lastState = state
+ 
+     this.#cleanupAutoUpdate?.()
+     this.#cleanupAutoUpdate = void 0
+@@ -149,7 +183,8 @@ export class TooltipProvider {
+     }
+ 
+     const virtualEl: VirtualElement = {
+-      getBoundingClientRect: () => posToDOMRect(view, from, to),
++      getBoundingClientRect: () =>
++        nestedSelectionRect(view) ?? posToDOMRect(view, from, to),
+       contextElement: view.dom,
+     }
+ 

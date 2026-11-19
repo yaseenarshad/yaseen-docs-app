@@ -691,6 +691,22 @@ button {
 .milkdown .ProseMirror mark.highlight-red { background: var(--mark-bg-red); }
 .milkdown .ProseMirror mark.highlight-gray { background: var(--mark-bg-gray); }
 
+/* Formatting inside a code block (YAZ-5794, `editor/code/codeMarks.ts`): CodeMirror mark decorations on the code's own
+   text, drawn as the page draws its marks. A highlight's colour is `--code-mark-bg`: a named colour's token, or a custom
+   colour's wash set on the span itself. */
+.cm-code-mark-bold { font-weight: bold; }
+.cm-code-mark-italic { font-style: italic; }
+.cm-code-mark-underline { text-decoration: underline; }
+.cm-code-mark-strike { text-decoration: line-through; }
+.cm-code-mark-highlight { background: var(--code-mark-bg, var(--mark-bg)); }
+.cm-code-mark-highlight.highlight-green { --code-mark-bg: var(--mark-bg-green); }
+.cm-code-mark-highlight.highlight-blue { --code-mark-bg: var(--mark-bg-blue); }
+.cm-code-mark-highlight.highlight-pink { --code-mark-bg: var(--mark-bg-pink); }
+.cm-code-mark-highlight.highlight-orange { --code-mark-bg: var(--mark-bg-orange); }
+.cm-code-mark-highlight.highlight-purple { --code-mark-bg: var(--mark-bg-purple); }
+.cm-code-mark-highlight.highlight-red { --code-mark-bg: var(--mark-bg-red); }
+.cm-code-mark-highlight.highlight-gray { --code-mark-bg: var(--mark-bg-gray); }
+
 /* The highlight buttons and their ▾ are the board toolbar's tiles (YAZ-4445): `editor/swatchTile.css`. */
 
 /* The page's selection toolbar, tighter (YAZ-4348 demo round 2, Yasin: "everything so spaced out … decently spaced
