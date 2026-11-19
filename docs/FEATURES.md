@@ -212,7 +212,8 @@ The Mac and the phone use one set of rules and one code path (`shared/cardSchedu
 - **The lists rebuild at once** after an action that is not an answer: Archive, Up next on or off, Reset, or a freed New cards place. A freed place takes the next new card. Reset never shows a card that is not in today's list.
 - **Two devices:** a card that the other device began joins the open session after a sync, as a Due today card for its second ✓. A card that the other device finished leaves the session.
 - **Time:** the day starts at midnight, local time. The schedule counts days in the local day, not in UTC. An answer saves the time that you pressed the button. A second answer on one card in the same millisecond gets +1 ms. Recent (sidebar) uses the same day timer.
-- **Kept as before:** the names "Due today" and "New cards"; two buttons (four as a setting); learning steps 1m, 1m; relearning 1m; Archive only (no bury, no suspend); the reviews on the card line.
+- **Recorded, not counted** (YAZ-5789, as Mochi): a ✕ sets the card's next date. A ✓ before that date, in the missed pass or on a later day, is kept in the card's history, but it does not move the date. A ✓ on or after the date counts as a normal review. A new card's ✕ is kept, but its schedule starts at its first ✓. The Reviews table says **Not counted** on such an answer.
+- **Kept as before:** the names "Due today" and "New cards"; two buttons (four as a setting); no learning steps (days only); Archive only (no bury, no suspend); the reviews on the card line.
 - **Not now:** leeches, cram, the optimizer, stats, load balancing, reverse cards, a top number of reviews a day, and a "Review day starts at" setting.
 
 ### Card files (YAZ-5037)
