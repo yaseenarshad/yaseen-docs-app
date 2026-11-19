@@ -332,6 +332,19 @@ function layerStyleOf(formatting: TextFormatting, pills: LinkPills, cardVars: CS
   }
   return style
 }
+const cardSurfaceStyles = new WeakMap<LinkPills, WeakMap<CSSProperties, CSSProperties>>()
+/**
+ * The style of a surface that shows a vault's cards outside a page layer — the Inbox, Preview a card, Explore's card
+ * layer (YAZ-5792): its card look and its link pills look, since a card's text holds link pills (`cardPill`). Cached on
+ * both objects, as `layerStyleOf`, so a surface's style keeps its identity between renders.
+ */
+function cardSurfaceStyleOf(pills: LinkPills, cardVars: CSSProperties): CSSProperties {
+  let byCard = cardSurfaceStyles.get(pills)
+  if (byCard === undefined) cardSurfaceStyles.set(pills, (byCard = new WeakMap()))
+  let style = byCard.get(cardVars)
+  if (style === undefined) byCard.set(cardVars, (style = { ...linkPillVars(pills), ...cardVars } as CSSProperties))
+  return style
+}
 /**
  * A vault's table look as its surfaces' variables (YAZ-5487): `--table-look` names the vault (the editor's script reads
  * its look by it, `tableLookAt`), and with a table-look.json its whole look (`initial` where it sets none); with none,
@@ -1085,11 +1098,13 @@ export function App() {
   /**
    * The card look of the vault that holds `path` (YAZ-5484), as variables for every surface that shows one of its cards
    * (page layers through `textVarsFor`, Explore's card layer, the Inbox, Preview a card): the vault's whole look over the
-   * app's settings, or none for a vault with no card-look.json (it reads `.app`'s, the app's look).
+   * app's settings, or none for a vault with no card-look.json (it reads `.app`'s, the app's look). With its link pills
+   * look too (YAZ-5792, `cardSurfaceStyleOf`): a card's links wear the vault's pill style on every one of those surfaces.
    */
   const cardVarsFor = (path: string): CSSProperties => {
     const look = scopeOf(path).cardLook.look
-    return look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
+    const cardVars = look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
+    return cardSurfaceStyleOf(scopeOf(path).linkPills.pills, cardVars)
   }
   /**
    * The text formatting of the vault that holds `path` (YAZ-3067 D12), as the style of the layer

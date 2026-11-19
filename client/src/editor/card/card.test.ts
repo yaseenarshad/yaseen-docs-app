@@ -863,7 +863,9 @@ describe('renderCard (the page and the Inbox, D18)', () => {
     const source = vault(true)
     const linkLook = { icon: (path: string) => ({ class: 'file-icon file-icon--file', 'data-icon-path': path }) }
     const card = renderCard('[[France]] and [[Gone]]', {}, cardLook(source, undefined, undefined, linkLook))
-    const [found, gone] = [...card.querySelectorAll<HTMLElement>('[data-card-link]')]
+    // The link rides on the pill's group (YAZ-5792); the pill is its name.
+    const name = (group: Element) => group.querySelector<HTMLElement>('.wikilink')!
+    const [found, gone] = [...card.querySelectorAll<HTMLElement>('[data-card-link]')].map(name)
     expect([...found.classList]).toEqual(['wikilink', 'file-icon', 'file-icon--file'])
     expect(found.getAttribute('data-icon-path')).toBe('/v/France.md')
     expect([...gone.classList]).toEqual(['wikilink', 'wikilink--unresolved'])
@@ -872,7 +874,7 @@ describe('renderCard (the page and the Inbox, D18)', () => {
     const side = card.querySelector('.card__side')!
     refreshCardLook(card, cardLook(source, undefined, undefined, linkLook))
     expect(card.querySelector('.card__side')).toBe(side)
-    const [france, now] = [...card.querySelectorAll<HTMLElement>('[data-card-link]')]
+    const [france, now] = [...card.querySelectorAll<HTMLElement>('[data-card-link]')].map(name)
     expect([...france.classList]).toEqual(['wikilink', 'wikilink--unresolved'])
     expect(france.hasAttribute('data-icon-path')).toBe(false)
     expect(now.getAttribute('data-icon-path')).toBe('/v/Gone.md')

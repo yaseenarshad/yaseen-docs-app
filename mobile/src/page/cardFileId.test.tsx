@@ -99,8 +99,10 @@ describe('YAZ-5556: a link to a card file opens it; its top bar shows its ID', (
     h = await openTrip()
     expect(chip(h)?.textContent).toBe('NC-1')
     // The ID link shows the card's title, and is a card link.
-    expect(link(h, 'Capital of France').className).toBe('wikilink wikilink--card')
-    expect(link(h, 'the capital').className).toBe('wikilink wikilink--card')
+    // The Mac's card pill (YAZ-5792, `cardPill`) inside the link: the title with the card icon.
+    expect(link(h, 'Capital of France').className).toBe('page-pill')
+    expect(link(h, 'Capital of France').querySelector('.wikilink--card')?.textContent).toBe('Capital of France')
+    expect(link(h, 'the capital').querySelector('.wikilink--card')?.textContent).toBe('the capital')
     for (const words of ['Capital of France', 'the capital']) {
       await act(async () => link(h!, words).click())
       await waitFor(h, () => h!.host.querySelector('.card-view') !== null && chip(h!) !== null)

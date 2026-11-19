@@ -2,6 +2,7 @@ import { isAudioRef } from '@client/editor/card/cardMedia'
 import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/localOnly'
 import { parseAlt } from '@client/editor/image/imageSrc'
 import { headSpan, tailSpan, type PillEnd } from '@client/editor/wikilink/linkPillLook'
+import { cardPill } from '@client/editor/wikilink/cardPill'
 import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
 import { Renderer, type RendererExtension, type Token, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
@@ -63,6 +64,8 @@ export interface LinkShow {
   missing?: string
   /** The vault's pill format's ends (`link-pills.json`): drawn before and after the name, as the Mac's page. */
   ends?: { head: PillEnd | null; tail: PillEnd | null }
+  /** A card link: the card icon stands on its title (`{icon}{name}`); else it is a piece of an end, or nowhere (YAZ-5792). */
+  iconOnName?: boolean
 }
 
 /** What an `![[embed]]` is. */
@@ -308,12 +311,16 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
       a.removeAttribute('data-page-link')
       const show = look.link(inner)
       a.textContent = show.label
-      a.className = show.open === null ? 'wikilink wikilink--unresolved' : show.open.kind === 'card' ? 'wikilink wikilink--card' : 'wikilink'
+      a.className = show.open === null ? 'wikilink wikilink--unresolved' : 'wikilink'
+      // A card link is the Mac's card pill (YAZ-5792, `cardPill`): its title between the format's ends; the `<a>` draws nothing.
       // The vault's format adds pieces at the pill's ends: the Mac's three spans, the head, the name, the
       // tail, each in the pill's classes; the `<a>` holds them and draws nothing itself.
       const head = show.ends?.head ?? null
       const tail = show.ends?.tail ?? null
-      if (head !== null || tail !== null) {
+      if (show.open?.kind === 'card') {
+        a.replaceChildren(cardPill(show.label, { head, tail }, show.iconOnName ?? true))
+        a.className = 'page-pill'
+      } else if (head !== null || tail !== null) {
         const cls = a.className
         const name = document.createElement('span')
         name.className = cls

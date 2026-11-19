@@ -23,8 +23,8 @@
  *    it, "INL-4 (In-harness-lab)", a widget too. Both stay dimmed (`wikilink--unresolved`),
  *  - the vault's link pills look (YAZ-4924, `source.pills`) adds a head and a tail piece, widgets, to every pill
  *    (`pillEnds`): the text before and after, the vault's name, the ID, the folder. Look only: the file keeps `[[Name]]`,
- *  - a link to a PAGE CARD (`[[WIKI-512]]`, YAZ-5030: the ID is a card's, `linkCard`) shows the card's title and its
- *    ID, with a card icon (`wikilink--card`), a widget as an ID link's title is; no vault look adds ends to it,
+ *  - a link to a PAGE CARD (`[[WIKI-512]]`, YAZ-5030: the ID is a card's, `linkCard`) shows the card's pill, a widget
+ *    as an ID link's title is: the card's title with the vault look's ends and the card icon (YAZ-5792, `cardPill`),
  *  - a match whose display would be EMPTY (`[[Page|]]`, `[[|]]`, `[[#]]`) stays raw — no
  *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
  *    GRO-2197),
@@ -59,7 +59,7 @@ import { basename } from '@shared/types'
 import { pathTitles } from '../../lib/pageLabel'
 import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './linkPillLook'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
-import { WIKILINK_CLASS, cardPillSpan } from './cardPill'
+import { WIKILINK_CLASS, cardPill, cardPillEnds, endsKey } from './cardPill'
 import './wikilink.css'
 import { tourEvent } from '../../course/tourBus'
 // The link resolution moved to its own file (YAZ-5153), so the review screen loads without this plugin; its names stay here too.
@@ -68,7 +68,7 @@ export type { LinkLook, MutableWikilinkResolveSource, ResolveLink, VaultsOfLette
 import { cardLinkTitle, idLinkTitle, linkCard, linkDisplayText, linkIsResolved, type LinkLook, linkPath, linkSplit, missingId, otherVaultId, pageTrim, type VaultsOfLetters, type WikilinkResolveSource } from './linkResolve'
 
 // The card pill moved to its own file (YAZ-5067), so the card drawing loads without this plugin; its names stay here too.
-export { WIKILINK_CARD_CLASS, WIKILINK_CARD_ID_CLASS, WIKILINK_CLASS, cardPillSpan } from './cardPill'
+export { WIKILINK_CARD_CLASS, WIKILINK_CLASS, WIKILINK_GROUP_CLASS, cardPill } from './cardPill'
 export const WIKILINK_UNRESOLVED_CLASS = 'wikilink--unresolved'
 export const WIKILINK_SYNTAX_CLASS = 'wikilink__syntax'
 export const WIKILINK_SUB_CLASS = 'wikilink__sub'
@@ -160,13 +160,16 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
   const { pipe, pageFirst } = linkSplit(inner, source)
-  // A link to a card (YAZ-5030): the whole `[[ID]]` is syntax, and the card's title and ID stand at its end, as a
-  // lone ID link's title does (YAZ-3916), one pill with the card icon. `title` in the spec: what ⌘F reads.
+  // A link to a card (YAZ-5030): the whole `[[ID]]` is syntax, and the card's pill stands at its end, as a lone ID
+  // link's title does (YAZ-3916). It follows the vault's format (YAZ-5792): the format's pieces around the card's title,
+  // the card icon where `{icon}` stands. `title` in the spec: what ⌘F reads.
   const card = pipe >= 0 || !resolved ? null : linkCard(inner, source)
   if (card !== null) {
     const shown = cardLinkTitle(card)
+    const ends = cardPillEnds(source, card)
+    const onName = iconPlace === 'name'
     hide(out, start, end)
-    out.push(Decoration.widget(end, () => cardPillSpan(shown, card.id), { key: `card|${shown}|${card.id}`, title: `${shown} ${card.id}`, side: -1 }))
+    out.push(Decoration.widget(end, () => cardPill(shown, ends, onName), { key: `card|${shown}|${onName}|${endsKey(ends)}`, title: `${shown} ${card.id}`, side: -1 }))
     return
   }
   const parts = inner.split('#')

@@ -1,6 +1,7 @@
 /**
  * A card's look in a vault (YAZ-4961; YAZ-4962 for the card window and the Inbox): the link pills as the page's
- * (label, resolved, icon), the pictures and sounds by the page's folder, the board embeds by their links. One function
+ * (label, resolved, icon, and the vault format's ends, YAZ-5792), the pictures and sounds by the page's folder, the
+ * board embeds by their links. One function
  * for the page and the screens outside it. Its own file, with no editor import (YAZ-5153, 2A1 of YAZ-5055), so the
  * review screen and the phone app draw a card without the editor.
  *
@@ -11,6 +12,8 @@ import { fileKind } from '@shared/fileKind'
 import { basename } from '@shared/types'
 import { imageSrc, pageDirRel } from '../image/imageSrc'
 import { cardLinkTitle, linkCard, linkIsResolved, linkPath, linksAsShown, type LinkLook, type WikilinkResolveSource } from '../wikilink/linkResolve'
+import { cardPillEnds } from '../wikilink/cardPill'
+import { pathInfo, pillIconPlace, pillParts, pillsNeedInfo } from '../wikilink/linkPillLook'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { BoardPictureLoad } from './cardMedia'
 import type { CardLook } from './cardRender'
@@ -38,14 +41,21 @@ export function cardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLin
   const boardPicture = image?.boardPicture
   return {
     link: (inner) => {
-      // A link to a card (YAZ-5030): its title, its ID and the card icon, as the page's card pill.
+      // The vault's link format (YAZ-5792): a card's links show the pieces the page's do, the icon where `{icon}` stands.
+      const iconOnName = pillIconPlace(wikilinks.pills) === 'name'
+      // A link to a card (YAZ-5030): the card's pill, its title between the format's ends (`cardPill`).
       const card = inner.includes('|') ? null : linkCard(inner, wikilinks)
-      if (card !== null) return { label: cardLinkTitle(card), resolved: true, card: card.id }
+      if (card !== null) return { label: cardLinkTitle(card), resolved: true, card: card.id, ends: cardPillEnds(wikilinks, card), iconOnName }
       const path = linkPath(inner, wikilinks, viewOnly)
+      const attrs = path === null || linkLook === undefined ? undefined : linkLook.icon(path, fileKind(basename(path)) === null)
+      // A page link's ends, as the page draws them (`wikilinkPlugin.ts` `pillEnds`): the page's ID and folder.
+      const info = path !== null && pillsNeedInfo(wikilinks.pills) ? pathInfo(wikilinks.records, wikilinks.folders).get(path) : undefined
       return {
         label: linksAsShown(`[[${inner}]]`, wikilinks, viewOnly),
         resolved: linkIsResolved(inner, wikilinks, viewOnly),
-        attrs: path === null || linkLook === undefined ? undefined : linkLook.icon(path, fileKind(basename(path)) === null),
+        attrs,
+        ends: pillParts(wikilinks.pills, { info, otherVault: null }, wikilinks.vault, attrs !== undefined),
+        iconOnName,
       }
     },
     image: image === undefined ? undefined : (src) => mediaSrc(image.root, pageDirRel(image.root, image.pagePath), src),

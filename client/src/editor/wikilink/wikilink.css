@@ -250,20 +250,25 @@
   color: var(--fg-muted);
 }
 
-/* A link to a card (YAZ-5030): the card's title, then its ID small and grey, one pill with a card icon. The icon is
-   a mask over the pill's colour on 1em of padding (the mark's way above): no atomic inline box (YAZ-4991). Named by both
-   classes, so Crepe's reset (`.milkdown *`) does not take the padding. The picker's card row draws the same icon
-   (`wikilinkPicker.css`), and so does a card file's row (YAZ-5037): `--card-link-icon` is app.css's. */
-.wikilink.wikilink--card::before {
+/* A link to a card (YAZ-5030, YAZ-5792 `cardPill`): the card's title between the vault format's ends, with a card icon.
+   The icon is a mask over the pill's colour on 1em of padding (the mark's way above): no atomic inline box (YAZ-4991).
+   On the title (`{icon}{name}`) it is the title's `::before`, named by both classes, so Crepe's reset (`.milkdown *`)
+   does not take the padding; away from the title (`{name} {icon}`) it is an icon piece of an end. The picker's card row
+   draws the same icon (`wikilinkPicker.css`), and so does a card file's row (YAZ-5037): `--card-link-icon` is app.css's. */
+.wikilink.wikilink--card::before,
+:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before {
   content: '';
   padding-left: 1em;
   margin-right: 0.25em;
   background-color: currentColor;
   mask: var(--card-link-icon) center / 0.9em 0.9em no-repeat;
 }
-.wikilink.wikilink--card .wikilink__card-id {
-  margin-left: 0.35em;
-  color: var(--fg-muted);
-  font-size: 0.8em;
-  font-variant-numeric: tabular-nums;
+/* As a piece, the format's own text spaces it. */
+:is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before {
+  margin-right: 0;
+}
+/* The group that holds a pill's pieces (`cardPill`, a link inside a card): it draws nothing, so the head, the name and
+   the tail sit side by side and the sibling rules above join them into one box (YAZ-5792). */
+.wikilink-group {
+  display: contents;
 }

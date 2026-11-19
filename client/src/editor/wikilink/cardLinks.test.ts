@@ -14,7 +14,7 @@ import { createCrepe, getMarkdownForSave, cardLook } from '../createCrepe'
 import { CARD_OPEN, takeCardLanding, type CardOpenRequest } from '../card/cardOpen'
 import { renderCard } from '../card/cardRender'
 import { rowsFor } from './wikilinkPicker'
-import { WIKILINK_CARD_CLASS, createWikilinkResolveSource, linksAsShown } from './wikilinkPlugin'
+import { WIKILINK_CARD_CLASS, WIKILINK_GROUP_CLASS, createWikilinkResolveSource, linksAsShown } from './wikilinkPlugin'
 
 const rec = (path: string, extra: Partial<IndexRecord> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -60,9 +60,10 @@ const mousedown = (el: Element, init: MouseEventInit = {}) => el.dispatchEvent(n
 describe('a card link in a page (YAZ-5030)', () => {
   it('`[[DEMO-127]]` in any case is a card pill: the card`s title and its ID, with the card icon; the file keeps the link', async () => {
     const { crepe, root } = await mount('See [[demo-127]] and [[DEMO-40]] and [[DEMO-3]].\n')
+    // The default format (`{icon}{name} ({vault})`, YAZ-5792): the card icon on the title, no ID.
     const cards = [...root.querySelectorAll<HTMLElement>(`.${WIKILINK_CARD_CLASS}`)]
-    expect(cards.map((c) => c.textContent)).toEqual(['EstarDEMO-127', 'Old cardDEMO-40'])
-    expect(cards[0].querySelector('.wikilink__card-id')?.textContent).toBe('DEMO-127')
+    expect(cards.map((c) => c.textContent)).toEqual(['Estar', 'Old card'])
+    expect(cards[0].closest(`.${WIKILINK_GROUP_CLASS}`)?.textContent).toBe('Estar')
     expect(cards[0].classList.contains('wikilink--unresolved')).toBe(false)
     // A page's ID stays a page pill, by its title.
     expect([...root.querySelectorAll('.wikilink')].some((s) => s.textContent === 'Estar pages')).toBe(true)
@@ -189,10 +190,86 @@ describe('the `[[` picker lists cards (YAZ-5030)', () => {
 })
 
 describe('a card link inside a card (YAZ-5030, `renderCard`)', () => {
-  it('draws the card pill: title, ID, card icon class; the raw link rides on it for the click', () => {
+  it('draws the card pill: the title with the card icon class; the raw link rides on its group for the click', () => {
     const el = renderCard('Compare with [[DEMO-126]]', {}, cardLook(source(), undefined))
     const pill = el.querySelector<HTMLElement>(`.${WIKILINK_CARD_CLASS}`)!
-    expect(pill.textContent).toBe('SerDEMO-126')
-    expect(pill.getAttribute('data-card-link')).toBe('DEMO-126')
+    expect(pill.textContent).toBe('Ser')
+    expect(pill.closest('[data-card-link]')?.getAttribute('data-card-link')).toBe('DEMO-126')
+  })
+})
+
+/** The source with a vault format (Settings › Link pills, YAZ-4924): Yaseen's, `{icon} {name}({number}){mark}`. */
+function formatted(format: string) {
+  const s = source()
+  s.setLook({ format }, 'Mine')
+  return s
+}
+
+/** A pill's pieces as text: the head's and the tail's parts (`link-pill__<part>`), the icon and the mark by name. */
+const pieces = (group: Element): string[] =>
+  [...group.querySelectorAll('.link-pill__head > *, .link-pill__tail > *')].map((el) =>
+    el.classList.contains('card-icon') ? 'card-icon' : el.classList.contains('link-pill__mark') ? 'mark' : `${el.className.replace('link-pill__', '')}:${el.textContent}`,
+  )
+
+describe('links in and to cards follow the vault`s link format (YAZ-5792)', () => {
+  it('a card link in a page: the format`s pieces around the title, the card`s ID number, the card icon where `{icon}` stands', async () => {
+    const { root } = await mount('See [[DEMO-127]].\n', formatted('{icon} {name}({number}){mark}'))
+    const group = root.querySelector<HTMLElement>(`.${WIKILINK_GROUP_CLASS}`)!
+    expect(group.querySelector('.wikilink:not(.link-pill__head):not(.link-pill__tail)')?.textContent).toBe('Estar')
+    expect(pieces(group)).toEqual(['card-icon', 'text: ', 'text:(', 'number:127', 'text:)', 'mark'])
+    // The icon is a piece, so the title has no icon of its own.
+    expect(group.querySelector(`.${WIKILINK_CARD_CLASS}`)).toBeNull()
+  })
+
+  it('`{name} {icon}`: the card icon after the title; `{icon}{name} {id}`: on the title, the ID after it', async () => {
+    const after = await mount('[[DEMO-126]]\n', formatted('{name} {icon}'))
+    expect(pieces(after.root.querySelector(`.${WIKILINK_GROUP_CLASS}`)!)).toEqual(['text: ', 'card-icon'])
+    const on = await mount('[[DEMO-126]]\n', formatted('{icon}{name} {id}'))
+    const group = on.root.querySelector(`.${WIKILINK_GROUP_CLASS}`)!
+    expect(group.querySelector(`.${WIKILINK_CARD_CLASS}`)?.textContent).toBe('Ser')
+    expect(pieces(group)).toEqual(['text: ', 'id:DEMO-126'])
+  })
+
+  it('a click on any piece of a formatted card pill opens the card', async () => {
+    const { root } = await mount('Go [[DEMO-127]] now\n', formatted('{icon} {name}({number}){mark}'))
+    const asks: CardOpenRequest[] = []
+    const onOpen = (e: Event) => asks.push((e as CustomEvent<CardOpenRequest>).detail)
+    document.addEventListener(CARD_OPEN, onOpen)
+    try {
+      mousedown(root.querySelector('.link-pill__number')!, { detail: 1 })
+      mousedown(root.querySelector(`.${WIKILINK_GROUP_CLASS} .wikilink:not(.link-pill__head):not(.link-pill__tail)`)!, { detail: 1 })
+      expect(asks).toEqual([
+        { path: VERBS, cardId: 'DEMO-127', index: 1 },
+        { path: VERBS, cardId: 'DEMO-127', index: 1 },
+      ])
+    } finally {
+      document.removeEventListener(CARD_OPEN, onOpen)
+    }
+  })
+
+  it('inside a card: a card link and a page link show the same pieces as in a page; the link rides on the group', () => {
+    const el = renderCard('[[DEMO-126]] and [[DEMO-3]]', {}, cardLook(formatted('{icon} {name}({number}){mark}'), undefined))
+    const [card, page] = [...el.querySelectorAll<HTMLElement>(`.${WIKILINK_GROUP_CLASS}`)]
+    expect(card.getAttribute('data-card-link')).toBe('DEMO-126')
+    expect(pieces(card)).toEqual(['card-icon', 'text: ', 'text:(', 'number:126', 'text:)', 'mark'])
+    expect(page.getAttribute('data-card-link')).toBe('DEMO-3')
+    // No icon look here (`cardLook` with none): `{icon}` and the space beside it go, as in a page with no icon.
+    expect(page.textContent).toBe('Estar pages(3)')
+    expect(pieces(page)).toEqual(['text:(', 'number:3', 'text:)', 'mark'])
+  })
+
+  it('inside a card with the default look: a card link is its title with the card icon; a page link is its name', () => {
+    const el = renderCard('[[DEMO-126]] and [[DEMO-3]]', {}, cardLook(source(), undefined))
+    const [card, page] = [...el.querySelectorAll<HTMLElement>(`.${WIKILINK_GROUP_CLASS}`)]
+    expect(card.textContent).toBe('Ser')
+    expect(card.querySelector(`.${WIKILINK_CARD_CLASS}`)).not.toBeNull()
+    expect(page.textContent).toBe('Estar pages')
+  })
+
+  it('a missing page inside a card keeps the missing look, with the format`s ends', () => {
+    const el = renderCard('[[Nowhere]]', {}, cardLook(formatted('{name} ({id})'), undefined))
+    const group = el.querySelector<HTMLElement>(`.${WIKILINK_GROUP_CLASS}`)!
+    expect(group.querySelector('.wikilink--unresolved')?.textContent).toBe('Nowhere')
+    expect(group.getAttribute('data-card-link')).toBe('Nowhere')
   })
 })
