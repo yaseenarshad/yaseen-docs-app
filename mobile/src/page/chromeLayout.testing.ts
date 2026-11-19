@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { appStylesheets } from '../../publish/stylesheets'
@@ -62,12 +63,19 @@ export async function inChrome<T>(html: string, expression: string, { width = 37
     const gone = chrome.exitCode !== null || chrome.signalCode !== null ? Promise.resolve() : new Promise((r) => chrome.once('exit', r))
     chrome.kill()
     await Promise.race([gone, new Promise((r) => setTimeout(r, 3000))])
-    // Its helper processes can still write a file or two after it exits (CI's macOS: ENOTEMPTY, YAZ-4965). The profile
-    // is in the temp folder: a removal that still fails after the retries leaves it there; it never fails the check.
-    try {
-      rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
-    } catch (err) {
-      console.warn(`[chrome] the temp profile stays: ${String(err)}`)
-    }
+    removeProfile(profile)
   }
+}
+
+/**
+ * Removes Chrome's temp profile OFF the test's clock (YAZ-5958). Its helper processes can still write a file or two
+ * after it exits (CI's macOS, YAZ-4965; CI's Linux each time): rmdir fails with ENOTEMPTY, and the retries wait
+ * 200 + 400 + … + 2,000 ms. A sync `rmSync` held the test for those 11 s each time Chrome ran, so two runs of Chrome
+ * went past the 30 s timeout. Here the retries run in the background. The profile is in the temp folder: a removal
+ * that still fails after the retries leaves it there; it never fails the check.
+ */
+export function removeProfile(profile: string): void {
+  rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch((err) =>
+    console.warn(`[chrome] the temp profile stays: ${String(err)}`),
+  )
 }
