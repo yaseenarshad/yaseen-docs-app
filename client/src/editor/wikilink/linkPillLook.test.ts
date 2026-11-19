@@ -27,6 +27,18 @@ describe('linkPillVars (YAZ-4924)', () => {
     expect(linkPillVars({ box: { shape: 'underline' } })).toEqual({ '--pill-bg': 'transparent', '--pill-pad': '0', '--pill-radius': '0', '--pill-decoration': 'underline' })
   })
 
+  it("the gap after the icon on the name (YAZ-5894): the default and a spaced format set nothing (the CSS's 0.25em); {icon}{name} is flush, 1px; a piece sets nothing", () => {
+    expect(linkPillVars(NO_LINK_PILLS)['--pill-icon-gap']).toBeUndefined()
+    expect(linkPillVars({ format: '{icon} {name} ({id})' })['--pill-icon-gap']).toBeUndefined()
+    expect(linkPillVars({ format: '{icon}  {name}' })['--pill-icon-gap']).toBeUndefined()
+    expect(linkPillVars({ format: '{icon}{name}({number})' })).toEqual({ '--pill-icon-gap': '1px' })
+    expect(linkPillVars({ format: '{name} {icon}' })['--pill-icon-gap']).toBeUndefined()
+    const css = readFileSync(join(__dirname, 'wikilink.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(css).toMatch(/\.wikilink \.file-icon::before \{[^}]*margin-right: var\(--pill-icon-gap, 0\.25em\) !important;/)
+    expect(css).toMatch(/:is\(\.link-pill__head, \.link-pill__tail\) \.file-icon::before \{\s*margin-right: 0 !important;/)
+    expect(css).toMatch(/\.wikilink\.wikilink--card::before,[^{]*\{[^}]*margin-right: var\(--pill-icon-gap, 0\.25em\);/)
+  })
+
   it("the icon's colour (YAZ-5843): --pill-icon-fg and --pill-icon-on, nothing else; Default sets none; Text is the page's text colour", () => {
     expect(linkPillVars({ parts: { icon: { color: 'teal' } } })).toEqual({ '--pill-icon-fg': 'var(--table-text-teal)', '--pill-icon-on': '1' })
     expect(linkPillVars({ parts: { icon: { color: 'accent' } } })).toEqual({ '--pill-icon-fg': 'var(--accent)', '--pill-icon-on': '1' })
@@ -125,9 +137,12 @@ describe('pillParts (YAZ-4924)', () => {
     expect(ends({ vault: 'always' }, { otherVault: null }, null)).toEqual([null, null])
   })
 
-  it('the icon: on the name when {icon}{name} stand together, a piece elsewhere, none without {icon}; a pill with no icon loses it and one blank beside it', () => {
-    expect([pillIconPlace(NO_LINK_PILLS), pillIconPlace({ format: '{icon} {name}' }), pillIconPlace({ format: '{name} {icon}' }), pillIconPlace({ format: '{name}' })]).toEqual(['name', 'piece', 'piece', 'none'])
-    expect(ends({ format: '{icon} {name}' }, { otherVault: null })).toEqual([['icon', 'text: '], null])
+  it('the icon: on the name when {icon} and {name} stand together or with spaces only between (YAZ-5894), a piece elsewhere, none without {icon}; a pill with no icon loses it and one blank beside it', () => {
+    expect([pillIconPlace(NO_LINK_PILLS), pillIconPlace({ format: '{icon}{name}' }), pillIconPlace({ format: '{icon} {name}' }), pillIconPlace({ format: '{icon}  {name}' }), pillIconPlace({ format: '{icon} · {name}' }), pillIconPlace({ format: '{name} {icon}' }), pillIconPlace({ format: '{name}' })]).toEqual(['name', 'name', 'name', 'name', 'piece', 'piece', 'none'])
+    // The space is the icon's gap, drawn by the CSS: no text piece.
+    expect(ends({ format: '{icon} {name}' }, { otherVault: null })).toEqual([null, null])
+    expect(ends({ format: '{icon}  {name} ({id})' }, { info, otherVault: null })).toEqual([null, ['text: (', 'id:YAS-12', 'text:)']])
+    expect(ends({ format: '{icon} · {name}' }, { otherVault: null })).toEqual([['icon', 'text: · '], null])
     expect(ends({ format: '{icon} {name}' }, { otherVault: null }, 'Mine', false)).toEqual([null, null])
     expect(ends({ format: '{name} {icon}' }, { otherVault: null })).toEqual([null, ['text: ', 'icon']])
     expect(ends({ format: '{name} {icon}' }, { otherVault: null }, 'Mine', false)).toEqual([null, null])
@@ -146,10 +161,10 @@ describe('pillParts (YAZ-4924)', () => {
   })
 
   it('the spans draw the pieces in order, each in its class, the icon with its attributes, spellcheck off', () => {
-    const { head, tail } = pillParts({ format: '({icon} {name} {id} ({vault}))', vault: 'always' }, { info, otherVault: null }, 'Mine')
+    const { head, tail } = pillParts({ format: '({icon}: {name} {id} ({vault}))', vault: 'always' }, { info, otherVault: null }, 'Mine')
     const h = headSpan('wikilink', head!, { class: 'file-icon file-icon--file', 'data-kind': 'markdown' })
-    expect([h.className, h.spellcheck, h.textContent]).toEqual(['wikilink link-pill__head', false, '( '])
-    expect([...h.children].map((c) => `${c.className}:${c.textContent}:${c.getAttribute('data-kind') ?? ''}`)).toEqual(['link-pill__text:(:', 'file-icon file-icon--file link-pill__icon::markdown', 'link-pill__text: :'])
+    expect([h.className, h.spellcheck, h.textContent]).toEqual(['wikilink link-pill__head', false, '(: '])
+    expect([...h.children].map((c) => `${c.className}:${c.textContent}:${c.getAttribute('data-kind') ?? ''}`)).toEqual(['link-pill__text:(:', 'file-icon file-icon--file link-pill__icon::markdown', 'link-pill__text:: :'])
     const t = tailSpan('wikilink link-pill', tail!)
     expect(t.className).toBe('wikilink link-pill link-pill__tail')
     expect([...t.children].map((c) => `${c.className}:${c.textContent}`)).toEqual(['link-pill__text: ', 'link-pill__id:YAS-12', 'link-pill__text: (', 'link-pill__vault:Mine', 'link-pill__text:))'])

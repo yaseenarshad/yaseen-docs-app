@@ -86,7 +86,7 @@ describe('the {number} and {mark} tokens (YAZ-4924 round 5)', () => {
 
   it('two more ready formats: Name #Number and Name ↗', () => {
     expect(LINK_PILL_READY.map((r) => r.label)).toEqual(['Name', 'Name (ID)', 'Name #Number', 'Name · Folder', 'Vault › Name', '(Name)', '→ Name', 'Name ↗', 'Plain'])
-    expect(LINK_PILL_READY.find((r) => r.label === 'Name #Number')?.format).toBe('{icon}{name} #{number}')
+    expect(LINK_PILL_READY.find((r) => r.label === 'Name #Number')?.format).toBe('{icon} {name} #{number}')
     expect(LINK_PILL_READY.find((r) => r.label === 'Name ↗')?.format).toBe('{name}{mark}')
   })
 
@@ -128,6 +128,16 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
     expect(linkPillsFile({ parts: { name: { bold: true } } })).toEqual({ version: 2, parts: { name: { bold: true } } })
   })
 
+  it('YAZ-5894 D2: the default and every ready format put a space after {icon}; the old default (no space) reads as the default; a typed {icon}{name} stays, flush', () => {
+    expect(DEFAULT_LINK_PILL_FORMAT).toBe('{icon} {name} ({vault})')
+    expect(LINK_PILL_READY.filter((r) => r.format.includes('{icon}')).every((r) => r.format.includes('{icon} {name}'))).toBe(true)
+    expect(LINK_PILL_READY.some((r) => r.format.includes('{icon}{name}'))).toBe(false)
+    expect(sanitizeLinkPills({ version: 2, format: '{icon}{name} ({vault})' })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, format: '{icon} {name} ({vault})' })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, format: '{icon}{name}({number})' })).toEqual({ format: '{icon}{name}({number})' })
+    expect(fromV1({ id: 'show' })).toEqual({ format: '{icon} {name} {id} ({vault})' })
+  })
+
   it('a strength needs a palette fill', () => {
     expect(sanitizeLinkPills({ version: 2, box: { strength: 'light' } })).toEqual({})
     expect(sanitizeLinkPills({ version: 2, box: { strength: 'light', fill: 'none' } })).toEqual({ box: { fill: 'none' } })
@@ -147,8 +157,8 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
   it('a ready format sets the format and lays its parts and box over the current ones; Plain is a look', () => {
     const [name, nameId, , , , brackets, , , plain] = LINK_PILL_READY
     const current: LinkPills = { parts: { name: { bold: true } }, box: { shape: 'square' } }
-    expect(withLinkPillReady(current, nameId!)).toEqual({ ...current, format: '{icon}{name} ({id})' })
-    expect(withLinkPillReady(current, brackets!)).toEqual({ ...current, format: '({icon}{name})', parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } } })
+    expect(withLinkPillReady(current, nameId!)).toEqual({ ...current, format: '{icon} {name} ({id})' })
+    expect(withLinkPillReady(current, brackets!)).toEqual({ ...current, format: '({icon} {name})', parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } } })
     expect(withLinkPillReady(current, plain!)).toEqual({ format: '{name}', parts: { name: { bold: true, color: 'same' } }, box: { shape: 'square', fill: 'none' } })
     expect(withLinkPillReady({ format: '{name}' }, name!)).toEqual({})
   })
@@ -181,14 +191,14 @@ describe('a version 1 file → the version 2 look → the same drawn pill (YAZ-4
     [{ text: 'green' }, { parts: { name: { color: 'green' } } }, { head: null, tail: null, icon: 'name' }],
     [{ icon: 'hide' }, { format: '{name} ({vault})' }, { head: null, tail: null, icon: 'none' }],
     [{ bold: true, italic: true, underline: true }, { parts: { name: { bold: true, italic: true, underline: true } } }, { head: null, tail: null, icon: 'name' }],
-    [{ before: '(', after: ')' }, { format: '({icon}{name} ({vault}))', parts: { text: { color: 'accent', size: 'normal' } } }, { head: ['text:('], tail: ['text:)'], icon: 'name' }],
-    [{ before: '→ ' }, { format: '→ {icon}{name} ({vault})', parts: { text: { color: 'accent', size: 'normal' } } }, { head: ['text:→ '], tail: null, icon: 'name' }],
+    [{ before: '(', after: ')' }, { format: '({icon} {name} ({vault}))', parts: { text: { color: 'accent', size: 'normal' } } }, { head: ['text:('], tail: ['text:)'], icon: 'name' }],
+    [{ before: '→ ' }, { format: '→ {icon} {name} ({vault})', parts: { text: { color: 'accent', size: 'normal' } } }, { head: ['text:→ '], tail: null, icon: 'name' }],
     [{ vault: 'always' }, { vault: 'always' }, { head: null, tail: ['text: (', 'vault:Mine', 'text:)'], icon: 'name' }],
-    [{ vault: 'always', vaultPlace: 'before' }, { format: '{vault} › {icon}{name}', vault: 'always' }, { head: ['vault:Mine', 'text: › '], tail: null, icon: 'name' }],
+    [{ vault: 'always', vaultPlace: 'before' }, { format: '{vault} › {icon} {name}', vault: 'always' }, { head: ['vault:Mine', 'text: › '], tail: null, icon: 'name' }],
     [{ vault: 'never' }, { vault: 'never' }, { head: null, tail: null, icon: 'name' }],
-    [{ id: 'show' }, { format: '{icon}{name} {id} ({vault})' }, { head: null, tail: ['text: ', 'id:YAS-12'], icon: 'name' }],
-    [{ folder: 'parent' }, { format: '{icon}{name} {folder} ({vault})' }, { head: null, tail: ['text: ', 'folder:Plans'], icon: 'name' }],
-    [{ folder: 'full' }, { format: '{icon}{name} {path} ({vault})' }, { head: null, tail: ['text: ', 'path:Projects › Plans'], icon: 'name' }],
+    [{ id: 'show' }, { format: '{icon} {name} {id} ({vault})' }, { head: null, tail: ['text: ', 'id:YAS-12'], icon: 'name' }],
+    [{ folder: 'parent' }, { format: '{icon} {name} {folder} ({vault})' }, { head: null, tail: ['text: ', 'folder:Plans'], icon: 'name' }],
+    [{ folder: 'full' }, { format: '{icon} {name} {path} ({vault})' }, { head: null, tail: ['text: ', 'path:Projects › Plans'], icon: 'name' }],
     [{ shape: 'square' }, { box: { shape: 'square' } }, { head: null, tail: null, icon: 'name' }],
     [{ shape: 'underline' }, { box: { shape: 'underline' } }, { head: null, tail: null, icon: 'name' }],
     [

@@ -118,9 +118,9 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     const ready = select(row, 'Ready formats') as HTMLSelectElement
     expect([...ready.options].map((o) => o.textContent)).toEqual(['Ready formats…', 'Name', 'Name (ID)', 'Name #Number', 'Name · Folder', 'Vault › Name', '(Name)', '→ Name', 'Name ↗', 'Plain'])
     pick(ready, 'Name (ID)')
-    expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true } }, format: '{icon}{name} ({id})' })
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true } }, format: '{icon} {name} ({id})' })
     pick(ready, '(Name)')
-    expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } }, format: '({icon}{name})' })
+    expect(save).toHaveBeenLastCalledWith({ parts: { name: { bold: true }, text: { color: 'accent', size: 'normal' } }, format: '({icon} {name})' })
     pick(ready, 'Plain')
     expect(save).toHaveBeenLastCalledWith({ format: '{name}', parts: { name: { bold: true, color: 'same' } }, box: { fill: 'none' } })
   })

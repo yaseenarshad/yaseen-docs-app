@@ -27,13 +27,13 @@ beforeAll(async () => {
 const parts = (end: { pieces: readonly { part: string; text?: string }[] } | null | undefined) => end?.pieces.map((p) => (p.text === undefined ? p.part : `${p.part}:${p.text}`)) ?? null
 
 describe('a card link on the phone follows the vault`s link format (YAZ-5792)', () => {
-  it('pageLook: the card opens, its ends hold the card`s number, the icon is a piece (`{icon} {name}`)', () => {
+  it('pageLook: the card opens, its ends hold the card`s number, the icon is on the title (`{icon} {name}`: its space is the gap, YAZ-5894)', () => {
     const show = pageLook(data, 'Trip plan.md').link('DEMO-40')
     expect(show.label).toBe('Capital of Spain')
     expect(show.open).toMatchObject({ kind: 'card', id: 'DEMO-40' })
-    expect(parts(show.ends?.head)).toEqual(['icon', 'text: '])
+    expect(parts(show.ends?.head)).toEqual(null)
     expect(parts(show.ends?.tail)).toEqual(['text:(', 'number:40', 'text:)', 'mark'])
-    expect(show.iconOnName).toBe(false)
+    expect(show.iconOnName).toBe(true)
   })
 
   it('YAZ-5835: a piped card link shows its words with the card`s pieces, as on the Mac', () => {
@@ -43,12 +43,12 @@ describe('a card link on the phone follows the vault`s link format (YAZ-5792)', 
     expect(parts(show.ends?.tail)).toEqual(['text:(', 'number:40', 'text:)', 'mark'])
   })
 
-  it('renderPage: the `<a>` holds the Mac`s card pill, the card icon as a piece', async () => {
+  it('renderPage: the `<a>` holds the Mac`s card pill, the card icon on the title', async () => {
     const host = document.createElement('div')
     await renderPage('See [[DEMO-40]].', pageLook(data, 'Trip plan.md'), host)
     const a = host.querySelector<HTMLAnchorElement>('a[data-open="card"]')!
     expect(a.className).toBe('page-pill')
-    expect(a.textContent).toBe(' Capital of Spain(40)')
-    expect(a.querySelector('.link-pill__icon.card-icon')).not.toBeNull()
+    expect(a.textContent).toBe('Capital of Spain(40)')
+    expect(a.querySelector('.wikilink--card')?.textContent).toBe('Capital of Spain')
   })
 })

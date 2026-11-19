@@ -47,8 +47,13 @@ export type LinkPillMark = (typeof LINK_PILL_MARKS)[number]
 export const DEFAULT_LINK_PILL_MARK: LinkPillMark = 'arrow-up-right'
 /** The longest format. */
 export const LINK_PILL_FORMAT_MAX = 60
-/** Today's pill: the icon on the name, then the other vault's name in brackets (empty, with its brackets, on a pill of this vault). */
-export const DEFAULT_LINK_PILL_FORMAT = '{icon}{name} ({vault})'
+/**
+ * Today's pill: the icon on the name, one space after it, then the other vault's name in brackets (empty, with its
+ * brackets, on a pill of this vault). The space is the gap after the icon (YAZ-5894 D1): `{icon}{name}` is flush.
+ */
+export const DEFAULT_LINK_PILL_FORMAT = '{icon} {name} ({vault})'
+/** The default before YAZ-5894 (no space after the icon): a file that holds it is read as the default (D2), not as flush. */
+const OLD_DEFAULT_LINK_PILL_FORMAT = '{icon}{name} ({vault})'
 
 /**
  * A part's colour: the accent, the text around the pill, the muted grey, or a palette colour's text colour. `kind`
@@ -117,12 +122,12 @@ export interface LinkPillReady {
 }
 export const LINK_PILL_READY: readonly LinkPillReady[] = [
   { label: 'Name', format: DEFAULT_LINK_PILL_FORMAT },
-  { label: 'Name (ID)', format: '{icon}{name} ({id})' },
-  { label: 'Name #Number', format: '{icon}{name} #{number}' },
-  { label: 'Name · Folder', format: '{icon}{name} · {folder}' },
-  { label: 'Vault › Name', format: '{vault} › {icon}{name}' },
-  { label: '(Name)', format: '({icon}{name})', parts: { text: { color: 'accent', size: 'normal' } } },
-  { label: '→ Name', format: '→ {icon}{name}', parts: { text: { color: 'accent', size: 'normal' } } },
+  { label: 'Name (ID)', format: '{icon} {name} ({id})' },
+  { label: 'Name #Number', format: '{icon} {name} #{number}' },
+  { label: 'Name · Folder', format: '{icon} {name} · {folder}' },
+  { label: 'Vault › Name', format: '{vault} › {icon} {name}' },
+  { label: '(Name)', format: '({icon} {name})', parts: { text: { color: 'accent', size: 'normal' } } },
+  { label: '→ Name', format: '→ {icon} {name}', parts: { text: { color: 'accent', size: 'normal' } } },
   { label: 'Name ↗', format: '{name}{mark}' },
   { label: 'Plain', format: '{name}', box: { fill: 'none' }, parts: { name: { color: 'same' } } },
 ]
@@ -221,7 +226,7 @@ function sanitizeBox(raw: unknown): LinkPillBox | undefined {
 /** A version 2 file, or a look in memory, with only its valid changes. */
 function sanitizeV2(raw: Record<string, unknown>): LinkPills {
   const out: LinkPills = {}
-  if (typeof raw.format === 'string' && raw.format !== DEFAULT_LINK_PILL_FORMAT && linkPillFormatProblem(raw.format) === null) out.format = raw.format
+  if (typeof raw.format === 'string' && raw.format !== DEFAULT_LINK_PILL_FORMAT && raw.format !== OLD_DEFAULT_LINK_PILL_FORMAT && linkPillFormatProblem(raw.format) === null) out.format = raw.format
   const box = sanitizeBox(raw.box)
   if (box !== undefined) out.box = box
   if (isRecord(raw.parts)) {
@@ -254,7 +259,7 @@ export function fromV1(raw: Record<string, unknown>): LinkPills {
   const format =
     before +
     (vaultBefore ? '{vault} › ' : '') +
-    (raw.icon === 'hide' ? '' : '{icon}') +
+    (raw.icon === 'hide' ? '' : '{icon} ') +
     '{name}' +
     (raw.id === 'show' ? ' {id}' : '') +
     (raw.folder === 'parent' ? ' {folder}' : raw.folder === 'full' ? ' {path}' : '') +

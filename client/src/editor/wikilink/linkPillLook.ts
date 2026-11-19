@@ -49,6 +49,9 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
     vars['--pill-icon-fg'] = icon === 'same' ? 'var(--fg)' : colorValue(icon)
     vars['--pill-icon-on'] = '1'
   }
+  // The gap after the icon on the name (YAZ-5894 D1): the format's space is it (`{icon} {name}`, the default: the CSS's
+  // own 0.25em); `{icon}{name}` is flush, a 1 px hairline.
+  if (pills.format !== undefined && compiled(pills).icon === 'name' && !compiled(pills).gap) vars['--pill-icon-gap'] = '1px'
   if (pills.parts !== undefined)
     for (const part of LINK_PILL_PARTS) {
       const style = pills.parts[part]
@@ -123,6 +126,12 @@ export type PillIconPlace = 'name' | 'piece' | 'none'
 interface Compiled {
   segments: readonly LinkPillSegment[]
   icon: PillIconPlace
+  /**
+   * The icon on the name with spaces only between them (`{icon} {name}`, YAZ-5894 D1): the gap is one space, drawn by
+   * the CSS (`--pill-icon-gap`), not as text; the index of that space segment, or -1 (`{icon}{name}`: flush).
+   */
+  gapAt: number
+  gap: boolean
   /** Whether a pill needs the index: `{id}`, `{number}`, `{folder}` or `{path}` in the format. Else no lookup is paid. */
   needsInfo: boolean
   hasVault: boolean
@@ -133,9 +142,12 @@ function compile(format: string): Compiled {
   const tokens = new Set<LinkPillToken>()
   segments.forEach((s) => 'token' in s && tokens.add(s.token))
   const iconAt = segments.findIndex((s) => 'token' in s && s.token === 'icon')
+  const isName = (s: LinkPillSegment | undefined) => s !== undefined && 'token' in s && s.token === 'name'
   const next = segments[iconAt + 1]
-  const icon: PillIconPlace = iconAt < 0 ? 'none' : next !== undefined && 'token' in next && next.token === 'name' ? 'name' : 'piece'
-  return { segments, icon, needsInfo: tokens.has('id') || tokens.has('number') || tokens.has('folder') || tokens.has('path'), hasVault: tokens.has('vault') }
+  // Spaces only between the icon and the name keep the icon on the name, with one space as its gap (YAZ-5894 D1).
+  const spaced = next !== undefined && 'text' in next && /^ +$/.test(next.text) && isName(segments[iconAt + 2])
+  const icon: PillIconPlace = iconAt < 0 ? 'none' : isName(next) || spaced ? 'name' : 'piece'
+  return { segments, icon, gapAt: spaced ? iconAt + 1 : -1, gap: spaced, needsInfo: tokens.has('id') || tokens.has('number') || tokens.has('folder') || tokens.has('path'), hasVault: tokens.has('vault') }
 }
 
 const DEFAULT_COMPILED = compile(DEFAULT_LINK_PILL_FORMAT)
@@ -217,7 +229,9 @@ const CLOSE = [')', ']', '}', '»', '>', '”']
 export function pillParts(pills: LinkPills, meta: PillMeta, ownVault: string | null, icon = true): { head: PillEnd | null; tail: PillEnd | null } {
   const c = compiled(pills)
   let items: Item[] = c.segments.map((seg) => ({ seg, text: 'token' in seg ? tokenText(seg.token, pills, meta, ownVault) : seg.text }))
-  if (!icon && c.icon !== 'none') {
+  // The space of `{icon} {name}` is the icon's gap (the CSS's), never text. With no icon to draw it goes with the icon below.
+  if (icon && c.gap) items = items.filter((_, i) => i !== c.gapAt)
+  else if (!icon && c.icon !== 'none') {
     const at = items.findIndex((it) => 'token' in it.seg && it.seg.token === 'icon')
     const after = items[at + 1]
     const before = items[at - 1]

@@ -815,9 +815,13 @@ describe("the vault's link pills look (YAZ-4924)", () => {
     source.setLook({ format: '{name} {icon}' }, 'Mine')
     expect(icons()).toEqual(['wikilink__icon link-pill__icon|/v/Projects/Plans/roadmap.md'])
     expect(pieces(root).map(([cls, text]) => [cls, text])).toEqual([['wikilink', 'Roadmap'], ['wikilink link-pill__tail', ' '], ['wikilink wikilink--unresolved', 'Nope']])
-    // A missing page has no icon: `{icon}` and the blank beside it go, so the pill has no stray space.
+    // YAZ-5894: `{icon} {name}` keeps the icon on the name, its space the gap (no text piece); a missing page has no icon
+    // and no stray space either.
     source.setLook({ format: '{icon} {name}' }, 'Mine')
-    expect(pieces(root).map(([, text]) => text)).toEqual([' ', 'Roadmap', 'Nope'])
+    expect(pieces(root).map(([, text]) => text)).toEqual(['Roadmap', 'Nope'])
+    // A piece elsewhere: `{icon}: {name}` draws the icon and its text in the head; a missing page loses the icon only.
+    source.setLook({ format: '{icon}: {name}' }, 'Mine')
+    expect(pieces(root).map(([, text]) => text)).toEqual([': ', 'Roadmap', ': ', 'Nope'])
     source.setLook({ format: '{name}' }, 'Mine')
     expect(icons()).toEqual([])
   })
