@@ -2000,10 +2000,19 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     const { el } = mountOn('Appearance', DEFAULT_SETTINGS, undefined, S)
     const pill = row(el, 'explorePageZoom')!.querySelector<HTMLElement>('.document-zoom')!
     expect(row(el, 'explorePageZoom')?.closest('.settings-group')?.getAttribute('data-group-title')).toBe('Explore')
-    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('100%')
-    act(() => [...pill.querySelectorAll<HTMLButtonElement>('.document-zoom__step')][1].click())
-    expect(localStorage.getItem('explore:zoom')).toBe('125')
+    // YAZ-5977 Q6: nothing saved is 125%, and 125% is no entry.
     expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('125%')
+    const steps = () => [...pill.querySelectorAll<HTMLButtonElement>('.document-zoom__step')]
+    act(() => steps()[1].click())
+    expect(localStorage.getItem('explore:zoom')).toBe('150')
+    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('150%')
+    // A saved 100% stays 100% (it is no longer the default).
+    act(() => steps()[0].click())
+    act(() => steps()[0].click())
+    expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('100%')
+    expect(localStorage.getItem('explore:zoom')).toBe('100')
+    act(() => steps()[1].click())
+    expect(localStorage.getItem('explore:zoom')).toBeNull()
     // The pill on a window's title row writes the same value: the row follows at once.
     act(() => setExploreZoom(300))
     expect(pill.querySelector('.document-zoom__value')?.textContent).toBe('300%')

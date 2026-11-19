@@ -40,7 +40,7 @@ import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { useExploreZoom } from './exploreZoom'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
-import { frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
+import { EXPLORE_PAGE_ZOOM_DEFAULT, frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
 import { landOnCard, type CardPlace } from '../editor/card/cardOpen'
 import { keyText } from '@shared/keyLabel'
 import './explore.css'
@@ -422,7 +422,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   topRef.current = top
 
   // ⌘+ / ⌘− / ⌘0 while Explore is open (round 4): the menu's step (`requestZoom`, App) zooms the TOP page layer, on the
-  // page zoom's key ladder; on a search layer it steps Explore size (YAZ-5881 D3; ⌘0: 125%). Caught on the document
+  // page zoom's key ladder (⌘0: its default, 125%, YAZ-5977); on a search layer it steps Explore size (YAZ-5881 D3; ⌘0: 125%). Caught on the document
   // first, so neither the tab behind nor the editor inside a layer (its own `.editor` listener) takes it, and the
   // sidebar's fallback never runs.
   useEffect(() => {
@@ -440,7 +440,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
         return
       }
       if (layer === undefined || layer.kind !== 'page') return
-      setZoom(step === 0 ? 100 : (stepZoomByKey(zoomRef.current, step) ?? zoomRef.current))
+      setZoom(step === 0 ? EXPLORE_PAGE_ZOOM_DEFAULT : (stepZoomByKey(zoomRef.current, step) ?? zoomRef.current))
     }
     document.addEventListener(ZOOM_EVENT, onZoom, true)
     return () => document.removeEventListener(ZOOM_EVENT, onZoom, true)

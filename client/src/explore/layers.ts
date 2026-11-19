@@ -272,11 +272,14 @@ export function firstLayerBox(kind: ExploreLayer['kind'], custom: number | null)
 
 /**
  * The ONE zoom of every explore page layer (round 4), kept across restarts in this window's localStorage: a whole
- * percent in the page zoom's range (50–400), 100 by default. A page tab's zoom is its own and never this one.
+ * percent in the page zoom's range (50–400), 125 by default (YAZ-5977 Q6, Yaseen: "125%, keep the old look": the look
+ * the pages had when Search size still scaled them). The default is no entry; a saved value (100 too) stays. ⌘0 goes
+ * back to it. A page tab's zoom is its own and never this one.
  */
 const ZOOM_KEY = 'explore:zoom'
-export const savedExploreZoom = (): number => savedZoom(ZOOM_KEY)
-export const saveExploreZoom = (zoom: number): void => saveZoom(ZOOM_KEY, zoom)
+export const EXPLORE_PAGE_ZOOM_DEFAULT = 125
+export const savedExploreZoom = (): number => savedZoom(ZOOM_KEY, EXPLORE_PAGE_ZOOM_DEFAULT)
+export const saveExploreZoom = (zoom: number): void => saveZoom(ZOOM_KEY, zoom, EXPLORE_PAGE_ZOOM_DEFAULT)
 
 export function saveLayerBox(kind: ExploreLayer['kind'], box: LayerBox | null): void {
   try {

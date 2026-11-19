@@ -1,6 +1,6 @@
 /**
  * THE ONE PAGE ZOOM OF EXPLORE (round 4, YAZ-5977): the zoom every page window of Explore shows its text at, kept in this
- * Mac's localStorage (`explore:zoom`, 50–400, 100 by default). One value with two doors: the title row's pill (and the
+ * Mac's localStorage (`explore:zoom`, 50–400, 125 by default: YAZ-5977 Q6). One value with two doors: the title row's pill (and the
  * stack's ⌘+ / ⌘− / ⌘0) and Settings › Appearance › Explore › Page zoom. A change at either shows at once at the other,
  * and in the other windows of the app (the `storage` event).
  */
@@ -9,7 +9,7 @@ import { saveExploreZoom, savedExploreZoom } from './layers'
 
 const listeners = new Set<() => void>()
 
-/** Read from localStorage each time (a number, so React sees the same value until it changes); no storage: 100. */
+/** Read from localStorage each time (a number, so React sees the same value until it changes); no entry or no storage: 125. */
 export const getExploreZoom = (): number => savedExploreZoom()
 
 export function setExploreZoom(zoom: number): void {
