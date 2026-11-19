@@ -65,6 +65,9 @@ export const CARD_FIELD_LABELS: Readonly<Record<string, string>> = {
 /** Status's three words (YAZ-5793): New (no ✓ yet, `isNewCard`), Active, or Archived (the line's `off`). Only Archived is written. */
 export const CARD_STATUSES = ['New', 'Active', 'Archived'] as const
 
+/** The Status words a cell writes (YAZ-5838, locked D2): Active or Archived. New is worked out from the answers, never set. */
+export const CARD_STATUS_EDITS = ['Active', 'Archived'] as const
+
 /** A card's Status word. */
 export const cardStatusOf = (card: CardRecord): (typeof CARD_STATUSES)[number] => (card.off ? 'Archived' : isNewCard(card.reviews) ? 'New' : 'Active')
 

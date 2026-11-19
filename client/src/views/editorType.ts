@@ -2,7 +2,7 @@ import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/type
 import { orderedPropertyOptions } from '@shared/propertyOptions'
 import type { FolderSettings } from './folderSettingsRead'
 import { canonicalKey } from './view/keys'
-import { CARD_FIX_STATUSES, CARD_STATUSES } from './cardRows'
+import { CARD_FIX_STATUSES, CARD_STATUS_EDITS } from './cardRows'
 
 /**
  * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence, as amended
@@ -72,7 +72,8 @@ const DECLARED_KIND: Record<Exclude<PropertyKind, 'mentions'>, EditorKind> = {
   image: 'image',
 }
 
-const CARD_STATUS_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_STATUSES }
+// Status's Select offers what a cell can write (YAZ-5838): Active or Archived. A filter still offers New, from the rows' own values.
+const CARD_STATUS_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_STATUS_EDITS }
 const CARD_FIX_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_FIX_STATUSES }
 const CARD_UP_NEXT_TYPING: ColumnTyping = { assigned: 'checkbox', dominant: null }
 
@@ -87,7 +88,7 @@ export function columnTyping(
   settings?: FolderSettings | null,
 ): ColumnTyping {
   const c = canonicalKey(key)
-  // A card row's edited columns (YAZ-5319): Card status, a Select of Active and Archived; Card fix status (YAZ-5430), a
+  // A card row's edited columns (YAZ-5319): Status, a Select of Active and Archived (New is never set, YAZ-5838); Card fix status (YAZ-5430), a
   // Select of Needs fixing, blank when not marked; Card up next, a checkbox.
   if (c === 'card.status') return CARD_STATUS_TYPING
   if (c === 'card.fix') return CARD_FIX_TYPING

@@ -168,7 +168,7 @@ describe('YAZ-5793: "+" › Card table', () => {
     }
   })
 
-  it('a Card table with Cards off, or IDs off, says "Cards are off…" and lists no pages; its saved setting stays', () => {
+  it('a Card table with Cards off, or IDs off, says "Cards are off…", lists no pages and shows no table tools (YAZ-5839); its saved setting stays', () => {
     for (const [settings, ids] of [[{ ...DEFAULT_REVIEW_SETTINGS, enabled: false }, true], [DEFAULT_REVIEW_SETTINGS, false], [undefined, true]] as const) {
       cardSettings = settings
       const { el, yaml } = mount(FULL_VIEW, ids)
@@ -177,6 +177,9 @@ describe('YAZ-5793: "+" › Card table', () => {
       expect(body(el)).toEqual([])
       expect(el.textContent).not.toContain('Europe trip')
       expect(yaml()).toContain('rows: cards')
+      // YAZ-5839: no Pages table tools over the line: no count, no New, no Sort, Columns or Filter. The view tabs stay.
+      expect(el.querySelector('.view-toolbar__actions')).toBeNull()
+      expect(el.querySelector('.view-tab__add')).not.toBeNull()
       act(() => root?.unmount())
       container?.remove()
     }
@@ -233,11 +236,12 @@ describe('YAZ-5319: a table that lists cards', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(TRIP)
   })
 
-  it('Status edits: its Select offers New, Active and Archived (YAZ-5793); Active writes the line without `off`, through the card line of its page', async () => {
+  it('Status edits (YAZ-5838, the locked D2): its Select offers only Active and Archived, never New (worked out from the answers); Active writes the line without `off`, through the card line of its page', async () => {
     const { el } = mount(FULL_VIEW)
     doubleClick(cell(el, 0, 2))
     const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
-    for (const word of ['New', 'Active', 'Archived']) expect(options.some((o) => o.textContent?.startsWith(word))).toBe(true)
+    for (const word of ['Active', 'Archived']) expect(options.some((o) => o.textContent?.startsWith(word))).toBe(true)
+    expect(options.some((o) => o.textContent?.startsWith('New'))).toBe(false)
     const option = options.find((o) => o.textContent?.startsWith('Active'))!
     await act(async () => void option.click())
     expect(changeCardLine).toHaveBeenCalledOnce()
@@ -247,17 +251,17 @@ describe('YAZ-5319: a table that lists cards', () => {
     expect(change(off)).toEqual({ parts: [{ kind: 'id', id: 'GEO-1' }] })
   })
 
-  it('YAZ-5793: Status New also clears `off`; Archived sets it', async () => {
+  it('YAZ-5838: the Status cell writes only Active (clears `off`) or Archived (sets it); New is never offered', async () => {
     const { el } = mount(FULL_VIEW)
     const pick = async (row: number, word: string) => {
       doubleClick(cell(el, row, 2))
       const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((o) => o.textContent?.startsWith(word))!
       await act(async () => void option.click())
     }
-    await pick(0, 'New')
-    const [, id, toNew] = vi.mocked(changeCardLine).mock.calls[0]
+    await pick(0, 'Active')
+    const [, id, toActive] = vi.mocked(changeCardLine).mock.calls[0]
     expect(id).toBe('GEO-1')
-    expect(toNew({ parts: [{ kind: 'id', id: 'GEO-1' }, { kind: 'off' }] })).toEqual({ parts: [{ kind: 'id', id: 'GEO-1' }] })
+    expect(toActive({ parts: [{ kind: 'id', id: 'GEO-1' }, { kind: 'off' }] })).toEqual({ parts: [{ kind: 'id', id: 'GEO-1' }] })
     await pick(1, 'Archived')
     const [, id2, toArchived] = vi.mocked(changeCardLine).mock.calls[1]
     expect(id2).toBe('GEO-2')

@@ -122,8 +122,8 @@ describe('YAZ-5319: card rows', () => {
     expect(expr).toBe('card.status == "Archived"')
     expect(exprToRule(expr)).toEqual(rule)
     expect(run({ ...CARDS, filters: expr }).rows.map((r) => r.record.path)).toEqual(['/v/Geo/Europe trip.md#GEO-1'])
-    // Status is a Select of New, Active and Archived (YAZ-5793); Up next a checkbox; the reviews dates and numbers.
-    expect(propertyValues('card.status', cardRowRecords(PAGES), columnTyping('card.status', []))).toEqual(['New', 'Active', 'Archived'])
+    // Status's Select writes Active or Archived (YAZ-5838); the filter also offers New, from the rows' own values. Up next a checkbox; the reviews dates and numbers.
+    expect(propertyValues('card.status', cardRowRecords(PAGES), columnTyping('card.status', []))).toEqual(['Active', 'Archived', 'New'])
     expect(['card.upNext', 'card.nextReview', 'card.reviews', 'card.id'].map((k) => inferType(k, []))).toEqual(['checkbox', 'date', 'number', 'text'])
     // YAZ-5793's new columns: the numbers filter as numbers; the File name as text.
     expect(['card.wait', 'card.forgotten', 'card.recall', 'card.overdue', 'card.file'].map((k) => inferType(k, []))).toEqual(['number', 'number', 'number', 'number', 'text'])
@@ -276,8 +276,8 @@ describe('YAZ-5793: Status is New, Active or Archived', () => {
     ]).toEqual(['New', 'New', 'Active', 'Archived', 'Archived'])
   })
 
-  it('the filter offers the three; "is New", "is Active" and "is Archived" each find their cards', () => {
-    expect(columnTyping('card.status', [])).toMatchObject({ assigned: 'select', options: ['New', 'Active', 'Archived'] })
+  it('the Select writes Active or Archived (YAZ-5838); the filter finds "is New", "is Active" and "is Archived" each', () => {
+    expect(columnTyping('card.status', [])).toMatchObject({ assigned: 'select', options: ['Active', 'Archived'] })
     const is = (value: string) => run({ ...CARDS, filters: ruleToExpr({ property: 'card.status', op: 'is', value }, 'select') }).rows.map((r) => r.record.title)
     expect([is('New'), is('Active'), is('Archived')]).toEqual([['GEO-2'], ['Longest river'], ['Capital of Spain']])
   })

@@ -1257,6 +1257,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         tabs={tabs}
         properties={properties}
         documentView={isPage}
+        actions={!cardsOff}
         folder={folder}
         dateColumns={calendarColumns}
         tabId={tabId}
