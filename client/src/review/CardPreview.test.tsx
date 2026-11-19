@@ -104,26 +104,26 @@ describe('Preview a card (YAZ-5152)', () => {
     expect(el.textContent).not.toContain('Secret title')
   })
 
-  it('YAZ-5696, YAZ-5709: the Preview follows "when the title shows": the global choice, and the card\'s own over it', () => {
+  it('YAZ-5696, YAZ-5709, YAZ-5857: the Preview follows "when the title shows": no band while the title waits; the global choice, and the card\'s own over it', () => {
     const band = () => el.querySelector('.card-inbox__panel > .card-band')
     mount(TEXT, 'Secret title', false, undefined, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'side2' })
-    expect(band()?.classList.contains('card-band--waiting')).toBe(true)
+    expect(band()).toBeNull()
     press(' ')
-    expect(band()?.classList.contains('card-band--waiting')).toBe(true)
+    expect(band()).toBeNull()
     // YAZ-5709 Before Side 2: the title is its own Space, just before Side 2.
     press(' ')
     expect(sides()).toBe(1)
-    expect(band()?.classList.contains('card-band--waiting')).toBe(false)
+    expect(band()).not.toBeNull()
     expect(band()?.textContent).toBe('Secret title')
     press(' ')
     expect(sides()).toBe(2)
     act(() => root?.unmount())
     el.remove()
     mount(TEXT, 'Secret title', false, 'click')
-    expect(band()?.classList.contains('card-band--waiting')).toBe(true)
+    expect(band()).toBeNull()
     // YAZ-5709 After the first click: the first Space is the title, by itself.
     press(' ')
-    expect(band()?.classList.contains('card-band--waiting')).toBe(false)
+    expect(band()).not.toBeNull()
     expect(el.querySelectorAll('.card__hidden').length).toBe(0)
   })
 

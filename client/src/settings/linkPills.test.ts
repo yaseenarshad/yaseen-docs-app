@@ -115,6 +115,19 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
     expect(sanitizeLinkPills({ version: 2, format: '{icon} {id}' })).toEqual({})
   })
 
+  it("the icon (YAZ-5843): its colour alone, and only one that is not Default ('kind'); 'kind' on another part drops; the file keeps it", () => {
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { color: 'teal', size: 'small', bold: true, italic: true, underline: true } } })).toEqual({ parts: { icon: { color: 'teal' } } })
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { color: 'same' } } })).toEqual({ parts: { icon: { color: 'same' } } })
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { color: 'kind' } } })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { size: 'small', bold: true } } })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, parts: { icon: { color: 'mauve' } } })).toEqual({})
+    expect(sanitizeLinkPills({ version: 2, parts: { name: { color: 'kind', bold: true }, mark: { color: 'kind' } } })).toEqual({ parts: { name: { bold: true } } })
+    expect(withLinkPillPart({ parts: { icon: { color: 'red' } } }, 'icon', { color: undefined })).toEqual({})
+    expect(linkPillsFile({ parts: { icon: { color: 'red' } } })).toEqual({ version: 2, parts: { icon: { color: 'red' } } })
+    // No icon change: the file keeps the old form.
+    expect(linkPillsFile({ parts: { name: { bold: true } } })).toEqual({ version: 2, parts: { name: { bold: true } } })
+  })
+
   it('a strength needs a palette fill', () => {
     expect(sanitizeLinkPills({ version: 2, box: { strength: 'light' } })).toEqual({})
     expect(sanitizeLinkPills({ version: 2, box: { strength: 'light', fill: 'none' } })).toEqual({ box: { fill: 'none' } })

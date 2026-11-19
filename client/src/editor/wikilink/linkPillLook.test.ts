@@ -27,6 +27,25 @@ describe('linkPillVars (YAZ-4924)', () => {
     expect(linkPillVars({ box: { shape: 'underline' } })).toEqual({ '--pill-bg': 'transparent', '--pill-pad': '0', '--pill-radius': '0', '--pill-decoration': 'underline' })
   })
 
+  it("the icon's colour (YAZ-5843): --pill-icon-fg and --pill-icon-on, nothing else; Default sets none; Text is the page's text colour", () => {
+    expect(linkPillVars({ parts: { icon: { color: 'teal' } } })).toEqual({ '--pill-icon-fg': 'var(--table-text-teal)', '--pill-icon-on': '1' })
+    expect(linkPillVars({ parts: { icon: { color: 'accent' } } })).toEqual({ '--pill-icon-fg': 'var(--accent)', '--pill-icon-on': '1' })
+    expect(linkPillVars({ parts: { icon: { color: 'muted' } } })).toEqual({ '--pill-icon-fg': 'var(--fg-muted)', '--pill-icon-on': '1' })
+    expect(linkPillVars({ parts: { icon: { color: 'same' } } })).toEqual({ '--pill-icon-fg': 'var(--fg)', '--pill-icon-on': '1' })
+    expect(linkPillVars({ parts: { name: { bold: true } } })).toEqual({ '--pill-name-weight': 'bold' })
+  })
+
+  it("the CSS reads the icon's colour under a style query: every pill icon (the file icon, the card icon on the title and as a piece) in --pill-icon-fg; the card icon's Default is the card colour", () => {
+    const css = readFileSync(join(__dirname, 'wikilink.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const query = css.slice(css.indexOf('@container style(--pill-icon-on: 1)'))
+    expect(query).not.toBe('')
+    for (const sel of ['.wikilink.file-icon::before', '.wikilink .file-icon::before', '.wikilink.wikilink--card::before', '.wikilink.card-icon::before', ':is(.link-pill__head, .link-pill__tail) .link-pill__icon.card-icon::before']) expect(query).toContain(sel)
+    expect(query).toMatch(/background: var\(--pill-icon-fg\) !important;/)
+    expect(query).toMatch(/background-color: var\(--pill-icon-fg\) !important;/)
+    expect(query).toMatch(/\[data-icon-custom\]::before \{\s*mask: var\(--icon\) center \/ 14px 14px no-repeat !important;/)
+    expect(css).toMatch(/\.wikilink\.wikilink--card::before,[^{]*\{[^}]*background-color: var\(--kind-card, currentColor\);/)
+  })
+
   it("each part's style is its own variables: weight, style, decoration, colour, size", () => {
     expect(linkPillVars({ parts: { name: { bold: true, italic: true, underline: true } } })).toEqual({ '--pill-name-weight': 'bold', '--pill-name-style': 'italic', '--pill-name-decoration': 'underline' })
     expect(linkPillVars({ parts: { name: { color: 'same' }, id: { color: 'accent', size: 'normal' }, text: { color: 'green', size: 'normal' }, vault: { color: 'muted' }, folder: { size: 'small' }, path: { bold: true } } })).toEqual({
@@ -215,12 +234,14 @@ describe("a pill's size follows its line: a pill in a heading is as big as the h
   })
 
   it('each part, the number and the mark too, reads its own size variable with an em or inherit fallback', () => {
-    for (const part of LINK_PILL_PARTS) {
+    // The icon has no size (YAZ-5843 D4).
+    const sized = LINK_PILL_PARTS.filter((part) => part !== 'icon')
+    for (const part of sized) {
       const rule = part === 'name' ? /--pill-name-size, inherit\)/ : new RegExp(`--pill-${part}-size, (0\\.85em|1em|inherit)\\)`)
       expect(wikilinkCss, part).toMatch(rule)
     }
     // Normal is the line's size and Small 85 % of it, never pixels.
-    for (const part of LINK_PILL_PARTS) {
+    for (const part of sized) {
       expect(linkPillVars({ parts: { [part]: { size: 'small' } } })[`--pill-${part}-size`]).toBe('0.85em')
       expect(linkPillVars({ parts: { [part]: { size: 'normal' } } })[`--pill-${part}-size`]).toBe('1em')
     }

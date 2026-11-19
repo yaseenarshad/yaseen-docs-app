@@ -2194,7 +2194,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'linkPills',
             label: 'Link pills',
-            hint: "The default look of every link in this vault. Right-click a link to style that one. Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {number} {vault} {folder} {path} {mark} and your own text. Click a part of the sample pill in the preview to style it; click its icon for the box. Every link to a page shows this way in this vault's pages, folder pages and the explore stack. The default look changes no page: it keeps its [[Name]].",
+            hint: "The default look of every link in this vault. Right-click a link to style that one. Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {number} {vault} {folder} {path} {mark} and your own text. Click a part of the sample pill in the preview to style it; click its icon for the icon's colour, and the pill's edge for the box. Every link to a page shows this way in this vault's pages, folder pages and the explore stack. The default look changes no page: it keeps its [[Name]].",
             keywords: LINK_PILL_WORDS,
             wide: true,
             available: (ctx) => ctx.linkPills !== undefined,

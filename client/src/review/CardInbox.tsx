@@ -30,7 +30,8 @@
  *    at any step, fully shown too, and the answer line names the card by its ID (`reviewTitleOf`).
  *  - WHEN A TITLE SHOWS (YAZ-5696): Never, Always, After the first click or Before Side 2 (YAZ-5709: the title then has its own Space) — the card's own choice
  *    (⋯ › Title in review, its line's `title-click`…), else Settings › Cards › Show card titles (`bandTitle`,
- *    `titleShows`). While it waits the band keeps its room, empty to the eye and to VoiceOver, so the card never jumps.
+ *    `titleShows`). While it waits there is no band (YAZ-5857 D1): the text starts flush with the top of the card, and
+ *    the band comes in at once, with no animation, when the title shows (D2), as on the phone.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -511,14 +512,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
           bodyRef={bodyRef}
           band={
             card !== null &&
-            headTitle !== '' && (
+            headTitle !== '' &&
+            !band.waits && (
               // The title band at the top of the card's frame (YAZ-5308 A3), no label. A card file's title opens its tab; a
               // card in a page's is the page title's own component, a click renames the card (its card line), as in the
               // page's card (YAZ-5164 part 3). In a Read only vault it shows only.
-              <CardBand waiting={band.waits}>
-                {band.waits ? (
-                  <span className="card-inbox__name">{headTitle}</span>
-                ) : cardFile ? (
+              <CardBand>
+                {cardFile ? (
                   <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openFile(card.path)}>
                     {headTitle}
                   </button>

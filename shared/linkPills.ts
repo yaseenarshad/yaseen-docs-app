@@ -10,7 +10,8 @@ import { isRecord } from './guards'
  * and in what order — `{icon}` `{name}` `{id}` `{number}` (the ID's number alone) `{vault}` `{folder}` (the parent
  * folder) `{path}` (the whole path from the vault) `{mark}` (a small icon, round 5); any other text shows as typed. The
  * box (shape, fill, strength) and each PART (the name, the ID, the number, the vault, the folder, the path, the mark,
- * your own text: bold / italic / underline, colour, size; the mark's icon) have their own style. The file
+ * your own text: bold / italic / underline, colour, size; the mark's icon; the icon: its colour alone, YAZ-5843) have
+ * their own style. The file
  * holds only what differs from the default, beside the version:
  * `{ "version": 2, "format": "{icon}{name} ({id})", "box": { "fill": "none" }, "parts": { "name": { "bold": true } } }`.
  * A missing file, or `{}`, is the app's own look: the default format with every part at its own default draws exactly
@@ -34,8 +35,11 @@ export type LinkPillStrength = (typeof LINK_PILL_STRENGTHS)[number]
 /** The tokens a format may hold, in the order the chips show them. */
 export const LINK_PILL_TOKENS = ['icon', 'name', 'id', 'number', 'vault', 'folder', 'path', 'mark'] as const
 export type LinkPillToken = (typeof LINK_PILL_TOKENS)[number]
-/** The parts a reader can style: each token but the icon, and `text` for every piece of their own text. The icon has no style. */
-export const LINK_PILL_PARTS = ['name', 'id', 'number', 'vault', 'folder', 'path', 'mark', 'text'] as const
+/**
+ * The parts a reader can style: each token, and `text` for every piece of their own text. The icon (YAZ-5843) has a
+ * colour only: no bold, italic, underline or size (`sanitizePart`).
+ */
+export const LINK_PILL_PARTS = ['name', 'id', 'number', 'vault', 'folder', 'path', 'mark', 'icon', 'text'] as const
 export type LinkPillPart = (typeof LINK_PILL_PARTS)[number]
 /** The icons `{mark}` can draw (round 5), in the order the style panel shows them; the first is the default. */
 export const LINK_PILL_MARKS = ['arrow-up-right', 'arrow-right', 'link', 'return', 'dot', 'diamond', 'star', 'bookmark'] as const
@@ -46,8 +50,12 @@ export const LINK_PILL_FORMAT_MAX = 60
 /** Today's pill: the icon on the name, then the other vault's name in brackets (empty, with its brackets, on a pill of this vault). */
 export const DEFAULT_LINK_PILL_FORMAT = '{icon}{name} ({vault})'
 
-/** A part's colour: the accent, the text around the pill, the muted grey, or a palette colour's text colour. */
-export type LinkPillPartColor = 'accent' | 'same' | 'muted' | LinkPillColor
+/**
+ * A part's colour: the accent, the text around the pill, the muted grey, or a palette colour's text colour. `kind`
+ * (YAZ-5843, the icon only): the app's own icon colours, as the sidebar draws them (a page grey, a card purple). It is
+ * the icon's default, so it is never stored.
+ */
+export type LinkPillPartColor = 'accent' | 'same' | 'muted' | 'kind' | LinkPillColor
 export type LinkPillSize = 'normal' | 'small'
 /** One part's style. Every field absent is the part's own default (`LINK_PILL_PART_DEFAULTS`). */
 export interface LinkPillPartStyle {
@@ -93,6 +101,7 @@ export const LINK_PILL_PART_DEFAULTS: Record<LinkPillPart, { color: LinkPillPart
   folder: { color: 'muted', size: 'small' },
   path: { color: 'muted', size: 'small' },
   mark: { color: 'accent', size: 'normal' },
+  icon: { color: 'kind', size: 'normal' },
 }
 
 /** The look of a vault that changed nothing: the same object every time, so a layer's style can be cached on it. */
@@ -178,21 +187,23 @@ const oneOf =
   <T extends string>(choices: readonly T[]) =>
   (v: unknown): v is T =>
     typeof v === 'string' && (choices as readonly string[]).includes(v)
-const isColor = oneOf(['accent', 'same', 'muted', ...LINK_PILL_COLORS])
+const isColor = oneOf(['accent', 'same', 'muted', 'kind', ...LINK_PILL_COLORS])
 const isSize = oneOf(['normal', 'small'])
 const isMark = oneOf(LINK_PILL_MARKS)
 
 /**
  * `raw` as a part's style with only its changes: a bad field falls back alone, a default is dropped. `undefined` when
- * nothing is left. `color`: the part's default colour (the mark's is the name's).
+ * nothing is left. `color`: the part's default colour (the mark's is the name's). The icon keeps its colour alone, and
+ * only one that is not `kind`; `kind` on any other part is no colour of that part and drops.
  */
 function sanitizePart(part: LinkPillPart, raw: unknown, color: LinkPillPartColor = LINK_PILL_PART_DEFAULTS[part].color): LinkPillPartStyle | undefined {
   if (!isRecord(raw)) return undefined
   const out: LinkPillPartStyle = {}
+  if (part === 'icon') return isColor(raw.color) && raw.color !== 'kind' ? { color: raw.color } : undefined
   if (raw.bold === true) out.bold = true
   if (raw.italic === true) out.italic = true
   if (raw.underline === true) out.underline = true
-  if (isColor(raw.color) && raw.color !== color) out.color = raw.color
+  if (isColor(raw.color) && raw.color !== 'kind' && raw.color !== color) out.color = raw.color
   if (isSize(raw.size) && raw.size !== LINK_PILL_PART_DEFAULTS[part].size) out.size = raw.size
   if (part === 'mark' && isMark(raw.icon) && raw.icon !== DEFAULT_LINK_PILL_MARK) out.icon = raw.icon
   return Object.keys(out).length === 0 ? undefined : out

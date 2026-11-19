@@ -22,7 +22,7 @@ import { dirname } from '../../lib/paths'
 /** The wash of a palette fill at each strength (a card's, `views.css`). */
 const STRENGTH_PERCENT = { light: 15, medium: 30, strong: 50 } as const
 
-/** A part's colour as CSS. */
+/** A part's colour as CSS. `kind` is never stored (the icon's default), so it never reaches a variable. */
 const colorValue = (color: LinkPillPartColor): string => (color === 'accent' ? 'var(--accent)' : color === 'same' ? 'currentColor' : color === 'muted' ? 'var(--fg-muted)' : `var(--table-text-${color})`)
 
 /** The custom properties of the changed fields, for example `{ '--pill-bg': 'transparent' }`. `{}` sets none. */
@@ -42,10 +42,17 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
       vars['--pill-decoration'] = 'underline'
     }
   }
+  // The icon's colour (YAZ-5843): `wikilink.css` draws every pill icon as a one-colour shape in `--pill-icon-fg` under a
+  // style query on `--pill-icon-on`. Its "Text" is the page's text colour: inside the icon, `currentColor` is the name's.
+  const icon = pills.parts?.icon?.color
+  if (icon !== undefined) {
+    vars['--pill-icon-fg'] = icon === 'same' ? 'var(--fg)' : colorValue(icon)
+    vars['--pill-icon-on'] = '1'
+  }
   if (pills.parts !== undefined)
     for (const part of LINK_PILL_PARTS) {
       const style = pills.parts[part]
-      if (style === undefined) continue
+      if (style === undefined || part === 'icon') continue
       if (style.bold) vars[`--pill-${part}-weight`] = 'bold'
       if (style.italic) vars[`--pill-${part}-style`] = 'italic'
       if (style.underline) vars[`--pill-${part}-decoration`] = 'underline'

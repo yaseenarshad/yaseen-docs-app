@@ -4057,8 +4057,8 @@ body.drag-held iframe {
 .app[data-sidebar-file-icons='off'] .card-icon::before {
   content: none;
 }
-/* A picked card colour (YAZ-5100 round 2) on a card pill's icon and the `[[` picker's too. */
-.app[data-icon-colors~='card']:not([data-sidebar-file-icons='off'], [data-sidebar-file-icons='grey']) .wikilink.wikilink--card::before,
+/* A picked card colour (YAZ-5100 round 2) on the `[[` picker's card icon. A card pill's icon is in the card colour always
+   (YAZ-5843 D2, `wikilink.css`). */
 .app[data-icon-colors~='card']:not([data-sidebar-file-icons='off'], [data-sidebar-file-icons='grey']) .wikilink-picker__card-icon {
   background-color: var(--kind-card);
 }

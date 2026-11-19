@@ -72,16 +72,9 @@ export function CardId({ id, onNotice }: { id: string; onNotice: (message: strin
  * bold, a long title wrapping. Read, no label, and nothing at all for a card with no title. Explore's card, the Inbox
  * and its Preview; a card in a page and an embed draw the same band without React.
  */
-export function CardBand({ children, waiting = false }: { children: ReactNode; waiting?: boolean }) {
-  // YAZ-5696: a title that waits (`titleShows`) keeps the band's room, so the card never moves down when it comes; the
-  // words are not seen and not read until then.
-  return waiting ? (
-    <div className="card-band card-band--waiting" aria-hidden="true">
-      {children}
-    </div>
-  ) : (
-    <div className="card-band">{children}</div>
-  )
+export function CardBand({ children }: { children: ReactNode }) {
+  // YAZ-5857: a title that waits (`titleShows`) draws no band at all; the caller leaves it out until the title shows.
+  return <div className="card-band">{children}</div>
 }
 
 /**

@@ -782,10 +782,6 @@
 .card .card-band {
   padding: 8px 16px 9px;
 }
-/* YAZ-5696: a title that waits keeps the band's room (the card never jumps when it comes); its words are not seen. */
-.card-band--waiting > * {
-  visibility: hidden;
-}
 .card-band[hidden],
 .card.card--editing > .card-band {
   display: none;

@@ -138,8 +138,10 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
             startDrag={startDrag}
             bodyRef={bodyRef}
             band={
-              headTitle !== '' && (
-                <CardBand waiting={band.waits}>
+              // YAZ-5857: no band while the title waits.
+              headTitle !== '' &&
+              !band.waits && (
+                <CardBand>
                   <span className="card-inbox__name">{headTitle}</span>
                 </CardBand>
               )
