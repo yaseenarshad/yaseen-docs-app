@@ -454,7 +454,7 @@ function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, wat
       {wasCard && <CardFileNotice text="This file is no longer a card file." />}
       {file !== null && cardFile && (
         <Suspense fallback={null}>
-          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
+          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} outsideChangeGlow={outsideChangeGlow} />
         </Suspense>
       )}
       {file !== null && !cardFile && (

@@ -43,7 +43,7 @@
  * checked leaves it open: the landing.
  */
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, Selection, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import { Transform, type Mapping } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
@@ -299,9 +299,13 @@ const beforeTitle = (before: string | null): string => (before === null ? 'New l
 const WORDS = /^\[[ x]\]|\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]/gu
 
 type DiffPart = OutsideChangeRow['parts'][number]
+export type OutsideDiffPart = DiffPart
 
-/** Word by word, `before` into `now`: the same start and end, then the longest common words of the middle. */
-const wordDiff = (before: string, now: string): DiffPart[] => {
+/**
+ * Word by word, `before` into `now`: the same start and end, then the longest common words of the middle. The `same`
+ * and `ins` parts, in order, give `now` again. Exported for the card glow (YAZ-5925, `card/cardGlow.ts`).
+ */
+export const wordDiff = (before: string, now: string): DiffPart[] => {
   // "Sam" → "Sam, urgent" adds ", urgent" and strikes nothing.
   const a = before.match(WORDS) ?? []
   const b = now.match(WORDS) ?? []
@@ -424,33 +428,43 @@ const tipContent = (view: EditorView, target: HTMLElement): HTMLElement[] => {
   return parts === null ? fallback : parts.map((part) => tipText(part.kind === 'same' ? 'span' : part.kind, part.text))
 }
 
+/**
+ * YAZ-5925: what a card's glow shows in the box, by its element (`card/cardGlow.ts`): a drawn card is no text of the
+ * page, so its words come from the card's own compare. Memory only; the element going takes its entry with it.
+ */
+export const outsideTipParts = new WeakMap<Element, readonly DiffPart[]>()
+
 /** The box under the mouse: shown on mouse-over at once, hidden off a change, on any change of the list, and with the view. */
-const createTip = (view: EditorView): { hide: () => void; destroy: () => void } => {
+const createTip = (view: EditorView): { hide: () => void; destroy: () => void } => mountOutsideTip(view.dom, (target) => tipContent(view, target))
+
+/** The same box over any `root` (YAZ-5925: a card page, which is no editor): a card glow's parts first, else `content`. */
+export const mountOutsideTip = (root: HTMLElement, content: (target: HTMLElement) => HTMLElement[]): { hide: () => void; destroy: () => void } => {
   let box: HTMLElement | null = null
   const hide = (): void => {
     if (box !== null) box.hidden = true
   }
   const onOver = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target.closest<HTMLElement>(`[${OUTSIDE_TIP_ATTR}]`) : null
-    if (target === null || !view.dom.contains(target)) return hide()
+    if (target === null || !root.contains(target)) return hide()
     if (box === null) {
       box = document.createElement('div')
       box.className = OUTSIDE_TIP_CLASS
       document.body.appendChild(box)
     }
-    box.replaceChildren(...tipContent(view, target))
+    const own = outsideTipParts.get(target)
+    box.replaceChildren(...(own === undefined ? content(target) : own.map((part) => tipText(part.kind === 'same' ? 'span' : part.kind, part.text))))
     box.hidden = false
     const rect = target.getBoundingClientRect()
     box.style.top = `${rect.bottom + 4}px`
     box.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - box.offsetWidth - 8))}px`
   }
-  view.dom.addEventListener('mouseover', onOver)
-  view.dom.addEventListener('mouseleave', hide)
+  root.addEventListener('mouseover', onOver)
+  root.addEventListener('mouseleave', hide)
   return {
     hide,
     destroy: () => {
-      view.dom.removeEventListener('mouseover', onOver)
-      view.dom.removeEventListener('mouseleave', hide)
+      root.removeEventListener('mouseover', onOver)
+      root.removeEventListener('mouseleave', hide)
       box?.remove()
     },
   }
@@ -685,6 +699,33 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
   }
 }
 
+/** When a glow of `glow` that starts `now` ends (D5); null: until checked. For the card glow too (YAZ-5925). */
+export const outsideGlowEndsAt = endsAt
+
+/** The editors' Glow, by their `.ProseMirror` (YAZ-5925: an embed's glow keeps its page's time). */
+const glowOfRoot = new WeakMap<Element, () => OutsideChangeGlow | undefined>()
+
+/** The Glow of the page that holds `el` (Settings and the page's cog); "Until I check it" outside a page. */
+export const outsideGlowAt = (el: Element): OutsideChangeGlow => {
+  const root = el.closest('.ProseMirror')
+  return (root === null ? undefined : glowOfRoot.get(root)?.()) ?? 'until-checked'
+}
+
+/**
+ * The change of the textblock at `pos` (YAZ-5925: a card block is one, `card/cardGlow.ts`): its id, its Before, and
+ * whether Next put the ring on it; null when it has none.
+ */
+export const outsideChangeAt = (state: EditorState, pos: number): { id: number; before: string | null; active: boolean } | null => {
+  const list = outsideKey.getState(state)
+  const change = list?.changes.find((each) => each.pos === pos)
+  return list === undefined || change === undefined ? null : { id: change.id, before: change.before, active: change.id === list.activeId }
+}
+
+/** Checked on one change (D8), from outside the plugin's own buttons (a card's head, YAZ-5925). */
+export const checkOutsideChange = (view: EditorView, id: number): void => {
+  view.dispatch(view.state.tr.setMeta(outsideKey, { type: 'check', id } satisfies OutsideMeta))
+}
+
 /** The change list, registered by `createCrepe` when the host hands it the channel. */
 export const createOutsideChanges = (channel: OutsideChangesChannel) =>
   $prose(
@@ -761,6 +802,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
             }, Math.max(0, soonest - Date.now()))
           }
           sync()
+          glowOfRoot.set(editorView.dom, () => outsideKey.getState(editorView.state)?.glow)
           const tip = createTip(editorView)
           // The list this tab kept for the page while it showed another (a link, then Back), with what changed meanwhile.
           const kept = channel.readSaved()
@@ -779,6 +821,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
             },
             destroy: () => {
               destroyed = true
+              glowOfRoot.delete(editorView.dom)
               clearTimeout(timer)
               tip.destroy()
               unbind()

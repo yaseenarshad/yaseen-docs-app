@@ -53,6 +53,9 @@ import { mountReviewsStrip, type ReviewsStripHandle, type StripPart } from './re
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { CARD_FIND_READ } from '../find/cardFind'
 import { pathUnit } from '../../vault/unitWord'
+import { isOwnWrite } from '../../lib/twinEditors'
+import { outsideGlowAt } from '../external/outsideChanges'
+import { cardGlowChecked, CardGlowTracker, paintCardGlow } from './cardGlow'
 import './cardEmbed.css'
 
 /** How far outside the screen a box starts to read its card (the page's own scroller). */
@@ -209,6 +212,12 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   head.append(from, dot, idButton, state, fixMark, editButton, more)
   const body = document.createElement('div')
   body.className = 'card__body'
+  // YAZ-5925 (D2c): an outside change of the card's source lights its words here, until Checked or the page's Glow ends.
+  const glow = new CardGlowTracker(() => outsideGlowAt(dom), () => paint())
+  /** The card the glow is for (path and ID): another card starts it again. */
+  let glowFor: string | null = null
+  const checked = cardGlowChecked(() => glow.check())
+  editButton.before(checked)
 
   let card: CardLink | null = null
   /** The card as its file holds it, once read (or as Done wrote it). */
@@ -287,7 +296,9 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const paint = (): void => {
     if (card === null || edit !== null) return
     // The head shows the title (off the card line); the card's text is its sides only (YAZ-5308).
-    body.replaceChildren(read === null ? '' : renderCard(read.text, {}, doors.look(card.path)))
+    const look = doors.look(card.path)
+    checked.hidden = glow.current === null
+    body.replaceChildren(read === null ? '' : paintCardGlow(renderCard(read.text, {}, look), read.text, glow.current, (old) => renderCard(old, {}, look)))
     drawReviews()
   }
 
@@ -335,6 +346,13 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       (content) => {
         if (destroyed || readKey !== key || edit !== null) return
         read = content === null ? null : cardInContent(c.path, content, c.id, c.index)
+        const who = `${c.path}\n${c.id}`
+        if (who !== glowFor) {
+          glowFor = who
+          glow.reset()
+        }
+        // The app's own write (Done here, a review, the page's save) never glows.
+        if (read !== null) glow.seen(read.text, !isOwnWrite(c.path, version))
         draw()
         paint()
       },
@@ -525,6 +543,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     },
     destroy: () => {
       destroyed = true
+      glow.destroy()
       stopWatch?.()
       closeMenu?.()
       edit?.editor.destroy()
