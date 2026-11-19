@@ -9,7 +9,9 @@ import { execFile } from 'node:child_process'
  * 0.1 s and uses about 0.05 s of CPU).
  *
  * At the release the same script names the app under the pointer (YAZ-5840 D1): the bundle ID of
- * the owner of the top visible window there (`CGWindowListCopyWindowInfo`, front to back). Owners
+ * the owner of the top visible window there (`CGWindowListCopyWindowInfo`, front to back). A window
+ * at the drag image's level (500, `kCGDraggingWindowLevel`) or above takes no drop: the drag image
+ * itself, and a see-through overlay app such as a dictation strip, are skipped (YAZ-5878). Owners
  * and bounds need no permission; only window titles would. The desktop is a Finder window, so a
  * drop on a Finder window or on the desktop prints `com.apple.finder`. A drop on another app, the
  * Dock, or the menu bar prints another ID: Finder made no copy, and the box asks nothing. A lookup
@@ -38,7 +40,7 @@ export const MOUSE_UP_SCRIPT = [
   "  var num = function (w, key) { return Number(w.objectForKey(key).js) }",
   '  for (var i = 0; i < Number(list.count); i++) {',
   "    var w = list.objectAtIndex(i), box = w.objectForKey('kCGWindowBounds')",
-  "    if (num(w, 'kCGWindowAlpha') === 0) continue",
+  "    if (num(w, 'kCGWindowAlpha') === 0 || num(w, 'kCGWindowLayer') >= 500) continue",
   "    var left = num(box, 'X'), top = num(box, 'Y')",
   "    if (x < left || x >= left + num(box, 'Width') || y < top || y >= top + num(box, 'Height')) continue",
   "    var app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(num(w, 'kCGWindowOwnerPID'))",

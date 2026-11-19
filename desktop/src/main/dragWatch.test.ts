@@ -92,8 +92,8 @@ describe('whenMouseUp (YAZ-3294 D24)', () => {
   it('the script names the owner of the TOP visible window under the pointer, in window-list space (YAZ-5840 D1)', () => {
     // A stand-in bridge: a 1000 pt main screen, the pointer at Cocoa (100, 900), so at y 100 from the top.
     const wrap = (v: unknown) => ({ js: v })
-    const win = (pid: number, alpha: number, X: number, Y: number, Width: number, Height: number) => {
-      const fields: Record<string, unknown> = { kCGWindowOwnerPID: wrap(pid), kCGWindowAlpha: wrap(alpha), kCGWindowBounds: { objectForKey: (k: string) => wrap(({ X, Y, Width, Height } as Record<string, number>)[k]) } }
+    const win = (pid: number, alpha: number, X: number, Y: number, Width: number, Height: number, layer = 0) => {
+      const fields: Record<string, unknown> = { kCGWindowOwnerPID: wrap(pid), kCGWindowAlpha: wrap(alpha), kCGWindowLayer: wrap(layer), kCGWindowBounds: { objectForKey: (k: string) => wrap(({ X, Y, Width, Height } as Record<string, number>)[k]) } }
       return { objectForKey: (k: string) => fields[k] }
     }
     const run = (windows: ReturnType<typeof win>[]) => {
@@ -114,6 +114,11 @@ describe('whenMouseUp (YAZ-3294 D24)', () => {
     expect(run([win(1, 1, 300, 0, 200, 200), win(2, 1, 0, 0, 500, 500), win(1, 1, 0, 0, 1000, 1000)])).toBe('com.google.Chrome')
     // An invisible overlay (alpha 0) on top is skipped.
     expect(run([win(3, 0, 0, 0, 1000, 1000), win(1, 1, 0, 0, 1000, 1000)])).toBe('com.apple.finder')
+    // A window at the drag image's level (500) or above — the drag image itself, a see-through overlay app
+    // such as a dictation strip at 1000 — takes no drop: the window below it does (YAZ-5878).
+    expect(run([win(3, 1, 0, 0, 1000, 1000, 1000), win(3, 1, 0, 0, 200, 200, 500), win(1, 1, 0, 0, 1000, 1000, -2147483603)])).toBe('com.apple.finder')
+    // The Dock (20) and the menu bar (24) take no drop of files to copy: they still count, and are not Finder.
+    expect(run([win(2, 1, 0, 0, 1000, 1000, 20), win(1, 1, 0, 0, 1000, 1000, -2147483603)])).toBe('com.google.Chrome')
     // No window there, or an owner that is gone: nothing.
     expect(run([win(1, 1, 500, 500, 10, 10)])).toBe('')
     expect(run([win(9, 1, 0, 0, 1000, 1000)])).toBe('')
