@@ -537,6 +537,87 @@
 .card__sides .card__side th:not([align]) {
   text-align: start;
 }
+/* YAZ-5867: THE LOOK THE PAGE SAVED, in a card's read table. `cardRender.ts` reads the table's comment with the page's
+   one reader, sets its marks after DOMPurify (`tableMarks.ts`: `data-fill`, `data-header-*`, a cell's own `text-align`
+   and `vertical-align` inline …) and the variables they name (`lookVars`: `cardTable.css`'s header and subheader row
+   variables, `--cell-fill`, `--cell-ink`). These rules paint them as `table.css` paints a page table, light and dark.
+   Not in a phone page (`.page-table`: its `tables.css` draws the same marks there), so a cell never takes two tints.
+   Where the phone Review's own rules weigh more, these name the property itself. Order: the header and subheader
+   rows, then the stripes, then the fills, so a filled cell keeps its fill. */
+.card__sides .card__table:not(.page-table) > table:is([data-header-color], [data-header-strength]) th,
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-fill] {
+  background-color: var(--table-cell-tint, transparent);
+}
+.card__sides .card__table:not(.page-table) > table[data-header-weight] th {
+  font-weight: var(--table-header-weight, bold);
+}
+.card__sides .card__table:not(.page-table) > table[data-header-text] th {
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), currentColor));
+}
+/* The table's own Align wins over Settings' (`--table-header-aligned` off: the nearest wins, as a page table's) and
+   over each header cell's own, as on the page. The subheader rows' the same. */
+.card__sides .card__table:not(.page-table) > table[data-header-align] {
+  --table-header-aligned: off;
+}
+.card__sides .card__table:not(.page-table) > table[data-header-align='left'] th { text-align: left !important; }
+.card__sides .card__table:not(.page-table) > table[data-header-align='center'] th { text-align: center !important; }
+.card__sides .card__table:not(.page-table) > table[data-header-align='right'] th { text-align: right !important; }
+/* Subheader rows (`subhead 5 12`): the table's own parts, else Settings' on `.app` (`cardTable.css`), else the Mac's
+   defaults (Medium grey, Bold, Full). */
+.card__sides .card__table:not(.page-table) > table td[data-subhead] {
+  --table-cell-tint: color-mix(in srgb, var(--table-subheader-hue, var(--crepe-color-on-background, var(--fg))) calc(var(--table-subheader-strength, 12) * var(--table-subheader-scale, 1) * 1%), transparent);
+  font-weight: var(--table-subheader-weight, bold);
+  color: var(--table-subheader-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-subheader-mute, 0) * 100%), currentColor));
+}
+.card__sides .card__table:not(.page-table) > table[data-subheader-align] {
+  --table-subheader-aligned: off;
+}
+.card__sides .card__table:not(.page-table) > table[data-subheader-align='left'] td[data-subhead] { text-align: left !important; }
+.card__sides .card__table:not(.page-table) > table[data-subheader-align='center'] td[data-subhead] { text-align: center !important; }
+.card__sides .card__table:not(.page-table) > table[data-subheader-align='right'] td[data-subhead] { text-align: right !important; }
+@container style(--table-subheader-aligned: on) {
+  .card__sides .card__table:not(.page-table) > table td[data-subhead] {
+    text-align: var(--table-subheader-align) !important;
+  }
+}
+/* Stripes: every second body row; with subheader rows, the rows `data-stripe` marks. Light, as the page's (4%). */
+.card__sides .card__table:not(.page-table) > table:where([data-stripes]:not([data-subheads])) > tbody > tr:where(:nth-child(even)) > td,
+.card__sides .card__table:not(.page-table) > table:where([data-stripes][data-subheads]) tr:where([data-stripe]) > td {
+  --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background, var(--fg)) 4%, transparent);
+}
+/* Fills and text colours: the ten names, light and dark (`cardTable.css`), or a custom `#rrggbb`: a fill at the page's
+   wash, a text colour made readable on the page in each theme (`readableInk`: `--cell-ink-light`, `--cell-ink-dark`). */
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-fill] {
+  --table-cell-tint: var(--cell-fill);
+}
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-color] {
+  color: var(--cell-ink, var(--cell-ink-light));
+}
+:where([data-theme='dark'], [data-scheme='dark']) .card__sides .card__table:not(.page-table) > table :is(th, td)[data-color^='#'] {
+  color: var(--cell-ink-dark);
+}
+/* The table's vertical alignment (a cell's own is inline, so it wins). Row height: the card's cell room is the page's
+   normal (4px and the card's gap); Compact and Tall in step, as the page's 1px and 10px. */
+.card__sides .card__table:not(.page-table) > table[data-valign='middle'] :is(th, td) { vertical-align: middle; }
+.card__sides .card__table:not(.page-table) > table[data-valign='bottom'] :is(th, td) { vertical-align: bottom; }
+.card__sides .card__table:not(.page-table) > table[data-height='compact'] :is(th, td) { padding-block: calc(1px + var(--card-gap, 0px)); }
+.card__sides .card__table:not(.page-table) > table[data-height='tall'] :is(th, td) { padding-block: calc(10px + var(--card-gap, 0px)); }
+/* The table's own border (`border 2px 40%`): its thickness and darkness of the outline colour, the page's. */
+.card__sides .card__table:not(.page-table) > table[data-border] :is(th, td) {
+  --table-border-width: var(--table-border-px);
+  --table-border-darkness: var(--table-border-dark);
+  border: var(--table-border-px) solid color-mix(in srgb, var(--crepe-color-outline, var(--table-outline)) var(--table-border-dark), transparent);
+}
+/* Clip (`nowrap`, `text 2:clip`): one line, cut with "…". A merged cell breaks a long word in its wider room. */
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-clip] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card__sides .card__table:not(.page-table) > table [data-merged] {
+  overflow-wrap: break-word;
+}
+/* End of YAZ-5867. */
 .card__body pre {
   overflow-x: auto;
 }
