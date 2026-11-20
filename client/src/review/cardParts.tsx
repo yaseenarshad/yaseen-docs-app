@@ -150,7 +150,7 @@ interface CardBodyProps {
   /** Right-click on a View-mode pill or Markdown link (D2). Absent → browser default. */
   onPillContextMenu?: (hit: CardViewLinkHit, x: number, y: number) => void
   /** Hover on a View-mode pill or Markdown link (D2). Null on pointer leave. */
-  onPillHover?: (hit: (CardViewLinkHit & { rect: DOMRect }) | null) => void
+  onPillHover?: (hit: (CardViewLinkHit & { rect: { left: number; top: number; right: number; bottom: number } }) | null) => void
   /** Double-click on a View-mode image (S4): opens the image lightbox. */
   onOpenImage?: (gallery: { images: Array<{ src: string; alt: string }>; index: number }) => void
 }
@@ -166,6 +166,29 @@ export interface CardBodyGlow {
  * render; an index change redraws only the pills (`refreshCardLook`). A pill and a Markdown link open as the
  * page's do (idea 6, `cardLinkWhere`).
  */
+/**
+ * Returns the on-screen rect of a link element. `.wikilink-group` uses `display: contents` so its own
+ * `getBoundingClientRect()` is 0×0 (which anchored hover previews at the window's top-left corner); measure the union
+ * of its rendered children when the element itself has no box.
+ */
+function rectOfLink(el: HTMLElement): { left: number; top: number; right: number; bottom: number } {
+  const own = el.getBoundingClientRect()
+  if (own.width > 0 || own.height > 0) return { left: own.left, top: own.top, right: own.right, bottom: own.bottom }
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  for (const child of el.children) {
+    const r = child.getBoundingClientRect()
+    if (r.width === 0 && r.height === 0) continue
+    if (r.left < left) left = r.left
+    if (r.top < top) top = r.top
+    if (r.right > right) right = r.right
+    if (r.bottom > bottom) bottom = r.bottom
+  }
+  return left <= right ? { left, top, right, bottom } : { left: own.left, top: own.top, right: own.right, bottom: own.bottom }
+}
+
 export function CardBody({ text, path, vault, show, doors, fold = false, glow, onPillContextMenu, onPillHover, onOpenImage }: CardBodyProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const icons = useContext(IconsContext)
@@ -282,7 +305,7 @@ export function CardBody({ text, path, vault, show, doors, fold = false, glow, o
     hoveredEl.current = el
     if (el === null) return cb(null)
     const hit = cardViewLinkHit(el)
-    cb(hit === null ? null : { ...hit, rect: el.getBoundingClientRect() })
+    cb(hit === null ? null : { ...hit, rect: rectOfLink(el) })
   }
   const onMouseLeave = () => {
     if (hoveredEl.current === null) return

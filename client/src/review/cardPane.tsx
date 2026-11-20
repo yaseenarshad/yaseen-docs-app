@@ -263,7 +263,7 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
   )
 
   const onPillHover = useCallback(
-    (hit: (CardViewLinkHit & { rect: DOMRect }) | null) => {
+    (hit: (CardViewLinkHit & { rect: { left: number; top: number; right: number; bottom: number } }) | null) => {
       const hover = refs.current.wikilinkHover
       if (hover === undefined) return
       if (hit === null) return hover.onLeave()

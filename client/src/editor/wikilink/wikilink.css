@@ -49,6 +49,7 @@
    Bold, italic and underline need no rule: the name's weight and style fall back to the line's (inherit), and the vault
    can add them, never take them away. */
 .milkdown .ProseMirror mark .wikilink:not(.wikilink--unresolved),
+.card__sides mark .wikilink:not(.wikilink--unresolved),
 .link-pills-preview mark .wikilink {
   background: transparent;
 }
@@ -327,7 +328,9 @@
     .milkdown .ProseMirror mark .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     .milkdown .ProseMirror mark .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     .milkdown .ProseMirror mark .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
+    .milkdown .ProseMirror mark .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
     .milkdown .ProseMirror mark a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
+    .card__sides mark .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
     .link-pills-preview mark .wikilink:hover,
     .link-pills-preview--hover mark .wikilink {
       background: var(--pill-mark-hover-bg, color-mix(in srgb, var(--fg) 8%, transparent));

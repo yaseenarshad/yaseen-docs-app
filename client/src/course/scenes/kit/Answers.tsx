@@ -12,8 +12,8 @@ export type Answer = 'forgot' | 'remembered'
 export function Answers({ beat, forgot, remembered, chosen, onAnswer }: { beat: Beat; forgot: number; remembered: number; chosen?: Answer | null; onAnswer?: (answer: Answer) => void }) {
   const live = onAnswer !== undefined && (chosen ?? null) === null
   const row: [Answer, string, number, () => ReactElement, string, string][] = [
-    ['forgot', 'Forgot', forgot, ForgotIcon, 'again', '0'],
-    ['remembered', 'Remembered', remembered, RememberedIcon, 'good', '1'],
+    ['forgot', 'Forgot', forgot, ForgotIcon, 'again', '1'],
+    ['remembered', 'Remembered', remembered, RememberedIcon, 'good', '0'],
   ]
   return (
     <div className="card-inbox__answers kit-answers">

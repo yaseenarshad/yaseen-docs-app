@@ -68,4 +68,30 @@ describe('wikilink hover (YAZ-3403 D8)', () => {
     expect(plugins(withIt.crepe).some((key) => key.startsWith('mdapp-wikilink-hover'))).toBe(true)
     expect(plugins(without.crepe).some((key) => key.startsWith('mdapp-wikilink-hover'))).toBe(false)
   })
+
+  it('YAZ-6051: resolves [data-card-link] pills inside inline/embedded cards and measures child union rect when wrapper is display: contents (0x0)', async () => {
+    const hover = { onHover: vi.fn(), onLeave: vi.fn() }
+    const { root } = await mount('pad\n', hover)
+    const pm = root.querySelector('.ProseMirror')!
+    const group = document.createElement('span')
+    group.className = 'wikilink-group'
+    group.dataset.cardLink = 'Known'
+    const name = document.createElement('span')
+    name.className = WIKILINK_CLASS
+    name.textContent = 'Known'
+    const tail = document.createElement('span')
+    tail.className = `${WIKILINK_CLASS} link-pill__tail`
+    tail.textContent = '(12)'
+    group.append(name, tail)
+    pm.append(group)
+
+    vi.spyOn(group, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    vi.spyOn(name, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 200, right: 150, bottom: 220, width: 50, height: 20, x: 100, y: 200, toJSON: () => ({}) } as DOMRect)
+    vi.spyOn(tail, 'getBoundingClientRect').mockReturnValue({ left: 150, top: 200, right: 180, bottom: 220, width: 30, height: 20, x: 150, y: 200, toJSON: () => ({}) } as DOMRect)
+
+    over(name)
+    expect(hover.onHover).toHaveBeenCalledExactlyOnceWith('/vault/Known.md', { left: 100, top: 200, right: 180, bottom: 220 }, false)
+    out(name, root)
+    expect(hover.onLeave).toHaveBeenCalledOnce()
+  })
 })
