@@ -41,7 +41,9 @@ import { withCardNext, withCardTitle } from '@shared/cardLine'
 import { fileKind } from '@shared/fileKind'
 import { readCardAt, type CardAtPage } from '../review/cardFile'
 import type { CardPlace } from '../editor/card/cardOpen'
+import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import { CardPane, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
+import { useTransientCardWidth } from '../review/inboxCardWidth'
 import { HoverTip } from '../components/HoverTip'
 import { ImageModal } from '../editor/image/ImageModal'
 import type { GalleryImage } from '../editor/image/imageOptions'
@@ -157,6 +159,15 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
   const card = loaded.kind === 'card' ? loaded.card : null
   // Edit card (YAZ-5003): E blocks it in a read-only vault, as in the page.
   const [editing, setEditing] = useState(false)
+  // YAZ-6054: one-time in-memory drag-to-resize edges (resets to default when closed/reopened).
+  const dragWidth = useTransientCardWidth(bodyRef, bodyRef, `${path}#${cardId ?? index}`, true, 24)
+  // YAZ-6052: commit any open card editor before a timed vault unlock re-locks.
+  useEffect(() => {
+    if (vault.beforeLock === undefined) return
+    return vault.beforeLock(() => {
+      cardBlockViewOfDom(bodyRef.current?.querySelector('.card.card--editing') ?? null)?.done()
+    })
+  }, [vault.beforeLock])
   // Out of Edit card, the body takes the keyboard, so the stack hears the next Esc or ⌘↵ (YAZ-5009 round 2). After the
   // commit, not in Done: the card's Done gives the keyboard back to its own editor, which this commit removes; the
   // keyboard would then fall to `document.body`, out of the stack.
@@ -244,7 +255,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
           </button>
         </HoverTip>
       </div>
-      <div ref={bodyRef} className="explore__body explore__body--card" tabIndex={-1} data-explore-card onKeyDown={onBodyKey}>
+      <div ref={bodyRef} className="explore__body explore__body--card" tabIndex={-1} data-explore-card onKeyDown={onBodyKey} style={dragWidth.width === null ? undefined : ({ '--card-text-width': `${dragWidth.width}px` } as React.CSSProperties)}>
         {loaded.kind === 'gone' && <p className="editor-msg">This card is no longer there</p>}
         {card !== null && (
           <CardPane
@@ -277,6 +288,8 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
             wikilinkHover={linkPreview === undefined ? undefined : linkHover}
             hotkeys={hotkeys}
             onOpenImage={setOpenImage}
+            onEdgeDrag={dragWidth.startDrag}
+            onEdgeReset={dragWidth.reset}
             strip={<CardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage({ id: card.id, index: card.index })} />}
             reviews={review?.settings}
             onDeleteReview={writes.deleteReview}

@@ -164,10 +164,13 @@ interface CardPaneProps {
   onOpenImage?: (gallery: { images: GalleryImage[]; index: number }) => void
   /** "Edit in a popup" for a board embed inside the card editor (D2). */
   onEditBoardInPopup?: (target: string) => void
+  /** Optional one-time in-memory left/right drag edges (YAZ-6054), mirroring Inbox's `.card-inbox__edge`. */
+  onEdgeDrag?: (side: -1 | 1) => (event: React.PointerEvent<HTMLElement>) => void
+  onEdgeReset?: () => void
 }
 
 /** The card's body: the card or its editor, its strip (Reviews, Properties, Linked mentions and, in a tab, Embedded in: YAZ-5382), then the facts strip. */
-export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head, onChangeLine, onNotice, stripOpen, onStripToggle, fold, glow, createFolder, openExplore, exploreClick, wikilinkHover, hotkeys, onOpenImage, onEditBoardInPopup }: CardPaneProps) {
+export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head, onChangeLine, onNotice, stripOpen, onStripToggle, fold, glow, createFolder, openExplore, exploreClick, wikilinkHover, hotkeys, onOpenImage, onEditBoardInPopup, onEdgeDrag, onEdgeReset }: CardPaneProps) {
   const swap = useCardSwap(editing)
   const pageActionsHere = useContext(PageActions)
   const vaultLinksHere = useContext(VaultLinksContext)
@@ -277,11 +280,20 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
     [path, vault.root, vault.viewOnlyLinks, vault.wikilinkCandidates, vault.wikilinks],
   )
 
+  const edges =
+    onEdgeDrag === undefined ? null : (
+      <>
+        <div className="card-inbox__edge" data-side="left" aria-hidden="true" title="Drag to resize · Double-click to reset" onPointerDown={onEdgeDrag(-1)} onDoubleClick={onEdgeReset} />
+        <div className="card-inbox__edge" data-side="right" aria-hidden="true" title="Drag to resize · Double-click to reset" onPointerDown={onEdgeDrag(1)} onDoubleClick={onEdgeReset} />
+      </>
+    )
+
   // The band shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
   return (
     <>
       {(editing || swap.shown === 'edit') && (
         <div ref={swap.editorRef} className={`card-pane__editor${swap.shown === 'edit' ? '' : ' card-pane__incoming'}`}>
+          {edges}
           <CardPaneEditor
             key={`${card.index}`}
             text={card.text}
@@ -303,6 +315,7 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
       )}
       {(!editing || swap.shown === 'read') && (
         <div ref={swap.readRef} className={`card card-screen${swap.shown === 'read' ? '' : ' card-pane__incoming'}`}>
+          {edges}
           {head}
           {band}
           <CardBody text={card.text} path={path} vault={vault} doors={doors} fold={fold} glow={glow} onPillContextMenu={onPillContextMenu} onPillHover={wikilinkHover === undefined ? undefined : onPillHover} onOpenImage={onOpenImage} />

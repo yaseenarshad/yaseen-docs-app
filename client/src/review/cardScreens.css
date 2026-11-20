@@ -116,6 +116,9 @@
   user-select: none;
 }
 /* What the strip tucks under sits over it: the Inbox's card, the card file tab's and the card window's card. */
+.card-pane__editor {
+  position: relative;
+}
 :is(.card-inbox__panel, .card-screen, .card-pane__editor):has(+ .card-reviews--strip) {
   position: relative;
   z-index: 1;

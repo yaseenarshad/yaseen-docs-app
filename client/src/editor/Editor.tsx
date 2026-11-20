@@ -64,6 +64,8 @@ import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
 import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
 import { readCardSides, writeCardSides, type CardSides } from '@shared/pageSwitches'
+import { cardBlockViewOfDom } from './card/cardBlockView'
+import { doneCardEmbedAt } from './card/embedCard'
 import { tellCardFoldChange } from './card/cardFold'
 import { HeadChipsSlot, LAYER_ESCAPE, LayerZoom, StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
@@ -833,8 +835,15 @@ function CrepeHost({
   diskRef.current = disk
   const reviewOn = useReviewOn(root)
   const convert = useCardConvert({ root, path: file.path, wikilinks, reviewOn, inFolderPage, disk: () => diskRef.current, allowFileAction: vaultScope.allowFileAction, onNotice, onReread, onOpenCardFile: onOpenFile })
-  /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves, then locks again. */
-  const unlock = useTimedUnlock(autosave.flushNow)
+  /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves (including any open card editor, YAZ-6052), then locks again. */
+  const unlock = useTimedUnlock(() => {
+    const openCards = hostRef.current?.querySelectorAll('.card.card--editing') ?? []
+    for (const openCard of openCards) {
+      cardBlockViewOfDom(openCard)?.done()
+      doneCardEmbedAt(openCard)
+    }
+    return autosave.flushNow()
+  })
   const readOnly = lockedBase && unlock.until === null
   /**
    * Esc and ⌘↵ in the text lock this page again while its timed unlock runs (YAZ-4997): save, then lock, as Lock now.

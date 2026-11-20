@@ -390,7 +390,7 @@ describe('YAZ-5392: one title spot, the card as a page shows it', () => {
     expect(el.querySelector('.card-file__title-row')).toBeNull()
     expect(el.querySelectorAll('.card-file .page-title')).toHaveLength(1)
     const card = el.querySelector<HTMLElement>('.card-file__page > .card')!
-    expect([...card.children].map((c) => c.classList[0])).toEqual(['card__head', 'card-band', 'card__body'])
+    expect([...card.children].filter((c) => !c.classList.contains('card-inbox__edge')).map((c) => c.classList[0])).toEqual(['card__head', 'card-band', 'card__body'])
     const head = card.querySelector('.card__head')!
     expect(head.querySelector('.card__id')?.textContent).toBe('WIKI-9')
     expect(head.querySelector('.card__edit')?.textContent).toBe('Edit card')

@@ -66,6 +66,7 @@ import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
 import { forgetNewCard, isNewCard } from '../review/newCardFile'
 import { CardPane, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
+import { useTransientCardWidth } from '../review/inboxCardWidth'
 import { CardBand, CardId, CardNextChip, type CardStripPart } from '../review/cardParts'
 import { cardHeadMarks } from '../review/cardHeadMarks'
 import { PropertiesIcon } from '../views/view/icons'
@@ -458,12 +459,20 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const ownWidth = readPageWidth(content)
   const ownPosition = readPagePosition(content)
   const width = ownWidth ?? defaultWidth
-  // Its own width sets its card's `--card-text-width`, and the column as wide (its 48 px sides), so Full fills the window.
-  const fileStyle = {
+  const effectivePos = ownPosition ?? appPosition
+  // YAZ-6054: one-time in-memory drag-to-resize edges (resets to default when closed/reopened).
+  const dragWidth = useTransientCardWidth(bodyRef, bodyRef, path, effectivePos !== 'left', 48)
+  // YAZ-6053: let `--card-text-width` (from Settings or vault card-look.json) expand `.card-file__page` past narrow
+  // page `--content-text-width`, while preserving own-page `page-width` and transient drag overrides.
+  const fileStyle: CSSProperties = {
     '--document-zoom': zoom / 100,
-    '--column-start': columnStart(ownPosition ?? appPosition, width),
-    ...(ownWidth !== null && { '--card-text-width': cardTextWidth(ownWidth), '--content-max-width': `calc(${cardTextWidth(ownWidth)} + 96px)` }),
-  } as CSSProperties
+    '--column-start': columnStart(effectivePos, width),
+    ...(dragWidth.width !== null
+      ? { '--card-text-width': `${dragWidth.width}px`, '--content-max-width': `calc(${dragWidth.width}px + 130px)` }
+      : ownWidth !== null
+        ? { '--card-text-width': cardTextWidth(ownWidth), '--content-max-width': `calc(${cardTextWidth(ownWidth)} + 96px)` }
+        : { '--content-max-width': 'calc(max(var(--content-text-width), var(--card-text-width) + 34px) + 96px)' }),
+  } as unknown as CSSProperties
   const propertyCount = Object.keys(card?.properties ?? {}).length
   const propertiesLabel = propertyCount > 0 ? `Properties (${propertyCount})` : 'Properties'
 
@@ -538,6 +547,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               wikilinkHover={previewScope === undefined ? undefined : linkHover}
               hotkeys={hotkeys}
               onOpenImage={setOpenImage}
+              onEdgeDrag={dragWidth.startDrag}
+              onEdgeReset={dragWidth.reset}
               titleField={!locked && onRetitle !== undefined ? 'edit' : 'show'}
               head={
                 <div className="card__head">

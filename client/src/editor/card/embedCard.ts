@@ -74,7 +74,18 @@ export interface CardEmbedHandle {
   setFolded: (on: boolean) => void
   /** The open card editor (tests): null while the card is not edited. */
   readonly cardEditor: CardEditor | null
+  /** Commit an open embed edit and write to disk (YAZ-6052: Lock now). */
+  done: () => void
   destroy: () => void
+}
+
+const embedDone = new WeakMap<Element, () => void>()
+export const registerCardEmbedDone = (dom: Element, done: () => void): (() => void) => {
+  embedDone.set(dom, done)
+  return () => void embedDone.delete(dom)
+}
+export const doneCardEmbedAt = (dom: Element | null): void => {
+  if (dom !== null) embedDone.get(dom)?.()
 }
 
 const byRecords = new WeakMap<readonly IndexRecord[], Map<string, IndexRecord>>()

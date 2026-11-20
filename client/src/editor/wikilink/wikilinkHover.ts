@@ -64,8 +64,12 @@ function resolveInnerPath(inner: string, source: WikilinkResolveSource, viewOnly
 /** The page a collapsed, resolved link span opens, or null. */
 function linkPathOf(view: EditorView, target: EventTarget | null, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, hover: WikilinkHover): { span: Element; path: string; editable: boolean } | null {
   if (!(target instanceof Element)) return null
+  // Let nested card editors handle their own hover without the outer editor double-firing.
+  const innerEditor = target.closest('.card__editor')
+  if (innerEditor !== null && view.dom.contains(innerEditor)) return null
   // No pill card over a board embed's window (YAZ-4827 item 23): its name pill is the window's own.
-  if (target.closest('.board-embed') !== null) return null
+  // Embedded cards (`![[CARD-ID]]`) are `.card.card-embed`, never a drawing board, so allow links inside `.card`.
+  if (target.closest('.board-embed') !== null && target.closest('.card') === null) return null
   // Links inside rendered inline cards and card embeds live inside `view.dom` as `[data-card-link]` / `.card__sides a[href]`.
   const cardLink = target.closest<HTMLElement>('[data-card-link]')
   if (cardLink !== null && view.dom.contains(cardLink)) {
@@ -106,28 +110,40 @@ export function createWikilinkHover(source: WikilinkResolveSource, hover: Wikili
     () =>
       new Plugin({
         key: wikilinkHoverKey,
-        props: {
-          handleDOMEvents: {
-            mouseover: (view, event) => {
-              const link = linkPathOf(view, event.target, source, viewOnly, hover)
-              if (link === null || link.path === current) return false
-              if (current !== null) hover.onLeave()
-              current = link.path
-              // On a pill the page preview stands in for the editor's own address bar (D20): it says where the link goes.
-              pillHover(view, link.span.classList.contains('link-pill'))
-              hover.onHover(link.path, linkRect(link.span), link.editable)
-              return false
+        // Attach directly on `view.dom` rather than `props.handleDOMEvents`: NodeViews (`cardBlockView`) and widget
+        // decorations (`cardEmbed` via `boardEmbed`) return `stopEvent: () => true`, which causes ProseMirror to drop
+        // `mouseover`/`mouseout` before `handleDOMEvents` ever sees links inside inline or embedded cards (YAZ-6051).
+        view: (view) => {
+          const onOver = (event: MouseEvent) => {
+            const link = linkPathOf(view, event.target, source, viewOnly, hover)
+            if (link === null || link.path === current) return
+            if (current !== null) hover.onLeave()
+            current = link.path
+            // On a pill the page preview stands in for the editor's own address bar (D20): it says where the link goes.
+            pillHover(view, link.span.classList.contains('link-pill'))
+            hover.onHover(link.path, linkRect(link.span), link.editable)
+          }
+          const onOut = (event: MouseEvent) => {
+            if (current === null) return
+            // Onto another segment of the same link (or a link to the same page): the hover stays.
+            if (linkPathOf(view, event.relatedTarget, source, viewOnly, hover)?.path === current) return
+            current = null
+            pillHover(view, false)
+            hover.onLeave()
+          }
+          view.dom.addEventListener('mouseover', onOver)
+          view.dom.addEventListener('mouseout', onOut)
+          return {
+            destroy: () => {
+              view.dom.removeEventListener('mouseover', onOver)
+              view.dom.removeEventListener('mouseout', onOut)
+              if (current !== null) {
+                current = null
+                pillHover(view, false)
+                hover.onLeave()
+              }
             },
-            mouseout: (view, event) => {
-              if (current === null) return false
-              // Onto another segment of the same link (or a link to the same page): the hover stays.
-              if (linkPathOf(view, event.relatedTarget, source, viewOnly, hover)?.path === current) return false
-              current = null
-              pillHover(view, false)
-              hover.onLeave()
-              return false
-            },
-          },
+          }
         },
       }),
   )
