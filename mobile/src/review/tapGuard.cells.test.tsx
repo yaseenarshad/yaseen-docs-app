@@ -53,7 +53,7 @@ async function screen(files: Record<string, string>) {
     press,
     tapCard,
     guarded: () => host.querySelector('[data-guard]') !== null,
-    head: () => (host.querySelector('.review__head')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    head: () => (host.querySelector('.review__id')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
     cardText: () => (host.querySelector('.phone-card__body')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
     reviews: () => t.answers.waiting().filter((w) => w.op.kind === 'review').map((w) => w.op.id),
     text: () => (host.textContent ?? '').replace(/\s+/g, ' '),

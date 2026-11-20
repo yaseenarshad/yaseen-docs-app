@@ -583,11 +583,15 @@ function SessionScreen({
   const canUndo = shownLine?.undo === true || session.canUndo
 
   const headTitle = titleShows({ title: titleText, at: titleAt, counts, sides: step.sides, open: step.open, titled: step.titled }) ? titleText : ''
-  // YAZ-5880 Title room: a title that waits (it has words, and its card shows it later). With `titleRoom` it keeps its
-  // room in the head line unseen; when it shows it fades in (`review__title--in`), so the ID beside it never moves.
+  // YAZ-5880 Title room + YAZ-6009 Layout C1: a title that is its own reveal step (`titleStep !== null`) always keeps
+  // its shaded band while waiting so the title-sized waiting/next blank shows; `titleRoom` (`Always`) also keeps the
+  // band on `Never` / untitled / `{{…}}` cards. When a waiting title shows, it fades in (`review__title--in`).
   const titleWaits = titleText !== '' && headTitle === ''
-  const titleKept = titleRoom && titleWaited.current === cardKey && headTitle !== ''
-  if (titleRoom && titleWaits) titleWaited.current = cardKey
+  const titleBlankWaits = titleWaits && titleStep !== null
+  const titleWaitsInBand = titleBlankWaits || (titleRoom && titleWaits)
+  const titleKept = titleWaited.current === cardKey && headTitle !== ''
+  if (titleWaitsInBand) titleWaited.current = cardKey
+  const showTitleBand = headTitle !== '' || titleBlankWaits || titleRoom
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
   // The crumb (YAZ-5132's place, from the first folder, YAZ-5682): "LEARNING / Memory", inside the card, on the chip's line;
   // too long, it folds from the start (YAZ-5713, `ReviewCrumb`).
@@ -737,6 +741,7 @@ function SessionScreen({
                     {AGAIN_LABEL}
                   </span>
                 )}
+                <span className="review__id">{card.id}</span>
                 {crumb.length > 0 && <ReviewCrumb parts={crumb} open={menu === 'place'} onTap={() => setMenu(menu === 'place' ? null : 'place')} />}
                 {counts.length > 1 && <span className="review__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</span>}
                 {menu === 'place' && crumb.length > 0 && (
@@ -750,32 +755,28 @@ function SessionScreen({
                   />
                 )}
               </div>
-              <p className="review__head">
-                {headTitle !== '' ? (
-                  <>
-                    {/* A title that waited in its room is a new span when it shows: it fades in once. */}
+              {showTitleBand && (
+                <div className="review__head" aria-hidden={headTitle === '' ? 'true' : undefined}>
+                  {headTitle !== '' ? (
+                    /* A title that waited in its band fades in once when it shows. */
                     <span className={`review__title${titleKept ? ' review__title--in' : ''}`}>
                       {headTitle}
                     </span>
-                    <span aria-hidden> · </span>
-                  </>
-                ) : (
-                  titleRoom &&
-                  titleWaits && (
-                    <span className="review__title-room" aria-hidden="true">
-                      {titleStep !== null ? (
-                        <span className="review__title card-band__blank" data-next={titleNow ? '' : undefined}>
-                          <span className="card__word">{titleText}</span>
-                        </span>
-                      ) : (
-                        <span className="review__title">{titleText}</span>
-                      )}
-                      <span> · </span>
-                    </span>
-                  )
-                )}
-                <span className="review__id">{card.id}</span>
-              </p>
+                  ) : (
+                    titleWaitsInBand && (
+                      <span className="review__title-room" aria-hidden="true">
+                        {titleStep !== null ? (
+                          <span className="review__title card-band__blank" data-next={titleNow ? '' : undefined}>
+                            <span className="card__word">{titleText}</span>
+                          </span>
+                        ) : (
+                          <span className="review__title">{titleText}</span>
+                        )}
+                      </span>
+                    )
+                  )}
+                </div>
+              )}
               {needsFix === card.path && <p className="review__fix">{NEEDS_FIX}</p>}
               {text !== null && page !== null ? (
                 <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, ...shownParts(step.open), next: mark }} links={source.links} files={source.files} media={media} retry={retry} onOpen={open} />
