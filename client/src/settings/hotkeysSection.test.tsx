@@ -454,7 +454,7 @@ describe('one card per key (YAZ-3564)', () => {
     click(chip('Review'))
     expect(shownRows().filter((id) => id?.startsWith('hotkey-')).every((id) => id?.startsWith('hotkey-review-'))).toBe(true)
     expect(keyButton('review-remembered').textContent).toBe('1')
-    expect(keyButton('review-forgot').textContent).toBe('2')
+    expect(keyButton('review-forgot').textContent).toBe('0')
     // Built-in O is refused.
     click(keyButton('review-remembered'))
     press('o', 'KeyO')
@@ -469,7 +469,7 @@ describe('one card per key (YAZ-3564)', () => {
     click(button(popup() as HTMLElement, 'Reset'))
     click(keyButton('review-forgot'))
     press('1', 'Digit1')
-    expect(says()).toEqual(['Change the key for Forgot?', '2 → 1', '1 is Review › Remembered now. It will lose its key.'])
+    expect(says()).toEqual(['Change the key for Forgot?', '0 → 1', '1 is Review › Remembered now. It will lose its key.'])
     click(button(popup() as HTMLElement, 'Move it here'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'review.remembered': null, 'review.forgot': '1' } })
     expect(keyButton('review-again').textContent).toBe('1')

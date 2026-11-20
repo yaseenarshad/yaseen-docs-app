@@ -240,8 +240,8 @@ describe('the review menu (YAZ-5415, as the Mac\'s cards menu)', () => {
     // The first new card needs two Remembered (the first adds it to today's reviews, YAZ-5702); then the done screen adds one more.
     for (let i = 0; i < 2; i++) await h.click('Remembered')
     expect(h.text()).toContain('Inbox complete')
+    await h.click(h.host.querySelector<HTMLButtonElement>('.done-add-trigger')!.textContent!)
     await h.click('Add 1 / 2 new card')
-    await h.click('Add') // YAZ-5699: the ask's second tap
     expect(h.head()).toBe('RS-2')
     await h.click(/Choose what to review/)
     // YAZ-5624: the count alone, as the Mac's New cards row (YAZ-5434): today's cards left, never "/ total".

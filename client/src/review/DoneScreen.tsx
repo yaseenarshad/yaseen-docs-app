@@ -22,12 +22,13 @@
  *  - LAST, on every one of them: "Today: 21 cards · 12 min", the cards menu's words and the time always (`todayDone`, YAZ-5710): the Time so far
  *    setting hides it only during the review.
  */
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { DoneCheer } from './DoneCheer'
 import { DueTodayEnd, GoButton, PlusIcon, RefreshIcon, type DoneLook } from './DueTodayEnd'
 import { reviewMoreCount } from './cardWords'
+import { pickAddMoreQuestion, pickDoneMessage } from './doneMessages'
 import { pickLabel } from './inboxMenu'
 import { todayDone } from './reviewTime'
 
@@ -52,12 +53,24 @@ interface Props {
 }
 
 export function DoneScreen({ review, session, shown, look, addKinds, adds, from, unit, offer }: Props) {
+  // YAZ-6041: 2-step add trigger — Click 1 expands the add controls in place, Click 2 adds immediately.
+  const [addOpen, setAddOpen] = useState(false)
+  useEffect(() => {
+    setAddOpen(false)
+  }, [session.landing, session.scope, session.filter])
   const more = (label: string, onClick: () => void) => (
     <button type="button" className={look.more} onMouseDown={(e) => e.preventDefault()} onClick={onClick}>
       {label}
     </button>
   )
   const line = (words: string) => <p className={look.line}>{words}</p>
+  /** YAZ-6041: keeps "Enjoy your day!" intact on a clean second line on narrow phones while reading as one line when wide. */
+  const splitLine = (first: string, second: string) => (
+    <p className={look.line}>
+      <span className="done-phrase">{first}</span>{' '}
+      <span className="done-phrase">{second}</span>
+    </p>
+  )
   const go = (icon: ReactNode, words: string, count: number, onClick: () => void, after?: ReactNode) => (
     <div className="due-end__actions">
       <GoButton look={look} icon={icon} words={words} count={count} onClick={onClick} />
@@ -75,7 +88,11 @@ export function DoneScreen({ review, session, shown, look, addKinds, adds, from,
       {title}
     </DoneCheer>
   )
-  const nothing = line('Nothing else is due today. Enjoy your day!')
+  const today = todayDone(session.today)
+  const todayEl = today !== '' ? <p className={look.today}>{today}</p> : null
+  const [doneA, doneB] = pickDoneMessage({ landing: session.landing, todayCards: session.today.cards, answered: session.answered })
+  const doneMsg = splitLine(doneA, doneB)
+  const nothing = session.today.cards > 0 ? doneMsg : splitLine('Nothing else is due today.', 'Enjoy your day!')
   const picked = pickLabel(session.newFrom)
   const { counts, end } = session
   const vault = session.scope === 'vault'
@@ -83,39 +100,78 @@ export function DoneScreen({ review, session, shown, look, addKinds, adds, from,
   const again = vault ? reviewMoreCount(addKinds, review.dueCount) : 0
   // The rest of the vault, after a review of one page or one folder: Mochi's "cards due in other decks".
   const rest = vault ? 0 : review.dueCount
-  // YAZ-6041: upbeat completion line when cards remain past today's daily limit (remaining count moves subtly onto Add).
+  // YAZ-6041: upbeat rotating completion line + Today stats right beneath it, then breathing room before 2-step Add more.
   const waits = addKinds.length > 0 && (
     <>
       {/* YAZ-5322, the fallback: said out loud, so a card's folder is never a surprise. */}
       {session.newFallback && addKinds.includes('new') && <p className={`${look.line} card-done__fallback`}>No new cards left in {picked}, so these come from All folders.</p>}
-      {(vault || rest === 0) && line("You're all caught up for today. Enjoy your day!")}
+      {(vault || rest === 0) && doneMsg}
     </>
   )
+  const gatedAdds =
+    adds === null ? null : addOpen ? (
+      <div className="done-add-expanded">
+        {adds}
+        <button type="button" className="done-add-cancel" onMouseDown={(e) => e.preventDefault()} onClick={() => setAddOpen(false)}>
+          Cancel
+        </button>
+      </div>
+    ) : (
+      <button type="button" className="done-add-trigger" onMouseDown={(e) => e.preventDefault()} onClick={() => setAddOpen(true)}>
+        {pickAddMoreQuestion(session.landing)}
+      </button>
+    )
+  const inlineToday = !(end?.kind === 'missed') && !(end?.kind === 'done' && (end.fresh > 0 || counts.all > 0)) && !(session.filter === 'new' && counts.all > 0) && !(session.filter === 'due' && counts.all > 0) && !(session.filter !== 'all' && counts.all > 0)
+  const divider = <div className="done-divider" aria-hidden="true" />
   /** What follows when nothing of the session is left: the scope's own way on. */
   const after = vault ? (
     offer !== undefined ? (
-      offer
+      <>
+        {inlineToday && todayEl}
+        {offer}
+      </>
     ) : again > 0 ? (
-      go(<RefreshIcon />, 'Review cards', again, () => review.start({}))
-    ) : adds === null ? (
-      nothing
+      <>
+        {inlineToday && todayEl}
+        {go(<RefreshIcon />, 'Review cards', again, () => review.start({}))}
+      </>
+    ) : gatedAdds === null ? (
+      <>
+        {nothing}
+        {inlineToday && todayEl}
+      </>
     ) : (
       <>
         {waits}
-        {adds}
+        {inlineToday && todayEl}
+        {divider}
+        {gatedAdds}
       </>
     )
   ) : (
     <>
       {waits}
-      {adds}
+      {rest === 0 && gatedAdds !== null && (
+        <>
+          {inlineToday && todayEl}
+          {divider}
+          {gatedAdds}
+        </>
+      )}
       {rest > 0 ? (
         <>
+          {gatedAdds}
           {line(unit('You have cards due in other pages.'))}
           {go(<RefreshIcon />, 'Review cards', rest, () => review.start({}))}
+          {inlineToday && todayEl}
         </>
       ) : (
-        adds === null && nothing
+        gatedAdds === null && (
+          <>
+            {nothing}
+            {inlineToday && todayEl}
+          </>
+        )
       )}
     </>
   )
@@ -132,7 +188,7 @@ export function DoneScreen({ review, session, shown, look, addKinds, adds, from,
           learnNew(end.fresh, review.goOn)
         ) : counts.all > 0 ? (
           <>
-            {adds}
+            {gatedAdds}
             {allLeft}
           </>
         ) : (
@@ -152,7 +208,7 @@ export function DoneScreen({ review, session, shown, look, addKinds, adds, from,
         ) : (
           allLeft
         )}
-        {adds}
+        {gatedAdds}
       </>
     )
   else if (session.filter === 'due' && counts.all > 0)
@@ -166,7 +222,7 @@ export function DoneScreen({ review, session, shown, look, addKinds, adds, from,
     body = (
       <>
         {cheer('No Up next cards left.')}
-        {adds}
+        {gatedAdds}
         {allLeft}
       </>
     )
@@ -177,11 +233,10 @@ export function DoneScreen({ review, session, shown, look, addKinds, adds, from,
         {after}
       </>
     )
-  const today = todayDone(session.today)
   return (
     <>
       {body}
-      {today !== '' && <p className={look.today}>{today}</p>}
+      {!inlineToday && todayEl}
     </>
   )
 }

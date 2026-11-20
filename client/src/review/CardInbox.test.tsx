@@ -300,7 +300,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.showAnswers).toHaveBeenCalledOnce()
     await flush()
     expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
-      ['Forgot (2)', 'Forgot · later today'],
+      ['Forgot (0)', 'Forgot · later today'],
       ['Remembered (1)', 'Remembered · 3 days'],
     ])
     press(' ')
@@ -320,11 +320,11 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
   })
 
-  it('YAZ-5010: 1 and 2 answer at any step — before the first Space, with words still hidden', async () => {
+  it('YAZ-5010: 1 and 0 answer at any step — before the first Space, with words still hidden', async () => {
     mount(TWO_SIDES)
     await flush()
     expect(shown()).toEqual([])
-    press('2')
+    press('0')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('again', expect.any(Number))
     act(() => buttons()[1].click())
     expect(review.answer).toHaveBeenLastCalledWith('good', expect.any(Number))
@@ -335,7 +335,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await flush()
     expect(review.showAnswers).not.toHaveBeenCalled()
     expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
-      ['Forgot (2)', 'Forgot'],
+      ['Forgot (0)', 'Forgot'],
       ['Remembered (1)', 'Remembered'],
     ])
     press('1')
@@ -422,7 +422,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     palette.setAttribute('role', 'menu')
     palette.hidden = true
     document.body.append(picker, palette)
-    press('2')
+    press('0')
     expect(review.answer).toHaveBeenCalledOnce()
     picker.remove()
     palette.remove()
@@ -817,7 +817,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     mount('Plain')
     await flush()
     const two = glyphs()
-    expect(two.map(([label, , key]) => [label, key])).toEqual([['Forgot', '(2)'], ['Remembered', '(1)']])
+    expect(two.map(([label, , key]) => [label, key])).toEqual([['Forgot', '(0)'], ['Remembered', '(1)']])
     expect(two.every(([, d]) => typeof d === 'string' && d.length > 0)).toBe(true)
     expect(two[0][1]).not.toBe(two[1][1])
     act(() => root?.unmount())
@@ -1661,7 +1661,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     mount(TWO_SIDES)
     await flush()
     tick(40_000)
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(40)
   })
 
@@ -1673,7 +1673,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     work(30)
     act(() => void window.dispatchEvent(new FocusEvent('focus')))
     work(3, 'pointerdown')
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(8)
   })
 
@@ -1688,7 +1688,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     act(() => void document.dispatchEvent(new Event('visibilitychange')))
     work(2)
     state.mockRestore()
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(6)
   })
 
@@ -1702,7 +1702,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     props = { ...props, shown: true }
     render()
     work(3)
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(10)
   })
 
@@ -1715,7 +1715,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     render()
     await flush()
     work(3)
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(3)
     // ⌘Z shows the first card again: from zero again, not its old 20 s.
     session = sessionOf(TWO_SIDES, { answered: [] })
@@ -2017,45 +2017,38 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe("↺ Reset today's new cards · Undo (Cmd+Z)")
   })
 
-  it('the done screen says what waits, with one add button for each kind; nothing waits: as before', () => {
+  it('the done screen uses a 2-step add trigger, rotating completion line, and subtle / N counts; nothing waits: as before', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[10]/ 38 new cardsfrom All foldersAdd[2]/ 3 Up next'])
+    const trigger = () => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')
+    const cancel = () => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-cancel')
+    expect(doneText()[0]).toBe('Inbox complete.')
+    expect(trigger()?.textContent?.endsWith('?')).toBe(true)
+    expect(pills()).toHaveLength(0)
+    // YAZ-6041: Click 1 reveals the add pills in place; Cancel folds them back; Click 2 adds directly (2-click safety).
+    act(() => trigger()!.click())
     expect(pills().map(textOf)).toEqual(['Add[10]/ 38 new cardsfrom All folders', 'Add[2]/ 3 Up next'])
-    // YAZ-5699 (Yaseen: "that should be a two click as well"): a click on "Add" or the words never adds; it asks in place.
-    const ask = () => el.querySelector<HTMLElement>('.card-inbox__done .ask-in-place')
-    const answer = (word: 'Cancel' | 'Add') => act(() => [...ask()!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === word)!.click())
-    act(() => addButtons()[0].click())
+    act(() => cancel()!.click())
+    expect(pills()).toHaveLength(0)
     expect(review.addCards).not.toHaveBeenCalled()
-    expect([ask()!.querySelector('.confirm__text')!.textContent, [...ask()!.querySelectorAll('button')].map((b) => b.textContent), document.activeElement?.textContent]).toEqual(['Add 10 new cards to today?', ['Cancel', 'Add'], 'Cancel'])
-    answer('Cancel')
-    expect([ask(), vi.mocked(review.addCards).mock.calls.length]).toEqual([null, 0])
+    act(() => trigger()!.click())
     act(() => addButtons()[0].click())
-    answer('Add')
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
     act(() => pills()[1].querySelectorAll<HTMLButtonElement>('.card-inbox__done-add-word')[1].click())
-    expect(ask()!.querySelector('.confirm__text')!.textContent).toBe('Add 2 Up next cards to today?')
-    // Esc cancels.
-    act(() => void document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-    expect([ask(), vi.mocked(review.addCards).mock.calls.length]).toEqual([null, 1])
-    act(() => pills()[1].querySelectorAll<HTMLButtonElement>('.card-inbox__done-add-word')[1].click())
-    answer('Add')
     expect(review.addCards).toHaveBeenLastCalledWith('next', 2)
-    // The same field: type, then Enter asks (the Inbox's keys do not see it); Add adds the typed number.
+    // Typing a custom number and pressing Enter adds that number directly.
     const input = pills()[0].querySelector('input')!
     typeIn(input, '25')
     key(input, 'Enter')
-    expect(vi.mocked(review.addCards).mock.calls.length).toBe(2)
-    answer('Add')
     expect(review.addCards).toHaveBeenLastCalledWith('new', 25)
-    // Only one kind waits: its line and its button.
+    // Only one kind waits: its button inside the expanded panel.
     session = { ...session, more: { new: 0, next: 3 }, adds: { new: 0, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[2]/ 3 Up next'])
+    expect(pills().map(textOf)).toEqual(['Add[2]/ 3 Up next'])
     session = { ...session, more: { new: 1, next: 0 }, adds: { new: 1, next: 0 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[1]/ 1 new cardfrom All folders'])
+    expect(pills().map(textOf)).toEqual(['Add[1]/ 1 new cardfrom All folders'])
     // Nothing waits (also: no limit), and nothing is due (YAZ-5623): as now.
     review = { ...review, dueCount: 0 }
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
@@ -2076,27 +2069,30 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(doneText()).toEqual(['Inbox complete.', 'Review cards 3'])
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!.click())
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
-    // Cards wait to be added: the adds, as on the phone (no "Review K more" beside them).
+    // Cards wait to be added: the 2-step add trigger, as on the phone (no "Review K more" beside them).
     session = { ...session, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[5]/ 5 new cardsfrom All folders'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(pills().map(textOf)).toEqual(['Add[5]/ 5 new cardsfrom All folders'])
   })
 
   it('a filter done (YAZ-5678, Mochi`s words): "Finished learning cards." · Review cards 12, then its add; Up next`s "12 more in All cards"; Due today has no add', () => {
     mount(TWO_SIDES)
     session = { ...session, filter: 'new', card: null, counts: { all: 12, next: 0, due: 12, new: 0 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 12', 'Add[10]/ 38 new cardsfrom All folders'])
+    expect(doneText().slice(0, 3)).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 12'])
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!.click())
     expect(review.setFilter).toHaveBeenLastCalledWith('due')
-    // YAZ-5699: "Review cards 12" moves to the next list and changes nothing: one click. The add asks first.
+    // YAZ-6041: 2-step add trigger opens Add pill; clicking Add adds directly.
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(pills().map(textOf)).toEqual(['Add[10]/ 38 new cardsfrom All folders'])
     act(() => addButtons()[0].click())
-    expect(review.addCards).not.toHaveBeenCalled()
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__done .ask-in-place button')].find((b) => b.textContent === 'Add')!.click())
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
     session = { ...session, filter: 'next' }
     render()
-    expect(doneText()).toEqual(['No Up next cards left.', 'Add[2]/ 3 Up next', '12 more in All cards'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(pills().map(textOf)).toEqual(['Add[2]/ 3 Up next'])
+    expect(doneText()).toContain('12 more in All cards')
     session = { ...session, filter: 'due' }
     render()
     expect(doneText()).toEqual(['Finished reviewing.', '12 more in All cards'])
@@ -2106,7 +2102,11 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     mount(TWO_SIDES)
     session = { ...session, label: 'Bio', scope: 'folder', card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
     render()
-    expect(doneText()).toEqual(['This folder is done.', 'Add[5]/ 5 new cardsfrom All folders', 'You have cards due in other pages.', 'Review cards 12'])
+    expect(doneText()[0]).toBe('This folder is done.')
+    expect(doneText()).toContain('You have cards due in other pages.')
+    expect(doneText()).toContain('Review cards 12')
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(pills().map(textOf)).toEqual(['Add[5]/ 5 new cardsfrom All folders'])
   })
 })
 
@@ -2553,7 +2553,9 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     mount(null)
     session = { ...session, ...WAITING, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, newFrom: SPANISH }
     render()
-    expect(doneText().slice(0, 3)).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[10]/ 14 new cardsfrom SpanishAdd[2]/ 3 Up next'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(doneText()[0]).toBe('Inbox complete.')
+    expect(el.querySelector('.card-inbox__done-adds')?.textContent).toContain('from Spanish')
     const from = el.querySelector<HTMLButtonElement>('.card-inbox__done-from')!
     act(() => from.click())
     expect(pickerRows().map((r) => r.textContent)).toEqual(['All folders38', 'Spanish24', 'Verbs4', 'Geography12'])
@@ -2566,7 +2568,9 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     mount(null)
     session = { ...session, ...WAITING, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 14, next: 0 }, adds: { new: 10, next: 0 }, newFrom: SPANISH, newFallback: true }
     render()
-    expect(doneText().slice(0, 4)).toEqual(['Inbox complete.', 'No new cards left in Spanish, so these come from All folders.', "You're all caught up for today. Enjoy your day!", 'Add[10]/ 14 new cardsfrom All folders'])
+    expect(doneText().slice(0, 2)).toEqual(['Inbox complete.', 'No new cards left in Spanish, so these come from All folders.'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(el.querySelector('.card-inbox__done-adds')?.textContent).toContain('from All folders')
     expect(el.querySelector('.card-inbox__pick-chip')?.textContent).toBe('New cards: Spanish×')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-from')!.click())
     expect(picker()!.textContent).toContain('Spanish stays picked. Its new cards come first again once you make some.')
@@ -2893,12 +2897,12 @@ describe('YAZ-5996 (D7): flipped 2-button defaults and live custom review hotkey
   it('rebound 2-button keys update button labels live without changing button order, and cleared keys hide the badge', async () => {
     mount(TWO_SIDES)
     await flush()
-    expect(buttons().map((b) => b.textContent)).toEqual(['Forgot (2)', 'Remembered (1)'])
+    expect(buttons().map((b) => b.textContent)).toEqual(['Forgot (0)', 'Remembered (1)'])
     props = { ...props, hotkeys: { 'review.remembered': 'J', 'review.forgot': 'K' } }
     render()
     expect(buttons().map((b) => b.textContent)).toEqual(['Forgot (K)', 'Remembered (J)'])
     press('1')
-    press('2')
+    press('0')
     expect(review.answer).not.toHaveBeenCalled()
     press('j')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))

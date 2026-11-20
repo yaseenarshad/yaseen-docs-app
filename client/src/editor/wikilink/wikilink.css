@@ -314,7 +314,8 @@
     .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
-    a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub) {
+    a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
+    .link-pills-preview--hover .wikilink {
       background: var(--pill-hover-bg, color-mix(in srgb, var(--accent) 18%, transparent));
     }
 
@@ -325,12 +326,16 @@
     .milkdown .ProseMirror mark .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     .milkdown .ProseMirror mark .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     .milkdown .ProseMirror mark .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
-    .milkdown .ProseMirror mark a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub) {
+    .milkdown .ProseMirror mark a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
+    .link-pills-preview mark .wikilink:hover,
+    .link-pills-preview--hover mark .wikilink {
       background: var(--pill-mark-hover-bg, color-mix(in srgb, var(--fg) 8%, transparent));
     }
 
     .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
-    .card__sides a[href]:hover {
+    .card__sides a[href]:hover,
+    .link-pills-preview .link-pills-preview__ext:hover,
+    .link-pills-preview--hover .link-pills-preview__ext {
       background: var(--pill-ext-hover-bg, color-mix(in srgb, var(--fg) 8%, transparent));
       padding-inline: 3px;
       margin-inline: -3px;
@@ -348,7 +353,8 @@
     :root .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     :root .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     :root .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
-    :root a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub) {
+    :root a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
+    :root .link-pills-preview--hover .wikilink {
       padding-block: 1px;
     }
 
@@ -357,7 +363,8 @@
     :root .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub, .wikilink + .wikilink, .link-pill:not(.link-pill--first)):has(+ .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     :root .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub, .wikilink + .wikilink, .link-pill:not(.link-pill--first)):has(+ .wikilink + .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     :root .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub, .wikilink + .wikilink),
-    :root a:has(> .link-pill):hover > .wikilink.link-pill--first:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub) {
+    :root a:has(> .link-pill):hover > .wikilink.link-pill--first:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
+    :root .link-pills-preview--hover .wikilink {
       padding-left: 3px;
       margin-left: -3px;
       border-top-left-radius: 4px;
@@ -371,7 +378,8 @@
     :root .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink.name-ending):hover,
     :root .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink.name-ending),
     :root .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):not(:has(+ .wikilink)),
-    :root a:has(> .link-pill):hover > .wikilink.link-pill--last:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub) {
+    :root a:has(> .link-pill):hover > .wikilink.link-pill--last:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
+    :root .link-pills-preview--hover .wikilink {
       padding-right: 3px;
       margin-right: -3px;
       border-top-right-radius: 4px;
@@ -390,7 +398,10 @@
     .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
     a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
     .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
-    .card__sides a[href]:hover {
+    .card__sides a[href]:hover,
+    .link-pills-preview--hover .wikilink,
+    .link-pills-preview .link-pills-preview__ext:hover,
+    .link-pills-preview--hover .link-pills-preview__ext {
       text-decoration-line: var(--pill-hover-decoration, underline);
     }
   }
@@ -406,7 +417,10 @@
     .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
     a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
     .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
-    .card__sides a[href]:hover {
+    .card__sides a[href]:hover,
+    .link-pills-preview--hover .wikilink,
+    .link-pills-preview .link-pills-preview__ext:hover,
+    .link-pills-preview--hover .link-pills-preview__ext {
       color: var(--pill-hover-fg, var(--accent));
     }
   }

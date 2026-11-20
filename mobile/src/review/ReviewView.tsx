@@ -7,8 +7,6 @@ import { START, markOf, nextStep, reveal, shownParts, type Reveal } from '@clien
 import { newCardsFrom } from '@client/review/inboxMenu'
 import { addedLine, resetLine } from '@client/review/cardWords'
 import { reviewDuration, todayDuration, todayStudied } from '@client/review/reviewTime'
-import { AskInPlace } from '@client/components/AskInPlace'
-import { addQuestion } from '@client/review/AddMoreField'
 import type { AddKind } from '@shared/cardSchedule'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
@@ -671,8 +669,6 @@ function SessionScreen({
   // the line goes there whenever the box is there, NOT only while `shown` (a panel over Review rests it, `shown` false):
   // drawn in the screen instead, the line pushed the card 44 px down under the panel, and back up on its close.
   const topBox = useReviewTop()
-  // YAZ-5699: the finish screen's add waiting for its second tap.
-  const [addAsk, setAddAsk] = useState<AddKind | null>(null)
   // During the review only (the sheet's line): the time as Settings › Review › Time so far says. The finish screens show it always.
   const today = <TodayLine session={session} mode={review.settings.timeSoFar} />
   const fromButton = (
@@ -680,46 +676,31 @@ function SessionScreen({
       from {newCardsFrom(session)} ›
     </button>
   )
-  // "Add 10 new cards" (YAZ-5042) and its "from Spanish ›", "Add 2 Up next" (the Mac's pill has a field). YAZ-5699
-  // (Yaseen: "that should be a two click as well"): a tap asks in place, "Add 10 new cards to today?", Cancel first
-  // (`AskInPlace`, the Mac's); Add there adds. "Learn new cards" / "Review missed cards" stay one tap: they add nothing.
+  // YAZ-6041: DoneScreen's 2-step trigger button is the intentional first tap, so tapping Add inside the expanded
+  // panel adds immediately (still 2 taps total from the completion screen).
   const adds =
     addKinds.length === 0 ? null : (
       <div className="review__done-adds">
-        {addKinds.map((k) =>
-          addAsk === k ? (
-            <AskInPlace
-              key={k}
-              question={addQuestion(k, session.adds[k])}
-              yes="Add"
-              className="review__done-ask"
-              onYes={() => {
-                setAddAsk(null)
-                review.addCards(k)
-              }}
-              onNo={() => setAddAsk(null)}
-            />
-          ) : (
-            <span key={k} className="review__done-add">
-              <button type="button" className="btn review__add" onClick={() => setAddAsk(k)}>
-                {k === 'new' ? (
-                  <>
-                    Add {session.adds.new}
-                    {session.more.new > 0 && <span className="review__add-total">{` / ${session.more.new}`}</span>}
-                    {` new card${session.adds.new === 1 ? '' : 's'}`}
-                  </>
-                ) : (
-                  <>
-                    Add {session.adds.next}
-                    {session.more.next > 0 && <span className="review__add-total">{` / ${session.more.next}`}</span>}
-                    {' Up next'}
-                  </>
-                )}
-              </button>
-              {k === 'new' && fromButton}
-            </span>
-          ),
-        )}
+        {addKinds.map((k) => (
+          <span key={k} className="review__done-add">
+            <button type="button" className="btn review__add" onClick={() => review.addCards(k)}>
+              {k === 'new' ? (
+                <>
+                  Add {session.adds.new}
+                  {session.more.new > 0 && <span className="review__add-total">{` / ${session.more.new}`}</span>}
+                  {` new card${session.adds.new === 1 ? '' : 's'}`}
+                </>
+              ) : (
+                <>
+                  Add {session.adds.next}
+                  {session.more.next > 0 && <span className="review__add-total">{` / ${session.more.next}`}</span>}
+                  {' Up next'}
+                </>
+              )}
+            </button>
+            {k === 'new' && fromButton}
+          </span>
+        ))}
       </div>
     )
 

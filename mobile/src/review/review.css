@@ -1178,6 +1178,43 @@
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
+.done-phrase {
+  display: inline-block;
+}
+.done-divider {
+  width: 44px;
+  height: 1px;
+  background: var(--border);
+  margin: 18px auto 16px;
+}
+.done-add-trigger {
+  min-height: var(--tap);
+  padding: 8px 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.done-add-expanded {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.done-add-cancel {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
 
 .review__done-more {
   min-height: var(--tap);

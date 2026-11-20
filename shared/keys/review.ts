@@ -1,5 +1,5 @@
 /**
- * The Review Inbox's keys (YAZ-5996, D7): rebindable answer keys for two-button (`Remembered = 1`, `Forgot = 2`)
+ * The Review Inbox's keys (YAZ-5996, D7): rebindable answer keys for two-button (`Remembered = 1`, `Forgot = 0`)
  * and four-button (`Again = 1`, `Hard = 2`, `Good = 3`, `Easy = 4`) modes, plus the Inbox's built-in keys so
  * Settings › Hotkeys › Review and Keys of this tab list them all and refuse binding an answer onto a built-in key.
  */
@@ -26,7 +26,7 @@ const fixed = (id: string, label: string, keys: readonly string[], hint: string)
 
 export const REVIEW_KEYS: readonly KeyRow[] = [
   answer('remembered', 'Remembered', '1', 'two', 'Two-button review: mark the card remembered'),
-  answer('forgot', 'Forgot', '2', 'two', 'Two-button review: mark the card forgotten'),
+  answer('forgot', 'Forgot', '0', 'two', 'Two-button review: mark the card forgotten'),
   answer('again', 'Again', '1', 'four', 'Four-button review: mark the card Again'),
   answer('hard', 'Hard', '2', 'four', 'Four-button review: mark the card Hard'),
   answer('good', 'Good', '3', 'four', 'Four-button review: mark the card Good'),

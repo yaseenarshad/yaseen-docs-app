@@ -448,7 +448,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
       <div className="card-inbox__done-adds">
         {/* Round 2: the same field as the cards menu's, "Add [10] new cards"; the number starts at the Settings number. */}
         {addKinds.map((k) => (
-          <AddMoreField key={k} kind={k} look="done" start={session.adds[k]} remaining={session.more[k]} onAdd={(n) => review.addCards(k, n)} after={k === 'new' ? fromButton : undefined} />
+          <AddMoreField key={k} kind={k} look="done" start={session.adds[k]} remaining={session.more[k]} direct onAdd={(n) => review.addCards(k, n)} after={k === 'new' ? fromButton : undefined} />
         ))}
         {picker.picker}
       </div>

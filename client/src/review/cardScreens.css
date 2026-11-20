@@ -1206,10 +1206,54 @@ body.card-inbox--sizing {
   font: inherit;
   cursor: pointer;
 }
-/* YAZ-6041: subtle remaining count inside the done screen's Add pill ("Add [10] / 457 new cards"). */
+/* YAZ-6041: subtle remaining count inside the done screen's Add pill ("Add [10] / 457 new cards"),
+   smart 2-phrase completion wrap, quiet divider, and 2-step add trigger/cancel. */
 .card-inbox__done-add-total {
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
+}
+.done-phrase {
+  display: inline-block;
+}
+.done-divider {
+  width: 44px;
+  height: 1px;
+  background: var(--border);
+  margin: 18px auto 16px;
+}
+.done-add-trigger {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.done-add-trigger:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+  border-color: color-mix(in srgb, var(--fg) 22%, var(--border));
+}
+.done-add-expanded {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.done-add-cancel {
+  padding: 2px 8px;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.done-add-cancel:hover {
+  color: var(--fg);
 }
 .card-inbox__done-add .card-inbox__add-number {
   border-color: var(--border);
