@@ -453,9 +453,10 @@
 .card .card__body .card__sides .card__side li > p {
   padding: 0;
 }
-/* Horizontal rules inside a card (YAZ-6035): a quiet 1 px hairline in all spacing modes instead of raw Chromium inset. */
-.card .card__body .card__sides .card__side hr,
-.card .card__editor hr {
+/* Horizontal rules inside a card (YAZ-6035, YAZ-6045): a quiet 1 px hairline in all spacing modes (Mac, mobile Review,
+   mobile Reader, and Mac Card Edit) instead of raw Chromium inset or page-wide line.css rules. */
+.card .card__sides .card__side hr,
+.card .card__editor .milkdown .ProseMirror hr {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 18px 0;

@@ -20,11 +20,12 @@ export function useModalKeys(dialog: RefObject<HTMLElement | null>, onEscape: ()
     const onKey = (e: KeyboardEvent) => {
       const current = dialog.current
       if (current !== null) {
-        // YAZ-6036: yield when a sibling modal dialog (such as ConfirmSheet) is mounted after this dialog in DOM order.
-        const dialogs = document.querySelectorAll('[role="dialog"], [role="alertdialog"]')
+        // YAZ-6036: yield when a visible sibling modal dialog (such as ConfirmSheet) is mounted after this dialog in DOM order.
+        const dialogs = document.querySelectorAll('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"]')
         for (let i = dialogs.length - 1; i >= 0; i--) {
           const d = dialogs[i]
           if (d === current) break
+          if (d instanceof HTMLElement && (d.hidden || d.closest('[hidden], [inert]') !== null)) continue
           if (!current.contains(d) && (current.compareDocumentPosition(d) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) return
         }
       }

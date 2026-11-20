@@ -258,12 +258,20 @@ it('YAZ-5050 round 4 & YAZ-6035: Clean adds softer card text and softer list mar
   expect(text.body).toMatch(/color:\s*color-mix\(in srgb, var\(--fg\) 90%, var\(--bg\)\)/)
   const marker = rules(clean, ':root .card__side').find((r) => r.selector === ':root .card__side')!
   expect(marker.body).toMatch(/--card-list-marker:\s*color-mix\(in srgb, currentColor 48%, transparent\)/)
-  const hr = rules(cardCss, '.card .card__body .card__sides .card__side hr')[0]!
+  const hr = rules(cardCss, '.card .card__sides .card__side hr')[0]!
   expect(hr.body).toMatch(/border:\s*0/)
   expect(hr.body).toMatch(/border-top:\s*1px solid var\(--border\)/)
   expect(hr.body).toMatch(/margin:\s*18px 0/)
+  expect(hr.body).toMatch(/padding:\s*0/)
+  expect(hr.body).toMatch(/background:\s*none/)
   expect(hr.body).not.toMatch(/!important/)
-  expect(beats(specificity('.card .card__body .card__sides .card__side hr'), [0, 1, 0])).toBe(true)
+  // No .card__body required (so Mobile Review .phone-card__body > .card__sides > .card__side > hr matches too, YAZ-6045).
+  expect(beats(specificity('.card .card__sides .card__side hr'), [0, 1, 0])).toBe(true)
+  expect(beats(specificity('.card .card__sides .card__side hr'), specificity('.reader__body hr'))).toBe(true)
+  // Card Edit <hr> beats line.css's `.milkdown .ProseMirror .line-view > hr` ([0, 3, 1]).
+  const editHr = rules(cardCss, '.card .card__editor .milkdown .ProseMirror hr')[0]!
+  expect(editHr.body).toMatch(/border-top:\s*1px solid var\(--border\)/)
+  expect(beats(specificity('.card .card__editor .milkdown .ProseMirror hr'), specificity('.milkdown .ProseMirror .line-view > hr'))).toBe(true)
   const screens = read('../../review/cardScreens.css')
   // 44 px inside the Inbox card is the card look's own variable now (YAZ-5484, `review/cardLook.ts`); no rule sets a width.
   expect(screens).not.toMatch(/data-card-clean/)

@@ -311,5 +311,19 @@ describe('VersionHistory', () => {
         await flush()
       }
     })
+
+    it('YAZ-6036: does not yield Escape to a non-modal aria-modal="false" sibling (e.g. CardPreview)', async () => {
+      const d = await mount(false)
+      const preview = document.createElement('div')
+      preview.setAttribute('role', 'dialog')
+      preview.setAttribute('aria-modal', 'false')
+      document.body.append(preview)
+      try {
+        await d.key(document.body, 'Escape')
+        expect(d.onClose).toHaveBeenCalledOnce()
+      } finally {
+        preview.remove()
+      }
+    })
   })
 })
