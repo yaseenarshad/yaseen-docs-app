@@ -10,7 +10,9 @@ import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { linkCard, linkPath, type WikilinkResolveSource } from '../wikilink/linkResolve'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { CardEditor } from './cardEditor'
+import type { CardViewLinkHit } from './cardMedia'
 import type { CardLook } from './cardRender'
+import type { MenuRow } from '../blockHandleMenu'
 
 /** What the editor gives its card embeds (`createCrepe`): the page card's own doors. Absent on the host → no card embeds. */
 export interface CardEmbedDoors {
@@ -28,6 +30,8 @@ export interface CardEmbedDoors {
   hotkeys?: () => HotkeyOverrides | undefined
   /** A Markdown link's open in the card. Absent → nothing. */
   openHref?: (href: string) => void
+  /** Right-click menu rows for a View-mode pill or Markdown link inside the card (S2). Absent → falls through to card menu. */
+  pillMenu?: (hit: CardViewLinkHit) => MenuRow[] | null
   onNotice?: (message: string) => void
   /** The vault's card review (YAZ-5105 round 4): the Reviews strip under a card with reviews. Absent (a hover preview): none. */
   reviews?: import('./cardBlockView').CardReviewDoorApi

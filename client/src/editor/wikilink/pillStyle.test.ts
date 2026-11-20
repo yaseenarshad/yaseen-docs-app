@@ -60,25 +60,28 @@ const pick = (view: EditorView, label: string) => {
 }
 
 describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
-  it('is a flyout in the link menu, before Edit link: Text (B I U), Highlight (None, yellow, the named colours), Back to the vault\'s look', async () => {
+  it('is a flyout in the link menu, before Edit link: Text (B I U S), Highlight (None, yellow, the named colours), Back to the vault\'s look', async () => {
     const { root, view } = await mount('pad [[Known]] tail\n')
     rightClick(span(root, 'Known'))
     expect(topRows(view)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Edit link', 'Remove link'])
     const sub = flyout(view)
     expect(Array.from(sub.querySelectorAll('.ctx-menu__heading')).map((h) => h.textContent)).toEqual(['Text', 'Highlight'])
-    expect(subRows(sub)).toEqual(['Bold', 'Italic', 'Underline', 'None ✓', 'Yellow', 'Green', 'Blue', 'Pink', 'Orange', 'Purple', 'Red', 'Gray', "↺ Back to the vault's look (off)"])
+    expect(subRows(sub)).toEqual(['Bold', 'Italic', 'Underline', 'Strikethrough', 'None ✓', 'Yellow', 'Green', 'Blue', 'Pink', 'Orange', 'Purple', 'Red', 'Gray', "↺ Back to the vault's look (off)"])
   })
 
-  it('Bold, Italic, Underline wrap the WHOLE link in the toolbar\'s marks, a second pick takes it off; the flyout stays open and shows the ✓', async () => {
+  it('Bold, Italic, Underline, Strikethrough wrap the WHOLE link in the toolbar\'s marks, a second pick takes it off; the flyout stays open and shows the ✓', async () => {
     const { crepe, root, view } = await mount('pad [[Known]] tail\n')
     rightClick(span(root, 'Known'))
     flyout(view)
     pick(view, 'Bold')
     expect(getMarkdownForSave(crepe)).toBe('pad **[[Known]]** tail\n')
-    expect(subRows(popupOf(view)!.querySelector('.ctx-menu__sub')!).slice(0, 3)).toEqual(['Bold ✓', 'Italic', 'Underline'])
+    expect(subRows(popupOf(view)!.querySelector('.ctx-menu__sub')!).slice(0, 4)).toEqual(['Bold ✓', 'Italic', 'Underline', 'Strikethrough'])
     pick(view, 'Italic')
     pick(view, 'Underline')
     expect(getMarkdownForSave(crepe)).toBe('pad ***<u>[[Known]]</u>*** tail\n')
+    pick(view, 'Strikethrough')
+    expect(subRows(popupOf(view)!.querySelector('.ctx-menu__sub')!).slice(0, 4)).toEqual(['Bold ✓', 'Italic ✓', 'Underline ✓', 'Strikethrough ✓'])
+    pick(view, 'Strikethrough')
     pick(view, 'Bold')
     expect(getMarkdownForSave(crepe)).toBe('pad *<u>[[Known]]</u>* tail\n')
     // Still one pill: the link is drawn as before, its text unchanged.
@@ -102,7 +105,7 @@ describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
     const { crepe, root, view } = await mount('pad **[[Other]]** and *==[[Known]]==* tail\n')
     rightClick(span(root, 'Known'))
     const sub = flyout(view)
-    expect(subRows(sub)).toEqual(['Bold', 'Italic ✓', 'Underline', 'None', 'Yellow ✓', 'Green', 'Blue', 'Pink', 'Orange', 'Purple', 'Red', 'Gray', "↺ Back to the vault's look"])
+    expect(subRows(sub)).toEqual(['Bold', 'Italic ✓', 'Underline', 'Strikethrough', 'None', 'Yellow ✓', 'Green', 'Blue', 'Pink', 'Orange', 'Purple', 'Red', 'Gray', "↺ Back to the vault's look"])
     pick(view, "↺ Back to the vault's look")
     expect(getMarkdownForSave(crepe)).toBe('pad **[[Other]]** and [[Known]] tail\n')
     undo(view.state, view.dispatch)
@@ -115,6 +118,26 @@ describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
     rightClick(span(root, 'Known'))
     const row = Array.from(popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).find((b) => b.textContent === 'Pill style')!
     expect([row.disabled, row.dataset.hint, row.classList.contains('ctx-menu__item--parent')]).toEqual([true, 'This page is read only', false])
+  })
+
+  it('YAZ-6001 (D3): when highlight is hidden in the toolbar (card editors), Pill style hides the Highlight group and keeps Text + Back', async () => {
+    const source = createWikilinkResolveSource()
+    source.update(resolve, undefined, undefined, false)
+    const nav = { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: 'pad [[Known]] tail\n', wikilinks: source, wikilinkNav: nav, hidden: { toolbar: ['highlight'] } })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    rightClick(span(root, 'Known'))
+    const sub = flyout(view)
+    expect(Array.from(sub.querySelectorAll('.ctx-menu__heading')).map((h) => h.textContent)).toEqual(['Text'])
+    expect(subRows(sub)).toEqual(['Bold', 'Italic', 'Underline', 'Strikethrough', "↺ Back to the vault's look (off)"])
+    pick(view, 'Strikethrough')
+    expect(getMarkdownForSave(crepe)).toBe('pad ~~[[Known]]~~ tail\n')
+    pick(view, "↺ Back to the vault's look")
+    expect(getMarkdownForSave(crepe)).toBe('pad [[Known]] tail\n')
   })
 })
 

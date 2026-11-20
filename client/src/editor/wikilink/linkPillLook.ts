@@ -14,13 +14,23 @@
  *    draw reads the pieces, never the string. The ID and the folder come from the index snapshot through `pathInfo`,
  *    a Map built once per snapshot, as `pathTitles` is.
  */
-import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_PARTS, linkPillIconColors, parseLinkPillFormat, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
+import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_PARTS, linkPillIconColors, parseLinkPillFormat, type LinkPillHoverColor, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
 import { idNumber } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
 import { dirname } from '../../lib/paths'
 
 /** The wash of a palette fill at each strength (a card's, `views.css`). */
 const STRENGTH_PERCENT = { light: 15, medium: 30, strong: 50 } as const
+/** Hover wash percentages (YAZ-5991): subtle (8%), medium (14%), strong (22%). */
+const HOVER_WASH_PERCENT = { light: 8, medium: 14, strong: 22 } as const
+/** Hover tint percentages for default accent-tinted boxes when strength is raised. */
+const HOVER_TINT_PERCENT = { light: 18, medium: 24, strong: 32 } as const
+/** Hover darkening mix over a palette/custom-filled box. */
+const HOVER_FILL_PERCENT = { light: 7, medium: 12, strong: 18 } as const
+const hoverSolid = (color: LinkPillHoverColor): string =>
+  color === 'accent' ? 'var(--accent)' : color.startsWith('#') ? color : `var(--table-fill-solid-${color})`
+const hoverTextColor = (color: LinkPillHoverColor): string =>
+  color === 'accent' ? 'var(--accent)' : color.startsWith('#') ? color : `var(--table-text-${color})`
 
 /**
  * A part's colour as CSS. A custom `#rrggbb` (YAZ-5972) is itself, in light and dark alike. `kind` never reaches here:
@@ -77,6 +87,45 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
       if (style.color !== undefined) vars[`--pill-${part}-fg`] = colorValue(style.color)
       if (style.size !== undefined) vars[`--pill-${part}-size`] = style.size === 'small' ? '0.85em' : '1em'
     }
+  // Hover styling (YAZ-5991 / D5): NO_LINK_PILLS emits nothing so `wikilink.css` fallbacks carry the default look.
+  const hover = pills.hover
+  const hoverStyle = hover?.style ?? 'wash'
+  const hoverStrength = hover?.strength ?? 'light'
+  const noFill = box?.fill === 'none' || box?.shape === 'underline'
+  const customFill = !noFill && box?.fill !== undefined
+  if (hoverStyle === 'off') {
+    vars['--pill-hover-off'] = '1'
+  } else if (hoverStyle === 'underline') {
+    vars['--pill-hover-mode'] = 'underline'
+    vars['--pill-hover-bg'] = 'transparent'
+    vars['--pill-hover-decoration'] = 'underline'
+  } else if (hoverStyle === 'text') {
+    vars['--pill-hover-mode'] = 'text'
+    vars['--pill-hover-bg'] = 'transparent'
+    vars['--pill-hover-fg'] = hoverTextColor(hover?.color ?? 'accent')
+  } else {
+    if (hover?.color !== undefined) {
+      const wash = `color-mix(in srgb, ${hoverSolid(hover.color)} ${HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
+      vars['--pill-hover-bg'] = wash
+      vars['--pill-mark-hover-bg'] = wash
+      vars['--pill-ext-hover-bg'] = wash
+      if (noFill) vars['--pill-hover-overhang'] = '1'
+    } else {
+      if (noFill) {
+        vars['--pill-hover-bg'] = `color-mix(in srgb, var(--fg) ${HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
+        vars['--pill-hover-overhang'] = '1'
+      } else if (customFill) {
+        vars['--pill-hover-bg'] = `color-mix(in srgb, var(--fg) ${HOVER_FILL_PERCENT[hoverStrength]}%, var(--pill-bg))`
+      } else if (hoverStrength !== 'light') {
+        vars['--pill-hover-bg'] = `color-mix(in srgb, var(--accent) ${HOVER_TINT_PERCENT[hoverStrength]}%, transparent)`
+      }
+      if (hoverStrength !== 'light') {
+        const wash = `color-mix(in srgb, var(--fg) ${HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
+        vars['--pill-mark-hover-bg'] = wash
+        vars['--pill-ext-hover-bg'] = wash
+      }
+    }
+  }
   return vars
 }
 

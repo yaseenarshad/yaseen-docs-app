@@ -43,15 +43,19 @@ import {
   isLinkPillHex,
   linkPillIconColors,
   withLinkPillBox,
+  withLinkPillHover,
   withLinkPillIconColor,
   withLinkPillPart,
   withLinkPillReady,
   withLinkPills,
   type LinkPillColor,
   type LinkPillHex,
+  type LinkPillHoverColor,
+  type LinkPillHoverStyle,
   type LinkPillMark,
   type LinkPillPart,
   type LinkPillPartColor,
+  type LinkPillStrength,
   type LinkPills,
 } from '@shared/linkPills'
 import { LINK_PILL_MARK_SVG, linkPillVars, pillsShowVault } from '../editor/wikilink/linkPillLook'
@@ -88,6 +92,17 @@ const SHAPE_OPTIONS: readonly Option<'round' | 'square' | 'underline'>[] = [
 ]
 const STRENGTH_OPTIONS: readonly Option<'light' | 'medium' | 'strong'>[] = [
   { label: 'Light', value: 'light' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Strong', value: 'strong' },
+]
+const HOVER_STYLE_OPTIONS: readonly Option<LinkPillHoverStyle>[] = [
+  { label: 'Wash', value: 'wash' },
+  { label: 'Underline', value: 'underline' },
+  { label: 'Text colour', value: 'text' },
+  { label: 'Off', value: 'off' },
+]
+const HOVER_STRENGTH_OPTIONS: readonly Option<LinkPillStrength>[] = [
+  { label: 'Subtle', value: 'light' },
   { label: 'Medium', value: 'medium' },
   { label: 'Strong', value: 'strong' },
 ]
@@ -255,6 +270,50 @@ function PartRows({ look, part }: { look: LinkPillsState; part: LinkPillPart }) 
         <Segmented options={SIZE_OPTIONS} value={style.size ?? defaults.size} onChange={(size) => save(withLinkPillPart(pills, part, { size: size === defaults.size ? undefined : size }))} ariaLabel={`Size (${who})`} />
       </Row>
     </>
+  )
+}
+
+/** Hover subsection (YAZ-5991 / D5): Style (Wash / Underline / Text colour / Off), Colour (Auto + Accent + palette + Custom), Strength (Subtle / Medium / Strong). */
+function HoverSection({ look }: { look: LinkPillsState }) {
+  const { pills, save } = look
+  const hover = pills.hover ?? {}
+  const style: LinkPillHoverStyle = hover.style ?? 'wash'
+  const color = hover.color
+  const strength: LinkPillStrength = hover.strength ?? 'light'
+  const pickColor = (c: LinkPillHoverColor | undefined) => save(withLinkPillHover(pills, { color: c }))
+  return (
+    <div className="link-pills-hover" role="group" aria-label="Hover">
+      <div className="link-pills-hover__title">Hover</div>
+      <Row label="Style">
+        <Segmented
+          options={HOVER_STYLE_OPTIONS}
+          value={style}
+          onChange={(next: LinkPillHoverStyle) =>
+            save(withLinkPillHover(pills, { style: next === 'wash' ? undefined : next, ...(next === 'off' || next === 'underline' ? { color: undefined, strength: undefined } : next === 'text' ? { strength: undefined } : {}) }))
+          }
+          ariaLabel="Hover style"
+        />
+      </Row>
+      {(style === 'wash' || style === 'text') && (
+        <Row label="Colour">
+          <span className="pill-toolbar__group" role="group" aria-label="Hover colour">
+            <Tool label="Auto hover colour" on={color === undefined} mark="Auto" onClick={() => pickColor(undefined)} />
+            <Tool label="Accent hover colour" on={color === 'accent'} mark="Accent" onClick={() => pickColor('accent')} />
+            <Swatches label="Palette (hover)" value={color} swatch={style === 'wash' ? fillSwatch : textSwatch} onPick={pickColor} />
+          </span>
+        </Row>
+      )}
+      {style === 'wash' && (
+        <Row label="Strength">
+          <Segmented
+            options={HOVER_STRENGTH_OPTIONS}
+            value={strength}
+            onChange={(next: LinkPillStrength) => save(withLinkPillHover(pills, { strength: next === 'light' ? undefined : next }))}
+            ariaLabel="Hover strength"
+          />
+        </Row>
+      )}
+    </div>
   )
 }
 
@@ -430,6 +489,7 @@ export function LinkPillsControl({ look, vault }: { look: LinkPillsState; vault:
           {live.kind === 'box' ? <BoxRows look={look} /> : <PartRows look={look} part={live.part} />}
         </div>
       )}
+      <HoverSection look={look} />
       {!isDefaultLinkPills(pills) && (
         <span className="settings__options">
           <button type="button" className="settings__option" title="Back to today's look" onClick={() => save({})}>
