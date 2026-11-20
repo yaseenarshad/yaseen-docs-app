@@ -339,15 +339,18 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   /** The cog's "Outside changes glow" (YAZ-5925, D3): this file's own key, on the newest bytes; null follows Settings. */
   const changeGlow = (next: OutsideChangeGlow | null) =>
     void transformFile(path, (text) => writeOutsideGlow(text, next)).then(read, (err: unknown) => onNotice(`Outside changes glow could not change: ${err instanceof Error ? err.message : String(err)}`))
-  /** Done: the card's text, its sides only. The band is the only title: Edit card shows it, with no field (YAZ-5392). */
-  const editDone = (text: string) => {
+  /** Done: the card's text, plus any title change through App's title edit door (`onRetitle`, YAZ-6040). */
+  const editDone = (text: string, nextTitle?: string) => {
     setSave('saving')
+    const trimmed = nextTitle?.trim()
+    const renamed = trimmed !== undefined && trimmed !== '' && trimmed !== (card?.title ?? '') && onRetitle !== undefined
     writes.editDone(
       text,
       () => {
         setSave('saved')
         setEditing(false)
         tourEvent('card-edit-done', path)
+        if (renamed) void onRetitle(path, trimmed, 'file')
       },
       () => setSave('error'),
     )
@@ -535,7 +538,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               wikilinkHover={previewScope === undefined ? undefined : linkHover}
               hotkeys={hotkeys}
               onOpenImage={setOpenImage}
-              titleField="show"
+              titleField={!locked && onRetitle !== undefined ? 'edit' : 'show'}
               head={
                 <div className="card__head">
                   {id !== null && <CardId id={id} onNotice={onNotice} />}

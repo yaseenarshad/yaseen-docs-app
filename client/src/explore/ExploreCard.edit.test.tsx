@@ -113,4 +113,35 @@ describe('Edit card in the card window with the page`s editor (YAZ-5026)', () =>
     await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  it('YAZ-6040: card-file retitle in Edit mode calls onRetitle and double-clicking an image opens ImageModal', async () => {
+    const CARD_FILE = '---\nkind: card\n---\n\n```card\nCapital of {{France}}?\n![map](https://example.com/map.png)\n---\nParis\n```\n<!-- card: WIKI-9, title "Capital of France" -->\n'
+    disk.set(PATH, CARD_FILE)
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update(() => null, [], [], true, ['WIKI'])
+    const vault: ExploreVault = { root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never }
+    const onRetitle = vi.fn()
+    el = document.createElement('div')
+    document.body.append(el)
+    root = createRoot(el)
+    await act(async () => root?.render(<ExploreCard path={PATH} cardId="WIKI-9" index={0} pageName="Capital of France" vault={vault} onOpenPage={vi.fn()} onOpenLink={vi.fn()} onOpenTab={vi.fn()} onOpenInTab={vi.fn()} onNotice={vi.fn()} onRetitle={onRetitle} onClose={vi.fn()} active />))
+    await vi.waitFor(() => expect(el.querySelector('.card-screen img')).not.toBeNull())
+    const img = el.querySelector<HTMLImageElement>('.card-screen img')!
+    act(() => void img.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })))
+    await vi.waitFor(() => expect(document.querySelector('.image-modal')).not.toBeNull())
+    const closeBtn = document.querySelector<HTMLButtonElement>('.image-modal [aria-label="Close"], .image-modal button')
+    if (closeBtn !== null) act(() => closeBtn.click())
+    const body = el.querySelector<HTMLElement>('[data-explore-card]')!
+    key(body, { key: 'e' })
+    await vi.waitFor(() => expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.value).toBe('Capital of France'))
+    const field = el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')!
+    expect(field.readOnly).toBe(false)
+    act(() => {
+      field.value = 'Capital of Italy'
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    key(field, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('Capital of Italy')
+  })
 })

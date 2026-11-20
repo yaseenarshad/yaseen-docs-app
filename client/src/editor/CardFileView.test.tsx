@@ -412,12 +412,34 @@ describe('YAZ-5392: one title spot, the card as a page shows it', () => {
     expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'Capital of Spain', 'file')
   })
 
-  it('Edit card: the band shows the title (no field: the band renames, read), the sides are the editor`s', async () => {
-    await mount(FILE)
+  it('Edit card (YAZ-6040): the title band field is editable when unlocked, and Done saves any title change through onRetitle', async () => {
+    const { onRetitle } = await mount(FILE)
     act(() => editButton()!.click())
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).not.toBeNull())
     await vi.waitFor(() => expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.value).toBe('Capital of France'))
-    expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.readOnly).toBe(true)
+    const titleField = el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')!
+    expect(titleField.readOnly).toBe(false)
+    act(() => {
+      titleField.value = 'Capital of Germany'
+      titleField.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    key(titleField, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'Capital of Germany', 'file')
+  })
+
+  it('Edit card (YAZ-6040): clearing the title to blank does not fire onRetitle on Done', async () => {
+    const { onRetitle } = await mount(FILE)
+    act(() => editButton()!.click())
+    await vi.waitFor(() => expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.value).toBe('Capital of France'))
+    const titleField = el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')!
+    act(() => {
+      titleField.value = '   '
+      titleField.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    key(titleField, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    expect(onRetitle).not.toHaveBeenCalled()
   })
 })
 

@@ -280,8 +280,8 @@ describe('VersionHistory', () => {
     })
 
     it('YAZ-6036: yields keyboard events to a sibling ConfirmSheet dialog mounted on top while allowFileAction awaits', async () => {
-      let resolveAsk: ((ok: boolean) => void) | null = null
-      const allow = vi.fn(() => new Promise<boolean>((r) => { resolveAsk = r }))
+      const ask: { resolve?: (ok: boolean) => void } = {}
+      const allow = vi.fn(() => new Promise<boolean>((r) => { ask.resolve = r }))
       const d = await mount(true, P, allow)
       act(() => d.$('[data-testid="history-restore"]')?.click())
       act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
@@ -307,7 +307,7 @@ describe('VersionHistory', () => {
       } finally {
         window.removeEventListener('keydown', onSheetKey)
         sheet.remove()
-        resolveAsk?.(false)
+        ask.resolve?.(false)
         await flush()
       }
     })
