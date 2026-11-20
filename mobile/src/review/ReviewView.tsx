@@ -313,7 +313,8 @@ function SessionScreen({
   const titleStep = titleStepOf(titleText, titleAt)
   const after = text === null ? null : nextStep(step, counts, titleStep)
   const done = text !== null && after === null
-  const mark = markOf(step, upTo(step.sides))
+  const titleNow = after !== null && after.titled && !step.titled
+  const mark = titleNow ? null : markOf(step, upTo(step.sides))
   // What the hint line counts: the hidden parts not shown yet, each side still to come, and the title's own tap.
   const left = text === null ? 0 : upTo(counts.length) - step.open.length + Math.max(0, counts.length - step.sides) + (titleStep !== null && !step.titled ? 1 : 0)
   // After an answer, taps wait until the next card is on the screen AND a short time has passed, so the
@@ -357,7 +358,6 @@ function SessionScreen({
     if (page === null || guarded) return
     firstAction()
     // The title's own tap (YAZ-5709) shows in the head, at the top: nothing to bring into view.
-    const titleNow = after !== null && after.titled && !step.titled
     const target: TapTarget = mark !== null ? mark : step.sides < counts.length ? 'side' : 'end'
     // The Mac's reading scroll: a part out of view first comes into view; that tap shows nothing.
     const view = cardBox.current
@@ -763,7 +763,13 @@ function SessionScreen({
                   titleRoom &&
                   titleWaits && (
                     <span className="review__title-room" aria-hidden="true">
-                      <span className="review__title">{titleText}</span>
+                      {titleStep !== null ? (
+                        <span className="review__title card-band__blank" data-next={titleNow ? '' : undefined}>
+                          <span className="card__word">{titleText}</span>
+                        </span>
+                      ) : (
+                        <span className="review__title">{titleText}</span>
+                      )}
                       <span> · </span>
                     </span>
                   )
@@ -772,7 +778,7 @@ function SessionScreen({
               </p>
               {needsFix === card.path && <p className="review__fix">{NEEDS_FIX}</p>}
               {text !== null && page !== null ? (
-                <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, ...shownParts(step.open), next: mark ?? undefined }} links={source.links} files={source.files} media={media} retry={retry} onOpen={open} />
+                <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, ...shownParts(step.open), next: mark }} links={source.links} files={source.files} media={media} retry={retry} onOpen={open} />
               ) : (
                 <div className="review__card-wait" aria-busy="true" />
               )}

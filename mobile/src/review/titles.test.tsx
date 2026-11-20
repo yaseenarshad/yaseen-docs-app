@@ -167,6 +167,33 @@ describe('when a title shows (YAZ-5696, YAZ-5709: Never · Always · After the f
     expect(h.host.querySelector('.review__title-room, .review__title')).toBeNull()
   })
 
+  it('YAZ-5995 (D4 4B): mobile title blank takes data-next when Title is next and clears data-next from body blanks', async () => {
+    // After the first click with titleRoom on: title blank has data-next, body blanks have none.
+    h = await reviewSetup(withGlobal('click', 'TI-30, title "Numbers"'), { titleRoom: true })
+    expect(h.host.querySelector('.review__title-room .card-band__blank')?.hasAttribute('data-next')).toBe(true)
+    expect(h.host.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+    await h.tap()
+    expect(h.host.querySelector('.review__title-room')).toBeNull()
+    expect(h.host.querySelectorAll('.card__blank[data-next]')).toHaveLength(1)
+    h.unmount()
+
+    // Before Side 2 with titleRoom on: grey title blank while Side 1 blanks come first, then data-next before Side 2.
+    h = await reviewSetup(withGlobal('side2', 'TI-31, title "Numbers"'), { titleRoom: true })
+    expect(h.host.querySelector('.review__title-room .card-band__blank')).not.toBeNull()
+    expect(h.host.querySelector('.review__title-room .card-band__blank')?.hasAttribute('data-next')).toBe(false)
+    expect(h.host.querySelectorAll('.card__blank[data-next]')).toHaveLength(1)
+    await h.tap()
+    await h.tap()
+    expect(h.host.querySelector('.review__title-room .card-band__blank')?.hasAttribute('data-next')).toBe(true)
+    expect(h.host.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+    h.unmount()
+
+    // titleRoom off: no title-room blank, and body blanks still clear data-next while Title is the next tap.
+    h = await reviewSetup(withGlobal('click', 'TI-32, title "Numbers"'), { titleRoom: false })
+    expect(h.host.querySelector('.review__title-room')).toBeNull()
+    expect(h.host.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+  })
+
   it('After the first click: a one-sided card with nothing hidden: the title is the one tap', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': JSON.stringify({ titleAt: 'click' }), 'p.md': page('Geography', cardBlock('Nothing hidden here.', 'TI-25, title "Numbers"')) })
     expect(h.head()).toBe('TI-25')

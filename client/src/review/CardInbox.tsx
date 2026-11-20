@@ -119,13 +119,14 @@ import type { ZoomStep } from '@shared/types'
 import { changeCardLine } from './cardFile'
 import { recordAt } from '../editor/card/embedCard'
 import type { GestureAction } from '@shared/keys'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, bandTitleStep, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
-import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
+import { cardInboxHints, cardInboxKey, reviewAnswerKeyLabel } from './cardInboxKeys'
 import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
 import { ContextMenu } from '../sidebar/ContextMenu'
@@ -197,6 +198,8 @@ export interface CardInboxProps {
    * no card, the course is not done, the person did not dismiss it, and Card tips is on. Absent: no offer.
    */
   courseOffer?: CourseOfferProps
+  /** User hotkey overrides (Settings › Hotkeys › Review, YAZ-5996). */
+  hotkeys?: HotkeyOverrides
 }
 
 const NO_TITLES: ReadonlyMap<string, string> = new Map()
@@ -233,7 +236,7 @@ interface LastAnswer {
 // The done screen's words moved to `cardWords.ts` (YAZ-5078), so the phone's Review screen says them too.
 export { addedLine, resetLine, waitingLine } from './cardWords'
 
-export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, showInSidebar, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, showInSidebar, focusMode = false, onFocusMode, courseOffer, hotkeys }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -261,8 +264,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
 
   // Space's steps (D18, YAZ-5048, YAZ-5049, YAZ-5105 round 3) and the scroll that follows them: the Inbox's card,
   // shared with the Preview (YAZ-5152, `inboxCard.tsx`). The card's sound stops with the card and a hidden Inbox.
-  const steps = useCardSteps(text, cardKey, rootRef, bandTitleStep(headTitle, card?.page?.titleAt, review.settings.titleAt))
-  const { counts, step, done, nextSide, onLastSide } = steps
+  const titleStep = bandTitleStep(headTitle, card?.page?.titleAt, review.settings.titleAt)
+  const steps = useCardSteps(text, cardKey, rootRef, titleStep)
+  const { counts, step, done, nextSide, titleNow, onLastSide } = steps
   // YAZ-5696: when the band's title shows (the card's own choice, else Settings › Cards › Show card titles).
   const band = bandTitle(headTitle, card?.page?.titleAt, review.settings.titleAt, steps)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -324,8 +328,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
     setMoreAt({ x: box.left, y: box.bottom + 4 })
     setMore(moreWhich === which || cardKey === null ? null : { key: cardKey, which })
   }
-  const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode })
-  live.current = { steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode }
+  const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode, hotkeys })
+  live.current = { steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode, hotkeys }
 
   // The last answer's line (YAZ-5025 round 2): its words fixed when the answer is given, shown once the session counts
   // it (`count`: the session's answers with it), and only while that answer is still the session's last (an undo clears it).
@@ -384,7 +388,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!live.current.shown || !isInboxKeyTarget(event, rootRef.current)) return
-      const key = cardInboxKey(event)
+      const key = cardInboxKey(event, live.current.review.settings.buttons, live.current.hotkeys)
       if (key === null) return
       const { card, session, review, ratings, moreOpen, focusMode, onFocusMode } = live.current
       // Esc closes the ⋯ row (YAZ-5011), else leaves focus mode (YAZ-5375): the Inbox is a tab, so with neither the key
@@ -412,8 +416,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
       }
       if (key.kind === 'answer') {
         // At any step (YAZ-5010): the buttons show from the moment the card shows.
-        const rating = ratings[key.button]
-        if (card.page !== null && rating !== undefined && !event.repeat) answerWith(rating)
+        if (card.page !== null && ratings.includes(key.rating) && !event.repeat) answerWith(key.rating)
         return
       }
       if (key.kind === 'open') return openCard(card, live.current.cardFile)
@@ -531,9 +534,17 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
               // card in a page's is the page title's own component, a click renames the card (its card line), as in the
               // page's card (YAZ-5164 part 3). In a Read only vault it shows only. Title room (YAZ-5880): Always keeps
               // the band on every card, empty with no title, the title unseen while it waits.
-              <CardBand key={cardKey} waiting={band.waits}>
+              <CardBand key={cardKey} waiting={band.waits} next={titleNow} onClick={() => advance('mouse')}>
                 {headTitle === '' ? null : band.waits ? (
-                  <span className="card-inbox__name">{headTitle}</span>
+                  <span className="card-inbox__name">
+                    {titleStep !== null ? (
+                      <span className="card-band__blank" data-next={titleNow ? '' : undefined}>
+                        <span className="card__word">{headTitle}</span>
+                      </span>
+                    ) : (
+                      headTitle
+                    )}
+                  </span>
                 ) : cardFile ? (
                   <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openFile(card.path)}>
                     {headTitle}
@@ -612,16 +623,17 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
             <div className="card-inbox__answers" data-tour="inbox-answers" data-nudge={nudge.key === cardKey && nudge.key !== null ? (nudge.n % 2 === 1 ? 'a' : 'b') : undefined}>
               {/* YAZ-5029: the buttons are the setting's, always there — never only once the card's answers are fixed, so
                   fast ← → never takes them away for a frame. The hover says when the card comes back once it is known. */}
-              {ratings.map((rating, i) => {
+              {ratings.map((rating) => {
                 const a = session.answers?.find((x) => x.review.rating === rating)
                 const label = answerLabel(rating, review.settings)
                 // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
                 const comesBack = a === undefined ? label : `${label} · ${cardWait(a.interval, a.comesBack)}`
+                const keyBadge = reviewAnswerKeyLabel(rating, review.settings.buttons, hotkeys)
                 return (
                   <HoverTip key={rating} text={comesBack}>
                     <button type="button" className="explore__button card-inbox__answer" data-rating={rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => live.current.card?.page != null && answerWith(rating)}>
                       {answerIcon(rating, review.settings.buttons)}
-                      <KeyLabel action={<span className="card-inbox__answer-label">{label}</span>} keys={String(i + 1)} />
+                      {keyBadge === '' ? <span className="card-inbox__answer-label">{label}</span> : <KeyLabel action={<span className="card-inbox__answer-label">{label}</span>} keys={keyBadge} />}
                     </button>
                   </HoverTip>
                 )

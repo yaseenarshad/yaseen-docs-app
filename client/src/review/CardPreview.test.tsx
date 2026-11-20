@@ -139,8 +139,42 @@ describe('Preview a card (YAZ-5152)', () => {
     const band = () => el.querySelector('.card-inbox__panel > .card-band')
     mount(TEXT, 'Secret title', false, 'click')
     expect([band()?.className, band()?.getAttribute('aria-hidden'), band()?.textContent]).toEqual(['card-band card-band--waiting', 'true', 'Secret title'])
+    // YAZ-5995 (D4 4B): while Title is the next step, the title blank wears `data-next` and body blanks wear none.
+    expect(band()?.hasAttribute('data-next')).toBe(true)
+    expect(band()?.querySelector('.card-band__blank')?.hasAttribute('data-next')).toBe(true)
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
     press(' ')
     expect([band()?.className, band()?.getAttribute('aria-hidden'), band()?.textContent]).toEqual(['card-band card-band--fade', null, 'Secret title'])
+    expect(band()?.hasAttribute('data-next')).toBe(false)
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(1)
+  })
+
+  it('YAZ-5995: clicking the highlighted waiting title blank reveals the title; Before Side 2 shows grey waiting blank until Title is next', () => {
+    const band = () => el.querySelector<HTMLElement>('.card-inbox__panel > .card-band')
+    mount(TEXT, 'Secret title', false, 'click')
+    act(() => band()!.querySelector<HTMLElement>('.card-band__blank')!.click())
+    expect(band()?.className).toBe('card-band card-band--fade')
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(1)
+    act(() => root?.unmount())
+    el.remove()
+
+    mount(TEXT, 'Secret title', false, 'side2')
+    // Front word comes first: title blank waits (grey, no data-next), body blank 0 has data-next.
+    expect(band()?.querySelector('.card-band__blank')).not.toBeNull()
+    expect(band()?.hasAttribute('data-next')).toBe(false)
+    expect(band()?.querySelector('.card-band__blank')?.hasAttribute('data-next')).toBe(false)
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(1)
+    // Clicking the grey waiting title blank before its turn does nothing.
+    act(() => band()!.querySelector<HTMLElement>('.card-band__blank')!.click())
+    expect(band()?.className).toBe('card-band card-band--waiting')
+    // Reveal Side 1's word -> now Title is next!
+    press(' ')
+    expect(band()?.hasAttribute('data-next')).toBe(true)
+    expect(band()?.querySelector('.card-band__blank')?.hasAttribute('data-next')).toBe(true)
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+    // Clicking reveals the title directly.
+    act(() => band()!.querySelector<HTMLElement>('.card-band__blank')!.click())
+    expect(band()?.className).toBe('card-band card-band--fade')
   })
 
   it('YAZ-5152 A: no title: the bar names the card by its ID', () => {

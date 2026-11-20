@@ -10,7 +10,7 @@ import { keyInWords, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { KeyLabel } from './KeyLabel'
 import { ALL_KEYS, blockersOf, keysOf, stepsAside, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
 
-const PLACE_TITLES: Record<KeyScope, string> = { app: 'App', page: 'Page', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views', explore: 'Explore' }
+const PLACE_TITLES: Record<KeyScope, string> = { app: 'App', page: 'Page', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views', explore: 'Explore', review: 'Review' }
 
 /** A row's keys in words (YAZ-5332), each of its keys: "Cmd+K / Cmd+P". */
 const keysText = (row: KeyRow, overrides: HotkeyOverrides): string => keysOf(row, overrides).map(keyInWords).join(' / ')

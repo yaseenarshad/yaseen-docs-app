@@ -727,7 +727,8 @@
    turned it off (`--mark-next-hidden: off`, card-look.json); its colour is the vault's where it picked one; with a file,
    the Mac's own mark rules (`card.css`) draw it in the vault's hidden-word look. */
 @container not style(--mark-next-hidden: off) {
-  .review__card .card__blank[data-next] {
+  .review__card .card__blank[data-next],
+  .review__card .card-band__blank[data-next] {
     border-bottom-color: var(--card-next-hidden, var(--next-hidden));
     background: color-mix(in srgb, var(--card-next-hidden, var(--next-hidden)) 16%, transparent);
   }

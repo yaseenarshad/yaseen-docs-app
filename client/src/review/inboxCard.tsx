@@ -50,7 +50,9 @@ export interface CardSteps {
   done: boolean
   /** YAZ-5048: the next Space shows the next side (the sides that show have no hidden word left, the title's own step past). */
   nextSide: boolean
-  /** The blank the next Space shows (YAZ-5049 round 4: after a click, the next one still hidden after the clicked word). */
+  /** YAZ-5995: the next Space shows the title (its own step, YAZ-5709). */
+  titleNow: boolean
+  /** The blank the next Space shows (YAZ-5049 round 4: after a click, the next one still hidden after the clicked word); null when the title is next. */
   mark: number | null
   /** YAZ-5105 round 3: the last side shows, past the front (a one-side card: past its first Space, or nothing hidden). */
   onLastSide: boolean
@@ -83,19 +85,18 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
   const after = text === null ? null : nextStep(step, counts, title)
   const done = text !== null && after === null
   const nextSide = after !== null && after.sides > step.sides
-  const mark = markOf(step, hiddenUpTo(step.sides))
+  const titleNow = after !== null && after.titled && !step.titled
+  const mark = titleNow ? null : markOf(step, hiddenUpTo(step.sides))
   const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.open.length > 0 || done)
   const stepOn = useCallback(
     (by: 'key' | 'mouse' = 'key'): boolean => {
       if (text === null) return false
       // The title's own step (YAZ-5709) shows at the card's top, in the band: nothing to bring into view.
-      const titleNow = after !== null && after.titled && !step.titled
-      const m = markOf(step, hiddenUpTo(step.sides))
       // Round 5 (Yaseen: "Yes, build it"): Space never shows a blank you cannot see. Round 6 (Yaseen: "certain space
       // clicks that are actually oriented towards just moving the screen"): the same for the next side and the end.
       const view = viewRef.current
       if (by === 'key' && view !== null && !titleNow) {
-        const dy = spaceMove(view, done ? 'end' : (m ?? 'side'))
+        const dy = spaceMove(view, done ? 'end' : (mark ?? 'side'))
         if (dy !== 0) {
           glideView(view, dy)
           return true
@@ -105,7 +106,7 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
       setStep({ ...after, key: step.key })
       return true
     },
-    [done, after, text, step, viewRef, hiddenUpTo],
+    [done, after, text, step, viewRef, titleNow, mark],
   )
   const showWord = useCallback(
     (word: number) => {
@@ -126,7 +127,7 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
     setStep({ ...START, key: cardKey })
     if (viewRef.current !== null) viewRef.current.scrollTop = 0
   }, [cardKey, viewRef])
-  return { counts, step, done, nextSide, mark, onLastSide, stepOn, showWord, hideWord, restart }
+  return { counts, step, done, nextSide, titleNow, mark, onLastSide, stepOn, showWord, hideWord, restart }
 }
 
 /**
@@ -189,7 +190,7 @@ export function InboxCardFace({ text, path, vault, steps, doors, onStep, tour }:
         else hideWord(n)
       }}
     >
-      <CardBody text={text} path={path} vault={vault} show={{ sides: step.sides, ...shownParts(step.open), next: mark ?? undefined }} doors={doors} />
+      <CardBody text={text} path={path} vault={vault} show={{ sides: step.sides, ...shownParts(step.open), next: mark }} doors={doors} />
     </div>
   )
 }

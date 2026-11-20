@@ -949,6 +949,44 @@
 .card-band--waiting > * {
   visibility: hidden;
 }
+/* YAZ-5995 (D4 4B): a title that is its own reveal step shows a title-sized blank while waiting, and takes the
+   next-hidden highlight when Title is the next step (Mac `.card-band` and Mobile `.review__title-room`). */
+:root .card-band__blank {
+  display: inline;
+  visibility: visible;
+  border-bottom: 2px solid var(--fg-muted);
+  border-radius: 3px;
+  padding: 0 2px;
+  user-select: none;
+}
+.card-band__blank > .card__word {
+  visibility: hidden;
+}
+.card-band__blank[data-next] {
+  cursor: pointer;
+}
+@container style(--shown-hidden-words: box) {
+  :root .card-band__blank {
+    border-bottom: 0;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+}
+@container style(--mark-next-hidden: on) {
+  :root .card-band__blank[data-next] {
+    border-bottom-color: var(--card-next-hidden, var(--next-hidden));
+  }
+}
+@container style(--mark-next-hidden: on) and style(--shown-hidden-words: highlight) {
+  :root .card-band__blank[data-next] {
+    background: color-mix(in srgb, var(--card-next-hidden, var(--next-hidden)) 22%, transparent);
+  }
+}
+@container style(--mark-next-hidden: on) and style(--shown-hidden-words: box) {
+  :root .card-band__blank[data-next] {
+    background: color-mix(in srgb, var(--card-next-hidden, var(--next-hidden)) 35%, transparent);
+  }
+}
 .card-inbox__panel > .card-band:empty::before {
   content: '\00a0';
 }

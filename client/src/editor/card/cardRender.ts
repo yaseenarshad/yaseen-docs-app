@@ -58,8 +58,8 @@ export interface CardShow {
   shown?: number
   /** Words shown out of order (YAZ-5049 round 4: a click shows THAT word), by their number over the card. */
   picked?: readonly number[]
-  /** The blank the next Space shows (`data-next`), when it is not the first hidden one (round 4: after a click). */
-  next?: number
+  /** The blank the next Space shows (`data-next`), when it is not the first hidden one (round 4: after a click); `null` marks no blank (when the title is the next step, YAZ-5995). */
+  next?: number | null
   /**
    * Side 2 and after start folded (YAZ-5904, `cardFold.ts`): each rule is a button, "▸ Side 2". Only the
    * main tabs ask (a page, an embed, a card page, the hover preview, the phone's page, Explore by its own setting); never
@@ -448,7 +448,7 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
   const shown = show.shown ?? Number.POSITIVE_INFINITY
   const picked = show.picked ?? []
   const open = (n: number): boolean => n < shown || picked.includes(n)
-  const next = show.next ?? shown
+  const next = show.next === undefined ? shown : (show.next ?? -1)
   const out = document.createElement('div')
   out.className = 'card__sides'
   out.addEventListener('copy', copyWithoutHidden)
