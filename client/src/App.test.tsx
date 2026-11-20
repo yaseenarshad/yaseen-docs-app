@@ -6528,7 +6528,7 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       subscriptions: [bridge.properties.onChange, bridge.github.onStatus, bridge.vaultConfig.onChange].map((spy) => spy.mock.calls.length),
     })
     const boot = {
-      index: [['/v'], ['/v']],
+      index: [['/v']],
       tree: [['/v']],
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
@@ -6855,7 +6855,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(records(editor('/w/b.md')?.wikilinks)).toEqual(['/w/b.md'])
     // One index bridge and one of each subscription per vault: each vault is asked as a window with that vault alone asks (S79).
     for (const vault of ['/v', '/w']) {
-      expect(callsFor(bridge.index, vault)).toBe(2)
+      expect(callsFor(bridge.index, vault)).toBe(1)
       expect(callsFor(bridge.watch, vault)).toBe(2)
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)

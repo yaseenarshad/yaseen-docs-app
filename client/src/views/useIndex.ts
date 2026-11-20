@@ -4,6 +4,7 @@ import { IDS_FILE } from '@shared/pageId'
 import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
 import { api } from '../api'
 import { fetchIndex, onIndex } from '../lib/indexFeed'
+import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
 import type { WatchSource } from '../hooks/useWatch'
 
 export type IndexStatus = 'pending' | 'ready' | 'error'
@@ -97,20 +98,24 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     setError(null)
   }, [])
 
-  const refresh = useCallback(() => {
-    const gen = ++generation.current
-    fetchIndex(root).then(
-      (res) => {
-        if (gen !== generation.current) return
-        applySnapshot(res)
-      },
-      (err: unknown) => {
-        if (gen !== generation.current) return
-        setStatus('error')
-        setError(err instanceof Error ? err.message : String(err))
-      },
-    )
-  }, [root, applySnapshot])
+  const runRefresh = useCallback(
+    (fresh: boolean) => {
+      const gen = ++generation.current
+      fetchIndex(root, fresh).then(
+        (res) => {
+          if (gen !== generation.current) return
+          applySnapshot(res)
+        },
+        (err: unknown) => {
+          if (gen !== generation.current) return
+          setStatus('error')
+          setError(err instanceof Error ? err.message : String(err))
+        },
+      )
+    },
+    [root, applySnapshot],
+  )
+  const refresh = useCallback(() => runRefresh(false), [runRefresh])
 
   useEffect(() => {
     setStatus('pending')
@@ -158,17 +163,29 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     const unsubscribeChange = api.ids.onChanged((c) => {
       if (c.root === root) refresh()
     })
+    // In-app renames/retitles already updated main's live index (`indexMoved`) before broadcasting `file:renamed`.
+    // Refresh on the leading edge so sidebar/tab titles match the new path immediately instead of flashing the raw
+    // filename slug behind the watcher settle + 300 ms debounce; coalesce bulk renames via leadingTrailing (YAZ-6008).
+    const trimmedRoot = root.replace(/[\\/]+$/, '')
+    const insideRoot = (p: string): boolean => p === trimmedRoot || p.startsWith(`${trimmedRoot}/`) || p.startsWith(`${trimmedRoot}\\`)
+    const renameBurst = leadingTrailing(() => runRefresh(true), WATCH_BURST_QUIET_MS)
+    const unsubscribeRename =
+      api.file?.onRenamed?.(({ oldPath, newPath }) => {
+        if (insideRoot(oldPath) || insideRoot(newPath)) renameBurst.call()
+      }) ?? (() => undefined)
     return () => {
       generation.current++
       offFeed()
       unsubscribe()
       unsubscribeIds()
       unsubscribeChange()
+      unsubscribeRename()
+      renameBurst.cancel()
       if (timer.current !== null) clearTimeout(timer.current)
       timer.current = null
       more.current = false
     }
-  }, [root, watch, refresh])
+  }, [root, watch, refresh, runRefresh])
 
   return { status, records, folders, ids, letters, ask, unfinished, boards, error, refresh }
 }
