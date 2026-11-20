@@ -566,6 +566,7 @@ export function App() {
   const slots = useRef(EMPTY_SLOTS)
   slots.current = assignSlots(slots.current, roots)
   const scopes: VaultScope[] = []
+  // oxlint-disable-next-line react-hooks/rules-of-hooks -- fixed-size vault slot array (constant hook count per render)
   for (const slotRoot of slots.current) scopes.push(useVaultScope(slotRoot, notify))
   /** The scopes of the window's vaults, in the order of `roots`. */
   const vaults = roots.map((vault) => scopes[slots.current.indexOf(vault)])
@@ -901,7 +902,7 @@ export function App() {
   // Every render: a few map writes; a sticky default that changed tells the editors (`setVaultTableLook`).
   useEffect(() => {
     roots.forEach((at, i) => setVaultTableLook(at, vaults[i]?.tableLook.settings ?? null))
-  })
+  }, [roots, vaults])
   useEffect(() => setCellNoteButtonSetting(settings.tableCellNoteButton), [settings.tableCellNoteButton])
   // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.
   useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
@@ -2274,7 +2275,7 @@ export function App() {
       // A shared drawing the merge rewrote re-uploads its link, as a local save would (YAZ-3040).
       for (const m of merged) if (m.copy === undefined && m.kind !== 'page') pageBoardSaved(vault.root, absFrom(vault.root, m.path))
     }
-  })
+  }, [vaults, openHistory])
   const leftOverview = useCallback(() => setOverview((at) => (at.phase === 'leaving' ? OVERVIEW_CLOSED : at)), [])
   const toggleOverview = useCallback(() => {
     const { phase, active: open } = now.current

@@ -1181,7 +1181,7 @@ export function Sidebar({
   const treePreview = useRef({ on: treePreviewing, stop: stopTreePreview })
   useEffect(() => {
     treePreview.current = { on: treePreviewing, stop: stopTreePreview }
-  })
+  }, [treePreviewing, stopTreePreview])
   useEffect(
     () => () => {
       if (treePreview.current.on) treePreview.current.stop()

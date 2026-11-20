@@ -84,7 +84,7 @@ export function useVaultIcons(roots: readonly string[], rules: readonly IconRule
     }
     for (const [root, mine] of byVault) {
       // The vault's own rules and colours stay as they are (YAZ-5488): main keeps them, the request names only the picks.
-      const next: VaultIcons = { ...held.current[root], paths: { ...(held.current[root]?.paths ?? {}) } }
+      const next: VaultIcons = { ...held.current[root], paths: { ...held.current[root]?.paths } }
       for (const p of mine) {
         if (id === null) delete next.paths[p]
         else next.paths[p] = id

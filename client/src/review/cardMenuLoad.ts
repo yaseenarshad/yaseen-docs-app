@@ -20,8 +20,8 @@ export const loadCardMenu = (): Promise<CardMenuView> => {
   return loading
 }
 
-/** Runs `use` with the card menu's code: at once once it is loaded, else when it comes. */
-export function withCardMenu(use: (m: CardMenuView) => void): void {
-  if (view !== null) return use(view)
-  loadCardMenu().then(use, () => undefined)
+/** Runs `onLoad` with the card menu's code: at once once it is loaded, else when it comes. */
+export function withCardMenu(onLoad: (m: CardMenuView) => void): void {
+  if (view !== null) return onLoad(view)
+  loadCardMenu().then(onLoad, () => undefined)
 }

@@ -121,6 +121,7 @@ jobs:
           path: desktop/.cache/drawio
           key: drawio-${{ runner.os }}-${{ hashFiles('shared/drawio.ts', 'tools/packDrawio.mjs', 'tools/lib/drawioPack.mjs', 'desktop/drawio-overlay/**') }}
       - run: npm run drawio:pack
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
         env:

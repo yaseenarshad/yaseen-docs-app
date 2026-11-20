@@ -1,0 +1,57 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/jsx-key": "error",
+    "react/exhaustive-deps": "warn",
+    "unicorn/no-invalid-remove-event-listener": "error",
+    "no-unused-vars": "off",
+    "typescript/no-unused-vars": "off",
+    "typescript/triple-slash-reference": "off",
+    "typescript/no-this-alias": "off",
+    "eslint/no-useless-escape": "off",
+    "eslint/no-unused-expressions": "off",
+    "eslint/no-control-regex": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/no-useless-spread": "off",
+    "unicorn/prefer-string-starts-ends-with": "off",
+    "unicorn/no-new-array": "off",
+    "unicorn/no-thenable": "off",
+    "react/refs": "off",
+    "react/set-state-in-effect": "off",
+    "react/immutability": "off",
+    "react/globals": "off",
+    "react/purity": "off",
+    "react/preserve-manual-memoization": "off",
+    "react/use-memo": "off",
+    "react/static-components": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.testing.ts", "**/testing.ts"],
+      "rules": {
+        "eslint/no-unsafe-optional-chaining": "off",
+        "eslint/no-setter-return": "off",
+        "eslint/no-unsafe-finally": "off",
+        "unicorn/no-unnecessary-await": "off",
+        "unicorn/no-useless-fallback-in-spread": "off",
+        "oxc/erasing-op": "off",
+        "react/rules-of-hooks": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/out/**",
+    "**/dist-app/**",
+    "**/node_modules/**",
+    "engine/**",
+    "client/vendor/**",
+    "desktop/drawio-overlay/**",
+    "share/dist/**"
+  ]
+}

@@ -701,7 +701,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io, 
     while (from > 0 && lines[from - 1].trim() === '') from--
     const before = lines.slice(0, from)
     const rest = lines.slice(at)
-    const next = [...before, ...(before.length > 0 ? [''] : []), block, ...(rest.length > 0 && rest.some((l) => l !== '') ? ['', ...rest] : [''])]
+    const next = [...before, ...(before.length > 0 ? [''] : []), block, ...(rest.some((l) => l !== '') ? ['', ...rest] : [''])]
     return frontmatter + next.join('\n')
   }))
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page, title, ...(Object.keys(properties).length > 0 && { properties }) }, null, 2)}\n` : `added ${id} to ${page}\n`)

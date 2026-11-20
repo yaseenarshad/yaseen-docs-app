@@ -2,23 +2,23 @@
   "$comment": "Size and perf ceilings for npm run perf:budget / perf:budget:ci. Ratchet rule: shrinking a metric lowers its ceiling in the same PR; raising one needs Yasin's OK. Historical logs live in git log.",
   "baseline": "v0.9.27 @ 63aeeea",
   "sizeTolerance": 0.001,
-  "ratchetedTo": "yaz-2131-speed @ f94390d",
+  "ratchetedTo": "yaz-6008-speed",
   "size": {
     "appBytes": {
-      "max": 342986768,
-      "$comment": "Packaged macOS .app total bytes."
+      "max": 321500000,
+      "$comment": "Packaged macOS .app total bytes (measured 320.19 MB on yaz-6008-speed)."
     },
     "frameworksBytes": {
       "max": 240920243,
       "$comment": "Electron Framework.framework bytes inside .app."
     },
     "asarBytes": {
-      "max": 91699193,
-      "$comment": "app.asar bytes inside .app."
+      "max": 77800000,
+      "$comment": "app.asar bytes inside .app (measured 76.97 MB on yaz-6008-speed)."
     },
     "dmgBytes": {
-      "max": 123685814,
-      "$comment": "Compressed arm64 DMG bytes."
+      "max": 107000000,
+      "$comment": "Compressed arm64 DMG bytes (measured 105.64 MB on yaz-6008-speed)."
     },
     "chromiumLocaleCount": {
       "max": 8,
@@ -38,28 +38,28 @@
       "$comment": "Unbundled node_modules files inside app.asar (must stay 0)."
     },
     "rendererEagerJsBytes": {
-      "max": 3650291,
-      "$comment": "Renderer entry JS static import closure bytes."
+      "max": 3000000,
+      "$comment": "Renderer entry JS static import closure bytes (measured 2.96 MB on yaz-6008-speed)."
     },
     "rendererEagerCssBytes": {
-      "max": 415927,
-      "$comment": "Renderer entry CSS static closure bytes."
+      "max": 290000,
+      "$comment": "Renderer entry CSS static closure bytes (measured 0.28 MB on yaz-6008-speed)."
     },
     "rendererTotalBytes": {
-      "max": 33741825,
-      "$comment": "Renderer out/ total bytes (excluding excalidraw-assets)."
+      "max": 31800000,
+      "$comment": "Renderer out/ total bytes excluding excalidraw-assets (measured 31.47 MB on yaz-6008-speed)."
     },
     "rendererMapBytes": {
       "max": 0,
       "$comment": "Shipped .map bytes inside out/renderer (must stay 0)."
     },
     "mainBundleBytes": {
-      "max": 1542407,
-      "$comment": "Main process and CLI bundle bytes in out/main."
+      "max": 865000,
+      "$comment": "Main process and CLI bundle bytes in out/main (measured 0.85 MB on yaz-6008-speed)."
     },
     "shareViewerBytes": {
-      "max": 11193478,
-      "$comment": "Share-link viewer bundle bytes in share/dist/assets."
+      "max": 2220000,
+      "$comment": "Share-link viewer bundle bytes in share/dist/assets (measured 2.17 MB on yaz-6008-speed)."
     }
   },
   "perfTolerance": 0.15,
