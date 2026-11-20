@@ -97,6 +97,19 @@ export interface LinkPillBox {
   strength?: Exclude<LinkPillStrength, 'medium'>
 }
 
+/** The pill's hover look (YAZ-5991 / D5). Absent: wash, auto colour, subtle (8 %). */
+export const LINK_PILL_HOVER_STYLES = ['wash', 'underline', 'text', 'off'] as const
+export type LinkPillHoverStyle = (typeof LINK_PILL_HOVER_STYLES)[number]
+export type LinkPillHoverColor = 'accent' | LinkPillColor | LinkPillHex
+export interface LinkPillHover {
+  /** Wash (absent), underline, text colour, or off. */
+  style?: Exclude<LinkPillHoverStyle, 'wash'>
+  /** Auto (absent), accent, a palette colour, or a custom `#rrggbb`. */
+  color?: LinkPillHoverColor
+  /** Subtle (absent, `'light'` 8 %), medium (14 %), or strong (22 %). Wash only. */
+  strength?: Exclude<LinkPillStrength, 'light'>
+}
+
 /** What one vault changed. Every field absent is today's look; a default is never stored. */
 export interface LinkPills {
   /** The format; `DEFAULT_LINK_PILL_FORMAT` when absent. Always valid: `{name}` in it, every token known. */
@@ -105,6 +118,8 @@ export interface LinkPills {
   parts?: { [K in LinkPillPart]?: LinkPillPartStyle }
   /** The vault's name on a pill: other vaults only (absent, YAZ-3609 D22), on every pill, or never. Read only with `{vault}` in the format. */
   vault?: 'always' | 'never'
+  /** Hover feedback on resolved pills, `<mark>` pills, and external web links (YAZ-5991). Absent: wash, auto, subtle. */
+  hover?: LinkPillHover
 }
 
 /**
@@ -259,6 +274,18 @@ function sanitizeBox(raw: unknown): LinkPillBox | undefined {
   return Object.keys(out).length === 0 ? undefined : out
 }
 
+function sanitizeHover(raw: unknown): LinkPillHover | undefined {
+  if (!isRecord(raw)) return undefined
+  const out: LinkPillHover = {}
+  if (oneOf(['underline', 'text', 'off'])(raw.style)) out.style = raw.style
+  if (out.style !== 'off' && out.style !== 'underline') {
+    if (oneOf(['accent', ...LINK_PILL_COLORS])(raw.color)) out.color = raw.color
+    else if (isLinkPillHex(raw.color)) out.color = linkPillHex(raw.color)
+  }
+  if (out.style === undefined && oneOf(['medium', 'strong'])(raw.strength)) out.strength = raw.strength
+  return Object.keys(out).length === 0 ? undefined : out
+}
+
 /** A version 2 file, or a look in memory, with only its valid changes. */
 function sanitizeV2(raw: Record<string, unknown>): LinkPills {
   const out: LinkPills = {}
@@ -276,6 +303,8 @@ function sanitizeV2(raw: Record<string, unknown>): LinkPills {
     if (Object.keys(parts).length > 0) out.parts = parts
   }
   if (oneOf(['always', 'never'])(raw.vault)) out.vault = raw.vault
+  const hover = sanitizeHover(raw.hover)
+  if (hover !== undefined) out.hover = hover
   return out
 }
 
@@ -334,13 +363,13 @@ export function sanitizeLinkPills(raw: unknown): LinkPills {
  * The top-level keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. The version 1
  * fields are owned too: a save converts them (`fromV1`), so they leave the file.
  */
-export const LINK_PILLS_KEYS: readonly string[] = ['version', 'format', 'box', 'parts', 'vault', ...V1_FIELDS]
+export const LINK_PILLS_KEYS: readonly string[] = ['version', 'format', 'box', 'parts', 'vault', 'hover', ...V1_FIELDS]
 
 /** What `vaultConfig.write` stores: the version, then the fields. */
 export const linkPillsFile = (pills: LinkPills): Record<string, unknown> => ({ version: LINK_PILLS_VERSION, ...sanitizeLinkPills(pills) })
 
 /** Whether the look is today's: nothing set. */
-export const isDefaultLinkPills = (pills: LinkPills): boolean => pills.format === undefined && pills.box === undefined && pills.parts === undefined && pills.vault === undefined
+export const isDefaultLinkPills = (pills: LinkPills): boolean => pills.format === undefined && pills.box === undefined && pills.parts === undefined && pills.vault === undefined && pills.hover === undefined
 
 /** `pills` with the top-level fields of `patch` applied, each default dropped: the result holds only changes. */
 export function withLinkPills(pills: LinkPills, patch: { [K in keyof LinkPills]?: LinkPills[K] | undefined }): LinkPills {
@@ -372,6 +401,11 @@ export function withLinkPillIconColor(pills: LinkPills, row: 'pages' | 'cards', 
 /** `pills` with the box patched. */
 export function withLinkPillBox(pills: LinkPills, patch: { [K in keyof LinkPillBox]?: LinkPillBox[K] | undefined }): LinkPills {
   return withLinkPills(pills, { box: { ...pills.box, ...patch } })
+}
+
+/** `pills` with the hover settings patched. */
+export function withLinkPillHover(pills: LinkPills, patch: { [K in keyof LinkPillHover]?: LinkPillHover[K] | undefined }): LinkPills {
+  return withLinkPills(pills, { hover: { ...pills.hover, ...patch } })
 }
 
 /** `pills` under a ready format: its format (if it has one), and its parts and box over the current ones. */

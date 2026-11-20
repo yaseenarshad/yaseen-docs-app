@@ -43,7 +43,7 @@ import { copyText, openMenuAt } from '../linkMenu'
 import { missingId, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import type { CardEditor } from './cardEditor'
 import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from './embedCard'
-import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
+import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS, cardViewLinkHit } from './cardMedia'
 import { drawEditButton } from './cardEditKeys'
 import { openCardWindow, previewCard } from './cardOpen'
 import { mountCardTitle } from './cardTitle'
@@ -544,6 +544,21 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   }
   const onContextMenu = (event: MouseEvent): void => {
     if (card === null || (event.target instanceof Element && edit?.mount.contains(event.target) === true)) return
+    const target = event.target instanceof Element ? event.target : null
+    if (target !== null && doors.pillMenu !== undefined) {
+      const hit = cardViewLinkHit(target)
+      const rows = hit === null ? null : doors.pillMenu(hit)
+      if (rows !== null && rows.length > 0) {
+        event.preventDefault()
+        closeMenu?.()
+        const close = openMenuAt(host.menuParent(), event.clientX, event.clientY, rows)
+        closeMenu = () => {
+          close()
+          closeMenu = null
+        }
+        return
+      }
+    }
     event.preventDefault()
     openMenu(event.clientX, event.clientY)
   }

@@ -25,9 +25,10 @@ const TEXT_MARKS = [
   ['strong', 'Bold'],
   ['emphasis', 'Italic'],
   ['underline', 'Underline'],
+  ['strike_through', 'Strikethrough'],
 ] as const
 /** The marks "Back to the vault's look" takes off. */
-const STYLE_MARKS = ['strong', 'emphasis', 'underline', 'highlight'] as const
+const STYLE_MARKS = ['strong', 'emphasis', 'underline', 'strike_through', 'highlight'] as const
 
 /** The mark of `type` that EVERY letter of `from`..`to` has, the same on all, or null (none, or not on all). */
 function markOver(doc: ProseNode, from: number, to: number, type: MarkType): Mark | null {
@@ -47,8 +48,9 @@ const styled = (doc: ProseNode, from: number, to: number, types: MarkType[]) => 
 /**
  * The "Pill style" row of the link at `from`..`to`. `keep` wraps each pick (the menu's plugin holds its doc-change close
  * while the pick runs, so the menu stays open). Absent marks in the schema (a stripped-down editor) leave their rows out.
+ * `allowHighlight` false (a card editor, D3): hides the Highlight group and leaves highlights out of "Back to the vault's look".
  */
-export function pillStyleRow(view: EditorView, from: number, to: number, keep: (run: () => void) => () => void = (run) => run): MenuRow {
+export function pillStyleRow(view: EditorView, from: number, to: number, keep: (run: () => void) => () => void = (run) => run, allowHighlight = true): MenuRow {
   if (!view.editable) return { label: 'Pill style', disabled: true, hint: readOnlyTip(), run: () => {} }
   const { doc, schema } = view.state
   const apply = (change: (tr: Transaction) => void) =>
@@ -63,23 +65,29 @@ export function pillStyleRow(view: EditorView, from: number, to: number, keep: (
     const on = markOver(doc, from, to, type) !== null
     return [{ label, hint: on ? '✓' : undefined, run: apply((tr) => (on ? tr.removeMark(from, to, type) : tr.addMark(from, to, type.create()))) }]
   })
-  const highlight = schema.marks.highlight
+  const highlight = allowHighlight ? schema.marks.highlight : undefined
   const current = highlight === undefined ? null : markOver(doc, from, to, highlight)
   const colour = (color: HighlightColor): MenuRow => ({
     label: color === null ? 'Yellow' : capital(color),
     icon: swatchIcon(color === null ? 'var(--mark-bg)' : `var(--mark-bg-${color})`),
     hint: current !== null && (current.attrs.color ?? null) === color ? '✓' : undefined,
-    run: apply((tr) => tr.removeMark(from, to, highlight).addMark(from, to, highlight!.create({ color }))),
+    run: apply((tr) => tr.removeMark(from, to, highlight!).addMark(from, to, highlight!.create({ color }))),
   })
   const highlights: MenuRow[] =
     highlight === undefined
       ? []
-      : [{ label: 'None', hint: highlight !== undefined && !doc.rangeHasMark(from, to, highlight) ? '✓' : undefined, run: apply((tr) => tr.removeMark(from, to, highlight)) }, colour(null), ...HIGHLIGHT_COLORS.map(colour)]
-  const types = STYLE_MARKS.flatMap((name) => schema.marks[name] ?? [])
+      : [{ label: 'None', hint: !doc.rangeHasMark(from, to, highlight) ? '✓' : undefined, run: apply((tr) => tr.removeMark(from, to, highlight)) }, colour(null), ...HIGHLIGHT_COLORS.map(colour)]
+  const types = (allowHighlight ? STYLE_MARKS : STYLE_MARKS.filter((name) => name !== 'highlight')).flatMap((name) => schema.marks[name] ?? [])
   const back: MenuRow = {
     label: "↺ Back to the vault's look",
     disabled: !styled(doc, from, to, types),
     run: apply((tr) => types.forEach((type) => tr.removeMark(from, to, type))),
   }
-  return { label: 'Pill style', run: () => {}, stay: true, headings: ['Text', 'Highlight'], children: [text, highlights, [back]] }
+  return {
+    label: 'Pill style',
+    run: () => {},
+    stay: true,
+    headings: highlight === undefined ? ['Text'] : ['Text', 'Highlight'],
+    children: highlight === undefined ? [text, [back]] : [text, highlights, [back]],
+  }
 }

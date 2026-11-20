@@ -465,4 +465,31 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(formatBox(row).value).toBe('({icon}{name} ({vault}))')
     expect(pillTexts(row)).toEqual(['(Roadmap (Mine))'])
   })
+
+  it('YAZ-6002 (D5): Hover subsection under Preview edits Style, Colour and Strength and updates preview vars; searching "hover" finds Link pills', () => {
+    const { row, save } = mount(NO_LINK_PILLS)
+    const hover = row.querySelector<HTMLElement>('.link-pills-hover')!
+    expect(hover).not.toBeNull()
+    expect(rows(hover)).toEqual(['Style', 'Colour', 'Strength'])
+    expect([...rowOf(hover, 'Style').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Wash', 'Underline', 'Text colour', 'Off'])
+    expect([...rowOf(hover, 'Strength').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Subtle', 'Medium', 'Strong'])
+    expect(button(rowOf(hover, 'Style'), 'Wash').getAttribute('aria-pressed')).toBe('true')
+    expect(button(rowOf(hover, 'Colour'), 'Auto hover colour').getAttribute('aria-pressed')).toBe('true')
+    expect(button(rowOf(hover, 'Strength'), 'Subtle').getAttribute('aria-pressed')).toBe('true')
+    click(rowOf(hover, 'Colour').querySelector('[role="radio"][title="Purple"]') as Element)
+    expect(save).toHaveBeenLastCalledWith({ hover: { color: 'purple' } })
+    click(button(rowOf(hover, 'Strength'), 'Strong'))
+    expect(save).toHaveBeenLastCalledWith({ hover: { strength: 'strong' } })
+    click(button(rowOf(hover, 'Style'), 'Off'))
+    expect(save).toHaveBeenLastCalledWith({ hover: { style: 'off' } })
+
+    const off = mount({ hover: { style: 'off' } })
+    expect(rows(off.row.querySelector<HTMLElement>('.link-pills-hover')!)).toEqual(['Style'])
+    expect(preview(off.row).style.getPropertyValue('--pill-hover-off')).toBe('1')
+    expect(button(off.row, 'Reset')).toBeDefined()
+
+    const text = mount({ hover: { style: 'text', color: 'teal' } })
+    expect(rows(text.row.querySelector<HTMLElement>('.link-pills-hover')!)).toEqual(['Style', 'Colour'])
+    expect(preview(text.row).style.getPropertyValue('--pill-hover-fg')).toBe('var(--table-text-teal)')
+  })
 })

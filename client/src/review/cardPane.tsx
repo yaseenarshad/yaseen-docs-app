@@ -7,24 +7,37 @@
  * The heads are each one's own: the window's speaks of the page the card is on, the tab IS the card's file.
  */
 import { previewCard } from '../editor/card/cardOpen'
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { cardBlock, EMPTY_CARD_LINE, withCardTitle, type CardReview } from '@shared/cardLine'
-import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { ReviewSettings } from '@shared/reviews'
-import type { IndexRecord } from '@shared/types'
+import { rootOfPath } from '@shared/types'
+import { api } from '../api'
 import { createCrepe } from '../editor/createCrepe'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
 import { isCardNode } from '../editor/card/cardBlockLine'
 import { cardBlockViewAt, cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import type { CardTitleField } from '../editor/card/cardEditor'
+import type { CardViewLinkHit } from '../editor/card/cardMedia'
+import type { GalleryImage } from '../editor/image/imageOptions'
+import { linkMenuRows, openMenuAt } from '../editor/linkMenu'
+import { markdownLinkMenuOf, redrawLinkPills, type MarkdownLinkNav } from '../editor/markdownLink'
+import { PageMenu } from '../editor/pageMenu'
 import { freezeScroll, keepPlace, readSwapPlace, scrollerOf, showSwapPlace, type SwapPlace } from '../editor/pagePlace'
-import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
-import { cardResolverOf, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { hrefPath, hrefTarget, vaultHref } from '../editor/pathPaste'
+import { wikilinkFollower, type LinkWhere, type WikilinkNav } from '../editor/wikilink/wikilinkClick'
+import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
+import { linkMenuOf } from '../editor/wikilink/wikilinkMenu'
+import { linkPath, redrawWikilinks, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ExploreVault } from '../explore/ExplorePage'
-import { pageLabel, pathTitles } from '../lib/pageLabel'
+import { PageActions } from '../lib/pageActions'
+import { storage } from '../lib/storage'
+import { VaultLinksContext } from '../links/vaultLinks'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
 import { CardBody, CardStrip, type CardBodyGlow, type CardLinkDoors, type CardStripPart } from './cardParts'
 
@@ -138,24 +151,161 @@ interface CardPaneProps {
   onStripToggle?: (part: CardStripPart) => void
   /** YAZ-5904: Side 2 and after may fold, as the surface's `--card-sides-fold` says (a card page, Explore's card layer). */
   fold?: boolean
+  /** Where an unresolved `[[link]]` click or `[[` Create puts a new page (D2). Absent → vault root. */
+  createFolder?: () => string
+  /** "Open in Explore" and plain-click Explore navigation in Edit & View mode (D2). */
+  openExplore?: (path: string) => void
+  exploreClick?: () => boolean
+  /** Link hover preview host (D2). Absent → no hover preview. */
+  wikilinkHover?: WikilinkHover
+  /** Settings › Hotkeys overrides for link gestures and editor keys (D2). */
+  hotkeys?: HotkeyOverrides
+  /** Double-click on an image in Edit or View mode (S4): opens the image lightbox. */
+  onOpenImage?: (gallery: { images: GalleryImage[]; index: number }) => void
+  /** "Edit in a popup" for a board embed inside the card editor (D2). */
+  onEditBoardInPopup?: (target: string) => void
 }
 
 /** The card's body: the card or its editor, its strip (Reviews, Properties, Linked mentions and, in a tab, Embedded in: YAZ-5382), then the facts strip. */
-export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head, onChangeLine, onNotice, stripOpen, onStripToggle, fold, glow }: CardPaneProps) {
+export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head, onChangeLine, onNotice, stripOpen, onStripToggle, fold, glow, createFolder, openExplore, exploreClick, wikilinkHover, hotkeys, onOpenImage, onEditBoardInPopup }: CardPaneProps) {
   const swap = useCardSwap(editing)
+  const pageActionsHere = useContext(PageActions)
+  const vaultLinksHere = useContext(VaultLinksContext)
+  const vaultReadOnly = useContext(VaultReadOnly)
+  const iconsHere = useContext(IconsContext)
+  const refs = useRef({ doors, onNotice, pageActions: pageActionsHere, vaultLinks: vaultLinksHere, allowFileAction: vaultReadOnly.allowFileAction, icons: iconsHere, createFolder, openExplore, exploreClick, wikilinkHover, hotkeys, onOpenImage, onEditBoardInPopup })
+  refs.current = { doors, onNotice, pageActions: pageActionsHere, vaultLinks: vaultLinksHere, allowFileAction: vaultReadOnly.allowFileAction, icons: iconsHere, createFolder, openExplore, exploreClick, wikilinkHover, hotkeys, onOpenImage, onEditBoardInPopup }
+  const closeMenuRef = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    if (editing) {
+      closeMenuRef.current?.()
+      closeMenuRef.current = null
+    }
+  }, [editing])
+  useEffect(
+    () => () => {
+      closeMenuRef.current?.()
+      closeMenuRef.current = null
+    },
+    [],
+  )
+  const makeNav = useCallback(() => {
+    const r = refs.current
+    const notice = (message: string) => (r.onNotice ?? r.doors.onNotice)(message)
+    const hotkeysNow = () => refs.current.hotkeys ?? storage.getSettings()?.hotkeys
+    const linkPlace = {
+      root: vault.root,
+      pagePath: path,
+      candidates: vault.wikilinkCandidates,
+      candidatesOf: (target: string) => refs.current.vaultLinks?.candidatesOf(target) ?? null,
+    }
+    const wikilinkNav: WikilinkNav = {
+      ...(r.pageActions ?? {}),
+      root: vault.root,
+      createFolder: () => refs.current.createFolder?.() ?? '',
+      openCurrent: (to) => refs.current.doors.openTab(to, 'thisTab'),
+      openNewTab: (to) => refs.current.doors.openTab(to, 'newTab'),
+      openBackground: (to) => refs.current.doors.openTab(to, 'backgroundTab'),
+      openExplore: r.openExplore === undefined ? undefined : (to) => refs.current.openExplore?.(to),
+      exploreClick: r.exploreClick === undefined ? undefined : () => refs.current.exploreClick?.() ?? false,
+      hotkeys: hotkeysNow,
+      onNotice: notice,
+      allowFileAction: (v) => refs.current.allowFileAction(v),
+    }
+    const markdownLinkNav: MarkdownLinkNav = {
+      ...(r.pageActions ?? {}),
+      open: (href) => api.shell.openLink({ href, sourcePath: path }),
+      inApp: (href) => hrefTarget(href, linkPlace),
+      openPath: (target, where) =>
+        where === 'explore'
+          ? (refs.current.openExplore ?? ((p: string) => refs.current.doors.openLayer(p)))(target)
+          : refs.current.doors.openTab(target, where),
+      exploreClick: r.exploreClick === undefined ? undefined : () => refs.current.exploreClick?.() ?? false,
+      hotkeys: hotkeysNow,
+      elsewhere: (href, background) => {
+        const target = hrefPath(href, path)
+        return target !== null && (refs.current.vaultLinks?.askToAdd(target, background) ?? false)
+      },
+      vaultPath: (href) => vaultHref(href, linkPlace),
+      icon: (target, folder) => fileIconDecoration(refs.current.icons, target, folder),
+      vaultTag: (target) => (rootOfPath([vault.root], target) !== null ? null : (refs.current.vaultLinks?.vaultOf(target) ?? null)),
+      onNotice: notice,
+    }
+    const vaultsOfLetters = (letters: string) => refs.current.vaultLinks?.vaultsOfLetters?.(letters) ?? []
+    return { notice, linkPlace, wikilinkNav, markdownLinkNav, vaultsOfLetters }
+  }, [path, vault.root, vault.wikilinkCandidates])
+
+  // View-mode pill / Markdown link right-click menu (D2): same link menu as the editor, without Edit/Remove.
+  const onPillContextMenu = useCallback(
+    (hit: CardViewLinkHit, x: number, y: number) => {
+      const { wikilinkNav, markdownLinkNav, vaultsOfLetters } = makeNav()
+      let rows
+      if (hit.kind === 'wikilink') {
+        const follow = wikilinkFollower(vault.wikilinks, wikilinkNav, vault.viewOnlyLinks, vaultsOfLetters)
+        rows = linkMenuRows(linkMenuOf(hit.inner, vault.wikilinks, wikilinkNav, follow, vault.viewOnlyLinks, vaultsOfLetters, undefined, undefined))
+      } else {
+        const followHref = (href: string, where: LinkWhere) => {
+          const inApp = markdownLinkNav.inApp?.(href) ?? null
+          if (inApp !== null && markdownLinkNav.openPath !== undefined) markdownLinkNav.openPath(inApp, where)
+          else if (markdownLinkNav.elsewhere?.(href, where === 'backgroundTab') !== true) void markdownLinkNav.open(href)
+        }
+        rows = linkMenuRows(markdownLinkMenuOf(hit.href, markdownLinkNav, followHref))
+      }
+      if (rows.length === 0) return
+      closeMenuRef.current?.()
+      const close = openMenuAt(swap.readRef.current ?? document.body, x, y, rows)
+      closeMenuRef.current = () => {
+        close()
+        closeMenuRef.current = null
+      }
+    },
+    [makeNav, swap.readRef, vault.viewOnlyLinks, vault.wikilinks],
+  )
+
+  const onPillHover = useCallback(
+    (hit: (CardViewLinkHit & { rect: DOMRect }) | null) => {
+      const hover = refs.current.wikilinkHover
+      if (hover === undefined) return
+      if (hit === null) return hover.onLeave()
+      const to =
+        hit.kind === 'wikilink'
+          ? linkPath(hit.inner, vault.wikilinks, vault.viewOnlyLinks)
+          : hrefTarget(hit.href, { root: vault.root, pagePath: path, candidates: vault.wikilinkCandidates, candidatesOf: (t) => refs.current.vaultLinks?.candidatesOf(t) ?? null })
+      if (to === null) return hover.onLeave()
+      hover.onHover(to, hit.rect, false)
+    },
+    [path, vault.root, vault.viewOnlyLinks, vault.wikilinkCandidates, vault.wikilinks],
+  )
+
   // The band shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
   return (
     <>
       {(editing || swap.shown === 'edit') && (
         <div ref={swap.editorRef} className={`card-pane__editor${swap.shown === 'edit' ? '' : ' card-pane__incoming'}`}>
-          <CardPaneEditor key={`${card.index}`} text={card.text} title={card.title} path={path} vault={vault} onDone={onEditDone} select={select} titleField={titleField} onUp={swap.editorUp} beforeDone={swap.beforeDone} />
+          <CardPaneEditor
+            key={`${card.index}`}
+            text={card.text}
+            title={card.title}
+            path={path}
+            vault={vault}
+            onDone={onEditDone}
+            select={select}
+            titleField={titleField}
+            onUp={swap.editorUp}
+            beforeDone={swap.beforeDone}
+            makeNav={makeNav}
+            wikilinkHover={wikilinkHover}
+            hotkeys={hotkeys}
+            onOpenImage={onOpenImage}
+            onEditBoardInPopup={onEditBoardInPopup}
+          />
         </div>
       )}
       {(!editing || swap.shown === 'read') && (
         <div ref={swap.readRef} className={`card card-screen${swap.shown === 'read' ? '' : ' card-pane__incoming'}`}>
           {head}
           {band}
-          <CardBody text={card.text} path={path} vault={vault} doors={doors} fold={fold} glow={glow} />
+          <CardBody text={card.text} path={path} vault={vault} doors={doors} fold={fold} glow={glow} onPillContextMenu={onPillContextMenu} onPillHover={wikilinkHover === undefined ? undefined : onPillHover} onOpenImage={onOpenImage} />
           {swap.shown !== 'read' && <ReadCardUp onUp={swap.readUp} />}
         </div>
       )}
@@ -284,7 +434,37 @@ const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [Crep
  * title over. Made once per edit: the text and title it starts from are the card's when Edit card began, and a read
  * again under it (an outside write) does not touch them.
  */
-function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, onUp, beforeDone }: { text: string; title: string; path: string; vault: ExploreVault; onDone: (text: string, title: string) => void; select?: { from: number; to: number }; titleField: CardTitleField; onUp?: () => void; beforeDone?: () => void }) {
+function CardPaneEditor({
+  text,
+  title,
+  path,
+  vault,
+  onDone,
+  select,
+  titleField,
+  onUp,
+  beforeDone,
+  makeNav,
+  wikilinkHover,
+  hotkeys,
+  onOpenImage,
+  onEditBoardInPopup,
+}: {
+  text: string
+  title: string
+  path: string
+  vault: ExploreVault
+  onDone: (text: string, title: string) => void
+  select?: { from: number; to: number }
+  titleField: CardTitleField
+  onUp?: () => void
+  beforeDone?: () => void
+  makeNav: () => { notice: (message: string) => void; linkPlace: { root: string; pagePath: string; candidates: ExploreVault['wikilinkCandidates']; candidatesOf: (target: string) => ExploreVault['wikilinkCandidates'] | null }; wikilinkNav: WikilinkNav; markdownLinkNav: MarkdownLinkNav; vaultsOfLetters: (letters: string) => string[] }
+  wikilinkHover?: WikilinkHover
+  hotkeys?: HotkeyOverrides
+  onOpenImage?: (gallery: { images: GalleryImage[]; index: number }) => void
+  onEditBoardInPopup?: (target: string) => void
+}) {
   const beforeRef = useRef(beforeDone)
   beforeRef.current = beforeDone
   const upRef = useRef(onUp)
@@ -292,15 +472,23 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, 
   const hostRef = useRef<HTMLDivElement>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
+  const openImageRef = useRef(onOpenImage)
+  openImageRef.current = onOpenImage
+  const editBoardRef = useRef(onEditBoardInPopup)
+  editBoardRef.current = onEditBoardInPopup
   // The icons of the `[[` picker's rows and the pills (YAZ-5407): the sidebar's, as a page's editor draws them.
   const iconsHere = useContext(IconsContext)
   const icons = useRef(iconsHere)
   icons.current = iconsHere
-  const start = useRef({ text, title, path, vault, select, titleField })
+  const vaultLinksHere = useContext(VaultLinksContext)
+  const [outerView, setOuterView] = useState<EditorView | null>(null)
+  const [innerView, setInnerView] = useState<EditorView | null>(null)
+  const start = useRef({ text, title, path, vault, select, titleField, makeNav, wikilinkHover, hotkeys })
   useEffect(() => {
     const host = hostRef.current
     if (host === null) return
-    const { text, title, path, vault, select, titleField } = start.current
+    const { text, title, path, vault, select, titleField, makeNav, wikilinkHover, hotkeys } = start.current
+    const { notice, linkPlace, wikilinkNav, markdownLinkNav, vaultsOfLetters } = makeNav()
     const el = document.createElement('div')
     el.className = 'editor-instance'
     host.appendChild(el)
@@ -313,8 +501,24 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, 
       // The `[[` picker's pages and cards, as in a page (YAZ-5185): without it the picker had only "Create".
       wikilinkCandidates: vault.wikilinkCandidates,
       viewOnlyLinks: vault.viewOnlyLinks,
+      wikilinkNav,
+      markdownLinkNav,
+      wikilinkHover:
+        wikilinkHover === undefined
+          ? undefined
+          : { ...wikilinkHover, markdownPath: (href) => hrefTarget(href, linkPlace) },
+      vaultsOfLetters,
+      pathPaste: { ...linkPlace, onNotice: notice },
+      boardEmbeds: { root: vault.root, ...(editBoardRef.current === undefined ? {} : { onEditInPopup: (target) => editBoardRef.current?.(target) }) },
+      hotkeys,
+      onCopyNotice: notice,
       linkLook: { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
-      image: { root: vault.root, pagePath: path },
+      image: {
+        root: vault.root,
+        pagePath: path,
+        onOpenImage: (gallery) => openImageRef.current?.(gallery),
+        onNotice: notice,
+      },
       cards: { path, onEditDone: (t, next) => doneRef.current(t, next), beforeDone: () => beforeRef.current?.(), titleField },
       // Esc with the keyboard on the card's frame, not in its text (YAZ-5164): Done, as in its text; never a step out to
       // the sidebar from inside a card file, a card window or Explore.
@@ -327,21 +531,52 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, 
     void crepe.create().then(() => {
       if (!live) return
       const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+      setOuterView(view)
       let pos = -1
       view.state.doc.descendants((node, at) => {
         if (pos === -1 && isCardNode(node)) pos = at
         return pos === -1
       })
-      if (pos >= 0) cardBlockViewAt(view, pos)?.edit(select)
+      const cardView = pos >= 0 ? cardBlockViewAt(view, pos) : null
+      cardView?.edit(select)
+      const editor = cardView?.cardEditor ?? null
+      if (editor !== null) {
+        void editor.ready.then(() => {
+          if (!live) return
+          const v = editor.view()
+          if (v !== null && !v.isDestroyed) setInnerView(v)
+        })
+      }
       // Its card is open: a frame to draw it (the page's editor in the card), then it shows (YAZ-5164).
       requestAnimationFrame(() => live && upRef.current?.())
     })
     return () => {
       live = false
+      setOuterView(null)
+      setInnerView(null)
       void crepe.destroy()
       el.remove()
     }
   }, [])
-  return <div ref={hostRef} className="explore-card__edit" data-explore-card-edit data-tour="card-editor" />
+  // S6: redraw pills in the inner card editor when file icons or window vaults change while editing (matching Editor.tsx).
+  const windowRoots = vaultLinksHere?.roots
+  const windowNames = vaultLinksHere?.names
+  const windowLetters = vaultLinksHere?.letters
+  const drawn = useRef<unknown[] | null>(null)
+  useEffect(() => {
+    if (innerView === null || innerView.isDestroyed) return
+    const now = [innerView, windowRoots, windowNames, iconsHere, windowLetters]
+    const before = drawn.current
+    drawn.current = now
+    if (before === null || before[0] !== innerView) return
+    if (before[1] !== windowRoots || before[2] !== windowNames || before[3] !== iconsHere) redrawLinkPills(innerView)
+    if (before[3] !== iconsHere || before[2] !== windowNames || before[4] !== windowLetters) redrawWikilinks(innerView)
+  }, [innerView, windowRoots, windowNames, iconsHere, windowLetters])
+  return (
+    <>
+      <div ref={hostRef} className="explore-card__edit" data-explore-card-edit data-tour="card-editor" />
+      <PageMenu view={outerView} />
+    </>
+  )
 }
 

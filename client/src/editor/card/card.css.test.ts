@@ -357,3 +357,18 @@ it('YAZ-5387: the title band reads Card title size over the card text, and its t
   expect(rules(screens, '.card-inbox__panel > .card-band')[0]?.body).toMatch(/font-size:\s*var\(--card-title-size, calc\(var\(--card-text-size, 1\.05em\) \* 1\.125\)\)/)
   expect(rules(screens, '.card-inbox__card').filter((r) => r.selector === '.card-inbox__card').some((r) => /font-size/.test(r.body))).toBe(false)
 })
+
+it('YAZ-5999: ordered list numbers centre in their label box with no padding, and the card editor passes card font size, line height, list gap, indent and row padding into its inner list items', () => {
+  const bullets = read('../outline/bullets.css')
+  const ordered = rules(bullets, '.label.ordered').find((r) => /display:\s*flex/.test(r.body))!
+  expect(ordered.body).toMatch(/align-items:\s*center/)
+  expect(ordered.body).toMatch(/padding:\s*0/)
+  const inner = rules(cardCss, '.milkdown .card .card__editor .milkdown').find((r) => r.selector === '.milkdown .card .card__editor .milkdown')!
+  expect(inner.body).toMatch(/--crepe-base-font-size:\s*var\(--card-text-size, var\(--text-size, 16px\)\)/)
+  expect(inner.body).toMatch(/--list-label-gap:\s*var\(--card-list-gap\)/)
+  expect(inner.body).toMatch(/--list-indent:\s*var\(--card-list-indent\)/)
+  const item = rules(cardCss, '.milkdown .card .card__editor .milkdown .milkdown-list-item-block > li.list-item').find((r) => r.selector === '.milkdown .card .card__editor .milkdown .milkdown-list-item-block > li.list-item')!
+  expect(item.body).toMatch(/--list-label-height:\s*calc\(var\(--crepe-base-font-size\) \* var\(--card-line\) \+ 2 \* var\(--card-list-row\)\)/)
+  const content = rules(cardCss, '.content-dom > :is(p, h1, h2, h3, h4, h5, h6)')[0]!
+  expect(content.body).toMatch(/padding:\s*var\(--card-list-row\) 0/)
+})

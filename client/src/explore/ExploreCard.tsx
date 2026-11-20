@@ -226,6 +226,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
               )
             }
             doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }}
+            openExplore={onOpenLink}
             onOpenPage={onOpenLink}
             strip={<CardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage({ id: card.id, index: card.index })} />}
             reviews={review?.settings}

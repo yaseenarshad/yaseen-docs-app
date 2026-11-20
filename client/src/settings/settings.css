@@ -2049,7 +2049,8 @@
   gap: 4px;
   min-width: 0;
 }
-.pill-toolbar .pill-toolbar__item {
+.pill-toolbar .pill-toolbar__item,
+.link-pills-hover .pill-toolbar__item {
   min-width: 32px;
   padding: 5px 8px;
   font-size: 13px;
@@ -2154,8 +2155,24 @@
 }
 /* "Custom colour…" (YAZ-5972) at the end of a pill colour row: the words until a custom colour is picked, then its
    swatch. Its colour box opens on a line of its own under the swatches, the width of the table's. */
-.pill-toolbar .pill-toolbar__custom {
+.pill-toolbar .pill-toolbar__custom,
+.link-pills-hover .pill-toolbar__custom {
   white-space: nowrap;
+}
+/* Settings › Files & Links › Link pills › Hover (YAZ-5991 / D5): visible right under Preview so hovering the sample pills tests it immediately. */
+.link-pills-hover {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 600px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.link-pills-hover__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
 }
 .pill-toolbar__custom-box {
   flex: 0 0 100%;

@@ -544,6 +544,18 @@ function onLastLine(field: HTMLTextAreaElement): boolean {
   return !(field.scrollHeight > 0 && line > 0 && field.scrollHeight > line * 1.5)
 }
 
+/** Active inner card editor views keyed by their `.card__editor` mount root, so `PageMenu` targets them directly (S1). */
+const editorViews = new WeakMap<HTMLElement, EditorView>()
+
+/** The inner card editor's ProseMirror view holding `target`, or null when outside a live card editor. */
+export function cardEditorViewFor(target: EventTarget | null): EditorView | null {
+  if (!(target instanceof Element)) return null
+  const root = target.closest<HTMLElement>('.card__editor')
+  if (root === null) return null
+  const view = editorViews.get(root) ?? null
+  return view !== null && !view.isDestroyed ? view : null
+}
+
 /**
  * Mounts the card's editor in `root` with the card's `text` (its sides) and its `title` in the Title field above it.
  * `select`: offsets in the card's text to select in its first line; absent → the caret at the end. `selectTitle`: the
@@ -600,6 +612,7 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; title: str
     if (o.selectTitle === true && field !== null && !field.readOnly) {
       v.dispatch(v.state.tr.setSelection(selection))
       view = v
+      editorViews.set(o.root, v)
       field.focus()
       field.select()
       return
@@ -611,6 +624,7 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; title: str
     }
     v.dispatch(v.state.tr.setSelection(selection).scrollIntoView())
     view = v
+    editorViews.set(o.root, v)
     v.focus()
   })
   ready.catch((err: unknown) => console.error('[card-editor] create failed:', err))
@@ -622,6 +636,7 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; title: str
     destroy: () => {
       if (destroyed) return
       destroyed = true
+      editorViews.delete(o.root)
       o.root.removeEventListener('keydown', onKeyDown, true)
       band?.remove()
       view = null
