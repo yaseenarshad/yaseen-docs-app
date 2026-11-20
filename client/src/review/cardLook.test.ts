@@ -62,11 +62,11 @@ describe('the card look as CSS variables (cardLook.ts)', () => {
   it('every setting has its variable: hidden words, the next mark and its colour, Clean\'s look, sizes, width, tables', () => {
     const vars = cardLookVars({ ...DEFAULT_SETTINGS, shownHiddenWords: 'box', nextHiddenColour: '#aa3399', cardSpacing: 'clean', cardWidth: 520, cardTextSize: 18, cardTitleSize: 24, cardTablePosition: 'center' })
     expect(vars).toEqual({
-      '--card-line-height': '1.5',
+      '--card-line-height': '1.65',
       '--card-block-gap': '8px',
       '--card-bullet-indent': '34px',
       '--card-bullet-gap': '10px',
-      '--card-bullet-space': '0px',
+      '--card-bullet-space': '3px',
       '--card-text-size': '18px',
       '--card-title-size': '24px',
       '--card-text-width': '520px',
@@ -85,14 +85,14 @@ describe('the card look as CSS variables (cardLook.ts)', () => {
   it('YAZ-5133 and YAZ-5387: a field a main process older than it did not send, round 1\'s title steps, or a wrong value: the default, never "undefinedpx"', () => {
     const { cardBulletSpace: _gone, cardTextSize: _s, cardTitleSize: _t, ...old } = { ...DEFAULT_SETTINGS, cardSpacing: 'custom' as const, cardLineSpacing: 1.15, cardBlockGap: 4 }
     const vars = cardLookVars(old as typeof DEFAULT_SETTINGS)
-    expect(vars).toMatchObject({ '--card-line-height': '1.15', '--card-block-gap': '4px', '--card-bullet-indent': '34px', '--card-bullet-gap': '10px', '--card-bullet-space': '0px' })
+    expect(vars).toMatchObject({ '--card-line-height': '1.15', '--card-block-gap': '4px', '--card-bullet-indent': '34px', '--card-bullet-gap': '10px', '--card-bullet-space': '3px' })
     for (const v of Object.values(vars)) expect(String(v)).not.toMatch(/undefined|NaN|null/)
     const bare = { ...DEFAULT_SETTINGS, cardSpacing: 'custom' as const, cardLineSpacing: undefined, cardBlockGap: 'x', cardBulletIndent: null, cardBulletGap: Number.NaN, cardTextSize: 99, cardTitleSize: 'large' } as unknown as typeof DEFAULT_SETTINGS
-    expect(cardLookVars(bare)).toMatchObject({ '--card-line-height': '1.5', '--card-block-gap': '8px', '--card-bullet-indent': '34px', '--card-bullet-gap': '10px', '--card-bullet-space': '0px' })
+    expect(cardLookVars(bare)).toMatchObject({ '--card-line-height': '1.65', '--card-block-gap': '8px', '--card-bullet-indent': '34px', '--card-bullet-gap': '10px', '--card-bullet-space': '3px' })
     expect(cardLookVars(bare)).not.toHaveProperty('--card-text-size')
     expect(cardLookVars(bare)).not.toHaveProperty('--card-title-size')
     // Clean is Clean's values, whatever Custom holds.
-    expect(cardLookVars({ ...DEFAULT_SETTINGS, cardSpacing: 'clean', cardLineSpacing: 2, cardBulletSpace: 8 })).toMatchObject({ '--card-line-height': '1.5', '--card-bullet-space': '0px' })
+    expect(cardLookVars({ ...DEFAULT_SETTINGS, cardSpacing: 'clean', cardLineSpacing: 2, cardBulletSpace: 8 })).toMatchObject({ '--card-line-height': '1.65', '--card-bullet-space': '3px' })
   })
 
   it('settings from a main process older than these fields: On, Highlight, no Clean', () => {

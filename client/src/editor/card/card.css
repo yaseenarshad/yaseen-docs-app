@@ -453,6 +453,16 @@
 .card .card__body .card__sides .card__side li > p {
   padding: 0;
 }
+/* Horizontal rules inside a card (YAZ-6035): a quiet 1 px hairline in all spacing modes instead of raw Chromium inset. */
+.card .card__body .card__sides .card__side hr,
+.card .card__editor hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 18px 0;
+  padding: 0;
+  height: 0;
+  background: none;
+}
 /* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's softer text (#333 on white), the same step in dark.
    `--card-clean` is the vault's (YAZ-5484, `review/cardLook.ts`). */
 @container style(--card-clean: on) {
@@ -478,6 +488,12 @@
   line-height: var(--card-line);
   --card-list-dot: 0.42em;
   --card-list-marker: color-mix(in srgb, currentColor 78%, transparent);
+}
+/* YAZ-6035: softer list numbers and bullets in Clean/Custom so markers recede behind the text. */
+@container style(--card-clean: on) {
+  :root .card__side {
+    --card-list-marker: color-mix(in srgb, currentColor 48%, transparent);
+  }
 }
 .card .card__side :is(ul, ol) {
   margin: 0.4em 0;

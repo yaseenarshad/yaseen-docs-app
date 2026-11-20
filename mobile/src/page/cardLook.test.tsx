@@ -39,7 +39,7 @@ async function open(extra: Record<string, string>): Promise<Harness> {
 }
 const LOOK = { '.yaseendocs/card-look.json': JSON.stringify({ version: 1, hiddenWords: 'underline', markNext: false, titleSize: 22, tables: 'left', spacing: 'clean' }) }
 const vars = (el: HTMLElement | null) => ['--shown-hidden-words', '--mark-next-hidden', '--card-title-size', '--card-table-inline', '--card-clean', '--card-line-height'].map((name) => el?.style.getPropertyValue(name))
-const WORN = ['underline', 'off', '22px', '0', 'on', '1.5']
+const WORN = ['underline', 'off', '22px', '0', 'on', '1.65']
 
 describe('YAZ-5484: the reader and the card view wear the vault\'s card look', () => {
   it('a page with cards: the reader carries the card variables', async () => {

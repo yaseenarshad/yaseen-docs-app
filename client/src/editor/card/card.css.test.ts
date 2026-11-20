@@ -252,9 +252,18 @@ it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes 
   for (const status of ['#d64545', '#c98a1a', '#3a9d5d', '#5b6cff', '#e06c6c', '#d9a13c', '#4fb573', '#7c8aff']) expect([light, dark]).not.toContain(status)
 })
 
-it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s looks: softer card text in light and dark, and 44 px inside the Inbox card; YAZ-5144: its short line is Card width (Narrow), no second width rule', () => {
-  const text = rules(queried(cardCss, 'style(--card-clean: on)'), ':root .card__sides')[0]!
+it('YAZ-5050 round 4 & YAZ-6035: Clean adds softer card text and softer list markers (48%), and cards style <hr> as a clean 1 px hairline in all spacing modes', () => {
+  const clean = queried(cardCss, 'style(--card-clean: on)')
+  const text = rules(clean, ':root .card__sides')[0]!
   expect(text.body).toMatch(/color:\s*color-mix\(in srgb, var\(--fg\) 90%, var\(--bg\)\)/)
+  const marker = rules(clean, ':root .card__side').find((r) => r.selector === ':root .card__side')!
+  expect(marker.body).toMatch(/--card-list-marker:\s*color-mix\(in srgb, currentColor 48%, transparent\)/)
+  const hr = rules(cardCss, '.card .card__body .card__sides .card__side hr')[0]!
+  expect(hr.body).toMatch(/border:\s*0/)
+  expect(hr.body).toMatch(/border-top:\s*1px solid var\(--border\)/)
+  expect(hr.body).toMatch(/margin:\s*18px 0/)
+  expect(hr.body).not.toMatch(/!important/)
+  expect(beats(specificity('.card .card__body .card__sides .card__side hr'), [0, 1, 0])).toBe(true)
   const screens = read('../../review/cardScreens.css')
   // 44 px inside the Inbox card is the card look's own variable now (YAZ-5484, `review/cardLook.ts`); no rule sets a width.
   expect(screens).not.toMatch(/data-card-clean/)
