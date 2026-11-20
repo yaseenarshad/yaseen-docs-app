@@ -1,7 +1,7 @@
 /**
  * The Inbox's keys (YAZ-4962, D18; YAZ-5996, D7), in ONE place: the handler (`CardInbox.tsx`) and the hint row read
  * this list. The answer keys read `shared/keys/review.ts` with the user's `settings.hotkeys` overrides (two-button
- * defaults: Remembered = 1, Forgot = 2; four-button defaults: Again = 1, Hard = 2, Good = 3, Easy = 4); the rest
+ * defaults: Remembered = 1, Forgot = 0; four-button defaults: Again = 1, Hard = 2, Good = 3, Easy = 4); the rest
  * stay built in.
  */
 import type { CardRating } from '@shared/cardLine'

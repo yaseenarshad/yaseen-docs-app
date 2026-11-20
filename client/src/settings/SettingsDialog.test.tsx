@@ -2080,7 +2080,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(rowButtons(el, 'cardSpacing').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Clean', 'false'], ['Custom', 'false']])
     for (const id of CUSTOM_ROWS) expect(row(el, id)).toBeNull()
     act(() => rowButtons(el, 'cardSpacing')[2].click())
-    expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'custom', cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
+    expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'custom', cardLineSpacing: 1.65, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 3 })
   })
 
   it('YAZ-5050 round 4: Clean is one click, with no rows; Custom from Clean starts at Clean\'s values', () => {
@@ -2093,7 +2093,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(rowButtons(clean.el, 'cardSpacing').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
     for (const id of CUSTOM_ROWS) expect(row(clean.el, id)).toBeNull()
     act(() => rowButtons(clean.el, 'cardSpacing')[2].click())
-    expect(clean.onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'custom', cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
+    expect(clean.onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'custom', cardLineSpacing: 1.65, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 3 })
   })
 
   it('YAZ-5050: Custom card spacing: its rows under Card spacing, in the pages\' words; a change is an app setting; Reset goes to Custom\'s start; Same as pages goes back', () => {

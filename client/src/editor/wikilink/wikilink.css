@@ -48,7 +48,8 @@
    over the vault's box. The pill's own fill steps aside, so the mark's wash shows behind the whole pill, its ends too.
    Bold, italic and underline need no rule: the name's weight and style fall back to the line's (inherit), and the vault
    can add them, never take them away. */
-.milkdown .ProseMirror mark .wikilink:not(.wikilink--unresolved) {
+.milkdown .ProseMirror mark .wikilink:not(.wikilink--unresolved),
+.link-pills-preview mark .wikilink {
   background: transparent;
 }
 /* The icon is the format's say (`{icon}`): a name with the icon's attributes draws it; before the sibling rule below, which hides a later piece's.
