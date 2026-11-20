@@ -249,8 +249,15 @@ export const sectionIndent = $prose(() => {
           return true
         },
         mousemove: (view, event) => {
-          // No hand cursor with folding off: the line is no button then.
-          view.dom.classList.toggle(SECTION_LINE_HOVER_CLASS, isFoldingOn(view.state) && lineHit(view, event) !== null)
+          // No hand cursor with folding off or section indent off; skip `posAtDOM`/`doc.resolve` on hover (YAZ-6028).
+          const target = event.target
+          const hit =
+            pluginKey.getState(view.state)?.on === true &&
+            isFoldingOn(view.state) &&
+            target instanceof HTMLElement &&
+            target.parentElement === view.dom &&
+            sectionLineAt(event.clientX, target) !== null
+          view.dom.classList.toggle(SECTION_LINE_HOVER_CLASS, hit)
           return false
         },
         mouseleave: (view) => {

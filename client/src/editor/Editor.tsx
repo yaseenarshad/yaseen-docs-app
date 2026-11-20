@@ -12,9 +12,9 @@ import { FolderPageChips, type FolderPageTab } from '../views/folderPageChipsCon
 import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
 import { placeRows, type LinkActions } from './linkMenu'
 import { redrawLinkPills } from './markdownLink'
-import { editorViewCtx } from '@milkdown/kit/core'
+import { editorViewCtx, serializerCtx } from '@milkdown/kit/core'
 import { takePageId } from '../views/scaffold'
-import { createCrepe, editorViewOf, focusEditor, getCaretOf, giveCaretBack, keepCaretOf, type KeptCaret, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo } from './createCrepe'
+import { createCrepe, editorViewOf, focusEditor, getCaretOf, giveCaretBack, keepCaretOf, type KeptCaret, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, postProcessMarkdown, setMarkdown, zoomPageTo } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { mergeExternalMarkdown } from './external/mergeExternal'
 import { FindBar } from './find/FindBar'
@@ -950,14 +950,19 @@ function CrepeHost({
    * scroll spy; the table of contents below draws them. Stable identity, for the find channel's
    * reason.
    */
+  const tocActive = tableOfContentsOn && tableOfContents !== 'off'
   const tocChannel = useMemo(() => {
     const channel = createTocChannel()
     // The saved source (the state above, as it was read at this mount) is in the channel BEFORE
     // the editor exists, so the engine's first scan is already by it: a page saved as Bullets
     // never shows its Auto list first.
     channel.setSource(tocSource)
+    channel.setEnabled(tocActive)
     return channel
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- once per mount; a later choice goes through `changeTocSource`
+  useEffect(() => {
+    tocChannel.setEnabled(tocActive)
+  }, [tocChannel, tocActive])
   /** The reader chose in the cog: this page's state, the app state file, and the engine, which scans again at once. */
   const changeTocSource = (source: TocSource | null): void => {
     setTocSource(source)
@@ -1200,7 +1205,16 @@ function CrepeHost({
     let stopKeeping: (() => void) | null = null
     const ready = crepe.create().then(() => {
       if (cancelled) return
-      controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
+      // Capture immutable initial doc lazily (YAZ-6028) so opening a large page skips startup Markdown serialization.
+      // Guard `'editor' in crepe` so tests that mock `createCrepe` fall back to eager `getContent()`.
+      const getBaseline =
+        'editor' in crepe && crepe.editor !== undefined
+          ? (() => {
+              const initDoc = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc)
+              return () => crepe.editor.action((ctx) => postProcessMarkdown(ctx.get(serializerCtx)(initDoc)))
+            })()
+          : undefined
+      controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body, getBaseline)
       setReadyCrepe(crepe)
       // An in-app rename carried another window's (or this window's) DIRTY buffer into this
       // path (Links E1, GRO-2194): apply it OVER the fresh disk baseline as an unsaved

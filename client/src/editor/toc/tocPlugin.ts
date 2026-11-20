@@ -458,25 +458,34 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
             },
           }
 
-          const unbind = channel.bind(controller)
-          channel.setZoomed(getZoomedItemPos(view.state) !== null)
-          scan()
-          // A title that changes in the index renames the rows that link to it: one scan, as after an edit.
-          const unsubscribeLinks = links?.subscribe(() => {
+          const scheduleScan = (): void => {
+            if (!channel.isEnabled()) {
+              if (timer !== null) clearTimeout(timer)
+              timer = null
+              channel.markDirty()
+              return
+            }
             if (timer !== null) clearTimeout(timer)
             timer = setTimeout(scan, SCAN_DELAY_MS)
-          })
+          }
+
+          const unbind = channel.bind(controller)
+          channel.setZoomed(getZoomedItemPos(view.state) !== null)
+          if (channel.isEnabled()) scan()
+          else channel.markDirty()
+          // A title that changes in the index renames the rows that link to it: one scan, as after an edit.
+          const unsubscribeLinks = links?.subscribe(scheduleScan)
           return {
             update: (_view, previous) => {
               channel.setZoomed(getZoomedItemPos(view.state) !== null)
               // A zoom in or out scans at once, as a change of source does: a click, not typing (YAZ-4094 4D).
               if (getZoomedItemPos(previous) !== getZoomedItemPos(view.state)) {
-                scan()
+                if (channel.isEnabled()) scan()
+                else channel.markDirty()
                 return
               }
               if (view.state.doc === previous.doc) return
-              if (timer !== null) clearTimeout(timer)
-              timer = setTimeout(scan, SCAN_DELAY_MS)
+              scheduleScan()
             },
             destroy: () => {
               stopGlide?.()

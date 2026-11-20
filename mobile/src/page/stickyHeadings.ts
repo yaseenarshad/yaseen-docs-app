@@ -229,6 +229,8 @@ export function stickHeadings(scroller: HTMLElement, body: HTMLElement, layer: H
   }
   let relayoutFrame = 0
   const soon = () => {
+    // Pause per-slice measurement/relayout while PageView appends progressive slices; one relayout runs when slicing ends (YAZ-6028).
+    if (body.dataset.slicing === 'true') return
     if (relayoutFrame === 0)
       relayoutFrame = requestAnimationFrame(() => {
         relayoutFrame = 0
@@ -290,8 +292,8 @@ export function stickHeadings(scroller: HTMLElement, body: HTMLElement, layer: H
   resized?.observe(scroller)
   resized?.observe(body)
   const mutated = typeof MutationObserver === 'undefined' ? null : new MutationObserver(soon)
-  // One `observe` (a second on the same node replaces the first's options): a block drawn, a fold, an arrow turned.
-  mutated?.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: [HIDDEN_ATTR, 'aria-expanded'] })
+  // One `observe` (a second on the same node replaces the first's options): a block drawn, a fold, an arrow turned, or slicing completed.
+  mutated?.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: [HIDDEN_ATTR, 'aria-expanded', 'data-slicing'] })
   return () => {
     gone = true
     if (frame !== 0) cancelAnimationFrame(frame)

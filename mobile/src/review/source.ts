@@ -84,6 +84,25 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
     if (held?.join() !== letters?.join()) letters = held
   }
 
+/** True when every field read by `makeResolver` and `links.update` is identical (card review history changes do not alter link resolution, YAZ-6028). */
+function sameLinkRecord(a: IndexRecord, b: IndexRecord): boolean {
+  if (a === b) return true
+  if (a.path !== b.path || a.name !== b.name || a.folder !== b.folder || a.basename !== b.basename || a.title !== b.title || a.id !== b.id) return false
+  const aa = a.properties.aliases
+  const ba = b.properties.aliases
+  if (aa !== ba) {
+    if (!Array.isArray(aa) || !Array.isArray(ba) || aa.length !== ba.length || aa.some((v, i) => v !== ba[i])) return false
+  }
+  const ac = a.cards
+  const bc = b.cards
+  if (ac !== bc) {
+    if ((ac?.length ?? 0) !== (bc?.length ?? 0)) return false
+    if (ac !== undefined && bc !== undefined && ac.some((c, i) => c.id !== bc[i]!.id)) return false
+  }
+  return true
+}
+
+  let lettersBuilt: readonly string[] | undefined
   async function read(): Promise<void> {
     if (readSettings) {
       readSettings = false
@@ -99,6 +118,15 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
     const prev = new Map((shown === null ? [] : Object.values(shown.records)).map((r) => [r.path, r]))
     const all = Object.values(view.records)
     const same = shown !== null && all.length === prev.size && all.every((r) => prev.get(r.path) === r)
+    const sameLinks =
+      ready &&
+      shown !== null &&
+      lettersBuilt === letters &&
+      all.length === prev.size &&
+      all.every((r) => {
+        const old = prev.get(r.path)
+        return old !== undefined && sameLinkRecord(old, r)
+      })
     shown = view
     if (!same || !ready) {
       const pages: IndexRecord[] = []
@@ -106,12 +134,15 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
       for (const r of all) (r.name === FOLDER_SETTINGS_FILE ? settingsFiles : pages).push(r)
       records = pages.sort(byPath)
       folders = settingsFiles.sort(byPath)
-      const resolve = makeResolver(
-        records.map((record) => ({ record })),
-        undefined,
-        { folders, letters },
-      )
-      links.update((target) => resolve(target)?.record.path ?? null, records, folders, letters !== undefined, letters ?? [])
+      if (!sameLinks) {
+        lettersBuilt = letters
+        const resolve = makeResolver(
+          records.map((record) => ({ record })),
+          undefined,
+          { folders, letters },
+        )
+        links.update((target) => resolve(target)?.record.path ?? null, records, folders, letters !== undefined, letters ?? [])
+      }
     }
     ready = true
     wake()

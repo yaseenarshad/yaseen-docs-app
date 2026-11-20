@@ -18,6 +18,7 @@ import { openByKey } from '../../lib/openGesture'
 import { type PageWindowLink, currentItemClass, shownRows, usePageWindowItems } from './PageWindow'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ItemName, useItemLock } from './ReadOnlyMark'
+import { useProgressiveCount } from './useProgressiveCount'
 import type { ViewHover } from './viewHover'
 
 export interface ListViewProps {
@@ -226,11 +227,18 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
     )
   }
 
+  const { shown: flatCount, sentinelRef } = useProgressiveCount(groups === null ? rows.length : 0)
+
   return (
     <div ref={rootRef} className="view-list" style={{ '--view-group-indent': `${groupIndentOf(view)}px` } as CSSProperties}>
-      {groups === null
-        ? items(rows)
-        : groups.map((g) => section(g, TOP_SPOT))}
+      {groups === null ? (
+        <>
+          {items(flatCount < rows.length ? rows.slice(0, flatCount) : rows)}
+          {flatCount < rows.length && <div ref={sentinelRef} className="view-list__sentinel" aria-hidden="true" />}
+        </>
+      ) : (
+        groups.map((g) => section(g, TOP_SPOT))
+      )}
       {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onOpenWindow={onOpenWindow} onNotice={onNotice} onClose={() => setMenu(null)} {...cardMenuItems(pageDoors, menu.path, () => setMenu(null), pageDoors?.newBelow === undefined ? undefined : { label: 'New row below', run: () => pageDoors.newBelow!(menu.path) })} />}
     </div>
   )
