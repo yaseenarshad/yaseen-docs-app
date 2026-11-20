@@ -49,7 +49,7 @@ it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every
     ['cardCourse'],
     ['cardTips'],
     ['newPerDay', 'upNextPerDay', 'newOrder'],
-    ['buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt'],
+    ['buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'loopArrows'],
     ['retention', 'maxDays', 'fuzz', 'weights'],
     ['cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
     ['howCardsComeBack'],

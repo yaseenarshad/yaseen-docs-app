@@ -209,7 +209,8 @@ describe('a card answered on the other device (YAZ-5622)', () => {
     expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 4])
     await elsewhere('D.md', 'WIKI-8', 'good')
     expect(ids()).toMatchObject({ all: 3, due: 2, new: 1 })
-    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 3])
+    // YAZ-6018: WIKI-8 answered on the other device counts as 1 done / 4 total.
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([1, 4])
     expect(review.dueCount).toBe(3)
     act(() => review.move(1))
     await shown('WIKI-5')
@@ -241,12 +242,13 @@ describe('a card answered on the other device (YAZ-5622)', () => {
     act(() => review.move(1))
     await shown('WIKI-8')
     await elsewhere('D.md', 'WIKI-7', 'good')
-    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 3])
-    // ← loops around (YAZ-5715): to the last card left, never to WIKI-7.
+    // YAZ-6018: WIKI-7 done elsewhere counts as 1 done / 4 total.
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([1, 4])
+    // YAZ-6019 (default Stop at the ends): WIKI-8 is now the first card, so ← is disabled and never finds WIKI-7.
+    expect(review.session?.canBack).toBe(false)
     act(() => review.move(-1))
-    await vi.waitFor(() => expect(review.session?.card?.id).not.toBe('WIKI-8'))
-    expect(review.session?.card?.id).not.toBe('WIKI-7')
-    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 3])
+    expect(review.session?.card?.id).toBe('WIKI-8')
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([1, 4])
   })
 
   it('a Forgot on the other device: the card is still due today, so it stays', async () => {

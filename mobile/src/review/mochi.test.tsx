@@ -112,20 +112,23 @@ describe('tap anywhere (YAZ-5415, round 4)', () => {
 describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Undo in the hint line', () => {
   const THREE = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...['A', 'B', 'C'].map((x, i) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `AR-${i + 1}, ${inOrder(OLD, i)}`))) }
 
-  it('← and → move between cards and loop around (YAZ-5715, as Mochi); neither gives nor takes back an answer; a skipped card stays due and comes back at the end', async () => {
+  it('← and → stop at the ends by default (YAZ-6019) and loop around when loopArrows is on (YAZ-5715); neither gives nor takes back an answer; a skipped card stays due and comes back at the end', async () => {
     h = await reviewSetup(THREE)
-    // ← at the first card: the last; → at the last: the first. The arrows never look disabled at the ends.
-    expect(h.button('Previous card')?.disabled).toBe(false)
-    await h.click('Previous card')
-    expect(h.head()).toBe('AR-3')
+    // Default (YAZ-6019): ← is disabled on the first card; → moves to the end where → disables.
+    expect(h.button('Previous card')?.disabled).toBe(true)
     expect(h.button('Next card')?.disabled).toBe(false)
-    await h.click('Next card')
     expect(h.head()).toBe('AR-1')
     expect(h.text()).toContain('0 / 3')
     await h.click('Next card')
     expect(h.head()).toBe('AR-2')
+    expect(h.button('Previous card')?.disabled).toBe(false)
+    expect(h.button('Next card')?.disabled).toBe(false)
     // YAZ-5675 (Mochi): "done / total"; → answers nothing.
     expect(h.text()).toContain('0 / 3')
+    await h.click('Next card')
+    expect(h.head()).toBe('AR-3')
+    expect(h.button('Next card')?.disabled).toBe(true)
+    await h.click('Previous card')
     await h.click('Previous card')
     expect(h.head()).toBe('AR-1')
     expect(ids(h)).toEqual([])
@@ -142,6 +145,15 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
     await h.click('Previous card')
     expect(h.head()).toBe('AR-1')
     expect(ids(h)).toEqual(['AR-2', 'AR-3'])
+    // Opt-in Loop around (review.json loopArrows: true): wraps at both ends.
+    h.unmount()
+    h = await reviewSetup({ ...THREE, '.yaseendocs/review.json': JSON.stringify({ loopArrows: true }) })
+    expect(h.button('Previous card')?.disabled).toBe(false)
+    await h.click('Previous card')
+    expect(h.head()).toBe('AR-3')
+    expect(h.button('Next card')?.disabled).toBe(false)
+    await h.click('Next card')
+    expect(h.head()).toBe('AR-1')
   })
 
   it('an answer before all parts show; the answer\'s line with its Undo in the hint line until the next card\'s first tap (it stays in ⋯)', async () => {

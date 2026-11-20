@@ -5940,10 +5940,10 @@ describe('App: the card flow (YAZ-4962)', () => {
     const remembered = el.querySelectorAll<HTMLButtonElement>('.card-inbox__answer')[1]
     // A new card's first Remembered keeps it in its same-day steps (YAZ-5020): the hover says "later today".
     expect(remembered.getAttribute('aria-description')).toBe('Remembered · later today')
-    // Remembered (2): the review lands on the card line, written as the line holds reviews (the answer's seconds may
+    // Remembered (1, YAZ-5996): the review lands on the card line, written as the line holds reviews (the answer's seconds may
     // end it, YAZ-5033).
     const review = /, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)?/g
-    await press(el, '2')
+    await press(el, '1')
     await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m))
     expect(files[PAGE].content.replace(review, '')).toBe(page('<!-- card: WIKI-9 -->'))
     const once = files[PAGE].content
@@ -5953,7 +5953,7 @@ describe('App: the card flow (YAZ-4962)', () => {
     for (let i = 0; i < 3; i++) await press(el, ' ')
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
     expect(el.querySelectorAll<HTMLButtonElement>('.card-inbox__answer')[1].getAttribute('aria-description')).toMatch(/^Remembered · (\d+ days?|today)$/)
-    await press(el, '2')
+    await press(el, '1')
     await vi.waitFor(() => expect(files[PAGE].content.match(review)).toHaveLength(2))
     expect(files[PAGE].content.replace(review, '')).toBe(page('<!-- card: WIKI-9 -->'))
     // Nothing left in the session: the done screen.
@@ -6216,7 +6216,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     const press = (key: string, init: KeyboardEventInit = {}) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })))
     for (let i = 0; i < 3; i++) await press(' ')
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
-    await press('2')
+    await press('1')
     // The review part may end with the answer's seconds (YAZ-5033: ` <n>s`, written when known).
     const reviewed = /^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m
     await vi.waitFor(() => expect(files[PAGE].content).toMatch(reviewed), { timeout: SLOW_RUNNER_MS })
@@ -6305,7 +6305,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     const press = (key: string) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
     await press(' ')
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
-    await press('2')
+    await press('1')
     // The review part may end with the answer's seconds (YAZ-5033: ` <n>s`, written when known).
     await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m), { timeout: SLOW_RUNNER_MS })
     await vi.waitFor(() => expect(getMarkdownForSave(captured.crepes.at(-1)!)).toMatch(/<!-- card: WIKI-9, \S+ good(?: \d+s)? -->/))

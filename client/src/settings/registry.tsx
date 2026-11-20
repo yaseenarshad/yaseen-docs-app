@@ -2570,6 +2570,27 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               />
             ),
           },
+          {
+            // YAZ-6019: whether ← and → stop at the first and last card (default) or wrap around (YAZ-5715).
+            // Saved in review.json so Mac and phone stay in sync.
+            id: 'loopArrows',
+            label: 'Arrow keys at the ends',
+            hint: 'What ← and → do at the first and last card in the Inbox. Stop at the ends keeps the real start and end of today\'s cards.',
+            keywords: [...REVIEW_KEYWORDS, 'arrow', 'arrows', 'left', 'right', 'loop', 'wrap', 'wheel', 'first', 'end', 'ends'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Stop at the ends', value: false },
+                    { label: 'Loop around', value: true },
+                  ]}
+                  value={review.settings.loopArrows}
+                  onChange={(loopArrows) => review.save({ ...review.settings, loopArrows })}
+                  ariaLabel="Arrow keys at the ends"
+                />
+              ),
+          },
         ],
       },
       {

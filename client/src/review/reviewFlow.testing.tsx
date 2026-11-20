@@ -333,16 +333,10 @@ export class FlowModel {
   goOn(): void {
     this.stop = null
   }
-  /** The Review closed and opened again (rule 12, E5): today's work carries on All cards; a session starts afresh. */
+  /** The Review closed and opened again (YAZ-6018): today's progress persists across reopen on every filter until midnight. */
   reopen(): void {
     for (const c of this.cards.values()) {
-      if (c.st === 'done') {
-        // Out of the run: done for today, so it counts no more (YAZ-5707: the run carries its own cards' work).
-        c.all.clear()
-        c.sess.clear()
-        continue
-      }
-      c.sess.clear()
+      if (c.st === 'done') continue
       c.answered = false
       c.fromNew = false
       // A miss waiting stays a miss waiting (rules 7, 18: it is let go by its ✓ in the re-check).
@@ -355,7 +349,7 @@ export class FlowModel {
     this.filter = 'all'
     this.firsts = []
   }
-  /** The other device answered card `id` (rule 34, YAZ-5622): done for today there leaves; a ✕ keeps it due; a new card begun is due. */
+  /** The other device answered card `id` (rule 34, YAZ-5622; YAZ-6018: day progress and live misses stay in sync). */
   elsewhere(id: string, rating: CardRating): void {
     this.undoStack = []
     const c = this.cards.get(id)
@@ -363,10 +357,20 @@ export class FlowModel {
     c.today.push(rating)
     if (c.list === 'new') {
       if (rating !== 'again') {
+        c.all.add('learn')
+        c.sess.add('new')
         c.list = 'due'
         c.fromNew = true
       }
-    } else if (rating !== 'again' && c.st !== 'missed') c.st = 'done'
+    } else {
+      c.all.add('review')
+      c.sess.add('due')
+      if (rating === 'again') {
+        c.st = 'missed'
+        c.again = true
+        c.repeat = true
+      } else if (c.st !== 'missed') c.st = 'done'
+    }
   }
   /** Past local midnight (rule 35): a new day for the Today line; a card answered yesterday is known now. */
   newDay(): void {
@@ -429,8 +433,11 @@ export class FlowTester {
     // The card on show: one the rules still have today, of the open filter, with its chip and "Again".
     if (v.card !== null) {
       if (model.stop !== null) this.fail('a stop of Due today shows in place of the card', { stop: model.stop, card: v.card })
-      // YAZ-5715: the arrows loop around, so they never look disabled at the ends: both work, or (one card left) neither.
-      if (v.arrows === null || v.arrows.back !== v.arrows.next) this.fail('← and → both work or neither does (they loop around, YAZ-5715)', v.arrows)
+      // YAZ-6019: by default ← and → stop at the ends, so when 1 card is left neither works, and when 2+ cards are left at least one works.
+      if (v.arrows === null) this.fail('arrows state present while a card shows', v.arrows)
+      const leftInFilter = m.left(f)
+      if (leftInFilter <= 1 && (v.arrows.back || v.arrows.next)) this.fail('one card left: neither arrow works', v.arrows)
+      if (leftInFilter > 1 && !v.arrows.back && !v.arrows.next) this.fail('multiple cards left: at least one arrow works', v.arrows)
       const c = m.card(v.card.id)
       if (c.st === 'done') this.fail('no card twice: a card done for today never shows again', { id: c.id })
       if (f !== 'all' && c.list !== f) this.fail('the card on show is of the open filter', { id: c.id, list: c.list, filter: f })
@@ -491,19 +498,20 @@ export class FlowTester {
   move(delta: -1 | 1): Promise<FlowView> {
     return this.act(delta < 0 ? '←' : '→', () => this.d.move(delta), () => undefined)
   }
-  /** → (or ←) until the first card shows again (at most `most` taps): the cards on the way, the first one first. */
-  async loop(delta: -1 | 1, most = 50): Promise<string[]> {
+  /** → (or ←) to the end of the open filter (YAZ-6019, Stop at the ends): the cards in order, starting from the current card. */
+  async walk(delta: -1 | 1, most = 50): Promise<string[]> {
     const first = this.last?.card?.id
     if (first === undefined) this.fail('an arrow with no card on show', this.last)
     const ids = [first!]
     for (let n = 0; n < most; n++) {
+      const can = delta < 0 ? this.last?.arrows?.back : this.last?.arrows?.next
+      if (!can) return ids
       const id = (await this.move(delta)).card?.id
       if (id === undefined) this.fail('an arrow never leaves the card for a screen', this.last)
-      if (id === first) return ids
-      if (ids.includes(id!)) this.fail('the arrows go through every card once before the first comes back', { ids, id })
+      if (ids.includes(id!)) this.fail('the arrows visit each card once before stopping at the end', { ids, id })
       ids.push(id!)
     }
-    return this.fail('the arrows never come back to the first card (YAZ-5715: they loop around)', { ids })
+    return this.fail('the arrows never reached the end', { ids })
   }
   filter(f: CardFilter): Promise<FlowView> {
     return this.act(`filter ${f}`, () => this.d.filter(f), () => this.m.setFilter(f))
@@ -788,10 +796,10 @@ export const FLOW_SCENARIOS: FlowScenario[] = [
       await t.answer('again', 'D1')
       await t.answer('good', 'D2')
       await t.reopen()
-      // The run carries its own cards' work (YAZ-5707): D1's miss (1); D2 is done for today and out of the run.
-      want(t, 'opened again: the miss still waits, ✕ 1', t.top(), '✕ 1 · 1 / 5')
+      // YAZ-6018: the count persists for the whole day across reopen — D1's miss (1) AND D2's done review (1) both stay!
+      want(t, 'opened again: whole day persists (D1 miss + D2 done), ✕ 1', t.top(), '✕ 1 · 2 / 6')
       await t.answerAll(() => 'good')
-      want(t, 'the run ends full; D1 counted once', [t.top(), t.screens.at(-1)], ['6 / 6', 'Inbox complete.'])
+      want(t, 'the run ends full; D1 counted once, D2 stays counted', [t.top(), t.screens.at(-1)], ['7 / 7', 'Inbox complete.'])
     },
   },
   {
@@ -841,35 +849,37 @@ export const FLOW_SCENARIOS: FlowScenario[] = [
     },
   },
   {
-    name: 'The arrows loop around, as Mochi (YAZ-5715): All cards, Due today, Review missed cards and New cards; one card left, they do nothing; Undo takes back the answer, not a move',
+    name: 'The arrows stop at the ends by default (YAZ-6019): All cards, Due today, Review missed cards and New cards; one card left, they do nothing; Undo takes back the answer, not a move',
     vault: (now) => flowVault([['due', 3], ['new', 2]], now),
     async run(t) {
       await t.start()
-      // All cards: → through all five cards comes back to the first; ← the other way round. Nothing is answered.
+      // All cards: starts at first card (← disabled), → walks to the last (→ disabled), ← walks back to the first.
       const top = t.top()
-      const ahead = await t.loop(1)
-      want(t, '→ goes through every card, then back to the first', ahead.length, 5)
-      want(t, '← goes the other way round', await t.loop(-1), [ahead[0], ...ahead.slice(1).reverse()])
-      want(t, '← at the first card shows the last', (await t.move(-1)).card?.id, ahead[4])
-      await t.move(1)
+      want(t, 'at first card: ← disabled, → enabled', t.last!.arrows, { back: false, next: true })
+      const ahead = await t.walk(1)
+      want(t, '→ walks through all five cards to the end', ahead.length, 5)
+      want(t, 'at last card: ← enabled, → disabled', t.last!.arrows, { back: true, next: false })
+      want(t, '← walks back to the first card', await t.walk(-1), [...ahead].reverse())
+      want(t, 'back at first card: ← disabled again', t.last!.arrows, { back: false, next: true })
       want(t, 'the arrows answer nothing: done / total, the bar and the ✕ stay', t.top(), top)
-      // An answer, then → past the end and ← back: Undo takes back the answer (its card shows again), not a move.
+      // An answer, then → and ←: Undo takes back the answer (its card shows again), not a move.
       await t.answer('good', ahead[0])
       const after = t.last!.card!.id
-      await t.move(-1)
       await t.move(1)
+      await t.move(-1)
       want(t, 'back on the card after the answer', t.last!.card?.id, after)
       await t.undo()
       want(t, 'Undo takes back the last answer', [t.last!.card?.id, t.top()], [ahead[0], top])
-      // Due today: three cards, in order; → past the last is the first.
+      // Due today: three cards, in order; stops at both ends.
       await t.filter('due')
-      want(t, 'Due today loops', await t.loop(1), ['D1', 'D2', 'D3'])
-      want(t, '← at the first Due today card shows the last', (await t.move(-1)).card?.id, 'D3')
-      await t.move(1)
+      want(t, 'Due today walks D1 → D2 → D3', await t.walk(1), ['D1', 'D2', 'D3'])
+      want(t, 'Due today stops at D3', t.last!.arrows, { back: true, next: false })
+      await t.walk(-1)
       await t.answerAll(missOnce(['D1', 'D2']))
       await t.press('Review missed cards')
-      // The missed pass: the two misses, looping; with one left, the arrows do nothing.
-      want(t, 'Review missed cards loops', (await t.loop(1)).length, 2)
+      // The missed pass: two misses, stopping at ends; with one left, neither arrow works.
+      want(t, 'Review missed cards walks both misses', (await t.walk(1)).length, 2)
+      await t.walk(-1)
       await t.answer('good')
       want(t, 'one card left: neither arrow works', t.last!.arrows, { back: false, next: false })
       const one = t.last!.card?.id
@@ -878,8 +888,8 @@ export const FLOW_SCENARIOS: FlowScenario[] = [
       want(t, 'one card left: the arrows do nothing', t.last!.card?.id, one)
       await t.answerAll(() => 'good')
       await t.press('Learn new cards')
-      want(t, 'New cards loops', await t.loop(1), ['N1', 'N2'])
-      want(t, '← at the first new card shows the last', (await t.move(-1)).card?.id, 'N2')
+      want(t, 'New cards walks N1 → N2 and stops', await t.walk(1), ['N1', 'N2'])
+      want(t, 'New cards stops at N2', t.last!.arrows, { back: true, next: false })
       await t.answerAll(() => 'good')
     },
   },
