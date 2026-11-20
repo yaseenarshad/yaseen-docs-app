@@ -306,7 +306,7 @@
    untouched. Zero layout shift: unpadded pills (`--pill-hover-overhang: 1`) and external links use paired padding and
    negative margin on outer edges only. Placed before the icon `@container` blocks below (`linkPillLook.test.ts`). */
 @media (hover: hover) {
-  @container not style(--pill-hover-off: 1) and not style(--pill-hover-mode: underline) and not style(--pill-hover-mode: text) {
+  @container not (style(--pill-hover-off: 1) or style(--pill-hover-mode: underline) or style(--pill-hover-mode: text)) {
     .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover,
     .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
     .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover + .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
