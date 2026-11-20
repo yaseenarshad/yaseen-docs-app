@@ -2021,8 +2021,8 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     mount(TWO_SIDES)
     session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '38 new cards and 3 Up next cards wait for another day.', 'Add[10]new cardsfrom All foldersAdd[2]Up next'])
-    expect(pills().map(textOf)).toEqual(['Add[10]new cardsfrom All folders', 'Add[2]Up next'])
+    expect(doneText()).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[10]/ 38 new cardsfrom All foldersAdd[2]/ 3 Up next'])
+    expect(pills().map(textOf)).toEqual(['Add[10]/ 38 new cardsfrom All folders', 'Add[2]/ 3 Up next'])
     // YAZ-5699 (Yaseen: "that should be a two click as well"): a click on "Add" or the words never adds; it asks in place.
     const ask = () => el.querySelector<HTMLElement>('.card-inbox__done .ask-in-place')
     const answer = (word: 'Cancel' | 'Add') => act(() => [...ask()!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === word)!.click())
@@ -2052,10 +2052,10 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     // Only one kind waits: its line and its button.
     session = { ...session, more: { new: 0, next: 3 }, adds: { new: 0, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '3 Up next cards wait for another day.', 'Add[2]Up next'])
+    expect(doneText()).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[2]/ 3 Up next'])
     session = { ...session, more: { new: 1, next: 0 }, adds: { new: 1, next: 0 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '1 new card waits for another day.', 'Add[1]new cardfrom All folders'])
+    expect(doneText()).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[1]/ 1 new cardfrom All folders'])
     // Nothing waits (also: no limit), and nothing is due (YAZ-5623): as now.
     review = { ...review, dueCount: 0 }
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
@@ -2079,14 +2079,14 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     // Cards wait to be added: the adds, as on the phone (no "Review K more" beside them).
     session = { ...session, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '5 new cards wait for another day.', 'Add[5]new cardsfrom All folders'])
+    expect(doneText()).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[5]/ 5 new cardsfrom All folders'])
   })
 
   it('a filter done (YAZ-5678, Mochi`s words): "Finished learning cards." · Review cards 12, then its add; Up next`s "12 more in All cards"; Due today has no add', () => {
     mount(TWO_SIDES)
     session = { ...session, filter: 'new', card: null, counts: { all: 12, next: 0, due: 12, new: 0 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 12', 'Add[10]new cardsfrom All folders'])
+    expect(doneText()).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 12', 'Add[10]/ 38 new cardsfrom All folders'])
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!.click())
     expect(review.setFilter).toHaveBeenLastCalledWith('due')
     // YAZ-5699: "Review cards 12" moves to the next list and changes nothing: one click. The add asks first.
@@ -2096,7 +2096,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
     session = { ...session, filter: 'next' }
     render()
-    expect(doneText()).toEqual(['No Up next cards left.', 'Add[2]Up next', '12 more in All cards'])
+    expect(doneText()).toEqual(['No Up next cards left.', 'Add[2]/ 3 Up next', '12 more in All cards'])
     session = { ...session, filter: 'due' }
     render()
     expect(doneText()).toEqual(['Finished reviewing.', '12 more in All cards'])
@@ -2106,7 +2106,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     mount(TWO_SIDES)
     session = { ...session, label: 'Bio', scope: 'folder', card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
     render()
-    expect(doneText()).toEqual(['This folder is done.', '5 new cards wait for another day.', 'Add[5]new cardsfrom All folders', 'You have cards due in other pages.', 'Review cards 12'])
+    expect(doneText()).toEqual(['This folder is done.', 'Add[5]/ 5 new cardsfrom All folders', 'You have cards due in other pages.', 'Review cards 12'])
   })
 })
 
@@ -2553,7 +2553,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     mount(null)
     session = { ...session, ...WAITING, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, newFrom: SPANISH }
     render()
-    expect(doneText().slice(0, 3)).toEqual(['Inbox complete.', '14 new Spanish cards and 3 Up next cards wait for another day.', 'Add[10]new cardsfrom SpanishAdd[2]Up next'])
+    expect(doneText().slice(0, 3)).toEqual(['Inbox complete.', "You're all caught up for today. Enjoy your day!", 'Add[10]/ 14 new cardsfrom SpanishAdd[2]/ 3 Up next'])
     const from = el.querySelector<HTMLButtonElement>('.card-inbox__done-from')!
     act(() => from.click())
     expect(pickerRows().map((r) => r.textContent)).toEqual(['All folders38', 'Spanish24', 'Verbs4', 'Geography12'])
@@ -2566,7 +2566,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     mount(null)
     session = { ...session, ...WAITING, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 14, next: 0 }, adds: { new: 10, next: 0 }, newFrom: SPANISH, newFallback: true }
     render()
-    expect(doneText().slice(0, 4)).toEqual(['Inbox complete.', 'No new cards left in Spanish, so these come from All folders.', '14 new cards wait for another day.', 'Add[10]new cardsfrom All folders'])
+    expect(doneText().slice(0, 4)).toEqual(['Inbox complete.', 'No new cards left in Spanish, so these come from All folders.', "You're all caught up for today. Enjoy your day!", 'Add[10]/ 14 new cardsfrom All folders'])
     expect(el.querySelector('.card-inbox__pick-chip')?.textContent).toBe('New cards: Spanish×')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-from')!.click())
     expect(picker()!.textContent).toContain('Spanish stays picked. Its new cards come first again once you make some.')

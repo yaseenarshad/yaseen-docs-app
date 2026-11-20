@@ -172,15 +172,15 @@ describe('the Review screen: Open page and Back, double taps, Undo, lost answers
         await h.click('Remembered')
         continue
       }
-      const add = h.button(/^Add \d+ new card/)
+      const add = h.button(/^Add \d+ \/ \d+ new card/)
       if (add === null) break
       seen.push(`[${add.textContent}]`)
       await h.click(add.textContent!)
       await h.click('Add') // YAZ-5699: the ask's second tap
     }
     // Each new card shows (two taps: it has two sides), then one Add; a card once answered never comes back.
-    expect(seen).toEqual(['NN-1', 'NN-1', '[Add 1 new card]', 'NN-2', 'NN-2', '[Add 1 new card]', 'NN-3', 'NN-3'])
-    expect(h.button(/^Add \d+ new card/)).toBeNull()
+    expect(seen).toEqual(['NN-1', 'NN-1', '[Add 1 / 2 new card]', 'NN-2', 'NN-2', '[Add 1 / 1 new card]', 'NN-3', 'NN-3'])
+    expect(h.button(/^Add \d+ \/ \d+ new card/)).toBeNull()
     expect(h.text()).toContain('Inbox complete')
   })
 

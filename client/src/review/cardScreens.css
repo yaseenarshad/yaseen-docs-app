@@ -1206,6 +1206,11 @@ body.card-inbox--sizing {
   font: inherit;
   cursor: pointer;
 }
+/* YAZ-6041: subtle remaining count inside the done screen's Add pill ("Add [10] / 457 new cards"). */
+.card-inbox__done-add-total {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
 .card-inbox__done-add .card-inbox__add-number {
   border-color: var(--border);
 }

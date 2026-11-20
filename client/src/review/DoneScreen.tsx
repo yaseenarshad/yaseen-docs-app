@@ -27,7 +27,7 @@ import type { AddKind } from '@shared/cardSchedule'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { DoneCheer } from './DoneCheer'
 import { DueTodayEnd, GoButton, PlusIcon, RefreshIcon, type DoneLook } from './DueTodayEnd'
-import { reviewMoreCount, waitingLine } from './cardWords'
+import { reviewMoreCount } from './cardWords'
 import { pickLabel } from './inboxMenu'
 import { todayDone } from './reviewTime'
 
@@ -77,19 +77,20 @@ export function DoneScreen({ review, session, shown, look, addKinds, adds, from,
   )
   const nothing = line('Nothing else is due today. Enjoy your day!')
   const picked = pickLabel(session.newFrom)
-  const waits = addKinds.length > 0 && (
-    <>
-      {/* YAZ-5322, the fallback: said out loud, so a card's folder is never a surprise. */}
-      {session.newFallback && addKinds.includes('new') && <p className={`${look.line} card-done__fallback`}>No new cards left in {picked}, so these come from All folders.</p>}
-      {line(waitingLine(session.more, addKinds, session.newFallback ? '' : picked))}
-    </>
-  )
   const { counts, end } = session
   const vault = session.scope === 'vault'
   // The vault done while cards are still due (a new day began, a card came back; YAZ-5623): "Review cards 12".
   const again = vault ? reviewMoreCount(addKinds, review.dueCount) : 0
   // The rest of the vault, after a review of one page or one folder: Mochi's "cards due in other decks".
   const rest = vault ? 0 : review.dueCount
+  // YAZ-6041: upbeat completion line when cards remain past today's daily limit (remaining count moves subtly onto Add).
+  const waits = addKinds.length > 0 && (
+    <>
+      {/* YAZ-5322, the fallback: said out loud, so a card's folder is never a surprise. */}
+      {session.newFallback && addKinds.includes('new') && <p className={`${look.line} card-done__fallback`}>No new cards left in {picked}, so these come from All folders.</p>}
+      {(vault || rest === 0) && line("You're all caught up for today. Enjoy your day!")}
+    </>
+  )
   /** What follows when nothing of the session is left: the scope's own way on. */
   const after = vault ? (
     offer !== undefined ? (

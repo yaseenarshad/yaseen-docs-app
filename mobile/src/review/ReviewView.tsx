@@ -702,7 +702,19 @@ function SessionScreen({
           ) : (
             <span key={k} className="review__done-add">
               <button type="button" className="btn review__add" onClick={() => setAddAsk(k)}>
-                {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
+                {k === 'new' ? (
+                  <>
+                    Add {session.adds.new}
+                    {session.more.new > 0 && <span className="review__add-total">{` / ${session.more.new}`}</span>}
+                    {` new card${session.adds.new === 1 ? '' : 's'}`}
+                  </>
+                ) : (
+                  <>
+                    Add {session.adds.next}
+                    {session.more.next > 0 && <span className="review__add-total">{` / ${session.more.next}`}</span>}
+                    {' Up next'}
+                  </>
+                )}
               </button>
               {k === 'new' && fromButton}
             </span>
