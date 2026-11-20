@@ -409,6 +409,8 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       running.dropped = true
       passes.delete(running.promise)
       running = null
+      // Release the stuck per-vault turn so the replacement pass does not deadlock behind the dropped pass (YAZ-6024).
+      if (vault !== null) turns.delete(vault.id)
     }
     if (vault === null) return Promise.resolve()
     clearTimer()

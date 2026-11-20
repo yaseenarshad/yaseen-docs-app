@@ -17,7 +17,7 @@ import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
-import { broadcastAll, rootsOf } from './ipc/broadcast'
+import { broadcastAll, excludeFromBroadcast, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerFriendsIpc } from './ipc/friends'
 import { onRendererSecretSet } from './ipc/secrets'
@@ -30,6 +30,7 @@ import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
+import { cleanupTreeWatcherProbes } from './fs/treeWatcher'
 import { watchDailyPages } from './dailyPagesVaultFile'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
@@ -164,6 +165,7 @@ const manager = createWindowManager(store, {
       previewByOwner.get(ownerId)?.destroy()
       previewByOwner.set(ownerId, child)
       previewPopups.add(child)
+      excludeFromBroadcast(child)
       child.setParentWindow(win)
       child.setIgnoreMouseEvents(true)
       child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -591,6 +593,7 @@ app.on('before-quit', (event) => {
     stopHelpers: () => Promise.all([stopAllLanguageServers(), cancelHelperInstall(), speller.stop()]).then(() => undefined),
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
+      cleanupTreeWatcherProbes()
       updater.installOnExit(reopenAfterQuit)
       app.exit(0)
     },

@@ -68,16 +68,28 @@ export async function ensureCardSkill(userData: string, shipped: string, appVers
   const files = await filesOf(shipped)
   if (await copyIsCurrent(copy, files, appVersion)) return copy
   const next = `${copy}.new-${process.pid}`
+  const old = `${copy}.old-${process.pid}`
   await rm(next, { recursive: true, force: true })
+  await setWritable(old, true)
+  await rm(old, { recursive: true, force: true })
+  let movedOld = false
   try {
     await cp(shipped, next, { recursive: true })
     await writeFile(join(next, CARD_SKILL_VERSION_FILE), appVersion)
     await setWritable(next, false)
-    // Windows does not delete a read-only file: the old copy's files are made writable first.
-    await setWritable(copy, true)
-    await rm(copy, { recursive: true, force: true })
+    // Move existing copy aside first so a rename failure restores the old copy instead of deleting it (YAZ-6024).
+    const hadOld = await stat(copy).then(() => true, () => false)
+    if (hadOld) {
+      await setWritable(copy, true)
+      await rename(copy, old)
+      movedOld = true
+    }
     await rename(next, copy)
+    if (movedOld) await rm(old, { recursive: true, force: true }).catch(() => undefined)
   } catch (err) {
+    if (movedOld) {
+      await rename(old, copy).then(() => setWritable(copy, false)).catch(() => undefined)
+    }
     await setWritable(next, true)
     await rm(next, { recursive: true, force: true })
     throw err

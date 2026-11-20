@@ -117,13 +117,14 @@ export function createRootChain(): <T>(root: string, fn: () => Promise<T>) => Pr
   const chains = new Map<string, Promise<unknown>>()
   return <T>(root: string, fn: () => Promise<T>): Promise<T> => {
     const run = (chains.get(root) ?? Promise.resolve()).then(fn, fn)
-    chains.set(
-      root,
-      run.then(
-        () => undefined,
-        () => undefined,
-      ),
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
     )
+    chains.set(root, settled)
+    void settled.then(() => {
+      if (chains.get(root) === settled) chains.delete(root)
+    })
     return run
   }
 }

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { EventEmitter, once } from 'node:events'
-import { existsSync, watch as fsWatch, type FSWatcher, type Stats } from 'node:fs'
+import { existsSync, rmSync, watch as fsWatch, type FSWatcher, type Stats } from 'node:fs'
 import { lstat, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -96,15 +96,34 @@ interface Probe {
  * folder, opened after the real one — can only hear from a stream that serves the real one too. It
  * writes a file there every `PROBE_MS` until it hears one.
  */
+/** Active macOS FSEvents probe directories so `cleanupTreeWatcherProbes()` removes them on `app.exit(0)` (YAZ-6024). */
+const activeProbeDirs = new Set<string>()
+
+export function cleanupTreeWatcherProbes(): void {
+  for (const dir of [...activeProbeDirs]) {
+    activeProbeDirs.delete(dir)
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch {
+      // best-effort cleanup during exit
+    }
+  }
+}
+
 async function probeStream(): Promise<Probe> {
   const dir = await mkdtemp(path.join(tmpdir(), 'yaseendocs-probe-'))
+  activeProbeDirs.add(dir)
   const probe = fsWatch(dir)
   const tick = setInterval(() => void writeFile(path.join(dir, 'probe'), '').catch(() => undefined), PROBE_MS)
+  tick.unref()
   return {
-    heard: once(probe, 'change').then(() => clearInterval(tick)),
+    heard: once(probe, 'change')
+      .then(() => undefined)
+      .finally(() => clearInterval(tick)),
     async close() {
       clearInterval(tick)
       probe.close()
+      activeProbeDirs.delete(dir)
       await rm(dir, { recursive: true, force: true })
     },
   }

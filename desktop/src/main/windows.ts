@@ -737,6 +737,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     win.on('closed', () => {
       cancelBoundsTimer()
+      // If a window dies mid-flush, settle immediately instead of stalling quit/reload for FLUSH_TIMEOUT_MS (YAZ-6024).
+      pendingFlush.get(wcId)?.settle('dirty')
       unregister()
       live.delete(id)
       closingWins.delete(id)

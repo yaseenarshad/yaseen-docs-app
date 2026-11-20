@@ -679,8 +679,13 @@ export const nextId = (root: string) => async (): Promise<string | undefined> =>
  * The app's own copy calls this too, once the folder it made holds its fresh id (`fs/copy.ts`,
  * YAZ-2420 🔒 D21): its pages were written holding their values under the original's.
  */
+const CARRIED_MAX = 256
+
 export async function carryFolderValues(dir: string, from: string, to: string): Promise<void> {
-  if (!carried.some((copy) => copy.dir === dir && copy.from === from && copy.to === to)) carried.push({ dir, from, to })
+  if (!carried.some((copy) => copy.dir === dir && copy.from === from && copy.to === to)) {
+    if (carried.length >= CARRIED_MAX) carried.shift()
+    carried.push({ dir, from, to })
+  }
   const files: string[] = []
   await walk(dir, files).catch(() => undefined)
   for (const file of files) await carryPage(file, from, to)

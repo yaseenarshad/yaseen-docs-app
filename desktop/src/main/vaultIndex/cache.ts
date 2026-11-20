@@ -200,6 +200,9 @@ function write(root: string, records: Map<string, IndexRecord>): Promise<void> {
     })
     .catch((err: unknown) => console.error(`[index-cache] failed to write cache for ${root}: ${String(err)}`))
   chains.set(root, chain)
+  void chain.finally(() => {
+    if (chains.get(root) === chain) chains.delete(root)
+  })
   return chain
 }
 
