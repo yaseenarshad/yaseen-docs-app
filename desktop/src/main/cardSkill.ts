@@ -67,6 +67,7 @@ export async function ensureCardSkill(userData: string, shipped: string, appVers
   }
   const next = `${copy}.new-${process.pid}`
   const old = `${copy}.old-${process.pid}`
+  await setWritable(next, true)
   await rm(next, { recursive: true, force: true })
   await setWritable(old, true)
   await rm(old, { recursive: true, force: true })

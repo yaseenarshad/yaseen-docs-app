@@ -35,6 +35,26 @@ describe('renderSourcemapsAside (YAZ-2183)', () => {
     await build(['assets/index-d4.js', 'assets/index-d4.js.map'])
     expect(await files(maps())).toEqual(['assets/index-d4.js.map'])
   })
+
+  it('keeps sibling main and renderer sourcemap directories disjoint across sequential builds (YAZ-6026)', async () => {
+    const mainOut = path.join(root, 'out', 'main')
+    const mainMaps = path.join(maps(), 'main')
+    const rendererMaps = path.join(maps(), 'renderer')
+    await mkdir(mainOut, { recursive: true })
+    await writeFile(path.join(mainOut, 'index.js'), 'main')
+    await writeFile(path.join(mainOut, 'index.js.map'), 'main-map')
+    const mainHook = renderSourcemapsAside(mainOut, mainMaps).writeBundle as (options: unknown, bundle: Rollup.OutputBundle) => Promise<void>
+    await mainHook({}, Object.fromEntries(['index.js', 'index.js.map'].map((n) => [n, {}])) as Rollup.OutputBundle)
+
+    await mkdir(path.join(out(), 'assets'), { recursive: true })
+    await writeFile(path.join(out(), 'assets', 'index-a1.js'), 'renderer')
+    await writeFile(path.join(out(), 'assets', 'index-a1.js.map'), 'renderer-map')
+    const rendererHook = renderSourcemapsAside(out(), rendererMaps).writeBundle as (options: unknown, bundle: Rollup.OutputBundle) => Promise<void>
+    await rendererHook({}, Object.fromEntries(['assets/index-a1.js', 'assets/index-a1.js.map'].map((n) => [n, {}])) as Rollup.OutputBundle)
+
+    expect(await files(mainMaps)).toEqual(['index.js.map'])
+    expect(await files(rendererMaps)).toEqual(['assets/index-a1.js.map'])
+  })
 })
 
 describe('dropMonacoTsWorkerUrl (YAZ-3501)', () => {

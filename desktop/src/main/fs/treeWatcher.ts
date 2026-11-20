@@ -458,6 +458,21 @@ class Engine extends EventEmitter implements TreeWatcher {
   private async walk(d: string, announce: boolean): Promise<void> {
     const queue: string[] = [d]
     let qNext = 0
+    // Shared concurrency cap across all directory workers so peak concurrent `lstat` calls stay <= WALK_CONCURRENCY.
+    let activeStats = 0
+    const statWaiters: Array<() => void> = []
+    const boundedLstat = async (p: string): Promise<Stats | null> => {
+      while (activeStats >= WALK_CONCURRENCY) {
+        await new Promise<void>((resolve) => statWaiters.push(resolve))
+      }
+      activeStats++
+      try {
+        return await lstat(p).catch(() => null)
+      } finally {
+        activeStats--
+        statWaiters.shift()?.()
+      }
+    }
     const drain = async (): Promise<void> => {
       while (qNext < queue.length && !this.abandoned && !this.closed) {
         const dir = queue[qNext++]!
@@ -468,20 +483,15 @@ class Engine extends EventEmitter implements TreeWatcher {
           const p = path.join(dir, e.name)
           if (!this.skip(p) && !this.known.has(p)) paths.push(p)
         }
-        // Bounded-parallel lstat within this folder; announce/recurse cleanly once stats settle.
-        for (let i = 0; i < paths.length; i += WALK_CONCURRENCY) {
+        const stats = await Promise.all(paths.map(boundedLstat))
+        for (let j = 0; j < paths.length; j++) {
           if (this.abandoned || this.closed) return
-          const slice = paths.slice(i, i + WALK_CONCURRENCY)
-          const stats = await Promise.all(slice.map((p) => lstat(p).catch(() => null)))
-          for (let j = 0; j < slice.length; j++) {
-            if (this.abandoned || this.closed) return
-            const p = slice[j]!
-            const st = stats[j]
-            if (st === null || this.known.has(p)) continue
-            this.remember(p, st)
-            if (announce) this.emit(st.isDirectory() ? 'addDir' : 'add', p, st)
-            if (st.isDirectory()) queue.push(p)
-          }
+          const p = paths[j]!
+          const st = stats[j]
+          if (st === null || this.known.has(p)) continue
+          this.remember(p, st)
+          if (announce) this.emit(st.isDirectory() ? 'addDir' : 'add', p, st)
+          if (st.isDirectory()) queue.push(p)
         }
       }
     }

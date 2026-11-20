@@ -455,8 +455,9 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   entry.ids = ids
   const unfinished = ids ? await planLeft(root) : false
   const lettersKey = letters.join('\0')
+  const version = entry.version
   const cached = entry.snapshot
-  if (cached !== undefined && cached.version === entry.version && cached.ids === ids && cached.lettersKey === lettersKey && cached.saved === saved && cached.unfinished === unfinished) {
+  if (cached !== undefined && cached.version === version && cached.ids === ids && cached.lettersKey === lettersKey && cached.saved === saved && cached.unfinished === unfinished) {
     return { ...cached.response, generatedAt: Date.now() }
   }
   const sorted = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
@@ -488,7 +489,8 @@ export async function getIndex(root: string): Promise<IndexResponse> {
       .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
     response = { root, records, folders, generatedAt: Date.now(), ids, letters, boards, ...(unfinished && { unfinished: true as const }) }
   }
-  entry.snapshot = { version: entry.version, ids, lettersKey, saved, unfinished, response }
+  // Only cache when no mutation landed during the awaits above (avoids stamping stale data with a newer version).
+  if (entry.version === version) entry.snapshot = { version, ids, lettersKey, saved, unfinished, response }
   return response
 }
 

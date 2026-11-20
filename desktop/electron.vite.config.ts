@@ -175,7 +175,7 @@ export function dropMonacoTsWorkerUrl(): Plugin {
 
 /** The last local build's maps, per version (the ROOT package.json's, which `tools/packDesktop.mjs` stamps in; rebuilding a release tag reproduces them), gitignored. */
 const { version } = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as { version: string }
-const mapsDir = resolve(here, '.maps', version)
+const rendererMapsDir = resolve(here, '.maps', version, 'renderer')
 const mainOut = resolve(here, 'out/main')
 const mainMapsDir = resolve(here, '.maps', version, 'main')
 
@@ -205,7 +205,7 @@ export default defineConfig({
   },
   renderer: {
     root: client,
-    plugins: [react(), dropMonacoTsWorkerUrl(), trimDesktopEngineDeadWeight(), excalidrawAssets(), drawioAssets(), renderSourcemapsAside(rendererOut, mapsDir)],
+    plugins: [react(), dropMonacoTsWorkerUrl(), trimDesktopEngineDeadWeight(), excalidrawAssets(), drawioAssets(), renderSourcemapsAside(rendererOut, rendererMapsDir)],
     resolve: {
       alias: { '@shared': shared },
       /**
