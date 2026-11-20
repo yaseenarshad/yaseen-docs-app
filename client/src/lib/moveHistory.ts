@@ -55,6 +55,8 @@ export interface ReorderStep {
   name: string
   undo: () => void
   redo: () => void
+  /** Files manual reorder writes `.yaseendocs/files-order.json` inside this vault (YAZ-5989): undo/redo asks `allowFileAction`. */
+  vault?: string
 }
 
 /** One entry of the undo list (D17): a move gesture (as YAZ-3255 built it), a rename, a delete, or a reorder (YAZ-5917). */

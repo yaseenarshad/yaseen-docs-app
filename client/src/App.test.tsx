@@ -87,7 +87,7 @@ interface SidebarStubProps {
   /** A move the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut, a Finder move-in. App records it and says it with Undo. */
   onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[] }, text: string, skipped: boolean) => void
   /** A Manual reorder (YAZ-5917): App puts it on the undo list and says it with Undo. */
-  onReordered?: (step: { name: string; undo: () => void; redo: () => void }) => void
+  onReordered?: (step: { name: string; undo: () => void; redo: () => void; vault?: string }) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
@@ -4718,7 +4718,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       })
       await act(async () => {})
       const sheet = () => el.querySelector('#confirm-read-only-vault-text')
-      const enter = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+      const enter = () => act(() => void (document.activeElement ?? window).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
       // Two files in one Delete: one action, one ask.
       act(() => void captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md']))
       await act(async () => {})
@@ -4904,6 +4904,103 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')?.click())
       await settle()
       expect(renames(bridge).length).toBe(before)
+    })
+
+    it('YAZ-5989: ConfirmSheet uses keys="sheet", so Enter pressed in an outside input (RenameInline / PageTitle / NewItemBox) opens the sheet without silently confirming "Just this once"', async () => {
+      const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const input = document.createElement('input')
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') void captured.sidebar?.onRenameFile('/v/B.md', '/v/C.md', 'file')
+      })
+      el.append(input)
+      input.focus()
+      // One Enter on the outside input opens the read-only sheet synchronously; with keys="sheet" the bubbling Enter does NOT confirm it.
+      await act(async () => {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      })
+      expect(el.querySelector('#confirm-read-only-vault-text')).not.toBeNull()
+      expect(renames(bridge)).toEqual([])
+      // Focus is now on "Just this once" inside the sheet, so a SECOND Enter inside the sheet confirms it.
+      expect(document.activeElement?.textContent).toBe('Just this once')
+      act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+      await settle()
+      expect(el.querySelector('#confirm-read-only-vault-text')).toBeNull()
+      expect(renames(bridge)).toEqual([['/v/B.md', '/v/C.md']])
+      input.remove()
+    })
+
+    it('YAZ-5989: Settings › Daily pages › Open template asks allowFileAction before creating a missing .template.md in a read-only vault; Cancel writes nothing', async () => {
+      const { bridge, el, emitSettings } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Daily' } }, identity(), { '/v/A.md': { content: 'A\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: [...TREE, { type: 'dir', name: 'Daily', path: '/v/Daily', children: [] }], generatedAt: 1 })
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      await act(async () => emitSettings())
+      const nav = [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent?.includes('Files & Links'))
+      act(() => nav?.click())
+      const openBtn = () => [...el.querySelectorAll<HTMLButtonElement>('.settings-dialog button')].find((b) => b.textContent === 'Open template')
+      expect(openBtn()).toBeDefined()
+      await act(async () => openBtn()?.click())
+      await settle()
+      expect(el.querySelector('#confirm-read-only-vault-text')).not.toBeNull()
+      expect(bridge.writeFile).not.toHaveBeenCalled()
+      const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__actions button')].find((b) => b.textContent === label)
+      await act(async () => button('Cancel')?.click())
+      await settle()
+      expect(bridge.writeFile).not.toHaveBeenCalled()
+      expect(el.querySelector('.settings-dialog')).not.toBeNull()
+      // Allowing "Just this once" creates the empty template and closes Settings.
+      await act(async () => openBtn()?.click())
+      await settle()
+      expect(el.querySelector('#confirm-read-only-vault-text')).not.toBeNull()
+      await act(async () => button('Just this once')?.click())
+      await settle()
+      expect(bridge.writeFile).toHaveBeenCalledWith({ path: '/v/Daily/.template.md', content: '' })
+      expect(el.querySelector('.settings-dialog')).toBeNull()
+    })
+
+    it('YAZ-5989: undo/redo of a Files manual reorder asks allowFileAction in a read-only vault; a Focus/Favorites reorder does not', async () => {
+      const { el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'A\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__actions button')].find((b) => b.textContent === label)
+      // Files manual reorder carries `vault`: ⌘Z asks; Cancel keeps it on the undo list; Just this once runs undo.
+      const undoFiles = vi.fn()
+      const redoFiles = vi.fn()
+      act(() => captured.sidebar?.onReordered?.({ name: 'A', undo: undoFiles, redo: redoFiles, vault: '/v' }))
+      await press()
+      expect(sheet()).not.toBeNull()
+      expect(undoFiles).not.toHaveBeenCalled()
+      await act(async () => button('Cancel')?.click())
+      await settle()
+      expect(undoFiles).not.toHaveBeenCalled()
+      await press()
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Just this once')?.click())
+      await settle()
+      expect(undoFiles).toHaveBeenCalledOnce()
+      // Redo also asks in a read-only vault.
+      await press(true)
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Cancel')?.click())
+      await settle()
+      expect(redoFiles).not.toHaveBeenCalled()
+      // A Focus/Favorites reorder has no `vault`: ⌘Z runs without asking.
+      const undoFav = vi.fn()
+      act(() => captured.sidebar?.onReordered?.({ name: 'Fav', undo: undoFav, redo: vi.fn() }))
+      await press()
+      expect(sheet()).toBeNull()
+      expect(undoFav).toHaveBeenCalledOnce()
     })
 
     it('S66 (YAZ-3272, as D23 of YAZ-3293 words it): one row deleted says "Deleted 1 file (Todo.md)" with Undo, by its kind and its name on disk', async () => {

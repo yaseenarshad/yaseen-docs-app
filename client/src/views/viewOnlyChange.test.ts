@@ -59,4 +59,45 @@ describe('isViewOnlyChange (YAZ-4939 round 3)', () => {
     expect(isViewOnlyChange({ columns, ...def }, same)).toBe(true)
     expect(isViewOnlyChange({}, { properties: undefined })).toBe(true)
   })
+
+  describe('Cards table columns and labels (YAZ-5989)', () => {
+    const cardView: ViewDef = {
+      type: 'table',
+      name: 'Cards',
+      rows: 'cards',
+      cardView: {
+        order: ['file.name', 'note.topic'],
+        columns: { topic: { kind: 'select', options: ['Art', 'Math'] } },
+        properties: { 'note.topic': { displayName: 'Topic' } },
+      },
+    }
+    const base: ViewSet = { views: [table, cardView], properties: def.properties, formulas: def.formulas }
+    const withCard = (patch: Partial<NonNullable<ViewDef['cardView']>>): ViewSet => ({
+      ...base,
+      views: [table, { ...cardView, cardView: { ...cardView.cardView, ...patch } }],
+    })
+
+    it.each<[string, ViewSet]>([
+      ['sorting a Cards table', withCard({ sort: [{ property: 'note.topic', direction: 'ASC' }] })],
+      ['filtering a Cards table', withCard({ filters: 'note.topic == "Art"' })],
+      ['reordering / hiding Cards table columns', withCard({ order: ['file.name'] })],
+      ['resizing a Cards table column', withCard({ columnSize: { 'note.topic': 200 } })],
+      ['reordering view tabs that include a Cards table', { ...base, views: [cardView, table] }],
+      ['adding a new empty Cards table view', { ...base, views: [...base.views, { type: 'table', name: 'Cards 2', rows: 'cards' }] }],
+    ])('%s is a view change', (_name, after) => {
+      expect(isViewOnlyChange({ columns, ...base }, { columns, ...after })).toBe(true)
+    })
+
+    it.each<[string, ViewSet]>([
+      ['adding a card column', withCard({ columns: { ...cardView.cardView!.columns, level: { kind: 'text' } } })],
+      ['editing a card column type', withCard({ columns: { topic: { kind: 'text' } } })],
+      ['editing a card column options', withCard({ columns: { topic: { kind: 'select', options: ['Art', 'Science'] } } })],
+      ['deleting a card column', withCard({ columns: {} })],
+      ['renaming a card column label', withCard({ properties: { 'note.topic': { displayName: 'Subject' } } })],
+      ['clearing a card column label', withCard({ properties: undefined })],
+      ['deleting a Cards table view that declares card columns', { ...base, views: [table] }],
+    ])('%s is a content change: read only refuses it', (_name, after) => {
+      expect(isViewOnlyChange({ columns, ...base }, { columns, ...after })).toBe(false)
+    })
+  })
 })

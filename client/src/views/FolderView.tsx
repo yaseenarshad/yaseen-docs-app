@@ -83,7 +83,7 @@ import { isViewOnlyChange } from './viewOnlyChange'
 import { declStamp, definedBelowOf, rowValues, withTied } from './folderPageValues'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
-import { VaultReadOnly } from '../vault/readOnlyVault'
+import { VAULT_READ_ONLY_TIP, VaultReadOnly } from '../vault/readOnlyVault'
 import { ViewFolder } from './view/GroupHeader'
 import { pageLinkOf } from './view/fills'
 import { OtherFiles, trayBackTarget } from './view/OtherFiles'
@@ -370,6 +370,8 @@ export function FolderView({
   const trayFolders = useMemo(() => [...movedFolders].map(([dir, f]) => ({ dir, name: f.name })), [movedFolders])
   /** The vault's Read only (YAZ-4939), and this tab's timed "Allow edits": one unlock for the page, its settings and its cells. */
   const vault = useContext(VaultReadOnly)
+  const vaultRef = useRef(vault)
+  vaultRef.current = vault
   const unlock = useTimedUnlock(noFlush)
   const vaultLockedHere = vault.on && unlock.until === null
   /**
@@ -846,7 +848,7 @@ export function FolderView({
     return track(write)
   }
   const commitSettings = (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']): Promise<void> => {
-    if (refuseLocked(isViewOnlyChange({ columns: liveSettings.columns, properties: parsed.def.properties }, { columns, properties }))) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
+    if (refuseLocked(isViewOnlyChange({ columns: liveSettings.columns, properties: parsed.def.properties, views: parsed.def.views }, { columns, properties, views }))) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
     clearErrors()
     const before = aheadRef.current
     setAhead(columns)
@@ -937,24 +939,34 @@ export function FolderView({
   }
   /**
    * C6: the owner's file, ahead first (`aheadParents`). A read-only owner page refuses it, as its own page would (D36).
+   * When the vault is locked and only this tab was unlocked (YAZ-5989), editing a different folder asks `allowFileAction`.
    * `next` and `base` are the page's copies; the owner's own "Separate value" switch (C3) rides back on both.
    */
   const writeOwnerDeclaration = (owner: string, key: string, next: ColumnDecl, base: ColumnDecl | undefined, filters: ((views: unknown) => unknown) | undefined): Promise<{ mtime: number }> => {
     const refusal = readOnlyRefusal(folderMap, owner, vaultName)
     if (refusal !== null) return Promise.reject(new Error(refusal))
-    const stored = folderSettings(folderMap.get(owner), ids).columns[key]
-    const before = aheadParents[key]
-    setAheadParents((now) => ({ ...now, [key]: { owner, decl: next } }))
-    const write = track(writeFolderColumn(folderSettingsPath(absFrom(root, owner)), key, withOwnerSwitch(next, stored), base === undefined ? undefined : withOwnerSwitch(base, stored), ids, filters))
-    write.then(
-      ({ mtime }) => setAheadParents((now) => (now[key]?.decl === next ? { ...now, [key]: { ...now[key], mtime } } : now)),
-      () =>
-        setAheadParents((now) => {
-          const { [key]: _mine, ...rest } = now
-          return before === undefined ? rest : { ...rest, [key]: before }
-        }),
-    )
-    return write
+    const run = (): Promise<{ mtime: number }> => {
+      const stored = folderSettings(folderMap.get(owner), ids).columns[key]
+      const before = aheadParents[key]
+      setAheadParents((now) => ({ ...now, [key]: { owner, decl: next } }))
+      const write = track(writeFolderColumn(folderSettingsPath(absFrom(root, owner)), key, withOwnerSwitch(next, stored), base === undefined ? undefined : withOwnerSwitch(base, stored), ids, filters))
+      write.then(
+        ({ mtime }) => setAheadParents((now) => (now[key]?.decl === next ? { ...now, [key]: { ...now[key], mtime } } : now)),
+        () =>
+          setAheadParents((now) => {
+            const { [key]: _mine, ...rest } = now
+            return before === undefined ? rest : { ...rest, [key]: before }
+          }),
+      )
+      return write
+    }
+    if (vault.on) {
+      return vault.allowFileAction(root).then((ok) => {
+        if (!ok) throw new Error(VAULT_READ_ONLY_TIP)
+        return run()
+      })
+    }
+    return run()
   }
   /**
    * The renamed option in the filters of every `.folder.md` below `owner` whose page takes `key` from it (C6), less
@@ -1165,10 +1177,16 @@ export function FolderView({
         const refusal = readOnlyRefusal(folderMap, dir, vaultName) ?? (dir === folder && pageEffective ? FOLDER_READ_ONLY_TIP : null)
         if (refusal !== null) throw new Error(refusal)
       }
+      const cross = to !== folder || from !== folder
+      if (vault.on && cross && !(await vault.allowFileAction(root))) throw new Error(VAULT_READ_ONLY_TIP)
       const side = (dir: string) => ({ path: dir === folder ? file : folderSettingsPath(absFrom(root, dir)), columns: columnsOf(dir) })
       const label = propertyLabel(parsed.def, `note.${key}`)
       const undo = await track(moveFolderColumn({ key, decl, from: side(from), to: side(to), ids }))
-      const back = () => void track(undo()).catch((err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error'))
+      const back = () =>
+        void (async () => {
+          if (vaultRef.current.on && cross && !(await vaultRef.current.allowFileAction(root))) return
+          await track(undo())
+        })().catch((err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error'))
       onNotice?.(`Moved "${label}" to ${nameOf(to)}`, 'info', 'undo', { label: 'Undo', run: back, fades: true })
     },
   }
@@ -1252,8 +1270,15 @@ export function FolderView({
       if (owner === undefined || target === null) throw new Error('Name a folder in Relation first')
       const refusal = readOnlyRefusal(folderMap, target, vaultName) ?? (target === folder && pageEffective ? FOLDER_READ_ONLY_TIP : null)
       if (refusal !== null) throw new Error(refusal)
+      const cross = target !== folder
+      if (vault.on && cross && !(await vault.allowFileAction(root))) throw new Error(VAULT_READ_ONLY_TIP)
       const at = folderSettingsPath(absFrom(root, target))
       const report = (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error')
+      const undoRun = (run: () => Promise<unknown>) => () =>
+        void (async () => {
+          if (vaultRef.current.on && cross && !(await vaultRef.current.allowFileAction(root))) return
+          await track(run())
+        })().catch(report)
       const there = columnsOf(target)
       const existing = tiedOn(target, key, owner)
       if (both) {
@@ -1263,13 +1288,13 @@ export function FolderView({
         const from = owner === '' ? { column: key } : { column: key, folder: record === undefined ? `[[${owner}]]` : pageLinkOf(record, resolveLink) }
         const tiedDecl: ColumnDecl = { kind: 'mentions', from, pair: true }
         await track(addTiedColumn(at, name, tiedDecl, ids))
-        onNotice?.(`Added ${name} to ${nameOf(target)}`, 'info', 'undo', { label: 'Undo', run: () => void track(removeTiedColumn(at, name, tiedDecl, null)).catch(report), fades: true })
+        onNotice?.(`Added ${name} to ${nameOf(target)}`, 'info', 'undo', { label: 'Undo', run: undoRun(() => removeTiedColumn(at, name, tiedDecl, null)), fades: true })
         return
       }
       if (existing === undefined) return
       const keys = Object.keys(there)
       const undo = await track(removeTiedColumn(at, existing, there[existing], keys[keys.indexOf(existing) + 1] ?? null))
-      onNotice?.(`Removed ${existing} from ${nameOf(target)}`, 'info', 'undo', { label: 'Undo', run: () => void track(undo()).catch(report), fades: true })
+      onNotice?.(`Removed ${existing} from ${nameOf(target)}`, 'info', 'undo', { label: 'Undo', run: undoRun(undo), fades: true })
     },
   }
 

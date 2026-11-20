@@ -564,8 +564,11 @@ export function App() {
   // slot while it is in the window (`vault/slots.ts`), and a slot with no vault is idle.
   const slots = useRef(EMPTY_SLOTS)
   slots.current = assignSlots(slots.current, roots)
+  // Ref-backed bridge to `allowFileAction` (defined below once `scopeOf` exists), so `useVaultScope`'s ID bulk writes ask the same read-only door (YAZ-5989).
+  const fileActionRef = useRef<(root: string) => Promise<boolean>>(async () => true)
+  const askFileAction = useCallback((vaultRoot: string) => fileActionRef.current(vaultRoot), [])
   const scopes: VaultScope[] = []
-  for (const slotRoot of slots.current) scopes.push(useVaultScope(slotRoot, notify))
+  for (const slotRoot of slots.current) scopes.push(useVaultScope(slotRoot, notify, askFileAction))
   /** The scopes of the window's vaults, in the order of `roots`. */
   const vaults = roots.map((vault) => scopes[slots.current.indexOf(vault)])
   /** The first vault's scope; on the Welcome window an idle one, so every reader below has a scope. */
@@ -579,7 +582,7 @@ export function App() {
    */
   const [cardSkill] = useState(storage.getCardSkill)
   const skillLoads = cardSkill !== null && appSettings.cardSkillInSidebar && root !== null
-  const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify)
+  const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify, askFileAction)
   const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true)
   const live = useRef({ roots, vaults, first, skill: skillLoads ? skillScope : null })
   live.current = { roots, vaults, first, skill: skillLoads ? skillScope : null }
@@ -675,6 +678,7 @@ export function App() {
     }
     return new Promise((resolve) => setReadOnlyAsk({ root, resolve }))
   }, [scopeOf, notify])
+  fileActionRef.current = allowFileAction
   const unlockVault = useCallback((root: string, choice: VaultUnlockFor) => scopeOf(root).readOnlyVault.unlock(choice), [scopeOf])
   const lockVault = useCallback((root: string) => scopeOf(root).readOnlyVault.lock(), [scopeOf])
   /** The sheet's answer: false = Cancel; null = Just this once (no allowance); a time = that allowance, then go on. */
@@ -1788,30 +1792,35 @@ export function App() {
   // D1 rule 3: your card follows your profile in each vault of the window.
   useCardFollowsProfile(roots, settings.profile)
   // Settings › Daily pages › Open template (YAZ-3607 D6): the daily pages folder's hidden `.template.md`, in a tab. A
-  // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
+  // missing one is made empty first (asking `allowFileAction` in a read-only vault, YAZ-5989). The sidebar hides a "."
+  // file, so this is the way to it. Settings closes first.
   // The folder is the one the daily page uses: in the first vault of the window that holds it (`dailyPageVault`).
   const openDailyTemplate = useCallback(() => {
     const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     let path = ''
+    let vaultRoot = ''
     void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
       .then(({ vault }) => {
+        vaultRoot = vault
         path = `${placePath(vault, now.dailyPageFolder)}/.template.md`
         return api.readFile(path)
       })
-      .catch((err: unknown) => {
+      .catch(async (err: unknown) => {
         if (path === '') throw err
         if (!(err instanceof BridgeRequestError && err.code === 'NOT_FOUND')) throw err
+        if (!(await allowFileAction(vaultRoot))) return null
         return api.writeFile({ path, content: '' })
       })
       .then(
-        () => {
+        (res) => {
+          if (res === null) return
           setSettingsOpen(false)
           openAsSidebar.current(path)
         },
         (err: unknown) => notify(`Can't open the daily page template: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
-  }, [dailyVault, notify])
+  }, [dailyVault, notify, allowFileAction])
 
   // The explore stack (YAZ-2571): ⌘⇧F / File › Explore Vault…. `exploreRequest` and `exploreFrom` are declared above
   // `openSearch` (⌘K closes the stack). The keyboard goes back where it was when the stack closes.
@@ -2227,7 +2236,7 @@ export function App() {
 
   // Settings › Storage (YAZ-1801 D1, 🔒 D13; YAZ-3039): the active tab's vault, measured only while
   // Settings is open — on its page's open, a sync pass finishing, and a shrink. A closed dialog hands the hook no sync state.
-  const vaultStorage = useVaultStorage(active.root, settingsOpen ? (active.sync.status?.state ?? null) : null)
+  const vaultStorage = useVaultStorage(active.root, settingsOpen ? (active.sync.status?.state ?? null) : null, allowFileAction)
 
   // Settings › Sharing (YAZ-3040, Draw's YAZ-1799 D7): main's share status and the active tab's
   // vault's shared boards, read only while Settings is open.
@@ -3434,8 +3443,8 @@ export function App() {
    * the step touches, once each, as `trashMany` does. Main's own writes never come here.
    */
   const allowStep = useCallback(async (entry: UndoStep): Promise<boolean> => {
-    // A reorder (YAZ-5917) writes a list of the vault's, never a file of the person's: it asks nothing.
-    if (!isMoveStep(entry) && entry.step === 'reorder') return true
+    // A Focus/Favorites/vault reorder writes a list, never a vault file; a Files manual reorder writes `.yaseendocs/files-order.json` in `entry.vault` (YAZ-5989).
+    if (!isMoveStep(entry) && entry.step === 'reorder') return entry.vault === undefined ? true : allowFileAction(entry.vault)
     const paths = isMoveStep(entry) ? entry.moves.flatMap((move) => [move.oldPath, move.newPath]) : entry.step === 'rename' ? [entry.path] : entry.items.map((item) => item.path)
     for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return false
     return true
@@ -4209,7 +4218,7 @@ export function App() {
       )}
       {history !== null && (
         <Suspense fallback={null}>
-          <VersionHistory key={history.path} root={history.root} path={history.path} fromMerge={history.fromMerge} darkColors={settings.diagramDarkColors} onClose={closeHistory} onNotice={notify} />
+          <VersionHistory key={history.path} root={history.root} path={history.path} fromMerge={history.fromMerge} darkColors={settings.diagramDarkColors} allowFileAction={allowFileAction} onClose={closeHistory} onNotice={notify} />
         </Suspense>
       )}
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
@@ -4623,7 +4632,9 @@ export function App() {
           focusConfirm
           // ↓ ↑ Tab move through Just this once · the sidebar lock's three · Cancel; Enter picks the focused one (YAZ-4989).
           // Each timed choice unlocks the whole vault, as the sidebar's lock does (YAZ-5581): one allowance, one meaning.
+          // `keys="sheet"` (YAZ-5989): Enter in RenameInline, PageTitle or NewItemBox opens this sheet during keydown and must never confirm unread.
           choices
+          keys="sheet"
           onConfirm={() => answerReadOnly(null)}
           onCancel={() => answerReadOnly(false)}
           other={

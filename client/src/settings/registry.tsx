@@ -428,8 +428,8 @@ export interface SettingsCtx {
     old: number
     unfinished: boolean
     state: () => Promise<IdsState>
-    reletter: (letters: string) => Promise<IdsState>
-    backfill: () => Promise<IdsState>
+    reletter: (letters: string) => Promise<IdsState | null>
+    backfill: () => Promise<IdsState | null>
   }
   /**
    * What the app calls the vault the three above are of (YAZ-2602 R10): the active tab's. Handed

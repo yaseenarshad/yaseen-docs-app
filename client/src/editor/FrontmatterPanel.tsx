@@ -6,7 +6,8 @@
  * lives. Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
  */
 import { useUnit } from '../vault/unitWord'
-import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
+import { VAULT_READ_ONLY_TIP, VaultReadOnly } from '../vault/readOnlyVault'
+import { createContext, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
@@ -231,6 +232,9 @@ export function FrontmatterPanel(props: FrontmatterPanelProps) {
 
 function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links, inheritColumns = DEFAULT_FOLDER_PAGES.inheritColumns, onNotice, card }: FrontmatterPanelProps) {
   const unit = useUnit()
+  const vaultLock = useContext(VaultReadOnly)
+  const vaultLockRef = useRef(vaultLock)
+  vaultLockRef.current = vaultLock
   /** The definition popover: `file` is the `.folder.md` whose column it edits (a column's owner, or a separate column's page); none = the vault's `properties.json`. */
   /** Edit property's "Column on" (YAZ-4769), awaiting its confirm: the column's folder now (`from`) and the one picked (`to`); null is no folder. */
   const [moving, setMoving] = useState<{ key: string; from: string | null; to: string | null; decl: ColumnDecl } | null>(null)
@@ -540,7 +544,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     const before = named(was)
     const after = named(name)
     const write = async (next: FolderSettings, base: FolderSettings): Promise<void> => {
-      refuseReadOnly(folder)
+      await allowCrossFolder(folder)
       await writeFolderSettings(folderSettingsPath(absOf(folder)), next, base, ids)
     }
     const from = was || defaultLabel(row.key)
@@ -639,6 +643,17 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     const refusal = readOnlyRefusal(folderMap, dir, typeof root === 'string' ? storage.vaultName(root) : '')
     if (refusal !== null) throw new Error(refusal)
   }
+  /**
+   * Cross-folder / vault-wide column write in a read-only vault (YAZ-5989): unlocking one tab unlocks that file alone.
+   * Writing another folder's `.folder.md` or `.yaseendocs/properties.json` while the vault is locked asks the vault door.
+   */
+  const allowCrossFolder = async (targetDir?: string): Promise<void> => {
+    if (targetDir !== undefined) refuseReadOnly(targetDir)
+    const v = vaultLockRef.current
+    if (!v.on) return
+    if (targetDir !== undefined && own && targetDir === relDir) return
+    if (typeof root !== 'string' || root === '' || !(await v.allowFileAction(root))) throw new Error(VAULT_READ_ONLY_TIP)
+  }
   /** A type can be saved for a column (its folder's `.folder.md`) or, with a vault root, for a page field (`properties.json`). */
   const typeable = (row: Row): boolean => definitionFile(row) !== undefined || (typeof root === 'string' && root !== '')
   /**
@@ -677,10 +692,13 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         const stored = declarationOf(folderMap, ids, on, name)
         const base = stored?.decl
         if (base?.kind !== kind) {
-          refuseReadOnly(on)
+          await allowCrossFolder(on)
           await writeFolderColumn(folderSettingsPath(absOf(on)), stored?.key ?? name, declarationForKind(base ?? typing.columns[name], kind), base, ids)
         }
-      } else if (kind !== (assigned ?? 'text') && typeof root === 'string' && root !== '') await vaultProperties.setProperty(root, name, declarationForKind(decls?.properties[name], kind))
+      } else if (kind !== (assigned ?? 'text') && typeof root === 'string' && root !== '') {
+        await allowCrossFolder()
+        await vaultProperties.setProperty(root, name, declarationForKind(decls?.properties[name], kind))
+      }
     }
     setSaving(true)
     void declare()
@@ -705,10 +723,21 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   const moveColumn = async ({ key, from, to, decl }: { key: string; from: string | null; to: string | null; decl: ColumnDecl }): Promise<void> => {
     if (to !== null) refuseReadOnly(to)
     if (from !== null) refuseReadOnly(from)
+    if ((to !== null && !(own && to === relDir)) || (from !== null && !(own && from === relDir))) await allowCrossFolder()
     const side = (dir: string | null) => (dir === null ? null : { path: folderSettingsPath(absOf(dir)), columns: folderSettings(folderMap.get(dir), ids).columns })
     const undo = await moveFolderColumn({ key, decl, from: side(from), to: side(to), ids })
     const said = from !== null && to !== null ? `Moved "${key}" to ${nameOf(to)}` : from !== null ? `Removed the "${key}" column from ${nameOf(from)}` : `Made "${key}" a column on ${nameOf(to!)}`
-    onNotice?.(said, 'info', 'undo', { label: 'Undo', run: () => void undo().catch((err: unknown) => setError(`Could not undo: ${messageOf(err)}`)), fades: true })
+    onNotice?.(said, 'info', 'undo', {
+      label: 'Undo',
+      run: () =>
+        void (async () => {
+          if (to !== null) refuseReadOnly(to)
+          if (from !== null) refuseReadOnly(from)
+          if ((to !== null && !(own && to === relDir)) || (from !== null && !(own && from === relDir))) await allowCrossFolder()
+          await undo()
+        })().catch((err: unknown) => setError(`Could not undo: ${messageOf(err)}`)),
+      fades: true,
+    })
   }
 
   const saveDefinition = async (): Promise<void> => {
@@ -716,7 +745,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     setSaving(true)
     try {
       const { key, definition, base, file: settingsFile, dir } = propertyMenu
-      if (dir !== undefined) refuseReadOnly(dir)
+      await allowCrossFolder(dir)
       // A column's definition is its folder's; a page field with no column has a vault-wide type (YAZ-4551 D21): `.yaseendocs/properties.json`.
       if (settingsFile !== undefined) await writeFolderColumn(settingsFile, key, definition, base, ids)
       else await vaultProperties.setProperty(root as string, key, definition)

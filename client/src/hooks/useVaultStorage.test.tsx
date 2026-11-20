@@ -26,11 +26,12 @@ const measured = (root: string, count: number) => ({ root, boards: { bytes: 0, c
 let root: Root | null = null
 let state: VaultStorageState
 
-function Probe({ vault, sync }: { vault: string; sync: string | null }) {
-  state = useVaultStorage(vault, sync)
+function Probe({ vault, sync, allowFileAction }: { vault: string; sync: string | null; allowFileAction?: (root: string) => Promise<boolean> }) {
+  state = useVaultStorage(vault, sync, allowFileAction)
   return null
 }
-const render = (vault: string, sync: string | null) => act(() => root?.render(<Probe vault={vault} sync={sync} />))
+const render = (vault: string, sync: string | null, allowFileAction?: (root: string) => Promise<boolean>) =>
+  act(() => root?.render(<Probe vault={vault} sync={sync} allowFileAction={allowFileAction} />))
 const answer = (i: number, s: VaultStorageStats) => act(async () => answers[i](s))
 
 afterEach(() => {
@@ -109,5 +110,30 @@ describe('useVaultStorage — one measure at a time, only when asked (🔒 D13)'
     state.refresh()
     await answer(0, measured('/v', 1))
     expect(state).toMatchObject({ stats: measured('/v', 1), failed: false })
+  })
+
+  it('YAZ-5989: shrink asks allowFileAction in a read-only vault; Cancel writes nothing and leaves lastShrink null', async () => {
+    const allow = vi.fn(async () => false)
+    vi.mocked(api.storage.shrink).mockClear()
+    root = createRoot(document.createElement('div'))
+    render('/v', null, allow)
+    let res: Awaited<ReturnType<typeof state.shrink>> | undefined
+    await act(async () => {
+      res = await state.shrink()
+    })
+    expect(allow).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(res).toEqual({ shrunk: 0, skipped: 0, bytesMoved: 0 })
+    expect(api.storage.shrink).not.toHaveBeenCalled()
+    expect(state.lastShrink).toBeNull()
+    expect(statsFn).not.toHaveBeenCalled()
+
+    allow.mockResolvedValueOnce(true)
+    vi.mocked(api.storage.shrink).mockResolvedValueOnce({ shrunk: 2, skipped: 0, bytesMoved: 4096 })
+    await act(async () => {
+      res = await state.shrink()
+    })
+    expect(api.storage.shrink).toHaveBeenCalledOnce()
+    expect(res).toEqual({ shrunk: 2, skipped: 0, bytesMoved: 4096 })
+    expect(state.lastShrink).toEqual({ shrunk: 2, skipped: 0, bytesMoved: 4096 })
   })
 })
