@@ -42,6 +42,19 @@ interface Entry {
   boards: Map<string, string>
   /** Each ID a board held before a two-Mac merge (YAZ-4071 7I, `formerIds`), to the ID it holds now; read with `boards`. */
   formerIds: Map<string, string>
+  /** Reverse index of `formerIds` (current ID → set of former IDs) so `getIndex` is O(boards) instead of O(boards × formerIds) (YAZ-6027). */
+  formerByCurrent: Map<string, Set<string>>
+  /** Monotonic mutation counter for `snapshot` caching (YAZ-6027). */
+  version: number
+  /** Last built `IndexResponse` snapshot, reused when `version`, `ids`, `letters`, `saved`, and `unfinished` match. */
+  snapshot?: {
+    version: number
+    ids: boolean
+    lettersKey: string
+    saved: boolean
+    unfinished: boolean
+    response: IndexResponse
+  }
   /**
    * Which folders answer for their own IDs (YAZ-4922 🔒 D1, `idsOwnedBy`), as read for what the index SHOWS: the counts
    * of the box and of Settings. Cleared when a folder comes or goes and when the app writes an `ids.json`. A write
@@ -73,12 +86,15 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
         .then(
           (record) => {
             entry.records.set(ev.path, record)
+            entry.version++
             // The diary pages each link to an ID this Mac made, with the time (YAZ-2677 R27).
             if (entry.ids) see(root, record, Date.now())
             // Every other indexed page is known to hold what it holds; this one, what it held before.
             void sweep(root, entry, [record], (p) => (p === ev.path ? held : entry.records.get(p)?.id))
           },
-          () => entry.records.delete(ev.path),
+          () => {
+            if (entry.records.delete(ev.path)) entry.version++
+          },
         )
         .finally(() => {
           entry.inFlight.delete(scan)
@@ -90,13 +106,17 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
     case 'addDir':
       entry.dirs.push(ev.path)
       entry.answers.clear()
+      entry.version++
       // A folder that appears is given its settings file, and so its id (D13).
       void sweep(root, entry, [], (p) => entry.records.get(p)?.id, [ev.path])
       return
     case 'unlink': {
-      if (entry.boards.delete(ev.path)) boardsChanged?.(root)
+      if (entry.boards.delete(ev.path)) {
+        entry.version++
+        boardsChanged?.(root)
+      }
       const id = isFolderSettingsPath(ev.path) ? entry.records.get(ev.path)?.id : undefined
-      entry.records.delete(ev.path)
+      if (entry.records.delete(ev.path)) entry.version++
       entry.waits.delete(ev.path)
       for (const key of entry.cardWaits.keys()) if (key.startsWith(`${ev.path}\n`)) entry.cardWaits.delete(key)
       schedulePersist(root, entry.records)
@@ -105,6 +125,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
     }
     case 'unlinkDir': {
       entry.answers.clear()
+      entry.version++
       const prefix = ev.path + path.sep
       for (const p of entry.records.keys()) if (p.startsWith(prefix)) entry.records.delete(p)
       for (const p of entry.waits.keys()) if (p.startsWith(prefix)) entry.waits.delete(p)
@@ -133,8 +154,13 @@ function learnFormer(entry: Entry, { id, was }: BoardIds): boolean {
   let learned = false
   if (id !== undefined)
     for (const w of was.map(canonicalPageId)) {
-      if (entry.formerIds.get(w) === id) continue
+      const prev = entry.formerIds.get(w)
+      if (prev === id) continue
+      if (prev !== undefined) entry.formerByCurrent.get(prev)?.delete(w)
       entry.formerIds.set(w, id)
+      let set = entry.formerByCurrent.get(id)
+      if (set === undefined) entry.formerByCurrent.set(id, (set = new Set()))
+      set.add(w)
       learned = true
     }
   return learned
@@ -161,6 +187,7 @@ async function readBoard(root: string, entry: Entry, file: string): Promise<void
   if (!learnFormer(entry, ids) && entry.boards.get(file) === id) return
   if (id === undefined) entry.boards.delete(file)
   else entry.boards.set(file, id)
+  entry.version++
   boardsChanged?.(root)
 }
 
@@ -214,6 +241,7 @@ export function indexBoard(file: string, id: string): void {
   for (const [root, entry] of entries) {
     if (!inside(root, file) || entry.boards.get(file) === id) continue
     entry.boards.set(file, id)
+    entry.version++
     boardsChanged?.(root)
   }
 }
@@ -251,8 +279,15 @@ function sweep(
 
 /** What a sweep found about two pages with one ID goes to the index (which page the ID opens meanwhile, S46) and to the bridge (S45). */
 function report(root: string, entry: Entry, { fixes, kept }: SweepResult, notice: boolean): void {
-  for (const [id, keeper] of kept) entry.kept.set(id, keeper)
-  for (const { id } of fixes) entry.kept.delete(id)
+  let changed = false
+  for (const [id, keeper] of kept) {
+    if (entry.kept.get(id) !== keeper) {
+      entry.kept.set(id, keeper)
+      changed = true
+    }
+  }
+  for (const { id } of fixes) if (entry.kept.delete(id)) changed = true
+  if (changed) entry.version++
   if (fixes.length > 0) fixed?.(root, fixes, notice ? fixNotice(fixes) : null)
 }
 
@@ -327,7 +362,7 @@ async function ownPart(root: string, entry: Entry): Promise<{ records: Map<strin
 
 async function build(root: string): Promise<Entry> {
   const dirs: string[] = []
-  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), cardWaits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map(), answers: new Map() }
+  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), cardWaits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map(), formerByCurrent: new Map(), version: 1, answers: new Map() }
   const files: string[] = []
   const boards: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
@@ -418,6 +453,12 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   const ids = answer === true
   if (ids && !entry.ids) sweepIndexed(root)
   entry.ids = ids
+  const unfinished = ids ? await planLeft(root) : false
+  const lettersKey = letters.join('\0')
+  const cached = entry.snapshot
+  if (cached !== undefined && cached.version === entry.version && cached.ids === ids && cached.lettersKey === lettersKey && cached.saved === saved && cached.unfinished === unfinished) {
+    return { ...cached.response, generatedAt: Date.now() }
+  }
   const sorted = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   // One map holds pages and folder settings files alike; the file name tells them apart (YAZ-2290 D8).
   const records: IndexRecord[] = []
@@ -427,23 +468,28 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(ids ? owned(r, letters, current, kept) : plain(r))
   // `ask` goes out while the answer is not yes (YAZ-2677 🔒 D2): the box in Settings shows the counts for a vault that said no too,
   // and asks for the letters the vault's file already holds (S9).
+  let response: IndexResponse
   if (!ids) {
     const own = await ownPart(root, entry)
-    return { root, records, folders, generatedAt: Date.now(), ids, ask: { ...wouldWrite(own.records, own.dirs, letters), ...(saved && { letters: letters[0] }) } }
+    response = { root, records, folders, generatedAt: Date.now(), ids, ask: { ...wouldWrite(own.records, own.dirs, letters), ...(saved && { letters: letters[0] }) } }
+  } else {
+    // A board's ID goes out as a page's does (R5): with the current letters, and not at all when it is another vault's.
+    // An ID two boards hold goes out for its keeper alone (YAZ-4129 6B3), so `[[ID]]` opens that board.
+    // The IDs it held before a two-Mac merge go out with it (YAZ-4071 7I): a link to one still opens it.
+    const keepers = await boardKeepers(entry)
+    const boards = [...entry.boards]
+      .flatMap(([p, held]) => {
+        const id = vaultPageId(held, letters)
+        if (id === undefined || keepers.get(held) !== p) return []
+        const rawWas = entry.formerByCurrent.get(held)
+        const was = rawWas === undefined ? [] : [...new Set([...rawWas].flatMap((w) => vaultPageId(w, letters) ?? []))].sort()
+        return [{ path: p, id, ...(was.length > 0 && { was }) }]
+      })
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    response = { root, records, folders, generatedAt: Date.now(), ids, letters, boards, ...(unfinished && { unfinished: true as const }) }
   }
-  // A board's ID goes out as a page's does (R5): with the current letters, and not at all when it is another vault's.
-  // An ID two boards hold goes out for its keeper alone (YAZ-4129 6B3), so `[[ID]]` opens that board.
-  // The IDs it held before a two-Mac merge go out with it (YAZ-4071 7I): a link to one still opens it.
-  const keepers = await boardKeepers(entry)
-  const boards = [...entry.boards]
-    .flatMap(([p, held]) => {
-      const id = vaultPageId(held, letters)
-      if (id === undefined || keepers.get(held) !== p) return []
-      const was = [...new Set([...entry.formerIds].flatMap(([w, now]) => (now === held ? (vaultPageId(w, letters) ?? []) : [])))].sort()
-      return [{ path: p, id, ...(was.length > 0 && { was }) }]
-    })
-    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-  return { root, records, folders, generatedAt: Date.now(), ids, letters, boards, ...((await planLeft(root)) && { unfinished: true as const }) }
+  entry.snapshot = { version: entry.version, ids, lettersKey, saved, unfinished, response }
+  return response
 }
 
 /** `p` is under `root` (a vault is never its own record). */
@@ -500,6 +546,7 @@ export async function indexMoved(oldPath: string, newPath: string, kind: 'file' 
         }
       }
     }
+    entry.version++
     schedulePersist(root, entry.records)
   }
 }
@@ -515,7 +562,10 @@ export async function indexWrote(p: string): Promise<void> {
   for (const [root, entry] of entries) {
     if (!inside(root, p)) continue
     await Promise.all([...entry.inFlight])
-    await scanFile(root, p).then((r) => void entry.records.set(p, r), () => undefined)
+    await scanFile(root, p).then((r) => {
+      entry.records.set(p, r)
+      entry.version++
+    }, () => undefined)
     schedulePersist(root, entry.records)
   }
 }
@@ -658,7 +708,10 @@ export async function turnIdsOn(root: string, letters: string, renamed?: Renamed
 const saveIds = (r: string, change: (config: Record<string, unknown>) => Record<string, unknown> | undefined): Promise<void> =>
   changeIds(r, change, async (config) => {
     await writeConfig(r, IDS_FILE, config)
-    for (const entry of entries.values()) entry.answers.clear()
+    for (const entry of entries.values()) {
+      entry.answers.clear()
+      entry.version++
+    }
   })
 
 /** The live index of a vault that uses IDs, and its letters; refused for any other. */
@@ -677,7 +730,10 @@ async function idsVault(root: unknown): Promise<{ r: string; entry: Entry; lette
 async function stateAfter(root: string, entry: Entry, { changed, gone }: Pass): Promise<IdsState> {
   for (const file of gone) entry.records.delete(file)
   for (const file of changed) await scanFile(root, file).then((record) => entry.records.set(file, record), () => undefined)
-  if (changed.length > 0 || gone.length > 0) schedulePersist(root, entry.records)
+  if (changed.length > 0 || gone.length > 0) {
+    entry.version++
+    schedulePersist(root, entry.records)
+  }
   return idsStateOf((await ownPart(root, entry)).records.values(), (await vaultIds(root)).letters, await planLeft(root))
 }
 

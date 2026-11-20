@@ -324,6 +324,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     store: session,
     vault: id,
     now: clock.now,
+    heldIndex: gen === generation ? current : null,
     // Each yield of the pass is a step: a long pass that works is never taken for a stuck one.
     yieldToUi: () => {
       step()

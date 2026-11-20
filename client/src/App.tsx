@@ -1217,7 +1217,8 @@ export function App() {
    */
   const openRoot = useCallback(async (path: string): Promise<boolean> => {
     try {
-      await api.tree(path)
+      // Prime treeFeed so Sidebar's useVaultTree reuses this walk instead of walking the vault twice (YAZ-6027).
+      await fetchTree(path)
     } catch (err) {
       if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) {
         storage.removeRecentRoot(path)
@@ -1262,7 +1263,7 @@ export function App() {
     const found: string[] = []
     for (const vault of set.roots) {
       try {
-        await api.tree(vault)
+        await fetchTree(vault)
         found.push(vault)
       } catch {
         // A folder that is gone is left out, and named below.

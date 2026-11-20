@@ -165,8 +165,13 @@ export function isNetworkMount(table: string, real: string): boolean {
   return best !== null && !best.local
 }
 
+/** Bounded concurrency for recursive watcher walks and resyncs (YAZ-6027). */
+const WALK_CONCURRENCY = 32
+
 class Engine extends EventEmitter implements TreeWatcher {
   private readonly known = new Map<string, Known>()
+  /** Direct children of each known directory so `syncChildren` and `forget` are O(subtree) instead of O(N) (YAZ-6027). */
+  private readonly children = new Map<string, Set<string>>()
   /** Known paths by their case-folded spelling: a case-only rename must not look like "still there". */
   private readonly folded = new Map<string, Set<string>>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -405,7 +410,10 @@ class Engine extends EventEmitter implements TreeWatcher {
   /** A known folder's direct entries against the disk: new ones are looked at, vanished ones forgotten. */
   private async syncChildren(d: string): Promise<void> {
     const names = new Set(await readdir(d).catch(() => [] as string[]))
-    for (const p of [...this.known.keys()]) if (path.dirname(p) === d && !names.has(path.basename(p))) this.forget(p)
+    const direct = this.children.get(d)
+    if (direct !== undefined) {
+      for (const p of [...direct]) if (!names.has(path.basename(p))) this.forget(p)
+    }
     for (const name of names) {
       const p = path.join(d, name)
       if (!this.known.has(p) && !this.skip(p)) await this.look(p)
@@ -415,38 +423,80 @@ class Engine extends EventEmitter implements TreeWatcher {
   /** The whole tree against what the engine knew: the difference is announced, as if every path had been queued. */
   private async resync(): Promise<void> {
     const unseen = new Set(this.known.keys())
-    const visit = async (d: string): Promise<void> => {
-      for (const e of await readdir(d, { withFileTypes: true }).catch(() => [])) {
-        if (this.closed) return
-        const p = path.join(d, e.name)
-        if (this.skip(p)) continue
-        unseen.delete(p)
-        if (this.known.get(p)?.dir === true && e.isDirectory()) await visit(p)
-        else await this.look(p)
+    const dirsToVisit: string[] = [this.dir]
+    const toLook: string[] = []
+    let next = 0
+    const dirWorker = async (): Promise<void> => {
+      while (next < dirsToVisit.length && !this.closed) {
+        const d = dirsToVisit[next++]!
+        const entries = await readdir(d, { withFileTypes: true }).catch(() => [])
+        for (const e of entries) {
+          if (this.closed) return
+          const p = path.join(d, e.name)
+          if (this.skip(p)) continue
+          unseen.delete(p)
+          if (this.known.get(p)?.dir === true && e.isDirectory()) dirsToVisit.push(p)
+          else toLook.push(p)
+        }
       }
     }
-    await visit(this.dir)
+    // Kick off bounded-parallel directory walks; wait until all discovered directories are drained.
+    while (next < dirsToVisit.length && !this.closed) {
+      const width = Math.min(WALK_CONCURRENCY, dirsToVisit.length - next)
+      await Promise.all(Array.from({ length: width }, dirWorker))
+    }
+    if (this.closed) return
+    for (const p of toLook) {
+      if (this.closed) return
+      await this.look(p)
+    }
     if (this.closed) return
     for (const p of unseen) if (this.known.has(p)) this.forget(p)
   }
 
   /** Everything under `d`, remembered; announced as `add`/`addDir` when `announce`. */
   private async walk(d: string, announce: boolean): Promise<void> {
-    const entries = await readdir(d, { withFileTypes: true }).catch(() => [])
-    for (const e of entries) {
-      if (this.abandoned || this.closed) return
-      const p = path.join(d, e.name)
-      if (this.skip(p) || this.known.has(p)) continue
-      const st = await lstat(p).catch(() => null)
-      if (st === null) continue
-      this.remember(p, st)
-      if (announce) this.emit(st.isDirectory() ? 'addDir' : 'add', p, st)
-      if (st.isDirectory()) await this.walk(p, announce)
+    const queue: string[] = [d]
+    let qNext = 0
+    const drain = async (): Promise<void> => {
+      while (qNext < queue.length && !this.abandoned && !this.closed) {
+        const dir = queue[qNext++]!
+        const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+        const paths: string[] = []
+        for (const e of entries) {
+          if (this.abandoned || this.closed) return
+          const p = path.join(dir, e.name)
+          if (!this.skip(p) && !this.known.has(p)) paths.push(p)
+        }
+        // Bounded-parallel lstat within this folder; announce/recurse cleanly once stats settle.
+        for (let i = 0; i < paths.length; i += WALK_CONCURRENCY) {
+          if (this.abandoned || this.closed) return
+          const slice = paths.slice(i, i + WALK_CONCURRENCY)
+          const stats = await Promise.all(slice.map((p) => lstat(p).catch(() => null)))
+          for (let j = 0; j < slice.length; j++) {
+            if (this.abandoned || this.closed) return
+            const p = slice[j]!
+            const st = stats[j]
+            if (st === null || this.known.has(p)) continue
+            this.remember(p, st)
+            if (announce) this.emit(st.isDirectory() ? 'addDir' : 'add', p, st)
+            if (st.isDirectory()) queue.push(p)
+          }
+        }
+      }
+    }
+    while (qNext < queue.length && !this.abandoned && !this.closed) {
+      const width = Math.min(WALK_CONCURRENCY, queue.length - qNext)
+      await Promise.all(Array.from({ length: width }, drain))
     }
   }
 
   private remember(p: string, st: Stats): void {
     this.known.set(p, { dir: st.isDirectory(), mtimeMs: st.mtimeMs, size: st.size, ino: st.ino })
+    const parent = path.dirname(p)
+    let kids = this.children.get(parent)
+    if (kids === undefined) this.children.set(parent, (kids = new Set()))
+    kids.add(p)
     const key = p.toLowerCase()
     const set = this.folded.get(key) ?? new Set<string>()
     set.add(p)
@@ -455,11 +505,28 @@ class Engine extends EventEmitter implements TreeWatcher {
 
   /** `p` and everything known beneath it are gone: deepest first, then `p` itself (never the watched folder). */
   private forget(p: string): void {
-    const inside = [...this.known.keys()].filter((k) => isInside(p, k)).sort((a, b) => b.length - a.length)
+    const inside: string[] = []
+    const collect = (dir: string): void => {
+      const kids = this.children.get(dir)
+      if (kids === undefined) return
+      for (const child of kids) {
+        collect(child)
+        inside.push(child)
+      }
+    }
+    collect(p)
+    inside.sort((a, b) => b.length - a.length)
     for (const k of [...inside, ...(p === this.dir ? [] : [p])]) {
       const was = this.known.get(k)
       if (was === undefined) continue
       this.known.delete(k)
+      this.children.delete(k)
+      const parent = path.dirname(k)
+      const siblings = this.children.get(parent)
+      if (siblings !== undefined) {
+        siblings.delete(k)
+        if (siblings.size === 0) this.children.delete(parent)
+      }
       const key = k.toLowerCase()
       this.folded.get(key)?.delete(k)
       if (this.folded.get(key)?.size === 0) this.folded.delete(key)

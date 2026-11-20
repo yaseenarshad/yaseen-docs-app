@@ -3,6 +3,7 @@ import { fileKind } from '@shared/fileKind'
 import { IDS_FILE } from '@shared/pageId'
 import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
 import { api } from '../api'
+import { fetchIndex, onIndex } from '../lib/indexFeed'
 import type { WatchSource } from '../hooks/useWatch'
 
 export type IndexStatus = 'pending' | 'ready' | 'error'
@@ -81,23 +82,27 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
   /** Did an event come in since the last read of this window (13AK)? Read when the window ends. */
   const more = useRef(false)
 
+  const applySnapshot = useCallback((res: IndexResponse) => {
+    setRecords(res.records)
+    setFolders(res.folders)
+    setIds(res.ids)
+    // Kept by identity while they read the same: the link resolver is rebuilt when they change, never on each fetch.
+    const next = res.letters ?? NO_LETTERS
+    setLetters((prev) => (prev.length === next.length && prev.every((held, i) => held === next[i]) ? prev : next))
+    setAsk(res.ask)
+    setUnfinished(res.unfinished === true)
+    const held = res.boards ?? NO_BOARDS
+    setBoards((prev) => (prev.length === held.length && prev.every((b, i) => b.path === held[i]!.path && b.id === held[i]!.id) ? prev : held))
+    setStatus('ready')
+    setError(null)
+  }, [])
+
   const refresh = useCallback(() => {
     const gen = ++generation.current
-    api.index(root).then(
+    fetchIndex(root).then(
       (res) => {
         if (gen !== generation.current) return
-        setRecords(res.records)
-        setFolders(res.folders)
-        setIds(res.ids)
-        // Kept by identity while they read the same: the link resolver is rebuilt when they change, never on each fetch.
-        const next = res.letters ?? NO_LETTERS
-        setLetters((prev) => (prev.length === next.length && prev.every((held, i) => held === next[i]) ? prev : next))
-        setAsk(res.ask)
-        setUnfinished(res.unfinished === true)
-        const held = res.boards ?? NO_BOARDS
-        setBoards((prev) => (prev.length === held.length && prev.every((b, i) => b.path === held[i]!.path && b.id === held[i]!.id) ? prev : held))
-        setStatus('ready')
-        setError(null)
+        applySnapshot(res)
       },
       (err: unknown) => {
         if (gen !== generation.current) return
@@ -105,7 +110,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
         setError(err instanceof Error ? err.message : String(err))
       },
     )
-  }, [root])
+  }, [root, applySnapshot])
 
   useEffect(() => {
     setStatus('pending')
@@ -117,6 +122,8 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     setUnfinished(false)
     setBoards(NO_BOARDS)
     setError(null)
+    // Keep the shared feed alive for this root so search and other consumers share snapshots without duplicate IPCs (YAZ-6027).
+    const offFeed = onIndex(root, () => undefined)
     refresh()
     // Leading and trailing (13AK): a read now, then one at the end of each window that had events.
     const settle = (): void => {
@@ -153,6 +160,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     })
     return () => {
       generation.current++
+      offFeed()
       unsubscribe()
       unsubscribeIds()
       unsubscribeChange()
