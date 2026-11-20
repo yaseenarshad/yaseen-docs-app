@@ -27,7 +27,6 @@ import { registerUpdateIpc } from './ipc/update'
 import { askHeap, askTabs, askViews, registerMemoryIpc } from './ipc/memory'
 import { createMemoryMeter, createReloadWatch, helperRss, type MemoryMeter, type ReloadWatch } from './memory'
 import { claimDeepLinkScheme } from './deepLinkScheme'
-import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
 import { cleanupTreeWatcherProbes } from './fs/treeWatcher'
@@ -41,7 +40,6 @@ import { followSettingsFolder } from './settingsFolder'
 import { drawingInFront, hotkeyRecording, noPageInFront } from './hotkeyRecording'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
-import { movePageSwitches } from './movePageSwitches'
 import { runQuitSequence } from './quitSequence'
 import { createSpeller, nativeMenuAsker, spellerPath } from './speller'
 import { cardSkillStamp, ensureCardSkill, shippedCardSkill } from './cardSkill'
@@ -533,22 +531,10 @@ app.whenReady().then(() => {
   // rather than at module scope because powerMonitor is only safe to touch after `ready`.
   powerMonitor.on('resume', () => sync.notifyWake())
   powerMonitor.on('unlock-screen', () => sync.notifyWake())
-  // Draw's data, copied one time into the gaps (YAZ-3028 D6): the app-data half now, each vault's half when it opens.
-  startDrawImport({
-    drawDir: join(app.getPath('appData'), DRAW_APP_NAME),
-    userData: app.getPath('userData'),
-    store,
-    secrets,
-    appData: shouldImportDrawAppData(process.env),
-    rootsOf,
-  })
   // The 1.0.15 heading styles move once into the vaults (YAZ-3066 D11). Before `restore`, which
   // drops the windows a launch does not bring back: every vault of the last session gets its copy.
   // It never holds up a window: a renderer that read no file yet hears the write as a change.
   void moveLegacyHeadingStyles(store).catch((err: unknown) => console.error(`[textFormatting] the move failed: ${String(err)}`))
-  // The page switches the app state held for pages move once into the pages (YAZ-4094 G4). The same terms: a
-  // window that has the page open hears the write as an outside change of its frontmatter.
-  void movePageSwitches(store).catch((err: unknown) => console.error(`[pageSwitches] the move failed: ${String(err)}`))
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.

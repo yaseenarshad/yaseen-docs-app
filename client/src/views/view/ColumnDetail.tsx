@@ -31,8 +31,6 @@ const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : 
 /** The Align row's choices (YAZ-3746 13Y): `auto` is no `columnAlign` entry. */
 const ALIGN_OPTIONS = [['auto', 'Auto'], ['left', 'Left'], ['center', 'Center'], ['right', 'Right']] as const satisfies readonly (readonly [ColumnAlign | 'auto', string])[]
 
-/** "Shows on <folder>" (YAZ-4781 R1): a link column's two choices. */
-const PAIR_OPTIONS = [['one', 'One way'], ['both', 'Both ways']] as const satisfies readonly (readonly ['one' | 'both', string])[]
 /** The Folder column's look (YAZ-4801). */
 const FOLDER_COLUMN_OPTIONS = [['path', 'From this page'], ['full', 'Full path'], ['last', 'Last folder']] as const satisfies readonly (readonly ['path' | 'full' | 'last', string])[]
 /** "Settings" of a parent's column (YAZ-4769 demo): the parent's, or this folder's own copy. Short, so they fit the panel. */

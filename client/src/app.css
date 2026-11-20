@@ -490,20 +490,10 @@ button {
   border-radius: 3px;
 }
 
-.frontmatter-panel__new,
 .frontmatter-panel__footer {
   display: flex;
   gap: 6px;
   align-items: center;
-}
-
-/* The add form is 371px with its type (YAZ-4551): on a narrow page, Add and Cancel wrap to the next line (YAZ-4544). */
-.frontmatter-panel__new {
-  flex-wrap: wrap;
-}
-
-.frontmatter-panel__name {
-  width: 150px;
 }
 
 /* The page's Add property row (YAZ-4713 C8A, YAZ-4769): one row, as a property's — the name in the names' column, then

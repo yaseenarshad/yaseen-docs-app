@@ -21,8 +21,6 @@ export const setTimeFormatSetting = (format: string): void => setApp({ tableTime
 export const setCalendarDaySetting = (start: number, end: number): void =>
   setApp(isCalendarDayTime(start) && isCalendarDayTime(end) && start < end ? { tableDayStart: start, tableDayEnd: end } : { tableDayStart: DEFAULT_CALENDAR_DAY.start, tableDayEnd: DEFAULT_CALENDAR_DAY.end })
 export const setHeaderRowSetting = (value: HeaderRow): void => setApp({ tableHeaderRow: value })
-export const setSubheaderRowSetting = (value: HeaderRow): void => setApp({ tableSubheaderRow: value })
-export const setStickySubheadersSetting = (on: boolean): void => setApp({ tableStickySubheaders: on })
 export const setStickyHeaderSetting = (on: boolean): void => setApp({ tableStickyHeader: on })
 export const setTextInCellsSetting = (value: TableTextInCells): void => setApp({ tableTextInCells: value === 'clip' ? 'clip' : 'wrap' })
 

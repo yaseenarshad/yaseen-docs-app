@@ -46,11 +46,6 @@ export type SettingRefusedWhy = 'invalid' | 'layout'
 
 export type SettingResult = { kind: 'set'; content: string } | { kind: 'already' } | { kind: 'refused'; why: SettingRefusedWhy }
 
-export const SETTING_REFUSED_WORDS: Record<SettingRefusedWhy, string> = {
-  invalid: "This page's properties do not read correctly, so the phone did not change its setting. Fix them on the Mac. Nothing was changed.",
-  layout: "The phone can't change this page's setting without changing its properties. Change it on the Mac. Nothing was changed.",
-}
-
 /** The page's own value for `key` (the Mac's `readPageSwitches`: a boolean, else none). */
 export const switchOf = (content: string, key: PageSettingKey): boolean | undefined => {
   const value: unknown = parseFrontmatter(splitFrontmatter(content).frontmatter).properties[key]

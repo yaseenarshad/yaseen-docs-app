@@ -18,10 +18,9 @@ import { serializeBoard } from '@shared/drawingAssets'
 import { fileKind } from '@shared/fileKind'
 import { setDiagramReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 import type { BoardKind, BoardReadOnlyResponse } from '@shared/types'
-import { BOARDS, boardTarget } from './boardDocument'
-import { readBoundedRegularFile } from './boundedRead'
+import { boardTarget, mutateBoardFile } from './boardDocument'
 import { parseScene } from './drawing'
-import { atomicWrite, BridgeFailure, fsCall, requireDir } from './fsUtils'
+import { BridgeFailure } from './fsUtils'
 import { requireRequest } from './validate'
 
 /** The kind by the request path's extension (`fileKind`, as `createBoard` reads it); any other file has no switch of the board doors. */
@@ -39,23 +38,14 @@ export async function setBoardReadOnly(req: unknown): Promise<BoardReadOnlyRespo
   const { dir, file, body } = boardTarget(req, kind)
   const { on, expectedMtime } = body
   if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean", { path: file })
-  if (typeof expectedMtime !== 'number') throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: file })
-  await requireDir(dir)
-  const snap = await readBoundedRegularFile(file, BOARDS[kind].max, BOARDS[kind].tooLarge)
-  if (snap.mtime !== expectedMtime) throw new BridgeFailure('CONFLICT', `${BOARDS[kind].noun} changed on disk since last read`, { path: file, mtime: snap.mtime })
-  const text = snap.data.toString('utf8')
-  let next: string
-  if (kind === 'drawing') {
-    const { scene } = parseScene(text, file, 'IO_ERROR')
-    const marked = withDrawingReadOnly(scene, on, snap.mtime)
-    next = marked === scene ? text : serializeBoard(marked)
-  } else {
+  return mutateBoardFile(dir, file, kind, expectedMtime, (text, mtime) => {
+    if (kind === 'drawing') {
+      const { scene } = parseScene(text, file, 'IO_ERROR')
+      const marked = withDrawingReadOnly(scene, on, mtime)
+      return marked === scene ? text : serializeBoard(marked)
+    }
     const problem = diagramDocumentError(text)
     if (problem !== null) throw new BridgeFailure('IO_ERROR', problem, { path: file })
-    next = setDiagramReadOnly(text, on)
-  }
-  if (next === text) return { path: file, mtime: snap.mtime, size: snap.size }
-  if (Buffer.byteLength(next, 'utf8') > BOARDS[kind].max) throw new BridgeFailure('TOO_LARGE', BOARDS[kind].tooLarge, { path: file })
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next))
-  return { path: file, mtime, size }
+    return setDiagramReadOnly(text, on)
+  })
 }
