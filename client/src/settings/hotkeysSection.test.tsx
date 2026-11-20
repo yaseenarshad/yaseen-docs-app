@@ -363,7 +363,7 @@ describe('one card per key (YAZ-3564)', () => {
     expect(row('hotkey-drawing-colorRed').querySelector('.hotkeys__lost')).toBeNull()
     expect(rows('T').slice(0, 2)).toEqual(['hotkey-drawing-text', 'hotkey-drawing-colorTransparent'])
     expect(action('drawing-colorTransparent')).toBe('Transparent, with a selection (on an icon: takes off the outline)')
-    expect(rows('1')).toEqual(['hotkey-drawing-size1', 'hotkey-diagram-size'])
+    expect(rows('1')).toEqual(['hotkey-drawing-size1', 'hotkey-diagram-size', 'hotkey-review-remembered', 'hotkey-review-again'])
     expect(action('drawing-size1')).toBe('Size: text 12, anything else 48 on its long side, with a selection')
     expect(action('drawing-size0')).toBe('Size: text 128, anything else 1024 on its long side, with a selection')
     // Neither is a clash: Rectangle's key is a button with no "Blocked" line.
@@ -447,6 +447,32 @@ describe('one card per key (YAZ-3564)', () => {
     click(button(row('hotkeys-reset-all'), 'Reset all shown'))
     click(button(el.querySelector('.confirm') as HTMLElement, 'Reset 2 hotkeys'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })
+  })
+
+  it('YAZ-5996: Review chip shows review hotkeys; Forgot can take 1 from Remembered without touching 4-button Again, and built-in O is refused', async () => {
+    await mount()
+    click(chip('Review'))
+    expect(shownRows().filter((id) => id?.startsWith('hotkey-')).every((id) => id?.startsWith('hotkey-review-'))).toBe(true)
+    expect(keyButton('review-remembered').textContent).toBe('1')
+    expect(keyButton('review-forgot').textContent).toBe('2')
+    // Built-in O is refused.
+    click(keyButton('review-remembered'))
+    press('o', 'KeyO')
+    expect(lines('review-remembered')[0]).toBe('O is built in: Review › Open page or card. Pick a different key.')
+    // Bare letter J is accepted.
+    press('j', 'KeyJ')
+    expect(says()).toEqual(['Change the key for Remembered?', '1 → J'])
+    click(button(popup() as HTMLElement, 'Save'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'review.remembered': 'J' } })
+    // Reset Remembered to 1, then move 1 to Forgot: only Remembered loses its key, 4-button Again keeps 1.
+    click(button(row('hotkey-review-remembered'), 'Reset'))
+    click(button(popup() as HTMLElement, 'Reset'))
+    click(keyButton('review-forgot'))
+    press('1', 'Digit1')
+    expect(says()).toEqual(['Change the key for Forgot?', '2 → 1', '1 is Review › Remembered now. It will lose its key.'])
+    click(button(popup() as HTMLElement, 'Move it here'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'review.remembered': null, 'review.forgot': '1' } })
+    expect(keyButton('review-again').textContent).toBe('1')
   })
 })
 

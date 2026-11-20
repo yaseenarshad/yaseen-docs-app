@@ -283,7 +283,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       props.vaultOf = (path) => ({ ...plain(path), readOnly })
       render()
       await flush()
-      press('2')
+      press('1')
       expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
       expect(review.setNext).not.toHaveBeenCalled()
       if (!readOnly) {
@@ -300,8 +300,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.showAnswers).toHaveBeenCalledOnce()
     await flush()
     expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
-      ['Forgot (1)', 'Forgot · later today'],
-      ['Remembered (2)', 'Remembered · 3 days'],
+      ['Forgot (2)', 'Forgot · later today'],
+      ['Remembered (1)', 'Remembered · 3 days'],
     ])
     press(' ')
     expect([sides(), shown(), blanks()]).toEqual([1, ['France'], 0])
@@ -316,7 +316,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     // More Space changes nothing.
     press(' ')
     expect(review.showAnswers).toHaveBeenCalledOnce()
-    press('2')
+    press('1')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
   })
 
@@ -324,7 +324,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     mount(TWO_SIDES)
     await flush()
     expect(shown()).toEqual([])
-    press('1')
+    press('2')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('again', expect.any(Number))
     act(() => buttons()[1].click())
     expect(review.answer).toHaveBeenLastCalledWith('good', expect.any(Number))
@@ -335,10 +335,10 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await flush()
     expect(review.showAnswers).not.toHaveBeenCalled()
     expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
-      ['Forgot (1)', 'Forgot'],
-      ['Remembered (2)', 'Remembered'],
+      ['Forgot (2)', 'Forgot'],
+      ['Remembered (1)', 'Remembered'],
     ])
-    press('2')
+    press('1')
     act(() => buttons()[0].click())
     expect(review.answer).not.toHaveBeenCalled()
   })
@@ -817,7 +817,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     mount('Plain')
     await flush()
     const two = glyphs()
-    expect(two.map(([label, , key]) => [label, key])).toEqual([['Forgot', '(1)'], ['Remembered', '(2)']])
+    expect(two.map(([label, , key]) => [label, key])).toEqual([['Forgot', '(2)'], ['Remembered', '(1)']])
     expect(two.every(([, d]) => typeof d === 'string' && d.length > 0)).toBe(true)
     expect(two[0][1]).not.toBe(two[1][1])
     act(() => root?.unmount())
@@ -973,7 +973,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const last = () => el.querySelector<HTMLElement>('.card-inbox__last')!
     // The row is there, empty, before any answer (no jump when the line comes).
     expect(last().textContent).toBe('')
-    press('2')
+    press('1')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
     // Not yet counted by the session (the write runs): no line.
     expect(last().textContent).toBe('')
@@ -1183,7 +1183,7 @@ describe('the title on the front (YAZ-5030)', () => {
   it('the answer line names a card by its title; a title hidden in review never (YAZ-5695): its ID', async () => {
     withLine(false)
     await flush()
-    press('2')
+    press('1')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France · back in 3 days · Undo (Cmd+Z)')
@@ -1192,7 +1192,7 @@ describe('the title on the front (YAZ-5030)', () => {
   it('after an answer, a title hidden in review is still nowhere (YAZ-5695): the answer line names the card by its ID', async () => {
     withLine(true)
     await flush()
-    press('2')
+    press('1')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · WIKI-9 · back in 3 days · Undo (Cmd+Z)')
@@ -1202,7 +1202,7 @@ describe('the title on the front (YAZ-5030)', () => {
   it('YAZ-5694: on a finish screen the answer line`s Undo is the only one; the key row under it does not say it again', async () => {
     withLine(false)
     await flush()
-    press('2')
+    press('1')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     // The last card answered: the finish screen, the line still there with its Undo.
@@ -1392,7 +1392,7 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
     press(' ')
     press(' ')
     expect(band()).toBe('none')
-    press('2')
+    press('1')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · WIKI-9 · back in 3 days · Undo (Cmd+Z)')
@@ -1525,7 +1525,7 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
   it('the answer line names the card by its title, though it had not shown yet', async () => {
     at('side2')
     await flush()
-    press('2')
+    press('1')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France · back in 3 days · Undo (Cmd+Z)')
@@ -1632,7 +1632,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     tick(90_000)
     act(() => void window.dispatchEvent(new MouseEvent('mousemove'))) // back at the desk: the time goes on from here
     work(5)
-    press('2')
+    press('1')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', 15)
   })
 
@@ -2828,6 +2828,104 @@ describe('the Inbox zoom (YAZ-5372)', () => {
     drag('left', 300, 0) // far out: the room, at 100%
     expect(inboxCardWidth()).toBe(800)
     setInboxCardWidth(null)
+  })
+})
+
+describe('YAZ-5995 (D4 4B): review title-sized waiting/next blank and data-next handoff', () => {
+  const band = () => el.querySelector<HTMLElement>('.card-inbox__panel > .card-band')
+  const titleBlank = () => band()?.querySelector<HTMLElement>('.card-band__blank') ?? null
+
+  it('After the first click: title blank wears data-next, body blanks wear none, and clicking the title blank reveals it and moves data-next to the first body blank', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'click', titleRoom: 'always' })
+    expect(band()?.hasAttribute('data-next')).toBe(true)
+    expect(titleBlank()?.hasAttribute('data-next')).toBe(true)
+    expect(titleBlank()?.querySelector('.card__word')?.textContent).toBe('Capital of France')
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+    act(() => titleBlank()!.click())
+    expect(titleBlank()).toBeNull()
+    expect(band()?.className).toBe('card-band card-band--fade')
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(1)
+  })
+
+  it('Before Side 2: title blank waits grey while Side 1 blanks come first, then takes data-next before Side 2', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'side2', titleRoom: 'always' })
+    expect(titleBlank()).not.toBeNull()
+    expect(titleBlank()?.hasAttribute('data-next')).toBe(false)
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(1)
+    press(' ')
+    expect(titleBlank()?.hasAttribute('data-next')).toBe(true)
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+    act(() => titleBlank()!.click())
+    expect(titleBlank()).toBeNull()
+    expect(sides()).toBe(1)
+  })
+
+  it('never draws a title blank for Never, Always, empty title, Title room = Only when it shows, or a {{…}} title', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'never', titleRoom: 'always' })
+    expect(titleBlank()).toBeNull()
+    act(() => root?.unmount())
+    el.remove()
+
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'always', titleRoom: 'always' })
+    expect(titleBlank()).toBeNull()
+    act(() => root?.unmount())
+    el.remove()
+
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'click', titleRoom: 'shown' })
+    expect(band()).toBeNull()
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+    act(() => root?.unmount())
+    el.remove()
+
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'click', titleRoom: 'always' })
+    session = sessionOf(TWO_SIDES, {}, '')
+    render()
+    expect(titleBlank()).toBeNull()
+
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'click', titleRoom: 'always' })
+    session = sessionOf(TWO_SIDES, {}, '{{Paris}}')
+    render()
+    expect(titleBlank()).toBeNull()
+  })
+})
+
+describe('YAZ-5996 (D7): flipped 2-button defaults and live custom review hotkeys', () => {
+  it('rebound 2-button keys update button labels live without changing button order, and cleared keys hide the badge', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Forgot (2)', 'Remembered (1)'])
+    props = { ...props, hotkeys: { 'review.remembered': 'J', 'review.forgot': 'K' } }
+    render()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Forgot (K)', 'Remembered (J)'])
+    press('1')
+    press('2')
+    expect(review.answer).not.toHaveBeenCalled()
+    press('j')
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
+    press('k')
+    expect(review.answer).toHaveBeenLastCalledWith('again', expect.any(Number))
+    props = { ...props, hotkeys: { 'review.remembered': null, 'review.forgot': 'K' } }
+    render()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Forgot (K)', 'Remembered'])
+  })
+
+  it('4-button mode defaults to 1-4 and respects custom rebound keys', async () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, buttons: 4 })
+    await flush()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Again (1)', 'Hard (2)', 'Good (3)', 'Easy (4)'])
+    press('1')
+    expect(review.answer).toHaveBeenLastCalledWith('again', expect.any(Number))
+    press('2')
+    expect(review.answer).toHaveBeenLastCalledWith('hard', expect.any(Number))
+    press('3')
+    expect(review.answer).toHaveBeenLastCalledWith('good', expect.any(Number))
+    press('4')
+    expect(review.answer).toHaveBeenLastCalledWith('easy', expect.any(Number))
+    props = { ...props, hotkeys: { 'review.easy': 'L' } }
+    render()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Again (1)', 'Hard (2)', 'Good (3)', 'Easy (L)'])
+    press('l')
+    expect(review.answer).toHaveBeenLastCalledWith('easy', expect.any(Number))
   })
 })
 

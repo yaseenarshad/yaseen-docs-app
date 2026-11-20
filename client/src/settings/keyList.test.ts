@@ -85,4 +85,24 @@ describe('the clash rule (K3) and the step aside (K9)', () => {
     expect(isUsableFor(trim, 'CmdOrCtrl+K CmdOrCtrl+X')).toBe(true)
     expect(isUsableFor(trim, 'CmdOrCtrl+K X')).toBe(false)
   })
+
+  it('YAZ-5996: review scope allows bare letters/digits, isolates 2-button vs 4-button answer clashes, and blocks built-in review keys', () => {
+    const remembered = keyRow('review.remembered')!
+    const forgot = keyRow('review.forgot')!
+    const again = keyRow('review.again')!
+    expect(remembered.keys).toEqual(['1'])
+    expect(forgot.keys).toEqual(['2'])
+    expect(again.keys).toEqual(['1'])
+    expect(isUsableFor(remembered, 'J')).toBe(true)
+    expect(isUsableFor(remembered, '1')).toBe(true)
+    expect(isUsableFor(remembered, 'CmdOrCtrl+1')).toBe(true)
+    // Two-button and four-button answer rows share 1 and 2 without clashing with each other.
+    expect(clashesOf(remembered, '1', {}, {})).toEqual([])
+    expect(clashesOf(forgot, '2', {}, {})).toEqual([])
+    // Within two-button mode, Forgot taking 1 clashes ONLY with Remembered (not four-button Again).
+    expect(clashesOf(forgot, '1', {}, {}).map((r) => r.id)).toEqual(['review.remembered'])
+    // Built-in review keys (no mode) clash with both two-button and four-button answer rows.
+    expect(clashesOf(remembered, 'O', {}, {}).map((r) => r.id)).toEqual(['review.open'])
+    expect(clashesOf(again, 'Space', {}, {}).map((r) => r.id)).toEqual(['review.step'])
+  })
 })

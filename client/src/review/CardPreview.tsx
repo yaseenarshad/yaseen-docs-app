@@ -58,7 +58,8 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
   const { text, title: headTitle } = useCardFront(card.text, card, settings?.titleAt ?? 'always')
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
-  const steps = useCardSteps(text, cardKey, rootRef, bandTitleStep(headTitle, card.titleAt, settings?.titleAt ?? 'always'))
+  const titleStep = bandTitleStep(headTitle, card.titleAt, settings?.titleAt ?? 'always')
+  const steps = useCardSteps(text, cardKey, rootRef, titleStep)
   // YAZ-5696: the Inbox's timing (the card's own choice, else the vault's; Review off: at once).
   const band = bandTitle(headTitle, card.titleAt, settings?.titleAt ?? 'always', steps)
   useStepScroll(steps, true, rootRef)
@@ -141,8 +142,16 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
               // Title room (YAZ-5880, the Inbox's): Always, a band on every card, empty with no title, the title unseen
               // while it waits; Only when it shows (YAZ-5864), no band while the title waits.
               ((settings?.titleRoom ?? 'always') === 'always' || (headTitle !== '' && !band.waits)) && (
-                <CardBand key={cardKey} waiting={band.waits}>
-                  {headTitle !== '' && <span className="card-inbox__name">{headTitle}</span>}
+                <CardBand key={cardKey} waiting={band.waits} next={steps.titleNow} onClick={step}>
+                  {headTitle === '' ? null : band.waits && titleStep !== null ? (
+                    <span className="card-inbox__name">
+                      <span className="card-band__blank" data-next={steps.titleNow ? '' : undefined}>
+                        <span className="card__word">{headTitle}</span>
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="card-inbox__name">{headTitle}</span>
+                  )}
                 </CardBand>
               )
             }

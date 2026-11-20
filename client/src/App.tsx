@@ -4232,7 +4232,7 @@ export function App() {
       )}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
-      {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
+      {keySheetOpen && <KeySheet place={placeOverTab() ?? (inboxShown ? 'review' : keyPlaceOf(file))} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
       {/* Preview a card (YAZ-5152) in a Files window: no page area there, so it covers the window. */}
       {filesWindow && cardPreviewView('window')}
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
@@ -4537,7 +4537,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} cardVarsOf={cardVarsFor} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} showInSidebar={showInSidebar} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} courseOffer={inboxCourseOffer} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} cardVarsOf={cardVarsFor} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} showInSidebar={showInSidebar} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} courseOffer={inboxCourseOffer} hotkeys={settings.hotkeys} />
               </Suspense>
             )}
             {/* Preview a card (YAZ-5152 A): in the page area as the Inbox tab is, over it too; the sidebar and the tab row stay. */}

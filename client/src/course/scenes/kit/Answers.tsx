@@ -11,13 +11,13 @@ export type Answer = 'forgot' | 'remembered'
 
 export function Answers({ beat, forgot, remembered, chosen, onAnswer }: { beat: Beat; forgot: number; remembered: number; chosen?: Answer | null; onAnswer?: (answer: Answer) => void }) {
   const live = onAnswer !== undefined && (chosen ?? null) === null
-  const row: [Answer, string, number, () => ReactElement, string][] = [
-    ['forgot', 'Forgot', forgot, ForgotIcon, 'again'],
-    ['remembered', 'Remembered', remembered, RememberedIcon, 'good'],
+  const row: [Answer, string, number, () => ReactElement, string, string][] = [
+    ['forgot', 'Forgot', forgot, ForgotIcon, 'again', '2'],
+    ['remembered', 'Remembered', remembered, RememberedIcon, 'good', '1'],
   ]
   return (
     <div className="card-inbox__answers kit-answers">
-      {row.map(([answer, label, p, Icon, rating], i) => (
+      {row.map(([answer, label, p, Icon, rating, key]) => (
         <button
           key={answer}
           type="button"
@@ -30,7 +30,7 @@ export function Answers({ beat, forgot, remembered, chosen, onAnswer }: { beat: 
         >
           <Icon />
           <span className="card-inbox__answer-label">{label}</span>
-          <kbd>{i + 1}</kbd>
+          <kbd>{key}</kbd>
         </button>
       ))}
     </div>

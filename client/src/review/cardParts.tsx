@@ -73,7 +73,7 @@ export function CardId({ id, onNotice }: { id: string; onNotice: (message: strin
  * bold, a long title wrapping. Read, no label, and nothing at all for a card with no title. Explore's card, the Inbox
  * and its Preview; a card in a page and an embed draw the same band without React.
  */
-export function CardBand({ children, waiting = false }: { children?: ReactNode; waiting?: boolean }) {
+export function CardBand({ children, waiting = false, next = false, onClick }: { children?: ReactNode; waiting?: boolean; next?: boolean; onClick?: () => void }) {
   // Title room (YAZ-5880). "Only when it shows" (YAZ-5864): the caller leaves the band out while the title waits.
   // "Always": the band is there on every card. A waiting title sits in it unseen and unread (`waiting`); when it shows,
   // it fades in (`card-band--fade`, card.css), so nothing moves. A card with no title shown has an empty band. The
@@ -86,7 +86,12 @@ export function CardBand({ children, waiting = false }: { children?: ReactNode; 
   }
   const empty = children === undefined || children === null || children === false
   return (
-    <div className={`card-band${waiting ? ' card-band--waiting' : fade.current ? ' card-band--fade' : ''}`} aria-hidden={waiting || empty ? 'true' : undefined}>
+    <div
+      className={`card-band${waiting ? ' card-band--waiting' : fade.current ? ' card-band--fade' : ''}`}
+      data-next={waiting && next ? '' : undefined}
+      aria-hidden={waiting || empty ? 'true' : undefined}
+      onClick={waiting && next ? onClick : undefined}
+    >
       {children}
     </div>
   )

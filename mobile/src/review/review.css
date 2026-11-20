@@ -7,12 +7,14 @@
   --bg-hover: #eeeef0;
   --next-hidden: #2a8bd1;
   --mark-bg: rgba(255, 213, 0, 0.4);
+  --card-title-band: #ededf0;
 }
 
 :root:where([data-scheme='dark']) {
   --review-warn-text: var(--warn);
   --bg-hover: #333336;
   --next-hidden: #5ab4ea;
+  --card-title-band: #2d2d30;
 }
 
 /* `.review`, `.review--waiting`, `.review--off`, `.review-slot` and `.review-host` are in `screens/reviewSlot.css`: the
@@ -620,17 +622,28 @@
   color: var(--fg-muted);
 }
 
+/* YAZ-6009 (Layout C): Mac-style shaded title band below `.review__cardtop`, bleeding edge-to-edge across the card. */
 .review__head {
-  margin: 10px 0 6px;
+  margin: 10px -32px 12px;
+  padding: 9px 32px 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--card-title-band);
+  color: var(--fg);
   font-size: calc(15px * var(--review-zoom, 1));
+  line-height: 1.35;
   overflow-wrap: anywhere;
+}
+.review__head:empty::before {
+  content: '\00a0';
 }
 
 .review__title {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .review__id {
+  flex: none;
   color: var(--fg-muted);
   font-size: calc(13px * var(--review-zoom, 1));
   /* The card ID is one word ("NC-48"): never broken over two lines. The title wraps. */
@@ -660,6 +673,12 @@
   margin: 0 0 8px;
   font-size: calc(14px * var(--review-zoom, 1));
   color: var(--review-warn-text);
+}
+
+/* Option C1: when the title band is omitted (Never / untitled under default Title room), keep room under the top row. */
+.review__cardtop + .phone-card__body,
+.review__cardtop + .review__fix {
+  margin-top: 10px;
 }
 
 .review__card .phone-card__body {
@@ -727,7 +746,8 @@
    turned it off (`--mark-next-hidden: off`, card-look.json); its colour is the vault's where it picked one; with a file,
    the Mac's own mark rules (`card.css`) draw it in the vault's hidden-word look. */
 @container not style(--mark-next-hidden: off) {
-  .review__card .card__blank[data-next] {
+  .review__card .card__blank[data-next],
+  .review__card .card-band__blank[data-next] {
     border-bottom-color: var(--card-next-hidden, var(--next-hidden));
     background: color-mix(in srgb, var(--card-next-hidden, var(--next-hidden)) 16%, transparent);
   }

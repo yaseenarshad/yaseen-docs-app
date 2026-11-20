@@ -6,7 +6,7 @@
  */
 
 /** Where a key works. `app` keys are the menu's and the window's: on a Mac they fire before any page (K3). */
-export type KeyScope = 'app' | 'page' | 'drawing' | 'diagram' | 'code' | 'views' | 'explore'
+export type KeyScope = 'app' | 'page' | 'drawing' | 'diagram' | 'code' | 'views' | 'explore' | 'review'
 
 /** The places an App key can let keep their own key on it (K9): the tabs that are a canvas or an editor of their own. */
 export type AsidePlace = Extract<KeyScope, 'drawing' | 'diagram' | 'code'>
@@ -45,4 +45,10 @@ export interface KeyRow {
    * key card shows both.
    */
   withSelection?: true
+  /**
+   * A mutually exclusive mode inside a scope (YAZ-5996: two-button vs four-button review answers).
+   * Rows of the same scope with different `mode` values never clash with each other; rows with no `mode`
+   * clash with every mode of their scope.
+   */
+  mode?: string
 }
