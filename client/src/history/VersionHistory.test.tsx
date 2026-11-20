@@ -278,5 +278,38 @@ describe('VersionHistory', () => {
       expect(github.restore).not.toHaveBeenCalled()
       expect(d.text('.history-dialog__problem')).toBe('This board is read only.')
     })
+
+    it('YAZ-6036: yields keyboard events to a sibling ConfirmSheet dialog mounted on top while allowFileAction awaits', async () => {
+      let resolveAsk: ((ok: boolean) => void) | null = null
+      const allow = vi.fn(() => new Promise<boolean>((r) => { resolveAsk = r }))
+      const d = await mount(true, P, allow)
+      act(() => d.$('[data-testid="history-restore"]')?.click())
+      act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
+      await flush()
+      expect(allow).toHaveBeenCalledOnce()
+      // Simulate App mounting <ConfirmSheet role="dialog" /> after VersionHistory in document order
+      const sheet = document.createElement('div')
+      sheet.setAttribute('role', 'dialog')
+      const btn = document.createElement('button')
+      btn.textContent = 'Just this once'
+      sheet.append(btn)
+      document.body.append(sheet)
+      const received: string[] = []
+      const onSheetKey = (e: KeyboardEvent) => received.push(e.key)
+      window.addEventListener('keydown', onSheetKey)
+      try {
+        btn.focus()
+        await d.key(btn, 'Enter')
+        await d.key(btn, 'ArrowDown')
+        await d.key(btn, 'Escape')
+        expect(received).toEqual(['Enter', 'ArrowDown', 'Escape'])
+        expect(document.activeElement).toBe(btn)
+      } finally {
+        window.removeEventListener('keydown', onSheetKey)
+        sheet.remove()
+        resolveAsk?.(false)
+        await flush()
+      }
+    })
   })
 })

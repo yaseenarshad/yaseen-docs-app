@@ -102,7 +102,12 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
   } else if (hoverStyle === 'text') {
     vars['--pill-hover-mode'] = 'text'
     vars['--pill-hover-bg'] = 'transparent'
-    vars['--pill-hover-fg'] = hoverTextColor(hover?.color ?? 'accent')
+    vars['--pill-hover-fg'] =
+      hover?.color !== undefined
+        ? hoverTextColor(hover.color)
+        : pills.parts?.name?.color === 'same'
+          ? 'var(--accent)'
+          : 'color-mix(in srgb, var(--accent) 72%, var(--fg))'
   } else {
     if (hover?.color !== undefined) {
       const wash = `color-mix(in srgb, ${hoverSolid(hover.color)} ${HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`

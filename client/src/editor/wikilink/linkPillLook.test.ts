@@ -77,7 +77,8 @@ describe('linkPillVars (YAZ-4924)', () => {
     expect(linkPillVars({ box: { fill: 'none' }, hover: { style: 'off' } })['--pill-hover-overhang']).toBeUndefined()
     expect(linkPillVars({ hover: { style: 'underline' } })).toEqual({ '--pill-hover-mode': 'underline', '--pill-hover-bg': 'transparent', '--pill-hover-decoration': 'underline' })
     expect(linkPillVars({ box: { fill: 'none' }, hover: { style: 'underline' } })['--pill-hover-overhang']).toBeUndefined()
-    expect(linkPillVars({ hover: { style: 'text' } })).toEqual({ '--pill-hover-mode': 'text', '--pill-hover-bg': 'transparent', '--pill-hover-fg': 'var(--accent)' })
+    expect(linkPillVars({ hover: { style: 'text' } })).toEqual({ '--pill-hover-mode': 'text', '--pill-hover-bg': 'transparent', '--pill-hover-fg': 'color-mix(in srgb, var(--accent) 72%, var(--fg))' })
+    expect(linkPillVars({ parts: { name: { color: 'same' } }, hover: { style: 'text' } })['--pill-hover-fg']).toBe('var(--accent)')
     expect(linkPillVars({ hover: { style: 'text', color: 'teal' } })['--pill-hover-fg']).toBe('var(--table-text-teal)')
     expect(linkPillVars({ hover: { style: 'text', color: '#12ab9f' } })['--pill-hover-fg']).toBe('#12ab9f')
     expect(linkPillVars({ hover: { color: 'purple', strength: 'medium' } })).toEqual({

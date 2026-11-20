@@ -33,7 +33,7 @@ afterEach(() => {
 vi.mock('@client/review/confetti', () => ({ confettiBurst: () => () => undefined }))
 
 const showing = () => (h!.host.querySelector('.review__card') === null ? null : /TD-\d/.exec(h!.head())?.[0])
-const place = () => /(\d+) \/ (\d+)/.exec(h!.text())?.slice(1).map(Number)
+const place = () => /(\d+) \/ (\d+)/.exec(h!.host.querySelector('.session-count__done')?.textContent ?? '')?.slice(1).map(Number)
 /** The sync pass that brings the Mac's commit. */
 const pull = async () => {
   await act(async () => {
@@ -64,7 +64,8 @@ describe('YAZ-5617 phone: the Mac answers while the phone reviews', () => {
     const line = (await h.remoteLines())['TD-1']
     expect(new Set(line.match(/\d{4}-\d\d-\d\dT[\d:.]+Z/g)).size).toBe(4)
     expect(showing()).toBe('TD-2')
-    expect(place()).toEqual([1, 2])
+    // YAZ-6018: Mac's TD-3 answer also counts toward today's done (2 / 3).
+    expect(place()).toEqual([2, 3])
     await h.click('Remembered')
     expect(showing()).toBeNull()
     await h.wait(5_000)
@@ -76,7 +77,8 @@ describe('YAZ-5617 phone: the Mac answers while the phone reviews', () => {
     h = await reviewSetup(FILES)
     await h.s.git.push({ 'a.md': page('A', card(1), card(2, mac('again')), card(3)) })
     await pull()
-    expect(place()).toEqual([0, 3])
+    // YAZ-6018: Mac's due miss counts +1 done and +1 total (waiting for re-check with red ✕ 1).
+    expect(place()).toEqual([1, 4])
     await h.click('Remembered')
     expect(showing()).toBe('TD-2')
     await h.click('Remembered')

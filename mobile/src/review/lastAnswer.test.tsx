@@ -98,11 +98,11 @@ describe('YAZ-5500: the last answer in the hint line, right after answering', ()
     expect(hint()).toMatch(/^✓ Remembered · Capital of Spain · back in \d+ days? · Undo$/)
   })
 
-  it('→ puts it away (← too: it loops to the last card left, never back to the answered one, as the Mac)', async () => {
+  it('→ puts it away (and ← is disabled at the first remaining card under YAZ-6019 Stop at the ends)', async () => {
     h = await reviewSetup(FILES)
     await h.click('Remembered')
     expect(h.head()).toBe('CAP-2')
-    expect(h.button('Previous card')?.disabled).toBe(false)
+    expect(h.button('Previous card')?.disabled).toBe(true)
     await h.click('Next card')
     expect(h.head()).toBe('CAP-3')
     expect(hint()).toMatch(plain)
