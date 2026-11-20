@@ -139,8 +139,11 @@ describe('the drawing engine is in its own lazy chunk only (YAZ-5440)', () => {
     const sw = String(assets.find((a) => a.fileName === 'sw.js')!.source)
     const shell = JSON.parse(/\bfiles:(\[[^\]]*\])/.exec(sw)![1]) as string[]
     const diagramFiles = [diagram.fileName, ...(diagram.viteMetadata?.importedCss ?? [])]
+    const drawingFiles = [drawing, ...fontChunks].flatMap((c) => [c.fileName, ...(c.viteMetadata?.importedCss ?? [])])
     expect(shell.filter((f) => f.startsWith('/drawio/') || diagramFiles.includes(f.slice(1)) || /drawDiagram/.test(f))).toEqual([])
+    expect(shell.filter((f) => drawingFiles.includes(f.slice(1)) || /drawPicture/.test(f))).toEqual([])
     expect(JSON.parse(/\bdrawioChunks:(\[[^\]]*\])/.exec(sw)![1])).toEqual(diagramFiles.map((f) => `/${f}`))
+    expect(JSON.parse(/\bdrawingChunks:(\[[^\]]*\])/.exec(sw)![1]).sort()).toEqual(drawingFiles.map((f) => `/${f}`).sort())
   })
 })
 

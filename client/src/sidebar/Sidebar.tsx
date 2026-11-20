@@ -54,7 +54,6 @@ import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusF
 import { dropBlankPlace, foldersChangedHere, lastPlace, markFoldersChanged, readPlace, savePlace, type TabPlace } from './tabPlace'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
-import { RecentList } from './RecentList'
 import { recentSections } from './recents'
 import { RowDateTip } from './RowDateTip'
 import { FilterChips, SearchFilterBar } from './SearchFilterBar'
@@ -78,6 +77,8 @@ import { tourEvent } from '../course/tourBus'
 
 /** A board's Info popover body (YAZ-3028 D11), with its CSS: loaded on the first "Info". */
 const BoardInfo = lazy(() => import('./BoardInfo'))
+/** On-demand sidebar panels (YAZ-6008 D3): split out of the initial renderer chunk. */
+const RecentList = lazy(() => import('./RecentList').then((m) => ({ default: m.RecentList })))
 
 /** One vault of the window as the panel reads it (YAZ-2602 D1): its folder, what the app calls it, its watcher, its index snapshot and its review. */
 export interface SidebarVault {
@@ -2298,7 +2299,9 @@ export function Sidebar({
           // row, ↑ on that row back to the bar.
           <>
             <div className="sidebar__search-recents" onKeyDown={recentUp}>
-              <RecentList recentOnly={searchHint} trees={shown} roots={ownRoots} groups={searchRecentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+              <Suspense fallback={null}>
+                <RecentList recentOnly={searchHint} trees={shown} roots={ownRoots} groups={searchRecentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+              </Suspense>
             </div>
           </>
         ) : searching ? (
@@ -2333,7 +2336,9 @@ export function Sidebar({
           <SessionList onFold={setListFold} titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
-          <RecentList onFold={setListFold} trees={shown} roots={ownRoots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          <Suspense fallback={null}>
+            <RecentList onFold={setListFold} trees={shown} roots={ownRoots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          </Suspense>
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and

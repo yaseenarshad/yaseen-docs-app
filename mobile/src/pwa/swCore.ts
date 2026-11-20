@@ -45,6 +45,8 @@ export interface ShellBuild {
   drawio?: string
   /** The app's own small diagram chunk and its stylesheet (`/assets/drawDiagram-….js`, `.css`): kept on first use with draw.io's files. */
   drawioChunks?: string[]
+  /** Excalidraw `drawPicture` + font chunks (`/assets/drawPicture-….js`, etc.): kept on first use (YAZ-6008 🔒 D9). */
+  drawingChunks?: string[]
 }
 
 export const CACHE_PREFIX = 'notecards-shell-'
@@ -167,8 +169,8 @@ export function route(request: RequestLike, origin: string, build: ShellBuild): 
   if (url.origin !== origin) return PASS
   const path = url.pathname
   if (path === '/sw.js') return PASS
-  // A draw.io file (the renderer frame's page too): kept on first use, never the app page in its place.
-  if (isDrawio(path) || build.drawioChunks?.includes(path)) return { kind: 'drawio', key: path }
+  // A draw.io file or on-demand Excalidraw chunk: kept on first use, never the app page in its place.
+  if (isDrawio(path) || build.drawioChunks?.includes(path) || build.drawingChunks?.includes(path)) return { kind: 'drawio', key: path }
   if (request.mode === 'navigate') {
     // The landing pages of the three shared links.
     const landing = /^\/(friend|group|join)(\/|\.html)?$/.exec(path)
@@ -240,7 +242,7 @@ export async function respondDrawio(scope: Pick<SwScope, 'caches' | 'fetch'>, bu
   }
   const body = /\/render$/.test(key) ? await answer.clone().text() : null
   if (!answer.ok || !drawioKind(key, answer, body)) return new Response('', { status: 404, statusText: 'Not Found' })
-  if (build.drawio !== undefined && (key.startsWith(build.drawio) || build.drawioChunks?.includes(key))) {
+  if (build.drawio !== undefined && (key.startsWith(build.drawio) || build.drawioChunks?.includes(key) || build.drawingChunks?.includes(key))) {
     try {
       await (await scope.caches.open(drawioCacheName(build.drawio))).put(key, answer.clone())
     } catch {

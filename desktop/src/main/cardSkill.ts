@@ -50,14 +50,6 @@ export async function cardSkillStamp(shipped: string, appVersion: string): Promi
   return `${appVersion}+dev.${hash.digest('hex').slice(0, 12)}`
 }
 
-/** True when the copy at `copy` was made from `appVersion` and still has every shipped file. */
-async function copyIsCurrent(copy: string, shipped: readonly string[], appVersion: string): Promise<boolean> {
-  const version = await readFile(join(copy, CARD_SKILL_VERSION_FILE), 'utf8').catch(() => null)
-  if (version !== appVersion) return false
-  const present = await Promise.all(shipped.map((file) => stat(join(copy, file)).then((s) => s.isFile(), () => false)))
-  return present.every(Boolean)
-}
-
 /**
  * The copy the app shows, `<userData>/card-skill`, made from `shipped` when it is not current. The new copy is made
  * beside the old one (`.version` written last), then it takes the old one's place: a failed copy leaves the old copy
@@ -65,8 +57,14 @@ async function copyIsCurrent(copy: string, shipped: readonly string[], appVersio
  */
 export async function ensureCardSkill(userData: string, shipped: string, appVersion: string): Promise<string> {
   const copy = join(userData, CARD_SKILL_DIR)
-  const files = await filesOf(shipped)
-  if (await copyIsCurrent(copy, files, appVersion)) return copy
+  const [files, version] = await Promise.all([
+    filesOf(shipped),
+    readFile(join(copy, CARD_SKILL_VERSION_FILE), 'utf8').catch(() => null),
+  ])
+  if (version === appVersion) {
+    const present = await Promise.all(files.map((file) => stat(join(copy, file)).then((s) => s.isFile(), () => false)))
+    if (present.every(Boolean)) return copy
+  }
   const next = `${copy}.new-${process.pid}`
   const old = `${copy}.old-${process.pid}`
   await rm(next, { recursive: true, force: true })

@@ -86,7 +86,15 @@ export function notecardsPwa(): Plugin {
       if (diagram.length !== 1 || diagram[0].type !== 'chunk' || diagram[0].imports.length > 0) this.error('notecards-pwa: the diagram code is not ONE lazy chunk that imports nothing (YAZ-5533)')
       // The chunk and its stylesheet.
       const drawioChunks = diagram.flatMap((o) => (o.type === 'chunk' ? [o.fileName, ...(o.viteMetadata?.importedCss ?? [])] : []))
-      const files = shellFiles([...Object.keys(bundle), ...LANDING_COPIES], publicFiles, drawioChunks)
+      // YAZ-6008 🔒 D9: Excalidraw (`drawPicture` + 30 base64 font chunks, 2.49 MB) also loads on first use, not at SW install.
+      const drawingChunks = Object.values(bundle).flatMap((o) =>
+        o.type === 'chunk' &&
+        (/\/mobile\/src\/drawing\/engine\/drawPicture\.ts$/.test(o.facadeModuleId ?? '') ||
+          Object.keys(o.modules).some((m) => /engine\/packages\/excalidraw\/fonts\/[^/]+\/[^/]+\.woff2\?inline$/.test(m)))
+          ? [o.fileName, ...(o.viteMetadata?.importedCss ?? [])]
+          : [],
+      )
+      const files = shellFiles([...Object.keys(bundle), ...LANDING_COPIES], publicFiles, [...drawioChunks, ...drawingChunks])
       const landingChunk = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry && /\/friend\.html$/.test(o.facadeModuleId ?? ''))
       if (!landingChunk) this.error('notecards-pwa: no entry chunk for friend.html')
       const entryChunk = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry && /\/index\.html$|\/src\/main\.tsx$/.test(o.facadeModuleId ?? ''))
@@ -104,7 +112,15 @@ export function notecardsPwa(): Plugin {
       }
       const entry = `/${entryChunk.fileName}`
       const landing = `/${landingChunk.fileName}`
-      const shell: ShellBuild = { version: hash.digest('hex').slice(0, 16), files, entry, pages: { '/': entry, '/friend': landing, '/group': landing, '/join': landing }, drawio, drawioChunks: drawioChunks.map((f) => `/${f}`) }
+      const shell: ShellBuild = {
+        version: hash.digest('hex').slice(0, 16),
+        files,
+        entry,
+        pages: { '/': entry, '/friend': landing, '/group': landing, '/join': landing },
+        drawio,
+        drawioChunks: drawioChunks.map((f) => `/${f}`),
+        drawingChunks: drawingChunks.map((f) => `/${f}`),
+      }
       // YAZ-5285: the kill switch replaces the worker (`npm run mobile:publish:preview:kill-switch`).
       const kill = process.env.NOTECARDS_KILL_SWITCH === '1'
       const result = await esbuild({

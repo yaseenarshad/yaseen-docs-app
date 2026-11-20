@@ -2722,9 +2722,9 @@ describe('App settings dialog (YAZ-1679)', () => {
   it('Yaseen Docs › Settings… (⌘,) mounts the ONE dialog, and its × unmounts it', async () => {
     const { el, emitSettings } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(el.querySelector('.settings-dialog')).toBeNull()
-    // Async: the dialog's own reads settle inside act (YAZ-3044 A36).
+    // Async: the lazy dialog chunk and its own reads settle inside act (YAZ-3044 A36, YAZ-6008 D3).
     await act(async () => emitSettings())
-    expect(el.querySelector('.settings-dialog')).not.toBeNull()
+    await vi.waitFor(() => expect(el.querySelector('.settings-dialog')).not.toBeNull())
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')?.click())
     expect(el.querySelector('.settings-dialog')).toBeNull()
   })

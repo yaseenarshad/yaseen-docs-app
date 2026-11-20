@@ -2,6 +2,7 @@ import { rendererUrlFor } from './rendererUrl'
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
+import { enableCompileCache } from 'node:module'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -60,6 +61,12 @@ import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName(APP_NAME)
 applyUserDataOverride(app, process.env.YASEEN_DOCS_USER_DATA_DIR)
+// Cache main-process V8 bytecode across warm launches (Node 22+, YAZ-6008 🔒 D10).
+try {
+  enableCompileCache?.(join(app.getPath('userData'), 'v8-compile-cache'))
+} catch {
+  // best-effort accelerator; never blocks launch
+}
 
 /** One running instance (GRO-2160): a second launch focuses the first; a link in its argv routes (E1). */
 const isPrimaryInstance = app.requestSingleInstanceLock()
@@ -484,9 +491,10 @@ app.whenReady().then(() => {
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'), store.get().settingsFolder)
   gitSync = sync
   // The course sound (YAZ-5159): downloaded per chapter while the course is open. At start only the clean-up runs, at
-  // most once a day: the folder goes 30 days after the course was last open. No download starts here.
+  // most once a day: the folder goes 30 days after the course was last open. Defer past first window restore (YAZ-6008 D4).
   courseAudio = registerCourseAudioIpc({ userData: app.getPath('userData'), isPackaged: app.isPackaged })
-  void courseAudio.sweep().catch((err: unknown) => console.warn(`[course-audio] the clean-up failed: ${String(err)}`))
+  const sweepCourseAudio = courseAudio
+  setTimeout(() => void sweepCourseAudio.sweep().catch((err: unknown) => console.warn(`[course-audio] the clean-up failed: ${String(err)}`)), 5000).unref()
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),
     restartToUpdate: () => {
