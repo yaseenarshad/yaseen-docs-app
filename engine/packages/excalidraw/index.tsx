@@ -595,3 +595,24 @@ export function useExcalidrawStateValue(
 export { _useOnAppStateChange as useOnExcalidrawStateChange };
 
 export { applyDarkModeFilter, getStrokeWidthByKey };
+
+// YAZ-5986 / YAZ-6069: snapping & layout helpers exported for unit testing
+export {
+  SnapCache,
+  getSnapBounds,
+  getSnapDistance,
+  getReferenceSnapPoints,
+  getVisibleGaps,
+  snapDraggedElements,
+  snapResizingElements,
+  getSnapLinesAtPointer,
+  getAltHoverMeasureLines,
+} from "./snapping";
+export {
+  renderSnaps,
+  renderResizeSizeBadge,
+  preCompensateDarkFilter,
+  SNAP_COLOR_LIGHT,
+  SNAP_COLOR_DARK,
+} from "./renderer/renderSnaps";
+export { tidyUpElements, actionTidyUp } from "./actions/actionDistribute";

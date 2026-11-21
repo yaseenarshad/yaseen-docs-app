@@ -23,7 +23,7 @@
 import { useSyncExternalStore } from 'react'
 import type { CanvasPanelTab } from '@shared/types'
 import { createStore, type Store } from '../lib/store'
-import { frameIcon, freedrawIcon, hamburgerIcon } from './launcherIcons'
+import { frameIcon, freedrawIcon, hamburgerIcon, magnetIcon } from './launcherIcons'
 
 export interface LauncherState {
   /** The engine has mounted and handed over its imperative API; until then nothing is actionable. */
@@ -32,6 +32,7 @@ export interface LauncherState {
   activeTab: CanvasPanelTab | null
   writingMode: boolean
   framesVisible: boolean
+  objectsSnapModeEnabled: boolean
 }
 
 export interface LauncherActions {
@@ -41,6 +42,7 @@ export interface LauncherActions {
   openTab: (tab: CanvasPanelTab) => void
   toggleWriting: () => void
   toggleFrames: () => void
+  toggleSnap: () => void
 }
 
 export interface LauncherStore extends LauncherActions, Store<LauncherState> {}
@@ -51,7 +53,7 @@ export function createLauncherStore(actions: LauncherActions, initial: LauncherS
 }
 
 export function LauncherRail({ store }: { store: LauncherStore }) {
-  const { ready, activeTab, writingMode, framesVisible } = useSyncExternalStore(store.subscribe, store.getState)
+  const { ready, activeTab, writingMode, framesVisible, objectsSnapModeEnabled } = useSyncExternalStore(store.subscribe, store.getState)
   const open = activeTab !== null
   return (
     <nav className="app-sidebar-launchers" aria-label="Workspace panel and canvas modes">
@@ -88,6 +90,17 @@ export function LauncherRail({ store }: { store: LauncherStore }) {
           onClick={store.toggleFrames}
         >
           {frameIcon}
+        </button>
+        <button
+          type="button"
+          className="app-sidebar-launcher app-sidebar-launcher--quiet app-sidebar-launcher--icon app-sidebar-launcher--toggle"
+          aria-label="Snap to objects"
+          aria-pressed={objectsSnapModeEnabled}
+          title="Snap to objects (Option+S)"
+          disabled={!ready}
+          onClick={store.toggleSnap}
+        >
+          {magnetIcon}
         </button>
       </div>
     </nav>

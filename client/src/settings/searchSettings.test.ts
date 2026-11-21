@@ -147,7 +147,7 @@ describe('settingCandidates', () => {
       'codeMinimap',
       'codeLanguageHelpers',
       // Settings › Drawings (YAZ-3037; "Excalidraw canvas" before the YAZ-3818 demo).
-      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'textEdgeDoubleClick', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
+      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapGapStyle', 'snapColor', 'showResizeSizeBadge', 'measureDistancesInfo', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'textEdgeDoubleClick', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
       // Its embeds group (YAZ-4820 D9, item 3), before the draw.io group.
       'embedRestSeconds',
       'newBoardFolder',
@@ -319,10 +319,10 @@ describe('searchSettings', () => {
     expect(outline).toHaveLength(14 + 15)
     // "guide" names the guide lines' rows (YAZ-4094; Bullet threading's hint no longer says it: one name for one thing) and is a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     // A grouped folder table's Group lines (YAZ-4798) are guide lines too, last in registry order.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines', 'folderPages.groupLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines', 'canvas.snapColor', 'folderPages.groupLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403). The Add panel's Hover zoom (YAZ-4447, D34)
     // leads: its label starts with the word, after the drawing's Hover outline (YAZ-4469 demo), which comes first in registry order.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['tableCellNotePreviewLines' /* "Hover preview lines" starts with the word (YAZ-5717) */, 'canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'tableTextInCells' /* its hint says hover a cut cell (YAZ-4900) */, 'tableRowBand' /* its hint names Folder pages › Row band on hover (YAZ-4608 C5) */, 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.groupLines' /* On hover (YAZ-4798) */, 'hotkey-code-showHover'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['tableCellNotePreviewLines' /* "Hover preview lines" starts with the word (YAZ-5717) */, 'canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'tableTextInCells' /* its hint says hover a cut cell (YAZ-4900) */, 'tableRowBand' /* its hint names Folder pages › Row band on hover (YAZ-4608 C5) */, 'canvas.measureDistancesInfo' /* Option-hover distance measurement (YAZ-5986) */, 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.groupLines' /* On hover (YAZ-4798) */, 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a page, at its right edge. Editor')
   })
@@ -348,7 +348,7 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'section indent'))).toEqual(['sectionStep', 'sectionLines'])
     // The page's bullet spacing (the YAZ-3818 demo) says "spacing" too.
     // The sidebar's Row spacing (YAZ-5885) too, on its page after Appearance.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'sidebarRowHeight', 'pageBulletIndent', 'pageBulletGap'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'sidebarRowHeight', 'pageBulletIndent', 'pageBulletGap', 'canvas.snapGapStyle', 'canvas.snapColor', 'canvas.measureDistancesInfo'])
   })
 
   it('matches on the group hint too: "guide lines" finds the three guide line rows of Outline (YAZ-4094); "threading" finds the three threading rows and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {

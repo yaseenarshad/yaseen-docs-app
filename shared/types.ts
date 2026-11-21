@@ -1482,6 +1482,9 @@ export const LASER_COLORS = ['#ff0000', '#ffd400', '#00c853', '#2979ff', '#d500f
 export type LaserColor = (typeof LASER_COLORS)[number]
 export const LASER_SIZES = ['S', 'M', 'L'] as const
 export type LaserSize = (typeof LASER_SIZES)[number]
+export const SNAP_GAP_STYLES = ['pill', 'bracket', 'band'] as const
+export type SnapGapStyle = (typeof SNAP_GAP_STYLES)[number]
+export const SNAP_COLOR_PRESETS = ['#e024a7', '#3b82f6', '#10b981', '#f97316', '#ef4444', '#8b5cf6'] as const
 
 /**
  * The fork's `FONT_FAMILY` ids the Settings › Canvas "Default font" row offers
@@ -1507,6 +1510,12 @@ export const FONT_FAMILY_OPTIONS: ReadonlyArray<{ id: number; label: string }> =
 export interface CanvasPrefs {
   gridModeEnabled: boolean
   objectsSnapModeEnabled: boolean
+  /** YAZ-5986 D5: how equal-spacing gap guides and Option-hover distances render. */
+  snapGapStyle: SnapGapStyle
+  /** YAZ-5986: custom `#rrggbb` color for snap guides, gap spacing, and distance pills. */
+  snapColor: string
+  /** YAZ-5986: opt-in live W × H pixel badge while resizing shapes (default off). */
+  showResizeSizeBadge: boolean
   /** The engine's `isMidpointSnappingEnabled`. */
   snapToMidpoints: boolean
   /** The engine's `isBindingEnabled` (arrows bind to the shapes they touch). */
@@ -1638,7 +1647,10 @@ export const NEW_TEXT_WRAP_MARGIN_MAX = 600
 /** The engine's own defaults (`appState.ts` `getDefaultAppState()` + `constants.ts`). */
 export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   gridModeEnabled: false,
-  objectsSnapModeEnabled: false,
+  objectsSnapModeEnabled: true,
+  snapGapStyle: 'pill',
+  snapColor: '#e024a7',
+  showResizeSizeBadge: false,
   snapToMidpoints: true,
   arrowBinding: true,
   selectOn: 'wrap',

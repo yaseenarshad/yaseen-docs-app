@@ -75,6 +75,7 @@ export {
 } from "./actionAlign";
 
 export {
+  actionTidyUp,
   distributeHorizontally,
   distributeVertically,
 } from "./actionDistribute";

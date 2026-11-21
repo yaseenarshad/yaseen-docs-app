@@ -414,7 +414,7 @@ export function ExcalidrawSurface({
   // the PREF and let the round trip apply it. Every action reads the refs above, so the store — and
   // therefore `renderTopLeftUI` — never changes identity.
   const rail = useMemo(() => {
-    const flip = (key: 'writingMode' | 'framesVisible') => prefsOutRef.current?.({ ...appliedRef.current, [key]: !appliedRef.current[key] })
+    const flip = (key: 'writingMode' | 'framesVisible' | 'objectsSnapModeEnabled') => prefsOutRef.current?.({ ...appliedRef.current, [key]: !appliedRef.current[key] })
     const store = createLauncherStore(
       {
         // Open on the last-used tab (Components until then); pressing again closes.
@@ -426,8 +426,9 @@ export function ExcalidrawSurface({
         openTab: (tab) => rawApiRef.current?.toggleSidebar({ name: CANVAS_SIDEBAR, tab, force: store.getState().activeTab !== tab }),
         toggleWriting: () => flip('writingMode'),
         toggleFrames: () => flip('framesVisible'),
+        toggleSnap: () => flip('objectsSnapModeEnabled'),
       },
-      { ready: false, activeTab: null, writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible },
+      { ready: false, activeTab: null, writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible, objectsSnapModeEnabled: canvasPrefs.objectsSnapModeEnabled },
     )
     return store
     // Mount-only by contract: the initial values are read once (`closePanel` is stable), and every
@@ -634,7 +635,7 @@ export function ExcalidrawSurface({
   }, [engine, canvasPrefs.newTextScreenSize, canvasPrefs.newTextWrapMargin])
 
   useEffect(() => {
-    rail.set({ writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible })
+    rail.set({ writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible, objectsSnapModeEnabled: canvasPrefs.objectsSnapModeEnabled })
     if (prefsEqual(canvasPrefs, appliedRef.current)) return
     const keys = changedPrefKeys(appliedRef.current, canvasPrefs)
     appliedRef.current = canvasPrefs
@@ -723,7 +724,7 @@ export function ExcalidrawSurface({
       const seen = appStateToPrefs(appState as unknown as EngineAppStateSlice, appliedRef.current)
       if (prefsEqual(seen, appliedRef.current)) return
       appliedRef.current = seen
-      rail.set({ writingMode: seen.writingMode, framesVisible: seen.framesVisible })
+      rail.set({ writingMode: seen.writingMode, framesVisible: seen.framesVisible, objectsSnapModeEnabled: seen.objectsSnapModeEnabled })
       reportPrefs(seen)
     },
     [withPanel, rail, rememberPanel, reportPrefs],

@@ -19,7 +19,7 @@
  * toolbar in the engine is the one place they are changed.
  */
 import type { ReactNode } from 'react'
-import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign, type TextEdgeDoubleClickMode } from '@shared/types'
+import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, SNAP_COLOR_PRESETS, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type SnapGapStyle, type TextAlign, type TextEdgeDoubleClickMode } from '@shared/types'
 import { Segmented, Select, Stepper } from './controls'
 import { DIAGRAM_DARK_COLORS_OPTIONS, EMBED_REST_OPTIONS, newBoardFolderOptions, ON_OFF_OPTIONS, type Option } from './options'
 import { unit } from './unitLabel'
@@ -53,6 +53,77 @@ const TEXT_EDGE_DOUBLE_CLICK_OPTIONS: readonly Option<TextEdgeDoubleClickMode>[]
   { value: 'shrink', label: 'Only shrink' },
   { value: 'fit', label: 'Fit the text' },
 ]
+
+/** YAZ-5986 D5: how equal-spacing gaps and Option-hover distances render. */
+const SNAP_GAP_STYLE_OPTIONS: readonly Option<SnapGapStyle>[] = [
+  { value: 'pill', label: 'Bracket + pill' },
+  { value: 'bracket', label: 'Bracket only' },
+  { value: 'band', label: 'Shaded band' },
+]
+
+const SNAP_COLOR_NAMES: Record<string, string> = {
+  '#e024a7': 'Magenta',
+  '#3b82f6': 'Blue',
+  '#10b981': 'Green',
+  '#f97316': 'Orange',
+  '#ef4444': 'Red',
+  '#8b5cf6': 'Purple',
+}
+
+function snapPillTextColor(hex: string): string {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex)
+  if (!m) return '#ffffff'
+  const n = parseInt(m[1], 16)
+  const lum = (0.299 * ((n >> 16) & 0xff) + 0.587 * ((n >> 8) & 0xff) + 0.114 * (n & 0xff)) / 255
+  return lum > 0.6 ? '#111111' : '#ffffff'
+}
+
+function SnapGapStylePreview({ style, color }: { style: SnapGapStyle; color: string }): ReactNode {
+  const pillText = snapPillTextColor(color)
+  return (
+    <svg
+      viewBox="0 0 116 36"
+      width={116}
+      height={36}
+      aria-hidden="true"
+      style={{
+        display: 'block',
+        marginTop: 6,
+        borderRadius: 6,
+        border: '1px solid var(--border, rgba(128,128,128,0.25))',
+        background: 'var(--bg-subtle, transparent)',
+      }}
+    >
+      {style === 'band' && (
+        <>
+          <rect x="28" y="6" width="19" height="24" fill={color} fillOpacity="0.18" />
+          <rect x="69" y="6" width="19" height="24" fill={color} fillOpacity="0.18" />
+        </>
+      )}
+      {style !== 'band' && (
+        <>
+          <line x1="28" y1="18" x2="47" y2="18" stroke={color} strokeWidth="1.2" />
+          <line x1="28" y1="13" x2="28" y2="23" stroke={color} strokeWidth="1.2" />
+          <line x1="47" y1="13" x2="47" y2="23" stroke={color} strokeWidth="1.2" />
+          <line x1="69" y1="18" x2="88" y2="18" stroke={color} strokeWidth="1.2" />
+          <line x1="69" y1="13" x2="69" y2="23" stroke={color} strokeWidth="1.2" />
+          <line x1="88" y1="13" x2="88" y2="23" stroke={color} strokeWidth="1.2" />
+        </>
+      )}
+      <rect x="6" y="6" width="22" height="24" rx="2" fill="none" stroke="currentColor" strokeOpacity="0.4" strokeWidth="1.2" />
+      <rect x="47" y="6" width="22" height="24" rx="2" fill="none" stroke="#6366f1" strokeWidth="1.2" strokeDasharray="3 2" />
+      <rect x="88" y="6" width="22" height="24" rx="2" fill="none" stroke="currentColor" strokeOpacity="0.4" strokeWidth="1.2" />
+      {(style === 'pill' || style === 'band') && (
+        <>
+          <rect x="30" y={style === 'band' ? 12.5 : 22} width="15" height="11" rx="2.5" fill={color} />
+          <text x="37.5" y={style === 'band' ? 20.5 : 30} textAnchor="middle" fill={pillText} fontSize="7.5" fontWeight="600" fontFamily="system-ui">20</text>
+          <rect x="71" y={style === 'band' ? 12.5 : 22} width="15" height="11" rx="2.5" fill={color} />
+          <text x="78.5" y={style === 'band' ? 20.5 : 30} textAnchor="middle" fill={pillText} fontSize="7.5" fontWeight="600" fontFamily="system-ui">20</text>
+        </>
+      )}
+    </svg>
+  )
+}
 
 /** YAZ-4277 D5, D7: the fold arrows of text boxes. */
 const FOLD_ARROW_MODE_OPTIONS: readonly Option<FoldArrowMode>[] = [
@@ -136,14 +207,84 @@ export const CANVAS_SECTION: SettingsSection = {
       title: 'Drawing aids',
       // Sub-headings (YAZ-5969).
       subheadings: [
-        { title: 'Snapping', rows: ['canvas.gridModeEnabled', 'canvas.objectsSnapModeEnabled', 'canvas.snapToMidpoints', 'canvas.arrowBinding'] },
+        { title: 'Snapping', rows: ['canvas.gridModeEnabled', 'canvas.objectsSnapModeEnabled', 'canvas.snapGapStyle', 'canvas.snapColor', 'canvas.showResizeSizeBadge', 'canvas.measureDistancesInfo'] },
+        { title: 'Arrows', rows: ['canvas.snapToMidpoints', 'canvas.arrowBinding'] },
         { title: 'Selecting', rows: ['canvas.selectOn', 'canvas.hoverOutline', 'canvas.textEdgeDoubleClick'] },
       ],
       hint: 'Applies to every Excalidraw drawing, in every window.',
       items: [
         toggle('gridModeEnabled', 'Grid', undefined, ['grid mode']),
-        toggle('objectsSnapModeEnabled', 'Snap to objects', undefined, ['snapping']),
-        toggle('snapToMidpoints', 'Snap to midpoints', undefined, ['snapping', 'midpoint']),
+        toggle('objectsSnapModeEnabled', 'Snap to objects', 'Aligns edges, centers, frame centers, and equal gaps while dragging. Hold Cmd while dragging to pause snapping.', ['snapping', 'cmd', 'canva']),
+        {
+          id: 'canvas.snapGapStyle',
+          label: 'Snap gap style',
+          hint: 'How equal spacing looks while dragging or measuring distances.',
+          keywords: ['snap', 'gap', 'pill', 'bracket', 'band', 'spacing', 'preview'],
+          render: ({ settings, onChange }) => {
+            const value = settings.canvas.snapGapStyle ?? DEFAULT_CANVAS_PREFS.snapGapStyle
+            const color = settings.canvas.snapColor ?? DEFAULT_CANVAS_PREFS.snapColor
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <Segmented options={SNAP_GAP_STYLE_OPTIONS} value={value} onChange={(snapGapStyle) => onChange(write(settings, { snapGapStyle }))} ariaLabel="Snap gap style" />
+                <SnapGapStylePreview style={value} color={color} />
+              </div>
+            )
+          },
+        },
+        {
+          id: 'canvas.snapColor',
+          label: 'Snap guide color',
+          hint: 'Color for snap guides, gap spacing, and distance measurements.',
+          keywords: ['snap', 'guide', 'color', 'colour', 'magenta', 'custom', 'picker', 'swatch'],
+          render: ({ settings, onChange }) => {
+            const value = (settings.canvas.snapColor ?? DEFAULT_CANVAS_PREFS.snapColor).toLowerCase()
+            const isDefault = value === DEFAULT_CANVAS_PREFS.snapColor
+            return (
+              <span className="settings__band-colours" role="radiogroup" aria-label="Snap guide color">
+                {SNAP_COLOR_PRESETS.map((hex) => (
+                  <button
+                    key={hex}
+                    type="button"
+                    role="radio"
+                    aria-checked={value === hex}
+                    aria-label={SNAP_COLOR_NAMES[hex] ?? hex}
+                    title={SNAP_COLOR_NAMES[hex] ?? hex}
+                    className="settings__band-colour"
+                    onClick={() => onChange(write(settings, { snapColor: hex }))}
+                  >
+                    <span className="settings__band-swatch" style={{ background: hex }} aria-hidden />
+                  </button>
+                ))}
+                <input
+                  type="color"
+                  className="settings__color"
+                  aria-label="Custom snap guide color"
+                  title={`Custom color (${value})`}
+                  value={value}
+                  onChange={(e) => onChange(write(settings, { snapColor: e.target.value.toLowerCase() }))}
+                />
+                {!isDefault && (
+                  <button
+                    type="button"
+                    className="settings__option"
+                    onClick={() => onChange(write(settings, { snapColor: DEFAULT_CANVAS_PREFS.snapColor }))}
+                  >
+                    Reset
+                  </button>
+                )}
+              </span>
+            )
+          },
+        },
+        toggle('showResizeSizeBadge', 'Show size while resizing', 'Shows a live W x H pixel badge beside a shape while you resize it.', ['resize', 'size', 'badge', 'dimensions', 'width', 'height', 'pixel']),
+        {
+          id: 'canvas.measureDistancesInfo',
+          label: 'Measure distances & Tidy up',
+          hint: 'Select one or more shapes, hold Option (Alt) without clicking or dragging, then move over another shape or frame edge to see pixel distances (Option + drag makes a copy). Select 3+ shapes and right-click (or press Option+T) for Tidy up.',
+          keywords: ['measure', 'distance', 'option', 'alt', 'hover', 'tidy up', 'distribute', 'spacing'],
+          render: () => <span className="settings__hint">Hold Option + hover</span>,
+        },
+        toggle('snapToMidpoints', 'Snap to midpoints', "Arrows snap to the midpoint of a shape's edge.", ['snapping', 'midpoint']),
         toggle('arrowBinding', 'Arrow binding', 'Arrows attach to the shapes they touch.', ['bind']),
         {
           id: 'canvas.selectOn',

@@ -124,6 +124,7 @@ export type ActionName =
   | "alignRight"
   | "alignVerticallyCentered"
   | "alignHorizontallyCentered"
+  | "tidyUp"
   | "distributeHorizontally"
   | "distributeVertically"
   | "flipHorizontal"
