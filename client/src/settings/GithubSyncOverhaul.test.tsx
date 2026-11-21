@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { DEFAULT_SETTINGS, type AutoSyncStatus, type GithubAuthStatus } from '@shared/types'
 import { SyncIndicator } from '../editor/SyncIndicator'
-import { CloudSyncSheet } from './CloudSyncSheet'
 import { GithubAccountControl } from './GithubAccountControl'
 import { SettingsDialog } from './SettingsDialog'
 import { SyncVaultControl } from './SyncVaultControl'
@@ -133,39 +132,6 @@ describe('SyncVaultControl (YAZ-6190 D3, Extras #1, #2, #4)', () => {
   })
 })
 
-describe('CloudSyncSheet (YAZ-6190 D5)', () => {
-  it('shows Add to GitHub AutoSync when installed and hides it when not installed', async () => {
-    stubGithub()
-    const onClose = vi.fn()
-    const addToAutoSync = vi.fn(async () => ({ ok: true, method: 'deep-link' as const }))
-    await act(async () =>
-      root!.render(
-        <CloudSyncSheet
-          autoSync={{ installed: true, vaultSynced: false, supportsDeepLink: true }}
-          sync={{ status: null, setEnabled: vi.fn(), addToAutoSync }}
-          onClose={onClose}
-        />,
-      ),
-    )
-    const autoBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Add to GitHub AutoSync')!
-    expect(autoBtn).toBeTruthy()
-    await act(async () => autoBtn.click())
-    expect(addToAutoSync).toHaveBeenCalledTimes(1)
-    expect(onClose).toHaveBeenCalledTimes(1)
-
-    await act(async () =>
-      root!.render(
-        <CloudSyncSheet
-          autoSync={{ installed: false, vaultSynced: false, supportsDeepLink: false }}
-          sync={{ status: null, setEnabled: vi.fn() }}
-          onClose={onClose}
-        />,
-      ),
-    )
-    expect([...container.querySelectorAll('button')].find((b) => b.textContent === 'Add to GitHub AutoSync')).toBeUndefined()
-  })
-})
-
 describe('SyncIndicator AutoSync state (YAZ-6190 Extra #3)', () => {
   it('renders AutoSync label and opens GitHub AutoSync on click when built-in sync is off', async () => {
     const onSyncNow = vi.fn()
@@ -189,8 +155,8 @@ describe('SyncIndicator AutoSync state (YAZ-6190 Extra #3)', () => {
   })
 })
 
-describe('Cards enable 3rd check in SettingsDialog (YAZ-6190 D5)', () => {
-  it('opens CloudSyncSheet when turning Cards on with neither sync active, and stays silent when AutoSync is active', async () => {
+describe('Cards enable walkthrough in SettingsDialog (YAZ-6225)', () => {
+  it('opens CardsSetupWizard on Cloud Sync when neither sync is active, and starts on Read Only when AutoSync is active', async () => {
     stubGithub()
     const saveReview = vi.fn()
     const renderCards = (vaultSynced: boolean) =>
@@ -218,18 +184,20 @@ describe('Cards enable 3rd check in SettingsDialog (YAZ-6190 D5)', () => {
     const onBtn = container.querySelector('[data-setting="enabled"] button') as HTMLButtonElement
     await act(async () => onBtn.click())
     expect(saveReview).toHaveBeenCalledWith(expect.objectContaining({ enabled: true }))
-    expect(container.querySelector('[data-testid="cloud-sync-sheet"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="cards-setup-wizard"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="cards-wizard-step-sync"]')).not.toBeNull()
 
     // Dismiss with Escape
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     })
-    expect(container.querySelector('[data-testid="cloud-sync-sheet"]')).toBeNull()
+    expect(container.querySelector('[data-testid="cards-setup-wizard"]')).toBeNull()
 
-    // When AutoSync already syncs the vault, turning Cards on stays silent.
+    // When AutoSync already syncs the vault, turning Cards on skips Cloud Sync and starts on Read Only.
     await renderCards(true)
     const onBtn2 = container.querySelector('[data-setting="enabled"] button') as HTMLButtonElement
     await act(async () => onBtn2.click())
-    expect(container.querySelector('[data-testid="cloud-sync-sheet"]')).toBeNull()
+    expect(container.querySelector('[data-testid="cards-setup-wizard"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="cards-wizard-step-readonly"]')).not.toBeNull()
   })
 })
