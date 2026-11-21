@@ -84,7 +84,7 @@
 
 /* ── Hover chrome: only on hover or selection, never over the picture at rest. ── */
 
-:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__fold, .board-window__pill, .board-window__zoom) {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__menu, .board-window__fold, .board-window__pill, .board-window__zoom) {
   position: absolute;
   z-index: 2;
   display: flex;
@@ -104,28 +104,30 @@
   transition: opacity 0.12s;
 }
 
-:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window:hover, .board-window.is-selected) > :is(.board-window__lock, .board-window__pill, .board-window__zoom) {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window:hover, .board-window.is-selected) > :is(.board-window__lock, .board-window__menu, .board-window__pill, .board-window__zoom) {
   opacity: 1;
   pointer-events: auto;
 }
 
-:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__fold, .board-window__pill, .board-window__zoom):hover {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__menu, .board-window__fold, .board-window__pill, .board-window__zoom):hover {
   color: var(--accent);
   border-color: var(--accent);
 }
 
-:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__fold) {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__menu, .board-window__fold) {
   width: 24px;
   padding: 0;
   justify-content: center;
 }
 
-:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__fold, .board-window__unfold) svg {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__menu, .board-window__fold, .board-window__unfold) svg {
   width: 14px;
   height: 14px;
 }
 
 :is(.milkdown, .board-window-overlay, .explore__board) .board-window__lock { top: 6px; right: 6px; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window--has-menu > .board-window__lock { right: 34px; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__menu { top: 6px; right: 6px; font-weight: 700; letter-spacing: 1px; }
 :is(.milkdown, .board-window-overlay, .explore__board) .board-window__fold { top: 6px; left: 6px; display: none; }
 :is(.milkdown, .board-window-overlay, .explore__board) .board-window__pill { bottom: 6px; left: 6px; max-width: calc(100% - 90px); }
 :is(.milkdown, .board-window-overlay, .explore__board) .board-window__zoom { bottom: 6px; right: 6px; font-variant-numeric: tabular-nums; }
@@ -332,4 +334,174 @@
 /* A link under the pointer: a click opens it as a layer. */
 .explore__board .board-window--on-link .board-window__stage {
   cursor: pointer;
+}
+
+/* ── Unified card-style frame & top header for inline ("In page") and standalone ("Embed") drawings (YAZ-6136) ── */
+
+.milkdown .board-embed.inline-drawing,
+.milkdown .board-embed.board-embed--framed {
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px 0;
+  margin-inline: var(--column-start, auto) auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+
+.milkdown .board-embed.inline-drawing.inline-drawing--folded,
+.milkdown .board-embed.board-embed--framed.board-embed--folded {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  margin: 0;
+}
+
+.milkdown .board-embed.inline-drawing.is-selected,
+.milkdown .board-embed.inline-drawing.ProseMirror-selectednode,
+.milkdown .board-embed.board-embed--framed.is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Remove redundant outer border/radius/margin/selection-ring from BoardWindow inside the unified frame. */
+.milkdown :is(.inline-drawing__box, .board-embed__box) > .board-window {
+  margin: 0;
+  border: 0;
+  border-radius: 0 0 7px 7px;
+}
+
+.milkdown :is(.inline-drawing__box, .board-embed__box) > .board-window.is-selected {
+  outline: none;
+}
+
+/* Framed inline & standalone drawings already show title/source + Edit drawing in their top header (YAZ-6133). */
+.milkdown :is(.inline-drawing__box, .board-embed__box) > .board-window > .board-window__pill {
+  display: none;
+}
+
+/* Card-style top header bar matching `.card .card__head` (`card.css`). */
+.milkdown .inline-drawing__head,
+.milkdown .board-embed__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 7px 7px 0 0;
+  background: var(--bg-side);
+  font-size: 0.8125em;
+  line-height: 1.6;
+  user-select: none;
+}
+
+.milkdown .inline-drawing__head[hidden],
+.milkdown .board-embed__head[hidden] {
+  display: none;
+}
+
+.milkdown .inline-drawing__kind,
+.milkdown .board-embed__kind {
+  flex: none;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 400;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.milkdown .inline-drawing__title {
+  flex: 1 1 120px;
+  min-width: 60px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 500;
+  padding: 0 4px;
+  outline: none;
+}
+
+.milkdown .inline-drawing__title::placeholder {
+  color: var(--fg-muted);
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.milkdown .inline-drawing__title:hover:not(:read-only),
+.milkdown .inline-drawing__title:focus:not(:read-only) {
+  background: var(--bg-hover);
+}
+
+.milkdown .board-embed__from {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.milkdown .board-embed__from:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.milkdown .board-embed__arrow {
+  margin-right: 4px;
+}
+
+.milkdown :is(.inline-drawing__edit, .inline-drawing__more, .board-embed__edit, .board-embed__more) {
+  flex: none;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.milkdown :is(.inline-drawing__edit, .inline-drawing__more, .board-embed__edit, .board-embed__more):hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.milkdown :is(.inline-drawing__edit, .board-embed__edit) {
+  margin-left: auto;
+}
+
+.milkdown :is(.inline-drawing__edit, .board-embed__edit)[hidden] {
+  display: none;
+}
+
+.milkdown :is(.inline-drawing__edit, .board-embed__edit)[hidden] + :is(.inline-drawing__more, .board-embed__more) {
+  margin-left: auto;
+}
+
+/* Previews (no caret) hide Edit drawing; read-only pages keep it for unlock-and-resume (matching `.card__edit`). */
+.ProseMirror[contenteditable='false'] :is(.inline-drawing__edit, .board-embed__edit) {
+  display: none;
+}
+
+.ProseMirror[contenteditable='false'] :is(.inline-drawing__more, .board-embed__more) {
+  margin-left: auto;
+}
+
+.milkdown :is(.inline-drawing__more, .board-embed__more) {
+  font-size: 1.2em;
+  line-height: 1.3;
+}
+
+.milkdown .inline-drawing__box,
+.milkdown .board-embed__box {
+  display: block;
 }

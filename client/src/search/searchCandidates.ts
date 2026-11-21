@@ -47,17 +47,23 @@ export interface SearchCandidate {
   snippet?: string
   /** A card (YAZ-5037): a card file's row, or a card's in a page, while its vault's Review is on. The Cards type (`typeOf`) and the card icon read it. */
   card?: true
+  /** An inline Excalidraw drawing inside a page (YAZ-6143): `typeOf` treats it as `'drawings'`, `page` is the page's path, `index` is its 0-based index. */
+  inlineDrawing?: true
   /**
-   * A card inside a page (YAZ-5037): the page's absolute path. Its row's own `path` is `cardRowPath(page, id)`, so each
-   * row keyed by path stays one; it opens the page at the card, and it stands under its page in the search tree.
+   * A card or inline drawing inside a page (YAZ-5037, YAZ-6143): the page's absolute path. Its row's own `path` is
+   * `cardRowPath(page, id)` or `inlineDrawingRowPath(page, index)`, so each row keyed by path stays unique; it stands
+   * under its page in the search tree.
    */
   page?: string
-  /** A card inside a page: its place among the page's cards (`pageCards` order, 0 first), where Explore's page layer lands (YAZ-5164). */
+  /** A card or inline drawing inside a page: its 0-based index within the page. */
   index?: number
 }
 
 /** A card-in-a-page row's own path (YAZ-5037): its page's, `#`, its ID. No file has it: it keys the row, never a read. */
 export const cardRowPath = (page: string, id: string): string => `${page}#${id}`
+
+/** An inline-drawing-in-a-page row's own path (YAZ-6143): its page's, `#drawing-`, its 0-based index. */
+export const inlineDrawingRowPath = (page: string, index: number): string => `${page}#drawing-${index}`
 
 /** Result cap for title search — scrollable results, not the `[[` picker's MAX_SUGGESTIONS popup. The sidebar says so when it is reached (🔒 D6, YAZ-2620). */
 export const SEARCH_CAP = 50
@@ -89,6 +95,12 @@ export function searchCandidates(records: readonly IndexRecord[], letters: reado
       for (const { card: c, id, index } of cardsWithIds(r.cards)) {
         const name = c.title ?? id
         rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: cardRowPath(r.path, id), folder: r.folder, id, ...was, card: true, page: r.path, index })
+      }
+    }
+    if (r.inlineDrawings !== undefined) {
+      for (const d of r.inlineDrawings) {
+        const name = d.title || 'Untitled drawing'
+        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: inlineDrawingRowPath(r.path, d.index), folder: r.folder, inlineDrawing: true, page: r.path, index: d.index })
       }
     }
     return rows

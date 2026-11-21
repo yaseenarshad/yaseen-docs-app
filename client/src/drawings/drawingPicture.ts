@@ -64,11 +64,13 @@ export function restoreForPicture(engine: Pick<PictureEngine, 'restoreElements'>
   return visibleElements(engine.restoreElements(elements as never, null) as unknown[])
 }
 
-/** A drawn picture: the SVG element the engine made, its bounds, its frames. */
+/** A drawn picture: the SVG element the engine made, its bounds, its frames, and its rendered background color. */
 export interface DrawnDrawing {
   svgEl: SVGSVGElement
   bounds: PictureBounds
   frames: BoardFrame[]
+  /** Effective rendered background fill from the exported SVG's background `<rect>` (e.g. `#121212` in dark mode). */
+  background?: string
 }
 
 /**
@@ -93,5 +95,8 @@ export async function drawingSvg(
   const roots = elements.filter((e) => frameIds.has(e.id) || !e.frameId || !frameIds.has(e.frameId))
   const [, , maxX, maxY] = engine.getCommonBounds(roots as never)
   const [, , width, height] = (svgEl.getAttribute('viewBox') ?? '0 0 0 0').split(/\s+/).map(Number)
-  return { svgEl, bounds: { x: maxX + DRAWING_PADDING - width, y: maxY + DRAWING_PADDING - height, width, height }, frames: framesOf(elements) }
+  const bgRect = Array.from(svgEl.children).find((el) => el.tagName.toLowerCase() === 'rect')
+  const fill = bgRect?.getAttribute('fill')?.trim()
+  const background = fill && fill !== 'none' && fill !== 'transparent' ? fill : undefined
+  return { svgEl, bounds: { x: maxX + DRAWING_PADDING - width, y: maxY + DRAWING_PADDING - height, width, height }, frames: framesOf(elements), ...(background === undefined ? {} : { background }) }
 }

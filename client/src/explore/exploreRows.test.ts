@@ -41,6 +41,17 @@ describe('text rows', () => {
     // "vocab" is in a title and a tag of one page: the title row alone shows (the tag's exact match would rank first, and twice is noise).
     expect(exploreRows(rows(), 'vocab').map((r) => [r.path, r.snippet])).toEqual([['/vault/words/conjecture.md', undefined]])
   })
+
+  it('deduplicates exact matches by path: title wins over ownFileName/alias, while alias-only and filename-only queries still match', () => {
+    const cicd = [rec('/vault/ci-cd.md', 'CI/CD', { aliases: ['ci pipeline', 'build-bot'] }), rec('/vault/deploy-script.md', 'Release Checklist')]
+    const cands = [...searchCandidates(cicd), ...textCandidates(cicd)]
+    // "ci" matches title ("CI/CD"), alias ("ci pipeline"), and ownFileName ("ci-cd"): returns ONE row (the title).
+    expect(exploreRows(cands, 'ci').map((r) => [r.path, r.label])).toEqual([['/vault/ci-cd.md', 'CI/CD']])
+    // "deploy-script" matches ONLY the ownFileName row: still returns that row.
+    expect(exploreRows(cands, 'deploy-script').map((r) => [r.path, r.label])).toEqual([['/vault/deploy-script.md', 'deploy-script — Release Checklist']])
+    // "build-bot" matches ONLY an alias: still returns that alias row.
+    expect(exploreRows(cands, 'build-bot').map((r) => [r.path, r.label])).toEqual([['/vault/ci-cd.md', 'build-bot — CI/CD']])
+  })
 })
 
 describe('the typo pass', () => {

@@ -12,11 +12,13 @@ import { readNeedle } from '../links/completion'
 import { relTo, dirname } from '../lib/paths'
 import { idNeedle, marked } from '../search/marked'
 import type { SearchCandidate } from '../search/searchCandidates'
+import { filterOn, filterTest, NO_FILTER, type SearchFilter, type SearchType } from '../search/searchType'
+import { storage } from '../lib/storage'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { PlaceName } from '../sidebar/PlaceName'
 import { useResultKeys } from '../sidebar/hooks/useSidebarSearch'
-import { FolderIcon } from '../views/view/icons'
-import { exploreRows } from './exploreRows'
+import { FilterIcon, FolderIcon } from '../views/view/icons'
+import { dedupeByPath, exploreRows } from './exploreRows'
 import { shownId, type IdsInSearch } from '../search/showIds'
 import { movedOpens, onExploreMove } from './exploreRecents'
 import { ago, type RecentSections } from './recentSections'
@@ -63,11 +65,30 @@ interface ExploreSearchProps {
 /** A row's identity: its file, and its name (a text row of the same file is its own row). */
 const rowKey = (row: SearchCandidate): string => `${row.path}␟${row.name}`
 
+const EXPLORE_TYPES: ReadonlyArray<SearchType> = ['all', 'pages', 'cards', 'drawings', 'diagrams']
+
 export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, roots, nameOf, onOpen, onOpenInTab, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
   const unit = useVaultUnit(roots[0] ?? null)
+  const typeLabel = (t: SearchType): string =>
+    t === 'all' ? 'All' : t === 'pages' ? unit('Pages') : t === 'cards' ? 'Cards' : t === 'drawings' ? 'Drawings' : 'Diagrams'
   const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<SearchFilter>(() => ({
+    ...NO_FILTER,
+    includeInline: storage.getSettings()?.searchIncludeInline !== false,
+  }))
+  const [filterOpen, setFilterOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const filterRef = useRef<HTMLDivElement>(null)
   const typed = query.trim() !== ''
+  const isFiltered = filterOn(filter)
+  useEffect(() => {
+    if (!filterOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (filterRef.current !== null && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [filterOpen])
   const recentNow = useRef(recent)
   recentNow.current = recent
   const [shownRecent, setShownRecent] = useState(recent)
@@ -96,7 +117,12 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
     [recentList, rowOf, roots, nameOf],
   )
   const now = Date.now()
-  const rows = useMemo(() => (typed ? exploreRows(candidates, query) : recentRows), [candidates, query, typed, recentRows])
+  const rows = useMemo(() => {
+    const test = filterTest(filter, () => 0, undefined)
+    if (typed) return exploreRows(test === undefined ? candidates : candidates.filter(test), query)
+    if (filter.type !== 'all') return dedupeByPath(test === undefined ? candidates : candidates.filter(test))
+    return test === undefined ? recentRows : recentRows.filter(test)
+  }, [candidates, query, typed, recentRows, filter])
   const needle = useMemo(() => (typed ? readNeedle(query) : undefined), [query, typed])
   link.rows = rows
   // The stack read these rows in its render, before this one wrote them: a page over this search counts again (YAZ-2571 bug).
@@ -145,33 +171,92 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
 
   return (
     <>
-      <input
-        ref={inputRef}
-        className="explore__input"
-        type="text"
-        placeholder="Search the vault…"
-        aria-label="Explore the vault"
-        autoComplete="off"
-        spellCheck={false}
-        value={query}
-        onChange={(e) => {
-          // Back to no text: the pages opened most recently, as they are now.
-          if (e.target.value.trim() === '' && typed) setShownRecent(recentNow.current)
-          setQuery(e.target.value)
-          setSelected(0)
-        }}
-        onKeyDown={onKeyDown}
-      />
+      <div className="explore__input-row" ref={filterRef}>
+        <input
+          ref={inputRef}
+          className="explore__input"
+          type="text"
+          placeholder="Search the vault…"
+          aria-label="Explore the vault"
+          autoComplete="off"
+          spellCheck={false}
+          value={query}
+          onChange={(e) => {
+            // Back to no text: the pages opened most recently, as they are now.
+            if (e.target.value.trim() === '' && typed) setShownRecent(recentNow.current)
+            setQuery(e.target.value)
+            setSelected(0)
+          }}
+          onKeyDown={onKeyDown}
+        />
+        <button
+          type="button"
+          className={`explore__filter-btn${isFiltered ? ' explore__filter-btn--on' : ''}`}
+          aria-label="Filter"
+          title="Filter"
+          aria-expanded={filterOpen}
+          aria-haspopup="true"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setFilterOpen((open) => !open)}
+        >
+          <FilterIcon />
+        </button>
+        {filterOpen && (
+          <div
+            className="explore__filter-pop"
+            role="dialog"
+            aria-label="Search filter"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                e.stopPropagation()
+                setFilterOpen(false)
+                inputRef.current?.focus()
+              }
+            }}
+          >
+            <div className="explore__filter-types" role="radiogroup" aria-label="Type">
+              {EXPLORE_TYPES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  aria-checked={filter.type === t}
+                  className={`explore__filter-type${filter.type === t ? ' explore__filter-type--active' : ''}`}
+                  onClick={() => {
+                    setFilter((prev) => ({ ...prev, type: t }))
+                    setSelected(0)
+                  }}
+                >
+                  {typeLabel(t)}
+                </button>
+              ))}
+            </div>
+            <label className="explore__filter-toggle">
+              <input
+                type="checkbox"
+                checked={filter.includeInline !== false}
+                onChange={(e) => {
+                  setFilter((prev) => ({ ...prev, includeInline: e.target.checked }))
+                  setSelected(0)
+                }}
+              />
+              <span>{unit('Include inside pages')}</span>
+            </label>
+          </div>
+        )}
+      </div>
       <div className="explore__results">
         {rows.length === 0 ? (
-          <p className="explore__empty">{typed ? 'No matches found' : unit('Type to search the vault. The pages you open show here.')}</p>
+          <p className="explore__empty">{typed || filter.type !== 'all' ? 'No matches found' : unit('Type to search the vault. The pages you open show here.')}</p>
         ) : (
           <ul className="search-results" role="listbox" aria-label="Explore results">
             {rows.map((r, i) => {
-              /** With no text: the section heading before its first row (Opened, Edited) and the row's time. */
+              /** With no text and All type: the section heading before its first row (Opened, Edited) and the row's time. */
+              const showRecents = !typed && filter.type === 'all'
               const opened = shownRecent.opened.length
-              const heading = typed ? null : i === 0 && opened > 0 ? 'Opened' : i === opened ? 'Edited' : null
-              const at = typed ? undefined : recentList[i]?.at
+              const heading = !showRecents ? null : i === 0 && opened > 0 ? 'Opened' : i === opened ? 'Edited' : null
+              const at = !showRecents ? undefined : recentList[i]?.at
               // The ID as a chip after the title (round 1, item 1), by the vault's rule (YAZ-4940); a row found by its ID loses the `ID — ` of its label, so the ID shows once.
               const id = shownId(r, idsInSearch(r.path))
               const label = id !== null && r.label.startsWith(`${id} — `) ? r.label.slice(id.length + 3) : r.label
@@ -203,11 +288,12 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
                 <span className="search-results__label">
                   {/* The name is cut with "…" on its own, so a long one never hides the ID after it (round 5). */}
                   <span className="explore__name">
-                    <FileIcon path={r.path} folder={r.kind === 'dir'} card={r.card === true} />
+                    <FileIcon path={r.inlineDrawing === true ? 'drawing.excalidraw' : r.path} folder={r.kind === 'dir'} card={r.card === true} />
                     {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
                     {marked(label, needle)}
                     {r.kind === 'file' && r.page === undefined && <NameEnding path={r.path} />}
                   </span>
+                  {r.page !== undefined && <span className="explore__inline-pill">{unit('In page')}</span>}
                   {/* The page's or folder's id, in an ID vault (YAZ-2571 round 1): small and muted after the title; a vault without IDs has none. Found by its ID, the matched digits are marked (round 5). */}
                   {id !== null && <span className="explore__id">{marked(id, idNeedle(r, query))}</span>}
                 </span>

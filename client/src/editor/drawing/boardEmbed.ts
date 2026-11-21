@@ -48,6 +48,7 @@ import type { BoardRef, BoardWindowHandle, OpenHow } from '../embed/types'
 import { linkMenuRows, openMenuAt, type LinkMenu } from '../linkMenu'
 import { embedFolds, toggleOutlineFold } from '../outline/outlineFolding'
 import { inCellOrPage } from '../table/cellBlocks'
+import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { linkPath, missingId, type LinkLook, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
@@ -55,6 +56,7 @@ import { boardEmbedAt, boardEmbedKey, boardEmbedsIn, embedRevealed, type BoardEm
 import { boardEmbedName, hasIdEmbed, isIdTarget, type BoardCheck } from './boardEmbedText'
 import { isBoardTarget } from '@shared/embedOptions'
 import { embedCard, loadCardEmbed, type CardEmbedDoors, type CardEmbedHandle } from '../card/embedCard'
+import { vaultUnit } from '../../vault/unitWord'
 import './boardEmbed.css'
 
 export { boardEmbedKey }
@@ -81,6 +83,8 @@ export interface BoardEmbedOptions {
   linkMenu?: (inner: string) => LinkMenu
   /** "Edit in a popup" for a drawing (D7): Editor's `DrawingModal`. Absent → no row. */
   onEditInPopup?: (target: string) => void
+  /** "Put back into this page" for a lone drawing embed (YAZ-5040): converts `.excalidraw` back into an inline block. Absent → no row. */
+  onPutDrawingBack?: (target: string, options: string | null, inner: string, nth: number) => void
   /** Card embeds (YAZ-5037): the page card's doors. Absent (the card editor, a vault with no cards) → `![[GEO-140]]` stays text. */
   cards?: CardEmbedDoors
 }
@@ -101,6 +105,23 @@ function cantShowCard(box: HTMLElement): void {
   box.classList.add(BOX_BROKEN_CLASS)
   box.textContent = "Can't show this card"
 }
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+function boardMenuGlyph(shapes: Array<[string, Record<string, string>]>): SVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  for (const [k, v] of Object.entries({ width: '14', height: '14', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) svg.setAttribute(k, v)
+  for (const [tag, attrs] of shapes) {
+    const shape = document.createElementNS(SVG_NS, tag)
+    for (const [k, v] of Object.entries(attrs)) shape.setAttribute(k, v)
+    svg.appendChild(shape)
+  }
+  return svg
+}
+const editDrawingGlyph = () => boardMenuGlyph([['path', { d: 'M3 21l3.5-1 11-11a2.1 2.1 0 0 0-3-3l-11 11z' }], ['path', { d: 'M14 6l3 3' }]])
+const putBackGlyph = () => boardMenuGlyph([['path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }], ['polyline', { points: '14 2 14 8 20 8' }], ['path', { d: 'M12 12v6' }], ['path', { d: 'm9 15 3 3 3-3' }]])
+const linkGlyph = () => boardMenuGlyph([['path', { d: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71' }], ['path', { d: 'M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71' }]])
+const editLinkGlyph = () => boardMenuGlyph([['path', { d: 'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z' }]])
+const removeEmbedGlyph = () => boardMenuGlyph([['path', { d: 'M3 6h18' }], ['path', { d: 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6' }], ['path', { d: 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2' }]])
 
 /** Counts, for the typing tests: the textblocks scanned, and the fold passes over every mount (A9), since the start. */
 export const boardEmbedStats = { blocksScanned: 0, foldPasses: 0 }
@@ -135,6 +156,10 @@ interface Mount {
   selected: boolean
   fold: { foldable: boolean; folded: boolean }
   cell: boolean
+  /** Quiet card-style top header for standalone `.excalidraw` embeds (YAZ-6136 / YAZ-6140). */
+  head?: HTMLElement
+  headFromText?: HTMLSpanElement
+  headEdit?: HTMLButtonElement
 }
 
 export function createBoardEmbed(opts: BoardEmbedOptions) {
@@ -302,6 +327,22 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       if (entry !== undefined) toggleOutlineFold(entry.itemPos)(view.state, view.dispatch)
     }
 
+    const lonePlaceOf = (view: EditorView, match: BoardEmbedMatch): { inner: string; nth: number } | null => {
+      const $at = view.state.doc.resolve(match.from)
+      const inner = loneEmbedOf($at.parent, $at.node($at.depth - 1), $at.index($at.depth - 1))
+      if (inner !== match.inner) return null
+      // Its place among the page's lone embeds of that text, as the file's lines read them (`embedLine`).
+      const before = $at.before()
+      let nth = 0
+      view.state.doc.descendants((node, pos, parent, index) => {
+        if (pos >= before) return false
+        if (node.type.name !== 'paragraph') return true
+        if (loneEmbedOf(node, parent, index) === inner) nth++
+        return false
+      })
+      return { inner, nth }
+    }
+
     const openMenu = (view: EditorView, mount: Mount, event: MouseEvent): void => {
       const m = matchOf(view, mount)
       const parent = view.dom.parentElement
@@ -320,13 +361,25 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
         if (now !== null) view.dispatch(view.state.tr.insertText(text, now.from, now.to))
       }
       const editable = view.editable
-      const drawing = fileKind(m.target.split('#')[0]!.trim()) === 'drawing'
+      const targetPage = m.target.split('#')[0]!.trim()
+      const resolvedPath = isIdTarget(targetPage) ? linkPath(m.target, opts.source, opts.viewOnly) : null
+      const drawing = fileKind((resolvedPath ?? targetPage).split('#')[0]!.trim()) === 'drawing'
+      const lone = editable && drawing && opts.onPutDrawingBack !== undefined ? lonePlaceOf(view, m) : null
       group([
-        editable && drawing && opts.onEditInPopup !== undefined ? { label: 'Edit in a popup', run: () => opts.onEditInPopup?.(m.target) } : null,
-        editable ? { label: 'Show as link', run: () => replace(`[[${m.target}]]`) } : null,
+        editable && drawing && opts.onEditInPopup !== undefined ? { label: 'Edit drawing', icon: editDrawingGlyph, run: () => opts.onEditInPopup?.(m.target) } : null,
+        lone !== null
+          ? {
+              label: vaultUnit(opts.root)('Put back into this page'),
+              icon: putBackGlyph,
+              ask: { question: vaultUnit(opts.root)('Put this drawing back into this page?'), yes: 'Put back' },
+              run: () => opts.onPutDrawingBack?.(m.target, m.options, lone.inner, lone.nth),
+            }
+          : null,
+        editable ? { label: 'Show as link', icon: linkGlyph, run: () => replace(`[[${m.target}]]`) } : null,
         editable
           ? {
               label: 'Edit link',
+              icon: editLinkGlyph,
               run: () => {
                 const now = live()
                 if (now === null) return
@@ -335,7 +388,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
               },
             }
           : null,
-        editable ? { label: 'Remove embed', danger: true, run: () => replace('') } : null,
+        editable ? { label: 'Remove embed', icon: removeEmbedGlyph, danger: true, run: () => replace('') } : null,
       ])
       closeMenu = openMenuAt(parent, event.clientX, event.clientY, rows)
     }
@@ -350,8 +403,74 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       const mount: Mount = { id: fact.id, dom, getPos, target: latest.target, options: latest.options, handle: null, isCard: false, card: null, refKey: keyOf(ref), selected: false, fold: firstFold(latest.cell), cell: latest.cell }
       mounts.set(dom, mount)
       byId.set(fact.id, mount)
+      let windowBox: HTMLElement = dom
+      if (!latest.cell && ref.kind === 'drawing') {
+        dom.classList.add('board-embed--framed')
+        const head = document.createElement('span')
+        head.className = 'board-embed__head'
+        const fromBtn = document.createElement('button')
+        fromBtn.type = 'button'
+        fromBtn.className = 'board-embed__from'
+        fromBtn.tabIndex = -1
+        fromBtn.title = 'Open the original'
+        fromBtn.setAttribute('aria-label', 'Open the original')
+        const arrow = document.createElement('span')
+        arrow.className = 'board-embed__arrow'
+        arrow.setAttribute('aria-hidden', 'true')
+        arrow.textContent = '↗'
+        const fromText = document.createElement('span')
+        fromText.textContent = `Embedded from "${ref.name}"`
+        fromBtn.append(arrow, fromText)
+        fromBtn.addEventListener('mousedown', (e) => e.stopPropagation())
+        fromBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          opts.follow?.(mount.target, e.metaKey || e.ctrlKey ? (e.shiftKey ? 'newTab' : 'backgroundTab') : 'thisTab')
+        })
+        const editBtn = document.createElement('button')
+        editBtn.type = 'button'
+        editBtn.className = 'board-embed__edit'
+        editBtn.tabIndex = -1
+        editBtn.textContent = 'Edit drawing'
+        editBtn.hidden = opts.onEditInPopup === undefined
+        editBtn.addEventListener('mousedown', (e) => e.stopPropagation())
+        editBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (!view.editable) {
+            tellReadOnlyEdit(dom, 'drawing', () => opts.onEditInPopup?.(mount.target))
+            return
+          }
+          opts.onEditInPopup?.(mount.target)
+        })
+        const moreBtn = document.createElement('button')
+        moreBtn.type = 'button'
+        moreBtn.className = 'board-embed__more'
+        moreBtn.tabIndex = -1
+        moreBtn.textContent = '⋯'
+        moreBtn.setAttribute('aria-label', 'Drawing menu')
+        moreBtn.title = 'Drawing menu'
+        moreBtn.addEventListener('mousedown', (e) => e.stopPropagation())
+        moreBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          const rect = moreBtn.getBoundingClientRect()
+          const synthetic = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.right, clientY: rect.bottom + 4 })
+          openMenu(view, mount, synthetic)
+        })
+        head.append(fromBtn, editBtn, moreBtn)
+        head.addEventListener('contextmenu', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          openMenu(view, mount, e)
+        })
+        const innerBox = document.createElement('span')
+        innerBox.className = 'board-embed__box'
+        dom.append(head, innerBox)
+        mount.head = head
+        mount.headFromText = fromText
+        mount.headEdit = editBtn
+        windowBox = innerBox
+      }
       const columnWidth = () => view.dom.clientWidth
-      mountInBox(dom, {
+      mountInBox(windowBox, {
         options: parseOptions(latest.options),
         columnWidth,
         host: () => ({
@@ -401,20 +520,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
             menuParent: () => view.dom.parentElement ?? document.body,
             place: () => {
               const now = matchOf(view, mount)
-              if (now === null) return null
-              const $at = view.state.doc.resolve(now.from)
-              const inner = loneEmbedOf($at.parent, $at.node($at.depth - 1), $at.index($at.depth - 1))
-              if (inner !== now.inner) return null
-              // Its place among the page's lone embeds of that text, as the file's lines read them (`embedLine`).
-              const before = $at.before()
-              let nth = 0
-              view.state.doc.descendants((node, pos, parent, index) => {
-                if (pos >= before) return false
-                if (node.type.name !== 'paragraph') return true
-                if (loneEmbedOf(node, parent, index) === inner) nth++
-                return false
-              })
-              return { inner, nth }
+              return now === null ? null : lonePlaceOf(view, now)
             },
           })
           mount.card = card
@@ -451,6 +557,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
         const key = keyOf(ref)
         if (key === mount.refKey) continue
         mount.refKey = key
+        if (mount.headFromText !== undefined) mount.headFromText.textContent = `Embedded from "${ref.name}"`
         mount.handle?.update({ ref })
       }
     }
@@ -483,7 +590,18 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
           // The window's keys (D10): ⌘+ ⌘− ⌘0, and Shift+1 (fit, never a typed "!" over the embed). The editor keeps
           // the focus, so any other key types over the embed as over any selection (item 21).
           if (mount.handle?.handleKey(event) === true) return true
+          if (!mount.isCard && event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && opts.follow !== undefined) {
+            event.preventDefault()
+            opts.follow(mount.target, event.shiftKey ? 'backgroundTab' : 'newTab')
+            return true
+          }
           if (event.metaKey || event.ctrlKey || event.altKey) return false
+          if (!mount.isCard && !event.shiftKey && event.key === 'Enter' && opts.onEditInPopup !== undefined && refOf(mount.target).kind === 'drawing') {
+            event.preventDefault()
+            if (!view.editable) tellReadOnlyEdit(mount.dom, 'drawing', () => opts.onEditInPopup?.(mount.target))
+            else opts.onEditInPopup(mount.target)
+            return true
+          }
           // Escape first deselects the window (item 20): the caret goes after the embed.
           if (event.key === 'Escape') {
             view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.to)))
@@ -518,6 +636,10 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
             if (next.folded !== mount.fold.folded) {
               mount.handle?.setFolded(next.folded)
               mount.card?.setFolded(next.folded)
+              if (mount.head !== undefined) {
+                mount.head.hidden = next.folded
+                mount.dom.classList.toggle('board-embed--folded', next.folded)
+              }
             }
             mount.fold = next
           }
@@ -538,6 +660,10 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
                 mount.handle?.setFoldable(false)
                 mount.handle?.setFolded(fact.cell)
                 mount.card?.setFolded(fact.cell)
+                if (mount.head !== undefined) {
+                  mount.head.hidden = fact.cell
+                  mount.dom.classList.toggle('board-embed--folded', fact.cell)
+                }
               }
               if (mount.options !== fact.options) {
                 mount.options = fact.options
@@ -556,6 +682,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
               const before = selected === null ? undefined : byId.get(selected)
               if (before !== undefined) {
                 before.selected = false
+                before.dom.classList.remove('is-selected')
                 before.handle?.setSelected(false)
                 before.card?.setSelected(false)
               }
@@ -563,6 +690,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
               const after = now === null ? undefined : byId.get(now)
               if (after !== undefined) {
                 after.selected = true
+                after.dom.classList.add('is-selected')
                 after.handle?.setSelected(true)
                 after.card?.setSelected(true)
               }

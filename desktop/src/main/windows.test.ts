@@ -2571,11 +2571,12 @@ describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () 
     return { manager, created, win }
   }
 
-  it('S3: an EMPTY window asks for a vault with no window → it hears link:set-roots, no window opens, the MRU is bumped', () => {
+  it('S3 (YAZ-6149): a window that already has a vault open (even with no tabs) opens a NEW window instead of replacing itself; the MRU is bumped', () => {
     const { manager, created, win } = seed(entry('e', ['/v/a']))
     expect(manager.openRecentBeside('/v/c', 'e')).toBe(true)
-    expect(created).toHaveLength(1)
-    expect(win('e').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/c'])
+    expect(created).toHaveLength(2)
+    expect(created[1].entry).toMatchObject({ roots: ['/v/c'], file: null, tabs: [] })
+    expect(win('e').webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onSetRoots.channel, expect.anything())
     expect(store.get().recents[0]?.path).toBe('/v/c')
   })
 
@@ -2588,7 +2589,7 @@ describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () 
     expect(win('e').webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onSetRoots.channel, expect.anything())
   })
 
-  it('S1, S5: "Open by itself" — a window with a tab gets a NEW window; an empty workspace window takes the vault alone', () => {
+  it('S1, S5 (YAZ-6149): "Open by itself" — both a window with a tab and a blank-tab workspace window open a NEW window; only a vault-less window takes it in place', () => {
     const busy = seed(entry('ab', ['/v/a', '/v/b'], ['/v/a/x.md']))
     expect(busy.manager.openAlone('/v/b', 'ab')).toBe(true)
     expect(busy.created).toHaveLength(2)
@@ -2598,8 +2599,9 @@ describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () 
     const empty = seed(entry('ab2', ['/v/c', '/v/d']))
     const before = empty.created.length // every stored window comes back, the first test's too
     expect(empty.manager.openAlone('/v/d', 'ab2')).toBe(true)
-    expect(empty.created).toHaveLength(before)
-    expect(empty.win('ab2').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/d'])
+    expect(empty.created).toHaveLength(before + 1)
+    expect(empty.created.at(-1)!.entry).toMatchObject({ roots: ['/v/d'], file: null, tabs: [] })
+    expect(empty.win('ab2').webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onSetRoots.channel, expect.anything())
   })
 
   it('S6, S7, S8: the blank tab is no tab; a right-panel item, a page on show, or a Files window is NOT empty → a new window opens', () => {
@@ -2612,12 +2614,18 @@ describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () 
     expect(created.slice(2).map((c) => c.entry.roots)).toEqual([['/v/c'], ['/v/d']])
   })
 
-  it('S9: a workspace row in an EMPTY window → the window takes the set\'s vaults that are left; the set becomes the last used', () => {
+  it('S9 (YAZ-6149): a workspace row in a window that already has a vault opens a NEW window; in a vault-less Welcome window it takes the set in place', () => {
     const work = store.saveVaultSet('Work', ['/v/b', '/v/a'], 1)!
-    const { manager, created, win } = seed(entry('e', ['/v/x']))
+    const { manager, created, win } = seed(entry('e', ['/v/x']), { ...entry('wel', ['/x']), root: null, roots: [] })
     expect(manager.openVaultSet(work.id, 'e')).toEqual({ opened: true, missing: [] })
-    expect(created).toHaveLength(1)
-    expect(win('e').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/b', '/v/a'])
+    expect(created).toHaveLength(3)
+    expect(created[2].entry.roots).toEqual(['/v/b', '/v/a'])
+    expect(win('e').webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onSetRoots.channel, expect.anything())
+
+    const solo = store.saveVaultSet('Solo', ['/v/c', '/v/d'], 2)!
+    expect(manager.openVaultSet(solo.id, 'wel')).toEqual({ opened: true, missing: [] })
+    expect(created).toHaveLength(3)
+    expect(win('wel').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/c', '/v/d'])
   })
 
   it('S10, S12: a Welcome window (no vault) in front counts as empty: ⌘<n> sends it the vault, and no window opens', () => {

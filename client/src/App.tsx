@@ -462,7 +462,7 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, openBackgroundAt, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, openInlineDrawing, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, openBackgroundAt, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
     closeActive, back, forward, go: goToStep, openStep, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -480,8 +480,9 @@ export function App() {
   /** The last committed tab id for the per-tab collapsed effect (YAZ-6064 D2, YAZ-6105). */
   const collapsedTabRef = useRef<string | null | undefined>(undefined)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
-  /** The sidebar's aside: a resize drag writes its live width here, not to state (YAZ-2239). */
+  /** The sidebar's aside and animated shell: a resize drag writes its live width here, not to state (YAZ-2239, YAZ-6146). */
   const sidebarRef = useRef<HTMLElement>(null)
+  const sidebarShellRef = useRef<HTMLDivElement>(null)
   // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and persisted because the Sidebar is
   // mounted on one vault (`sidebarKey`) and only while open; sidebar-local view state would reset on every
   // collapse/reopen and root switch. Window identity like visibility since YAZ-1628 — one
@@ -861,6 +862,7 @@ export function App() {
         raw = start + ev.clientX - x0
         // As wide as the page lets it (YAZ-3511 D18): the page keeps MAIN_WORKSPACE_MIN_W.
         width = Math.max(SIDEBAR_MIN_W, Math.min(SIDEBAR_MAX_W, window.innerWidth - MAIN_WORKSPACE_MIN_W, raw))
+        if (sidebarShellRef.current !== null) sidebarShellRef.current.style.width = `${width}px`
         if (sidebarRef.current !== null) sidebarRef.current.style.width = `${width}px`
         if (overlayAtRef.current(width) !== overlayAtRef.current(rendered)) {
           rendered = width
@@ -873,6 +875,7 @@ export function App() {
         holdColResize(false)
         setResizing(false)
         if (raw < SIDEBAR_MIN_W * 0.6) {
+          if (sidebarRef.current !== null) sidebarRef.current.style.width = `${start}px`
           setSidebarWidth(start)
           toggleSidebar()
           return
@@ -1517,7 +1520,7 @@ export function App() {
    * search goes back to its tab; then the sidebar closes, and the keyboard goes from it to the page, in place.
    */
   useEscapeLast(
-    () => ({ aside: sidebarRef.current, searchShown: sidebarLens === 'search', canClose: !filesWindow }),
+    () => ({ aside: sidebarCollapsedRef.current ? null : sidebarRef.current, searchShown: sidebarLens === 'search', canClose: !filesWindow }),
     (step) => {
       if (step === 'leaveSearch') return changeLens(lastNonSearchLens.current)
       const active = document.activeElement
@@ -2713,6 +2716,17 @@ export function App() {
     // A new start (YAZ-3737 D3): the source's caret is in another level, so it stays behind.
     if (copy !== null && view !== undefined) startView.set(copy, { scrollTop: 0, zoomKey: zoom, folds: view.folds, magnification: view.magnification })
   }, [openZoom, startView, learnZoomLabel])
+  const openInlineDrawingTab = useCallback((id: string, index: number, background: boolean) => {
+    const source = tabById(now.current, id)
+    if (source !== null) void flushRenamedPath(source.path)
+    openInlineDrawing(id, index, background)
+  }, [openInlineDrawing])
+  const openInlineDrawingByPath = useCallback((path: string, index: number, background: boolean) => {
+    void flushRenamedPath(path)
+    const anyTab = now.current.tabs.find((t) => t.path === path)
+    if (anyTab !== undefined) openInlineDrawing(anyTab.id, index, background)
+    else openStored([{ path, inlineDrawing: index, ...(background ? {} : { active: true }) }])
+  }, [openInlineDrawing, openStored])
   /**
    * A tab another window moved here (YAZ-3091 D5, S8–S14): the board closes, the page is a NEW tab at the end
    * and shows — a copy when it is open, out of the right panel when it was there — with the moved name and
@@ -4070,6 +4084,7 @@ export function App() {
   // Each tab's page, by id: a layer is a tab's (YAZ-2940 D1), and its editor is that tab's page.
   const pathOf = new Map(tabs.map((t) => [t.id, t.path]))
   const zoomOf = new Map(tabs.map((t) => [t.id, t.zoom ?? null]))
+  const inlineDrawingOf = new Map(tabs.map((t) => [t.id, t.inlineDrawing]))
   /** The tab whose layer shows: the active one, none under the blank tab or the Inbox tab (YAZ-5038, `pageOnShow`). */
   const shown = pageOnShow === null ? null : activeTab
   shownRef.current = shown
@@ -4308,7 +4323,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={settings.exploreSize} exploreWidth={settings.exploreWidth} onExploreSize={changeExploreSize} linkPreview={exploreLinkPreview} hotkeys={settings.hotkeys} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} onOpenInlineDrawingTab={openInlineDrawingByPath} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={settings.exploreSize} exploreWidth={settings.exploreWidth} onExploreSize={changeExploreSize} linkPreview={exploreLinkPreview} hotkeys={settings.hotkeys} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -4353,8 +4368,16 @@ export function App() {
           )}
         </div>
       )}
-      {root !== null && (filesWindow || !sidebarCollapsed) && (
-        <Sidebar
+      {root !== null && (
+        <div
+          ref={sidebarShellRef}
+          className={`sidebar-shell${!filesWindow && sidebarCollapsed ? ' sidebar-shell--collapsed' : ''}${resizing ? ' sidebar-shell--resizing' : ''}`}
+          style={{ width: !filesWindow && sidebarCollapsed ? 0 : filesWindow ? filesNarrowW.current : sidebarWidth }}
+          aria-hidden={!filesWindow && sidebarCollapsed ? true : undefined}
+          inert={!filesWindow && sidebarCollapsed ? true : undefined}
+        >
+          <Sidebar
+            onOpenInlineDrawingTab={openInlineDrawingByPath}
           // Keyed on one vault of the window (YAZ-2631 D5): a vault that joins, leaves behind it or moves does not remount the panel.
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
@@ -4464,6 +4487,7 @@ export function App() {
           // move restyled the whole window, every mounted tab included.
           // A Files window's sidebar fills it (app.css); while its board shows, it keeps the narrow width (YAZ-3357 D3).
           width={filesWindow ? filesNarrowW.current : sidebarWidth}
+          collapsed={!filesWindow && sidebarCollapsed}
           asideRef={sidebarRef}
           onHistoryFile={filesDoors?.history ?? openHistory}
           onShareFile={filesDoors?.share ?? openShare}
@@ -4475,6 +4499,7 @@ export function App() {
           // Its "Open in new window" (YAZ-5054): main opens the window, from a Files window too.
           onInboxNewWindow={openInboxInNewWindow}
         />
+        </div>
       )}
       {root !== null && !sidebarCollapsed && !filesWindow && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
       {filesWindow && root !== null ? (
@@ -4601,7 +4626,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The page's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  {id !== held && <UnitContext.Provider value={scopeOf(path).unit.unit}><RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackgroundCopy} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} /></UnitContext.Provider>}
+                  {id !== held && <UnitContext.Provider value={scopeOf(path).unit.unit}><RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackgroundCopy} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} inlineDrawingIndex={inlineDrawingOf.get(id)} onOpenInlineDrawing={openInlineDrawingTab} /></UnitContext.Provider>}
                 </div>
               )
             })}

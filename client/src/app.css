@@ -1978,6 +1978,31 @@ button {
 
 /* ---------- sidebar ---------- */
 
+/* YAZ-6146: animated shell around .sidebar so collapsing/expanding on tab switch or toggle glides smoothly without reflowing the tree. */
+.sidebar-shell {
+  flex: none;
+  display: flex;
+  overflow: clip;
+  opacity: 1;
+}
+
+.sidebar-shell--collapsed {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar-shell {
+    transition:
+      width 0.16s cubic-bezier(0.2, 0.7, 0.3, 1),
+      opacity 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+
+  .sidebar-shell--resizing {
+    transition: none;
+  }
+}
+
 /* The width is set on .sidebar itself from AppState.sidebarWidth (YAZ-738, YAZ-2194). */
 .sidebar {
   flex: none;
@@ -1990,7 +2015,11 @@ button {
 
 /* The page keeps 360 px, MAIN_WORKSPACE_MIN_W (YAZ-3511 D18): in a narrower window a wide sidebar is drawn narrower, and
    its stored width comes back when the window does. A Files window is only the sidebar. */
-.app:not(.app--files) > .sidebar {
+.app:not(.app--files) > .sidebar-shell {
+  max-width: calc(100vw - 360px);
+}
+
+.app:not(.app--files) > .sidebar-shell > .sidebar {
   max-width: calc(100vw - 360px);
   /* In a window under 360 px that leaves no width at all: nothing of the sidebar shows beside its edge (YAZ-4643 S10).
      `clip`, not `hidden`: no scroll container, so a focus inside it never shifts its content. Menus portal out. */
@@ -1999,7 +2028,13 @@ button {
 
 /* A Files window (YAZ-3357 D1, D8) is only the sidebar: it fills the window, with no edge to drag. While Tabs Mission
    Control shows, the window is wide and the sidebar keeps its narrow width (set on it), the board right of it. */
-.app--files:not(.app--files-board) > .sidebar {
+.app--files:not(.app--files-board) > .sidebar-shell {
+  flex: 1 1 auto;
+  width: auto !important;
+  min-width: 0;
+}
+
+.app--files:not(.app--files-board) > .sidebar-shell > .sidebar {
   flex: 1 1 auto;
   width: auto !important;
   min-width: 0;

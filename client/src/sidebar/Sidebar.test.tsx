@@ -24,6 +24,7 @@ import { EMPTY_SELECTION } from '../lib/selection'
 import { storage } from '../lib/storage'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { takeCardLanding } from '../editor/card/cardOpen'
+import { takeInlineDrawingLanding } from '../editor/drawing/inlineDrawingLand'
 import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
 
 /**
@@ -12497,7 +12498,7 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
   it('S9, S34, D3, D4, D7, D12: the button opens the Search menu — Best match first, no Manual, "Show last updated", then Type and Time — and a pick writes `searchSort` or `rowDates` alone', async () => {
     const { el, props } = await search()
     act(() => sortButton(el)?.click())
-    expect(items(el)).toEqual(['Best match✓', 'Name', 'Last updated', 'Show last updated✓', 'TypeAll types', 'TimeAny time'])
+    expect(items(el)).toEqual(['Best match✓', 'Name', 'Last updated', 'Show last updated✓', 'TypeAll types', 'TimeAny time', 'Include inside pages✓'])
     await act(async () => itemByLabel(el, 'Last updated')?.click())
     expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, searchSort: { by: 'updated', reverse: false } })
     act(() => sortButton(el)?.click())
@@ -12615,6 +12616,66 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(true)
     await rerender({ lens: 'search', pendingSearchFocus: true, pendingSearchClear: true })
     expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(false)
+  })
+
+  it('YAZ-6137: selecting a type filter with an empty search box filters immediately instead of showing unfiltered recents', async () => {
+    const m = await mount({ lens: 'search', settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, search: false } } }, (b) => {
+      b.tree.mockResolvedValue({
+        root: '/v',
+        tree: [
+          page('/v/Note.md', NOW - 60_000),
+          { type: 'file', name: 'Sketch.excalidraw', path: '/v/Sketch.excalidraw', size: 1, mtime: NOW - 120_000, kind: 'drawing' },
+          { type: 'file', name: 'Flow.drawio', path: '/v/Flow.drawio', size: 1, mtime: NOW - 180_000, kind: 'diagram' },
+        ],
+        generatedAt: 1,
+      })
+      b.index.mockResolvedValue({ root: '/v', records: [indexRecord('/v/Note.md')], folders: [], generatedAt: 1, ids: true } as never)
+    })
+    expect(searchBar(m.el)!.value).toBe('')
+    act(() => sortButton(m.el)?.click())
+    clickSub(m.el, 'Drawings', 'Type')
+    await wait(50)
+    expect(m.el.querySelector('.sidebar__search-recents')).toBeNull()
+    expect(rows(m.el)).toEqual(['Sketch.excalidraw -'])
+    // Clearing the filter chip restores the empty-bar state.
+    act(() => m.el.querySelector<HTMLButtonElement>('.sidebar__filters .sidebar__filter-chip')?.click())
+    expect(m.el.querySelector('.sidebar__search-recents')).not.toBeNull()
+  })
+
+  it('YAZ-6143: inline drawings appear under their page in Search, open via onOpenInlineDrawingTab, and respect searchIncludeInline', async () => {
+    const onOpenInlineDrawingTab = vi.fn()
+    const rec = { ...indexRecord('/v/Plan.md'), inlineDrawings: [{ index: 0, title: 'Architecture' }] }
+    const m = await mount(
+      { lens: 'search', onOpenInlineDrawingTab, settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, search: false } } },
+      (b) => {
+        b.tree.mockResolvedValue({
+          root: '/v',
+          tree: [page('/v/Plan.md', NOW - 60_000), { type: 'file', name: 'Sketch.excalidraw', path: '/v/Sketch.excalidraw', size: 1, mtime: NOW - 120_000, kind: 'drawing' }],
+          generatedAt: 1,
+        })
+        b.index.mockResolvedValue({ root: '/v', records: [rec], folders: [], generatedAt: 1, ids: true } as never)
+      },
+    )
+    act(() => sortButton(m.el)?.click())
+    clickSub(m.el, 'Drawings', 'Type')
+    await wait(50)
+    const inlineRow = [...m.el.querySelectorAll<HTMLButtonElement>('.tree__row--card')].find((b) => b.textContent?.includes('Architecture'))
+    expect(inlineRow).toBeDefined()
+    expect(inlineRow!.querySelector('.file-icon')?.getAttribute('data-kind')).toBe('drawing')
+    expect(inlineRow!.querySelector('.card-icon')).toBeNull()
+    act(() => inlineRow!.click())
+    expect(onOpenInlineDrawingTab).toHaveBeenCalledWith('/v/Plan.md', 0, false)
+    act(() => inlineRow!.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    expect(onOpenInlineDrawingTab).toHaveBeenLastCalledWith('/v/Plan.md', 0, true)
+    // Right-clicking the inline drawing opens its context menu; "Show in page" opens the page and schedules landing.
+    act(() => inlineRow!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })))
+    expect(items(m.el)).toEqual(['Show in page', 'Open in new tab'])
+    act(() => itemByLabel(m.el, 'Show in page')?.click())
+    expect(m.props.onOpenFile).toHaveBeenCalledWith('/v/Plan.md')
+    expect(takeInlineDrawingLanding('/v/Plan.md', 0)).toBe(true)
+    // Respects settings.searchIncludeInline = false
+    await m.rerender({ settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, search: false }, searchIncludeInline: false } })
+    expect(m.el.querySelectorAll('.tree__row--card')).toHaveLength(0)
   })
 
   it('S58, D17: the sort button is lit on Search alone; on Files, with the filter still on, it looks as before', async () => {

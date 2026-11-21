@@ -111,8 +111,10 @@ export function useSidebarSearch(
   onFilter: (next: SearchFilter) => void,
   /** With the focus flag: a NEW search (YAZ-2663 D10). A new tab (⌘T) asks it, and the bar is emptied; ⌘K does not, and keeps its text. */
   pendingSearchClear = false,
-  /** Enter on a card inside a page (YAZ-5037): its page opens at the card; `background` is ⌘, and `reveal` is Shift. */
+  /** Enter on a card or inline drawing inside a page (YAZ-5037, YAZ-6143): opens its page/drawing tab; `background` is ⌘, and `reveal` is Shift. */
   openCard: (row: SearchCandidate, background: boolean, reveal: boolean) => void = () => undefined,
+  /** Global default for including inline drawings & cards in search (YAZ-6143, `settings.searchIncludeInline`). */
+  defaultIncludeInline = true,
 ) {
   // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
   // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
@@ -122,14 +124,18 @@ export function useSidebarSearch(
   const searchInput = useRef<HTMLInputElement>(null)
   const pinnedPaths = useMemo(() => new Set(pinned.map((node) => node.path)), [pinned])
   // The filters' test (D16), built when the filters, the file times or the day change, never on a keystroke, and only
-  // while the search shows and has text: a save on Files with a filter on does no search work. A time range reads each
-  // row's time by its path off the whole tree — a folder's newest file anywhere inside (D14); its start is read on each
-  // render, so "Today" turns at midnight with no save.
-  const ranking = active && query.trim() !== ''
-  const from = timeStart(filter.time, Date.now())
+  // while the search shows and has text or an active type/time filter (YAZ-6137): a save on Files with a filter on does no search work.
+  // When `filter.includeInline` is unset, respect `defaultIncludeInline` (`settings.searchIncludeInline`, YAZ-6143).
+  const effectiveFilter = useMemo(
+    () => (filter.includeInline !== undefined || defaultIncludeInline ? filter : { ...filter, includeInline: false }),
+    [filter, defaultIncludeInline],
+  )
+  const activeFilter = filter.type !== 'all' || filter.time !== 'any'
+  const ranking = active && (query.trim() !== '' || activeFilter)
+  const from = timeStart(effectiveFilter.time, Date.now())
   const timedTree = ranking && from !== undefined ? tree : null
   const times = useMemo(() => (timedTree === null ? NO_TIMES : timesByPath(timedTree)), [timedTree])
-  const keep = useMemo(() => (ranking ? filterTest(filter, (path) => times.get(path) ?? 0, from) : undefined), [ranking, filter, times, from])
+  const keep = useMemo(() => (ranking ? filterTest(effectiveFilter, (path) => times.get(path) ?? 0, from) : undefined), [ranking, effectiveFilter, times, from])
   // A search that is not on screen ranks nothing (YAZ-2638 D2): with no results it has no highlight,
   // so it scrolls no row of the tab that shows. The ranking is synchronous, so the results are back
   // in the render that shows the Search tab again. A match of a pinned item ranks first (YAZ-2662 D4).
@@ -292,11 +298,11 @@ export function useSidebarSearch(
     return stopPreview
   }, [active, stopPreview])
 
-  // With text typed the Search tab's body is the search tree (YAZ-2620); with none it is one line
-  // of help (YAZ-2638 D2). A conditional render, not a teardown — every bit of the other tabs' tree
+  // With text typed or an active type/time filter (YAZ-6137) the Search tab's body is the search tree (YAZ-2620); with neither it is
+  // the empty-bar recents / help (YAZ-2638 D2, YAZ-5774). A conditional render, not a teardown — every bit of the other tabs' tree
   // state (data, expansion, pending create/rename, drag) lives in the Sidebar's other hooks
   // (useVaultTree, rowGestures) and is waiting untouched when one of them shows again.
-  const typed = query.trim() !== ''
+  const typed = query.trim() !== '' || activeFilter
 
   // The highlight as the tree takes a selection (S39): the one row the keys are on. A click moves
   // it to the clicked row when the keys can stop on that row (S26, S27) and leaves it be otherwise (S28).

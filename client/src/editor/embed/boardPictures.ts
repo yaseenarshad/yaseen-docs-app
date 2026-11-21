@@ -31,7 +31,7 @@ import type { DiagramDarkColors, WatchEvent } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { renderDiagramPage, type BoardBounds, type DiagramPageRef } from '../../diagrams/renderDiagram'
 import { DRAWING_PADDING, drawingSvg, framesOf, type BoardFrame, type SceneElement } from '../../drawings/drawingPicture'
-import { readDrawingForPicture } from '../../drawings/drawingScene'
+import { readDrawingForPicture, readInlineDrawingForPicture } from '../../drawings/drawingScene'
 import { createPreviewCache } from '../../lib/previewCache'
 import { storage } from '../../lib/storage'
 import { appliedTheme } from '../../lib/theme'
@@ -67,6 +67,8 @@ export interface BoardPicture {
   bytes: number
   /** Where its links are, in board units (YAZ-4943, `boardLinks.ts`): Explore's board layer opens them. Absent = none. */
   links?: readonly BoardLinkSpot[]
+  /** Effective rendered SVG background color (YAZ-6141), matched on the stage so letterbox margins show no seam. */
+  background?: string
 }
 
 /** What a picture is asked for by. `path` is vault-relative or absolute under `root`. */
@@ -126,9 +128,39 @@ async function drawDrawing(root: string, path: string, theme: 'light' | 'dark'):
   const elements = read.elements as SceneElement[]
   if (elements.length === 0) return { svg: '', bounds: null, pages: [], page: null, frames: [] }
   await whenIdle()
-  const { svgEl, bounds, frames } = await drawingSvg(engine, { elements, appState, files }, theme)
+  const { svgEl, bounds, frames, background } = await drawingSvg(engine, { elements, appState, files }, theme)
   const svg = new XMLSerializer().serializeToString(svgEl)
-  return { svg, bounds, pages: [], page: null, frames, links: drawingLinkSpots(elements) }
+  return { svg, bounds, pages: [], page: null, frames, links: drawingLinkSpots(elements), ...(background === undefined ? {} : { background }) }
+}
+
+async function drawInlineDrawing(root: string, json: string, theme: 'light' | 'dark'): Promise<Drawn> {
+  const read = await readInlineDrawingForPicture(root, json, IMAGE_MAX_PX)
+  const { engine, appState, files } = read
+  const elements = read.elements as SceneElement[]
+  if (elements.length === 0) return { svg: '', bounds: null, pages: [], page: null, frames: [] }
+  await whenIdle()
+  const { svgEl, bounds, frames, background } = await drawingSvg(engine, { elements, appState, files }, theme)
+  const svg = new XMLSerializer().serializeToString(svgEl)
+  return { svg, bounds, pages: [], page: null, frames, links: drawingLinkSpots(elements), ...(background === undefined ? {} : { background }) }
+}
+
+/** Fast non-crypto hash (FNV-1a 32-bit) for keying inline drawing scenes in the picture cache. */
+function hashScene(text: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return `${(h >>> 0).toString(36)}:${text.length}`
+}
+
+const INLINE_PREFIX = '__inline__\n'
+/** Active inline scene payloads keyed by cache key while a render is queued; cleared after settle/evict. */
+const inlinePayloads = new Map<string, { root: string; json: string; theme: 'light' | 'dark' }>()
+
+/** Cache key for an inline Excalidraw scene (YAZ-5040). */
+export function inlinePictureKey(root: string, json: string, theme: 'light' | 'dark' = currentLook().theme): string {
+  return `${INLINE_PREFIX}${root}\n${hashScene(json)}\n${theme}`
 }
 
 /** Each settled key's facts; an entry leaves with its picture. */
@@ -140,18 +172,27 @@ function report(): void {
 }
 
 async function drawPicture(key: string): Promise<string> {
-  const { root, path, theme, darkColors, page } = parseKey(key)
-  const drawn = isDiagram(path) ? await drawDiagram(root, path, theme, darkColors, page) : await drawDrawing(root, path, theme)
+  let drawn: Drawn
+  if (key.startsWith(INLINE_PREFIX)) {
+    const payload = inlinePayloads.get(key)
+    if (payload === undefined) throw new Error('missing inline scene payload')
+    drawn = await drawInlineDrawing(payload.root, payload.json, payload.theme)
+    inlinePayloads.delete(key)
+  } else {
+    const { root, path, theme, darkColors, page } = parseKey(key)
+    drawn = isDiagram(path) ? await drawDiagram(root, path, theme, darkColors, page) : await drawDrawing(root, path, theme)
+  }
   const url = drawn.svg === '' ? '' : URL.createObjectURL(new Blob([drawn.svg], { type: 'image/svg+xml' }))
   const old = meta.get(key)
   if (old !== undefined) totalBytes -= old.bytes
-  meta.set(key, { key, url, bounds: drawn.bounds, pages: drawn.pages, page: drawn.page, frames: drawn.frames, bytes: drawn.svg.length, links: drawn.links })
+  meta.set(key, { key, url, bounds: drawn.bounds, pages: drawn.pages, page: drawn.page, frames: drawn.frames, bytes: drawn.svg.length, links: drawn.links, ...(drawn.background === undefined ? {} : { background: drawn.background }) })
   totalBytes += drawn.svg.length
   report()
   return url
 }
 
 function evict(key: string, url: string): void {
+  inlinePayloads.delete(key)
   if (url !== '') URL.revokeObjectURL(url)
   const entry = meta.get(key)
   // A key settled again keeps its new entry: only the picture that left goes.
@@ -201,6 +242,16 @@ export async function loadPicture(ref: PictureRef, page: string | null): Promise
   const key = currentKey(ref, page)
   if (key === null) return 'missing'
   const url = await cache.load(key)
+  return url === null ? 'broken' : (meta.get(key) ?? 'broken')
+}
+
+/** Loads and caches the SVG picture for an inline Excalidraw JSON scene (YAZ-5040). */
+export async function loadInlinePicture(root: string, json: string): Promise<BoardPicture | 'broken'> {
+  const { theme } = currentLook()
+  const key = inlinePictureKey(root, json, theme)
+  if (peekPicture(key) === undefined) inlinePayloads.set(key, { root, json, theme })
+  const url = await cache.load(key)
+  inlinePayloads.delete(key)
   return url === null ? 'broken' : (meta.get(key) ?? 'broken')
 }
 

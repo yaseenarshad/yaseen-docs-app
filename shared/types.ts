@@ -248,12 +248,20 @@ export interface IndexRecord {
    * read when a card shows. Absent when the page has no card, or was not read. When a card is due is computed (`cardSchedule.ts`).
    */
   cards?: CardRecord[]
+  /** Inline Excalidraw drawings in the page (YAZ-6143), in page order: 0-based index and title ('' when untitled). Absent when none. */
+  inlineDrawings?: readonly InlineDrawingRecord[]
   /**
    * `card` when the file is a CARD FILE (YAZ-5037): its properties hold `kind: card` (`shared/cardFileFormat.ts`). Its
    * `title` is then its card's title (off its card line, YAZ-5308; its file name when it has none), and `cards` holds every card in it (one, unless the file is not valid). Absent
    * for a page.
    */
   kind?: 'card'
+}
+
+/** One inline Excalidraw drawing entry stored on `IndexRecord` (YAZ-6143). */
+export interface InlineDrawingRecord {
+  index: number
+  title: string
 }
 
 export interface IndexResponse {
@@ -577,6 +585,28 @@ export interface DrawingSaveResponse {
   movedOut?: true
   /** YAZ-3943 4C: the ID this save gave the board (its first save in a vault that gives IDs). Absent when it had one. */
   id?: string
+}
+
+/** Resolve image fileIds from `<vault>/assets/` for an inline Excalidraw drawing (YAZ-5040). */
+export interface DrawingResolveAssetsRequest {
+  root: string
+  fileIds: string[]
+  imageMaxPx?: number
+}
+
+export interface DrawingResolveAssetsResponse {
+  files: Record<string, DrawingFileEntry>
+  stored: string[]
+}
+
+/** Land pasted image bytes into `<vault>/assets/` before saving an inline drawing back into `.md` (YAZ-5040). */
+export interface DrawingLandAssetsRequest {
+  root: string
+  newFiles: DrawingNewFile[]
+}
+
+export interface DrawingLandAssetsResponse {
+  persisted: string[]
 }
 
 export interface DiagramLoadRequest {
@@ -2528,6 +2558,13 @@ export interface SettingsState {
    */
   newBoardFolder: NewBoardFolder
   /**
+   * Where "/drawing" puts a new Excalidraw drawing inside a page (YAZ-5040): `inline` = inside the `.md` file
+   * as a ```` ```excalidraw ```` block (default), `file` = separate `.excalidraw` file.
+   */
+  newPageDrawing: NewPageDrawing
+  /** Whether Search and Explore include inline drawings and inline cards by default (YAZ-6143). */
+  searchIncludeInline: boolean
+  /**
    * The canvas panel's library folder (YAZ-3038; Draw's 🔒 YAZ-1775 D5): ONE folder every vault shares, for
    * saved components and media favorites. null = the default, `<userData>/library`, which only main
    * can resolve (`drawing.libraryFolder()`); never `''`, which would resolve to the process cwd.
@@ -2718,6 +2755,9 @@ export const EMBED_REST_SECONDS: readonly EmbedRestSeconds[] = [10, 30, 60, 300,
 /** YAZ-4820 item 3: where a board made from a page goes. */
 export type NewBoardFolder = 'page' | 'assets'
 export const NEW_BOARD_FOLDERS: readonly NewBoardFolder[] = ['page', 'assets']
+/** YAZ-5040: whether `/drawing` creates an inline drawing inside `.md` or a standalone `.excalidraw` file. */
+export type NewPageDrawing = 'inline' | 'file'
+export const NEW_PAGE_DRAWINGS: readonly NewPageDrawing[] = ['inline', 'file']
 
 /** How long a tab stays unseen before it sleeps (YAZ-3737 D10): 30 min is the default. */
 export type TabSleepAfter = '15m' | '30m' | '1h' | '2h' | 'never'
@@ -3231,6 +3271,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   diagramDarkColors: 'adapt',
   embedRestSeconds: 30,
   newBoardFolder: 'page',
+  newPageDrawing: 'inline',
+  searchIncludeInline: true,
   libraryFolder: null,
   canvasPanel: DEFAULT_CANVAS_PANEL,
   mediaFilters: DEFAULT_MEDIA_FILTERS,
@@ -3284,12 +3326,17 @@ export interface StoredTab {
   name?: string
   /** The zoom key of the bullet the tab is zoomed into (YAZ-3646 D14, `isZoomKey`): absent = the whole page. */
   zoom?: string
+  /** 0-based index of an inline Excalidraw drawing block in `path` (YAZ-6134): absent = the whole file. */
+  inlineDrawing?: number
   /** On the active copy of `file` only: which of two copies of one file was on show. */
   active?: true
 }
 
 /** A zoom key as `zoom.ts` makes it (`stem:occurrence`, YAZ-3646 D14): a short base-36 hash and a count. */
 export const isZoomKey = (raw: unknown): raw is string => typeof raw === 'string' && /^[0-9a-z]{1,8}:\d{1,6}$/.test(raw)
+
+/** A valid stored inline-drawing block index (YAZ-6134): non-negative integer < 10,000. */
+export const isInlineDrawingIndex = (raw: unknown): raw is number => typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 && raw < 10_000
 
 /**
  * A window's kind (YAZ-3357 D1): `'files'` is a Files window, a window that is ONLY the sidebar — the vault

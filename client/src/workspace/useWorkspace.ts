@@ -82,6 +82,8 @@ export interface Tab {
    * page. Its steps carry it, and the window stores it with the tab (YAZ-3646 D14).
    */
   zoom?: string
+  /** 0-based index of an inline Excalidraw drawing block in `path` (YAZ-6134), or none: the whole file. */
+  inlineDrawing?: number
 }
 
 /** The right panel's back/forward stack for one page (`rightHistory`): `entries[index]` is the page it shows. */
@@ -140,7 +142,7 @@ export const newTabId = (): string => `tab-${++lastTabId}`
 const newTab = (path: string): Tab => ({ id: newTabId(), path })
 
 /** A stored tab as a tab again (YAZ-3057): a new id, with its display name and its zoom level (YAZ-3646 D14). */
-const storedTab = ({ path, name, zoom }: StoredTab): Tab => ({ ...newTab(path), ...(name === undefined ? {} : { name }), ...(zoom === undefined ? {} : { zoom }) })
+const storedTab = ({ path, name, zoom, inlineDrawing }: StoredTab): Tab => ({ ...newTab(path), ...(name === undefined ? {} : { name }), ...(zoom === undefined ? {} : { zoom }), ...(inlineDrawing === undefined ? {} : { inlineDrawing }) })
 
 /** The tab with this id, or null. */
 export const tabById = (s: Pick<TabsState, 'tabs'>, id: string | null): Tab | null => (id === null ? null : (s.tabs.find((t) => t.id === id) ?? null))
@@ -148,7 +150,8 @@ export const tabById = (s: Pick<TabsState, 'tabs'>, id: string | null): Tab | nu
 /** The tab a trip to `path` goes to (YAZ-2940 S7, S8): the active tab if it shows `path`, else the first from the left that does, else null. */
 export function tabOf(s: Pick<TabsState, 'tabs' | 'active'>, path: string): Tab | null {
   const active = tabById(s, s.active)
-  return active !== null && active.path === path ? active : (s.tabs.find((t) => t.path === path) ?? null)
+  if (active !== null && active.path === path && active.inlineDrawing === undefined) return active
+  return s.tabs.find((t) => t.path === path && t.inlineDrawing === undefined) ?? null
 }
 
 /**
@@ -157,7 +160,7 @@ export function tabOf(s: Pick<TabsState, 'tabs' | 'active'>, path: string): Tab 
  */
 export function duplicateTabIds(s: { tabs: readonly Tab[]; active: string | null }): string[] {
   const keep = new Map<string, string>()
-  const key = (t: Tab): string => `${t.path}\n${t.zoom ?? ''}`
+  const key = (t: Tab): string => `${t.path}\n${t.zoom ?? ''}\n${t.inlineDrawing ?? ''}`
   for (const t of s.tabs) if (!keep.has(key(t))) keep.set(key(t), t.id)
   const active = s.tabs.find((t) => t.id === s.active)
   if (active !== undefined) keep.set(key(active), active.id)
@@ -172,7 +175,7 @@ export const storedTabs = (tabs: readonly Tab[]): string[] => [...new Set(tabs.m
  * name, and the active tab marked — so the copy that was on show is the one on show after a restart.
  */
 export const tabStrip = (s: TabsState): StoredTab[] =>
-  s.tabs.map((t) => ({ path: t.path, ...(t.name === undefined ? {} : { name: t.name }), ...(t.zoom === undefined ? {} : { zoom: t.zoom }), ...(t.id === s.active ? { active: true as const } : {}) }))
+  s.tabs.map((t) => ({ path: t.path, ...(t.name === undefined ? {} : { name: t.name }), ...(t.zoom === undefined ? {} : { zoom: t.zoom }), ...(t.inlineDrawing === undefined ? {} : { inlineDrawing: t.inlineDrawing }), ...(t.id === s.active ? { active: true as const } : {}) }))
 
 /** The active tab's path: the window's `file`. */
 export const activePath = (s: Pick<TabsState, 'tabs' | 'active'>): string | null => tabById(s, s.active)?.path ?? null
@@ -210,6 +213,7 @@ export type TabsAction =
   | { type: 'open-background'; path: string; next?: boolean; copy?: true; at?: number; fresh?: true } // a KEPT tab at the end — or next to the current tab, after the ones opened behind it, `next` (YAZ-3808 D2, D4) — do NOT activate (no-op when already open; with `copy`, a ⌘-click's new tab, a copy opens: YAZ-3943 5B)
   | { type: 'duplicate'; id: string } // "Duplicate tab" (YAZ-2940 D6): a copy of the tab, right after it, active
   | { type: 'open-zoom'; id: string; zoom: string | null; background?: true } // a bullet in a new tab (YAZ-3646 D11): a copy of the tab right after it, at that bullet; null the whole page (a title crumb, YAZ-3647 E2)
+  | { type: 'open-inline-drawing'; id: string; index: number; background?: true } // an inline Excalidraw drawing in its own tab (YAZ-6134)
   | { type: 'take'; path: string; background?: boolean; at?: number } // a tab another window moved here (YAZ-3091 D5): ALWAYS a new kept tab at the end, active — a copy when the page is open; `background` (a quiet move from a tab board, YAZ-3343 D13): not active, not mounted, while a page is on show; `at` (a tab dropped on this strip, YAZ-3637 D4): at that slot instead of the end
   | { type: 'keep'; id: string } // double click, first edit: the preview tab becomes a kept tab (no-op for any other tab)
   | { type: 'set-name'; id: string; name: string | null } // "Set display name" / "Reset to page name" (YAZ-2949): null, empty or blank clears it
@@ -454,6 +458,18 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       const i = s.tabs.findIndex((t) => t.id === a.id)
       if (i === -1) return s
       const copy: Tab = a.zoom === null ? newTab(s.tabs[i].path) : { ...newTab(s.tabs[i].path), zoom: a.zoom }
+      const tabs = insertAt(s.tabs, copy, i + 1)
+      const preview = s.preview === a.id ? null : s.preview
+      return a.background === true ? { ...s, tabs, preview } : { ...withActive({ ...s, tabs }, copy.id), preview }
+    }
+    case 'open-inline-drawing': {
+      // An inline Excalidraw drawing in its own tab (YAZ-6134): reuses an existing tab for the same `(path, index)` if open, else inserts right after the source tab.
+      const i = s.tabs.findIndex((t) => t.id === a.id)
+      if (i === -1) return s
+      const path = s.tabs[i].path
+      const existing = s.tabs.find((t) => t.path === path && t.inlineDrawing === a.index)
+      if (existing !== undefined) return a.background === true ? s : withActive(s, existing.id)
+      const copy: Tab = { ...newTab(path), inlineDrawing: a.index }
       const tabs = insertAt(s.tabs, copy, i + 1)
       const preview = s.preview === a.id ? null : s.preview
       return a.background === true ? { ...s, tabs, preview } : { ...withActive({ ...s, tabs }, copy.id), preview }
@@ -958,6 +974,8 @@ export interface UseWorkspace extends WorkspaceState {
   duplicate: (id: string) => string | null
   /** A bullet in a new tab (YAZ-3646 D11): a copy of tab `id` right after it, zoomed into `zoom` (null: the whole page, YAZ-3647 E2), in front or behind; the copy's id, or null for an unknown tab. */
   openZoom: (id: string, zoom: string | null, background: boolean) => string | null
+  /** An inline Excalidraw drawing in its own tab (YAZ-6134): activates an existing tab for `(path, index)` or opens one right after `id`. */
+  openInlineDrawing: (id: string, index: number, background: boolean) => string | null
   /** A tab's page zoomed (YAZ-3647 D2): `zoom` is the bullet's zoom key, null the whole page; `quiet`: the page is at that level already, no step; `from`: the key a quiet report replaces (YAZ-3662 F6b). */
   zoomTab: (id: string, zoom: string | null, quiet: boolean, from?: ZoomFrom) => void
   /** A tab another window moved here (YAZ-3091 D5): a new kept tab at the end, active, a copy when the page is open; a right-panel page leaves the panel. The new tab's id. */
@@ -1100,6 +1118,13 @@ export function useWorkspace(root: string | null): UseWorkspace {
     const before = new Set(s.tabs.map((t) => t.id))
     return stateRef.current.tabs.find((t) => !before.has(t.id))?.id ?? null
   }, [dispatch])
+  // An inline Excalidraw drawing in its own tab (YAZ-6134).
+  const openInlineDrawing = useCallback((id: string, index: number, background: boolean): string | null => {
+    const s = stateRef.current
+    dispatch({ type: 'open-inline-drawing', id, index, ...(background ? { background: true as const } : {}) })
+    const before = new Set(s.tabs.map((t) => t.id))
+    return stateRef.current.tabs.find((t) => !before.has(t.id))?.id ?? stateRef.current.active
+  }, [dispatch])
   // A tab's zoom level is stored with the window (YAZ-3646 D14): one write for each change of level.
   const zoomTab = useCallback((id: string, zoom: string | null, quiet: boolean, from?: ZoomFrom) => dispatch({ type: 'zoom', id, zoom, ...(quiet ? { quiet: true as const } : {}), ...(from === undefined ? {} : { from }) }), [dispatch])
   // A moved tab is stored with the window (YAZ-3091 D5), like any new tab: the caller then names it and gives it its page view.
@@ -1190,7 +1215,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, openBackgroundAt, activate, sleep, wake, close, closeMany, openStored, move, closeActive, back, forward, go, openStep, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, openZoom, openInlineDrawing, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, openBackgroundAt, activate, sleep, wake, close, closeMany, openStored, move, closeActive, back, forward, go, openStep, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,

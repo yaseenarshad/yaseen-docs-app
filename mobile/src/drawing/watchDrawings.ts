@@ -56,6 +56,7 @@ export interface DrawingWatch {
 }
 
 const NEAR = '600px 0px'
+const BOX_SELECTOR = '[data-vault-drawing], [data-inline-drawing]'
 const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 /** The screen's turn before a drawing: the drawing chunk is all that runs after. */
 const nextTurn = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
@@ -68,9 +69,10 @@ function line(box: HTMLElement, words: string): void {
   box.textContent = words
 }
 
-/** Each box: its path, whether it is drawing now, its picture's URL, whether it waits for the signal, the page shown. */
+/** Each box: its path (or inline JSON), whether it is drawing now, its picture's URL, whether it waits for the signal, the page shown. */
 interface Held {
-  path: string
+  path: string | null
+  inline: string | null
   busy: boolean
   url: string | null
   waits: boolean
@@ -127,7 +129,7 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
   }
 
   /** A plain draw.io diagram, by draw.io's viewer (`diagram/drawDiagram.ts`). */
-  const drawDiagramBox = async (box: HTMLElement, held: Held, name: string, live: () => boolean) => {
+  const drawDiagramBox = async (box: HTMLElement, held: Held, path: string, name: string, live: () => boolean) => {
     let chunk
     try {
       chunk = await loadDiagram()
@@ -136,7 +138,7 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
       if (live()) (held.waits = true), line(box, isOnline() ? `Diagram · ${name} · Can't show it now` : firstTimeWords(name))
       return
     }
-    const got = await deps.read(held.path)
+    const got = await deps.read(path)
     if (!live()) return
     if (!('bytes' in got)) {
       held.waits = got.why === 'offline' || got.why === 'slowed'
@@ -180,40 +182,47 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
     if (stopped || held === undefined || held.busy || held.ended) return
     held.busy = true
     held.waits = false
-    const name = nameOf(held.path)
+    const isInline = held.inline !== null
+    const name = held.path !== null ? nameOf(held.path) : 'Inline drawing'
     const live = () => !stopped && box.isConnected && boxes.get(box) === held
     try {
-      if (isPlainDiagram(held.path)) return await drawDiagramBox(box, held, name, live)
+      if (held.path !== null && isPlainDiagram(held.path)) return await drawDiagramBox(box, held, held.path, name, live)
       let chunk
       try {
         chunk = await load()
       } catch {
         // No signal and the engine is not on the phone yet: the old line, until the signal returns.
-        if (live()) (held.waits = true), line(box, onMacWords(name))
+        if (live()) (held.waits = true), line(box, isInline ? 'Drawing · Open it on the Mac' : onMacWords(name))
         return
       }
-      const got = await deps.read(held.path)
-      if (!live()) return
-      if (!('bytes' in got)) {
-        held.waits = got.why === 'offline' || got.why === 'slowed'
-        held.ended = !held.waits
-        line(box, got.why === 'offline' ? `Drawing · ${name} · Needs a connection` : got.why === 'gone' || got.why === 'not-in-vault' ? `Missing drawing · ${name}` : `Drawing · ${name} · Can't show it now`)
-        return
+      let bytes: Uint8Array
+      if (held.inline !== null) {
+        bytes = new TextEncoder().encode(held.inline)
+      } else {
+        const got = await deps.read(held.path!)
+        if (!live()) return
+        if (!('bytes' in got)) {
+          held.waits = got.why === 'offline' || got.why === 'slowed'
+          held.ended = !held.waits
+          line(box, got.why === 'offline' ? `Drawing · ${name} · Needs a connection` : got.why === 'gone' || got.why === 'not-in-vault' ? `Missing drawing · ${name}` : `Drawing · ${name} · Can't show it now`)
+          return
+        }
+        bytes = got.bytes
       }
       let drawn: Drawn
       try {
         // One drawing at a time, each after the screen had its turn: two big boards never draw in one go.
-        const input: DrawInput = { text: new TextDecoder().decode(got.bytes), theme: dark?.matches ? 'dark' : 'light', files: deps.files(), read: deps.read }
+        const input: DrawInput = { text: new TextDecoder().decode(bytes), theme: dark?.matches ? 'dark' : 'light', files: deps.files(), read: deps.read }
         drawn = await inTurn(() => chunk.drawPicture(input))
       } catch {
-        if (live()) (held.ended = true), line(box, `Drawing · ${name} · Can't show this drawing`)
+        if (live()) (held.ended = true), line(box, isInline ? "Can't show this drawing" : `Drawing · ${name} · Can't show this drawing`)
         return
       }
       if (!live()) return
-      if (drawn === 'empty') return void ((held.ended = true), line(box, `Drawing · ${name} · Empty drawing`))
+      if (drawn === 'empty') return void ((held.ended = true), line(box, isInline ? 'Empty drawing' : `Drawing · ${name} · Empty drawing`))
       release(held)
       held.url = URL.createObjectURL(new Blob([drawn.svg], { type: 'image/svg+xml' }))
-      const img = picture(held.url, `Drawing · ${name}`, drawn.width, drawn.height)
+      const img = picture(held.url, isInline ? 'Drawing' : `Drawing · ${name}`, drawn.width, drawn.height)
       img.addEventListener('click', () => openView(img.src, name, drawn.width, drawn.height))
       box.className = 'page-drawing'
       box.removeAttribute('role')
@@ -241,14 +250,15 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
 
   const take = (box: HTMLElement) => {
     const path = box.dataset.vaultDrawing
-    if (boxes.has(box) || path === undefined) return
-    boxes.set(box, { path, busy: false, url: null, waits: false, near: false, ended: false, page: null })
+    const inline = box.dataset.inlineDrawing
+    if (boxes.has(box) || (path === undefined && inline === undefined)) return
+    boxes.set(box, { path: path ?? null, inline: inline ?? null, busy: false, url: null, waits: false, near: false, ended: false, page: null })
     if (seen === null) void draw(box)
     else seen.observe(box)
   }
   const scan = (node: ParentNode) => {
-    if (node instanceof HTMLElement && node.dataset.vaultDrawing !== undefined) take(node)
-    for (const el of node.querySelectorAll<HTMLElement>('[data-vault-drawing]')) take(el)
+    if (node instanceof HTMLElement && (node.dataset.vaultDrawing !== undefined || node.dataset.inlineDrawing !== undefined)) take(node)
+    for (const el of node.querySelectorAll<HTMLElement>(BOX_SELECTOR)) take(el)
   }
   const drop = (box: HTMLElement) => {
     const held = boxes.get(box)
@@ -259,7 +269,7 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
   }
   const forget = (node: Node) => {
     if (node instanceof HTMLElement && boxes.has(node)) drop(node)
-    if (node instanceof Element) for (const el of node.querySelectorAll<HTMLElement>('[data-vault-drawing]')) drop(el)
+    if (node instanceof Element) for (const el of node.querySelectorAll<HTMLElement>(BOX_SELECTOR)) drop(el)
   }
   scan(root)
   const watcher =

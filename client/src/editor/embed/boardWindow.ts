@@ -37,7 +37,7 @@ import type { WatchEvent } from '@shared/types'
 import { holdFrames } from '../../lib/colResize'
 import { storage } from '../../lib/storage'
 import { setEmbedPictureSweep } from './pictureStats'
-import { currentKey, dropPicturesExcept, loadPicture, peekPicture, watchBoard, type BoardBounds, type BoardPicture } from './boardPictures'
+import { currentKey, dropPicturesExcept, inlinePictureKey, loadInlinePicture, loadPicture, peekPicture, watchBoard, type BoardBounds, type BoardPicture } from './boardPictures'
 import { spotAt, type BoardLinkSpot } from './boardLinks'
 import { firstWindowSize, MIN_WIDTH } from './hostWindow'
 import type { BoardWindowHandle, BoardWindowHost, WindowMenuRow } from './types'
@@ -233,6 +233,7 @@ class BoardWindow implements BoardWindowHandle {
   private readonly img: HTMLImageElement
   private readonly message: HTMLDivElement
   private readonly lockButton: HTMLButtonElement
+  private readonly menuButton: HTMLButtonElement | null
   private readonly foldButton: HTMLButtonElement
   private readonly pill: HTMLButtonElement
   private readonly zoomButton: HTMLButtonElement
@@ -303,7 +304,7 @@ class BoardWindow implements BoardWindowHandle {
       this.fitted = false
     }
 
-    this.dom = el('div', `board-window board-window--loading${full ? ' board-window--full' : ''}${host.fill === true ? ' board-window--fill' : ''}`)
+    this.dom = el('div', `board-window board-window--loading${full ? ' board-window--full' : ''}${host.fill === true ? ' board-window--fill' : ''}${host.menuButton === true ? ' board-window--has-menu' : ''}`)
     this.dom.setAttribute('contenteditable', 'false')
     this.dom.tabIndex = -1
     this.dom.dataset.kind = host.ref.kind
@@ -315,6 +316,7 @@ class BoardWindow implements BoardWindowHandle {
     this.message = el('div', 'board-window__message')
     this.stage.append(this.img, this.message)
     this.lockButton = button('board-window__lock', 'Lock view', MOVE_ICON)
+    this.menuButton = host.menuButton === true ? button('board-window__menu', 'Drawing menu', '⋯') : null
     this.foldButton = button('board-window__fold', 'Collapse embed', FOLD_UP)
     this.pill = button('board-window__pill', 'Open', '')
     this.zoomButton = button('board-window__zoom', 'Fit', '')
@@ -350,20 +352,27 @@ class BoardWindow implements BoardWindowHandle {
       e.stopPropagation()
       this.setLocked(!this.locked)
     })
+    this.menuButton?.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (this.host.onContextMenu === undefined) return
+      const rect = this.menuButton!.getBoundingClientRect()
+      const synthetic = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.right, clientY: rect.bottom + 4 })
+      this.host.onContextMenu(synthetic)
+    })
     this.foldButton.addEventListener('click', (e) => {
       e.stopPropagation()
       this.host.onFold?.()
     })
     this.pill.addEventListener('click', (e) => {
       e.stopPropagation()
-      this.host.onOpen?.(e.metaKey || e.ctrlKey ? 'backgroundTab' : 'thisTab')
+      this.host.onOpen?.(e.metaKey || e.ctrlKey ? (e.shiftKey ? 'newTab' : 'backgroundTab') : 'thisTab')
     })
     this.zoomButton.addEventListener('click', (e) => {
       e.stopPropagation()
       this.wake()
       this.fit()
     })
-    for (const b of [this.lockButton, this.foldButton, this.pill, this.zoomButton]) b.addEventListener('mousedown', (e) => e.stopPropagation())
+    for (const b of [this.lockButton, ...(this.menuButton ? [this.menuButton] : []), this.foldButton, this.pill, this.zoomButton]) b.addEventListener('mousedown', (e) => e.stopPropagation())
 
     this.renderRef()
     this.renderSize()
@@ -378,7 +387,8 @@ class BoardWindow implements BoardWindowHandle {
 
   /** The settled picture of this board in the cache now, with no request; undefined before its first ask. */
   private cachedPicture(page: string | null): BoardPicture | undefined {
-    const { root, path } = this.host.ref
+    const { root, path, inlineJson } = this.host.ref
+    if (inlineJson !== undefined) return peekPicture(inlinePictureKey(root ?? '', inlineJson))
     const key = root === null || path === null ? null : currentKey({ root, path }, page)
     return key === null ? undefined : peekPicture(key)
   }
@@ -390,7 +400,7 @@ class BoardWindow implements BoardWindowHandle {
 
   /** The open window's children, in order. */
   private parts(): HTMLElement[] {
-    return [this.stage, this.restPage, this.lockButton, this.foldButton, this.pill, this.zoomButton, ...this.handles]
+    return [this.stage, this.restPage, this.lockButton, ...(this.menuButton ? [this.menuButton] : []), this.foldButton, this.pill, this.zoomButton, ...this.handles]
   }
 
   // ── Picture ──
@@ -398,8 +408,8 @@ class BoardWindow implements BoardWindowHandle {
   private watch(): void {
     this.unwatch?.()
     this.unwatch = null
-    const { root, path, kind, name } = this.host.ref
-    if (root === null) return
+    const { root, path, kind, name, inlineJson } = this.host.ref
+    if (inlineJson !== undefined || root === null) return
     this.unwatch = watchBoard(root, path, `${name}.${kind === 'diagram' ? 'drawio' : 'excalidraw'}`, this.onBoardEvent)
   }
 
@@ -440,8 +450,8 @@ class BoardWindow implements BoardWindowHandle {
   lookChanged(): void {
     if (this.picture === null || this.folded) return
     const ref = this.host.ref
-    if (ref.root === null || ref.path === null) return
-    if (currentKey({ root: ref.root, path: ref.path }, this.page) === this.picture.key) return
+    const nextKey = ref.inlineJson !== undefined ? inlinePictureKey(ref.root ?? '', ref.inlineJson) : ref.root === null || ref.path === null ? null : currentKey({ root: ref.root, path: ref.path }, this.page)
+    if (nextKey === null || nextKey === this.picture.key) return
     if (this.isNear) this.ensurePicture()
     else this.stale = true
   }
@@ -453,7 +463,29 @@ class BoardWindow implements BoardWindowHandle {
 
   private ensurePicture(): void {
     if (this.destroyed || this.folded || !this.isNear || this.loading) return
-    const { root, path } = this.host.ref
+    const { root, path, inlineJson } = this.host.ref
+    if (inlineJson !== undefined) {
+      const inlineRoot = root ?? ''
+      const key = inlinePictureKey(inlineRoot, inlineJson)
+      if (!this.stale && this.picture?.key === key && peekPicture(key) !== undefined) return
+      this.stale = false
+      this.loading = true
+      void loadInlinePicture(inlineRoot, inlineJson).then((picture) => {
+        this.loading = false
+        if (this.destroyed || this.folded) return
+        if (this.host.ref.inlineJson !== inlineJson || this.stale) {
+          this.ensurePicture()
+          return
+        }
+        if (picture === 'broken') {
+          this.picture = null
+          this.setStatus('broken')
+          return
+        }
+        this.show(picture)
+      })
+      return
+    }
     if (root === null || path === null) {
       this.setStatus('missing')
       return
@@ -488,10 +520,12 @@ class BoardWindow implements BoardWindowHandle {
     this.picture = picture
     this.host.onPages?.(picture.pages, picture.page)
     if (picture.url === '' || picture.bounds === null) {
+      this.stage.style.backgroundColor = ''
       this.img.removeAttribute('src')
       this.setStatus('empty')
       return
     }
+    this.stage.style.backgroundColor = picture.background ?? ''
     if (this.img.getAttribute('src') !== picture.url) this.img.src = picture.url
     this.img.style.width = `${picture.bounds.width}px`
     this.img.style.height = `${picture.bounds.height}px`
@@ -509,6 +543,7 @@ class BoardWindow implements BoardWindowHandle {
 
   private releasePicture(): void {
     this.picture = null
+    this.stage.style.backgroundColor = ''
     this.img.removeAttribute('src')
   }
 
@@ -516,6 +551,7 @@ class BoardWindow implements BoardWindowHandle {
     this.dom.classList.remove(`board-window--${this.status}`)
     this.status = status
     this.dom.classList.add(`board-window--${status}`)
+    if (status !== 'ready') this.stage.style.backgroundColor = ''
     const word = this.host.ref.kind === 'diagram' ? 'diagram' : 'drawing'
     const name = this.host.ref.name
     this.message.textContent = status === 'missing' ? `Missing ${word}: ${name}` : status === 'broken' ? `Can't show ${word}: ${name}` : status === 'empty' ? `Empty ${word}` : ''
@@ -776,6 +812,11 @@ class BoardWindow implements BoardWindowHandle {
         this.host.onLink!(spot, { metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey })
         return
       }
+      // Single Cmd/Ctrl+click on the canvas opens the board in a new tab immediately (YAZ-6134).
+      if ((e.metaKey || e.ctrlKey) && this.host.onOpen !== undefined) {
+        this.host.onOpen(e.shiftKey ? 'newTab' : 'backgroundTab')
+        return
+      }
       // A click (D12): it wakes a resting window and selects the embed.
       this.wake()
       this.setSelected(true)
@@ -946,7 +987,7 @@ class BoardWindow implements BoardWindowHandle {
   private renderRef(): void {
     this.dom.dataset.kind = this.host.ref.kind
     this.pill.replaceChildren(...this.nameParts())
-    this.pill.title = `Open ${this.host.ref.name} (⌘-click: new tab)`
+    this.pill.title = this.host.ref.inlineJson !== undefined ? 'Edit inline drawing' : `Open ${this.host.ref.name} (⌘-click: new tab)`
     if (this.folded) this.renderLine()
   }
 
@@ -968,7 +1009,7 @@ class BoardWindow implements BoardWindowHandle {
     const { options, ...rest } = next
     this.host = { ...this.host, ...rest }
     const r = next.ref
-    if (r !== undefined && (r.root !== prev.ref.root || r.path !== prev.ref.path || r.kind !== prev.ref.kind)) {
+    if (r !== undefined && (r.root !== prev.ref.root || r.path !== prev.ref.path || r.kind !== prev.ref.kind || r.inlineJson !== prev.ref.inlineJson)) {
       this.picture = null
       this.stale = true
       this.watch()

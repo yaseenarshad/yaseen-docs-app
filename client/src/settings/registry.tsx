@@ -2226,6 +2226,25 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        title: 'Search',
+        items: [
+          {
+            id: 'searchIncludeInline',
+            label: 'Include inline drawings and cards in search',
+            hint: (ctx) => unit(ctx, 'Show inline drawings and cards stored inside pages in Sidebar Search and Explore by default. You can still toggle this per search in the Filter menu.'),
+            keywords: ['search', 'explore', 'inline', 'drawing', 'drawings', 'card', 'cards', 'filter'],
+            render: ({ settings, onChange }) => (
+              <Segmented
+                options={ON_OFF_OPTIONS}
+                value={settings.searchIncludeInline}
+                onChange={(searchIncludeInline) => onChange({ ...settings, searchIncludeInline })}
+                ariaLabel="Include inline drawings and cards in search"
+              />
+            ),
+          },
+        ],
+      },
+      {
         title: 'This vault',
         // Sub-headings (YAZ-5969).
         subheadings: [

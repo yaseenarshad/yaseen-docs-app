@@ -70,19 +70,20 @@ const typeIcon = (name: string): ReactNode => (name === 'card' ? createElement(C
 /** The types the menu offers: Cards only while Review is on (YAZ-5037). */
 const typesFor = (cards: boolean) => (cards ? TYPES : TYPES.filter(([value]) => value !== 'cards'))
 
-/** The filters that are on, as the bar under the search box names them (YAZ-3511 D24): the type with its icon, then the time. */
+/** The filters that are on, as the bar under the search box names them (YAZ-3511 D24): the type with its icon, then the time, then Files only (YAZ-6143). */
 export function filterChips(filter: SearchFilter): { key: keyof SearchFilter; label: string; icon?: ReactNode }[] {
   const type = TYPES.find(([value]) => value === filter.type)
   const time = TIMES.find(([value]) => value === filter.time)
   return [
     ...(filter.type === 'all' || type === undefined ? [] : [{ key: 'type' as const, label: type[1], ...(type[2] !== undefined && { icon: typeIcon(type[2]) }) }]),
     ...(filter.time === 'any' || time === undefined ? [] : [{ key: 'time' as const, label: time[1] }]),
+    ...(filter.includeInline === false ? [{ key: 'includeInline' as const, label: 'Files only' }] : []),
   ]
 }
 
-/** The Search menu's Type and Time rows (D13, D14): each a flyout with its "all" choice apart, ✓ on the pick, the pick as the row's hint. `cards`: a vault of the window has Review on. */
-export function filterSection(filter: SearchFilter, set: (next: SearchFilter) => void, cards = false): MenuSection {
-  const flyout = <K extends keyof SearchFilter>(key: K, choices: ReadonlyArray<[SearchFilter[K], string, string?]>, id: string, label: string) => {
+/** The Search menu's Type, Time, and Include inside pages rows (D13, D14, YAZ-6143): each flyout with its "all" choice apart, ✓ on the pick, the pick as the row's hint. `cards`: a vault of the window has Review on. */
+export function filterSection(filter: SearchFilter, set: (next: SearchFilter) => void, cards = false, unit: (text: string) => string = (text) => text): MenuSection {
+  const flyout = <K extends 'type' | 'time'>(key: K, choices: ReadonlyArray<[SearchFilter[K], string, string?]>, id: string, label: string) => {
     const leaf = ([value, text, iconOf]: [SearchFilter[K], string, string?]) => ({
       id: `${id}-${value}`,
       label: text,
@@ -94,7 +95,14 @@ export function filterSection(filter: SearchFilter, set: (next: SearchFilter) =>
     })
     return { id, label, hint: choices.find(([value]) => value === filter[key])?.[1], children: [[leaf(choices[0])], choices.slice(1).map(leaf)] }
   }
-  return [flyout('type', typesFor(cards), 'filter-type', 'Type'), flyout('time', TIMES, 'filter-time', 'Time')]
+  const inlineOn = filter.includeInline !== false
+  const includeInlineRow = {
+    id: 'filter-include-inline',
+    label: unit('Include inside pages'),
+    hint: inlineOn ? '✓' : undefined,
+    onSelect: () => set({ ...filter, includeInline: !inlineOn }),
+  }
+  return [flyout('type', typesFor(cards), 'filter-type', 'Type'), flyout('time', TIMES, 'filter-time', 'Time'), includeInlineRow]
 }
 
 /** The Type flyout alone, as Search's (D13), for the Recents menu (YAZ-4450 demo): `omit` leaves out types its rows never have. Recents rows are the tree's: no Cards. */
