@@ -1,5 +1,5 @@
-import { SHOW_GAP, leastScroll, type Span } from '@client/editor/find/leastScroll'
-import { glideView, inRoom, readingScroll } from '@client/review/inboxScroll'
+import type { Span } from '@client/editor/find/leastScroll'
+import { ARROW_SCROLL_MIN_PX, SPACE_PAGE_FRACTION, glideView, inRoom, readingScroll } from '@client/review/inboxScroll'
 
 /**
  * THE CARD'S READING SCROLL on the phone: the Mac Inbox's rules (`inboxScroll.ts`, YAZ-5049 rounds 2–6), on
@@ -35,11 +35,17 @@ export function tapMove(view: HTMLElement, target: TapTarget): number {
     if (el === null) return 0
     const blank = spanOf(el.getBoundingClientRect())
     dy = inRoom(blank, room) ? 0 : readingScroll(blank, room)
-  } else {
+  } else if (target === 'side') {
     const body = view.querySelector('.phone-card__body')
     if (body === null) return 0
     const edge = body.getBoundingClientRect().bottom
-    dy = target === 'side' ? readingScroll({ start: edge, end: edge }, room) : leastScroll({ start: edge, end: edge }, room, SHOW_GAP)
+    dy = readingScroll({ start: edge, end: edge }, room)
+  } else {
+    // Parity with desktop YAZ-6058: page down smoothly (~70% of visible room) instead of jumping straight to the bottom.
+    const remaining = Math.max(0, view.scrollHeight - view.clientHeight - view.scrollTop)
+    if (remaining < 1) return 0
+    const page = Math.max(ARROW_SCROLL_MIN_PX, Math.round((room.end - room.start) * SPACE_PAGE_FRACTION))
+    dy = remaining <= page * 1.2 ? remaining : page
   }
   if (dy === 0) return 0
   const down = Math.max(0, view.scrollHeight - view.clientHeight - view.scrollTop)

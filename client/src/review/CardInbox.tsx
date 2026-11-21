@@ -122,7 +122,13 @@ import type { GestureAction } from '@shared/keys'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
-import type { ExploreVault } from '../explore/ExplorePage'
+import type { ExploreLinkPreview, ExploreVault } from '../explore/ExplorePage'
+import { fileKind } from '@shared/fileKind'
+import { linkOpenHint } from '../editor/linkGesture'
+import { pageLabel } from '../lib/pageLabel'
+import { CardPreviewHost, useCardPreview } from '../tabs/cardPreview'
+import type { AnchorRect } from '../sidebar/previewPlacement'
+import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, bandTitleStep, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
@@ -201,6 +207,8 @@ export interface CardInboxProps {
   courseOffer?: CourseOfferProps
   /** User hotkey overrides (Settings › Hotkeys › Review, YAZ-5996). */
   hotkeys?: HotkeyOverrides
+  /** Link hover preview host (shared with Explore): shows page/card previews when hovering wikilinks in Inbox cards. */
+  linkPreview?: ExploreLinkPreview
 }
 
 const NO_TITLES: ReadonlyMap<string, string> = new Map()
@@ -237,7 +245,7 @@ interface LastAnswer {
 // The done screen's words moved to `cardWords.ts` (YAZ-5078), so the phone's Review screen says them too.
 export { addedLine, resetLine, waitingLine } from './cardWords'
 
-export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, showInSidebar, focusMode = false, onFocusMode, courseOffer, hotkeys }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, showInSidebar, focusMode = false, onFocusMode, courseOffer, hotkeys, linkPreview }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -462,7 +470,39 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const retitle = (path: string, id: string, next: string): void => {
     changeCardLine(path, id, (l) => withCardTitle(l, next)).catch((err: unknown) => onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`))
   }
-  const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide, lineUndo: session.lastAdd !== null || archivedLine || line !== null })
+  const [canScrollDown, setCanScrollDown] = useState(false)
+  useEffect(() => {
+    const view = rootRef.current
+    if (!shown || view === null || !done || card === null) return setCanScrollDown(false)
+    const check = () => setCanScrollDown(view.scrollHeight - view.clientHeight - view.scrollTop >= 4)
+    check()
+    view.addEventListener('scroll', check, { passive: true })
+    window.addEventListener('resize', check)
+    return () => {
+      view.removeEventListener('scroll', check)
+      window.removeEventListener('resize', check)
+    }
+  }, [shown, done, card, cardKey, step])
+
+  const linkAt = useRef<{ path: string; rect: AnchorRect; editable: boolean } | null>(null)
+  const hover = useCardPreview(linkPreview?.on() === true, (p) => (linkAt.current?.path === p ? linkAt.current.rect : null))
+  const [linkHover] = useState<WikilinkHover>(() => ({
+    onHover: (p, rect, editable) => {
+      linkAt.current = { path: p, rect, editable }
+      hover.hoverCard(p, p)
+    },
+    onLeave: () => {
+      if (linkAt.current !== null) hover.leaveCard(linkAt.current.path)
+      linkAt.current = null
+    },
+  }))
+  const linkCard = (_: string, p: string): { root: string | null; name: string; hint?: string } => ({
+    root: null,
+    name: pageLabel(p, false, NO_TITLES),
+    hint: linkOpenHint(live.current.hotkeys, linkAt.current?.editable ?? false, fileKind(p) === 'markdown'),
+  })
+
+  const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide, lineUndo: session.lastAdd !== null || archivedLine || line !== null, scrollDown: canScrollDown })
   /**
    * The head's ⋯ (YAZ-5963): the ONE card menu's Inbox rows (YAZ-5697 round 2: Open card, Move to Up next (YAZ-5697),
    * Archive card, Title in review ›; no Preview, no Fix later, YAZ-5430). Archive card goes on the hook's Undo stack
@@ -597,7 +637,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
             ) : (
               text !== null &&
               card.page !== null && (
-                <InboxCardFace tour="inbox-card" text={text} path={card.path} vault={vaultOf(card.path)} steps={steps} doors={doors} onStep={advance} />
+                <InboxCardFace tour="inbox-card" text={text} path={card.path} vault={vaultOf(card.path)} steps={steps} doors={doors} onStep={advance} wikilinkHover={linkPreview === undefined ? undefined : linkHover} />
               )
             )}
         </InboxCardPanel>
@@ -694,6 +734,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
       </div>
       {/* YAZ-5679: Mochi's "Added card to reviews · Undo" when a new card is learned. */}
       <LearnedToast learned={session.learned} onUndo={() => void review.undo()} />
+      {linkPreview !== undefined && <CardPreviewHost store={hover.store} cardOf={linkCard} scopeOf={linkPreview.scopeOf} diagramDarkColors={linkPreview.diagramDarkColors} />}
     </div>
   )
 }

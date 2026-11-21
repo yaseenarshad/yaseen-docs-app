@@ -11,7 +11,10 @@ import { reviewTitleAt, titleShows, titleStepOf, type TitleStep } from '@shared/
 import { cardSides, hiddenCount } from '@shared/cardText'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBody, type CardLinkDoors } from './cardParts'
-import { CARD_MEDIA, CARD_OPENS, stopCardAudio } from '../editor/card/cardMedia'
+import { CARD_MEDIA, CARD_OPENS, stopCardAudio, type CardViewLinkHit } from '../editor/card/cardMedia'
+import { hrefTarget } from '../editor/pathPaste'
+import { linkPath } from '../editor/wikilink/wikilinkPlugin'
+import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
 import { glideToBottomIfNear, glideView, spaceMove } from './inboxScroll'
 import { START, hide, markOf, nextStep, reveal, shownParts, type Reveal } from './cardSteps'
 
@@ -168,8 +171,8 @@ export function CardSideCount({ steps }: { steps: Pick<CardSteps, 'counts' | 'st
 export function InboxCardPanel({ startDrag, bodyRef, band, more, children }: { startDrag: (side: -1 | 1) => (event: ReactPointerEvent<HTMLElement>) => void; bodyRef: RefObject<HTMLDivElement | null>; band?: ReactNode; /** The card's ⋯ at the top right of the head band (YAZ-5963, the Inbox's; not the Preview's). */ more?: ReactNode; children: ReactNode }) {
   return (
     <div className="card-inbox__panel">
-      <div className="card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(-1)} />
-      <div className="card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(1)} />
+      <div className="card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" title="Drag to resize" onPointerDown={startDrag(-1)} />
+      <div className="card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" title="Drag to resize" onPointerDown={startDrag(1)} />
       {band}
       {more}
       <div ref={bodyRef} className="card-inbox__body">
@@ -184,8 +187,20 @@ export function InboxCardPanel({ startDrag, bodyRef, band, more, children }: { s
  * on a blank, that word; on a shown word, it hides again (round 6); elsewhere on the card, the marked word — but not on
  * a link or a sound. A mouse never scrolls.
  */
-export function InboxCardFace({ text, path, vault, steps, doors, onStep, tour }: { text: string; path: string; vault: ExploreVault; steps: Pick<CardSteps, 'step' | 'mark' | 'showWord' | 'hideWord'>; doors: CardLinkDoors; onStep: (by: 'mouse') => void; /** The guided tour's mark (YAZ-5123), in the Inbox only. */ tour?: string }) {
+export function InboxCardFace({ text, path, vault, steps, doors, onStep, tour, wikilinkHover }: { text: string; path: string; vault: ExploreVault; steps: Pick<CardSteps, 'step' | 'mark' | 'showWord' | 'hideWord'>; doors: CardLinkDoors; onStep: (by: 'mouse') => void; /** The guided tour's mark (YAZ-5123), in the Inbox only. */ tour?: string; wikilinkHover?: WikilinkHover }) {
   const { step, mark, showWord, hideWord } = steps
+  const onHoverLink =
+    wikilinkHover === undefined
+      ? undefined
+      : (hit: (CardViewLinkHit & { rect: { left: number; top: number; right: number; bottom: number } }) | null) => {
+          if (hit === null) return wikilinkHover.onLeave()
+          const to =
+            hit.kind === 'wikilink'
+              ? linkPath(hit.inner, vault.wikilinks, vault.viewOnlyLinks)
+              : hrefTarget(hit.href, { root: vault.root, pagePath: path, candidates: vault.wikilinkCandidates })
+          if (to === null) return wikilinkHover.onLeave()
+          wikilinkHover.onHover(to, hit.rect, false)
+        }
   return (
     <div
       className="card card-screen card-inbox__card"
@@ -199,7 +214,7 @@ export function InboxCardFace({ text, path, vault, steps, doors, onStep, tour }:
         else hideWord(n)
       }}
     >
-      <CardBody text={text} path={path} vault={vault} show={{ sides: step.sides, ...shownParts(step.open), next: mark }} doors={doors} />
+      <CardBody text={text} path={path} vault={vault} show={{ sides: step.sides, ...shownParts(step.open), next: mark }} doors={doors} onPillHover={onHoverLink} />
     </div>
   )
 }

@@ -108,6 +108,8 @@ export interface CardInboxMoment {
   nextSide?: boolean
   /** The line above the row shows its own Undo (the last answer, an add, Archive card): YAZ-5694. */
   lineUndo?: boolean
+  /** Long card still has room below the view after the last reveal: Space pages down. */
+  scrollDown?: boolean
 }
 
 /**
@@ -115,9 +117,10 @@ export interface CardInboxMoment {
  * answer digits are on the buttons, so the row does not say them again. No Esc (YAZ-5011): the Inbox is a tab, and
  * closes as one (its ✕, ⌘W).
  */
-export const cardInboxHints = ({ card, cardFile = false, answering, canUndo, moves = false, audio = false, nextSide = false, lineUndo = false }: CardInboxMoment): { keys: string; label: string }[] => [
+export const cardInboxHints = ({ card, cardFile = false, answering, canUndo, moves = false, audio = false, nextSide = false, lineUndo = false, scrollDown = false }: CardInboxMoment): { keys: string; label: string }[] => [
   // What Space does next (YAZ-5048, Yaseen: "no way to know there is another side"): a word, or the next side.
   ...(card && !answering ? [{ keys: 'Space', label: nextSide ? 'Next side' : 'Show' }] : []),
+  ...(card && answering && scrollDown ? [{ keys: 'Space', label: 'Scroll' }] : []),
   ...(card && audio ? [{ keys: 'P', label: 'Play' }] : []),
   ...(card && moves ? [{ keys: '← →', label: 'Other cards' }] : []),
   // YAZ-5694: on a finish screen the row would say only Undo, under the line's own "Undo ⌘Z": once is enough. With a
