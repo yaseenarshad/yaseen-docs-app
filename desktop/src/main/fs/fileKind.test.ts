@@ -23,8 +23,28 @@ describe('fileKind', () => {
     }
     // They follow `.tex`, in that order, and no extension is in the list twice.
     const list = TEXT_VIEW_EXTENSIONS as readonly string[]
-    expect(list.slice(list.indexOf('.tex') + 1)).toEqual(added)
+    expect(list.slice(list.indexOf('.tex') + 1, list.indexOf('.tex') + 1 + added.length)).toEqual(added)
     expect(new Set(list).size).toBe(list.length)
+  })
+
+  it('YAZ-4502: the 20 added code/config extensions and 3 well-known names are text, each once', () => {
+    const added = ['.tf', '.tfvars', '.hcl', '.bicep', '.bat', '.cmd', '.ex', '.exs', '.sol', '.wgsl', '.dockerfile', '.nix', '.prisma', '.zig', '.cue', '.rego', '.kdl', '.awk', '.glsl', '.just']
+    for (const ext of added) {
+      expect(fileKind(`/repo/src/main${ext}`), ext).toBe('text')
+      expect(isViewOnly(`main${ext}`), ext).toBe(true)
+    }
+    const list = TEXT_VIEW_EXTENSIONS as readonly string[]
+    expect(list.slice(list.indexOf('.elm') + 1)).toEqual(added)
+    expect(new Set(list).size).toBe(list.length)
+
+    for (const name of ['Justfile', 'Brewfile', 'Rakefile']) {
+      expect(fileKind(name), name).toBe('text')
+      expect(fileKind(`/repo/${name}`), name).toBe('text')
+      expect(isViewOnly(name), name).toBe(true)
+    }
+    for (const miss of ['justfile', 'brewfile', 'rakefile']) {
+      expect(fileKind(miss), miss).toBeNull()
+    }
   })
 
   it('YAZ-3505: the well-known names with no extension are text, exactly as on disk, wherever they are', () => {

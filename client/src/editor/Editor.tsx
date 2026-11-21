@@ -49,6 +49,7 @@ import { CODE_WIDTH_KEY, readBlockWidth, readFindFolds, readOutsideGlow, readPag
 import { columnStart, contentTextWidth } from '../lib/contentWidth'
 import { watchBlockRoom } from './blockRoom'
 import { undo } from '@milkdown/kit/prose/history'
+import { Selection } from '@milkdown/kit/prose/state'
 import { CODE_WIDTH_DRAGGED, codeBlockCount, codeWidthsToPage, type CodeWidthDragged } from './code/codeWidth'
 import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
@@ -72,7 +73,9 @@ import { openCellNoteByLabel } from './table/cellNoteCard'
 import { onCellNoteRequest, takeCellNoteRequest } from './table/cellNoteRequest'
 import { goToNow } from './table/tableCalendar'
 import { fileLines } from './lineNumbers/fileLines'
+import { jumpViewToLine } from './lineNumbers/jumpToLine'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
+import { useAutomationSurface } from '../automation/surfaces'
 import { showSectionIndent } from './outline/sectionIndent'
 import type { FolderPagesSettings, ZoomStep } from '@shared/types'
 import type { ZoomFrom } from '../workspace/useWorkspace'
@@ -1469,6 +1472,21 @@ function CrepeHost({
       cancelled = true
     }
   }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts, onNotice])
+  // CLI navigation (YAZ-4502): jump to a 1-based disk line in this tab's markdown editor. Zero cost unless invoked.
+  useAutomationSurface(() => {
+    if (inExplore || inFolderPage) return null
+    const tab = hostRef.current?.closest<HTMLElement>('[data-tab]')?.dataset.tab
+    return tab === undefined ? null : `editor:${tab}`
+  }, {
+    ready: readyCrepe !== null,
+    inspect: () => ({}),
+    jumpToLine: (line) => {
+      const crepe = crepeRef.current
+      if (crepe === null || crepe !== readyCrepe) return
+      const { frontmatter, body } = diskParts()
+      return jumpViewToLine(crepe, frontmatter, body, line, hostRef.current?.closest<HTMLElement>('.editor-host'), () => crepeRef.current === crepe)
+    },
+  })
   // "The page at now" (YAZ-4164 D11): a request for this page (the daily-page button, ⌘D) is taken once the editor is
   // ready and its tab shows — after the mount's caret and scroll — or at once by an editor that is open and in front.
   // A tab behind the page waits for its layer to show, so the tab in front never scrolls. A Linked mentions line in a

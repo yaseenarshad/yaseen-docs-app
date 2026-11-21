@@ -1,3 +1,6 @@
+import { navigateApp } from './automation/navigateApp'
+import { useAutomation } from './automation/useAutomation'
+import { useAutomationSurface } from './automation/surfaces'
 import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
@@ -579,9 +582,10 @@ export function App() {
   // Ref-backed bridge to `allowFileAction` (defined below once `scopeOf` exists), so `useVaultScope`'s ID bulk writes ask the same read-only door (YAZ-5989).
   const fileActionRef = useRef<(root: string) => Promise<boolean>>(async () => true)
   const askFileAction = useCallback((vaultRoot: string) => fileActionRef.current(vaultRoot), [])
+  const [transientReadOnly] = useState(storage.isTransientReadOnly)
   const scopes: VaultScope[] = []
   // oxlint-disable-next-line react-hooks/rules-of-hooks -- fixed-size vault slot array (constant hook count per render)
-  for (const slotRoot of slots.current) scopes.push(useVaultScope(slotRoot, notify, askFileAction))
+  for (const slotRoot of slots.current) scopes.push(useVaultScope(slotRoot, notify, askFileAction, transientReadOnly))
   /** The scopes of the window's vaults, in the order of `roots`. */
   const vaults = roots.map((vault) => scopes[slots.current.indexOf(vault)])
   /** The first vault's scope; on the Welcome window an idle one, so every reader below has a scope. */
@@ -1827,8 +1831,8 @@ export function App() {
     () => ({ me: settings.profile, resolvedPlace: settings.commentsResolved, openProfile: openSettings }),
     [settings.profile, settings.commentsResolved, openSettings],
   )
-  // D1 rule 3: your card follows your profile in each vault of the window.
-  useCardFollowsProfile(roots, settings.profile)
+  // D1 rule 3: your card follows your profile in each vault of the window (skipped in transient read-only windows, YAZ-4502).
+  useCardFollowsProfile(transientReadOnly ? [] : roots, settings.profile)
   // Settings › Daily pages › Open template (YAZ-3607 D6): the daily pages folder's hidden `.template.md`, in a tab. A
   // missing one is made empty first (asking `allowFileAction` in a read-only vault, YAZ-5989). The sidebar hides a "."
   // file, so this is the way to it. Settings closes first.
@@ -2842,6 +2846,10 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
+  // CLI navigation (YAZ-4502): show the page and the sidebar list, reveal the target there, pick the folder view, and
+  // reply only once the window shows it. Nothing here runs unless main sends a request.
+  useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
+  useAutomation((target) => navigateApp(target, { isSidebarCollapsed: () => sidebarCollapsedRef.current, toggleSidebar, changeLens, openPage }))
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles, onTakeInbox: takeInbox })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {

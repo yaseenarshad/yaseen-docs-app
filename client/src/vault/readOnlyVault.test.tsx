@@ -35,14 +35,14 @@ const write = vi.mocked(api.vaultConfig.write)
 let root: Root | null = null
 let state: ReadOnlyVaultState
 
-function Probe({ vault }: { vault: string | null }) {
-  state = useReadOnlyVault(vault)
+function Probe({ vault, forced = false }: { vault: string | null; forced?: boolean }) {
+  state = useReadOnlyVault(vault, forced)
   return null
 }
 
-async function mount(vault: string | null): Promise<void> {
+async function mount(vault: string | null, forced = false): Promise<void> {
   root = createRoot(document.createElement('div'))
-  await act(async () => root?.render(<Probe vault={vault} />))
+  await act(async () => root?.render(<Probe vault={vault} forced={forced} />))
 }
 
 beforeEach(() => {
@@ -246,5 +246,21 @@ describe('useReadOnlyVault', () => {
     act(() => state.unlock('until'))
     await act(async () => window.dispatchEvent(new Event('focus')))
     expect(state.locked).toBe(false)
+  })
+
+  it('YAZ-4502: forced transient read-only locks immediately without read-only.json and save() never writes to disk', async () => {
+    await mount('/vault', true)
+    expect(state.settings).toEqual({ on: true })
+    expect([state.locked, state.fileActionsAllowed(), state.unlockedUntil]).toEqual([true, false, null])
+    await act(async () => state.save({ on: false }))
+    await act(async () => state.save({ on: true }))
+    expect(write).not.toHaveBeenCalled()
+    expect(state.settings).toEqual({ on: true })
+    expect([state.locked, state.fileActionsAllowed()]).toEqual([true, false])
+    act(() => state.unlock('ten'))
+    expect([state.locked, state.fileActionsAllowed()]).toEqual([false, true])
+    await act(async () => state.lock())
+    expect([state.locked, state.fileActionsAllowed()]).toEqual([true, false])
+    expect(write).not.toHaveBeenCalled()
   })
 })

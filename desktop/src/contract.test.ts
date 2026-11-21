@@ -17,6 +17,7 @@ import { registerFriendsIpc } from './main/ipc/friends'
 import { registerUpdateIpc } from './main/ipc/update'
 import { registerMemoryIpc } from './main/ipc/memory'
 import { registerSpellerIpc } from './main/ipc/speller'
+import { registerAutomationIpc } from './main/ipc/automation'
 import { registerCourseAudioIpc } from './main/ipc/courseAudio'
 import { registerSelectionColourIpc } from './main/ipc/selectionColour'
 import { LIBRARY_MARKER_FILE } from './main/library/copyLibrary'
@@ -55,10 +56,11 @@ afterAll(async () => {
 })
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
-  // The five registrations `main/index.ts` makes on `ready`, besides `registerIpc`. The course sound (YAZ-5159) fetches nothing here.
+  // The registrations `main/index.ts` makes on `ready`, besides `registerIpc`. The course sound (YAZ-5159) fetches nothing here.
   registerCourseAudioIpc({ userData: dir, isPackaged: true, fetchImpl: vi.fn() })
   registerMemoryIpc({ report: vi.fn() })
   registerSpellerIpc({ guesses: vi.fn() })
+  registerAutomationIpc(createStore(path.join(dir, 'automation.json')), { idFor: () => undefined } as never)
   // The Mac's selection colour (YAZ-5941), registered on `ready` beside the appearance.
   registerSelectionColourIpc(() => null)
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', checks: true, releases: [] }), check: async () => ({ kind: 'idle' }), checks: true }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })

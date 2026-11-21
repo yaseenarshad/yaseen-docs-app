@@ -1,4 +1,6 @@
 import './views.css'
+import { viewIndex } from '@shared/automationNavigation'
+import { useAutomationSurface } from '../automation/surfaces'
 import { boardOptionGroups } from './boardOptionGroups'
 import { useUnit } from '../vault/unitWord'
 import { LinkFoldersContext } from './view/PagesFromPicker'
@@ -419,6 +421,15 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const filled = withDefaults(own, defaults)
     return filled.rows === 'cards' && !cardsOffered ? { ...filled, rows: undefined } : filled
   }, [own, defaults, cardsOffered])
+  // CLI navigation (YAZ-4502): the folder page of a tab says its views, and picks one by main's rule.
+  useAutomationSurface(() => {
+    const tab = paneRef.current?.closest<HTMLElement>('[data-tab]')?.dataset.tab
+    return tab === undefined ? null : `view:${tab}`
+  }, {
+    ready: true,
+    inspect: () => ({ view: view.name, views: def.views.map((item) => item.name) }),
+    selectView: (name) => setActive(viewIndex(def.views, name)),
+  })
   const cards = cardRowsOf(view)
   /** A Card table while cards are off (YAZ-5793): it shows one line in place of the table. */
   const cardsOff = !cardsOffered && cardRowsOf(withDefaults(own, defaults))

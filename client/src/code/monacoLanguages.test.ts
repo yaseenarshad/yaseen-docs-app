@@ -69,12 +69,12 @@ describe('the extra languages (YAZ-3479)', () => {
 })
 
 describe('well-known names with no extension (YAZ-3505)', () => {
-  it('Makefile and Jenkinsfile pick the app\'s tokenizers; Dockerfile.<anything> and Vagrantfile go to Monaco\'s own languages', () => {
+  it('Makefile, Justfile and Jenkinsfile pick the app\'s tokenizers; Dockerfile.<anything>, Vagrantfile and Brewfile go to Monaco\'s own languages', () => {
     const registry = { register: vi.fn(), setMonarchTokensProvider: vi.fn(), setLanguageConfiguration: vi.fn(), getLanguages: () => [{ id: 'dockerfile' }, { id: 'ruby' }] } as unknown as LanguageRegistry
     registerExtraLanguages(registry)
-    expect(registry.register).toHaveBeenCalledWith({ id: 'makefile', extensions: [], aliases: ['Makefile', 'make'], filenames: ['Makefile'] })
+    expect(registry.register).toHaveBeenCalledWith({ id: 'makefile', extensions: ['.just'], aliases: ['Makefile', 'make'], filenames: ['Makefile', 'Justfile'] })
     expect(registry.register).toHaveBeenCalledWith({ id: 'dockerfile', filenamePatterns: ['Dockerfile.*'] })
-    expect(registry.register).toHaveBeenCalledWith({ id: 'ruby', filenames: ['Vagrantfile'] })
+    expect(registry.register).toHaveBeenCalledWith({ id: 'ruby', filenames: ['Vagrantfile', 'Brewfile'] })
     expect(registry.setLanguageConfiguration).toHaveBeenCalledWith('makefile', expect.objectContaining({ comments: { lineComment: '#' } }))
   })
 

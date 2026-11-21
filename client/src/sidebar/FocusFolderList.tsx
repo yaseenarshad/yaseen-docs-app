@@ -1,3 +1,4 @@
+import { useAutomationSurface } from '../automation/surfaces'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 import { useUnit } from '../vault/unitWord'
 import { createPortal } from 'react-dom'
@@ -111,6 +112,22 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
   const unit = useUnit()
   const shut = useSyncExternalStore(subscribeShut, () => SHUT[kind])
   const setShut = (next: (was: ReadonlySet<string>) => ReadonlySet<string>) => setShutStackFolders(kind, next(SHUT[kind]))
+  // CLI navigation (YAZ-4502): open the named group, and each group that holds the target.
+  useAutomationSurface(`groups:${kind}`, {
+    ready: true,
+    inspect: () => ({ open: folders.filter((folder) => !shut.has(folder.id)).map((folder) => folder.id) }),
+    reveal: (target) => setShut((previous) => {
+      const next = new Set(previous)
+      for (const folder of folders) {
+        const contains = target.path !== undefined && folder.items.some((item) => {
+          const resolved = resolveItem(item, roots)
+          return 'path' in resolved && (target.path === resolved.path || target.path!.startsWith(`${resolved.path}/`))
+        })
+        if (folder.id === target.group || contains) next.delete(folder.id)
+      }
+      return next
+    }),
+  })
   // The report to Collapse all (YAZ-5664), keyed on the ids: the Sidebar hands a new array while one folder shows alone.
   const foldIds = folders.flatMap((folder) => (folder.id === only ? [] : [folder.id])).join('\n')
   const ids = useMemo(() => (foldIds === '' ? [] : foldIds.split('\n')), [foldIds])

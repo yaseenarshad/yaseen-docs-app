@@ -113,6 +113,7 @@ vi.mock('electron', () => ({
   // Save Heap Snapshot (YAZ-3737 D9) finds the window's debugger by id; no test clicks it.
   webContents: { fromId: vi.fn() },
 }))
+vi.mock('../automation/server', () => ({ startAutomationServer: vi.fn(async () => ({ close: vi.fn(async () => {}) })) }))
 vi.mock('./store', () => ({ createStore: () => h.store }))
 vi.mock('./windows', () => ({ createWindowManager: () => h.manager }))
 // The diaries of links (YAZ-2677 R27) are flushed with the index cache, in the same step.
@@ -378,7 +379,7 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['app:selection-colour', 'course-audio:chapter', 'course-audio:chapter-starting', 'course-audio:open', 'memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['app:selection-colour', 'automation:ready', 'automation:reply', 'course-audio:chapter', 'course-audio:chapter-starting', 'course-audio:open', 'memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })
@@ -464,5 +465,18 @@ describe('runQuitSequence (YAZ-2174)', () => {
     const fail = () => Promise.reject(new Error('no'))
     await expect(runQuitSequence({ flushWindows: fail, flushStore: fail, flushIndex: fail, flushSync: fail, stopHelpers: fail, exit })).resolves.toBeUndefined()
     expect(exit).toHaveBeenCalledOnce()
+  })
+})
+
+describe('the CLI connection in index.ts (YAZ-4502)', () => {
+  it('starts on ready for this profile, and quit closes it before the renderers flush', async () => {
+    h.s.ready(); await settle()
+    const { startAutomationServer } = await import('../automation/server')
+    expect(vi.mocked(startAutomationServer)).toHaveBeenCalledWith('/profile', expect.any(Function))
+    const server = await vi.mocked(startAutomationServer).mock.results.at(-1)!.value as { close: ReturnType<typeof vi.fn> }
+    server.close.mockImplementationOnce(async () => void h.s.order.push('cli.close'))
+    h.s.order.length = 0
+    h.s.on.get('before-quit')!(event()); await settle(); await settle()
+    expect(h.s.order.slice(0, 2)).toEqual(['cli.close', 'flushAllForQuit'])
   })
 })
