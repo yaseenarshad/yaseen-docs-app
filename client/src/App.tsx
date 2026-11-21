@@ -477,6 +477,8 @@ export function App() {
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   /** The tab id currently shown (`null` for New tab / Inbox), updated each render for `toggleSidebar` (YAZ-6064 D2). */
   const shownRef = useRef<string | null>(null)
+  /** The last committed tab id for the per-tab collapsed effect (YAZ-6064 D2, YAZ-6105). */
+  const collapsedTabRef = useRef<string | null | undefined>(undefined)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
   /** The sidebar's aside: a resize drag writes its live width here, not to state (YAZ-2239). */
   const sidebarRef = useRef<HTMLElement>(null)
@@ -2327,6 +2329,12 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     // The Inbox is a tab (YAZ-5011): the blank tab comes to the front, and the Inbox stays open behind.
     setInboxFront(false)
+    // Save the outgoing tab's collapsed state before `openSearch()` opens the sidebar for the New tab (YAZ-6105).
+    if (storage.getSettings().sidebarPlace === 'tab' && shownRef.current !== null) {
+      saveCollapsed(shownRef.current, sidebarCollapsedRef.current)
+      collapsedTabRef.current = null
+      shownRef.current = null
+    }
     openBlank()
     openSearch()
     setPendingSearchClear(true)
@@ -4067,7 +4075,6 @@ export function App() {
   shownRef.current = shown
   // Per-tab sidebar open/closed state (YAZ-6064 D2): runs in `useLayoutEffect` (after child Sidebar saves the outgoing
   // tab's place) and before browser paint, so switching between an open-sidebar tab and a closed-sidebar tab has zero flash.
-  const collapsedTabRef = useRef<string | null | undefined>(undefined)
   useLayoutEffect(() => {
     const from = collapsedTabRef.current
     collapsedTabRef.current = shown

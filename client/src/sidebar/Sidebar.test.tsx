@@ -6958,6 +6958,66 @@ describe('focus tab (YAZ-2619)', () => {
       expect(isOpen(el, `${v}/Projects`)).toBe('true')
     })
 
+    it('YAZ-6104: mounting Sidebar on an unvisited tab or New tab after collapsing on Tab A starts clean without leaking Tab A state', async () => {
+      const onFilesOnly = vi.fn()
+      const onFocusOnly = vi.fn()
+      const onRestoreLens = vi.fn()
+      const onRestoreClosedVaults = vi.fn()
+      // Mount Tab A with Files, expanded /Projects, filesOnly, focusOnly, and closedVaults, then unmount (sidebar collapsed).
+      const { el, v, rerender } = await mountVault(
+        { lens: 'files', activeTab: 'yaz6104-A', settings: PER_TAB, onFilesOnly, onFocusOnly, onRestoreLens, onRestoreClosedVaults },
+        { focus: ['/Projects'] },
+      )
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      await act(async () => root?.render(<></>))
+
+      // Remount on unvisited Tab B (activeFile in Pages/) while App still holds Tab A's lens/filesOnly/focusOnly/closedVaults.
+      onFilesOnly.mockClear()
+      onFocusOnly.mockClear()
+      onRestoreLens.mockClear()
+      onRestoreClosedVaults.mockClear()
+      await rerender({
+        lens: 'focus',
+        activeTab: 'yaz6104-B',
+        activeFile: `${v}/Pages/n.md`,
+        settings: PER_TAB,
+        filesOnly: `${v}/Projects`,
+        focusOnly: 'stack-1',
+        closedVaults: [v],
+      })
+      expect(onRestoreLens).toHaveBeenLastCalledWith('files')
+      expect(onFilesOnly).toHaveBeenLastCalledWith(null)
+      expect(onFocusOnly).toHaveBeenLastCalledWith(null)
+      expect(onRestoreClosedVaults).toHaveBeenLastCalledWith([])
+      await rerender({ activeTab: 'yaz6104-B', activeFile: `${v}/Pages/n.md`, settings: PER_TAB, lens: 'files', filesOnly: null, focusOnly: null, closedVaults: [] })
+      expect(isOpen(el, `${v}/Pages`)).toBe('true')
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+
+      // Collapse again, then remount on a New tab (activeTab: null, lens: 'search', as Cmd+T does from a collapsed tab).
+      await act(async () => root?.render(<></>))
+      onFilesOnly.mockClear()
+      onFocusOnly.mockClear()
+      onRestoreLens.mockClear()
+      onRestoreClosedVaults.mockClear()
+      await rerender({
+        lens: 'search',
+        activeTab: null,
+        activeFile: null,
+        settings: PER_TAB,
+        filesOnly: `${v}/Projects`,
+        focusOnly: 'stack-1',
+        closedVaults: [v],
+      })
+      expect(onRestoreLens).not.toHaveBeenCalled()
+      expect(onFilesOnly).toHaveBeenLastCalledWith(null)
+      expect(onFocusOnly).toHaveBeenLastCalledWith(null)
+      expect(onRestoreClosedVaults).toHaveBeenLastCalledWith([])
+      await rerender({ activeTab: null, activeFile: null, settings: PER_TAB, lens: 'files', filesOnly: null, focusOnly: null, closedVaults: [] })
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      expect(isOpen(el, `${v}/Pages`)).toBe('false')
+    })
+
     it('YAZ-6097: switching from a page tab to a New tab collapses all folders and resets scroll without leaving Search', async () => {
       const onRestoreLens = vi.fn()
       const onRestoreClosedVaults = vi.fn()

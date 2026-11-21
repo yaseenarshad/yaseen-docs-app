@@ -1476,6 +1476,30 @@ describe('"Hide all others" in Files (YAZ-5790)', () => {
       clearPlaces()
     }
   })
+
+  it('YAZ-6105: pressing Cmd+T from a collapsed-sidebar tab keeps that tab collapsed when returning to it', async () => {
+    clearPlaces()
+    try {
+      const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarPlace: 'tab' } }
+      const { el, emitToggleSidebar } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false })
+      const tabButtons = () => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+      const tabA = captured.sidebar?.activeTab ?? null
+      expect(tabA).not.toBeNull()
+      // Collapse sidebar on Tab A.
+      act(() => emitToggleSidebar())
+      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      expect(readCollapsed(tabA)).toBe(true)
+      // Open New tab (Cmd+T / "+" button): opens sidebar on Search.
+      act(() => el.querySelector<HTMLButtonElement>('.tabbar__new')?.click())
+      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      // Switch back to Tab A: sidebar must collapse again and Tab A's collapsed state must still be true.
+      act(() => tabButtons()[0]!.click())
+      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      expect(readCollapsed(tabA)).toBe(true)
+    } finally {
+      clearPlaces()
+    }
+  })
 })
 
 describe('App appearance (Desktop K, GRO-2218)', () => {

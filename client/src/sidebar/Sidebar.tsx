@@ -829,7 +829,14 @@ export function Sidebar({
     shared: !perTab,
     start: (): string[] => {
       const here = vaults.map((vault) => vault.root)
-      return ((readPlace(activeTab ?? null) ?? lastPlace())?.expanded ?? []).filter((dir) => rootOfPath(here, dir) !== null)
+      const saved = readPlace(activeTab ?? null)
+      if (saved !== undefined) return saved.expanded.filter((dir) => rootOfPath(here, dir) !== null)
+      // Unvisited page tab mounting after another tab existed (YAZ-6104): start with only its own file's parent folders.
+      if (activeTab !== null && activeTab !== undefined && activeFile !== null && lastPlace() !== undefined) {
+        const home = rootOfPath(here, activeFile)
+        return home === null ? [] : ancestorDirs(home, activeFile)
+      }
+      return []
     },
     touch: markFoldersChanged,
     touched: foldersChangedHere,
@@ -877,10 +884,7 @@ export function Sidebar({
       restoredFilesOnly.current = null
       return
     }
-    if (restoredFilesOnly.current === filesOnly) {
-      restoredFilesOnly.current = null
-      return
-    }
+    if (restoredFilesOnly.current === filesOnly) return
     restoredFilesOnly.current = null
     openTo(`${filesOnly}/x`)
   }, [filesOnly, openTo])
@@ -1391,25 +1395,32 @@ export function Sidebar({
         skipQuietReveal.current = true
       }
       putBack(place, from !== undefined)
-    } else if (from !== undefined) {
-      // Unvisited tab (YAZ-6064 D1, D3): never leak the previous tab's Hide all others. For a real page tab switched
-      // from another page tab, start clean on Files with only its own file's parent folders open and scroll 0.
-      if (placeNow.current.filesOnly !== null) onFilesOnly?.(null)
+    } else if (from !== undefined || lastPlace() !== undefined) {
+      // Unvisited tab or New tab (YAZ-6064 D1/D3, YAZ-6097, YAZ-6104): never leak the previous tab's Hide all others,
+      // folded vaults, or folders — both on tab switch (`from !== undefined`) and on remount after a collapsed tab
+      // (`from === undefined && lastPlace() !== undefined`).
+      if (placeNow.current.filesOnly !== null) {
+        restoredFilesOnly.current = placeNow.current.filesOnly
+        onFilesOnly?.(null)
+      }
       if (placeNow.current.focusOnly !== null) onFocusOnly?.(null)
-      if (from !== null && to !== null) {
-        const file = activeRef.current
-        const dirs = file !== null && rootOfPath(rootsNow.current, file) !== null ? ancestorDirs(rootOf(file), file) : []
-        dispatch({ type: 'setAll', dirs })
+      if (to !== null && (from !== null || from === undefined)) {
+        if (from !== undefined) {
+          const file = activeRef.current
+          const dirs = file !== null && rootOfPath(rootsNow.current, file) !== null ? ancestorDirs(rootOf(file), file) : []
+          dispatch({ type: 'setAll', dirs })
+        }
         setShutStackFolders('focus', new Set())
         setShutStackFolders('favorites', new Set())
         if (placeNow.current.closedVaults.length > 0) onRestoreClosedVaults?.([])
-        if (placeNow.current.lens !== 'files') restoreLens('files')
+        const keepMountLens = from === undefined && (placeNow.current.lens === 'search' || placeNow.current.revealRequest !== null)
+        if (!keepMountLens && placeNow.current.lens !== 'files') restoreLens('files')
         placeScroll.current = 0
         placeSelection.current = { lens: 'files', paths: [] }
-      } else if (from !== null && to === null) {
-        // New tab from a page tab (YAZ-6097): collapse all folders and reset scroll/selection without changing lens
-        // so Cmd+T's Search stays open and switching to Files starts clean.
-        dispatch({ type: 'setAll', dirs: [] })
+      } else if (to === null && from !== null) {
+        // New tab from a page tab or remounted after a collapsed tab (YAZ-6097, YAZ-6104): collapse all folders and
+        // reset scroll/selection without changing lens so Cmd+T's Search stays open and switching to Files starts clean.
+        if (from !== undefined) dispatch({ type: 'setAll', dirs: [] })
         setShutStackFolders('focus', new Set())
         setShutStackFolders('favorites', new Set())
         if (placeNow.current.closedVaults.length > 0) onRestoreClosedVaults?.([])
