@@ -51,7 +51,7 @@ import { UnitContext, useVaultUnit, vaultUnit } from '../vault/unitWord'
 import type { ListFold } from './listFold'
 import { createPortal } from 'react-dom'
 import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusFolderList'
-import { dropBlankPlace, foldersChangedHere, lastPlace, markFoldersChanged, readPlace, savePlace, type TabPlace } from './tabPlace'
+import { currentVaultEpoch, dropBlankPlace, foldersChangedHere, lastPlace, markFoldersChanged, readCollapsed, readPlace, savePlace, type TabPlace } from './tabPlace'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
 import { recentSections } from './recents'
@@ -213,6 +213,10 @@ interface SidebarProps {
   activeTab?: string | null
   /** A tab was clicked; App writes a lens through to the window identity — never Search — and passes the new value back down. */
   onLensChange: (lens: SidebarTab) => void
+  /** Restore a tab's saved lens without writing to window storage (YAZ-6064). Falls back to `onLensChange`. */
+  onRestoreLens?: (lens: SidebarTab) => void
+  /** Restore a tab's saved folded vault rows in a multi-vault window (YAZ-6064). */
+  onRestoreClosedVaults?: (closed: readonly string[]) => void
   /** One reveal in Files; a request that arrives on another lens is dropped. */
   revealRequest: SidebarRevealRequest | null
   /** The request has been accepted into Sidebar-local work and must not replay after a remount. */
@@ -732,6 +736,8 @@ export function Sidebar({
   lens,
   activeTab,
   onLensChange,
+  onRestoreLens,
+  onRestoreClosedVaults,
   revealRequest,
   onRevealConsumed,
   menuRequest,
@@ -811,6 +817,13 @@ export function Sidebar({
   // the tab on show (a New tab's own, YAZ-5757); with none, from the open folders the sidebar last showed. Only the
   // folders in this window's vaults: a vault switch keeps the place of the tab on show.
   const perTab = settings.sidebarPlace === 'tab' && activeTab !== undefined
+  /** File whose auto-`expandTo` in `useVaultTree` should be skipped after restoring a saved tab place (YAZ-6064). */
+  const skipExpandToRef = useRef<string | null>(null)
+  /** A `filesOnly` value just restored from a saved `TabPlace` (YAZ-6064): do not re-open it if the user had collapsed it. */
+  const restoredFilesOnly = useRef<string | null>(null)
+  /** The last non-search lens shown in this sidebar (YAZ-6064): used when leaving Search or saving `placeHere` on Search. */
+  const lastNonSearchLens = useRef<SidebarLens>(lens === 'search' ? storage.getSidebarLens() : lens)
+  if (lens !== 'search') lastNonSearchLens.current = lens
   const folderShare: FolderShare = {
     shared: !perTab,
     start: (): string[] => {
@@ -819,6 +832,11 @@ export function Sidebar({
     },
     touch: markFoldersChanged,
     touched: foldersChangedHere,
+    skipExpandTo: (file: string): boolean => {
+      const match = skipExpandToRef.current === file
+      skipExpandToRef.current = null
+      return match
+    },
   }
   const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes, folderShare)
   // The FIRST vault: the one a window with one vault has.
@@ -838,17 +856,32 @@ export function Sidebar({
   const top = vaults[0]?.folder ?? root
   // "Hide all others" in Files (YAZ-5790): the folder the Files tab shows alone, while the tree holds it.
   const filesAlone = useMemo(() => (filesOnly === null || forest === null ? null : findDirNode(forest, filesOnly)), [filesOnly, forest])
-  // A folder shown alone that the tree does not hold (deleted or moved outside the app): all shows again after a short
-  // wait. App's `file:renamed` follows an in-app move in that wait, and its `file:deleted` ends the view at once.
+  // A folder shown alone that belongs to no current vault clears immediately (YAZ-6064). One inside a current vault that
+  // the tree does not hold (deleted or moved outside the app) waits briefly so `file:renamed` can follow an in-app move.
+  const filesOutsideRoots = filesOnly !== null && rootOfPath(roots, filesOnly) === null
   const aloneGone = filesOnly !== null && loaded && forest !== null && filesAlone === null
   useEffect(() => {
+    if (filesOutsideRoots) {
+      onFilesOnly?.(null)
+      return
+    }
     if (!aloneGone) return
     const id = window.setTimeout(() => onFilesOnly?.(null), FILES_ONLY_GRACE_MS)
     return () => window.clearTimeout(id)
-  }, [aloneGone, filesOnly, onFilesOnly])
+  }, [filesOutsideRoots, aloneGone, filesOnly, onFilesOnly])
   // The folder shown alone is open: the folders above it too, and its vault's row (`openTo`'s synthetic child).
+  // Skip when `filesOnly` was just restored from a saved tab place so a folder the user collapsed stays collapsed (YAZ-6064).
   useEffect(() => {
-    if (filesOnly !== null) openTo(`${filesOnly}/x`)
+    if (filesOnly === null) {
+      restoredFilesOnly.current = null
+      return
+    }
+    if (restoredFilesOnly.current === filesOnly) {
+      restoredFilesOnly.current = null
+      return
+    }
+    restoredFilesOnly.current = null
+    openTo(`${filesOnly}/x`)
   }, [filesOnly, openTo])
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
   const multi = ownRoots.length > 1
@@ -1158,7 +1191,7 @@ export function Sidebar({
   // hitting esc again should close the side bar"), the keyboard stays in the sidebar, on the row of the tab that comes
   // back (`rowAfterSearch`): the next Esc closes the sidebar, and Esc in the page text never does.
   const leaveSearch = useCallback(() => {
-    onLensChange(storage.getSidebarLens())
+    onLensChange(lastNonSearchLens.current)
     if (escapeClosesSidebar) rowAfterSearch.current = true
     else toPage()
   }, [onLensChange, toPage, escapeClosesSidebar])
@@ -1266,15 +1299,26 @@ export function Sidebar({
     row?.scrollIntoView?.({ block: 'nearest' })
   }, [searchCursor.paths])
 
-  // A place for each page tab (YAZ-5701, "Sidebar remembers"): a switch saves the place of the tab that goes and puts
-  // back the place of the tab that comes; a tab with no place keeps what is on screen. Declared before the reveal below,
-  // so "Reveal the open file" runs after the place is back. A switch costs one `setAll` and one scroll write.
-  const placeNow = useRef({ lens, expanded, perTab })
-  placeNow.current = { lens, expanded, perTab }
+  // A place for each page tab (YAZ-5701, YAZ-6064, "Sidebar remembers"): a switch saves the place of the tab that goes
+  // and puts back the place of the tab that comes; an unvisited page tab starts clean on Files with its own file's
+  // parent folders open. Declared before the reveal below, so "Reveal the open file" skips when a saved place restores.
+  const revealActive = settings.sidebarRevealActive
+  const filesShows = lens === 'files'
+  const rootsNow = useRef(roots)
+  rootsNow.current = roots
+  const followed = useRef<{ path: string | null | undefined; files: boolean; id: number }>({ path: undefined, files: false, id: 0 })
+  const mountEpoch = useRef(currentVaultEpoch())
+  useLayoutEffect(() => {
+    mountEpoch.current = currentVaultEpoch()
+  }, [roots])
+  const placeNow = useRef({ lens, expanded, perTab, filesOnly, focusOnly, closedVaults, revealRequest, revealActive })
+  placeNow.current = { lens, expanded, perTab, filesOnly, focusOnly, closedVaults, revealRequest, revealActive }
   /** The tab whose place is on screen; `undefined` until the first effect. */
   const placeTab = useRef<string | null | undefined>(undefined)
   /** The scroll to put back once the place's folders are drawn (the layout effect below). */
   const placeScroll = useRef<number | null>(null)
+  /** Skip the automatic `sidebarRevealActive` quiet reveal right after restoring a saved tab place (YAZ-6064 D4). */
+  const skipQuietReveal = useRef(false)
   /**
    * The selected rows on screen (YAZ-5769), kept current below `useSelection`. Saved as they are, also when the switch
    * shows Search: a blank tab opens on Search in the same commit, and Search has no selection of its own to save.
@@ -1284,28 +1328,94 @@ export function Sidebar({
   const placeSelection = useRef<{ lens: SidebarTab; paths: readonly string[] } | null>(null)
   const placeHere = (body: HTMLElement | null): TabPlace => {
     const now = placeNow.current
-    return { lens: now.lens === 'search' ? storage.getSidebarLens() : now.lens, expanded: now.expanded, shut: { focus: shutStackFolders('focus'), favorites: shutStackFolders('favorites') }, scrollTop: body?.scrollTop ?? 0, selected: [...placeSelected.current] }
+    return {
+      lens: now.lens === 'search' ? lastNonSearchLens.current : now.lens,
+      expanded: now.expanded,
+      shut: { focus: shutStackFolders('focus'), favorites: shutStackFolders('favorites') },
+      scrollTop: body?.scrollTop ?? 0,
+      selected: [...placeSelected.current],
+      filesOnly: now.filesOnly,
+      focusOnly: now.focusOnly,
+      closedVaults: now.closedVaults,
+    }
   }
+  const restoreLens = onRestoreLens ?? onLensChange
   /** `folders` false at the mount: the tree started from the place's folders. */
   const putBack = (place: TabPlace, folders: boolean): void => {
     if (folders) dispatch({ type: 'setAll', dirs: [...place.expanded] })
     setShutStackFolders('focus', place.shut.focus)
     setShutStackFolders('favorites', place.shut.favorites)
-    if (place.lens !== placeNow.current.lens) onLensChange(place.lens)
+    const keepMountLens = !folders && (placeNow.current.lens === 'search' || placeNow.current.revealRequest !== null)
+    if (keepMountLens) lastNonSearchLens.current = place.lens
+    else if (place.lens !== placeNow.current.lens) restoreLens(place.lens)
+    const nextFilesOnly = place.filesOnly !== null && rootOfPath(rootsNow.current, place.filesOnly) !== null ? place.filesOnly : null
+    if (nextFilesOnly !== null && (!folders || nextFilesOnly !== placeNow.current.filesOnly)) restoredFilesOnly.current = nextFilesOnly
+    if (nextFilesOnly !== placeNow.current.filesOnly) onFilesOnly?.(nextFilesOnly)
+    if (place.focusOnly !== placeNow.current.focusOnly) onFocusOnly?.(place.focusOnly)
+    if (onRestoreClosedVaults !== undefined) {
+      const nextClosed = place.closedVaults.filter((v) => rootsNow.current.includes(v))
+      const curClosed = placeNow.current.closedVaults
+      if (nextClosed.length !== curClosed.length || nextClosed.some((v, i) => v !== curClosed[i])) onRestoreClosedVaults(nextClosed)
+    }
     placeScroll.current = place.scrollTop
     placeSelection.current = { lens: place.lens, paths: place.selected ?? [] }
   }
-  useEffect(() => {
+  useLayoutEffect(() => {
     const from = placeTab.current
     const to = activeTab ?? null
-    placeTab.current = to
-    if (!perTab || from === to) return
+    if (!perTab || from === to) {
+      placeTab.current = to
+      return
+    }
     // The first run is the mount: its folders came from the tab's place already (`folderShare.start`).
     // A New tab's place is for its Hide and Show sidebar only (YAZ-5757): it goes with the tab, and the next New tab keeps the screen.
     if (from === null) dropBlankPlace()
     else if (from !== undefined) savePlace(from, placeHere(bodyRef.current))
+    // If App is about to collapse the sidebar for `to` in the same commit (YAZ-6064 D2), stop here and clear
+    // `placeTab.current` so the imminent unmount cleanup does not overwrite `to`'s saved place with `from`'s DOM.
+    if (from !== undefined && readCollapsed(to) === true) {
+      placeTab.current = undefined
+      return
+    }
+    placeTab.current = to
     const place = to === null && from !== undefined ? undefined : readPlace(to)
-    if (place !== undefined) putBack(place, from !== undefined)
+    if (place !== undefined) {
+      if (from !== undefined && activeRef.current !== null) skipExpandToRef.current = activeRef.current
+      if (
+        placeNow.current.revealActive &&
+        place.lens === 'files' &&
+        activeRef.current !== null &&
+        (from === undefined || activeRef.current !== followed.current.path || placeNow.current.lens !== 'files')
+      ) {
+        skipQuietReveal.current = true
+      }
+      putBack(place, from !== undefined)
+    } else if (from !== undefined) {
+      // Unvisited tab (YAZ-6064 D1, D3): never leak the previous tab's Hide all others. For a real page tab switched
+      // from another page tab, start clean on Files with only its own file's parent folders open and scroll 0.
+      if (placeNow.current.filesOnly !== null) onFilesOnly?.(null)
+      if (placeNow.current.focusOnly !== null) onFocusOnly?.(null)
+      if (from !== null && to !== null) {
+        const file = activeRef.current
+        const dirs = file !== null && rootOfPath(rootsNow.current, file) !== null ? ancestorDirs(rootOf(file), file) : []
+        dispatch({ type: 'setAll', dirs })
+        setShutStackFolders('focus', new Set())
+        setShutStackFolders('favorites', new Set())
+        if (placeNow.current.closedVaults.length > 0) onRestoreClosedVaults?.([])
+        if (placeNow.current.lens !== 'files') restoreLens('files')
+        placeScroll.current = 0
+        placeSelection.current = { lens: 'files', paths: [] }
+      } else if (from !== null && to === null) {
+        // New tab from a page tab (YAZ-6097): collapse all folders and reset scroll/selection without changing lens
+        // so Cmd+T's Search stays open and switching to Files starts clean.
+        dispatch({ type: 'setAll', dirs: [] })
+        setShutStackFolders('focus', new Set())
+        setShutStackFolders('favorites', new Set())
+        if (placeNow.current.closedVaults.length > 0) onRestoreClosedVaults?.([])
+        placeScroll.current = 0
+        placeSelection.current = { lens: placeNow.current.lens, paths: [] }
+      }
+    }
   }, [perTab, activeTab])
   // Only once every vault's tree has landed (YAZ-5749): a mount reads its trees again, and a scroll written over no rows
   // is clamped to 0. The commit that lands them draws the rows, so this writes once, then holds nothing.
@@ -1319,7 +1429,7 @@ export function Sidebar({
     const body = bodyRef.current
     return () => {
       const tab = placeTab.current
-      if (placeNow.current.perTab && tab !== undefined) savePlace(tab, placeHere(body))
+      if (placeNow.current.perTab && tab !== undefined) savePlace(tab, placeHere(body), mountEpoch.current)
     }
   }, [])
 
@@ -1331,16 +1441,19 @@ export function Sidebar({
   // window asks nothing. A path in a vault row the user closed opens that row (`openTo`, Yaseen's change to D13):
   // with the setting on, the open tab wins over YAZ-2602 R9; with it off, `useVaultTree`'s own opening of a new
   // tab's folders still leaves that row closed (R9). Declared before App's requests, so an App request in the same commit wins.
-  const revealActive = settings.sidebarRevealActive
-  const filesShows = lens === 'files'
-  const rootsNow = useRef(roots)
-  rootsNow.current = roots
-  const followed = useRef<{ path: string | null | undefined; files: boolean; id: number }>({ path: undefined, files: false, id: 0 })
   useEffect(() => {
     const last = followed.current
     const moved = last.path !== activeFile || (filesShows && !last.files)
     followed.current = { ...last, path: activeFile, files: filesShows }
-    if (!revealActive || !filesShows || !moved || activeFile === null) return
+    if (!revealActive) {
+      skipQuietReveal.current = false
+      return
+    }
+    if (!filesShows || !moved || activeFile === null) return
+    if (skipQuietReveal.current) {
+      skipQuietReveal.current = false
+      return
+    }
     if (rootOfPath(rootsNow.current, activeFile) === null) return
     // Its own ids, below zero: App's count up from one, and each id is handled one time (`handledFilesRevealId`).
     followed.current.id -= 1
@@ -1365,8 +1478,8 @@ export function Sidebar({
   // Expand / collapse the whole tree (⚡ YAZ-862). "Any open" is
   // measured against what the CURRENT tree can actually unfold (`dirs`, above), never the raw
   // persisted list, which would leave the button offering to collapse nothing.
-  // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6).
-  const foldVaults = multi && lens === 'files'
+  // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6) — unless Hide all others shows one folder alone (YAZ-6064).
+  const foldVaults = multi && lens === 'files' && filesOnly === null
   // The stack folders of Focus and Favorites fold with the real folders (YAZ-5664): one open of either kind reads "Collapse all".
   const [stackFold, setStackFold] = useState<ListFold | null>(null)
   const stacks = lens === 'focus' || lens === 'favorites' ? stackFold : null

@@ -72,6 +72,8 @@ export interface FolderShare {
   start: () => string[]
   touch: (vaults: readonly string[]) => void
   touched: (vault: string) => boolean
+  /** True when the caller just restored a saved tab place, so `activeFile`'s auto-`expandTo` should not re-open collapsed folders (YAZ-6064). */
+  skipExpandTo?: (file: string) => boolean
 }
 
 const SHARED_FOLDERS: FolderShare = { shared: true, start: () => [], touch: () => undefined, touched: () => true }
@@ -112,8 +114,23 @@ export function useVaultTree(
   /** The vault that holds `path`, the most specific one; a path in no vault of the window gets the first. */
   const rootOf = useCallback((path: string): string => rootOfPath(live.current.roots, path) ?? live.current.roots[0], [])
 
-  // Each vault's tree, by its root, once it has landed.
-  const [trees, setTrees] = useState<ReadonlyMap<string, TreeResponse>>(() => new Map())
+  // Each vault's tree, by its root, once it has landed. Seed immediately from `latestTree` when cached (YAZ-6064) so
+  // reopening the sidebar on a per-tab switch draws the tree on frame 1 with no "Loading…" flash while `refresh` syncs.
+  // Track seeded vaults so the mount `validated` check waits for a fresh `land()` instead of closing newly created tabs.
+  const seededVaults = useRef<Set<string> | null>(null)
+  const [trees, setTrees] = useState<ReadonlyMap<string, TreeResponse>>(() => {
+    const initial = new Map<string, TreeResponse>()
+    const seeded = new Set<string>()
+    for (const vault of roots) {
+      const walked = latestTree(vault)
+      if (walked !== null) {
+        initial.set(vault, walked)
+        seeded.add(vault)
+      }
+    }
+    seededVaults.current = seeded
+    return initial
+  })
   // Each vault's load error, by its root: its own tree clears it, and it leaves with its vault.
   const [failures, setFailures] = useState<ReadonlyMap<string, string>>(() => new Map())
   const setFailure = useCallback((vault: string, message: string | null) => {
@@ -226,12 +243,14 @@ export function useVaultTree(
       feed.end()
       held.delete(vault)
       if (at !== -1) continue
+      seededVaults.current?.delete(vault)
       setTrees((prev) => new Map([...prev].filter(([key]) => key !== vault)))
       setFailure(vault, null)
     }
     roots.forEach((vault, at) => {
       if (held.has(vault)) return
       const land = (landed: TreeResponse): void => {
+        seededVaults.current?.delete(vault)
         setTrees((prev) => new Map(prev).set(vault, landed))
         setFailure(vault, null)
       }
@@ -325,10 +344,12 @@ export function useVaultTree(
   // tab and leaves the tree collapsed. Any file opened after that still opens its folders.
   // Its FOLDERS, in the vault that holds it: a vault row the user closed stays closed (YAZ-2602 R9).
   const restoredFile = useRef(activeFile)
+  const shareRef = useRef(share)
+  shareRef.current = share
   useEffect(() => {
     if (activeFile === restoredFile.current) return
     restoredFile.current = null
-    if (activeFile !== null) dispatch({ type: 'expandTo', root: rootOf(activeFile), file: activeFile })
+    if (activeFile !== null && !shareRef.current.skipExpandTo?.(activeFile)) dispatch({ type: 'expandTo', root: rootOf(activeFile), file: activeFile })
   }, [rootOf, activeFile])
 
   // Neither list is pruned against the tree here (Favorites: D14; focus: YAZ-2702 S13, which overturns
@@ -347,13 +368,14 @@ export function useVaultTree(
   // Settings › Daily pages › Open template opens (YAZ-3607 D6) — is never in the tree either, so neither check asks.
   const validated = useRef(false)
   const home = activeFile === null ? null : rootOfPath(roots, activeFile)
-  const homeTree = trees.get(home ?? root) ?? null
+  const homeRoot = home ?? root
+  const homeTree = trees.get(homeRoot) ?? null
   useEffect(() => {
-    if (homeTree === null || validated.current) return
+    if (homeTree === null || validated.current || seededVaults.current?.has(homeRoot)) return
     validated.current = true
     if (activeFile !== null && home !== null && activeFile.startsWith(`${home.replace(/\/+$/, '')}/`) && !hiddenIn(home, activeFile) && !treeHasPath(homeTree.tree, activeFile))
       onFileMissing()
-  }, [homeTree, activeFile, home, onFileMissing])
+  }, [homeTree, trees, activeFile, home, homeRoot, onFileMissing])
 
   // A stale tab ACTIVATED after its file vanished on disk (I3, GRO-2235): when the activation
   // CHANGES to an in-root file the cached tree does not show, confirm against a FRESH tree —

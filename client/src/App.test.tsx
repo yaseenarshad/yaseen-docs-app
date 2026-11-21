@@ -28,6 +28,7 @@ import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
 import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
+import { clearPlaces, readCollapsed, readPlace, savePlace } from './sidebar/tabPlace'
 import { registerPageView } from './lib/pageView'
 import { fetchTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
@@ -69,6 +70,7 @@ interface SidebarStubProps {
   /** A drag of a vault row (YAZ-2631 D5): the window's vaults in the new order. */
   onReorderVaults: (next: string[]) => void
   activeFile: string | null
+  activeTab?: string | null
   onOpenFile: (path: string) => void
   /** A double click on a row (YAZ-2648 D2): the workspace's openKept. */
   onKeepFile: (path: string) => void
@@ -1429,6 +1431,50 @@ describe('"Hide all others" in Files (YAZ-5790)', () => {
     await act(async () => emitFileDeleted('/v/Archive/Docs/Ideas', 'dir'))
     expect(captured.sidebar?.filesOnly).toBeNull()
     expect(bridge.window.setIdentity.mock.calls.length).toBe(writes)
+  })
+
+  it('YAZ-6064 Bug 1: switching vaults via onOpenVaultHere clears filesOnly immediately', async () => {
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    await act(async () => captured.sidebar?.onFilesOnly?.('/v/Docs/Plans'))
+    expect(captured.sidebar?.filesOnly).toBe('/v/Docs/Plans')
+    await act(async () => void (await captured.sidebar?.onOpenVaultHere('/w')))
+    expect(captured.sidebar?.filesOnly).toBeNull()
+  })
+
+  it('YAZ-6064 D2: per-tab sidebarCollapsed remembers open/closed per tab across switches without corrupting saved TabPlace', async () => {
+    clearPlaces()
+    try {
+      const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarPlace: 'tab' } }
+      const { el, emitToggleSidebar } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
+      const tabButtons = () => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      // Switch to Tab B and collapse the sidebar there.
+      act(() => tabButtons()[1]!.click())
+      act(() => emitToggleSidebar())
+      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      // Switch back to Tab A: sidebar reopens.
+      act(() => tabButtons()[0]!.click())
+      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      // Save a TabPlace for Tab B's id and verify switching A -> B -> A preserves it and collapses/reopens the sidebar.
+      const tabA = captured.sidebar?.activeTab ?? null
+      expect(tabA).not.toBeNull()
+      expect(readCollapsed(tabA)).toBe(false)
+      act(() => tabButtons()[1]!.click())
+      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      // Verify switching back to Tab A reopens the sidebar again.
+      act(() => tabButtons()[0]!.click())
+      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      // Seed a place on Tab A and verify readPlace stays intact across a round-trip to collapsed Tab B.
+      const saved = { lens: 'focus' as const, expanded: ['/v/Docs'], shut: { focus: new Set<string>(), favorites: new Set<string>() }, scrollTop: 24, selected: [], filesOnly: null, focusOnly: null, closedVaults: [] }
+      savePlace(tabA, saved)
+      act(() => tabButtons()[1]!.click())
+      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      act(() => tabButtons()[0]!.click())
+      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      expect(readPlace(tabA)).toEqual(saved)
+    } finally {
+      clearPlaces()
+    }
   })
 })
 
