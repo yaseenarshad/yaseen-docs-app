@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { CogIcon } from '../components/CogIcon'
+import { prefetchSettingsDialog } from './prefetchSettings'
 
 /**
  * The cog in the sidebar footer (GRO-2024; since YAZ-1679 it only OPENS the settings dialog —
@@ -14,8 +16,25 @@ interface SettingsButtonProps {
 }
 
 export function SettingsButton({ onClick, hotkeys }: SettingsButtonProps) {
+  useEffect(() => {
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(() => prefetchSettingsDialog(), { timeout: 1500 })
+      return () => window.cancelIdleCallback(id)
+    }
+    const id = window.setTimeout(prefetchSettingsDialog, 1500)
+    return () => window.clearTimeout(id)
+  }, [])
+
   return (
-    <button type="button" className="settings-button" onClick={onClick} title={titleWithKey('Settings', 'settings', hotkeys)} aria-label="Settings">
+    <button
+      type="button"
+      className="settings-button"
+      onClick={onClick}
+      onMouseEnter={prefetchSettingsDialog}
+      onFocus={prefetchSettingsDialog}
+      title={titleWithKey('Settings', 'settings', hotkeys)}
+      aria-label="Settings"
+    >
       <CogIcon size={15} />
     </button>
   )

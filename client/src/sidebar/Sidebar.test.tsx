@@ -12669,7 +12669,7 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(onOpenInlineDrawingTab).toHaveBeenLastCalledWith('/v/Plan.md', 0, true)
     // Right-clicking the inline drawing opens its context menu; "Show in page" opens the page and schedules landing.
     act(() => inlineRow!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })))
-    expect(items(m.el)).toEqual(['Show in page', 'Open in new tab'])
+    expect(items(m.el)).toEqual(['Open in new tab', 'Show in page'])
     act(() => itemByLabel(m.el, 'Show in page')?.click())
     expect(m.props.onOpenFile).toHaveBeenCalledWith('/v/Plan.md')
     expect(takeInlineDrawingLanding('/v/Plan.md', 0)).toBe(true)

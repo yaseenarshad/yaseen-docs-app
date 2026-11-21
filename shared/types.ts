@@ -2531,6 +2531,8 @@ export interface SettingsState {
    * on a vault share. It travels with the settings folder.
    */
   sidebarPlace: SidebarPlace
+  /** When `sidebarPlace === 'tab'`, also remember a custom sidebar width per tab (default `true`). */
+  sidebarPerTabWidth: boolean
   /** The sidebar tree (YAZ-3440 D4): each kind's own icon colour, `#rrggbb`; a kind not in it has the built-in colour (`{}` = all built in). It travels with the settings folder, as a whole. */
   sidebarIconColors: SidebarIconColors
   /** The sidebar tree (YAZ-3440 D9): the name rules, `[{ match, kind, icon }]` (`shared/vaultIcons.ts`), the first that matches a row's name and kind naming its Material icon, after the row's own pick in its vault's `icons.json`. A personal preference: one list for every vault, and it travels with the settings folder. */
@@ -3265,6 +3267,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarArrowMotion: 'instant',
   sidebarRevealActive: false,
   sidebarPlace: 'window',
+  sidebarPerTabWidth: true,
   sidebarIconColors: {},
   sidebarIconRules: [],
   canvas: DEFAULT_CANVAS_PREFS,

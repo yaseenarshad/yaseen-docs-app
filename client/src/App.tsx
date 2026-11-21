@@ -24,6 +24,7 @@ import type { Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type ReorderStep, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
+import { useSidebarMotion } from './sidebar/sidebarMotion'
 import { dropIndex } from './lib/dragSlot'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -102,7 +103,7 @@ import { setNewBoardFolderOf } from './drawings/createDrawing'
 import { hasLetters } from '@shared/pageId'
 import { dailyPageVault, todaysPage } from './sidebar/dailyPage'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
-import { bumpVaultEpoch, clearPlaces, deletePlacesFilesOnly, dropBlankPlace, prunePlaces, prunePlacesFilesOnly, readCollapsed, renamePlacesFilesOnly, saveCollapsed } from './sidebar/tabPlace'
+import { bumpVaultEpoch, clearPlaces, deletePlacesFilesOnly, prunePlaces, prunePlacesFilesOnly, renamePlacesFilesOnly, saveCollapsed, saveWidth, stepTabSidebar } from './sidebar/tabPlace'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -480,6 +481,8 @@ export function App() {
   /** The last committed tab id for the per-tab collapsed effect (YAZ-6064 D2, YAZ-6105). */
   const collapsedTabRef = useRef<string | null | undefined>(undefined)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
+  const sidebarWidthRef = useRef(sidebarWidth)
+  sidebarWidthRef.current = sidebarWidth
   /** The sidebar's aside and animated shell: a resize drag writes its live width here, not to state (YAZ-2239, YAZ-6146). */
   const sidebarRef = useRef<HTMLElement>(null)
   const sidebarShellRef = useRef<HTMLDivElement>(null)
@@ -807,14 +810,18 @@ export function App() {
 
   // Settings and sidebar width are global. Visibility (YAZ-1280) and the lens (YAZ-1628) are
   // window identity and never follow another renderer's `state:changed` broadcast.
-  useEffect(
-    () =>
-      storage.subscribe(() => {
-        setSettings(storage.getSettings())
-        setSidebarWidth(storage.getSidebarWidth())
-      }),
-    [],
-  )
+  useEffect(() => {
+    let lastGlobalW = storage.getSidebarWidth()
+    return storage.subscribe(() => {
+      const nextSettings = storage.getSettings()
+      setSettings(nextSettings)
+      const nextW = storage.getSidebarWidth()
+      if (nextW !== lastGlobalW) {
+        lastGlobalW = nextW
+        if (nextSettings.sidebarPlace !== 'tab' || nextSettings.sidebarPerTabWidth === false) setSidebarWidth(nextW)
+      }
+    })
+  }, [])
 
   useEffect(() => {
     const resize = () => setWindowWidth(window.innerWidth)
@@ -825,6 +832,7 @@ export function App() {
   // The page keeps MAIN_WORKSPACE_MIN_W (YAZ-3511 D18): a sidebar wider than the window allows is drawn narrower (app.css), its stored width kept.
   const drawnSidebarWidth = (width: number) => Math.min(width, windowWidth - MAIN_WORKSPACE_MIN_W)
   const visibleSidebarWidth = root !== null && !sidebarCollapsed ? drawnSidebarWidth(sidebarWidth) : 0
+  useSidebarMotion(sidebarShellRef, sidebarCollapsed, drawnSidebarWidth(sidebarWidth), filesWindow || root === null, resizing)
   /** Whether the right panel overlays the workspace beside a sidebar this wide; a resize drag asks it per move. */
   const overlayAt = (sideWidth: number) => rightPanel.open && windowWidth < drawnSidebarWidth(sideWidth) + rightPanel.width + MAIN_WORKSPACE_MIN_W
   const overlayAtRef = useRef(overlayAt)
@@ -882,6 +890,8 @@ export function App() {
         }
         setSidebarWidth(width)
         if (width !== start) storage.setSidebarWidth(width)
+        const s = storage.getSettings()
+        if (s.sidebarPlace === 'tab' && s.sidebarPerTabWidth !== false && shownRef.current !== null) saveWidth(shownRef.current, width)
       }
       window.addEventListener('mousemove', move)
       window.addEventListener('mouseup', up)
@@ -4094,14 +4104,10 @@ export function App() {
     const from = collapsedTabRef.current
     collapsedTabRef.current = shown
     if (filesWindow || sidebarPlace !== 'tab' || from === undefined || from === shown) return
-    if (from === null) dropBlankPlace()
-    else saveCollapsed(from, sidebarCollapsedRef.current)
-    const next = readCollapsed(shown)
-    if (next !== undefined && next !== sidebarCollapsedRef.current) {
-      sidebarCollapsedRef.current = next
-      setSidebarCollapsed(next)
-    }
-  }, [filesWindow, sidebarPlace, shown])
+    const { collapsed: nextC, width: nextW } = stepTabSidebar(from, shown, sidebarCollapsedRef.current, sidebarWidthRef.current, settings.sidebarPerTabWidth !== false)
+    if (nextC !== undefined) { sidebarCollapsedRef.current = nextC; setSidebarCollapsed(nextC) }
+    if (nextW !== undefined) { sidebarWidthRef.current = nextW; setSidebarWidth(nextW) }
+  }, [filesWindow, sidebarPlace, settings.sidebarPerTabWidth, shown])
   // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
   // each, so a hide of another window renders no App here.
   const hiddenHere = useWindowHidden(storage.getWindowId())
@@ -4371,7 +4377,7 @@ export function App() {
       {root !== null && (
         <div
           ref={sidebarShellRef}
-          className={`sidebar-shell${!filesWindow && sidebarCollapsed ? ' sidebar-shell--collapsed' : ''}${resizing ? ' sidebar-shell--resizing' : ''}`}
+          className={`sidebar-shell${!filesWindow && sidebarCollapsed ? ' sidebar-shell--collapsed' : ''}`}
           style={{ width: !filesWindow && sidebarCollapsed ? 0 : filesWindow ? filesNarrowW.current : sidebarWidth }}
           aria-hidden={!filesWindow && sidebarCollapsed ? true : undefined}
           inert={!filesWindow && sidebarCollapsed ? true : undefined}

@@ -316,10 +316,10 @@ export const SIDEBAR_ARROW_MOTION_OPTIONS: readonly Option<SidebarArrowMotion>[]
   { label: 'Smooth', value: 'smooth' },
 ]
 
-/** What keeps the sidebar's place (YAZ-5701): one place for the window, the default, or a place for each tab. */
+/** What keeps the sidebar's place (YAZ-5701): one place for the window, the default, or custom per tab. */
 export const SIDEBAR_PLACE_OPTIONS: readonly Option<SidebarPlace>[] = [
   { label: 'One place for the window', value: 'window' },
-  { label: 'A place for each tab', value: 'tab' },
+  { label: 'Custom per tab', value: 'tab' },
 ]
 
 /** Each kind's built-in icon colour (YAZ-3440 D4), the light theme's (app.css `--kind-<kind>`): the picker's swatch when the theme's own cannot be read. */

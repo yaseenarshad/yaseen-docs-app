@@ -2623,12 +2623,12 @@ export function Sidebar({
           sections={[
             inlineRowMenu.card.inlineDrawing === true
               ? [
-                  { id: 'show-in-page', label: unit('Show in page'), onSelect: () => { const page = inlineRowMenu.card.page ?? inlineRowMenu.card.path; if (inlineRowMenu.card.index !== undefined) landOnInlineDrawing(page, inlineRowMenu.card.index); onOpenFile(page) } },
                   { id: 'open-drawing-tab', label: 'Open in new tab', onSelect: () => openSearchCard(inlineRowMenu.card, true) },
+                  { id: 'show-in-page', label: unit('Show in page'), onSelect: () => { const page = inlineRowMenu.card.page ?? inlineRowMenu.card.path; if (inlineRowMenu.card.index !== undefined) landOnInlineDrawing(page, inlineRowMenu.card.index); onOpenFile(page) } },
                 ]
               : [
-                  { id: 'show-in-page', label: unit('Show in page'), onSelect: () => { const page = inlineRowMenu.card.page ?? inlineRowMenu.card.path; if (inlineRowMenu.card.id !== undefined) landOnCard(page, inlineRowMenu.card.id); onOpenFile(page) } },
                   { id: 'open-card-tab', label: 'Open in new tab', onSelect: () => { const page = inlineRowMenu.card.page ?? inlineRowMenu.card.path; if (inlineRowMenu.card.id !== undefined) landOnCard(page, inlineRowMenu.card.id); onOpenFileBackground(page) } },
+                  { id: 'show-in-page', label: unit('Show in page'), onSelect: () => { const page = inlineRowMenu.card.page ?? inlineRowMenu.card.path; if (inlineRowMenu.card.id !== undefined) landOnCard(page, inlineRowMenu.card.id); onOpenFile(page) } },
                 ],
           ]}
           onClose={() => setInlineRowMenu(null)}

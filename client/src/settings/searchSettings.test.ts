@@ -67,6 +67,7 @@ describe('settingCandidates', () => {
       'sidebarFolderIcons',
       'sidebarRevealActive',
       'sidebarPlace',
+      'sidebarPerTabWidth',
       'sidebarIconSet',
       'sidebarFileIcons',
       // YAZ-5488: the colours and the rules are the vault's, each group with its Vault dropdown.
@@ -150,6 +151,7 @@ describe('settingCandidates', () => {
       ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapGapStyle', 'snapColor', 'showResizeSizeBadge', 'measureDistancesInfo', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'textEdgeDoubleClick', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
       // Its embeds group (YAZ-4820 D9, item 3), before the draw.io group.
       'embedRestSeconds',
+      'newPageDrawing',
       'newBoardFolder',
       // Its last group, draw.io diagrams (YAZ-4748 D11: "Drawings and diagrams"; before, Appearance's last row).
       'diagramDarkColors',
@@ -182,6 +184,7 @@ describe('settingCandidates', () => {
       // Settings › Files & Links › Preview on hover (YAZ-3403): the master switch, then one row per place.
       'hoverPreview',
       ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`),
+      'searchIncludeInline',
       // This vault (YAZ-4938, YAZ-4940, YAZ-4936, YAZ-4939): the word for a page, the Show IDs block (search, title, files list), Clicking a link, Read only, then the IDs rows.
       'unitWord',
       'showIds',
@@ -287,7 +290,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyPages', 'dailyPageFolder', 'dailyPageFormat', 'dailyPageDayFolder', 'dailyPageOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'unitWord', 'showIds', 'showIds.title', 'showIds.files', 'linkClick', 'readOnlyVault', 'ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyPages', 'dailyPageFolder', 'dailyPageFormat', 'dailyPageDayFolder', 'dailyPageOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'searchIncludeInline', 'unitWord', 'showIds', 'showIds.title', 'showIds.files', 'linkClick', 'readOnlyVault', 'ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
