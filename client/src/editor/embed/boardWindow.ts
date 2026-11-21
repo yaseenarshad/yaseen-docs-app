@@ -7,7 +7,7 @@
  * THE PICTURE: an `<img>` of the board's SVG at its board size, moved by `transform: translate() scale()` — one write
  * per animation frame, and `will-change: transform` only while a gesture runs, so it redraws sharp after.
  * `view` is the board point at the window's top-left and the zoom: `screen = (board − view) × zoom`. No view → fit,
- * with 10 px around. Zoom 0.1 to 30, the tab's.
+ * with 10 px around. Zoom 0.001 (0.1%) to 100 (10000%).
  *
  * GESTURES (D10, as the tab's view mode): the wheel pans (`delta / zoom`); ⌘ or ctrl + wheel, and a pinch, zoom at the
  * pointer by `exp(−deltaY × 0.01)` (the engine's `getWheelZoom`); a drag pans. While selected: ⌘+ ⌘− (× 1.1, the
@@ -43,8 +43,8 @@ import { firstWindowSize, MIN_WIDTH } from './hostWindow'
 import type { BoardWindowHandle, BoardWindowHost, WindowMenuRow } from './types'
 import './boardWindow.css'
 
-export const MIN_ZOOM = 0.1
-export const MAX_ZOOM = 30
+export const MIN_ZOOM = 0.001
+export const MAX_ZOOM = 100
 /** The fit's margin, in screen px. */
 export const FIT_PADDING = 10
 /** The engine's wheel rate and its delta clamp (`getWheelZoom`). */
@@ -67,6 +67,12 @@ const NEAR_MARGIN = '100% 0px'
 
 export function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
+}
+
+/** Formats zoom for the chip: whole percent at 1% and up, one decimal below 1% (never "0%" or "1.0%"). */
+export function formatZoomPercent(zoom: number): string {
+  const pct = zoom * 100
+  return pct < 0.95 ? `${Math.max(0.1, Math.round(pct * 10) / 10).toFixed(1)}%` : `${Math.round(pct)}%`
 }
 
 /** The view that shows all of `bounds` in a `width` × `height` window, centred, with `FIT_PADDING` around. */
@@ -280,8 +286,8 @@ class BoardWindow implements BoardWindowHandle {
   private resized: ResizeObserver | null = null
   /** The scroll root whose observer watches this window (YAZ-4862), fixed at the mount. */
   private readonly nearRoot: Element | null
-  /** The zoom label's percent as written (A23): a pan frame writes it only when it changes. */
-  private zoomLabel = -1
+  /** The zoom label as written (A23): a pan frame writes it only when it changes. */
+  private zoomLabel = ''
 
   /** `full`: the window of View full size, which has the focus itself (A3); a page's window never takes it. */
   constructor(
@@ -543,10 +549,10 @@ class BoardWindow implements BoardWindowHandle {
       if (view === null || this.picture?.bounds == null) return
       const b = this.picture.bounds
       this.img.style.transform = `translate(${(b.x - view.x) * view.zoom}px, ${(b.y - view.y) * view.zoom}px) scale(${view.zoom})`
-      const percent = Math.round(view.zoom * 100)
-      if (percent !== this.zoomLabel) {
-        this.zoomLabel = percent
-        this.zoomButton.textContent = `${percent}%`
+      const label = formatZoomPercent(view.zoom)
+      if (label !== this.zoomLabel) {
+        this.zoomLabel = label
+        this.zoomButton.textContent = label
       }
     }
     if (typeof requestAnimationFrame === 'function') this.frame = requestAnimationFrame(run)
