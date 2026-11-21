@@ -9388,7 +9388,10 @@ describe('card files (YAZ-5037)', () => {
     expect(bridge.mintPageId).toHaveBeenCalledExactlyOnceWith('/v/sub')
     const path = `/v/sub/${cardFileName('Capital of France', 'YAZ-1')}`
     expect(path).not.toBe('/v/sub/yaz-1.md')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path, content: '---\nkind: card\n---\n```card\n\n```\n<!-- card: YAZ-1, title "Capital of France" -->\n' })
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({
+      path,
+      content: expect.stringMatching(/^---\nkind: card\n---\n```card\n\n```\n<!-- card: YAZ-1, created \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z, title "Capital of France" -->\n$/),
+    })
     expect(nameBox(el)).toBeNull()
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(path)
   })
