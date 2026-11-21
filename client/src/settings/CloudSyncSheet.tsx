@@ -51,12 +51,34 @@ export function CloudSyncSheet({
     }
   }
 
+  const [waitingSignIn, setWaitingSignIn] = useState(false)
+
+  useEffect(() => {
+    if (!waitingSignIn) return
+    const gh = typeof window !== 'undefined' ? (window as unknown as { yaseenDocs?: { github?: { onAuthChanged?: unknown } } }).yaseenDocs?.github : undefined
+    if (typeof gh?.onAuthChanged !== 'function') return
+    return api.github.onAuthChanged((next) => {
+      if (next.signedIn) {
+        setWaitingSignIn(false)
+        sync?.setEnabled(true)
+        onClose()
+      } else if (next.error !== undefined) {
+        setWaitingSignIn(false)
+        setFeedback(next.error)
+      }
+    })
+  }, [waitingSignIn, sync, onClose])
+
   const handleBuiltInSync = async () => {
     setBusy(true)
     try {
-      const auth = typeof api.github.authStatus === 'function' ? await api.github.authStatus().catch(() => null) : null
-      if (auth !== null && !auth.signedIn && !auth.hasManualToken && typeof api.github.signIn === 'function') {
+      const gh = typeof window !== 'undefined' ? (window as unknown as { yaseenDocs?: { github?: { authStatus?: unknown; signIn?: unknown } } }).yaseenDocs?.github : undefined
+      const auth = typeof gh?.authStatus === 'function' ? await api.github.authStatus().catch(() => null) : null
+      if (auth !== null && !auth.signedIn && !auth.hasManualToken && typeof gh?.signIn === 'function') {
         await api.github.signIn()
+        setWaitingSignIn(true)
+        setFeedback('Finish signing in with GitHub in your browser — sync will turn on automatically.')
+        return
       }
       sync?.setEnabled(true)
       onClose()

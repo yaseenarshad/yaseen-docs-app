@@ -1,9 +1,9 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AutoSyncStatus, GithubAuthStatus } from '@shared/types'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+import { DEFAULT_SETTINGS, type AutoSyncStatus, type GithubAuthStatus } from '@shared/types'
 import { SyncIndicator } from '../editor/SyncIndicator'
-import { DEFAULT_REVIEW_SETTINGS, DEFAULT_SETTINGS } from '@shared/types'
 import { CloudSyncSheet } from './CloudSyncSheet'
 import { GithubAccountControl } from './GithubAccountControl'
 import { SettingsDialog } from './SettingsDialog'
@@ -100,7 +100,12 @@ describe('SyncVaultControl (YAZ-6190 D3, Extras #1, #2, #4)', () => {
     expect(container.querySelector('[data-testid="autosync-active-note"]')?.textContent).toContain('Synced by GitHub AutoSync')
     expect(container.querySelector('[data-testid="phone-sync-note"]')?.textContent).toContain('docs.yaseenarshad.com')
     const onBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'On') as HTMLButtonElement
+    const offBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Off') as HTMLButtonElement
     expect(onBtn.disabled).toBe(true)
+    // YAZ-6206: Off stays clickable so users can turn off Docs App Sync if both were on.
+    expect(offBtn.disabled).toBe(false)
+    await act(async () => offBtn.click())
+    expect(setEnabled).toHaveBeenCalledWith(false)
   })
 
   it('offers Connect to a GitHub repo when signed in and folder has no remote (Extra #1)', async () => {
@@ -198,7 +203,7 @@ describe('Cards enable 3rd check in SettingsDialog (YAZ-6190 D5)', () => {
               settings: DEFAULT_SETTINGS,
               onChange: vi.fn(),
               review: { settings: { ...DEFAULT_REVIEW_SETTINGS, enabled: false }, save: saveReview },
-              ids: { enabled: true, held: false, ask: undefined, set: vi.fn(), check: vi.fn(async () => ''), old: 0, unfinished: false, state: vi.fn(async () => ({ enabled: true, letters: 'AB', pages: 0, folders: 0, old: 0, unfinished: false })), reletter: vi.fn(async () => null), backfill: vi.fn(async () => null) },
+              ids: { enabled: true, held: false, ask: undefined, set: vi.fn(), check: vi.fn(async () => ''), old: 0, unfinished: false, state: vi.fn(async () => ({ letters: 'AB', pages: 0, folders: 0, old: 0, stale: 0, unfinished: false })), reletter: vi.fn(async () => null), backfill: vi.fn(async () => null) },
               sync: {
                 status: { root: '/vault', state: 'off', enabled: false },
                 autoSync: { installed: true, vaultSynced, supportsDeepLink: true },

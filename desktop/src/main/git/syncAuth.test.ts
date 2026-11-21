@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -86,5 +86,88 @@ describe('syncPass with GitHub App auth (YAZ-6190 D2 + Extra #5)', () => {
     } finally {
       process.env.HOME = prevHome
     }
+  })
+
+  it('rebases cleanly when behind remote with no local git identity (YAZ-6205)', async () => {
+    const bin = await resolveGit()
+    if (bin === null) return
+    const bare = await makeTemp('bare-rebase-')
+    const cloneA = await makeTemp('clone-a-')
+    const cloneB = await makeTemp('clone-b-')
+    await git(bin, bare, ['init', '--bare', '-b', 'main'])
+    await git(bin, cloneA, ['init', '-b', 'main'])
+    await git(bin, cloneA, ['remote', 'add', 'origin', bare])
+    await writeFile(path.join(cloneA, 'First.md'), 'one\n')
+    await git(bin, cloneA, ['add', '-A'])
+    await git(bin, cloneA, ['-c', 'user.name=A', '-c', 'user.email=a@example.com', 'commit', '-m', 'init'])
+    await git(bin, cloneA, ['push', '-u', 'origin', 'main'])
+
+    await git(bin, cloneB, ['clone', bare, '.'])
+    // Remote moves ahead via cloneA
+    await writeFile(path.join(cloneA, 'Remote.md'), 'from remote\n')
+    await git(bin, cloneA, ['add', '-A'])
+    await git(bin, cloneA, ['-c', 'user.name=A', '-c', 'user.email=a@example.com', 'commit', '-m', 'remote change'])
+    await git(bin, cloneA, ['push'])
+
+    // cloneB has no local identity and has its own local edit
+    await git(bin, cloneB, ['config', 'user.name', ''])
+    await git(bin, cloneB, ['config', 'user.email', ''])
+    await writeFile(path.join(cloneB, 'Local.md'), 'from local\n')
+
+    const fakeHome = await makeTemp('home-rebase-')
+    const prevHome = process.env.HOME
+    process.env.HOME = fakeHome
+    try {
+      const status = await syncPass(cloneB, {
+        auth: {
+          getValidAuth: async () => ({
+            token: 'ghu_test',
+            login: 'yaseenarshad',
+            email: '43793164+yaseenarshad@users.noreply.github.com',
+          }),
+        },
+      })
+      expect(status.state).toBe('synced')
+    } finally {
+      process.env.HOME = prevHome
+    }
+  })
+
+  it('passes -c credential.helper= and classifies repo-not-allowed on 404 when signed in (YAZ-6204, Extra #5)', async () => {
+    const dir = await makeTemp('fake-git-')
+    await mkdir(path.join(dir, '.git', 'info'), { recursive: true })
+    const logFile = path.join(dir, 'args.log')
+    const fakeGit = path.join(dir, 'git')
+    // Fake git binary: answers detectRepo + ensureBoardMergeRule queries cleanly, logs fetch args, and simulates GitHub 404.
+    const script = `#!/bin/sh
+echo "$@" >> "${logFile}"
+case "$*" in
+  *"rev-parse --is-inside-work-tree"*) echo "true"; exit 0 ;;
+  *"rev-parse --git-path info/attributes"*) echo ".git/info/attributes"; exit 0 ;;
+  *"remote get-url origin"*) echo "https://github.com/yaseenarshad/blocked-repo.git"; exit 0 ;;
+  *"rev-parse --abbrev-ref HEAD"*) echo "main"; exit 0 ;;
+  *"status --porcelain"*) exit 0 ;;
+  *"fetch origin"*) echo "remote: Repository not found." >&2; exit 128 ;;
+  *) exit 0 ;;
+esac
+`
+    await writeFile(fakeGit, script, { mode: 0o700 })
+    await chmod(fakeGit, 0o700)
+
+    const status = await syncPass(dir, {
+      candidates: [fakeGit],
+      auth: {
+        getValidAuth: async () => ({
+          token: 'ghu_test',
+          login: 'yaseenarshad',
+          email: '43793164+yaseenarshad@users.noreply.github.com',
+        }),
+        isRepoAllowed: async (slug) => (slug === 'yaseenarshad/blocked-repo' ? 'not-allowed' : 'allowed'),
+      },
+    })
+    expect(status.state).toBe('attention')
+    expect(status.attention).toBe('repo-not-allowed')
+    const logged = await readFile(logFile, 'utf8')
+    expect(logged).toContain('-c credential.helper= fetch origin')
   })
 })

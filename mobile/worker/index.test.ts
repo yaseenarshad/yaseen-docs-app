@@ -95,6 +95,12 @@ describe('GET /auth/callback desktop bounce (YAZ-6190)', () => {
     expect(forwarded).toBe(true)
     expect(res.status).toBe(200)
   })
+
+  it('wrangler.jsonc routes /auth/callback to the Worker first (YAZ-6203)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const raw = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')
+    expect(raw).toContain('"/auth/callback"')
+  })
 })
 
 describe('POST /api/github/refresh', () => {

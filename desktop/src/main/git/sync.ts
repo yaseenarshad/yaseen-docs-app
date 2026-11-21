@@ -207,7 +207,7 @@ async function fromFailure(
   return { root, state: 'attention', attention: 'error', message, repo }
 }
 
-/** Runs a network git command (`fetch`/`push`), injecting `GIT_ASKPASS` when signed in and falling back from SSH to HTTPS if SSH auth fails (YAZ-6190, D2). */
+/** Runs a network git command (`fetch`/`push`), injecting `GIT_ASKPASS` when signed in (with `-c credential.helper=` so macOS Keychain never shadows it — YAZ-6204) and falling back from SSH to HTTPS if SSH auth fails (YAZ-6190, D2). */
 async function runNetworkGit(
   bin: string,
   root: string,
@@ -215,14 +215,25 @@ async function runNetworkGit(
   opts: { timeoutMs: number; remoteUrl: string | null; token: string | null },
 ): Promise<GitResult> {
   const authEnv = opts.token !== null ? await gitAuthEnv(opts.token) : undefined
-  const first = await git(bin, root, args, { timeoutMs: opts.timeoutMs, env: authEnv })
+  const credArgs = opts.token !== null ? ['-c', 'credential.helper='] : []
+  const first = await git(bin, root, [...credArgs, ...args], { timeoutMs: opts.timeoutMs, env: authEnv })
   if (first.code === 0 || opts.token === null || !isSshGithubRemote(opts.remoteUrl)) return first
   if (classifyGitFailure(first) !== 'auth') return first
   // SSH remote failed auth while signed in with GitHub App: retry over HTTPS with the signed-in token.
-  return git(bin, root, ['-c', 'url.https://github.com/.insteadOf=git@github.com:', '-c', 'url.https://github.com/.insteadOf=ssh://git@github.com/', ...args], {
+  return git(bin, root, [...credArgs, '-c', 'url.https://github.com/.insteadOf=git@github.com:', '-c', 'url.https://github.com/.insteadOf=ssh://git@github.com/', ...args], {
     timeoutMs: opts.timeoutMs,
     env: authEnv,
   })
+}
+
+/** Returns `-c user.name=... -c user.email=...` when git has no configured identity and the user is signed in with GitHub (YAZ-6190 D2, YAZ-6205). */
+async function fallbackIdentityArgs(bin: string, root: string, auth: { login: string; email: string } | null): Promise<string[]> {
+  if (auth === null) return []
+  const [nameRes, emailRes] = await Promise.all([git(bin, root, ['config', '--get', 'user.name']), git(bin, root, ['config', '--get', 'user.email'])])
+  const args: string[] = []
+  if (nameRes.code !== 0 || nameRes.stdout.trim() === '') args.push('-c', `user.name=${auth.login}`)
+  if (emailRes.code !== 0 || emailRes.stdout.trim() === '') args.push('-c', `user.email=${auth.email}`)
+  return args
 }
 
 /**
@@ -255,6 +266,7 @@ export async function syncPass(
 
   const validAuth = opts?.auth !== undefined ? await opts.auth.getValidAuth().catch(() => null) : null
   const token = validAuth?.token ?? null
+  const identArgs = await fallbackIdentityArgs(bin, root, validAuth)
 
   // ---------- 1. local edits become one commit (minus anything GitHub would refuse — D3) ----------
   await ensureBoardMergeRule(bin, root) // YAZ-1897 D2: boards never reach git's line merge
@@ -273,11 +285,7 @@ export async function syncPass(
     // untracked folder to `Folder/`, which would name the folder the held-back file sits in.
     const named = tooLarge.length > 0 ? zList(await git(bin, root, ['diff', '--cached', '--name-only', '-z'])) : facts.dirtyFiles.filter((f) => !isAtomicTmp(f) && f !== FRIENDS_LIST)
     const msg = commitMessage(named)
-    let committed = anything ? await git(bin, root, ['commit', '-m', msg]) : { code: 0, stdout: '', stderr: '' }
-    // YAZ-6190 D2: if git has no global user.name/user.email, fall back to the signed-in GitHub profile so users never need terminal git config.
-    if (committed.code !== 0 && validAuth !== null && IDENTITY_PATTERNS.some((p) => p.test(`${committed.stderr}\n${committed.stdout}`))) {
-      committed = await git(bin, root, ['-c', `user.name=${validAuth.login}`, '-c', `user.email=${validAuth.email}`, 'commit', '-m', msg])
-    }
+    const committed = anything ? await git(bin, root, [...identArgs, 'commit', '-m', msg]) : { code: 0, stdout: '', stderr: '' }
     if (committed.code !== 0 && !NOTHING_TO_COMMIT.test(`${committed.stdout}\n${committed.stderr}`)) {
       // A machine with no `user.name`/`user.email` cannot commit at all, and no amount of retrying
       // changes that — it is a one-time setup step, so it gets its own attention state.
@@ -306,7 +314,7 @@ export async function syncPass(
     const span = (await git(bin, root, ['rev-parse', 'HEAD', '@{u}'])).stdout.split('\n')
     let refused = null as GitResult | null // set in the callback; the cast stops TS narrowing it to null
     const outcome = await parkWhileRebasing(bin, root, tooLarge, async () => {
-      const rebased = await git(bin, root, ['rebase', '@{u}'])
+      const rebased = await git(bin, root, [...identArgs, 'rebase', '@{u}'])
       if (rebased.code === 0) return true
       // YAZ-3044 A1: an autosave landed between the commit and the rebase, and git refused to
       // start. Nothing is stopped and nothing is lost: the next pass commits that save and rebases.

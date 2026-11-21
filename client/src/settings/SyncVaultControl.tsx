@@ -96,9 +96,10 @@ export function SyncVaultControl({ root, sync }: { root?: string; sync: Settings
       <Segmented
         options={ON_OFF_OPTIONS}
         value={sync.status?.enabled === true}
-        disabled={blockedByAutoSync}
+        isOptionDisabled={(opt) => blockedByAutoSync && opt === true}
         onChange={(enabled) => {
-          if (!blockedByAutoSync) sync.setEnabled(enabled)
+          if (enabled && blockedByAutoSync) return
+          sync.setEnabled(enabled)
         }}
         ariaLabel="Sync this vault to GitHub"
       />

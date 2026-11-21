@@ -179,4 +179,34 @@ describe('createGithubAuth', () => {
     expect(out.signedIn).toBe(false)
     expect(await secrets.read(GITHUB_APP_AUTH_SECRET)).toBeNull()
   })
+
+  it('does not re-save refreshed tokens if signOut runs while refresh is in flight', async () => {
+    const secrets = memorySecrets()
+    await secrets.set(
+      GITHUB_APP_AUTH_SECRET,
+      JSON.stringify({ login: 'yaseenarshad', userId: 42, accessToken: 'ghu_old', accessEndsAt: 1000, refreshToken: 'ghr_once', refreshEndsAt: 9_000_000 }),
+    )
+    let resolveRefresh!: (res: Response) => void
+    let markStarted!: () => void
+    const started = new Promise<void>((r) => {
+      markStarted = r
+    })
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === `${WORKER_ORIGIN}/api/github/refresh`) {
+        markStarted()
+        return new Promise<Response>((resolve) => {
+          resolveRefresh = resolve
+        })
+      }
+      return jsonRes(200, { revoked: true })
+    }) as unknown as typeof globalThis.fetch
+
+    const auth = createGithubAuth({ secrets, openExternal: () => undefined, fetch: fetchMock, now: () => 900 })
+    const refreshPromise = auth.getValidAuth()
+    await started
+    await auth.signOut()
+    resolveRefresh(jsonRes(200, { accessToken: 'ghu_stale', expiresIn: 28800, refreshToken: 'ghr_stale', refreshExpiresIn: 15897600 }))
+    expect(await refreshPromise).toBeNull()
+    expect(await secrets.read(GITHUB_APP_AUTH_SECRET)).toBeNull()
+  })
 })

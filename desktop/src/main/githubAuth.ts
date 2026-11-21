@@ -143,6 +143,8 @@ export function createGithubAuth(deps: GithubAuthDeps): GithubAuthManager {
 
   let pending: PendingSignIn | null = null
   let lastError: string | undefined
+  /** Bumped on signOut so an in-flight token refresh never writes tokens back after sign-out. */
+  let authGen = 0
   /** Extra #6: one shared refresh promise so concurrent vaults never race on a single-use refresh token. */
   let refreshInFlight: Promise<StoredAppAuth | null> | null = null
 
@@ -210,9 +212,11 @@ export function createGithubAuth(deps: GithubAuthDeps): GithubAuthManager {
   async function refreshLocked(current: StoredAppAuth): Promise<StoredAppAuth | null> {
     if (current.refreshToken === null) return null
     if (refreshInFlight !== null) return refreshInFlight
+    const gen = authGen
     refreshInFlight = (async () => {
       try {
         const res = await callWorker('/api/github/refresh', { refreshToken: current.refreshToken! })
+        if (gen !== authGen) return null
         if (!res.ok) {
           if (DEAD_REFRESH_ERRORS.has(res.error)) {
             await writeStored(null)
@@ -223,7 +227,7 @@ export function createGithubAuth(deps: GithubAuthDeps): GithubAuthManager {
           return null
         }
         const pair = pairFromWorker(res.data, now())
-        if (pair === null) return null
+        if (pair === null || gen !== authGen) return null
         const updated: StoredAppAuth = { login: current.login, userId: current.userId, ...pair }
         await writeStored(updated)
         return updated
@@ -397,6 +401,7 @@ export function createGithubAuth(deps: GithubAuthDeps): GithubAuthManager {
     },
 
     async signOut() {
+      authGen++
       const stored = await readStored()
       pending = null
       lastError = undefined
@@ -412,10 +417,12 @@ export function createGithubAuth(deps: GithubAuthDeps): GithubAuthManager {
     },
 
     async getValidAuth() {
+      const gen = authGen
       let stored = await readStored()
-      if (stored === null) return null
+      if (stored === null || gen !== authGen) return null
       if (stored.accessEndsAt !== null && stored.accessEndsAt - now() <= REFRESH_MARGIN_MS) {
         const refreshed = await refreshLocked(stored)
+        if (gen !== authGen) return null
         if (refreshed !== null) stored = refreshed
         else if (stored.accessEndsAt <= now()) return null
       }
