@@ -19,12 +19,12 @@ describe('linkPillVars (YAZ-4924)', () => {
   })
 
   it('the box: the fill, the strength, the shape; the CSS falls back to today for the rest', () => {
-    expect(linkPillVars({ box: { fill: 'none' } })).toEqual({ '--pill-bg': 'transparent', '--pill-pad': '0' })
-    expect(linkPillVars({ box: { fill: 'blue' } })).toEqual({ '--pill-bg': 'color-mix(in srgb, var(--table-fill-solid-blue) 30%, transparent)' })
+    expect(linkPillVars({ box: { fill: 'none' } })).toEqual({ '--pill-bg': 'transparent', '--pill-pad': '0', '--pill-hover-bg': 'color-mix(in srgb, var(--fg) 8%, transparent)', '--pill-hover-overhang': '1' })
+    expect(linkPillVars({ box: { fill: 'blue' } })).toEqual({ '--pill-bg': 'color-mix(in srgb, var(--table-fill-solid-blue) 30%, transparent)', '--pill-hover-bg': 'color-mix(in srgb, var(--fg) 7%, var(--pill-bg))' })
     expect(linkPillVars({ box: { fill: 'red', strength: 'light' } })['--pill-bg']).toContain(' 15%,')
     expect(linkPillVars({ box: { fill: 'red', strength: 'strong' } })['--pill-bg']).toContain(' 50%,')
     expect(linkPillVars({ box: { shape: 'square' } })).toEqual({ '--pill-radius': '0' })
-    expect(linkPillVars({ box: { shape: 'underline' } })).toEqual({ '--pill-bg': 'transparent', '--pill-pad': '0', '--pill-radius': '0', '--pill-decoration': 'underline' })
+    expect(linkPillVars({ box: { shape: 'underline' } })).toEqual({ '--pill-bg': 'transparent', '--pill-pad': '0', '--pill-radius': '0', '--pill-decoration': 'underline', '--pill-hover-bg': 'color-mix(in srgb, var(--fg) 8%, transparent)', '--pill-hover-overhang': '1' })
   })
 
   it("the gap after the icon on the name (YAZ-5894): the default and a spaced format set nothing (the CSS's 0.25em); {icon}{name} is flush, 1px; a piece sets nothing", () => {
@@ -67,9 +67,44 @@ describe('linkPillVars (YAZ-4924)', () => {
 
   it('a custom colour (YAZ-5972): a part is the hex as is; a custom fill washes at the strengths of a palette fill', () => {
     expect(linkPillVars({ parts: { name: { color: '#ff00aa' }, mark: { color: '#00ff00' } } })).toEqual({ '--pill-name-fg': '#ff00aa', '--pill-mark-fg': '#00ff00' })
-    expect(linkPillVars({ box: { fill: '#336699' } })).toEqual({ '--pill-bg': 'color-mix(in srgb, #336699 30%, transparent)' })
+    expect(linkPillVars({ box: { fill: '#336699' } })).toEqual({ '--pill-bg': 'color-mix(in srgb, #336699 30%, transparent)', '--pill-hover-bg': 'color-mix(in srgb, var(--fg) 7%, var(--pill-bg))' })
     expect(linkPillVars({ box: { fill: '#336699', strength: 'light' } })['--pill-bg']).toBe('color-mix(in srgb, #336699 15%, transparent)')
     expect(linkPillVars({ box: { fill: '#336699', strength: 'strong' } })['--pill-bg']).toBe('color-mix(in srgb, #336699 50%, transparent)')
+  })
+
+  it('hover settings (YAZ-6002 / D5): off, underline, text colour, wash colour & strength, and CSS rules inside @media (hover: hover)', () => {
+    expect(linkPillVars({ hover: { style: 'off' } })).toEqual({ '--pill-hover-off': '1' })
+    expect(linkPillVars({ box: { fill: 'none' }, hover: { style: 'off' } })['--pill-hover-overhang']).toBeUndefined()
+    expect(linkPillVars({ hover: { style: 'underline' } })).toEqual({ '--pill-hover-mode': 'underline', '--pill-hover-bg': 'transparent', '--pill-hover-decoration': 'underline' })
+    expect(linkPillVars({ box: { fill: 'none' }, hover: { style: 'underline' } })['--pill-hover-overhang']).toBeUndefined()
+    expect(linkPillVars({ hover: { style: 'text' } })).toEqual({ '--pill-hover-mode': 'text', '--pill-hover-bg': 'transparent', '--pill-hover-fg': 'color-mix(in srgb, var(--accent) 72%, var(--fg))' })
+    expect(linkPillVars({ parts: { name: { color: 'same' } }, hover: { style: 'text' } })['--pill-hover-fg']).toBe('var(--accent)')
+    expect(linkPillVars({ hover: { style: 'text', color: 'teal' } })['--pill-hover-fg']).toBe('var(--table-text-teal)')
+    expect(linkPillVars({ hover: { style: 'text', color: '#12ab9f' } })['--pill-hover-fg']).toBe('#12ab9f')
+    expect(linkPillVars({ hover: { color: 'purple', strength: 'medium' } })).toEqual({
+      '--pill-hover-bg': 'color-mix(in srgb, var(--table-fill-solid-purple) 14%, transparent)',
+      '--pill-mark-hover-bg': 'color-mix(in srgb, var(--table-fill-solid-purple) 14%, transparent)',
+      '--pill-ext-hover-bg': 'color-mix(in srgb, var(--table-fill-solid-purple) 14%, transparent)',
+    })
+    expect(linkPillVars({ hover: { color: '#ff00aa', strength: 'strong' }, box: { fill: 'none' } })).toMatchObject({
+      '--pill-hover-bg': 'color-mix(in srgb, #ff00aa 22%, transparent)',
+      '--pill-ext-hover-bg': 'color-mix(in srgb, #ff00aa 22%, transparent)',
+      '--pill-hover-overhang': '1',
+    })
+    expect(linkPillVars({ box: { fill: 'blue' }, hover: { strength: 'strong' } })['--pill-hover-bg']).toBe('color-mix(in srgb, var(--fg) 18%, var(--pill-bg))')
+    const css = readFileSync(join(__dirname, 'wikilink.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const hoverIdx = css.indexOf('@media (hover: hover)')
+    const iconIdx = css.indexOf('@container style(--pill-icon-on: 1)')
+    expect(hoverIdx).toBeGreaterThan(-1)
+    expect(hoverIdx).toBeLessThan(iconIdx)
+    const hoverBlock = css.slice(hoverIdx, iconIdx)
+    expect(hoverBlock).toContain('@container not (style(--pill-hover-off: 1) or style(--pill-hover-mode: underline) or style(--pill-hover-mode: text))')
+    expect(hoverBlock).not.toMatch(/@container\s+not\s+style\([^)]+\)\s+and\b/)
+    expect(hoverBlock).toContain('@container style(--pill-hover-overhang: 1)')
+    expect(hoverBlock).toContain('padding-left: 3px;')
+    expect(hoverBlock).toContain('margin-left: -3px;')
+    expect(hoverBlock).toContain('.milkdown .ProseMirror a:not(:has(> .link-pill)):hover')
+    expect(hoverBlock).toContain('.card__sides a[href]:hover')
   })
 
   it("the CSS: pages and files under --pill-icon-on, never a card's icon; cards (the title's, a piece, a card file's) under --pill-card-icon-on (YAZ-5972)", () => {

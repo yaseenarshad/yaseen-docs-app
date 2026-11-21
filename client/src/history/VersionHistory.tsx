@@ -23,9 +23,10 @@
  * app's theme and dark-mode colours, and Restore works the same (main writes through
  * `diagram:save`). There are no change marks for a diagram in v1, so it shows "As it was" only.
  */
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { BoardVersion, BoardVersionScene, DiagramDarkColors, DrawingFileEntry } from '@shared/types'
 import { boardBaseName, isDiagram } from '@shared/fileKind'
+import { isDiagramReadOnly } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
 import { renderDiagramPreview } from '../diagrams/renderDiagram'
 import { loadExcalidraw, type ExcalidrawModule } from '../drawings/engine'
@@ -36,6 +37,7 @@ import { createScenePreviewPng, visibleElements, type PreviewBounds } from '../l
 import { cycleTab, useModalKeys } from '../lib/modalKeys'
 import { useAppliedTheme } from '../lib/theme'
 import { pageBoardSaved } from '../share/liveShare'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { changesScene, compareBoards, hasChanges, MARK, type BoardChanges } from './compare'
 import './history.css'
 
@@ -46,6 +48,8 @@ interface VersionHistoryProps {
   fromMerge?: boolean
   /** 🔒 YAZ-1802 D16: a diagram's pictures follow the app's dark-mode colour setting, as its editor does. */
   darkColors: DiagramDarkColors
+  /** The vault's read-only file-action door (YAZ-5989): Restore asks first in a read-only vault. */
+  allowFileAction?: (root: string) => Promise<boolean>
   onClose: () => void
   onNotice: (text: string) => void
 }
@@ -97,7 +101,9 @@ export function versionMeta(v: BoardVersion, now: number): string {
   return [relativeTime(v.at, now), v.merged ? 'merged' : null, v.localOnly ? 'only on this computer' : null].filter((x) => x !== null).join(' · ')
 }
 
-export function VersionHistory({ root, path, fromMerge = false, darkColors, onClose, onNotice }: VersionHistoryProps) {
+export function VersionHistory({ root, path, fromMerge = false, darkColors, allowFileAction, onClose, onNotice }: VersionHistoryProps) {
+  const vaultAction = useContext(VaultReadOnly).allowFileAction
+  const askAction = allowFileAction ?? vaultAction
   const name = boardBaseName(basename(path))
   const diagram = isDiagram(path)
   const theme = useAppliedTheme()
@@ -195,9 +201,32 @@ export function VersionHistory({ root, path, fromMerge = false, darkColors, onCl
 
   const restore = async () => {
     if (version === undefined) return
+    if (drawingBase?.board.scene.readOnly === true) {
+      setProblem('This board is read only.')
+      setConfirming(false)
+      return
+    }
     setBusy(true)
     setProblem(null)
     try {
+      if (diagram && typeof api.diagram?.load === 'function') {
+        try {
+          const current = await api.diagram.load({ root, path })
+          if (isDiagramReadOnly(current.xml)) {
+            setProblem('This board is read only.')
+            setBusy(false)
+            setConfirming(false)
+            return
+          }
+        } catch {
+          // An unreadable diagram can still be restored from history (after the vault check below).
+        }
+      }
+      if (!(await askAction(root))) {
+        setBusy(false)
+        setConfirming(false)
+        return
+      }
       await api.github.restore(root, path, version.ref)
       pageBoardSaved(root, path)
       onNotice(`Restored “${name}” to the version from ${relativeTime(version.at, Date.now())}.`)

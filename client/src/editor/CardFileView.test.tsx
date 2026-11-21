@@ -23,6 +23,8 @@ import { placeOf } from '../test-placeName'
 import { listenTour } from '../course/tourBus'
 import { createWikilinkCandidateSource, WIKILINK_PICKER_CLASS } from './wikilink/wikilinkPicker'
 import { nameCandidate } from '../links/completion'
+import { IconsContext, type IconsHere } from '../sidebar/FileIcon'
+import { buildRowIcons } from '../sidebar/rowIcons'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -388,7 +390,7 @@ describe('YAZ-5392: one title spot, the card as a page shows it', () => {
     expect(el.querySelector('.card-file__title-row')).toBeNull()
     expect(el.querySelectorAll('.card-file .page-title')).toHaveLength(1)
     const card = el.querySelector<HTMLElement>('.card-file__page > .card')!
-    expect([...card.children].map((c) => c.classList[0])).toEqual(['card__head', 'card-band', 'card__body'])
+    expect([...card.children].filter((c) => !c.classList.contains('card-inbox__edge')).map((c) => c.classList[0])).toEqual(['card__head', 'card-band', 'card__body'])
     const head = card.querySelector('.card__head')!
     expect(head.querySelector('.card__id')?.textContent).toBe('WIKI-9')
     expect(head.querySelector('.card__edit')?.textContent).toBe('Edit card')
@@ -410,12 +412,34 @@ describe('YAZ-5392: one title spot, the card as a page shows it', () => {
     expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'Capital of Spain', 'file')
   })
 
-  it('Edit card: the band shows the title (no field: the band renames, read), the sides are the editor`s', async () => {
-    await mount(FILE)
+  it('Edit card (YAZ-6040): the title band field is editable when unlocked, and Done saves any title change through onRetitle', async () => {
+    const { onRetitle } = await mount(FILE)
     act(() => editButton()!.click())
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).not.toBeNull())
     await vi.waitFor(() => expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.value).toBe('Capital of France'))
-    expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.readOnly).toBe(true)
+    const titleField = el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')!
+    expect(titleField.readOnly).toBe(false)
+    act(() => {
+      titleField.value = 'Capital of Germany'
+      titleField.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    key(titleField, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'Capital of Germany', 'file')
+  })
+
+  it('Edit card (YAZ-6040): clearing the title to blank does not fire onRetitle on Done', async () => {
+    const { onRetitle } = await mount(FILE)
+    act(() => editButton()!.click())
+    await vi.waitFor(() => expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.value).toBe('Capital of France'))
+    const titleField = el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')!
+    act(() => {
+      titleField.value = '   '
+      titleField.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    key(titleField, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    expect(onRetitle).not.toHaveBeenCalled()
   })
 })
 
@@ -1273,6 +1297,131 @@ describe('comments on a card file (YAZ-5466)', () => {
       expect(onDisk()).toContain('readonly: true')
       expect(cardPart(onDisk())).toBe(CARD)
       stillLocked()
+    })
+  })
+
+  describe('YAZ-6000 & YAZ-6001: Card page editor parity, View-mode pill menu, S3 Markdown link gestures, S4 ImageModal', () => {
+    it('View-mode pill right-click menu (D2), S3 ⌘-click on in-app Markdown link, and S4 ImageModal on image double-click', async () => {
+      const cardMd = '---\nkind: card\n---\n```card\nSee [[europe]] and [Europe](../europe.md)\n\n![Map](https://example.com/map.png)\n---\nBack\n```\n<!-- card: WIKI-9, title "Capital of France" -->\n'
+      disk.files.set(PATH, cardMd)
+      wikilinks.update((t) => (t === 'europe' ? '/v/europe.md' : null), records(1), [], true, ['WIKI'])
+      const candidates = createWikilinkCandidateSource()
+      candidates.update([{ ...nameCandidate('europe'), path: '/v/europe.md' }])
+      const onOpenFile = vi.fn()
+      const onOpenLink = vi.fn()
+      const onOpenLinkBackground = vi.fn()
+      const onNotice = vi.fn()
+      el = document.createElement('div')
+      document.body.append(el)
+      root = createRoot(el)
+      await act(async () =>
+        root?.render(
+          <VaultReadOnly.Provider value={{ on: false, allowFileAction: async () => true }}>
+            <ReviewScope />
+            <CardFileView
+              file={{ path: PATH, content: cardMd, mtime: 1, size: cardMd.length }}
+              root={ROOT}
+              wikilinks={wikilinks}
+              wikilinkCandidates={candidates}
+              onOpenFile={onOpenFile}
+              onOpenLink={onOpenLink}
+              onOpenLinkBackground={onOpenLinkBackground}
+              onNotice={onNotice}
+              onPage={vi.fn()}
+            />
+          </VaultReadOnly.Provider>,
+        ),
+      )
+      await vi.waitFor(() => expect(el.querySelector('[data-card-link="europe"]')).not.toBeNull())
+
+      // View-mode pill right-click opens the link menu without Edit/Remove.
+      const pill = el.querySelector<HTMLElement>('[data-card-link="europe"]')!
+      act(() => void pill.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })))
+      const menuItems = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu--editor .ctx-menu__item')].map((b) => b.textContent)
+      expect(menuItems).toContain('Open')
+      expect(menuItems).toContain('Open in new tab')
+      expect(menuItems).not.toContain('Edit link')
+      expect(menuItems).not.toContain('Remove link')
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+
+      // S3: ⌘-click on an in-app Markdown link opens in a background tab.
+      const mdLink = el.querySelector<HTMLAnchorElement>('.card__body a[href="../europe.md"]')!
+      act(() => void mdLink.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, metaKey: true })))
+      expect(onOpenLinkBackground).toHaveBeenCalledWith('/v/europe.md')
+
+      // S4: double-clicking an image opens the ImageModal lightbox.
+      const img = el.querySelector<HTMLImageElement>('.card__side img')!
+      act(() => void img.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })))
+      expect(document.querySelector('.image-modal-overlay')).not.toBeNull()
+    })
+
+    it('Edit-mode parity (D2 + D3 + S5 + S6): ⌘-click pill opens background tab, Pill style hides Highlight and includes Strikethrough, PageMenu works on card text, and IconsContext redraws pills', async () => {
+      const cardMd = '---\nkind: card\n---\n```card\nSee [[europe]] now\n---\nBack\n```\n<!-- card: WIKI-9, title "Capital of France" -->\n'
+      disk.files.set(PATH, cardMd)
+      wikilinks.update((t) => (t === 'europe' ? '/v/europe.md' : null), records(1), [], true, ['WIKI'])
+      const candidates = createWikilinkCandidateSource()
+      candidates.update([{ ...nameCandidate('europe'), path: '/v/europe.md' }])
+      const onOpenLinkBackground = vi.fn()
+      const onNotice = vi.fn()
+      window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: async () => null } } as typeof window.yaseenDocs
+      el = document.createElement('div')
+      document.body.append(el)
+      root = createRoot(el)
+      const renderTree = (iconsHere: IconsHere) => (
+        <VaultReadOnly.Provider value={{ on: false, allowFileAction: async () => true }}>
+          <IconsContext.Provider value={iconsHere}>
+            <ReviewScope />
+            <CardFileView
+              file={{ path: PATH, content: cardMd, mtime: 1, size: cardMd.length }}
+              root={ROOT}
+              wikilinks={wikilinks}
+              wikilinkCandidates={candidates}
+              onOpenFile={vi.fn()}
+              onOpenLink={vi.fn()}
+              onOpenLinkBackground={onOpenLinkBackground}
+              onNotice={onNotice}
+              onPage={vi.fn()}
+            />
+          </IconsContext.Provider>
+        </VaultReadOnly.Provider>
+      )
+      await act(async () => root?.render(renderTree({ roots: [ROOT], rowIcons: buildRowIcons({ [ROOT]: { paths: {} } }, [ROOT], [], true) })))
+      await vi.waitFor(() => expect(editButton()).not.toBeNull())
+      act(() => editButton()!.click())
+      await vi.waitFor(() => expect(el.querySelector('.card__editor .wikilink')).not.toBeNull())
+      // Flush async state updates (`setOuterView` / `setInnerView`) so `<PageMenu>` and S6 effects attach.
+      await act(async () => new Promise<void>((r) => setTimeout(r, 0)))
+
+      // ⌘-click on a pill in Edit mode opens it in a background tab.
+      const editPill = el.querySelector<HTMLElement>('.card__editor .wikilink')!
+      act(() => void editPill.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, metaKey: true })))
+      expect(onOpenLinkBackground).toHaveBeenCalledWith('/v/europe.md')
+
+      // Right-click pill -> Pill style › has Text (Bold, Italic, Underline, Strikethrough) and NO Highlight group.
+      act(() => {
+        editPill.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 20 }))
+        editPill.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 20 }))
+      })
+      const pillStyleBtn = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu--editor .ctx-menu__item--parent')].find((b) => b.textContent === 'Pill style')!
+      expect(pillStyleBtn).toBeDefined()
+      act(() => pillStyleBtn.click())
+      const sub = el.querySelector<HTMLElement>('.ctx-menu--editor .ctx-menu__sub')!
+      expect([...sub.querySelectorAll('.ctx-menu__heading')].map((h) => h.textContent)).toEqual(['Text'])
+      expect([...sub.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)).toEqual(['Bold', 'Italic', 'Underline', 'Strikethrough', "↺ Back to the vault's look"])
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+
+      // Right-click plain text in the inner card editor opens <PageMenu>.
+      const para = el.querySelector<HTMLElement>('.card__editor .ProseMirror p')!
+      act(() => void para.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })))
+      await vi.waitFor(() => expect(document.querySelector('.ctx-menu [role="menuitem"]')).not.toBeNull())
+      const pageRows = [...document.querySelectorAll<HTMLElement>('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)
+      expect(pageRows).toEqual(expect.arrayContaining(['Cut', 'Copy', 'Paste']))
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+
+      // S6: updating IconsContext while editing redraws the pill's icon live in the inner card editor.
+      await act(async () => root?.render(renderTree({ roots: [ROOT], rowIcons: buildRowIcons({ [ROOT]: { paths: { '/v/europe.md': 'lua' } } }, [ROOT], [], true) })))
+      await vi.waitFor(() => expect(el.querySelector('.card__editor .wikilink')?.getAttribute('data-icon')).toBe('lua'))
     })
   })
 })

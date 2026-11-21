@@ -47,8 +47,8 @@ const type = (input: HTMLInputElement, value: string) =>
 const enter = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
 const formatBox = (row: HTMLElement) => row.querySelector<HTMLInputElement>('input[aria-label="Link pill format"]') as HTMLInputElement
 const preview = (row: HTMLElement) => row.querySelector('.link-pills-preview') as HTMLElement
-/** The sample page pill's text (the card pill, YAZ-5919, has its own tests). */
-const pillTexts = (row: HTMLElement) => [...preview(row).querySelectorAll('.wikilink:not(.link-pills-preview__card)')].map((p) => p.textContent)
+/** The sample page pill's text (the card pill, YAZ-5919, and highlighted sample, YAZ-5991, have their own tests). */
+const pillTexts = (row: HTMLElement) => [...preview(row).querySelectorAll('.wikilink:not(.link-pills-preview__card, .link-pills-preview__highlight)')].map((p) => p.textContent)
 const cardPill = (row: HTMLElement) => preview(row).querySelector<HTMLElement>('.link-pills-preview__card')
 const toolbar = (row: HTMLElement) => row.querySelector<HTMLElement>('.pill-toolbar')
 /** The panel's rows, by their labels on the left. */
@@ -72,15 +72,24 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(formatBox(row).maxLength).toBe(60)
     expect(select(row, 'Vault name on a link pill')?.selectedOptions[0]?.textContent).toBe('Vault name: other vaults only')
     expect([...row.querySelectorAll<HTMLButtonElement>('.link-pills-chip')].map((b) => b.textContent)).toEqual(['{icon}', '{name}', '{id}', '{number}', '{vault}', '{folder}', '{path}', '{mark}'])
-    // The preview (round 4): a muted "Preview" label and two sample pills (YAZ-5919): a page with the sidebar's page
-    // icon, and a card with the card icon. The format has {vault}, so the page shows its vault's name even under "other
-    // vaults only"; a card is in this vault, so it shows none. No sentence around them.
+    // The unified preview (YAZ-5919, YAZ-5991): page pill, card pill, highlighted pill, external link, and Show hover toggle.
     expect(preview(row).querySelector('.link-pills-preview__label')?.textContent).toBe('Preview')
     expect([...preview(row).querySelectorAll('.wikilink')].map((p) => [p.textContent, p.querySelector('.file-icon')?.getAttribute('data-kind') ?? null, p.querySelector('.card-icon') !== null])).toEqual([
       ['Roadmap (Mine)', 'markdown', false],
       ['Capital of France', null, true],
+      ['Notes', 'markdown', false],
     ])
-    expect(preview(row).textContent).toBe('PreviewRoadmap (Mine)Capital of France')
+    expect(preview(row).querySelector('.link-pills-preview__mark .link-pills-preview__highlight')?.textContent).toBe('Notes')
+    expect(preview(row).querySelector('.link-pills-preview__ext')?.textContent).toBe('docs.example.com')
+    const showHoverBtn = preview(row).querySelector<HTMLButtonElement>('.link-pills-preview__hover-toggle')!
+    expect(showHoverBtn.textContent).toBe('Show hover')
+    expect(showHoverBtn.getAttribute('aria-pressed')).toBe('false')
+    click(showHoverBtn)
+    expect(showHoverBtn.getAttribute('aria-pressed')).toBe('true')
+    expect(preview(row).classList.contains('link-pills-preview--hover')).toBe(true)
+    expect(toolbar(row)).toBeNull()
+    click(showHoverBtn)
+    expect(preview(row).classList.contains('link-pills-preview--hover')).toBe(false)
     expect(preview(row).title).toBe('Click a part of a pill to style it')
     expect(toolbar(row)).toBeNull()
     expect(button(row, 'Reset')).toBeUndefined()
@@ -464,5 +473,32 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     const { row } = mount({ format: '({icon}{name} ({vault}))', parts: { text: { color: 'accent', size: 'normal' } } })
     expect(formatBox(row).value).toBe('({icon}{name} ({vault}))')
     expect(pillTexts(row)).toEqual(['(Roadmap (Mine))'])
+  })
+
+  it('YAZ-6002 (D5): Hover subsection under Preview edits Style, Colour and Strength and updates preview vars; searching "hover" finds Link pills', () => {
+    const { row, save } = mount(NO_LINK_PILLS)
+    const hover = row.querySelector<HTMLElement>('.link-pills-hover')!
+    expect(hover).not.toBeNull()
+    expect(rows(hover)).toEqual(['Style', 'Colour', 'Strength'])
+    expect([...rowOf(hover, 'Style').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Wash', 'Underline', 'Text colour', 'Off'])
+    expect([...rowOf(hover, 'Strength').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Subtle', 'Medium', 'Strong'])
+    expect(button(rowOf(hover, 'Style'), 'Wash').getAttribute('aria-pressed')).toBe('true')
+    expect(button(rowOf(hover, 'Colour'), 'Auto hover colour').getAttribute('aria-pressed')).toBe('true')
+    expect(button(rowOf(hover, 'Strength'), 'Subtle').getAttribute('aria-pressed')).toBe('true')
+    click(rowOf(hover, 'Colour').querySelector('[role="radio"][title="Purple"]') as Element)
+    expect(save).toHaveBeenLastCalledWith({ hover: { color: 'purple' } })
+    click(button(rowOf(hover, 'Strength'), 'Strong'))
+    expect(save).toHaveBeenLastCalledWith({ hover: { strength: 'strong' } })
+    click(button(rowOf(hover, 'Style'), 'Off'))
+    expect(save).toHaveBeenLastCalledWith({ hover: { style: 'off' } })
+
+    const off = mount({ hover: { style: 'off' } })
+    expect(rows(off.row.querySelector<HTMLElement>('.link-pills-hover')!)).toEqual(['Style'])
+    expect(preview(off.row).style.getPropertyValue('--pill-hover-off')).toBe('1')
+    expect(button(off.row, 'Reset')).toBeDefined()
+
+    const text = mount({ hover: { style: 'text', color: 'teal' } })
+    expect(rows(text.row.querySelector<HTMLElement>('.link-pills-hover')!)).toEqual(['Style', 'Colour'])
+    expect(preview(text.row).style.getPropertyValue('--pill-hover-fg')).toBe('var(--table-text-teal)')
   })
 })

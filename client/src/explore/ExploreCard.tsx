@@ -35,16 +35,28 @@
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cardState } from '@shared/cardSchedule'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
 import { withCardNext, withCardTitle } from '@shared/cardLine'
+import { fileKind } from '@shared/fileKind'
 import { readCardAt, type CardAtPage } from '../review/cardFile'
 import type { CardPlace } from '../editor/card/cardOpen'
+import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import { CardPane, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
+import { useTransientCardWidth } from '../review/inboxCardWidth'
+import { arrowGlide } from '../review/inboxScroll'
 import { HoverTip } from '../components/HoverTip'
+import { ImageModal } from '../editor/image/ImageModal'
+import type { GalleryImage } from '../editor/image/imageOptions'
+import { CardPreviewHost, useCardPreview } from '../tabs/cardPreview'
+import type { AnchorRect } from '../sidebar/previewPlacement'
+import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
+import { linkOpenHint } from '../editor/linkGesture'
+import { pageLabel, usePathTitles } from '../lib/pageLabel'
 import { withKeys } from '@shared/keyLabel'
 import { CardBand, CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
-import { keepFocus, type ExploreVault } from './ExplorePage'
+import { keepFocus, type ExploreLinkPreview, type ExploreVault } from './ExplorePage'
 import { useUnit } from '../vault/unitWord'
 import { cardMarksOf, cardMenuSections } from '../review/cardMenuView'
 import { PageTitle } from '../editor/PageTitle'
@@ -67,6 +79,10 @@ interface ExploreCardProps {
   /** ⌘↵ and ⋯'s row: the card's page in a tab, and the stack closes. */
   onOpenInTab: () => void
   onNotice: (message: string) => void
+  onRetitle?: (title: string) => void
+  createFolder?: () => string
+  linkPreview?: ExploreLinkPreview
+  hotkeys?: HotkeyOverrides
   onHeadDown?: (event: ReactMouseEvent) => void
   onHeadReset?: (event: ReactMouseEvent) => void
   onClose: () => void
@@ -75,7 +91,7 @@ interface ExploreCardProps {
 
 type Loaded = { kind: 'loading' } | { kind: 'card'; card: CardAtPage } | { kind: 'gone' }
 
-export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, onOpenLink, onOpenTab, onOpenInTab, onNotice, onHeadDown, onHeadReset, onClose, active }: ExploreCardProps) {
+export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, onOpenLink, onOpenTab, onOpenInTab, onNotice, onRetitle, createFolder, linkPreview, hotkeys, onHeadDown, onHeadReset, onClose, active }: ExploreCardProps) {
   const unit = useUnit()
   const headRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
@@ -85,6 +101,27 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
   /** The ID the card has once read: a card with none when the layer opened keeps being found by it after the sweep gives one. */
   const idRef = useRef(cardId)
   const { wikilinks } = vault
+  const titles = usePathTitles(wikilinks)
+  const [openImage, setOpenImage] = useState<{ images: GalleryImage[]; index: number } | null>(null)
+  const hotkeysRef = useRef(hotkeys)
+  hotkeysRef.current = hotkeys
+  const linkAt = useRef<{ path: string; rect: AnchorRect; editable: boolean } | null>(null)
+  const hover = useCardPreview(linkPreview?.on() === true, (p) => (linkAt.current?.path === p ? linkAt.current.rect : null))
+  const [linkHover] = useState<WikilinkHover>(() => ({
+    onHover: (p, rect, editable) => {
+      linkAt.current = { path: p, rect, editable }
+      hover.hoverCard(p, p)
+    },
+    onLeave: () => {
+      if (linkAt.current !== null) hover.leaveCard(linkAt.current.path)
+      linkAt.current = null
+    },
+  }))
+  const linkCard = (_: string, p: string): { root: string | null; name: string; hint?: string } => ({
+    root: null,
+    name: pageLabel(p, false, titles),
+    hint: linkOpenHint(hotkeysRef.current, linkAt.current?.editable ?? false, fileKind(p) === 'markdown'),
+  })
 
   const read = useCallback(() => {
     let live = true
@@ -123,6 +160,15 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
   const card = loaded.kind === 'card' ? loaded.card : null
   // Edit card (YAZ-5003): E blocks it in a read-only vault, as in the page.
   const [editing, setEditing] = useState(false)
+  // YAZ-6054: one-time in-memory drag-to-resize edges (resets to default when closed/reopened).
+  const dragWidth = useTransientCardWidth(bodyRef, bodyRef, `${path}#${cardId ?? index}`, true, 24)
+  // YAZ-6052: commit any open card editor before a timed vault unlock re-locks.
+  useEffect(() => {
+    if (vault.beforeLock === undefined) return
+    return vault.beforeLock(() => {
+      cardBlockViewOfDom(bodyRef.current?.querySelector('.card.card--editing') ?? null)?.done()
+    })
+  }, [vault.beforeLock])
   // Out of Edit card, the body takes the keyboard, so the stack hears the next Esc or ⌘↵ (YAZ-5009 round 2). After the
   // commit, not in Done: the card's Done gives the keyboard back to its own editor, which this commit removes; the
   // keyboard would then fall to `document.body`, out of the stack.
@@ -133,11 +179,34 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
   }, [editing])
   const writes = cardWrites(path, card, read, onNotice, review)
   const changeLine = writes.changeLine
-  // A card file's title is its file's: its tab renames it, so here it stays as it is.
-  const editDone = (text: string, next: string) => writes.editDone(text, () => setEditing(false), undefined, card?.cardFile === true ? undefined : next)
+  const canRetitleCardFile = card?.cardFile === true && onRetitle !== undefined && vault.readOnly !== true
+  const editDone = (text: string, next: string) => {
+    if (card?.cardFile === true) {
+      const trimmed = next.trim()
+      const renamed = canRetitleCardFile && trimmed !== '' && trimmed !== card.title
+      writes.editDone(text, () => {
+        setEditing(false)
+        if (renamed) onRetitle(trimmed)
+      })
+      return
+    }
+    writes.editDone(text, () => setEditing(false), undefined, next)
+  }
   /** E on the card window: Edit card (YAZ-5003), as the page's Edit card. Not in a field, not read only. */
   const preview = () => card !== null && previewCardOf(bodyRef.current, path, card)
   const onBodyKey = (event: React.KeyboardEvent) => {
+    // YAZ-6057: Up/Down scroll a larger, smooth step while reading a card (never in fields or menus).
+    if (!editing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      const target = event.target instanceof Element ? event.target : null
+      if (target === null || target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="menu"], [role="listbox"]') === null) {
+        if (bodyRef.current !== null) {
+          event.preventDefault()
+          event.stopPropagation()
+          arrowGlide(bodyRef.current, event.key === 'ArrowUp' ? -1 : 1)
+          return
+        }
+      }
+    }
     // P (YAZ-5152): Preview, as the Inbox shows the card; nothing saved.
     if (!editing && card !== null && isCardPreviewKey(event)) {
       event.preventDefault()
@@ -199,7 +268,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
           </button>
         </HoverTip>
       </div>
-      <div ref={bodyRef} className="explore__body explore__body--card" tabIndex={-1} data-explore-card onKeyDown={onBodyKey}>
+      <div ref={bodyRef} className="explore__body explore__body--card" tabIndex={-1} data-explore-card onKeyDown={onBodyKey} style={dragWidth.width === null ? undefined : ({ '--card-text-width': `${dragWidth.width}px` } as React.CSSProperties)}>
         {loaded.kind === 'gone' && <p className="editor-msg">This card is no longer there</p>}
         {card !== null && (
           <CardPane
@@ -208,25 +277,32 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
             vault={vault}
             editing={editing}
             onEditDone={editDone}
-            titleField={card.cardFile === true ? 'show' : 'edit'}
+            titleField={card.cardFile === true && !canRetitleCardFile ? 'show' : 'edit'}
             band={
               card.title !== '' && (
-                // The page title's own component (YAZ-5164 part 3), as in a card in a page: a click renames the card, its
-                // card line (YAZ-5308). A read-only vault, or a card file's card, shows it only.
+                // The page title's own component (YAZ-5164 part 3, YAZ-6040): a click renames the card on its card
+                // line (or through App's title door for a card file). A read-only vault shows it only.
                 <CardBand>
                   <PageTitle
                     path={path}
                     titles={NO_TITLES}
                     text={card.title}
-                    readOnly={vault.readOnly === true || card.cardFile === true}
+                    readOnly={vault.readOnly === true || (card.cardFile === true && onRetitle === undefined)}
                     locked={false}
-                    onRetitle={(next) => changeLine((l) => withCardTitle(l, next))}
+                    onRetitle={(next) => (card.cardFile === true ? onRetitle?.(next) : changeLine((l) => withCardTitle(l, next)))}
                   />
                 </CardBand>
               )
             }
             doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }}
+            openExplore={onOpenLink}
             onOpenPage={onOpenLink}
+            createFolder={createFolder}
+            wikilinkHover={linkPreview === undefined ? undefined : linkHover}
+            hotkeys={hotkeys}
+            onOpenImage={setOpenImage}
+            onEdgeDrag={dragWidth.startDrag}
+            onEdgeReset={dragWidth.reset}
             strip={<CardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage({ id: card.id, index: card.index })} />}
             reviews={review?.settings}
             onDeleteReview={writes.deleteReview}
@@ -237,6 +313,8 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
           />
         )}
       </div>
+      {linkPreview !== undefined && <CardPreviewHost store={hover.store} cardOf={linkCard} scopeOf={linkPreview.scopeOf} diagramDarkColors={linkPreview.diagramDarkColors} />}
+      {openImage !== null && <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />}
     </>
   )
 }

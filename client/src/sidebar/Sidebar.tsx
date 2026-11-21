@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useLayout
 import { useAllPathIds, type IdsInFiles, type IdsInSearch, type PathIdsSource } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
+import { isReadOnlyProperties } from '@shared/readOnly'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
@@ -50,8 +51,9 @@ import { buildMenuSections, SCOPE_TIPS } from './menuSections'
 import { UnitContext, useVaultUnit, vaultUnit } from '../vault/unitWord'
 import type { ListFold } from './listFold'
 import { createPortal } from 'react-dom'
-import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusFolderList'
-import { dropBlankPlace, foldersChangedHere, lastPlace, markFoldersChanged, readPlace, savePlace, type TabPlace } from './tabPlace'
+import { FocusFolderList } from './FocusFolderList'
+import { foldersChangedHere, lastPlace, markFoldersChanged, readPlace } from './tabPlace'
+import { useTabPlace } from './hooks/useTabPlace'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
 import { recentSections } from './recents'
@@ -213,6 +215,10 @@ interface SidebarProps {
   activeTab?: string | null
   /** A tab was clicked; App writes a lens through to the window identity — never Search — and passes the new value back down. */
   onLensChange: (lens: SidebarTab) => void
+  /** Restore a tab's saved lens without writing to window storage (YAZ-6064). Falls back to `onLensChange`. */
+  onRestoreLens?: (lens: SidebarTab) => void
+  /** Restore a tab's saved folded vault rows in a multi-vault window (YAZ-6064). */
+  onRestoreClosedVaults?: (closed: readonly string[]) => void
   /** One reveal in Files; a request that arrives on another lens is dropped. */
   revealRequest: SidebarRevealRequest | null
   /** The request has been accepted into Sidebar-local work and must not replay after a remount. */
@@ -320,7 +326,7 @@ interface SidebarProps {
    */
   onMoved: (gesture: MovedGesture, text: string, skipped: boolean) => void
   /** A Manual reorder of Files, Focus or Favorites (YAZ-5917): App puts it on the window's undo list and says it with Undo. */
-  onReordered?: (step: { name: string; undo: () => void; redo: () => void }) => void
+  onReordered?: (step: { name: string; undo: () => void; redo: () => void; vault?: string }) => void
   /**
    * Rows dragged out to Finder, and the drag ended outside the window with no drop inside it
    * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
@@ -732,6 +738,8 @@ export function Sidebar({
   lens,
   activeTab,
   onLensChange,
+  onRestoreLens,
+  onRestoreClosedVaults,
   revealRequest,
   onRevealConsumed,
   menuRequest,
@@ -811,14 +819,33 @@ export function Sidebar({
   // the tab on show (a New tab's own, YAZ-5757); with none, from the open folders the sidebar last showed. Only the
   // folders in this window's vaults: a vault switch keeps the place of the tab on show.
   const perTab = settings.sidebarPlace === 'tab' && activeTab !== undefined
+  /** File whose auto-`expandTo` in `useVaultTree` should be skipped after restoring a saved tab place (YAZ-6064). */
+  const skipExpandToRef = useRef<string | null>(null)
+  /** A `filesOnly` value just restored from a saved `TabPlace` (YAZ-6064): do not re-open it if the user had collapsed it. */
+  const restoredFilesOnly = useRef<string | null>(null)
+  /** The last non-search lens shown in this sidebar (YAZ-6064): used when leaving Search or saving `placeHere` on Search. */
+  const lastNonSearchLens = useRef<SidebarLens>(lens === 'search' ? storage.getSidebarLens() : lens)
+  if (lens !== 'search') lastNonSearchLens.current = lens
   const folderShare: FolderShare = {
     shared: !perTab,
     start: (): string[] => {
       const here = vaults.map((vault) => vault.root)
-      return ((readPlace(activeTab ?? null) ?? lastPlace())?.expanded ?? []).filter((dir) => rootOfPath(here, dir) !== null)
+      const saved = readPlace(activeTab ?? null)
+      if (saved !== undefined) return saved.expanded.filter((dir) => rootOfPath(here, dir) !== null)
+      // Unvisited page tab mounting after another tab existed (YAZ-6104): start with only its own file's parent folders.
+      if (activeTab !== null && activeTab !== undefined && activeFile !== null && lastPlace() !== undefined) {
+        const home = rootOfPath(here, activeFile)
+        return home === null ? [] : ancestorDirs(home, activeFile)
+      }
+      return []
     },
     touch: markFoldersChanged,
     touched: foldersChangedHere,
+    skipExpandTo: (file: string): boolean => {
+      const match = skipExpandToRef.current === file
+      skipExpandToRef.current = null
+      return match
+    },
   }
   const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes, folderShare)
   // The FIRST vault: the one a window with one vault has.
@@ -838,17 +865,29 @@ export function Sidebar({
   const top = vaults[0]?.folder ?? root
   // "Hide all others" in Files (YAZ-5790): the folder the Files tab shows alone, while the tree holds it.
   const filesAlone = useMemo(() => (filesOnly === null || forest === null ? null : findDirNode(forest, filesOnly)), [filesOnly, forest])
-  // A folder shown alone that the tree does not hold (deleted or moved outside the app): all shows again after a short
-  // wait. App's `file:renamed` follows an in-app move in that wait, and its `file:deleted` ends the view at once.
+  // A folder shown alone that belongs to no current vault clears immediately (YAZ-6064). One inside a current vault that
+  // the tree does not hold (deleted or moved outside the app) waits briefly so `file:renamed` can follow an in-app move.
+  const filesOutsideRoots = filesOnly !== null && rootOfPath(roots, filesOnly) === null
   const aloneGone = filesOnly !== null && loaded && forest !== null && filesAlone === null
   useEffect(() => {
+    if (filesOutsideRoots) {
+      onFilesOnly?.(null)
+      return
+    }
     if (!aloneGone) return
     const id = window.setTimeout(() => onFilesOnly?.(null), FILES_ONLY_GRACE_MS)
     return () => window.clearTimeout(id)
-  }, [aloneGone, filesOnly, onFilesOnly])
+  }, [filesOutsideRoots, aloneGone, filesOnly, onFilesOnly])
   // The folder shown alone is open: the folders above it too, and its vault's row (`openTo`'s synthetic child).
+  // Skip when `filesOnly` was just restored from a saved tab place so a folder the user collapsed stays collapsed (YAZ-6064).
   useEffect(() => {
-    if (filesOnly !== null) openTo(`${filesOnly}/x`)
+    if (filesOnly === null) {
+      restoredFilesOnly.current = null
+      return
+    }
+    if (restoredFilesOnly.current === filesOnly) return
+    restoredFilesOnly.current = null
+    openTo(`${filesOnly}/x`)
   }, [filesOnly, openTo])
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
   const multi = ownRoots.length > 1
@@ -1158,7 +1197,7 @@ export function Sidebar({
   // hitting esc again should close the side bar"), the keyboard stays in the sidebar, on the row of the tab that comes
   // back (`rowAfterSearch`): the next Esc closes the sidebar, and Esc in the page text never does.
   const leaveSearch = useCallback(() => {
-    onLensChange(storage.getSidebarLens())
+    onLensChange(lastNonSearchLens.current)
     if (escapeClosesSidebar) rowAfterSearch.current = true
     else toPage()
   }, [onLensChange, toPage, escapeClosesSidebar])
@@ -1266,62 +1305,39 @@ export function Sidebar({
     row?.scrollIntoView?.({ block: 'nearest' })
   }, [searchCursor.paths])
 
-  // A place for each page tab (YAZ-5701, "Sidebar remembers"): a switch saves the place of the tab that goes and puts
-  // back the place of the tab that comes; a tab with no place keeps what is on screen. Declared before the reveal below,
-  // so "Reveal the open file" runs after the place is back. A switch costs one `setAll` and one scroll write.
-  const placeNow = useRef({ lens, expanded, perTab })
-  placeNow.current = { lens, expanded, perTab }
-  /** The tab whose place is on screen; `undefined` until the first effect. */
-  const placeTab = useRef<string | null | undefined>(undefined)
-  /** The scroll to put back once the place's folders are drawn (the layout effect below). */
-  const placeScroll = useRef<number | null>(null)
-  /**
-   * The selected rows on screen (YAZ-5769), kept current below `useSelection`. Saved as they are, also when the switch
-   * shows Search: a blank tab opens on Search in the same commit, and Search has no selection of its own to save.
-   */
-  const placeSelected = useRef<ReadonlySet<string>>(new Set())
-  /** The rows to select again once the place's sidebar tab shows (the effect after `useSelection`, which clears on a tab change). */
-  const placeSelection = useRef<{ lens: SidebarTab; paths: readonly string[] } | null>(null)
-  const placeHere = (body: HTMLElement | null): TabPlace => {
-    const now = placeNow.current
-    return { lens: now.lens === 'search' ? storage.getSidebarLens() : now.lens, expanded: now.expanded, shut: { focus: shutStackFolders('focus'), favorites: shutStackFolders('favorites') }, scrollTop: body?.scrollTop ?? 0, selected: [...placeSelected.current] }
-  }
-  /** `folders` false at the mount: the tree started from the place's folders. */
-  const putBack = (place: TabPlace, folders: boolean): void => {
-    if (folders) dispatch({ type: 'setAll', dirs: [...place.expanded] })
-    setShutStackFolders('focus', place.shut.focus)
-    setShutStackFolders('favorites', place.shut.favorites)
-    if (place.lens !== placeNow.current.lens) onLensChange(place.lens)
-    placeScroll.current = place.scrollTop
-    placeSelection.current = { lens: place.lens, paths: place.selected ?? [] }
-  }
-  useEffect(() => {
-    const from = placeTab.current
-    const to = activeTab ?? null
-    placeTab.current = to
-    if (!perTab || from === to) return
-    // The first run is the mount: its folders came from the tab's place already (`folderShare.start`).
-    // A New tab's place is for its Hide and Show sidebar only (YAZ-5757): it goes with the tab, and the next New tab keeps the screen.
-    if (from === null) dropBlankPlace()
-    else if (from !== undefined) savePlace(from, placeHere(bodyRef.current))
-    const place = to === null && from !== undefined ? undefined : readPlace(to)
-    if (place !== undefined) putBack(place, from !== undefined)
-  }, [perTab, activeTab])
-  // Only once every vault's tree has landed (YAZ-5749): a mount reads its trees again, and a scroll written over no rows
-  // is clamped to 0. The commit that lands them draws the rows, so this writes once, then holds nothing.
-  useLayoutEffect(() => {
-    if (placeScroll.current === null || !loaded || bodyRef.current === null) return
-    bodyRef.current.scrollTop = placeScroll.current
-    placeScroll.current = null
+  // A place for each page tab (YAZ-5701, YAZ-6064, "Sidebar remembers"): declared before the reveal below, so
+  // "Reveal the open file" skips when a saved place restores.
+  const revealActive = settings.sidebarRevealActive
+  const filesShows = lens === 'files'
+  const rootsNow = useRef(roots)
+  rootsNow.current = roots
+  const followed = useRef<{ path: string | null | undefined; files: boolean; id: number }>({ path: undefined, files: false, id: 0 })
+  const { skipQuietReveal, placeSelected, placeSelection } = useTabPlace({
+    perTab,
+    activeTab,
+    lens,
+    expanded,
+    filesOnly,
+    focusOnly,
+    closedVaults,
+    revealRequest,
+    revealActive,
+    loaded,
+    roots,
+    rootOf,
+    activeRef,
+    bodyRef,
+    followed,
+    lastNonSearchLens,
+    skipExpandToRef,
+    restoredFilesOnly,
+    dispatch,
+    onLensChange,
+    onRestoreLens,
+    onFilesOnly,
+    onFocusOnly,
+    onRestoreClosedVaults,
   })
-  // The sidebar goes (hidden, or a vault switch): the tab on show keeps the place it showed, a New tab too (YAZ-5757). Before the DOM goes, for the scroll.
-  useLayoutEffect(() => {
-    const body = bodyRef.current
-    return () => {
-      const tab = placeTab.current
-      if (placeNow.current.perTab && tab !== undefined) savePlace(tab, placeHere(body))
-    }
-  }, [])
 
   // Files follows the open tab (YAZ-3440 D13, `sidebarRevealActive`): a new active tab, or Files that shows
   // again, is a QUIET request on the one reveal path below (no flash, no focus, no notice). It is asked one
@@ -1331,16 +1347,19 @@ export function Sidebar({
   // window asks nothing. A path in a vault row the user closed opens that row (`openTo`, Yaseen's change to D13):
   // with the setting on, the open tab wins over YAZ-2602 R9; with it off, `useVaultTree`'s own opening of a new
   // tab's folders still leaves that row closed (R9). Declared before App's requests, so an App request in the same commit wins.
-  const revealActive = settings.sidebarRevealActive
-  const filesShows = lens === 'files'
-  const rootsNow = useRef(roots)
-  rootsNow.current = roots
-  const followed = useRef<{ path: string | null | undefined; files: boolean; id: number }>({ path: undefined, files: false, id: 0 })
   useEffect(() => {
     const last = followed.current
     const moved = last.path !== activeFile || (filesShows && !last.files)
     followed.current = { ...last, path: activeFile, files: filesShows }
-    if (!revealActive || !filesShows || !moved || activeFile === null) return
+    if (!revealActive) {
+      skipQuietReveal.current = false
+      return
+    }
+    if (!filesShows || !moved || activeFile === null) return
+    if (skipQuietReveal.current) {
+      skipQuietReveal.current = false
+      return
+    }
     if (rootOfPath(rootsNow.current, activeFile) === null) return
     // Its own ids, below zero: App's count up from one, and each id is handled one time (`handledFilesRevealId`).
     followed.current.id -= 1
@@ -1365,8 +1384,8 @@ export function Sidebar({
   // Expand / collapse the whole tree (⚡ YAZ-862). "Any open" is
   // measured against what the CURRENT tree can actually unfold (`dirs`, above), never the raw
   // persisted list, which would leave the button offering to collapse nothing.
-  // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6).
-  const foldVaults = multi && lens === 'files'
+  // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6) — unless Hide all others shows one folder alone (YAZ-6064).
+  const foldVaults = multi && lens === 'files' && filesOnly === null
   // The stack folders of Focus and Favorites fold with the real folders (YAZ-5664): one open of either kind reads "Collapse all".
   const [stackFold, setStackFold] = useState<ListFold | null>(null)
   const stacks = lens === 'focus' || lens === 'favorites' ? stackFold : null
@@ -1882,8 +1901,22 @@ export function Sidebar({
   }, [createRequest, lens, forest, trees, rootOf, onCreateConsumed, startCreateAt])
 
   // The row goes when the index says so, as it came; only a refusal is said.
-  const removeShortcutRow = (path: string, dir: string): void =>
-    void removeShortcut(dir, path, vaultOf(dir).index.folders).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+  // YAZ-5989: check the page's own `readonly: true` and the vault's read-only door before rewriting `also_in`.
+  const isPageReadOnly = (path: string): boolean => {
+    const record = vaultOf(path).index.records.find((r) => r.path === path)
+    return record !== undefined && isReadOnlyProperties(record.properties)
+  }
+  const removeShortcutRow = (path: string, dir: string): void => {
+    void (async () => {
+      if (isPageReadOnly(path)) return onNotice(`Can't remove the shortcut: "${nameOf(path)}" is read only`, 'error')
+      if (onFileAction !== undefined && !(await onFileAction(rootOf(dir)))) return
+      try {
+        await removeShortcut(dir, path, vaultOf(dir).index.folders)
+      } catch (err: unknown) {
+        onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    })()
+  }
 
   // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
   // window in the tab's order (D1), every focus item of the window by the same rule (YAZ-2702 Decision 3), or the vault rows of Files (D5).
@@ -1938,8 +1971,8 @@ export function Sidebar({
   // Files under Manual (YAZ-5916): each folder's order, kept in the vault; read only while Files sorts by hand.
   const filesManual = settings.sidebarSort.files.by === 'manual'
   const filesOrder = useFilesOrder(ownRoots, filesManual, onNotice)
-  const reordered = useCallback((name: string, undo: () => void, redo: () => void) => onReordered?.({ name, undo, redo }), [onReordered])
-  const { fileMove, reorder, manual } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag, folderDrop, filesOrder.save, reordered)
+  const reordered = useCallback((name: string, undo: () => void, redo: () => void, vault?: string) => onReordered?.(vault === undefined ? { name, undo, redo } : { name, undo, redo, vault }), [onReordered])
+  const { fileMove, reorder, manual } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag, folderDrop, filesOrder.save, reordered, onFileAction)
 
   // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
   // identity until a list really changes — the memoised levels compare it by identity.
@@ -2733,9 +2766,19 @@ export function Sidebar({
           folder={relTo(rootOf(pickingShortcut), pickingShortcut)}
           source={vaultOf(pickingShortcut).index}
           onPick={(path) => {
+            const dir = pickingShortcut
             setPickingShortcut(null)
             // The row follows the index, as every other write's do; only a refusal is said.
-            addShortcut(pickingShortcut, path).catch((err: unknown) => onNotice(`Can't add the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+            // YAZ-5989: check the page's own `readonly: true` and the vault's read-only door before rewriting `also_in`.
+            void (async () => {
+              if (isPageReadOnly(path)) return onNotice(`Can't add the shortcut: "${nameOf(path)}" is read only`, 'error')
+              if (onFileAction !== undefined && !(await onFileAction(rootOf(dir)))) return
+              try {
+                await addShortcut(dir, path)
+              } catch (err: unknown) {
+                onNotice(`Can't add the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error')
+              }
+            })()
           }}
           onClose={() => setPickingShortcut(null)}
         />

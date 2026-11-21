@@ -945,6 +945,9 @@ describe('renderCard (the page and the Inbox, D18)', () => {
     // The page shows everything: nothing is next.
     expect(next(renderCard(text))).toEqual([])
     expect(next(renderCard(text, { sides: 2, shown: 4 }))).toEqual([])
+    // YAZ-5995: `next: null` suppresses `data-next` on every blank (when the title is the next step); `undefined` keeps fallback to `shown`.
+    expect(next(renderCard(text, { sides: 1, shown: 0, next: null }))).toEqual([])
+    expect(next(renderCard(text, { sides: 1, shown: 0, next: undefined }))).toEqual([['0', 'card__blank']])
   })
 
   it('YAZ-5013: the blank and the shown word are the same two spans with the real word inside — only the class (and what a screen reader hears) changes — and a copy over a blank leaves the word out', () => {

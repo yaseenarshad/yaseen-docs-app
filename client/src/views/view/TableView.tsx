@@ -1427,10 +1427,13 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const pasteInto = (area: { rows: number[]; cols: number[] }): void => {
     // A picture on the clipboard pasted on Image cells (YAZ-4802): saved once into assets/images, each cell linking it.
     if (area.cols.every((c) => typings[c]?.assigned === 'image')) {
+      // YAZ-5989: check for at least one writable target cell BEFORE saving to `assets/images/`, so locked rows leave no orphan file.
+      const firstWritable = area.cols.some((c) => bares[c] != null) ? area.rows.find((r) => flat[r] !== undefined && !readOnly.has(flat[r].record.path)) : undefined
+      if (firstWritable === undefined) return
       void clipboardImage().then((file) => {
         if (file === null) return pasteText(area)
-        // A pasted picture has no name: it is named after the first page it lands on.
-        saveImageFile(root, file, flat[area.rows[0]]?.record.basename).then(
+        // A pasted picture has no name: it is named after the first writable page it lands on.
+        saveImageFile(root, file, flat[firstWritable]?.record.basename).then(
           (path) => writeCells(area.rows.flatMap((r) => (flat[r] === undefined ? [] : area.cols.map((c) => ({ r, c, value: imageValue(path) })))), undefined, 'Paste into'),
           (error: unknown) => onNotice?.(`Can't paste the picture: ${error instanceof Error ? error.message : String(error)}`),
         )

@@ -23,7 +23,7 @@ import { HoverTip } from '../components/HoverTip'
 import { cardLook } from '../editor/card/cardLook'
 import { desktopBoardPicture } from '../editor/card/boardPictureDesktop'
 import { copyText } from '../lib/copyText'
-import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from '../editor/card/cardMedia'
+import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS, cardViewLinkHit, type CardViewLinkHit } from '../editor/card/cardMedia'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardShow } from '../editor/card/cardRender'
 import { followCardFold, onCardFoldChange } from '../editor/card/cardFold'
 import { hrefTarget } from '../editor/pathLinks'
@@ -73,7 +73,7 @@ export function CardId({ id, onNotice }: { id: string; onNotice: (message: strin
  * bold, a long title wrapping. Read, no label, and nothing at all for a card with no title. Explore's card, the Inbox
  * and its Preview; a card in a page and an embed draw the same band without React.
  */
-export function CardBand({ children, waiting = false }: { children?: ReactNode; waiting?: boolean }) {
+export function CardBand({ children, waiting = false, next = false, onClick }: { children?: ReactNode; waiting?: boolean; next?: boolean; onClick?: () => void }) {
   // Title room (YAZ-5880). "Only when it shows" (YAZ-5864): the caller leaves the band out while the title waits.
   // "Always": the band is there on every card. A waiting title sits in it unseen and unread (`waiting`); when it shows,
   // it fades in (`card-band--fade`, card.css), so nothing moves. A card with no title shown has an empty band. The
@@ -86,7 +86,12 @@ export function CardBand({ children, waiting = false }: { children?: ReactNode; 
   }
   const empty = children === undefined || children === null || children === false
   return (
-    <div className={`card-band${waiting ? ' card-band--waiting' : fade.current ? ' card-band--fade' : ''}`} aria-hidden={waiting || empty ? 'true' : undefined}>
+    <div
+      className={`card-band${waiting ? ' card-band--waiting' : fade.current ? ' card-band--fade' : ''}`}
+      data-next={waiting && next ? '' : undefined}
+      aria-hidden={waiting || empty ? 'true' : undefined}
+      onClick={waiting && next ? onClick : undefined}
+    >
       {children}
     </div>
   )
@@ -142,6 +147,12 @@ interface CardBodyProps {
   fold?: boolean
   /** YAZ-5925: an outside change lit in the drawn card (a card page, `cardGlow.ts`); a new `key` draws it again. */
   glow?: CardBodyGlow
+  /** Right-click on a View-mode pill or Markdown link (D2). Absent → browser default. */
+  onPillContextMenu?: (hit: CardViewLinkHit, x: number, y: number) => void
+  /** Hover on a View-mode pill or Markdown link (D2). Null on pointer leave. */
+  onPillHover?: (hit: (CardViewLinkHit & { rect: { left: number; top: number; right: number; bottom: number } }) | null) => void
+  /** Double-click on a View-mode image (S4): opens the image lightbox. */
+  onOpenImage?: (gallery: { images: Array<{ src: string; alt: string }>; index: number }) => void
 }
 
 /** A drawn card lit by its host: `render` draws another text (the old one) with the same look. */
@@ -155,7 +166,30 @@ export interface CardBodyGlow {
  * render; an index change redraws only the pills (`refreshCardLook`). A pill and a Markdown link open as the
  * page's do (idea 6, `cardLinkWhere`).
  */
-export function CardBody({ text, path, vault, show, doors, fold = false, glow }: CardBodyProps) {
+/**
+ * Returns the on-screen rect of a link element. `.wikilink-group` uses `display: contents` so its own
+ * `getBoundingClientRect()` is 0×0 (which anchored hover previews at the window's top-left corner); measure the union
+ * of its rendered children when the element itself has no box.
+ */
+function rectOfLink(el: HTMLElement): { left: number; top: number; right: number; bottom: number } {
+  const own = el.getBoundingClientRect()
+  if (own.width > 0 || own.height > 0) return { left: own.left, top: own.top, right: own.right, bottom: own.bottom }
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  for (const child of el.children) {
+    const r = child.getBoundingClientRect()
+    if (r.width === 0 && r.height === 0) continue
+    if (r.left < left) left = r.left
+    if (r.top < top) top = r.top
+    if (r.right > right) right = r.right
+    if (r.bottom > bottom) bottom = r.bottom
+  }
+  return left <= right ? { left, top, right, bottom } : { left: own.left, top: own.top, right: own.right, bottom: own.bottom }
+}
+
+export function CardBody({ text, path, vault, show, doors, fold = false, glow, onPillContextMenu, onPillHover, onOpenImage }: CardBodyProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const icons = useContext(IconsContext)
   const { root, wikilinks, viewOnlyLinks } = vault
@@ -187,6 +221,13 @@ export function CardBody({ text, path, vault, show, doors, fold = false, glow }:
 
   const doorsRef = useRef(doors)
   doorsRef.current = doors
+  const onPillContextMenuRef = useRef(onPillContextMenu)
+  onPillContextMenuRef.current = onPillContextMenu
+  const onPillHoverRef = useRef(onPillHover)
+  onPillHoverRef.current = onPillHover
+  const onOpenImageRef = useRef(onOpenImage)
+  onOpenImageRef.current = onOpenImage
+  const hoveredEl = useRef<Element | null>(null)
   const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target instanceof Element ? event.target : null
     if (target === null || event.button !== 0) return
@@ -220,14 +261,58 @@ export function CardBody({ text, path, vault, show, doors, fold = false, glow }:
     event.stopPropagation()
     const href = link.getAttribute('href') ?? ''
     const inApp = /^[a-z][a-z0-9+.-]*:/i.test(href) ? null : hrefTarget(href, { root, pagePath: path, candidates: vault.wikilinkCandidates })
-    if (inApp !== null) openLayer(inApp)
-    else void api.shell.openLink({ href, sourcePath: path })
+    if (inApp !== null) {
+      // S3: honor modifier gestures (`⌘`-click, `⌘⇧`-click) on in-app Markdown links just like wikilinks.
+      const where = cardLinkWhere(event, storage.getSettings()?.hotkeys)
+      if (where === null) return
+      if (where === 'explore' || where === 'thisTab') openLayer(inApp)
+      else openTab(inApp, where)
+    } else void api.shell.openLink({ href, sourcePath: path })
   }
   // A Markdown link never navigates the window.
   const onClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.target instanceof Element && event.target.closest('a[href]') !== null) event.preventDefault()
   }
-  return <div ref={boxRef} className="card__body card-screen__body" onMouseDown={onMouseDown} onClick={onClick} />
+  const onContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const cb = onPillContextMenuRef.current
+    if (cb === undefined) return
+    const target = event.target instanceof Element ? event.target : null
+    if (target === null) return
+    const hit = cardViewLinkHit(target)
+    if (hit === null) return
+    event.preventDefault()
+    event.stopPropagation()
+    cb(hit, event.clientX, event.clientY)
+  }
+  const onDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const open = onOpenImageRef.current
+    if (open === undefined || boxRef.current === null) return
+    const img = event.target instanceof Element ? event.target.closest<HTMLImageElement>('.card__side img') : null
+    if (img === null || img.closest(CARD_OPENS) !== null) return
+    const imgs = [...boxRef.current.querySelectorAll<HTMLImageElement>('.card__side img')].filter((el) => el.closest(CARD_OPENS) === null)
+    const index = imgs.indexOf(img)
+    if (index < 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    open({ images: imgs.map((el) => ({ src: el.currentSrc || el.src, alt: el.alt })), index })
+  }
+  const onMouseOver = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const cb = onPillHoverRef.current
+    if (cb === undefined) return
+    const target = event.target instanceof Element ? event.target : null
+    const el = target?.closest<HTMLElement>(`${CARD_OPENS}, a[href]`) ?? null
+    if (el === hoveredEl.current) return
+    hoveredEl.current = el
+    if (el === null) return cb(null)
+    const hit = cardViewLinkHit(el)
+    cb(hit === null ? null : { ...hit, rect: rectOfLink(el) })
+  }
+  const onMouseLeave = () => {
+    if (hoveredEl.current === null) return
+    hoveredEl.current = null
+    onPillHoverRef.current?.(null)
+  }
+  return <div ref={boxRef} className="card__body card-screen__body" onMouseDown={onMouseDown} onClick={onClick} onContextMenu={onContextMenu} onDoubleClick={onDoubleClick} onMouseOver={onMouseOver} onMouseLeave={onMouseLeave} />
 }
 
 interface CardReviewsProps {

@@ -42,8 +42,8 @@
       "$comment": "Renderer entry JS static import closure bytes (measured 2.96 MB on yaz-6008-speed)."
     },
     "rendererEagerCssBytes": {
-      "max": 290000,
-      "$comment": "Renderer entry CSS static closure bytes (measured 0.28 MB on yaz-6008-speed)."
+      "max": 305000,
+      "$comment": "Renderer entry CSS static closure bytes (measured 300,285 B on feat/yaz-5993-11-20-pr; raised with Yasin's OK)."
     },
     "rendererTotalBytes": {
       "max": 31800000,

@@ -1,8 +1,33 @@
-/** A sidebar place for each page tab (YAZ-5701): the tab's place is saved, read, pruned to the strip and dropped. */
+/** A sidebar place for each page tab (YAZ-5701, YAZ-6064): the tab's place is saved, read, pruned to the strip and dropped. */
 import { afterEach, describe, expect, it } from 'vitest'
-import { clearPlaces, dropBlankPlace, foldersChangedHere, lastPlace, markFoldersChanged, prunePlaces, readPlace, savePlace, type TabPlace } from './tabPlace'
+import {
+  clearPlaces,
+  deletePlacesFilesOnly,
+  dropBlankPlace,
+  foldersChangedHere,
+  lastPlace,
+  markFoldersChanged,
+  prunePlaces,
+  prunePlacesFilesOnly,
+  readCollapsed,
+  readPlace,
+  renamePlacesFilesOnly,
+  saveCollapsed,
+  savePlace,
+  type TabPlace,
+} from './tabPlace'
 
-const place = (lens: TabPlace['lens'], scrollTop: number): TabPlace => ({ lens, expanded: [`/v/${lens}`], shut: { focus: new Set(['f']), favorites: new Set() }, scrollTop, selected: [] })
+const place = (lens: TabPlace['lens'], scrollTop: number, extra: Partial<TabPlace> = {}): TabPlace => ({
+  lens,
+  expanded: [`/v/${lens}`],
+  shut: { focus: new Set(['f']), favorites: new Set() },
+  scrollTop,
+  selected: [],
+  filesOnly: null,
+  focusOnly: null,
+  closedVaults: [],
+  ...extra,
+})
 
 afterEach(clearPlaces)
 
@@ -36,5 +61,79 @@ describe('tabPlace', () => {
     savePlace(null, place('files', 8))
     clearPlaces()
     expect(readPlace(null)).toBeUndefined()
+  })
+
+  it('YAZ-6064: preserves filesOnly, focusOnly, and closedVaults on each tab place', () => {
+    const p = place('files', 16, { filesOnly: '/v/Projects', focusOnly: 'stack-1', closedVaults: ['/w'] })
+    savePlace('a', p)
+    expect(readPlace('a')).toEqual(p)
+  })
+
+  it('YAZ-6064 D2: saveCollapsed and readCollapsed track per-tab and blank state; prunePlaces, dropBlankPlace, and clearPlaces clean them up', () => {
+    expect([readCollapsed('a'), readCollapsed(null)]).toEqual([undefined, undefined])
+    saveCollapsed('a', true)
+    saveCollapsed('b', false)
+    saveCollapsed(null, true)
+    expect([readCollapsed('a'), readCollapsed('b'), readCollapsed(null)]).toEqual([true, false, true])
+
+    // dropBlankPlace clears both blank place and blank collapsed state without touching named tabs.
+    savePlace(null, place('files', 4))
+    dropBlankPlace()
+    expect([readPlace(null), readCollapsed(null), readCollapsed('a')]).toEqual([undefined, undefined, true])
+
+    // prunePlaces drops closed tabs' collapsed state even when `places` has no entries for them.
+    prunePlaces(['b'])
+    expect([readCollapsed('a'), readCollapsed('b')]).toEqual([undefined, false])
+
+    // clearPlaces drops all collapsed state.
+    saveCollapsed(null, true)
+    clearPlaces()
+    expect([readCollapsed('b'), readCollapsed(null)]).toEqual([undefined, undefined])
+  })
+
+  it('YAZ-6064 D1: renamePlacesFilesOnly updates matching and nested filesOnly in saved tabs and blank', () => {
+    savePlace('exact', place('files', 0, { filesOnly: '/v/Projects' }))
+    savePlace('nested', place('files', 0, { filesOnly: '/v/Projects/Alpha' }))
+    savePlace('other', place('files', 0, { filesOnly: '/v/Projects2' }))
+    savePlace('none', place('files', 0, { filesOnly: null }))
+    savePlace(null, place('files', 0, { filesOnly: '/v/Projects/Beta' }))
+
+    renamePlacesFilesOnly('/v/Projects', '/v/Work')
+
+    expect(readPlace('exact')?.filesOnly).toBe('/v/Work')
+    expect(readPlace('nested')?.filesOnly).toBe('/v/Work/Alpha')
+    expect(readPlace('other')?.filesOnly).toBe('/v/Projects2')
+    expect(readPlace('none')?.filesOnly).toBeNull()
+    expect(readPlace(null)?.filesOnly).toBe('/v/Work/Beta')
+  })
+
+  it('YAZ-6064 D1: deletePlacesFilesOnly clears matching and nested filesOnly in saved tabs and blank', () => {
+    savePlace('exact', place('files', 0, { filesOnly: '/v/Projects' }))
+    savePlace('nested', place('files', 0, { filesOnly: '/v/Projects/Alpha' }))
+    savePlace('other', place('files', 0, { filesOnly: '/v/Projects2' }))
+    savePlace('none', place('files', 0, { filesOnly: null }))
+    savePlace(null, place('files', 0, { filesOnly: '/v/Projects/Beta' }))
+
+    deletePlacesFilesOnly('/v/Projects')
+
+    expect(readPlace('exact')?.filesOnly).toBeNull()
+    expect(readPlace('nested')?.filesOnly).toBeNull()
+    expect(readPlace('other')?.filesOnly).toBe('/v/Projects2')
+    expect(readPlace('none')?.filesOnly).toBeNull()
+    expect(readPlace(null)?.filesOnly).toBeNull()
+  })
+
+  it('YAZ-6064 D1: prunePlacesFilesOnly clears filesOnly outside current roots in saved tabs and blank', () => {
+    savePlace('kept', place('files', 0, { filesOnly: '/v/Projects' }))
+    savePlace('gone', place('files', 0, { filesOnly: '/w/Notes' }))
+    savePlace('none', place('files', 0, { filesOnly: null }))
+    savePlace(null, place('files', 0, { filesOnly: '/w/Inbox' }))
+
+    prunePlacesFilesOnly(['/v'])
+
+    expect(readPlace('kept')?.filesOnly).toBe('/v/Projects')
+    expect(readPlace('gone')?.filesOnly).toBeNull()
+    expect(readPlace('none')?.filesOnly).toBeNull()
+    expect(readPlace(null)?.filesOnly).toBeNull()
   })
 })

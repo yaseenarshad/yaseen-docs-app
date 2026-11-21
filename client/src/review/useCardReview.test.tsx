@@ -155,7 +155,8 @@ describe('useCardReview', () => {
     await mount()
     expect(review.dueCount).toBe(2)
     await act(async () => review.start())
-    expect(review.session).toMatchObject({ label: 'Inbox', progress: { total: 2 } })
+    // YAZ-6018: WIKI-2 was learned + reviewed earlier today (+2 done), plus 2 waiting = 2 / 4.
+    expect(review.session).toMatchObject({ label: 'Inbox', progress: { done: 2, total: 4 } })
     expect(review.session?.card).toMatchObject({ path: `${ROOT}/Geo.md`, id: 'WIKI-1', isNew: false, page: { text: 'Capital of {{France}}?' } })
     // The guided tour (YAZ-5123) hears the answer once it is written, once, with the card's file.
     const heard: Array<[string, string | undefined]> = []
@@ -269,31 +270,32 @@ describe('useCardReview', () => {
     await act(async () => review.start({ folder: 'Bio' }))
     expect(review.session?.progress.total).toBe(1)
     await act(async () => review.start({ page: `${ROOT}/Geo.md` }))
-    expect(review.session).toMatchObject({ progress: { total: 1 }, card: { id: 'WIKI-1' } })
+    // YAZ-6018: Geo.md holds WIKI-2 (learned + reviewed earlier today = 2 done) and WIKI-1 (1 waiting) → 2 / 3.
+    expect(review.session).toMatchObject({ progress: { done: 2, total: 3 }, card: { id: 'WIKI-1' } })
   })
 
   it('YAZ-5017: the filter — counts per filter (Due today = reviewed and due, New cards = never reviewed), the queue and "n of m" follow it, ← → stay inside it; the path says where the cards come from', async () => {
     page('Bio/More.md', ['A {{second}} new card', 'WIKI-5'], ['Old {{one}}', 'WIKI-6, 2026-10-01T09:00:00.000Z good'])
     await mount()
     await act(async () => review.start())
-    // Due: WIKI-6 (most overdue first), WIKI-1; new: WIKI-3, WIKI-5.
-    expect(review.session).toMatchObject({ filter: 'all', counts: { all: 4, due: 2, new: 2 }, progress: { total: 4 }, from: ['vault'], card: { id: 'WIKI-6' } })
+    // Due: WIKI-6 (most overdue first), WIKI-1; new: WIKI-3, WIKI-5; WIKI-2 done earlier today (1 new + 1 due = 2 all).
+    expect(review.session).toMatchObject({ filter: 'all', counts: { all: 4, due: 2, new: 2 }, progress: { done: 2, total: 6 }, from: ['vault'], card: { id: 'WIKI-6' } })
     await act(async () => review.setFilter('new'))
-    expect(review.session).toMatchObject({ filter: 'new', progress: { total: 2 }, card: { id: 'WIKI-3', isNew: true }, canBack: true, canNext: true })
+    expect(review.session).toMatchObject({ filter: 'new', progress: { done: 1, total: 3 }, card: { id: 'WIKI-3', isNew: true }, canBack: false, canNext: true })
     act(() => review.move(1))
-    expect(review.session).toMatchObject({ progress: { total: 2 }, card: { id: 'WIKI-5' }, canNext: true })
+    expect(review.session).toMatchObject({ progress: { done: 1, total: 3 }, card: { id: 'WIKI-5' }, canBack: true, canNext: false })
     await act(async () => review.setFilter('due'))
-    expect(review.session).toMatchObject({ progress: { total: 2 }, card: { id: 'WIKI-6', isNew: false } })
+    expect(review.session).toMatchObject({ progress: { done: 1, total: 3 }, card: { id: 'WIKI-6', isNew: false } })
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     await step(() => review.answer('good'))
-    // One due card answered: "2 of 2", the counts drop by one, the new cards stay.
-    await vi.waitFor(() => expect(review.session).toMatchObject({ progress: { total: 2 }, counts: { all: 3, due: 1, new: 2 }, card: { id: 'WIKI-1' } }))
+    // One due card answered: done 2 / 3, the counts drop by one, the new cards stay.
+    await vi.waitFor(() => expect(review.session).toMatchObject({ progress: { done: 2, total: 3 }, counts: { all: 3, due: 1, new: 2 }, card: { id: 'WIKI-1' } }))
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     await step(() => review.answer('good'))
     // No due card left: no card under the filter, the new cards still counted.
     expect(review.session).toMatchObject({ card: null, counts: { all: 2, due: 0, new: 2 } })
     await act(async () => review.setFilter('all'))
-    expect(review.session).toMatchObject({ card: { id: 'WIKI-3' }, progress: { total: 4 } })
+    expect(review.session).toMatchObject({ card: { id: 'WIKI-3' }, progress: { done: 4, total: 6 } })
     // The scope's path: the folder's parts, the page's name.
     await act(async () => review.start({ folder: 'Bio' }))
     expect(review.session).toMatchObject({ filter: 'all', from: ['Bio'] })
@@ -347,9 +349,9 @@ describe('useCardReview', () => {
     // Rule 7 (Review rules v1): each card in one list only; before, the Up next cards counted under their kind too (due 2, new 2).
     expect(review.session).toMatchObject({ filter: 'all', counts: { all: 4, next: 2, due: 1, new: 1 } })
     await act(async () => review.setFilter('next'))
-    expect(review.session).toMatchObject({ filter: 'next', progress: { total: 2 }, card: { id: 'WIKI-2', next: true, isNew: false }, canNext: true })
+    expect(review.session).toMatchObject({ filter: 'next', progress: { total: 2 }, card: { id: 'WIKI-2', next: true, isNew: false }, canBack: false, canNext: true })
     act(() => review.move(1))
-    expect(review.session).toMatchObject({ progress: { total: 2 }, card: { id: 'WIKI-5', next: true, isNew: true }, canNext: true })
+    expect(review.session).toMatchObject({ progress: { total: 2 }, card: { id: 'WIKI-5', next: true, isNew: true }, canBack: true, canNext: false })
     act(() => review.move(-1))
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     await step(() => review.answer('good'))
@@ -410,7 +412,7 @@ describe('useCardReview', () => {
     act(() => review.setFilter('next'))
     expect(review.session).toMatchObject({ filter: 'next', progress: { total: 2 }, card: { id: 'WIKI-5' } })
     act(() => review.move(1))
-    expect(review.session).toMatchObject({ progress: { total: 2 }, card: { id: 'WIKI-6' }, canNext: true })
+    expect(review.session).toMatchObject({ progress: { total: 2 }, card: { id: 'WIKI-6' }, canBack: true, canNext: false })
     // The third keeps its mark in the file, and waits for another day (YAZ-5042 Decision 1).
     expect(vault.get(`${ROOT}/Up.md`)).toContain('WIKI-7, next')
     // Empty (no limit): all three.
@@ -708,45 +710,48 @@ describe('useCardReview', () => {
     })
   })
 
-  it('YAZ-5020: the progress bar`s answers — each answer in order (a Forgot is `again`), ⌘Z takes the last back; a new session starts empty', async () => {
+  it('YAZ-5020: the progress bar`s answers — each answer in order (a Forgot is `again`), ⌘Z takes the last back; a new session starts `answered` empty while day progress persists (YAZ-6018)', async () => {
     await mount()
     await act(async () => review.start())
-    expect(review.session).toMatchObject({ answered: [], progress: { done: 0, total: 2 } })
+    // YAZ-6018: WIKI-2 already did 2 steps earlier today (new + due) → starts at 2 / 4.
+    expect(review.session).toMatchObject({ answered: [], progress: { done: 2, total: 4 } })
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     // Same-day steps (YAZ-5020): a Forgot puts the card back. YAZ-5675 (Mochi): done +1 and the total +1.
     await step(() => review.answer('again'))
-    expect(review.session).toMatchObject({ answered: ['again'], progress: { done: 1, total: 3, waiting: 1 } })
+    expect(review.session).toMatchObject({ answered: ['again'], progress: { done: 3, total: 5, waiting: 1 } })
     // YAZ-5707: All cards is one run: the new card next, the missed card at the end.
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-3', page: { id: 'WIKI-3' } }))
     await step(() => review.answer('good'))
     expect(review.session?.answered).toEqual(['again', 'good'])
     await step(() => review.undo())
-    expect(review.session).toMatchObject({ answered: ['again'], progress: { done: 1, total: 3, waiting: 1 } })
+    expect(review.session).toMatchObject({ answered: ['again'], progress: { done: 3, total: 5, waiting: 1 } })
     await act(async () => review.start())
     expect(review.session?.answered).toEqual([])
+    expect(review.session?.progress).toEqual({ done: 3, total: 5, waiting: 1 })
   })
 
   it('YAZ-5432: the bar counts only the tab on show — Due today done fills it; New cards and All cards each show their own share; the ring reads the same answers', async () => {
     await mount()
     await act(async () => review.start(undefined, { filter: 'due' }))
-    expect(review.session).toMatchObject({ filter: 'due', progress: { done: 0, total: 1 } })
+    // YAZ-6018: WIKI-2 did 1 due review + 1 new learn earlier today.
+    expect(review.session).toMatchObject({ filter: 'due', progress: { done: 1, total: 2 } })
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     await step(() => review.answer('again'))
     // The first pass done (YAZ-5675, Mochi): done +1, and 1 more for the missed card waiting (red).
-    expect(review.session).toMatchObject({ end: { kind: 'missed', count: 1, percent: 0 }, progress: { done: 1, total: 2, waiting: 1 } })
+    expect(review.session).toMatchObject({ end: { kind: 'missed', count: 1, percent: 0 }, progress: { done: 2, total: 3, waiting: 1 } })
     await act(async () => review.goOn())
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { id: 'WIKI-1' } }))
     await step(() => review.answer('good'))
     // Only misses come back (YAZ-5702, the YAZ-5655 amendment): the ✓ in the missed pass is done for today, also with
     // FSRS still keeping the card in a step. Due today is done: the bar is full, though a new card waits.
-    expect(review.session).toMatchObject({ end: { kind: 'done', count: 1, percent: 0, fresh: 1 }, progress: { done: 1, total: 1, waiting: 0 } })
+    expect(review.session).toMatchObject({ end: { kind: 'done', count: 1, percent: 0, fresh: 1 }, progress: { done: 2, total: 2, waiting: 0 } })
     // Another tab: its own numbers.
     act(() => review.setFilter('new'))
-    expect(review.session?.progress).toEqual({ done: 0, total: 1, waiting: 0 })
-    act(() => review.setFilter('all'))
     expect(review.session?.progress).toEqual({ done: 1, total: 2, waiting: 0 })
+    act(() => review.setFilter('all'))
+    expect(review.session?.progress).toEqual({ done: 3, total: 4, waiting: 0 })
     act(() => review.setFilter('due'))
-    expect(review.session?.progress).toEqual({ done: 1, total: 1, waiting: 0 })
+    expect(review.session?.progress).toEqual({ done: 2, total: 2, waiting: 0 })
   })
 
   it('a card whose page is gone when its turn comes is passed over; review off has no count and no session', async () => {
@@ -786,21 +791,21 @@ describe('useCardReview', () => {
     }
   })
 
-  it('YAZ-5004: → and ← move through the queue with no answer; the card left stays in it, "1 of 2" follows; an answer after → leaves the card passed over in the queue', async () => {
+  it('YAZ-5004 + YAZ-6019: → and ← move through the queue with no answer and stop at the ends by default; the card left stays in it; an answer after → leaves the card passed over in the queue', async () => {
     await mount()
     await act(async () => review.start())
-    expect(review.session).toMatchObject({ progress: { total: 2 }, canBack: true, canNext: true })
+    // YAZ-6018: WIKI-2 did 2 steps earlier today + 2 waiting = 2 / 4. YAZ-6019: at first card, ← disabled.
+    expect(review.session).toMatchObject({ progress: { done: 2, total: 4 }, canBack: false, canNext: true })
     const before = vault.get(`${ROOT}/Geo.md`)
     act(() => review.move(1))
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-3', page: { text: 'What is a {{cell}}?' } }))
-    expect(review.session).toMatchObject({ canBack: true, canNext: true })
-    act(() => review.move(1)) // the end: back to the first (YAZ-5715)
-    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { text: 'Capital of {{France}}?' } }))
+    expect(review.session).toMatchObject({ canBack: true, canNext: false })
+    // Past the end: stops at WIKI-3 (does not wrap).
     act(() => review.move(1))
-    await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-3'))
+    expect(review.session?.card?.id).toBe('WIKI-3')
     act(() => review.move(-1))
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { text: 'Capital of {{France}}?' } }))
-    expect(review.session).toMatchObject({ canBack: true, canNext: true })
+    expect(review.session).toMatchObject({ canBack: false, canNext: true })
     expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
     act(() => review.move(1))
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
@@ -808,26 +813,26 @@ describe('useCardReview', () => {
     // WIKI-1, passed over, is still in the queue: it shows next.
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { text: 'Capital of {{France}}?' } }))
     // WIKI-3 was new: its first Remembered puts it back at the end (YAZ-5020); under All cards Mochi adds 1 to the total (YAZ-5675).
-    expect(review.session).toMatchObject({ progress: { done: 1, total: 3 } })
+    expect(review.session).toMatchObject({ progress: { done: 3, total: 5 } })
   })
 
-  it('YAZ-5715: ← → loop around, as Mochi — → past the last card shows the first, ← before the first the last, in every filter; with one card left they do nothing; done / total stays; ⌘Z takes back the last answer, not a move', async () => {
+  it('YAZ-5715 + YAZ-6019: with loopArrows on, ← → loop around in every filter; with one card left they do nothing; done / total stays; ⌘Z takes back the last answer, not a move', async () => {
     page('Bio/More.md', ['A {{second}} new card', 'WIKI-5'])
-    await mount()
+    await mount({ ...S, loopArrows: true })
     await act(async () => review.start())
     const shownAfter = async (delta: -1 | 1, id: string) => {
       act(() => review.move(delta))
       await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id, page: { id } }))
     }
-    // All cards: WIKI-1 (due), WIKI-3, WIKI-5 (new). Both arrows work at both ends.
-    expect(review.session).toMatchObject({ filter: 'all', card: { id: 'WIKI-1' }, progress: { done: 0, total: 3 }, canBack: true, canNext: true })
+    // All cards: WIKI-1 (due), WIKI-3, WIKI-5 (new) + WIKI-2 (2 done earlier today). Both arrows work at both ends.
+    expect(review.session).toMatchObject({ filter: 'all', card: { id: 'WIKI-1' }, progress: { done: 2, total: 5 }, canBack: true, canNext: true })
     await shownAfter(-1, 'WIKI-5')
     await shownAfter(1, 'WIKI-1')
     await shownAfter(1, 'WIKI-3')
     await shownAfter(1, 'WIKI-5')
     expect(review.session).toMatchObject({ canBack: true, canNext: true })
     await shownAfter(1, 'WIKI-1')
-    expect(review.session).toMatchObject({ progress: { done: 0, total: 3 }, canUndo: false, answered: [] })
+    expect(review.session).toMatchObject({ progress: { done: 2, total: 5 }, canUndo: false, answered: [] })
     // New cards: WIKI-3, WIKI-5; the loop stays inside the filter.
     act(() => review.setFilter('new'))
     expect(review.session).toMatchObject({ card: { id: 'WIKI-3' }, canBack: true, canNext: true })
@@ -846,12 +851,12 @@ describe('useCardReview', () => {
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     await step(() => review.answer('good'))
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-3', page: { id: 'WIKI-3' } }))
-    expect(review.session).toMatchObject({ progress: { done: 1, total: 3 } })
+    expect(review.session).toMatchObject({ progress: { done: 3, total: 5 } })
     await shownAfter(-1, 'WIKI-5')
     await shownAfter(1, 'WIKI-3')
-    expect(review.session).toMatchObject({ progress: { done: 1, total: 3 } })
+    expect(review.session).toMatchObject({ progress: { done: 3, total: 5 } })
     await step(() => review.undo())
-    await vi.waitFor(() => expect(review.session).toMatchObject({ card: { id: 'WIKI-1' }, progress: { done: 0, total: 3 }, canUndo: false }))
+    await vi.waitFor(() => expect(review.session).toMatchObject({ card: { id: 'WIKI-1' }, progress: { done: 2, total: 5 }, canUndo: false }))
   })
 
   it('YAZ-5004: turnOff (the Inbox ⋯) writes `off` on the card showing and takes it out of the queue', async () => {
@@ -966,7 +971,7 @@ describe('useCardReview: same-day returns (YAZ-5702: a ✕, a new card`s first �
     expect(vault.get(`${ROOT}/K.md`)).toBe(before)
     await shown('WIKI-5')
     expect(place()).toEqual(['WIKI-5', 0, 2])
-    expect(review.session).toMatchObject({ canBack: true, canNext: true, canUndo: false })
+    expect(review.session).toMatchObject({ canBack: false, canNext: true, canUndo: false })
     // After →: the answered card goes back to the place it was answered at, with the card passed over before it.
     act(() => review.move(1))
     await answer('WIKI-6', 'good')
@@ -976,7 +981,7 @@ describe('useCardReview: same-day returns (YAZ-5702: a ✕, a new card`s first �
     expect(vault.get(`${ROOT}/K.md`)).toBe(before)
     await shown('WIKI-6')
     expect(place()).toEqual(['WIKI-6', 0, 2])
-    expect(review.session).toMatchObject({ canBack: true, canNext: true })
+    expect(review.session).toMatchObject({ canBack: true, canNext: false })
   })
 })
 
@@ -1142,7 +1147,8 @@ describe('YAZ-5322: the folder pick for new cards', () => {
     expect(review.newCardFolders()).toEqual({ all: 4, folders: [{ folder: 'Bio', label: 'Bio', count: 1 }, { folder: 'Spanish', label: 'Spanish', count: 2 }, { folder: 'Spanish/Deep', label: 'Deep', count: 1 }] })
     await act(async () => review.setNewFrom(['Spanish']))
     expect(review.settings.newFrom).toEqual(['Spanish'])
-    expect(review.session).toMatchObject({ counts: { all: 3, due: 1, new: 2 }, progress: { total: 3 }, newFrom: [{ folder: 'Spanish', label: 'Spanish' }], newFallback: false })
+    // YAZ-6018: WIKI-2 did 2 steps earlier today + 3 waiting = 5 total.
+    expect(review.session).toMatchObject({ counts: { all: 3, due: 1, new: 2 }, progress: { done: 2, total: 5 }, newFrom: [{ folder: 'Spanish', label: 'Spanish' }], newFallback: false })
     expect(review.session?.card?.id).toBe('WIKI-1')
     // A folder with no new card left: All folders, said out loud; the pick stays (0 in the picker).
     await act(async () => review.setNewFrom(['Empty']))
@@ -1331,5 +1337,65 @@ describe('YAZ-5675 (Mochi`s numbers): "done / total", the bar and every list`s c
       await answer('WIKI-21', 'again')
       expect(review.session).toMatchObject({ counts: { new: 2, all: 2 }, progress: { total: 2, done: 0, waiting: 0 }, misses: 0 })
     }
+  })
+
+  it('YAZ-6018: progress persists across close/reopen on Due today, New cards, Up next, All cards, and folder/page scopes, then resets at local midnight', async () => {
+    vault = new Map()
+    page(
+      'Spanish/Verbs.md',
+      ['Due 1 {{a}}', 'WIKI-101, 2026-10-01T09:00:00.000Z good'],
+      ['Due 2 {{b}}', 'WIKI-102, 2026-10-02T09:00:00.000Z good'],
+      ['Due 3 {{c}}', 'WIKI-103, 2026-10-03T09:00:00.000Z good'],
+      ['New 1 {{d}}', 'WIKI-104'],
+      ['New 2 {{e}}', 'WIKI-105'],
+    )
+    page('Other.md', ['Other due {{f}}', 'WIKI-106, 2026-10-04T09:00:00.000Z good'])
+    await mount()
+    await act(async () => review.start(undefined, { filter: 'due' }))
+    expect(review.session?.progress).toEqual({ done: 0, total: 4, waiting: 0 })
+    await answer('WIKI-101', 'good')
+    await answer('WIKI-102', 'again')
+    expect(review.session?.progress).toEqual({ done: 2, total: 5, waiting: 1 })
+    expect(review.session?.misses).toBe(1)
+    // Close and reopen: Due today keeps 2 / 5 with ✕ 1!
+    act(() => review.close())
+    await act(async () => review.start(undefined, { filter: 'due' }))
+    expect(review.session?.progress).toEqual({ done: 2, total: 5, waiting: 1 })
+    expect(review.session?.misses).toBe(1)
+    // Learn a new card, close and reopen under New cards: keeps 1 / 2!
+    await act(async () => review.setFilter('new'))
+    await answer('WIKI-104', 'good')
+    expect(review.session?.progress).toEqual({ done: 1, total: 2, waiting: 0 })
+    act(() => review.close())
+    await act(async () => review.start(undefined, { filter: 'new' }))
+    expect(review.session?.progress).toEqual({ done: 1, total: 2, waiting: 0 })
+    // Scope isolation: "Review this page" on Other.md has 0 done today (not Spanish's 3).
+    await act(async () => review.start({ page: `${ROOT}/Other.md` }))
+    expect(review.session?.progress).toEqual({ done: 0, total: 1, waiting: 0 })
+    // "Review this folder" on Spanish keeps Spanish's 3 done steps (WIKI-101, WIKI-102 miss, WIKI-104 learn) + 4 waiting = 3 / 7.
+    await act(async () => review.start({ folder: 'Spanish' }))
+    expect(review.session?.progress).toEqual({ done: 3, total: 7, waiting: 1 })
+    // Next local day: resets to 0 on reopen.
+    vi.setSystemTime(new Date(2026, 10, 13, 9, 0).getTime())
+    await act(async () => review.start(undefined, { filter: 'due' }))
+    expect(review.session?.progress.done).toBe(0)
+  })
+
+  it('YAZ-6019: ← / → stop at the first and last card by default and loop only when loopArrows is enabled', async () => {
+    vault = new Map()
+    page('P.md', ['A {{1}}', 'WIKI-201, 2026-10-01T09:00:00.000Z good'], ['B {{2}}', 'WIKI-202, 2026-10-02T09:00:00.000Z good'], ['C {{3}}', 'WIKI-203, 2026-10-03T09:00:00.000Z good'])
+    await mount({ ...S, dueTodayOrder: 'in-order', loopArrows: false })
+    await act(async () => review.start())
+    expect(review.session).toMatchObject({ card: { id: 'WIKI-201' }, canBack: false, canNext: true })
+    act(() => review.move(-1))
+    expect(review.session?.card?.id).toBe('WIKI-201')
+    act(() => review.move(1))
+    await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-202'))
+    expect(review.session).toMatchObject({ canBack: true, canNext: true })
+    act(() => review.move(1))
+    await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-203'))
+    expect(review.session).toMatchObject({ canBack: true, canNext: false })
+    act(() => review.move(1))
+    expect(review.session?.card?.id).toBe('WIKI-203')
   })
 })

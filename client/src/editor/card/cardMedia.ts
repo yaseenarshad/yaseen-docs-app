@@ -30,6 +30,24 @@ export const CARD_OPENS = `[data-card-link], [${CARD_BOARD_ATTR}]`
 /** A press here is the media's own: it never selects the card or steps the Inbox. */
 export const CARD_MEDIA = '.card__audio'
 
+/** A link right-clicked or hovered inside a View-mode card body: a wikilink/board pill or a Markdown anchor. */
+export type CardViewLinkHit = { kind: 'wikilink'; inner: string } | { kind: 'href'; href: string; text: string }
+
+/** Resolves a View-mode card link under `target`, or null when `target` is outside any pill or link. */
+export function cardViewLinkHit(target: Element): CardViewLinkHit | null {
+  const pill = target.closest<HTMLElement>(CARD_OPENS)
+  if (pill !== null) {
+    const inner = pill.getAttribute('data-card-link') ?? pill.getAttribute(CARD_BOARD_ATTR) ?? ''
+    return inner === '' ? null : { kind: 'wikilink', inner }
+  }
+  const link = target.closest<HTMLAnchorElement>('a[href]')
+  if (link !== null) {
+    const href = link.getAttribute('href') ?? ''
+    return href === '' || href.startsWith('#') ? null : { kind: 'href', href, text: link.textContent ?? '' }
+  }
+  return null
+}
+
 const AUDIO: readonly string[] = AUDIO_EXTENSIONS
 /** The file part of a link or a source: before `|`, `#` and `?`. */
 const targetOf = (ref: string): string => ref.split(/[|#?]/)[0].trim()

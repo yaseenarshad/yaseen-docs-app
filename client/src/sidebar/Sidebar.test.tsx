@@ -6719,7 +6719,7 @@ describe('focus tab (YAZ-2619)', () => {
     const body = (el: HTMLElement) => el.querySelector<HTMLElement>('.sidebar__body')!
     const stackOpen = (el: HTMLElement) => el.querySelector(`[data-focus-folder="${stack.id}"]`)?.getAttribute('aria-expanded')
 
-    it('"A place for each tab": a switch puts back each tab\'s sidebar tab, open folders, shut stack folders and scroll; a tab with no place keeps what is on screen; the open folders never go to the store, until "One place for the window" writes the ones on screen', async () => {
+    it('"A place for each tab": a switch puts back each tab\'s sidebar tab, open folders, shut stack folders and scroll; an unvisited page tab starts clean on Files (YAZ-6064 D3); the open folders never go to the store, until "One place for the window" writes the ones on screen', async () => {
       const setExpanded = vi.spyOn(storage, 'setExpanded')
       const { el, v, props, rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz5701-A', settings: PER_TAB }, { focus: ['/Projects'] }, withStack)
       const at = (activeTab: string, lens?: SidebarTab) => rerender({ activeTab, settings: PER_TAB, ...(lens !== undefined && { lens }) })
@@ -6727,15 +6727,11 @@ describe('focus tab (YAZ-2619)', () => {
       await act(async () => rowByPath(el, `${v}/Projects`)?.click())
       act(() => el.querySelector<HTMLButtonElement>(`[data-focus-folder="${stack.id}"]`)?.click())
       body(el).scrollTop = 40
-      // Tab B has no place yet: the screen stays as it is.
+      // Tab B has no place yet: starts clean on Files, folders closed, stack open, scroll 0 (YAZ-6064 D3).
       await at('yaz5701-B')
-      expect(props.onLensChange).not.toHaveBeenCalled()
-      expect([isOpen(el, `${v}/Projects`), stackOpen(el), body(el).scrollTop]).toEqual(['true', 'false', 40])
-      // On B: Projects closed, the stack folder open, then Files at the top.
-      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
-      act(() => el.querySelector<HTMLButtonElement>(`[data-focus-folder="${stack.id}"]`)?.click())
+      expect(props.onLensChange).toHaveBeenLastCalledWith('files')
       await at('yaz5701-B', 'files')
-      body(el).scrollTop = 0
+      expect(body(el).scrollTop).toBe(0)
       // Back to A: Focus, Projects open, the stack folder shut, the scroll at 40.
       await at('yaz5701-A')
       expect(props.onLensChange).toHaveBeenLastCalledWith('focus')
@@ -6894,6 +6890,174 @@ describe('focus tab (YAZ-2619)', () => {
       await afterQuiet()
       await rerender({ activeTab: 'yaz5769-A', settings: PER_TAB, lens: 'files' })
       expect(picked()).toEqual([`${v}/Projects`])
+    })
+
+    it('YAZ-6064 D1: per-tab filesOnly and focusOnly clear on an unvisited tab and restore when switching back', async () => {
+      const onFilesOnly = vi.fn()
+      const onFocusOnly = vi.fn()
+      const { v, rerender } = await mountVault(
+        { lens: 'files', activeTab: 'yaz6064-d1-A', settings: PER_TAB, filesOnly: null, focusOnly: null, onFilesOnly, onFocusOnly },
+        { focus: ['/Projects'] },
+        withStack,
+      )
+      // Tab A sets both filesOnly and focusOnly.
+      await rerender({ activeTab: 'yaz6064-d1-A', settings: PER_TAB, lens: 'files', filesOnly: `${v}/Projects`, focusOnly: stack.id })
+      // Unvisited Tab B clears both.
+      await rerender({ activeTab: 'yaz6064-d1-B', settings: PER_TAB, lens: 'files', filesOnly: `${v}/Projects`, focusOnly: stack.id })
+      expect(onFilesOnly).toHaveBeenLastCalledWith(null)
+      expect(onFocusOnly).toHaveBeenLastCalledWith(null)
+      await rerender({ activeTab: 'yaz6064-d1-B', settings: PER_TAB, lens: 'files', filesOnly: null, focusOnly: null })
+      onFilesOnly.mockClear()
+      onFocusOnly.mockClear()
+      // Switching back to Tab A restores both.
+      await rerender({ activeTab: 'yaz6064-d1-A', settings: PER_TAB, lens: 'files', filesOnly: null, focusOnly: null })
+      expect(onFilesOnly).toHaveBeenLastCalledWith(`${v}/Projects`)
+      expect(onFocusOnly).toHaveBeenLastCalledWith(stack.id)
+    })
+
+    it('YAZ-6064 D3: switching from a page tab to an unvisited page tab starts clean on Files with only its own file\'s ancestor folders open and scroll 0', async () => {
+      const onFilesOnly = vi.fn()
+      const onRestoreLens = vi.fn()
+      const { el, v, rerender } = await mountVault(
+        { lens: 'focus', activeTab: 'yaz6064-d3-A', settings: PER_TAB, onFilesOnly, onRestoreLens },
+        { focus: ['/Projects'] },
+      )
+      await rerender({ activeTab: 'yaz6064-d3-A', activeFile: `${v}/Projects/Alpha/a.md`, settings: PER_TAB, lens: 'focus', filesOnly: `${v}/Projects` })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      body(el).scrollTop = 48
+      // Switch to unvisited Tab B whose active file lives in Pages/.
+      await rerender({ activeTab: 'yaz6064-d3-B', activeFile: `${v}/Pages/n.md`, settings: PER_TAB, lens: 'focus', filesOnly: `${v}/Projects` })
+      expect(onRestoreLens).toHaveBeenLastCalledWith('files')
+      expect(onFilesOnly).toHaveBeenLastCalledWith(null)
+      await rerender({ activeTab: 'yaz6064-d3-B', activeFile: `${v}/Pages/n.md`, settings: PER_TAB, lens: 'files', filesOnly: null })
+      expect(isOpen(el, `${v}/Pages`)).toBe('true')
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      expect(body(el).scrollTop).toBe(0)
+    })
+
+    it('YAZ-6064 D4: restoring a saved tab on Files skips automatic sidebarRevealActive so saved folders and scroll are preserved, while navigating to a new file still reveals', async () => {
+      const REVEAL_PER_TAB: SettingsState = { ...PER_TAB, sidebarRevealActive: true }
+      const { el, v, rerender } = await mountVault({
+        lens: 'files',
+        activeTab: 'yaz6064-d4-A',
+        settings: REVEAL_PER_TAB,
+      })
+      await rerender({ activeTab: 'yaz6064-d4-A', activeFile: `${v}/Projects/Alpha/a.md`, settings: REVEAL_PER_TAB, lens: 'files' })
+      // On Tab A: collapse Projects, open Pages, and scroll down.
+      if (isOpen(el, `${v}/Projects`) === 'true') await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      await act(async () => rowByPath(el, `${v}/Pages`)?.click())
+      body(el).scrollTop = 36
+      expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Pages`), body(el).scrollTop]).toEqual(['false', 'true', 36])
+      // Switch to Tab B on top.md.
+      await rerender({ activeTab: 'yaz6064-d4-B', activeFile: `${v}/top.md`, settings: REVEAL_PER_TAB, lens: 'files' })
+      // Switch back to Tab A: saved place restores with Projects still closed and scroll 36 (no quiet reveal).
+      await rerender({ activeTab: 'yaz6064-d4-A', activeFile: `${v}/Projects/Alpha/a.md`, settings: REVEAL_PER_TAB, lens: 'files' })
+      expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Pages`), body(el).scrollTop]).toEqual(['false', 'true', 36])
+      // Navigating to a different file inside Tab A still triggers sidebarRevealActive.
+      await rerender({ activeTab: 'yaz6064-d4-A', activeFile: `${v}/Projects/p.md`, settings: REVEAL_PER_TAB, lens: 'files' })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+    })
+
+    it('YAZ-6104: mounting Sidebar on an unvisited tab or New tab after collapsing on Tab A starts clean without leaking Tab A state', async () => {
+      const onFilesOnly = vi.fn()
+      const onFocusOnly = vi.fn()
+      const onRestoreLens = vi.fn()
+      const onRestoreClosedVaults = vi.fn()
+      // Mount Tab A with Files, expanded /Projects, filesOnly, focusOnly, and closedVaults, then unmount (sidebar collapsed).
+      const { el, v, rerender } = await mountVault(
+        { lens: 'files', activeTab: 'yaz6104-A', settings: PER_TAB, onFilesOnly, onFocusOnly, onRestoreLens, onRestoreClosedVaults },
+        { focus: ['/Projects'] },
+      )
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      await act(async () => root?.render(<></>))
+
+      // Remount on unvisited Tab B (activeFile in Pages/) while App still holds Tab A's lens/filesOnly/focusOnly/closedVaults.
+      onFilesOnly.mockClear()
+      onFocusOnly.mockClear()
+      onRestoreLens.mockClear()
+      onRestoreClosedVaults.mockClear()
+      await rerender({
+        lens: 'focus',
+        activeTab: 'yaz6104-B',
+        activeFile: `${v}/Pages/n.md`,
+        settings: PER_TAB,
+        filesOnly: `${v}/Projects`,
+        focusOnly: 'stack-1',
+        closedVaults: [v],
+      })
+      expect(onRestoreLens).toHaveBeenLastCalledWith('files')
+      expect(onFilesOnly).toHaveBeenLastCalledWith(null)
+      expect(onFocusOnly).toHaveBeenLastCalledWith(null)
+      expect(onRestoreClosedVaults).toHaveBeenLastCalledWith([])
+      await rerender({ activeTab: 'yaz6104-B', activeFile: `${v}/Pages/n.md`, settings: PER_TAB, lens: 'files', filesOnly: null, focusOnly: null, closedVaults: [] })
+      expect(isOpen(el, `${v}/Pages`)).toBe('true')
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+
+      // Collapse again, then remount on a New tab (activeTab: null, lens: 'search', as Cmd+T does from a collapsed tab).
+      await act(async () => root?.render(<></>))
+      onFilesOnly.mockClear()
+      onFocusOnly.mockClear()
+      onRestoreLens.mockClear()
+      onRestoreClosedVaults.mockClear()
+      await rerender({
+        lens: 'search',
+        activeTab: null,
+        activeFile: null,
+        settings: PER_TAB,
+        filesOnly: `${v}/Projects`,
+        focusOnly: 'stack-1',
+        closedVaults: [v],
+      })
+      expect(onRestoreLens).not.toHaveBeenCalled()
+      expect(onFilesOnly).toHaveBeenLastCalledWith(null)
+      expect(onFocusOnly).toHaveBeenLastCalledWith(null)
+      expect(onRestoreClosedVaults).toHaveBeenLastCalledWith([])
+      await rerender({ activeTab: null, activeFile: null, settings: PER_TAB, lens: 'files', filesOnly: null, focusOnly: null, closedVaults: [] })
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      expect(isOpen(el, `${v}/Pages`)).toBe('false')
+    })
+
+    it('YAZ-6097: switching from a page tab to a New tab collapses all folders and resets scroll without leaving Search', async () => {
+      const onRestoreLens = vi.fn()
+      const onRestoreClosedVaults = vi.fn()
+      const { el, v, rerender } = await mountVault({
+        lens: 'files',
+        activeTab: 'yaz6097-A',
+        settings: PER_TAB,
+        onRestoreLens,
+        onRestoreClosedVaults,
+      })
+      await act(async () => rowByPath(el, `${v}/Projects`)?.click())
+      body(el).scrollTop = 44
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      // Open New tab (activeTab: null, lens: 'search', as Cmd+T does).
+      await rerender({ activeTab: null, activeFile: null, settings: PER_TAB, lens: 'search' })
+      expect(onRestoreLens).not.toHaveBeenCalled()
+      // Switching to Files on the New tab shows all folders collapsed and scroll at 0.
+      await rerender({ activeTab: null, activeFile: null, settings: PER_TAB, lens: 'files' })
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      expect(isOpen(el, `${v}/Pages`)).toBe('false')
+      expect(body(el).scrollTop).toBe(0)
+      // Returning to Tab A restores its expanded folder and scroll.
+      await rerender({ activeTab: 'yaz6097-A', activeFile: null, settings: PER_TAB, lens: 'files' })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      expect(body(el).scrollTop).toBe(44)
+    })
+
+    it('YAZ-6064 Bug 2: restoring a tab lens calls onRestoreLens instead of onLensChange so window storage is untouched', async () => {
+      const onLensChange = vi.fn()
+      const onRestoreLens = vi.fn()
+      const { rerender } = await mountVault({ lens: 'focus', activeTab: 'yaz6064-b2-A', settings: PER_TAB, onLensChange, onRestoreLens })
+      // Unvisited Tab B switches to Files via onRestoreLens, never onLensChange.
+      await rerender({ activeTab: 'yaz6064-b2-B', settings: PER_TAB, lens: 'focus' })
+      expect(onRestoreLens).toHaveBeenLastCalledWith('files')
+      expect(onLensChange).not.toHaveBeenCalled()
+      await rerender({ activeTab: 'yaz6064-b2-B', settings: PER_TAB, lens: 'files' })
+      // Back to Tab A restores Focus via onRestoreLens, never onLensChange.
+      await rerender({ activeTab: 'yaz6064-b2-A', settings: PER_TAB, lens: 'files' })
+      expect(onRestoreLens).toHaveBeenLastCalledWith('focus')
+      expect(onLensChange).not.toHaveBeenCalled()
     })
 
     it('"One place for the window" (the default): a tab switch changes nothing, and the open folders go to the store as before', async () => {
@@ -7271,6 +7435,17 @@ describe('favorites (YAZ-1766)', () => {
         await act(() => vi.advanceTimersByTimeAsync(FILES_ONLY_GRACE_MS - 1))
         expect(props.onFilesOnly).not.toHaveBeenCalled()
         await act(() => vi.advanceTimersByTimeAsync(1))
+        expect(props.onFilesOnly).toHaveBeenCalledExactlyOnceWith(null)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('YAZ-6064 Bug 1: filesOnly pointing outside current roots clears immediately without waiting for the grace timer', async () => {
+      const { props, rerender } = await mountVault({ lens: 'files', onFilesOnly: vi.fn() })
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        await rerender({ filesOnly: '/some-other-vault/Projects' })
         expect(props.onFilesOnly).toHaveBeenCalledExactlyOnceWith(null)
       } finally {
         vi.useRealTimers()
@@ -10131,6 +10306,58 @@ describe('page shortcuts (YAZ-2290 D2)', () => {
       expect(writeFile).toHaveBeenCalledTimes(1)
     })
 
+    it('YAZ-5989: "Remove shortcut" and "Add shortcut" refuse a page with readonly: true and ask onFileAction in a read-only vault', async () => {
+      // 1. Vault read-only (onFileAction returns false): Remove shortcut writes nothing; Allow writes.
+      const allow = vi.fn(async () => false)
+      const { el, disk, writeFile, indexSource, props } = await mountLinked([PROJECTS_ID], { onFileAction: allow })
+      rightClick(shortcutRow(el))
+      await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
+      await act(async () => undefined)
+      expect(allow).toHaveBeenCalledExactlyOnceWith('/v')
+      expect(writeFile).not.toHaveBeenCalled()
+
+      // 2. Page itself has readonly: true: Remove shortcut refuses with a read-only notice and does not even ask onFileAction.
+      allow.mockClear()
+      const lockedRecords = records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, properties: { ...r.properties, readonly: true } } : r))
+      act(() => indexSource.update(() => null, lockedRecords, FOLDERS, true))
+      rightClick(shortcutRow(el))
+      await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
+      await act(async () => undefined)
+      expect(allow).not.toHaveBeenCalled()
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('is read only'), 'error')
+
+      // 3. Add shortcut on a locked page refuses with a read-only notice; on an unlocked page in a locked vault asks onFileAction.
+      vi.mocked(props.onNotice!).mockClear()
+      const noShortcut = records().map((r) => (r.path === HEALTH ? { ...r, properties: { readonly: true } } : r))
+      act(() => indexSource.update(() => null, noShortcut, FOLDERS, true))
+      rightClick(row(el, '/v/Projects'))
+      act(() => itemByLabel(el, 'Add page shortcut')?.click())
+      const healthBtn = () => [...document.querySelectorAll<HTMLElement>('.shortcut-picker [role="option"], .shortcut-picker button')].find((b) => b.textContent?.includes('Health'))
+      expect(healthBtn()).toBeDefined()
+      await act(async () => healthBtn()?.click())
+      await act(async () => undefined)
+      expect(allow).not.toHaveBeenCalled()
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('is read only'), 'error')
+
+      // Unlock the page's own readonly: now Add shortcut asks onFileAction('/v'); Cancel writes nothing.
+      act(() => indexSource.update(() => null, records(), FOLDERS, true))
+      rightClick(row(el, '/v/Projects'))
+      act(() => itemByLabel(el, 'Add page shortcut')?.click())
+      await act(async () => healthBtn()?.click())
+      await act(async () => undefined)
+      expect(allow).toHaveBeenCalledExactlyOnceWith('/v')
+      expect(writeFile).not.toHaveBeenCalled()
+      // Allow: Add shortcut writes `also_in`.
+      allow.mockResolvedValueOnce(true)
+      rightClick(row(el, '/v/Projects'))
+      act(() => itemByLabel(el, 'Add page shortcut')?.click())
+      await act(async () => healthBtn()?.click())
+      await act(async () => undefined)
+      expect(disk.get(HEALTH)).toContain(PROJECTS_ID)
+    })
+
     /** A Cut is a move, and a move clears no value (YAZ-4713 C9): a paste runs at once, with no sheet, on the paths main's clipboard holds. */
     describe('Cut, then Paste (YAZ-4713 C9)', () => {
       const ALPHA = '/v/Projects/Alpha.md'
@@ -10754,6 +10981,36 @@ describe('several vaults in one window (YAZ-2602)', () => {
     // S62: the store holds folders only, each under its own vault.
     const stored = setFolderCalls(bridge).filter(([, patch]) => patch.expanded !== undefined)
     expect(stored).toEqual([[a, { expanded: [`${a}/sub`] }], [b, { expanded: [`${b}/docs`] }], [a, { expanded: [] }], [b, { expanded: [] }], [a, { expanded: [`${a}/sub`] }], [b, { expanded: [`${b}/docs`] }]])
+  })
+
+  it('YAZ-6064 D5: per-tab mode saves and restores closedVaults via onRestoreClosedVaults', async () => {
+    clearPlaces()
+    const PER_TAB: SettingsState = { ...TEST_SETTINGS, sidebarPlace: 'tab' }
+    const onRestoreClosedVaults = vi.fn()
+    const { a, b, rerender } = await two({ activeTab: 'yaz6064-d5-A', settings: PER_TAB, onRestoreClosedVaults })
+    await rerender({ activeTab: 'yaz6064-d5-A', settings: PER_TAB, closedVaults: [b] })
+    // Switch to unvisited Tab B (still carrying [b] during the switch commit), then close vault a on Tab B.
+    await rerender({ activeTab: 'yaz6064-d5-B', settings: PER_TAB, closedVaults: [b] })
+    await rerender({ activeTab: 'yaz6064-d5-B', settings: PER_TAB, closedVaults: [a] })
+    // Switch back to Tab A: restores [b].
+    await rerender({ activeTab: 'yaz6064-d5-A', settings: PER_TAB, closedVaults: [a] })
+    expect(onRestoreClosedVaults).toHaveBeenLastCalledWith([b])
+    await rerender({ activeTab: 'yaz6064-d5-A', settings: PER_TAB, closedVaults: [b] })
+    // Switch back to Tab B: restores [a].
+    await rerender({ activeTab: 'yaz6064-d5-B', settings: PER_TAB, closedVaults: [b] })
+    expect(onRestoreClosedVaults).toHaveBeenLastCalledWith([a])
+    clearPlaces()
+  })
+
+  it('YAZ-6064 Bug 3: Collapse all in a multi-vault window with filesOnly active folds subfolders without closing hidden vault rows', async () => {
+    const doors = vaultDoors()
+    const { el, a, rerender } = await two({ onSetVaultOpen: doors.onSetVaultOpen })
+    await rerender({ filesOnly: `${a}/sub` })
+    expect(allLabel(el)).toBe('Collapse all')
+    act(() => allButton(el)?.click())
+    await rerender({ closedVaults: doors.closed(), filesOnly: `${a}/sub` })
+    expect(doors.onSetVaultOpen).not.toHaveBeenCalled()
+    expect(doors.closed()).toEqual([])
   })
 
   it('YAZ-2631 S59, S60: two vaults with no folder in either still show the button on Files, for the vault rows alone, and not on Focus or Favorites; on those tabs the button moves that tab\'s folders and leaves the vault rows as they were', async () => {
@@ -12924,6 +13181,35 @@ describe('Files under Manual (YAZ-5916)', () => {
     expect(props.onRenameFile).toHaveBeenCalledWith(`${v}/b.md`, `${v}/Projects/b.md`, 'file')
     expect(bridge.filesOrder.setFolder).not.toHaveBeenCalled()
     expect(el.querySelector('.tree__row--drop')).toBeNull()
+  })
+
+  it('YAZ-5989: Files manual reorder asks onFileAction; Cancel writes nothing; Allow writes and attaches vault to onReordered', async () => {
+    const v = `/v-manual-${++vaults}`
+    const allow = vi.fn(async () => false)
+    const { el, bridge, props } = await mount({ root: v, lens: 'files', settings: MANUAL, onReordered: vi.fn(), onFileAction: allow }, async (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: NODES(v), generatedAt: 1 } as never)
+      b.filesOrder.get.mockResolvedValue({ sort: { by: 'manual', reverse: false }, folders: { [v]: ['c.md', 'Projects', 'b.md'] } })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+      await storage.init()
+    })
+    await act(async () => undefined)
+
+    lift(rowByPath(el, `${v}/c.md`))
+    mouse(rowByPath(el, `${v}/Projects`), 'mousemove', { clientY: 1, buttons: 1 })
+    mouse(rowByPath(el, `${v}/Projects`), 'mouseup', { clientY: 1 })
+    await act(async () => undefined)
+    expect(allow).toHaveBeenCalledExactlyOnceWith(v)
+    expect(bridge.filesOrder.setFolder).not.toHaveBeenCalled()
+    expect(props.onReordered).not.toHaveBeenCalled()
+
+    allow.mockResolvedValueOnce(true)
+    lift(rowByPath(el, `${v}/c.md`))
+    mouse(rowByPath(el, `${v}/Projects`), 'mousemove', { clientY: 1, buttons: 1 })
+    mouse(rowByPath(el, `${v}/Projects`), 'mouseup', { clientY: 1 })
+    await act(async () => undefined)
+    expect(bridge.filesOrder.setFolder).toHaveBeenCalledExactlyOnceWith(v, v, ['Projects', 'c.md', 'b.md', 'Archive'])
+    expect(props.onReordered).toHaveBeenCalledOnce()
+    expect(vi.mocked(props.onReordered!).mock.calls[0][0].vault).toBe(v)
   })
 })
 

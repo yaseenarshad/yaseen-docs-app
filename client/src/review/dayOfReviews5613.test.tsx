@@ -245,19 +245,19 @@ describe('YAZ-5613: a full day of reviews on the Mac, step by step (YAZ-5611 rul
     // the new-card limit counts NEW-1 as begun today, so no third new card joins.
     vi.setSystemTime(Date.now() + 60 * 60_000)
     await open()
-    // YAZ-5707 (Mochi's E5): the run carries today's earlier work on its cards: NEW-1 learned already.
-    expect(await look()).toEqual(row('NEW-1', '1 / 3', '1/3', 2, 1, 1))
+    // YAZ-6018: day-wide progress persists across reopen (4 due done + NEW-1 learned = 5 / 7).
+    expect(await look()).toEqual(row('NEW-1', '5 / 7', '5/7', 2, 1, 1))
     await answer('good') // N-1's second ✓: it is done
-    expect(await look()).toEqual(row('NEW-2', '2 / 3', '2/3', 1, 0, 1))
+    expect(await look()).toEqual(row('NEW-2', '6 / 7', '6/7', 1, 0, 1))
     await answer('good')
     await answer('good')
-    expect(await look()).toEqual(row('done: Inbox complete.', null, '4/4', 0, 0, 0))
+    expect(await look()).toEqual(row('done: Inbox complete.', null, '8/8', 0, 0, 0))
     expect(review.session?.more.new).toBe(2)
     // Add more for today: one more day of the Settings number (2), never more than what waits.
     await step(() => review.addCards('new'))
-    expect(await look()).toEqual(row('NEW-3', '4 / 6', '4/6', 2, 0, 2))
+    expect(await look()).toEqual(row('NEW-3', '8 / 10', '8/10', 2, 0, 2))
     await step(() => review.undo())
-    expect(await look()).toEqual(row('done: Inbox complete.', null, '4/4', 0, 0, 0))
+    expect(await look()).toEqual(row('done: Inbox complete.', null, '8/8', 0, 0, 0))
     expect(review.session?.more.new).toBe(2)
 
     // The next day, 9:00: the limit starts again (2 new cards: N-3, N-4); no card of yesterday is in New cards; every

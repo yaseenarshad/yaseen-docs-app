@@ -30,7 +30,7 @@ export interface VaultStorageState {
   lastShrink: ShrinkResult | null
 }
 
-export function useVaultStorage(root: string | null, syncState: string | null): VaultStorageState {
+export function useVaultStorage(root: string | null, syncState: string | null, allowFileAction?: (root: string) => Promise<boolean>): VaultStorageState {
   const [stats, setStats] = useState<VaultStorageStats | null>(null)
   const [failed, setFailed] = useState(false)
   const [lastShrink, setLastShrink] = useState<ShrinkResult | null>(null)
@@ -97,6 +97,7 @@ export function useVaultStorage(root: string | null, syncState: string | null): 
 
   const shrink = useCallback(async (): Promise<ShrinkResult> => {
     if (root === null) return { shrunk: 0, skipped: 0, bytesMoved: 0 }
+    if (allowFileAction !== undefined && !(await allowFileAction(root))) return { shrunk: 0, skipped: 0, bytesMoved: 0 }
     try {
       const result = await api.storage.shrink(root, dirtyPaths())
       setLastShrink(result)
@@ -104,7 +105,7 @@ export function useVaultStorage(root: string | null, syncState: string | null): 
     } finally {
       refresh()
     }
-  }, [root, refresh])
+  }, [root, refresh, allowFileAction])
 
   return { stats, failed: failed && stats === null, refresh, shrink, lastShrink }
 }

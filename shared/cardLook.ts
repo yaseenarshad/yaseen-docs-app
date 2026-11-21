@@ -68,18 +68,18 @@ export const CARD_LOOK_DEFAULTS: Readonly<CardLookSettings> = /*#__PURE__*/ Obje
   cardTitleSize: null,
   cardTablePosition: 'pages',
   cardSpacing: 'pages',
-  cardLineSpacing: 1.5,
+  cardLineSpacing: 1.65,
   cardBlockGap: 8,
   cardBulletIndent: 34,
   cardBulletGap: 10,
-  cardBulletSpace: 0,
+  cardBulletSpace: 3,
   cardSidesFold: false,
   cardSidesFoldCardPages: false,
   cardSidesFoldExplore: false,
 })
 
 /** The Mac's `CARD_SPACING_CLEAN` (Clean's spacing), in the app's names. */
-export const CARD_LOOK_CLEAN = /*#__PURE__*/ Object.freeze({ cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
+export const CARD_LOOK_CLEAN = /*#__PURE__*/ Object.freeze({ cardLineSpacing: 1.65, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 3 })
 
 const whole = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 const oneOf = <T extends string>(list: readonly T[]) => (v: unknown): v is T => typeof v === 'string' && (list as readonly string[]).includes(v)

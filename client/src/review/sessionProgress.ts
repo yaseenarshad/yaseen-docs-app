@@ -15,14 +15,15 @@
  * OPEN filter's misses, so it and the red always agree. Mochi shows the session's ✕ on every filter (finding 2); we
  * differ on purpose. A Forgot on a new card never makes a ✕ (finding 11).
  *
- * ALL CARDS (YAZ-5707, Mochi's finding E5 on YAZ-5703): ONE run with no stop, so its numbers are these with two more
- * things. The run carries today's earlier work (`earlierAnswers`, fixed when the session starts): the answers today
- * before it on the cards of its queue (a new card learned earlier, its same-day review waiting: E5's "2 / 7"; a miss
- * waiting for its re-check), counted as this session counts its own, so a card counts once across the two: a miss's ✓
- * in its re-check after the Inbox opened again adds nothing (YAZ-5708). And the exact rule is:
- *   total = earlier + the session's done + every card still waiting (each once), where the waiting cards are the
- *   cards at the start not answered yet, a new card back after a ✕ (it moved nothing), each learned new card's
- *   same-day review (+1 when learned) and each missed card (+1 when missed, −1 when remembered at the end).
+ * ALL CARDS (YAZ-5707, Mochi's finding E5 on YAZ-5703): ONE run with no stop, and since YAZ-6018 EVERY filter carries
+ * the whole local day's work (`earlierAnswers`, derived live from the vault index for the open scope + `upNextTaken`):
+ * closing and reopening the Inbox, restarting the app, or syncing answers from the phone keeps `done / total` for the
+ * whole day instead of resetting to 0 (leaving Mochi's per-session reset on purpose). Each card's learning answer (first
+ * ✓) and due answer (first review after a ✓) count at most once per filter across `earlier` and this sitting's `answers`.
+ * And the exact rule stays:
+ *   total = done + every card still waiting in the filter (each once), where the waiting cards are the cards not
+ *   answered yet, a new card back after a ✕ (it moved nothing), each learned new card's same-day review (+1 when
+ *   learned) and each missed card (+1 when missed, −1 when remembered at the end).
  * So the bar is full exactly when nothing is left: then "Inbox complete.".
  *
  * The ring's % is each due card's FIRST answer of the session (`dueFirsts`): a card missed then got right counts as
@@ -67,17 +68,24 @@ export interface FilterCount {
 
 const missed = (c: SessionCard): boolean => c.forgot === true && !c.isNew
 
+const NO_TAKEN: ReadonlySet<string> = new Set()
+
 /**
- * The filter's numbers (YAZ-5675): `queue` is the cards still waiting in the session; `earlier` (YAZ-5707, All cards
- * only) today's answers before the session (`earlierAnswers`), counted first.
+ * The filter's numbers (YAZ-5675, YAZ-6018): `queue` is the cards still waiting in the session; `earlier` is today's
+ * answers across the open scope (`earlierAnswers`), counted first and deduplicated against `answers` so neither a
+ * new card's first ✓ nor a due card's first answer ever counts twice.
  */
 export function filterCount(answers: readonly SessionAnswer[], queue: readonly SessionCard[], filter: CardFilter, earlier: readonly SessionAnswer[] = []): FilterCount {
   const seen = new Set<string>()
+  const seenNew = new Set<string>()
   let done = 0
   for (const a of [...earlier, ...answers]) {
     if (!matchesFilter(a, filter)) continue
     if (a.isNew) {
-      if (a.rating !== 'again') done++
+      if (a.rating !== 'again' && !seenNew.has(a.key)) {
+        seenNew.add(a.key)
+        done++
+      }
     } else if (!seen.has(a.key)) {
       seen.add(a.key)
       done++
@@ -88,20 +96,48 @@ export function filterCount(answers: readonly SessionAnswer[], queue: readonly S
 }
 
 /**
- * Today's answers before a session (YAZ-5707, Mochi's E5: "2 / 7" at the start of All cards after 2 new cards learned):
- * of `cards` (the session's queue, each with its `key`), each answer today (`from`, the local day's start) up to
- * `before` (the session's start), with what the card was then, so `filterCount` counts them as it counts the session's
- * own: a card known before today, 1 (its first answer); a new card learned today, 1, and 1 more for its same-day
- * review; a new card with only ✕ today, 0. Archived cards count nothing.
+ * Today's answers across `cards` (YAZ-5707, extended to the whole local day and every filter in YAZ-6018): each answer
+ * in `[from, to)` (local midnight to tomorrow's local midnight), tagged with what the card was when answered by
+ * replaying its review timestamps:
+ *  - before its first ✓: `isNew: true` (New cards)
+ *  - once it has a ✓: `isNew: false` (Due today)
+ *  - its first answer today when `card.id` is in `upNextTaken`: `next: true` (Up next, on the same device)
+ * Cards with no review in `[from, to)` are skipped without sorting or allocating. Cards archived (`off`) AFTER being
+ * reviewed today still keep today's count, matching `reviewedToday` ("Today: N cards").
  */
-export function earlierAnswers(cards: Iterable<{ key: string; off: boolean; reviews: readonly CardReview[] }>, from: string, before: string): SessionAnswer[] {
+export function earlierAnswers(
+  cards: Iterable<{ key: string; id?: string | null; off?: boolean; reviews: readonly CardReview[] }>,
+  from: string,
+  to: string,
+  upNextTaken: ReadonlySet<string> = NO_TAKEN,
+  upNextBegun: ReadonlySet<string> = NO_TAKEN,
+): SessionAnswer[] {
   const out: SessionAnswer[] = []
   for (const card of cards) {
-    if (card.off) continue
+    if (card.reviews.length === 0) continue
+    // Fast path: skip cards with no review today without copying or sorting.
+    let anyToday = false
+    for (const r of card.reviews) {
+      if (r.at >= from && r.at < to) {
+        anyToday = true
+        break
+      }
+    }
+    if (!anyToday) continue
     let known = false
+    const takenId = card.id != null && upNextTaken.has(card.id)
+    const begunAsNext = takenId && upNextBegun.has(card.id!)
+    let nextLeft = takenId
     for (const r of [...card.reviews].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))) {
-      if (r.at > before) break
-      if (r.at >= from) out.push({ key: card.key, rating: r.rating, isNew: !known, next: false, first: false })
+      if (r.at >= to) break
+      if (r.at >= from) {
+        const isNew = !known
+        // Only a card begun as Up next (`UP_NEXT_BEGUN`) used Up next on its `isNew` review; a due card (or one learned
+        // earlier today and marked Up next later) used Up next on a known (`!isNew`) review.
+        const next = nextLeft && (begunAsNext ? isNew : !isNew)
+        if (next) nextLeft = false
+        out.push({ key: card.key, rating: r.rating, isNew, next, first: false })
+      }
       if (r.rating !== 'again') known = true
     }
   }

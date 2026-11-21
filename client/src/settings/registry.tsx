@@ -428,8 +428,8 @@ export interface SettingsCtx {
     old: number
     unfinished: boolean
     state: () => Promise<IdsState>
-    reletter: (letters: string) => Promise<IdsState>
-    backfill: () => Promise<IdsState>
+    reletter: (letters: string) => Promise<IdsState | null>
+    backfill: () => Promise<IdsState | null>
   }
   /**
    * What the app calls the vault the three above are of (YAZ-2602 R10): the active tab's. Handed
@@ -930,7 +930,7 @@ function IdsControl({ ids, vault, review }: { ids: NonNullable<SettingsCtx['ids'
 }
 
 /** Settings › Link pills (YAZ-4924): one row, its words those of every choice it holds. */
-const LINK_PILL_WORDS = ['link', 'links', 'pill', 'pills', 'wikilink', 'look', 'style', 'vault', 'preview', 'reset', 'format', 'token', 'icon', 'id', 'folder', 'path', 'colour', 'color', 'fill', 'tint', 'strength', 'bold', 'italic', 'underline', 'size', 'muted', 'shape', 'square', 'rounded', 'box', 'brackets', 'parentheses', 'arrow', 'text', 'before', 'after']
+const LINK_PILL_WORDS = ['link', 'links', 'pill', 'pills', 'wikilink', 'look', 'style', 'vault', 'preview', 'reset', 'format', 'token', 'icon', 'id', 'folder', 'path', 'colour', 'color', 'fill', 'tint', 'strength', 'bold', 'italic', 'underline', 'size', 'muted', 'shape', 'square', 'rounded', 'box', 'brackets', 'parentheses', 'arrow', 'text', 'before', 'after', 'hover', 'wash']
 
 const HOVER_WORDS = ['hover', 'preview', 'page', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse']
 
@@ -1287,18 +1287,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-3440 D13: the Files tab follows the open tab, as VS Code's "Auto Reveal". Off by default: the tree starts closed (YAZ-1642).
             id: 'sidebarRevealActive',
             label: 'Reveal the open file',
-            hint: 'Files opens the folders down to the open tab\'s file and scrolls to it.',
+            hint: 'Files opens the folders down to the open tab\'s file and scrolls to it. With "A place for each tab", a tab keeps its saved place when you switch back to it.',
             keywords: ['sidebar', 'folder', 'tree', 'reveal', 'follow', 'open file', 'active', 'auto reveal', 'explorer', 'scroll'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.sidebarRevealActive} onChange={(sidebarRevealActive) => onChange({ ...settings, sidebarRevealActive })} ariaLabel="Reveal the open file in the sidebar" />
             ),
           },
           {
-            // YAZ-5701: one place for the window (the default, as before), or a place for each page tab, for the session.
+            // YAZ-5701, YAZ-6064: one place for the window (the default, as before), or a place for each page tab, for the session.
             id: 'sidebarPlace',
             label: 'Sidebar remembers',
-            hint: 'A place is the sidebar tab, the open folders and the scroll position.',
-            keywords: ['sidebar', 'place', 'tab', 'tabs', 'remember', 'window', 'folders', 'scroll', 'each tab', 'per tab'],
+            hint: 'A place is whether the sidebar is open, the sidebar tab, the open folders, Hide all others, and the scroll position.',
+            keywords: ['sidebar', 'place', 'tab', 'tabs', 'remember', 'window', 'folders', 'scroll', 'each tab', 'per tab', 'hide all others', 'collapsed'],
             render: ({ settings, onChange }) => (
               <Select options={SIDEBAR_PLACE_OPTIONS} value={settings.sidebarPlace} onChange={(sidebarPlace) => onChange({ ...settings, sidebarPlace })} ariaLabel="What the sidebar remembers" />
             ),
@@ -2569,6 +2569,27 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 ariaLabel={unit(ctx, 'Inbox: O opens the page at')}
               />
             ),
+          },
+          {
+            // YAZ-6019: whether ← and → stop at the first and last card (default) or wrap around (YAZ-5715).
+            // Saved in review.json so Mac and phone stay in sync.
+            id: 'loopArrows',
+            label: 'Arrow keys at the ends',
+            hint: 'What ← and → do at the first and last card in the Inbox. Stop at the ends keeps the real start and end of today\'s cards.',
+            keywords: [...REVIEW_KEYWORDS, 'arrow', 'arrows', 'left', 'right', 'loop', 'wrap', 'wheel', 'first', 'end', 'ends'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Stop at the ends', value: false },
+                    { label: 'Loop around', value: true },
+                  ]}
+                  value={review.settings.loopArrows}
+                  onChange={(loopArrows) => review.save({ ...review.settings, loopArrows })}
+                  ariaLabel="Arrow keys at the ends"
+                />
+              ),
           },
         ],
       },

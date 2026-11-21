@@ -81,7 +81,7 @@ import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { landOn } from '../editor/toc/tocMotion'
 import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import { pageCardIn, type CardPlace } from '../editor/card/cardOpen'
-import { recordAt } from '../editor/card/embedCard'
+import { doneCardEmbedAt, recordAt } from '../editor/card/embedCard'
 import { keepPlace, readPagePlace, showPagePlace, type PagePlace } from '../editor/pagePlace'
 import { readPageViewOf } from '../lib/pageView'
 import { READ_ONLY_EDIT, ReadOnlyEditEvent } from '../editor/readOnlyEdit'
@@ -646,6 +646,12 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const leave = useRef({ mode, onToggleEdit })
   leave.current = { mode, onToggleEdit }
   const unlock = useTimedUnlock(() => {
+    // YAZ-6052: commit any open card editor (card file, inline card, or embedded card) BEFORE locking so unfinished edits are saved.
+    const openCards = editBodyRef.current?.querySelectorAll('.card.card--editing') ?? []
+    for (const openCard of openCards) {
+      cardBlockViewOfDom(openCard)?.done()
+      doneCardEmbedAt(openCard)
+    }
     if (leave.current.mode === 'edit') leave.current.onToggleEdit()
   }, vault.beforeLock)
   const unlocked = locked && unlock.until !== null

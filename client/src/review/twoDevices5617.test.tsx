@@ -153,7 +153,8 @@ describe('YAZ-5617 Mac: the phone answers while the Mac reviews', () => {
     phoneAnswers('TD-3', 'good')
     await sync()
     expect(review.session?.counts).toMatchObject({ all: 2, due: 1, new: 1 })
-    expect(place()).toEqual([1, 3])
+    // YAZ-6018: phone's answer moves Mac's done up by 1 while total stays 4.
+    expect(place()).toEqual([2, 4])
     expect(await finish()).toEqual(['TD-2', 'TD-4', 'TD-4'])
     for (const id of ['TD-1', 'TD-2', 'TD-3']) expect(ratings(id)).toEqual(['good', 'good', 'good'])
     expect(ratings('TD-4')).toEqual(['good', 'good'])
@@ -165,6 +166,8 @@ describe('YAZ-5617 Mac: the phone answers while the Mac reviews', () => {
     phoneAnswers('TD-2', 'again')
     await sync()
     expect(review.session?.counts).toMatchObject({ all: 4, due: 3 })
+    // YAZ-6018: a due miss on the phone shows up live as red ✕ 1 and done +1 / total +1 on the Mac.
+    expect(review.session).toMatchObject({ progress: { done: 1, total: 5, waiting: 1 }, misses: 1 })
     await answer('TD-1', 'good')
     await answer('TD-2', 'good')
     expect(ratings('TD-2')).toEqual(['good', 'good', 'again', 'good'])

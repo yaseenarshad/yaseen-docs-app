@@ -492,6 +492,44 @@ function embeddedInScope(records: readonly CardPage[], folder: string, page: str
 const NO_EMBEDS: ReadonlyMap<string, string> = new Map()
 
 /**
+ * Each card of a review scope (vault, folder or page, plus cards embedded in that scope — the same membership rule as
+ * `cardPlan`, YAZ-5037) with its unique `path\nid` key, for day-wide progress counting (YAZ-6018). Duplicate IDs on
+ * the same page are skipped once. Includes `off` cards so reviews actually made today still count (matching `reviewedToday`).
+ */
+export interface ScopedCard {
+  key: string
+  id: string
+  off: boolean
+  next: boolean
+  reviews: readonly CardReview[]
+}
+
+export function cardsInScope(
+  records: readonly CardPage[],
+  folder = '',
+  page?: string,
+  letters?: readonly string[],
+): ScopedCard[] {
+  const wholeVault = page === undefined && folder === ''
+  const embedded = wholeVault ? NO_EMBEDS : embeddedInScope(records, folder, page, letters)
+  const out: ScopedCard[] = []
+  for (const r of records) {
+    const cards = r.cards
+    if (cards === undefined || cards.length === 0) continue
+    const scoped = wholeVault || (page === undefined ? inFolder(r.folder, folder) : r.path === page)
+    if (!scoped && embedded.size === 0) continue
+    const ids = new Set<string>()
+    for (const card of cards) {
+      if (card.id === null || ids.has(card.id)) continue
+      ids.add(card.id)
+      if (!scoped && embedded.get(card.id.toLowerCase()) !== r.path) continue
+      out.push({ key: `${r.path}\n${card.id}`, id: card.id, off: card.off === true, next: card.next === true, reviews: card.reviews })
+    }
+  }
+  return out
+}
+
+/**
  * Up next takes no New cards place (Review rules v1, rule 10, YAZ-5655; Anki's Set due date): the taken list
  * (`upNextTaken`) also names each new card that an Up next answer BEGAN today (its first review), as its ID and this
  * ending. Such a card is not one of today's "new cards begun": it holds no place of "New cards a day". A card begun as a

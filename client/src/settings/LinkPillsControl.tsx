@@ -43,15 +43,19 @@ import {
   isLinkPillHex,
   linkPillIconColors,
   withLinkPillBox,
+  withLinkPillHover,
   withLinkPillIconColor,
   withLinkPillPart,
   withLinkPillReady,
   withLinkPills,
   type LinkPillColor,
   type LinkPillHex,
+  type LinkPillHoverColor,
+  type LinkPillHoverStyle,
   type LinkPillMark,
   type LinkPillPart,
   type LinkPillPartColor,
+  type LinkPillStrength,
   type LinkPills,
 } from '@shared/linkPills'
 import { LINK_PILL_MARK_SVG, linkPillVars, pillsShowVault } from '../editor/wikilink/linkPillLook'
@@ -88,6 +92,17 @@ const SHAPE_OPTIONS: readonly Option<'round' | 'square' | 'underline'>[] = [
 ]
 const STRENGTH_OPTIONS: readonly Option<'light' | 'medium' | 'strong'>[] = [
   { label: 'Light', value: 'light' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Strong', value: 'strong' },
+]
+const HOVER_STYLE_OPTIONS: readonly Option<LinkPillHoverStyle>[] = [
+  { label: 'Wash', value: 'wash' },
+  { label: 'Underline', value: 'underline' },
+  { label: 'Text colour', value: 'text' },
+  { label: 'Off', value: 'off' },
+]
+const HOVER_STRENGTH_OPTIONS: readonly Option<LinkPillStrength>[] = [
+  { label: 'Subtle', value: 'light' },
   { label: 'Medium', value: 'medium' },
   { label: 'Strong', value: 'strong' },
 ]
@@ -258,6 +273,50 @@ function PartRows({ look, part }: { look: LinkPillsState; part: LinkPillPart }) 
   )
 }
 
+/** Hover subsection (YAZ-5991 / D5): Style (Wash / Underline / Text colour / Off), Colour (Auto + Accent + palette + Custom), Strength (Subtle / Medium / Strong). */
+function HoverSection({ look }: { look: LinkPillsState }) {
+  const { pills, save } = look
+  const hover = pills.hover ?? {}
+  const style: LinkPillHoverStyle = hover.style ?? 'wash'
+  const color = hover.color
+  const strength: LinkPillStrength = hover.strength ?? 'light'
+  const pickColor = (c: LinkPillHoverColor | undefined) => save(withLinkPillHover(pills, { color: c }))
+  return (
+    <div className="link-pills-hover" role="group" aria-label="Hover">
+      <div className="link-pills-hover__title">Hover</div>
+      <Row label="Style">
+        <Segmented
+          options={HOVER_STYLE_OPTIONS}
+          value={style}
+          onChange={(next: LinkPillHoverStyle) =>
+            save(withLinkPillHover(pills, { style: next === 'wash' ? undefined : next, ...(next === 'off' || next === 'underline' ? { color: undefined, strength: undefined } : next === 'text' ? { strength: undefined } : {}) }))
+          }
+          ariaLabel="Hover style"
+        />
+      </Row>
+      {(style === 'wash' || style === 'text') && (
+        <Row label="Colour">
+          <span className="pill-toolbar__group" role="group" aria-label="Hover colour">
+            <Tool label="Auto hover colour" on={color === undefined} mark="Auto" onClick={() => pickColor(undefined)} />
+            <Tool label="Accent hover colour" on={color === 'accent'} mark="Accent" onClick={() => pickColor('accent')} />
+            <Swatches label="Palette (hover)" value={color} swatch={style === 'wash' ? fillSwatch : textSwatch} onPick={pickColor} />
+          </span>
+        </Row>
+      )}
+      {style === 'wash' && (
+        <Row label="Strength">
+          <Segmented
+            options={HOVER_STRENGTH_OPTIONS}
+            value={strength}
+            onChange={(next: LinkPillStrength) => save(withLinkPillHover(pills, { strength: next === 'light' ? undefined : next }))}
+            ariaLabel="Hover strength"
+          />
+        </Row>
+      )}
+    </div>
+  )
+}
+
 /** The box's rows: Shape, Fill (Tint · None · the swatches), Strength (only with a palette fill). */
 function BoxRows({ look }: { look: LinkPillsState }) {
   const { pills, save } = look
@@ -294,6 +353,8 @@ const SAMPLE = { text: 'Roadmap', path: '/preview/sample page.md', info: { id: '
  * vault (`cardPillEnds`: never another vault's name); its ID and folder are its own.
  */
 const SAMPLE_CARD = { text: 'Capital of France', info: { id: 'YAS-34', folder: 'Projects/Plans' } }
+/** The highlighted sample pill (YAZ-5991): shows how hover deepens a highlighted link inside `<mark>`. */
+const SAMPLE_MARK = { text: 'Notes', path: '/preview/sample notes.md', info: { id: 'YAS-56', folder: 'Projects/Plans' } }
 /** The sample's vault name where the app has none for this vault. */
 const SAMPLE_VAULT = 'Wiki'
 
@@ -384,6 +445,7 @@ function FormatBox({ look }: { look: LinkPillsState }) {
 export function LinkPillsControl({ look, vault }: { look: LinkPillsState; vault: string | null }) {
   const { pills, save } = look
   const [target, setTarget] = useState<Target | null>(null)
+  const [showHover, setShowHover] = useState(false)
   const format = pills.format ?? DEFAULT_LINK_PILL_FORMAT
   const tokens = linkPillFormatTokens(format)
   // The parts the toolbar can switch to: the name, each token of the format (the icon right after the name), and your text when the format has some.
@@ -402,18 +464,42 @@ export function LinkPillsControl({ look, vault }: { look: LinkPillsState; vault:
       {pillsShowVault(pills) && <Select options={VAULT_OPTIONS} value={pills.vault ?? 'other'} onChange={(rule: 'other' | 'always' | 'never') => save(withLinkPills(pills, { vault: rule === 'other' ? undefined : rule }))} ariaLabel="Vault name on a link pill" />}
       <PillLook.Provider value={{ pills, vault }}>
         {/* The toolbar's own picker is the keyboard's way to a part; the click is the mouse's. */}
-        <p className="link-pills-preview" aria-label="Link pills preview" title="Click a part of a pill to style it" style={linkPillVars(pills)} onClick={pick}>
-          <span className="link-pills-preview__label">Preview</span>
-          {/* The vault's name goes in as the pill's "other vault": `{vault}` then shows it under "other vaults only"
-              and "always" alike; "never" still hides it. */}
-          <span className="wikilink view-link-pill">
-            <PillEnds text={<span className="link-pills-preview__name">{SAMPLE.text}</span>} info={SAMPLE.info} otherVault={vault ?? SAMPLE_VAULT} icon={<FileIcon path={SAMPLE.path} />} />
+        <div className={`link-pills-preview${showHover ? ' link-pills-preview--hover' : ''}`} aria-label="Link pills preview" title="Click a part of a pill to style it" style={linkPillVars(pills)} onClick={pick}>
+          <span className="link-pills-preview__samples">
+            <span className="link-pills-preview__label">Preview</span>
+            {/* The vault's name goes in as the pill's "other vault": `{vault}` then shows it under "other vaults only"
+                and "always" alike; "never" still hides it. */}
+            <span className="wikilink view-link-pill">
+              <PillEnds text={<span className="link-pills-preview__name">{SAMPLE.text}</span>} info={SAMPLE.info} otherVault={vault ?? SAMPLE_VAULT} icon={<FileIcon path={SAMPLE.path} />} />
+            </span>
+            {/* YAZ-5919: a card pill too, with the card icon (the card colour by default), as a link to a card draws. */}
+            <span className="wikilink view-link-pill link-pills-preview__card">
+              <PillEnds text={<span className="link-pills-preview__name">{SAMPLE_CARD.text}</span>} info={SAMPLE_CARD.info} icon={<span className="card-icon" aria-hidden />} />
+            </span>
+            {/* YAZ-5991: a highlighted pill and external link in the same bar so hover styles preview across all link kinds. */}
+            <mark className="link-pills-preview__mark">
+              <span className="wikilink view-link-pill link-pills-preview__highlight">
+                <PillEnds text={<span className="link-pills-preview__name">{SAMPLE_MARK.text}</span>} info={SAMPLE_MARK.info} icon={<FileIcon path={SAMPLE_MARK.path} />} />
+              </span>
+            </mark>
+            <a className="link-pills-preview__ext" href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
+              docs.example.com
+            </a>
           </span>
-          {/* YAZ-5919: a card pill too, with the card icon (the card colour by default), as a link to a card draws. */}
-          <span className="wikilink view-link-pill link-pills-preview__card">
-            <PillEnds text={<span className="link-pills-preview__name">{SAMPLE_CARD.text}</span>} info={SAMPLE_CARD.info} icon={<span className="card-icon" aria-hidden />} />
-          </span>
-        </p>
+          <button
+            type="button"
+            className={`link-pills-preview__hover-toggle${showHover ? ' link-pills-preview__hover-toggle--on' : ''}`}
+            aria-pressed={showHover}
+            title="Show hover state on all preview links"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowHover((v) => !v)
+            }}
+          >
+            <span className="link-pills-preview__hover-dot" aria-hidden />
+            Show hover
+          </button>
+        </div>
       </PillLook.Provider>
       {live !== null && (
         <div className="pill-toolbar" role="toolbar" aria-label={`Styling: ${live.kind === 'box' ? BOX_NAME : PART_NAMES[live.part]}`}>
@@ -430,6 +516,7 @@ export function LinkPillsControl({ look, vault }: { look: LinkPillsState; vault:
           {live.kind === 'box' ? <BoxRows look={look} /> : <PartRows look={look} part={live.part} />}
         </div>
       )}
+      <HoverSection look={look} />
       {!isDefaultLinkPills(pills) && (
         <span className="settings__options">
           <button type="button" className="settings__option" title="Back to today's look" onClick={() => save({})}>

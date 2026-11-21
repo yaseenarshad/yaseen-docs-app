@@ -92,8 +92,8 @@ export interface VaultScope {
         /** A run of "Give old IDs numbers" stopped with links left to change (S90). */
         unfinished: boolean
         state: () => Promise<IdsState>
-        reletter: (letters: string) => Promise<IdsState>
-        backfill: () => Promise<IdsState>
+        reletter: (letters: string) => Promise<IdsState | null>
+        backfill: () => Promise<IdsState | null>
       }
     | undefined
   /** Every READY index snapshot of this vault, from its `WikilinkIndexBridge`. */
@@ -101,7 +101,7 @@ export interface VaultScope {
 }
 
 /** `root` is nullable because `App` calls this for every slot: with no vault there is no bridge call. */
-export function useVaultScope(root: string | null, notify: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void): VaultScope {
+export function useVaultScope(root: string | null, notify: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, allowFileAction?: (root: string) => Promise<boolean>): VaultScope {
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per vault — a stable object every editor's
   // wikilink plugin subscribes to; the vault's WikilinkIndexBridge keeps it fed from the vault
@@ -194,8 +194,10 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
    * keep the other's change; and a yes gives the numbers now, on this Mac (R32, S64). The index
    * refetches off the write. A file that cannot be read is not written over.
    */
-  const saveIds = (enabled: boolean, letters?: string): Promise<boolean> => {
-    if (root === null) return Promise.resolve(false)
+  const saveIds = async (enabled: boolean, letters?: string): Promise<boolean> => {
+    if (root === null) return false
+    // YAZ-5989: turning IDs on or setting letters rewrites pages across the vault, so a read-only vault asks first.
+    if ((enabled || letters !== undefined) && allowFileAction !== undefined && !(await allowFileAction(root))) return false
     // YAZ-5154: true once saved, so Cards change only with IDs.
     return api.ids.set(root, enabled, letters).then(
       () => true,
@@ -209,8 +211,16 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const checkIds = (): Promise<string> => (root === null ? Promise.resolve('') : api.ids.check(root))
   // The rows "ID letters" and "Old IDs" (YAZ-2677 🔒 D5, D6): the main process counts and changes. Stable, so a row reads the state one time.
   const idsState = useCallback((): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.state(root)), [root])
-  const reletter = (letters: string): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.reletter(root, letters))
-  const backfill = (): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.backfill(root))
+  const reletter = async (letters: string): Promise<IdsState | null> => {
+    if (root === null) throw new Error('no vault')
+    if (allowFileAction !== undefined && !(await allowFileAction(root))) return null
+    return api.ids.reletter(root, letters)
+  }
+  const backfill = async (): Promise<IdsState | null> => {
+    if (root === null) throw new Error('no vault')
+    if (allowFileAction !== undefined && !(await allowFileAction(root))) return null
+    return api.ids.backfill(root)
+  }
 
   return {
     root,

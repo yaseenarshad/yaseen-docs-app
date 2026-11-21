@@ -22,6 +22,7 @@ import { useEffect, useRef, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import type { CardPreviewRequest } from '../editor/card/cardOpen'
 import { toggleCardAudio } from '../editor/card/cardMedia'
+import { arrowGlide } from './inboxScroll'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBand, CardId, CardStrip, type CardLinkDoors } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, bandTitleStep, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
@@ -58,7 +59,8 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
   const { text, title: headTitle } = useCardFront(card.text, card, settings?.titleAt ?? 'always')
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
-  const steps = useCardSteps(text, cardKey, rootRef, bandTitleStep(headTitle, card.titleAt, settings?.titleAt ?? 'always'))
+  const titleStep = bandTitleStep(headTitle, card.titleAt, settings?.titleAt ?? 'always')
+  const steps = useCardSteps(text, cardKey, rootRef, titleStep)
   // YAZ-5696: the Inbox's timing (the card's own choice, else the vault's; Review off: at once).
   const band = bandTitle(headTitle, card.titleAt, settings?.titleAt ?? 'always', steps)
   useStepScroll(steps, true, rootRef)
@@ -103,6 +105,13 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
         if (!steps.stepOn()) steps.restart()
         return
       }
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        if (event.shiftKey || rootRef.current === null) return
+        event.preventDefault()
+        event.stopPropagation()
+        arrowGlide(rootRef.current, event.key === 'ArrowUp' ? -1 : 1)
+        return
+      }
       if (event.key === 'p' || event.key === 'P') {
         event.preventDefault()
         event.stopPropagation()
@@ -141,8 +150,16 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
               // Title room (YAZ-5880, the Inbox's): Always, a band on every card, empty with no title, the title unseen
               // while it waits; Only when it shows (YAZ-5864), no band while the title waits.
               ((settings?.titleRoom ?? 'always') === 'always' || (headTitle !== '' && !band.waits)) && (
-                <CardBand key={cardKey} waiting={band.waits}>
-                  {headTitle !== '' && <span className="card-inbox__name">{headTitle}</span>}
+                <CardBand key={cardKey} waiting={band.waits} next={steps.titleNow} onClick={step}>
+                  {headTitle === '' ? null : band.waits && titleStep !== null ? (
+                    <span className="card-inbox__name">
+                      <span className="card-band__blank" data-next={steps.titleNow ? '' : undefined}>
+                        <span className="card__word">{headTitle}</span>
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="card-inbox__name">{headTitle}</span>
+                  )}
                 </CardBand>
               )
             }

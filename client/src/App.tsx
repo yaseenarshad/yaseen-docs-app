@@ -3,7 +3,7 @@ import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import { sanitizeSpacing, spacingOf, spacingVars, type PageSpacing, type TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -102,7 +102,7 @@ import { setNewBoardFolderOf } from './drawings/createDrawing'
 import { hasLetters } from '@shared/pageId'
 import { dailyPageVault, todaysPage } from './sidebar/dailyPage'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
-import { clearPlaces, prunePlaces } from './sidebar/tabPlace'
+import { bumpVaultEpoch, clearPlaces, deletePlacesFilesOnly, dropBlankPlace, prunePlaces, prunePlacesFilesOnly, readCollapsed, renamePlacesFilesOnly, saveCollapsed } from './sidebar/tabPlace'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -475,6 +475,10 @@ export function App() {
   useEffect(() => keepOutsideChangesOfTabs(tabs.map((t) => t.id)), [tabs])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
+  /** The tab id currently shown (`null` for New tab / Inbox), updated each render for `toggleSidebar` (YAZ-6064 D2). */
+  const shownRef = useRef<string | null>(null)
+  /** The last committed tab id for the per-tab collapsed effect (YAZ-6064 D2, YAZ-6105). */
+  const collapsedTabRef = useRef<string | null | undefined>(undefined)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
   /** The sidebar's aside: a resize drag writes its live width here, not to state (YAZ-2239). */
   const sidebarRef = useRef<HTMLElement>(null)
@@ -483,6 +487,8 @@ export function App() {
   // collapse/reopen and root switch. Window identity like visibility since YAZ-1628 — one
   // `WindowEntry.sidebarLens`; never a second flag.
   const [sidebarLens, setSidebarLens] = useState<SidebarTab>(storage.getSidebarLens)
+  /** The window's live non-search lens (YAZ-6064): updated by both `changeLens` and `restoreLens` so leaving Search returns to this tab's lens. */
+  const lastNonSearchLens = useRef<SidebarLens>(storage.getSidebarLens())
   // ⌘⇧C's read-only window onto the sidebar's multi-selection (🔒 D4, YAZ-1338). App owns the
   // BOX and the chord; the Sidebar owns the selection (🔒 D1) and writes it in here, emptying it
   // when it unmounts. A ref rather than state on purpose: App needs the answer only at the
@@ -566,9 +572,12 @@ export function App() {
   // slot while it is in the window (`vault/slots.ts`), and a slot with no vault is idle.
   const slots = useRef(EMPTY_SLOTS)
   slots.current = assignSlots(slots.current, roots)
+  // Ref-backed bridge to `allowFileAction` (defined below once `scopeOf` exists), so `useVaultScope`'s ID bulk writes ask the same read-only door (YAZ-5989).
+  const fileActionRef = useRef<(root: string) => Promise<boolean>>(async () => true)
+  const askFileAction = useCallback((vaultRoot: string) => fileActionRef.current(vaultRoot), [])
   const scopes: VaultScope[] = []
   // oxlint-disable-next-line react-hooks/rules-of-hooks -- fixed-size vault slot array (constant hook count per render)
-  for (const slotRoot of slots.current) scopes.push(useVaultScope(slotRoot, notify))
+  for (const slotRoot of slots.current) scopes.push(useVaultScope(slotRoot, notify, askFileAction))
   /** The scopes of the window's vaults, in the order of `roots`. */
   const vaults = roots.map((vault) => scopes[slots.current.indexOf(vault)])
   /** The first vault's scope; on the Welcome window an idle one, so every reader below has a scope. */
@@ -582,7 +591,7 @@ export function App() {
    */
   const [cardSkill] = useState(storage.getCardSkill)
   const skillLoads = cardSkill !== null && appSettings.cardSkillInSidebar && root !== null
-  const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify)
+  const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify, askFileAction)
   const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true)
   const live = useRef({ roots, vaults, first, skill: skillLoads ? skillScope : null })
   live.current = { roots, vaults, first, skill: skillLoads ? skillScope : null }
@@ -678,6 +687,7 @@ export function App() {
     }
     return new Promise((resolve) => setReadOnlyAsk({ root, resolve }))
   }, [scopeOf, notify])
+  fileActionRef.current = allowFileAction
   const unlockVault = useCallback((root: string, choice: VaultUnlockFor) => scopeOf(root).readOnlyVault.unlock(choice), [scopeOf])
   const lockVault = useCallback((root: string) => scopeOf(root).readOnlyVault.lock(), [scopeOf])
   /** The sheet's answer: false = Cancel; null = Just this once (no allowance); a time = that allowance, then go on. */
@@ -826,8 +836,9 @@ export function App() {
     const next = !sidebarCollapsedRef.current
     sidebarCollapsedRef.current = next
     storage.setSidebarCollapsed(next)
+    if (storage.getSettings().sidebarPlace === 'tab' && shownRef.current !== null) saveCollapsed(shownRef.current, next)
     setSidebarCollapsed(next)
-  }, [])
+  }, [filesWindow])
 
 
   // Dragging past 60% of the minimum reads as "close it" rather than "make it tiny" — the
@@ -951,7 +962,15 @@ export function App() {
     // or a click on the tab, also while it shows — asks for the caret in its bar. A lens that is
     // the stored one already (Esc in the bar goes back to it) is not written again.
     if (next === 'search') setPendingSearchFocus(true)
-    else if (next !== storage.getSidebarLens()) storage.setSidebarLens(next)
+    else {
+      lastNonSearchLens.current = next
+      if (next !== storage.getSidebarLens()) storage.setSidebarLens(next)
+    }
+    setSidebarLens(next)
+  }, [])
+  /** Restore a tab's saved lens without writing to window storage (YAZ-6064), keeping `lastNonSearchLens` current. */
+  const restoreLens = useCallback((next: SidebarTab) => {
+    if (next !== 'search') lastNonSearchLens.current = next
     setSidebarLens(next)
   }, [])
 
@@ -1232,8 +1251,12 @@ export function App() {
     if (dropped.length > 0) storage.pageClosed(dropped)
     storage.setRoot(path) // ONE identity write: { root, file: null, tabs: [] } (Tabs rule 13)
     storage.pushRecentRoot(path)
-    setSidebarLens(storage.getSidebarLens()) // the vault lands on Files (🔒 D2, YAZ-1846)
+    const rootLens = storage.getSidebarLens()
+    lastNonSearchLens.current = rootLens
+    setSidebarLens(rootLens) // the vault lands on Files (🔒 D2, YAZ-1846)
     setSidebarRevealRequest(null)
+    setFocusOnly(null)
+    bumpVaultEpoch()
     setRoots(storage.getRoots()) // that ONE vault: every other vault of the window leaves (YAZ-2602 S61)
     // A vault opens blank (YAZ-3487 D7) — or on its last page, as Settings › Open on says (D15); reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
     resetTabs(path, filesWindow || storage.getSettings().vaultOpensOn !== 'last' ? null : storage.getLastFile(path))
@@ -1277,6 +1300,8 @@ export function App() {
     // A workspace names places (YAZ-4922 D3): the window takes them as they are.
     storage.setPlaces(found)
     for (const vault of found) storage.pushRecentRoot(vault)
+    setFocusOnly(null)
+    bumpVaultEpoch()
     setRoots(storage.getRoots())
     return true
   }, [notify])
@@ -1398,7 +1423,7 @@ export function App() {
     if (exploreRequest === 0 && !sidebarCollapsed && sidebarLens === 'search' && inSidebar) {
       const was = searchFrom.current
       searchFrom.current = null
-      changeLens(storage.getSidebarLens())
+      changeLens(lastNonSearchLens.current)
       if (was?.opened === true && !sidebarCollapsedRef.current) toggleSidebar()
       giveFocusBack(was?.from ?? null)
       return
@@ -1494,7 +1519,7 @@ export function App() {
   useEscapeLast(
     () => ({ aside: sidebarRef.current, searchShown: sidebarLens === 'search', canClose: !filesWindow }),
     (step) => {
-      if (step === 'leaveSearch') return changeLens(storage.getSidebarLens())
+      if (step === 'leaveSearch') return changeLens(lastNonSearchLens.current)
       const active = document.activeElement
       if (active === null || active === document.body || sidebarRef.current?.contains(active) === true) {
         if (!focusOpenDocument(document, true)) leaveToPage()
@@ -1792,30 +1817,35 @@ export function App() {
   // D1 rule 3: your card follows your profile in each vault of the window.
   useCardFollowsProfile(roots, settings.profile)
   // Settings › Daily pages › Open template (YAZ-3607 D6): the daily pages folder's hidden `.template.md`, in a tab. A
-  // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
+  // missing one is made empty first (asking `allowFileAction` in a read-only vault, YAZ-5989). The sidebar hides a "."
+  // file, so this is the way to it. Settings closes first.
   // The folder is the one the daily page uses: in the first vault of the window that holds it (`dailyPageVault`).
   const openDailyTemplate = useCallback(() => {
     const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     let path = ''
+    let vaultRoot = ''
     void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
       .then(({ vault }) => {
+        vaultRoot = vault
         path = `${placePath(vault, now.dailyPageFolder)}/.template.md`
         return api.readFile(path)
       })
-      .catch((err: unknown) => {
+      .catch(async (err: unknown) => {
         if (path === '') throw err
         if (!(err instanceof BridgeRequestError && err.code === 'NOT_FOUND')) throw err
+        if (!(await allowFileAction(vaultRoot))) return null
         return api.writeFile({ path, content: '' })
       })
       .then(
-        () => {
+        (res) => {
+          if (res === null) return
           setSettingsOpen(false)
           openAsSidebar.current(path)
         },
         (err: unknown) => notify(`Can't open the daily page template: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
-  }, [dailyVault, notify])
+  }, [dailyVault, notify, allowFileAction])
 
   // The explore stack (YAZ-2571): ⌘⇧F / File › Explore Vault…. `exploreRequest` and `exploreFrom` are declared above
   // `openSearch` (⌘K closes the stack). The keyboard goes back where it was when the stack closes.
@@ -2231,7 +2261,7 @@ export function App() {
 
   // Settings › Storage (YAZ-1801 D1, 🔒 D13; YAZ-3039): the active tab's vault, measured only while
   // Settings is open — on its page's open, a sync pass finishing, and a shrink. A closed dialog hands the hook no sync state.
-  const vaultStorage = useVaultStorage(active.root, settingsOpen ? (active.sync.status?.state ?? null) : null)
+  const vaultStorage = useVaultStorage(active.root, settingsOpen ? (active.sync.status?.state ?? null) : null, allowFileAction)
 
   // Settings › Sharing (YAZ-3040, Draw's YAZ-1799 D7): main's share status and the active tab's
   // vault's shared boards, read only while Settings is open.
@@ -2299,6 +2329,12 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     // The Inbox is a tab (YAZ-5011): the blank tab comes to the front, and the Inbox stays open behind.
     setInboxFront(false)
+    // Save the outgoing tab's collapsed state before `openSearch()` opens the sidebar for the New tab (YAZ-6105).
+    if (storage.getSettings().sidebarPlace === 'tab' && shownRef.current !== null) {
+      saveCollapsed(shownRef.current, sidebarCollapsedRef.current)
+      collapsedTabRef.current = null
+      shownRef.current = null
+    }
     openBlank()
     openSearch()
     setPendingSearchClear(true)
@@ -2370,9 +2406,13 @@ export function App() {
   // "Hide all others" on a focus folder (YAZ-4460 F8): the one folder the Focus tab shows, by the Recents filter's rule —
   // this window's session only, never written. A folder that goes ends it (the sidebar checks it is still there).
   const [focusOnly, setFocusOnly] = useState<string | null>(null)
-  // "Hide all others" in Files (YAZ-5790): the one folder (a path) the Files tab shows, by the same rule — this window's
-  // session only, never written. A rename or a move of it follows it; a delete of it shows all again (the pushes below).
+  // "Hide all others" in Files (YAZ-5790, YAZ-6064): the one folder (a path) the Files tab shows, by the same rule — this
+  // window's session only, never written. Clears immediately when its vault leaves the window.
   const [filesOnly, setFilesOnly] = useState<string | null>(null)
+  const filesOnlyValid = filesOnly !== null && rootOfPath(roots, filesOnly) !== null ? filesOnly : null
+  useEffect(() => {
+    if (filesOnly !== null && filesOnlyValid === null) setFilesOnly(null)
+  }, [filesOnly, filesOnlyValid])
   // The Recents Type filter (YAZ-4450 demo), Search's types: the window's session only, as the vault pick.
   const [recentType, setRecentType] = useState<SearchType>('all')
   const recentPick = recentVault !== null && roots.length > 1 && roots.includes(recentVault) ? recentVault : null
@@ -2734,9 +2774,12 @@ export function App() {
     // Main names places (YAZ-4922 D3): an empty folder-of window that takes its vault shows the whole vault.
     storage.setPlaces(next)
     for (const root of next) storage.pushRecentRoot(root)
+    setFocusOnly(null)
+    bumpVaultEpoch()
     setRoots(storage.getRoots())
     // The vaults land on Files, as every vault open does (YAZ-1846 D2): a ⌘⇧N window boots on the search.
     storage.setSidebarLens(DEFAULT_SIDEBAR_LENS)
+    lastNonSearchLens.current = DEFAULT_SIDEBAR_LENS
     setSidebarLens(DEFAULT_SIDEBAR_LENS)
     // "Open on: Its last page" (YAZ-3487 D15): the first vault's last page, as a new window would. A Files window has no tab.
     const last = filesWindow || storage.getSettings().vaultOpensOn !== 'last' ? null : storage.getLastFile(next[0])
@@ -3096,6 +3139,7 @@ export function App() {
           }
           renamedUnderOverview(oldPath, newPath, true)
           setFilesOnly((only) => filesOnlyAfterRename(only, oldPath, newPath))
+          renamePlacesFilesOnly(oldPath, newPath)
           renameWorkspaceDir(oldPath, newPath, moved[0] !== now.roots[0] ? moved[0] : undefined)
           if (vaultMoved) setRoots(moved)
           return
@@ -3444,8 +3488,8 @@ export function App() {
    * the step touches, once each, as `trashMany` does. Main's own writes never come here.
    */
   const allowStep = useCallback(async (entry: UndoStep): Promise<boolean> => {
-    // A reorder (YAZ-5917) writes a list of the vault's, never a file of the person's: it asks nothing.
-    if (!isMoveStep(entry) && entry.step === 'reorder') return true
+    // A Focus/Favorites/vault reorder writes a list, never a vault file; a Files manual reorder writes `.yaseendocs/files-order.json` in `entry.vault` (YAZ-5989).
+    if (!isMoveStep(entry) && entry.step === 'reorder') return entry.vault === undefined ? true : allowFileAction(entry.vault)
     const paths = isMoveStep(entry) ? entry.moves.flatMap((move) => [move.oldPath, move.newPath]) : entry.step === 'rename' ? [entry.path] : entry.items.map((item) => item.path)
     for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return false
     return true
@@ -3641,6 +3685,7 @@ export function App() {
         if (kind === 'dir') {
           retireDeletedDir(path)
           setFilesOnly((only) => filesOnlyAfterDelete(only, path))
+          deletePlacesFilesOnly(path)
           dropPageWindowsAt(path)
           moveExploreRecent(path, null)
           deleteWorkspaceDir(path)
@@ -3830,6 +3875,7 @@ export function App() {
     // new first vault's to remember, and the vault that left keeps its last file (S52).
     deleteWorkspaceDir(stripSlash(gone), rest[0])
     storage.setRoots(rest)
+    prunePlacesFilesOnly(rest)
     setRoots(storage.getRoots())
     setVaultOpen(gone, true) // a vault that comes back starts open (R9)
   }, [deleteWorkspaceDir, setVaultOpen])
@@ -4026,6 +4072,21 @@ export function App() {
   const zoomOf = new Map(tabs.map((t) => [t.id, t.zoom ?? null]))
   /** The tab whose layer shows: the active one, none under the blank tab or the Inbox tab (YAZ-5038, `pageOnShow`). */
   const shown = pageOnShow === null ? null : activeTab
+  shownRef.current = shown
+  // Per-tab sidebar open/closed state (YAZ-6064 D2): runs in `useLayoutEffect` (after child Sidebar saves the outgoing
+  // tab's place) and before browser paint, so switching between an open-sidebar tab and a closed-sidebar tab has zero flash.
+  useLayoutEffect(() => {
+    const from = collapsedTabRef.current
+    collapsedTabRef.current = shown
+    if (filesWindow || sidebarPlace !== 'tab' || from === undefined || from === shown) return
+    if (from === null) dropBlankPlace()
+    else saveCollapsed(from, sidebarCollapsedRef.current)
+    const next = readCollapsed(shown)
+    if (next !== undefined && next !== sidebarCollapsedRef.current) {
+      sidebarCollapsedRef.current = next
+      setSidebarCollapsed(next)
+    }
+  }, [filesWindow, sidebarPlace, shown])
   // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
   // each, so a hide of another window renders no App here.
   const hiddenHere = useWindowHidden(storage.getWindowId())
@@ -4219,7 +4280,7 @@ export function App() {
       )}
       {history !== null && (
         <Suspense fallback={null}>
-          <VersionHistory key={history.path} root={history.root} path={history.path} fromMerge={history.fromMerge} darkColors={settings.diagramDarkColors} onClose={closeHistory} onNotice={notify} />
+          <VersionHistory key={history.path} root={history.root} path={history.path} fromMerge={history.fromMerge} darkColors={settings.diagramDarkColors} allowFileAction={allowFileAction} onClose={closeHistory} onNotice={notify} />
         </Suspense>
       )}
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
@@ -4239,7 +4300,7 @@ export function App() {
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && (
         <Suspense fallback={null}>
-          <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />
+          <KeySheet place={placeOverTab() ?? (inboxShown ? 'review' : keyPlaceOf(file))} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />
         </Suspense>
       )}
       {/* Preview a card (YAZ-5152) in a Files window: no page area there, so it covers the window. */}
@@ -4247,7 +4308,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={settings.exploreSize} exploreWidth={settings.exploreWidth} onExploreSize={changeExploreSize} linkPreview={exploreLinkPreview} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={settings.exploreSize} exploreWidth={settings.exploreWidth} onExploreSize={changeExploreSize} linkPreview={exploreLinkPreview} hotkeys={settings.hotkeys} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -4309,7 +4370,7 @@ export function App() {
           onRecentVault={setRecentVault}
           focusOnly={focusOnly}
           onFocusOnly={setFocusOnly}
-          filesOnly={filesOnly}
+          filesOnly={filesOnlyValid}
           onFilesOnly={setFilesOnly}
           recentType={recentType}
           onRecentType={setRecentType}
@@ -4349,6 +4410,8 @@ export function App() {
           createRequest={sidebarCreateRequest}
           onCreateConsumed={consumeSidebarCreate}
           onLensChange={changeLens}
+          onRestoreLens={restoreLens}
+          onRestoreClosedVaults={setClosedVaults}
           settings={settings}
           pageFilesIn={pageFilesIn}
           onChangeSettings={changeSettings}
@@ -4546,7 +4609,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} cardVarsOf={cardVarsFor} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} showInSidebar={showInSidebar} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} courseOffer={inboxCourseOffer} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} cardVarsOf={cardVarsFor} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} showInSidebar={showInSidebar} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} courseOffer={inboxCourseOffer} hotkeys={settings.hotkeys} linkPreview={exploreLinkPreview} />
               </Suspense>
             )}
             {/* Preview a card (YAZ-5152 A): in the page area as the Inbox tab is, over it too; the sidebar and the tab row stay. */}
@@ -4641,7 +4704,9 @@ export function App() {
           focusConfirm
           // ↓ ↑ Tab move through Just this once · the sidebar lock's three · Cancel; Enter picks the focused one (YAZ-4989).
           // Each timed choice unlocks the whole vault, as the sidebar's lock does (YAZ-5581): one allowance, one meaning.
+          // `keys="sheet"` (YAZ-5989): Enter in RenameInline, PageTitle or NewItemBox opens this sheet during keydown and must never confirm unread.
           choices
+          keys="sheet"
           onConfirm={() => answerReadOnly(null)}
           onCancel={() => answerReadOnly(false)}
           other={

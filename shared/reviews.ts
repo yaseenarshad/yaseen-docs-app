@@ -89,6 +89,12 @@ export interface ReviewSettings {
   /** How the Inbox shows today's review time (YAZ-5130): hidden behind a click, shown, or off. Only how it shows. */
   timeSoFar: TimeSoFar
   /**
+   * What ← and → do at the first and last card of the open filter (YAZ-6019): `false` (the default) stops at the
+   * ends so ← always reaches the first card of the day; `true` loops around (YAZ-5715). Saved here so the phone
+   * follows the Mac.
+   */
+  loopArrows: boolean
+  /**
    * When a card's title shows in Review (YAZ-5696, Settings › Cards › Card look › "Show card titles"): Never, Always
    * (the default: as before), After the first click, Before Side 2. A card's own choice on its line wins
    * (`cardTitleAtOf`); `notitle` never shows it. Round 1's `once` and `front` read as Always and After the first click.
@@ -132,6 +138,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   fuzz: true,
   pauseAfter: 60,
   timeSoFar: 'hidden',
+  loopArrows: false,
   titleAt: 'always',
   titleRoom: 'always',
   titleMark: 'different',
@@ -174,6 +181,7 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     fuzz: typeof r.fuzz === 'boolean' ? r.fuzz : d.fuzz,
     pauseAfter: (PAUSE_AFTER_CHOICES as readonly unknown[]).includes(r.pauseAfter) ? (r.pauseAfter as PauseAfter) : d.pauseAfter,
     timeSoFar: (TIME_SO_FAR_CHOICES as readonly unknown[]).includes(r.timeSoFar) ? (r.timeSoFar as TimeSoFar) : d.timeSoFar,
+    loopArrows: typeof r.loopArrows === 'boolean' ? r.loopArrows : d.loopArrows,
     titleAt: (CARD_TITLE_SHOW as readonly unknown[]).includes(r.titleAt) ? (r.titleAt as CardTitleShow) : typeof r.titleAt === 'string' && Object.hasOwn(OLD_TITLE_AT, r.titleAt) ? OLD_TITLE_AT[r.titleAt] : d.titleAt,
     // Anything but 'shown' is the default, Always.
     titleRoom: r.titleRoom === 'shown' ? 'shown' : d.titleRoom,

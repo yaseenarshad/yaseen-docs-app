@@ -118,7 +118,7 @@ export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
     run('Changing…', () =>
       ids.reletter(letters).then(
         (next) => {
-          setState(next)
+          if (next !== null) setState(next)
           return null
         },
         (err: unknown) => `Couldn't change the letters: ${said(err)}`,
@@ -188,7 +188,7 @@ export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
             setAsking(null)
             run('Giving numbers…', () =>
               ids.backfill().then(
-                ({ old, unfinished }) => (old === 0 && !unfinished ? unit('Each page has a number now.') : `${oldIdsLine(old, unit)} Run it again to finish.`),
+                (res) => (res === null ? null : res.old === 0 && !res.unfinished ? unit('Each page has a number now.') : `${oldIdsLine(res.old, unit)} Run it again to finish.`),
                 (err: unknown) => `Couldn't give the numbers: ${said(err)}`,
               ),
             )
