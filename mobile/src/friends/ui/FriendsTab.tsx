@@ -7,6 +7,7 @@ import { useApp } from '../../app/AppState'
 import { friendsMessage } from '../../auth/friends'
 import { Confirm } from '../../screens/Confirm'
 import { Problem } from '../../screens/Frame'
+import { PHONE } from '../../store'
 import type { Unavailable } from '../list'
 import {
   MARK_LINE,
@@ -1330,38 +1331,34 @@ function AcceptCardSheet({
   onClose: () => void
   onDone: (message: string) => void
 }) {
+  const app = useApp()
   const [folders, setFolders] = useState<string[]>([])
-  const [picked, setPicked] = useState<string>(() => {
-    try {
-      return globalThis.localStorage?.getItem(LAST_FOLDER_KEY) ?? ''
-    } catch {
-      return ''
-    }
-  })
+  const [picked, setPicked] = useState<string>('')
   const [upNext, setUpNext] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
-    void service.vaultFolders?.().then((list) => {
-      if (live) setFolders(list)
+    void Promise.all([
+      service.vaultFolders?.() ?? Promise.resolve([]),
+      app.services.store.getState<string>(PHONE, LAST_FOLDER_KEY).catch(() => undefined),
+    ]).then(([list, last]) => {
+      if (!live) return
+      setFolders(list)
+      if (typeof last === 'string') setPicked(last)
     })
     return () => {
       live = false
     }
-  }, [service])
+  }, [service, app.services.store])
 
   const commit = async (dir: string) => {
     if (busy) return
     setBusy(true)
     setError(null)
     try {
-      try {
-        globalThis.localStorage?.setItem(LAST_FOLDER_KEY, dir)
-      } catch {
-        // ignore storage errors
-      }
+      await app.services.store.setState(PHONE, LAST_FOLDER_KEY, dir).catch(() => undefined)
       if (target.kind === 'card') {
         const res = await service.acceptCardToVault?.({ card: target.card, folder: dir, upNext })
         if (!res?.ok) return setError(res?.error ?? 'Could not add card to vault.')
