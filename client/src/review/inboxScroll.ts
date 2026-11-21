@@ -18,7 +18,7 @@
  * word a Space just showed stays still, to study it. A Space never scrolls after it shows; when what it would show is
  * out of view, that Space only scrolls (`spaceMove`), and the next one shows. This replaces round 3's follow.
  */
-import { SHOW_GAP, leastScroll, type Span } from '../editor/find/leastScroll'
+import type { Span } from '../editor/find/leastScroll'
 import { cssZoom } from '../lib/cssZoom'
 
 /** Where a word may sit before the view moves: the top two thirds of the room. */
@@ -29,6 +29,8 @@ export const LAND_LINE = 1 / 3
 export const ARROW_SCROLL_FRACTION = 0.35
 /** Minimum step (CSS px) per Up/Down press on shorter windows. */
 export const ARROW_SCROLL_MIN_PX = 180
+/** Fraction of visible room per Space page-down after the final reveal (YAZ-6058), keeping ~30% reading overlap. */
+export const SPACE_PAGE_FRACTION = 0.7
 
 const arrowState = new WeakMap<HTMLElement, { target: number; at: number }>()
 const ARROW_CHAIN_MS = 300
@@ -81,10 +83,14 @@ export function arrowGlide(view: HTMLElement, delta: -1 | 1): void {
   scrollViewTo(view, target)
 }
 
-/** Smooth-scrolls `view` all the way to the bottom so the in-flow dock shows (YAZ-6058). No-op on short cards. */
-export function glideToBottom(view: HTMLElement): void {
+/**
+ * On a final blank reveal (YAZ-6058), smooth-scroll to the bottom only when the bottom is already close
+ * (<= half a viewport away), so Forgot / Remembered appear without skipping past unread text.
+ */
+export function glideToBottomIfNear(view: HTMLElement): void {
   const max = Math.max(0, view.scrollHeight - view.clientHeight)
-  if (max - view.scrollTop < 1) return
+  const remaining = max - view.scrollTop
+  if (remaining < 1 || remaining > view.clientHeight * 0.5) return
   arrowState.delete(view)
   scrollViewTo(view, max)
 }
@@ -133,10 +139,10 @@ function wantedMove(view: HTMLElement, target: SpaceTarget): number {
   }
   const edge = view.querySelector('.card-inbox__panel')?.getBoundingClientRect().bottom
   if (target === 'side') return edge === undefined ? 0 : readingScroll({ start: edge, end: edge }, room)
-  // YAZ-6058: at the end, scroll all the way to the bottom so the in-flow dock (Forgot / Remembered) shows.
+  // YAZ-6058: at the end, page down smoothly (~70% of visible room per Space) so long tails/Side 2 are read in chunks,
+  // snapping cleanly to the very bottom (showing Forgot / Remembered) once within ~1.2× a page step.
   const remaining = Math.max(0, view.scrollHeight - view.clientHeight - view.scrollTop) * cssZoom(view)
-  if (remaining >= 1) return remaining
-  const strip = view.querySelector('.card-reviews--strip')?.getBoundingClientRect()
-  const end = strip !== undefined ? { start: strip.top, end: strip.bottom } : edge !== undefined ? { start: edge, end: edge } : null
-  return end === null ? 0 : leastScroll(end, room, SHOW_GAP)
+  if (remaining < 1) return 0
+  const page = Math.max(ARROW_SCROLL_MIN_PX, Math.round((room.end - room.start) * SPACE_PAGE_FRACTION))
+  return remaining <= page * 1.2 ? remaining : page
 }

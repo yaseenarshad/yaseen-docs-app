@@ -2314,7 +2314,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 40 }))
       })
 
-      it('THE END (YAZ-6058): the last Space shows the last word and smooth-scrolls to the bottom; once at the bottom, the next Space rings the buttons', () => {
+      it('THE END (YAZ-6058): on a long card, the last Space reveals without skipping past unread text; each next Space pages down smoothly until the bottom, then rings the buttons', () => {
         mount(THREE)
         const view = scroller()
         const answers = () => el.querySelector('.card-inbox__answers')!
@@ -2324,10 +2324,14 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         place.panel = [110, 700]
         press(' ')
         expect(blanks()).toBe(0)
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 5000, behavior: 'smooth' })
+        // 5000px remaining (> half viewport): stays put so unread text is not skipped.
+        expect(scrollTo).not.toHaveBeenCalled()
+        // Next Space pages down smoothly (~70% of 300px room = 210px).
+        press(' ')
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: Math.round(300 * 0.7), behavior: 'smooth' })
         expect(answers().hasAttribute('data-nudge')).toBe(false)
         scrollTo.mockClear()
-        // Already at the bottom: one more Space moves nothing and rings the buttons.
+        // Once at the bottom: one more Space moves nothing and rings the buttons.
         view.scrollTop = 5000
         place.panel = [110, 350]
         press(' ')
@@ -2335,12 +2339,14 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(answers().getAttribute('data-nudge')).not.toBeNull()
       })
 
-      it('THE END with reviews (YAZ-6058): last Space scrolls to the bottom, and Space while scrolled up returns to the bottom', async () => {
+      it('THE END with reviews (YAZ-6058): when already near the bottom, last Space glides to the bottom; scrolling up pages back to the bottom', async () => {
         mount(THREE)
         session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
         render()
         await flush()
         const view = scroller()
+        // Near the bottom (150px left <= 200px half-viewport): final blank reveal glides cleanly to bottom.
+        view.scrollTop = 4850
         for (let i = 0; i < 3; i++) press(' ')
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 5000, behavior: 'smooth' })
         scrollTo.mockClear()

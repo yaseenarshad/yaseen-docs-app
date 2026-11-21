@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { ARROW_SCROLL_FRACTION, LAND_LINE, READ_LINE, arrowGlide, glideToBottom, readingScroll, spaceMove } from './inboxScroll'
+import { ARROW_SCROLL_FRACTION, LAND_LINE, READ_LINE, SPACE_PAGE_FRACTION, arrowGlide, glideToBottomIfNear, readingScroll, spaceMove } from './inboxScroll'
 
 // A room of 300 px from 100 to 400: the read line at 300, the land line at 200.
 const room = { start: 100, end: 400 }
@@ -40,30 +40,42 @@ it('YAZ-6057: arrowGlide smooth-scrolls a larger step and chains rapid repeats w
   expect(scrollTo).toHaveBeenLastCalledWith({ top: step, behavior: 'smooth' })
 })
 
-it('YAZ-6058: glideToBottom smooth-scrolls to max on long cards and is a no-op on short cards', () => {
+it('YAZ-6058: glideToBottomIfNear glides only when <= half a viewport remains; no-op on long tails or short cards', () => {
   const scrollTo = vi.fn()
-  const long = document.createElement('div')
-  Object.defineProperty(long, 'clientHeight', { value: 500, configurable: true })
-  Object.defineProperty(long, 'scrollHeight', { value: 1200, configurable: true })
-  Object.defineProperty(long, 'scrollTop', { value: 200, writable: true, configurable: true })
-  long.scrollTo = scrollTo as unknown as typeof long.scrollTo
-  glideToBottom(long)
-  expect(scrollTo).toHaveBeenCalledWith({ top: 700, behavior: 'smooth' })
+  const near = document.createElement('div')
+  Object.defineProperty(near, 'clientHeight', { value: 500, configurable: true })
+  Object.defineProperty(near, 'scrollHeight', { value: 900, configurable: true })
+  Object.defineProperty(near, 'scrollTop', { value: 200, writable: true, configurable: true })
+  near.scrollTo = scrollTo as unknown as typeof near.scrollTo
+  glideToBottomIfNear(near)
+  expect(scrollTo).toHaveBeenCalledWith({ top: 400, behavior: 'smooth' })
+
+  const far = document.createElement('div')
+  Object.defineProperty(far, 'clientHeight', { value: 500, configurable: true })
+  Object.defineProperty(far, 'scrollHeight', { value: 1500, configurable: true })
+  Object.defineProperty(far, 'scrollTop', { value: 200, writable: true, configurable: true })
+  far.scrollTo = vi.fn() as unknown as typeof far.scrollTo
+  glideToBottomIfNear(far)
+  expect(far.scrollTo).not.toHaveBeenCalled()
 
   const short = document.createElement('div')
   Object.defineProperty(short, 'clientHeight', { value: 500, configurable: true })
   Object.defineProperty(short, 'scrollHeight', { value: 500, configurable: true })
   Object.defineProperty(short, 'scrollTop', { value: 0, writable: true, configurable: true })
   short.scrollTo = vi.fn() as unknown as typeof short.scrollTo
-  glideToBottom(short)
+  glideToBottomIfNear(short)
   expect(short.scrollTo).not.toHaveBeenCalled()
 })
 
-it('YAZ-6058: spaceMove("end") returns remaining scroll distance to reach the bottom dock', () => {
+it('YAZ-6058: spaceMove("end") pages down in ~70% chunks on long tails and snaps cleanly to bottom when close', () => {
   const el = document.createElement('div')
   el.getBoundingClientRect = () => ({ top: 0, bottom: 500, left: 0, right: 800, width: 800, height: 500, x: 0, y: 0, toJSON: () => ({}) })
   Object.defineProperty(el, 'clientHeight', { value: 500, configurable: true })
-  Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true })
-  Object.defineProperty(el, 'scrollTop', { value: 100, writable: true, configurable: true })
+  Object.defineProperty(el, 'scrollHeight', { value: 2000, configurable: true })
+  Object.defineProperty(el, 'scrollTop', { value: 0, writable: true, configurable: true })
+  // Long tail (1500px left): pages down one readable chunk (~70% of 500 = 350px)
+  expect(spaceMove(el, 'end')).toBe(Math.round(500 * SPACE_PAGE_FRACTION))
+  // Within 1.2× a page step (400px <= 420px): snaps cleanly to the bottom (400px)
+  el.scrollTop = 1100
   expect(spaceMove(el, 'end')).toBe(400)
 })
