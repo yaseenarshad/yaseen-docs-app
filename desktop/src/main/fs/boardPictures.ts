@@ -27,7 +27,7 @@ import { BOARD_META_KEY, isValidPicturesFolder, PICTURES_INSIDE_MAX_BYTES, pictu
 import type { BoardPicturesResponse } from '@shared/types'
 import { BOARDS, boardTarget } from './boardDocument'
 import { readBoundedRegularFile } from './boundedRead'
-import { embedPictures, landAssets, liftEmbedded, parseScene } from './drawing'
+import { embedPictures, landAssets, liftEmbedded, parseScene } from './pictureStore'
 import { atomicWrite, BridgeFailure, fsCall, requireDir } from './fsUtils'
 import { landingFolder } from './picturesFolders'
 

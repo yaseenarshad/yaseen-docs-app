@@ -19,7 +19,7 @@ import { fileKind } from '@shared/fileKind'
 import { setDiagramReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 import type { BoardKind, BoardReadOnlyResponse } from '@shared/types'
 import { boardTarget, mutateBoardFile } from './boardDocument'
-import { parseScene } from './drawing'
+import { parseScene } from './pictureStore'
 import { BridgeFailure } from './fsUtils'
 import { requireRequest } from './validate'
 
