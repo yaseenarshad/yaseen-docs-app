@@ -9,6 +9,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/pageId'
 import type { IndexRecord, IndexResponse, VaultConfigChange, WatchEvent } from '@shared/types'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
+import { hintRetitle } from '../lib/indexFeed'
 import { useIndex, type IndexState } from './useIndex'
 
 let configListeners: Array<(c: VaultConfigChange) => void> = []
@@ -309,13 +310,23 @@ describe('useIndex', () => {
     })
     expect(indexFn).toHaveBeenCalledTimes(2)
 
-    // Rename in this vault refreshes immediately (0 ms) even while the watcher's 300 ms cooldown is active.
-    indexFn.mockResolvedValue({ ...response('/vault', '/vault/a-renamed-test-1.md', '/vault/b.md'), records: [{ ...rec('/vault/a-renamed-test-1.md'), title: 'A Renamed' }, rec('/vault/b.md')] })
+    // Rename in this vault remaps the record synchronously with the hinted title (before `api.index` even resolves!)
+    // and kicks off an immediate refresh even while the watcher's 300 ms cooldown is active.
+    let resolveIndex!: (res: IndexResponse) => void
+    indexFn.mockImplementationOnce(() => new Promise<IndexResponse>((r) => (resolveIndex = r)))
+    hintRetitle('/vault/a.md', 'A Renamed')
     await act(async () => {
       renameListeners.forEach((l) => l({ oldPath: '/vault/a.md', newPath: '/vault/a-renamed-test-1.md', kind: 'file' }))
-      await vi.advanceTimersByTimeAsync(0)
     })
     expect(indexFn).toHaveBeenCalledTimes(3)
+    expect(state.records[0]?.path).toBe('/vault/a-renamed-test-1.md')
+    expect(state.records[0]?.title).toBe('A Renamed')
+
+    // Authoritative snapshot lands cleanly afterwards.
+    await act(async () => {
+      resolveIndex({ ...response('/vault', '/vault/a-renamed-test-1.md', '/vault/b.md'), records: [{ ...rec('/vault/a-renamed-test-1.md'), title: 'A Renamed' }, rec('/vault/b.md')] })
+      await vi.advanceTimersByTimeAsync(0)
+    })
     expect(state.records[0]?.title).toBe('A Renamed')
 
     // A burst of 5 rapid renames (e.g. "Change letters") triggers only 1 trailing read after the quiet window.

@@ -3,8 +3,9 @@ import { fileKind } from '@shared/fileKind'
 import { IDS_FILE } from '@shared/pageId'
 import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
 import { api } from '../api'
-import { fetchIndex, onIndex } from '../lib/indexFeed'
+import { consumeRetitleHint, fetchIndex, onFileRenamed, onIndex } from '../lib/indexFeed'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
+import { basename, stripExt } from '../lib/paths'
 import type { WatchSource } from '../hooks/useWatch'
 
 export type IndexStatus = 'pending' | 'ready' | 'error'
@@ -169,10 +170,32 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     const trimmedRoot = root.replace(/[\\/]+$/, '')
     const insideRoot = (p: string): boolean => p === trimmedRoot || p.startsWith(`${trimmedRoot}/`) || p.startsWith(`${trimmedRoot}\\`)
     const renameBurst = leadingTrailing(() => runRefresh(true), WATCH_BURST_QUIET_MS)
-    const unsubscribeRename =
-      api.file?.onRenamed?.(({ oldPath, newPath }) => {
-        if (insideRoot(oldPath) || insideRoot(newPath)) renameBurst.call()
-      }) ?? (() => undefined)
+    const unsubscribeRename = onFileRenamed(({ oldPath, newPath, kind }) => {
+      if (!insideRoot(oldPath) && !insideRoot(newPath)) return
+      const hintedTitle = consumeRetitleHint(oldPath)
+      const oldPrefix = `${oldPath.replace(/[\\/]+$/, '')}/`
+      const remapList = (prev: IndexRecord[], isFolders: boolean): IndexRecord[] => {
+        let changed = false
+        const next = prev.map((r) => {
+          if (kind !== 'dir') {
+            if (r.path !== oldPath) return r
+            changed = true
+            const name = basename(newPath)
+            const base = stripExt(name)
+            return { ...r, path: newPath, name, basename: base, ...(hintedTitle !== undefined ? { title: hintedTitle } : {}) }
+          }
+          if (r.path !== oldPath && !r.path.startsWith(oldPrefix)) return r
+          changed = true
+          const movedPath = newPath + r.path.slice(oldPath.length)
+          const isDirectFolderMeta = isFolders && movedPath.slice(newPath.length + 1).indexOf('/') === -1
+          return { ...r, path: movedPath, ...(isDirectFolderMeta && hintedTitle !== undefined ? { title: hintedTitle } : {}) }
+        })
+        return changed ? next : prev
+      }
+      setRecords((prev) => remapList(prev, false))
+      if (kind === 'dir') setFolders((prev) => remapList(prev, true))
+      renameBurst.call()
+    })
     return () => {
       generation.current++
       offFeed()

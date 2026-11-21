@@ -57,6 +57,7 @@ import { askFromFiles, filesClickHow, watchFilesKeys } from './lib/filesWindow'
 import { FloatingPreview } from './sidebar/HoverPreviewHost'
 import { filesPreviewPopup } from './sidebar/previewPopup'
 import { isFolderPath, pageName, pathTitles, useAllPathTitles, useLatestTrees } from './lib/pageLabel'
+import { clearRetitleHint, hintRetitle } from './lib/indexFeed'
 import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
@@ -3152,9 +3153,13 @@ export function App() {
       const dirs = vaultDirs(r)
       let newPath: string
       let kind: 'file' | 'dir'
+      const hintedTitle = to.title === undefined ? undefined : to.title.trim()
+      if (hintedTitle !== undefined && hintedTitle !== '') hintRetitle(oldPath, hintedTitle)
       try {
         ;({ newPath, kind } = to.title === undefined ? await api.file.rename({ oldPath, newPath: to.newPath }) : await api.file.retitle({ path: oldPath, title: to.title }))
+        if (newPath === oldPath) clearRetitleHint(oldPath)
       } catch (error) {
+        clearRetitleHint(oldPath)
         return { error }
       }
       // A move removes nothing from a page (YAZ-4713 C9): its values are its own fields, and a page's own values stay too.

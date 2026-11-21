@@ -7,7 +7,7 @@
  *     parallel fetch when `useIndex` already refreshed the vault;
  *   - when the last listener unsubscribes, the feed entry is dropped on a microtask (no retained snapshots or test leaks).
  */
-import { STALE_FLIGHT_MS, type IndexResponse } from '@shared/types'
+import { STALE_FLIGHT_MS, type FileRenamedEvent, type IndexResponse } from '@shared/types'
 import { api } from '../api'
 import { currentTurn } from './treeFeed'
 
@@ -81,4 +81,35 @@ export function latestIndex(root: string): IndexResponse | null {
 /** True when at least one listener is actively keeping `root`'s feed alive. */
 export function hasIndexListeners(root: string): boolean {
   return (feeds.get(root)?.listeners.size ?? 0) > 0
+}
+
+/**
+ * Short-lived optimistic title hints for in-flight `fs:retitle` calls (YAZ-6008):
+ * `useIndex` consumes the hint synchronously on `file:renamed` so sidebar/tab titles switch
+ * straight to the new title at t = 0 ms without ever flashing the raw slugified filename.
+ */
+const retitleHints = new Map<string, string>()
+
+export function hintRetitle(oldPath: string, title: string): void {
+  if (retitleHints.size > 64) retitleHints.clear()
+  retitleHints.set(oldPath, title)
+}
+
+export function clearRetitleHint(oldPath: string): void {
+  retitleHints.delete(oldPath)
+}
+
+export function consumeRetitleHint(oldPath: string): string | undefined {
+  const title = retitleHints.get(oldPath)
+  if (title !== undefined) retitleHints.delete(oldPath)
+  return title
+}
+
+/** Subscribes to `api.file.onRenamed`; returns a no-op unsubscribe under partial test stubs that omit `file.onRenamed`. */
+export function onFileRenamed(listener: (ev: FileRenamedEvent) => void): () => void {
+  try {
+    return api.file?.onRenamed?.(listener) ?? (() => undefined)
+  } catch {
+    return () => undefined
+  }
 }
