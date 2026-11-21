@@ -73,7 +73,7 @@ import { openCellNoteByLabel } from './table/cellNoteCard'
 import { onCellNoteRequest, takeCellNoteRequest } from './table/cellNoteRequest'
 import { goToNow } from './table/tableCalendar'
 import { fileLines } from './lineNumbers/fileLines'
-import { blockLines } from './lineNumbers/blockLines'
+import { jumpViewToLine } from './lineNumbers/jumpToLine'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { useAutomationSurface } from '../automation/surfaces'
 import { showSectionIndent } from './outline/sectionIndent'
@@ -496,47 +496,6 @@ function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, wat
 
 /** No store to follow: a page outside a folder page's Page tab. */
 const noSubscribe = (): (() => void) => () => undefined
-
-const LINE_CONTAINERS = new Set(['bullet_list', 'ordered_list', 'list_item', 'blockquote', 'footnote_definition', 'cell_note'])
-const LINE_LEAVES = new Set(['paragraph', 'heading', 'code_block', 'hr', 'table'])
-
-/** Jump the ProseMirror selection and scroller to the leaf block covering 1-based disk `line` (YAZ-4502). */
-function jumpViewToLine(crepe: ReturnType<typeof createCrepe>, frontmatter: string, body: string, line: number, scroller: HTMLElement | null | undefined): void {
-  if (!('editor' in crepe) || crepe.editor === undefined) return
-  const { text, toFileLine } = fileLines(frontmatter, body)
-  const blocks = blockLines(text)
-  if (blocks.lines.length === 0) return
-  let targetIndex = blocks.lines.length - 1
-  for (let i = 0; i < blocks.lines.length; i++) {
-    if (line <= toFileLine(blocks.ends[i])) {
-      targetIndex = i
-      break
-    }
-  }
-  const view = crepe.editor.ctx.get(editorViewCtx)
-  let index = 0
-  let targetPos: number | null = null
-  view.state.doc.descendants((node, pos) => {
-    if (targetPos !== null) return false
-    if (LINE_CONTAINERS.has(node.type.name)) return true
-    if (LINE_LEAVES.has(node.type.name)) {
-      if (index === targetIndex) targetPos = pos
-      index++
-    }
-    return false
-  })
-  if (targetPos === null) return
-  const pos = targetPos
-  const resolved = view.state.doc.resolve(Math.min(pos + 1, view.state.doc.content.size))
-  view.dispatch(view.state.tr.setSelection(Selection.near(resolved)).scrollIntoView())
-  const dom = view.nodeDOM(pos)
-  if (dom instanceof HTMLElement && scroller) {
-    const rect = dom.getBoundingClientRect()
-    const box = scroller.getBoundingClientRect()
-    if (box.height > 0) scroller.scrollTop += rect.top - box.top - box.height / 3
-    else dom.scrollIntoView?.({ block: 'center' })
-  }
-}
 
 /** The setters of a mount that threads no table of contents setting: one identity, so the memoised table of contents never sees a new one. */
 const noTableOfContentsChange = (): void => undefined
@@ -1503,7 +1462,7 @@ function CrepeHost({
       const crepe = crepeRef.current
       if (crepe === null || crepe !== readyCrepe) return
       const { frontmatter, body } = diskParts()
-      jumpViewToLine(crepe, frontmatter, body, line, hostRef.current?.closest<HTMLElement>('.editor-host'))
+      return jumpViewToLine(crepe, frontmatter, body, line, hostRef.current?.closest<HTMLElement>('.editor-host'), () => crepeRef.current === crepe)
     },
   })
   // "The page at now" (YAZ-4164 D11): a request for this page (the daily-page button, ⌘D) is taken once the editor is

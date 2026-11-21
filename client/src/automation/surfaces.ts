@@ -7,7 +7,7 @@ export interface AutomationSurface {
   inspect(): Record<string, unknown>
   reveal?(target: NavigationTarget): void | Promise<void>
   selectView?(name: string): void
-  jumpToLine?(line: number): void
+  jumpToLine?(line: number): unknown
 }
 const surfaces = new Map<string, AutomationSurface>()
 const waiting = new Set<() => void>()
@@ -36,7 +36,7 @@ export function useAutomationSurface(key: string | null | (() => string | null),
       at.current = resolved
     }
     for (const check of waiting) queueMicrotask(check)
-  })
+  }, [key, surface, stable])
   useLayoutEffect(() => () => {
     if (at.current !== null && surfaces.get(at.current) === stable) surfaces.delete(at.current)
     at.current = null
