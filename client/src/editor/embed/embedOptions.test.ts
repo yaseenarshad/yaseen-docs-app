@@ -57,8 +57,11 @@ describe('embed options (YAZ-4820 1A)', () => {
     expect(parseEmbedOptions('640x360 view=1,2,0')?.view).toBeNull()
   })
 
-  it('rounds the view it writes: whole units, zoom to 2 decimals', () => {
-    expect(formatEmbedOptions({ ...base, view: { x: 120.6, y: -40.4, zoom: 0.8333 } })).toBe('640x360 view=121,-40,0.83')
+  it('rounds the view it writes: whole units, zoom to 4 decimals (YAZ-5988)', () => {
+    expect(formatEmbedOptions({ ...base, view: { x: 120.6, y: -40.4, zoom: 0.83333 } })).toBe('640x360 view=121,-40,0.8333')
+    expect(formatEmbedOptions({ ...base, view: { x: 120, y: -40, zoom: 0.02431 } })).toBe('640x360 view=120,-40,0.0243')
+    expect(formatEmbedOptions({ ...base, view: { x: 120, y: -40, zoom: 0.00412 } })).toBe('640x360 view=120,-40,0.0041')
+    expect(formatEmbedOptions({ ...base, view: { x: 120, y: -40, zoom: 0.00001 } })).toBe('640x360 view=120,-40,0.0001')
   })
 
   it('splits an embed into its target and options', () => {
