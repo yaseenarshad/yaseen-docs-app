@@ -19,6 +19,7 @@
  */
 import { cardsWithIds, withCardFix, withCardNext, withCardOff, withCardProperty, withoutCardProperty, type CardLine, type CardRecord } from '@shared/cardLine'
 import { cardDueAt, cardMemory, cardReviewNumbers, dayCount, isNewCard } from '@shared/cardSchedule'
+import { parseCreatedMs } from '@shared/pageCreated'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { cardRowPath } from '../search/searchCandidates'
@@ -35,13 +36,15 @@ export interface CardRow {
   page: string
   /** The page's title; null for a card file, which lives in itself. */
   pageTitle: string | null
+  /** The card file's `ctime` (ms), used only as fallback for unstamped standalone card files (`pageTitle === null`). */
+  ctime?: number
 }
 
 /**
- * The card columns (YAZ-5793, Yaseen's list): the ones a new Card table shows, in this order, then the ones Columns ⚙
+ * The card columns (YAZ-5793, Yaseen's list; YAZ-6150 D4 adds `card.created`): the ones a new Card table shows, in this order, then the ones Columns ⚙
  * offers hidden. Anki's Interval, Lapses and Retrievability are Wait time, Times forgotten and Recall chance.
  */
-export const CARD_SHOWN_KEYS = ['card.status', 'card.nextReview', 'card.wait', 'card.forgotten', 'card.recall', 'card.lastReview'] as const
+export const CARD_SHOWN_KEYS = ['card.status', 'card.nextReview', 'card.wait', 'card.forgotten', 'card.recall', 'card.lastReview', 'card.created'] as const
 export const CARD_KEYS = [...CARD_SHOWN_KEYS, 'card.overdue', 'card.upNext', 'card.fix', 'card.reviews', 'card.successRate', 'card.page', 'card.id', 'card.file'] as const
 
 /** Their names (YAZ-5793): the table holds only cards, so no name says "Card". The title column is "Title" (`propertyLabel`). */
@@ -52,6 +55,7 @@ export const CARD_FIELD_LABELS: Readonly<Record<string, string>> = {
   'card.forgotten': 'Times forgotten',
   'card.recall': 'Recall chance',
   'card.lastReview': 'Last review date',
+  'card.created': 'Created',
   'card.overdue': 'Days overdue',
   'card.upNext': 'Up next status',
   'card.fix': 'Fix status',
@@ -156,7 +160,7 @@ export function cardRowRecords(pages: readonly IndexRecord[]): IndexRecord[] {
         embeds: own ? r.embeds : [],
         cards: [card],
       }
-      rowOf.set(record, { card, id, index, page: r.path, pageTitle: own ? null : r.title })
+      rowOf.set(record, { card, id, index, page: r.path, pageTitle: own ? null : r.title, ...(own && r.ctime > 0 && { ctime: r.ctime }) })
       out.push(record)
     }
   }
@@ -182,6 +186,7 @@ export function cardValues(row: CardRow, settings: ReviewSettings | undefined, n
   const due = scheduled ? cardDueAt(card.reviews, settings) : Number.NaN
   const memory = scheduled ? cardMemory(card.reviews, settings, now) : null
   const overdue = Number.isNaN(due) ? null : daysPast(due, now)
+  const createdMs = parseCreatedMs(card.created) ?? (row.pageTitle === null && (row.ctime ?? 0) > 0 ? row.ctime! : null)
   return {
     page: row.pageTitle,
     status,
@@ -192,6 +197,7 @@ export function cardValues(row: CardRow, settings: ReviewSettings | undefined, n
     recall: memory === null ? null : Math.round(100 * memory.recall),
     overdue: overdue === null || overdue < 0 ? null : overdue,
     lastReview: numbers.last === null ? null : new DateValue(numbers.last, false),
+    created: createdMs === null ? null : new DateValue(createdMs, false),
     reviews: numbers.reviews === 0 ? null : numbers.reviews,
     successRate: numbers.successRate,
     upNext: card.next,

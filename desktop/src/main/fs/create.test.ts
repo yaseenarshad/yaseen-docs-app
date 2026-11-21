@@ -34,6 +34,8 @@ const door = testDoor('YAZ')
 afterAll(() => cleanup())
 
 const code = async (p: Promise<unknown>) => (await failure(p)).code
+const CREATED_LINE = /\ncreated: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\n/
+const normCreated = (text: string) => text.replace(CREATED_LINE, '\ncreated: <ISO>\n')
 
 describe('createDir', () => {
   const settingsIn = (dir: string) => readFile(path.join(dir, FOLDER_SETTINGS_FILE), 'utf8')
@@ -106,12 +108,12 @@ describe('createDir', () => {
 })
 
 describe('createFile', () => {
-  it('creates a markdown file holding only its id, and returns path, mtime, size, id (YAZ-2293 D3)', async () => {
+  it('creates a markdown file holding its id and created stamp, and returns path, mtime, size, id (YAZ-2293 D3, YAZ-6165)', async () => {
     const p = path.join(root, 'NewFolder', 'page.md')
     const body = await createFile(p, door)
     expect(body.path).toBe(p)
     expect(isPageId(body.id)).toBe(true)
-    expect(await readFile(p, 'utf8')).toBe(`---\nid: ${body.id}\n---\n`)
+    expect(normCreated(await readFile(p, 'utf8'))).toBe(`---\nid: ${body.id}\ncreated: <ISO>\n---\n`)
     expect(body.size).toBe((await stat(p)).size)
     expect(body.mtime).toBeGreaterThan(0)
   })
@@ -160,15 +162,15 @@ describe('createFile with content (Bible B, GRO-2202)', () => {
     const content = '---\npage_type: kpi\nunit:\n---\n'
     const body = await createFile({ path: p, content }, door)
     expect(body.path).toBe(p)
-    const written = `---\npage_type: kpi\nunit:\nid: ${body.id}\n---\n`
-    expect(await readFile(p, 'utf8')).toBe(written)
-    expect(body.size).toBe(Buffer.byteLength(written))
+    const raw = await readFile(p, 'utf8')
+    expect(normCreated(raw)).toBe(`---\npage_type: kpi\nunit:\nid: ${body.id}\ncreated: <ISO>\n---\n`)
+    expect(body.size).toBe(Buffer.byteLength(raw))
   })
 
-  it('the object form without content creates a page holding only its id', async () => {
+  it('the object form without content creates a page holding its id and created stamp', async () => {
     const md = path.join(root, 'NewFolder', 'plain.md')
     const body = await createFile({ path: md }, door)
-    expect(await readFile(md, 'utf8')).toBe(`---\nid: ${body.id}\n---\n`)
+    expect(normCreated(await readFile(md, 'utf8'))).toBe(`---\nid: ${body.id}\ncreated: <ISO>\n---\n`)
   })
 
   it('ALREADY_EXISTS with content never overwrites', async () => {
@@ -191,14 +193,16 @@ describe('createFile gives the page its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
 
   it('a body with no frontmatter gains a block and keeps its bytes', async () => {
     const body = await createFile({ path: at('body-only.md'), content: '# Title\n\ntext\n' }, door)
-    expect(await readFile(at('body-only.md'), 'utf8')).toBe(`---\nid: ${body.id}\n---\n# Title\n\ntext\n`)
+    expect(normCreated(await readFile(at('body-only.md'), 'utf8'))).toBe(`---\nid: ${body.id}\ncreated: <ISO>\n---\n# Title\n\ntext\n`)
   })
 
-  it("an id already in the seed (a template's) is replaced, never copied", async () => {
-    const body = await createFile({ path: at('from-template.md'), content: '---\nid: k3m9x2pq7abc\nstatus: idea\n---\n' }, door)
+  it("an id and created already in the seed (a template's) are replaced, never copied", async () => {
+    const body = await createFile({ path: at('from-template.md'), content: '---\nid: k3m9x2pq7abc\ncreated: 2020-01-01T00:00:00.000Z\nstatus: idea\n---\n' }, door)
     expect(body.id).not.toBe('k3m9x2pq7abc')
     expect(isPageId(body.id)).toBe(true)
-    expect(await readFile(at('from-template.md'), 'utf8')).toBe(`---\nid: ${body.id}\nstatus: idea\n---\n`)
+    const raw = await readFile(at('from-template.md'), 'utf8')
+    expect(raw).not.toContain('2020-01-01T00:00:00.000Z')
+    expect(normCreated(raw)).toBe(`---\nid: ${body.id}\ncreated: <ISO>\nstatus: idea\n---\n`)
   })
 
   it('a seed whose frontmatter is not valid YAML is created as given, without an id', async () => {
@@ -219,7 +223,7 @@ describe('createFile gives the page its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
     const taken = door.given.length
     const body = await createFile({ path: at('given.md'), id }, door)
     expect(body.id).toBe(id)
-    expect(await readFile(at('given.md'), 'utf8')).toBe(`---\nid: ${id}\n---\n`)
+    expect(normCreated(await readFile(at('given.md'), 'utf8'))).toBe(`---\nid: ${id}\ncreated: <ISO>\n---\n`)
     expect(door.given).toHaveLength(taken)
   })
 
@@ -255,7 +259,7 @@ describe('createFile gives the page its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
     const watched = { letters: ['YAZ'], mint: async () => (order.push(`mint, page there: ${await stat(at('ordered.md')).then(() => true, () => false)}`), ['YAZ-900']) }
     await createFile(at('ordered.md'), watched)
     expect(order).toEqual(['mint, page there: false'])
-    expect(await readFile(at('ordered.md'), 'utf8')).toBe('---\nid: YAZ-900\n---\n')
+    expect(normCreated(await readFile(at('ordered.md'), 'utf8'))).toBe('---\nid: YAZ-900\ncreated: <ISO>\n---\n')
   })
 })
 

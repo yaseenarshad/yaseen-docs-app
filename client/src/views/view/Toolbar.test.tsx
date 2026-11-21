@@ -1272,7 +1272,7 @@ views:
     const pop = openMenu(el, 'Columns and view')
     click(bulk(pop, 'Show all')!)
 
-    const order = ['status', 'file.name', 'note.owner', 'note.priority', 'file.basename', 'file.folder', 'formula.Score'] // Folder is a column since YAZ-4564 D26
+    const order = ['status', 'file.name', 'note.owner', 'file.ctime', 'note.priority', 'file.basename', 'file.folder', 'formula.Score'] // Folder is a column since YAZ-4564 D26; Created since YAZ-6150 D4
     expect(def()).toEqual({ ...before, views: [{ ...before.views[0], order }, before.views[1]] })
     expect(parseViews(yaml()).def).toEqual(def())
     expect([...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].every((input) => input.checked)).toBe(true)
@@ -1312,7 +1312,7 @@ views:
     click(byLabel(el, 'Columns and view'))
     const reopened = openMenu(el, 'Columns and view')
     click(bulk(reopened, 'Show all')!)
-    expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status', 'file.basename', 'file.folder'])
+    expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status', 'file.ctime', 'file.basename', 'file.folder'])
     expect(def().views[0].frozenColumns).toBeUndefined()
     expect(parseViews(yaml()).def).toEqual(def())
     expect(el.querySelector(type === 'table' ? '.view-table__name' : '.view-board__title')).not.toBeNull()
@@ -1326,7 +1326,7 @@ views:
     expect(def().views[0].order).toEqual([])
     expect(bulk(pop, 'Hide all')).toBeNull()
     click(bulk(pop, 'Show all')!)
-    expect(def().views[0].order).toEqual(['file.name', 'file.basename', 'file.folder'])
+    expect(def().views[0].order).toEqual(['file.name', 'file.ctime', 'file.basename', 'file.folder'])
     expect(bulk(pop, 'Show all')).toBeNull()
     expect(onChange).toHaveBeenCalledTimes(2)
   })
@@ -1885,7 +1885,7 @@ views:
     const pop = openMenu(el, 'Columns and view')
     const rows = [...pop.querySelectorAll<HTMLElement>('.view-prop')]
     const keyed = rows.map((row) => row.querySelector('.view-prop__name small')?.textContent ?? null)
-    expect(keyed).toEqual(['file.name', 'note.name', null, null, null])
+    expect(keyed).toEqual(['file.name', 'note.name', null, null, null, null])
   })
 })
 

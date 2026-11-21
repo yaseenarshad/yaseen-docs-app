@@ -65,6 +65,29 @@ properties:
     expect(viewTable(def, ['note.price'], result.rows, ctx)[0]).toEqual(['Name', 'Price'])
   })
 
+  it('YAZ-6167: built-in date columns honor def.properties[key].format on export', () => {
+    const dated = [
+      { ...RECORDS[0], ctime: new Date(2026, 10, 7, 15, 30).getTime() },
+      { ...RECORDS[1], ctime: new Date(2026, 10, 8, 9, 0).getTime() },
+    ]
+    const { def } = parseViews(`views:
+  - type: table
+    name: T
+    order: [file.name, file.ctime]
+properties:
+  file.ctime:
+    format:
+      style: custom
+      pattern: ddd MMM D
+`)
+    const result = runView(def, def.views[0], dated, { resolve })
+    expect(viewTable(def, def.views[0].order!, result.rows, ctx)).toEqual([
+      ['Name', 'Created'],
+      ['Alpha', 'Sat Nov 7'],
+      ['Bravo', 'Sun Nov 8'],
+    ])
+  })
+
   it('a grouped view: group by group, and a page shown under two groups is one line', () => {
     const { result } = run(`views:
   - type: table

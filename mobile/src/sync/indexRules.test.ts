@@ -94,4 +94,29 @@ describe('the stored index and the rules it was built by (YAZ-5309)', () => {
     expect(engine.index()!.records['cards/capital-of-france-old-3.md'].title).toBe('Capital of France')
     engine.stop()
   })
+
+  it('YAZ-6165: an index of rules 6 (ignored frontmatter `created:` for `ctime`) is built again at open: rules 7 or more', async () => {
+    expect(INDEX_RULES).toBeGreaterThanOrEqual(7)
+    const stamped = Date.UTC(2025, 0, 15, 10, 30, 0)
+    const s = await syncSetup({ 'stamped.md': '---\ntitle: Stamped\ncreated: 2025-01-15T10:30:00.000Z\n---\nHello\n' })
+    const clock = fakeClock()
+    const make = () =>
+      createSyncEngine({ store: s.store, tokens: s.tokens, clock, yieldToUi: async () => {}, makeRemote: (v, tok) => githubRemote(githubClient(tok, { fetch: s.github.fetch, now: clock.now }), v.repo, v.branch) })
+    const first = make()
+    await first.open(ROW)
+    await first.idle()
+    first.stop()
+    const saved = (await s.store.getState<PhoneIndex>(VAULT, INDEX_STATE))!
+    expect(saved.rules).toBe(INDEX_RULES)
+    expect(saved.records['stamped.md'].ctime).toBe(stamped)
+    // Simulate a rules-6 cached index whose ctime was the OS/sync time instead of frontmatter `created:`
+    await s.store.setState(VAULT, INDEX_STATE, { ...saved, rules: 6, records: { 'stamped.md': { ...saved.records['stamped.md'], ctime: 999 } } } satisfies PhoneIndex)
+    s.github.offline = true
+    const second = make()
+    await second.open(ROW)
+    expect(second.index()!.rules).toBe(INDEX_RULES)
+    expect(second.index()!.records['stamped.md'].ctime).toBe(stamped)
+    await second.idle()
+    second.stop()
+  })
 })

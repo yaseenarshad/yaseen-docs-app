@@ -1,8 +1,10 @@
 import { mkdir, stat } from 'node:fs/promises'
 import type { CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse } from '@shared/types'
 import { cardFileId, isCardFileContent } from '@shared/cardFileFormat'
+import { cardTime } from '@shared/cardLine'
 import { isMarkdown } from '@shared/fileKind'
 import { FrontmatterWriteError, setFrontmatterProperty, withCommentsHint } from '@shared/frontmatter'
+import { CREATED_KEY } from '@shared/pageCreated'
 import { PAGE_ID_KEY, isVaultNumberId } from '@shared/pageId'
 import { TITLE_KEY } from '@shared/pageName'
 import type { IdDoor } from '../vaultIndex/mint'
@@ -87,10 +89,11 @@ export async function createFile(req: string | CreateFileRequest, ids: IdDoor | 
   })
 }
 
-/** `content` with its frontmatter `id` set to `id`; the content untouched (and no id) when its frontmatter will not parse. */
+/** `content` with its frontmatter `id` and `created` set; the content untouched (and no id) when its frontmatter will not parse. */
 function withPageId(content: string, id: string): { content: string; id?: string } {
   try {
-    return { content: setFrontmatterProperty(content, PAGE_ID_KEY, id), id }
+    const withId = setFrontmatterProperty(content, PAGE_ID_KEY, id)
+    return { content: setFrontmatterProperty(withId, CREATED_KEY, cardTime(Date.now())), id }
   } catch (err) {
     if (err instanceof FrontmatterWriteError) return { content }
     throw err

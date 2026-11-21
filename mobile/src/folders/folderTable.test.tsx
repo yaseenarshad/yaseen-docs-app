@@ -117,7 +117,10 @@ describe('the folder table (YAZ-5460)', () => {
     expect(h.host.querySelector('.folder-view__count')?.textContent).toBe('4 pages · 1 folder')
     await act(async () => h!.host.querySelector<HTMLElement>('.folder-table tr[data-folder] td[data-name]')!.click())
     await waitFor(h, () => h!.host.querySelector('.folder-page .reader__title')?.textContent === 'Trips')
-    // Trips declares no view: the Mac's default table, the columns it takes from Projects (C2) in their sorted order.
-    expect(grid(h)).toEqual(['# | Name | Budget | Due | Owner | Status', '1 | Lisbon weekend | $640.00 | Nov 14, 2026 | Lee | Doing'])
+    // Trips declares no view: the Mac's default table, the columns it takes from Projects (C2) in their sorted order, plus Created (YAZ-6167).
+    const rows = grid(h)
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toBe('# | Name | Budget | Due | Owner | Status | Created')
+    expect(rows[1]).toMatch(/^1 \| Lisbon weekend \| \$640\.00 \| Nov 14, 2026 \| Lee \| Doing \| \d{4}-\d{2}-\d{2}$/)
   })
 })

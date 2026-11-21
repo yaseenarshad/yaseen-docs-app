@@ -196,6 +196,7 @@ describe('settingCandidates', () => {
       'duplicates',
       'idLetters',
       'oldIds',
+      'backfillCreated',
       // Settings › Link pills (YAZ-4924), after This vault.
       ...LINK_PILL_ROWS,
       // Settings › Folder pages (YAZ-4585): the folder views' hover row moved here from Files & Links.
@@ -229,7 +230,7 @@ describe('settingCandidates', () => {
 
   it('includes the Review section only with a vault open, between Files & Links and Sync (YAZ-2322)', () => {
     const all = ids(settingCandidates(ctx({ status: null, setEnabled: () => undefined }, REVIEW)))
-    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS, ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubSync'])
+    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', 'backfillCreated', ...LINK_PILL_ROWS, ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubSync'])
     expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
   })
 
@@ -290,7 +291,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyPages', 'dailyPageFolder', 'dailyPageFormat', 'dailyPageDayFolder', 'dailyPageOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'searchIncludeInline', 'unitWord', 'showIds', 'showIds.title', 'showIds.files', 'linkClick', 'readOnlyVault', 'ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyPages', 'dailyPageFolder', 'dailyPageFormat', 'dailyPageDayFolder', 'dailyPageOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'searchIncludeInline', 'unitWord', 'showIds', 'showIds.title', 'showIds.files', 'linkClick', 'readOnlyVault', 'ids', 'duplicates', 'idLetters', 'oldIds', 'backfillCreated', ...LINK_PILL_ROWS])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {

@@ -10,7 +10,7 @@
  * one-line `problem` plus a safe default, so a hand-edited file always renders. A file with no
  * settings key at all is the defaults, with zero problems.
  */
-import { IMAGE_SHAPES, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX, IMAGE_SIZE_MIN, PROPERTY_KINDS, type ImageShape, type IndexRecord, type MentionsFrom, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { IMAGE_SHAPES, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX, IMAGE_SIZE_MIN, PROPERTY_KINDS, type ImageShape, type IndexRecord, type MentionsFrom, type PropertyDecl, type PropertyFormat, type PropertyKind } from '@shared/types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { isRecord } from '@shared/guards'
 // The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
@@ -47,8 +47,8 @@ export interface FolderSettings {
    * the expression itself is never parsed here (a bad one is the engine's own reported cell error).
    */
   formulas?: Record<string, string>
-  /** Column labels (YAZ-1513): `ViewSet.properties` verbatim — key → { displayName }. The KEY never changes; only what the header says. */
-  properties?: Record<string, { displayName?: string }>
+  /** Column labels and built-in date formats (YAZ-1513, YAZ-6167): `ViewSet.properties` verbatim — key → { displayName?, format? }. */
+  properties?: Record<string, { displayName?: string; format?: PropertyFormat }>
   /**
    * Never empty: `DEFAULT_VIEWS` when the key declares none usable — but otherwise EXACTLY what
    * the file lists, nothing added (🔒 D3, YAZ-1471). `ViewDef` verbatim.
@@ -217,32 +217,37 @@ function readFormulas(raw: unknown, problems: string[]): Record<string, string> 
 }
 
 /**
- * `key → { displayName }`, tolerant like `readFormulas`: a non-map is ignored with a problem, a
- * non-map entry or a non-string `displayName` drops just that entry. Only `displayName` is read —
- * the settings module's vocabulary for a label is exactly that one word.
+ * `key → { displayName?, format? }`, tolerant like `readFormulas`: a non-map is ignored with a problem, a
+ * non-map entry drops just that entry, and a bad `displayName` or `format` drops just that field.
  */
-function readProperties(raw: unknown, problems: string[]): Record<string, { displayName?: string }> | undefined {
+function readProperties(raw: unknown, problems: string[]): Record<string, { displayName?: string; format?: PropertyFormat }> | undefined {
   if (raw === undefined) return undefined
   if (!isRecord(raw)) {
     problems.push(`${FOLDER_SETTINGS_KEY}.properties must be a map of column labels — ignoring it`)
     return undefined
   }
-  const properties: Record<string, { displayName?: string }> = {}
+  const properties: Record<string, { displayName?: string; format?: PropertyFormat }> = {}
   for (const [key, entry] of Object.entries(raw)) {
     if (!isRecord(entry)) {
       problems.push(`${FOLDER_SETTINGS_KEY}.properties.${key} must be a map with a displayName — ignoring that label`)
       continue
     }
-    if (entry.displayName === undefined) {
-      properties[key] = {}
-      continue
+    const out: { displayName?: string; format?: PropertyFormat } = {}
+    let valid = true
+    if (entry.displayName !== undefined) {
+      if (typeof entry.displayName !== 'string') {
+        problems.push(`${FOLDER_SETTINGS_KEY}.properties.${key}.displayName must be text — ignoring that label`)
+        valid = false
+      } else if (entry.displayName.trim() !== '') {
+        // A blank label is no label (YAZ-1549): the header never goes empty, it wears the default.
+        out.displayName = entry.displayName
+      }
     }
-    if (typeof entry.displayName !== 'string') {
-      problems.push(`${FOLDER_SETTINGS_KEY}.properties.${key}.displayName must be text — ignoring that label`)
-      continue
+    if (entry.format !== undefined) {
+      const format = readFormat('date', entry.format, problems, `${FOLDER_SETTINGS_KEY}.properties.${key}.format`)
+      if (format !== undefined) out.format = format
     }
-    // A blank label is no label (YAZ-1549): the header never goes empty, it wears the default.
-    properties[key] = entry.displayName.trim() === '' ? {} : { displayName: entry.displayName }
+    if (valid || out.format !== undefined) properties[key] = out
   }
   return properties
 }

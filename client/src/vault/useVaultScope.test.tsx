@@ -18,6 +18,7 @@ vi.mock('../api', async (importOriginal) => ({
       reletter: vi.fn(async ( _root: string, letters: string): Promise<IdsState> => ({ letters, pages: 3, stale: 0, old: 0, unfinished: false })),
       backfill: vi.fn(async (): Promise<IdsState> => ({ letters: 'YAZ', pages: 3, stale: 0, old: 0, unfinished: false })),
     },
+    backfillCreated: vi.fn(async () => ({ written: 2, skipped: 1 })),
     vaultConfig: {
       read: vi.fn(async () => null),
       write: vi.fn(async () => ({})),
@@ -86,10 +87,14 @@ describe('useVaultScope IDs read-only guards (YAZ-5989)', () => {
 
     expect(await scope.ids!.backfill()).toBeNull()
     expect(api.ids.backfill).not.toHaveBeenCalled()
-    expect(allow).toHaveBeenCalledTimes(3)
+
+    expect(await scope.ids!.backfillCreated()).toBeNull()
+    expect(api.backfillCreated).not.toHaveBeenCalled()
+    expect(allow).toHaveBeenCalledTimes(4)
     expect(allow).toHaveBeenNthCalledWith(1, '/v')
     expect(allow).toHaveBeenNthCalledWith(2, '/v')
     expect(allow).toHaveBeenNthCalledWith(3, '/v')
+    expect(allow).toHaveBeenNthCalledWith(4, '/v')
 
     // Read-only checks and turning IDs off stay free.
     allow.mockClear()
@@ -112,5 +117,8 @@ describe('useVaultScope IDs read-only guards (YAZ-5989)', () => {
 
     expect(await scope.ids!.backfill()).toMatchObject({ old: 0 })
     expect(api.ids.backfill).toHaveBeenCalledExactlyOnceWith('/v')
+
+    expect(await scope.ids!.backfillCreated()).toEqual({ written: 2, skipped: 1 })
+    expect(api.backfillCreated).toHaveBeenCalledExactlyOnceWith('/v')
   })
 })

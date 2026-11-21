@@ -747,23 +747,23 @@ describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
 })
 
 describe('propertyKeys / propertyLabel (GRO-2133)', () => {
-  it('propertyKeys: view.order when set, else file.name + sorted page keys', () => {
+  it('propertyKeys: view.order when set, else file.name + sorted page keys + file.ctime', () => {
     expect(propertyKeys(yasin, yasin.views[0], TEST_RECORDS)).toEqual(['file.name'])
     expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS)).toEqual([
-      'file.name', 'note.cover', 'note.date', 'note.pillar', 'note.priority', 'note.published', 'note.related', 'note.status', 'note.tags', 'note.views',
+      'file.name', 'note.cover', 'note.date', 'note.pillar', 'note.priority', 'note.published', 'note.related', 'note.status', 'note.tags', 'note.views', 'file.ctime',
     ])
-    expect(propertyKeys(yasin, yasin.views[1], [])).toEqual(['file.name'])
+    expect(propertyKeys(yasin, yasin.views[1], [])).toEqual(['file.name', 'file.ctime'])
   })
 
   it('propertyKeys: on a page with no column, every key the rows hold is a default column — `id`, `also_in` and `title` like any other (YAZ-2523 V12; the folder host takes the app’s keys out first)', () => {
     const own = [{ ...TEST_RECORDS[0], properties: { id: 'k3m9x2pq7abc', also_in: ['f7n2w8rt4xyz'], title: 'Zebra', status: 'idea' } }]
-    expect(propertyKeys(yasin, yasin.views[1], own)).toEqual(['file.name', 'note.also_in', 'note.id', 'note.status', 'note.title'])
+    expect(propertyKeys(yasin, yasin.views[1], own)).toEqual(['file.name', 'note.also_in', 'note.id', 'note.status', 'note.title', 'file.ctime'])
   })
 
   it('propertyKeys: a DECLARED column is a column before any member carries it (YAZ-1549)', () => {
-    expect(propertyKeys(yasin, yasin.views[1], [], ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
+    expect(propertyKeys(yasin, yasin.views[1], [], ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status', 'file.ctime'])
     // A page with columns shows them alone (YAZ-4713 C4): the rows' other fields wait in Columns ⚙ › Other properties.
-    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
+    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status', 'file.ctime'])
     expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status']).filter((k) => k === 'note.status')).toHaveLength(1)
     // an explicit order still wins
     expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name'] }, TEST_RECORDS, ['status'])).toEqual(['file.name'])
@@ -773,7 +773,7 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     const calendar = { type: 'calendar', name: 'C' }
     expect(propertyKeys(yasin, calendar, TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name'])
     expect(propertyKeys(yasin, { ...calendar, order: ['file.name', 'note.status'] }, TEST_RECORDS)).toEqual(['file.name', 'note.status'])
-    for (const type of ['table', 'board', 'list', 'cards']) expect(propertyKeys(yasin, { type, name: 'X' }, [], ['status'])).toEqual(['file.name', 'note.status'])
+    for (const type of ['table', 'board', 'list', 'cards']) expect(propertyKeys(yasin, { type, name: 'X' }, [], ['status'])).toEqual(['file.name', 'note.status', 'file.ctime'])
   })
 
   it('propertyLabel: displayName (bare or page.-prefixed key) else the default label (YAZ-1513)', () => {

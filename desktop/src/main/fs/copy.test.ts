@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { cardCreatedOf, cardIdOf, cardTitleOf, pageCards } from '@shared/cardLine'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE } from '@shared/types'
@@ -97,7 +98,7 @@ describe('copyEntry (YAZ-1674, D4)', () => {
     expect((await readdir(to)).sort()).toEqual([FOLDER_SETTINGS_FILE, 'inner', expect.stringMatching(/^z-yaz-\d+\.md$/)])
     const [deep] = await readdir(path.join(to, 'inner'))
     expect(deep).toMatch(/^deep-yaz-\d+\.md$/)
-    expect(await readFile(path.join(to, 'inner', deep), 'utf8')).toMatch(/^---\nid: YAZ-\d+\ntitle: deep\n---\ndeep$/)
+    expect(await readFile(path.join(to, 'inner', deep), 'utf8')).toMatch(/^---\nid: YAZ-\d+\ncreated: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\ntitle: deep\n---\ndeep$/)
     expect(await exists(path.join(from, 'inner', 'deep.md'))).toBe(true)
   })
 
@@ -158,6 +159,7 @@ describe('copyEntry: a copy is its own page at once (YAZ-2420 D21)', () => {
   const ID = 'k3m9x2pq7abc'
   const at = (...p: string[]) => path.join(root, ...p)
   const read = (file: string) => readFile(file, 'utf8')
+  const normCreated = (text: string) => text.replace(/\ncreated: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\n/, '\ncreated: <ISO>\n')
   const propertiesOf = async (file: string) => parseFrontmatter(splitFrontmatter(await read(file)).frontmatter).properties
   const names = async (dir: string) => (await readdir(dir)).sort()
   /** Writes the files under `dir` and returns its path. */
@@ -179,7 +181,42 @@ describe('copyEntry: a copy is its own page at once (YAZ-2420 D21)', () => {
     expect(id).toBe(door.given[door.given.length - 1])
     expect(id).toMatch(/^YAZ-[1-9]\d*$/)
     expect(res).toEqual({ from, to: path.join(dir, `abdul-sample-copy-${String(id).toLowerCase()}.md`), kind: 'file' })
-    expect(await read(res.to)).toBe(`---\nid: ${String(id)}\ntitle: Abdul Sample copy\nstatus: new # kept\n---\nbody\n`)
+    expect(normCreated(await read(res.to))).toBe(`---\nid: ${String(id)}\ntitle: Abdul Sample copy\nstatus: new # kept\ncreated: <ISO>\n---\nbody\n`)
+    expect(await read(from)).toBe(original)
+  })
+
+  it('YAZ-6165: duplicating a page stamps a fresh `created:` replacing the original’s `created:`', async () => {
+    const original = `---\nid: ${ID}\ntitle: Old Note\ncreated: 2020-01-01T00:00:00.000Z\n---\nbody\n`
+    const dir = await folder('d21-created-fresh', { [`old-note-${ID}.md`]: original })
+    const res = await copyEntry(path.join(dir, `old-note-${ID}.md`), dir, door)
+    const props = await propertiesOf(res.to)
+    expect(typeof props.created).toBe('string')
+    expect(props.created).not.toBe('2020-01-01T00:00:00.000Z')
+    expect(String(props.created)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    expect((await propertiesOf(path.join(dir, `old-note-${ID}.md`))).created).toBe('2020-01-01T00:00:00.000Z')
+  })
+
+  it('YAZ-6150: duplicating a standalone card file (`kind: card`) writes fresh id and `created` on the card line and NO frontmatter `id:` or `created:`', async () => {
+    const original = '---\nkind: card\n---\n```card\nCapital of France?\n---\nParis\n```\n<!-- card: YAZ-1, created 2020-01-01T00:00:00.000Z, title "Capital" -->\n'
+    const dir = await folder('d21-card-file', { 'capital-yaz-1.md': original })
+    const from = path.join(dir, 'capital-yaz-1.md')
+    const res = await copyEntry(from, dir, door)
+    const text = await read(res.to)
+    const props = parseFrontmatter(splitFrontmatter(text).frontmatter).properties
+    expect(props).toEqual({ kind: 'card' })
+    expect('id' in props).toBe(false)
+    expect('created' in props).toBe(false)
+    expect('title' in props).toBe(false)
+    const cards = pageCards(text)
+    expect(cards).toHaveLength(1)
+    const newId = cardIdOf(cards[0].line)
+    expect(newId).toBe(door.given[door.given.length - 1])
+    expect(newId).not.toBe('YAZ-1')
+    const newCreated = cardCreatedOf(cards[0].line)
+    expect(newCreated).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    expect(newCreated).not.toBe('2020-01-01T00:00:00.000Z')
+    expect(cardTitleOf(cards[0].line)).toBe('Capital copy')
+    expect(path.basename(res.to)).toBe(`capital-copy-${newId!.toLowerCase()}.md`)
     expect(await read(from)).toBe(original)
   })
 
@@ -201,7 +238,7 @@ describe('copyEntry: a copy is its own page at once (YAZ-2420 D21)', () => {
       const { to } = await copyEntry(path.join(dir, 'Plan.md'), into, door)
       const id = String((await propertiesOf(to)).id)
       expect(to).toBe(path.join(into, `plan-copy-${id.toLowerCase()}.md`))
-      expect(await read(to)).toBe(`---\nid: ${id}\ntitle: Plan copy\n---\nbody\n`)
+      expect(normCreated(await read(to))).toBe(`---\nid: ${id}\ncreated: <ISO>\ntitle: Plan copy\n---\nbody\n`)
     }
     expect(await read(path.join(dir, 'Plan.md'))).toBe('body\n')
   })
@@ -226,18 +263,18 @@ describe('copyEntry: a copy is its own page at once (YAZ-2420 D21)', () => {
     expect(res).toEqual({ from, to, kind: 'dir' })
 
     const upwork = String((await propertiesOf(path.join(to, FOLDER_SETTINGS_FILE))).id)
-    expect(await read(path.join(to, FOLDER_SETTINGS_FILE))).toBe(`---\nid: ${upwork}\ntitle: Upwork 2026 copy\nfolder_settings:\n  views: []\n---\n`)
+    expect(normCreated(await read(path.join(to, FOLDER_SETTINGS_FILE)))).toBe(`---\nid: ${upwork}\ntitle: Upwork 2026 copy\nfolder_settings:\n  views: []\ncreated: <ISO>\n---\n`)
     const [abdulName, planName] = (await names(to)).filter((name) => /^(abdul|plan)-/.test(name))
     const [abdul, plan] = [String((await propertiesOf(path.join(to, abdulName))).id), String((await propertiesOf(path.join(to, planName))).id)]
     // The hidden template, the PDF and the page that will not parse come as they are, bytes and name.
     expect(await names(to)).toEqual([FOLDER_SETTINGS_FILE, '.template.md', `abdul-${abdul.toLowerCase()}.md`, 'broken.md', 'candidates', 'cv.pdf', `plan-${plan.toLowerCase()}.md`])
     for (const name of ['.template.md', 'broken.md', 'cv.pdf']) expect(await read(path.join(to, name))).toBe(UPWORK_FILES[name])
-    expect(await read(path.join(to, abdulName))).toBe(`---\nid: ${abdul}\ntitle: Abdul\n---\nbody\n`)
-    expect(await read(path.join(to, planName))).toBe(`---\nid: ${plan}\ntitle: Plan\n---\nmade outside the app\n`)
+    expect(normCreated(await read(path.join(to, abdulName)))).toBe(`---\nid: ${abdul}\ntitle: Abdul\ncreated: <ISO>\n---\nbody\n`)
+    expect(normCreated(await read(path.join(to, planName)))).toBe(`---\nid: ${plan}\ncreated: <ISO>\ntitle: Plan\n---\nmade outside the app\n`)
 
     // A folder inside keeps its name and title, and takes a fresh id like its pages.
     const candidates = String((await propertiesOf(path.join(to, 'candidates', FOLDER_SETTINGS_FILE))).id)
-    expect(await read(path.join(to, 'candidates', FOLDER_SETTINGS_FILE))).toBe(`---\nid: ${candidates}\ntitle: Candidates\n---\n`)
+    expect(normCreated(await read(path.join(to, 'candidates', FOLDER_SETTINGS_FILE)))).toBe(`---\nid: ${candidates}\ntitle: Candidates\ncreated: <ISO>\n---\n`)
     const [samName] = await names(path.join(to, 'candidates', 'deep'))
     const sam = String((await propertiesOf(path.join(to, 'candidates', 'deep', samName))).id)
     expect(samName).toBe(`sam-${sam.toLowerCase()}.md`)
@@ -261,7 +298,7 @@ describe('copyEntry: a copy is its own page at once (YAZ-2420 D21)', () => {
     const { to } = await copyEntry(path.join(parent, 'upwork-2026'), parent, door)
     const id = String((await propertiesOf(path.join(to, FOLDER_SETTINGS_FILE))).id)
     expect(id).not.toBe('sweptsweptsw')
-    expect(await read(path.join(to, FOLDER_SETTINGS_FILE))).toBe(`---\nid: ${id}\ntitle: Upwork 2026 copy\nfolder_settings:\n  views: []\n---\n`)
+    expect(normCreated(await read(path.join(to, FOLDER_SETTINGS_FILE)))).toBe(`---\nid: ${id}\ntitle: Upwork 2026 copy\nfolder_settings:\n  views: []\ncreated: <ISO>\n---\n`)
     expect(await names(to)).toEqual([FOLDER_SETTINGS_FILE, 'cv.pdf'])
   })
 
@@ -281,7 +318,7 @@ describe('copyEntry: a copy is its own page at once (YAZ-2420 D21)', () => {
     expect(to).toBe(path.join(parent, '10-04-standup-copy'))
     const id = String((await propertiesOf(path.join(to, FOLDER_SETTINGS_FILE))).id)
     expect(isPageId(id)).toBe(true)
-    expect(await read(path.join(to, FOLDER_SETTINGS_FILE))).toBe(`---\nid: ${id}\ntitle: 10_04- Standup copy\n---\n`)
+    expect(normCreated(await read(path.join(to, FOLDER_SETTINGS_FILE)))).toBe(`---\nid: ${id}\ncreated: <ISO>\ntitle: 10_04- Standup copy\n---\n`)
     expect(await names(to)).toEqual([FOLDER_SETTINGS_FILE, 'pages.txt'])
   })
 

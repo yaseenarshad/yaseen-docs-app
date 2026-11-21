@@ -65,7 +65,7 @@ import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { loadCardMenu, withCardMenu } from '../../review/cardMenuLoad'
 import { CARD_HEADS_REDRAW, cardHeadMarkEls } from '../../review/cardHeadMarks'
 import type { CardMenuDoors } from '../../review/cardMenuView'
-import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleAtOf, cardTitleChoiceOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
+import { cardCreatedOf, cardIdOf, cardPropertiesOf, cardReviewsOf, cardTime, cardTitleAtOf, cardTitleChoiceOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardCreated, withCardFix, withCardId, withCardNext, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
@@ -742,7 +742,19 @@ export class CardBlockView implements NodeView {
   takeId(id: string): void {
     const pos = this.pos
     if (pos === null || this.view.isDestroyed) return
-    const tr = changeCardLineAt(this.view.state, pos, (line) => (cardIdOf(line) === null ? withCardId(line, id) : line))
+    const tr = changeCardLineAt(this.view.state, pos, (line) => {
+      if (cardIdOf(line) !== null) return line
+      const withId = withCardId(line, id)
+      return cardCreatedOf(withId) === null ? withCardCreated(withId, cardTime(Date.now())) : withId
+    })
+    if (tr !== null) this.view.dispatch(tr.setMeta('addToHistory', false).setMeta(CARD_ID_META, true))
+  }
+
+  /** Stamp `created` on a new card that has no ID door yet (or whose door failed). Out of undo history; saved by `CARD_ID_META`. */
+  stampCreated(): void {
+    const pos = this.pos
+    if (pos === null || this.view.isDestroyed) return
+    const tr = changeCardLineAt(this.view.state, pos, (line) => (cardCreatedOf(line) === null ? withCardCreated(line, cardTime(Date.now())) : line))
     if (tr !== null) this.view.dispatch(tr.setMeta('addToHistory', false).setMeta(CARD_ID_META, true))
   }
 
@@ -1349,11 +1361,16 @@ export function cardRow(host: CardHost): SlashRow {
       if (!isCardNode($from.parent)) return
       const card = cardBlockViewAt(view, $from.before())
       card?.edit('title')
-      if (card === null || host.mintId === undefined) return
+      if (card === null) return
+      if (host.mintId === undefined) {
+        card.stampCreated()
+        return
+      }
       host.mintId(host.path).then(
         (id) => card.takeId(id),
         () => {
           // No ID now (a vault that stopped giving them, a door that failed): the sweep gives it.
+          card.stampCreated()
         },
       )
     },

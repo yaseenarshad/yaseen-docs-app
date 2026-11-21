@@ -6,6 +6,7 @@ import { folderBlocks } from './folderValues'
 import { parseFrontmatter, splitFrontmatter } from './frontmatter'
 import { drawingTitleOf, findInlineDrawings } from './inlineDrawing'
 import { indexTarget, splitLink } from './linkParts'
+import { CREATED_KEY, parseCreatedMs } from './pageCreated'
 import { PAGE_ID_KEY, canonicalPageId, isPageId } from './pageId'
 import { titleOf } from './pageName'
 import { FOLDER_SETTINGS_FILE, type IndexRecord } from './types'
@@ -196,6 +197,8 @@ export function indexRecord(meta: IndexRecordMeta, text: string | null): IndexRe
   // the letters can change after this record was scanned and cached.
   const id = properties[PAGE_ID_KEY]
   if (isPageId(id)) record.id = canonicalPageId(id)
+  const createdMs = parseCreatedMs(properties[CREATED_KEY])
+  if (createdMs !== null) record.ctime = createdMs
   record.title = titleOf(properties, record.title)
   // The page's cards (YAZ-4960 D4): ID, title, off and reviews off each card line, no card text.
   const cards = cardRecords(body)
@@ -210,6 +213,8 @@ export function indexRecord(meta: IndexRecordMeta, text: string | null): IndexRe
   if (isCardKind(properties)) {
     record.kind = 'card'
     record.title = cards[0]?.title ?? cards[0]?.id ?? fileTitle(meta)
+    const cardCreatedMs = parseCreatedMs(cards[0]?.created)
+    if (cardCreatedMs !== null) record.ctime = cardCreatedMs
   }
   return { ...record, ...extractBody(properties, body), ...(cards.length > 0 && { cards }), ...(inlineDrawings.length > 0 && { inlineDrawings }) }
 }

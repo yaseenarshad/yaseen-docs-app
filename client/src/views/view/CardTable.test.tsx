@@ -44,7 +44,7 @@ const VIEW = 'views:\n  - type: table\n    name: T\n    rows: cards\n    order: 
 const PAGES = 'views:\n  - type: table\n    name: T\n    order: [file.name, note.status]\n'
 /** VIEW, showing the columns a Card table hides by default that a cell edits: Fix status and Up next status. */
 const VIEW_EDITS = `${VIEW}    cardView:\n      order: [file.name, card.status, card.fix, card.upNext, note.level]\n`
-const CARD_HEADERS = ['Title', 'Status', 'Next review date', 'Wait time', 'Times forgotten', 'Recall chance', 'Last review date', 'Level']
+const CARD_HEADERS = ['Title', 'Status', 'Next review date', 'Wait time', 'Times forgotten', 'Recall chance', 'Last review date', 'Created', 'Level']
 
 let root: Root | null = null
 let container: HTMLElement | null = null

@@ -202,7 +202,7 @@ describe('YAZ-5793: "+" › Card table', () => {
 describe('YAZ-5319: a table that lists cards', () => {
   it('one row per card, each kind, with the card columns (YAZ-5793: the seven of a new Card table); a page\'s columns are hidden; the count says cards', () => {
     const { el } = mount(CARDS_VIEW)
-    expect(headers(el)).toEqual(['Title', 'Status', 'Next review date', 'Wait time', 'Times forgotten', 'Recall chance', 'Last review date'])
+    expect(headers(el)).toEqual(['Title', 'Status', 'Next review date', 'Wait time', 'Times forgotten', 'Recall chance', 'Last review date', 'Created'])
     const rows = body(el)
     // No ✓ yet: New (YAZ-5793); the archived card is Archived whatever its reviews.
     expect(rows.map((r) => [r[0], r[1]])).toEqual([

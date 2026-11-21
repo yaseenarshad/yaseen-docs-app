@@ -76,6 +76,7 @@ const titleAtOfWord = (text: string): CardTitleAt | null =>
 /** One part of a card line, in the order the line holds them. */
 export type CardPart =
   | { kind: 'id'; id: string }
+  | { kind: 'created'; at: string; raw?: string }
   | { kind: 'title'; title: string; raw?: string }
   | { kind: 'property'; name: string; value: CardPropertyValue; raw?: string }
   | { kind: 'review'; review: CardReview; raw?: string }
@@ -113,6 +114,8 @@ export interface CardRecord {
   next: boolean
   /** The reviews, in the order the line holds them. */
   reviews: CardReview[]
+  /** When the card was created (its card line's `created` part, ISO 8601 UTC to the ms); absent when unstamped. */
+  created?: string
   /** The card's title (its card line's `title` part, `cardTitleOf`); absent for a card with none. */
   title?: string
   /** The title is hidden on the Inbox's front (the line's `notitle` part, YAZ-5030); absent: it shows. */
@@ -167,11 +170,43 @@ function reviewPart(text: string): Extract<CardPart, { kind: 'review' }> | null 
   return formatCardReview(review) === text ? { kind: 'review', review } : { kind: 'review', review, raw: text }
 }
 
+/** A created part: `created <iso>` (full ISO 8601 UTC/offset or `YYYY-MM-DD`; real calendar day checked by `createdAt`). */
+const CREATED_RE =
+  /^created[ \t]+(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?:T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?)$/
+
+/** The created part as this app writes it: `created 2026-11-21T16:05:31.204Z`. */
+const createdPartText = (at: string): string => `created ${at}`
+
+/**
+ * A creation time `CREATED_RE` matched, normalized to UTC ms (`cardTime`), or null when its calendar day is invalid
+ * (`2026-02-30`). Date-only `YYYY-MM-DD` stays `YYYY-MM-DD` so local-time rendering (`parseCreatedMs`) never shifts
+ * a day in negative UTC offsets; sub-ms digits are cut to 3 digits so it never rounds.
+ */
+function createdAt(value: string): string | null {
+  const y = Number(value.slice(0, 4))
+  const m = Number(value.slice(5, 7))
+  const d = Number(value.slice(8, 10))
+  if (new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) return null
+  if (value.length === 10) return value
+  if (FULL_TIME_RE.test(value)) return value
+  const ms = Date.parse(value.replace(/(\.\d{3})\d+/, '$1'))
+  return Number.isNaN(ms) ? null : cardTime(ms)
+}
+
+/** The created part `text` holds (its own bytes kept as `raw` when non-canonical), or null. */
+function createdPart(text: string): Extract<CardPart, { kind: 'created' }> | null {
+  const m = CREATED_RE.exec(text)
+  if (m === null) return null
+  const at = createdAt(m[1])
+  if (at === null) return null
+  return FULL_TIME_RE.test(at) && text === createdPartText(at) ? { kind: 'created', at } : { kind: 'created', at, raw: text }
+}
+
 /** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteText`). */
 const TITLE_RE = /^title[ \t]+("(?:[^"\\]|\\.)*")$/
 
-/** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle`, `fix` (YAZ-5097) or an ID. */
-const isKnownPart = (text: string): boolean => reviewPart(text) !== null || text === 'off' || text === 'next' || text === 'notitle' || titleAtOfWord(text) !== null || text === 'fix' || isNumberId(text)
+/** A part the line's own rules know by its text alone: a review, `created`, `off`, `next`, `notitle`, `fix` (YAZ-5097) or an ID. */
+const isKnownPart = (text: string): boolean => reviewPart(text) !== null || createdPart(text) !== null || text === 'off' || text === 'next' || text === 'notitle' || titleAtOfWord(text) !== null || text === 'fix' || isNumberId(text)
 
 /**
  * The parts of a line's body, split on its commas: a comma inside a quoted text (a title, a property's value) splits
@@ -245,7 +280,7 @@ const titlePart = (title: string): string => `title ${quoteText(title)}`
 // read as a property (a bare word alone, a bare value that is no number or checkbox) stays an unknown part, kept.
 
 /** The card line's own words: never a property's name (YAZ-5379), in any capitals. */
-const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle', 'fix', ...Object.values(CARD_TITLE_AT_WORDS), ...OLD_TITLE_AT_WORDS])
+const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['created', 'title', 'off', 'next', 'notitle', 'fix', ...Object.values(CARD_TITLE_AT_WORDS), ...OLD_TITLE_AT_WORDS])
 const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
 const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/
 const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
@@ -323,13 +358,18 @@ export function parseCardLine(value: string): CardLine | null {
   if (body === undefined || body.includes('-->')) return null
   const parts: CardPart[] = []
   let id = false
+  let created = false
   let titled = false
   for (const text of splitParts(body)) {
     if (text === '') continue
     const review = reviewPart(text)
+    const stamped = created ? null : createdPart(text)
     const title = titled ? null : TITLE_RE.exec(text)
     if (review !== null) parts.push(review)
-    else if (title !== null && cleanCardTitle(unquoteText(title[1])) !== '') {
+    else if (stamped !== null) {
+      created = true
+      parts.push(stamped)
+    } else if (title !== null && cleanCardTitle(unquoteText(title[1])) !== '') {
       titled = true
       const clean = cleanCardTitle(unquoteText(title[1]))
       // Its own bytes are kept (`raw`) unless they are the app's form, or hold a raw comma: an older build splits there,
@@ -372,17 +412,19 @@ export function formatCardLine(line: CardLine): string | null {
   const parts = line.parts.map((p) =>
     p.kind === 'id'
       ? p.id
-      : p.kind === 'title'
-        ? (p.raw ?? titlePart(p.title))
-        : p.kind === 'property'
-          ? (p.raw ?? formatProperty(p.name, p.value))
-          : p.kind === 'review'
-            ? (p.raw ?? formatCardReview(p.review))
-            : p.kind === 'other'
-              ? p.text
-              : p.kind === 'titleat'
-                ? (p.raw ?? CARD_TITLE_AT_WORDS[p.at])
-                : p.kind,
+      : p.kind === 'created'
+        ? (p.raw ?? createdPartText(p.at))
+        : p.kind === 'title'
+          ? (p.raw ?? titlePart(p.title))
+          : p.kind === 'property'
+            ? (p.raw ?? formatProperty(p.name, p.value))
+            : p.kind === 'review'
+              ? (p.raw ?? formatCardReview(p.review))
+              : p.kind === 'other'
+                ? p.text
+                : p.kind === 'titleat'
+                  ? (p.raw ?? CARD_TITLE_AT_WORDS[p.at])
+                  : p.kind,
   )
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
 }
@@ -390,6 +432,8 @@ export function formatCardLine(line: CardLine): string | null {
 export const EMPTY_CARD_LINE: CardLine = { parts: [] }
 
 export const cardIdOf = (line: CardLine): string | null => line.parts.find((p) => p.kind === 'id')?.id ?? null
+/** When the card was created (its `created` part, ISO 8601 UTC to the ms), or null when unstamped. */
+export const cardCreatedOf = (line: CardLine): string | null => line.parts.find((p) => p.kind === 'created')?.at ?? null
 export const isCardOff = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'off')
 /** The line with no ID part (a copy before its new ID); every other part stays. */
 export const withoutCardId = (line: CardLine): CardLine => ({ parts: line.parts.filter((p) => p.kind !== 'id') })
@@ -418,6 +462,7 @@ export const reviewTitleOf = (card: { title?: string; notitle?: boolean; titleAt
   // YAZ-5696 round 2: the global Never hides every title that has no timing of its own, the answer line's too.
   card.notitle === true || (card.titleAt === undefined && global === 'never') ? '' : (card.title ?? '')
 const cardRecordOf = (line: CardLine): CardRecord => {
+  const created = cardCreatedOf(line)
   const title = cardTitleOf(line)
   const properties = cardPropertiesOf(line)
   return {
@@ -425,6 +470,7 @@ const cardRecordOf = (line: CardLine): CardRecord => {
     off: isCardOff(line),
     next: isCardNext(line),
     reviews: cardReviewsOf(line),
+    ...(created !== null && { created }),
     ...(title !== '' && { title }),
     ...(isCardNoTitle(line) && { notitle: true as const }),
     ...(cardTitleAtOf(line) !== null && { titleAt: cardTitleAtOf(line)! }),
@@ -433,10 +479,10 @@ const cardRecordOf = (line: CardLine): CardRecord => {
   }
 }
 
-/** Where a part that follows the card's head goes: after its ID, its title and its properties (each when it has them), else first. */
+/** Where a part that follows the card's head goes: after its ID, its created stamp, its title and its properties (each when it has them), else first. */
 const afterHead = (line: CardLine): number => {
   let i = line.parts.findIndex((p) => p.kind === 'id') + 1
-  while (line.parts[i]?.kind === 'title' || line.parts[i]?.kind === 'property') i++
+  while (line.parts[i]?.kind === 'created' || line.parts[i]?.kind === 'title' || line.parts[i]?.kind === 'property') i++
   return i
 }
 
@@ -478,7 +524,7 @@ export function withCardProperty(line: CardLine, name: string, value: unknown): 
   const part: CardPart = { kind: 'property', name, value: next }
   if (at !== -1) return { parts: line.parts.flatMap((p, i) => (i === at ? [part] : p.kind === 'property' && keyFold(p.name) === fold ? [] : [p])) }
   let i = line.parts.findIndex((p) => p.kind === 'id') + 1
-  while (line.parts[i]?.kind === 'title') i++
+  while (line.parts[i]?.kind === 'created' || line.parts[i]?.kind === 'title') i++
   const last = line.parts.map((p) => p.kind === 'property').lastIndexOf(true)
   if (last !== -1) i = last + 1
   return { parts: [...line.parts.slice(0, i), part, ...line.parts.slice(i)] }
@@ -504,8 +550,21 @@ export function withoutCardProperty(line: CardLine, name: string): CardLine {
 }
 
 /**
+ * The card's creation timestamp (`created <iso>`): changes in place, or lands right after the ID (before `title`);
+ * null removes it. The same value gives the same line.
+ */
+export function withCardCreated(line: CardLine, at: string | null): CardLine {
+  if (at === null) return line.parts.some((p) => p.kind === 'created') ? { parts: line.parts.filter((p) => p.kind !== 'created') } : line
+  if (at === cardCreatedOf(line)) return line
+  const existing = line.parts.findIndex((p) => p.kind === 'created')
+  if (existing !== -1) return { parts: line.parts.flatMap((p, i): CardPart[] => (i === existing ? [{ kind: 'created', at }] : p.kind === 'created' ? [] : [p])) }
+  const i = line.parts.findIndex((p) => p.kind === 'id') + 1
+  return { parts: [...line.parts.slice(0, i), { kind: 'created', at }, ...line.parts.slice(i)] }
+}
+
+/**
  * The card titled `title` (YAZ-5308: the card head's rename, Edit card's Title field, `card add --title`): plain text on
- * one line (`cleanCardTitle`). The title part changes in place, or comes right after the ID, or first; an empty title
+ * one line (`cleanCardTitle`). The title part changes in place, or comes right after the ID and `created`, or first; an empty title
  * removes it. The same title gives the same line.
  */
 export function withCardTitle(line: CardLine, title: string): CardLine {
@@ -515,7 +574,8 @@ export function withCardTitle(line: CardLine, title: string): CardLine {
   if (clean === '') return { parts: without }
   const at = line.parts.findIndex((p) => p.kind === 'title')
   if (at !== -1) return { parts: line.parts.flatMap((p, i) => (i === at ? [{ kind: 'title', title: clean } as CardPart] : p.kind === 'title' ? [] : [p])) }
-  const i = without.findIndex((p) => p.kind === 'id') + 1
+  let i = without.findIndex((p) => p.kind === 'id') + 1
+  while (without[i]?.kind === 'created') i++
   return { parts: [...without.slice(0, i), { kind: 'title', title: clean }, ...without.slice(i)] }
 }
 
@@ -707,7 +767,7 @@ export function settleCardCopy(keeper: CardSide | null, copy: CardSide): CardCop
   const has = new Set(cardReviewsOf(union).map(cardReviewKey))
   // The rule's own check: never empty a history whose reviews the keeper does not hold now.
   if (!cardReviewsOf(copy.line).every((r) => has.has(cardReviewKey(r)))) return { keeper: keeper.line, copy: copy.line, emptied: false }
-  return { keeper: union, copy: withCardNext(withoutCardReviews(copy.line), false), emptied: true }
+  return { keeper: union, copy: withCardCreated(withCardNext(withoutCardReviews(copy.line), false), null), emptied: true }
 }
 
 // ---------- cards in a page ----------

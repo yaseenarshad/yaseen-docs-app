@@ -6413,8 +6413,9 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     })
     expect(card.editing).toBe(false)
     await act(async () => void view.dispatch(view.state.tr.insertText('Capital of {{France}}\n---\nParis', at + 1)))
-    // The autosave writes the card with the ID the door gave at insert, before any sweep.
-    await vi.waitFor(() => expect(files[PAGE].content).toBe('# Cards\n\nIntro\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'), { timeout: SLOW_RUNNER_MS })
+    // The autosave writes the card with the ID and created timestamp the door gave at insert, before any sweep.
+    const createdCardLine = '<!-- card: WIKI-9, created \\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z -->'
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(new RegExp(`^# Cards\\n\\nIntro\\n\\n\`\`\`card\\nCapital of \\{\\{France\\}\\}\\n---\\nParis\\n\`\`\`\\n${createdCardLine}\\n$`)), { timeout: SLOW_RUNNER_MS })
     // The index reads the save: the Inbox row counts the new card.
     await vi.waitFor(() => expect(captured.sidebar?.dueCount).toBe(1), { timeout: SLOW_RUNNER_MS })
     // Unsaved typing in the open page, elsewhere than the card ("Intro" → "Intro, typed").
@@ -6432,7 +6433,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
     await press('0')
     // The review part may end with the answer's seconds (YAZ-5033: ` <n>s`, written when known).
-    const reviewed = /^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m
+    const reviewed = /^<!-- card: WIKI-9, created \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z, \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z good(?: \d+s)? -->$/m
     await vi.waitFor(() => expect(files[PAGE].content).toMatch(reviewed), { timeout: SLOW_RUNNER_MS })
     // The open page took the review, and its next save writes the typing with it: both are in the file.
     await vi.waitFor(() => expect(files[PAGE].content).toContain('Intro, typed'), { timeout: SLOW_RUNNER_MS })
@@ -6443,8 +6444,8 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     expect(el.querySelector('.outside-change, [data-outside-change]')).toBeNull()
     // ⌘Z in the Inbox takes the review off the line; the typing stays.
     await press('z', { metaKey: true })
-    await vi.waitFor(() => expect(files[PAGE].content).toBe('# Cards\n\nIntro, typed\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'), { timeout: SLOW_RUNNER_MS })
-    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-9 -->'))
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(new RegExp(`^# Cards\\n\\nIntro, typed\\n\\n\`\`\`card\\nCapital of \\{\\{France\\}\\}\\n---\\nParis\\n\`\`\`\\n${createdCardLine}\\n$`)), { timeout: SLOW_RUNNER_MS })
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toMatch(new RegExp(createdCardLine)))
     expect(el.querySelector('.outside-changes-bar')).toBeNull()
   }, 30_000)
 

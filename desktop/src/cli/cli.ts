@@ -43,7 +43,7 @@ import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, canonicalPageId, isNumberId, vaultPageId } from '@shared/pageId'
 import { keyFold } from '@shared/propertyKeys'
-import { cardBlock, cardTitleOf, changeCard, isCardPropertyName, pageCards, withCardNext, withCardNoTitle, withCardProperty, withCardTitle, type CardLine, type CardPropertyScalar, type CardPropertyValue } from '@shared/cardLine'
+import { cardBlock, cardTime, cardTitleOf, changeCard, isCardPropertyName, pageCards, withCardNext, withCardNoTitle, withCardProperty, withCardTitle, type CardLine, type CardPropertyScalar, type CardPropertyValue } from '@shared/cardLine'
 import { inLineEnds, withLf } from '@shared/lineEnds'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardFileContent, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
@@ -652,7 +652,7 @@ const withCardProps = (line: CardLine, properties: Record<string, CardPropertyVa
  * with `--hide-title`, as ⋯ › "Title on the front" › Hide writes it, and its `--prop` properties.
  */
 const newCardLine = (id: string, title: string, flags: Map<string, string | true>, properties: Record<string, CardPropertyValue>): CardLine =>
-  withCardProps(withCardNoTitle(withCardTitle({ parts: [{ kind: 'id', id }] }, title), flags.has('--hide-title')), properties)
+  withCardProps(withCardNoTitle(withCardTitle({ parts: [{ kind: 'id', id }, { kind: 'created', at: cardTime(Date.now()) }] }, title), flags.has('--hide-title')), properties)
 
 /** `card add` (YAZ-4963, idea 16): a card with a real ID from the vault's counter, written atomically. */
 async function cardAdd(page: string, flags: Map<string, string | true>, io: Io, props?: readonly string[]): Promise<void> {

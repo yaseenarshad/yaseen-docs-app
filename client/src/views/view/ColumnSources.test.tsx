@@ -95,7 +95,7 @@ describe('Columns ⚙: where each hidden column comes from (YAZ-4713 C4)', () =>
   it('the folder’s own (by its name), From <owner>, then the pages’ other fields', () => {
     const pop = openColumns(mount().el)
     expect(parts(pop)).toEqual({
-      Desserts: ['Status', 'File name', 'Folder'],
+      Desserts: ['Status', 'Created', 'File name', 'Folder'],
       'From Schema': ['Pillar'],
       'Other properties in these pages': ['Cover', 'Date', 'Priority', 'Published', 'Related', 'Tags', 'Views'],
     })

@@ -6,11 +6,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
+import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import type { ColumnDecl } from '../folderSettings'
 import { type ParsedViews, parseViews } from '../viewSchema'
 import { type FolderHost, ViewsPane } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
+
+vi.mock('../../review/useReviewSettings', () => ({ useVaultReviewSettings: () => DEFAULT_REVIEW_SETTINGS }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -118,10 +122,122 @@ describe('Edit column', () => {
     expect(setColumn).toHaveBeenLastCalledWith('amount', { kind: 'number', format: { style: 'grouped', decimals: 2 } }, expect.anything())
   })
 
-  it('a Date column offers its three formats', () => {
+  it('a Date column offers its four formats including Custom…', () => {
     const { el } = mount({ due: { kind: 'date' }, stage: SELECT })
     editColumn(el, 2)
-    expect([...byLabel<HTMLSelectElement>('Format of Due').options].map((o) => o.textContent)).toEqual(['2026-11-07', 'Nov 7, 2026', 'Relative (in 3 days)'])
+    expect([...byLabel<HTMLSelectElement>('Format of Due').options].map((o) => o.textContent)).toEqual(['2026-11-07', 'Nov 7, 2026', 'Relative (in 3 days)', 'Custom…'])
+  })
+
+  it('YAZ-6167: Custom… on a Date column shows Pattern input + live preview and saves pattern on commit', () => {
+    const { el, setColumn } = mount({ due: { kind: 'date', format: { style: 'custom' } }, stage: SELECT })
+    editColumn(el, 2)
+    const input = byLabel<HTMLInputElement>('Date pattern for Due')
+    expect(input.placeholder).toBe('ddd MMM D')
+    expect(byLabel<HTMLElement>('Preview of Due format').textContent).toContain('Preview:')
+    setValue(input, 'ddd MMM D')
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(setColumn).toHaveBeenLastCalledWith('due', { kind: 'date', format: { style: 'custom', pattern: 'ddd MMM D' } }, { kind: 'date', format: { style: 'custom' } })
+  })
+
+  it('YAZ-6167: built-in file.ctime shows Format picker, saves def.properties["file.ctime"].format, and renders formatted cells', () => {
+    const ctime = new Date(2026, 10, 7, 15, 30).getTime()
+    const datedRecords = [
+      { ...RECORDS[0], ctime },
+      { ...RECORDS[1], ctime: new Date(2026, 10, 8, 9, 0).getTime() },
+    ]
+    let parsed = parseViews(`views:
+  - type: table
+    name: T
+    order:
+      - file.name
+      - file.ctime
+`)
+    const folder = testFolderHost({ settings: { columns: {}, views: [], problems: [] }, vaultRecords: datedRecords })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const rerender = () =>
+      act(() =>
+        root?.render(
+          <ViewsPane
+            parsed={parsed}
+            onChange={(next: ParsedViews) => {
+              parsed = next
+              rerender()
+            }}
+            root="/vault"
+            folderPath="/vault/f/.folder.md"
+            records={datedRecords}
+            folder={folder}
+            onOpenFile={vi.fn()}
+          />,
+        ),
+      )
+    rerender()
+    // Default Created display is date-only ISO
+    expect(cells(container).slice(0, 2)).toEqual(['A', '2026-11-07'])
+    // Open Edit column on Created (file.ctime)
+    editColumn(container, 1)
+    setValue(byLabel<HTMLSelectElement>('Format of Created'), 'custom')
+    const patternInput = byLabel<HTMLInputElement>('Date pattern for Created')
+    setValue(patternInput, 'ddd MMM D')
+    act(() => {
+      patternInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(parsed.def.properties?.['file.ctime']?.format).toEqual({ style: 'custom', pattern: 'ddd MMM D' })
+    expect(cells(container).slice(0, 2)).toEqual(['A', 'Sat Nov 7'])
+  })
+
+  it('YAZ-6167: built-in card.created in a Cards table saves format through cardView.properties and renders formatted cells', () => {
+    const ctime = new Date(2026, 10, 7, 15, 30).getTime()
+    const cardRecords: IndexRecord[] = [
+      {
+        ...rec('C-1', {}),
+        kind: 'card',
+        ctime,
+        cards: [{ id: 'C-1', title: 'First card', off: false, next: false, reviews: [] }],
+      },
+    ]
+    let parsed = parseViews(`views:
+  - type: table
+    name: Cards
+    rows: cards
+    cardView:
+      order:
+        - file.name
+        - card.created
+`)
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update(null, [], [], true)
+    const folder = testFolderHost({ wikilinks, settings: { columns: {}, views: [], problems: [] }, vaultRecords: cardRecords })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const rerender = () =>
+      act(() =>
+        root?.render(
+          <ViewsPane
+            parsed={parsed}
+            onChange={(next: ParsedViews) => {
+              parsed = next
+              rerender()
+            }}
+            root="/vault"
+            folderPath="/vault/f/.folder.md"
+            records={cardRecords}
+            folder={folder}
+            onOpenFile={vi.fn()}
+          />,
+        ),
+      )
+    rerender()
+    expect(cells(container).slice(0, 2)).toEqual(['First card', '2026-11-07'])
+    editColumn(container, 1)
+    setValue(byLabel<HTMLSelectElement>('Format of Created'), 'medium')
+    expect(parsed.def.views[0].cardView?.properties?.['card.created']?.format).toEqual({ style: 'medium' })
+    expect(cells(container).slice(0, 2)).toEqual(['First card', 'Nov 7, 2026'])
   })
 
   it('S24: renaming an option asks the host to rename it in the pages too', () => {

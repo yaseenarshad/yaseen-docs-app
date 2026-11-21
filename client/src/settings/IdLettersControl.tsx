@@ -5,6 +5,7 @@
  * for it and shows what the vault holds afterwards.
  */
 import { useEffect, useRef, useState } from 'react'
+import type { BackfillCreatedResult } from '@shared/ipc'
 import { isIdLetters } from '@shared/pageId'
 import type { IdsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
@@ -195,6 +196,46 @@ export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
           }}
           onCancel={() => setAsking(null)}
         />
+      )}
+    </>
+  )
+}
+
+/**
+ * Opt-in created-date backfill (YAZ-6168): stamps `created:` on unstamped pages and `created <iso>`
+ * on unstamped card files using each file's current OS birthtime.
+ */
+export function BackfillCreatedControl({ backfillCreated }: { backfillCreated: () => Promise<BackfillCreatedResult | null> }) {
+  const unit = useUnit()
+  const { busy, line, run } = useRun()
+  return (
+    <>
+      <div className="settings__options">
+        <button
+          type="button"
+          className="settings__option"
+          disabled={busy}
+          onClick={() =>
+            run('Stamping created dates…', () =>
+              backfillCreated().then(
+                (res) =>
+                  res === null
+                    ? null
+                    : res.written === 0
+                      ? unit('All pages already have a created date.')
+                      : unit(`Stamped ${res.written} ${res.written === 1 ? 'page' : 'pages'}.`),
+                (err: unknown) => `Couldn't stamp created dates: ${said(err)}`,
+              ),
+            )
+          }
+        >
+          Stamp created dates
+        </button>
+      </div>
+      {line !== null && (
+        <p className="setting__hint" role="status">
+          {line}
+        </p>
       )}
     </>
   )

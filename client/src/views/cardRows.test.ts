@@ -42,8 +42,8 @@ const CARDS: ViewDef = { type: 'table', name: 'Cards', rows: 'cards' }
 const DEF: ViewSet = { views: [CARDS] }
 /** A Card table that shows every card column, hidden ones too (YAZ-5793 hides some by default). */
 const ALL: ViewDef = { ...CARDS, order: ['file.name', ...CARD_KEYS] }
-/** The new Card table's columns (YAZ-5793, Yaseen's list), then the ones Columns ⚙ offers hidden. */
-const SHOWN = ['file.name', 'card.status', 'card.nextReview', 'card.wait', 'card.forgotten', 'card.recall', 'card.lastReview']
+/** The new Card table's columns (YAZ-5793, Yaseen's list; YAZ-6150 D4 adds `card.created`), then the ones Columns ⚙ offers hidden. */
+const SHOWN = ['file.name', 'card.status', 'card.nextReview', 'card.wait', 'card.forgotten', 'card.recall', 'card.lastReview', 'card.created']
 const OFFERED = ['card.overdue', 'card.upNext', 'card.fix', 'card.reviews', 'card.successRate', 'card.page', 'card.id', 'card.file']
 const run = (view: ViewDef = CARDS, records = cardRowRecords(PAGES)) => runView({ views: [view] }, view, records, { now: NOW, cardSettings: DEFAULT_REVIEW_SETTINGS })
 
@@ -65,7 +65,7 @@ describe('YAZ-5319: card rows', () => {
     expect(DEFAULT_CARD_ORDER).toEqual(SHOWN)
     expect(propertyKeys(DEF, CARDS, [])).toEqual(SHOWN)
     const seen = cardLensOn(DEF, 0)
-    expect(propertyKeys(seen, seen.views[0], []).map((k) => propertyLabel(seen, k))).toEqual(['Title', 'Status', 'Next review date', 'Wait time', 'Times forgotten', 'Recall chance', 'Last review date'])
+    expect(propertyKeys(seen, seen.views[0], []).map((k) => propertyLabel(seen, k))).toEqual(['Title', 'Status', 'Next review date', 'Wait time', 'Times forgotten', 'Recall chance', 'Last review date', 'Created'])
     // Every card key: the shown ones, then the ones Columns ⚙ offers hidden.
     expect(CARD_KEYS).toEqual([...SHOWN.slice(1), ...OFFERED])
     expect(OFFERED.map(defaultLabel)).toEqual(['Days overdue', 'Up next status', 'Fix status', 'Reviews', 'Success rate', 'Page', 'ID', 'File name'])
@@ -97,7 +97,7 @@ describe('YAZ-5319: card rows', () => {
     // A card with a `status` property: its column and the Status column side by side, told apart.
     const rows = cardRowRecords([record('Trip', { cards: [card('GEO-1', { properties: { status: 'draft' } })] })])
     const keys = propertyKeys(seen, seen.views[0], rows)
-    expect(keys.map((k) => propertyLabel(seen, k))).toEqual(['Title', 'Status', 'Next review date', 'Wait time', 'Times forgotten', 'Recall chance', 'Last review date', 'Status (card property)'])
+    expect(keys.map((k) => propertyLabel(seen, k))).toEqual(['Title', 'Status', 'Next review date', 'Wait time', 'Times forgotten', 'Recall chance', 'Last review date', 'Created', 'Status (card property)'])
   })
 
   it('each column\'s value: the page, the status, the reviews from the schedule, Up next, the ID, the file', () => {
@@ -375,5 +375,39 @@ describe('YAZ-5793: Wait time, Times forgotten, Recall chance, Days overdue, Fil
     // Late is at 87%, Soon (learned Oct 25) higher; a New card has none.
     const high: ViewDef = { ...view, filters: 'card.recall >= 90' }
     expect(runView({ views: [high] }, high, cardRowRecords(pages), { now, cardSettings: S }).rows.map((r) => r.record.title)).toEqual(['Soon'])
+  })
+
+  it('YAZ-6167: card.created reads stamped timestamp, falls back to file ctime only for standalone card files, displays date-only, sorts by exact ms', () => {
+    const t1 = new Date(2026, 10, 21, 9, 0, 0).getTime()
+    const t2 = new Date(2026, 10, 21, 16, 30, 0).getTime()
+    const tFile = new Date(2026, 10, 10, 12, 0, 0).getTime()
+    const pages = [
+      record('Notes', {
+        ctime: tFile,
+        cards: [
+          card('C-1', { title: 'Inline later', created: new Date(t2).toISOString() } as Partial<CardRecord>),
+          card('C-2', { title: 'Inline earlier', created: new Date(t1).toISOString() } as Partial<CardRecord>),
+          card('C-3', { title: 'Inline unstamped' }),
+        ],
+      }),
+      record('C-4', { kind: 'card', ctime: tFile, cards: [card('C-4', { title: 'File unstamped' })] }),
+      record('C-5', { kind: 'card', ctime: tFile, cards: [card('C-5', { title: 'File stamped', created: new Date(t1 + 60_000).toISOString() } as Partial<CardRecord>)] }),
+    ]
+    expect(inferType('card.created', [])).toBe('date')
+    const view: ViewDef = { ...CARDS, sort: [{ property: 'card.created', direction: 'ASC' }] }
+    const out = runView({ views: [view] }, view, cardRowRecords(pages), { now: NOW, cardSettings: S })
+    expect(out.rows.map((r) => r.record.title)).toEqual([
+      'File unstamped',
+      'Inline earlier',
+      'File stamped',
+      'Inline later',
+      'Inline unstamped',
+    ])
+    const byTitle = Object.fromEntries(out.rows.map((r) => [r.record.title, r.values['card.created']]))
+    expect(byTitle['File unstamped']).toEqual(new DateValue(tFile, false))
+    expect(byTitle['Inline earlier']).toEqual(new DateValue(t1, false))
+    expect(byTitle['File stamped']).toEqual(new DateValue(t1 + 60_000, false))
+    expect(byTitle['Inline later']).toEqual(new DateValue(t2, false))
+    expect(byTitle['Inline unstamped']).toBeNull()
   })
 })

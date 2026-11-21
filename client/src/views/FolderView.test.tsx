@@ -304,7 +304,7 @@ describe('a folder with no settings file', () => {
 
   it('a page’s own `id`, `title` and `also_in` are no columns where the vault uses IDs: they are the app’s keys (YAZ-4713 C1)', async () => {
     const el = await mount({}, [rec(LEAD, held({ order: 2 }, { id: 'n0tead000001', title: 'Lead', also_in: [STAGES_ID] }))])
-    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order', 'Created'])
   })
 
   it('before the first snapshot nothing renders: only the index can say the folder has no settings', async () => {
@@ -1611,7 +1611,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
     // 2. Open Orders: Domain is there, owned by Schema, its header marked ↳ "From Schema" (C2, C11).
     el = await open(ORDERS, IN_ORDERS)
     expect(captured.folder!.columns).toEqual({ domain: { decl: domain, owner: 'schema' } })
-    expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toEqual(['Name', 'Domain'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toEqual(['Name', 'Domain', 'Created'])
     // The words are the app's hover box and the icon's name (YAZ-4772: a native title showed nothing).
     expect(headerMark(el, 'Domain')).toMatchObject({ dataset: { mark: 'parent' } })
     expect(headerMark(el, 'Domain')!.querySelector('svg')!.getAttribute('aria-label')).toBe('From Schema')
@@ -1900,7 +1900,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
     }
     // No `order` on the view: the default columns are the name and the page's columns alone.
     const el = await mount({ columns: SETTINGS.columns, views: [{ type: 'table', name: 'Table' }] }, [lead])
-    expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((header) => header.trim())).toEqual(['Name', 'Order', 'Related'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((header) => header.trim())).toEqual(['Name', 'Order', 'Related', 'Created'])
     expect(cell(el, 'Lead Gen', 1).textContent).toBe('2')
 
     feed({ columns: SETTINGS.columns, views: [{ type: 'table', name: 'Table', order: ['file.name', 'file.folder', 'file.tags', 'file.links', 'file.mtime', 'note.secret', 'note.id', 'note.elsewhere'] }] }, [lead])
@@ -1970,7 +1970,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
     act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
     await flush()
     expect(captured.folder!.settings.columns).toEqual({})
-    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Status'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Status', 'Created'])
     expect([cell(el, 'Lead Gen', 1).textContent, cell(el, 'Sales', 1).textContent]).toEqual(['4-Done', '1-Backlog'])
   })
 
@@ -2013,7 +2013,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
 
   it('a key the app owns is no column: the views list none, and the write door refuses one', async () => {
     const el = await mount({ views: [{ type: 'table', name: 'Table' }] }, [rec(LEAD, { order: 2, also_in: [ARCHIVE_ID], title: 'Lead', in: { [ARCHIVE_ID]: { x: 1 } } })])
-    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order', 'Created'])
     await expect(captured.folder!.writeValues(LEAD, [{ key: 'in', value: {} }])).rejects.toThrow("in is the app's own property")
     await expect(captured.folder!.writeValues(LEAD, [{ key: 'folder_settings', value: {} }])).rejects.toThrow("folder_settings is the app's own property")
     expect(writeFile).not.toHaveBeenCalled()
@@ -2156,7 +2156,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
     it('a link field no folder defines waits under "Other properties"; shown, it reads and edits as a link', async () => {
       disk.set(PAGE, '---\ntitle: Orders table\ncontact: "[[Outsider]]"\n---\n')
       const el = await open(ORDERS)
-      expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toEqual(['Name', 'Points to'])
+      expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toEqual(['Name', 'Points to', 'Created'])
       click(byLabel(el, 'Columns and view'))
       click(byLabel(el, 'Show Contact'))
       // An "Other properties" row's Show asks first (YAZ-4764, C4A).
@@ -2328,7 +2328,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
       const el = await mount(null, OWN, false)
       expect(texts(el, '.view-tab__btn')).toEqual(['Table'])
       expect(captured.folder!.settings.columns).toEqual({})
-      expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Owner', 'Title'])
+      expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Owner', 'Title', 'Created'])
       expect([cell(el, 'Lead Gen', 2).textContent, cell(el, 'Lead Gen', 5).textContent, cell(el, 'Old', 4).textContent, cell(el, 'Old', 6).textContent]).toEqual(['k3m9x2pq7abc', 'Ana', '500', 'mine'])
       expect(write).not.toHaveBeenCalled()
       expect(writeOwn).not.toHaveBeenCalled()
@@ -2389,7 +2389,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
       expect(texts(el, '[role="menuitem"]')).toEqual(['Edit column…', 'Rename column…', 'Add column to the right…', 'Sort', 'Group', 'Filter', 'Text', 'Fill column', 'Header row', 'Hide column', 'Freeze up to this column', 'Unfreeze columns'])
       click(menuItem(el, 'Hide column'))
       await flush()
-      expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Title'])
+      expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Title', 'Created'])
       expect([...disk.keys()]).toEqual([SETTINGS_FILE])
     })
   })

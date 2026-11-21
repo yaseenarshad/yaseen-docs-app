@@ -98,7 +98,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintPageId.channel, CONTRACT.makeDailyPage.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.duplicate.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.downloadImage.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintPageId.channel, CONTRACT.makeDailyPage.channel, CONTRACT.backfillCreated.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.duplicate.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.downloadImage.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -460,7 +460,7 @@ describe('registerFsIpc', () => {
         store.setSettings({ ...store.get().settings, commentsHint: true })
         expect(await call(CONTRACT.mintPageId, at('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
         expect(await call(CONTRACT.createFile, { path: at('meeting-pages-yaz-1.md'), content: PAGE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
-        expect(await readFile(at('meeting-pages-yaz-1.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\nstatus: idea\nid: YAZ-1\n---\nbody\n')
+        expect(await readFile(at('meeting-pages-yaz-1.md'), 'utf8')).toMatch(/^---\n# comments: - \{by: <name>, body: <text>\}\nstatus: idea\nid: YAZ-1\ncreated: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\n---\nbody\n$/)
       } finally {
         await close(vault)
       }
@@ -509,7 +509,7 @@ describe('registerFsIpc', () => {
         // The front end takes the number first, from the door (YAZ-2677 R17), and the page is born with it.
         expect(await call(CONTRACT.mintPageId, at('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
         expect(await call(CONTRACT.createFile, { path: at('meeting-pages-yaz-1.md'), content: PAGE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
-        expect(await readFile(at('meeting-pages-yaz-1.md'), 'utf8')).toBe('---\nstatus: idea\nid: YAZ-1\n---\nbody\n')
+        expect(await readFile(at('meeting-pages-yaz-1.md'), 'utf8')).toMatch(/^---\nstatus: idea\nid: YAZ-1\ncreated: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\n---\nbody\n$/)
         // An old ID is never written (R3): a request that carries one is refused, and makes nothing.
         expect(await call(CONTRACT.createFile, { path: at(`old-${ID}.md`), content: PAGE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         // Each ID after that is a next number: a folder (S33), a page with no `id` in its request, a copy
