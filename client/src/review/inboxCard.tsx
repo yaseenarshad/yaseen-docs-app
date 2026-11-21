@@ -5,14 +5,16 @@
  * (`CardPreview`) both draw their card with these, so a preview IS the Inbox's card: no copy of its look or its steps.
  * What each adds is its own: the Inbox its answers, its timer and its session; the Preview none of them.
  */
-import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { reviewTitleOf, type CardTitleAt, type CardTitleShow } from '@shared/cardLine'
 import { reviewTitleAt, titleShows, titleStepOf, type TitleStep } from '@shared/cardTitleShows'
 import { cardSides, hiddenCount } from '@shared/cardText'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBody, type CardLinkDoors } from './cardParts'
-import { CARD_MEDIA, CARD_OPENS, stopCardAudio } from '../editor/card/cardMedia'
-import { glideView, spaceMove } from './inboxScroll'
+import { CARD_MEDIA, CARD_OPENS, stopCardAudio, type CardViewLinkHit } from '../editor/card/cardMedia'
+import { linkPath } from '../editor/wikilink/linkResolve'
+import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
+import { glideToBottomIfNear, glideView, spaceMove } from './inboxScroll'
 import { START, hide, markOf, nextStep, reveal, shownParts, type Reveal } from './cardSteps'
 
 /** The step a card is at (D18): how many sides show, which hidden words, and the marked blank (`cardSteps.ts`, YAZ-5049 round 4). */
@@ -50,7 +52,9 @@ export interface CardSteps {
   done: boolean
   /** YAZ-5048: the next Space shows the next side (the sides that show have no hidden word left, the title's own step past). */
   nextSide: boolean
-  /** The blank the next Space shows (YAZ-5049 round 4: after a click, the next one still hidden after the clicked word). */
+  /** YAZ-5995: the next Space shows the title (its own step, YAZ-5709). */
+  titleNow: boolean
+  /** The blank the next Space shows (YAZ-5049 round 4: after a click, the next one still hidden after the clicked word); null when the title is next. */
   mark: number | null
   /** YAZ-5105 round 3: the last side shows, past the front (a one-side card: past its first Space, or nothing hidden). */
   onLastSide: boolean
@@ -83,29 +87,37 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
   const after = text === null ? null : nextStep(step, counts, title)
   const done = text !== null && after === null
   const nextSide = after !== null && after.sides > step.sides
-  const mark = markOf(step, hiddenUpTo(step.sides))
+  const titleNow = after !== null && after.titled && !step.titled
+  const mark = titleNow ? null : markOf(step, hiddenUpTo(step.sides))
   const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.open.length > 0 || done)
+  const scrollBottomRef = useRef(false)
+  useEffect(() => {
+    if (!done || !scrollBottomRef.current) return
+    scrollBottomRef.current = false
+    const view = viewRef.current
+    if (view !== null) glideToBottomIfNear(view)
+  }, [done, step.key, viewRef])
   const stepOn = useCallback(
     (by: 'key' | 'mouse' = 'key'): boolean => {
       if (text === null) return false
       // The title's own step (YAZ-5709) shows at the card's top, in the band: nothing to bring into view.
-      const titleNow = after !== null && after.titled && !step.titled
-      const m = markOf(step, hiddenUpTo(step.sides))
       // Round 5 (Yaseen: "Yes, build it"): Space never shows a blank you cannot see. Round 6 (Yaseen: "certain space
       // clicks that are actually oriented towards just moving the screen"): the same for the next side and the end.
       const view = viewRef.current
       if (by === 'key' && view !== null && !titleNow) {
-        const dy = spaceMove(view, done ? 'end' : (m ?? 'side'))
+        const dy = spaceMove(view, done ? 'end' : (mark ?? 'side'))
         if (dy !== 0) {
           glideView(view, dy)
           return true
         }
       }
       if (after === null) return false
+      // YAZ-6058: on a final blank reveal (not a newly opened long Side 2), glide to the bottom only if already close.
+      if (by === 'key' && !nextSide && nextStep(after, counts, title) === null) scrollBottomRef.current = true
       setStep({ ...after, key: step.key })
       return true
     },
-    [done, after, text, step, viewRef, hiddenUpTo],
+    [done, after, text, step, viewRef, titleNow, mark, counts, title, nextSide],
   )
   const showWord = useCallback(
     (word: number) => {
@@ -126,7 +138,7 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
     setStep({ ...START, key: cardKey })
     if (viewRef.current !== null) viewRef.current.scrollTop = 0
   }, [cardKey, viewRef])
-  return { counts, step, done, nextSide, mark, onLastSide, stepOn, showWord, hideWord, restart }
+  return { counts, step, done, nextSide, titleNow, mark, onLastSide, stepOn, showWord, hideWord, restart }
 }
 
 /**
@@ -158,8 +170,8 @@ export function CardSideCount({ steps }: { steps: Pick<CardSteps, 'counts' | 'st
 export function InboxCardPanel({ startDrag, bodyRef, band, more, children }: { startDrag: (side: -1 | 1) => (event: ReactPointerEvent<HTMLElement>) => void; bodyRef: RefObject<HTMLDivElement | null>; band?: ReactNode; /** The card's ⋯ at the top right of the head band (YAZ-5963, the Inbox's; not the Preview's). */ more?: ReactNode; children: ReactNode }) {
   return (
     <div className="card-inbox__panel">
-      <div className="card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(-1)} />
-      <div className="card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(1)} />
+      <div className="card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" title="Drag to resize" onPointerDown={startDrag(-1)} />
+      <div className="card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" title="Drag to resize" onPointerDown={startDrag(1)} />
       {band}
       {more}
       <div ref={bodyRef} className="card-inbox__body">
@@ -174,8 +186,17 @@ export function InboxCardPanel({ startDrag, bodyRef, band, more, children }: { s
  * on a blank, that word; on a shown word, it hides again (round 6); elsewhere on the card, the marked word — but not on
  * a link or a sound. A mouse never scrolls.
  */
-export function InboxCardFace({ text, path, vault, steps, doors, onStep, tour }: { text: string; path: string; vault: ExploreVault; steps: Pick<CardSteps, 'step' | 'mark' | 'showWord' | 'hideWord'>; doors: CardLinkDoors; onStep: (by: 'mouse') => void; /** The guided tour's mark (YAZ-5123), in the Inbox only. */ tour?: string }) {
+export function InboxCardFace({ text, path, vault, steps, doors, onStep, tour, wikilinkHover }: { text: string; path: string; vault: ExploreVault; steps: Pick<CardSteps, 'step' | 'mark' | 'showWord' | 'hideWord'>; doors: CardLinkDoors; onStep: (by: 'mouse') => void; /** The guided tour's mark (YAZ-5123), in the Inbox only. */ tour?: string; wikilinkHover?: WikilinkHover }) {
   const { step, mark, showWord, hideWord } = steps
+  const onHoverLink =
+    wikilinkHover === undefined
+      ? undefined
+      : (hit: (CardViewLinkHit & { rect: { left: number; top: number; right: number; bottom: number } }) | null) => {
+          if (hit === null) return wikilinkHover.onLeave()
+          const to = hit.kind === 'wikilink' ? linkPath(hit.inner, vault.wikilinks, vault.viewOnlyLinks) : null
+          if (to === null) return wikilinkHover.onLeave()
+          wikilinkHover.onHover(to, hit.rect, false)
+        }
   return (
     <div
       className="card card-screen card-inbox__card"
@@ -189,7 +210,7 @@ export function InboxCardFace({ text, path, vault, steps, doors, onStep, tour }:
         else hideWord(n)
       }}
     >
-      <CardBody text={text} path={path} vault={vault} show={{ sides: step.sides, ...shownParts(step.open), next: mark ?? undefined }} doors={doors} />
+      <CardBody text={text} path={path} vault={vault} show={{ sides: step.sides, ...shownParts(step.open), next: mark }} doors={doors} onPillHover={onHoverLink} />
     </div>
   )
 }

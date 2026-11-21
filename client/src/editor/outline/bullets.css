@@ -79,7 +79,9 @@
 /* A long number ("100.") stays on one line and runs out to the left, never into its text. */
 .editor-instance .milkdown .milkdown-list-item-block > li > .label-wrapper > .label.ordered {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  padding: 0;
   white-space: nowrap;
 }
 

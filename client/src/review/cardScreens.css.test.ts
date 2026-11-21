@@ -46,17 +46,18 @@ const decls = (css: string, selector: string) =>
     .filter((r) => r.selectors.length === 1 && r.selectors[0] === selector)
     .reduce<Record<string, string>>((all, r) => ({ ...all, ...r.decls }), {})
 
-describe('the block under the card stays at the bottom of the screen (YAZ-5431, as Mochi)', () => {
+describe('the block under the card sits in normal flow below long cards and at the bottom for short cards (YAZ-5431, YAZ-6055, as Mochi)', () => {
   it('the column fills the Inbox\'s height and the dock (buttons, last line, keys) sits at its bottom: a short card leaves the room above it', () => {
     expect(decls(cards, '.card-inbox__column')['flex']).toBe('1 0 auto')
     expect(decls(cards, '.card-inbox__dock')['margin-top']).toBe('auto')
+    expect(decls(cards, '.card-inbox__dock')['padding-bottom']).toBe('16px')
   })
 
-  it('a long card: the same dock is sticky at the very same bottom edge, so it never moves between a short and a long card', () => {
+  it('a long card: the dock sits in normal scroll flow below the card with no sticky positioning or fade overlay (YAZ-6055)', () => {
     const dock = decls(cards, '.card-inbox__dock')
-    expect(dock['position']).toBe('sticky')
-    // The view has no bottom padding: the short card's dock (end of the filled column) and the long card's (stuck) share the view's bottom edge.
-    expect(dock['bottom']).toBe('0')
+    expect(dock['position']).toBeUndefined()
+    expect(dock['bottom']).toBeUndefined()
+    expect(decls(cards, '.card-inbox__dock::before')).toEqual({})
     expect(decls(cards, '.card-inbox')['padding']).toBe('0 16px')
   })
 })

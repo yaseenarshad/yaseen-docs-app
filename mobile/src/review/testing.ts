@@ -116,7 +116,11 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
     text: () => (host.textContent ?? '').replace(/\s+/g, ' '),
     /** The line under the buttons. */
     last: () => (host.querySelector('.review__last')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
-    head: () => (host.querySelector('.review__head')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    head: () => {
+      const title = (host.querySelector('.review__head > .review__title')?.textContent ?? '').replace(/\s+/g, ' ').trim()
+      const id = (host.querySelector('.review__id')?.textContent ?? '').replace(/\s+/g, ' ').trim()
+      return title !== '' && id !== '' ? `${title} · ${id}` : title || id
+    },
     seen,
     async tap() {
       await seen()

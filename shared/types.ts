@@ -2732,11 +2732,11 @@ export const CARD_SPACINGS: readonly CardSpacing[] = ['pages', 'clean', 'custom'
 /** A card's own space between blocks (YAZ-5050), px per side. */
 export const CARD_BLOCK_GAP_MAX = 24
 /**
- * Card spacing's Clean values (YAZ-5050 round 3 and 4, Yaseen: "custom defaults are what mochies are", "yes clean is
- * good"): measured on his Mochi screenshot — lines 1.5 apart, about 1em between paragraphs (8 px a side), and no extra
- * space between bullets. Clean uses them; Custom starts from them. Separate from the pages' own defaults.
+ * Card spacing's Clean values (YAZ-5050 round 3 and 4; updated YAZ-6035): roomy 1.65 line height, 8 px paragraph gap,
+ * and 3 px per side (6 px total) between list items. Clean uses them; Custom starts from them. Separate from the
+ * pages' own defaults.
  */
-export const CARD_SPACING_CLEAN = { cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 } as const
+export const CARD_SPACING_CLEAN = { cardLineSpacing: 1.65, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 3 } as const
 
 /** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the page. */
 export type GuideLinesShow = 'always' | 'near'

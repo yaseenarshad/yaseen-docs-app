@@ -653,3 +653,137 @@ ${more}---
     expect(value().querySelector('.view-cell-edit[data-editing]')).not.toBeNull()
   })
 })
+
+describe('YAZ-5989: cross-folder column writes from an unlocked child folder tab in a read-only vault', () => {
+  const PARENT = '/vault/recipes'
+  const PARENT_FILE = `${PARENT}/.folder.md`
+  const CHILD = `${PARENT}/desserts`
+  const CHILD_FILE = `${CHILD}/.folder.md`
+  const OTHER = '/vault/tags'
+  const OTHER_FILE = `${OTHER}/.folder.md`
+  const PAGE = `${CHILD}/Flan.md`
+  const PARENT_MD = `---
+id: fold0000000p
+folder_settings:
+  columns:
+    course:
+      kind: select
+      options:
+        - Sweet
+        - Savory
+  views:
+    - type: table
+      name: All
+---
+`
+  const CHILD_MD = `---
+id: fold0000000c
+folder_settings:
+  columns:
+    tag:
+      kind: link
+      target: "[[tags]]"
+  views:
+    - type: table
+      name: Desserts
+      order:
+        - file.name
+        - note.course
+        - note.tag
+---
+`
+  const OTHER_MD = `---
+id: fold0000000t
+folder_settings:
+  columns: {}
+  views:
+    - type: table
+      name: Tags
+---
+`
+  const mountChild = async (allowFileAction: (root: string) => Promise<boolean>) => {
+    disk = new Map([
+      [PARENT_FILE, { content: PARENT_MD, mtime: 50 }],
+      [CHILD_FILE, { content: CHILD_MD, mtime: 50 }],
+      [OTHER_FILE, { content: OTHER_MD, mtime: 50 }],
+      [PAGE, { content: '---\ncourse: Sweet\n---\n', mtime: 10 }],
+    ])
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() =>
+      root?.render(
+        <VaultReadOnly.Provider value={{ on: true, allowFileAction }}>
+          <FolderView root="/vault" path={CHILD} source={source} onOpenFile={() => undefined} onRetitle={() => undefined} commentsOrder="oldest" onChangeCommentsOrder={() => undefined} />
+        </VaultReadOnly.Provider>,
+      ),
+    )
+    const records = [rec(PAGE, { course: 'Sweet' })]
+    const folders = [PARENT_FILE, CHILD_FILE, OTHER_FILE].map((p) => {
+      const f = disk.get(p)!
+      return rec(p, parseFrontmatter(splitFrontmatter(f.content).frontmatter).properties, f.mtime)
+    })
+    const resolve = resolverFor([...records, ...folders], '/vault')
+    act(() => source.update((target) => (target === 'tags' ? OTHER : resolve(target)?.record.path ?? null), records, folders, true))
+    await flush()
+    // Unlock THIS child tab alone (vault stays read-only: vault.on === true).
+    click(chip(container)!)
+    click(boxButton(container, 'Allow edits for 1 minute'))
+    await flush()
+    return container
+  }
+
+  it('editing a parent-owned column, moving a column across folders, and toggling a cross-folder relation ask allowFileAction; Cancel writes nothing', async () => {
+    const allow = vi.fn(async () => false)
+    const el = await mountChild(allow)
+    const openColumnEdit = (label: string) => {
+      const th = [...el.querySelectorAll<HTMLElement>('.view-table thead th')].find((t) => t.textContent?.includes(label))!
+      act(() => void th.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 20 })))
+      click(menuItem(el, 'Edit column…'))
+    }
+
+    // 1. Edit inherited column `course` (owned by parent `recipes`): asks allowFileAction; Cancel does not write `recipes/.folder.md`.
+    openColumnEdit('Course')
+    await flush()
+    const typeBtn = document.querySelector<HTMLButtonElement>('[aria-label="Edit property Course"]')
+    expect(typeBtn).not.toBeNull()
+    click(typeBtn!)
+    const textOpt = [...document.querySelectorAll<HTMLElement>('.type-picker__option')].find((o) => o.querySelector('.type-picker__name')?.textContent === 'Text')
+    expect(textOpt).toBeDefined()
+    click(textOpt!)
+    await flush()
+    expect(allow).toHaveBeenCalledWith('/vault')
+    expect(writeFile.mock.calls.map((c) => c[0].path)).not.toContain(PARENT_FILE)
+
+    // 2. Toggle "Show Tag on tags too" (writes `tags/.folder.md`): asks allowFileAction; Cancel does not write `tags/.folder.md`.
+    press(document.body, 'Escape')
+    await flush()
+    allow.mockClear()
+    writeFile.mockClear()
+    openColumnEdit('Tag')
+    await flush()
+    const bothSwitch = document.querySelector<HTMLInputElement>('input[aria-label^="Show Tag on "]')
+    expect(bothSwitch).not.toBeNull()
+    click(bothSwitch!)
+    await flush()
+    expect(allow).toHaveBeenCalledWith('/vault')
+    expect(writeFile.mock.calls.map((c) => c[0].path)).not.toContain(OTHER_FILE)
+
+    // 3. Move column `tag` up to parent `recipes` (cross-folder move from `desserts` to `recipes`): asks allowFileAction; Cancel writes nothing.
+    allow.mockClear()
+    writeFile.mockClear()
+    const colOnBtn = document.querySelector<HTMLButtonElement>('[aria-label="Column on for Tag"]')
+    expect(colOnBtn).not.toBeNull()
+    click(colOnBtn!)
+    const recipesOpt = [...document.querySelectorAll<HTMLElement>('.type-picker__option')].find((o) => o.querySelector('.type-picker__name')?.textContent?.toLowerCase() === 'recipes')
+    expect(recipesOpt).toBeDefined()
+    click(recipesOpt!)
+    await flush()
+    const moveConfirm = [...document.querySelectorAll<HTMLButtonElement>('.confirm__actions button')].find((b) => b.textContent === 'Move column')
+    expect(moveConfirm).toBeDefined()
+    click(moveConfirm!)
+    await flush()
+    expect(allow).toHaveBeenCalledWith('/vault')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+})

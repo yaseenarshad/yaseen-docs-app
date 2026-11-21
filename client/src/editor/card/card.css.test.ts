@@ -229,9 +229,10 @@ it('YAZ-5049 round 2: the Inbox card is one long page, as Mochi — no scroll ba
   expect(rules(screens, '.card-inbox').find((r) => r.selector === '.card-inbox')!.body).toMatch(/overflow:\s*auto/)
   expect(rules(screens, '.card-inbox__top').find((r) => r.selector === '.card-inbox__top')!.body).toMatch(/position:\s*sticky;\s*top:\s*0/)
   const dock = rules(screens, '.card-inbox__dock').find((r) => r.selector === '.card-inbox__dock')!
-  expect(dock.body).toMatch(/position:\s*sticky/)
-  expect(dock.body).toMatch(/bottom:\s*0/)
+  expect(dock.body).not.toMatch(/position:\s*sticky/)
+  expect(dock.body).not.toMatch(/bottom:\s*0/)
   expect(dock.body).toMatch(/margin-top:\s*auto/)
+  expect(rules(screens, '.card-inbox__dock::before')).toEqual([])
 })
 
 it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes the colour in the look of Shown hidden words: the line, the highlight, or the box', () => {
@@ -252,9 +253,26 @@ it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes 
   for (const status of ['#d64545', '#c98a1a', '#3a9d5d', '#5b6cff', '#e06c6c', '#d9a13c', '#4fb573', '#7c8aff']) expect([light, dark]).not.toContain(status)
 })
 
-it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s looks: softer card text in light and dark, and 44 px inside the Inbox card; YAZ-5144: its short line is Card width (Narrow), no second width rule', () => {
-  const text = rules(queried(cardCss, 'style(--card-clean: on)'), ':root .card__sides')[0]!
+it('YAZ-5050 round 4 & YAZ-6035: Clean adds softer card text and softer list markers (48%), and cards style <hr> as a clean 1 px hairline in all spacing modes', () => {
+  const clean = queried(cardCss, 'style(--card-clean: on)')
+  const text = rules(clean, ':root .card__sides')[0]!
   expect(text.body).toMatch(/color:\s*color-mix\(in srgb, var\(--fg\) 90%, var\(--bg\)\)/)
+  const marker = rules(clean, ':root .card__side').find((r) => r.selector === ':root .card__side')!
+  expect(marker.body).toMatch(/--card-list-marker:\s*color-mix\(in srgb, currentColor 48%, transparent\)/)
+  const hr = rules(cardCss, '.card .card__sides .card__side hr')[0]!
+  expect(hr.body).toMatch(/border:\s*0/)
+  expect(hr.body).toMatch(/border-top:\s*1px solid var\(--border\)/)
+  expect(hr.body).toMatch(/margin:\s*18px 0/)
+  expect(hr.body).toMatch(/padding:\s*0/)
+  expect(hr.body).toMatch(/background:\s*none/)
+  expect(hr.body).not.toMatch(/!important/)
+  // No .card__body required (so Mobile Review .phone-card__body > .card__sides > .card__side > hr matches too, YAZ-6045).
+  expect(beats(specificity('.card .card__sides .card__side hr'), [0, 1, 0])).toBe(true)
+  expect(beats(specificity('.card .card__sides .card__side hr'), specificity('.reader__body hr'))).toBe(true)
+  // Card Edit <hr> beats line.css's `.milkdown .ProseMirror .line-view > hr` ([0, 3, 1]).
+  const editHr = rules(cardCss, '.card .card__editor .milkdown .ProseMirror hr')[0]!
+  expect(editHr.body).toMatch(/border-top:\s*1px solid var\(--border\)/)
+  expect(beats(specificity('.card .card__editor .milkdown .ProseMirror hr'), specificity('.milkdown .ProseMirror .line-view > hr'))).toBe(true)
   const screens = read('../../review/cardScreens.css')
   // 44 px inside the Inbox card is the card look's own variable now (YAZ-5484, `review/cardLook.ts`); no rule sets a width.
   expect(screens).not.toMatch(/data-card-clean/)
@@ -356,4 +374,19 @@ it('YAZ-5387: the title band reads Card title size over the card text, and its t
   expect(rules(screens, '.card.card-inbox__card')[0]?.body).toMatch(/font-size:\s*var\(--card-text-size, 1\.05em\)/)
   expect(rules(screens, '.card-inbox__panel > .card-band')[0]?.body).toMatch(/font-size:\s*var\(--card-title-size, calc\(var\(--card-text-size, 1\.05em\) \* 1\.125\)\)/)
   expect(rules(screens, '.card-inbox__card').filter((r) => r.selector === '.card-inbox__card').some((r) => /font-size/.test(r.body))).toBe(false)
+})
+
+it('YAZ-5999: ordered list numbers centre in their label box with no padding, and the card editor passes card font size, line height, list gap, indent and row padding into its inner list items', () => {
+  const bullets = read('../outline/bullets.css')
+  const ordered = rules(bullets, '.label.ordered').find((r) => /display:\s*flex/.test(r.body))!
+  expect(ordered.body).toMatch(/align-items:\s*center/)
+  expect(ordered.body).toMatch(/padding:\s*0/)
+  const inner = rules(cardCss, '.milkdown .card .card__editor .milkdown').find((r) => r.selector === '.milkdown .card .card__editor .milkdown')!
+  expect(inner.body).toMatch(/--crepe-base-font-size:\s*var\(--card-text-size, var\(--text-size, 16px\)\)/)
+  expect(inner.body).toMatch(/--list-label-gap:\s*var\(--card-list-gap\)/)
+  expect(inner.body).toMatch(/--list-indent:\s*var\(--card-list-indent\)/)
+  const item = rules(cardCss, '.milkdown .card .card__editor .milkdown .milkdown-list-item-block > li.list-item').find((r) => r.selector === '.milkdown .card .card__editor .milkdown .milkdown-list-item-block > li.list-item')!
+  expect(item.body).toMatch(/--list-label-height:\s*calc\(var\(--crepe-base-font-size\) \* var\(--card-line\) \+ 2 \* var\(--card-list-row\)\)/)
+  const content = rules(cardCss, '.content-dom > :is(p, h1, h2, h3, h4, h5, h6)')[0]!
+  expect(content.body).toMatch(/padding:\s*var\(--card-list-row\) 0/)
 })

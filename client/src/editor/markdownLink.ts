@@ -213,33 +213,44 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
 }
 
 /**
+ * The view-mode link menu of a Markdown `href` (shared by the editor's `menuOf`, card view mode and card embeds).
+ */
+export function markdownLinkMenuOf(href: string, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void): LinkMenu {
+  const path = nav.vaultPath?.(href) ?? null
+  // The page's name as the sidebar shows it (YAZ-3778 D2): no `.md`, no drawing's or diagram's extension.
+  const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
+  const local = href.startsWith('#')
+  // Only a file or folder that is there, found as a click finds it.
+  const found = path === null ? null : (nav.inApp?.(href) ?? null)
+  return {
+    // No top line (YAZ-3747 demo): the pill already shows the name and its vault.
+    labels: [],
+    open: local ? undefined : () => follow(href, 'thisTab'),
+    openNew: path === null ? undefined : () => follow(href, 'backgroundTab'),
+    // "Open in Explore" (YAZ-4936): a page that is there, as on a [[link]]; the host's `openPath` takes 'explore'.
+    openExplore: found !== null && fileKind(found) === 'markdown' && nav.openPath !== undefined && nav.exploreClick !== undefined ? () => follow(href, 'explore') : undefined,
+    copyName: name === null || name === '' ? undefined : () => copyText(name, 'name', nav.onNotice, nav.copy, true),
+    copyAddress: path === null ? () => copyText(href, 'address', nav.onNotice, nav.copy) : undefined,
+    ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),
+  }
+}
+
+/**
  * The one link menu's rows for a Markdown link (YAZ-3609 D23, YAZ-3740, `linkMenu.ts`). A link into a vault of the
  * window opens in a new tab too, and copies its name; one whose page is there
  * has the place rows (Show in sidebar, Copy path, Focus, Favorites, "Open in ▸"). Any other link opens only through
  * the OS, and "Copy address" copies its href.
  */
-function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void, keep: (run: () => void) => () => void): LinkMenu {
+function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void, keep: (run: () => void) => () => void, allowHighlight = true): LinkMenu {
   const path = nav.vaultPath?.(hit.href) ?? null
-  // The page's name as the sidebar shows it (YAZ-3778 D2): no `.md`, no drawing's or diagram's extension.
   const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
-  const local = hit.href.startsWith('#')
-  // Only a file or folder that is there, found as a click finds it.
-  const found = path === null ? null : (nav.inApp?.(hit.href) ?? null)
   return {
-    // No top line (YAZ-3747 demo): the pill already shows the name and its vault.
-    labels: [],
-    open: local ? undefined : () => follow(hit.href, 'thisTab'),
-    openNew: path === null ? undefined : () => follow(hit.href, 'backgroundTab'),
-    // "Open in Explore" (YAZ-4936): a page that is there, as on a [[link]]; the host's `openPath` takes 'explore'.
-    openExplore: found !== null && fileKind(found) === 'markdown' && nav.openPath !== undefined && nav.exploreClick !== undefined ? () => follow(hit.href, 'explore') : undefined,
-    copyName: name === null || name === '' ? undefined : () => copyText(name, 'name', nav.onNotice, nav.copy, true),
-    copyAddress: path === null ? () => copyText(hit.href, 'address', nav.onNotice, nav.copy) : undefined,
-    ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),
+    ...markdownLinkMenuOf(hit.href, nav, follow),
     // A drawing's or a diagram's link (YAZ-4829 D8): the image node of the same address, `![name](href)` — a window (2B).
     // Not in a table cell: embeds there are out of scope (the checker's round 1).
     showAsEmbed: view.editable && path !== null && isBoardSrc(hit.href) && !inCellOrPage(view.state.doc.resolve(hit.from)) ? () => view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, imageSchema.type(ctx).create({ src: hit.href, alt: newEmbedAlt(name ?? ''), title: '' }))) : undefined,
     // This pill's own style (YAZ-4924 round 5): the toolbar's marks around the whole link. A web link is no pill: none.
-    pillStyle: path === null ? undefined : pillStyleRow(view, hit.from, hit.to, keep),
+    pillStyle: path === null ? undefined : pillStyleRow(view, hit.from, hit.to, keep, allowHighlight),
     edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
     remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }
@@ -266,7 +277,7 @@ export const noPreviewOnPills = (ctx: Ctx) => {
 }
 
 /** `source`: the vault's resolve source (YAZ-4924), for the look its pills wear and the ID and folder a pill may show; the pills draw again when it changes. */
-export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolveSource) =>
+export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolveSource, allowHighlight = true) =>
   $prose((ctx) => {
     let close = () => {}
     // True while a "Pill style" pick runs: its own change to the page keeps the menu open (YAZ-4924 round 5).
@@ -385,7 +396,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolv
             if (parent === null) return false
             event.preventDefault()
             close()
-            const rows = () => linkMenuRows(menuOf(view, hit, ctx, nav, follow, keep))
+            const rows = () => linkMenuRows(menuOf(view, hit, ctx, nav, follow, keep, allowHighlight))
             close = openMenuAt(parent, event.clientX, event.clientY, rows(), rows)
             return true
           },

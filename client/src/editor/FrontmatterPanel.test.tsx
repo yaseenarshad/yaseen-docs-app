@@ -17,6 +17,7 @@ import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { settleFileWrites } from '../views/writeProperty'
 import type { ColumnDecl } from '../views/folderSettings'
 import { UNIT_WORDS, UnitContext, unitTextOf } from '../vault/unitWord'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { READ_ONLY_EDIT, ReadOnlyEditEvent } from './readOnlyEdit'
 import { EMPTY_CARD_LINE, cardPropertiesOf, withCardProperty, type CardLine } from '@shared/cardLine'
 import { setDisplayName } from '../views/view/columnLabel'
@@ -1886,5 +1887,119 @@ describe('FrontmatterPanel — one property menu with Rename (YAZ-5583)', () => 
     } finally {
       document.removeEventListener(READ_ONLY_EDIT, listen)
     }
+  })
+})
+
+describe('YAZ-5989: cross-folder and vault-wide column writes ask allowFileAction when only this tab is unlocked in a read-only vault', () => {
+  const A_ID = 'fold0000000a'
+  const B_ID = 'fold0000000b'
+  const PAGE = '/vault/A/B/C/Task.md'
+  const A_COLUMNS: Record<string, ColumnDecl> = { priority: { kind: 'text' }, effort: { kind: 'text' } }
+  const A_FILE = '---\nid: fold0000000a\nfolder_settings:\n  columns:\n    effort:\n      kind: text\n    priority:\n      kind: text\n---\n'
+  const B_FILE = '---\nid: fold0000000b\nfolder_settings:\n  columns: {}\n---\n'
+  const folderMd = (dir: string, settings: { id?: string; columns?: Record<string, ColumnDecl> } = {}): IndexRecord => ({
+    ...TEST_RECORDS[0],
+    path: `${dir}/.folder.md`,
+    name: '.folder.md',
+    basename: '.folder',
+    title: dir.split('/').pop() ?? '',
+    folder: dir.replace(/^\/vault\/?/, ''),
+    id: settings.id,
+    properties: {
+      ...(settings.id === undefined ? {} : { id: settings.id }),
+      ...(settings.columns === undefined ? {} : { folder_settings: { columns: settings.columns, views: [] } }),
+    },
+  })
+  const feed = () => {
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [], [folderMd('/vault/A', { id: A_ID, columns: A_COLUMNS }), folderMd('/vault/A/B', { id: B_ID, columns: {} }), folderMd('/vault/A/B/C')], true)
+    return source
+  }
+  const mountInLockedVault = (content: string, allowFileAction: (r: string) => Promise<boolean>) => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = { properties: {}, columns: {} } as unknown as PropertiesResponse
+    act(() =>
+      root?.render(
+        <VaultReadOnly.Provider value={{ on: true, allowFileAction }}>
+          <FrontmatterPanel file={{ path: PAGE, content, mtime: 100 }} root={ROOT} properties={props} wikilinks={feed()} readOnly={false} />
+        </VaultReadOnly.Provider>,
+      ),
+    )
+    expand(container)
+    return container
+  }
+
+  beforeEach(() => {
+    readFile.mockImplementation(async (p: string) => ({
+      path: p,
+      content: p === '/vault/A/.folder.md' ? A_FILE : p === '/vault/A/B/.folder.md' ? B_FILE : '---\npriority: P1\n---\nBody\n',
+      mtime: 100,
+      size: 1,
+    }))
+  })
+
+  it('adding a property with Column on A or writing .yaseendocs/properties.json asks allowFileAction; Cancel writes nothing', async () => {
+    const allow = vi.fn(async () => false)
+    const setProp = vi.spyOn(propertiesStub, 'setProperty')
+    try {
+      const el = mountInLockedVault('Body\n', allow)
+      click(btn(el, 'Add property'))
+      setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'reviewer')
+      pick('Column on', 'A')
+      click(btn(el, 'Add'))
+      await flush()
+      expect(allow).toHaveBeenCalledExactlyOnceWith(ROOT)
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(el.querySelector('[role="alert"]')?.textContent).toBe('Could not add "reviewer": This vault is read only')
+
+      // "This page only" with a non-text type writes `.yaseendocs/properties.json`: also asks.
+      allow.mockClear()
+      pick('Edit property the new property', 'Number')
+      pick('Column on', 'This page only')
+      click(btn(el, 'Add'))
+      await flush()
+      expect(allow).toHaveBeenCalledExactlyOnceWith(ROOT)
+      expect(setProp).not.toHaveBeenCalled()
+      expect(writeFile).not.toHaveBeenCalled()
+    } finally {
+      setProp.mockRestore()
+    }
+  })
+
+  it('Edit property › Save and Rename… on a parent folder column ask allowFileAction; Cancel writes nothing, Allow writes', async () => {
+    const allow = vi.fn(async () => false)
+    const el = mountInLockedVault('---\npriority: P1\n---\nBody\n', allow)
+    click(byLabel(el, 'Configure priority'))
+    click(buttonNamed(el, 'Edit property ›'))
+    click(byLabel(el, 'Property type: Text'))
+    click(buttonNamed(el, 'Number'))
+    click(buttonNamed(document.querySelector('.frontmatter-property-menu__actions')!, 'Save'))
+    await flush()
+    expect(allow).toHaveBeenCalledExactlyOnceWith(ROOT)
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(document.querySelector('.frontmatter-property-menu [role="alert"]')?.textContent).toBe('Could not save the property: This vault is read only')
+
+    // Rename… on column defined in A: also asks; Cancel refuses; Allow writes A's .folder.md.
+    click(buttonNamed(document.querySelector('.frontmatter-property-menu__actions')!, 'Cancel'))
+    allow.mockClear()
+    click(byLabel(el, 'Configure priority'))
+    click(buttonNamed(el, 'Rename…'))
+    const input = byLabel<HTMLInputElement>(el, 'Rename priority')!
+    setValue(input, 'Urgency')
+    press(input, 'Enter')
+    await flush()
+    expect(allow).toHaveBeenCalledExactlyOnceWith(ROOT)
+    expect(writeFile).not.toHaveBeenCalled()
+
+    allow.mockResolvedValueOnce(true)
+    click(byLabel(el, 'Configure priority'))
+    click(buttonNamed(el, 'Rename…'))
+    const input2 = byLabel<HTMLInputElement>(el, 'Rename priority')!
+    setValue(input2, 'Urgency')
+    press(input2, 'Enter')
+    await flush()
+    expect(writeFile.mock.calls.map((c) => c[0].path)).toContain('/vault/A/B/C/.folder.md')
   })
 })

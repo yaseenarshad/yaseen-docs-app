@@ -283,7 +283,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       props.vaultOf = (path) => ({ ...plain(path), readOnly })
       render()
       await flush()
-      press('2')
+      press('0')
       expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
       expect(review.setNext).not.toHaveBeenCalled()
       if (!readOnly) {
@@ -301,7 +301,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await flush()
     expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
       ['Forgot (1)', 'Forgot · later today'],
-      ['Remembered (2)', 'Remembered · 3 days'],
+      ['Remembered (0)', 'Remembered · 3 days'],
     ])
     press(' ')
     expect([sides(), shown(), blanks()]).toEqual([1, ['France'], 0])
@@ -316,11 +316,11 @@ describe('the Inbox screen (YAZ-4962)', () => {
     // More Space changes nothing.
     press(' ')
     expect(review.showAnswers).toHaveBeenCalledOnce()
-    press('2')
+    press('0')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
   })
 
-  it('YAZ-5010: 1 and 2 answer at any step — before the first Space, with words still hidden', async () => {
+  it('YAZ-5010: 1 and 0 answer at any step — before the first Space, with words still hidden', async () => {
     mount(TWO_SIDES)
     await flush()
     expect(shown()).toEqual([])
@@ -336,9 +336,9 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.showAnswers).not.toHaveBeenCalled()
     expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
       ['Forgot (1)', 'Forgot'],
-      ['Remembered (2)', 'Remembered'],
+      ['Remembered (0)', 'Remembered'],
     ])
-    press('2')
+    press('1')
     act(() => buttons()[0].click())
     expect(review.answer).not.toHaveBeenCalled()
   })
@@ -422,7 +422,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     palette.setAttribute('role', 'menu')
     palette.hidden = true
     document.body.append(picker, palette)
-    press('2')
+    press('0')
     expect(review.answer).toHaveBeenCalledOnce()
     picker.remove()
     palette.remove()
@@ -817,7 +817,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     mount('Plain')
     await flush()
     const two = glyphs()
-    expect(two.map(([label, , key]) => [label, key])).toEqual([['Forgot', '(1)'], ['Remembered', '(2)']])
+    expect(two.map(([label, , key]) => [label, key])).toEqual([['Forgot', '(1)'], ['Remembered', '(0)']])
     expect(two.every(([, d]) => typeof d === 'string' && d.length > 0)).toBe(true)
     expect(two[0][1]).not.toBe(two[1][1])
     act(() => root?.unmount())
@@ -973,7 +973,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const last = () => el.querySelector<HTMLElement>('.card-inbox__last')!
     // The row is there, empty, before any answer (no jump when the line comes).
     expect(last().textContent).toBe('')
-    press('2')
+    press('0')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
     // Not yet counted by the session (the write runs): no line.
     expect(last().textContent).toBe('')
@@ -1183,7 +1183,7 @@ describe('the title on the front (YAZ-5030)', () => {
   it('the answer line names a card by its title; a title hidden in review never (YAZ-5695): its ID', async () => {
     withLine(false)
     await flush()
-    press('2')
+    press('0')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France · back in 3 days · Undo (Cmd+Z)')
@@ -1192,7 +1192,7 @@ describe('the title on the front (YAZ-5030)', () => {
   it('after an answer, a title hidden in review is still nowhere (YAZ-5695): the answer line names the card by its ID', async () => {
     withLine(true)
     await flush()
-    press('2')
+    press('0')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · WIKI-9 · back in 3 days · Undo (Cmd+Z)')
@@ -1202,7 +1202,7 @@ describe('the title on the front (YAZ-5030)', () => {
   it('YAZ-5694: on a finish screen the answer line`s Undo is the only one; the key row under it does not say it again', async () => {
     withLine(false)
     await flush()
-    press('2')
+    press('0')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     // The last card answered: the finish screen, the line still there with its Undo.
@@ -1392,7 +1392,7 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
     press(' ')
     press(' ')
     expect(band()).toBe('none')
-    press('2')
+    press('0')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · WIKI-9 · back in 3 days · Undo (Cmd+Z)')
@@ -1525,7 +1525,7 @@ describe('when a shown title appears (YAZ-5696, YAZ-5709: Never · Always · Aft
   it('the answer line names the card by its title, though it had not shown yet', async () => {
     at('side2')
     await flush()
-    press('2')
+    press('0')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France · back in 3 days · Undo (Cmd+Z)')
@@ -1632,7 +1632,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     tick(90_000)
     act(() => void window.dispatchEvent(new MouseEvent('mousemove'))) // back at the desk: the time goes on from here
     work(5)
-    press('2')
+    press('0')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', 15)
   })
 
@@ -1661,7 +1661,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     mount(TWO_SIDES)
     await flush()
     tick(40_000)
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(40)
   })
 
@@ -1673,7 +1673,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     work(30)
     act(() => void window.dispatchEvent(new FocusEvent('focus')))
     work(3, 'pointerdown')
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(8)
   })
 
@@ -1688,7 +1688,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     act(() => void document.dispatchEvent(new Event('visibilitychange')))
     work(2)
     state.mockRestore()
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(6)
   })
 
@@ -1702,7 +1702,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     props = { ...props, shown: true }
     render()
     work(3)
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(10)
   })
 
@@ -1715,7 +1715,7 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     render()
     await flush()
     work(3)
-    press('2')
+    press('0')
     expect(secondsOfAnswer()).toBe(3)
     // ⌘Z shows the first card again: from zero again, not its old 20 s.
     session = sessionOf(TWO_SIDES, { answered: [] })
@@ -2017,45 +2017,38 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(el.querySelector('.card-inbox__last')?.textContent).toBe("↺ Reset today's new cards · Undo (Cmd+Z)")
   })
 
-  it('the done screen says what waits, with one add button for each kind; nothing waits: as before', () => {
+  it('the done screen uses a 2-step add trigger, rotating completion line, and subtle / N counts; nothing waits: as before', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '38 new cards and 3 Up next cards wait for another day.', 'Add[10]new cardsfrom All foldersAdd[2]Up next'])
-    expect(pills().map(textOf)).toEqual(['Add[10]new cardsfrom All folders', 'Add[2]Up next'])
-    // YAZ-5699 (Yaseen: "that should be a two click as well"): a click on "Add" or the words never adds; it asks in place.
-    const ask = () => el.querySelector<HTMLElement>('.card-inbox__done .ask-in-place')
-    const answer = (word: 'Cancel' | 'Add') => act(() => [...ask()!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === word)!.click())
-    act(() => addButtons()[0].click())
+    const trigger = () => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')
+    const cancel = () => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-cancel')
+    expect(doneText()[0]).toBe('Inbox complete.')
+    expect(trigger()?.textContent?.endsWith('?')).toBe(true)
+    expect(pills()).toHaveLength(0)
+    // YAZ-6041: Click 1 reveals the add pills in place; Cancel folds them back; Click 2 adds directly (2-click safety).
+    act(() => trigger()!.click())
+    expect(pills().map(textOf)).toEqual(['Add[10]/ 38 new cardsfrom All folders', 'Add[2]/ 3 Up next'])
+    act(() => cancel()!.click())
+    expect(pills()).toHaveLength(0)
     expect(review.addCards).not.toHaveBeenCalled()
-    expect([ask()!.querySelector('.confirm__text')!.textContent, [...ask()!.querySelectorAll('button')].map((b) => b.textContent), document.activeElement?.textContent]).toEqual(['Add 10 new cards to today?', ['Cancel', 'Add'], 'Cancel'])
-    answer('Cancel')
-    expect([ask(), vi.mocked(review.addCards).mock.calls.length]).toEqual([null, 0])
+    act(() => trigger()!.click())
     act(() => addButtons()[0].click())
-    answer('Add')
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
     act(() => pills()[1].querySelectorAll<HTMLButtonElement>('.card-inbox__done-add-word')[1].click())
-    expect(ask()!.querySelector('.confirm__text')!.textContent).toBe('Add 2 Up next cards to today?')
-    // Esc cancels.
-    act(() => void document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-    expect([ask(), vi.mocked(review.addCards).mock.calls.length]).toEqual([null, 1])
-    act(() => pills()[1].querySelectorAll<HTMLButtonElement>('.card-inbox__done-add-word')[1].click())
-    answer('Add')
     expect(review.addCards).toHaveBeenLastCalledWith('next', 2)
-    // The same field: type, then Enter asks (the Inbox's keys do not see it); Add adds the typed number.
+    // Typing a custom number and pressing Enter adds that number directly.
     const input = pills()[0].querySelector('input')!
     typeIn(input, '25')
     key(input, 'Enter')
-    expect(vi.mocked(review.addCards).mock.calls.length).toBe(2)
-    answer('Add')
     expect(review.addCards).toHaveBeenLastCalledWith('new', 25)
-    // Only one kind waits: its line and its button.
+    // Only one kind waits: its button inside the expanded panel.
     session = { ...session, more: { new: 0, next: 3 }, adds: { new: 0, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '3 Up next cards wait for another day.', 'Add[2]Up next'])
+    expect(pills().map(textOf)).toEqual(['Add[2]/ 3 Up next'])
     session = { ...session, more: { new: 1, next: 0 }, adds: { new: 1, next: 0 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '1 new card waits for another day.', 'Add[1]new cardfrom All folders'])
+    expect(pills().map(textOf)).toEqual(['Add[1]/ 1 new cardfrom All folders'])
     // Nothing waits (also: no limit), and nothing is due (YAZ-5623): as now.
     review = { ...review, dueCount: 0 }
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
@@ -2076,27 +2069,30 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(doneText()).toEqual(['Inbox complete.', 'Review cards 3'])
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!.click())
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
-    // Cards wait to be added: the adds, as on the phone (no "Review K more" beside them).
+    // Cards wait to be added: the 2-step add trigger, as on the phone (no "Review K more" beside them).
     session = { ...session, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '5 new cards wait for another day.', 'Add[5]new cardsfrom All folders'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(pills().map(textOf)).toEqual(['Add[5]/ 5 new cardsfrom All folders'])
   })
 
   it('a filter done (YAZ-5678, Mochi`s words): "Finished learning cards." · Review cards 12, then its add; Up next`s "12 more in All cards"; Due today has no add', () => {
     mount(TWO_SIDES)
     session = { ...session, filter: 'new', card: null, counts: { all: 12, next: 0, due: 12, new: 0 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 12', 'Add[10]new cardsfrom All folders'])
+    expect(doneText().slice(0, 3)).toEqual(['Finished learning cards.', "Now let's review the cards you've learned.", 'Review cards 12'])
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .due-end__go')!.click())
     expect(review.setFilter).toHaveBeenLastCalledWith('due')
-    // YAZ-5699: "Review cards 12" moves to the next list and changes nothing: one click. The add asks first.
+    // YAZ-6041: 2-step add trigger opens Add pill; clicking Add adds directly.
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(pills().map(textOf)).toEqual(['Add[10]/ 38 new cardsfrom All folders'])
     act(() => addButtons()[0].click())
-    expect(review.addCards).not.toHaveBeenCalled()
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__done .ask-in-place button')].find((b) => b.textContent === 'Add')!.click())
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
     session = { ...session, filter: 'next' }
     render()
-    expect(doneText()).toEqual(['No Up next cards left.', 'Add[2]Up next', '12 more in All cards'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(pills().map(textOf)).toEqual(['Add[2]/ 3 Up next'])
+    expect(doneText()).toContain('12 more in All cards')
     session = { ...session, filter: 'due' }
     render()
     expect(doneText()).toEqual(['Finished reviewing.', '12 more in All cards'])
@@ -2106,7 +2102,11 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     mount(TWO_SIDES)
     session = { ...session, label: 'Bio', scope: 'folder', card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
     render()
-    expect(doneText()).toEqual(['This folder is done.', '5 new cards wait for another day.', 'Add[5]new cardsfrom All folders', 'You have cards due in other pages.', 'Review cards 12'])
+    expect(doneText()[0]).toBe('This folder is done.')
+    expect(doneText()).toContain('You have cards due in other pages.')
+    expect(doneText()).toContain('Review cards 12')
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(pills().map(textOf)).toEqual(['Add[5]/ 5 new cardsfrom All folders'])
   })
 })
 
@@ -2187,13 +2187,13 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
     let place: Record<string, [number, number]>
     let scrollTo: ReturnType<typeof vi.fn>
-    // The view 0–600; its sticky top row ends at 100, its sticky buttons start at 400: the room is 100–400.
+    // The view 0–400; its sticky top row ends at 100, and the dock is in normal flow below the card (YAZ-6055): the room is 100–400.
     beforeEach(() => {
       place = {}
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-        if (this.classList.contains('card-inbox')) return box(0, 600)
+        if (this.classList.contains('card-inbox')) return box(0, 400)
         if (this.classList.contains('card-inbox__top')) return box(0, 100)
-        if (this.classList.contains('card-inbox__dock')) return box(400, 480)
+        if (this.classList.contains('card-inbox__dock')) return box(place.dock?.[0] ?? 1200, place.dock?.[1] ?? 1280)
         const key = this.dataset.hidden !== undefined ? `word${this.dataset.hidden}` : this.dataset.side !== undefined ? `side${this.dataset.side}` : this.classList.contains('card-reviews--strip') ? 'strip' : this.classList.contains('card-inbox__panel') ? 'panel' : ''
         // The strip (YAZ-5380: on every card's last side) sits right under the card, as laid out.
         const [top, bottom] = place[key] ?? (key === 'strip' && place.panel !== undefined ? [place.panel[1], place.panel[1] + 36] : [150, 170])
@@ -2207,8 +2207,8 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       const view = el.querySelector<HTMLElement>('.card-inbox')!
       scrollTo = vi.fn()
       view.scrollTo = scrollTo as never
-      Object.defineProperty(view, 'clientHeight', { configurable: true, value: 600 })
-      Object.defineProperty(view, 'scrollHeight', { configurable: true, value: 600 + range })
+      Object.defineProperty(view, 'clientHeight', { configurable: true, value: 400 })
+      Object.defineProperty(view, 'scrollHeight', { configurable: true, value: 400 + range })
       view.scrollTop = scrollTop
       return view
     }
@@ -2248,12 +2248,19 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).not.toHaveBeenCalled()
       })
 
-      it('a blank cut by the buttons` edge, or by the top row`s, is not in view: Space only moves it (above the view: the least scroll, a small gap kept)', () => {
+      it('a blank cut by the view`s bottom edge, or by the top row`s, is not in view: Space only moves it (above the view: the least scroll, a small gap kept); the in-flow dock never clips it (YAZ-6055)', () => {
         mount(THREE)
         scroller()
-        place.word0 = [390, 410]
+        // Even if the in-flow dock rect is above box.bottom, a blank wholly inside [top, box.bottom] is in view.
+        place.dock = [340, 420]
+        place.word0 = [350, 370]
         press(' ')
-        expect(shown()).toEqual([])
+        expect(shown()).toEqual(['one'])
+        expect(scrollTo).not.toHaveBeenCalled()
+        // A blank cut by the view's bottom edge (400) is not in view: Space glides it in.
+        place.word1 = [390, 410]
+        press(' ')
+        expect(shown()).toEqual(['one'])
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 390 - 200 }))
         mount(THREE)
         scroller(300)
@@ -2307,9 +2314,9 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 40 }))
       })
 
-      it('THE END: the last word shows and nothing moves; then a Space brings the card`s end in (no ring), and the next one rings the buttons', () => {
+      it('THE END (YAZ-6058): on a long card, the last Space reveals without skipping past unread text; each next Space pages down smoothly until the bottom, then rings the buttons', () => {
         mount(THREE)
-        scroller()
+        const view = scroller()
         const answers = () => el.querySelector('.card-inbox__answers')!
         press(' ')
         press(' ')
@@ -2317,30 +2324,35 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         place.panel = [110, 700]
         press(' ')
         expect(blanks()).toBe(0)
+        // 5000px remaining (> half viewport): stays put so unread text is not skipped.
         expect(scrollTo).not.toHaveBeenCalled()
+        // Next Space pages down smoothly (~70% of 300px room = 210px).
         press(' ')
-        // The card's end is its strip (YAZ-5380: every card's last side has one), 36 tall under the panel.
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 + 36 - 400 + 6 }))
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: Math.round(300 * 0.7), behavior: 'smooth' })
         expect(answers().hasAttribute('data-nudge')).toBe(false)
         scrollTo.mockClear()
+        // Once at the bottom: one more Space moves nothing and rings the buttons.
+        view.scrollTop = 5000
         place.panel = [110, 350]
         press(' ')
         expect(scrollTo).not.toHaveBeenCalled()
         expect(answers().getAttribute('data-nudge')).not.toBeNull()
       })
 
-      it('THE END with reviews: the end is the Reviews strip under the card (YAZ-5105)', async () => {
+      it('THE END with reviews (YAZ-6058): when already near the bottom, last Space glides to the bottom; scrolling up pages back to the bottom', async () => {
         mount(THREE)
         session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
         render()
         await flush()
-        scroller()
+        const view = scroller()
+        // Near the bottom (150px left <= 200px half-viewport): final blank reveal glides cleanly to bottom.
+        view.scrollTop = 4850
         for (let i = 0; i < 3; i++) press(' ')
-        expect(scrollTo).not.toHaveBeenCalled()
-        place.panel = [110, 380]
-        place.strip = [384, 420]
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 5000, behavior: 'smooth' })
+        scrollTo.mockClear()
+        view.scrollTop = 4800
         press(' ')
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 400 + 6 }))
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 5000, behavior: 'smooth' })
       })
 
       it('after a scroll by hand took the next blank out of view: Space only brings it back', () => {
@@ -2461,9 +2473,9 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       })
     })
 
-    it('THE END: the hint row drops Space; one more Space moves nothing and gives the answer buttons one soft nudge, each time', () => {
+    it('THE END: the hint row drops Space; one more Space at the bottom moves nothing and gives the answer buttons one soft nudge, each time', () => {
       mount(THREE)
-      scroller()
+      const view = scroller()
       const answers = () => el.querySelector('.card-inbox__answers')!
       const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
       press(' ')
@@ -2472,6 +2484,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       press(' ')
       expect(hints()).not.toContain('Show (Space)')
       expect(answers().hasAttribute('data-nudge')).toBe(false)
+      view.scrollTop = 5000
       scrollTo.mockClear()
       press(' ')
       expect(scrollTo).not.toHaveBeenCalled()
@@ -2553,7 +2566,9 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     mount(null)
     session = { ...session, ...WAITING, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, newFrom: SPANISH }
     render()
-    expect(doneText().slice(0, 3)).toEqual(['Inbox complete.', '14 new Spanish cards and 3 Up next cards wait for another day.', 'Add[10]new cardsfrom SpanishAdd[2]Up next'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(doneText()[0]).toBe('Inbox complete.')
+    expect(el.querySelector('.card-inbox__done-adds')?.textContent).toContain('from Spanish')
     const from = el.querySelector<HTMLButtonElement>('.card-inbox__done-from')!
     act(() => from.click())
     expect(pickerRows().map((r) => r.textContent)).toEqual(['All folders38', 'Spanish24', 'Verbs4', 'Geography12'])
@@ -2566,7 +2581,9 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     mount(null)
     session = { ...session, ...WAITING, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 14, next: 0 }, adds: { new: 10, next: 0 }, newFrom: SPANISH, newFallback: true }
     render()
-    expect(doneText().slice(0, 4)).toEqual(['Inbox complete.', 'No new cards left in Spanish, so these come from All folders.', '14 new cards wait for another day.', 'Add[10]new cardsfrom All folders'])
+    expect(doneText().slice(0, 2)).toEqual(['Inbox complete.', 'No new cards left in Spanish, so these come from All folders.'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done .done-add-trigger')!.click())
+    expect(el.querySelector('.card-inbox__done-adds')?.textContent).toContain('from All folders')
     expect(el.querySelector('.card-inbox__pick-chip')?.textContent).toBe('New cards: Spanish×')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-from')!.click())
     expect(picker()!.textContent).toContain('Spanish stays picked. Its new cards come first again once you make some.')
@@ -2828,6 +2845,104 @@ describe('the Inbox zoom (YAZ-5372)', () => {
     drag('left', 300, 0) // far out: the room, at 100%
     expect(inboxCardWidth()).toBe(800)
     setInboxCardWidth(null)
+  })
+})
+
+describe('YAZ-5995 (D4 4B): review title-sized waiting/next blank and data-next handoff', () => {
+  const band = () => el.querySelector<HTMLElement>('.card-inbox__panel > .card-band')
+  const titleBlank = () => band()?.querySelector<HTMLElement>('.card-band__blank') ?? null
+
+  it('After the first click: title blank wears data-next, body blanks wear none, and clicking the title blank reveals it and moves data-next to the first body blank', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'click', titleRoom: 'always' })
+    expect(band()?.hasAttribute('data-next')).toBe(true)
+    expect(titleBlank()?.hasAttribute('data-next')).toBe(true)
+    expect(titleBlank()?.querySelector('.card__word')?.textContent).toBe('Capital of France')
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+    act(() => titleBlank()!.click())
+    expect(titleBlank()).toBeNull()
+    expect(band()?.className).toBe('card-band card-band--fade')
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(1)
+  })
+
+  it('Before Side 2: title blank waits grey while Side 1 blanks come first, then takes data-next before Side 2', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'side2', titleRoom: 'always' })
+    expect(titleBlank()).not.toBeNull()
+    expect(titleBlank()?.hasAttribute('data-next')).toBe(false)
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(1)
+    press(' ')
+    expect(titleBlank()?.hasAttribute('data-next')).toBe(true)
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+    act(() => titleBlank()!.click())
+    expect(titleBlank()).toBeNull()
+    expect(sides()).toBe(1)
+  })
+
+  it('never draws a title blank for Never, Always, empty title, Title room = Only when it shows, or a {{…}} title', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'never', titleRoom: 'always' })
+    expect(titleBlank()).toBeNull()
+    act(() => root?.unmount())
+    el.remove()
+
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'always', titleRoom: 'always' })
+    expect(titleBlank()).toBeNull()
+    act(() => root?.unmount())
+    el.remove()
+
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'click', titleRoom: 'shown' })
+    expect(band()).toBeNull()
+    expect(el.querySelectorAll('.card__blank[data-next]')).toHaveLength(0)
+    act(() => root?.unmount())
+    el.remove()
+
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'click', titleRoom: 'always' })
+    session = sessionOf(TWO_SIDES, {}, '')
+    render()
+    expect(titleBlank()).toBeNull()
+
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, titleAt: 'click', titleRoom: 'always' })
+    session = sessionOf(TWO_SIDES, {}, '{{Paris}}')
+    render()
+    expect(titleBlank()).toBeNull()
+  })
+})
+
+describe('YAZ-5996 (D7): flipped 2-button defaults and live custom review hotkeys', () => {
+  it('rebound 2-button keys update button labels live without changing button order, and cleared keys hide the badge', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Forgot (1)', 'Remembered (0)'])
+    props = { ...props, hotkeys: { 'review.remembered': 'J', 'review.forgot': 'K' } }
+    render()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Forgot (K)', 'Remembered (J)'])
+    press('1')
+    press('0')
+    expect(review.answer).not.toHaveBeenCalled()
+    press('j')
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
+    press('k')
+    expect(review.answer).toHaveBeenLastCalledWith('again', expect.any(Number))
+    props = { ...props, hotkeys: { 'review.remembered': null, 'review.forgot': 'K' } }
+    render()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Forgot (K)', 'Remembered'])
+  })
+
+  it('4-button mode defaults to 1-4 and respects custom rebound keys', async () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, buttons: 4 })
+    await flush()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Again (1)', 'Hard (2)', 'Good (3)', 'Easy (4)'])
+    press('1')
+    expect(review.answer).toHaveBeenLastCalledWith('again', expect.any(Number))
+    press('2')
+    expect(review.answer).toHaveBeenLastCalledWith('hard', expect.any(Number))
+    press('3')
+    expect(review.answer).toHaveBeenLastCalledWith('good', expect.any(Number))
+    press('4')
+    expect(review.answer).toHaveBeenLastCalledWith('easy', expect.any(Number))
+    props = { ...props, hotkeys: { 'review.easy': 'L' } }
+    render()
+    expect(buttons().map((b) => b.textContent)).toEqual(['Again (1)', 'Hard (2)', 'Good (3)', 'Easy (L)'])
+    press('l')
+    expect(review.answer).toHaveBeenLastCalledWith('easy', expect.any(Number))
   })
 })
 

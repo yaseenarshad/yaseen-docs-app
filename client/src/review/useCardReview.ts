@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { cardTime, isCardSeconds, withCardNext, withCardOff, type CardLine, type CardRating, type CardReview } from '@shared/cardLine'
-import { UP_NEXT_BEGUN, addStep, anyUpNext, cardPlan, cardState, isCardDue, newCardFolders, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
+import { UP_NEXT_BEGUN, addStep, anyUpNext, cardPlan, cardState, cardsInScope, isCardDue, newCardFolders, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
 import type { AllCardsOrder, DueTodayOrder, ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
@@ -54,10 +54,12 @@ import { tourEvent } from '../course/tourBus'
  * leaves it, and the card goes when nothing else keeps it due. Only a CHANGE of the index's marks moves the session
  * (`marks`, the marks it last saw), so a snapshot that has not caught up with an answer yet never brings its card back.
  *
- * `answered` (YAZ-5020) is each answer of the session, in order, with its card's kind; ⌘Z takes the last one back. The
- * top right's "✕ K · done / total" and the bar read it with the queue, as Mochi counts (YAZ-5675, `filterCount`): a
- * Forgot on a due card is done +1 and total +1, a new card learned under All cards total +1, a Remembered in the missed
- * pass total −1. A new session (or the Inbox tab closed) starts it empty.
+ * `answered` (YAZ-5020) is each answer of this sitting, in order, with its card's kind; ⌘Z takes the last one back. The
+ * top right's "✕ K · done / total" and the bar combine it with the whole local day's answers (`dayEarlier`, YAZ-6018,
+ * across close/reopen, restarts, windows and phone sync, for every filter) and the queue (`filterCount`): a Forgot on a
+ * due card is done +1 and total +1, a new card learned under All cards total +1, a Remembered in the missed pass
+ * total −1. A new sitting starts `answered` empty (for ⌘Z and Due today's % ring), while `dayEarlier` keeps the day's
+ * count until local midnight.
  *
  * Same-day returns (YAZ-5702, as Mochi, YAZ-5703; the scheduler is days only): an answer whose card comes back
  * (`CardAnswer.comesBack`) puts it back at the END of this session's queue: a Forgot (a due card's once, in "Review
@@ -313,8 +315,6 @@ interface CachedCard {
 interface Session {
   /** YAZ-5707: each card's place in today's plan at the start (`cardPlan`): Due today's In order. */
   rank: ReadonlyMap<string, number>
-  /** YAZ-5707: All cards' "done" before this session: today's earlier answers on its cards (`earlierAnswers`). */
-  earlier: readonly SessionAnswer[]
   /** YAZ-5029: one per `start`: the card left on show while the next is read is only ever this session's. */
   id: number
   label: string
@@ -536,11 +536,18 @@ const missedCards = (s: Session): QueueCard[] => {
 }
 
 /**
- * The place of the card the filter shows next before (-1) or after (+1) `at`, looping around as Mochi (YAZ-5715): past
- * the last card the first, before the first the last; -1 when no other card shows (one card left: the arrows do nothing).
+ * The place of the card the filter shows next before (-1) or after (+1) `at` (YAZ-5004, YAZ-5715, YAZ-6019):
+ *  - `loop` false (default, YAZ-6019): stops at the first and last card of the open filter (`-1` past either end).
+ *  - `loop` true (YAZ-5715): wraps around past the last card to the first and before the first to the last; `-1` with one card left.
  */
-const stepFrom = (s: Session, delta: -1 | 1): number => {
+const stepFrom = (s: Session, delta: -1 | 1, loop: boolean): number => {
   const n = s.queue.length
+  if (!loop) {
+    for (let i = s.at + delta; i >= 0 && i < n; i += delta) {
+      if (matchesFilter(s.queue[i], s.filter)) return i
+    }
+    return -1
+  }
   for (let k = 1; k < n; k++) {
     const i = (((s.at + delta * k) % n) + n) % n
     if (matchesFilter(s.queue[i], s.filter)) return i
@@ -588,6 +595,8 @@ function withOwnWrites(records: readonly IndexRecord[], writes: readonly OwnWrit
 let sessionCount = 0
 
 const NO_TAKEN: readonly string[] = []
+const NO_TAKEN_KEYS: ReadonlySet<string> = new Set()
+const NO_EARLIER: readonly SessionAnswer[] = Object.freeze([])
 const NO_ADDED: CardsAddedToday = Object.freeze({ newCards: 0, upNext: 0 })
 
 /** What one click adds of each kind (YAZ-5042): one more day of the Settings number (`addStep`), never more than what waits. */
@@ -659,23 +668,36 @@ const withMarks = (s: Session, live: readonly DueCard[]): Session => {
  * at the end of the due cards, a new card at the end. A card of the session the other device began (New cards → Due
  * today) is a Due today card here, back for its second ✓. Up next cards join through `withMarks`.
  */
-const withLive = (s: Session, live: readonly DueCard[], files: boolean, keep: ReadonlySet<string>): Session => {
+const withLive = (s: Session, live: readonly DueCard[], files: boolean, keep: ReadonlySet<string>, missedKeys: ReadonlySet<string>): Session => {
   const now = listsOf(live)
   const gone = new Set(files ? [...s.live.keys()].filter((k) => !now.has(k) && !keep.has(k)) : [])
   const inSession = new Set(s.queue.map(cardKey))
   const joining = files ? live.filter((c) => !c.next && !s.live.has(cardKey(c)) && !inSession.has(cardKey(c)) && !keep.has(cardKey(c))) : []
   const begun = new Set(files ? [...now].filter(([k, list]) => list === 'due' && s.live.get(k) === 'new' && !keep.has(k)).map(([k]) => k) : [])
-  const moved = s.queue.some((c) => gone.has(cardKey(c)) || (begun.has(cardKey(c)) && c.isNew && c.repeat !== true))
+  const newlyMissed = (c: QueueCard): boolean => files && !c.isNew && !c.next && c.forgot !== true && !keep.has(cardKey(c)) && missedKeys.has(cardKey(c))
+  const moved = s.queue.some((c) => gone.has(cardKey(c)) || (begun.has(cardKey(c)) && c.isNew && c.repeat !== true) || newlyMissed(c))
   if (!moved && joining.length === 0) {
     const same = now.size === s.live.size && [...now].every(([k, list]) => s.live.get(k) === list)
     return same ? s : { ...s, live: now }
   }
   const head = s.queue[s.at]
   // The other device began it: a Due today card here, for its second ✓ (rule 12, as YAZ-5610's `fromNew`).
-  const kept = s.queue.filter((c) => !gone.has(cardKey(c))).map((c): QueueCard => (begun.has(cardKey(c)) && c.isNew && c.repeat !== true ? { ...c, isNew: false, fromNew: true } : c))
+  // YAZ-6018: a due card missed on the other device wears `repeat` + `forgot` live so red ✕ K and the bar agree.
+  const kept = s.queue
+    .filter((c) => !gone.has(cardKey(c)))
+    .map((c): QueueCard =>
+      begun.has(cardKey(c)) && c.isNew && c.repeat !== true
+        ? { ...c, isNew: false, fromNew: true }
+        : newlyMissed(c)
+          ? { ...c, repeat: true, forgot: true }
+          : c,
+    )
   const shown = head === undefined ? undefined : kept.find((c) => sameCard(c, head))
   let queue = kept
-  for (const card of joining) queue = card.isNew ? [...queue, card] : [...queue.slice(0, dueEnd(queue)), card, ...queue.slice(dueEnd(queue))]
+  for (const raw of joining) {
+    const card: QueueCard = !raw.isNew && !raw.next && missedKeys.has(cardKey(raw)) ? { ...raw, repeat: true, forgot: true } : raw
+    queue = card.isNew ? [...queue, card] : [...queue.slice(0, dueEnd(queue)), card, ...queue.slice(dueEnd(queue))]
+  }
   // The card on show stays on show; when it went, the next card left after it.
   const at = shown !== undefined ? queue.indexOf(shown) : s.queue.slice(0, s.at).filter((c) => !gone.has(cardKey(c))).length
   const next = fitted({ ...s, queue, at: at < queue.length ? at : 0, live: now, turn: queue[at] !== undefined && head !== undefined && sameCard(queue[at], head) && queue[at].isNew === head.isNew ? s.turn : s.turn + 1 })
@@ -824,19 +846,28 @@ const endOf = (s: Session): DueTodayEnd | null => {
   }
 }
 
-/** The local day's start of `now`, as a review time (YAZ-5707: today's earlier work). */
+/** The local day's start of `now`, as a review time (YAZ-5707, YAZ-6018: today's work). */
 const dayStart = (now: number): string => {
   const d = new Date(now)
   d.setHours(0, 0, 0, 0)
   return cardTime(d.getTime())
 }
-/**
- * The index's cards of `queue` (YAZ-5707): today's earlier work that the run carries is that of the cards still in it
- * (Mochi's E5: the new cards learned earlier, their same-day review waiting); a card done for today is not in the run.
- */
-const queuedCards = (records: readonly IndexRecord[], queue: readonly DueCard[]) => {
-  const keys = new Set(queue.map(cardKey))
-  return records.flatMap((r) => (r.cards ?? []).flatMap((c) => (c.id !== null && keys.has(`${r.path}\n${c.id}`) ? [{ ...c, key: `${r.path}\n${c.id}` }] : [])))
+/** Tomorrow's local midnight (exclusive end of today's day window, matching `reviewedToday`, YAZ-6018). */
+const dayEnd = (now: number): string => {
+  const d = new Date(now)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() + 1)
+  return cardTime(d.getTime())
+}
+/** Non-archived cards in `records` whose latest review today was a Forgot (waiting for re-check, YAZ-5708, YAZ-6018). */
+const missedKeysOf = (records: readonly IndexRecord[], from: string): Set<string> => {
+  const out = new Set<string>()
+  for (const r of records) {
+    for (const c of r.cards ?? []) {
+      if (!c.off && c.id !== null && missedToday(c.reviews, from)) out.add(`${r.path}\n${c.id}`)
+    }
+  }
+  return out
 }
 
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
@@ -897,7 +928,8 @@ export function useCardReview(
   // YAZ-5680 check 3: this device's own answers and undos count at once, before the index has the write (the Mac's
   // index lags a write by a moment; the phone's does not): each is laid over the index's card until the index agrees.
   const [ownWrites, setOwnWrites] = useState<readonly OwnWrite[]>([])
-  const today = useMemo(() => reviewedToday(withOwnWrites(records, ownWrites), Date.now()), [records, ownWrites, day])
+  const effectiveRecords = useMemo(() => withOwnWrites(records, ownWrites), [records, ownWrites])
+  const today = useMemo(() => reviewedToday(effectiveRecords, Date.now()), [effectiveRecords, day])
 
   // YAZ-5622: the card this session is writing (an answer, an archive): the index may have the write before the write returns.
   const writing = useRef<string | null>(null)
@@ -910,13 +942,15 @@ export function useCardReview(
     seenRecords.current = records
     setSession((s) => {
       if (s === null || !settings.enabled) return s
+      const now = Date.now()
       const vault = !s.scope.folder && s.scope.page === undefined
-      const live = vault ? vaultQueue : cardPlan(records, settings, Date.now(), s.scope.folder, s.scope.page, letters, taken, added).queue
+      const live = vault ? vaultQueue : cardPlan(records, settings, now, s.scope.folder, s.scope.page, letters, taken, added).queue
       const marked = withMarks(s, live)
-      // YAZ-5622: and a card the other device answered leaves it.
+      // YAZ-5622: and a card the other device answered leaves it; YAZ-6018: a card missed on the other device wears `forgot` live.
       const keep = new Set([...s.marks, ...marked.marks].filter((k) => s.marks.has(k) !== marked.marks.has(k)))
       if (writes !== null) keep.add(writes)
-      return withLive(marked, live, files, keep)
+      const missedKeys = files ? missedKeysOf(records, dayStart(now)) : NO_TAKEN_KEYS
+      return withLive(marked, live, files, keep, missedKeys)
     })
   }, [vaultQueue, records, settings, letters, taken, added])
 
@@ -1072,20 +1106,18 @@ export function useCardReview(
       // YAZ-5707: the Order setting, once for the session (⌘Z and a filter switch never mix again).
       const plan = cardPlan(records, settings, now, scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : host.upNextTakenToday(root), root === null ? NO_ADDED : host.cardsAddedToday(root)).queue
       const rank = new Map(plan.map((c, i) => [cardKey(c), i]))
-      const cards = queuedCards(records, plan)
       const from = dayStart(now)
-      const earlier = earlierAnswers(cards, from, cardTime(now))
       // YAZ-5708: a miss of today waiting for its re-check stays one when the Inbox opens again (rules 7, 18): "Again",
       // the red and the ✕ K, at the end of the run.
-      const missed = new Set(cards.filter((c) => !c.off && missedToday(c.reviews, from)).map((c) => c.key))
+      const missed = missedKeysOf(records, from)
       const marked = plan.map((c): QueueCard => (missed.has(cardKey(c)) && !c.isNew && !c.next ? { ...c, repeat: true, forgot: true } : c))
       const queue = [...ordered(marked, 0, settings, rank).filter((c) => allPart(c) !== 2), ...marked.filter((c) => allPart(c) === 2)]
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
-      // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020); a moved Inbox on its filter, at its
-      // card when that is still in the queue, else on the filter's first card (YAZ-5054).
+      // A new scope starts on All cards (YAZ-5017); day-wide progress comes live from today's reviews (YAZ-6018).
+      // A moved Inbox picks up on its filter, at its card when that is still in the queue, else on the filter's first card (YAZ-5054).
       const filter = resume.filter ?? 'all'
       const at = resume.card === undefined ? -1 : queue.findIndex((c) => c.path === resume.card?.path && c.id === resume.card.id)
-      setSession((s) => fitted({ id: ++sessionCount, rank, earlier, label, scope, queue, at: Math.max(at, 0), turn: (s?.turn ?? 0) + 1, undo: [], filter, answered: [], marks: markedIn(queue), live: listsOf(queue), stage: 'first', pause: null }))
+      setSession((s) => fitted({ id: ++sessionCount, rank, label, scope, queue, at: Math.max(at, 0), turn: (s?.turn ?? 0) + 1, undo: [], filter, answered: [], marks: markedIn(queue), live: listsOf(queue), stage: 'first', pause: null }))
     },
     [root, source, host],
   )
@@ -1350,9 +1382,10 @@ export function useCardReview(
   const setNext = useCallback((path: string, id: string, on: boolean) => setMark(path, id, (l) => withCardNext(l, on)), [setMark])
 
   const move = useCallback((delta: -1 | 1) => {
+    const loop = live.current.settings.loopArrows
     setSession((s) => {
       if (s === null || s.pause !== null) return s
-      const at = stepFrom(s, delta)
+      const at = stepFrom(s, delta, loop)
       return at === -1 ? s : { ...s, at, turn: s.turn + 1 }
     })
   }, [])
@@ -1461,6 +1494,19 @@ export function useCardReview(
     () => (scope === undefined || (!scope.folder && scope.page === undefined) ? vaultPlan : cardPlan(records, settings, Date.now(), scope.folder, scope.page, letters, taken, added)),
     [scope, vaultPlan, records, settings, letters, taken, added],
   )
+  // YAZ-6018: today's answers across the open scope (vault, folder or page), live from the index + own writes, so the
+  // top-right counter persists across close/reopen, restarts, windows and phone sync, for every filter, until midnight.
+  const dayEarlier = useMemo<readonly SessionAnswer[]>(() => {
+    if (scope === undefined) return NO_EARLIER
+    const now = Date.now()
+    const takenSet = new Set<string>()
+    const begunSet = new Set<string>()
+    for (const entry of taken) {
+      if (entry.endsWith(UP_NEXT_BEGUN)) begunSet.add(entry.slice(0, -UP_NEXT_BEGUN.length))
+      else takenSet.add(entry)
+    }
+    return earlierAnswers(cardsInScope(effectiveRecords, scope.folder ?? '', scope.page, letters), dayStart(now), dayEnd(now), takenSet, begunSet)
+  }, [effectiveRecords, scope, letters, taken, day])
   const upNext = useMemo(() => anyUpNext(records), [records])
   // YAZ-5029: the last card shown with its text, and its session: on show while the next card is read.
   const lastShown = useRef<{ session: number; card: ShownCard } | null>(null)
@@ -1474,7 +1520,7 @@ export function useCardReview(
     else if (shownCard !== null && page !== null) lastShown.current = { session: session.id, card: shownCard }
     const { filter, queue, scope } = session
     const counts = countOf(queue)
-    const progress = filterCount(session.answered, queue, filter, filter === 'all' ? session.earlier : [])
+    const progress = filterCount(session.answered, queue, filter, dayEarlier)
     const lastStep = session.undo.at(-1)
     const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
@@ -1483,8 +1529,8 @@ export function useCardReview(
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
       cards: scope,
       card: shownCard,
-      canBack: session.pause === null && stepFrom(session, -1) !== -1,
-      canNext: session.pause === null && stepFrom(session, 1) !== -1,
+      canBack: session.pause === null && stepFrom(session, -1, settings.loopArrows) !== -1,
+      canNext: session.pause === null && stepFrom(session, 1, settings.loopArrows) !== -1,
       // The card before, still on show (YAZ-5029), has no answers: none of its buttons writes to the card under it.
       answers: fixed?.key === turnKey && page !== null ? fixed.answers : null,
       canUndo: session.undo.length > 0,
@@ -1514,7 +1560,7 @@ export function useCardReview(
       landing: shownCard === null && session.answered.length > 0 ? `${session.id}:${session.answered.length}` : null,
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, host, cached, records, folders, today, scopePlan, settings, added, upNext, folderLabelOf])
+  }, [session, loaded, fixed, turnKey, root, vaultName, host, cached, records, folders, today, scopePlan, dayEarlier, settings, added, upNext, folderLabelOf])
 
   // YAZ-5322: the picker's rows, worked out when it opens: each folder with new cards, and each picked one (0 when empty).
   const pickerFolders = useCallback(() => {

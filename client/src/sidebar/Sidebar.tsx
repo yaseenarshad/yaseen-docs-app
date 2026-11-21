@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useLayout
 import { useAllPathIds, type IdsInFiles, type IdsInSearch, type PathIdsSource } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
+import { isReadOnlyProperties } from '@shared/readOnly'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
@@ -324,7 +325,7 @@ interface SidebarProps {
    */
   onMoved: (gesture: MovedGesture, text: string, skipped: boolean) => void
   /** A Manual reorder of Files, Focus or Favorites (YAZ-5917): App puts it on the window's undo list and says it with Undo. */
-  onReordered?: (step: { name: string; undo: () => void; redo: () => void }) => void
+  onReordered?: (step: { name: string; undo: () => void; redo: () => void; vault?: string }) => void
   /**
    * Rows dragged out to Finder, and the drag ended outside the window with no drop inside it
    * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
@@ -1995,8 +1996,22 @@ export function Sidebar({
   }, [createRequest, lens, forest, trees, rootOf, onCreateConsumed, startCreateAt])
 
   // The row goes when the index says so, as it came; only a refusal is said.
-  const removeShortcutRow = (path: string, dir: string): void =>
-    void removeShortcut(dir, path, vaultOf(dir).index.folders).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+  // YAZ-5989: check the page's own `readonly: true` and the vault's read-only door before rewriting `also_in`.
+  const isPageReadOnly = (path: string): boolean => {
+    const record = vaultOf(path).index.records.find((r) => r.path === path)
+    return record !== undefined && isReadOnlyProperties(record.properties)
+  }
+  const removeShortcutRow = (path: string, dir: string): void => {
+    void (async () => {
+      if (isPageReadOnly(path)) return onNotice(`Can't remove the shortcut: "${nameOf(path)}" is read only`, 'error')
+      if (onFileAction !== undefined && !(await onFileAction(rootOf(dir)))) return
+      try {
+        await removeShortcut(dir, path, vaultOf(dir).index.folders)
+      } catch (err: unknown) {
+        onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    })()
+  }
 
   // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
   // window in the tab's order (D1), every focus item of the window by the same rule (YAZ-2702 Decision 3), or the vault rows of Files (D5).
@@ -2051,8 +2066,8 @@ export function Sidebar({
   // Files under Manual (YAZ-5916): each folder's order, kept in the vault; read only while Files sorts by hand.
   const filesManual = settings.sidebarSort.files.by === 'manual'
   const filesOrder = useFilesOrder(ownRoots, filesManual, onNotice)
-  const reordered = useCallback((name: string, undo: () => void, redo: () => void) => onReordered?.({ name, undo, redo }), [onReordered])
-  const { fileMove, reorder, manual } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag, folderDrop, filesOrder.save, reordered)
+  const reordered = useCallback((name: string, undo: () => void, redo: () => void, vault?: string) => onReordered?.(vault === undefined ? { name, undo, redo } : { name, undo, redo, vault }), [onReordered])
+  const { fileMove, reorder, manual } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag, folderDrop, filesOrder.save, reordered, onFileAction)
 
   // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
   // identity until a list really changes — the memoised levels compare it by identity.
@@ -2846,9 +2861,19 @@ export function Sidebar({
           folder={relTo(rootOf(pickingShortcut), pickingShortcut)}
           source={vaultOf(pickingShortcut).index}
           onPick={(path) => {
+            const dir = pickingShortcut
             setPickingShortcut(null)
             // The row follows the index, as every other write's do; only a refusal is said.
-            addShortcut(pickingShortcut, path).catch((err: unknown) => onNotice(`Can't add the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+            // YAZ-5989: check the page's own `readonly: true` and the vault's read-only door before rewriting `also_in`.
+            void (async () => {
+              if (isPageReadOnly(path)) return onNotice(`Can't add the shortcut: "${nameOf(path)}" is read only`, 'error')
+              if (onFileAction !== undefined && !(await onFileAction(rootOf(dir)))) return
+              try {
+                await addShortcut(dir, path)
+              } catch (err: unknown) {
+                onNotice(`Can't add the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error')
+              }
+            })()
           }}
           onClose={() => setPickingShortcut(null)}
         />

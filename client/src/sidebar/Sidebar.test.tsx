@@ -10246,6 +10246,58 @@ describe('page shortcuts (YAZ-2290 D2)', () => {
       expect(writeFile).toHaveBeenCalledTimes(1)
     })
 
+    it('YAZ-5989: "Remove shortcut" and "Add shortcut" refuse a page with readonly: true and ask onFileAction in a read-only vault', async () => {
+      // 1. Vault read-only (onFileAction returns false): Remove shortcut writes nothing; Allow writes.
+      const allow = vi.fn(async () => false)
+      const { el, disk, writeFile, indexSource, props } = await mountLinked([PROJECTS_ID], { onFileAction: allow })
+      rightClick(shortcutRow(el))
+      await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
+      await act(async () => undefined)
+      expect(allow).toHaveBeenCalledExactlyOnceWith('/v')
+      expect(writeFile).not.toHaveBeenCalled()
+
+      // 2. Page itself has readonly: true: Remove shortcut refuses with a read-only notice and does not even ask onFileAction.
+      allow.mockClear()
+      const lockedRecords = records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, properties: { ...r.properties, readonly: true } } : r))
+      act(() => indexSource.update(() => null, lockedRecords, FOLDERS, true))
+      rightClick(shortcutRow(el))
+      await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
+      await act(async () => undefined)
+      expect(allow).not.toHaveBeenCalled()
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('is read only'), 'error')
+
+      // 3. Add shortcut on a locked page refuses with a read-only notice; on an unlocked page in a locked vault asks onFileAction.
+      vi.mocked(props.onNotice!).mockClear()
+      const noShortcut = records().map((r) => (r.path === HEALTH ? { ...r, properties: { readonly: true } } : r))
+      act(() => indexSource.update(() => null, noShortcut, FOLDERS, true))
+      rightClick(row(el, '/v/Projects'))
+      act(() => itemByLabel(el, 'Add page shortcut')?.click())
+      const healthBtn = () => [...document.querySelectorAll<HTMLElement>('.shortcut-picker [role="option"], .shortcut-picker button')].find((b) => b.textContent?.includes('Health'))
+      expect(healthBtn()).toBeDefined()
+      await act(async () => healthBtn()?.click())
+      await act(async () => undefined)
+      expect(allow).not.toHaveBeenCalled()
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('is read only'), 'error')
+
+      // Unlock the page's own readonly: now Add shortcut asks onFileAction('/v'); Cancel writes nothing.
+      act(() => indexSource.update(() => null, records(), FOLDERS, true))
+      rightClick(row(el, '/v/Projects'))
+      act(() => itemByLabel(el, 'Add page shortcut')?.click())
+      await act(async () => healthBtn()?.click())
+      await act(async () => undefined)
+      expect(allow).toHaveBeenCalledExactlyOnceWith('/v')
+      expect(writeFile).not.toHaveBeenCalled()
+      // Allow: Add shortcut writes `also_in`.
+      allow.mockResolvedValueOnce(true)
+      rightClick(row(el, '/v/Projects'))
+      act(() => itemByLabel(el, 'Add page shortcut')?.click())
+      await act(async () => healthBtn()?.click())
+      await act(async () => undefined)
+      expect(disk.get(HEALTH)).toContain(PROJECTS_ID)
+    })
+
     /** A Cut is a move, and a move clears no value (YAZ-4713 C9): a paste runs at once, with no sheet, on the paths main's clipboard holds. */
     describe('Cut, then Paste (YAZ-4713 C9)', () => {
       const ALPHA = '/v/Projects/Alpha.md'
@@ -13069,6 +13121,35 @@ describe('Files under Manual (YAZ-5916)', () => {
     expect(props.onRenameFile).toHaveBeenCalledWith(`${v}/b.md`, `${v}/Projects/b.md`, 'file')
     expect(bridge.filesOrder.setFolder).not.toHaveBeenCalled()
     expect(el.querySelector('.tree__row--drop')).toBeNull()
+  })
+
+  it('YAZ-5989: Files manual reorder asks onFileAction; Cancel writes nothing; Allow writes and attaches vault to onReordered', async () => {
+    const v = `/v-manual-${++vaults}`
+    const allow = vi.fn(async () => false)
+    const { el, bridge, props } = await mount({ root: v, lens: 'files', settings: MANUAL, onReordered: vi.fn(), onFileAction: allow }, async (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: NODES(v), generatedAt: 1 } as never)
+      b.filesOrder.get.mockResolvedValue({ sort: { by: 'manual', reverse: false }, folders: { [v]: ['c.md', 'Projects', 'b.md'] } })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+      await storage.init()
+    })
+    await act(async () => undefined)
+
+    lift(rowByPath(el, `${v}/c.md`))
+    mouse(rowByPath(el, `${v}/Projects`), 'mousemove', { clientY: 1, buttons: 1 })
+    mouse(rowByPath(el, `${v}/Projects`), 'mouseup', { clientY: 1 })
+    await act(async () => undefined)
+    expect(allow).toHaveBeenCalledExactlyOnceWith(v)
+    expect(bridge.filesOrder.setFolder).not.toHaveBeenCalled()
+    expect(props.onReordered).not.toHaveBeenCalled()
+
+    allow.mockResolvedValueOnce(true)
+    lift(rowByPath(el, `${v}/c.md`))
+    mouse(rowByPath(el, `${v}/Projects`), 'mousemove', { clientY: 1, buttons: 1 })
+    mouse(rowByPath(el, `${v}/Projects`), 'mouseup', { clientY: 1 })
+    await act(async () => undefined)
+    expect(bridge.filesOrder.setFolder).toHaveBeenCalledExactlyOnceWith(v, v, ['Projects', 'c.md', 'b.md', 'Archive'])
+    expect(props.onReordered).toHaveBeenCalledOnce()
+    expect(vi.mocked(props.onReordered!).mock.calls[0][0].vault).toBe(v)
   })
 })
 

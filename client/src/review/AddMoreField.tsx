@@ -25,6 +25,10 @@ interface AddMoreFieldProps {
   look: 'done' | 'setting'
   /** The done pill's end (YAZ-5322): "from [Spanish ▾]", the new cards' folder pick. */
   after?: ReactNode
+  /** How many cards of this kind remain past today's limit (YAZ-6041): shown subtly as `/ N` in the done pill. */
+  remaining?: number
+  /** Skip the in-place confirmation (YAZ-6041): true when already gated behind the done screen's 2-step trigger button. */
+  direct?: boolean
 }
 
 /** The done pill's words after the number: "new cards", "Up next". */
@@ -39,7 +43,7 @@ export const typedCount = (value: string): number | null => {
   return value.trim() !== '' && Number.isInteger(n) && n > 0 ? n : null
 }
 
-export function AddMoreField({ kind, start, onAdd, look, after }: AddMoreFieldProps) {
+export function AddMoreField({ kind, start, onAdd, look, after, remaining, direct = false }: AddMoreFieldProps) {
   const [value, setValue] = useState(String(start))
   // The ⚙ part's ask (round 3): the number waiting for its second click.
   const [asking, setAsking] = useState<number | null>(null)
@@ -52,6 +56,11 @@ export function AddMoreField({ kind, start, onAdd, look, after }: AddMoreFieldPr
   const add = () => {
     const n = typedCount(value)
     if (n === null) return
+    if (direct) {
+      typed.current = false
+      onAdd(n)
+      return
+    }
     setAsking(n)
   }
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -119,6 +128,7 @@ export function AddMoreField({ kind, start, onAdd, look, after }: AddMoreFieldPr
       </button>
       {field}
       <button type="button" className="card-inbox__done-add-word" onMouseDown={(e) => e.preventDefault()} onClick={add}>
+        {remaining !== undefined && remaining > 0 && <span className="card-inbox__done-add-total">{`/ ${remaining} `}</span>}
         {addWords(kind, n)}
       </button>
       {after}
