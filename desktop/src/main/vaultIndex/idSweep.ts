@@ -236,11 +236,16 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   const among = await ownOnly([...new Map(events.map((r) => [r.path, records.get(r.path) ?? r])).values()], (r) => mine(r.path))
   /** A page the index could not read (its YAML is invalid, or it is over the size limit) takes no id. */
   const takes = (r: IndexRecord): boolean => r.frontmatterError === undefined && r.size <= MAX_FILE_BYTES
-  // Each card's title onto its card line, one time for the vault (YAZ-5308), before any number.
-  const withCards = await ownOnly([...records.values()].filter((r) => (r.cards?.length ?? 0) > 0 && takes(r) && !isFolderSettingsPath(r.path)), (r) => mine(r.path))
-  await moveOnce(root, CARD_TITLES_MOVED, withCards, cardTitlesMoved)
-  // YAZ-5384: after the titles, a card file's own properties onto its card line (option A).
-  await moveOnce(root, CARD_PROPERTIES_MOVED, withCards.filter((r) => r.kind === 'card'), cardFilePropertiesMoved)
+  // Check one-time move markers BEFORE scanning all records and calling `ownOnly` (YAZ-6027).
+  const [titlesDone, propsDone] = await Promise.all([
+    stat(path.join(root, CARD_TITLES_MOVED)).then(() => true, () => false),
+    stat(path.join(root, CARD_PROPERTIES_MOVED)).then(() => true, () => false),
+  ])
+  if (!titlesDone || !propsDone) {
+    const withCards = await ownOnly([...records.values()].filter((r) => (r.cards?.length ?? 0) > 0 && takes(r) && !isFolderSettingsPath(r.path)), (r) => mine(r.path))
+    if (!titlesDone) await moveOnce(root, CARD_TITLES_MOVED, withCards, cardTitlesMoved)
+    if (!propsDone) await moveOnce(root, CARD_PROPERTIES_MOVED, withCards.filter((r) => r.kind === 'card'), cardFilePropertiesMoved)
+  }
   /**
    * The sweep's one write of an id: `file` takes `to` while it still holds `held` (`giveId`). False
    * when it took none: it changed under the sweep, or cannot be written — and one that cannot be
@@ -679,8 +684,13 @@ export const nextId = (root: string) => async (): Promise<string | undefined> =>
  * The app's own copy calls this too, once the folder it made holds its fresh id (`fs/copy.ts`,
  * YAZ-2420 🔒 D21): its pages were written holding their values under the original's.
  */
+const CARRIED_MAX = 256
+
 export async function carryFolderValues(dir: string, from: string, to: string): Promise<void> {
-  if (!carried.some((copy) => copy.dir === dir && copy.from === from && copy.to === to)) carried.push({ dir, from, to })
+  if (!carried.some((copy) => copy.dir === dir && copy.from === from && copy.to === to)) {
+    if (carried.length >= CARRIED_MAX) carried.shift()
+    carried.push({ dir, from, to })
+  }
   const files: string[] = []
   await walk(dir, files).catch(() => undefined)
   for (const file of files) await carryPage(file, from, to)

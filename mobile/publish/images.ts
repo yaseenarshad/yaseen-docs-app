@@ -6,7 +6,6 @@ import { readFileSync } from 'node:fs'
  */
 
 /** The app's accent and backgrounds (`src/styles.css`; `publish/site.test.ts` checks the manifest against it). */
-export const ACCENT = '#5b6cff'
 export const BG_LIGHT = '#ffffff'
 export const BG_DARK = '#1e1e1e'
 

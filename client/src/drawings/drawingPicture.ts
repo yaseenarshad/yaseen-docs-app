@@ -86,7 +86,7 @@ export async function drawingSvg(
     elements,
     appState: { ...scene.appState, exportBackground: true, exportWithDarkMode: theme === 'dark', exportPadding: DRAWING_PADDING },
     files: scene.files,
-    ...(opts ?? {}),
+    ...opts,
   } as never)
   // The engine's canvas size (`getCanvasSize`): the common bounds of the root elements, plus the padding each side.
   const frameIds = new Set(elements.filter((e) => e.type === 'frame' || e.type === 'magicframe').map((e) => e.id))

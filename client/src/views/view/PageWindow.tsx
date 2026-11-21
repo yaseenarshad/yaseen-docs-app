@@ -1,14 +1,43 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Group, Row } from '../engine'
-import { PropertiesOpenMemory } from '../../editor/FrontmatterPanel'
+import { PropertiesOpenMemory } from '../../editor/propertiesOpenMemory'
 import { PageZoomMemory } from '../../editor/DocumentZoom'
-import { cellNotePinnedAtStart } from '../../editor/table/cellNoteCard'
 import { isPageKey } from '../../editor/pageKeys'
 import { cssZoom } from '../../lib/cssZoom'
 import { storage } from '../../lib/storage'
 import { TOP_SPOT, type GroupSpot, childSpot, spotKey } from './groupDrag'
 import { legacyPageWindowKey, movedStorageItem } from '@shared/legacyNames'
+import {
+  MAX_OPEN_WINDOWS,
+  type PageWindowMemory,
+  dropAllPageWindows,
+  dropPageWindow,
+  dropPageWindowsAt,
+  isAtOrUnder,
+  keepPageWindow,
+  openPageWindow,
+  openWindows,
+  pageWindowKey,
+  pageWindowMemory,
+  renamePageWindowView,
+  renamePageWindows,
+  windowListeners,
+} from './pageWindowMemory'
+export {
+  MAX_OPEN_WINDOWS,
+  type PageWindowMemory,
+  dropAllPageWindows,
+  dropPageWindow,
+  dropPageWindowsAt,
+  isAtOrUnder,
+  keepPageWindow,
+  openPageWindow,
+  pageWindowKey,
+  pageWindowMemory,
+  renamePageWindowView,
+  renamePageWindows,
+}
 
 /**
  * The table's side of the card (YAZ-4547 D16): one mutable object per folder page, so a step renders the card and
@@ -86,50 +115,6 @@ export function usePageWindowItems(link: PageWindowLink | undefined, order: read
 /** ` view-item--current` on the item of the page the card shows, for a view's className. */
 export const currentItemClass = (link: PageWindowLink | undefined, path: string): string => (link !== undefined && link.current === path ? ` ${CURRENT_ITEM}` : '')
 
-/** An open card: the page it shows now, and its place, size and pin, kept while the app runs (D17): in memory only. */
-export interface PageWindowMemory {
-  /** The page the card shows now: its start, then each step. */
-  path: string
-  /** The top-left corner after a drag or a resize, in layout px of the folder page; null for the default place. */
-  placed: { x: number; y: number } | null
-  width: number | null
-  height: number | null
-  pinned: boolean
-  /**
-   * The Properties panel's open state (YAZ-3746 13Q): each page the card shows starts as the last one left it — over its
-   * ‹ › steps, and over a click on another card that swaps the page in this same card (YAZ-5582). Absent: closed.
-   */
-  properties?: { current: boolean | null }
-  /** The page zoom, the same way (YAZ-5607): each page starts at the last zoom set in this card. Absent: the page's own (100%). */
-  zoom?: { current: number | null }
-}
-
-/**
- * A new memory on `path`: the pin starts as Settings › Folder pages › "Keep the mini window pinned" says (YAZ-4585, D34);
- * null there, as Settings › "Keep cell notes open (pinned)" says (5E).
- */
-export const pageWindowMemory = (path: string, pinned: boolean | null = null): PageWindowMemory => ({ path, placed: null, width: null, height: null, pinned: pinned ?? cellNotePinnedAtStart() })
-
-/**
- * The open cards, by app tab, folder page and view tab (YAZ-4547 D17, YAZ-4544). A tab that sleeps unmounts its
- * folder page; when it mounts again, its card shows again on the same page, at the same place. Two tabs on one folder
- * each have their own card; a folder page with no tab (the right panel) is its own place. Bounded: a card that closes
- * drops its entry, and at most `MAX_OPEN_WINDOWS` stay, the oldest open out.
- */
-const openWindows = new Map<string, PageWindowMemory>()
-export const MAX_OPEN_WINDOWS = 50
-
-export const pageWindowKey = (tabId: string | undefined, folderPath: string, viewName: string): string => JSON.stringify([tabId ?? null, folderPath, viewName])
-export const openPageWindow = (key: string): PageWindowMemory | undefined => openWindows.get(key)
-export function keepPageWindow(key: string, memory: PageWindowMemory): void {
-  openWindows.delete(key)
-  openWindows.set(key, memory)
-  if (openWindows.size > MAX_OPEN_WINDOWS) openWindows.delete(openWindows.keys().next().value!)
-}
-export const dropPageWindow = (key: string): void => void openWindows.delete(key)
-/** For tests: no card open anywhere. */
-export const dropAllPageWindows = (): void => openWindows.clear()
-
 /** A card's place and size, apart from its page and pin. */
 export type PageWindowBox = Pick<PageWindowMemory, 'placed' | 'width' | 'height'>
 /**
@@ -161,48 +146,6 @@ export function savePageWindowBox(folderPath: string, { placed, width, height }:
   } catch {
     // No storage (a private window, a full quota): the size lasts the session, as before.
   }
-}
-
-/** `path` is `at` or a file under the folder `at`. */
-const isAtOrUnder = (path: string, at: string): boolean => path === at || path.startsWith(`${at}/`)
-
-/** The mounted cards, told of a rename (`to` its new path) or a delete (`to` null) of a page or a folder (YAZ-4544). */
-const windowListeners = new Set<(from: string, to: string | null) => void>()
-
-/** A key's parts (`pageWindowKey`). */
-const keyParts = (key: string): [string | null, string, string] => JSON.parse(key) as [string | null, string, string]
-
-/** The entries whose key `moves` picks get the key it names (YAZ-4635 P5): the card stays open across a rename of its place. */
-function rekeyPageWindows(moves: (tabId: string | null, folderPath: string, viewName: string) => string | null): void {
-  for (const [key, memory] of [...openWindows]) {
-    const to = moves(...keyParts(key))
-    if (to === null || to === key) continue
-    openWindows.delete(key)
-    openWindows.set(to, memory)
-  }
-}
-
-/**
- * A rename of a page or a folder (YAZ-4544): App's `file:renamed`, after `carryEditorAcrossRename` retired the
- * editors at the old path. Each card on it, mounted or not, moves to the new path; a mounted card mounts its editor there.
- * A folder's rename also moves the cards of the folder pages at or under it to their new folder path (YAZ-4635 P5),
- * so the page that mounts again on the new path finds its card.
- */
-export function renamePageWindows(oldPath: string, newPath: string): void {
-  for (const memory of openWindows.values()) if (isAtOrUnder(memory.path, oldPath)) memory.path = newPath + memory.path.slice(oldPath.length)
-  rekeyPageWindows((tabId, folderPath, viewName) => (isAtOrUnder(folderPath, oldPath) ? pageWindowKey(tabId ?? undefined, newPath + folderPath.slice(oldPath.length), viewName) : null))
-  for (const tell of [...windowListeners]) tell(oldPath, newPath)
-}
-
-/** A view tab of `folderPath` renamed `from` → `to` (YAZ-4635 P5): the cards on it, in every app tab, keep their place under the new name. */
-export const renamePageWindowView = (folderPath: string, from: string, to: string): void =>
-  rekeyPageWindows((tabId, folder, viewName) => (folder === folderPath && viewName === from ? pageWindowKey(tabId ?? undefined, folderPath, to) : null))
-
-/** A delete of a page or a folder (YAZ-4544): App's `file:deleted`, after `retireDeletedPath`. Each card on it closes. */
-export function dropPageWindowsAt(path: string): void {
-  // The mounted cards close first, so their folder page keeps the place and size for its next card.
-  for (const tell of [...windowListeners]) tell(path, null)
-  for (const [key, memory] of openWindows) if (isAtOrUnder(memory.path, path)) openWindows.delete(key)
 }
 
 interface PageWindowProps {

@@ -322,10 +322,12 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       if (host.platform === 'darwin' && host.isPackaged) swept = Promise.all([rm(updates, { recursive: true, force: true }), rm(staged, { recursive: true, force: true })]).catch(() => undefined)
       // S3: a failed timer check is silent to the user; the log is for us.
       const quiet = (): void => void check().catch((err: unknown) => console.error(`[update] check failed: ${String(err)}`))
-      setTimeout(() => {
+      const first = setTimeout(() => {
         quiet()
-        setInterval(quiet, CHECK_EVERY_MS)
+        const repeat = setInterval(quiet, CHECK_EVERY_MS)
+        repeat.unref()
       }, FIRST_CHECK_MS)
+      first.unref()
     },
     check,
     checks,

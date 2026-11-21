@@ -571,6 +571,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     }
   }, [drag])
 
+  const headBase = useFolderHeaderRow()
+
   if (dateKey === null)
     return (
       <div className="view-cal__hint">
@@ -927,7 +929,6 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const properties = rows.find((r) => r.record.path === m.path)?.record.properties ?? {}
     return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(m.path, writes)} />] }
   }
-  const headBase = useFolderHeaderRow()
   const shownHead = shownHeaderRow(view, headBase)
   /** ⌘Z / ⇧⌘Z on a card (YAZ-4906): the page's value history, as the table reads them; a field keeps its own keys. */
   const onUndoKey = (e: ReactKeyboardEvent) => {

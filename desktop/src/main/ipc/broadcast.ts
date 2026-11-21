@@ -8,9 +8,16 @@ import type { WindowManager } from '../windows'
  * caused the change. Renderers filter by their own root where that matters (the
  * `state:changed` / `vaultConfig:changed` posture).
  */
+const excludedWindows = new WeakSet<BrowserWindow>()
+
+/** Exclude non-app popups (such as Files preview popups) from receiving `broadcastAll` payloads (YAZ-6024). */
+export function excludeFromBroadcast(win: BrowserWindow): void {
+  excludedWindows.add(win)
+}
+
 export function broadcastAll(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed() || win.webContents.isDestroyed()) continue
+    if (win.isDestroyed() || win.webContents.isDestroyed() || excludedWindows.has(win)) continue
     win.webContents.send(channel, ...args)
   }
 }

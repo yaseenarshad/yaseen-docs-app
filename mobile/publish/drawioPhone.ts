@@ -189,15 +189,3 @@ export function drawioPhone(): Plugin {
   }
 }
 
-/** The served path of each draw.io file of a build (`dist/drawio/<hash>/…`). */
-export function drawioServedFiles(distFiles: string[]): string[] {
-  return distFiles.filter((f) => f.startsWith(DRAWIO_ROOT.slice(1))).map((f) => `/${f.replace(/\.html$/, '')}`)
-}
-
-/** For the report: every file of `dir` under `drawio/`. */
-export function listDrawio(dist: string): string[] {
-  const root = join(dist, 'drawio')
-  if (!existsSync(root)) return []
-  const walk = (d: string, rel: string): string[] => readdirSync(join(root, d), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name), `${rel}${e.name}/`) : [`drawio/${rel}${e.name}`]))
-  return walk('', '')
-}

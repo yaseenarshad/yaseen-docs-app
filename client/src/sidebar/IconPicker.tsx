@@ -1,7 +1,66 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { PICKER_COLUMNS, PICKER_W } from './iconSuggestions'
 import { iconUrl, pickableIcons, useMaterialIcons } from './materialIcons'
+
+interface IconSection {
+  title: string
+  ids: readonly string[]
+}
+
+/** Memoized icon grid so hovering/focusing icons only updates the footer instead of re-rendering 1,000+ buttons (YAZ-6028). */
+const IconPickerGrid = memo(function IconPickerGrid({
+  sections,
+  current,
+  onChoose,
+  onMove,
+  onHover,
+  onFocus,
+}: {
+  sections: readonly IconSection[]
+  current: string | null
+  onChoose: (id: string) => void
+  onMove: (e: React.KeyboardEvent<HTMLButtonElement>) => void
+  onHover: (id: string | null) => void
+  onFocus: (id: string | null) => void
+}) {
+  return (
+    <div className="icon-picker__scroll">
+      {sections.map((section) => (
+        <section key={section.title} className="icon-picker__section">
+          <div className="icon-picker__label">{section.title}</div>
+          <div className="icon-picker__grid" role="listbox" aria-label={section.title}>
+            {section.ids.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="option"
+                aria-selected={id === current}
+                className={`icon-picker__icon${id === current ? ' icon-picker__icon--current' : ''}`}
+                title={id}
+                aria-label={id}
+                onClick={() => onChoose(id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    onChoose(id)
+                  } else onMove(e)
+                }}
+                onMouseEnter={() => onHover(id)}
+                onMouseLeave={() => onHover(null)}
+                onFocus={() => onFocus(id)}
+                onBlur={() => onFocus(null)}
+              >
+                <img src={iconUrl(id)} alt="" width={28} height={28} loading="lazy" draggable={false} />
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+      {sections.length === 0 && <div className="icon-picker__empty">No icon has that name.</div>}
+    </div>
+  )
+})
 
 /**
  * The icon picker (YAZ-3440 D8): a panel of Material icons, opened right of the sidebar by "Change icon ▸
@@ -43,12 +102,14 @@ export function IconPicker({ x, y, anchor, title, current, canReset = current !=
   // Material's tables (YAZ-3470) are in by the time a menu opens the picker; if not, it lists them once they land.
   const material = useMaterialIcons()
   const all = useMemo(() => pickableIcons().sort(), [material]) // eslint-disable-line react-hooks/exhaustive-deps -- `material` is read by pickableIcons
-  const words = query.trim().toLowerCase().split(/[\s-]+/).filter((w) => w !== '')
-  const matches = (id: string) => words.every((w) => id.includes(w))
-  const sections = [
-    { title: 'Suggested', ids: suggested.filter(matches) },
-    { title: 'All icons', ids: words.length === 0 ? all : all.filter(matches) },
-  ].filter((section) => section.ids.length > 0)
+  const sections = useMemo<IconSection[]>(() => {
+    const words = query.trim().toLowerCase().split(/[\s-]+/).filter((w) => w !== '')
+    const matches = (id: string) => words.every((w) => id.includes(w))
+    return [
+      { title: 'Suggested', ids: suggested.filter(matches) },
+      { title: 'All icons', ids: words.length === 0 ? all : all.filter(matches) },
+    ].filter((section) => section.ids.length > 0)
+  }, [query, suggested, all])
   const panel = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState(() => (anchor === undefined ? { x, y } : { x: anchor.left, y: anchor.bottom + 4 }))
   useLayoutEffect(() => {
@@ -58,27 +119,33 @@ export function IconPicker({ x, y, anchor, title, current, canReset = current !=
     const above = anchor.top - 4
     setAt({ x: anchor.left, y: height <= below || below >= above ? anchor.bottom + 4 : Math.max(0, anchor.top - 4 - height) })
   }, [anchor])
-  const choose = (id: string | null) => {
-    onPick(id)
-    onClose()
-  }
+  const choose = useCallback(
+    (id: string | null) => {
+      onPick(id)
+      onClose()
+    },
+    [onPick, onClose],
+  )
   /** The icon buttons in on-screen order, each with its section and its place in it. */
-  const buttons = () => [...(panel.current?.querySelectorAll<HTMLButtonElement>('.icon-picker__icon') ?? [])]
-  const move = (e: React.KeyboardEvent<HTMLButtonElement>) => {
-    const list = buttons()
-    const at = list.indexOf(e.currentTarget)
-    const section = e.currentTarget.closest('.icon-picker__grid')
-    const inSection = list.filter((b) => b.closest('.icon-picker__grid') === section)
-    const i = inSection.indexOf(e.currentTarget)
-    let to: HTMLButtonElement | undefined
-    if (e.key === 'ArrowRight') to = list[at + 1]
-    else if (e.key === 'ArrowLeft') to = list[at - 1]
-    else if (e.key === 'ArrowDown') to = inSection[i + PICKER_COLUMNS] ?? list[list.indexOf(inSection[inSection.length - 1]) + 1] ?? inSection[inSection.length - 1]
-    else if (e.key === 'ArrowUp') to = i >= PICKER_COLUMNS ? inSection[i - PICKER_COLUMNS] : (list[list.indexOf(inSection[0]) - 1] ?? panel.current?.querySelector<HTMLButtonElement>('.icon-picker__search') ?? undefined)
-    else return
-    e.preventDefault()
-    to?.focus()
-  }
+  const buttons = useCallback(() => [...(panel.current?.querySelectorAll<HTMLButtonElement>('.icon-picker__icon') ?? [])], [])
+  const move = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      const list = buttons()
+      const at = list.indexOf(e.currentTarget)
+      const section = e.currentTarget.closest('.icon-picker__grid')
+      const inSection = list.filter((b) => b.closest('.icon-picker__grid') === section)
+      const i = inSection.indexOf(e.currentTarget)
+      let to: HTMLButtonElement | undefined
+      if (e.key === 'ArrowRight') to = list[at + 1]
+      else if (e.key === 'ArrowLeft') to = list[at - 1]
+      else if (e.key === 'ArrowDown') to = inSection[i + PICKER_COLUMNS] ?? list[list.indexOf(inSection[inSection.length - 1]) + 1] ?? inSection[inSection.length - 1]
+      else if (e.key === 'ArrowUp') to = i >= PICKER_COLUMNS ? inSection[i - PICKER_COLUMNS] : (list[list.indexOf(inSection[0]) - 1] ?? panel.current?.querySelector<HTMLButtonElement>('.icon-picker__search') ?? undefined)
+      else return
+      e.preventDefault()
+      to?.focus()
+    },
+    [buttons],
+  )
   const named = hovered ?? focused ?? current
   return (
     <>
@@ -133,40 +200,7 @@ export function IconPicker({ x, y, anchor, title, current, canReset = current !=
         <button type="button" className="ctx-menu__item icon-picker__reset" disabled={!canReset} onClick={() => choose(null)}>
           Reset to default
         </button>
-        <div className="icon-picker__scroll">
-          {sections.map((section) => (
-            <section key={section.title} className="icon-picker__section">
-              <div className="icon-picker__label">{section.title}</div>
-              <div className="icon-picker__grid" role="listbox" aria-label={section.title}>
-                {section.ids.map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    role="option"
-                    aria-selected={id === current}
-                    className={`icon-picker__icon${id === current ? ' icon-picker__icon--current' : ''}`}
-                    title={id}
-                    aria-label={id}
-                    onClick={() => choose(id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        choose(id)
-                      } else move(e)
-                    }}
-                    onMouseEnter={() => setHovered(id)}
-                    onMouseLeave={() => setHovered(null)}
-                    onFocus={() => setFocused(id)}
-                    onBlur={() => setFocused(null)}
-                  >
-                    <img src={iconUrl(id)} alt="" width={28} height={28} loading="lazy" draggable={false} />
-                  </button>
-                ))}
-              </div>
-            </section>
-          ))}
-          {sections.length === 0 && <div className="icon-picker__empty">No icon has that name.</div>}
-        </div>
+        <IconPickerGrid sections={sections} current={current} onChoose={choose} onMove={move} onHover={setHovered} onFocus={setFocused} />
         <div className="icon-picker__foot" aria-live="polite">
           {named ?? ' '}
         </div>

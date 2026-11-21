@@ -50,9 +50,11 @@ jobs:
       - run: npm ci
       # First after the install: draw.io's pack copies the engine's fonts, and the typecheck reads its types. A no-op after a cache hit.
       - run: npm run engine:build
-      # The pinned draw.io pack (YAZ-3028 D5, Draw's YAZ-1802 D5): sha256-checked, so the suites that read
-      # the real bundle run here too, and `npm run build` finds it unpacked. Not cached: the 54 MB draw.war
-      # downloads on each run.
+      # Cache the verified draw.io pack (54 MB draw.war + unpacked/pruned tree) across CI jobs and runs (YAZ-6008 D12).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: desktop/.cache/drawio
+          key: drawio-${{ runner.os }}-${{ hashFiles('shared/drawio.ts', 'tools/packDrawio.mjs', 'tools/lib/drawioPack.mjs', 'desktop/drawio-overlay/**') }}
       - run: npm run drawio:pack
       # The phone's layout tests drive headless Chrome (mobile/src/page/chromeLayout.testing.ts); the Linux runner's.
       # SKIP_MAC_ONLY leaves out two files that need the Mac (the `exclude` of client/ and mobile/vitest.config.ts);
@@ -83,9 +85,11 @@ jobs:
       - run: npm ci
       # First after the install: draw.io's pack copies the engine's fonts, and the typecheck reads its types. A no-op after a cache hit.
       - run: npm run engine:build
-      # The pinned draw.io pack (YAZ-3028 D5, Draw's YAZ-1802 D5): sha256-checked, so the suites that read
-      # the real bundle run here too, and `npm run build` finds it unpacked. Not cached: the 54 MB draw.war
-      # downloads on each run.
+      # Cache the verified draw.io pack (54 MB draw.war + unpacked/pruned tree) across CI jobs and runs (YAZ-6008 D12).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: desktop/.cache/drawio
+          key: drawio-${{ runner.os }}-${{ hashFiles('shared/drawio.ts', 'tools/packDrawio.mjs', 'tools/lib/drawioPack.mjs', 'desktop/drawio-overlay/**') }}
       - run: npm run drawio:pack
       - run: npm test -- --project desktop --project tools
       # MAC_ONLY: the two client and phone files `unit-linux` leaves out (see there).
@@ -111,10 +115,13 @@ jobs:
       - run: npm ci
       # First after the install: draw.io's pack copies the engine's fonts, and the typecheck reads its types. A no-op after a cache hit.
       - run: npm run engine:build
-      # The pinned draw.io pack (YAZ-3028 D5, Draw's YAZ-1802 D5): sha256-checked, so the suites that read
-      # the real bundle run here too, and `npm run build` finds it unpacked. Not cached: the 54 MB draw.war
-      # downloads on each run.
+      # Cache the verified draw.io pack (54 MB draw.war + unpacked/pruned tree) across CI jobs and runs (YAZ-6008 D12).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: desktop/.cache/drawio
+          key: drawio-${{ runner.os }}-${{ hashFiles('shared/drawio.ts', 'tools/packDrawio.mjs', 'tools/lib/drawioPack.mjs', 'desktop/drawio-overlay/**') }}
       - run: npm run drawio:pack
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
         env:

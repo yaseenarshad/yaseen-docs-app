@@ -41,7 +41,7 @@ const SETTINGS = 'friendsSettings'
 export function localFriends(store: VaultStore): FriendsPort {
   return {
     hasFriends: async () => false,
-    settings: async () => ({ ...NO_FRIENDS_SETTINGS, ...((await store.getState<FriendsSettings>(PHONE, SETTINGS)) ?? {}) }),
+    settings: async () => ({ ...NO_FRIENDS_SETTINGS, ...(await store.getState<FriendsSettings>(PHONE, SETTINGS)) }),
     saveSettings: (settings) => store.setState(PHONE, SETTINGS, settings),
   }
 }

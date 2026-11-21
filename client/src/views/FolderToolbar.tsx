@@ -13,44 +13,17 @@
  * The parts that change often (the save state, the Page tab's part) live in a small store, so a save re-renders this
  * toolbar alone, never the views.
  */
-import { createContext, useSyncExternalStore, type ReactNode } from 'react'
+import { useSyncExternalStore } from 'react'
 import { ViewTypeIcon } from './view/icons'
 import type { FolderPagesSettings, GithubSyncStatus } from '@shared/types'
-import { type Hint, PageSettings, type PageSettingsProps, type PageSwitch } from '../editor/PageSettings'
+import { type Hint, PageSettings, type PageSwitch } from '../editor/PageSettings'
 import { MarkGlyph } from './view/ColumnMark'
 import { StatusChips } from '../editor/StatusChips'
 import type { SaveStatus } from '../lib/autosave'
 import type { Store } from '../lib/store'
 import type { AllowFor } from '../editor/useTimedUnlock'
-
-/**
- * THE HOOK FOR THE PAGE TAB (YAZ-3746 10D, D35): what the Page tab hands the folder page's toolbar while it shows.
- * The Page tab reads the store from `FolderPageChips` and calls `store.set({ page })` while it shows — again when
- * a switch or its save state moves — and `store.set({ page: null })` when it goes.
- */
-export interface FolderPageTab {
-  /**
-   * The page's page switches, as a page's `Editor` hands its own cog: every `PageSettings` prop but the folder's
-   * own rows. They show after the "This folder page" group: Line numbers, Section indent, …, the counts.
-   */
-  cog: Omit<PageSettingsProps, 'readOnly' | 'onToggleReadOnly' | 'switches' | 'switchesHeading' | 'rows'>
-  /** The Page body's save state: the save chip shows it with the settings writes' (the worse of the two). */
-  save: SaveStatus
-  /** The page's fold-all button (YAZ-3746 10D): it stands left of the cog, as on a page page. Null while Folding is off. */
-  foldAll: ReactNode
-}
-
-export interface FolderChipsState {
-  /** The folder's own settings writes: 'saving' while one is in flight, 'error' when the last batch had a failure. */
-  save: SaveStatus
-  /** The Page tab's part; null while another view tab shows. */
-  page: FolderPageTab | null
-  /** The folder page is read only (D36): the Page tab keeps its body read only while this is true. */
-  readOnly: boolean
-}
-
-/** The folder page's chips store, for the Page tab (see `FolderPageTab`). Null outside a folder page. */
-export const FolderPageChips = createContext<Store<FolderChipsState> | null>(null)
+import { FolderPageChips, type FolderChipsState, type FolderPageTab } from './folderPageChipsContext'
+export { FolderPageChips, type FolderChipsState, type FolderPageTab }
 
 /** The refusal of a settings write while the folder page is read only (D36), as the views' banner says it. */
 export const FOLDER_READ_ONLY_TIP = 'This folder page is read only'

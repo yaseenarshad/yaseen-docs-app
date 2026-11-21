@@ -50,14 +50,6 @@ export async function cardSkillStamp(shipped: string, appVersion: string): Promi
   return `${appVersion}+dev.${hash.digest('hex').slice(0, 12)}`
 }
 
-/** True when the copy at `copy` was made from `appVersion` and still has every shipped file. */
-async function copyIsCurrent(copy: string, shipped: readonly string[], appVersion: string): Promise<boolean> {
-  const version = await readFile(join(copy, CARD_SKILL_VERSION_FILE), 'utf8').catch(() => null)
-  if (version !== appVersion) return false
-  const present = await Promise.all(shipped.map((file) => stat(join(copy, file)).then((s) => s.isFile(), () => false)))
-  return present.every(Boolean)
-}
-
 /**
  * The copy the app shows, `<userData>/card-skill`, made from `shipped` when it is not current. The new copy is made
  * beside the old one (`.version` written last), then it takes the old one's place: a failed copy leaves the old copy
@@ -65,19 +57,38 @@ async function copyIsCurrent(copy: string, shipped: readonly string[], appVersio
  */
 export async function ensureCardSkill(userData: string, shipped: string, appVersion: string): Promise<string> {
   const copy = join(userData, CARD_SKILL_DIR)
-  const files = await filesOf(shipped)
-  if (await copyIsCurrent(copy, files, appVersion)) return copy
+  const [files, version] = await Promise.all([
+    filesOf(shipped),
+    readFile(join(copy, CARD_SKILL_VERSION_FILE), 'utf8').catch(() => null),
+  ])
+  if (version === appVersion) {
+    const present = await Promise.all(files.map((file) => stat(join(copy, file)).then((s) => s.isFile(), () => false)))
+    if (present.every(Boolean)) return copy
+  }
   const next = `${copy}.new-${process.pid}`
+  const old = `${copy}.old-${process.pid}`
+  await setWritable(next, true)
   await rm(next, { recursive: true, force: true })
+  await setWritable(old, true)
+  await rm(old, { recursive: true, force: true })
+  let movedOld = false
   try {
     await cp(shipped, next, { recursive: true })
     await writeFile(join(next, CARD_SKILL_VERSION_FILE), appVersion)
     await setWritable(next, false)
-    // Windows does not delete a read-only file: the old copy's files are made writable first.
-    await setWritable(copy, true)
-    await rm(copy, { recursive: true, force: true })
+    // Move existing copy aside first so a rename failure restores the old copy instead of deleting it (YAZ-6024).
+    const hadOld = await stat(copy).then(() => true, () => false)
+    if (hadOld) {
+      await setWritable(copy, true)
+      await rename(copy, old)
+      movedOld = true
+    }
     await rename(next, copy)
+    if (movedOld) await rm(old, { recursive: true, force: true }).catch(() => undefined)
   } catch (err) {
+    if (movedOld) {
+      await rename(old, copy).then(() => setWritable(copy, false)).catch(() => undefined)
+    }
     await setWritable(next, true)
     await rm(next, { recursive: true, force: true })
     throw err

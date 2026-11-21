@@ -84,7 +84,7 @@ export function mergeNeverLower(remote: unknown, fresh: FriendStats, opts: { tot
   const raw = state.raw
   const rawDays = Array.isArray(raw.days) ? raw.days.filter(isObject) : []
   const days = new Map<string, Record<string, unknown>>()
-  for (const day of state.value.days) days.set(day.day, { ...(rawDays.find((d) => d.day === day.day) ?? {}), ...day })
+  for (const day of state.value.days) days.set(day.day, { ...rawDays.find((d) => d.day === day.day), ...day })
   for (const day of fresh.days) {
     const had = days.get(day.day) as (FriendDay & Record<string, unknown>) | undefined
     if (had === undefined) {

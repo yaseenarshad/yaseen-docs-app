@@ -9,7 +9,7 @@ import { exactLinkTarget } from '@shared/linkRewrite'
 import { canonicalPageId, isNumberId, pageIdNumber, vaultPageId } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
 import { atomicWrite } from '../fs/fsUtils'
-import { MADE_DAYS, appDataDir, countsOf, madeBy, vaultIds, type Counts } from './mint'
+import { MADE_DAYS, appDataDir, countsOf, vaultIds, type Counts } from './mint'
 
 /**
  * THE DIARY (YAZ-2677 🔒 D7, R25, R27, R28): what ONE Mac remembers about the IDs it made in ONE
@@ -181,7 +181,42 @@ export async function openDiary(root: string, counts: Counts, letters: readonly 
   const state = stateOf(root)
   const book = await state.book
   const mine = counts.files.get(counts.me)
-  const made = (id: string | undefined): id is string => id !== undefined && madeBy(mine, pageIdNumber(id) ?? 0, now)
+  const oldest = now - MADE_DAYS * 24 * 60 * 60 * 1000
+  // Pre-filter and merge `mine.made` runs once so checking 20,000 diary links is O(log R) instead of O(N*R) Date.parse (YAZ-6027).
+  const intervals: Array<[number, number]> = []
+  if (mine !== undefined) {
+    const active: Array<[number, number]> = []
+    for (const run of mine.made) {
+      const t = Date.parse(run.at)
+      if (!Number.isNaN(t) && t >= oldest) active.push([run.from, run.to])
+    }
+    active.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    for (const [from, to] of active) {
+      const last = intervals[intervals.length - 1]
+      if (last !== undefined && from <= last[1] + 1) {
+        if (to > last[1]) last[1] = to
+      } else {
+        intervals.push([from, to])
+      }
+    }
+  }
+  const hasMade = (num: number): boolean => {
+    let lo = 0
+    let hi = intervals.length - 1
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      const [from, to] = intervals[mid]!
+      if (num < from) hi = mid - 1
+      else if (num > to) lo = mid + 1
+      else return true
+    }
+    return false
+  }
+  const made = (id: string | undefined): id is string => {
+    if (id === undefined || intervals.length === 0) return false
+    const num = pageIdNumber(id)
+    return num !== undefined && hasMade(num)
+  }
   // What left `made` leaves the diary (R21); an ID written with letters the vault had before is kept under its letters of now.
   for (const [key, files] of [...book.links]) {
     const id = vaultPageId(key, letters)
@@ -190,7 +225,6 @@ export async function openDiary(root: string, counts: Counts, letters: readonly 
     book.dirty = true
     if (made(id) && !book.links.has(id)) book.links.set(id, files)
   }
-  const oldest = now - MADE_DAYS * 24 * 60 * 60 * 1000
   for (const [id, clash] of book.clashes) {
     if (clash.at >= oldest) continue
     book.clashes.delete(id)

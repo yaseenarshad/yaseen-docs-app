@@ -19,7 +19,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
-import { api } from '../api'
+import { fetchIndex, latestIndex, onIndex } from '../lib/indexFeed'
 import type { WatchSource } from '../hooks/useWatch'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
 import { atOrBelow } from '../lib/treeState'
@@ -89,24 +89,33 @@ export function useSearchCandidates(vaults: readonly SearchVault[], activated: b
       if (held.has(root)) continue
       /** Bumped per read and on teardown: only the newest read's answer is ever applied (YAZ-2191). */
       let generation = 0
-      const load = () => {
+      const take = (res: { records: IndexRecord[]; folders: IndexRecord[]; letters?: string[] }) =>
+        setSnapshots((prev) => new Map(prev).set(root, { records: res.records, folders: res.folders, letters: res.letters }))
+      // Share the window's per-root index feed (`indexFeed.ts`, YAZ-6027): reuse already-loaded snapshots immediately
+      // and receive subsequent updates from `useIndex` without duplicating `api.index(root)` IPCs.
+      const cached = latestIndex(root)
+      if (cached !== null) take(cached)
+      const offFeed = onIndex(root, (outcome) => {
+        if (outcome.status === 'fulfilled') take(outcome.value)
+      })
+      const load = (fresh: boolean) => {
         const mine = ++generation
         // An unreadable index leaves search with no PAGE rows — quietly (the folders and the other
         // files come from the tree, S35 on YAZ-2620). Search is an accelerator, not a view: a banner
         // here would shout about something the tree below is already showing fine.
-        api.index(root).then(
+        fetchIndex(root, fresh).then(
           (res) => {
-            if (mine === generation) setSnapshots((prev) => new Map(prev).set(root, { records: res.records, folders: res.folders, letters: res.letters }))
+            if (mine === generation) take(res)
           },
           () => undefined,
         )
       }
-      load()
+      if (cached === null) load(false)
       // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering
       // missed events, and reads at once. A lone event reads at once too; a burst is that read plus
       // ONE more, 100 ms after its last event (YAZ-2191, YAZ-2240): it used to be one whole-index
       // fetch per event.
-      const burst = leadingTrailing(load, WATCH_BURST_QUIET_MS)
+      const burst = leadingTrailing(() => load(true), WATCH_BURST_QUIET_MS)
       const off = watch.subscribe((ev) => {
         if (ev.type === 'change' || ev.type === 'error') return
         if (ev.type === 'ready') return burst.flush()
@@ -116,6 +125,7 @@ export function useSearchCandidates(vaults: readonly SearchVault[], activated: b
         watch,
         end: () => {
           generation++
+          offFeed()
           off()
           burst.cancel()
         },

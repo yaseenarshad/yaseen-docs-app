@@ -28,6 +28,7 @@ import type { Mark, MarkType, Node as ProseNode, ResolvedPos } from '@milkdown/k
 import { type Command, type EditorState, NodeSelection, Plugin, PluginKey, Selection, SelectionRange, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { liftTarget } from '@milkdown/kit/prose/transform'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { typingOnly } from './table/tableStyle'
 import { collapsedSectionAround, collapsedSectionBlocks } from './outline/headingFolding'
 import { findFoldedChildren, isListItem, isTableCell, LIST_NODE_NAMES } from './outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed } from './outline/outlineFolding'
@@ -465,9 +466,12 @@ export const liftHeadlessItems = $prose(
       key: liftHeadlessItemsKey,
       appendTransaction(trs, _old, state) {
         if (!trs.some((tr) => tr.docChanged)) return null
+        // Pure inline typing inside a textblock cannot create a headless list item (YAZ-6028).
+        if (trs.every((tr) => !tr.docChanged || typingOnly(tr))) return null
         // Every headless item, deepest / last first so each lift leaves the remaining positions valid.
         const positions: number[] = []
         state.doc.descendants((node, pos) => {
+          if (node.isTextblock) return false
           if (headlessList(node) !== null) positions.push(pos)
           return true
         })

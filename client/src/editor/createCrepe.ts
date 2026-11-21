@@ -242,7 +242,9 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { codeTheme } from './codeTheme'
 import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
 import { commandsCtx, editorViewCtx, serializerCtx } from '@milkdown/kit/core'
+import { listener } from '@milkdown/kit/plugin/listener'
 import type { Ctx } from '@milkdown/kit/ctx'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import {
   hardbreakClearMarkPlugin,
   headingKeymap,
@@ -1031,57 +1033,60 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(liftHeadlessItems)
   // YAZ-1734 D6: typing over a selection that spans folded lines replaces only the visible pieces.
   crepe.editor.use(visibleTypeOver)
+  // YAZ-6028: Milkdown's built-in `listener` plugin synchronously serializes the full document on every
+  // `init` (even for read-only previews and unedited opens) and runs `prevDoc.eq(doc)` on every edit.
+  // Removing it and using our own lean plugin below skips all startup serialization and double post-processing.
+  void crepe.editor.remove(listener)
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
-    /**
-     * Did a change OUT of the undo history (an outside merge: an Inbox answer, an agent's edit) land after the last
-     * edit the listener heard? Milkdown's listener serializes the doc of the last edit IN the history, 200 ms later:
-     * after such a merge that doc is stale, and its save would drop what the merge brought until the next edit.
-     */
-    let outsideLast = false
-    crepe.editor.use(
-      $prose(
-        () =>
-          new Plugin({
-            key: new PluginKey('mdapp-outside-last'),
-            state: {
-              init: () => null,
-              apply: (tr, v) => {
-                if (tr.docChanged) outsideLast = tr.getMeta('addToHistory') === false
-                return v
-              },
-            },
-          }),
-      ),
-    )
-    crepe.on((listener) => {
-      listener.markdownUpdated((ctx, markdown, prev) => {
-        // Compared as it would be SAVED. Crepe's trailing empty paragraph (added on start-up to any
-        // document ending in a list) differs raw but vanishes in `postProcessMarkdown`, and an
-        // update the file would not notice is not an update (YAZ-968's save-path contract). An empty
-        // cell note is left out, as `getMarkdownForSave` leaves it out (YAZ-3818 D15). After an outside
-        // merge, the doc as it is NOW (see `outsideLast`).
-        const next = postProcessMarkdown(savedMarkdown(ctx) ?? (outsideLast ? ctx.get(serializerCtx)(ctx.get(editorViewCtx).state.doc) : markdown))
-        if (next !== postProcessMarkdown(prev)) cb(next)
-      })
-    })
-    // A board window's view write (YAZ-4820 D4) is outside undo (`addToHistory: false`), and Milkdown's listener skips
-    // every such transaction, so it would never be saved. This plugin saves exactly those, debounced as the listener is.
     crepe.editor.use(
       $prose((ctx) => {
-        const key = new PluginKey<number>('mdapp-board-view-save')
+        const key = new PluginKey<number>('mdapp-markdown-updated')
         return new Plugin({
           key,
-          // A new card's ID (YAZ-4961) is such a write too: out of undo, so ⌘Z removes the card in one step.
-          // So is the card editor's mirror of a card's text (YAZ-5026): out of undo, so Done is ONE undo step.
-          state: { init: () => 0, apply: (tr, n) => (tr.docChanged && (tr.getMeta(BOARD_VIEW_META) === true || tr.getMeta(CARD_ID_META) === true || tr.getMeta(CARD_MIRROR_META) === true) ? n + 1 : n) },
-          view: () => {
+          state: {
+            init: () => 0,
+            apply: (tr, n) => {
+              if (!tr.docChanged) return n
+              // Track normal history edits plus the three deliberate out-of-undo saves (YAZ-4820, YAZ-4961, YAZ-5026).
+              if (tr.getMeta('addToHistory') !== false || tr.getMeta(BOARD_VIEW_META) === true || tr.getMeta(CARD_ID_META) === true || tr.getMeta(CARD_MIRROR_META) === true) {
+                return n + 1
+              }
+              return n
+            },
+          },
+          view: (initView) => {
+            let baselineDoc: ProseNode = initView.state.doc
+            let lastDoc: ProseNode = initView.state.doc
+            let lastSeenVer = key.getState(initView.state) ?? 0
+            let lastPublished: string | null = null
             let timer: ReturnType<typeof setTimeout> | undefined
             return {
-              update: (view, prev) => {
-                if (key.getState(view.state) === key.getState(prev)) return
+              update: (view) => {
+                const ver = key.getState(view.state) ?? 0
+                if (ver === lastSeenVer) {
+                  // A silent outside change / reload while no local edit is pending advances the baseline.
+                  if (view.state.doc !== lastDoc && timer === undefined) {
+                    baselineDoc = view.state.doc
+                    lastPublished = null
+                  }
+                  lastDoc = view.state.doc
+                  return
+                }
+                lastSeenVer = ver
+                lastDoc = view.state.doc
                 clearTimeout(timer)
-                timer = setTimeout(() => cb(postProcessMarkdown(savedMarkdown(ctx) ?? ctx.get(serializerCtx)(ctx.get(editorViewCtx).state.doc))), 200)
+                timer = setTimeout(() => {
+                  timer = undefined
+                  if (view.isDestroyed) return
+                  const next = serializeForSave(crepe, ctx, view.state)
+                  if (lastPublished === null) lastPublished = serializeDoc(crepe, ctx, baselineDoc)
+                  if (next !== lastPublished) {
+                    lastPublished = next
+                    baselineDoc = view.state.doc
+                    cb(next)
+                  }
+                }, 200)
               },
               destroy: () => clearTimeout(timer),
             }
@@ -1132,14 +1137,23 @@ function cardDepsOf(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, 
   }
 }
 
-/**
- * The doc's Markdown without each empty cell note and its mark (YAZ-3818 D15, `withoutEmptyCellNotes`), or null when
- * the doc has none: then the editor's own serialization is the save.
- */
-const savedMarkdown = (ctx: Ctx): string | null => {
-  const { state } = ctx.get(editorViewCtx)
-  const doc = withoutEmptyCellNotes(state)
-  return doc === state.doc ? null : ctx.get(serializerCtx)(doc)
+/** Per-editor cache of post-processed Markdown by immutable ProseMirror doc node (YAZ-6028). */
+const docMarkdownCache = new WeakMap<Crepe, WeakMap<ProseNode, string>>()
+
+function serializeDoc(crepe: Crepe, ctx: Ctx, doc: ProseNode): string {
+  let cache = docMarkdownCache.get(crepe)
+  if (cache === undefined) docMarkdownCache.set(crepe, (cache = new WeakMap()))
+  let md = cache.get(doc)
+  if (md === undefined) {
+    md = postProcessMarkdown(ctx.get(serializerCtx)(doc))
+    cache.set(doc, md)
+  }
+  return md
+}
+
+function serializeForSave(crepe: Crepe, ctx: Ctx, state: EditorView['state']): string {
+  const clean = withoutEmptyCellNotes(state)
+  return serializeDoc(crepe, ctx, clean)
 }
 
 /**
@@ -1148,13 +1162,13 @@ const savedMarkdown = (ctx: Ctx): string | null => {
  * still waits for its 800 ms write is written first (YAZ-4834 A8): every save flush (close, quit, rename) reads here.
  */
 export function getMarkdownForSave(crepe: Crepe): string {
-  const saved = crepe.editor.action((ctx) => {
-    flushBoardWindows(ctx.get(editorViewCtx))
+  return crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    flushBoardWindows(view)
     // A card in Edit card (YAZ-5026): its text as it is now, into the page, before the page is read.
-    flushCardEditor(ctx.get(editorViewCtx))
-    return savedMarkdown(ctx)
+    flushCardEditor(view)
+    return serializeForSave(crepe, ctx, view.state)
   })
-  return postProcessMarkdown(saved ?? crepe.getMarkdown())
 }
 
 /**

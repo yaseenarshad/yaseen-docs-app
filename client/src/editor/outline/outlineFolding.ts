@@ -396,11 +396,65 @@ const blockEntries = new WeakMap<ProseNode, readonly BlockEntry[]>()
  * `isBoard` is the host's word on an id embed (`boardCheckOf`, YAZ-4920). A block with an id-shaped embed is not cached:
  * what the embed is can change when the resolver does, with the block unchanged.
  */
+const itemEntries = new WeakMap<ProseNode, readonly BlockEntry[]>()
+
+/** Entries of a single `list_item` relative to the item's own start (`itemPos = 0`), cached per immutable node (YAZ-6028). */
+const entriesOfListItem = (node: ProseNode, isBoard: BoardCheck | undefined): readonly BlockEntry[] => {
+  const cached = itemEntries.get(node)
+  if (cached !== undefined) return cached
+  const keep = !hasIdEmbed(node.textContent)
+  const entries: BlockEntry[] = []
+  const foldedChildren = findFoldedChildren(node)
+  const images = findOwnImages(node)
+  const embeds = findOwnEmbeds(node, isBoard)
+  if (foldedChildren.length > 0 || images.length > 0 || embeds.length > 0) {
+    const label = itemLabelText(node, isBoard)
+    entries.push({
+      keyLabel: outlineFoldLabel(label),
+      keyStem: outlineFoldKeyStem(label),
+      label,
+      itemPos: 0,
+      foldedRanges: foldedChildren.map(({ list, offset }) => {
+        const from = 1 + offset
+        return { from, to: from + list.nodeSize }
+      }),
+      imageRanges: images.map(({ node: img, offset }) => {
+        const from = 1 + offset
+        return { from, to: from + img.nodeSize }
+      }),
+      embedRanges: embeds.map(({ from, to }) => ({ from: 1 + from, to: 1 + to })),
+    })
+  }
+  // Recurse into non-textblock children (nested lists, blockquotes, tables) so untouched sibling subtrees hit cache.
+  node.forEach((child, childOffset) => {
+    if (child.isTextblock) return
+    const base = 2 + childOffset
+    const shift = ({ from, to }: { from: number; to: number }) => ({ from: base + from, to: base + to })
+    for (const entry of entriesOfBlock(child, isBoard)) {
+      entries.push({ ...entry, itemPos: base + entry.itemPos, foldedRanges: entry.foldedRanges.map(shift), imageRanges: entry.imageRanges.map(shift), embedRanges: entry.embedRanges.map(shift) })
+    }
+  })
+  if (keep) itemEntries.set(node, entries)
+  return entries
+}
+
 const entriesOfBlock = (block: ProseNode, isBoard: BoardCheck | undefined): readonly BlockEntry[] => {
   const cached = blockEntries.get(block)
   if (cached !== undefined) return cached
   const keep = !hasIdEmbed(block.textContent)
   const entries: BlockEntry[] = []
+  if (block.type.name === 'bullet_list' || block.type.name === 'ordered_list') {
+    block.descendants((node, offset) => {
+      if (node.type.name !== 'list_item') return !node.isTextblock
+      const shift = ({ from, to }: { from: number; to: number }) => ({ from: offset + from, to: offset + to })
+      for (const entry of entriesOfListItem(node, isBoard)) {
+        entries.push({ ...entry, itemPos: offset + entry.itemPos, foldedRanges: entry.foldedRanges.map(shift), imageRanges: entry.imageRanges.map(shift), embedRanges: entry.embedRanges.map(shift) })
+      }
+      return false
+    })
+    if (keep) blockEntries.set(block, entries)
+    return entries
+  }
   if (block.type.name === 'table') {
     block.forEach((row, offset) => {
       const base = offset + 1
@@ -413,7 +467,7 @@ const entriesOfBlock = (block: ProseNode, isBoard: BoardCheck | undefined): read
     return entries
   }
   block.descendants((node, itemPos) => {
-    if (node.type.name !== 'list_item') return true
+    if (node.type.name !== 'list_item') return !node.isTextblock
     const foldedChildren = findFoldedChildren(node)
     const images = findOwnImages(node)
     const embeds = findOwnEmbeds(node, isBoard)
@@ -469,28 +523,77 @@ const getCollapsedKeys = ({ entries, collapsedItemPositions }: OutlineFoldingSta
     .map(({ foldKey }) => foldKey)
     .sort()
 
+/** A bullet's chevron widget. Both the full build and the carry (a bullet whose label changed) make it here, so they match. */
+const outlineToggle = (entry: OutlineEntry, collapsed: boolean): Decoration =>
+  Decoration.widget(
+    entry.itemPos + 1,
+    (view, getPos) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = OUTLINE_TOGGLE_CLASS
+      button.dataset.outlineFoldKey = entry.foldKey
+      button.setAttribute('aria-expanded', String(!collapsed))
+      button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
+      button.replaceChildren(chevronSvg())
+      // The LIVE position, not `entry.itemPos`: ProseMirror keeps this DOM (same key) while edits above
+      // shift the bullet, and a stale position folded nothing.
+      const toggle = () => {
+        const widgetPos = getPos()
+        if (widgetPos !== undefined) view.dispatch(foldTransaction(view.state, widgetPos - 1))
+      }
+      // Keep the caret where it is: the toggle must not steal focus or move the selection.
+      button.addEventListener('mousedown', (event) => event.preventDefault())
+      button.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        toggle()
+      })
+      // The widget sits inside the contenteditable, so ProseMirror's keymap would swallow
+      // Enter/Space before the button's native activation; handle them here and keep focus
+      // on the (re-rendered) toggle so keyboard users can fold/unfold repeatedly.
+      button.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        event.stopPropagation()
+        toggle()
+        view.dom
+          .querySelector<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}[data-outline-fold-key="${entry.foldKey}"]`)
+          ?.focus()
+      })
+      return button
+    },
+    { key: `outline-toggle:${entry.foldKey}:${collapsed ? 'collapsed' : 'expanded'}` },
+  )
+
 /**
- * An edit that leaves every foldable item where the mapping puts it, with the same key, label and
- * fold, needs no new decorations: the previous set, mapped, is exactly what `decorations` builds
- * (YAZ-2131 5C, pinned by foldDecorations.test.ts). Typing inside a bullet is that case, so a keystroke skips
- * the rebuild. A carried chevron reads its live position at click time, so it acts like a new one.
+ * An edit that leaves every foldable item where the mapping puts it, with the same fold, needs no new
+ * decoration rebuild: the previous set, mapped, is exactly what `decorations` builds
+ * (YAZ-2131 5C, pinned by foldDecorations.test.ts). Typing inside a foldable bullet swaps only that bullet's
+ * chevron (mirroring headingFolding YAZ-3816, YAZ-6028). A carried chevron reads its live position at click time.
  */
 const carryDecorations = (previous: OutlineFoldingState, entries: readonly OutlineEntry[], collapsed: ReadonlySet<number>, mapping: Mapping, doc: ProseNode): void => {
   const cached = decorationCache.get(previous.entries)
   if (cached === undefined || cached.collapsedKey !== collapsedKey(previous.collapsedItemPositions) || entries.length !== previous.entries.length) return
+  const renamed: OutlineEntry[] = []
   const unchanged = entries.every((entry, i) => {
     const before = previous.entries[i]
     const folded = collapsed.has(entry.itemPos)
+    if (entry.foldKey !== before.foldKey || entry.label !== before.label) renamed.push(entry)
     return (
-      entry.foldKey === before.foldKey &&
-      entry.label === before.label &&
       folded === previous.collapsedItemPositions.has(before.itemPos) &&
       widgetLands(mapping, before.itemPos + 1, entry.itemPos + 1) &&
       nodeRangesLand(mapping, before.imageRanges, entry.imageRanges) &&
       (!folded || nodeRangesLand(mapping, before.foldedRanges, entry.foldedRanges))
     )
   })
-  if (unchanged) decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set: cached.set.map(mapping, doc) })
+  if (!unchanged) return
+  let set = cached.set.map(mapping, doc)
+  for (const entry of renamed) {
+    const at = entry.itemPos + 1
+    const old = set.find(at, at, (spec) => String(spec.key).startsWith('outline-toggle:'))
+    set = set.remove(old).add(doc, [outlineToggle(entry, collapsed.has(entry.itemPos))])
+  }
+  decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set })
 }
 
 export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCollapsedKeysChange }: OutlineFoldingOptions = {}) =>
@@ -630,47 +733,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             const decorations: Decoration[] = []
             foldingState.entries.forEach((entry) => {
               const collapsed = foldingState.collapsedItemPositions.has(entry.itemPos)
-              decorations.push(
-                Decoration.widget(
-                  entry.itemPos + 1,
-                  (view, getPos) => {
-                    const button = document.createElement('button')
-                    button.type = 'button'
-                    button.className = OUTLINE_TOGGLE_CLASS
-                    button.dataset.outlineFoldKey = entry.foldKey
-                    button.setAttribute('aria-expanded', String(!collapsed))
-                    button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
-                    button.replaceChildren(chevronSvg())
-                    // The LIVE position, not `entry.itemPos`: ProseMirror keeps this DOM (same key) while edits above
-                    // shift the bullet, and a stale position folded nothing.
-                    const toggle = () => {
-                      const widgetPos = getPos()
-                      if (widgetPos !== undefined) view.dispatch(foldTransaction(view.state, widgetPos - 1))
-                    }
-                    // Keep the caret where it is: the toggle must not steal focus or move the selection.
-                    button.addEventListener('mousedown', (event) => event.preventDefault())
-                    button.addEventListener('click', (event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      toggle()
-                    })
-                    // The widget sits inside the contenteditable, so ProseMirror's keymap would swallow
-                    // Enter/Space before the button's native activation; handle them here and keep focus
-                    // on the (re-rendered) toggle so keyboard users can fold/unfold repeatedly.
-                    button.addEventListener('keydown', (event) => {
-                      if (event.key !== 'Enter' && event.key !== ' ') return
-                      event.preventDefault()
-                      event.stopPropagation()
-                      toggle()
-                      view.dom
-                        .querySelector<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}[data-outline-fold-key="${entry.foldKey}"]`)
-                        ?.focus()
-                    })
-                    return button
-                  },
-                  { key: `outline-toggle:${entry.foldKey}:${collapsed ? 'collapsed' : 'expanded'}` },
-                ),
-              )
+              decorations.push(outlineToggle(entry, collapsed))
               entry.imageRanges.forEach(({ from, to }) => {
                 const attrs = collapsed
                   ? { [OUTLINE_FOLDABLE_IMAGE_ATTR]: 'true', [OUTLINE_FOLDED_IMAGE_ATTR]: 'true' }

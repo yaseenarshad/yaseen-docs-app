@@ -4,6 +4,8 @@ import { lazySync } from '../app/lazySync'
 import { createSyncEngine } from '../sync/engine'
 import { BRANCH, REPO, pageText, syncSetup } from '../sync/testing'
 import { followAnswers } from './followAnswers'
+import { sameLinkRecord } from './source'
+import type { IndexRecord } from '@shared/types'
 
 /**
  * YAZ-5078: the app shell makes ONE answer list with the engine and wires it to the page (3C's result comment: the
@@ -77,5 +79,38 @@ describe('the shell wires the answer list (decision 4)', () => {
     expect(link.answers.waiting()).toHaveLength(0)
     expect(writes()).toBe(3)
     await sync.open(null)
+  })
+})
+
+describe('sameLinkRecord (YAZ-6028 checker round 1)', () => {
+  const base: IndexRecord = {
+    path: 'a.md',
+    name: 'a.md',
+    basename: 'a',
+    title: 'A',
+    folder: '',
+    ext: '.md',
+    size: 100,
+    ctime: 0,
+    mtime: 0,
+    id: 'YAS-1',
+    properties: {},
+    aliases: ['Old'],
+    tags: [],
+    links: [],
+    embeds: [],
+    cards: [{ id: 'YAS-2', title: 'Front', off: false, next: false, reviews: [] }],
+  }
+
+  it('treats review-only card changes as link-identical, but catches alias, kind, card title, and notitle changes', () => {
+    const reviewed: IndexRecord = {
+      ...base,
+      cards: [{ ...base.cards![0]!, reviews: [{ at: '2026-11-20T00:00:00Z', rating: 'good' }] }],
+    }
+    expect(sameLinkRecord(base, reviewed)).toBe(true)
+    expect(sameLinkRecord(base, { ...base, aliases: ['New'] })).toBe(false)
+    expect(sameLinkRecord(base, { ...base, kind: 'card' })).toBe(false)
+    expect(sameLinkRecord(base, { ...base, cards: [{ ...base.cards![0]!, title: 'Renamed' }] })).toBe(false)
+    expect(sameLinkRecord(base, { ...base, cards: [{ ...base.cards![0]!, notitle: true }] })).toBe(false)
   })
 })

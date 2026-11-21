@@ -52,6 +52,22 @@ const parse = (content: string | Uint8Array | undefined): unknown => {
   }
 }
 
+/** True when every field read by `makeResolver`, `makeCardResolver`, and `links.update` is identical (card review history changes do not alter link resolution, YAZ-6028). */
+export function sameLinkRecord(a: IndexRecord, b: IndexRecord): boolean {
+  if (a === b) return true
+  if (a.path !== b.path || a.name !== b.name || a.folder !== b.folder || a.basename !== b.basename || a.title !== b.title || a.id !== b.id || a.kind !== b.kind) return false
+  if (a.aliases !== b.aliases) {
+    if (a.aliases.length !== b.aliases.length || a.aliases.some((v, i) => v !== b.aliases[i])) return false
+  }
+  const ac = a.cards
+  const bc = b.cards
+  if (ac !== bc) {
+    if ((ac?.length ?? 0) !== (bc?.length ?? 0)) return false
+    if (ac !== undefined && bc !== undefined && ac.some((c, i) => c.id !== bc[i]!.id || c.title !== bc[i]!.title || c.notitle !== bc[i]!.notitle)) return false
+  }
+  return true
+}
+
 export function createReviewSource(link: ReviewLink, vault: string, vaultName: string): ReviewSource {
   const { engine, answers, store } = link
   const listeners = new Set<() => void>()
@@ -84,6 +100,7 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
     if (held?.join() !== letters?.join()) letters = held
   }
 
+  let lettersBuilt: readonly string[] | undefined
   async function read(): Promise<void> {
     if (readSettings) {
       readSettings = false
@@ -99,6 +116,15 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
     const prev = new Map((shown === null ? [] : Object.values(shown.records)).map((r) => [r.path, r]))
     const all = Object.values(view.records)
     const same = shown !== null && all.length === prev.size && all.every((r) => prev.get(r.path) === r)
+    const sameLinks =
+      ready &&
+      shown !== null &&
+      lettersBuilt === letters &&
+      all.length === prev.size &&
+      all.every((r) => {
+        const old = prev.get(r.path)
+        return old !== undefined && sameLinkRecord(old, r)
+      })
     shown = view
     if (!same || !ready) {
       const pages: IndexRecord[] = []
@@ -106,12 +132,15 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
       for (const r of all) (r.name === FOLDER_SETTINGS_FILE ? settingsFiles : pages).push(r)
       records = pages.sort(byPath)
       folders = settingsFiles.sort(byPath)
-      const resolve = makeResolver(
-        records.map((record) => ({ record })),
-        undefined,
-        { folders, letters },
-      )
-      links.update((target) => resolve(target)?.record.path ?? null, records, folders, letters !== undefined, letters ?? [])
+      if (!sameLinks) {
+        lettersBuilt = letters
+        const resolve = makeResolver(
+          records.map((record) => ({ record })),
+          undefined,
+          { folders, letters },
+        )
+        links.update((target) => resolve(target)?.record.path ?? null, records, folders, letters !== undefined, letters ?? [])
+      }
     }
     ready = true
     wake()

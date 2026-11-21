@@ -48,17 +48,23 @@ export const relativeLinks = $prose((ctx) => new Plugin({
     for (const tr of trs) {
       tr.steps.forEach((step, i) => {
         if (step instanceof AddMarkStep && step.mark.type === type) set.add(step.mark.attrs.href as string)
-        if (!(step instanceof ReplaceStep)) return
+        if (!(step instanceof ReplaceStep) || step.slice.content.size === 0) return
+        // Fast path: check inserted slice for link marks before resolving and scanning the parent line (YAZ-6028).
+        const added: string[] = []
+        step.slice.content.descendants((node) => {
+          const href = type.isInSet(node.marks)?.attrs.href as string | undefined
+          if (href !== undefined) added.push(href)
+        })
+        if (added.length === 0) return
         const doc = tr.docs[i]!
         const line = new Set<string>()
         doc.resolve(Math.min(step.from, doc.content.size)).parent.descendants((node) => {
           const mark = type.isInSet(node.marks)
           if (mark !== undefined) line.add(mark.attrs.href as string)
         })
-        step.slice.content.descendants((node) => {
-          const href = type.isInSet(node.marks)?.attrs.href as string | undefined
-          if (href !== undefined && !line.has(href)) set.add(href)
-        })
+        for (const href of added) {
+          if (!line.has(href)) set.add(href)
+        }
       })
     }
     const absolute = [...set].filter((href) => typeof href === 'string' && /^(file:|\/|[A-Za-z]:[\\/])/i.test(href))

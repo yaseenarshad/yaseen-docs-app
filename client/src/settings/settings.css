@@ -688,10 +688,6 @@
   color: var(--fg-muted);
 }
 
-.hotkeys__label--command {
-  color: var(--fg);
-}
-
 .hotkeys__hint {
   color: var(--fg-muted);
 }

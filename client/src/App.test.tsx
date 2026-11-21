@@ -2722,9 +2722,9 @@ describe('App settings dialog (YAZ-1679)', () => {
   it('Yaseen Docs › Settings… (⌘,) mounts the ONE dialog, and its × unmounts it', async () => {
     const { el, emitSettings } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(el.querySelector('.settings-dialog')).toBeNull()
-    // Async: the dialog's own reads settle inside act (YAZ-3044 A36).
+    // Async: the lazy dialog chunk and its own reads settle inside act (YAZ-3044 A36, YAZ-6008 D3).
     await act(async () => emitSettings())
-    expect(el.querySelector('.settings-dialog')).not.toBeNull()
+    await vi.waitFor(() => expect(el.querySelector('.settings-dialog')).not.toBeNull())
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')?.click())
     expect(el.querySelector('.settings-dialog')).toBeNull()
   })
@@ -6625,7 +6625,7 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       subscriptions: [bridge.properties.onChange, bridge.github.onStatus, bridge.vaultConfig.onChange].map((spy) => spy.mock.calls.length),
     })
     const boot = {
-      index: [['/v'], ['/v']],
+      index: [['/v']],
       tree: [['/v']],
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
@@ -6952,7 +6952,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(records(editor('/w/b.md')?.wikilinks)).toEqual(['/w/b.md'])
     // One index bridge and one of each subscription per vault: each vault is asked as a window with that vault alone asks (S79).
     for (const vault of ['/v', '/w']) {
-      expect(callsFor(bridge.index, vault)).toBe(2)
+      expect(callsFor(bridge.index, vault)).toBe(1)
       expect(callsFor(bridge.watch, vault)).toBe(2)
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)

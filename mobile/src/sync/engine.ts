@@ -324,6 +324,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     store: session,
     vault: id,
     now: clock.now,
+    heldIndex: gen === generation ? current : null,
     // Each yield of the pass is a step: a long pass that works is never taken for a stuck one.
     yieldToUi: () => {
       step()
@@ -409,6 +410,8 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       running.dropped = true
       passes.delete(running.promise)
       running = null
+      // Release the stuck per-vault turn so the replacement pass does not deadlock behind the dropped pass (YAZ-6024).
+      if (vault !== null) turns.delete(vaultId(vault))
     }
     if (vault === null) return Promise.resolve()
     clearTimer()

@@ -18,7 +18,7 @@ export interface AutosaveHandle {
    * the editor holds the body with `\n` alone (`withLf`), since the parser keeps a `\r` inside a code or card block
    * while it writes every other line with `\n`.
    */
-  attach: (getContent: () => string, mtime: number, frontmatter: string, diskBody: string) => Autosave
+  attach: (getContent: () => string, mtime: number, frontmatter: string, diskBody: string, getBaseline?: () => string) => Autosave
   /** Overwrite the on-disk version with the editor content. */
   keepMine: () => void
   /** Called after the editor content was replaced from disk; `getContent` returns the reloaded body. */
@@ -82,10 +82,11 @@ export function useAutosave(path: string): AutosaveHandle {
   const refusedRef = useRef<((diskMtime: number) => void) | null>(null)
 
   const attach = useCallback(
-    (getContent: () => string, mtime: number, frontmatter: string, diskBody: string) => {
+    (getContent: () => string, mtime: number, frontmatter: string, diskBody: string, getBaseline?: () => string) => {
       holdDisk(frontmatter, diskBody)
       const autosave = new Autosave({
-        content: getContent(),
+        content: getBaseline === undefined ? getContent() : '',
+        getBaseline,
         mtime,
         delayMs: 500,
         save: async (content, expectedMtime) => {
