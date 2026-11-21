@@ -116,6 +116,27 @@ export const TEXT_VIEW_EXTENSIONS = [
   '.cmake',
   '.fs',
   '.elm',
+  // YAZ-4502: 20 more code/config extensions for external repos.
+  '.tf',
+  '.tfvars',
+  '.hcl',
+  '.bicep',
+  '.bat',
+  '.cmd',
+  '.ex',
+  '.exs',
+  '.sol',
+  '.wgsl',
+  '.dockerfile',
+  '.nix',
+  '.prisma',
+  '.zig',
+  '.cue',
+  '.rego',
+  '.kdl',
+  '.awk',
+  '.glsl',
+  '.just',
 ] as const
 /**
  * Well-known files with no extension that open as `text` (YAZ-3505, 2D3; YAZ-3439 "Decision — Demo round 2"
@@ -123,7 +144,7 @@ export const TEXT_VIEW_EXTENSIONS = [
  * (`WELL_KNOWN_TEXT_PREFIXES`) when its extension is no kind of its own. Dot-files (`.gitignore`) stay hidden
  * (`isSkipped`).
  */
-export const WELL_KNOWN_TEXT_NAMES = ['Dockerfile', 'Makefile', 'Procfile', 'Gemfile', 'Jenkinsfile', 'Vagrantfile', 'LICENSE', 'CODEOWNERS'] as const
+export const WELL_KNOWN_TEXT_NAMES = ['Dockerfile', 'Makefile', 'Procfile', 'Gemfile', 'Jenkinsfile', 'Vagrantfile', 'LICENSE', 'CODEOWNERS', 'Justfile', 'Brewfile', 'Rakefile'] as const
 /** `Dockerfile.dev`, `Dockerfile.prod`: a base name that starts with one of these, and goes on. */
 export const WELL_KNOWN_TEXT_PREFIXES = ['Dockerfile.'] as const
 export const PDF_EXTENSIONS = ['.pdf'] as const
@@ -4503,6 +4524,11 @@ export interface WindowIdentity {
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */
   zoom?: number
+  /**
+   * Transient read-only window (YAZ-4502): opened with `--read-only`, keeps the vault read-only in memory without
+   * writing `.yaseendocs/read-only.json`. Given out by EVERY identity read (so reloads keep it); never persisted to `WindowEntry`.
+   */
+  readOnly?: true
 }
 
 /**
@@ -4599,6 +4625,8 @@ export interface OpenWindowOptions {
   file: string | null
   /** More vaults for the window, after `root` (YAZ-2602); absent = `root` alone. */
   roots?: string[]
+  /** Transient read-only mode (YAZ-4502): never persisted to `WindowEntry` or `.yaseendocs/`. */
+  readOnly?: boolean
 }
 
 /** Clipboard text captured when the user chooses an explicit paste mode. */

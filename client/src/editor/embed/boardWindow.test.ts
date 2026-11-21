@@ -27,7 +27,7 @@ vi.mock('./boardPictures', () => ({
 }))
 
 import { currentKey, dropPicturesExcept, loadPicture, peekPicture } from './boardPictures'
-import { clampZoom, fitView, mountBoardWindow, panBy, resizeBy, sharedCounts, sweepPictures, WRITE_DELAY_MS, zoomAt } from './boardWindow'
+import { clampZoom, fitView, formatZoomPercent, mountBoardWindow, panBy, resizeBy, sharedCounts, sweepPictures, WRITE_DELAY_MS, zoomAt } from './boardWindow'
 
 /** One fake IntersectionObserver per mount round: the test says which window is near. */
 const observers: FakeObserver[] = []
@@ -125,9 +125,25 @@ describe('the pan and zoom math', () => {
     expect(view.x + 120 / view.zoom).toBeCloseTo(next.x + 120 / next.zoom, 10)
     expect(view.y + 80 / view.zoom).toBeCloseTo(next.y + 80 / next.zoom, 10)
     expect(next.zoom).toBe(3)
-    expect(zoomAt(view, 0, 0, 1000).zoom).toBe(30)
-    expect(zoomAt(view, 0, 0, 0.0001).zoom).toBe(0.1)
-    expect(clampZoom(0.01)).toBe(0.1)
+    expect(zoomAt(view, 0, 0, 1000).zoom).toBe(100)
+    expect(zoomAt(view, 0, 0, 0.00001).zoom).toBe(0.001)
+    expect(clampZoom(0.01)).toBe(0.01)
+    expect(clampZoom(0.0001)).toBe(0.001)
+    expect(clampZoom(200)).toBe(100)
+  })
+
+  it('fits very large boards below 10% and formats the zoom chip cleanly below 1% (YAZ-5988)', () => {
+    const big = fitView({ x: 0, y: 0, width: 30_000, height: 15_000 }, 400, 200)
+    expect(big.zoom).toBeCloseTo(0.012, 6) // min(380/30000, 180/15000)
+    expect(formatZoomPercent(big.zoom)).toBe('1%')
+
+    const huge = fitView({ x: 0, y: 0, width: 100_000, height: 50_000 }, 400, 200)
+    expect(huge.zoom).toBeCloseTo(0.0036, 6)
+    expect(formatZoomPercent(huge.zoom)).toBe('0.4%')
+
+    expect(formatZoomPercent(0.04)).toBe('4%')
+    expect(formatZoomPercent(0.0096)).toBe('1%')
+    expect(formatZoomPercent(0.001)).toBe('0.1%')
   })
 
   it('a fit shows the whole board with 10 px around, centred; a pan moves by the screen distance over the zoom', () => {

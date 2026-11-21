@@ -110,6 +110,8 @@ export function moveSettingsIntoVaults(
   store: SeedStore & { get(): AppState; onChange(listener: (state: AppState) => void): () => void },
   steps: readonly MoveStep[],
   canSeed: (root: string) => Promise<boolean> = async () => true,
+  /** Roots whose only open windows are transient read-only (YAZ-4502): never seeded or written. */
+  skipRoot?: (root: string) => boolean,
 ): VaultMove {
   let last = ''
   let chain: Promise<void> = Promise.resolve()
@@ -118,8 +120,10 @@ export function moveSettingsIntoVaults(
     const s = store.get().settings
     chain = chain.then(async () => {
       for (const roots of list) {
+        const writable = skipRoot ? roots.filter((root) => !skipRoot(root)) : roots
+        if (writable.length === 0) continue
         for (const step of steps) {
-          await step.run(roots, s, store, canSeed).catch((err: unknown) => console.warn(`[vaultSettings] could not move ${step.name} into ${roots.join(', ')}: ${String(err)}`))
+          await step.run(writable, s, store, canSeed).catch((err: unknown) => console.warn(`[vaultSettings] could not move ${step.name} into ${writable.join(', ')}: ${String(err)}`))
         }
       }
     })

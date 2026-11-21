@@ -13,6 +13,7 @@
  *
  * `HELP` IS the contract: it is the only documentation an agent reads, so its wording is UI copy.
  */
+import { isAutomationCommand, runAutomation } from './automation'
 import { execFile } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { readFile as readRaw, stat } from 'node:fs/promises'
@@ -93,6 +94,7 @@ export const USAGE = `usage:
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
+  yaseendocs open     [--new-window] [--read-only] [--root <repo>] [--line <n>] [<file[:line]> | <dir>]
   yaseendocs --help`
 
 export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, the pages that link to it, its cards and the ones due for review, the app's list of vaults, and a new page or the day's daily page, from the shell.
@@ -948,6 +950,8 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
 
 /** The program: resolves to the exit code (0 done · 1 refused or failed · 2 usage). */
 export async function main(argv: readonly string[], io: Io): Promise<number> {
+  // Navigation through the running app (YAZ-4502): its own resources, so no command above changes.
+  if (isAutomationCommand(argv)) return runAutomation(argv, io)
   try {
     await run(argv, io)
     return 0

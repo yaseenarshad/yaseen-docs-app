@@ -101,7 +101,7 @@ export interface VaultScope {
 }
 
 /** `root` is nullable because `App` calls this for every slot: with no vault there is no bridge call. */
-export function useVaultScope(root: string | null, notify: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, allowFileAction?: (root: string) => Promise<boolean>): VaultScope {
+export function useVaultScope(root: string | null, notify: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, allowFileAction?: (root: string) => Promise<boolean>, transientReadOnly = false): VaultScope {
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per vault — a stable object every editor's
   // wikilink plugin subscribes to; the vault's WikilinkIndexBridge keeps it fed from the vault
@@ -150,7 +150,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const linkClick = useLinkClick(root)
   const showIds = useShowIds(root)
   const unit = useVaultUnitWord(root)
-  const readOnlyVault = useReadOnlyVault(root)
+  const readOnlyVault = useReadOnlyVault(root, transientReadOnly)
   const textFormatting = useTextFormatting(root, notify)
   const cardLook = useCardLook(root, notify)
   const tableLook = useTableLook(root, notify)

@@ -17,6 +17,7 @@ import { CARD_LOOK_MOVE } from '../cardLookMove'
 import { tableLookMoves } from '../tableLookMove'
 import { FOLDER_PAGES_MOVE } from '../folderPagesMove'
 import { NEW_PLACES_MOVE } from '../newPlaces'
+import { setReadOnlyRootChecker } from '../vaultIndex/live'
 import { moveSettingsIntoVaults, type VaultMove } from '../vaultSettingsMove'
 import { registerBoardIpc } from './board'
 import { registerCardSkillIpc } from './cardSkill'
@@ -85,7 +86,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerFilesOrderIpc(store)
   registerNewPlacesIpc(store)
   registerFocusIpc(store)
-  registerFocusFoldersIpc(store)
+  registerFocusFoldersIpc(store, windows)
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
   registerStorageIpc(store)
@@ -138,10 +139,13 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
     pulled.add(status.root)
     moves?.pulled(status.root)
   })
+  const isTransientReadOnly = (root: string): boolean => windows.isTransientReadOnlyRoot?.(root) === true
+  setReadOnlyRootChecker(isTransientReadOnly)
   moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE, ...tableLookMoves(store.slotTimeToMove()), FOLDER_PAGES_MOVE], async (root) => {
+    if (isTransientReadOnly(root)) return false
     if (pulled.has(root)) return true
     const status = await sync.status(root)
     return status.enabled !== true || status.state === 'off' || status.state === 'synced'
-  })
+  }, isTransientReadOnly)
   return { sync, secrets, lsp, libraryMoves }
 }

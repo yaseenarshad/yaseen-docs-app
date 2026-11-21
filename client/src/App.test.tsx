@@ -4,6 +4,11 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
+import { FolderView } from './views/FolderView'
+import type { WikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
+import type { RendererCommand } from '@shared/automationNavigation'
+import { useAutomationSurface } from './automation/surfaces'
+import { openCodeAt } from './code/codeOpener'
 import { FORMATS_CHAPTER_TITLE, requestCourse } from './course/openCourse'
 import { showTourPlace } from './course/tourBus'
 import { COURSE_NOTICE } from './course/courseFacts'
@@ -186,7 +191,12 @@ const captured = vi.hoisted(() => ({
   /** The card flow mounts the REAL page editor (`./editor/Editor`); every other test the stub. */
   realEditor: false,
   crepes: [] as import('@milkdown/crepe').Crepe[],
+  jumpedLines: [] as { path: string | null; line: number }[],
   editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void; folderPages?: FolderPagesSettings }[],
+}))
+
+vi.mock('./code/codeOpener', () => ({
+  openCodeAt: vi.fn((path: string, _place: { lineNumber: number; column: number }, open: (path: string) => void) => open(path)),
 }))
 
 vi.mock('./editor/Editor', async (importOriginal) => {
@@ -216,6 +226,12 @@ const EditorStub = ({ folderPages, vaultReadOnly, onVaultLock, root, path, onOpe
     captured.editorRetitle = onRetitle
     captured.titleIsName = useContext(TitleIsName)
     captured.viewOnlyLinks.push(viewOnlyLinks)
+    useAutomationSurface(tabId === undefined ? null : `editor:${tabId}`, {
+      ready: true,
+      inspect: () => ({}),
+      jumpToLine: (line) => captured.jumpedLines.push({ path, line }),
+    })
+    if (path === '/v/Automation Folder') return <FolderView path={path} root={root} source={wikilinks as WikilinkResolveSource} onOpenFile={onOpenFile} onRetitle={() => {}} commentsOrder="oldest" onChangeCommentsOrder={() => {}} />
     return (
       <div data-editor data-root={root} data-path={path ?? ''}>
         <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
@@ -275,6 +291,7 @@ let courseNoticeDue = false
 type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
+  const automationRequests = new Set<(request: RendererCommand) => void>()
   const stateChanged = new Set<(next: AppState) => void>()
   const windowViews = new Set<() => (StartView | null)[]>()
   const windowTabs = new Set<() => MemoryTabFacts[]>()
@@ -330,6 +347,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       return () => set.delete(l)
     })
   const bridge = {
+    automation: { onRequest: vi.fn((listener: (request: RendererCommand) => void) => { automationRequests.add(listener); return () => automationRequests.delete(listener) }), ready: vi.fn(async () => {}), reply: vi.fn(async () => {}) },
     tree: vi.fn(async (root: string): Promise<TreeResponse> => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
     index: vi.fn(async (root: string): Promise<IndexResponse> => ({ root, records: [], folders: [], generatedAt: 1, ids: true })),
@@ -649,6 +667,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
     bridge,
+    emitAutomation: (request: RendererCommand) => automationRequests.forEach((listener) => listener(request)),
     emitStateChanged: (next: AppState) => stateChanged.forEach((listener) => listener(next)),
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitOpenFolder: () => menuOpenFolder.forEach((l) => l()),
@@ -764,6 +783,7 @@ afterEach(() => {
   captured.editors = []
   captured.realEditor = false
   captured.crepes = []
+  captured.jumpedLines = []
   history.replaceState(null, '', '/')
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
@@ -8338,6 +8358,92 @@ describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
   })
 })
 
+describe('App CLI navigation acknowledgement (YAZ-4502)', () => {
+  it('opens the requested page and sidebar before replying', async () => {
+    const path = '/v/Mochi.md'
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Mochi', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-1', action: 'navigate', target: { path, sidebar: 'favorites', reveal: false } }))
+    expect(captured.sidebar?.lens).toBe('favorites')
+    expect(captured.sidebar?.activeFile).toBe(path)
+    expect(bridge.automation.reply).toHaveBeenCalledExactlyOnceWith({ id: 'nav-1', ok: true, value: expect.objectContaining({ path, sidebar: 'favorites', sidebarCollapsed: false, acknowledged: true }) })
+  })
+  it('waits for a view the saved file holds until the page has indexed it, then selects it (YAZ-4518)', async () => {
+    // The Editor mock renders a real FolderView at this one path.
+    const path = '/v/Automation Folder'
+    const folderRecord = (views: unknown[]): IndexRecord => ({ path: `${path}/.folder.md`, name: '.folder.md', basename: '.folder', title: 'Automation Folder', folder: 'Automation Folder', ext: 'md', size: 7, ctime: 1, mtime: 2, properties: { folder_settings: { views } }, aliases: [], tags: [], links: [], embeds: [] })
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, (b) => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Automation Folder', children: [] }], generatedAt: 1 })
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    expect([...el.querySelectorAll('.view-tab__btn')].map((node) => node.textContent)).toEqual(['Table', 'Board'])
+    await act(async () => { emitAutomation({ id: 'nav-later', action: 'navigate', target: { path, view: 'Later' } }) })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+    await act(async () => {})
+    expect(JSON.stringify(bridge.automation.reply.mock.calls)).not.toContain('nav-later')
+    // The saved view reaches the page through the index, as any outside edit does.
+    bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [folderRecord([{ type: 'table', name: 'Table' }, { type: 'list', name: 'Later' }])], generatedAt: 2, ids: true })
+    const listeners = bridge.watch.mock.calls.flatMap(([root, listener]) => (root === '/v' && typeof listener === 'function' ? [listener as (event: unknown) => void] : []))
+    await act(async () => { listeners.forEach((listener) => listener({ type: 'change', path: `${path}/.folder.md` })); await new Promise((resolve) => setTimeout(resolve, 400)) })
+    await act(async () => {})
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-later', ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+    expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe('Later')
+  })
+  it('picks a folder view by the one shared rule: of "Table" and "table", each name selects its own view (YAZ-4527 P9)', async () => {
+    const path = '/v/Automation Folder'
+    const views = [{ type: 'table', name: 'Table' }, { type: 'list', name: 'table' }]
+    const folder: IndexRecord = { path: `${path}/.folder.md`, name: '.folder.md', basename: '.folder', title: 'Automation Folder', folder: 'Automation Folder', ext: 'md', size: 7, ctime: 1, mtime: 2, properties: { folder_settings: { views } }, aliases: [], tags: [], links: [], embeds: [] }
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: path, tabs: [path], sidebarCollapsed: true }, {}, (b) => {
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: [{ type: 'dir', path, name: 'Automation Folder', children: [] }], generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [folder], generatedAt: 1, ids: true })
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    await act(async () => {})
+    expect([...el.querySelectorAll('.view-tab__btn')].map((node) => node.textContent)).toEqual(['Table', 'table'])
+    for (const name of ['table', 'Table']) {
+      await act(async () => { emitAutomation({ id: `nav-${name}`, action: 'navigate', target: { path, view: name } }); await new Promise((resolve) => setTimeout(resolve, 50)) })
+      expect(bridge.automation.reply).toHaveBeenLastCalledWith({ id: `nav-${name}`, ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+      expect(el.querySelector('.view-tab__btn[aria-selected="true"]')?.textContent).toBe(name)
+    }
+  })
+  it('preserves the hidden sidebar when only a page was requested', async () => {
+    const path = '/v/Journal.md'
+    const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Journal', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-2', action: 'navigate', target: { path } }))
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-2', ok: true, value: expect.objectContaining({ path, sidebarCollapsed: true }) })
+  })
+  it('tells main the window is ready for navigation once it mounts', async () => {
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(bridge.automation.ready).toHaveBeenCalledWith(true)
+  })
+  it('transient read-only window locks the vault immediately and never writes people.json or read-only.json', async () => {
+    const appState = { ...defaultAppState(), settings: { ...defaultAppState().settings, profile: { name: 'Yasin', handle: 'yasin', picture: null } } }
+    const { bridge } = await mount(appState, { id: 'w1', root: '/v', file: '/v/Note.md', tabs: ['/v/Note.md'], readOnly: true }, { '/v/Note.md': { content: 'Hello', mtime: 1 } }, (b) => {
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'people.json' ? { yasin: { name: 'Old Name', handle: 'yasin' } } : null))
+    })
+    await act(async () => {})
+    expect(captured.sidebar?.vaults[0]?.readOnly).toBe(true)
+    expect(captured.editors.at(-1)?.vaultReadOnly).toBe(true)
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+  })
+  it('opens text files via openCodeAt when target.line is provided', async () => {
+    const path = '/v/index.ts'
+    const openCodeAtMock = vi.mocked(openCodeAt)
+    openCodeAtMock.mockClear()
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, { [path]: { content: 'const x = 1\n', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-code-line', action: 'navigate', target: { path, line: 42 } }))
+    expect(openCodeAtMock).toHaveBeenCalledWith(path, { lineNumber: 42, column: 1 }, expect.any(Function))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-code-line', ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+  })
+  it('jumps to the requested line in a markdown editor when target.line is provided', async () => {
+    const path = '/v/Notes.md'
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, { [path]: { content: '# Title\n\nLine three\n', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-md-line', action: 'navigate', target: { path, line: 3 } }))
+    expect(captured.jumpedLines).toEqual([{ path, line: 3 }])
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-md-line', ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+  })
+})
 
 /**
  * THE CARD SKILL IN THE SIDEBAR (YAZ-5108), one test per row of the issue's table: the app's copy is one more vault of

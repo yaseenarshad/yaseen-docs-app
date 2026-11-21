@@ -10,7 +10,7 @@
  * only our words, so the window takes a new window's size and starts with its view locked. An embed with no options at
  * all is an older one, and stays unlocked as it always was. A word this build does not know is KEPT and
  * written back as it was, so a newer build's option survives an older build's write. `view` is the board point at the
- * window's top-left and the zoom; `formatEmbedOptions` rounds it (whole board units, zoom to 2 decimals) so a write
+ * window's top-left and the zoom; `formatEmbedOptions` rounds it (whole board units, zoom to 4 decimals) so a write
  * is short and a tiny move never changes the text (item 18 also gates the write itself: `movedEnough`).
  */
 import { isBoard } from './fileKind'
@@ -102,9 +102,9 @@ function parseView(value: string): EmbedView | null {
   return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(zoom) && zoom > 0 ? { x, y, zoom } : null
 }
 
-/** Rounds a view the way it is written: whole board units, zoom to 2 decimals (never 0). */
+/** Rounds a view the way it is written: whole board units, zoom to 4 decimals (never 0). */
 export function roundView(view: EmbedView): EmbedView {
-  return { x: Math.round(view.x), y: Math.round(view.y), zoom: Math.max(0.01, Math.round(view.zoom * 100) / 100) }
+  return { x: Math.round(view.x), y: Math.round(view.y), zoom: Math.max(0.0001, Math.round(view.zoom * 10000) / 10000) }
 }
 
 /** Options → their text; the inverse of `parseEmbedOptions` for every value it returns. */
