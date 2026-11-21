@@ -229,9 +229,10 @@ it('YAZ-5049 round 2: the Inbox card is one long page, as Mochi — no scroll ba
   expect(rules(screens, '.card-inbox').find((r) => r.selector === '.card-inbox')!.body).toMatch(/overflow:\s*auto/)
   expect(rules(screens, '.card-inbox__top').find((r) => r.selector === '.card-inbox__top')!.body).toMatch(/position:\s*sticky;\s*top:\s*0/)
   const dock = rules(screens, '.card-inbox__dock').find((r) => r.selector === '.card-inbox__dock')!
-  expect(dock.body).toMatch(/position:\s*sticky/)
-  expect(dock.body).toMatch(/bottom:\s*0/)
+  expect(dock.body).not.toMatch(/position:\s*sticky/)
+  expect(dock.body).not.toMatch(/bottom:\s*0/)
   expect(dock.body).toMatch(/margin-top:\s*auto/)
+  expect(rules(screens, '.card-inbox__dock::before')).toEqual([])
 })
 
 it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes the colour in the look of Shown hidden words: the line, the highlight, or the box', () => {

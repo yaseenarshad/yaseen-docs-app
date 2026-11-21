@@ -35,12 +35,11 @@ export function readingScroll(thing: Span, room: Span, gap = 6): number {
   return 0
 }
 
-/** The part of the Inbox's view (`.card-inbox`) that shows the card: under its sticky top row, over its sticky buttons. */
+/** The part of the Inbox's view (`.card-inbox`) that shows the card: under its sticky top row, down to the view's bottom (YAZ-6055: the dock sits in normal flow below the card, not sticky over it). */
 export function inboxRoom(view: HTMLElement): Span {
   const box = view.getBoundingClientRect()
   const top = view.querySelector('.card-inbox__top')?.getBoundingClientRect().bottom ?? box.top
-  const dock = view.querySelector('.card-inbox__dock')?.getBoundingClientRect().top ?? box.bottom
-  return { start: Math.max(box.top, top), end: Math.min(box.bottom, dock) }
+  return { start: Math.max(box.top, top), end: box.bottom }
 }
 
 /**

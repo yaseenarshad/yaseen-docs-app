@@ -2187,13 +2187,13 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
     let place: Record<string, [number, number]>
     let scrollTo: ReturnType<typeof vi.fn>
-    // The view 0–600; its sticky top row ends at 100, its sticky buttons start at 400: the room is 100–400.
+    // The view 0–400; its sticky top row ends at 100, and the dock is in normal flow below the card (YAZ-6055): the room is 100–400.
     beforeEach(() => {
       place = {}
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-        if (this.classList.contains('card-inbox')) return box(0, 600)
+        if (this.classList.contains('card-inbox')) return box(0, 400)
         if (this.classList.contains('card-inbox__top')) return box(0, 100)
-        if (this.classList.contains('card-inbox__dock')) return box(400, 480)
+        if (this.classList.contains('card-inbox__dock')) return box(place.dock?.[0] ?? 1200, place.dock?.[1] ?? 1280)
         const key = this.dataset.hidden !== undefined ? `word${this.dataset.hidden}` : this.dataset.side !== undefined ? `side${this.dataset.side}` : this.classList.contains('card-reviews--strip') ? 'strip' : this.classList.contains('card-inbox__panel') ? 'panel' : ''
         // The strip (YAZ-5380: on every card's last side) sits right under the card, as laid out.
         const [top, bottom] = place[key] ?? (key === 'strip' && place.panel !== undefined ? [place.panel[1], place.panel[1] + 36] : [150, 170])
@@ -2207,8 +2207,8 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       const view = el.querySelector<HTMLElement>('.card-inbox')!
       scrollTo = vi.fn()
       view.scrollTo = scrollTo as never
-      Object.defineProperty(view, 'clientHeight', { configurable: true, value: 600 })
-      Object.defineProperty(view, 'scrollHeight', { configurable: true, value: 600 + range })
+      Object.defineProperty(view, 'clientHeight', { configurable: true, value: 400 })
+      Object.defineProperty(view, 'scrollHeight', { configurable: true, value: 400 + range })
       view.scrollTop = scrollTop
       return view
     }
@@ -2248,12 +2248,19 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).not.toHaveBeenCalled()
       })
 
-      it('a blank cut by the buttons` edge, or by the top row`s, is not in view: Space only moves it (above the view: the least scroll, a small gap kept)', () => {
+      it('a blank cut by the view`s bottom edge, or by the top row`s, is not in view: Space only moves it (above the view: the least scroll, a small gap kept); the in-flow dock never clips it (YAZ-6055)', () => {
         mount(THREE)
         scroller()
-        place.word0 = [390, 410]
+        // Even if the in-flow dock rect is above box.bottom, a blank wholly inside [top, box.bottom] is in view.
+        place.dock = [340, 420]
+        place.word0 = [350, 370]
         press(' ')
-        expect(shown()).toEqual([])
+        expect(shown()).toEqual(['one'])
+        expect(scrollTo).not.toHaveBeenCalled()
+        // A blank cut by the view's bottom edge (400) is not in view: Space glides it in.
+        place.word1 = [390, 410]
+        press(' ')
+        expect(shown()).toEqual(['one'])
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 390 - 200 }))
         mount(THREE)
         scroller(300)
