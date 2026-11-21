@@ -2509,11 +2509,21 @@ span.cards-wizard__pill {
   gap: 8px;
 }
 
+.cards-wizard__link-btn {
+  text-decoration: none;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+}
+
 .cards-wizard__btn--primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .cards-wizard__btn--primary:hover {

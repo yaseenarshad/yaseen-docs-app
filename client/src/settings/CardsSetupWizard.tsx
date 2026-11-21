@@ -55,6 +55,7 @@ export function CardsSetupWizard({
   const [syncDone, setSyncDone] = useState(alreadySynced)
   const [busy, setBusy] = useState(false)
   const [waitingSignIn, setWaitingSignIn] = useState(false)
+  const [createdRepoClicked, setCreatedRepoClicked] = useState(false)
   const [pickingRepo, setPickingRepo] = useState(false)
   const [repos, setRepos] = useState<GithubInstalledRepo[] | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
@@ -62,6 +63,11 @@ export function CardsSetupWizard({
   const liveRef = useRef(true)
 
   const needsRepo = sync?.status?.repo === undefined || sync.status.repo.remoteUrl === null
+  const folderName = root?.split(/[/\\]/).filter(Boolean).pop() ?? ''
+  const createRepoUrl =
+    folderName !== ''
+      ? `https://github.com/new?name=${encodeURIComponent(folderName)}&visibility=private`
+      : 'https://github.com/new?visibility=private'
 
   useEffect(() => {
     liveRef.current = true
@@ -275,13 +281,36 @@ export function CardsSetupWizard({
         {step === 'sync' && (
           <div className="cards-wizard__body" data-testid="cards-wizard-step-sync">
             <h2 className="cards-wizard__title" id="cards-wizard-title">
-              Sync this vault to review on your phone?
+              {!syncDone && needsRepo
+                ? createdRepoClicked
+                  ? 'Finish creating your repo, then connect it here'
+                  : 'This vault is not a GitHub repo yet'
+                : 'Sync this vault to review on your phone?'}
             </h2>
-            <p className="cards-wizard__desc">
-              Page IDs and Cards are on. Sync to GitHub so you can review cards on your phone at{' '}
-              <strong>docs.yaseenarshad.com</strong>. Pick <strong>Docs App Sync</strong> below, or add this folder to{' '}
-              <strong>GitHub AutoSync</strong> if you use that app. Pick only one so both do not clash.
-            </p>
+            {!syncDone && needsRepo ? (
+              <p className="cards-wizard__desc">
+                {createdRepoClicked ? (
+                  <>
+                    Waiting on you to create the empty private repo in your browser. Once it is created, click{' '}
+                    <strong>Connect to a GitHub repo</strong> below — no cloning or Terminal needed — or click{' '}
+                    <strong>Not now</strong> to skip.
+                  </>
+                ) : (
+                  <>
+                    Cloud sync needs a GitHub repo first, so you cannot turn on sync for this folder yet. Create a
+                    private empty repo on GitHub, then come back here and click <strong>Connect to a GitHub repo</strong>{' '}
+                    (no cloning or Terminal needed) — or skip for now and set it up later in{' '}
+                    <strong>Settings › Sync</strong>.
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className="cards-wizard__desc">
+                Page IDs and Cards are on. Sync to GitHub so you can review cards on your phone at{' '}
+                <strong>docs.yaseenarshad.com</strong>. Pick <strong>Docs App Sync</strong> below, or add this folder to{' '}
+                <strong>GitHub AutoSync</strong> if you use that app. Pick only one so both do not clash.
+              </p>
+            )}
 
             {syncDone && (
               <p className="cards-wizard__status" role="status">
@@ -326,6 +355,9 @@ export function CardsSetupWizard({
                         Choose other repos ↗
                       </button>
                     )}
+                    <button type="button" className="settings__option" disabled={busy} onClick={() => void loadRepos()}>
+                      Refresh list
+                    </button>
                   </div>
                 )}
               </div>
@@ -338,7 +370,28 @@ export function CardsSetupWizard({
             )}
 
             <div className="cards-wizard__actions">
-              {!syncDone && !pickingRepo && (
+              {!syncDone && needsRepo && !pickingRepo && (
+                <>
+                  <a
+                    href={createRepoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={createdRepoClicked ? 'confirm__btn cards-wizard__link-btn' : 'confirm__btn cards-wizard__btn--primary'}
+                    onClick={() => setCreatedRepoClicked(true)}
+                  >
+                    Create a private repo on GitHub ↗
+                  </a>
+                  <button
+                    type="button"
+                    className={createdRepoClicked ? 'confirm__btn cards-wizard__btn--primary' : 'confirm__btn'}
+                    disabled={busy || waitingSignIn}
+                    onClick={() => void handleDocsAppSync()}
+                  >
+                    {waitingSignIn ? 'Waiting for GitHub sign-in…' : 'Connect to a GitHub repo'}
+                  </button>
+                </>
+              )}
+              {!syncDone && !needsRepo && !pickingRepo && (
                 <button
                   type="button"
                   className="confirm__btn cards-wizard__btn--primary"
@@ -348,7 +401,7 @@ export function CardsSetupWizard({
                   {waitingSignIn ? 'Waiting for GitHub sign-in…' : 'Use Docs App Sync'}
                 </button>
               )}
-              {!syncDone && autoSync.installed && !pickingRepo && (
+              {!syncDone && !needsRepo && autoSync.installed && !pickingRepo && (
                 <button
                   type="button"
                   className="confirm__btn"

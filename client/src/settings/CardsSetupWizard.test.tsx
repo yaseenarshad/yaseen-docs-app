@@ -56,7 +56,7 @@ const findBtn = (label: string) =>
   [...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === label)
 
 describe('CardsSetupWizard (YAZ-6225)', () => {
-  it('places Use Docs App Sync as the #1 primary option and walks through GitHub sign-in + repo connect inline', async () => {
+  it('tells non-repo vaults they cannot sync yet, hides enable buttons, and guides creating or connecting a repo (YAZ-6250)', async () => {
     const { gh, emitAuth } = stubGithub({
       listRepos: async () => [{ fullName: 'yaseenarshad/study-cards', private: true, defaultBranch: 'main' }],
     })
@@ -68,8 +68,8 @@ describe('CardsSetupWizard (YAZ-6225)', () => {
         <CardsSetupWizard
           autoSync={{ installed: true, vaultSynced: false, supportsDeepLink: true }}
           alreadySynced={false}
-          root="/vault"
-          sync={{ status: { root: '/vault', state: 'off', enabled: false }, setEnabled }}
+          root="/vault/study-cards"
+          sync={{ status: { root: '/vault/study-cards', state: 'off', enabled: false }, setEnabled }}
           settings={DEFAULT_SETTINGS}
           onChange={vi.fn()}
           onClose={onClose}
@@ -77,18 +77,26 @@ describe('CardsSetupWizard (YAZ-6225)', () => {
       ),
     )
 
-    // Use Docs App Sync is the first primary button; Add to GitHub AutoSync is secondary.
-    const actionBtns = [...container.querySelectorAll<HTMLButtonElement>('.cards-wizard__actions button')]
-    expect(actionBtns.map((b) => b.textContent?.trim())).toEqual([
-      'Use Docs App Sync',
-      'Add to GitHub AutoSync',
-      'Not now',
-    ])
-    expect(actionBtns[0].classList.contains('cards-wizard__btn--primary')).toBe(true)
-    expect(actionBtns[1].classList.contains('cards-wizard__btn--primary')).toBe(false)
+    // Non-repo vault must NOT show Use Docs App Sync or Add to GitHub AutoSync.
+    expect(container.textContent).toContain('This vault is not a GitHub repo yet')
+    expect(findBtn('Use Docs App Sync')).toBeUndefined()
+    expect(findBtn('Add to GitHub AutoSync')).toBeUndefined()
+    const createLink = container.querySelector<HTMLAnchorElement>('.cards-wizard__actions a')!
+    expect(createLink.textContent?.trim()).toBe('Create a private repo on GitHub ↗')
+    expect(createLink.href).toContain('https://github.com/new?name=study-cards&visibility=private')
+    expect(createLink.classList.contains('cards-wizard__btn--primary')).toBe(true)
 
-    // Clicking Use Docs App Sync while signed out launches sign-in and waits for auth callback.
-    await act(async () => actionBtns[0].click())
+    // Clicking Create shifts primary highlight to Connect and shows waiting-on-you copy.
+    await act(async () => {
+      createLink.addEventListener('click', (e) => e.preventDefault(), { once: true })
+      createLink.click()
+    })
+    expect(container.textContent).toContain('Finish creating your repo, then connect it here')
+    expect(createLink.classList.contains('cards-wizard__btn--primary')).toBe(false)
+    expect(findBtn('Connect to a GitHub repo')!.classList.contains('cards-wizard__btn--primary')).toBe(true)
+
+    // Clicking Connect to a GitHub repo while signed out launches sign-in and waits for auth callback.
+    await act(async () => findBtn('Connect to a GitHub repo')!.click())
     expect(gh.signIn).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Finish signing in with GitHub')
 
@@ -99,18 +107,18 @@ describe('CardsSetupWizard (YAZ-6225)', () => {
 
     // Picking a repo connects it and advances straight to Step 3: Read Only.
     await act(async () => findBtn('yaseenarshad/study-cards')!.click())
-    expect(gh.connectRepo).toHaveBeenCalledWith('/vault', 'yaseenarshad/study-cards')
+    expect(gh.connectRepo).toHaveBeenCalledWith('/vault/study-cards', 'yaseenarshad/study-cards')
     expect(container.querySelector('[data-testid="cards-wizard-step-readonly"]')).not.toBeNull()
   })
 
-  it('enables Docs App Sync directly when already a git repo with remote and signed in', async () => {
+  it('places Use Docs App Sync as #1 primary and Add to GitHub AutoSync as #2 when vault is already a GitHub repo', async () => {
     stubGithub({ authStatus: async () => ({ signedIn: true, login: 'yaseenarshad', hasManualToken: false }) })
     const setEnabled = vi.fn()
 
     await act(async () =>
       root!.render(
         <CardsSetupWizard
-          autoSync={{ installed: false, vaultSynced: false, supportsDeepLink: false }}
+          autoSync={{ installed: true, vaultSynced: false, supportsDeepLink: true }}
           alreadySynced={false}
           root="/vault"
           sync={{
@@ -124,7 +132,16 @@ describe('CardsSetupWizard (YAZ-6225)', () => {
       ),
     )
 
-    await act(async () => findBtn('Use Docs App Sync')!.click())
+    const actionBtns = [...container.querySelectorAll<HTMLButtonElement>('.cards-wizard__actions button')]
+    expect(actionBtns.map((b) => b.textContent?.trim())).toEqual([
+      'Use Docs App Sync',
+      'Add to GitHub AutoSync',
+      'Not now',
+    ])
+    expect(actionBtns[0].classList.contains('cards-wizard__btn--primary')).toBe(true)
+    expect(actionBtns[1].classList.contains('cards-wizard__btn--primary')).toBe(false)
+
+    await act(async () => actionBtns[0].click())
     expect(setEnabled).toHaveBeenCalledWith(true)
     expect(container.querySelector('[data-testid="cards-wizard-step-readonly"]')).not.toBeNull()
   })
@@ -266,7 +283,7 @@ describe('CardsSetupWizard (YAZ-6225)', () => {
           autoSync={{ installed: false, vaultSynced: false, supportsDeepLink: false }}
           alreadySynced={false}
           root="/vault"
-          sync={{ status: { root: '/vault', state: 'off', enabled: false }, setEnabled: vi.fn() }}
+          sync={{ status: { root: '/vault', state: 'off', enabled: false, repo: { remoteUrl: 'https://github.com/a/b.git', branch: 'main' } }, setEnabled: vi.fn() }}
           settings={DEFAULT_SETTINGS}
           onChange={vi.fn()}
           onClose={vi.fn()}
@@ -292,7 +309,7 @@ describe('CardsSetupWizard (YAZ-6225)', () => {
         <CardsSetupWizard
           autoSync={{ installed: true, vaultSynced: false, supportsDeepLink: true }}
           alreadySynced={false}
-          sync={{ status: { root: '/vault', state: 'off', enabled: false }, setEnabled: vi.fn(), addToAutoSync }}
+          sync={{ status: { root: '/vault', state: 'off', enabled: false, repo: { remoteUrl: 'https://github.com/a/b.git', branch: 'main' } }, setEnabled: vi.fn(), addToAutoSync }}
           settings={DEFAULT_SETTINGS}
           onChange={vi.fn()}
           openCourse={openCourse}
