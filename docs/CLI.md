@@ -12,7 +12,34 @@
 
 The command replies after the window shows the result. It starts Docs when Docs is not running.
 
-The existing offline commands (`comment`, `comments`, `edit`, `delete`, `id`, `links`, `due`, `vaults`, `daily`, `new`) do not change. `yaseendocs --help` lists `yaseendocs open` alongside them; detailed navigation help is `yaseendocs open --help`, `yaseendocs navigation --help`, `yaseendocs navigation open --help`, and `yaseendocs capabilities --help`.
+The existing offline commands (`comment`, `comments`, `edit`, `delete`, `resolve`, `id`, `links`, `mentions`, `due`, `card`, `board`, `vaults`, `daily`, `new`) run directly on disk without starting Docs. `yaseendocs --help` lists every command; detailed navigation help is `yaseendocs open --help`, `yaseendocs navigation --help`, `yaseendocs navigation open --help`, and `yaseendocs capabilities --help`.
+
+## Offline card and board commands
+
+```sh
+# Cards (in vaults with IDs enabled)
+yaseendocs card edit    <id> [<folder>] [--title <text>] [--body <text | ->] [--prop <name>=<value> ...] [--remove-prop <name> ...] [--hide-title | --show-title] [--json]
+yaseendocs card archive <id> [<folder>] [--unarchive] [--json]
+yaseendocs card extract <id> [<folder>] [--to <dir>] [--json]
+yaseendocs card inline  <id> <page.md> [--force] [--json]
+
+# Boards (.excalidraw drawings and .drawio diagrams)
+yaseendocs board new      <folder> --title <name> [--kind drawing|diagram] [--json]
+yaseendocs board pictures <file.excalidraw> (--out | --inside) [--folder <dir>] [--json]
+yaseendocs board readonly <file> [--off] [--json]
+yaseendocs board inline   <page.md> [--title <text>] [--from <file.excalidraw>] [--after <heading>] [--unlocked] [--trash] [--json]
+yaseendocs board extract  <page.md> [--index <n>] [--title <name>] [--to <dir>] [--json]
+```
+
+- `card edit` updates a card's title, body, properties, or front-title visibility while keeping its review history; retitling a standalone card file also renames it to `<kebab-title>-<id>.md`.
+- `card archive` toggles `off` on the card line (`--unarchive` to restore).
+- `card extract` moves an inline card into its own card file (`--to <dir>`, default: page's folder) and replaces it with `![[<id>]]` at the same indent.
+- `card inline` pulls a standalone card file back into `<page.md>` at its lone embed (migrating `comments:` and moving the old file to `.trash`; refuses if other frontmatter keys would be lost unless `--force`).
+- `board new` creates a `.excalidraw` drawing (default) or `.drawio` diagram without overwriting existing files.
+- `board pictures` moves an Excalidraw file's embedded images `--out` to a folder (default `assets`, or `--folder <dir>`) or `--inside` the file.
+- `board readonly` sets or clears (`--off`) read-only on a `.excalidraw` or `.drawio` file.
+- `board inline` inserts a new inline drawing (locked by default, `--unlocked` to leave unlocked) or pulls `--from <file.excalidraw>` into `<page.md>` (extracting embedded base64 images to `assets/`, replacing a matching lone embed if present, optional `--trash` to move the original to `.trash`).
+- `board extract` moves an inline drawing (`--index <n>` when the page holds more than one) out to its own `.excalidraw` file (`--to <dir>`, `--title <name>`) and leaves a `![[...]]` embed at the same indent.
 
 ## Commands
 

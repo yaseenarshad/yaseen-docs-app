@@ -14,6 +14,9 @@
  * `HELP` IS the contract: it is the only documentation an agent reads, so its wording is UI copy.
  */
 import { isAutomationCommand, runAutomation } from './automation'
+import { BOARD_FLAGS, BOARD_SWITCHES, BoardUsageError, boardCommand } from './boardCommands'
+import { CardUsageError, cardArchive, cardEdit, cardExtract, cardInline } from './cardCommands'
+import { onlyFlags as checkFlags, sectionPlace, str, transformOnDisk } from './cliShared'
 import { execFile } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { readFile as readRaw, stat } from 'node:fs/promises'
@@ -41,7 +44,6 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, canonicalPageId, isNumberId, vaultPageId } from '@shared/pageId'
 import { keyFold } from '@shared/propertyKeys'
 import { cardBlock, cardTime, cardTitleOf, changeCard, isCardPropertyName, pageCards, withCardNext, withCardNoTitle, withCardProperty, withCardTitle, type CardLine, type CardPropertyScalar, type CardPropertyValue } from '@shared/cardLine'
-import { lineKinds } from '@shared/fences'
 import { inLineEnds, withLf } from '@shared/lineEnds'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardFileContent, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
@@ -55,7 +57,7 @@ import { mentionsOf } from '@shared/mentions'
 import { CARD_SKILL_DIR } from '../main/cardSkill'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { createFile } from '../main/fs/create'
-import { readFile, writeFile } from '../main/fs/file'
+import { readFile } from '../main/fs/file'
 import { dailyPage, vaultDailySettings } from '../main/pages/daily'
 import { vaultNewPlacesSettings, vaultRootOf } from '../main/vaultSettingsRead'
 import { newPage } from '../main/pages/page'
@@ -89,8 +91,17 @@ export const USAGE = `usage:
   yaseendocs due      <page.md | folder> [--json]
   yaseendocs card add <page.md> --body <text | -> [--title <text>] [--prop <name>=<value> ...] [--after <heading>] [--hide-title] [--json]
   yaseendocs card new <folder> --title <text> [--body <text | ->] [--prop <name>=<value> ...] [--hide-title] [--json]
+  yaseendocs card edit <id> [<folder>] [--title <text>] [--body <text | ->] [--prop <name>=<value> ...] [--remove-prop <name> ...] [--hide-title | --show-title] [--json]
+  yaseendocs card archive <id> [<folder>] [--unarchive] [--json]
+  yaseendocs card extract <id> [<folder>] [--to <dir>] [--json]
+  yaseendocs card inline <id> <page.md> [--force] [--json]
   yaseendocs card next <id> [<folder>] [--off] [--json]
   yaseendocs card guide [--path]
+  yaseendocs board new <folder> --title <name> [--kind drawing|diagram] [--json]
+  yaseendocs board pictures <file.excalidraw> (--out | --inside) [--folder <dir>] [--json]
+  yaseendocs board readonly <file> [--off] [--json]
+  yaseendocs board inline <page.md> [--title <text>] [--from <file.excalidraw>] [--after <heading>] [--unlocked] [--trash] [--json]
+  yaseendocs board extract <page.md> [--index <n>] [--title <name>] [--to <dir>] [--json]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
@@ -205,6 +216,20 @@ Inbox"). The card is found by its id in the vault of \`<folder>\` (the current f
 An archived card stays out of the Inbox. It prints \`<id> is up next (<page>)\` or \`<id> is not up
 next (<page>)\`; \`--json\` gives \`id\`, \`page\` and \`next\`.
 
+\`card edit <id>\` updates a card's title (\`--title\`), text (\`--body\`, \`-\` for stdin), properties
+(\`--prop <name>=<value>\`, \`--remove-prop <name>\`), or front-title visibility (\`--hide-title\` / \`--show-title\`)
+without touching its review history; retitling a standalone card file also renames it to \`<kebab-title>-<id>.md\`.
+\`card archive <id>\` toggles \`off\` on the card line (\`--unarchive\` to restore). \`card extract <id>\` moves an
+inline card into its own card file (\`--to <dir>\`, default: page's folder) and leaves \`![[<id>]]\` at the same
+indent. \`card inline <id> <page.md>\` puts a standalone card file back at its lone embed (migrating \`comments:\`
+and moving the old file to \`.trash\`; refuses if other frontmatter keys would be lost unless \`--force\`).
+
+\`board\` manages Excalidraw drawings (\`.excalidraw\`) and draw.io diagrams (\`.drawio\`): \`board new\` creates one
+(\`--kind drawing|diagram\`), \`board pictures\` moves an Excalidraw file's images \`--out\` to a folder or \`--inside\`
+the file, \`board readonly\` toggles read-only (\`--off\` to make editable), \`board inline\` inserts a new inline
+drawing or pulls \`--from <file.excalidraw>\` into a page (lifting embedded images to \`assets/\`, optional \`--trash\`),
+and \`board extract\` moves an inline drawing (\`--index <n>\`) out to its own \`.excalidraw\` file (\`--to <dir>\`).
+
 \`card guide\` prints the start page of the card skill: how to write a good card and the formats.
 Run \`yaseendocs card guide\` before you add or change a card. The skill is a folder of pages, and the start
 page names the others: \`--path\` prints the folder's path in double quotes (it has a space on macOS), so you can
@@ -258,13 +283,15 @@ Make a card, and see what is due:
 `
 
 /** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
-const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--after', '--prop'])
-/** Flags that may come more than once: each value is kept, in order (`--prop`, YAZ-5386). */
-const REPEATED = new Set(['--prop'])
+const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--after', '--prop', '--remove-prop', ...BOARD_FLAGS])
+/** Flags that may come more than once: each value is kept, in order (`--prop`, `--remove-prop`). */
+const REPEATED = new Set(['--prop', '--remove-prop'])
 /** Flags that take no value. */
-const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off', '--path', '--hide-title'])
+const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off', '--path', '--hide-title', '--show-title', '--unarchive', '--force', ...BOARD_SWITCHES])
 
 class Usage extends Error {}
+
+export { transformOnDisk } from './cliShared'
 
 function parse(argv: readonly string[]): { verb: string; args: string[]; flags: Map<string, string | true>; repeated: Map<string, string[]> } {
   const args: string[] = []
@@ -283,29 +310,6 @@ function parse(argv: readonly string[]): { verb: string; args: string[]; flags: 
   }
   const [verb = '', ...rest] = args
   return { verb, args: rest, flags, repeated }
-}
-
-/**
- * The renderer's `transformFile` on disk: read, transform, write against the mtime just read;
- * on CONFLICT read again and recompute ONCE. A second conflict throws. A no-op transform
- * writes nothing and returns the bytes as read. `create`: a file that is not there yet reads as
- * empty and the write creates it — a folder's settings file the app has not written yet (YAZ-2290 D1).
- */
-export async function transformOnDisk(path: string, transform: (content: string) => string, create = false): Promise<string> {
-  let file: { content: string; mtime?: number } = await (create ? readPage : readFile)(path)
-  let retried = false
-  for (;;) {
-    const content = transform(file.content)
-    if (content === file.content) return content
-    try {
-      await writeFile({ path, content, expectedMtime: file.mtime ?? 0 })
-      return content
-    } catch (err) {
-      if (!(err instanceof BridgeFailure) || err.code !== 'CONFLICT' || retried) throw err
-      retried = true
-      file = await readFile(path)
-    }
-  }
 }
 
 /** `#3` for a top-level comment, `#3.1` for a reply; the id when a hand-written entry has no number. */
@@ -393,11 +397,6 @@ async function bodyOf(flags: Map<string, string | true>, io: Io): Promise<string
   const body = flags.get('--body')
   if (typeof body !== 'string') throw new Usage('--body is required')
   return body === '-' ? io.stdin() : body
-}
-
-const str = (flags: Map<string, string | true>, name: string): string | undefined => {
-  const v = flags.get(name)
-  return typeof v === 'string' ? v : undefined
 }
 
 /** The card settings of the vault at `root` (`.yaseendocs/review.json`), or the defaults. */
@@ -580,10 +579,8 @@ const openLink = (link: string): Promise<void> =>
   })
 
 /** A flag that `verb` does not take is refused, not ignored: an agent that passed it meant something by it. */
-function onlyFlags(verb: string, flags: Map<string, string | true>, takes: readonly string[]): void {
-  const other = [...flags.keys()].find((flag) => !takes.includes(flag))
-  if (other !== undefined) throw new Usage(`${verb} does not take ${other}`)
-}
+const onlyFlags = (verb: string, flags: Map<string, string | true>, takes: readonly string[]): void =>
+  checkFlags(verb, flags, takes, (msg) => new Usage(msg))
 
 /** `daily` (YAZ-4269 D2, D5, D6, D9, D10): a day's daily page of a vault, found or made by the app's own rules. */
 async function daily(target: string | undefined, flags: Map<string, string | true>, io: Io): Promise<void> {
@@ -612,24 +609,6 @@ async function newCommand(target: string | undefined, flags: Map<string, string 
   const page = await newPage(resolve(target), title, body, (vault === null ? app : await vaultNewPlacesSettings(vault, app)).commentsHint)
   if (!page.created && body !== undefined) io.stderr(`warning: --body was not written: ${page.path} was already there\n`)
   report(io, flags, page)
-}
-
-/** Where a new card goes in `body`: after the line index returned (the end of the heading's section), or the end. */
-function cardPlace(body: string, after: string | undefined): number {
-  const lines = body.split('\n')
-  if (after === undefined) return lines.length
-  const want = after.replace(/^#+\s*/, '').trim().toLowerCase()
-  const kinds = lineKinds(lines)
-  const headings: { at: number; level: number; text: string }[] = []
-  lines.forEach((line, at) => {
-    // A heading in a code block (or a card) is the block's own text.
-    const h = kinds[at] === 'text' ? /^(#{1,6})[ \t]+(.*?)[ \t#]*$/.exec(line) : null
-    if (h !== null) headings.push({ at, level: h[1].length, text: h[2].trim().toLowerCase() })
-  })
-  const i = headings.findIndex((h) => h.text === want)
-  if (i === -1) throw new Error(`no heading "${after}" on the page`)
-  const end = headings.slice(i + 1).find((h) => h.level <= headings[i].level)
-  return end === undefined ? lines.length : end.at
 }
 
 /** A card file holds one card (YAZ-5037): `card add` never puts a second one in it. */
@@ -687,7 +666,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io, 
   // The page and the heading are checked before a number is taken: a refusal costs no number.
   const content = (await readFile(page)).content
   if (isCardFileContent(content)) throw new Error(CARD_FILE_REFUSED)
-  cardPlace(splitFrontmatter(withLf(content)).body, after)
+  sectionPlace(splitFrontmatter(withLf(content)).body, after)
   // The door (YAZ-2677 D4): the count file is on disk before the card is written (R18), the app's own number.
   const id = (await mintIds(root, 1))?.[0]
   if (id === undefined) throw new Error(`${page}'s vault does not give its pages IDs, so it has no cards`)
@@ -697,7 +676,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io, 
     if (isCardFileContent(lf)) throw new Error(CARD_FILE_REFUSED)
     const { frontmatter, body } = splitFrontmatter(lf)
     const lines = body.split('\n')
-    const at = cardPlace(body, after)
+    const at = sectionPlace(body, after)
     // One blank line before the card and one after it; the page's own blank lines stay.
     let from = at
     while (from > 0 && lines[from - 1].trim() === '') from--
@@ -803,13 +782,31 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       if (args[1] === undefined) throw new Usage('card new needs a folder')
       return cardNew(resolve(args[1]), flags, io, repeated.get('--prop'))
     }
+    if (args[0] === 'edit') {
+      if (args[1] === undefined) throw new Usage('card edit needs a card id')
+      return cardEdit(args[1], resolve(args[2] ?? '.'), flags, io, repeated.get('--prop'), repeated.get('--remove-prop'))
+    }
+    if (args[0] === 'archive') {
+      if (args[1] === undefined) throw new Usage('card archive needs a card id')
+      return cardArchive(args[1], resolve(args[2] ?? '.'), flags, io)
+    }
+    if (args[0] === 'extract') {
+      if (args[1] === undefined) throw new Usage('card extract needs a card id')
+      return cardExtract(args[1], resolve(args[2] ?? '.'), flags, io)
+    }
+    if (args[0] === 'inline') {
+      if (args[1] === undefined) throw new Usage('card inline needs a card id and a page')
+      if (args[2] === undefined) throw new Usage('card inline needs a page')
+      return cardInline(args[1], resolve(args[2]), flags, io)
+    }
     if (args[0] === 'guide') return cardGuide(args.slice(1), flags, io)
-    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new, next or guide' : `unknown card command: ${args[0]}`)
+    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new, edit, archive, extract, inline, next or guide' : `unknown card command: ${args[0]}`)
     if (args[1] === undefined) throw new Usage('card add needs a page')
     const page = resolve(args[1])
     requireMarkdownFile(page)
     return cardAdd(page, flags, io, repeated.get('--prop'))
   }
+  if (verb === 'board') return boardCommand(args, flags, io)
   if (verb === 'due') {
     onlyFlags('due', flags, ['--json'])
     if (args[0] === undefined) throw new Usage('due needs a page or a folder')
@@ -956,7 +953,7 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
     await run(argv, io)
     return 0
   } catch (err) {
-    if (err instanceof Usage) {
+    if (err instanceof Usage || err instanceof CardUsageError || err instanceof BoardUsageError) {
       io.stderr(`${err.message}\n${USAGE}\n`)
       return 2
     }
