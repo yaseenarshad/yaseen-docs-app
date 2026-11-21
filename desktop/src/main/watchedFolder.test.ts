@@ -87,6 +87,36 @@ describe('createWatchedFolder', () => {
     expect(calls).toEqual([[a, b]])
   })
 
+  it('holds an event that comes WHILE an own write runs, and drops it once the write answers the same mtime (YAZ-5785)', async () => {
+    const watched = await watchJson(base)
+    const p = path.join(base, 'own.json')
+    let finish: (mtime: number) => void = () => undefined
+    const writing = watched.ownWrite(p, () => new Promise<number>((r) => (finish = r)))
+    // The engine looks at the file before the write knows its mtime — twice, as a resync can.
+    engines.last!.emit('add', p, { mtimeMs: 42 })
+    engines.last!.emit('change', p, { mtimeMs: 42 })
+    await sleep(200)
+    finish(42)
+    await writing
+    await sleep(200)
+    expect(calls).toEqual([])
+  })
+
+  it('announces what an own write held when the write turns out not to be the cause', async () => {
+    const watched = await watchJson(base)
+    const [p, q] = [path.join(base, 'own.json'), path.join(base, 'failed.json')]
+    let finish: (mtime: number) => void = () => undefined
+    const writing = watched.ownWrite(p, () => new Promise<number>((r) => (finish = r)))
+    engines.last!.emit('change', p, { mtimeMs: 7 }) // someone else's bytes
+    const failing = watched.ownWrite(q, () => sleep(100).then(() => Promise.reject(new Error('disk full'))))
+    engines.last!.emit('add', q, { mtimeMs: 9 })
+    await expect(failing).rejects.toThrow('disk full')
+    finish(8)
+    await writing
+    await until(() => calls.flat().length >= 2)
+    expect(calls.flat().sort()).toEqual([q, p].sort())
+  })
+
   describe('under the polling fallback', { timeout: 20_000 }, () => {
     beforeEach(() => void (nativeWatch.fail = true))
 

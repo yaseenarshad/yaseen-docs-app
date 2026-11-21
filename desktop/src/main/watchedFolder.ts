@@ -15,6 +15,10 @@ import { watchTree, type TreeWatcher } from './fs/treeWatcher'
  *    starts — so the FIRST write that creates the folder re-adds it (`recordOwnWrite` does this).
  *  - ECHO SUPPRESSION. A write this process made is announced to subscribers synchronously by the
  *    store itself; its watcher echo is dropped by mtime (`null` = an unlink this process caused).
+ *    The write learns its mtime only after the file is in place, and the engine can look at the
+ *    file in that gap (its first resync looks at once, without settling). So `ownWrite` marks the
+ *    path BEFORE it writes, and an event for it is held until the write answers its mtime
+ *    (YAZ-5785: the echo of a component save got through on a slow CI Mac).
  *  - DEBOUNCE. 50 ms, because one save touches two or three files and the subscriber only wants
  *    to know that something changed.
  */
@@ -22,7 +26,12 @@ import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 const NOTIFY_DEBOUNCE_MS = 50
 
 export interface WatchedFolder {
-  /** Page a write this process just made, so its echo is dropped; `null` mtime = a delete. */
+  /**
+   * Run `write`, which makes, replaces or removes `file` and answers its mtime (`null` = removed).
+   * An event for `file` while it runs is held, then dropped when it is the echo of this write.
+   */
+  ownWrite(file: string, write: () => Promise<number | null>): Promise<void>
+  /** Page a write this process just made, so its echo is dropped; `null` mtime = a delete. Prefer `ownWrite`. */
   recordOwnWrite(file: string, mtime: number | null): void
   /** Point at another folder; the old one goes quiet and every own-write page is dropped. */
   setFolder(next: string): void
@@ -47,6 +56,10 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
   let dir = opts.dir
   let watcher: TreeWatcher
   let ownWrites = new Map<string, number | null>()
+  /** Own writes still running, per path, and the events that arrived for those paths meanwhile. */
+  const inFlight = new Map<string, number>()
+  let held = new Map<string, (number | null)[]>()
+  let schedule: (p: string, mtime: number | null) => void = () => undefined
   let anchored = false
   let timer: ReturnType<typeof setTimeout> | null = null
   let pending = new Set<string>()
@@ -59,13 +72,16 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
     // native engine and on the polling fallback alike.
     const depth = opts.depth
     const w = watchTree(watched, depth === undefined ? {} : { ignored: (p) => path.relative(watched, p).split(path.sep).length - 1 > depth })
-    const schedule = (p: string, stats?: Stats) => {
+    const announce = (p: string, mtime: number | null) => {
       if (!opts.relevant(p, watched)) return
-      const own = ownWrites.get(p)
-      if (own !== undefined && (stats === undefined ? own === null : own === stats.mtimeMs)) {
-        ownWrites.delete(p)
-        return // the echo of this process's own write or delete
+      if (inFlight.has(p)) {
+        held.set(p, [...(held.get(p) ?? []), mtime])
+        return // this process is writing it right now: decided once the write answers its mtime
       }
+      const own = ownWrites.get(p)
+      // The entry stays while events match it: one write can be heard twice.
+      if (own !== undefined && own === mtime) return // the echo of this process's own write or delete
+      if (own !== undefined) ownWrites.delete(p)
       pending.add(p)
       if (timer !== null) clearTimeout(timer)
       timer = setTimeout(() => {
@@ -75,9 +91,11 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
         opts.onChange(paths)
       }, NOTIFY_DEBOUNCE_MS)
     }
-    w.on('add', schedule)
-      .on('change', schedule)
-      .on('unlink', (p) => schedule(p))
+    schedule = announce
+    const seen = (p: string, stats?: Stats) => announce(p, stats === undefined ? null : stats.mtimeMs)
+    w.on('add', seen)
+      .on('change', seen)
+      .on('unlink', (p) => announce(p, null))
       .on('error', (err) => console.warn(`[${opts.tag}] watcher error under ${watched}: ${String(err)}`))
     const also = opts.alsoWatch?.(watched)
     if (also !== undefined && also.length > 0) w.on('ready', () => also.forEach((p) => w.add(p)))
@@ -88,14 +106,31 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
     if (timer !== null) clearTimeout(timer)
     timer = null
     pending = new Set()
+    held = new Map()
   }
 
   watcher = start()
 
-  return {
+  const folderApi: WatchedFolder = {
+    async ownWrite(file, write) {
+      inFlight.set(file, (inFlight.get(file) ?? 0) + 1)
+      try {
+        folderApi.recordOwnWrite(file, await write())
+      } finally {
+        const left = (inFlight.get(file) ?? 1) - 1
+        if (left > 0) inFlight.set(file, left)
+        else {
+          inFlight.delete(file)
+          const events = held.get(file) ?? []
+          held.delete(file)
+          // A write that failed recorded nothing, so what it held is announced as it would have been.
+          events.forEach((mtime) => schedule(file, mtime))
+        }
+      }
+    },
     recordOwnWrite(file, mtime) {
-      // An entry is consumed by the echo it predicts; an echo that never arrives (a watcher that
-      // missed it) would otherwise keep its page for the session. Clearing the lot at a generous
+      // An entry lives until an event that does not match it; an echo that never arrives (a watcher
+      // that missed it) would otherwise keep its page for the session. Clearing the lot at a generous
       // ceiling costs at most one spurious "something changed", which is a re-list.
       if (ownWrites.size > 256) ownWrites.clear()
       ownWrites.set(file, mtime)
@@ -116,4 +151,5 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
       return watcher.close()
     },
   }
+  return folderApi
 }

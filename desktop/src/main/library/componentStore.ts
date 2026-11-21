@@ -189,14 +189,16 @@ export function createComponentStore(initialFolder: string, deps: ComponentStore
   }
 
   async function writeBytes(p: string, content: string | Uint8Array): Promise<void> {
-    const { mtime } = await fsCall(p, async () => {
-      // Never `mkdir -p` above the library (YAZ-4383): a settings folder that is gone must not come back.
-      const dir = path.dirname(p)
-      const inComponents = path.basename(dir) === LIBRARY_COMPONENTS_DIR && dir !== folder
-      await makeLibraryDir(inComponents ? path.dirname(dir) : dir, inComponents ? LIBRARY_COMPONENTS_DIR : undefined)
-      return atomicWrite(p, content)
+    await watched.ownWrite(p, async () => {
+      const { mtime } = await fsCall(p, async () => {
+        // Never `mkdir -p` above the library (YAZ-4383): a settings folder that is gone must not come back.
+        const dir = path.dirname(p)
+        const inComponents = path.basename(dir) === LIBRARY_COMPONENTS_DIR && dir !== folder
+        await makeLibraryDir(inComponents ? path.dirname(dir) : dir, inComponents ? LIBRARY_COMPONENTS_DIR : undefined)
+        return atomicWrite(p, content)
+      })
+      return mtime
     })
-    watched.recordOwnWrite(p, mtime)
     scanCache = null // this process just changed the folder; the next read scans it again
   }
 
@@ -340,15 +342,9 @@ export function createComponentStore(initialFolder: string, deps: ComponentStore
         // Both files, and a preview that is already gone is not a failure — the fragment is the
         // component, the picture is a convenience.
         const fragment = fragmentPath(slug)
-        await fsCall(fragment, async () => {
-          await trash(fragment)
-          watched.recordOwnWrite(fragment, null)
-        })
+        await fsCall(fragment, () => watched.ownWrite(fragment, () => trash(fragment).then(() => null)))
         const preview = previewPath(slug)
-        await trash(preview).then(
-          () => watched.recordOwnWrite(preview, null),
-          () => undefined,
-        )
+        await watched.ownWrite(preview, () => trash(preview).then(() => null)).catch(() => undefined)
         scanCache = null
         return { index: next, value: undefined }
       })
