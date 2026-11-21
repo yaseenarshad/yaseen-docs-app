@@ -32,7 +32,8 @@ export function parseCreatedMs(value: unknown): number | null {
     const y = Number(dateOnly[1])
     const m = Number(dateOnly[2])
     const d = Number(dateOnly[3])
-    return isRealCalendarDay(y, m, d) ? Date.UTC(y, m - 1, d) : null
+    const dt = new Date(y, m - 1, d)
+    return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d ? dt.getTime() : null
   }
   const iso = ISO_TIME_RE.exec(s)
   if (iso === null) return null

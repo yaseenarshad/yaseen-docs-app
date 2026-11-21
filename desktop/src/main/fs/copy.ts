@@ -1,6 +1,7 @@
 import { cp, mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardTime } from '@shared/cardLine'
+import { cardFileName, cardFileTitle, isCardKind } from '@shared/cardFileFormat'
+import { cardTime, rewritePageCards, withCardCreated, withCardId, withCardTitle } from '@shared/cardLine'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { BOARD_ID_KEY, BOARD_META_HEAD_BYTES, BOARD_META_KEY, boardIdOf, FORMER_IDS_KEY, parseBoardMetaBlock, serializeBoard } from '@shared/drawingAssets'
 import { isDrawing } from '@shared/fileKind'
@@ -104,8 +105,16 @@ function reborn(content: string, fresh: Fresh): { properties: Record<string, unk
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
   if (error !== undefined) return
   const id = fresh.next()
+  const now = cardTime(Date.now())
+  if (isCardKind(properties)) {
+    return {
+      properties,
+      id,
+      content: rewritePageCards(content, (card, n) => (n === 0 ? withCardCreated(withCardId(card.line, id), now) : undefined)),
+    }
+  }
   const withId = setFrontmatterProperty(content, PAGE_ID_KEY, id)
-  return { properties, id, content: setFrontmatterProperty(withId, CREATED_KEY, cardTime(Date.now())) }
+  return { properties, id, content: setFrontmatterProperty(withId, CREATED_KEY, now) }
 }
 
 /** A byte copy, whole and never over anything: an errno from it belongs to the TARGET (EEXIST → ALREADY_EXISTS on `to`). */
@@ -144,6 +153,14 @@ async function copyFile(src: string, to: string): Promise<void> {
 async function copyPage(src: string, dir: string, fresh: Fresh, suffix = ''): Promise<string | undefined> {
   const born = isMarkdown(src) ? reborn(await readFile(src, 'utf8'), fresh) : undefined
   if (born === undefined) return
+  if (isCardKind(born.properties)) {
+    const title = cardFileTitle(born.content)
+    const nextTitle = title !== '' && suffix !== '' ? title + suffix : title
+    const content = nextTitle !== title ? rewritePageCards(born.content, (card, n) => (n === 0 ? withCardTitle(card.line, nextTitle) : undefined)) : born.content
+    const to = path.join(dir, cardFileName(nextTitle, born.id))
+    await fsCall(to, () => createDurable(to, content))
+    return to
+  }
   const title = titleOf(born.properties, path.parse(src).name) + suffix
   const to = path.join(dir, pageFileName(title, born.id))
   await fsCall(to, () => createDurable(to, setFrontmatterProperty(born.content, TITLE_KEY, title)))

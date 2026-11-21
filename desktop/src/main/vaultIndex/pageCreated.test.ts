@@ -23,9 +23,12 @@ describe('parseCreatedMs (YAZ-6165)', () => {
     expect(parseCreatedMs('  2026-11-21T16:05:31.204Z  ')).toBe(Date.UTC(2026, 10, 21, 16, 5, 31, 204))
   })
 
-  it('parses YYYY-MM-DD dates and Date objects', () => {
-    expect(parseCreatedMs('2026-11-21')).toBe(Date.UTC(2026, 10, 21))
-    expect(parseCreatedMs('2024-02-29')).toBe(Date.UTC(2024, 1, 29))
+  it('parses YYYY-MM-DD dates as local midnight and Date objects', () => {
+    expect(parseCreatedMs('2026-11-21')).toBe(new Date(2026, 10, 21).getTime())
+    expect(parseCreatedMs('2024-02-29')).toBe(new Date(2024, 1, 29).getTime())
+    const ms = parseCreatedMs('2025-09-12')!
+    const local = new Date(ms)
+    expect([local.getFullYear(), local.getMonth() + 1, local.getDate()]).toEqual([2025, 9, 12])
     const d = new Date(Date.UTC(2026, 5, 15, 10, 20, 30, 400))
     expect(parseCreatedMs(d)).toBe(d.getTime())
   })
@@ -60,9 +63,19 @@ describe('indexRecord created -> ctime (YAZ-6165)', () => {
     expect(rec.ctime).toBe(Date.UTC(2025, 2, 10, 8, 15, 30, 500))
   })
 
-  it('accepts date-only frontmatter `created:`', () => {
-    const rec = indexRecord(META, `---\n${CREATED_KEY}: 2025-03-10\n---\nHello\n`)
-    expect(rec.ctime).toBe(Date.UTC(2025, 2, 10))
+  it('accepts date-only frontmatter `created:` as local midnight', () => {
+    const rec = indexRecord(META, `---\n${CREATED_KEY}: 2025-09-12\n---\nHello\n`)
+    expect(rec.ctime).toBe(new Date(2025, 8, 12).getTime())
+    const local = new Date(rec.ctime)
+    expect([local.getFullYear(), local.getMonth() + 1, local.getDate()]).toEqual([2025, 9, 12])
+  })
+
+  it('accepts date-only card line `created YYYY-MM-DD` as local midnight on card files', () => {
+    const rec = indexRecord(META, '---\nkind: card\n---\n```card\nQ\n---\nA\n```\n<!-- card: YAZ-1, created 2025-09-12 -->\n')
+    expect(rec.kind).toBe('card')
+    expect(rec.ctime).toBe(new Date(2025, 8, 12).getTime())
+    const local = new Date(rec.ctime)
+    expect([local.getFullYear(), local.getMonth() + 1, local.getDate()]).toEqual([2025, 9, 12])
   })
 
   it('falls back to meta.ctime when `created:` is absent or invalid', () => {

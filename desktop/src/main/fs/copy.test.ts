@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { cardCreatedOf, cardIdOf, cardTitleOf, pageCards } from '@shared/cardLine'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE } from '@shared/types'
@@ -193,6 +194,30 @@ describe('copyEntry: a copy is its own page at once (YAZ-2420 D21)', () => {
     expect(props.created).not.toBe('2020-01-01T00:00:00.000Z')
     expect(String(props.created)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
     expect((await propertiesOf(path.join(dir, `old-note-${ID}.md`))).created).toBe('2020-01-01T00:00:00.000Z')
+  })
+
+  it('YAZ-6150: duplicating a standalone card file (`kind: card`) writes fresh id and `created` on the card line and NO frontmatter `id:` or `created:`', async () => {
+    const original = '---\nkind: card\n---\n```card\nCapital of France?\n---\nParis\n```\n<!-- card: YAZ-1, created 2020-01-01T00:00:00.000Z, title "Capital" -->\n'
+    const dir = await folder('d21-card-file', { 'capital-yaz-1.md': original })
+    const from = path.join(dir, 'capital-yaz-1.md')
+    const res = await copyEntry(from, dir, door)
+    const text = await read(res.to)
+    const props = parseFrontmatter(splitFrontmatter(text).frontmatter).properties
+    expect(props).toEqual({ kind: 'card' })
+    expect('id' in props).toBe(false)
+    expect('created' in props).toBe(false)
+    expect('title' in props).toBe(false)
+    const cards = pageCards(text)
+    expect(cards).toHaveLength(1)
+    const newId = cardIdOf(cards[0].line)
+    expect(newId).toBe(door.given[door.given.length - 1])
+    expect(newId).not.toBe('YAZ-1')
+    const newCreated = cardCreatedOf(cards[0].line)
+    expect(newCreated).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    expect(newCreated).not.toBe('2020-01-01T00:00:00.000Z')
+    expect(cardTitleOf(cards[0].line)).toBe('Capital copy')
+    expect(path.basename(res.to)).toBe(`capital-copy-${newId!.toLowerCase()}.md`)
+    expect(await read(from)).toBe(original)
   })
 
   it('a second copy of the same page is ` copy` again: the ids keep the two files apart', async () => {

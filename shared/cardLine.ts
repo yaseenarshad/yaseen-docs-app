@@ -179,14 +179,15 @@ const createdPartText = (at: string): string => `created ${at}`
 
 /**
  * A creation time `CREATED_RE` matched, normalized to UTC ms (`cardTime`), or null when its calendar day is invalid
- * (`2026-02-30`). Date-only `YYYY-MM-DD` becomes midnight UTC; sub-ms digits are cut to 3 digits so it never rounds.
+ * (`2026-02-30`). Date-only `YYYY-MM-DD` stays `YYYY-MM-DD` so local-time rendering (`parseCreatedMs`) never shifts
+ * a day in negative UTC offsets; sub-ms digits are cut to 3 digits so it never rounds.
  */
 function createdAt(value: string): string | null {
   const y = Number(value.slice(0, 4))
   const m = Number(value.slice(5, 7))
   const d = Number(value.slice(8, 10))
   if (new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) return null
-  if (value.length === 10) return cardTime(Date.UTC(y, m - 1, d))
+  if (value.length === 10) return value
   if (FULL_TIME_RE.test(value)) return value
   const ms = Date.parse(value.replace(/(\.\d{3})\d+/, '$1'))
   return Number.isNaN(ms) ? null : cardTime(ms)
@@ -198,7 +199,7 @@ function createdPart(text: string): Extract<CardPart, { kind: 'created' }> | nul
   if (m === null) return null
   const at = createdAt(m[1])
   if (at === null) return null
-  return text === createdPartText(at) ? { kind: 'created', at } : { kind: 'created', at, raw: text }
+  return FULL_TIME_RE.test(at) && text === createdPartText(at) ? { kind: 'created', at } : { kind: 'created', at, raw: text }
 }
 
 /** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteText`). */

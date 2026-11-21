@@ -43,10 +43,10 @@ describe('shared/cardLine created part (YAZ-6166)', () => {
     expect(formatCardLine(parsed)).toBe(rawLine)
   })
 
-  it('parses non-canonical ISO dates/timestamps, normalizes at, and preserves raw bytes', () => {
+  it('parses non-canonical ISO dates/timestamps, preserves date-only as YYYY-MM-DD, normalizes timestamps, and keeps raw bytes', () => {
     const cases: Array<[string, string]> = [
-      ['created 2026-11-21', '2026-11-21T00:00:00.000Z'],
-      ['created 2024-02-29', '2024-02-29T00:00:00.000Z'],
+      ['created 2026-11-21', '2026-11-21'],
+      ['created 2024-02-29', '2024-02-29'],
       ['created 2026-11-21T16:05Z', '2026-11-21T16:05:00.000Z'],
       ['created 2026-11-21T16:05:31Z', '2026-11-21T16:05:31.000Z'],
       ['created 2026-11-21T16:05:31.204999Z', '2026-11-21T16:05:31.204Z'],
