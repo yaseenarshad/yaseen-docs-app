@@ -52,6 +52,30 @@
   color: var(--fg-muted);
 }
 
+.drawing-modal__title-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  outline: none;
+}
+
+.drawing-modal__title-input::placeholder {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.drawing-modal__title-input:hover:not(:read-only),
+.drawing-modal__title-input:focus:not(:read-only) {
+  border-color: var(--border);
+  background: var(--bg-subtle, rgba(128, 128, 128, 0.06));
+}
+
 .drawing-modal__btn {
   padding: 4px 12px;
   font-size: 13px;
@@ -61,6 +85,11 @@
 
 .drawing-modal__btn:hover {
   background: var(--accent-soft);
+}
+
+.drawing-modal__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .drawing-modal__close {

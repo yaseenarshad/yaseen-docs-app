@@ -4,6 +4,7 @@ import { parseAlt } from '@client/editor/image/imageSrc'
 import type { PillEnd } from '@client/editor/wikilink/linkPillLook'
 import { cardPill, pillPieces } from '@client/editor/wikilink/cardPill'
 import { cardIdOf, cardReviewsOf, cardTitleAtOf, cardTitleOf, isCardFix, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
+import { DRAWING_LANGUAGE } from '@shared/inlineDrawing'
 import type { ReviewSettings } from '@shared/reviews'
 import { Renderer, type RendererExtension, type Token, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
@@ -162,11 +163,12 @@ const ownTokens: RendererExtension[] = [
   },
 ]
 
-/** One parse: the page's own cards it met, in order, with what the card line under each says (`lined`: it has one). */
+/** One parse: the page's own cards and inline drawings it met, in order. */
 interface Parse {
   cards: (CardMarks & { text: string; lined: boolean })[]
+  inlineDrawings: string[]
 }
-let parse: Parse = { cards: [] }
+let parse: Parse = { cards: [], inlineDrawings: [] }
 
 /** THE reader's parser (`pageMarked.ts`): the tick finds its task with the same one. */
 const markdown = pageMarked
@@ -222,7 +224,12 @@ markdown.use({
       return `${taskBox(checked, task ?? null)} `
     },
     code(token) {
-      if (token.lang?.trim() !== 'card') return false
+      const lang = token.lang?.trim()
+      if (lang === DRAWING_LANGUAGE) {
+        parse.inlineDrawings.push(token.text)
+        return `<div ${localMark('inline-drawing')}="${parse.inlineDrawings.length - 1}"></div>`
+      }
+      if (lang !== 'card') return false
       parse.cards.push({ text: token.text, id: null, title: '', lined: false })
       return `<div ${localMark('page-card')}="${parse.cards.length - 1}"></div>`
     },
@@ -241,6 +248,8 @@ markdown.use({
         }
         return ''
       }
+      // YAZ-5040: an inline drawing's options line (`<!-- drawing: … -->`) stays hidden on the phone.
+      if (/^\s*<!--\s*drawing:[\s\S]*?-->\s*$/.test(text)) return ''
       // Only WHOLE comments show nothing. An unclosed `<!--` runs to the end of the text (CommonMark); hiding
       // it would hide the rest of the page. It goes to `cleanLocal`, which shows it, and the rest, as text.
       return text.replace(/<!--[\s\S]*?--!?>/g, '').trim() === '' ? '' : false
@@ -453,6 +462,26 @@ function drawCards(root: DocumentFragment, look: PageLook, cards: Parse['cards']
   }
 }
 
+function drawInlineDrawings(root: DocumentFragment, inlineDrawings: string[]): void {
+  for (const slot of root.querySelectorAll<HTMLElement>('div[data-inline-drawing]')) {
+    const json = inlineDrawings[Number(slot.getAttribute('data-inline-drawing'))]
+    if (json === undefined) {
+      slot.remove()
+      continue
+    }
+    const box = document.createElement('figure')
+    box.className = 'page-drawing page-drawing--wait'
+    box.dataset.inlineDrawing = json
+    box.setAttribute('role', 'img')
+    box.setAttribute('aria-label', 'Drawing')
+    const wait = document.createElement('span')
+    wait.className = 'page-drawing__wait'
+    wait.textContent = 'Drawing'
+    box.append(wait)
+    slot.replaceWith(box)
+  }
+}
+
 /** `> [!tip] Title` (Obsidian, GitHub): the quote becomes a callout with that title. */
 function drawCallouts(root: DocumentFragment): void {
   for (const quote of root.querySelectorAll('blockquote')) {
@@ -479,23 +508,24 @@ function drawCallouts(root: DocumentFragment): void {
  * One piece of a page as the parser draws it, before the cleaner: its HTML and its cards. `firstLine`: the line of the
  * body the piece starts on (its boxes' `data-task-line`).
  */
-export function pieceHtml(text: string, firstLine = 0): { html: string; cards: Parse['cards'] } {
-  parse = { cards: [] }
+export function pieceHtml(text: string, firstLine = 0): { html: string; cards: Parse['cards']; inlineDrawings: string[] } {
+  parse = { cards: [], inlineDrawings: [] }
   const own = readerText(text)
   const tokens = markdown.lexer(own)
   markTasks(tokens, own, firstLine)
   joinTableComments(tokens)
-  return { html: markdown.parser(tokens), cards: parse.cards }
+  return { html: markdown.parser(tokens), cards: parse.cards, inlineDrawings: parse.inlineDrawings }
 }
 
 /** One piece of a page as clean elements; `firstLine`: the line of the body the piece starts on (its tasks' lines). */
 export function renderPiece(text: string, look: PageLook, firstLine = 0): DocumentFragment {
-  const { html, cards } = pieceHtml(text, firstLine)
+  const { html, cards, inlineDrawings } = pieceHtml(text, firstLine)
   const root = clean(html)
   drawLinks(root, look)
   drawPictures(root, look)
   drawEmbeds(root, look)
   drawCards(root, look, cards)
+  drawInlineDrawings(root, inlineDrawings)
   drawCallouts(root)
   // A table's own settings from the file (its frozen rows and columns), read with the Mac's parser.
   for (const table of root.querySelectorAll<HTMLTableElement>('table[data-table-file]')) {

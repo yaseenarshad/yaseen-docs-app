@@ -36,9 +36,11 @@ import {
   MAX_SESSION_TABS,
   MAX_VAULT_SETS,
   NEW_PAGE_LOCATIONS,
+  NEW_PAGE_DRAWINGS,
   NEW_BOARD_PICTURES,
   NEW_TAB_PLACES,
   type NewBoardPictures,
+  type NewPageDrawing,
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
   FIND_FOLDS,
@@ -134,6 +136,7 @@ import {
   cleanUpNextTaken,
   cleanCardsAdded,
   cleanVaultName,
+  isInlineDrawingIndex,
   isZoomKey,
   defaultAppState,
   defaultFolderState,
@@ -796,6 +799,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sidebarArrowMotion: (v): v is SidebarArrowMotion => typeof v === 'string' && (SIDEBAR_ARROW_MOTIONS as readonly string[]).includes(v),
   sidebarRevealActive: (v): v is boolean => typeof v === 'boolean',
   sidebarPlace: (v): v is SidebarPlace => typeof v === 'string' && (SIDEBAR_PLACES as readonly string[]).includes(v),
+  sidebarPerTabWidth: (v): v is boolean => typeof v === 'boolean',
   sidebarIconColors: isSidebarIconColors,
   sidebarIconRules: isIconRules,
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.
@@ -803,6 +807,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   diagramDarkColors: (v): v is DiagramDarkColors => typeof v === 'string' && (DIAGRAM_DARK_COLORS as readonly string[]).includes(v),
   embedRestSeconds: (v): v is EmbedRestSeconds => typeof v === 'number' && (EMBED_REST_SECONDS as readonly number[]).includes(v),
   newBoardFolder: (v): v is NewBoardFolder => typeof v === 'string' && (NEW_BOARD_FOLDERS as readonly string[]).includes(v),
+  newPageDrawing: (v): v is NewPageDrawing => typeof v === 'string' && (NEW_PAGE_DRAWINGS as readonly string[]).includes(v),
+  searchIncludeInline: (v): v is boolean => typeof v === 'boolean',
   // YAZ-3038 (Draw's 🔒 YAZ-1775 D5): an absolute path the user picked, or null for `<userData>/library`. Never
   // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
   libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
@@ -967,7 +973,7 @@ export function normalizeTabs(tabs: readonly string[], file: string | null): str
 export function readStoredTab(raw: unknown): StoredTab | null {
   if (!isRecord(raw) || typeof raw.path !== 'string' || !isAbsolute(raw.path)) return null
   const name = cleanVaultName(raw.name)
-  return { path: raw.path, ...(name === null ? {} : { name }), ...(isZoomKey(raw.zoom) ? { zoom: raw.zoom } : {}), ...(raw.active === true ? { active: true as const } : {}) }
+  return { path: raw.path, ...(name === null ? {} : { name }), ...(isZoomKey(raw.zoom) ? { zoom: raw.zoom } : {}), ...(isInlineDrawingIndex(raw.inlineDrawing) ? { inlineDrawing: raw.inlineDrawing } : {}), ...(raw.active === true ? { active: true as const } : {}) }
 }
 
 /**
@@ -983,12 +989,12 @@ export function normalizeTabStrip(strip: readonly StoredTab[] | undefined, tabs:
   const kept = strip.filter((t) => open.has(t.path))
   const order = [...new Set(kept.map((t) => t.path))]
   if (order.length !== tabs.length || order.some((path, i) => path !== tabs[i])) return undefined
-  if (kept.length === tabs.length && kept.every((t) => t.name === undefined && t.zoom === undefined)) return undefined
+  if (kept.length === tabs.length && kept.every((t) => t.name === undefined && t.zoom === undefined && t.inlineDrawing === undefined)) return undefined
   let marked = false
-  return kept.map(({ path, name, zoom, active }) => {
+  return kept.map(({ path, name, zoom, inlineDrawing, active }) => {
     const on = active === true && path === file && !marked
     if (on) marked = true
-    return { path, ...(name === undefined ? {} : { name }), ...(zoom === undefined ? {} : { zoom }), ...(on ? { active: true as const } : {}) }
+    return { path, ...(name === undefined ? {} : { name }), ...(zoom === undefined ? {} : { zoom }), ...(inlineDrawing === undefined ? {} : { inlineDrawing }), ...(on ? { active: true as const } : {}) }
   })
 }
 

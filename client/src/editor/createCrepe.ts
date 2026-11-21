@@ -265,6 +265,7 @@ import { readOnlyKeys } from './readOnlyKeys'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { breakMarks } from './breakMarks'
 import { BOARD_VIEW_META, createBoardEmbed } from './drawing/boardEmbed'
+import { inlineDrawingPlugins, type InlineDrawingDeps } from './drawing/inlineDrawingView'
 import { flushBoardWindows } from './embed/hostWindow'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { createSlashMenu, type SlashMenuGroups } from './slashMenu'
@@ -430,7 +431,9 @@ export interface CreateCrepeOptions {
    * Board embeds (YAZ-4827): the vault root the boards load from, and "Edit in a popup" (D7, the drawing modal).
    * Absent → `![[x.excalidraw]]` and `![[x.drawio]]` stay plain text.
    */
-  boardEmbeds?: { root: string; onEditInPopup?: (target: string) => void }
+  boardEmbeds?: { root: string; onEditInPopup?: (target: string) => void; onPutDrawingBack?: (target: string, options: string | null, inner: string, nth: number) => void }
+  /** Inline Excalidraw drawings (YAZ-5040): modal edit and move-to-file doors for ```` ```excalidraw ```` blocks. */
+  inlineDrawing?: InlineDrawingDeps
   /** First-class images (YAZ-1656): root + page path for src resolution, the lightbox opener, the paste notice. Absent → stock `<img>`, and pasted image bytes are not written. */
   image?: ImageOptions
   /**
@@ -896,9 +899,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   // Cards (YAZ-4961): a ```card block draws as a card in every editor that has code blocks (idea 10: the hover
   // preview, QuickLook, read-only pages and Explore too); its pills, images and links as the page's.
-  const cardsHere = { ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false && opts.cardBlocks !== false
-  const cardDeps = cardsHere ? cardDepsOf(opts, wikilinks, viewOnlyLinks, follow) : undefined
+  const codeHere = { ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false
+  const cardDeps = codeHere && opts.cardBlocks !== false ? cardDepsOf(opts, wikilinks, viewOnlyLinks, follow) : undefined
   if (cardDeps !== undefined) crepe.editor.use(cardBlockPlugins(cardDeps))
+  if (codeHere) {
+    crepe.editor.use(inlineDrawingPlugins({ ...opts.inlineDrawing, root: opts.inlineDrawing?.root ?? opts.boardEmbeds?.root ?? opts.image?.root ?? null, pagePath: opts.inlineDrawing?.pagePath ?? opts.image?.pagePath ?? null }))
+  }
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav, wikilinks, allowHighlight)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
   if (opts.boardEmbeds !== undefined) {

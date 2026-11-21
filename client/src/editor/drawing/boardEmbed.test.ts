@@ -336,7 +336,7 @@ describe('open and the menu (2C)', () => {
     expect(wikilinkNav.openBackground).toHaveBeenCalledWith('/v/CloudFront.drawio')
   })
 
-  it('the menu: the pill rows, the window`s rows, then Edit in a popup, Show as link, Edit link, Remove embed', async () => {
+  it('the menu: the pill rows, the window`s rows, then Edit drawing, Show as link, Edit link, Remove embed', async () => {
     const onEditInPopup = vi.fn()
     fakes.rows = [{ label: 'Fit whole drawing', run: vi.fn() }, { label: 'Page', run: () => {}, children: [{ label: 'One', run: vi.fn(), checked: true } as WindowMenuRow] }]
     const { crepe, root } = await mount('![[Sketch.excalidraw|640x360]]\n', { wikilinkNav: nav(), viewOnlyLinks: viewOnlyResolving(), boardEmbeds: { root: '/v', onEditInPopup } })
@@ -344,9 +344,9 @@ describe('open and the menu (2C)', () => {
     fakes.list[0]!.host.onContextMenu!(new MouseEvent('contextmenu', { clientX: 5, clientY: 5 }))
     const labels = Array.from(document.querySelectorAll('.ctx-menu > .ctx-menu__item, .ctx-menu > .ctx-menu__parent > .ctx-menu__item')).map((b) => b.textContent)
     expect(labels.slice(0, 2)).toEqual(['Open', 'Open in new tab'])
-    expect(labels.slice(-6)).toEqual(['Fit whole drawing', 'Page', 'Edit in a popup', 'Show as link', 'Edit link', 'Remove embed'])
+    expect(labels.slice(-6)).toEqual(['Fit whole drawing', 'Page', 'Edit drawing', 'Show as link', 'Edit link', 'Remove embed'])
     const click = (label: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).find((b) => b.textContent === label)!.click()
-    click('Edit in a popup')
+    click('Edit drawing')
     expect(onEditInPopup).toHaveBeenCalledWith('Sketch.excalidraw')
     void root
     fakes.list[0]!.host.onContextMenu!(new MouseEvent('contextmenu', { clientX: 5, clientY: 5 }))
@@ -354,12 +354,12 @@ describe('open and the menu (2C)', () => {
     expect(md(crepe)).toBe('[[Sketch.excalidraw]]\n')
   })
 
-  it('a diagram`s menu has no Edit in a popup; Remove embed removes it whole', async () => {
+  it('a diagram`s menu has no Edit drawing; Remove embed removes it whole', async () => {
     const { crepe } = await mount('A ![[CloudFront.drawio]] B\n', { wikilinkNav: nav(), boardEmbeds: { root: '/v', onEditInPopup: vi.fn() } })
     await windows(1)
     fakes.list[0]!.host.onContextMenu!(new MouseEvent('contextmenu'))
     const items = Array.from(document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
-    expect(items.map((b) => b.textContent)).not.toContain('Edit in a popup')
+    expect(items.map((b) => b.textContent)).not.toContain('Edit drawing')
     items.find((b) => b.textContent === 'Remove embed')!.click()
     expect(md(crepe)).toBe('A  B\n')
   })

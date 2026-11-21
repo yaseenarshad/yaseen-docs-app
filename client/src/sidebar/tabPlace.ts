@@ -37,6 +37,10 @@ let blank: TabPlace | undefined
 const collapsedByTab = new Map<string, boolean>()
 let blankCollapsed: boolean | undefined
 
+/** Per-tab sidebar width in px when "Custom per tab" + "Custom sidebar width per tab" are enabled. */
+const widthByTab = new Map<string, number>()
+let blankWidth: number | undefined
+
 /**
  * Bumped on every vault switch (`bumpVaultEpoch`), and captured by each `Sidebar` mount so an outgoing vault's
  * unmount cleanup cannot re-populate `blank` for the new vault (YAZ-6064).
@@ -47,6 +51,7 @@ export const bumpVaultEpoch = (): void => {
   vaultEpoch += 1
   blank = undefined
   blankCollapsed = undefined
+  blankWidth = undefined
 }
 
 export function savePlace(tab: string | null, place: TabPlace, epoch?: number): void {
@@ -71,9 +76,35 @@ export function saveCollapsed(tab: string | null, collapsed: boolean): void {
 
 export const readCollapsed = (tab: string | null): boolean | undefined => (tab === null ? blankCollapsed : collapsedByTab.get(tab))
 
+export function saveWidth(tab: string | null, width: number): void {
+  if (tab === null) {
+    blankWidth = width
+    return
+  }
+  widthByTab.set(tab, width)
+}
+
+export const readWidth = (tab: string | null): number | undefined => (tab === null ? blankWidth : widthByTab.get(tab))
+
+/** Saves outgoing tab's collapsed/width and returns incoming tab's values that differ from current state. */
+export function stepTabSidebar(from: string | null, to: string | null, collapsed: boolean, width: number, perTabWidth: boolean): { collapsed?: boolean; width?: number } {
+  if (from === null) dropBlankPlace()
+  else {
+    saveCollapsed(from, collapsed)
+    if (perTabWidth) saveWidth(from, width)
+  }
+  const nextCollapsed = readCollapsed(to)
+  const nextWidth = perTabWidth ? readWidth(to) : undefined
+  return {
+    ...(nextCollapsed !== undefined && nextCollapsed !== collapsed ? { collapsed: nextCollapsed } : {}),
+    ...(nextWidth !== undefined && nextWidth !== width ? { width: nextWidth } : {}),
+  }
+}
+
 export const dropBlankPlace = (): void => {
   blank = undefined
   blankCollapsed = undefined
+  blankWidth = undefined
 }
 
 /** The place saved last, of any tab: what the sidebar showed when it last went off screen. */
@@ -83,12 +114,13 @@ export function lastPlace(): TabPlace | undefined {
   return last
 }
 
-/** A closed tab drops its place and collapsed state: only the tabs of the strip keep one. */
+/** A closed tab drops its place, collapsed state, and width: only the tabs of the strip keep one. */
 export function prunePlaces(tabs: readonly string[]): void {
-  if (places.size === 0 && collapsedByTab.size === 0) return
+  if (places.size === 0 && collapsedByTab.size === 0 && widthByTab.size === 0) return
   const live = new Set(tabs)
   for (const tab of [...places.keys()]) if (!live.has(tab)) places.delete(tab)
   for (const tab of [...collapsedByTab.keys()]) if (!live.has(tab)) collapsedByTab.delete(tab)
+  for (const tab of [...widthByTab.keys()]) if (!live.has(tab)) widthByTab.delete(tab)
 }
 
 /** A folder renamed or moved (`file:renamed`, kind `dir`): update `filesOnly` in saved background tabs (YAZ-6064). */
@@ -141,5 +173,7 @@ export function clearPlaces(): void {
   blank = undefined
   collapsedByTab.clear()
   blankCollapsed = undefined
+  widthByTab.clear()
+  blankWidth = undefined
   changedVaults.clear()
 }

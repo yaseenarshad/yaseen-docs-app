@@ -162,8 +162,16 @@
   background: var(--border);
   border-radius: 2px;
 }
-.explore__input {
+.explore__input-row {
+  position: relative;
+  display: flex;
+  align-items: center;
   flex: none;
+  border-bottom: 1px solid var(--border);
+}
+.explore__input {
+  flex: 1 1 auto;
+  min-width: 0;
   box-sizing: border-box;
   width: 100%;
   padding: 12px 14px;
@@ -172,11 +180,104 @@
   color: var(--fg);
   background: transparent;
   border: 0;
-  border-bottom: 1px solid var(--border);
   outline: none;
 }
 .explore__input::placeholder {
   color: var(--fg-muted);
+}
+.explore__filter-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-right: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.explore__filter-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.explore__filter-btn--on {
+  color: var(--accent);
+}
+.explore__filter-btn--on::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.explore__filter-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 10px;
+  z-index: 20;
+  min-width: 210px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.explore__filter-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.explore__filter-type {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.explore__filter-type:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.explore__filter-type--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.explore__filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+}
+.explore__inline-pill {
+  flex: none;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+  white-space: nowrap;
 }
 
 .explore__results {

@@ -24,9 +24,11 @@ export interface BoardRef {
   vault: string | null
   /** The pill icon's attributes (`LinkLook.icon`), absent → the kind's plain icon. */
   icon?: Record<string, string>
+  /** Inline Excalidraw scene JSON living directly inside a `.md` block (YAZ-5040): no `.excalidraw` file on disk. */
+  inlineJson?: string
 }
 
-export type OpenHow = 'thisTab' | 'backgroundTab'
+export type OpenHow = 'thisTab' | 'newTab' | 'backgroundTab'
 
 /** A host's side of one window. Every callback is optional where a host may not offer it (a read-only page, say). */
 export interface BoardWindowHost {
@@ -61,6 +63,8 @@ export interface BoardWindowHost {
   onLink?: (spot: BoardLinkSpot, mods: MouseMods) => void
   /** A picture came (fill): a diagram's pages and the page shown, for the layer's page tabs. */
   onPages?: (pages: readonly DiagramPageRef[], page: string | null) => void
+  /** Show a top-right `⋯` button that opens `onContextMenu` (inline drawings, YAZ-5040). */
+  menuButton?: boolean
 }
 
 /** One row the window adds to its embed's menu (D12). `children` makes a flyout (Page ▸, Frame ▸). */

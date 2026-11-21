@@ -95,7 +95,19 @@ export function fuzzyRows(candidates: readonly SearchCandidate[], query: string,
   return tiers.flat().slice(0, cap)
 }
 
-/** What the explore search shows for `query`: the sidebar search's rows (a page's text row only when no named row found it), then the typo matches, capped at `SEARCH_CAP`. */
+/** Keeps only the first (highest-ranked) row per `path`. */
+export function dedupeByPath(rows: readonly SearchCandidate[]): SearchCandidate[] {
+  const seen = new Set<string>()
+  const out: SearchCandidate[] = []
+  for (const r of rows) {
+    if (seen.has(r.path)) continue
+    seen.add(r.path)
+    out.push(r)
+  }
+  return out
+}
+
+/** What the explore search shows for `query`: the sidebar search's rows (a page's text row only when no named row found it, one row per path), then the typo matches, capped at `SEARCH_CAP`. */
 export function exploreRows(candidates: readonly SearchCandidate[], query: string, stats?: SearchStats): SearchCandidate[] {
   // `#5` searches by the ID number alone (YAZ-2571 round 5): no text row, no typo pass. In a vault without IDs it is text.
   const digits = idQuery(query)
@@ -104,12 +116,11 @@ export function exploreRows(candidates: readonly SearchCandidate[], query: strin
   const ranked = searchRows(candidates, query)
   // A page found by its title, alias or file name shows that row alone: its text rows add nothing.
   const named = new Set(ranked.flatMap((c) => (c.snippet === undefined ? [c.path] : [])))
-  const exact = ranked.filter((c) => c.snippet === undefined || !named.has(c.path))
+  const exact = dedupeByPath(ranked.filter((c) => c.snippet === undefined || !named.has(c.path)))
   if (exact.length >= FUZZY_WHEN) return exact
   const shown = new Set(exact.map((c) => c.path))
   const fuzzy = fuzzyRows(candidates, query, shown, SEARCH_CAP - exact.length, stats)
   if (fuzzy.length === 0) return exact
   // One row per page from the typo pass: its first row (the title's, then an alias's) says enough.
-  const seen = new Set<string>()
-  return [...exact, ...fuzzy.filter((c) => !seen.has(c.path) && seen.add(c.path) !== undefined)]
+  return [...exact, ...dedupeByPath(fuzzy)]
 }

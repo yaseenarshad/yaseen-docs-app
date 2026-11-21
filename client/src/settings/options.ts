@@ -5,7 +5,7 @@
  * resolution, the folder for a new page). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
 import type { UnitText } from '../vault/unitWord'
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentPosition, type ContentStep, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarPlace, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TablePosition, type CardTablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentPosition, type ContentStep, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageDrawing, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarPlace, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TablePosition, type CardTablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 import type { TableSlotTime } from '@shared/tableLook'
 
 export interface Option<T> {
@@ -56,6 +56,12 @@ export const EMBED_REST_OPTIONS: readonly Option<EmbedRestSeconds>[] = [
 export const newBoardFolderOptions = (unit: UnitText): readonly Option<NewBoardFolder>[] => [
   { label: unit("The page's folder"), value: 'page' },
   { label: 'assets/drawings', value: 'assets' },
+]
+
+/** YAZ-5040: where "/drawing" puts a new Excalidraw drawing inside a page. */
+export const newPageDrawingOptions = (unit: UnitText): readonly Option<NewPageDrawing>[] => [
+  { label: unit('Inside the page'), value: 'inline' },
+  { label: 'Own .excalidraw file', value: 'file' },
 ]
 
 /** Comment stream order (YAZ-1515): a reading preference, global — the block's own toggle drives the same field. */
@@ -310,10 +316,10 @@ export const SIDEBAR_ARROW_MOTION_OPTIONS: readonly Option<SidebarArrowMotion>[]
   { label: 'Smooth', value: 'smooth' },
 ]
 
-/** What keeps the sidebar's place (YAZ-5701): one place for the window, the default, or a place for each tab. */
+/** What keeps the sidebar's place (YAZ-5701): one place for the window, the default, or custom per tab. */
 export const SIDEBAR_PLACE_OPTIONS: readonly Option<SidebarPlace>[] = [
   { label: 'One place for the window', value: 'window' },
-  { label: 'A place for each tab', value: 'tab' },
+  { label: 'Custom per tab', value: 'tab' },
 ]
 
 /** Each kind's built-in icon colour (YAZ-3440 D4), the light theme's (app.css `--kind-<kind>`): the picker's swatch when the theme's own cannot be read. */

@@ -212,11 +212,13 @@ describe('useSearchResults (YAZ-803)', () => {
     expect(labels()).toEqual(['Alpha', 'Anchor'])
   })
 
-  it('a plain `change` event refetches nothing — a body edit cannot change a title', async () => {
+  it('a `.md` `change` event refreshes the index (title, inline drawings, cards), while non-`.md` `change` refetches nothing', async () => {
     const { bridge, fire } = await mount([rec('Alpha')], 'a')
     bridge.index.mockClear()
-    await fire({ type: 'change', path: '/v/Alpha.md', mtime: 2 })
+    await fire({ type: 'change', path: '/v/shot.png', mtime: 2 })
     expect(bridge.index).not.toHaveBeenCalled()
+    await fire({ type: 'change', path: '/v/Alpha.md', mtime: 3 })
+    expect(bridge.index).toHaveBeenCalledTimes(1)
   })
 
   it('an empty or whitespace query yields no rows at all (the shared matcher would match everything)', async () => {

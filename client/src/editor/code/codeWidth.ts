@@ -58,6 +58,7 @@ import { cssZoom } from '../../lib/cssZoom'
 import { blockRightEdge } from '../blockRoom'
 import { joinNextComment } from '../joinComment'
 import { CARD_LINE_ATTR, cleanCardLine, isCardCode, CARD_LANGUAGE } from '../card/cardBlockLine'
+import { DRAWING_LINE_ATTR, cleanDrawingLine, isInlineDrawingCode, DRAWING_LANGUAGE } from '../drawing/inlineDrawingLine'
 import { CODE_WIDTH_MAX, CODE_WIDTH_MIN, cleanSpans, codeWidth, formatCodeComment, formatMarkPart, marksFromSpans, parseCodeComment, parseMarkPart, spansFromMarks, type CodeLook, type CodeSpan, type CodeUnknownPart } from './codeComment'
 
 export * from './codeComment'
@@ -157,6 +158,8 @@ interface CodeData {
   codeLook?: CodeLook
   /** A card's card line (YAZ-4961, `card/cardBlockLine.ts`), its text. */
   cardLine?: string
+  /** An inline drawing's option line (YAZ-5040, `drawing/inlineDrawingLine.ts`), its text. */
+  drawingLine?: string
 }
 
 export const codeWidthRemark = $remark('mdapp-code-width', () => () => (tree) => {
@@ -170,6 +173,15 @@ export const codeWidthRemark = $remark('mdapp-code-width', () => () => (tree) =>
     },
     isCardCode,
   )
+  joinNextComment(
+    tree as Nodes,
+    'code',
+    cleanDrawingLine,
+    (node, drawingLine) => {
+      node.data = { ...node.data, drawingLine } as typeof node.data
+    },
+    isInlineDrawingCode,
+  )
   joinNextComment(tree as Nodes, 'code', parseCodeComment, (node, look) => {
     node.data = { ...node.data, codeLook: look } as typeof node.data
   })
@@ -177,12 +189,17 @@ export const codeWidthRemark = $remark('mdapp-code-width', () => () => (tree) =>
 
 /**
  * The comment goes on the line right under the fence: no blank line between, wherever the block is. A card's line
- * (YAZ-4961) goes there too, and a code comment of the card right under its line.
+ * (YAZ-4961) and an inline drawing's line (YAZ-5040) go there too, and a code comment right under them.
  */
 const codeCommentJoin: Join = (left, right) => {
   if (right.type !== 'html') return undefined
-  if (left.type === 'code' && (parseCodeComment(right.value) !== null || (isCardCode(left) && cleanCardLine(right.value) !== null))) return 0
-  return left.type === 'html' && cleanCardLine(left.value) !== null && parseCodeComment(right.value) !== null ? 0 : undefined
+  if (
+    left.type === 'code' &&
+    (parseCodeComment(right.value) !== null || (isCardCode(left) && cleanCardLine(right.value) !== null) || (isInlineDrawingCode(left) && cleanDrawingLine(right.value) !== null))
+  ) {
+    return 0
+  }
+  return left.type === 'html' && (cleanCardLine(left.value) !== null || cleanDrawingLine(left.value) !== null) && parseCodeComment(right.value) !== null ? 0 : undefined
 }
 
 /** Adds `codeCommentJoin`; call in a `crepe.editor.config` (read once, when Milkdown builds remark). */
@@ -194,7 +211,7 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
   const base = prev(ctx)
   return {
     ...base,
-    attrs: { ...base.attrs, width: { default: null }, marks: { default: null }, unknownParts: { default: null }, cardLine: { default: null } },
+    attrs: { ...base.attrs, width: { default: null }, marks: { default: null }, unknownParts: { default: null }, cardLine: { default: null }, drawingLine: { default: null } },
     parseDOM: [
       {
         tag: 'pre',
@@ -214,6 +231,7 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
             language: pre.dataset.language,
             ...lookAttrs({ width: codeWidth(Number(pre.getAttribute(CODE_WIDTH_ATTR))), marks, unknownParts: cleanParts(parts) }, pre.textContent ?? ''),
             cardLine: cleanCardLine(pre.getAttribute(CARD_LINE_ATTR)),
+            drawingLine: cleanDrawingLine(pre.getAttribute(DRAWING_LINE_ATTR)),
           }
         },
       },
@@ -224,6 +242,7 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
       const unknownParts = cleanParts(node.attrs.unknownParts)
       const spans = codeSpansOf(node)
       const cardLine = cleanCardLine(node.attrs.cardLine)
+      const drawingLine = cleanDrawingLine(node.attrs.drawingLine)
       return [
         tag,
         {
@@ -232,6 +251,7 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
           ...(unknownParts.length > 0 && { [PARTS_ATTR]: JSON.stringify(unknownParts) }),
           ...(spans.length > 0 && { [MARKS_ATTR]: marksFromSpans(node.textContent, spans).map(formatMarkPart).join('\n') }),
           ...(cardLine !== null && { [CARD_LINE_ATTR]: cardLine }),
+          ...(drawingLine !== null && { [DRAWING_LINE_ATTR]: drawingLine }),
         },
         ...content,
       ] as DOMOutputSpec
@@ -242,7 +262,13 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
         const look = (node.data as CodeData | undefined)?.codeLook
         const value = node.value as string | null
         const cardLine = (node.data as CodeData | undefined)?.cardLine
-        state.openNode(type, { language: (node.lang as string | null | undefined) ?? '', ...(look && lookAttrs(look, value ?? '')), ...(cardLine !== undefined && { cardLine }) })
+        const drawingLine = (node.data as CodeData | undefined)?.drawingLine
+        state.openNode(type, {
+          language: (node.lang as string | null | undefined) ?? '',
+          ...(look && lookAttrs(look, value ?? '')),
+          ...(cardLine !== undefined && { cardLine }),
+          ...(drawingLine !== undefined && { drawingLine }),
+        })
         if (value) state.addText(value)
         state.closeNode()
       },
@@ -254,6 +280,8 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
         // A card's line (YAZ-4961): right under the fence, before a code comment. A block that is no card writes none.
         const cardLine = node.attrs.language === CARD_LANGUAGE ? cleanCardLine(node.attrs.cardLine) : null
         if (cardLine !== null) state.addNode('html', undefined, cardLine)
+        const drawingLine = node.attrs.language === DRAWING_LANGUAGE ? cleanDrawingLine(node.attrs.drawingLine) : null
+        if (drawingLine !== null) state.addNode('html', undefined, drawingLine)
         const comment = formatCodeComment(codeLookOf(node))
         if (comment !== null) state.addNode('html', undefined, comment)
       },

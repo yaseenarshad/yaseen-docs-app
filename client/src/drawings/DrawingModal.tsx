@@ -51,10 +51,11 @@ import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
-import { openDrawing, type LoadedDrawing } from './drawingScene'
+import { openDrawing, openInlineDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingAppSettings, DrawingSnapshot } from './ExcalidrawSurface'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
 import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
+import { compactInlineScene } from '@shared/inlineDrawing'
 import type { NoticeKind } from '../lib/notice'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { VaultReadOnly } from '../vault/readOnlyVault'
@@ -75,12 +76,27 @@ export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is
 /** The inline confirm's copy (an in-modal strip, not a sheet), asked only when a save failed or a conflict blocks it. */
 export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 
+/** Inline mode (YAZ-5040): edits a ```` ```excalidraw ```` block inside a `.md` page instead of a standalone `.excalidraw` file. */
+export interface InlineDrawingModalProps {
+  json: string
+  pagePath: string
+  title?: string
+  /** Focus and select the title input on mount (used when creating a new drawing via `/drawing`). */
+  autoFocusTitle?: boolean
+  onTitleChange?: (title: string) => void
+  onSave: (compactJson: string) => void | Promise<void>
+  onMoveToFile?: (compactJson: string) => Promise<void>
+  onOpenInTab?: () => void | Promise<void>
+}
+
 /** Page links in the drawing's text (YAZ-4039): the props the page's own `[[links]]` get, as a drawing tab has them. */
-interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings {
+export interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings {
   /** Vault root; with the target it is all `openDrawing` needs. */
   root: string
-  /** The embed's raw target, exactly as the page spells it — the resolution rule is the pipe's. */
-  target: string
+  /** The embed's raw target, exactly as the page spells it — the resolution rule is the pipe's. Omitted in inline mode. */
+  target?: string
+  /** Inline mode (YAZ-5040): when set, loads and saves an inline `.md` drawing instead of a `.excalidraw` file. */
+  inline?: InlineDrawingModalProps
   /** The app's resolved appearance, handed straight to the surface. */
   theme: 'light' | 'dark'
   /** Close: the host drops the modal (it is unmounted, never hidden). */
@@ -93,8 +109,13 @@ interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings {
   onNotice?: (message: string, icon?: NoticeKind) => void
 }
 
-export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAside, onNotice, canvasPrefs, onCanvasPrefsChange, ...linkProps }: DrawingModalProps) {
+export function DrawingModal({ root, target = '', inline, theme, onClose, hotkeys, hotkeysAside, onNotice, canvasPrefs, onCanvasPrefsChange, ...linkProps }: DrawingModalProps) {
+  const inlineRef = useRef(inline)
+  inlineRef.current = inline
+  const isInline = inline !== undefined
+  const inlinePagePath = inline?.pagePath
   const overlayRef = useRef<HTMLDivElement>(null)
+  const titleInputRef = useRef<HTMLInputElement>(null)
   /** The sheet: the link menu, the Edit link box and the `[[` picker go in it, so a click on them is not a click-away. */
   const sheetRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState<LoadedDrawing | null>(null)
@@ -116,6 +137,10 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
   const left = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [inlineTitle, setInlineTitle] = useState(inline?.title ?? '')
+  useEffect(() => {
+    setInlineTitle(inline?.title ?? '')
+  }, [inline?.title])
   /** The disk's mtime while the conflict bar is up (YAZ-3044 A4); null when there is no conflict. */
   const [conflict, setConflict] = useState<number | null>(null)
   /** Bumped by Reload so the surface remounts on the disk's scene (it reads `scene` once, on mount). */
@@ -145,7 +170,8 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
 
   useEffect(() => {
     let live = true
-    void openDrawing(root, target).then(
+    const loader = isInline ? openInlineDrawing(root, inlineRef.current!.json, inlinePagePath!) : openDrawing(root, target)
+    void loader.then(
       (drawing) => {
         if (!live) return
         persisted.current = new Set(drawing.stored)
@@ -159,10 +185,17 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
     return () => {
       live = false
     }
-  }, [root, target])
+  }, [root, target, isInline, inlinePagePath])
 
-  // Focus lands here on mount so Esc works before the canvas exists (and stays inside afterwards).
-  useEffect(() => overlayRef.current?.focus(), [])
+  // Focus lands on the title input for a brand-new `/drawing` (`autoFocusTitle`), else on the overlay so Esc works immediately.
+  useEffect(() => {
+    if (inlineRef.current?.autoFocusTitle === true && !vaultLocked && titleInputRef.current !== null) {
+      titleInputRef.current.focus()
+      titleInputRef.current.select()
+    } else {
+      overlayRef.current?.focus()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- mount-only initial focus
 
   // A drawing is in front of the page while this is open (YAZ-3564 K9, K11): main's menu lets it keep ⌘D, and the
   // key sheet lists its keys. Best effort: a failed send only leaves the page's menu keys.
@@ -205,6 +238,18 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
       if (current === null || drawing === null) throw new Error('nothing to save')
       try {
         const { json, files, referenced } = current.serialize()
+        const inlineOpts = inlineRef.current
+        if (inlineOpts !== undefined) {
+          const newFiles = unpersistedFiles(files, referenced, persisted.current)
+          if (newFiles.length > 0) {
+            const res = await api.drawing.landAssets({ root, newFiles })
+            for (const id of res.persisted) persisted.current.add(id)
+          }
+          const { json: compactJson } = compactInlineScene(json)
+          await inlineOpts.onSave(compactJson)
+          setError(null)
+          return { mtime: Date.now() }
+        }
         const res = await saveDrawing({ root, target, path: drawing.path, json, newFiles: unpersistedFiles(files, referenced, persisted.current), expectedMtime })
         // An inside save names every picture the file holds now; a deleted one is not there (6A item 1). So does a
         // save that moved them out by the 50 MB rule: the store holds exactly those (YAZ-4071 7H).
@@ -320,6 +365,28 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
     }
   }
 
+  /** Inline mode (YAZ-6134): flushes pending edits (same as closing), closes the modal, and opens the drawing in a tab. */
+  const openInTab = async (): Promise<void> => {
+    const onOpenInTab = inlineRef.current?.onOpenInTab
+    if (onOpenInTab === undefined || closing.current || left.current) return
+    const a = autosave.current
+    if (a !== null) {
+      closing.current = true
+      await a.flush()
+      const failed = (): boolean => statusRef.current === 'error' || conflictRef.current !== null
+      if (a.dirty && !failed()) await a.flush()
+      closing.current = false
+      if (left.current) return
+      if (a.dirty) {
+        setConfirming(true)
+        return
+      }
+    }
+    left.current = true
+    onClose()
+    await onOpenInTab()
+  }
+
   const onKeyDown = (e: ReactKeyboardEvent): void => {
     if (e.key !== 'Escape') return
     e.preventDefault()
@@ -329,14 +396,46 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
     else void requestClose()
   }
 
+  const onTitleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      e.currentTarget.blur()
+      overlayRef.current?.focus()
+    }
+  }
+
   return (
     <div ref={overlayRef} className="drawing-modal-overlay" tabIndex={-1} onMouseDown={() => void requestClose()} onKeyDown={onKeyDown}>
-      <div ref={sheetRef} className="drawing-modal" role="dialog" aria-modal="true" aria-label={`Drawing ${target}`} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className="drawing-modal" role="dialog" aria-modal="true" aria-label={isInline ? (inlineTitle.trim() || 'Inline drawing') : `Drawing ${target}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="drawing-modal__bar">
-          <span className="drawing-modal__title" title={target}>
-            {target}
-          </span>
+          {isInline ? (
+            <input
+              ref={titleInputRef}
+              type="text"
+              className="drawing-modal__title-input"
+              placeholder="Untitled drawing"
+              aria-label="Drawing title"
+              value={inlineTitle}
+              readOnly={readOnly}
+              onChange={(e) => {
+                const next = e.target.value
+                setInlineTitle(next)
+                inlineRef.current?.onTitleChange?.(next)
+              }}
+              onKeyDown={onTitleKeyDown}
+            />
+          ) : (
+            <span className="drawing-modal__title" title={target}>
+              {target}
+            </span>
+          )}
           {loaded !== null && !readOnly && <SaveIndicator status={status} />}
+          {loaded !== null && inline?.onOpenInTab !== undefined && (
+            <button type="button" className="drawing-modal__btn" onClick={() => void openInTab()}>
+              Open in tab
+            </button>
+          )}
           <button type="button" className="drawing-modal__btn drawing-modal__close" aria-label="Close drawing" onClick={() => void requestClose()}>
             ✕
           </button>

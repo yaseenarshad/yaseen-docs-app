@@ -103,6 +103,7 @@ import { redrawCardHeads } from '../review/cardHeadMarks'
 import { CardReviewDoor } from '../review/cardReviewDoor'
 import { useReviewOn } from '../review/useReviewSettings'
 import { useCardConvert } from './useCardConvert'
+import { useInlineDrawing } from './drawing/useInlineDrawing'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { CardReview } from '@shared/cardLine'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
@@ -114,6 +115,8 @@ import { CardFileNotice } from './CardFileNotice'
  * chunk, and the engine after it (`drawings/engine.ts`) — a window with no drawing tab loads neither.
  */
 const DrawingEditor = lazy(() => import('../drawings/DrawingEditor').then((m) => ({ default: m.DrawingEditor })))
+/** An inline Excalidraw drawing opened in its own tab (YAZ-6134): same lazy chunk rule as `DrawingEditor`. */
+const InlineDrawingTab = lazy(() => import('../drawings/InlineDrawingTab').then((m) => ({ default: m.InlineDrawingTab })))
 /** A diagram tab (YAZ-3028 D5): the same rule — its host in its own chunk, and draw.io in its own origin's iframe. */
 const DrawioEditor = lazy(() => import('../diagrams/DrawioEditor').then((m) => ({ default: m.DrawioEditor })))
 /** A code tab (YAZ-3448, D1/D2): the same rule — its host in its own chunk, and Monaco in the next (`code/monaco.ts`). */
@@ -286,6 +289,10 @@ interface EditorProps {
    * tab `tabId`; null is the whole page (the title crumb). Stable, as `onZoom`.
    */
   onOpenBullet?: (tabId: string, zoom: string | null, background: boolean, label: string | null) => void
+  /** 0-based index of an inline Excalidraw drawing opened in its own tab (YAZ-6134). */
+  inlineDrawingIndex?: number
+  /** Opens the `index`-th inline Excalidraw drawing of `tabId` in its own tab (YAZ-6134). */
+  onOpenInlineDrawing?: (tabId: string, index: number, background: boolean) => void
   /** The canvas preferences every drawing shares (YAZ-3028, Draw's 🔒 YAZ-1775 D9): `SettingsState.canvas`. Absent → the defaults. */
   canvasPrefs?: CanvasPrefs
   /** A drawing's engine moved a pref: App writes the SETTING through this. */
@@ -365,7 +372,7 @@ export function Editor(props: EditorProps) {
   )
 }
 
-function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderPageEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
+function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderPageEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, inlineDrawingIndex, onOpenInlineDrawing, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -416,6 +423,13 @@ function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFold
       </section>
     )
   }
+  if (inlineDrawingIndex !== undefined) {
+    return (
+      <Suspense fallback={<section className="editor" />}>
+        <InlineDrawingTab key={`${path}#drawing-${inlineDrawingIndex}`} root={root} path={path} index={inlineDrawingIndex} watch={watch} sync={sync} onSyncNow={onSyncNow} startView={startViewRef.current} {...drawingSettings} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} hotkeys={hotkeys} hotkeysAside={hotkeysAside} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink ?? onOpenFile} onOpenLinkBackground={onOpenLinkBackground ?? onOpenFileBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+      </Suspense>
+    )
+  }
   if (kind === 'drawing') {
     // The board host renders its own `section.editor editor--drawing` (the section the menu's board
     // commands are dispatched on), so nothing wraps it here.
@@ -441,7 +455,7 @@ function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFold
       </section>
     )
   }
-  return <MarkdownEditor drawingSettings={drawingSettings} root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
+  return <MarkdownEditor drawingSettings={drawingSettings} root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} onOpenInlineDrawing={onOpenInlineDrawing} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
 }
 
 /**
@@ -462,7 +476,7 @@ interface FolderPageMode {
  * card file.", until the tab reads the file again. A second card is the card view's own notice, never the page. A
  * folder page's Page tab is never a card file.
  */
-function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps & FolderPageMode & { drawingSettings: DrawingAppSettings }) {
+function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, onOpenInlineDrawing, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps & FolderPageMode & { drawingSettings: DrawingAppSettings }) {
   // A convert that kept the file's name (YAZ-5037: a page turned into a card file, or back) reads it again: the right view.
   const [revision, setRevision] = useState(0)
   const reread = useCallback(() => setRevision((n) => n + 1), [])
@@ -486,7 +500,7 @@ function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, wat
         </Suspense>
       )}
       {file !== null && !cardFile && (
-        <CrepeHost key={file.path} inFolderPage={inFolderPage} {...drawingSettings} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} onReread={reread} />
+        <CrepeHost key={file.path} inFolderPage={inFolderPage} {...drawingSettings} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} onOpenInlineDrawing={onOpenInlineDrawing} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} onReread={reread} />
       )}
     </>
   )
@@ -545,6 +559,7 @@ function CrepeHost({
   zoomKey,
   onZoom,
   onOpenBullet,
+  onOpenInlineDrawing,
   diagramDarkColors,
   hoverLinks,
   hoverDrawingLinks,
@@ -605,6 +620,7 @@ function CrepeHost({
   zoomKey?: string | null
   onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null, from?: ZoomFrom) => void
   onOpenBullet?: (tabId: string, zoom: string | null, background: boolean, label: string | null) => void
+  onOpenInlineDrawing?: (tabId: string, index: number, background: boolean) => void
   diagramDarkColors: DiagramDarkColors
   hoverLinks: boolean
   /** The page popup's board pills follow "Links in drawings and diagrams" (YAZ-3943). */
@@ -841,6 +857,7 @@ function CrepeHost({
   diskRef.current = disk
   const reviewOn = useReviewOn(root)
   const convert = useCardConvert({ root, path: file.path, wikilinks, reviewOn, inFolderPage, disk: () => diskRef.current, allowFileAction: vaultScope.allowFileAction, onNotice, onReread, onOpenCardFile: onOpenFile })
+  const inlineDrawing = useInlineDrawing({ root, path: file.path, title: () => titleRef.current, disk: () => diskRef.current, getView: () => (crepeRef.current === null ? null : editorViewOf(crepeRef.current)), flushPage: () => autosave.flushNow(), wikilinks, viewOnlyLinks, allowFileAction: vaultScope.allowFileAction, onNotice, onOpenInTab: tabId === undefined || onOpenInlineDrawing === undefined ? undefined : (index, background) => onOpenInlineDrawing(tabId, index, background) })
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves (including any open card editor, YAZ-6052), then locks again. */
   const unlock = useTimedUnlock(() => {
     const openCards = hostRef.current?.querySelectorAll('.card.card--editing') ?? []
@@ -1155,11 +1172,16 @@ function CrepeHost({
             },
             kind,
           ),
+        createInline: (view) => {
+          if (storage.getSettings()?.newPageDrawing === 'file') return false
+          inlineDrawing.createInline(view)
+        },
         onNotice,
       },
       // Board embeds (YAZ-4827): a window into each `![[x.drawio]]` / `![[x.excalidraw]]`. The window loads from this
       // root and refreshes from the watcher itself; "Edit in a popup" opens the drawing modal (D7, the old click path).
-      boardEmbeds: { root, onEditInPopup: (target) => setOpenDrawing({ root, target }) },
+      boardEmbeds: { root, onEditInPopup: (target) => setOpenDrawing({ root, target }), onPutDrawingBack: inlineDrawing.onPutDrawingBack },
+      inlineDrawing: inlineDrawing.inlineProps,
       // First-class images (YAZ-1656): the root and THIS page's absolute path are what a relative
       // src resolves against (main's `app://vault/` protocol); double-click opens the lightbox
       // below, and a paste that could not be written rides the same passive notice.
@@ -1689,6 +1711,7 @@ function CrepeHost({
       ) : (
         <OutsideChangesBar channel={outsideChanges} pinned={outsideListPinned} onPin={onChangeOutsideListPinned} onKeep={() => changeOutsideGlow('until-checked')} />
       )}
+      {inlineDrawing.nudgeBanner}
       {/* The scroller holds SIX stacked blocks, in this order. Block ZERO is the page title
           (⚡ YAZ-888) — the file's own name, React-side and never a ProseMirror node; block ONE is
           the properties panel (⚡ YAZ-883), the page's frontmatter as raw YAML; then the Crepe
@@ -1761,12 +1784,18 @@ function CrepeHost({
       <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={pageWidth ?? contentWidth} pageZoom={drawnZoom} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusPage} folds={tocFolds} onChangeFolds={changeTocFolds} zoom={tocZoom} onChangeZoom={onChangeTocZoom} />
       {/* Put back's ask (YAZ-5037): other pages embed the card. */}
       {convert.sheet}
+      {inlineDrawing.confirmSheet}
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           page. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}
       {openDrawing !== null && (
         <Suspense fallback={null}>
           <DrawingModal key={`${openDrawing.root}\n${openDrawing.target}`} root={openDrawing.root} target={openDrawing.target} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+        </Suspense>
+      )}
+      {inlineDrawing.modalProps !== null && (
+        <Suspense fallback={null}>
+          <DrawingModal key={inlineDrawing.modalProps.key} root={root} inline={inlineDrawing.modalProps.inline} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onClose={inlineDrawing.modalProps.onClose} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
         </Suspense>
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing

@@ -66,6 +66,7 @@ import type { EditorView as CodeMirrorView } from '@codemirror/view'
 import { paintCodeBlocks, scrollCodeMatch } from './codeBlockFind'
 import { CARD_FIND_READ, cardMatches, createCardSideFolds, paintFindRanges, scrollToRange } from './cardFind'
 import { isCardNode } from '../card/cardBlockLine'
+import { isInlineDrawingNode } from '../drawing/inlineDrawingLine'
 
 export const FIND_MATCH_CLASS = 'find-match'
 /** The active match carries this IN ADDITION to `FIND_MATCH_CLASS`. */
@@ -215,7 +216,7 @@ const findMatches = (state: EditorState, query: string, zoom: Match | null, link
   const isBoard = boardCheckOf(state)
   state.doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
-    if (drawn.has(pos) && isCardNode(node)) return false
+    if ((drawn.has(pos) && isCardNode(node)) || isInlineDrawingNode(node)) return false
     const pills = links === undefined || node.type.spec.code === true ? [] : pillLinks(node, pos, state.selection, links.wikilinks, links.viewOnly)
     // A board embed's text is under its window (YAZ-4827 item 15): none of it is a match, unless "Edit link" opened it.
     const embeds = host ? boardEmbedsIn(node, pos, isBoard).filter((embed) => !embedRevealed(state.selection, embed.from, embed.to)) : []

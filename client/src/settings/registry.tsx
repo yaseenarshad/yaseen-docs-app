@@ -1287,20 +1287,35 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-3440 D13: the Files tab follows the open tab, as VS Code's "Auto Reveal". Off by default: the tree starts closed (YAZ-1642).
             id: 'sidebarRevealActive',
             label: 'Reveal the open file',
-            hint: 'Files opens the folders down to the open tab\'s file and scrolls to it. With "A place for each tab", a tab keeps its saved place when you switch back to it.',
+            hint: 'Files opens the folders down to the open tab\'s file and scrolls to it. With "Custom per tab", a tab keeps its saved place when you switch back to it.',
             keywords: ['sidebar', 'folder', 'tree', 'reveal', 'follow', 'open file', 'active', 'auto reveal', 'explorer', 'scroll'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.sidebarRevealActive} onChange={(sidebarRevealActive) => onChange({ ...settings, sidebarRevealActive })} ariaLabel="Reveal the open file in the sidebar" />
             ),
           },
           {
-            // YAZ-5701, YAZ-6064: one place for the window (the default, as before), or a place for each page tab, for the session.
+            // YAZ-5701, YAZ-6064: one place for the window (the default, as before), or custom per tab, for the session.
             id: 'sidebarPlace',
             label: 'Sidebar remembers',
             hint: 'A place is whether the sidebar is open, the sidebar tab, the open folders, Hide all others, and the scroll position.',
-            keywords: ['sidebar', 'place', 'tab', 'tabs', 'remember', 'window', 'folders', 'scroll', 'each tab', 'per tab', 'hide all others', 'collapsed'],
+            keywords: ['sidebar', 'place', 'tab', 'tabs', 'remember', 'window', 'folders', 'scroll', 'each tab', 'per tab', 'custom per tab', 'hide all others', 'collapsed'],
             render: ({ settings, onChange }) => (
               <Select options={SIDEBAR_PLACE_OPTIONS} value={settings.sidebarPlace} onChange={(sidebarPlace) => onChange({ ...settings, sidebarPlace })} ariaLabel="What the sidebar remembers" />
+            ),
+          },
+          {
+            id: 'sidebarPerTabWidth',
+            label: 'Custom sidebar width per tab',
+            hint: 'Each tab keeps its own resized sidebar width when you switch between tabs.',
+            keywords: ['sidebar', 'width', 'tab', 'tabs', 'per tab', 'custom', 'resize', 'remember'],
+            available: ({ settings }) => settings.sidebarPlace === 'tab',
+            render: ({ settings, onChange }) => (
+              <Segmented
+                options={ON_OFF_OPTIONS}
+                value={settings.sidebarPerTabWidth !== false}
+                onChange={(sidebarPerTabWidth) => onChange({ ...settings, sidebarPerTabWidth })}
+                ariaLabel="Custom sidebar width per tab"
+              />
             ),
           },
         ],
@@ -2223,6 +2238,25 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               ),
             }),
           ),
+        ],
+      },
+      {
+        title: 'Search',
+        items: [
+          {
+            id: 'searchIncludeInline',
+            label: 'Include inline drawings and cards in search',
+            hint: (ctx) => unit(ctx, 'Show inline drawings and cards stored inside pages in Sidebar Search and Explore by default. You can still toggle this per search in the Filter menu.'),
+            keywords: ['search', 'explore', 'inline', 'drawing', 'drawings', 'card', 'cards', 'filter'],
+            render: ({ settings, onChange }) => (
+              <Segmented
+                options={ON_OFF_OPTIONS}
+                value={settings.searchIncludeInline}
+                onChange={(searchIncludeInline) => onChange({ ...settings, searchIncludeInline })}
+                ariaLabel="Include inline drawings and cards in search"
+              />
+            ),
+          },
         ],
       },
       {
