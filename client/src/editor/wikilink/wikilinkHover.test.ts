@@ -12,9 +12,9 @@ import type { WikilinkHover } from './wikilinkHover'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown: string, hover?: WikilinkHover) {
+async function mount(markdown: string, hover?: WikilinkHover, ids = false) {
   const source = createWikilinkResolveSource()
-  source.update((target) => (target === 'Known' ? '/vault/Known.md' : null))
+  source.update((target) => (target === 'Known' ? '/vault/Known.md' : null), [], [], ids, ids ? ['WIKI'] : [])
   const root = document.createElement('div')
   document.body.appendChild(root)
   const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, wikilinkHover: hover })
@@ -93,5 +93,87 @@ describe('wikilink hover (YAZ-3403 D8)', () => {
     expect(hover.onHover).toHaveBeenCalledExactlyOnceWith('/vault/Known.md', { left: 100, top: 200, right: 180, bottom: 220 }, false)
     out(name, root)
     expect(hover.onLeave).toHaveBeenCalledOnce()
+  })
+
+  describe('YAZ-6051: links inside cards (listeners on view.dom, not handleDOMEvents)', () => {
+    const CARD_PAGE = 'pad\n\n```card\nSee [[Known]] here\n---\nback\n```\n<!-- card: WIKI-1 -->\n'
+    const add = (parent: Element, html: string) => {
+      const host = document.createElement('div')
+      host.innerHTML = html
+      const node = host.firstElementChild!
+      parent.append(node)
+      return node
+    }
+
+    it('an inline card (cardBlockView, stopEvent: () => true) still reports a hover on its [data-card-link] pill, and leaving tells once', async () => {
+      const hover = { onHover: vi.fn(), onLeave: vi.fn() }
+      const { root } = await mount(CARD_PAGE, hover, true) // a vault with IDs: a ```card block draws as a card
+      // The real node view (stopEvent: () => true) swallows the event for ProseMirror: handleDOMEvents would never hear it.
+      const card = root.querySelector('.card')
+      expect(card).not.toBeNull()
+      const pill = card!.querySelector('[data-card-link]')
+      expect(pill).not.toBeNull()
+      over(pill!)
+      expect(hover.onHover).toHaveBeenCalledExactlyOnceWith('/vault/Known.md', expect.objectContaining({ left: expect.any(Number) }), false)
+      out(pill!, root)
+      expect(hover.onLeave).toHaveBeenCalledOnce()
+    })
+
+    it('an embedded card (.card.card-embed) previews a [data-card-link] pill and a Markdown link through markdownPath', async () => {
+      const hover = { onHover: vi.fn(), onLeave: vi.fn(), markdownPath: (href: string) => (href === 'known.md' ? '/vault/Known.md' : null) }
+      const { root } = await mount('pad\n', hover)
+      const embed = add(root.querySelector('.ProseMirror')!, '<div class="card card-embed"><div class="card__sides"><span data-card-link="Known"><span class="wikilink">Known</span></span><a href="known.md">md</a><a href="other.md">other</a></div></div>')
+      over(embed.querySelector('.wikilink')!)
+      expect(hover.onHover).toHaveBeenCalledExactlyOnceWith('/vault/Known.md', expect.anything(), false)
+      out(embed.querySelector('.wikilink')!, root)
+      expect(hover.onLeave).toHaveBeenCalledOnce()
+      over(embed.querySelector('a[href="known.md"]')!)
+      expect(hover.onHover).toHaveBeenCalledTimes(2)
+      out(embed.querySelector('a[href="known.md"]')!, root)
+      over(embed.querySelector('a[href="other.md"]')!) // a link that opens no page says nothing
+      expect(hover.onHover).toHaveBeenCalledTimes(2)
+    })
+
+    it('an unresolved card pill says nothing', async () => {
+      const hover = { onHover: vi.fn(), onLeave: vi.fn() }
+      const { root } = await mount('pad\n', hover)
+      const embed = add(root.querySelector('.ProseMirror')!, '<div class="card card-embed"><span data-card-link="Missing"><span class="wikilink">Missing</span></span></div>')
+      over(embed.querySelector('.wikilink')!)
+      expect(hover.onHover).not.toHaveBeenCalled()
+    })
+
+    it('still blocked inside a drawing board embed, but a card inside it is allowed', async () => {
+      const hover = { onHover: vi.fn(), onLeave: vi.fn() }
+      const { root } = await mount('pad\n', hover)
+      const board = add(root.querySelector('.ProseMirror')!, '<div class="board-embed"><span data-card-link="Known"><span class="wikilink">Known</span></span></div>')
+      over(board.querySelector('.wikilink')!)
+      expect(hover.onHover).not.toHaveBeenCalled()
+      const withCard = add(root.querySelector('.ProseMirror')!, '<div class="board-embed"><div class="card"><span data-card-link="Known"><span class="wikilink">Known</span></span></div></div>')
+      over(withCard.querySelector('.wikilink')!)
+      expect(hover.onHover).toHaveBeenCalledTimes(1)
+    })
+
+    it('a nested .card__editor does not double-fire: its own editor handles hover', async () => {
+      const hover = { onHover: vi.fn(), onLeave: vi.fn() }
+      const { root } = await mount('pad\n', hover)
+      const card = add(root.querySelector('.ProseMirror')!, '<div class="card"><div class="card__editor"><span data-card-link="Known"><span class="wikilink">Known</span></span></div></div>')
+      over(card.querySelector('.wikilink')!)
+      expect(hover.onHover).not.toHaveBeenCalled()
+    })
+
+    it('destroy removes the listeners and tells the host the hover is over', async () => {
+      const hover = { onHover: vi.fn(), onLeave: vi.fn() }
+      const { root, crepe } = await mount('pad [[Known]]\n', hover)
+      const known = span(root, 'Known')
+      over(known)
+      expect(hover.onHover).toHaveBeenCalledTimes(1)
+      const pm = root.querySelector('.ProseMirror')!
+      await crepe.destroy()
+      expect(hover.onLeave).toHaveBeenCalledOnce()
+      over(known)
+      expect(hover.onHover).toHaveBeenCalledTimes(1)
+      mounted.splice(mounted.findIndex((m) => m.crepe === crepe), 1)
+      pm.remove()
+    })
   })
 })
