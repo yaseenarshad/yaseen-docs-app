@@ -419,11 +419,11 @@ export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly Ind
   return defaultKeys(records, declared)
 }
 
-/** `file.name` plus the page's columns (or, with none, every key the rows hold): `propertyKeys` with no `order`, for every view type but the calendar. */
+/** `file.name`, the page's columns (or, with none, every key the rows hold), and `file.ctime` (YAZ-6150 D4): `propertyKeys` with no `order`, for every view type but the calendar. */
 export function defaultKeys(records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   const keys = new Set<string>(declared.map((k) => `note.${k}`))
   if (declared.length === 0) for (const r of records) for (const k of Object.keys(r.properties)) if (k !== READ_ONLY_KEY) keys.add(`note.${k}`)
-  return ['file.name', ...[...keys].sort()]
+  return ['file.name', ...[...keys].sort(), 'file.ctime']
 }
 
 /**

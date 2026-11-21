@@ -52,6 +52,7 @@ export function allPropertyKeys(
   for (const k of [...fields].sort()) add(`note.${k}`)
   // The read-only switch is no auto-shown column (YAZ-3130 nit), but a reader may still show it.
   if (records.some((r) => READ_ONLY_KEY in r.properties)) add(`note.${READ_ONLY_KEY}`)
+  add('file.ctime')
   add('file.basename')
   add('file.folder')
   // The Type column (YAZ-5047): offered where it tells rows apart — a card file (YAZ-5037) or a folder row among them; off by default.

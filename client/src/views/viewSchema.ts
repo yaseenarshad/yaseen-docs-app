@@ -1,6 +1,6 @@
 import { type Document, isMap, parseDocument } from 'yaml'
 import { isRecord } from '@shared/guards'
-import { headerRowOwn, type HeaderRowOwn } from '@shared/types'
+import { headerRowOwn, type HeaderRowOwn, type PropertyFormat } from '@shared/types'
 import type { CardTable } from './cardView'
 
 /**
@@ -218,7 +218,7 @@ export const folderColumnOf = (view: ViewDef): 'path' | 'full' | 'last' => (view
 export interface ViewSet {
   filters?: FilterNode
   formulas?: Record<string, string>
-  properties?: Record<string, { displayName?: string; [extra: string]: unknown }>
+  properties?: Record<string, { displayName?: string; format?: PropertyFormat; [extra: string]: unknown }>
   summaries?: Record<string, string>
   views: ViewDef[]
   /** The saved START (YAZ-1104), a view NAME — in the def since YAZ-1471 so rename/delete keep it honest in the same write. */
