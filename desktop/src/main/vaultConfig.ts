@@ -3,7 +3,7 @@ import { lstat, mkdir, readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { keepUnknownKeys } from '@shared/configMerge'
 import { VAULT_CONFIG_DIR, type VaultConfigChange } from '@shared/types'
-import { atomicWrite, BridgeFailure, createDurable, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
+import { atomicWrite, BridgeFailure, createDurable, createRootChain, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
 import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 
 /**
@@ -147,24 +147,29 @@ function configText(value: unknown): string {
  * kept (`keepUnknownKeys`), so a Mac on an older build never erases a key a newer build added. A known key the value
  * leaves out is dropped as before ("the default is never stored"). Without it the value is written as is.
  */
+/** Per-(root, config-file) write serialization so concurrent `writeConfig(..., known)` calls never clobber keys (YAZ-6024). */
+const writeChain = createRootChain()
+
 export async function writeConfig(root: string, name: string, value: unknown, known?: readonly string[] | null): Promise<void> {
   const r = requireAbsPath(root, 'root')
   const n = requireConfigName(name)
   // The bridge sends an omitted argument as null (or undefined): both mean "no `known`".
   if (known != null && !(Array.isArray(known) && known.every((k) => typeof k === 'string'))) throw new BridgeFailure('BAD_REQUEST', "'known' must be a list of key names")
-  let kept = value
-  if (known != null) {
-    const onDisk = await readConfigDetailed(r, n)
-    if (onDisk.state === 'ok') kept = keepUnknownKeys(onDisk.value, value, known)
-  }
-  const content = configText(kept)
-  const dir = path.join(r, VAULT_CONFIG_DIR)
-  const file = path.join(dir, n)
-  const { mtime } = await fsCall(file, async () => {
-    await mkdir(dir, { recursive: true })
-    return atomicWrite(file, content)
+  return writeChain(`${r}\0${n}`, async () => {
+    let kept = value
+    if (known != null) {
+      const onDisk = await readConfigDetailed(r, n)
+      if (onDisk.state === 'ok') kept = keepUnknownKeys(onDisk.value, value, known)
+    }
+    const content = configText(kept)
+    const dir = path.join(r, VAULT_CONFIG_DIR)
+    const file = path.join(dir, n)
+    const { mtime } = await fsCall(file, async () => {
+      await mkdir(dir, { recursive: true })
+      return atomicWrite(file, content)
+    })
+    announce(r, n, mtime)
   })
-  announce(r, n, mtime)
 }
 
 /**

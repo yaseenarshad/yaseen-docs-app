@@ -329,8 +329,6 @@ interface Computed {
   own: Map<string, string>
 }
 
-const INHERITED = new Set(['color', 'font-size', 'font-weight', 'visibility'])
-
 export interface Finding {
   theme: Theme
   what: 'text' | 'large text' | 'placeholder' | 'icon' | 'field border'

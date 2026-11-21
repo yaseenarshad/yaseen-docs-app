@@ -261,18 +261,24 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       // the embedded cards came again one by one: the page "hung" while the person scrolled.
       const into = first ? el : document.createElement('div')
       // YAZ-5568: each slice of a long page gets its arrows and its folds as it comes (a section runs across slices).
-      const slicer = uiSlicer()
-      const slice = first ? async () => (folds.current?.scan(), await slicer()) : slicer
-      await renderPage(splitFrontmatter(text).body, { ...pageLook(data, path), tables: look.table }, into, slice, () => live)
-      if (!live) return
-      markSections(into, sectionIndent)
-      if (!first) {
-        await fillCardEmbeds(into, data, store, doorRef.current, () => live)
+      // Pause stickyHeadings ResizeObserver/MutationObserver during progressive slicing, then trigger one relayout (YAZ-6028).
+      if (first) el.dataset.slicing = 'true'
+      try {
+        const slicer = uiSlicer()
+        const slice = first ? async () => (folds.current?.scan(), await slicer()) : slicer
+        await renderPage(splitFrontmatter(text).body, { ...pageLook(data, path), tables: look.table }, into, slice, () => live)
         if (!live) return
-        el.replaceChildren(...into.childNodes)
+        markSections(into, sectionIndent)
+        if (!first) {
+          await fillCardEmbeds(into, data, store, doorRef.current, () => live)
+          if (!live) return
+          el.replaceChildren(...into.childNodes)
+        }
+        ticksRef.current.paint()
+        folds.current?.apply()
+      } finally {
+        if (first) delete el.dataset.slicing
       }
-      ticksRef.current.paint()
-      folds.current?.apply()
       // YAZ-5904: Side 2 and after of each card folded as the vault's Card sides in pages, or the page's `card-sides`, says.
       followCardFolds(el)
       const head = el.firstElementChild

@@ -17,9 +17,12 @@ import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
 import { created } from '../code/monacoTestKit'
-// Loaded up front, so `Editor`'s lazy import of the code tab resolves within a settle.
+// Loaded up front, so `Editor`'s lazy imports resolve within a settle.
 import '../code/CodeEditor'
 import './CardFileView'
+import '../views/FolderView'
+import './FrontmatterPanel'
+import '../comments/CommentsSection'
 import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'

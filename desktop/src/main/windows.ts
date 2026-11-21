@@ -70,7 +70,12 @@ const DEFAULT_BOUNDS: WindowBounds = { x: 100, y: 100, width: 1200, height: 800 
 /** The slice of `BrowserWindow` the manager drives; a test fake implements it in a few lines. */
 export interface ManagedWindow {
   /** `reload()` like Electron's: the same `webContents` loads its page again (YAZ-3737 D2, only after a clean flush). */
-  webContents: { id: number; send(channel: string, ...args: unknown[]): void; reload(): void }
+  webContents: {
+    id: number
+    send(channel: string, ...args: unknown[]): void
+    reload(): void
+    on?(event: 'render-process-gone', listener: () => void): unknown
+  }
   getBounds(): WindowBounds
   isDestroyed(): boolean
   isMinimized(): boolean
@@ -735,8 +740,15 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       })
     })
 
+    // If a renderer crashes mid-flush, settle immediately instead of stalling quit/reload for FLUSH_TIMEOUT_MS (YAZ-6024).
+    win.webContents.on?.('render-process-gone', () => {
+      pendingFlush.get(wcId)?.settle('dirty')
+    })
+
     win.on('closed', () => {
       cancelBoundsTimer()
+      // If a window dies mid-flush, settle immediately instead of stalling quit/reload for FLUSH_TIMEOUT_MS (YAZ-6024).
+      pendingFlush.get(wcId)?.settle('dirty')
       unregister()
       live.delete(id)
       closingWins.delete(id)

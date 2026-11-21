@@ -56,9 +56,6 @@
   align-items: flex-end;
   text-align: right;
 }
-.kit-veil {
-  background: color-mix(in srgb, var(--bg) 50%, transparent);
-}
 .kit-layer--fill > * {
   width: 100%;
   height: 100%;
@@ -385,10 +382,6 @@
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-.kit-curve-line--old {
-  stroke: var(--fg-muted);
-  stroke-dasharray: 3 5;
 }
 .kit-ghost {
   stroke: var(--fg-muted);

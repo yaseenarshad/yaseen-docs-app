@@ -2,6 +2,7 @@ import { rendererUrlFor } from './rendererUrl'
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
+import { enableCompileCache } from 'node:module'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -17,7 +18,7 @@ import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
-import { broadcastAll, rootsOf } from './ipc/broadcast'
+import { broadcastAll, excludeFromBroadcast, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerFriendsIpc } from './ipc/friends'
 import { onRendererSecretSet } from './ipc/secrets'
@@ -27,9 +28,9 @@ import { registerUpdateIpc } from './ipc/update'
 import { askHeap, askTabs, askViews, registerMemoryIpc } from './ipc/memory'
 import { createMemoryMeter, createReloadWatch, helperRss, type MemoryMeter, type ReloadWatch } from './memory'
 import { claimDeepLinkScheme } from './deepLinkScheme'
-import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
+import { cleanupTreeWatcherProbes } from './fs/treeWatcher'
 import { watchDailyPages } from './dailyPagesVaultFile'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
@@ -40,7 +41,6 @@ import { followSettingsFolder } from './settingsFolder'
 import { drawingInFront, hotkeyRecording, noPageInFront } from './hotkeyRecording'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
-import { movePageSwitches } from './movePageSwitches'
 import { runQuitSequence } from './quitSequence'
 import { createSpeller, nativeMenuAsker, spellerPath } from './speller'
 import { cardSkillStamp, ensureCardSkill, shippedCardSkill } from './cardSkill'
@@ -61,6 +61,12 @@ import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName(APP_NAME)
 applyUserDataOverride(app, process.env.YASEEN_DOCS_USER_DATA_DIR)
+// Cache main-process V8 bytecode across warm launches (Node 22+, YAZ-6008 🔒 D10).
+try {
+  enableCompileCache?.(join(app.getPath('userData'), 'v8-compile-cache'))
+} catch {
+  // best-effort accelerator; never blocks launch
+}
 
 /** One running instance (GRO-2160): a second launch focuses the first; a link in its argv routes (E1). */
 const isPrimaryInstance = app.requestSingleInstanceLock()
@@ -164,6 +170,7 @@ const manager = createWindowManager(store, {
       previewByOwner.get(ownerId)?.destroy()
       previewByOwner.set(ownerId, child)
       previewPopups.add(child)
+      excludeFromBroadcast(child)
       child.setParentWindow(win)
       child.setIgnoreMouseEvents(true)
       child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -484,9 +491,10 @@ app.whenReady().then(() => {
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'), store.get().settingsFolder)
   gitSync = sync
   // The course sound (YAZ-5159): downloaded per chapter while the course is open. At start only the clean-up runs, at
-  // most once a day: the folder goes 30 days after the course was last open. No download starts here.
+  // most once a day: the folder goes 30 days after the course was last open. Defer past first window restore (YAZ-6008 D4).
   courseAudio = registerCourseAudioIpc({ userData: app.getPath('userData'), isPackaged: app.isPackaged })
-  void courseAudio.sweep().catch((err: unknown) => console.warn(`[course-audio] the clean-up failed: ${String(err)}`))
+  const sweepCourseAudio = courseAudio
+  setTimeout(() => void sweepCourseAudio.sweep().catch((err: unknown) => console.warn(`[course-audio] the clean-up failed: ${String(err)}`)), 5000).unref()
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),
     restartToUpdate: () => {
@@ -531,22 +539,10 @@ app.whenReady().then(() => {
   // rather than at module scope because powerMonitor is only safe to touch after `ready`.
   powerMonitor.on('resume', () => sync.notifyWake())
   powerMonitor.on('unlock-screen', () => sync.notifyWake())
-  // Draw's data, copied one time into the gaps (YAZ-3028 D6): the app-data half now, each vault's half when it opens.
-  startDrawImport({
-    drawDir: join(app.getPath('appData'), DRAW_APP_NAME),
-    userData: app.getPath('userData'),
-    store,
-    secrets,
-    appData: shouldImportDrawAppData(process.env),
-    rootsOf,
-  })
   // The 1.0.15 heading styles move once into the vaults (YAZ-3066 D11). Before `restore`, which
   // drops the windows a launch does not bring back: every vault of the last session gets its copy.
   // It never holds up a window: a renderer that read no file yet hears the write as a change.
   void moveLegacyHeadingStyles(store).catch((err: unknown) => console.error(`[textFormatting] the move failed: ${String(err)}`))
-  // The page switches the app state held for pages move once into the pages (YAZ-4094 G4). The same terms: a
-  // window that has the page open hears the write as an outside change of its frontmatter.
-  void movePageSwitches(store).catch((err: unknown) => console.error(`[pageSwitches] the move failed: ${String(err)}`))
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
@@ -591,6 +587,7 @@ app.on('before-quit', (event) => {
     stopHelpers: () => Promise.all([stopAllLanguageServers(), cancelHelperInstall(), speller.stop()]).then(() => undefined),
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
+      cleanupTreeWatcherProbes()
       updater.installOnExit(reopenAfterQuit)
       app.exit(0)
     },

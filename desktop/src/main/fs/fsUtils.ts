@@ -117,13 +117,14 @@ export function createRootChain(): <T>(root: string, fn: () => Promise<T>) => Pr
   const chains = new Map<string, Promise<unknown>>()
   return <T>(root: string, fn: () => Promise<T>): Promise<T> => {
     const run = (chains.get(root) ?? Promise.resolve()).then(fn, fn)
-    chains.set(
-      root,
-      run.then(
-        () => undefined,
-        () => undefined,
-      ),
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
     )
+    chains.set(root, settled)
+    void settled.then(() => {
+      if (chains.get(root) === settled) chains.delete(root)
+    })
     return run
   }
 }
@@ -162,8 +163,36 @@ export async function requireDir(dir: string): Promise<void> {
  * `node_modules` and crash-left atomic-write tmps (`isAtomicTmp`, YAZ-2179) are skipped;
  * unreadable subdirs are skipped.
  */
-export async function buildTree(dir: string): Promise<TreeNode[]> {
-  const entries = await readdir(dir, { withFileTypes: true })
+/** Max concurrent fs calls inside one `buildTree` walk so 10k-file vaults never flood libuv or hit EMFILE (YAZ-6027). */
+const TREE_CONCURRENCY = 32
+
+function createLimiter(max: number): <T>(fn: () => Promise<T>) => Promise<T> {
+  let active = 0
+  const queue: Array<() => void> = []
+  return <T>(fn: () => Promise<T>): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const run = () => {
+        active++
+        fn().then(
+          (v) => {
+            active--
+            queue.shift()?.()
+            resolve(v)
+          },
+          (err) => {
+            active--
+            queue.shift()?.()
+            reject(err)
+          },
+        )
+      }
+      if (active < max) run()
+      else queue.push(run)
+    })
+}
+
+async function buildTreeWith(dir: string, limit: <T>(fn: () => Promise<T>) => Promise<T>): Promise<TreeNode[]> {
+  const entries = await limit(() => readdir(dir, { withFileTypes: true }))
   const dirs: TreeNode[] = []
   const files: TreeNode[] = []
   await Promise.all(
@@ -171,15 +200,19 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
       if (isSkipped(e.name) || isAtomicTmp(e.name)) return
       const full = path.join(dir, e.name)
       if (e.isDirectory()) {
-        const children = await buildTree(full).catch(() => null)
+        const children = await buildTreeWith(full, limit).catch(() => null)
         if (children !== null) dirs.push({ type: 'dir', name: e.name, path: full, children })
       } else if (e.isFile()) {
-        const st = await stat(full).catch(() => undefined)
+        const st = await limit(() => stat(full)).catch(() => undefined)
         if (st) files.push({ type: 'file', name: e.name, path: full, size: st.size, mtime: st.mtimeMs, kind: fileKind(e.name) })
       }
     }),
   )
   return [...dirs.sort(byNameCi), ...files.sort(byNameCi)]
+}
+
+export async function buildTree(dir: string): Promise<TreeNode[]> {
+  return buildTreeWith(dir, createLimiter(TREE_CONCURRENCY))
 }
 
 /**

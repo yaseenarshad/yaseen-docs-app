@@ -86,8 +86,6 @@ const h = vi.hoisted(() => {
     // The language helpers' pool (YAZ-3737 D1): the memory meter reads its PIDs, only for a report.
     registerIpc: vi.fn(() => (s.order.push('registerIpc'), { sync: gitSync, secrets: {}, lsp: { running: () => [] } })),
     registerClipboardIpc: vi.fn(log('registerClipboardIpc')),
-    /** The Draw import's wiring (YAZ-3028 D6); `drawImport.test.ts` tests the import itself. */
-    startDrawImport: vi.fn((_deps: Record<string, unknown>) => void s.order.push('startDrawImport')),
     /** The card skill's copy (YAZ-5107); `cardSkill.test.ts` tests the copy itself. A real copy reads the disk, which ends after `settle` (YAZ-5149). */
     ensureCardSkill: vi.fn(async (userData: string, _shipped: string, _version: string): Promise<string> => (s.order.push('ensureCardSkill'), `${userData}/card-skill`)),
     cardSkillStamp: vi.fn(async (_shipped: string, version: string): Promise<string> => `${version}+dev.stub`),
@@ -133,7 +131,6 @@ vi.mock('@shared/features', () => ({
     return friendsStub.on
   },
 }))
-vi.mock('./drawImport', async (importOriginal) => ({ ...(await importOriginal<typeof import('./drawImport')>()), startDrawImport: h.startDrawImport }))
 vi.mock('./cardSkill', async (importOriginal) => ({ ...(await importOriginal<typeof import('./cardSkill')>()), ensureCardSkill: h.ensureCardSkill, cardSkillStamp: h.cardSkillStamp }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
 vi.mock('./appZoom', () => ({ subscribeAppZoom: vi.fn(), appZoomFactor: () => 1 }))
@@ -274,15 +271,6 @@ describe('main startup order (YAZ-2172)', () => {
     await settle()
     h.s.on.get('open-url')!(event(), 'yaseendraw:///vault/Board%20one.excalidraw?root=%2Fvault')
     expect(h.manager.routeToFile).toHaveBeenCalledWith('/vault/Board one.excalidraw', '/vault')
-  })
-
-  it('starts the Draw import once on ready, before the windows restore, with the app-data half off for an isolated profile (YAZ-3028 D6)', async () => {
-    expect(h.startDrawImport).not.toHaveBeenCalled()
-    h.s.ready()
-    await settle()
-    expect(h.startDrawImport).toHaveBeenCalledOnce()
-    expect(h.startDrawImport.mock.calls[0]![0]).toMatchObject({ drawDir: '/profile/Yaseen Draw', userData: '/profile', appData: false })
-    expect(h.s.order.indexOf('startDrawImport')).toBeLessThan(h.s.order.findIndex((e) => e.startsWith('restore:')))
   })
 
   it('copies the card skill into the profile before the windows restore, stamped with the app version (YAZ-5107, YAZ-5149)', async () => {

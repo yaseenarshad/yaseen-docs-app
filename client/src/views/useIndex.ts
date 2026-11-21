@@ -3,6 +3,9 @@ import { fileKind } from '@shared/fileKind'
 import { IDS_FILE } from '@shared/pageId'
 import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
 import { api } from '../api'
+import { consumeRetitleHint, fetchIndex, onFileRenamed, onIndex } from '../lib/indexFeed'
+import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
+import { basename, stripExt } from '../lib/paths'
 import type { WatchSource } from '../hooks/useWatch'
 
 export type IndexStatus = 'pending' | 'ready' | 'error'
@@ -81,31 +84,39 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
   /** Did an event come in since the last read of this window (13AK)? Read when the window ends. */
   const more = useRef(false)
 
-  const refresh = useCallback(() => {
-    const gen = ++generation.current
-    api.index(root).then(
-      (res) => {
-        if (gen !== generation.current) return
-        setRecords(res.records)
-        setFolders(res.folders)
-        setIds(res.ids)
-        // Kept by identity while they read the same: the link resolver is rebuilt when they change, never on each fetch.
-        const next = res.letters ?? NO_LETTERS
-        setLetters((prev) => (prev.length === next.length && prev.every((held, i) => held === next[i]) ? prev : next))
-        setAsk(res.ask)
-        setUnfinished(res.unfinished === true)
-        const held = res.boards ?? NO_BOARDS
-        setBoards((prev) => (prev.length === held.length && prev.every((b, i) => b.path === held[i]!.path && b.id === held[i]!.id) ? prev : held))
-        setStatus('ready')
-        setError(null)
-      },
-      (err: unknown) => {
-        if (gen !== generation.current) return
-        setStatus('error')
-        setError(err instanceof Error ? err.message : String(err))
-      },
-    )
-  }, [root])
+  const applySnapshot = useCallback((res: IndexResponse) => {
+    setRecords(res.records)
+    setFolders(res.folders)
+    setIds(res.ids)
+    // Kept by identity while they read the same: the link resolver is rebuilt when they change, never on each fetch.
+    const next = res.letters ?? NO_LETTERS
+    setLetters((prev) => (prev.length === next.length && prev.every((held, i) => held === next[i]) ? prev : next))
+    setAsk(res.ask)
+    setUnfinished(res.unfinished === true)
+    const held = res.boards ?? NO_BOARDS
+    setBoards((prev) => (prev.length === held.length && prev.every((b, i) => b.path === held[i]!.path && b.id === held[i]!.id) ? prev : held))
+    setStatus('ready')
+    setError(null)
+  }, [])
+
+  const runRefresh = useCallback(
+    (fresh: boolean) => {
+      const gen = ++generation.current
+      fetchIndex(root, fresh).then(
+        (res) => {
+          if (gen !== generation.current) return
+          applySnapshot(res)
+        },
+        (err: unknown) => {
+          if (gen !== generation.current) return
+          setStatus('error')
+          setError(err instanceof Error ? err.message : String(err))
+        },
+      )
+    },
+    [root, applySnapshot],
+  )
+  const refresh = useCallback(() => runRefresh(false), [runRefresh])
 
   useEffect(() => {
     setStatus('pending')
@@ -117,6 +128,8 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     setUnfinished(false)
     setBoards(NO_BOARDS)
     setError(null)
+    // Keep the shared feed alive for this root so search and other consumers share snapshots without duplicate IPCs (YAZ-6027).
+    const offFeed = onIndex(root, () => undefined)
     refresh()
     // Leading and trailing (13AK): a read now, then one at the end of each window that had events.
     const settle = (): void => {
@@ -151,16 +164,63 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     const unsubscribeChange = api.ids.onChanged((c) => {
       if (c.root === root) refresh()
     })
+    // In-app renames/retitles already updated main's live index (`indexMoved`) before broadcasting `file:renamed`.
+    // Refresh on the leading edge so sidebar/tab titles match the new path immediately instead of flashing the raw
+    // filename slug behind the watcher settle + 300 ms debounce; coalesce bulk renames via leadingTrailing (YAZ-6008).
+    const trimmedRoot = root.replace(/[\\/]+$/, '')
+    const insideRoot = (p: string): boolean => p === trimmedRoot || p.startsWith(`${trimmedRoot}/`) || p.startsWith(`${trimmedRoot}\\`)
+    const renameBurst = leadingTrailing(() => runRefresh(true), WATCH_BURST_QUIET_MS)
+    /** A record's `folder` as the index writes it: the vault-relative folder, `/`-separated, '' at the root. */
+    const folderOf = (p: string): string => {
+      const dir = p.slice(0, Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')))
+      return dir.length <= trimmedRoot.length ? '' : dir.slice(trimmedRoot.length + 1).split('\\').join('/')
+    }
+    const unsubscribeRename = onFileRenamed(({ oldPath, newPath, kind }) => {
+      if (!insideRoot(oldPath) && !insideRoot(newPath)) return
+      // Every rename event makes any read already on the wire stale: main's `getIndex` may have built its records
+      // before this rename landed, and applying it would put the old path back (new → old → new). Only the
+      // burst's trailing read, which post-dates every event, may commit (YAZ-6056 checker round 1).
+      generation.current++
+      const hintedTitle = consumeRetitleHint(oldPath)
+      // Optimistic remap ONLY for a title edit (`fs:retitle` left a hint): one record, the case that flashed the
+      // raw file name. Plain renames, pastes and "Change letters" wait for the read: no array per event.
+      if (hintedTitle !== undefined) {
+        const oldPrefix = `${oldPath.replace(/[\\/]+$/, '')}/`
+        const remapList = (prev: IndexRecord[], isFolders: boolean): IndexRecord[] => {
+          let changed = false
+          const next = prev.map((r) => {
+            if (kind !== 'dir') {
+              if (r.path !== oldPath) return r
+              changed = true
+              const name = basename(newPath)
+              return { ...r, path: newPath, name, basename: stripExt(name), folder: folderOf(newPath), title: hintedTitle }
+            }
+            if (r.path !== oldPath && !r.path.startsWith(oldPrefix)) return r
+            changed = true
+            const movedPath = newPath + r.path.slice(oldPath.length)
+            const isDirectFolderMeta = isFolders && movedPath.slice(newPath.length + 1).indexOf('/') === -1
+            return { ...r, path: movedPath, folder: folderOf(movedPath), ...(isDirectFolderMeta ? { title: hintedTitle } : {}) }
+          })
+          return changed ? next : prev
+        }
+        setRecords((prev) => remapList(prev, false))
+        if (kind === 'dir') setFolders((prev) => remapList(prev, true))
+      }
+      renameBurst.call()
+    })
     return () => {
       generation.current++
+      offFeed()
       unsubscribe()
       unsubscribeIds()
       unsubscribeChange()
+      unsubscribeRename()
+      renameBurst.cancel()
       if (timer.current !== null) clearTimeout(timer.current)
       timer.current = null
       more.current = false
     }
-  }, [root, watch, refresh])
+  }, [root, watch, refresh, runRefresh])
 
   return { status, records, folders, ids, letters, ask, unfinished, boards, error, refresh }
 }

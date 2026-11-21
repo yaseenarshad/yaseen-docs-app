@@ -23,7 +23,6 @@ export interface RecentSections {
   edited: readonly ExploreOpen[]
 }
 
-export const NO_SECTIONS: RecentSections = { opened: [], edited: [] }
 
 export interface RecentSources {
   /** The window's vaults: each root, and the folder a folder-of-a-vault window shows. */

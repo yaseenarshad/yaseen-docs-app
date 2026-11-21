@@ -4197,7 +4197,6 @@ export function builtInPrefixRefusal(name: string): string | null {
  * the vault). A STORED folder outside this grammar still reads — report-don't-block: use sites
  * treat it as absent, a vault is never refused over it.
  */
-export const FOLDER_NAME = /^(?![A-Za-z]:)[^\\\0/.][^\\\0/]*(?:\/[^\\\0/.][^\\\0/]*)*$/
 
 /** One declared property: what kind of editor it gets, and what a link points at. */
 export interface PropertyDecl {

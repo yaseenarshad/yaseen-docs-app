@@ -69,8 +69,12 @@ const INLINE_TAG_RE = /(?:^|[\s([,;])#([A-Za-z0-9_/-]+)/g
 
 /** Frontmatter tags, then inline `#tags` in order of appearance (GRO-2127 rules). */
 export function extractTags(props: Record<string, unknown>, body: string): string[] {
+  return extractTagsFromMasked(props, stripCode(body))
+}
+
+function extractTagsFromMasked(props: Record<string, unknown>, masked: string): string[] {
   const tags = frontmatterTags(props)
-  for (const m of stripCode(body).replace(URL_RE, ' ').matchAll(INLINE_TAG_RE)) {
+  for (const m of masked.replace(URL_RE, ' ').matchAll(INLINE_TAG_RE)) {
     if (/[^0-9]/.test(m[1])) tags.push(m[1])
   }
   return unique(tags)
@@ -92,23 +96,20 @@ export function linkTarget(inner: string): string {
  * (`[[Covid pages|COVID-19]]`) keep both page sides, `Covid pages|COVID-19`. The scan knows no pages; the resolver
  * picks the side when it reads the record (the left side when it is a page).
  */
-function bodyWikilinks(body: string, embed: boolean): string[] {
-  const out: string[] = []
-  for (const m of stripCode(body).matchAll(WIKILINK_RE)) {
-    if ((m[1] === '!') !== embed) continue
+/** Single pass over already-masked body extracting both `[[links]]` and `![[embeds]]` (YAZ-6027). */
+function bodyWikilinksAndEmbeds(masked: string): { links: string[]; embeds: string[] } {
+  const links: string[] = []
+  const embeds: string[] = []
+  for (const m of masked.matchAll(WIKILINK_RE)) {
     const target = indexTarget(m[2])
-    if (target !== '') out.push(target)
+    if (target === '') continue
+    if (m[1] === '!') embeds.push(target)
+    else links.push(target)
   }
-  return out
+  return { links, embeds }
 }
 
-/**
- * Frontmatter string values (top-level and inside lists) that are exactly `[[…]]`, then the same
- * in each folder's block of `in` (D19), then body `[[links]]` outside code; embeds excluded.
- * `aliases` is skipped whatever it holds (GRO-2214): its values are this page's own NAMES, never
- * outgoing links.
- */
-export function extractLinks(props: Record<string, unknown>, body: string): string[] {
+function frontmatterLinks(props: Record<string, unknown>): string[] {
   const out: string[] = []
   const take = (v: unknown): void => {
     for (const item of Array.isArray(v) ? v : [v]) {
@@ -120,16 +121,33 @@ export function extractLinks(props: Record<string, unknown>, body: string): stri
   }
   for (const [key, v] of Object.entries(props)) if (key !== ALIASES_KEY) take(v)
   for (const [, block] of folderBlocks(props)) Object.values(block).forEach(take)
-  return unique([...out, ...bodyWikilinks(body, false)])
+  return out
+}
+
+/**
+ * Frontmatter string values (top-level and inside lists) that are exactly `[[…]]`, then the same
+ * in each folder's block of `in` (D19), then body `[[links]]` outside code; embeds excluded.
+ * `aliases` is skipped whatever it holds (GRO-2214): its values are this page's own NAMES, never
+ * outgoing links.
+ */
+export function extractLinks(props: Record<string, unknown>, body: string): string[] {
+  return unique([...frontmatterLinks(props), ...bodyWikilinksAndEmbeds(stripCode(body)).links])
 }
 
 /** `![[target]]` targets from the body, outside code. */
 export function extractEmbeds(body: string): string[] {
-  return unique(bodyWikilinks(body, true))
+  return unique(bodyWikilinksAndEmbeds(stripCode(body)).embeds)
 }
 
 function extractBody(props: Record<string, unknown>, body: string): Pick<IndexRecord, 'aliases' | 'tags' | 'links' | 'embeds'> {
-  return { aliases: extractAliases(props), tags: extractTags(props, body), links: extractLinks(props, body), embeds: extractEmbeds(body) }
+  const masked = stripCode(body)
+  const { links, embeds } = bodyWikilinksAndEmbeds(masked)
+  return {
+    aliases: extractAliases(props),
+    tags: extractTagsFromMasked(props, masked),
+    links: unique([...frontmatterLinks(props), ...links]),
+    embeds: unique(embeds),
+  }
 }
 
 /**

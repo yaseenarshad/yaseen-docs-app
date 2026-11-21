@@ -28,6 +28,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { cellPosAt, isMerged, rectHasMerge, rowFolded, rowSubhead } from './cells'
 import { fillSeries } from './fillSeries'
 import { selectCells, textCell, writeCells, type Cell } from './tablePaste'
+import { typingOnly } from './tableStyle'
 
 /** The source cells: rows `top` to `bottom` and columns `left` to `right`, both ends exclusive (a `TableRect`). */
 interface FillSource {
@@ -203,6 +204,10 @@ export const tableFill = $prose(() => {
         // Typing outside a table keeps the empty state; a moved caret in the same cell keeps the handle.
         if (source === null && prev.source === null && drag === null) return prev
         if (!tr.docChanged && sameSource(source, prev.source) && drag === prev.drag) return prev
+        // Inline typing inside the same cell keeps the fill handle at its mapped position (YAZ-6028).
+        if (tr.docChanged && drag === null && prev.drag === null && sameSource(source, prev.source) && typingOnly(tr)) {
+          return { source, drag, decorations: prev.decorations.map(tr.mapping, state.doc) }
+        }
         return { source, drag, decorations: decorationsOf(state, source, drag) }
       },
     },

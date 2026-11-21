@@ -435,9 +435,6 @@
 }
 
 /* The calendar as an agenda: the month, then each day with pages, today in the accent. */
-.folder-agenda__earlier {
-  margin-bottom: 8px;
-}
 .folder-agenda__month {
   margin: 16px 0 6px;
   font-size: 15px;

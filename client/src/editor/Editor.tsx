@@ -5,20 +5,16 @@ import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, HotkeyAside } from '@shared/keys'
 import { api } from '../api'
-import { CommentsSection } from '../comments/CommentsSection'
 import { createBoardForPage } from '../drawings/createDrawing'
-import { DrawingModal } from '../drawings/DrawingModal'
 import type { DrawingAppSettings } from '../drawings/ExcalidrawSurface'
-import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
-import { FolderView } from '../views/FolderView'
-import { FolderPageChips, type FolderPageTab } from '../views/FolderToolbar'
+import { FolderPageChips, type FolderPageTab } from '../views/folderPageChipsContext'
 import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
 import { placeRows, type LinkActions } from './linkMenu'
 import { redrawLinkPills } from './markdownLink'
-import { editorViewCtx } from '@milkdown/kit/core'
+import { editorViewCtx, serializerCtx } from '@milkdown/kit/core'
 import { takePageId } from '../views/scaffold'
-import { createCrepe, editorViewOf, focusEditor, getCaretOf, giveCaretBack, keepCaretOf, type KeptCaret, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo } from './createCrepe'
+import { createCrepe, editorViewOf, focusEditor, getCaretOf, giveCaretBack, keepCaretOf, type KeptCaret, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, postProcessMarkdown, setMarkdown, zoomPageTo } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { mergeExternalMarkdown } from './external/mergeExternal'
 import { FindBar } from './find/FindBar'
@@ -29,7 +25,6 @@ import { OutsideChangesBar } from './external/OutsideChangesBar'
 import { OutsideChangesList } from './external/OutsideChangesList'
 import { TableOfContents } from './toc/TableOfContents'
 import { createTocChannel } from './toc/tocChannel'
-import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
 import { PageFrame, TitleRowControls } from './PageFrame'
 import { usePageId } from '../search/showIds'
@@ -120,6 +115,12 @@ const DrawioEditor = lazy(() => import('../diagrams/DrawioEditor').then((m) => (
 const CodeEditor = lazy(() => import('../code/CodeEditor').then((m) => ({ default: m.CodeEditor })))
 /** A card file's tab (YAZ-5037): the same rule — the card view and its card editor in their own chunk. */
 const CardFileView = lazy(() => import('./CardFileView').then((m) => ({ default: m.CardFileView })))
+/** On-demand editors, modals, and heavy page sections (YAZ-6008 D3): split out of the initial renderer bundle. */
+const FolderView = lazy(() => import('../views/FolderView').then((m) => ({ default: m.FolderView })))
+const DrawingModal = lazy(() => import('../drawings/DrawingModal').then((m) => ({ default: m.DrawingModal })))
+const ImageModal = lazy(() => import('./image/ImageModal').then((m) => ({ default: m.ImageModal })))
+const FrontmatterPanel = lazy(() => import('./FrontmatterPanel').then((m) => ({ default: m.FrontmatterPanel })))
+const CommentsSection = lazy(() => import('../comments/CommentsSection').then((m) => ({ default: m.CommentsSection })))
 
 /**
  * A save flips the chip unsaved → saving → saved, and each flip re-renders CrepeHost; these sections
@@ -379,7 +380,9 @@ function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFold
       )
       return (
         <section className="editor">
-          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenFolderPage={onOpenFolderPage} onOpenFileNewTab={onOpenFileNewTab} renderPageEditor={renderPageEditor} onDeleteEntries={onDeleteEntries} renderPage={renderPage} tabId={tabId} viewKey={viewKey} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} hoverLinks={hoverFolderLinks} folderPages={folderPages} previewScope={previewScope} diagramDarkColors={diagramDarkColors} sync={sync} onSyncNow={onSyncNow} />
+          <Suspense fallback={null}>
+            <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenFolderPage={onOpenFolderPage} onOpenFileNewTab={onOpenFileNewTab} renderPageEditor={renderPageEditor} onDeleteEntries={onDeleteEntries} renderPage={renderPage} tabId={tabId} viewKey={viewKey} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} hoverLinks={hoverFolderLinks} folderPages={folderPages} previewScope={previewScope} diagramDarkColors={diagramDarkColors} sync={sync} onSyncNow={onSyncNow} />
+          </Suspense>
         </section>
       )
     }
@@ -947,14 +950,19 @@ function CrepeHost({
    * scroll spy; the table of contents below draws them. Stable identity, for the find channel's
    * reason.
    */
+  const tocActive = tableOfContentsOn && tableOfContents !== 'off'
   const tocChannel = useMemo(() => {
     const channel = createTocChannel()
     // The saved source (the state above, as it was read at this mount) is in the channel BEFORE
     // the editor exists, so the engine's first scan is already by it: a page saved as Bullets
     // never shows its Auto list first.
     channel.setSource(tocSource)
+    channel.setEnabled(tocActive)
     return channel
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- once per mount; a later choice goes through `changeTocSource`
+  useEffect(() => {
+    tocChannel.setEnabled(tocActive)
+  }, [tocChannel, tocActive])
   /** The reader chose in the cog: this page's state, the app state file, and the engine, which scans again at once. */
   const changeTocSource = (source: TocSource | null): void => {
     setTocSource(source)
@@ -1197,7 +1205,16 @@ function CrepeHost({
     let stopKeeping: (() => void) | null = null
     const ready = crepe.create().then(() => {
       if (cancelled) return
-      controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
+      // Capture immutable initial doc lazily (YAZ-6028) so opening a large page skips startup Markdown serialization.
+      // Guard `'editor' in crepe` so tests that mock `createCrepe` fall back to eager `getContent()`.
+      const getBaseline =
+        'editor' in crepe && crepe.editor !== undefined
+          ? (() => {
+              const initDoc = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc)
+              return () => crepe.editor.action((ctx) => postProcessMarkdown(ctx.get(serializerCtx)(initDoc)))
+            })()
+          : undefined
+      controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body, getBaseline)
       setReadyCrepe(crepe)
       // An in-app rename carried another window's (or this window's) DIRTY buffer into this
       // path (Links E1, GRO-2194): apply it OVER the fresh disk baseline as an unsaved
@@ -1684,7 +1701,9 @@ function CrepeHost({
               {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
                   folder view — ONE registry, so a type declared in a row types the same column in
                   every folder's views. */}
-              <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />
+              <Suspense fallback={null}>
+                <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />
+              </Suspense>
             </>
           }
         >
@@ -1692,7 +1711,9 @@ function CrepeHost({
           <div className="editor-mount" data-tour="page-editor" ref={hostRef} {...mountWidths} />
           {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
               writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
-          <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />
+          <Suspense fallback={null}>
+            <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />
+          </Suspense>
           {wikilinks !== undefined && (
             <MemoBacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} hoverPreview={hoverBacklinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
           )}
@@ -1717,14 +1738,18 @@ function CrepeHost({
           page. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}
       {openDrawing !== null && (
-        <DrawingModal key={`${openDrawing.root}\n${openDrawing.target}`} root={openDrawing.root} target={openDrawing.target} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+        <Suspense fallback={null}>
+          <DrawingModal key={`${openDrawing.root}\n${openDrawing.target}`} root={openDrawing.root} target={openDrawing.target} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+        </Suspense>
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing
           modal, opened by the node view's double-click with the whole gallery (every image on
           the page, resolved srcs) and the index of the one clicked. */}
       {openImage !== null && (
         // Keyed on the clicked image so a reopen remounts with a fresh cursor.
-        <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />
+        <Suspense fallback={null}>
+          <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />
+        </Suspense>
       )}
     </>
   )

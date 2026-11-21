@@ -53,6 +53,7 @@ import { gestureAction } from '@shared/keys'
 import { rowShortcuts } from '../pageKeys'
 import { openCellNote, canOpenCellNote } from '../table/cellNoteCard'
 import { cellNoteAround } from '../table/cellNotes'
+import { typingOnly } from '../table/tableStyle'
 import { boardCheckOf } from '../drawing/boardEmbedScan'
 import type { BoardCheck } from '../drawing/boardEmbedText'
 import { ancestorItemPositions, cellPosAround, innermostItemPos, isListItem, itemLabelText } from './listNodes'
@@ -391,9 +392,25 @@ const itemPosFromGlyphClick = (view: EditorView, event: MouseEvent): number | nu
   return isListItem($pos.parent) && canZoomInto(view.state.doc, $pos.before()) ? $pos.before() : null
 }
 
+/** O(depth) key of the breadcrumb labels for `itemPos` (captures page title, ancestor labels, zoomed label, and live wikilink titles). */
+const crumbsKeyOf = (doc: ProseNode, itemPos: number, title: string, linkText?: (text: string) => string): string | null => {
+  const $item = doc.resolve(itemPos)
+  const zoomed = $item.nodeAfter
+  if (!isListItem(zoomed)) return null
+  let key = `${itemPos}\u0000${title}`
+  for (let depth = 0; depth <= $item.depth; depth++) {
+    const container = $item.node(depth)
+    if (isListItem(container)) key += `\u0000${itemLabel(container, linkText)}`
+  }
+  key += `\u0000${itemLabel(zoomed, linkText)}`
+  return key
+}
+
 export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, linkText, hotkeys }: ZoomOptions) => {
   // Used by the FIRST state only: a rebuilt state (`setMarkdown` → `replaceAll(md, true)`) starts zoomed out, as before.
   let pendingStartKey = startKey
+  // Cached zoomed DecorationSet so selection moves and inline typing in zoomed children avoid rebuilding every frame (YAZ-6028).
+  let cachedDecos: { doc: ProseNode; crumbsKey: string; set: DecorationSet } | null = null
   return $prose(
     () =>
       new Plugin<ZoomState>({
@@ -409,6 +426,7 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
           apply: (transaction, previous, _oldState, newState) => {
             const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)
             if (meta !== undefined) {
+              cachedDecos = null
               // ⌘Z-revertible while it is the latest view action; the revert itself consumes it.
               return { ...previous, itemPos: meta, undoLevel: transaction.getMeta(UNDO_META) ? undefined : previous.itemPos, changes: previous.changes + 1 }
             }
@@ -432,6 +450,16 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
                 const inside = transaction.mapping.mapResult(itemPos + 1, 1)
                 const pos = !mapped.deleted ? mapped.pos : !inside.deleted ? inside.pos - 1 : null
                 itemPos = pos !== null && isListItem(newState.doc.nodeAt(pos)) ? pos : null
+              }
+              if (cachedDecos !== null && itemPos !== null && itemPos === previous.itemPos && typingOnly(transaction)) {
+                const nextCrumbsKey = crumbsKeyOf(newState.doc, itemPos, title(), linkText)
+                if (nextCrumbsKey !== null && nextCrumbsKey === cachedDecos.crumbsKey) {
+                  cachedDecos = { doc: newState.doc, crumbsKey: nextCrumbsKey, set: cachedDecos.set.map(transaction.mapping, newState.doc) }
+                } else {
+                  cachedDecos = null
+                }
+              } else {
+                cachedDecos = null
               }
             }
             return itemPos === previous.itemPos && undoLevel === previous.undoLevel ? previous : { ...previous, itemPos, undoLevel }
@@ -483,7 +511,14 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
           decorations: (state) => {
             const itemPos = getZoomedItemPos(state)
             if (itemPos === null) return DecorationSet.empty
-            return DecorationSet.create(state.doc, buildDecorations(state, itemPos, title(), linkText))
+            const currentTitle = title()
+            const crumbsKey = crumbsKeyOf(state.doc, itemPos, currentTitle, linkText)
+            if (crumbsKey !== null && cachedDecos !== null && cachedDecos.doc === state.doc && cachedDecos.crumbsKey === crumbsKey) {
+              return cachedDecos.set
+            }
+            const set = DecorationSet.create(state.doc, buildDecorations(state, itemPos, currentTitle, linkText))
+            cachedDecos = crumbsKey !== null ? { doc: state.doc, crumbsKey, set } : null
+            return set
           },
           handleDOMEvents: {
             click: (view, event) => {

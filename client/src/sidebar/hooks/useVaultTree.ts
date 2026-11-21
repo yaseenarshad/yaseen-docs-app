@@ -9,6 +9,7 @@ import { copyFoldKey } from '@shared/foldKey'
 import { rootOfPath, stripSlash, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import type { WatchSource } from '../../hooks/useWatch'
+import { onFileRenamed } from '../../lib/indexFeed'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, latestTree, onTree } from '../../lib/treeFeed'
@@ -245,11 +246,18 @@ export function useVaultTree(
         if (ev.type === 'ready') return burst.flush()
         burst.call()
       })
+      // Refresh immediately on in-app renames/moves so the sidebar does not wait for macOS FSEvents + SETTLE_MS (YAZ-6008).
+      const trimmedVault = vault.replace(/[\\/]+$/, '')
+      const inVault = (p: string): boolean => p === trimmedVault || p.startsWith(`${trimmedVault}/`) || p.startsWith(`${trimmedVault}\\`)
+      const offRename = onFileRenamed(({ oldPath, newPath }) => {
+        if (inVault(oldPath) || inVault(newPath)) burst.call()
+      })
       held.set(vault, {
         watch: watches[at],
         end: () => {
           offTree()
           offWatch()
+          offRename()
           burst.cancel()
         },
       })

@@ -13,7 +13,6 @@
     "@excalidraw/common": "0.18.0",
     "@excalidraw/element": "0.18.0",
     "@excalidraw/excalidraw": "0.18.0",
-    "@excalidraw/fractional-indexing": "3.3.0",
     "@excalidraw/math": "0.18.0",
     "@lezer/highlight": "^1.2.3",
     "@milkdown/crepe": "^7.22.1",

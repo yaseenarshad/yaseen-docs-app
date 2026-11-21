@@ -21,9 +21,10 @@ export const INDEX_STATE = 'index'
  * (`CardRecord.properties`, off its card line), and `fix` is a card line word (no property is named so); the Mac's
  * `CACHE_VERSION` 19. 4: an empty block (`---\n---`) ends at its own second fence, never at a later
  * `---` line (the cards above that line were missing); the Mac's `CACHE_VERSION` 20. 5: a page that starts
- * with a BOM has its block read; the Mac's `CACHE_VERSION` 21. Absent (1): every index stored before it.
+ * with a BOM has its block read; the Mac's `CACHE_VERSION` 21. 6: card review times without seconds/ms or
+ * with timezone offsets are read (YAZ-5673, matching Mac `CACHE_VERSION` 22; YAZ-6024). Absent (1): every index stored before it.
  */
-export const INDEX_RULES = 5
+export const INDEX_RULES = 6
 
 export interface PhoneIndex {
   /** The commit the records are of. */

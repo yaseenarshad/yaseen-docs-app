@@ -295,7 +295,9 @@ function SessionScreen({
   const text = pageText
   const cardName = page === null ? '' : reviewTitleOf(page, review.settings.titleAt)
   const titleText = pageText === null ? '' : cardName
-  const record = card === null ? undefined : source.records.find((r) => r.path === card.path)
+  // O(1) lookup by path instead of scanning all vault records on every tap/render (YAZ-6028).
+  const recordByPath = useMemo(() => new Map(source.records.map((r) => [r.path, r])), [source.records])
+  const record = card === null ? undefined : recordByPath.get(card.path)
   const cardFile = record?.kind === 'card'
   // A card that comes back (YAZ-5594: same place, "3 / 3") is a new turn: the answers so far tell the two apart.
   const cardKey = card === null ? null : `${session.answered.length}\n${card.path}\n${card.id}`

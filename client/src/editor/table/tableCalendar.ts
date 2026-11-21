@@ -327,6 +327,15 @@ class CalendarClock {
       this.#generation = state.generation
       this.#watchChips(state)
     }
+    // No calendar table in this page: skip full-DOM pill/room scans on every keystroke (YAZ-6028).
+    if (!want) {
+      if (this.#second !== null) {
+        clearTimeout(this.#second)
+        this.#second = null
+      }
+      this.#textOn = false
+      return
+    }
     this.#text()
     this.#seconds()
     this.#rooms()

@@ -12,7 +12,6 @@ import { keepOutsideChangesOfTabs } from './editor/external/outsideChangesMemory
 import { newPageBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
-import { KeySheet } from './keys/KeySheet'
 import { onKeySheetRequest, placeOverTab } from './keys/keySheetRequest'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { useVaultStorage } from './hooks/useVaultStorage'
@@ -58,6 +57,7 @@ import { askFromFiles, filesClickHow, watchFilesKeys } from './lib/filesWindow'
 import { FloatingPreview } from './sidebar/HoverPreviewHost'
 import { filesPreviewPopup } from './sidebar/previewPopup'
 import { isFolderPath, pageName, pathTitles, useAllPathTitles, useLatestTrees } from './lib/pageLabel'
+import { clearRetitleHint, hintRetitle } from './lib/indexFeed'
 import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
@@ -69,12 +69,11 @@ import { folderPagesFor as folderPagesOver, type FolderPagesVault } from '@share
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart } from './editor/table/cellNoteCard'
 import { setCellNotePreviewLines } from './editor/table/cellNotePreview'
-import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
+import { dropPageWindowsAt, renamePageWindows } from './views/view/pageWindowMemory'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
 import type { ExploreRequest } from './explore/layers'
-import { CARD_OPEN, type CardOpenRequest } from './editor/card/cardBlockView'
 import { CARD_FORMATS_OPEN, cardFormatsOpenIn, setCardFormatHints, type CardFormatsOpenRequest } from './editor/card/cardFormatHint'
-import { CARD_PREVIEW, type CardPlace, type CardPreviewRequest } from './editor/card/cardOpen'
+import { CARD_OPEN, CARD_PREVIEW, type CardOpenRequest, type CardPlace, type CardPreviewRequest } from './editor/card/cardOpen'
 import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
@@ -90,7 +89,6 @@ import { tellCardFoldChange } from './editor/card/cardFold'
 import { useReviewOnRoots } from './review/useReviewSettings'
 import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
 import { QuickLook } from './search/QuickLook'
-import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
 import { linkPillVars } from './editor/wikilink/linkPillLook'
 import { DEFAULT_NEW_PAGE_TITLE, plainEntryName, renderTitleTemplate } from './sidebar/createEntry'
@@ -140,6 +138,10 @@ import { useTabSleep } from './workspace/useTabSleep'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
 import { PageActions } from './lib/pageActions'
+
+/** On-demand surfaces (YAZ-6008 D3): split out of the initial renderer chunk so launch only parses the active workspace. */
+const SettingsDialog = lazy(() => import('./settings/SettingsDialog').then((m) => ({ default: m.SettingsDialog })))
+const KeySheet = lazy(() => import('./keys/KeySheet').then((m) => ({ default: m.KeySheet })))
 
 /** The "What's new" sheet (YAZ-2976 D5) is its own chunk: launch never parses it, and the first open fetches it. */
 const WhatsNewSheet = lazy(() => import('./update/WhatsNewSheet'))
@@ -565,6 +567,7 @@ export function App() {
   const slots = useRef(EMPTY_SLOTS)
   slots.current = assignSlots(slots.current, roots)
   const scopes: VaultScope[] = []
+  // oxlint-disable-next-line react-hooks/rules-of-hooks -- fixed-size vault slot array (constant hook count per render)
   for (const slotRoot of slots.current) scopes.push(useVaultScope(slotRoot, notify))
   /** The scopes of the window's vaults, in the order of `roots`. */
   const vaults = roots.map((vault) => scopes[slots.current.indexOf(vault)])
@@ -900,7 +903,7 @@ export function App() {
   // Every render: a few map writes; a sticky default that changed tells the editors (`setVaultTableLook`).
   useEffect(() => {
     roots.forEach((at, i) => setVaultTableLook(at, vaults[i]?.tableLook.settings ?? null))
-  })
+  }, [roots, vaults])
   useEffect(() => setCellNoteButtonSetting(settings.tableCellNoteButton), [settings.tableCellNoteButton])
   // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.
   useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
@@ -1216,7 +1219,8 @@ export function App() {
    */
   const openRoot = useCallback(async (path: string): Promise<boolean> => {
     try {
-      await api.tree(path)
+      // Prime treeFeed so Sidebar's useVaultTree reuses this walk instead of walking the vault twice (YAZ-6027).
+      await fetchTree(path)
     } catch (err) {
       if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) {
         storage.removeRecentRoot(path)
@@ -1261,7 +1265,7 @@ export function App() {
     const found: string[] = []
     for (const vault of set.roots) {
       try {
-        await api.tree(vault)
+        await fetchTree(vault)
         found.push(vault)
       } catch {
         // A folder that is gone is left out, and named below.
@@ -2272,7 +2276,7 @@ export function App() {
       // A shared drawing the merge rewrote re-uploads its link, as a local save would (YAZ-3040).
       for (const m of merged) if (m.copy === undefined && m.kind !== 'page') pageBoardSaved(vault.root, absFrom(vault.root, m.path))
     }
-  })
+  }, [vaults, openHistory])
   const leftOverview = useCallback(() => setOverview((at) => (at.phase === 'leaving' ? OVERVIEW_CLOSED : at)), [])
   const toggleOverview = useCallback(() => {
     const { phase, active: open } = now.current
@@ -3149,10 +3153,16 @@ export function App() {
       const dirs = vaultDirs(r)
       let newPath: string
       let kind: 'file' | 'dir'
+      const hintedTitle = to.title === undefined ? undefined : to.title.trim()
+      if (hintedTitle !== undefined && hintedTitle !== '') hintRetitle(oldPath, hintedTitle)
       try {
         ;({ newPath, kind } = to.title === undefined ? await api.file.rename({ oldPath, newPath: to.newPath }) : await api.file.retitle({ path: oldPath, title: to.title }))
       } catch (error) {
         return { error }
+      } finally {
+        // Main pushes `file:renamed` before it replies, so the event already took the hint; one it never took
+        // (no rename happened, or an error) must not leak into a later rename of the same path (YAZ-6056).
+        clearRetitleHint(oldPath)
       }
       // A move removes nothing from a page (YAZ-4713 C9): its values are its own fields, and a page's own values stay too.
       const hasMovedViewFile = viewOnlyCatalog?.entries.some((entry) =>
@@ -4215,7 +4225,11 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />
+        </Suspense>
+      )}
       {courseOpen !== null && (
         <Suspense fallback={null}>
           <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={courseOpen.vault} onClose={closeCourse} courseVault={courseVault} lost={courseLost} />
@@ -4223,7 +4237,11 @@ export function App() {
       )}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
-      {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
+      {keySheetOpen && (
+        <Suspense fallback={null}>
+          <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />
+        </Suspense>
+      )}
       {/* Preview a card (YAZ-5152) in a Files window: no page area there, so it covers the window. */}
       {filesWindow && cardPreviewView('window')}
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}

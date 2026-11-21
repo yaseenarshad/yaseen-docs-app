@@ -125,6 +125,7 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
   const flyout = useFlyout<string>()
   // The view's own Text in cells, else Settings' (YAZ-4544 10A).
   const defaults = useViewDefaults()
+  const base = useFolderHeaderRow()
   const textInCells = textInCellsOf(def.views[viewIndex], defaults)
   /** Once per menu, not per keystroke in its fields: the kind may walk the rows. */
   const typeLabel = useMemo(() => (columnKey === null ? '' : columnTypeLabel(columnKey, records, properties, folder.settings)), [columnKey, records, properties, folder.settings])
@@ -220,7 +221,6 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
    * one write of the view's own `headerRow` (`setHeaderRowPart`, the View tab's writer) and the menu stays open, so
    * fill, strength, weight, text colour and align go in one visit, as a page table's "Header row ›".
    */
-  const base = useFolderHeaderRow()
   const header = shownHeaderRow(view, base)
   const headerItem = (part: keyof HeaderRowOwn, value: string, swatch?: string) => (
     <button

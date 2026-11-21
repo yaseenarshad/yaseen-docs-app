@@ -21,6 +21,7 @@ import { openByKey } from '../../lib/openGesture'
 import { type PageWindowLink, currentItemClass, shownRows, usePageWindowItems } from './PageWindow'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ItemName, useItemLock } from './ReadOnlyMark'
+import { useProgressiveCount } from './useProgressiveCount'
 import type { ViewHover } from './viewHover'
 
 export interface CardsViewProps {
@@ -277,11 +278,18 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     )
   }
 
+  const { shown: flatCount, sentinelRef } = useProgressiveCount(groups === null ? rows.length : 0)
+
   return (
     <div ref={rootRef} className="view-cards" style={style}>
-      {groups === null
-        ? grid(rows)
-        : groups.map((g) => section(g, TOP_SPOT))}
+      {groups === null ? (
+        <>
+          {grid(flatCount < rows.length ? rows.slice(0, flatCount) : rows)}
+          {flatCount < rows.length && <div ref={sentinelRef} className="view-cards__sentinel" aria-hidden="true" />}
+        </>
+      ) : (
+        groups.map((g) => section(g, TOP_SPOT))
+      )}
       {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onOpenWindow={onOpenWindow} onNotice={onNotice} onClose={() => setMenu(null)} {...cardMenuItems(pageDoors, menu.path, () => setMenu(null), pageDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => pageDoors.newBelow!(menu.path) })} />}
     </div>
   )

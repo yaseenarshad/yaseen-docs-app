@@ -6,7 +6,9 @@
  * lives. Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
  */
 import { useUnit } from '../vault/unitWord'
-import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useContext, useMemo, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
+import { PropertiesOpenMemory } from './propertiesOpenMemory'
+export { PropertiesOpenMemory }
 import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
@@ -214,7 +216,7 @@ const pillOf = (target: EventTarget | null): HTMLElement | null => (target insta
  * The mini window's memory of the panel's open state (YAZ-3746 13Q): `PageWindow` provides one `{ current }` per card,
  * each page it shows starts as the last one left it, and each toggle writes it. Null (a tab, the right panel): closed at first.
  */
-export const PropertiesOpenMemory = createContext<{ current: boolean | null } | null>(null)
+/** Re-exported from `propertiesOpenMemory.ts` (YAZ-6008 D3). */
 
 /** A link value is the page editor's pill here too, as in a folder page's cells (YAZ-4544 4G): one look for links. */
 export function FrontmatterPanel(props: FrontmatterPanelProps) {

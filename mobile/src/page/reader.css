@@ -60,7 +60,6 @@
   --page-code-bg: #dfdfdf;
   /* The quote's bar (`--crepe-color-selected`) and the rule (`--crepe-color-outline` at 20%). */
   --page-quote-bar: #d5d5d5;
-  --page-rule: color-mix(in srgb, #a8a8a8 20%, transparent);
   font-size: var(--text-size, 16px);
   line-height: var(--page-line);
 }
@@ -68,7 +67,6 @@
   --page-code-fg: #ff6666;
   --page-code-bg: #303030;
   --page-quote-bar: #3a3a3a;
-  --page-rule: color-mix(in srgb, #757575 30%, transparent);
 }
 
 /* The blocks: no margins of their own but the Mac's; a paragraph's room is its padding (Crepe's), so it never

@@ -26,6 +26,8 @@ export interface PassOptions {
   onProgress?: (progress: PassProgress) => void
   /** From this many files to download, text files come in batches (default `BATCH_FROM`). Tests of the one-file path raise it. */
   batchFrom?: number
+  /** In-memory PhoneIndex already held by the sync engine, avoiding a redundant multi-MB IDB deserialization when its commit matches (YAZ-6027). */
+  heldIndex?: PhoneIndex | null
 }
 
 /**
@@ -119,7 +121,10 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
   const old = checkpoint?.shas ?? {}
   const diff = diffTrees(checkpoint?.shas ?? null, tree)
   const stored = new Set((await store.list(vault)).map((e) => e.path))
-  const saved = await store.getState<PhoneIndex>(vault, INDEX_STATE)
+  const saved =
+    checkpoint !== null && options.heldIndex != null && options.heldIndex.commit === checkpoint.commit && ofTheseRules(options.heldIndex)
+      ? options.heldIndex
+      : await store.getState<PhoneIndex>(vault, INDEX_STATE)
   // An index of an older build's rules is not trusted: every record is built again from the stored files.
   const trusted = checkpoint !== null && saved !== undefined && saved.commit === checkpoint.commit && ofTheseRules(saved)
   await slice()
@@ -187,11 +192,30 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
       if (text !== null && text !== undefined && (await gitBlobSha(text)) === shas[i]) checked.set(shas[i], text)
       await slice()
     }
+    const batchItems: Array<{ path: string; content: string }> = []
+    const fallbackPaths: string[] = []
     for (const path of paths) {
+      const text = checked.get(tree.get(path)!)
+      if (text !== undefined) batchItems.push({ path, content: text })
+      else fallbackPaths.push(path)
+    }
+    if (batchItems.length > 0 && failure === null) {
+      if (store.writeBatch !== undefined) {
+        await store.writeBatch(vault, batchItems)
+        fetched += batchItems.length
+        for (const { path, content } of batchItems) await finish(path, content)
+      } else {
+        for (const { path, content } of batchItems) {
+          if (failure !== null) return
+          await finish(path, await download(path, tree.get(path)!, content))
+        }
+      }
+    }
+    for (const path of fallbackPaths) {
       // Nothing writes after a failure in another lane.
       if (failure !== null) return
       const sha = tree.get(path)!
-      await finish(path, await download(path, sha, checked.get(sha)))
+      await finish(path, await download(path, sha))
     }
   }
 
@@ -236,9 +260,14 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
   }
 
   // Gone, too large, or a picture or sound that changed: the kept copy goes (R5, F7, R7).
+  const toRemove: string[] = []
   for (const path of stored) {
     const sha = tree.get(path)
-    if (sha === undefined || tooBig(path) || (!wanted(path) && old[path] !== sha)) await store.remove(vault, path)
+    if (sha === undefined || tooBig(path) || (!wanted(path) && old[path] !== sha)) toRemove.push(path)
+  }
+  if (toRemove.length > 0) {
+    if (store.removeBatch !== undefined) await store.removeBatch(vault, toRemove)
+    else for (const path of toRemove) await store.remove(vault, path)
     await slice()
   }
 

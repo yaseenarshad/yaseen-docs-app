@@ -34,11 +34,6 @@ export function linkRoute(target: LinkTarget): Route {
   return { kind: 'page', path: target.path, ...(target.heading !== undefined && target.heading !== '' && { heading: target.heading }) }
 }
 
-/** What a tap on a link opens full screen: the action the app takes for `target` with "Clicking a link" `open` (the tests read it). */
-export function linkAction(target: LinkTarget): NavAction {
-  return { type: 'open', route: linkRoute(target) }
-}
-
 /** Opens `target`. The one place a link tap opens anything: through `openFile`, which picks a sheet or full screen. */
 export function openLink(door: LinkDoor, target: LinkTarget): void {
   openFile(door, linkRoute(target), { from: 'inside', ...(door.click !== undefined && { click: door.click }) })

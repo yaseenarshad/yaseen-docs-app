@@ -90,6 +90,12 @@ export interface TocChannel {
   publish(rows: readonly TocRow[]): void
   /** Engine side: a bullet zoom started or ended. */
   setZoomed(zoomed: boolean): void
+  /** Host side: pause TOC scanning while the page's TOC is off (`'off'` or `toc: false`), and catch up when re-enabled (YAZ-6028). */
+  setEnabled(enabled: boolean): void
+  /** Engine side: false while TOC is explicitly disabled by the host. Defaults to true. */
+  isEnabled(): boolean
+  /** Engine side: mark rows stale while disabled so re-enabling rescans immediately. */
+  markDirty(): void
 }
 
 const sameRows = (a: readonly TocRow[], b: readonly TocRow[]): boolean =>
@@ -99,6 +105,8 @@ export function createTocChannel(): TocChannel {
   let controller: TocController | null = null
   let snapshot: TocSnapshot = { rows: [], zoomed: false }
   let source: TocSource | null = null
+  let enabled = true
+  let dirty = false
   const listeners = new Set<() => void>()
 
   const set = (next: TocSnapshot): void => {
@@ -111,6 +119,7 @@ export function createTocChannel(): TocChannel {
     jump: (index) => controller?.jump(index),
     current: (indices, scroller) => controller?.current(indices, scroller) ?? -1,
     publish(rows) {
+      dirty = false
       if (!sameRows(rows, snapshot.rows)) set({ ...snapshot, rows })
     },
     setZoomed(zoomed) {
@@ -119,7 +128,8 @@ export function createTocChannel(): TocChannel {
     setSource(next) {
       if (next === source) return
       source = next
-      controller?.rescan()
+      if (enabled) controller?.rescan()
+      else dirty = true
     },
     getSource: () => source,
     getState: () => snapshot,
@@ -128,6 +138,18 @@ export function createTocChannel(): TocChannel {
       return () => {
         listeners.delete(listener)
       }
+    },
+    setEnabled(next) {
+      if (next === enabled) return
+      enabled = next
+      if (enabled && dirty) {
+        dirty = false
+        controller?.rescan()
+      }
+    },
+    isEnabled: () => enabled,
+    markDirty() {
+      dirty = true
     },
     bind(next) {
       controller = next

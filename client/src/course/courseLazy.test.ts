@@ -51,11 +51,16 @@ function eagerGraph(entry: string): Set<string> {
 describe('the course loads only when it opens (YAZ-5120)', () => {
   const eager = eagerGraph(join(SRC, 'main.tsx'))
 
-  it('walks a real graph: App and Settings are in it', () => {
+  it('walks a real graph: App and Settings (lazy chunk) are walked cleanly', () => {
     expect(eager.size).toBeGreaterThan(300)
     expect(eager.has(join(SRC, 'App.tsx'))).toBe(true)
-    expect(eager.has(join(SRC, 'settings/registry.tsx'))).toBe(true)
-    expect(eager.has(join(COURSE_DIR, 'courseSettings.tsx'))).toBe(true)
+    expect(eager.has(join(COURSE_DIR, 'courseFacts.ts'))).toBe(true)
+    // SettingsDialog is lazy-loaded (YAZ-6026), so settings/registry.tsx & courseSettings.tsx stay out of the eager chunk,
+    // and walking SettingsDialog itself reaches courseSettings.tsx without pulling in the heavy course layer.
+    const settingsGraph = eagerGraph(join(SRC, 'settings/SettingsDialog.tsx'))
+    expect(settingsGraph.has(join(SRC, 'settings/registry.tsx'))).toBe(true)
+    expect(settingsGraph.has(join(COURSE_DIR, 'courseSettings.tsx'))).toBe(true)
+    expect(settingsGraph.has(join(COURSE_DIR, 'CardCourse.tsx'))).toBe(false)
   })
 
   it('reaches no course file but the facts, the door and the Settings row: not the script, the player, the layer or its CSS', () => {

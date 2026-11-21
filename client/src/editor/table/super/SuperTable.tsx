@@ -65,7 +65,7 @@ const NO_KEYS: ReadonlySet<string> = new Set()
 type Panel = 'sort' | 'group' | 'filter' | null
 
 /** The bar's tools, each with the folder page's icon (the sort arrows, the sliders, the funnel; YAZ-4869 demo). */
-const TOOLS = { sort: ['Sort', <SortIcon />], group: ['Group', <PropertiesIcon />], filter: ['Filter', <FilterIcon />] } as const
+const TOOLS = { sort: ['Sort', <SortIcon key="sort" />], group: ['Group', <PropertiesIcon key="group" />], filter: ['Filter', <FilterIcon key="filter" />] } as const
 
 /** A name no view has yet: "View 1", "View 2"… */
 const freshName = (views: readonly TableViewDef[], base = 'View'): string => {

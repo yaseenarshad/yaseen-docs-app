@@ -91,7 +91,6 @@ export function movedSettings<T>(raw: T): T {
 export const OTHER_FILES_KEEP_KEY_MOVE = Object.freeze({ from: 'other_files_keep_notes', to: 'other_files_keep_pages' })
 
 /** A view's `subfolders` value as read: `notes` (before YAZ-5036) reads as `pages`. */
-export const movedSubfolders = (v: unknown): unknown => (v === 'notes' ? 'pages' : v)
 
 /** A fill as read: its old `note` link reads as `page` (a `page` that is there already wins). */
 export function movedFill(fill: unknown): unknown {

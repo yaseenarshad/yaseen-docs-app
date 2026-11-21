@@ -49,7 +49,11 @@ function excalidrawAssets(): Plugin {
       })
     },
     async writeBundle() {
-      await cp(fonts, resolve(rendererOut, EXCALIDRAW_ASSET_DIR, 'fonts'), { recursive: true })
+      // Drop CJK Xiaolai handwritten font (12.79 MB uncompressed .woff2, 94% of Excalidraw fonts; YAZ-6008 🔒 D8).
+      await cp(fonts, resolve(rendererOut, EXCALIDRAW_ASSET_DIR, 'fonts'), {
+        recursive: true,
+        filter: (src) => !src.includes('/Xiaolai') && !src.includes('\\Xiaolai'),
+      })
     },
   }
 }
@@ -88,12 +92,40 @@ export function renderSourcemapsAside(outDir: string, mapsDir: string): Plugin {
   return {
     name: 'yaseen-sourcemaps-aside',
     apply: 'build',
-    async writeBundle(_options, bundle) {
+    async writeBundle(options, bundle) {
+      const actualDir = options.dir ? resolve(options.dir) : outDir
+      if (actualDir !== outDir) return
       await rm(mapsDir, { recursive: true, force: true })
       for (const file of Object.keys(bundle).filter((f) => f.endsWith('.map'))) {
         await mkdir(dirname(resolve(mapsDir, file)), { recursive: true })
-        await rename(resolve(outDir, file), resolve(mapsDir, file))
+        await rename(resolve(actualDir, file), resolve(mapsDir, file))
       }
+    },
+  }
+}
+
+/**
+ * Strip dead weight from the desktop renderer build (YAZ-6008 🔒 D4):
+ * - 53 non-English Excalidraw locale chunks (-1.40 MB; English-only app per YAZ-2131 D1)
+ * - Duplicate main-thread HarfBuzz WASM fallback `subset-shared.chunk` (-1.82 MB; Electron 43 always has Workers)
+ * - Legacy KaTeX `.ttf` / `.woff` fallbacks (-0.82 MB; Chromium 136+ has 100% native WOFF2)
+ */
+function trimDesktopEngineDeadWeight(): Plugin {
+  const OFF = '\0yaseen-desktop-off'
+  return {
+    name: 'yaseen-trim-desktop-engine',
+    apply: 'build',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (!importer || !/(^|\/)(@excalidraw|engine\/packages)\//.test(importer)) return null
+      if (/\/locales\/(?!en-)[\w-]+\.js$/.test(source)) return OFF
+      if (/\/subset-shared\.chunk(\.js)?$/.test(source) && /subset-main/.test(importer)) return OFF
+      return null
+    },
+    load: (id) => (id === OFF ? 'throw new Error("pruned for desktop Electron")' : null),
+    transform(code, id) {
+      if (!/katex(\.min)?\.css$/.test(id.split('?')[0])) return null
+      return { code: code.replace(/,?\s*url\([^)]+\.(?:woff|ttf)\)\s*format\([^)]+\)/g, ''), map: null }
     },
   }
 }
@@ -143,7 +175,9 @@ export function dropMonacoTsWorkerUrl(): Plugin {
 
 /** The last local build's maps, per version (the ROOT package.json's, which `tools/packDesktop.mjs` stamps in; rebuilding a release tag reproduces them), gitignored. */
 const { version } = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as { version: string }
-const mapsDir = resolve(here, '.maps', version)
+const rendererMapsDir = resolve(here, '.maps', version, 'renderer')
+const mainOut = resolve(here, 'out/main')
+const mainMapsDir = resolve(here, '.maps', version, 'main')
 
 /**
  * `yaml`'s ES-module build (YAZ-5509). Its `node` export is CommonJS, which Rollup cannot tree-shake, so the main
@@ -160,9 +194,10 @@ export default defineConfig({
     // `tools/mainBundle.test.mjs` fails if the bundle requires anything but Node built-ins and
     // electron (YAZ-2185).
     resolve: { alias: [{ find: '@shared', replacement: shared }, { find: /^yaml$/, replacement: yamlEsm }] },
-    plugins: [friendsOffInMain()],
+    plugins: [friendsOffInMain(), renderSourcemapsAside(mainOut, mainMapsDir)],
     // Two entries (YAZ-1617): the app, and the `yaseendocs` command the packaged shim runs as plain Node.
-    build: { externalizeDeps: false, rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
+    // Minified with hidden sourcemaps in desktop/.maps/<version>/main (YAZ-6008 🔒 D10).
+    build: { outDir: mainOut, minify: 'esbuild', sourcemap: 'hidden', externalizeDeps: false, rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
   },
   preload: {
     resolve: { alias: { '@shared': shared } },
@@ -170,7 +205,7 @@ export default defineConfig({
   },
   renderer: {
     root: client,
-    plugins: [react(), dropMonacoTsWorkerUrl(), excalidrawAssets(), drawioAssets(), renderSourcemapsAside(rendererOut, mapsDir)],
+    plugins: [react(), dropMonacoTsWorkerUrl(), trimDesktopEngineDeadWeight(), excalidrawAssets(), drawioAssets(), renderSourcemapsAside(rendererOut, rendererMapsDir)],
     resolve: {
       alias: { '@shared': shared },
       /**

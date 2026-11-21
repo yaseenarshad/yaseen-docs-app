@@ -104,7 +104,11 @@ export interface VaultStore {
 
   read(vault: string, path: string): Promise<StoredFile | null>
   write(vault: string, path: string, content: FileContent): Promise<WriteResult>
+  /** Write multiple files of one vault in a single IDB transaction when storage permits (YAZ-6027). */
+  writeBatch?(vault: string, items: ReadonlyArray<{ path: string; content: FileContent }>): Promise<WriteResult>
   remove(vault: string, path: string): Promise<void>
+  /** Remove multiple files of one vault in a single IDB transaction (YAZ-6027). */
+  removeBatch?(vault: string, paths: readonly string[]): Promise<void>
   /** The vault's files, no content, in path order. */
   list(vault: string): Promise<FileEntry[]>
   /** The file was shown now: its media is dropped later than media not shown since. */
@@ -321,10 +325,12 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     formatReset,
 
     async read(vault, path) {
-      const entry = (await backend.get('entries', [vault, path])) as FileEntry | undefined
-      if (entry === undefined) return null
-      const file = (await backend.get('files', [vault, path])) as { content: FileContent } | undefined
-      return file === undefined ? null : { ...entry, content: file.content }
+      const [entry, file] = await Promise.all([
+        backend.get('entries', [vault, path]) as Promise<FileEntry | undefined>,
+        backend.get('files', [vault, path]) as Promise<{ content: FileContent } | undefined>,
+      ])
+      if (entry === undefined || file === undefined) return null
+      return { ...entry, content: file.content }
     },
 
     async write(vault, path, content) {
@@ -339,7 +345,39 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
       return { dropped }
     },
 
+    async writeBatch(vault, items) {
+      if (items.length === 0) return { dropped: [] }
+      if (items.length === 1) return store.write(vault, items[0]!.path, items[0]!.content)
+      const ops: Op[] = []
+      const at = now()
+      for (const { path, content } of items) {
+        const size = sizeOf(content)
+        const entry: FileEntry = { vault, path, kind: kindOnPhone(path), size, viewedAt: at }
+        ops.push({ put: 'files', key: [vault, path], value: { content } }, { put: 'entries', key: [vault, path], value: entry })
+      }
+      try {
+        await apply(ops, vault)
+        return { dropped: [] }
+      } catch (error) {
+        if (!isQuotaError(error)) throw error
+        // On quota pressure, fall back to per-file writes so eviction and StorageFullError reporting stay exact.
+        const dropped: FileRef[] = []
+        for (const { path, content } of items) {
+          const res = await store.write(vault, path, content)
+          dropped.push(...res.dropped)
+        }
+        return { dropped }
+      }
+    },
+
     remove: (vault, path) => backend.apply(dropOps({ vault, path })),
+
+    async removeBatch(vault, paths) {
+      if (paths.length === 0) return
+      const ops: Op[] = []
+      for (const path of paths) ops.push(...dropOps({ vault, path }))
+      await backend.apply(ops)
+    },
 
     async protectMedia(vault, paths) {
       if (vault === null) {
@@ -397,12 +435,16 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     async statesWith(scope, prefix) {
       if (TOKEN_STATE.startsWith(prefix)) throw new Error('The GitHub token is read and written through TokenStore only')
       const keys = await backend.keys('state', scope)
-      const names = keys.map((key) => (Array.isArray(key) ? key[1] : key))
+      const matching = keys
+        .map((key) => (Array.isArray(key) ? key[1] : key))
+        .filter((name) => name.startsWith(prefix))
+      if (matching.length === 0) return {}
+      // Fetch only matching keys instead of `backend.all('state', scope)` which would deserialize the full PhoneIndex (YAZ-6027).
+      const values = await Promise.all(matching.map((name) => backend.get('state', [scope, name])))
       const out: Record<string, unknown> = {}
-      const values = await backend.all('state', scope)
-      // Both reads are in key order. A row written between them changes the count: then each row is read on its own.
-      if (values.length === keys.length) names.forEach((name, i) => name.startsWith(prefix) && (out[name] = values[i]))
-      else for (const name of names) if (name.startsWith(prefix)) out[name] = await backend.get('state', [scope, name])
+      matching.forEach((name, i) => {
+        if (values[i] !== undefined) out[name] = values[i]
+      })
       return out
     },
 

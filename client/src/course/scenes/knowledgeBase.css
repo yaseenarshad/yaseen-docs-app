@@ -224,9 +224,6 @@
   height: 0.35em;
   border-bottom: 2px solid var(--accent);
 }
-.kb-say {
-  gap: clamp(10px, 3cqmin, 30px);
-}
 .kb-bubble {
   position: relative;
   min-width: 8em;
