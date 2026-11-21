@@ -91,7 +91,9 @@ export function hasIndexListeners(root: string): boolean {
 const retitleHints = new Map<string, string>()
 
 export function hintRetitle(oldPath: string, title: string): void {
-  if (retitleHints.size > 64) retitleHints.clear()
+  retitleHints.delete(oldPath)
+  // Bounded: drop the OLDEST hint only (Map keeps insertion order), never the live ones.
+  if (retitleHints.size >= 64) retitleHints.delete(retitleHints.keys().next().value as string)
   retitleHints.set(oldPath, title)
 }
 

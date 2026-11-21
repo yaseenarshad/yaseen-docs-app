@@ -3157,10 +3157,12 @@ export function App() {
       if (hintedTitle !== undefined && hintedTitle !== '') hintRetitle(oldPath, hintedTitle)
       try {
         ;({ newPath, kind } = to.title === undefined ? await api.file.rename({ oldPath, newPath: to.newPath }) : await api.file.retitle({ path: oldPath, title: to.title }))
-        if (newPath === oldPath) clearRetitleHint(oldPath)
       } catch (error) {
-        clearRetitleHint(oldPath)
         return { error }
+      } finally {
+        // Main pushes `file:renamed` before it replies, so the event already took the hint; one it never took
+        // (no rename happened, or an error) must not leak into a later rename of the same path (YAZ-6056).
+        clearRetitleHint(oldPath)
       }
       // A move removes nothing from a page (YAZ-4713 C9): its values are its own fields, and a page's own values stay too.
       const hasMovedViewFile = viewOnlyCatalog?.entries.some((entry) =>

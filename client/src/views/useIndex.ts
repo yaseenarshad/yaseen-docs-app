@@ -170,30 +170,42 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     const trimmedRoot = root.replace(/[\\/]+$/, '')
     const insideRoot = (p: string): boolean => p === trimmedRoot || p.startsWith(`${trimmedRoot}/`) || p.startsWith(`${trimmedRoot}\\`)
     const renameBurst = leadingTrailing(() => runRefresh(true), WATCH_BURST_QUIET_MS)
+    /** A record's `folder` as the index writes it: the vault-relative folder, `/`-separated, '' at the root. */
+    const folderOf = (p: string): string => {
+      const dir = p.slice(0, Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')))
+      return dir.length <= trimmedRoot.length ? '' : dir.slice(trimmedRoot.length + 1).split('\\').join('/')
+    }
     const unsubscribeRename = onFileRenamed(({ oldPath, newPath, kind }) => {
       if (!insideRoot(oldPath) && !insideRoot(newPath)) return
+      // Every rename event makes any read already on the wire stale: main's `getIndex` may have built its records
+      // before this rename landed, and applying it would put the old path back (new → old → new). Only the
+      // burst's trailing read, which post-dates every event, may commit (YAZ-6056 checker round 1).
+      generation.current++
       const hintedTitle = consumeRetitleHint(oldPath)
-      const oldPrefix = `${oldPath.replace(/[\\/]+$/, '')}/`
-      const remapList = (prev: IndexRecord[], isFolders: boolean): IndexRecord[] => {
-        let changed = false
-        const next = prev.map((r) => {
-          if (kind !== 'dir') {
-            if (r.path !== oldPath) return r
+      // Optimistic remap ONLY for a title edit (`fs:retitle` left a hint): one record, the case that flashed the
+      // raw file name. Plain renames, pastes and "Change letters" wait for the read: no array per event.
+      if (hintedTitle !== undefined) {
+        const oldPrefix = `${oldPath.replace(/[\\/]+$/, '')}/`
+        const remapList = (prev: IndexRecord[], isFolders: boolean): IndexRecord[] => {
+          let changed = false
+          const next = prev.map((r) => {
+            if (kind !== 'dir') {
+              if (r.path !== oldPath) return r
+              changed = true
+              const name = basename(newPath)
+              return { ...r, path: newPath, name, basename: stripExt(name), folder: folderOf(newPath), title: hintedTitle }
+            }
+            if (r.path !== oldPath && !r.path.startsWith(oldPrefix)) return r
             changed = true
-            const name = basename(newPath)
-            const base = stripExt(name)
-            return { ...r, path: newPath, name, basename: base, ...(hintedTitle !== undefined ? { title: hintedTitle } : {}) }
-          }
-          if (r.path !== oldPath && !r.path.startsWith(oldPrefix)) return r
-          changed = true
-          const movedPath = newPath + r.path.slice(oldPath.length)
-          const isDirectFolderMeta = isFolders && movedPath.slice(newPath.length + 1).indexOf('/') === -1
-          return { ...r, path: movedPath, ...(isDirectFolderMeta && hintedTitle !== undefined ? { title: hintedTitle } : {}) }
-        })
-        return changed ? next : prev
+            const movedPath = newPath + r.path.slice(oldPath.length)
+            const isDirectFolderMeta = isFolders && movedPath.slice(newPath.length + 1).indexOf('/') === -1
+            return { ...r, path: movedPath, folder: folderOf(movedPath), ...(isDirectFolderMeta ? { title: hintedTitle } : {}) }
+          })
+          return changed ? next : prev
+        }
+        setRecords((prev) => remapList(prev, false))
+        if (kind === 'dir') setFolders((prev) => remapList(prev, true))
       }
-      setRecords((prev) => remapList(prev, false))
-      if (kind === 'dir') setFolders((prev) => remapList(prev, true))
       renameBurst.call()
     })
     return () => {
