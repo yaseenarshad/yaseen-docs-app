@@ -386,13 +386,17 @@ export type RemoteLook = 'level' | 'moved' | 'unknown'
 export async function lookAtRemote(root: string, opts?: { auth?: GitSyncAuthProvider }): Promise<RemoteLook> {
   const bin = await resolveGit()
   if (bin === null) return 'unknown'
-  const facts = await detectRepo(bin, root)
   const validAuth = opts?.auth !== undefined ? await opts.auth.getValidAuth().catch(() => null) : null
-  const fetched = await runNetworkGit(bin, root, ['fetch', 'origin'], {
-    timeoutMs: TRANSFER_TIMEOUT_MS,
-    remoteUrl: facts.remoteUrl,
-    token: validAuth?.token ?? null,
-  })
+  const token = validAuth?.token ?? null
+  let fetched: GitResult
+  if (token === null) {
+    // Keep the idle poll at 2 spawns (`fetch` + `rev-list`) when signed out (YAZ-2073 5H).
+    fetched = await git(bin, root, ['fetch', 'origin'], { timeoutMs: TRANSFER_TIMEOUT_MS })
+  } else {
+    const remoteRes = await git(bin, root, ['remote', 'get-url', 'origin'])
+    const remoteUrl = remoteRes.code === 0 ? remoteRes.stdout.trim() || null : null
+    fetched = await runNetworkGit(bin, root, ['fetch', 'origin'], { timeoutMs: TRANSFER_TIMEOUT_MS, remoteUrl, token })
+  }
   if (fetched.code !== 0) return 'unknown'
   const level = await divergence(bin, root)
   return level !== null && level.behind === 0 && level.ahead === 0 ? 'level' : 'moved'

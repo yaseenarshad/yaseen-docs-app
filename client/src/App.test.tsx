@@ -7311,7 +7311,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     const PAGE: Record<string, string> = { ids: 'Files & Links', enabled: 'Cards', githubSync: 'Sync' }
     const pressed = (setting: string) => {
       settingsPage(el, PAGE[setting])
-      return [...el.querySelectorAll(`[data-setting="${setting}"] button`)].map((b) => b.getAttribute('aria-pressed'))
+      return [...el.querySelectorAll(`[data-setting="${setting}"] button[aria-pressed]`)].map((b) => b.getAttribute('aria-pressed'))
     }
     const turnOn = (setting: string) => el.querySelector<HTMLButtonElement>(`[data-setting="${setting}"] button`)?.click()
     act(() => emitSettings())
@@ -7413,8 +7413,8 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { bridge, el } = await mount(defaultAppState(), TWO, {}, PAGES)
     expect(el.querySelector('.sync-banner')).toBeNull()
-    act(() => push(bridge.github.onStatus, { root: '/w', state: 'attention', attention: 'auth' }))
-    expect(el.querySelector('.sync-banner strong')?.textContent).toBe("GitHub didn't accept this computer's credentials.")
+    act(() => push(bridge.github.onStatus, { root: '/w', state: 'attention', attention: 'no-git' }))
+    expect(el.querySelector('.sync-banner strong')?.textContent).toBe("Git isn't installed on this computer.")
     act(() => button(el, 'Copy setup prompt')?.click())
     expect(writeText.mock.calls[0][0]).toContain('/w')
     expect(writeText.mock.calls[0][0]).not.toContain('/v')
