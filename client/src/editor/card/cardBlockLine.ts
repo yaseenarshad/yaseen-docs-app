@@ -18,7 +18,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { AttrStep, Step, StepMap, StepResult, type Mappable } from '@milkdown/kit/prose/transform'
-import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, cardTitleAtOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, parseCardLine, renameCardProperty, withCardFix, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardProperty, withCardTitle, withCardTitleAt, withoutCardProperty, type CardLine, type CardPart, type CardPropertyValue, type CardReview } from '@shared/cardLine'
+import { EMPTY_CARD_LINE, cardCreatedOf, cardIdOf, cardNextIndex, cardReviewsOf, cardTitleAtOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, parseCardLine, renameCardProperty, withCardCreated, withCardFix, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardProperty, withCardTitle, withCardTitleAt, withoutCardProperty, type CardLine, type CardPart, type CardPropertyValue, type CardReview } from '@shared/cardLine'
 import { keyFold } from '@shared/propertyKeys'
 import type { Code, RootContent } from 'mdast'
 
@@ -96,6 +96,7 @@ export function rebaseCardLine(now: CardLine, before: CardLine, after: CardLine)
   let line = now
   const id = cardIdOf(after)
   if (id !== cardIdOf(before)) line = id === null ? { parts: line.parts.filter((p) => p.kind !== 'id') } : withCardId(line, id)
+  if (cardCreatedOf(after) !== cardCreatedOf(before)) line = withCardCreated(line, cardCreatedOf(after))
   if (cardTitleOf(after) !== cardTitleOf(before)) line = withCardTitle(line, cardTitleOf(after))
   if (isCardOff(after) !== isCardOff(before)) line = withCardOff(line, isCardOff(after))
   if (isCardNext(after) !== isCardNext(before)) line = withCardNext(line, isCardNext(after), isCardNext(after) ? cardNextIndex(after) : undefined)

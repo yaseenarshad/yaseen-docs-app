@@ -66,11 +66,12 @@ it('the copy rule: a paste below is the copy too and takes a new ID from the doo
   view.dispatch(view.state.tr.insert(view.state.doc.content.size, card).setMeta('uiEvent', 'paste'))
   expect(cardLines()).toEqual([line, '<!-- card: off -->'])
   await new Promise((r) => setTimeout(r, 0))
-  expect(cardLines()).toEqual([line, '<!-- card: WIKI-30, off -->'])
+  expect(cardLines()).toEqual([line, expect.stringMatching(/^<!-- card: WIKI-30, created \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z, off -->$/)])
+  const copyLine = cardLines()[1]
   // A move: the card leaves its place and lands at the end in ONE transaction (a drag): it keeps its ID and history.
   const end = view.state.doc.content.size
   view.dispatch(view.state.tr.insert(end, card).delete(0, card.nodeSize).setMeta('uiEvent', 'drop'))
-  expect(cardLines()).toEqual(['<!-- card: WIKI-30, off -->', line])
+  expect(cardLines()).toEqual([copyLine, line])
   // An outside write with two cards of one ID is the sweep's to settle: the editor takes it as it is.
   const twice = `\`\`\`card\nQ\n---\nA\n\`\`\`\n${line}\n\n\`\`\`card\nQ\n---\nA\n\`\`\`\n${line}\n`
   const { applyExternalMarkdown } = await import('../external/applyExternalMarkdown')

@@ -135,13 +135,23 @@ describe('the "Card" slash row (D1, idea 9)', () => {
     expect(view.state.selection.$from.parent.attrs.language).toBe('card')
     // YAZ-5308: the card starts empty, its title on its card line (none yet); the caret in its text.
     expect(view.state.selection.from).toBe(1)
-    // The ID lands without any sweep, on the line under the fence.
-    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\n```\n<!-- card: WIKI-512 -->\n'))
+    // The ID and created stamp land without any sweep, on the line under the fence.
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toMatch(/^```card\n```\n<!-- card: WIKI-512, created \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z -->\n$/))
     // The ID is out of the undo history: one ⌘Z takes the card away whole.
     undo(view.state, view.dispatch)
     expect(cardPos(view)).toBe(-1)
-    // A door that fails leaves the card with no line: the sweep is the safety net.
+    // A door that fails still stamps created on the new card.
     mint = () => Promise.reject(new Error('no IDs'))
+  })
+
+  it('/card without mintId still stamps created on the new inline card', async () => {
+    setCardEditorKind('code')
+    const { crepe, root, view } = await mount('x\n', { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
+    await typeSlash(view, '/card')
+    await vi.waitFor(() => expect(slashRows(root)).toEqual(['Card']))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(cardPos(view)).toBe(0))
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toMatch(/^```card\n```\n<!-- card: created \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z -->\n$/))
   })
 
   it('hides in a vault without IDs, and in an editor whose host gives no cards', async () => {
