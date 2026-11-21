@@ -7,7 +7,7 @@
  * The file's tab then opens in Edit card (`isNewCard`, read once by `CardFileView`), on the empty card.
  */
 import { NEW_CARD_TITLE, cardFileContent, cardFileName } from '@shared/cardFileFormat'
-import { EMPTY_CARD_LINE, withCardId, type CardLine } from '@shared/cardLine'
+import { EMPTY_CARD_LINE, cardTime, withCardCreated, withCardId, type CardLine } from '@shared/cardLine'
 import { api } from '../api'
 import { takePageId } from '../views/scaffold'
 import { tourEvent } from '../course/tourBus'
@@ -24,7 +24,7 @@ export async function createCardFile(dir: string, title = NEW_CARD_TITLE, line: 
   const named = title.trim() === '' ? NEW_CARD_TITLE : title.trim()
   const id = await takePageId(dir)
   const path = `${dir}/${cardFileName(named, id)}`
-  await api.createFile({ path, content: cardFileContent(named, '', line(withCardId(EMPTY_CARD_LINE, id))) })
+  await api.createFile({ path, content: cardFileContent(named, '', line(withCardCreated(withCardId(EMPTY_CARD_LINE, id), cardTime(Date.now())))) })
   fresh.add(path)
   tourEvent('card-file-created', path)
   return path

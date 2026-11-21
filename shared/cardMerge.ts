@@ -1,4 +1,4 @@
-import { CARD_TITLE_AT_WORDS, cardIdOf, cardReviewKey, cardReviewsOf, cardTitleOf, formatCardLine, formatCardReview, pageCards, rewritePageCards, withCardReviews, type CardBlock, type CardLine, type CardPart } from './cardLine'
+import { CARD_TITLE_AT_WORDS, cardCreatedOf, cardIdOf, cardReviewKey, cardReviewsOf, cardTitleOf, formatCardLine, formatCardReview, pageCards, rewritePageCards, withCardReviews, type CardBlock, type CardLine, type CardPart } from './cardLine'
 import { keyFold } from './propertyKeys'
 
 /**
@@ -74,17 +74,19 @@ const same = (a: CardLine, b: CardLine): boolean => formatCardLine(a) === format
 const keyOf = (p: CardPart): string =>
   p.kind === 'id'
     ? 'id'
-    : p.kind === 'title'
-      ? 'title'
-      : p.kind === 'property'
-        ? `property ${keyFold(p.name)}`
-        : p.kind === 'review'
-          ? `review ${cardReviewKey(p.review)}`
-          : p.kind === 'other'
-            ? `mark ${p.text}`
-            : p.kind === 'titleat'
-              ? `mark ${CARD_TITLE_AT_WORDS[p.at]}`
-              : `mark ${p.kind}`
+    : p.kind === 'created'
+      ? 'created'
+      : p.kind === 'title'
+        ? 'title'
+        : p.kind === 'property'
+          ? `property ${keyFold(p.name)}`
+          : p.kind === 'review'
+            ? `review ${cardReviewKey(p.review)}`
+            : p.kind === 'other'
+              ? `mark ${p.text}`
+              : p.kind === 'titleat'
+                ? `mark ${CARD_TITLE_AT_WORDS[p.at]}`
+                : `mark ${p.kind}`
 
 const marksOf = (line: CardLine | null): Set<string> => new Set((line?.parts ?? []).map(keyOf).filter((k) => k.startsWith('mark ')))
 
@@ -112,11 +114,11 @@ function uniteLine(base: CardLine | null, theirs: CardLine, mine: CardLine): Car
     }
     // The app's own marks go after the head (the ID, the title and the properties, YAZ-5349) and keep its order: `off`,
     // then `next`, then `notitle`, then `fix` (`withCardOff`, `withCardNext`, `withCardNoTitle`, `withCardFix`).
-    if (rank(part) > 0) while (parts[at]?.kind === 'title' || parts[at]?.kind === 'property') at++
+    if (rank(part) > 0) while (parts[at]?.kind === 'created' || parts[at]?.kind === 'title' || parts[at]?.kind === 'property') at++
     while (rank(parts[at]) > 0 && rank(parts[at]) < rank(part)) at++
     parts = [...parts.slice(0, at), part, ...parts.slice(at)]
   }
-  return uniteProperties(base, theirs, mine, uniteTitle(base, theirs, mine, { parts }))
+  return uniteProperties(base, theirs, mine, uniteTitle(base, theirs, mine, uniteCreated(base, theirs, mine, { parts })))
 }
 
 /** A line's properties by name (`keyFold`; the first of two spellings, as `cardPropertiesOf` reads them), each with its part. */
@@ -168,7 +170,7 @@ function uniteProperties(base: CardLine | null, theirs: CardLine, mine: CardLine
     let place = -1
     for (let j = mineAt - 1; j >= 0 && place === -1; j--) {
       const prev = mine.parts[j]
-      if (prev.kind !== 'property' && prev.kind !== 'title' && prev.kind !== 'id') break
+      if (prev.kind !== 'property' && prev.kind !== 'title' && prev.kind !== 'created' && prev.kind !== 'id') break
       const found = parts.findIndex((p) => keyOf(p) === keyOf(prev))
       if (found !== -1) place = found + 1
     }
@@ -176,7 +178,7 @@ function uniteProperties(base: CardLine | null, theirs: CardLine, mine: CardLine
     if (place === -1) {
       const last = parts.map((p) => p.kind === 'property').lastIndexOf(true)
       place = last !== -1 ? last + 1 : parts.findIndex((p) => p.kind === 'id') + 1
-      while (parts[place]?.kind === 'title') place++
+      while (parts[place]?.kind === 'created' || parts[place]?.kind === 'title') place++
     }
     parts = [...parts.slice(0, place), own, ...parts.slice(place)]
   }
@@ -184,9 +186,28 @@ function uniteProperties(base: CardLine | null, theirs: CardLine, mine: CardLine
 }
 
 /**
+ * The `created` stamp three ways: never drop `created` when either side holds it. When both sides hold a `created`
+ * stamp, the side that changed it from the base wins (both changed or no base -> theirs). Placed right after `id`.
+ */
+function uniteCreated(base: CardLine | null, theirs: CardLine, mine: CardLine, line: CardLine): CardLine {
+  const [b, t, m] = [base === null ? null : cardCreatedOf(base), cardCreatedOf(theirs), cardCreatedOf(mine)]
+  if (t === m) return line
+  if (t === null && m !== null) {
+    const own = mine.parts.find((p) => p.kind === 'created')!
+    const after = line.parts.findIndex((p) => p.kind === 'id') + 1
+    return { parts: [...line.parts.slice(0, after), own, ...line.parts.slice(after)] }
+  }
+  if (m === null) return line
+  if (base === null || m === b || t !== b) return line
+  const own = mine.parts.find((p) => p.kind === 'created')!
+  const at = line.parts.findIndex((p) => p.kind === 'created')
+  return { parts: line.parts.flatMap((p, i): CardPart[] => (i === at ? [own] : p.kind === 'created' ? [] : [p])) }
+}
+
+/**
  * The title three ways (YAZ-5309), by its text (`cardTitleOf`): the side that changed it from the base wins; both
  * changed it, each to a new one: theirs. `line` holds theirs' title part; mine's part (its own bytes) takes its place,
- * or comes right after the ID when theirs has none; a title mine removed goes.
+ * or comes right after the ID and `created` when theirs has none; a title mine removed goes.
  */
 function uniteTitle(base: CardLine | null, theirs: CardLine, mine: CardLine, line: CardLine): CardLine {
   const [b, t, m] = [base === null ? null : cardTitleOf(base), cardTitleOf(theirs), cardTitleOf(mine)]
@@ -199,7 +220,8 @@ function uniteTitle(base: CardLine | null, theirs: CardLine, mine: CardLine, lin
   const rest = line.parts.filter((p) => p.kind !== 'title')
   if (own === undefined) return { parts: rest }
   if (at !== -1) return { parts: line.parts.flatMap((p, i): CardPart[] => (i === at ? [own] : p.kind === 'title' ? [] : [p])) }
-  const after = rest.findIndex((p) => p.kind === 'id') + 1
+  let after = rest.findIndex((p) => p.kind === 'id') + 1
+  while (rest[after]?.kind === 'created') after++
   return { parts: [...rest.slice(0, after), own, ...rest.slice(after)] }
 }
 

@@ -811,7 +811,7 @@ describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
     expect(made).toBe(`/v/Geography/${cardFileName('Capital of France', 'WIKI-10')}`)
     // The guided tour (YAZ-5123) hears the new card file once, with its path.
     expect(heard).toEqual([['card-file-created', made]])
-    expect(disk.files.get(made)).toBe('---\nkind: card\n---\n```card\n\n```\n<!-- card: WIKI-10, title "Capital of France" -->\n')
+    expect(disk.files.get(made)).toMatch(/^---\nkind: card\n---\n```card\n\n```\n<!-- card: WIKI-10, created \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z, title "Capital of France" -->\n$/)
     const { onRetitle } = await mount(disk.files.get(made)!, { path: made })
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')).not.toBeNull())
     const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
@@ -819,7 +819,7 @@ describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
     act(() => view.dispatch(view.state.tr.insertText('Which city?\n---\nParis', 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.files.get(made)).toContain('Paris'))
-    expect(disk.files.get(made)).toMatch(/^---\nkind: card\n---\n[\s\S]*<!-- card: WIKI-10, title "Capital of France" -->\n$/)
+    expect(disk.files.get(made)).toMatch(/^---\nkind: card\n---\n[\s\S]*<!-- card: WIKI-10, created \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z, title "Capital of France" -->\n$/)
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
     expect(onRetitle).not.toHaveBeenCalled()
     // Opened again, it is a card file like any other: shown, not in Edit card.
