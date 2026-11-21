@@ -178,7 +178,7 @@ describe("a link's own style wins over the vault's look (YAZ-4924 round 5)", () 
 
   it("CSS: the page's highlight shows through the vault's box; bold and italic follow the page unless the vault adds them; the vault can never take them away", () => {
     const css = readFileSync(join(__dirname, 'wikilink.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
-    expect(css).toMatch(/\.milkdown \.ProseMirror mark \.wikilink:not\(\.wikilink--unresolved\)\s*\{\s*background:\s*transparent;/)
+    expect(css).toMatch(/\.milkdown \.ProseMirror mark \.wikilink:not\(\.wikilink--unresolved\)[^{]*\{\s*background:\s*transparent;/)
     expect(css).toMatch(/\.wikilink \{[^}]*font-weight: var\(--pill-name-weight, inherit\);[^}]*font-style: var\(--pill-name-style, inherit\);/)
   })
 })

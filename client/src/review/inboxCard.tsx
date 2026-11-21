@@ -12,8 +12,7 @@ import { cardSides, hiddenCount } from '@shared/cardText'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBody, type CardLinkDoors } from './cardParts'
 import { CARD_MEDIA, CARD_OPENS, stopCardAudio, type CardViewLinkHit } from '../editor/card/cardMedia'
-import { hrefTarget } from '../editor/pathPaste'
-import { linkPath } from '../editor/wikilink/wikilinkPlugin'
+import { linkPath } from '../editor/wikilink/linkResolve'
 import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
 import { glideToBottomIfNear, glideView, spaceMove } from './inboxScroll'
 import { START, hide, markOf, nextStep, reveal, shownParts, type Reveal } from './cardSteps'
@@ -194,10 +193,7 @@ export function InboxCardFace({ text, path, vault, steps, doors, onStep, tour, w
       ? undefined
       : (hit: (CardViewLinkHit & { rect: { left: number; top: number; right: number; bottom: number } }) | null) => {
           if (hit === null) return wikilinkHover.onLeave()
-          const to =
-            hit.kind === 'wikilink'
-              ? linkPath(hit.inner, vault.wikilinks, vault.viewOnlyLinks)
-              : hrefTarget(hit.href, { root: vault.root, pagePath: path, candidates: vault.wikilinkCandidates })
+          const to = hit.kind === 'wikilink' ? linkPath(hit.inner, vault.wikilinks, vault.viewOnlyLinks) : null
           if (to === null) return wikilinkHover.onLeave()
           wikilinkHover.onHover(to, hit.rect, false)
         }

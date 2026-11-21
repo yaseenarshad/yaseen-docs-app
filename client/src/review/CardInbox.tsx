@@ -106,7 +106,7 @@
  *  - ARCHIVED cards are not listed here (YAZ-5319): a folder page's table shows them (+ › Card table, Status
  *    is Archived), and a card's ⋯ menu unarchives it.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { CourseOffer, type CourseOfferProps } from '../course/CourseOffer'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides } from '@shared/cardText'
@@ -123,12 +123,9 @@ import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreLinkPreview, ExploreVault } from '../explore/ExplorePage'
-import { fileKind } from '@shared/fileKind'
-import { linkOpenHint } from '../editor/linkGesture'
-import { pageLabel } from '../lib/pageLabel'
-import { CardPreviewHost, useCardPreview } from '../tabs/cardPreview'
-import type { AnchorRect } from '../sidebar/previewPlacement'
 import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
+
+const InboxLinkPreview = lazy(() => import('./InboxLinkPreview').then((m) => ({ default: m.InboxLinkPreview })))
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, bandTitleStep, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
@@ -482,25 +479,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
       view.removeEventListener('scroll', check)
       window.removeEventListener('resize', check)
     }
-  }, [shown, done, card, cardKey, step])
+  }, [shown, done, card, cardKey, step, width])
 
-  const linkAt = useRef<{ path: string; rect: AnchorRect; editable: boolean } | null>(null)
-  const hover = useCardPreview(linkPreview?.on() === true, (p) => (linkAt.current?.path === p ? linkAt.current.rect : null))
+  const linkHoverRef = useRef<WikilinkHover | null>(null)
   const [linkHover] = useState<WikilinkHover>(() => ({
-    onHover: (p, rect, editable) => {
-      linkAt.current = { path: p, rect, editable }
-      hover.hoverCard(p, p)
-    },
-    onLeave: () => {
-      if (linkAt.current !== null) hover.leaveCard(linkAt.current.path)
-      linkAt.current = null
-    },
+    onHover: (p, rect, editable) => linkHoverRef.current?.onHover(p, rect, editable),
+    onLeave: () => linkHoverRef.current?.onLeave(),
   }))
-  const linkCard = (_: string, p: string): { root: string | null; name: string; hint?: string } => ({
-    root: null,
-    name: pageLabel(p, false, NO_TITLES),
-    hint: linkOpenHint(live.current.hotkeys, linkAt.current?.editable ?? false, fileKind(p) === 'markdown'),
-  })
 
   const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide, lineUndo: session.lastAdd !== null || archivedLine || line !== null, scrollDown: canScrollDown })
   /**
@@ -734,7 +719,11 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
       </div>
       {/* YAZ-5679: Mochi's "Added card to reviews · Undo" when a new card is learned. */}
       <LearnedToast learned={session.learned} onUndo={() => void review.undo()} />
-      {linkPreview !== undefined && <CardPreviewHost store={hover.store} cardOf={linkCard} scopeOf={linkPreview.scopeOf} diagramDarkColors={linkPreview.diagramDarkColors} />}
+      {linkPreview !== undefined && (
+        <Suspense fallback={null}>
+          <InboxLinkPreview linkPreview={linkPreview} hotkeys={hotkeys} hoverRef={linkHoverRef} />
+        </Suspense>
+      )}
     </div>
   )
 }

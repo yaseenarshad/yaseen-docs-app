@@ -45,8 +45,6 @@ type UnlockMessage = { root: string; until: number } | { root: string; lock: tru
 /** What a refused file action says (the sheet's first words; a folder page's create error). */
 export const VAULT_READ_ONLY_TIP = 'This vault is read only'
 
-/** What a refused file action says (the sheet's first words; a folder page's create error). */
-
 /** What the file holds, or the default for anything else: only `true` counts, as a page's `readonly` does. */
 export function sanitizeReadOnlyVault(raw: unknown): ReadOnlyVaultSettings {
   const on = typeof raw === 'object' && raw !== null ? (raw as { on?: unknown }).on : undefined
