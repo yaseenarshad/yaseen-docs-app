@@ -4,10 +4,11 @@
  * (`storageWorker.ts`: `fs/shrink.ts`) imports this, never `drawing.ts`: a save's board ID (4C) pulls the vault index and
  * its `yaml` parser into `drawing.ts`, and the worker uses none of it (YAZ-4071 7B: 21 KB had become 276 KB).
  */
-import { link, mkdir, rename, unlink } from 'node:fs/promises'
+import { link, mkdir, readdir, readFile, rename, unlink } from 'node:fs/promises'
 import path from 'node:path'
+import type { DrawingFileEntry } from '@shared/types'
 import { isRecord } from '@shared/guards'
-import { ASSETS_DIR, assetFileName, isValidFileId, parseDataUrl, referencedFileIds, stripEmbeddedScene } from '@shared/drawingAssets'
+import { ASSETS_DIR, assetFileName, createdOf, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseDataUrl, referencedFileIds, stripEmbeddedScene, type EmbeddedFile } from '@shared/drawingAssets'
 import { BridgeFailure, fsCall, tmpSibling, writeDurable } from './fsUtils'
 
 /**
@@ -107,4 +108,76 @@ export async function landAssets(dir: string, pending: readonly PendingAsset[], 
     persisted.push(asset.fileId)
   }
   return persisted
+}
+
+/** One store folder as a map fileId → file name (first match wins); an absent folder is an empty store. */
+async function listStore(store: string): Promise<Map<string, string>> {
+  const found = new Map<string, string>()
+  const names = await readdir(store).catch(() => [] as string[])
+  // Sorted so a duplicate id spelled two ways (`x.png` and `x.jpg`) always resolves to the same one.
+  for (const name of names.sort()) {
+    const id = fileIdOfAssetName(name)
+    const ext = name.slice(name.lastIndexOf('.') + 1)
+    if (id === null || mimeForAssetExt(ext) === null || found.has(id)) continue
+    found.set(id, name)
+  }
+  return found
+}
+
+/**
+ * The bytes the stores hold for `ids` — the board's own `folder` first, then `assets/` (`storesOf`); an id with no
+ * readable bytes in either is absent (the placeholder, not a failed open).
+ */
+export async function fromStore(dir: string, ids: readonly string[], folder: string | null): Promise<Record<string, DrawingFileEntry>> {
+  const found: Record<string, DrawingFileEntry> = {}
+  if (ids.length === 0) return found
+  for (const store of storesOf(dir, folder)) {
+    const names = await listStore(store)
+    for (const id of ids) {
+      const name = names.get(id)
+      if (name === undefined || found[id] !== undefined) continue
+      const mimeType = mimeForAssetExt(name.slice(name.lastIndexOf('.') + 1))
+      const bytes = await readFile(path.join(store, name)).catch(() => null)
+      if (bytes !== null && mimeType !== null) found[id] = { mimeType, dataURL: `data:${mimeType};base64,${bytes.toString('base64')}` }
+    }
+  }
+  return found
+}
+
+/**
+ * The pictures a scene references, from the board's own `folder` and the vault's `assets/` store — with a
+ * legacy scene's own `embedded` entries as the fallback. Shared by `drawing:load` and Version history's old
+ * versions (Draw's YAZ-1897 D4; `git/history.ts`), so an old version draws its pictures the way the open board does.
+ */
+export async function resolveFiles(dir: string, embedded: Record<string, DrawingFileEntry>, elements: readonly unknown[], folder: string | null = null): Promise<{ files: Record<string, DrawingFileEntry>; stored: string[] }> {
+  const ids = [...referencedFileIds(elements)].sort()
+  const found = await fromStore(dir, ids, folder)
+  const files: Record<string, DrawingFileEntry> = {}
+  const stored: string[] = []
+  for (const id of ids) {
+    if (found[id] !== undefined) {
+      files[id] = found[id]
+      stored.push(id)
+    } else if (embedded[id] !== undefined) files[id] = embedded[id]
+  }
+  return { files, stored }
+}
+
+/**
+ * The pictures an "inside" board carries (YAZ-3943 D5): each one a live element uses, from the
+ * first of `sources` that has it, else from the board's `folder` or `assets/` (an old board takes its
+ * pictures inside this way), engine-shaped and sorted by id. `created` stays as `prior` (the file as it
+ * is) has it, so an untouched save writes the same bytes. An id found nowhere stays out, as on a load.
+ */
+export async function embedPictures(dir: string, elements: readonly unknown[], sources: readonly Record<string, DrawingFileEntry>[], prior: Record<string, unknown> | null, folder: string | null = null): Promise<Record<string, EmbeddedFile>> {
+  const ids = [...referencedFileIds(elements)].sort()
+  const found = (id: string): DrawingFileEntry | undefined => sources.find((s) => s[id] !== undefined)?.[id]
+  const stored = await fromStore(dir, ids.filter((id) => found(id) === undefined), folder)
+  const now = Date.now()
+  const files: Record<string, EmbeddedFile> = {}
+  for (const id of ids) {
+    const entry = found(id) ?? stored[id]
+    if (entry !== undefined) files[id] = { mimeType: entry.mimeType, id, dataURL: entry.dataURL, created: (prior === null ? null : createdOf(prior, id)) ?? now }
+  }
+  return files
 }
