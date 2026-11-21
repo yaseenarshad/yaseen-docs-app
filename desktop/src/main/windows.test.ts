@@ -2709,4 +2709,65 @@ describe('createWindowManager: transient read-only windows (YAZ-4502)', () => {
     expect(manager.isReadOnly(roId)).toBe(false)
     expect(manager.isTransientReadOnlyRoot('/tmp/ext')).toBe(false)
   })
+
+  it('closing the last live window when it is transient read-only removes it from store.windows and skips addClosed and recents', async () => {
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+
+    const roId = manager.openAutomationWindow({ root: '/tmp/ext', file: '/tmp/ext/README.md', readOnly: true })
+    expect(store.get().windows.map((w) => w.id)).toEqual([roId])
+
+    created[0].win.close()
+    manager.handleFlushed(created[0].win.webContents, true)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(created[0].win.isDestroyed()).toBe(true)
+    expect(store.get().windows).toEqual([])
+    expect(store.get().folders['/tmp/ext']?.closed ?? {}).toEqual({})
+    expect(store.get().recents).toEqual([])
+    expect(manager.isReadOnly(roId)).toBe(false)
+    expect(manager.isTransientReadOnlyRoot('/tmp/ext')).toBe(false)
+  })
+
+  it('closing a transient read-only window while other windows remain removes it from store.windows and skips addClosed', async () => {
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+
+    const rwId = manager.openAutomationWindow({ root: '/v', file: '/v/a.md' })
+    const roId = manager.openAutomationWindow({ root: '/tmp/ext', file: '/tmp/ext/README.md', readOnly: true })
+    expect(store.get().windows.map((w) => w.id)).toEqual([rwId, roId])
+
+    created[1].win.close()
+    manager.handleFlushed(created[1].win.webContents, true)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(created[1].win.isDestroyed()).toBe(true)
+    expect(store.get().windows.map((w) => w.id)).toEqual([rwId])
+    expect(store.get().folders['/tmp/ext']?.closed ?? {}).toEqual({})
+    expect(manager.isReadOnly(roId)).toBe(false)
+  })
+
+  it('flushAllForQuit() removes transient read-only windows before flushing while keeping writable windows', async () => {
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+
+    const rwId = manager.openAutomationWindow({ root: '/v', file: '/v/a.md' })
+    const roId = manager.openAutomationWindow({ root: '/tmp/ext', file: '/tmp/ext/README.md', readOnly: true })
+    expect(store.get().windows.map((w) => w.id)).toEqual([rwId, roId])
+
+    const done = vi.fn()
+    void manager.flushAllForQuit().then(done)
+    await vi.advanceTimersByTimeAsync(0)
+
+    // Already removed before flush completes so a quit never persists transient read-only windows.
+    expect(store.get().windows.map((w) => w.id)).toEqual([rwId])
+
+    manager.handleFlushed(created[0].win.webContents, true)
+    manager.handleFlushed(created[1].win.webContents, true)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(done).toHaveBeenCalled()
+    expect(store.get().windows.map((w) => w.id)).toEqual([rwId])
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/v'])
+  })
 })

@@ -788,12 +788,15 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       else if (hiddenWins.size > 0 && [...live.keys()].every((other) => hiddenWins.has(other))) for (const other of [...hiddenWins]) showWindow(other)
       // A user close forgets the window; the LAST one closing quits the app (`window-all-closed`), so that is
       // a quit too: its entry stays, and the vault it was working in is the "last vault" (YAZ-2589 A1, YAZ-2602 A8).
-      if (live.size > 0) {
+      if (wasReadOnly) {
+        // Transient read-only windows never persist in AppState.windows, never bump recents, and never enter Recently closed (YAZ-4502).
+        store.removeWindow(id)
+      } else if (live.size > 0) {
         // A window you close puts its pages in "Recently closed" (YAZ-3487 D10). A quit does not: its tabs come back.
         const entry = entryOf(id)
         if (entry !== undefined && !isFilesWindow(entry)) store.addClosed(placeVaults(store.get().folders, entry.roots), entry.tabs)
         store.removeWindow(id)
-      } else if (!wasReadOnly) recordUsed(activeVault(entryOf(id)))
+      } else recordUsed(activeVault(entryOf(id)))
     })
   }
 
@@ -1482,7 +1485,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // Every renderer at once (YAZ-2198): quit waits one FLUSH_TIMEOUT_MS cap in total, not one per
       // window, and still resolves only once every window has flushed (`runQuitSequence`'s order).
       const wins = [...live].filter(([, win]) => !win.isDestroyed())
-      for (const [id, win] of wins) commitBounds(id, win)
+      for (const [id, win] of wins) {
+        if (!readOnlyWins.has(id)) commitBounds(id, win)
+      }
+      // Transient read-only windows must never persist to yaseendocs.json or reopen writable on next launch (YAZ-4502).
+      for (const id of [...readOnlyWins]) store.removeWindow(id)
       await Promise.all(
         wins.map(async ([, win]) => {
           await flushRenderer(win)

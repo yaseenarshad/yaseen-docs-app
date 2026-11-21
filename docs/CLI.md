@@ -1,8 +1,10 @@
 # CLI navigation
 
-`yaseendocs navigation open` shows a vault or a saved workspace in a Docs window. In one call it can:
+`yaseendocs open` and `yaseendocs navigation open` show a file, folder, vault, or saved workspace in a Docs window. In one call they can:
 
 - pick a new window or reuse one that shows exactly those vaults;
+- open a file or repo in transient `--read-only` mode without writing `.yaseendocs/` or persisting the window;
+- jump to a 1-based line number (`--line <n>` or `file:line`);
 - show Files, Favorites, or Focus in the sidebar;
 - open a folder or page and reveal it in that list, with its folders expanded;
 - open a Favorites or Focus group;
@@ -10,15 +12,37 @@
 
 The command replies after the window shows the result. It starts Docs when Docs is not running.
 
-The existing offline commands (`comment`, `comments`, `edit`, `delete`, `id`, `links`, `due`, `vaults`, `daily`, `new`) and `yaseendocs --help` do not change. The navigation help is `yaseendocs navigation --help`, `yaseendocs navigation open --help`, and `yaseendocs capabilities --help`.
+The existing offline commands (`comment`, `comments`, `edit`, `delete`, `id`, `links`, `due`, `vaults`, `daily`, `new`) do not change. `yaseendocs --help` lists `yaseendocs open` alongside them; detailed navigation help is `yaseendocs open --help`, `yaseendocs navigation --help`, `yaseendocs navigation open --help`, and `yaseendocs capabilities --help`.
 
 ## Commands
 
 ```sh
-yaseendocs navigation open <inputs>       # show a context in a window (starts Docs)
-yaseendocs app status                     # is Docs running in this profile; its version and protocol
-yaseendocs request status --id <id>       # the receipt of an earlier request
-yaseendocs capabilities --json            # every command, its input and output schema, and the limits
+yaseendocs open [flags] [<file[:line]> | <dir>]  # shorthand to open a file or folder (starts Docs)
+yaseendocs navigation open <inputs>              # show a context in a window (starts Docs)
+yaseendocs app status                            # is Docs running in this profile; its version and protocol
+yaseendocs request status --id <id>              # the receipt of an earlier request
+yaseendocs capabilities --json                   # every command, its input and output schema, and the limits
+```
+
+## Shorthand: `yaseendocs open`
+
+`yaseendocs open` accepts relative or absolute paths, resolves them against the current working directory, and forwards to `navigation.open`.
+
+- Positional target: `<file[:line]>` or `<dir>`. Appending `:<line>` jumps to a 1-based line number (cannot be combined with `--line`). If a file literally contains `:digits` and exists on disk, it is opened verbatim.
+- Auto-root: when `--root` is omitted for a file, the CLI walks up from the file's directory to the nearest ancestor containing `.git` or `.yaseendocs`, falling back to the file's directory. For a directory without `--root`, that directory itself is the root.
+- `--new-window`: always open a new window (`--mode new`).
+- `--read-only`: open in a transient read-only window without writing `.yaseendocs/`, bumping recents, or persisting the window across close/quit.
+- `--root <repo>`: explicit vault/repo root.
+- `--line <n>`: 1-based line number to jump to in the target file.
+- `--sidebar <files|favorites|focus>`, `--reveal <true|false>`, `--view <name>`: forwarded to `navigation.open`.
+- `--profile <absolute-path>`, `--wait-ms <1..300000>`, `--request <session/id/issuedAt>`, `--json`: standard CLI flags.
+
+```sh
+# Open a file at line 42 in a transient read-only window without touching .yaseendocs/.
+yaseendocs open --read-only src/app.ts:42
+
+# Open a folder in a new window.
+yaseendocs open --new-window ./notes
 ```
 
 ## Inputs of `navigation open`
@@ -33,6 +57,8 @@ Name the vaults with exactly one of `--root`, `--roots`, or `--workspace`, or na
 | `--roots` | Several vault folders, as a JSON list (at most 8). | `--roots '["/Vaults/Demo Skills","/Vaults/Demo Notes"]'` |
 | `--workspace` | A saved workspace: its ID, or its name if no other workspace has that name (case is ignored). All its vaults open. | `--workspace "All Folders"` |
 | `--path` | A folder or page inside those vaults. It must exist, and it cannot be hidden (a name that starts with a dot, or `node_modules`). A vault folder itself means that vault with no page, as opening a vault in the app does: the list shows, nothing is revealed. | `--path "/Vaults/Demo Skills/Example"` |
+| `--line` | A 1-based line number to jump to in the target file (positive integer). Needs `--path` pointing to a file. | `--line 42` |
+| `--read-only` | `true` opens a transient read-only window (no `.yaseendocs/` writes, no recents bump, never persisted across close/quit). | `--read-only true` |
 | `--sidebar` | `files`, `favorites`, or `focus`. The sidebar shows, even when it was hidden. | `--sidebar favorites` |
 | `--reveal` | `true` (the default when a sidebar is named) reveals the path in that list and expands its folders. `false` only opens the page. | `--reveal false` |
 | `--group` | A Favorites or Focus group: its ID, or its unique name. Needs `--sidebar favorites` or `--sidebar focus`. With a path, the path must be in that group. | `--group "Study"` |

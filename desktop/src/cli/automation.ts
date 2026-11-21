@@ -39,7 +39,8 @@ Example:
 export const OPEN_HELP = `usage:
   yaseendocs open [--new-window] [--read-only] [--root <repo>] [--line <n>]
       [--sidebar files|favorites|focus] [--reveal true|false] [--view <name>]
-      [--profile <absolute-path>] [--wait-ms <1..300000>] [--json] [<file[:line]> | <dir>]
+      [--profile <absolute-path>] [--wait-ms <1..300000>] [--request <session/id/issuedAt>] [--json]
+      [<file[:line]> | <dir>]
 
 Opens a file or folder in Yaseen Docs (starting Docs when needed).
   <file[:line]>  File to open; append :<line> to jump to a 1-based line number.
@@ -51,6 +52,7 @@ Opens a file or folder in Yaseen Docs (starting Docs when needed).
   --sidebar      Sidebar list to show (files|favorites|focus).
   --reveal       Reveal target in the sidebar (true|false).
   --view <name>  Saved view of the target folder page.
+  --request      Retry an earlier request reference (<session/id/issuedAt>), within five minutes.
 `
 
 const RESOURCES = new Set(['capabilities', 'navigation', 'app', 'request', 'open'])
