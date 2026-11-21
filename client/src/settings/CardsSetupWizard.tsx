@@ -9,7 +9,7 @@ import type { SettingsSyncCtx } from './SyncVaultControl'
 export type CardsWizardStep = 'sync' | 'readonly' | 'friends' | 'learn'
 
 const STEPS: readonly { id: 'ids' | CardsWizardStep; num: number; label: string }[] = [
-  { id: 'ids', num: 1, label: 'Page IDs' },
+  { id: 'ids', num: 1, label: 'IDs' },
   { id: 'sync', num: 2, label: 'Cloud Sync' },
   { id: 'readonly', num: 3, label: 'Read Only' },
   { id: 'friends', num: 4, label: 'Friends' },
