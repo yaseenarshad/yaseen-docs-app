@@ -43,7 +43,7 @@ it('YAZ-5050 round 2: the previews copy no text style — SpacingPreview.css sty
 
 it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every row kept; each spacing has its preview right after its rows', () => {
   const review = SETTINGS_SECTIONS.find((s) => s.id === 'cards')!
-  expect(review.groups.map((g) => g.title ?? null)).toEqual([null, null, null, 'Daily limits', 'Answers', 'Scheduling', 'Card look', null, 'GitHub'])
+  expect(review.groups.map((g) => g.title ?? null)).toEqual([null, null, null, 'Daily limits', 'Answers', 'Scheduling', 'Card look', null])
   expect(review.groups.map((g) => g.items.map((i) => i.id))).toEqual([
     ['enabled', 'whatThisAdds', 'cardSkillInSidebar'],
     ['cardCourse'],
@@ -53,7 +53,6 @@ it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every
     ['retention', 'maxDays', 'fuzz', 'weights'],
     ['cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
     ['howCardsComeBack'],
-    ['githubToken', 'friendsSend'],
   ])
   const spacing = SETTINGS_SECTIONS.find((s) => s.id === 'appearance')!.groups.find((g) => g.title === 'Spacing')!
   expect(spacing.items.map((i) => i.id)).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview'])

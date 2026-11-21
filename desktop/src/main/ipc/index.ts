@@ -3,7 +3,9 @@ import { CONTRACT } from '@shared/ipc'
 import { PIXABAY_SECRET } from '@shared/types'
 import { componentItemKey } from '@shared/mediaLibrary'
 import type { GitSyncManager } from '../git/manager'
+import { createGithubAuth, type GithubAuthManager } from '../githubAuth'
 import type { Secrets } from '../secrets'
+import { broadcastAll } from './broadcast'
 import type { SettingsFolder } from '../settingsFolder'
 import type { LspPool } from '../lsp/pool'
 import type { Store } from '../store'
@@ -67,9 +69,13 @@ export type IpcPlaces = ShareIpcPlaces & {
   macId: () => Promise<string>
   /** `app.getAppPath()`: a dev build's language helpers are in `node_modules` from there upward (YAZ-3454, YAZ-3500). */
   appPath?: string
+  /** Opens a URL in the system browser (GitHub App OAuth, deep links; YAZ-6190). */
+  openExternal?: (url: string) => Promise<void> | void
+  /** Opens a local app bundle (GitHub AutoSync fallback; YAZ-6190). */
+  openPath?: (appPath: string) => Promise<string> | string
 }
 
-export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
+export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; githubAuth: GithubAuthManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
   const { userData } = places
   registerFsIpc(store, windows)
   registerCardSkillIpc(store, windows)
@@ -134,11 +140,20 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // YAZ-5487: the table look into each table-look.json (YAZ-5602 round 2: with the Time in slot this Mac set before).
   const pulled = new Set<string>()
   let moves: VaultMove | null = null
-  const sync = registerGithubIpc(store, (status) => {
-    if (status.state !== 'synced' || pulled.has(status.root)) return
-    pulled.add(status.root)
-    moves?.pulled(status.root)
+  const githubAuth = createGithubAuth({
+    secrets,
+    openExternal: (url) => places.openExternal?.(url),
+    onChange: (status) => broadcastAll(CONTRACT.github.onAuthChanged.channel, status),
   })
+  const sync = registerGithubIpc(
+    store,
+    (status) => {
+      if (status.state !== 'synced' || pulled.has(status.root)) return
+      pulled.add(status.root)
+      moves?.pulled(status.root)
+    },
+    { auth: githubAuth, openExternal: places.openExternal, openPath: places.openPath },
+  )
   const isTransientReadOnly = (root: string): boolean => windows.isTransientReadOnlyRoot?.(root) === true
   setReadOnlyRootChecker(isTransientReadOnly)
   moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE, ...tableLookMoves(store.slotTimeToMove()), FOLDER_PAGES_MOVE], async (root) => {
@@ -147,5 +162,5 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
     const status = await sync.status(root)
     return status.enabled !== true || status.state === 'off' || status.state === 'synced'
   }, isTransientReadOnly)
-  return { sync, secrets, lsp, libraryMoves }
+  return { sync, githubAuth, secrets, lsp, libraryMoves }
 }

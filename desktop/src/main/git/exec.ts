@@ -107,7 +107,7 @@ export async function resolveGit(candidates: readonly string[] = GIT_CANDIDATES)
  * `maxBuffer` raises the 10 MB stdout cap for the one read that returns a whole file (a board's
  * old version for Version history, YAZ-1897 D4).
  */
-export function git(bin: string, root: string, args: string[], opts: { timeoutMs?: number; input?: string; maxBuffer?: number } = {}): Promise<GitResult> {
+export function git(bin: string, root: string, args: string[], opts: { timeoutMs?: number; input?: string; maxBuffer?: number; env?: NodeJS.ProcessEnv } = {}): Promise<GitResult> {
   const timeout = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   return new Promise((resolve, reject) => {
     const child = execFile(
@@ -126,7 +126,7 @@ export function git(bin: string, root: string, args: string[], opts: { timeoutMs
         // the macOS keychain helper are unaffected, so a stored credential still works.
         // GIT_OPTIONAL_LOCKS=0 keeps read-only calls (`status`) from writing the index, so a sync
         // poll never fights an editor or the user's own terminal for `.git/index.lock`.
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', ...opts.env },
       },
       (err, stdout, stderr) => {
         if (err === null) {

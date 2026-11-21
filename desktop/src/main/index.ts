@@ -18,6 +18,7 @@ import { APP_SCHEME } from './appScheme'
 import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import { excalidrawFontsDir, viewerAssetsDir } from './ipc/share'
 import type { GitSyncManager } from './git/manager'
+import { isGithubAuthCallback, type GithubAuthManager } from './githubAuth'
 import { registerIpc } from './ipc'
 import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
@@ -91,6 +92,10 @@ claimDeepLinkScheme(app, process.env)
 
 /** A parsed link routes to the best window; a bad one gets the unobtrusive notice, never a dialog. */
 function handleLink(url: string): void {
+  if (isGithubAuthCallback(url)) {
+    void githubAuth?.handleCallback(url)
+    return
+  }
   const parsed = parseFileLink(url)
   if (parsed === null) {
     manager.linkNotice(`Can't open link: ${url}`)
@@ -301,6 +306,8 @@ let lastFocusedWcId: number | undefined
 
 /** The per-vault GitHub sync manager (YAZ-1081), created with the rest of the IPC once `ready` fires. */
 let gitSync: GitSyncManager | undefined
+/** Mac GitHub App sign-in manager (YAZ-6190), created in `registerIpc` once `ready` fires. */
+let githubAuth: GithubAuthManager | undefined
 /** The course sound (YAZ-5159): made with the other doors; `app://course-voice` answers 404 before. */
 let courseAudio: CourseAudio | null = null
 
@@ -471,7 +478,7 @@ app.whenReady().then(() => {
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
   rebuildMenuOnFocus = applyIfMoved
-  const { sync, secrets, lsp } = registerIpc(store, manager, {
+  const { sync, githubAuth: auth, secrets, lsp } = registerIpc(store, manager, {
     userData: app.getPath('userData'),
     // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
     viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), mainDir: __dirname, exists: existsSync }),
@@ -480,7 +487,10 @@ app.whenReady().then(() => {
     isPackaged: app.isPackaged,
     appPath: app.getAppPath(),
     macId: () => macId(),
+    openExternal: (url) => shell.openExternal(url),
+    openPath: (appPath) => shell.openPath(appPath),
   }, settingsFolder)
+  githubAuth = auth
   // The Mac sends the numbers too (YAZ-5086, decision 16): with the same token, when a file with cards changes, and once
   // after the start. A new token (or a removed one) starts over.
   // YAZ-5652: only with Friends on (`shared/features.ts`). Off, nothing starts: no sender, no gist call, no

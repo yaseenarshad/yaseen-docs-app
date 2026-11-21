@@ -40,16 +40,14 @@ describe('Friends off (YAZ-5652)', () => {
     expect(FRIENDS_ENABLED).toBe(false)
   })
 
-  it('Settings › Cards › GitHub: the token row stays, no Friends row, and no friends:status call', async () => {
+  it('Settings › Cards: no Friends row, no friends:status call, and GitHub sign-in lives in Settings › Sync (YAZ-5652, YAZ-6190 D4)', async () => {
     resetGithubTokenStatus()
     el = document.createElement('div')
     document.body.appendChild(el)
     root = createRoot(el)
     act(() => root?.render(<SettingsDialog ctx={ctx()} onClose={vi.fn()} />))
     act(() => [...el!.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Cards')?.click())
-    await act(async () => void (await import('./GithubTokenControl')))
     for (let i = 0; i < 4; i++) await act(async () => await Promise.resolve())
-    expect(el.querySelector('[data-setting="githubToken"]')).not.toBeNull()
     expect(el.querySelector('[data-setting="friendsSend"]')).toBeNull()
     expect(el.textContent).not.toMatch(/friend/i)
     expect(api.friends.status).not.toHaveBeenCalled()

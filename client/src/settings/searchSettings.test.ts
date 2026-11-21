@@ -12,7 +12,7 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 // Settings › Review (YAZ-4967, D14): the card settings.
-const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'loopArrows', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', 'githubToken', 'friendsSend']
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'loopArrows', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
@@ -230,7 +230,7 @@ describe('settingCandidates', () => {
 
   it('includes the Review section only with a vault open, between Files & Links and Sync (YAZ-2322)', () => {
     const all = ids(settingCandidates(ctx({ status: null, setEnabled: () => undefined }, REVIEW)))
-    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', 'backfillCreated', ...LINK_PILL_ROWS, ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubSync'])
+    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', 'backfillCreated', ...LINK_PILL_ROWS, ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubAccount', 'githubSync'])
     expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
   })
 

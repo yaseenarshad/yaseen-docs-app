@@ -3975,7 +3975,43 @@ export interface GithubSyncConfig {
  * out" (YAZ-1801 D3: files held back under `tooLarge`, everything else synced), and `error` is the
  * honest catch-all that carries a message.
  */
-export type GithubSyncAttention = 'no-git' | 'no-identity' | 'auth' | 'conflict' | 'error' | 'too-large'
+export type GithubSyncAttention = 'no-git' | 'no-identity' | 'auth' | 'repo-not-allowed' | 'conflict' | 'error' | 'too-large'
+
+/** Mac GitHub App sign-in state (YAZ-6190). Tokens never leave the main process. */
+export interface GithubAuthStatus {
+  signedIn: boolean
+  login?: string
+  hasManualToken: boolean
+  pending?: boolean
+  error?: string
+}
+
+/** One repo the yaseen-docs GitHub App is allowed to access (YAZ-6190). */
+export interface GithubInstalledRepo {
+  fullName: string
+  private: boolean
+  defaultBranch: string
+}
+
+/** Read-only detection of the separate GitHub AutoSync Mac app (YAZ-6190). */
+export interface AutoSyncStatus {
+  installed: boolean
+  vaultSynced: boolean
+  supportsDeepLink: boolean
+}
+
+/** Result of trying to add a vault folder to GitHub AutoSync (YAZ-6190). */
+export interface AddToAutoSyncResult {
+  ok: boolean
+  method: 'deep-link' | 'opened-app' | 'not-installed'
+}
+
+/** Result of connecting a non-git vault folder to an allowed GitHub repo (YAZ-6190). */
+export interface ConnectRepoResult {
+  ok: boolean
+  status?: GithubSyncStatus
+  error?: string
+}
 
 /**
  * YAZ-1801 D3 (Draw, ported by YAZ-3039): the size at which a sync pass holds a file back instead

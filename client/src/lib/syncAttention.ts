@@ -15,8 +15,10 @@ import { basename } from './paths'
 export interface AttentionCopy {
   title: string
   body: string
-  /** Whether the banner offers "Copy setup prompt" — true only for the machine-setup reasons. */
+  /** Whether the banner offers "Copy setup prompt" — true only for machine-setup reasons (`no-git`). */
   showSetupPrompt: boolean
+  /** Primary action on the sync banner (YAZ-6190 D2 + Extra #5). */
+  action?: 'sign-in' | 'manage-repos' | 'setup-prompt'
   /**
    * Whether the banner offers Dismiss. False only for `too-large` (YAZ-1801 D3, YAZ-3039): a file
    * that is silently not backed up is exactly what a dismissed banner would hide, so it stays until
@@ -31,16 +33,25 @@ const COPY: Record<GithubSyncAttention, Omit<AttentionCopy, 'body' | 'dismissibl
     title: "Git isn't installed on this computer.",
     body: 'Copy the setup prompt into any LLM and it will walk you through installing it.',
     showSetupPrompt: true,
+    action: 'setup-prompt',
   },
   'no-identity': {
     title: "Git doesn't know who you are yet.",
-    body: 'One-time setup: a name and email for your commits. The setup prompt walks you through it.',
-    showSetupPrompt: true,
+    body: 'Sign in with GitHub to use your GitHub name and email automatically.',
+    showSetupPrompt: false,
+    action: 'sign-in',
   },
   auth: {
     title: "GitHub didn't accept this computer's credentials.",
-    body: 'Copy the setup prompt into any LLM and it will walk you through signing in.',
-    showSetupPrompt: true,
+    body: 'Sign in with GitHub so Yaseen Docs can sync without terminal setup.',
+    showSetupPrompt: false,
+    action: 'sign-in',
+  },
+  'repo-not-allowed': {
+    title: "Yaseen Docs can't access this repo on GitHub yet.",
+    body: 'Allow this repository for Yaseen Docs on GitHub, then sync again.',
+    showSetupPrompt: false,
+    action: 'manage-repos',
   },
   conflict: {
     title: 'Both machines changed the same lines.',
@@ -94,7 +105,13 @@ export function attentionCopy(status: GithubSyncStatus): AttentionCopy | null {
     const paths = status.tooLarge ?? []
     return { title: paths.length > 1 ? `${paths.length} files are too big for GitHub.` : entry.title, body: tooLargeBody(paths), showSetupPrompt: false, dismissible: false }
   }
-  return { title: entry.title, body: entry.body ?? status.message ?? 'git reported an error.', showSetupPrompt: entry.showSetupPrompt, dismissible: true }
+  return {
+    title: entry.title,
+    body: entry.body ?? status.message ?? 'git reported an error.',
+    showSetupPrompt: entry.showSetupPrompt,
+    ...(entry.action !== undefined ? { action: entry.action } : {}),
+    dismissible: true,
+  }
 }
 
 /** One short clause naming what went wrong, for the prompt's "It reported:" slot. */
@@ -102,6 +119,7 @@ const REASON: Record<GithubSyncAttention, string> = {
   'no-git': 'git is not installed on this computer',
   'no-identity': 'git has no user.name or user.email configured',
   auth: "GitHub did not accept this computer's credentials",
+  'repo-not-allowed': 'Yaseen Docs is not allowed to access this repository on GitHub yet',
   conflict: 'both machines changed the same lines and the merge conflicted',
   error: 'git reported an error',
   'too-large': "a file in the folder is over GitHub's 100 MB per-file limit",
