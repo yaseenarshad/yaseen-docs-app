@@ -132,20 +132,39 @@ export function CardsSetupWizard({
     })
   }, [waitingSignIn, needsRepo, root, sync]) // eslint-disable-line react-hooks/exhaustive-deps -- reacts to sign-in completion
 
+  const goToStep = (next: CardsWizardStep) => {
+    if (next !== 'sync') {
+      setWaitingSignIn(false)
+      setPickingRepo(false)
+    }
+    setStep(next)
+  }
+
   const handleDocsAppSync = async () => {
+    if (syncDone) return
     setBusy(true)
     setFeedback(null)
     try {
       const auth = hasGithubBridgeMethod('authStatus') ? await api.github.authStatus().catch(() => null) : null
       if (!liveRef.current) return
       if (auth !== null && !auth.signedIn && !auth.hasManualToken && hasGithubBridgeMethod('signIn')) {
-        await api.github.signIn()
+        const res = await api.github.signIn()
         if (!liveRef.current) return
+        if (res.signedIn) {
+          await finishDocsAppSync(res)
+          return
+        }
+        if (res.error !== undefined && res.error !== '') {
+          setFeedback(res.error)
+          return
+        }
         setWaitingSignIn(true)
         setFeedback('Finish signing in with GitHub in your browser. This step continues automatically.')
         return
       }
       await finishDocsAppSync(auth)
+    } catch {
+      if (liveRef.current) setFeedback('Could not start GitHub sign-in. Try again.')
     } finally {
       if (liveRef.current) setBusy(false)
     }
@@ -165,12 +184,15 @@ export function CardsSetupWizard({
       } else {
         setFeedback(res.error ?? 'Could not connect this folder to GitHub.')
       }
+    } catch {
+      if (liveRef.current) setFeedback('Could not connect this folder to GitHub. Try again.')
     } finally {
       if (liveRef.current) setBusy(false)
     }
   }
 
   const handleAutoSync = async () => {
+    if (syncDone) return
     if (sync?.addToAutoSync === undefined) {
       setStep('readonly')
       return
@@ -188,6 +210,8 @@ export function CardsSetupWizard({
       } else {
         setFeedback('Could not open GitHub AutoSync.')
       }
+    } catch {
+      if (liveRef.current) setFeedback('Could not open GitHub AutoSync.')
     } finally {
       if (liveRef.current) setBusy(false)
     }
@@ -239,7 +263,7 @@ export function CardsSetupWizard({
                 type="button"
                 className={cls}
                 aria-current={isCurrent ? 'step' : undefined}
-                onClick={() => setStep(target)}
+                onClick={() => goToStep(target)}
               >
                 {isDone && !isCurrent ? `✓ ${s.num}. ` : `${s.num}. `}
                 {s.label}
@@ -261,7 +285,9 @@ export function CardsSetupWizard({
 
             {syncDone && (
               <p className="cards-wizard__status" role="status">
-                Cloud sync is on for this vault.
+                {autoSync.vaultSynced
+                  ? 'Synced by GitHub AutoSync. Keep Docs App Sync off so both do not clash.'
+                  : 'Cloud sync is on for this vault.'}
               </p>
             )}
 
@@ -312,7 +338,7 @@ export function CardsSetupWizard({
             )}
 
             <div className="cards-wizard__actions">
-              {!pickingRepo && (
+              {!syncDone && !pickingRepo && (
                 <button
                   type="button"
                   className="confirm__btn cards-wizard__btn--primary"
@@ -322,7 +348,7 @@ export function CardsSetupWizard({
                   {waitingSignIn ? 'Waiting for GitHub sign-in…' : 'Use Docs App Sync'}
                 </button>
               )}
-              {autoSync.installed && !pickingRepo && (
+              {!syncDone && autoSync.installed && !pickingRepo && (
                 <button
                   type="button"
                   className="confirm__btn"
@@ -334,13 +360,9 @@ export function CardsSetupWizard({
               )}
               <button
                 type="button"
-                className="confirm__btn"
+                className={syncDone ? 'confirm__btn cards-wizard__btn--primary' : 'confirm__btn'}
                 disabled={busy}
-                onClick={() => {
-                  setWaitingSignIn(false)
-                  setPickingRepo(false)
-                  setStep('readonly')
-                }}
+                onClick={() => goToStep('readonly')}
               >
                 {syncDone ? 'Next: Read Only →' : 'Not now'}
               </button>

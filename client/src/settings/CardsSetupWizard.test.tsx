@@ -225,4 +225,91 @@ describe('CardsSetupWizard (YAZ-6225)', () => {
     expect(container.querySelector('[data-testid="cards-setup-wizard"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="cards-wizard-step-sync"]')).not.toBeNull()
   })
+
+  it('prevents double-syncing on Step 2 when already synced by AutoSync and user clicks Back (YAZ-6232)', async () => {
+    stubGithub()
+    const setEnabled = vi.fn()
+
+    await act(async () =>
+      root!.render(
+        <CardsSetupWizard
+          autoSync={{ installed: true, vaultSynced: true, supportsDeepLink: true }}
+          alreadySynced={true}
+          sync={{ status: { root: '/vault', state: 'off', enabled: false }, setEnabled }}
+          settings={DEFAULT_SETTINGS}
+          onChange={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      ),
+    )
+
+    // Starts on Step 3 (Read Only) when already synced.
+    expect(container.querySelector('[data-testid="cards-wizard-step-readonly"]')).not.toBeNull()
+
+    // Click Back to Step 2: Use Docs App Sync and Add to GitHub AutoSync must be hidden.
+    await act(async () => findBtn('← Back')!.click())
+    expect(container.querySelector('[data-testid="cards-wizard-step-sync"]')).not.toBeNull()
+    expect(findBtn('Use Docs App Sync')).toBeUndefined()
+    expect(findBtn('Add to GitHub AutoSync')).toBeUndefined()
+    expect(container.textContent).toContain('Synced by GitHub AutoSync')
+    expect(findBtn('Next: Read Only →')).toBeTruthy()
+  })
+
+  it('shows sign-in error and keeps buttons unlocked when api.github.signIn fails or rejects (YAZ-6233)', async () => {
+    stubGithub({
+      signIn: async () => ({ signedIn: false, hasManualToken: false, error: 'GitHub sign-in is unavailable.' }),
+    })
+
+    await act(async () =>
+      root!.render(
+        <CardsSetupWizard
+          autoSync={{ installed: false, vaultSynced: false, supportsDeepLink: false }}
+          alreadySynced={false}
+          root="/vault"
+          sync={{ status: { root: '/vault', state: 'off', enabled: false }, setEnabled: vi.fn() }}
+          settings={DEFAULT_SETTINGS}
+          onChange={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      ),
+    )
+
+    await act(async () => findBtn('Use Docs App Sync')!.click())
+    expect(container.textContent).toContain('GitHub sign-in is unavailable.')
+    const btn = findBtn('Use Docs App Sync')!
+    expect(btn).toBeTruthy()
+    expect(btn.disabled).toBe(false)
+  })
+
+  it('supports Add to GitHub AutoSync secondary button and Step 5 Done button', async () => {
+    stubGithub()
+    const addToAutoSync = vi.fn(async () => ({ ok: true, method: 'deep-link' as const }))
+    const openCourse = vi.fn()
+    const onClose = vi.fn()
+
+    await act(async () =>
+      root!.render(
+        <CardsSetupWizard
+          autoSync={{ installed: true, vaultSynced: false, supportsDeepLink: true }}
+          alreadySynced={false}
+          sync={{ status: { root: '/vault', state: 'off', enabled: false }, setEnabled: vi.fn(), addToAutoSync }}
+          settings={DEFAULT_SETTINGS}
+          onChange={vi.fn()}
+          openCourse={openCourse}
+          onClose={onClose}
+        />,
+      ),
+    )
+
+    await act(async () => findBtn('Add to GitHub AutoSync')!.click())
+    expect(addToAutoSync).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[data-testid="cards-wizard-step-readonly"]')).not.toBeNull()
+
+    // Jump to Step 5 and click Done (closes without opening course).
+    await act(async () => findBtn('5. Learn & Skills')!.click())
+    expect(container.querySelector('[data-testid="cards-wizard-step-learn"]')).not.toBeNull()
+    await act(async () => findBtn('Done')!.click())
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(openCourse).not.toHaveBeenCalled()
+  })
 })
