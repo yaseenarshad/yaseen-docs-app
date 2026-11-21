@@ -1,3 +1,4 @@
+import './views.css'
 import { boardOptionGroups } from './boardOptionGroups'
 import { useUnit } from '../vault/unitWord'
 import { LinkFoldersContext } from './view/PagesFromPicker'
