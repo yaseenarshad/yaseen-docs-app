@@ -301,7 +301,7 @@ describe('copy-out carries readable text/plain AND rich text/html (YAZ-1443)', (
   })
 })
 
-describe('a plain-text copy names links as the note shows them (YAZ-3744 S8)', () => {
+describe('a plain-text copy names links as the page shows them (YAZ-3744 S8)', () => {
   async function mountLinks(markdown: string) {
     const wikilinks = createWikilinkResolveSource()
     wikilinks.update((target) => ({ 'YAS-466': '/v/AR v2 plan.md', 'yas-466': '/v/AR v2 plan.md', 'AR v2 plan': '/v/AR v2 plan.md' } as Record<string, string>)[target] ?? null, [], [], true, ['YAS'])
@@ -343,7 +343,7 @@ describe('a plain-text copy names links as the note shows them (YAZ-3744 S8)', (
     expect(payload(view).text).toContain('See AR v2 plan (YAS-466) here')
   })
 
-  it('the app\'s own HTML keeps the raw links: a paste into a note keeps [[YAS-466]]', async () => {
+  it('the app\'s own HTML keeps the raw links: a paste into a page keeps [[YAS-466]]', async () => {
     const { view } = await mountLinks('See [[YAS-466]] and [[LN Scenarios Diagram.drawio]] here\n')
     selectAll(view)
     const { text, html } = payload(view)

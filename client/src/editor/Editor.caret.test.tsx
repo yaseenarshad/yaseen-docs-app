@@ -1,7 +1,7 @@
 /**
- * A woken tab's caret (YAZ-3737 D3, YAZ-3926) through the REAL note editor: `createCrepe`, `placeCaret` and
+ * A woken tab's caret (YAZ-3737 D3, YAZ-3926) through the REAL page editor: `createCrepe`, `placeCaret` and
  * `focusEditor` are not mocked (Editor.test.tsx's fake has no ProseMirror, so it sees only the call order).
- * The note has a list: Crepe's list-item node views put back, one frame after they mount, the caret the new
+ * The page has a list: Crepe's list-item node views put back, one frame after they mount, the caret the new
  * editor had then (its start). The test lets the mount, its effects and a few frames finish, then reads the
  * caret from the page view, as the tab sleep and "Duplicate tab" read it.
  */
@@ -23,8 +23,8 @@ import { api } from '../api'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const PATH = '/vault/Note F.md'
-const BODY = '# Note F\n\nFirst paragraph.\n\n- item one\n- item two\n\nThird paragraph QW of text.\n'
+const PATH = '/vault/Page F.md'
+const BODY = '# Page F\n\nFirst paragraph.\n\n- item one\n- item two\n\nThird paragraph QW of text.\n'
 const noop = (): void => undefined
 const watch: WatchSource = { subscribe: () => noop }
 
@@ -38,7 +38,7 @@ async function settle(): Promise<void> {
   })
 }
 
-/** Mounts the note in a tab layer (`data-tab`, as App draws it) with `startView`; `behind`: a hover wake (S7). */
+/** Mounts the page in a tab layer (`data-tab`, as App draws it) with `startView`; `behind`: a hover wake (S7). */
 async function mount(startView: PageView | undefined, behind = false): Promise<void> {
   const file: FileResponse = { path: PATH, content: BODY, mtime: 1, size: BODY.length }
   vi.mocked(api.readFile).mockResolvedValue(file)
@@ -73,7 +73,7 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
-describe('a woken note keeps its caret, through the real editor (YAZ-3737 D3, YAZ-3926)', () => {
+describe('a woken page keeps its caret, through the real editor (YAZ-3737 D3, YAZ-3926)', () => {
   it('a woken tab or a copy (front, with the caret grab) and a hover wake (behind, S7) end with the kept caret, not at the start', async () => {
     // With no page view the caret starts at 1, in the title: where the bug put a woken tab's.
     await mount(undefined)

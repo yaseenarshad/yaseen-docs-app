@@ -20,7 +20,7 @@ import { $prose } from '@milkdown/kit/utils'
 
 const pluginKey = new PluginKey<boolean>('mdapp-folding-switch')
 
-/** The note host's message for a fold key on a page with folding off (YAZ-4094 item 12). One notice at a time: a new one replaces it. */
+/** The page host's message for a fold key on a page with folding off (YAZ-4094 item 12). One notice at a time: a new one replaces it. */
 export const FOLDING_OFF_NOTICE = 'Folding is off on this page. Turn it on in the page cog.'
 
 /** True unless this editor's folding is off. An editor without the plugin folds. */
@@ -44,7 +44,7 @@ export const foldingBlocked = (state: EditorState, dispatch?: (tr: Transaction) 
 
 /**
  * The host's door (YAZ-4094 F1), as `showSectionIndent` is Section indent's: a metadata-only transaction that is no
- * step of the history, so ⌘Z never undoes it and the note never turns unsaved. Nothing is sent when it already is.
+ * step of the history, so ⌘Z never undoes it and the page never turns unsaved. Nothing is sent when it already is.
  */
 export const showFolding = (crepe: Crepe, on: boolean): void =>
   crepe.editor.action((ctx) => {

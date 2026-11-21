@@ -5,7 +5,9 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { hasCodeComment } from '../code/codeWidth'
 import type { BlockLines } from './blockLines'
+import { cleanCardLine, isCardNode } from '../card/cardBlockLine'
 import { CODE_LINE_ATTR, syncCodeLines } from './codeLines'
 
 /** What the host sends: the file's blocks. With no `ends`, every block is one line. */
@@ -29,7 +31,9 @@ const FENCE: Record<string, number> = { c: 1, i: 0 }
  * `data-line-end` (D7). A code block also gets the file line of its first code line (D8), but only
  * when the page holds as many code lines as the file has inside the block. An empty block, a fence
  * that is never closed, and indented code that the load-time rules gave a blank line do not, and
- * keep their own 1, 2, 3.
+ * keep their own 1, 2, 3. A code block with a width (YAZ-4783) ends on its comment, the ONE line right
+ * under its closing fence (`codeCommentJoin`), so that line is no code line. A comment written by hand
+ * after a blank line adds a line the count does not expect, and the block keeps its 1, 2, 3 until the next save.
  */
 const build = (doc: ProseNode, blocks: ShownLines): DecorationSet => {
   const decorations: Decoration[] = []
@@ -50,7 +54,9 @@ const build = (doc: ProseNode, blocks: ShownLines): DecorationSet => {
       const end = blocks.ends?.[index] ?? line
       const attrs: Record<string, string> = { 'data-line': String(line) }
       if (end > line) attrs['data-line-end'] = String(end)
-      if (fence !== undefined && node.textContent.split('\n').length === end - line + 1 - 2 * fence) attrs[CODE_LINE_ATTR] = String(line + fence)
+      // The lines under the closing fence that are the block's own: a code comment, and a card's card line.
+      const comment = fence === undefined ? 0 : (hasCodeComment(node) ? 1 : 0) + (isCardNode(node) && cleanCardLine(node.attrs.cardLine) !== null ? 1 : 0)
+      if (fence !== undefined && node.textContent.split('\n').length === end - line + 1 - 2 * fence - comment) attrs[CODE_LINE_ATTR] = String(line + fence)
       decorations.push(Decoration.node(pos, pos + node.nodeSize, attrs))
       index++
     }

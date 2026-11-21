@@ -2,7 +2,7 @@
  * SETTINGS › CANVAS (YAZ-3037, YAZ-3028 D10; ported from Draw's 🔒 YAZ-1775 D9): one row per `CanvasPrefs`
  * key, writing the whole `SettingsState` with only `canvas` changed — the same store the rail's Writing /
  * Frames toggles and the engine's own read-back write, so the three can never disagree about a value.
- * Every drawing reads it: a drawing tab and the note embed's modal alike.
+ * Every drawing reads it: a drawing tab and the page embed's modal alike.
  *
  * Row ids are `canvas.<key>` — the registry's "the id names the field" rule, one level down, so a
  * spec that knows the field knows the row.
@@ -19,9 +19,10 @@
  * toolbar in the engine is the one place they are changed.
  */
 import type { ReactNode } from 'react'
-import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
+import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign, type TextEdgeDoubleClickMode } from '@shared/types'
 import { Segmented, Select, Stepper } from './controls'
-import { ON_OFF_OPTIONS, type Option } from './options'
+import { DIAGRAM_DARK_COLORS_OPTIONS, EMBED_REST_OPTIONS, newBoardFolderOptions, ON_OFF_OPTIONS, type Option } from './options'
+import { unit } from './unitLabel'
 import type { SettingDef, SettingsSection } from './registry'
 
 const SELECT_ON_OPTIONS: readonly Option<SelectOn>[] = [
@@ -45,6 +46,12 @@ const TEXT_ALIGN_OPTIONS: readonly Option<TextAlign>[] = [
 const NEW_ELEMENT_STYLE_OPTIONS: readonly Option<NewElementStyleMode>[] = [
   { value: 'default', label: 'Start with the default style' },
   { value: 'keep', label: 'Keep the last style' },
+]
+
+/** YAZ-5771: what a double click on a text box's left or right edge does. */
+const TEXT_EDGE_DOUBLE_CLICK_OPTIONS: readonly Option<TextEdgeDoubleClickMode>[] = [
+  { value: 'shrink', label: 'Only shrink' },
+  { value: 'fit', label: 'Fit the text' },
 ]
 
 /** YAZ-4277 D5, D7: the fold arrows of text boxes. */
@@ -119,13 +126,19 @@ const width = (key: WidthKey, label: string, hint: string): SettingDef => ({
 
 export const CANVAS_SECTION: SettingsSection = {
   id: 'canvas',
-  // Draw's 🔒 YAZ-1802 D12 / D13: these preferences are Excalidraw's alone; a draw.io diagram has fixed defaults.
-  // "Drawings", as the app names them (the YAZ-3818 demo); the old words still find it.
-  title: 'Drawings',
-  keywords: ['excalidraw', 'canvas', 'board'],
+  // Draw's 🔒 YAZ-1802 D12 / D13: the canvas preferences are Excalidraw's alone; a draw.io diagram has fixed defaults.
+  // "Drawings", as the app names them (the YAZ-3818 demo), and draw.io diagrams beside them, with their one row at the
+  // end (YAZ-4748 D11); the old words still find it.
+  title: 'Drawings and diagrams',
+  keywords: ['excalidraw', 'canvas', 'board', 'drawio', 'draw.io', 'diagram'],
   groups: [
     {
       title: 'Drawing aids',
+      // Sub-headings (YAZ-5969).
+      subheadings: [
+        { title: 'Snapping', rows: ['canvas.gridModeEnabled', 'canvas.objectsSnapModeEnabled', 'canvas.snapToMidpoints', 'canvas.arrowBinding'] },
+        { title: 'Selecting', rows: ['canvas.selectOn', 'canvas.hoverOutline', 'canvas.textEdgeDoubleClick'] },
+      ],
       hint: 'Applies to every Excalidraw drawing, in every window.',
       items: [
         toggle('gridModeEnabled', 'Grid', undefined, ['grid mode']),
@@ -141,6 +154,16 @@ export const CANVAS_SECTION: SettingsSection = {
         },
         // YAZ-4469 demo: the faint outline of what a click would pick, while the selection tool hovers.
         toggle('hoverOutline', 'Hover outline', "A faint outline shows what a click will pick, while you hover. A board's cog can choose its own.", ['hover', 'outline', 'highlight', 'select', 'selection']),
+        {
+          // YAZ-5771: like a column edge in a spreadsheet. Drawings only, not draw.io diagrams.
+          id: 'canvas.textEdgeDoubleClick',
+          label: 'Double-click a text box edge',
+          hint: 'Only shrink: the box keeps its lines and loses its empty space. Fit the text: each paragraph goes on one line.',
+          keywords: ['text box', 'edge', 'double click', 'width', 'fit', 'shrink', 'wrap', 'auto resize', 'snap'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={TEXT_EDGE_DOUBLE_CLICK_OPTIONS} value={settings.canvas.textEdgeDoubleClick ?? DEFAULT_CANVAS_PREFS.textEdgeDoubleClick} onChange={(textEdgeDoubleClick) => onChange(write(settings, { textEdgeDoubleClick }))} ariaLabel="Double-click a text box edge" />
+          ),
+        },
       ],
     },
     {
@@ -154,6 +177,12 @@ export const CANVAS_SECTION: SettingsSection = {
     },
     {
       title: 'New elements',
+      // Sub-headings (YAZ-5969).
+      subheadings: [
+        { title: 'Shapes and lines', rows: ['canvas.newElementStyle', 'canvas.newShapesMatchZoom', 'canvas.fillSetsTextColor', 'canvas.writingStrokeWidth', 'canvas.vectorStrokeWidth'] },
+        { title: 'Text', rows: ['canvas.defaultFontFamily', 'canvas.newTextScreenSize', 'canvas.newTextWrapMargin'] },
+        { title: 'Default look', rows: ['canvas.defaultRoughness', 'canvas.defaultTextAlign'] },
+      ],
       hint: 'What a shape or a line is born with; the toolbar still changes anything you have selected.',
       items: [
         {
@@ -183,7 +212,7 @@ export const CANVAS_SECTION: SettingsSection = {
           // YAZ-4247: the same size on screen at every zoom; old text keeps its size.
           id: 'canvas.newTextScreenSize',
           label: 'New text size',
-          hint: 'How big new text looks on screen, at any zoom. 16 is the size of note text.',
+          hint: 'How big new text looks on screen, at any zoom. 16 is the size of page text.',
           keywords: ['text size', 'font size', 'drawing', 'zoom', 'new text', 'big', 'small'],
           render: ({ settings, onChange }) => (
             <PxStepper name="New text size" value={settings.canvas.newTextScreenSize ?? DEFAULT_CANVAS_PREFS.newTextScreenSize} fallback={DEFAULT_CANVAS_PREFS.newTextScreenSize}
@@ -260,6 +289,48 @@ export const CANVAS_SECTION: SettingsSection = {
           render: ({ settings, onChange }) => (
             <PxStepper name="Smallest fold arrow on screen" value={settings.canvas.foldArrowMinSize ?? DEFAULT_CANVAS_PREFS.foldArrowMinSize} fallback={DEFAULT_CANVAS_PREFS.foldArrowMinSize}
               min={FOLD_ARROW_MIN_SIZE_MIN} max={FOLD_ARROW_MIN_SIZE_MAX} step={1} onSet={(foldArrowMinSize) => onChange(write(settings, { foldArrowMinSize }))} />
+          ),
+        },
+      ],
+    },
+    {
+      // YAZ-4820: a drawing or a diagram shown in a page as a window (D9), and a new one made from a page (item 3).
+      // Before the draw.io group, which stays last (YAZ-4748 D11).
+      title: (ctx) => unit(ctx, 'Embeds in pages'),
+      items: [
+        {
+          id: 'embedRestSeconds',
+          label: 'Embeds stop moving after',
+          hint: 'An embed that you do not move for this time rests. Then the wheel scrolls the page. A click on the embed makes it move again.',
+          keywords: ['embed', 'window', 'rest', 'resting', 'idle', 'scroll', 'wheel', 'freeze', 'timeout', 'drawing', 'diagram'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={EMBED_REST_OPTIONS} value={settings.embedRestSeconds} onChange={(embedRestSeconds) => onChange({ ...settings, embedRestSeconds })} ariaLabel="Embeds stop moving after" />
+          ),
+        },
+        {
+          id: 'newBoardFolder',
+          label: 'New drawings and diagrams go to',
+          // YAZ-5486: the active tab's vault's (`new-places.json`).
+          hint: "Where /drawing and /diagram put the new file. The file gets the page's name. Saved in this vault.",
+          keywords: ['embed', 'new drawing', 'new diagram', 'folder', 'assets', 'slash', 'location'],
+          render: (ctx) => (
+            <Segmented options={newBoardFolderOptions((text) => unit(ctx, text))} value={ctx.settings.newBoardFolder} onChange={(newBoardFolder) => ctx.onChange({ ...ctx.settings, newBoardFolder })} ariaLabel="New drawings and diagrams go to" />
+          ),
+        },
+      ],
+    },
+    {
+      // YAZ-3037 (Draw's 🔒 YAZ-1802 D16), here since YAZ-4748 D11 (before: Appearance): the default for every diagram; a file
+      // that sets its own `adaptiveColors` keeps it.
+      title: 'draw.io diagrams',
+      items: [
+        {
+          id: 'diagramDarkColors',
+          label: 'In dark mode',
+          hint: 'Adapt re-colours diagrams so they stay readable in dark mode. A diagram that asks to keep its own colours always does.',
+          keywords: ['drawio', 'draw.io', 'diagram', 'dark', 'colors', 'colours', 'adaptive'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={DIAGRAM_DARK_COLORS_OPTIONS} value={settings.diagramDarkColors} onChange={(diagramDarkColors) => onChange({ ...settings, diagramDarkColors })} ariaLabel="draw.io diagrams in dark mode" />
           ),
         },
       ],

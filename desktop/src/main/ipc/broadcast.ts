@@ -1,5 +1,5 @@
 import { BrowserWindow, type IpcMainInvokeEvent } from 'electron'
-import type { AppState } from '@shared/types'
+import { placeVaults, type AppState } from '@shared/types'
 import type { Store } from '../store'
 import type { WindowManager } from '../windows'
 
@@ -8,16 +8,28 @@ import type { WindowManager } from '../windows'
  * caused the change. Renderers filter by their own root where that matters (the
  * `state:changed` / `vaultConfig:changed` posture).
  */
+const excludedWindows = new WeakSet<BrowserWindow>()
+
+/** Exclude non-app popups (such as Files preview popups) from receiving `broadcastAll` payloads (YAZ-6024). */
+export function excludeFromBroadcast(win: BrowserWindow): void {
+  excludedWindows.add(win)
+}
+
 export function broadcastAll(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed() || win.webContents.isDestroyed()) continue
+    if (win.isDestroyed() || win.webContents.isDestroyed() || excludedWindows.has(win)) continue
     win.webContents.send(channel, ...args)
   }
 }
 
-/** The vaults the window that sent `e` shows (YAZ-2602 D1); none for Welcome or an unknown sender. */
+/**
+ * The vaults the window that sent `e` shows (YAZ-2602 D1); none for Welcome or an unknown sender. A window that is
+ * "a folder of" a vault shows that vault (YAZ-4922 🔒 D3, `placeVault`): what it reads and writes is the vault's, so a
+ * page it makes gets the vault's next ID, and its own folder never takes a `.yaseendocs`.
+ */
 export function senderRoots(store: Pick<Store, 'get'>, windows: Pick<WindowManager, 'idFor'>, e: IpcMainInvokeEvent): readonly string[] {
-  return store.get().windows.find((w) => w.id === windows.idFor(e.sender))?.roots ?? []
+  const state = store.get()
+  return placeVaults(state.folders, state.windows.find((w) => w.id === windows.idFor(e.sender))?.roots ?? [])
 }
 
 /**
@@ -33,9 +45,9 @@ export function loggedSave<A extends unknown[], R extends { path: string }>(stor
   }
 }
 
-/** Every vault of every window in `AppState.windows` (Welcome has none), unique (YAZ-2602 D6). */
+/** Every vault of every window in `AppState.windows` (Welcome has none), unique (YAZ-2602 D6); a folder of a vault counts as its vault (YAZ-4922 D3). */
 export function rootsOf(state: AppState): string[] {
-  return [...new Set(state.windows.flatMap((w) => w.roots))]
+  return [...new Set(state.windows.flatMap((w) => placeVaults(state.folders, w.roots)))]
 }
 
 /**

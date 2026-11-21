@@ -10,6 +10,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, MEMORY_SAMPLE_MS, type MemoryReport, type MemoryTabRow } from '@shared/types'
 import { api } from '../api'
 import { SettingsDialog } from './SettingsDialog'
+import { setEmbedPictureStats } from '../editor/embed/pictureStats'
 import { agoText } from './memorySection'
 import settingsCss from './settings.css?inline'
 
@@ -25,7 +26,7 @@ const REPORT: MemoryReport = {
     {
       id: 'w1',
       title: 'App Memory Bloat Fix demo, a long window name',
-      open: '4 notes, 1 drawing',
+      open: '4 pages, 1 drawing',
       bytes: 800 * MB,
       jsHeapBytes: 100 * MB,
       grew: true,
@@ -40,7 +41,7 @@ const REPORT: MemoryReport = {
       ],
     },
     // A window that did not answer the tabs ask: its stored tabs, a display name kept, no facts.
-    { id: 'w2', title: 'Research', open: '2 notes', bytes: 400 * MB, jsHeapBytes: null, grew: false, tabs: [tab('/v/r-notes.md', { state: null }), tab('/v/s.md', { title: 'Sources', state: null, changed: NOW - 3 * MIN })] },
+    { id: 'w2', title: 'Research', open: '2 pages', bytes: 400 * MB, jsHeapBytes: null, grew: false, tabs: [tab('/v/r-pages.md', { state: null }), tab('/v/s.md', { title: 'Sources', state: null, changed: NOW - 3 * MIN })] },
     { id: 'w3', title: 'Welcome', open: '', bytes: 100 * MB, jsHeapBytes: null, grew: false, tabs: [] },
   ],
   core: { bytes: 300 * MB, main: 200 * MB, gpu: 60 * MB, utility: 40 * MB, other: 0 },
@@ -96,7 +97,7 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect([...row('w1').cells].map((c) => c.colSpan)).toEqual([3, 1, 1])
     expect(cells(row('w1'))[2]).toBe('800.0 MB')
     expect(row('w1').querySelector('.memory__name')!.textContent).toBe('App Memory Bloat Fix demo, a long window name')
-    expect(row('w1').querySelector<HTMLElement>('.memory__name')!.title).toBe('App Memory Bloat Fix demo, a long window name\n4 notes, 1 drawing')
+    expect(row('w1').querySelector<HTMLElement>('.memory__name')!.title).toBe('App Memory Bloat Fix demo, a long window name\n4 pages, 1 drawing')
     expect(row('w2').querySelector('.memory__grew')).toBeNull()
     expect(row('core').querySelector('.memory__name')!.textContent).toBe('App core')
     expect(row('helpers').querySelector('.memory__size')!.textContent).toBe('500.0 MB')
@@ -153,9 +154,9 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(columnTips).toEqual([
       'The last time this tab was on your screen. Empty for the tab in view (you see it now) and for a tab that is not loaded.',
       'The last time the file was saved to disk: by you, by Sync or by another app.',
-      'The memory the window uses now. All tabs in a window share this memory, so a tab has no number of its own. Hover on a size to see its parts. JS heap is the memory of your notes and tabs. Other is the rest of the window: the screen, images and drawings.',
+      'The memory the window uses now. All tabs in a window share this memory, so a tab has no number of its own. Hover on a size to see its parts. JS heap is the memory of your pages and tabs. Other is the rest of the window: the screen, images and drawings.',
     ])
-    expect(row('w1').querySelector<HTMLElement>('.memory__name')!.title).toBe('App Memory Bloat Fix demo, a long window name\n4 notes, 1 drawing')
+    expect(row('w1').querySelector<HTMLElement>('.memory__name')!.title).toBe('App Memory Bloat Fix demo, a long window name\n4 pages, 1 drawing')
   })
 
   it('YAZ-3934, YAZ-3946: a click on a window row opens its tab rows, awake first: title, state, last seen, changed, and an empty Memory cell; it follows the next report; a click closes it', async () => {
@@ -184,7 +185,7 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     // A window that did not answer: its stored tabs, the file name or display name, no facts.
     act(() => row('w2').querySelector<HTMLButtonElement>('.memory__toggle')!.click())
     expect(tabRows('w2').map(cells)).toEqual([
-      ['r-notes', '', '', '', ''],
+      ['r-pages', '', '', '', ''],
       ['Sources', '', '', '3 min ago', ''],
     ])
     // The next report, a minute on: Ideas woke, Plan's countdown went on.
@@ -235,7 +236,7 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
 
   it('D10: the two settings below the rows: sleep after 30 min and reload On by default; a choice writes its field', async () => {
     await mountMemory()
-    expect([...el.querySelectorAll<HTMLElement>('[data-setting]')].map((r) => r.dataset.setting)).toEqual(['memoryWindows', 'tabSleepAfter', 'memoryReload'])
+    expect([...el.querySelectorAll<HTMLElement>('[data-setting]')].map((r) => r.dataset.setting)).toEqual(['memoryWindows', 'tabSleepAfter', 'embedPictures', 'memoryReload'])
     const buttons = (id: string) => [...el.querySelectorAll<HTMLButtonElement>(`[data-setting="${id}"] button`)]
     expect(buttons('tabSleepAfter').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
       ['15 min', 'false'],
@@ -249,6 +250,23 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(buttons('memoryReload').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('On')
     act(() => buttons('memoryReload')[1].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, memoryReload: false })
+  })
+
+  it('YAZ-4825 item 27: one row for the embed picture cache, with its count and its estimated bytes', async () => {
+    await mountMemory()
+    const cell = () => el.querySelector('[data-setting="embedPictures"] [data-embed-pictures]')!.textContent
+    expect(cell()).toBe('None now')
+    act(() => root?.unmount())
+    root = null
+    el.remove()
+    report.mockClear()
+    setEmbedPictureStats(3, 2 * 1024 * 1024)
+    try {
+      await mountMemory()
+      expect(cell()).toMatch(/^3 pictures · about 2(\.0)? MB$/)
+    } finally {
+      setEmbedPictureStats(0, 0)
+    }
   })
 
   it('YAZ-4024: the State ⓘ gives the true reason for a plain "Awake" and says what an empty cell means', async () => {

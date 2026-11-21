@@ -1,5 +1,5 @@
 /**
- * A JUMP FROM THE CODE OUTLINE (YAZ-3486 S8, S9), as a note's table of contents jumps (`tocPlugin.ts`):
+ * A JUMP FROM THE CODE OUTLINE (YAZ-3486 S8, S9), as a page's table of contents jumps (`tocPlugin.ts`):
  *  1. Every fold that hides the symbol opens, and so does the symbol's own fold: the reader asked
  *     for what is under it.
  *  2. The cursor goes to the symbol's name, and the code has the focus.
@@ -118,7 +118,7 @@ function glide(editor: JumpEditorLike, target: JumpTarget, lineHeight: number): 
   frame = requestAnimationFrame(step)
 }
 
-/** One flash of the line, the note's colours (`outline.css`, `.code-outline-flash`). */
+/** One flash of the line, the page's colours (`outline.css`, `.code-outline-flash`). */
 function flash(editor: JumpEditorLike, line: number): void {
   const flashed = editor.createDecorationsCollection([{ range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 }, options: { isWholeLine: true, className: 'code-outline-flash' } }])
   setTimeout(() => flashed.clear(), FLASH_MS)

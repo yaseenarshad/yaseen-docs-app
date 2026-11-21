@@ -44,10 +44,10 @@ const TYPED_MARKER = 'tab-buffer-5c1'
 const IDEAS_BODY = 'synthetic-idea-body'
 const ROADMAP_BODY = 'synthetic-roadmap-body'
 const ARCHIVE_BODY = 'synthetic-archive-body'
-/** A fifth note, this spec's own: the page that is the preview tab when the app quits. */
+/** A fifth page, this spec's own: the page that is the preview tab when the app quits. */
 const SCRATCH_BODY = 'synthetic-scratch-body'
 /** The strip after the blank tab was filled, in order; `Scratch` joins it as the preview tab before the quit. */
-const KEPT = ['Welcome note', 'Roadmap', 'Ideas', 'Old plan']
+const KEPT = ['Welcome page', 'Roadmap', 'Ideas', 'Old plan']
 
 const board = (w: Page) => w.locator('.taboverview')
 const gridButton = (w: Page) => w.locator('.tabbar-nav [aria-label="Show all open tabs"]')
@@ -105,7 +105,7 @@ test('step 1 — a sidebar click opens the PREVIEW tab and never replaces a kept
   // seeded tab is a kept tab, and stays.
   await fileRow(win, 'Ideas').click()
   await expect(editorOf(win)).toContainText(IDEAS_BODY)
-  await expect(tabsOf(win)).toHaveText(['Welcome note', 'Ideas'])
+  await expect(tabsOf(win)).toHaveText(['Welcome page', 'Ideas'])
   await expect(activeTab(win)).toHaveText('Ideas')
   await expect(previewTab(win)).toHaveText(['Ideas'])
   await shoot(win, 'i3-01a-preview-tab')
@@ -113,17 +113,17 @@ test('step 1 — a sidebar click opens the PREVIEW tab and never replaces a kept
   // The next click shows its file in the SAME tab: the count does not move.
   await fileRow(win, 'Roadmap').click()
   await expect(editorOf(win)).toContainText(ROADMAP_BODY)
-  await expect(tabsOf(win)).toHaveText(['Welcome note', 'Roadmap'])
+  await expect(tabsOf(win)).toHaveText(['Welcome page', 'Roadmap'])
   await expect(previewTab(win)).toHaveText(['Roadmap'])
 
   // A double click on the row keeps the tab its first click previewed (D2): the name is upright.
   await fileRow(win, 'Roadmap').dblclick()
-  await expect(tabsOf(win)).toHaveText(['Welcome note', 'Roadmap'])
+  await expect(tabsOf(win)).toHaveText(['Welcome page', 'Roadmap'])
   await expect(previewTab(win)).toHaveCount(0)
 
   // ⌘-click another file: a KEPT background tab appends; activation (and the editor) stay put.
   await fileRow(win, 'Ideas').click({ modifiers: ['Meta'] })
-  await expect(tabsOf(win)).toHaveText(['Welcome note', 'Roadmap', 'Ideas'])
+  await expect(tabsOf(win)).toHaveText(['Welcome page', 'Roadmap', 'Ideas'])
   await expect(activeTab(win)).toHaveText('Roadmap')
   await expect(previewTab(win)).toHaveCount(0)
   await expect(editorOf(win)).toContainText(ROADMAP_BODY)
@@ -148,11 +148,11 @@ test('step 2 — switching tabs by click preserves each tab\'s content and typed
 })
 
 test('step 3 — ⌃Tab / ⌃⇧Tab cycle the strip with wraparound (the menu accelerator ids)', async () => {
-  // Active: Roadmap, the middle of [Welcome note, Roadmap, Ideas]. Next twice wraps to the first tab; Previous wraps back to the last.
+  // Active: Roadmap, the middle of [Welcome page, Roadmap, Ideas]. Next twice wraps to the first tab; Previous wraps back to the last.
   await clickMenuItem(app, 'menu.window.next-tab', 'w1')
   await expect(activeTab(win)).toHaveText('Ideas')
   await clickMenuItem(app, 'menu.window.next-tab', 'w1')
-  await expect(activeTab(win)).toHaveText('Welcome note')
+  await expect(activeTab(win)).toHaveText('Welcome page')
   await clickMenuItem(app, 'menu.window.prev-tab', 'w1')
   await expect(activeTab(win)).toHaveText('Ideas')
   await clickMenuItem(app, 'menu.window.prev-tab', 'w1')
@@ -165,14 +165,14 @@ test('step 3b — the tab board (YAZ-3343): the grid button and ⌘⇧M open it,
   await gridButton(win).click()
   await expect(board(win)).toBeVisible()
   await expect(gridButton(win)).toHaveAttribute('aria-pressed', 'true')
-  await expect(tabsOf(win)).toHaveText(['Welcome note', 'Roadmap', 'Ideas'])
+  await expect(tabsOf(win)).toHaveText(['Welcome page', 'Roadmap', 'Ideas'])
   // "Show all windows" is on by default (D19, S21): the one window is one frame, "This window", that holds its cards
   // directly, in vault, folder and strip order, each card with its folder in grey (D17). No folder group, no stack.
   await expect(boardSwitch(win).locator('input[role="switch"]')).toBeChecked()
   await expect(win.locator('.taboverview__frame')).toHaveCount(1)
   await expect(win.locator('.taboverview__frame-here')).toHaveText('This window')
   await expect(win.locator('.taboverview__island')).toHaveCount(0)
-  await expect(pageTitles(win)).toHaveText(['Welcome note', 'Ideas', 'Roadmap'])
+  await expect(pageTitles(win)).toHaveText(['Welcome page', 'Ideas', 'Roadmap'])
   await expect(win.locator('.taboverview__page[aria-current="page"] .taboverview__title')).toHaveText('Roadmap')
   await shoot(win, 'i3-03b-board')
 
@@ -182,7 +182,7 @@ test('step 3b — the tab board (YAZ-3343): the grid button and ⌘⇧M open it,
   await expect(win.locator('.taboverview__frame')).toHaveCount(0)
   await expect(win.locator('.taboverview__island-leaf')).toHaveText([path.basename(vault), 'Projects'])
   await expect(win.locator('.taboverview__island-count')).toHaveText(['2', '1'])
-  await expect(pageTitles(win)).toHaveText(['Welcome note', 'Ideas', 'Roadmap'])
+  await expect(pageTitles(win)).toHaveText(['Welcome page', 'Ideas', 'Roadmap'])
   await shoot(win, 'i3-03b-board-folder-groups')
   // The switch is stored (D1); on again for the rest of the spec.
   await expect.poll(async () => (await readState(userData)).tabCanvas.allWindows).toBe(false)
@@ -204,7 +204,7 @@ test('step 3b — the tab board (YAZ-3343): the grid button and ⌘⇧M open it,
   // ⌘⇧M — Window › Tab Overview, by its menu id — opens the board, and closes it again: the page that was open is back.
   await clickMenuItem(app, 'menu.window.tab-overview', 'w1')
   await expect(board(win)).toBeVisible()
-  await expect(pageTitles(win)).toHaveText(['Welcome note', 'Ideas', 'Roadmap']) // the filter is the board's own, and went with it
+  await expect(pageTitles(win)).toHaveText(['Welcome page', 'Ideas', 'Roadmap']) // the filter is the board's own, and went with it
   await clickMenuItem(app, 'menu.window.tab-overview', 'w1')
   await expect(board(win)).toHaveCount(0)
   await expect(activeTab(win)).toHaveText('Ideas')
@@ -214,7 +214,7 @@ test('step 3b — the tab board (YAZ-3343): the grid button and ⌘⇧M open it,
 test('step 3c — ⌘T shows the blank tab with the caret in the search bar; the result chosen fills it as a KEPT tab; "+" shows it again and ⌘W closes it alone', async () => {
   // ⌘T — File › New Tab, by its menu id (YAZ-2655 D10, D11): "New tab", last and active, over the new tab page (YAZ-2663 D3).
   await clickMenuItem(app, 'menu.file.new-tab', 'w1')
-  await expect(tabsOf(win)).toHaveText(['Welcome note', 'Roadmap', 'Ideas', 'New tab'])
+  await expect(tabsOf(win)).toHaveText(['Welcome page', 'Roadmap', 'Ideas', 'New tab'])
   await expect(activeTab(win)).toHaveText('New tab')
   await expect(win.locator('.start__heading')).toHaveText(['Recently closed', 'Recently viewed', 'Favorites'])
   await expect(searchBar(win)).toBeFocused()
@@ -253,7 +253,7 @@ test('step 4 — quit and relaunch restores the tabs and the active tab: every t
   const flushed = await readState(userData)
   expect(flushed.windows).toHaveLength(1)
   // The blank tab is in no stored field (D10): the tabs are the files, and the file is the last real active tab.
-  expect(flushed.windows[0].tabs.map((t) => path.basename(t))).toEqual(['Welcome note.md', 'Roadmap.md', 'Ideas.md', 'Old plan.md', 'Scratch.md'])
+  expect(flushed.windows[0].tabs.map((t) => path.basename(t))).toEqual(['Welcome page.md', 'Roadmap.md', 'Ideas.md', 'Old plan.md', 'Scratch.md'])
   expect(path.basename(flushed.windows[0].file!)).toBe('Scratch.md')
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
@@ -344,7 +344,7 @@ test('step 5 — the ⌘W ladder: tabs → empty state with the window ALIVE →
 
   // ⌘W closes the active tab (Roadmap → its right neighbour Ideas takes over), then each tab that is left.
   await clickMenuItem(app, 'menu.file.close-tab', dupId)
-  await expect(tabsOf(dup)).toHaveText(['Welcome note', 'Ideas', 'Old plan', 'Scratch'])
+  await expect(tabsOf(dup)).toHaveText(['Welcome page', 'Ideas', 'Old plan', 'Scratch'])
   await expect(activeTab(dup)).toHaveText('Ideas')
   for (let left = 3; left >= 0; left--) {
     await clickMenuItem(app, 'menu.file.close-tab', dupId)

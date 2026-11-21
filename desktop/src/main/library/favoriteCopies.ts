@@ -78,7 +78,7 @@ export const copyMimeType = (ext: string): string => (ext === 'svg' ? 'image/svg
 export interface FavoriteCopiesDeps {
   /** The favorites as `media.json` holds them now (every Mac's, after YAZ-4364). */
   favorites: () => Promise<StoredMediaItem[]>
-  /** The itemKeys of the library's removal notes (`media.json`'s `removed`): a pass deletes their copies. */
+  /** The itemKeys of the library's removal pages (`media.json`'s `removed`): a pass deletes their copies. */
   removedKeys?: () => Promise<readonly string[]>
   /** Whether this Mac has a Pixabay key: a Pixabay copy waits until it does. */
   hasPixabayKey: () => Promise<boolean>

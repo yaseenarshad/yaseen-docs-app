@@ -1,9 +1,9 @@
 /**
  * Standard Markdown link interaction (YAZ-1309).
  *
- * A primary mousedown with an open gesture (Settings › Hotkeys › "Links in a note", YAZ-3936) owns navigation before
- * ProseMirror can move the caret; a read-only note keeps "a click opens". A link that is a pill is one unit, as a
- * `[[link]]` is (YAZ-4021, demo round 4): in an editable note a plain click puts the caret at its nearer edge, a
+ * A primary mousedown with an open gesture (Settings › Hotkeys › "Links in a page", YAZ-3936) owns navigation before
+ * ProseMirror can move the caret; a read-only page keeps "a click opens". A link that is a pill is one unit, as a
+ * `[[link]]` is (YAZ-4021, demo round 4): in an editable page a plain click puts the caret at its nearer edge, a
  * double-click selects it whole, and a drag from it holds it whole (`wikilinkClick.ts`'s rules). `idLinkCaret.ts` keeps
  * the caret out of its words and removes it whole (`markdownPillsAround`), and a letter typed at its end is not part of
  * the link. Typed over the whole selected pill, words rename it and keep the link. Any other link's words are text, as
@@ -17,34 +17,43 @@
 import { linkPreviewTooltip, linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Mark, MarkType, Node as ProseNode } from '@milkdown/kit/prose/model'
-import { linkSchema } from '@milkdown/kit/preset/commonmark'
+import { imageSchema, linkSchema } from '@milkdown/kit/preset/commonmark'
 import { Plugin, PluginKey, TextSelection, type EditorState, type PluginView } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { newEmbedAlt } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
+import { isBoardSrc } from './drawing/boardEmbedText'
+import { inCellOrPage } from './table/cellBlocks'
 import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import { linkClickAction } from './linkGesture'
+import type { LinkWhere } from './wikilink/wikilinkClick'
 import { fileLabel } from '../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
 import { followDrag, nearerEdge } from './wikilink/wikilinkClick'
-import { WIKILINK_CLASS, vaultSpan } from './wikilink/wikilinkPlugin'
+import { NO_LINK_PILLS } from '@shared/linkPills'
+import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './wikilink/linkPillLook'
+import { WIKILINK_CLASS, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { pillStyleRow } from './wikilink/pillStyle'
 
 /** The link menu's place rows (YAZ-3740: `showInSidebar`, Focus and Favorites, "Open in ▸") are App's `LinkActions`: absent, no row. */
 export interface MarkdownLinkNav extends LinkActions {
   open: (href: string) => Promise<void> | void
   /** A link to a page, folder or file of this vault (YAZ-3609 D8): its path, or null to leave it to `open`. */
   inApp?: (href: string) => string | null
-  /** Opens that path where the open gesture says (YAZ-3936): this tab, a new tab or a background tab. */
-  openPath?: (path: string, where: GestureAction) => void
+  /** Opens that path where the open gesture says (YAZ-3936): this tab, a new tab or a background tab, or Explore (YAZ-4936). */
+  openPath?: (path: string, where: LinkWhere) => void
+  /** This vault's "Clicking a link" (YAZ-4936), read at each click: a plain click on a page pill opens it in Explore. A Markdown pill behaves as a [[link]] does. */
+  exploreClick?: () => boolean
   /** The user's changes of Settings › Hotkeys (`settings.hotkeys`), read at each click: the gestures that open a link. Absent → the defaults. */
   hotkeys?: () => HotkeyOverrides | undefined
   /** A link into a vault the app knows but this window does not show (YAZ-3609 D21): true when the host asked to add it. */
   elsewhere?: (href: string, background: boolean) => boolean
   /** A link into a vault of this window, found or not (YAZ-3609 D19): its absolute path, or null. Such a link is a pill. */
   vaultPath?: (href: string) => string | null
-  /** The name of the vault that holds `path` when it is not the note's own (D22), else null: the pill's last piece shows it. */
+  /** The name of the vault that holds `path` when it is not the page's own (D22), else null: the pill's last piece shows it. */
   vaultTag?: (path: string) => string | null
   /** The pill's icon: the decoration attributes that draw the one the sidebar gives `path` (D13, D19, `fileIconDecoration`). */
   icon?: (path: string, folder: boolean) => Record<string, string>
@@ -67,9 +76,9 @@ const REDRAW = 'redraw-pills'
 const addLinkOf = new WeakMap<EditorView, (range?: { from: number; to: number }) => boolean>()
 
 /**
- * Opens the link box on `range` (default: `view`'s selection), as the note menu's "Add link…" (YAZ-3609 D17).
- * The menu passes the selection it opened on: closing it gives the note its focus back, which can move the
- * selection. False with no words, in a read-only note, or with no link plugin.
+ * Opens the link box on `range` (default: `view`'s selection), as the page menu's "Add link…" (YAZ-3609 D17).
+ * The menu passes the selection it opened on: closing it gives the page its focus back, which can move the
+ * selection. False with no words, in a read-only page, or with no link plugin.
  */
 export function addLinkOn(view: EditorView, range?: { from: number; to: number }): boolean {
   return addLinkOf.get(view)?.(range) ?? false
@@ -94,7 +103,7 @@ export function markdownPillsAround(state: EditorState, pos: number): Array<{ fr
   return [...pills.values()]
 }
 
-/** Draws every link pill of the note again (YAZ-3664): the host calls it when the window's vaults change. No document change. */
+/** Draws every link pill of the page again (YAZ-3664): the host calls it when the window's vaults change. No document change. */
 export function redrawLinkPills(view: EditorView): void {
   view.dispatch(view.state.tr.setMeta(markdownLinkKey, REDRAW).setMeta('addToHistory', false))
 }
@@ -146,7 +155,7 @@ function linkHit(view: EditorView, ctx: Ctx, target: EventTarget | null): LinkHi
  * replaced: each run of one link mark whose path is in a vault of the window. The first piece of a run
  * carries the icon; a bold or code piece inside the link is part of the same pill, with no second icon (YAZ-3656).
  */
-function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: MarkdownLinkNav, set: DecorationSet): DecorationSet {
+function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: MarkdownLinkNav, set: DecorationSet, source: WikilinkResolveSource | undefined): DecorationSet {
   const stale: Decoration[] = []
   const fresh: Decoration[] = []
   doc.nodesBetween(Math.max(0, from), Math.min(doc.content.size, Math.max(from, to)), (block, pos) => {
@@ -155,24 +164,35 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
     let run: { mark: Mark; pieces: Array<[number, number]> } | null = null
     const close = () => {
       const href = run?.mark.attrs.href
-      // A `#heading` link stays text (YAZ-4033): the host resolves its empty path to the note's folder.
+      // A `#heading` link stays text (YAZ-4033): the host resolves its empty path to the page's folder.
       const path = typeof href === 'string' && !href.startsWith('#') ? nav.vaultPath?.(href) ?? null : null
       if (run !== null && path !== null && nav.icon !== undefined) {
         const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
-        const icon = nav.icon(path, fileKind(name) === null && !name.includes('.'))
+        const pills = source?.pills ?? NO_LINK_PILLS
+        // The icon where the vault's format puts it (YAZ-4924): on the first piece (`{icon}{name}`, today's), as a
+        // piece of the head or the tail, or nowhere.
+        const iconPlace = pillIconPlace(pills)
+        const icon = iconPlace === 'none' ? undefined : nav.icon(path, fileKind(name) === null && !name.includes('.'))
         const last = run.pieces.length - 1
         const vault = nav.vaultTag?.(path) ?? null
+        // The pieces the vault's format adds at the pill's ends (`pillParts`): with today's look, only the vault's
+        // name of a pill into another vault (D22). The ID and the folder are this vault's index's: a pill into another
+        // vault shows none.
+        const meta: PillMeta = { info: source !== undefined && pillsNeedInfo(pills) ? pathInfo(source.records, source.folders).get(path) : undefined, otherVault: vault }
+        const { head, tail } = pillParts(pills, meta, source?.vault ?? null, icon !== undefined)
         // One object for the pill's pieces: `markdownPillsAround` finds the whole pill from any piece (YAZ-4021).
         const pill = {}
         run.pieces.forEach(([start, end], i) => {
-          const edges = `${i === 0 ? ' link-pill--first' : ''}${i === last ? ' link-pill--last' : ''}`
-          const attrs: Record<string, string> = i === 0 ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}`, spellcheck: 'false' } : { class: `wikilink link-pill${edges}`, spellcheck: 'false' }
+          const edges = `${i === 0 && head === null ? ' link-pill--first' : ''}${i === last && tail === null ? ' link-pill--last' : ''}`
+          const attrs: Record<string, string> = i === 0 && icon !== undefined && iconPlace === 'name' ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}`, spellcheck: 'false' } : { class: `wikilink link-pill${edges}`, spellcheck: 'false' }
           fresh.push(Decoration.inline(start, end, attrs, { pill }))
         })
-        // Its vault's name is the pill's last piece (YAZ-3738 D4): drawn before the caret at the link's end, so the
-        // caret shows after the whole pill. Inside the link's anchor: a click on it opens the link, as on the text.
+        // The head and the tail are the pill's first and last pieces (YAZ-3738 D4): the tail is drawn before the caret
+        // at the link's end, so the caret shows after the whole pill. Inside the link's anchor: a click on either opens
+        // the link, as on the text.
         const mark = run.mark
-        if (vault !== null) fresh.push(Decoration.widget(run.pieces[last]![1], () => vaultSpan('wikilink link-pill link-pill--last', vault), { side: -1, marks: [mark], key: `vault:${vault}` }))
+        if (head !== null) fresh.push(Decoration.widget(run.pieces[0]![0], () => headSpan('wikilink link-pill link-pill--first', head, icon), { side: -1, marks: [mark], key: headKey(head) }))
+        if (tail !== null) fresh.push(Decoration.widget(run.pieces[last]![1], () => tailSpan('wikilink link-pill link-pill--last', tail, icon), { side: -1, marks: [mark], key: tailKey(tail) }))
       }
       run = null
     }
@@ -193,26 +213,44 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
 }
 
 /**
+ * The view-mode link menu of a Markdown `href` (shared by the editor's `menuOf`, card view mode and card embeds).
+ */
+export function markdownLinkMenuOf(href: string, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void): LinkMenu {
+  const path = nav.vaultPath?.(href) ?? null
+  // The page's name as the sidebar shows it (YAZ-3778 D2): no `.md`, no drawing's or diagram's extension.
+  const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
+  const local = href.startsWith('#')
+  // Only a file or folder that is there, found as a click finds it.
+  const found = path === null ? null : (nav.inApp?.(href) ?? null)
+  return {
+    // No top line (YAZ-3747 demo): the pill already shows the name and its vault.
+    labels: [],
+    open: local ? undefined : () => follow(href, 'thisTab'),
+    openNew: path === null ? undefined : () => follow(href, 'backgroundTab'),
+    // "Open in Explore" (YAZ-4936): a page that is there, as on a [[link]]; the host's `openPath` takes 'explore'.
+    openExplore: found !== null && fileKind(found) === 'markdown' && nav.openPath !== undefined && nav.exploreClick !== undefined ? () => follow(href, 'explore') : undefined,
+    copyName: name === null || name === '' ? undefined : () => copyText(name, 'name', nav.onNotice, nav.copy, true),
+    copyAddress: path === null ? () => copyText(href, 'address', nav.onNotice, nav.copy) : undefined,
+    ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),
+  }
+}
+
+/**
  * The one link menu's rows for a Markdown link (YAZ-3609 D23, YAZ-3740, `linkMenu.ts`). A link into a vault of the
  * window opens in a new tab too, and copies its name; one whose page is there
  * has the place rows (Show in sidebar, Copy path, Focus, Favorites, "Open in ▸"). Any other link opens only through
  * the OS, and "Copy address" copies its href.
  */
-function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: GestureAction) => void): LinkMenu {
+function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void, keep: (run: () => void) => () => void, allowHighlight = true): LinkMenu {
   const path = nav.vaultPath?.(hit.href) ?? null
-  // The page's name as the sidebar shows it (YAZ-3778 D2): no `.md`, no drawing's or diagram's extension.
   const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
-  const local = hit.href.startsWith('#')
-  // Only a file or folder that is there, found as a click finds it.
-  const found = path === null ? null : (nav.inApp?.(hit.href) ?? null)
   return {
-    // No top line (YAZ-3747 demo): the pill already shows the name and its vault.
-    labels: [],
-    open: local ? undefined : () => follow(hit.href, 'thisTab'),
-    openNew: path === null ? undefined : () => follow(hit.href, 'backgroundTab'),
-    copyName: name === null || name === '' ? undefined : () => copyText(name, 'name', nav.onNotice, nav.copy, true),
-    copyAddress: path === null ? () => copyText(hit.href, 'address', nav.onNotice, nav.copy) : undefined,
-    ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),
+    ...markdownLinkMenuOf(hit.href, nav, follow),
+    // A drawing's or a diagram's link (YAZ-4829 D8): the image node of the same address, `![name](href)` — a window (2B).
+    // Not in a table cell: embeds there are out of scope (the checker's round 1).
+    showAsEmbed: view.editable && path !== null && isBoardSrc(hit.href) && !inCellOrPage(view.state.doc.resolve(hit.from)) ? () => view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, imageSchema.type(ctx).create({ src: hit.href, alt: newEmbedAlt(name ?? ''), title: '' }))) : undefined,
+    // This pill's own style (YAZ-4924 round 5): the toolbar's marks around the whole link. A web link is no pill: none.
+    pillStyle: path === null ? undefined : pillStyleRow(view, hit.from, hit.to, keep, allowHighlight),
     edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
     remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }
@@ -238,16 +276,27 @@ export const noPreviewOnPills = (ctx: Ctx) => {
   })
 }
 
-export const createMarkdownLink = (nav: MarkdownLinkNav) =>
+/** `source`: the vault's resolve source (YAZ-4924), for the look its pills wear and the ID and folder a pill may show; the pills draw again when it changes. */
+export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolveSource, allowHighlight = true) =>
   $prose((ctx) => {
     let close = () => {}
+    // True while a "Pill style" pick runs: its own change to the page keeps the menu open (YAZ-4924 round 5).
+    let holding = false
+    const keep = (run: () => void) => () => {
+      holding = true
+      try {
+        run()
+      } finally {
+        holding = false
+      }
+    }
     /** A paste event is running: Milkdown's own paste dispatches with no `paste` meta. Only the paste's own change may
      * count, so the flag ends with the event, and at the first change of any kind (YAZ-4038). */
     let pasting = false
 
     /** Opens `href` as an open gesture does: a page or file of a vault in the window in a tab, `where` it says (D8, D14, YAZ-3936), anything else through the OS. */
     const type = linkSchema.type(ctx)
-    const follow = (href: string, where: GestureAction) => {
+    const follow = (href: string, where: LinkWhere) => {
       const path = nav.inApp?.(href) ?? null
       if (path !== null && nav.openPath !== undefined) nav.openPath(path, where)
       else if (nav.elsewhere?.(href, where === 'backgroundTab') !== true) attempt(() => nav.open(href), 'Could not open link', nav.onNotice)
@@ -273,11 +322,11 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
       // typing next to it (YAZ-3655) work as on any text, and the caret stays out of it (YAZ-4021). The look follows the
       // path, not the index.
       state: {
-        init: (_, state) => (nav.vaultPath === undefined ? DecorationSet.empty : pillsIn(state.doc, 0, state.doc.content.size, type, nav, DecorationSet.empty)),
+        init: (_, state) => (nav.vaultPath === undefined ? DecorationSet.empty : pillsIn(state.doc, 0, state.doc.content.size, type, nav, DecorationSet.empty, source)),
         apply: (tr, set, before, state) => {
           if (nav.vaultPath === undefined) return set
-          // The window's vaults changed (YAZ-3664): every link of the note is a pill, or not, again.
-          if (tr.getMeta(markdownLinkKey) === REDRAW) return pillsIn(state.doc, 0, state.doc.content.size, type, nav, set)
+          // The window's vaults changed (YAZ-3664): every link of the page is a pill, or not, again.
+          if (tr.getMeta(markdownLinkKey) === REDRAW) return pillsIn(state.doc, 0, state.doc.content.size, type, nav, set, source)
           if (!tr.docChanged) return set
           const mapped = set.map(tr.mapping, tr.doc)
           // Only the lines the change touched are drawn again: the step ranges, and the doc diff (a mark step maps no positions).
@@ -295,7 +344,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
             from = Math.min(from, diff)
             to = Math.max(to, before.doc.content.findDiffEnd(state.doc.content)?.b ?? diff)
           }
-          return from > to ? mapped : pillsIn(state.doc, from, to, type, nav, mapped)
+          return from > to ? mapped : pillsIn(state.doc, from, to, type, nav, mapped, source)
         },
       },
       props: {
@@ -322,7 +371,8 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
             if (hit === null || hit.href.startsWith('#')) return false
             // Only an open gesture opens (YAZ-3936). A click no gesture has: on a pill, as on a [[link]] (YAZ-4021); on any
             // other link, the editor's, as on text (YAZ-3935).
-            const where = linkClickAction(view, event, nav.hotkeys?.())
+            // A single plain click on a page pill opens it in Explore while the vault says so (YAZ-4936), as on a [[link]], on a read-only page too (YAZ-4939).
+            const where: LinkWhere | null = linkClickAction(view, event, nav.hotkeys?.(), () => event.detail === 1 && nav.exploreClick?.() === true && fileKind(nav.inApp?.(hit.href) ?? '') === 'markdown')
             if (where !== null) {
               event.preventDefault()
               follow(hit.href, where)
@@ -346,13 +396,14 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
             if (parent === null) return false
             event.preventDefault()
             close()
-            close = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(menuOf(view, hit, ctx, nav, follow)))
+            const rows = () => linkMenuRows(menuOf(view, hit, ctx, nav, follow, keep, allowHighlight))
+            close = openMenuAt(parent, event.clientX, event.clientY, rows(), rows)
             return true
           },
         },
       },
       view: (editorView) => {
-        // The note menu's "Add link…" (YAZ-3609 D17, `noteMenu.tsx`): Crepe's own link box, on this editor's selection.
+        // The page menu's "Add link…" (YAZ-3609 D17, `pageMenu.tsx`): Crepe's own link box, on this editor's selection.
         addLinkOf.set(editorView, (range) => {
           const { from, to } = range ?? editorView.state.selection
           if (!editorView.editable || from >= to || to > editorView.state.doc.content.size) return false
@@ -377,11 +428,22 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
         }
         document.addEventListener('click', onPreviewClick, true)
         document.addEventListener('auxclick', onPreviewClick, true)
+        // The vault's look changed (YAZ-4924): every pill draws again. An index snapshot wakes the source too; the
+        // pills follow the path, not the index, so only a changed look or vault name pays the redraw.
+        let seenPills = source?.pills
+        let seenVault = source?.vault
+        const unsubscribe = source?.subscribe(() => {
+          if (source.pills === seenPills && source.vault === seenVault) return
+          seenPills = source.pills
+          seenVault = source.vault
+          if (nav.vaultPath !== undefined) redrawLinkPills(editorView)
+        })
         return {
           update: (view, previousState) => {
-            if (view.state.doc !== previousState.doc) close()
+            if (view.state.doc !== previousState.doc && !holding) close()
           },
           destroy: () => {
+            unsubscribe?.()
             addLinkOf.delete(editorView)
             document.removeEventListener('click', onPreviewClick, true)
             document.removeEventListener('auxclick', onPreviewClick, true)

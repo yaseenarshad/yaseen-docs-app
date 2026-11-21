@@ -5,7 +5,7 @@ import { foldersById, isShortcut, rowsByFolder } from '../links/shortcuts'
 
 /**
  * Each folder's shortcuts (YAZ-2290 D2), by the folder's absolute path, in ONE pass over the rows
- * its own view shows (`rowsByFolder`), run once per index snapshot: the notes whose `also_in` names
+ * its own view shows (`rowsByFolder`), run once per index snapshot: the pages whose `also_in` names
  * THIS folder and that do not live under it, as the file rows the tree draws under it — a shortcut
  * into a subfolder stands under the subfolder alone. A folder with none has no entry, and the vault
  * root has no row, so it has none.

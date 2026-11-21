@@ -12,7 +12,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { hexOfRgb, rgbOf } from '../../lib/colour'
 import { getMarkdownForSave } from '../createCrepe'
 import { TABLE_HANDLE_MENU } from './tableMenu'
-import { cellPos, mountNote as mount, unmountAll } from './tableTestKit'
+import { cellPos, mountPage as mount, unmountAll } from './tableTestKit'
 
 afterEach(unmountAll)
 
@@ -55,6 +55,7 @@ describe('when the toolbar shows', () => {
       'label Text', 'Red text', 'Blue text', 'Green text', 'Text colours', 'divider',
       'Bold', 'Italic', 'Strikethrough', 'divider',
       'Align left', 'Align center', 'Align right', 'divider',
+      'Merge cells', 'divider',
       'Clear cells',
     ])
     for (const b of toolbarOf(view)!.querySelectorAll('button')) expect(b.title).toBe(b.getAttribute('aria-label'))
@@ -70,7 +71,7 @@ describe('when the toolbar shows', () => {
     expect(shown(view)).toBe(false)
   })
 
-  it('hides in a read-only note', async () => {
+  it('hides in a read-only page', async () => {
     const { view } = await mount(TABLE)
     view.setProps({ editable: () => false })
     await select(view, [1, 0], [2, 1])

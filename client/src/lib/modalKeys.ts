@@ -18,12 +18,23 @@ export function useModalKeys(dialog: RefObject<HTMLElement | null>, onEscape: ()
     const previous = document.activeElement
     dialog.current?.focus()
     const onKey = (e: KeyboardEvent) => {
-      const inside = e.target instanceof Node && dialog.current?.contains(e.target) === true
+      const current = dialog.current
+      if (current !== null) {
+        // YAZ-6036: yield when a visible sibling modal dialog (such as ConfirmSheet) is mounted after this dialog in DOM order.
+        const dialogs = document.querySelectorAll('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"]')
+        for (let i = dialogs.length - 1; i >= 0; i--) {
+          const d = dialogs[i]
+          if (d === current) break
+          if (d instanceof HTMLElement && (d.hidden || d.closest('[hidden], [inert]') !== null)) continue
+          if (!current.contains(d) && (current.compareDocumentPosition(d) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) return
+        }
+      }
+      const inside = e.target instanceof Node && current?.contains(e.target) === true
       if (inside && e.key !== 'Escape') return
       e.preventDefault()
       e.stopPropagation()
       if (e.key === 'Escape') escape.current()
-      else dialog.current?.focus()
+      else current?.focus()
     }
     window.addEventListener('keydown', onKey, true)
     return () => {

@@ -209,7 +209,7 @@ describe('createComponentStore — the folder is the truth, the index is a cache
   it('a stray file that is not a `<slug>.excalidraw` is not a component', async () => {
     await mkdir(componentsDir(), { recursive: true })
     await writeFile(path.join(componentsDir(), 'A Card.excalidraw'), fragment())
-    await writeFile(path.join(componentsDir(), 'notes.txt'), 'hello')
+    await writeFile(path.join(componentsDir(), 'pages.txt'), 'hello')
     await writeFile(path.join(componentsDir(), 'orphan.png'), 'x')
     expect(await store.list()).toEqual([])
   })

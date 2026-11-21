@@ -107,7 +107,7 @@ describe('captureComponentSelection — the selection, deep-copied, with its byt
   })
 
   it('refuses a selection past the web app’s elements ceiling', () => {
-    const element = fakeElementApi([rect('a', { note: 'x'.repeat(MAX_COMPONENT_ELEMENTS_BYTES) })])
+    const element = fakeElementApi([rect('a', { page: 'x'.repeat(MAX_COMPONENT_ELEMENTS_BYTES) })])
     expect(() => captureComponentSelection(element, fakeCanvas().api)).toThrow(/bytes or smaller/)
   })
 })

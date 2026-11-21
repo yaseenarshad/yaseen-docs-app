@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { MAX_WINDOW_ROOTS, rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
+import { MAX_WINDOW_ROOTS, placeVault, rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { isFolderPath, pageLabel, useLatestTrees, type PathTitles } from '../lib/pageLabel'
@@ -16,10 +16,13 @@ import { useTabHeads } from './useTabHeads'
 import { useCamera } from './useCamera'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
 import { useHiddenWindows, useMinimizedWindows } from './hiddenWindows'
-import { TabSearchPanel } from './TabSearchPanel'
+import { TabSearchPanel, type SearchPlace } from './TabSearchPanel'
 import { autoWindowLabel, windowLabel } from './windowLabel'
 import { AsleepIcon } from '../views/view/icons'
 import './tabs.css'
+import { useUnit } from '../vault/unitWord'
+import { PlaceName } from '../sidebar/PlaceName'
+import { dirname } from '../lib/paths'
 
 export { SETTLE_MS, TOOLBAR_INSET } from './useCamera'
 
@@ -109,8 +112,6 @@ export interface TabOverviewProps {
   onSetName?: (id: string, name: string | null) => void
   onShowInSidebar?: (path: string) => void
   onNotice?: (message: string) => void
-  reviewState?: (path: string) => boolean | null
-  onSetReview?: (path: string, on: boolean) => void
   /**
    * Focus and Favorites on a card (YAZ-3264 D4): where a page stands in this window's lists — null
    * for a vault this window does not show, which hides both items — and the two toggles. A vault's
@@ -149,6 +150,8 @@ const NO_WINDOWS: readonly WindowEntry[] = []
 const WAYS: Record<string, Way> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
 const tabCount = (n: number): string => (n === 1 ? '1 tab' : `${n} tabs`)
 const noSubscribe = (): (() => void) => () => undefined
+/** A vault of a window and the folder it shows of it (YAZ-4922 D3): none where it is the vault itself. */
+const placeIn = (vault: string, folder: string | null): SearchPlace => (folder === null || folder === vault ? { root: vault } : { root: vault, folder })
 const noWindows = (): readonly WindowEntry[] => NO_WINDOWS
 
 /**
@@ -263,6 +266,7 @@ const NONE_ASLEEP: ReadonlySet<string> = new Set()
  * moving renders two cards, and a pan, a zoom or a drag renders none (D4).
  */
 const Card = memo(function Card(p: CardProps) {
+  const unit = useUnit()
   const cls = ['taboverview__page']
   if (p.active) cls.push('taboverview__page--active')
   if (p.previewing) cls.push('taboverview__page--preview')
@@ -301,8 +305,9 @@ const Card = memo(function Card(p: CardProps) {
           {p.asleep && <AsleepIcon className="taboverview__asleep" />}
         </span>
       )}
-      {p.folder !== null && <span className="taboverview__folder">{p.folder}</span>}
-      {p.named && <span className="taboverview__pagename">Page: {p.page}</span>}
+      {/* YAZ-5402: the folder icon before the folder. */}
+      {p.folder !== null && <PlaceName className="taboverview__folder" path={dirname(p.path)} kind="folder" label={p.folder} />}
+      {p.named && <span className="taboverview__pagename">{unit('Page')}: {p.page}</span>}
       {p.picture && p.root !== null ? (
         <span className="taboverview__shot">
           <Suspense fallback={<span className="taboverview__lines">{p.lines}</span>}>
@@ -340,7 +345,7 @@ type Gesture =
 /**
  * The tab board (YAZ-2648 D5, YAZ-3343): every open tab as a card on a CANVAS, in the editor's place while it
  * shows — App hides the tab stack under it and unmounts nothing while it shows (no tab sleeps then, YAZ-3737 5A),
- * so each page is as it was when the board closes. A card shows its title and, for a note, its first lines (D6, `useTabHeads`); a drawing's card its
+ * so each page is as it was when the board closes. A card shows its title and, for a page, its first lines (D6, `useTabHeads`); a drawing's card its
  * picture. With "Show all windows" off, cards stand in GROUPS, one per folder that directly holds them, under
  * their vault (D7, D8); on, every open window is a FRAME that holds its cards directly, in folder order (D17).
  * `layoutCanvas` (board.ts) computes every place with no DOM; a card, a group or a frame the user dragged stands
@@ -362,7 +367,8 @@ type Gesture =
  * end of the top row, is about every tab the board is about, whatever the filter shows; the board only asks:
  * App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, asleep = NONE_ASLEEP, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onAskVault, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, asleep = NONE_ASLEEP, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onAskVault, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
+  const unit = useUnit()
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)
@@ -487,6 +493,12 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const aspect = view !== null && view.w > 0 && view.h > 0 ? view.w / view.h : undefined
   const plan: CanvasPlan = useMemo(() => layoutCanvas(allWindows ? model.frames : model.frames.slice(0, 1), { by: layout, wrapW, stored: canvas.cards, anchors: frameAnchors, aspect }), [model, allWindows, layout, wrapW, canvas, frameAnchors, aspect])
   const { windows, info, byWin } = model
+  // "Open tabs here…" (D22) for a "folder of <vault>" window (YAZ-4922 🔒 D3): each vault with the folder it shows, so the
+  // panel finds only what is under it. This window's roots are vaults (its folder is `storage.folderIn`); another's are
+  // its places, read as their vaults. A window not in the state yet shows this window's. Kept while the roots stand.
+  const searchWin = searchFor === null ? undefined : byWin.get(searchFor)
+  const searchRoots = searchWin === undefined || searchWin.mine ? null : searchWin.roots
+  const searchPlaces = useMemo<readonly SearchPlace[]>(() => (searchRoots === null ? roots.map((root) => placeIn(root, storage.folderIn(root))) : searchRoots.map((place) => placeIn(placeVault(storage.getFolders(), place), place))), [searchRoots, roots])
   const shownWindows = useMemo(() => (allWindows ? windows : windows.slice(0, 1)), [windows, allWindows])
   const posOf = (id: string): { x: number; y: number } | undefined => ghosts.get(id) ?? plan.cards.get(id)
   const groupsByKey = new Map(plan.groups.map((group) => [group.key, group]))
@@ -823,7 +835,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       menuOn(e, () =>
         live.current.picked.has(id) && live.current.pick.length > 1
           ? setPickMenu({ x: e.clientX, y: e.clientY })
-          : setPageMenu({ x: e.clientX, y: e.clientY, id, path: card.page.path, review: reviewState?.(card.page.path) ?? null, named: card.page.named, lists: listState?.(card.page.path) ?? null }),
+          : setPageMenu({ x: e.clientX, y: e.clientY, id, path: card.page.path, named: card.page.named, lists: listState?.(card.page.path) ?? null }),
       )
     },
     hover: (id: string) => {
@@ -1672,7 +1684,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           onRename={menuCard.mine && onSetName === undefined ? undefined : setRenaming}
           onResetName={(id) => setCardName(id, null)}
           onShowInSidebar={menuCard.mine ? onShowInSidebar : () => askTab(pageMenu.id, { kind: 'show-in-sidebar' })}
-          onSetReview={menuCard.mine ? onSetReview : (_path, on) => askTab(pageMenu.id, { kind: 'set-review', on })}
           // The tab row's two items, in its places and with its glyphs (YAZ-3264 D2, D4, D6): this window writes them for any card of a vault it shows.
           onToggleFocus={onToggleFocus}
           onToggleFavorite={onToggleFavorite}
@@ -1815,7 +1826,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       {searchFor !== null && (
         <TabSearchPanel
           key={searchFor}
-          roots={byWin.get(searchFor)?.roots ?? roots}
+          places={searchPlaces}
           label={byWin.get(searchFor)?.label ?? 'the new window'}
           at={searchAt(searchFor)}
           watchOf={watchOf}

@@ -13,7 +13,7 @@
   min-height: 0;
 }
 
-/* YAZ-4277 1C: the block handle has no place in a box (its rows are a note's). */
+/* YAZ-4277 1C: the block handle has no place in a box (its rows are a page's). */
 .excalidraw-host-text-editor .milkdown-block-handle {
   display: none;
 }

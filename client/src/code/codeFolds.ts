@@ -1,6 +1,6 @@
 /**
  * A code tab's folds, remembered (YAZ-3451; YAZ-3438 D7): in the app state, `folders[root].folds[path]`,
- * the store note folds use — never in the file.
+ * the store page folds use — never in the file.
  *
  * KEYED BY TEXT, NOT BY LINE NUMBER. A fold's key is the text of its first line, trimmed and cut at
  * `MAX_KEY_TEXT`; the 2nd, 3rd, … line with the same text gets `\0<n>` after it. So when another app adds

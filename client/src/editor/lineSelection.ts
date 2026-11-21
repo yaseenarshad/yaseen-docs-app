@@ -28,6 +28,7 @@ import type { Mark, MarkType, Node as ProseNode, ResolvedPos } from '@milkdown/k
 import { type Command, type EditorState, NodeSelection, Plugin, PluginKey, Selection, SelectionRange, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { liftTarget } from '@milkdown/kit/prose/transform'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { typingOnly } from './table/tableStyle'
 import { collapsedSectionAround, collapsedSectionBlocks } from './outline/headingFolding'
 import { findFoldedChildren, isListItem, isTableCell, LIST_NODE_NAMES } from './outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed } from './outline/outlineFolding'
@@ -53,8 +54,8 @@ const edgeAt = ($head: ResolvedPos, dir: 1 | -1): Edge | null => {
  * The whole hidden run around the textblock at `$pos`, or null when it is in view (D6). Asks the plugins that
  * hide things, through their own state: outside the zoomed item's subtree (`getZoomedItemPos` — the zoom decorations
  * hide every block off the root → item path, the ancestors' own text included), inside a collapsed heading's section
- * (`collapsedSectionAround`), inside a collapsed bullet's nested list (`collapsedItemsHiding`), or inside a hidden cell
- * note (`isCellNoteHidden`, YAZ-3818 D4). All answer from plugin state, which is what their `display: none` is computed
+ * (`collapsedSectionAround`), inside a collapsed bullet's nested list (`collapsedItemsHiding`), or inside a hidden
+ * cell note (`isCellNoteHidden`, YAZ-3818 D4). All answer from plugin state, which is what their `display: none` is computed
  * from — no DOM, no re-derived fold logic.
  * A folded ANCESTOR of the zoomed item hides nothing: the zoom shows it expanded (zoom.css), so only a fold at or below
  * the zoomed item counts (YAZ-3209 bug 1B1). The run is the OUTERMOST one — all of the zoom's outside, the whole
@@ -72,15 +73,15 @@ const hiddenRun = (state: EditorState, $pos: ResolvedPos): { from: number; to: n
   const section = collapsedSectionAround(state, pos)
   if (section !== null) return section
   // A hidden cell note and a folded item's nested list can hold each other: the one that starts first is the outer.
-  const notePos = cellNoteAround($pos)
-  const note = notePos !== null && isCellNoteHidden(state, notePos) ? { from: notePos, to: notePos + state.doc.nodeAt(notePos)!.nodeSize } : null
+  const cellNotePos = cellNoteAround($pos)
+  const cellNote = cellNotePos !== null && isCellNoteHidden(state, cellNotePos) ? { from: cellNotePos, to: cellNotePos + state.doc.nodeAt(cellNotePos)!.nodeSize } : null
   const fold = collapsedItemsHiding(state, pos).find((itemPos) => zoomed === null || itemPos >= zoomed)
-  if (fold === undefined) return note
+  if (fold === undefined) return cellNote
   // The folded item's nested list that holds `pos`: the child one level below the item.
   for (let depth = 1; depth < $pos.depth; depth++) {
-    if ($pos.before(depth) === fold) return note !== null && note.from < $pos.before(depth + 1) ? note : { from: $pos.before(depth + 1), to: $pos.after(depth + 1) }
+    if ($pos.before(depth) === fold) return cellNote !== null && cellNote.from < $pos.before(depth + 1) ? cellNote : { from: $pos.before(depth + 1), to: $pos.after(depth + 1) }
   }
-  return note
+  return cellNote
 }
 
 /** Is the textblock around `$pos` hidden from view (D6)? See `hiddenRun`. */
@@ -465,9 +466,12 @@ export const liftHeadlessItems = $prose(
       key: liftHeadlessItemsKey,
       appendTransaction(trs, _old, state) {
         if (!trs.some((tr) => tr.docChanged)) return null
+        // Pure inline typing inside a textblock cannot create a headless list item (YAZ-6028).
+        if (trs.every((tr) => !tr.docChanged || typingOnly(tr))) return null
         // Every headless item, deepest / last first so each lift leaves the remaining positions valid.
         const positions: number[] = []
         state.doc.descendants((node, pos) => {
+          if (node.isTextblock) return false
           if (headlessList(node) !== null) positions.push(pos)
           return true
         })

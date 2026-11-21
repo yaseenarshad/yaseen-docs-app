@@ -101,7 +101,7 @@ describe('the block menu\'s strip turns a list into a checklist, bullets, number
     const { view, item } = await mount('1. a\n   * kid\n2. b\n')
     aimAt(view, 'a')
     rightClick(item)
-    expect(menu(view)).toEqual([STRIP('Numbered list', 'Text'), '|', 'Number children', 'Bullets with written numbers', 'Collapse all', 'Expand all', 'Lock open'])
+    expect(menu(view)).toEqual([STRIP('Numbered list', 'Text'), '|', 'Number children', 'Bullets with written numbers', 'Collapse all', 'Expand all', 'Collapse this level', 'Expand this level', 'Lock open'])
   })
 
   it.each([
@@ -207,10 +207,14 @@ describe('the block menu\'s strip turns a list into a checklist, bullets, number
     expect(getMarkdownForSave(crepe)).toBe('* a\n\n1. b\n   * kid\n\n* c\n')
   })
 
-  it('a code block has no menu', async () => {
-    const { view, item } = await mount('```\ncode\n```\n')
+  // YAZ-4800 demo ("on a code block that is without a bullet clicking the 6 dots doesnt do absolutely anything"): a code
+  // block in no bullet now has the strip that puts it on one, then Add line above / below. No T: the code stays code.
+  it('a code block in no bullet: the strip puts it on a bullet, then Add line above and below', async () => {
+    const { crepe, view, item } = await mount('```\ncode\n```\n')
     aimAt(view, 'code')
     rightClick(item)
-    expect(popupOf(view)).toBeNull()
+    expect(menu(view)).toEqual(['[Put on a bullet, Put on a numbered line, Put on a checklist line]', '|', 'Add line above', 'Add line below'])
+    pick(view, 'Put on a bullet')
+    expect(getMarkdownForSave(crepe)).toMatch(/^\* ```\n {2}code\n {2}```\n$/)
   })
 })

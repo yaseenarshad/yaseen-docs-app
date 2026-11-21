@@ -1,14 +1,14 @@
 /**
  * The page title (⚡ YAZ-888) end-to-end against the REAL app: every page shows its own title as
- * block ZERO of the note's scroller, and editing it IS a rename — through the same one door the
+ * block ZERO of the page's scroller, and editing it IS a rename — through the same one door the
  * sidebar's Rename reaches, so the confirm sheet, the new file name, the link rewrite and the tab
  * remap all come with it. The vault is plain (YAZ-2523 🔒 V3), the default: the title is the file
- * name, and a rename writes nothing inside the note. `names.spec.ts` walks a vault that uses IDs.
+ * name, and a rename writes nothing inside the page. `names.spec.ts` walks a vault that uses IDs.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 a file made outside the app shows its own name as its title, and committing an edit asks
  *     first with the honest count, then renames on disk, in the tab strip, in the sidebar and in
- *     the note that links to it
+ *     the page that links to it
  *   2 LEAVING the field commits (YAZ-1553): click away with a changed name and the same sheet
  *     asks — no Enter needed — and the rename lands everywhere step 1 proved
  *   3 Escape is the only discard: no sheet, nothing on disk moves
@@ -26,7 +26,7 @@ import { activeTab, appWindow, buildFixtureVault, confirmSheet, copyVault, edito
 test.describe.configure({ mode: 'serial' })
 
 /** Seeded on top of the fixture vault: Index links to Guide. */
-const GUIDE_BODY = 'guide-note-body'
+const GUIDE_BODY = 'guide-page-body'
 const GUIDE = `# Guide\n\n${GUIDE_BODY}\n`
 const RENAMED = 'Handbook'
 const LEFT = 'Manual'
@@ -37,7 +37,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** Block ZERO of the open note's scroller: the heading, and the input a click swaps in. */
+/** Block ZERO of the open page's scroller: the heading, and the input a click swaps in. */
 const title = (w: Page) => layer(w).locator('.page-title__text')
 const titleInput = (w: Page) => layer(w).locator('.page-title__input')
 
@@ -59,11 +59,11 @@ test.afterAll(async () => {
 /** The rename pipeline is still in flight right after confirming; a missing file must keep polling. */
 const readWhenReady = (p: string) => readFile(p, 'utf8').catch(() => '')
 
-test('step 1 — editing the title renames the page: sheet with the honest count, then disk, tab, sidebar and the linking note all follow', async () => {
+test('step 1 — editing the title renames the page: sheet with the honest count, then disk, tab, sidebar and the linking page all follow', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Guide.md')) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(GUIDE_BODY)
-  // In a plain vault a note's title is its file name, minus the extension (YAZ-2420 🔒 D5, YAZ-2523 🔒 V3).
+  // In a plain vault a page's title is its file name, minus the extension (YAZ-2420 🔒 D5, YAZ-2523 🔒 V3).
   await expect(title(win)).toHaveText('Guide')
   await shoot(win, 'title-01-page-title')
 
@@ -72,8 +72,8 @@ test('step 1 — editing the title renames the page: sheet with the honest count
   await titleInput(win).fill(RENAMED)
   await win.keyboard.press('Enter')
 
-  // The name changed, so the one door asks first — with the count of notes the rewrite will touch.
-  await expect(confirmSheet(win).locator('.confirm__text')).toHaveText(`Rename 'Guide' to '${RENAMED}'? Links in 1 note will be updated.`)
+  // The name changed, so the one door asks first — with the count of pages the rewrite will touch.
+  await expect(confirmSheet(win).locator('.confirm__text')).toHaveText(`Rename 'Guide' to '${RENAMED}'? Links in 1 page will be updated.`)
   await shoot(win, 'title-02-confirm-sheet')
   await confirmSheet(win).locator('.confirm__btn', { hasText: 'Rename' }).click()
   await expect(confirmSheet(win)).toHaveCount(0)
@@ -82,16 +82,16 @@ test('step 1 — editing the title renames the page: sheet with the honest count
   // vault); nothing remains at the old path.
   await expect.poll(() => readWhenReady(path.join(vault, `${RENAMED}.md`))).toBe(GUIDE)
   await expect(readFile(path.join(vault, 'Guide.md'), 'utf8')).rejects.toThrow()
-  // The note that linked to it was rewritten, and the passive summary says so.
+  // The page that linked to it was rewritten, and the passive summary says so.
   await expect.poll(() => readWhenReady(path.join(vault, 'Index.md'))).toBe(`# Index\n\nSee [[${RENAMED}]] here.\n`)
-  await expect(win.locator('.link-notice__text')).toHaveText(`Renamed to "${RENAMED}". Updated links in 1 note`) // with Undo (YAZ-3268 D18)
+  await expect(win.locator('.link-notice__text')).toHaveText(`Renamed to "${RENAMED}". Updated links in 1 page`) // with Undo (YAZ-3268 D18)
   // Every surface shows the new name: the title itself, the tab strip and the sidebar row.
   await expect(title(win)).toHaveText(RENAMED)
   await expect(activeTab(win)).toHaveText(RENAMED)
   await expect(fileRow(win, RENAMED)).toBeVisible()
   await shoot(win, 'title-03-renamed')
 
-  // And the rewritten link in the referencing note renders — and resolves — under the new name.
+  // And the rewritten link in the referencing page renders — and resolves — under the new name.
   await fileRow(win, 'Index').click()
   await expect(editorOf(win).locator('.wikilink', { hasText: RENAMED }).first()).toBeVisible()
 })
@@ -102,7 +102,7 @@ test('step 2 — leaving the title commits (YAZ-1553): click away with a changed
 
   await title(win).click()
   await titleInput(win).fill(LEFT)
-  // No Enter: clicking into the note is the leave, and the leave is the commit.
+  // No Enter: clicking into the page is the leave, and the leave is the commit.
   await editorOf(win).click()
   // Only the NAMES are pinned: step 1 rewrote Index.md moments ago, and whether the count reads
   // 1 or 0 depends on how far the debounced reindex has caught up (rename.spec step 7's rule).

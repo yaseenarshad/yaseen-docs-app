@@ -196,7 +196,7 @@ export function createComponentStore(initialFolder: string, deps: ComponentStore
       await makeLibraryDir(inComponents ? path.dirname(dir) : dir, inComponents ? LIBRARY_COMPONENTS_DIR : undefined)
       return atomicWrite(p, content)
     })
-    watched.noteOwnWrite(p, mtime)
+    watched.recordOwnWrite(p, mtime)
     scanCache = null // this process just changed the folder; the next read scans it again
   }
 
@@ -342,11 +342,11 @@ export function createComponentStore(initialFolder: string, deps: ComponentStore
         const fragment = fragmentPath(slug)
         await fsCall(fragment, async () => {
           await trash(fragment)
-          watched.noteOwnWrite(fragment, null)
+          watched.recordOwnWrite(fragment, null)
         })
         const preview = previewPath(slug)
         await trash(preview).then(
-          () => watched.noteOwnWrite(preview, null),
+          () => watched.recordOwnWrite(preview, null),
           () => undefined,
         )
         scanCache = null

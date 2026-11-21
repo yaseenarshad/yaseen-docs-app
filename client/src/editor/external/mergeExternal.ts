@@ -1,5 +1,5 @@
 /**
- * Merge an outside edit into a note that has unsaved typing (YAZ-3704 D1, D2).
+ * Merge an outside edit into a page that has unsaved typing (YAZ-3704 D1, D2).
  *
  * Three bodies: the BASE (the body as last saved or read — `useAutosave`'s `diskParts().body`),
  * YOURS (the live doc) and THEIRS (the new file). `diffDocs` gives each side's ranges against the
@@ -8,7 +8,7 @@
  * through such a transaction, so ⌘Z keeps undoing your typing and never the outside edit.
  *
  * Three refusals, all 'conflict' (the caller shows the conflict bar, nothing is dispatched):
- *  - a rewrite: one outside range covers `REWRITE_SHARE` of the note — the rule `applyExternalMarkdown`
+ *  - a rewrite: one outside range covers `REWRITE_SHARE` of the page — the rule `applyExternalMarkdown`
  *    rebuilds on, so a rewrite never lands as one huge glow with every fold mapped onto one point;
  *  - D2: a range of yours and a range of theirs touch the same block (line, bullet, heading, cell)
  *    — "the AI rewrote the line you are typing in" must never merge silently. An attr change that you
@@ -24,6 +24,8 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Transform } from '@milkdown/kit/prose/transform'
+import { boardCheckOf, boardEmbedsIn } from '../drawing/boardEmbedScan'
+import { isBoardSrc, type BoardCheck } from '../drawing/boardEmbedText'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
 import { EXTERNAL_EDIT_META, firstLineOf, OUTSIDE_RANGES_META, replaceTracked, REWRITE_SHARE, withTrailingParagraphOf } from './applyExternalMarkdown'
 import { diffDocs, onlyDerived, type ReplaceRange } from './diffDocs'
@@ -39,22 +41,42 @@ const blockSpan = (doc: ProseNode, { from, to, attrs }: ReplaceRange): { from: n
   return { from: $from.parent.isTextblock ? $from.start() : from, to: $to.parent.isTextblock ? $to.end() : to }
 }
 
-/** D2: a range of yours and a range of theirs in ONE block, or touching, is a conflict. */
-const touchSameBlock = (base: ProseNode, mine: readonly ReplaceRange[], theirs: readonly ReplaceRange[]): boolean => {
+/**
+ * A board window's own write (YAZ-4820 D4, item 19): a range of yours inside an embed's options (`|640x360 view=…`, or
+ * where they go, before `]]`), or an alt change of a board image. A pan is not typing: it never makes the line "yours"
+ * for D2, so the AI may edit the rest of that line. The order check below still refuses a merge where theirs touches
+ * the same options.
+ */
+const isViewWrite = (base: ProseNode, range: ReplaceRange, isBoard: BoardCheck | undefined): boolean => {
+  if (range.attrs !== undefined) {
+    const node = base.nodeAt(range.from)
+    return node?.type.name === 'image' && typeof node.attrs.src === 'string' && isBoardSrc(node.attrs.src)
+  }
+  const $from = base.resolve(range.from)
+  if (!$from.parent.isTextblock) return false
+  return boardEmbedsIn($from.parent, $from.before(), isBoard).some((m) => {
+    const pipe = m.inner.indexOf('|')
+    const start = pipe < 0 ? m.to - 2 : m.from + 3 + pipe
+    return start <= range.from && range.to <= m.to - 2
+  })
+}
+
+/** D2: a range of yours and a range of theirs in ONE block, or touching, is a conflict. `isBoard`: an id embed's write is a view write too (YAZ-4920). */
+const touchSameBlock = (base: ProseNode, mine: readonly ReplaceRange[], theirs: readonly ReplaceRange[], isBoard: BoardCheck | undefined): boolean => {
   const theirSpans = theirs.filter((range) => !onlyDerived(range)).map((range) => blockSpan(base, range))
   return mine.some((range) => {
-    if (onlyDerived(range)) return false
+    if (onlyDerived(range) || isViewWrite(base, range, isBoard)) return false
     const a = blockSpan(base, range)
     return theirSpans.some((b) => a.from <= b.to && b.from <= a.to)
   })
 }
 
 /**
- * `quiet` (a copy of this note in another tab saved — the user's own typing) leaves the change list
+ * `quiet` (a copy of this page in another tab saved — the user's own typing) leaves the change list
  * alone, exactly as `applyExternalMarkdown`'s own flag does.
  */
 /**
- * 'unchanged': the new file already IS the live note, apart from what the editor works out itself (a
+ * 'unchanged': the new file already IS the live page, apart from what the editor works out itself (a
  * heading's id): nothing lands, and the caller has nothing to save either (YAZ-3704 4A).
  */
 export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: string, quiet = false): 'merged' | 'unchanged' | 'conflict' => {
@@ -68,7 +90,7 @@ export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: 
     const live = view.state.doc
     const theirsDoc = withTrailingParagraphOf(live, fresh)
     if (diffDocs(live, theirsDoc).every(onlyDerived)) {
-      result = 'unchanged' // both sides made the same note
+      result = 'unchanged' // both sides made the same page
       return
     }
     const baseDoc = withTrailingParagraphOf(live, base)
@@ -76,7 +98,7 @@ export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: 
     const theirs = diffDocs(baseDoc, theirsDoc)
     const rewriteWidth = baseDoc.content.size * REWRITE_SHARE
     if (theirs.some(({ from, to }) => to - from >= rewriteWidth)) return
-    if (touchSameBlock(baseDoc, mine, theirs)) return
+    if (touchSameBlock(baseDoc, mine, theirs, boardCheckOf(view.state))) return
     const onBase = (ranges: readonly ReplaceRange[]): Transform => {
       const tr = new Transform(baseDoc)
       replaceTracked(tr, ranges, baseDoc)

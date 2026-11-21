@@ -4,15 +4,17 @@
  * rides in the same attribute (`parseAlt`, imageSrc.ts) — with the src as the fallback for an
  * empty alt. That is the one stand-in for an image everywhere it needs a text identity: the fold
  * key, the zoom breadcrumb (`itemLabelText`, listNodes.ts) and this copy agree (YAZ-1709).
- * A `[[link]]` copies as the note shows it, through `links` (YAZ-3744 S8: `linksAsShown`, an ID link with its ID).
- * Code, inline or a block, copies as written, as the note draws it raw.
+ * A `[[link]]` copies as the page shows it, through `links` (YAZ-3744 S8: `linksAsShown`, an ID link with its ID).
+ * A board embed copies as its name (YAZ-4827 item 16): `![[x.drawio|…]]` through `links`, a board image node here.
+ * Code, inline or a block, copies as written, as the page draws it raw.
  */
 import type { Fragment, Node, Slice } from '@milkdown/kit/prose/model'
+import { boardImageName } from './drawing/boardEmbedText'
 import { parseAlt } from './image/imageSrc'
 
 const isList = (node: Node) => node.type.name === 'bullet_list' || node.type.name === 'ordered_list'
 
-/** A text's `[[links]]` as the note shows them; the text as it is when no editor gave one. */
+/** A text's `[[links]]` as the page shows them; the text as it is when no editor gave one. */
 type LinkText = (text: string) => string
 const asWritten: LinkText = (text) => text
 
@@ -43,7 +45,7 @@ function inline(block: Node, depth: number, links: LinkText): string {
 function readable(node: Node, depth: number, links: LinkText): string {
   if (node.isText) return node.text ?? ''
   if (node.type.name === 'hardbreak') return '\n'
-  if (node.type.name === 'image') return parseAlt(node.attrs.alt).text || node.attrs.src
+  if (node.type.name === 'image') return boardImageName(node.attrs.src, node.attrs.alt) ?? (parseAlt(node.attrs.alt).text || node.attrs.src)
   if (node.type.name === 'image-block') return node.attrs.caption || node.attrs.src || ''
   if (node.type.name === 'html') return node.attrs.value
   if (node.type.name === 'hr') return '───'

@@ -16,14 +16,14 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })))
 })
 
-/** A vault with `Notes/n.md`, `Projects/Alpha/deep.md`, `Projects/p.md`, `top.md`. */
+/** A vault with `Pages/n.md`, `Projects/Alpha/deep.md`, `Projects/p.md`, `top.md`. */
 async function makeVault(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'yd-favorites-'))
   roots.push(root)
-  await mkdir(path.join(root, 'Notes'))
+  await mkdir(path.join(root, 'Pages'))
   await mkdir(path.join(root, 'Projects', 'Alpha'), { recursive: true })
   await Promise.all([
-    writeFile(path.join(root, 'Notes', 'n.md'), '# n\n'),
+    writeFile(path.join(root, 'Pages', 'n.md'), '# n\n'),
     writeFile(path.join(root, 'Projects', 'Alpha', 'deep.md'), '# deep\n'),
     writeFile(path.join(root, 'Projects', 'p.md'), '# p\n'),
     writeFile(path.join(root, 'top.md'), '# top\n'),
@@ -66,10 +66,10 @@ describe('getFavorites / setFavorites', () => {
 
   it('set creates .yaseendocs/favorites.json with RELATIVE POSIX entries in order, pretty JSON; get round-trips to absolute', async () => {
     const root = await makeVault()
-    const abs = [path.join(root, 'Projects', 'p.md'), path.join(root, 'Notes'), path.join(root, 'top.md')]
+    const abs = [path.join(root, 'Projects', 'p.md'), path.join(root, 'Pages'), path.join(root, 'top.md')]
     await setFavorites(root, abs)
     const raw = await readFile(file(root), 'utf8')
-    expect(raw).toBe(`${JSON.stringify({ version: 1, favorites: ['Projects/p.md', 'Notes', 'top.md'] }, null, 2)}\n`)
+    expect(raw).toBe(`${JSON.stringify({ version: 1, favorites: ['Projects/p.md', 'Pages', 'top.md'] }, null, 2)}\n`)
     expect(await getFavorites(root)).toEqual(abs)
   })
 
@@ -106,8 +106,8 @@ describe('getFavorites / setFavorites', () => {
   it('set de-duplicates and caps at MAX_FAVORITES', async () => {
     const root = await makeVault()
     const top = path.join(root, 'top.md')
-    await setFavorites(root, [top, path.join(root, 'Notes'), top])
-    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['top.md', 'Notes'] })
+    await setFavorites(root, [top, path.join(root, 'Pages'), top])
+    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['top.md', 'Pages'] })
     // The cap: MAX_FAVORITES + 5 existing files (dirs are cheaper to make than files here).
     const dirs = Array.from({ length: MAX_FAVORITES + 5 }, (_, i) => path.join(root, 'many', `d${i}`))
     await Promise.all(dirs.map((d) => mkdir(d, { recursive: true })))
@@ -117,17 +117,17 @@ describe('getFavorites / setFavorites', () => {
 
   it('set drops entries whose path is gone from disk (D14) and keeps the rest in order', async () => {
     const root = await makeVault()
-    await setFavorites(root, [path.join(root, 'Notes'), path.join(root, 'gone.md'), path.join(root, 'Projects', 'Alpha', 'missing'), path.join(root, 'top.md')])
-    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['Notes', 'top.md'] })
+    await setFavorites(root, [path.join(root, 'Pages'), path.join(root, 'gone.md'), path.join(root, 'Projects', 'Alpha', 'missing'), path.join(root, 'top.md')])
+    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['Pages', 'top.md'] })
   })
 })
 
 describe('renamePath / removePath repair (D13)', () => {
   it('renamePath remaps a favorited file', async () => {
     const root = await makeVault()
-    await setFavorites(root, [path.join(root, 'top.md'), path.join(root, 'Notes')])
-    await renamePath([root], path.join(root, 'top.md'), path.join(root, 'Notes', 'moved.md'))
-    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['Notes/moved.md', 'Notes'] })
+    await setFavorites(root, [path.join(root, 'top.md'), path.join(root, 'Pages')])
+    await renamePath([root], path.join(root, 'top.md'), path.join(root, 'Pages', 'moved.md'))
+    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['Pages/moved.md', 'Pages'] })
   })
 
   it('renamePath remaps a favorited dir AND its descendants by prefix, and leaves a same-prefix sibling alone', async () => {
@@ -145,25 +145,25 @@ describe('renamePath / removePath repair (D13)', () => {
     const before = await readFile(file(root), 'utf8')
     const mtime = await mtimeOf(root)
     await new Promise((r) => setTimeout(r, 20))
-    await renamePath([root], path.join(root, 'Notes', 'n.md'), path.join(root, 'Notes', 'm.md'))
+    await renamePath([root], path.join(root, 'Pages', 'n.md'), path.join(root, 'Pages', 'm.md'))
     expect(await readFile(file(root), 'utf8')).toBe(before)
     expect(await mtimeOf(root)).toBe(mtime)
   })
 
   it('a favorite moved OUT of the vault is dropped', async () => {
     const root = await makeVault()
-    await setFavorites(root, [path.join(root, 'Notes'), path.join(root, 'top.md')])
-    await renamePath([root], path.join(root, 'Notes'), '/elsewhere/Notes')
+    await setFavorites(root, [path.join(root, 'Pages'), path.join(root, 'top.md')])
+    await renamePath([root], path.join(root, 'Pages'), '/elsewhere/Pages')
     expect(await onDisk(root)).toEqual({ version: 1, favorites: ['top.md'] })
   })
 
   it('removePath drops a deleted file, and a deleted dir with everything under it', async () => {
     const root = await makeVault()
-    await setFavorites(root, [path.join(root, 'top.md'), path.join(root, 'Projects'), path.join(root, 'Projects', 'p.md'), path.join(root, 'Notes')])
+    await setFavorites(root, [path.join(root, 'top.md'), path.join(root, 'Projects'), path.join(root, 'Projects', 'p.md'), path.join(root, 'Pages')])
     await removePath([root], path.join(root, 'top.md'))
-    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['Projects', 'Projects/p.md', 'Notes'] })
+    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['Projects', 'Projects/p.md', 'Pages'] })
     await removePath([root], path.join(root, 'Projects'))
-    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['Notes'] })
+    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['Pages'] })
   })
 
   it('nested roots: the DEEPEST open root owning the path is the one repaired', async () => {
@@ -213,14 +213,14 @@ describe('the workspace list (YAZ-4450 D1, D3)', () => {
 
   it('each list reads and writes only its own file; no workspace file is an EMPTY list, never the vault\'s own (D3)', async () => {
     const root = await makeVault()
-    const [top, notes] = [path.join(root, 'top.md'), path.join(root, 'Notes')]
+    const [top, pages] = [path.join(root, 'top.md'), path.join(root, 'Pages')]
     await setFavorites(root, [top])
     expect(await getFavorites(root, 'workspace')).toEqual([])
-    await setFavorites(root, [notes, top], 'workspace')
-    expect(JSON.parse(await readFile(wsFile(root), 'utf8'))).toEqual({ version: 1, favorites: ['Notes', 'top.md'] })
+    await setFavorites(root, [pages, top], 'workspace')
+    expect(JSON.parse(await readFile(wsFile(root), 'utf8'))).toEqual({ version: 1, favorites: ['Pages', 'top.md'] })
     expect(await onDisk(root)).toEqual({ version: 1, favorites: ['top.md'] })
     expect(await getFavorites(root)).toEqual([top])
-    expect(await getFavorites(root, 'workspace')).toEqual([notes, top])
+    expect(await getFavorites(root, 'workspace')).toEqual([pages, top])
   })
 
   it('a malformed workspace file reads [] and refuses its own writes, and leaves the vault\'s own list alone', async () => {
@@ -228,9 +228,9 @@ describe('the workspace list (YAZ-4450 D1, D3)', () => {
     await setFavorites(root, [path.join(root, 'top.md')])
     await writeFile(wsFile(root), '{ nope')
     expect(await getFavorites(root, 'workspace')).toEqual([])
-    expect(await failure(setFavorites(root, [path.join(root, 'Notes')], 'workspace'))).toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringContaining('favorites-workspace.json') })
-    await setFavorites(root, [path.join(root, 'Notes')])
-    expect(await getFavorites(root)).toEqual([path.join(root, 'Notes')])
+    expect(await failure(setFavorites(root, [path.join(root, 'Pages')], 'workspace'))).toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringContaining('favorites-workspace.json') })
+    await setFavorites(root, [path.join(root, 'Pages')])
+    expect(await getFavorites(root)).toEqual([path.join(root, 'Pages')])
   })
 
   it('a rename and a delete repair BOTH files of the vault', async () => {

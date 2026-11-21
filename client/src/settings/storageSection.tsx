@@ -17,7 +17,7 @@
  * GitHub's 10 GB maximum (D7), with GitHub's 1 GB and 5 GB lines marked: green to 1 GB, amber to
  * 5 GB, red past it. "Your files" is everything on disk in one number.
  *
- * NEEDS ATTENTION is any file in the vault — note, board, picture, video — at or over 50 MiB, biggest
+ * NEEDS ATTENTION is any file in the vault — page, board, picture, video — at or over 50 MiB, biggest
  * first. Red at `GITHUB_FILE_LIMIT_BYTES`, the SAME line the sync guard holds files back at, so a
  * red row is exactly a file sync will not push; amber below it.
  *
@@ -157,7 +157,7 @@ export const STORAGE_SECTION: SettingsSection = {
   standalone: true,
   vault: true,
   available: (ctx) => ctx.storage !== undefined,
-  note: 'This vault only. GitHub refuses any file over 100 MB and wants the whole repo under 1 GB.',
+  page: 'This vault only. GitHub refuses any file over 100 MB and wants the whole repo under 1 GB.',
   groups: [
     {
       items: [

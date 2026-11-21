@@ -56,7 +56,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.setCourse.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel, CONTRACT.hotkeys.noPageInFront.channel].sort(),
     )
   })
 
@@ -69,6 +69,17 @@ describe('registerStateIpc', () => {
     expect(await recording({ sender: wc }, 'yes')).toEqual(bad('BAD_REQUEST'))
     expect(await recording({ sender: wc }, false)).toEqual(ok(undefined))
     expect(hotkeyRecording.active()).toBe(false)
+  })
+
+  it('YAZ-5041: the Inbox tab (or the blank tab) in front of a window marks that window "no page in front", and off again; anything but a boolean is refused', async () => {
+    const { noPageInFront } = await import('../hotkeyRecording')
+    const told = registered(CONTRACT.hotkeys.noPageInFront.channel)
+    const wc = { id: 52, on: vi.fn(), once: vi.fn() }
+    expect(await told({ sender: wc }, true)).toEqual(ok(undefined))
+    expect(noPageInFront.has(52)).toBe(true)
+    expect(await told({ sender: wc }, 1)).toEqual(bad('BAD_REQUEST'))
+    expect(await told({ sender: wc }, false)).toEqual(ok(undefined))
+    expect(noPageInFront.has(52)).toBe(false)
   })
 
   it('YAZ-3276 D6: a folder with another Mac\'s file wins (0); an empty one takes this Mac\'s settings (now); null keeps the settings', async () => {
@@ -186,6 +197,16 @@ describe('registerStateIpc', () => {
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { expanded: [1] })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { lastFile: 5 })).toEqual(bad('BAD_REQUEST'))
     expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null })
+    // "Up next a day" (YAZ-5028): the day and its card IDs, nothing else.
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { upNext: { day: '2026-11-13', cards: ['DEMO-1'] } })).toEqual(ok(undefined))
+    expect(store.get().folders['/u'].upNext).toEqual({ day: '2026-11-13', cards: ['DEMO-1'] })
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { upNext: { day: 'x', cards: [] } })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { upNext: 3 })).toEqual(bad('BAD_REQUEST'))
+    // "Add more for today" (YAZ-5042): the day and two whole numbers, nothing else.
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { added: { day: '2026-11-13', newCards: 10, upNext: 0 } })).toEqual(ok(undefined))
+    expect(store.get().folders['/u'].added).toEqual({ day: '2026-11-13', newCards: 10, upNext: 0 })
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { added: { day: '2026-11-13', newCards: '10', upNext: 0 } })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { added: 3 })).toEqual(bad('BAD_REQUEST'))
     // The vault's display name (YAZ-1974 D3): a string (cleaned by the store) or null, nothing else.
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { name: '  Business Wiki ' })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].name).toBe('Business Wiki')
@@ -280,6 +301,40 @@ describe('registerStateIpc', () => {
     expect(live.webContents.send).toHaveBeenCalledTimes(1)
     store.pushRecent('/v', 1)
     expect(live.webContents.send).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('state:set-course (YAZ-5120)', () => {
+  it('applies a good patch; is strict: a bad value or an unknown field rejects the call and stores nothing', async () => {
+    const set = registered(CONTRACT.state.setCourse.channel)
+    expect(await set({ sender }, { chapter: 'inbox', clip: 'c3-04', finished: ['why'], speed: 1.25, muted: true })).toEqual(ok(undefined))
+    expect(store.get().course).toMatchObject({ chapter: 'inbox', clip: 'c3-04', finished: ['why'], speed: 1.25, muted: true })
+    const before = store.get().course
+    for (const patch of [null, [], 'x', { speed: 2 }, { muted: 'yes' }, { chapter: 'a b' }, { finished: ['why', 'why'] }, { finished: 'why' }, { folder: '/v' }]) {
+      expect(await set({ sender }, patch)).toEqual(bad('BAD_REQUEST'))
+    }
+    expect(store.get().course).toBe(before)
+  })
+
+  it('takes what the course made (YAZ-5124): absolute paths, one record per vault; a bad record rejects the call', async () => {
+    const set = registered(CONTRACT.state.setCourse.channel)
+    const made = [{ vault: '/v', folder: '/v/course-cards', cards: ['/v/course-cards/a-tst-2.md'], page: '/v/course-cards/course-page-tst-3.md' }]
+    expect(await set({ sender }, { made })).toEqual(ok(undefined))
+    expect(store.get().course.made).toEqual(made)
+    for (const bad_ of [{ made: [{ ...made[0], cards: ['a.md'] }] }, { made: [made[0], made[0]] }, { made: [{ vault: '/v' }] }]) {
+      expect(await set({ sender }, bad_)).toEqual(bad('BAD_REQUEST'))
+    }
+    expect(store.get().course.made).toEqual(made)
+  })
+
+  it('YAZ-5202: takes the course folder`s ID as the renderer writes it (`{ ...made, folder, folderId }`); a bad ID rejects the call', async () => {
+    const set = registered(CONTRACT.state.setCourse.channel)
+    const was = { vault: '/v', folder: '', cards: [] as string[], page: null }
+    const made = [{ ...was, folder: '/v/course-cards', folderId: 'TST-4' }]
+    expect(await set({ sender }, { made })).toEqual(ok(undefined))
+    expect(store.get().course.made).toEqual(made)
+    expect(await set({ sender }, { made: [{ ...made[0], folderId: 'not an id' }] })).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().course.made).toEqual(made)
   })
 })
 

@@ -1,7 +1,7 @@
 /**
  * WHERE A HOVER PREVIEW GOES (Draw's YAZ-1800; shared by YAZ-3075 D2): the box beside the sidebar
- * that the board panel (`BoardPreview`) and the note panel (`NotePreview`) both take. Its own file,
- * so a note hover loads neither the board panel nor its picture cache. The placement is measured
+ * that the board panel (`BoardPreview`) and the page panel (`PagePreview`) both take. Its own file,
+ * so a page hover loads neither the board panel nor its picture cache. The placement is measured
  * off the sidebar's own rect and re-measured on resize, scroll and a sidebar resize.
  */
 import { useLayoutEffect, useState, type RefObject } from 'react'
@@ -20,8 +20,8 @@ export interface BoardPreviewPlacement {
   height: number
 }
 
-/** A board's landscape box, or a note's tall one (YAZ-3075 D2): the same place and width. */
-export type PreviewShape = 'board' | 'note'
+/** A board's landscape box, or a page's tall one (YAZ-3075 D2): the same place and width. */
+export type PreviewShape = 'board' | 'page'
 
 /** A box on screen the panel sits beside (YAZ-3343, the tab board's cards). */
 export interface AnchorRect {
@@ -67,7 +67,7 @@ const BESIDE_MAX_W = 520
 function besideSize(roomWidth: number, roomHeight: number, shape: PreviewShape): { width: number; height: number } {
   const width = Math.min(BESIDE_MAX_W, Math.round(roomWidth * 0.4))
   const tallest = Math.round(roomHeight * MAX_H_RATIO)
-  return { width, height: shape === 'note' ? tallest : Math.min(tallest, Math.max(MIN_H, Math.round(width * HEIGHT_RATIO))) }
+  return { width, height: shape === 'page' ? tallest : Math.min(tallest, Math.max(MIN_H, Math.round(width * HEIGHT_RATIO))) }
 }
 
 /**
@@ -129,14 +129,14 @@ export function belowPlacement(rect: AnchorRect, innerWidth: number, innerHeight
 
 /**
  * Where the panel goes (YAZ-1800): right of the sidebar with a gap, a little over half of the
- * room left, landscape-ish, vertically centred. A note is 70% of the window tall (YAZ-3075 D2), so
+ * room left, landscape-ish, vertically centred. A page is 70% of the window tall (YAZ-3075 D2), so
  * it shows some 25 lines. Null when the window leaves no room at all.
  */
 export function boardPreviewPlacement(sidebarRight: number, innerWidth: number, innerHeight: number, shape: PreviewShape = 'board'): BoardPreviewPlacement | null {
   const usable = innerWidth - sidebarRight - GAP
   const width = Math.min(Math.round(usable * WIDTH_RATIO), usable - GAP)
   const tallest = Math.round(innerHeight * MAX_H_RATIO)
-  const height = shape === 'note' ? tallest : Math.min(tallest, Math.max(MIN_H, Math.round(width * HEIGHT_RATIO)))
+  const height = shape === 'page' ? tallest : Math.min(tallest, Math.max(MIN_H, Math.round(width * HEIGHT_RATIO)))
   if (width <= 0 || height <= 0) return null
   return { left: sidebarRight + GAP, top: Math.max(GAP, Math.round((innerHeight - height) / 2)), width, height }
 }

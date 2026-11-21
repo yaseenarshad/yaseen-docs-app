@@ -13,7 +13,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import type { Command } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
 import { onVisibleLines } from '../lineSelection'
-import { rowShortcuts } from '../noteKeys'
+import { rowShortcuts } from '../pageKeys'
 
 /** The letter styles ⌘\ clears; `link` (and any other mark) stays. `text_color` exists in a text box only. */
 const CLEARED_MARKS = ['strong', 'emphasis', 'underline', 'strike_through', 'inlineCode', 'highlight', 'text_color']
@@ -43,5 +43,5 @@ export const clearFormatting: Command = (state, dispatch) => {
 const PRIORITY = 100
 
 export const clearFormattingKeymap = $shortcut((ctx: Ctx) =>
-  rowShortcuts(ctx, 'note.clearFormatting', 'ClearFormatting', { priority: PRIORITY, onRun: () => onVisibleLines(clearFormatting) }),
+  rowShortcuts(ctx, 'page.clearFormatting', 'ClearFormatting', { priority: PRIORITY, onRun: () => onVisibleLines(clearFormatting) }),
 )

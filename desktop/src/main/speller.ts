@@ -42,7 +42,7 @@ export async function nativeMenuGuesses(params: { misspelledWord: string; dictio
 /**
  * One window's native menu guesses, latest-wins (S6): null when a newer right-click came while this
  * one waited, so only the latest opens a menu. `guesses` carries the menu's wait (`createSpellWait`).
- * `movedOn()`: a click or a key during the wait, so the waiting menu opens nothing (as the note menu's, S9).
+ * `movedOn()`: a click or a key during the wait, so the waiting menu opens nothing (as the page menu's, S9).
  */
 export function nativeMenuAsker(platform: NodeJS.Platform, guesses: (word: string) => Promise<string[] | null>) {
   let latest = 0

@@ -7,11 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FocusFolder } from '@shared/types'
-import { FocusFolderList } from './FocusFolderList'
+import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusFolderList'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const ROOTS = ['/x/Notes', '/x/Work']
+const ROOTS = ['/x/Pages', '/x/Work']
 const folder = (id: string, items: FocusFolder['items']): FocusFolder => ({ id, name: id, created: 1, at: 1, items })
 let root: Root | null = null
 let el: HTMLDivElement
@@ -25,7 +25,7 @@ afterEach(() => {
 function mount(over: Partial<ComponentProps<typeof FocusFolderList>> = {}) {
   const props: ComponentProps<typeof FocusFolderList> = {
     kind: 'focus',
-    folders: [folder('Clients', [{ vault: 'Work', path: 'Clients' }, { vault: 'Notes', path: 'a.md' }]), folder('Empty', [])],
+    folders: [folder('Clients', [{ vault: 'Work', path: 'Clients' }, { vault: 'Pages', path: 'a.md' }]), folder('Empty', [])],
     roots: ROOTS,
     renderItems: (_f, paths) => (
       <ul className="tree" role="group">
@@ -116,7 +116,7 @@ describe('FocusFolderList', () => {
     expect(document.querySelector('.ctx-menu__heading')?.getAttribute('title')).toContain('Workspace: a window with two or more vaults')
     expect(item('Vault')?.title).toBe('Show it in a window with this vault alone')
     act(() => item('Open all in tabs')?.click())
-    expect(props.onOpenAll).toHaveBeenCalledExactlyOnceWith(['/x/Work/Clients', '/x/Notes/a.md'])
+    expect(props.onOpenAll).toHaveBeenCalledExactlyOnceWith(['/x/Work/Clients', '/x/Pages/a.md'])
     menuOf('Empty')
     expect(item('Open all in tabs')).toBeUndefined()
   })
@@ -150,16 +150,16 @@ describe('FocusFolderList', () => {
   })
 
   it('YAZ-4477 (M5, F6): a ghost — an item of a vault not in this window — has the ghost glyph and a tooltip, and its click asks to add the vault; a name two vaults share opens nothing', () => {
-    const props = mount({ folders: [folder('Mixed', [{ vault: 'Research', path: 'Papers/p.md' }, { vault: 'Notes', path: 'a.md' }])] })
+    const props = mount({ folders: [folder('Mixed', [{ vault: 'Research', path: 'Papers/p.md' }, { vault: 'Pages', path: 'a.md' }])] })
     const ghost = el.querySelector<HTMLButtonElement>('.tree__row--ghost')
     expect(ghost?.querySelector('.tree__ghost-icon')).not.toBeNull()
     expect(ghost?.title).toBe('In "Research", which is not in this window')
     act(() => ghost?.click())
     expect(props.onGhost).toHaveBeenCalledExactlyOnceWith('Research', 'Papers/p.md')
     act(() => root?.unmount())
-    const clash = mount({ roots: ['/home/Notes', '/work/Notes'], folders: [folder('Twins', [{ vault: 'Notes', path: 'a.md' }])] })
+    const clash = mount({ roots: ['/home/Pages', '/work/Pages'], folders: [folder('Twins', [{ vault: 'Pages', path: 'a.md' }])] })
     const twin = el.querySelector<HTMLButtonElement>('.tree__row--ghost')
-    expect(twin?.title).toBe('Two vaults in this window are named "Notes": the app cannot tell which one holds it')
+    expect(twin?.title).toBe('Two vaults in this window are named "Pages": the app cannot tell which one holds it')
     act(() => twin?.click())
     expect(clash.onGhost).not.toHaveBeenCalled()
   })
@@ -177,14 +177,39 @@ describe('FocusFolderList', () => {
   })
 
   it('YAZ-4477 (YAZ-4470 9): a fold lasts the session — the list that mounts again, after a tab switch, keeps it — and each tab has its own', () => {
-    mount({ folders: [folder('Keep shut', [{ vault: 'Notes', path: 'a.md' }])] })
+    mount({ folders: [folder('Keep shut', [{ vault: 'Pages', path: 'a.md' }])] })
     act(() => row('Keep shut').click())
     expect(row('Keep shut').closest('li')?.getAttribute('aria-expanded')).toBe('false')
     act(() => root?.unmount())
-    mount({ folders: [folder('Keep shut', [{ vault: 'Notes', path: 'a.md' }])] })
+    mount({ folders: [folder('Keep shut', [{ vault: 'Pages', path: 'a.md' }])] })
     expect(row('Keep shut').closest('li')?.getAttribute('aria-expanded')).toBe('false')
     act(() => root?.unmount())
-    mount({ kind: 'favorites', folders: [folder('Keep shut', [{ vault: 'Notes', path: 'a.md' }])] })
+    mount({ kind: 'favorites', folders: [folder('Keep shut', [{ vault: 'Pages', path: 'a.md' }])] })
     expect(row('Keep shut').closest('li')?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('YAZ-5664: the list reports its fold to Collapse all, setAll(false) shuts each folder but the one shown alone, and the door sets the folds from outside', () => {
+    const onFold = vi.fn()
+    const two = [folder('Fold A', [{ vault: 'Pages', path: 'a.md' }]), folder('Fold B', [])]
+    mount({ folders: two, onFold })
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: true, any: true })
+    act(() => row('Fold A').click())
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: true })
+    act(() => row('Fold B').click())
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: false, any: true })
+    act(() => onFold.mock.lastCall?.[0].setAll(true))
+    expect([row('Fold A'), row('Fold B')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'true'])
+    act(() => root?.unmount())
+    // "Fold A" shows alone: it stays open, and it is not in the report.
+    mount({ folders: two, only: 'Fold A', onFold })
+    act(() => onFold.mock.lastCall?.[0].setAll(false))
+    expect([row('Fold A'), row('Fold B')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false'])
+    expect(['Fold A', 'Fold B'].map((id) => shutStackFolders('focus').has(id))).toEqual([false, true])
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: false, any: true })
+    act(() => setShutStackFolders('focus', new Set()))
+    expect(row('Fold B').getAttribute('aria-expanded')).toBe('true')
+    act(() => root?.unmount())
+    root = null
+    expect(onFold).toHaveBeenLastCalledWith(null)
   })
 })

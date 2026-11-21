@@ -74,19 +74,20 @@ describe('Crepe feature allowlist', () => {
     await withDrawing.teardown()
   })
 
-  it('the Drawing row exists only when the host supplies a creator (YAZ-877)', async () => {
+  it('the Drawing and Diagram rows exist only when the host supplies a creator (YAZ-877, YAZ-4831)', async () => {
     const plain = await mountedMenuItems({})
     // Sanity: the stock menu is really being read (Image is off with ImageBlock, Table is on).
     expect(plain.items).toContain('Table')
     expect(plain.items).not.toContain('Drawing')
+    expect(plain.items).not.toContain('Diagram')
     expect(plain.items).not.toContain('Ordered List')
     await plain.teardown()
 
     const withDrawing = await mountedMenuItems({ drawing: { create: vi.fn() } })
     expect(withDrawing.items).toContain('Drawing')
     expect(withDrawing.items).not.toContain('Ordered List')
-    // Appended to Crepe's own advanced group — the stock rows keep their order ahead of it.
-    expect(withDrawing.items.indexOf('Drawing')).toBe(withDrawing.items.length - 1)
+    // Appended to Crepe's own advanced group — the stock rows keep their order ahead of it; Diagram right after (YAZ-4831).
+    expect(withDrawing.items.filter((l) => l.trim() !== '').slice(-2)).toEqual(['Drawing', 'Diagram'])
     expect(withDrawing.items.filter((l) => l === 'Drawing')).toHaveLength(1)
     await withDrawing.teardown()
   })

@@ -15,6 +15,7 @@ import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import { groupKeyOf } from './GroupHeader'
+import viewsCss from '../views.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -24,7 +25,7 @@ const HOST = testFolderHost()
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
 vi.mock('../../lib/storage', () => ({
-  storage: {
+  storage: { getSettings: () => undefined,
     getViewGroups: vi.fn((root: string, key: string) => groupStore.get(`${root}|${key}`) ?? []),
     setViewGroups: vi.fn((root: string, key: string, collapsed: readonly string[]) => {
       if (collapsed.length === 0) groupStore.delete(`${root}|${key}`)
@@ -45,6 +46,11 @@ const GROUP_BASE = `views:
     summaries:
       note.priority: Sum
 `
+/**
+ * The grouped view with "Show empty groups" off: Settings › Folder pages turns it on by default (YAZ-3746), and a table
+ * that shows empty groups keeps them through a search (YAZ-3940 S11). The search tests below pin the off behavior.
+ */
+const NO_EMPTY = GROUP_BASE + '    showEmptyColumns: false\n'
 /** The same grouped view plus a plain second one, so a Delete on the first is not refused as the last view. */
 const TWO_VIEWS = GROUP_BASE + `  - type: table
     name: U
@@ -133,7 +139,7 @@ const headers = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorA
 const headerTexts = (el: ParentNode): string[] => headers(el).map((h) => q(h, '.view-group__value').textContent ?? '')
 const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `Toggle group ${label}`)
 
-/** 600 notes split into two groups for the grouped windowing tests. */
+/** 600 pages split into two groups for the grouped windowing tests. */
 function manyRecords(n = 600): IndexRecord[] {
   return Array.from({ length: n }, (_, i) => {
     const basename = `n${String(i).padStart(3, '0')}`
@@ -217,7 +223,7 @@ describe('grouped sections', () => {
 
     // 'both' joins group a AND group b, so two records produce three data rows
     expect(headers(el)).toHaveLength(2)
-    const data = [...el.querySelectorAll('tbody tr:not(.view-table__group)')]
+    const data = [...el.querySelectorAll('tbody tr:not(.view-table__group):not(.view-table__new)')]
     expect(data).toHaveLength(3)
     // React only warns once per duplicate-key list, and silently mis-reconciles after that
     expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key|unique "key"/i)
@@ -249,10 +255,10 @@ describe('collapse', () => {
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [])
   })
 
-  it('a group of an id link is headed by the note title but collapses under the STORED id, so a rename never reopens it (YAZ-2293 D8)', async () => {
+  it('a group of an id link is headed by the page title but collapses under the STORED id, so a rename never reopens it (YAZ-2293 D8)', async () => {
     const { storage } = await import('../../lib/storage')
     const ID = 'k3m9x2pq7abc'
-    /** "Creator Economy" carries the id (under whatever title), and the first two notes are grouped under it BY that id. */
+    /** "Creator Economy" carries the id (under whatever title), and the first two pages are grouped under it BY that id. */
     const vault = (title: string): IndexRecord[] =>
       TEST_RECORDS.map((r, i) => (i === 2 ? { ...r, id: ID, basename: title, title: title, name: `${title}.md` } : i < 2 ? { ...r, properties: { ...r.properties, status: `[[${ID}]]` } } : r))
     let records = vault('Creator Economy')
@@ -270,7 +276,7 @@ describe('collapse', () => {
 
   it('the toolbar toggle collapses every group at once, the ones search hides included', async () => {
     const { storage } = await import('../../lib/storage')
-    const { el } = mount(GROUP_BASE)
+    const { el } = mount(NO_EMPTY)
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'agency')
     expect(headerTexts(el)).toEqual(['drafting', 'idea'])
@@ -291,7 +297,10 @@ describe('collapse', () => {
       properties: { ...TEST_RECORDS[0].properties, status: `s${i}` },
     }))
     const { el } = mount(GROUP_BASE, { records: many })
-    expect(el.querySelectorAll('.view-table__group').length).toBe(MAX_COLLAPSED_GROUP_KEYS + 1)
+    // Each group is three lines (header, row, "+ New" row: YAZ-4539), so the table windows: the spacers and the
+    // mounted lines add up to 3 × 201.
+    const spacers = [...el.querySelectorAll<HTMLElement>('.view-table__spacer')].reduce((sum, tr) => sum + parseFloat(tr.style.height) / 28, 0)
+    expect(spacers + el.querySelectorAll('.view-table tbody tr:not(.view-table__spacer)').length).toBe(3 * (MAX_COLLAPSED_GROUP_KEYS + 1))
     expect(el.querySelector('[aria-label="Collapse all groups"]')).toBeNull()
   })
 
@@ -343,7 +352,7 @@ describe('collapse', () => {
 
 describe('search interplay', () => {
   it('filters within groups, drops empty groups and narrows the group summaries', () => {
-    const { el } = mount(GROUP_BASE)
+    const { el } = mount(NO_EMPTY)
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'agency')
     // 'agency' hits one row in drafting (The Levels of an Agency) and one in idea (Agentic Agency)
@@ -401,5 +410,78 @@ describe('windowing with headers', () => {
     expect(links(el)).toHaveLength(300)
     expect(links(el)[0]).toBe('n001')
     expect(links(el)).toContain('n599')
+  })
+})
+
+describe('group indent (YAZ-4532 D10)', () => {
+  const withIndent = (step?: string) => GROUP_BASE.replace('    groupBy:\n', `${step === undefined ? '' : `    groupIndent: ${step}\n`}    groupBy:\n`)
+  it.each([
+    ['small', '14px'],
+    ['medium', '28px'],
+    ['large', '42px'],
+    [undefined, '28px'],
+    ['huge', '28px'],
+  ])('groupIndent %s sets --view-group-indent to %s on the table', (step, px) => {
+    const { el } = mount(withIndent(step))
+    expect(q<HTMLElement>(el, '.view-table').style.getPropertyValue('--view-group-indent')).toBe(px)
+  })
+  it('a row\'s Name cell carries --depth, the number of group levels above it; an ungrouped row has none', () => {
+    const depths = (el: HTMLElement) => [...new Set([...el.querySelectorAll<HTMLElement>('td.view-table__name')].map(td => td.style.getPropertyValue('--depth')))]
+    expect(depths(mount(GROUP_BASE).el)).toEqual(['1'])
+    unmount()
+    const nested = mount(GROUP_BASE.replace('    groupBy:\n      property: note.status\n', '    groupBy:\n      - property: note.status\n      - property: note.pillar\n')).el
+    expect(depths(nested).sort()).toEqual(['1', '2']) // a direct row of the outer is at 1, a row in an inner group at 2
+    unmount()
+    expect(depths(mount(GROUP_BASE.replace('    groupBy:\n      property: note.status\n', '')).el)).toEqual([''])
+  })
+  it('the Name cell\'s indent is the indent × depth, but leaves 60px of title in the column (YAZ-4544)', () => {
+    const nested = (extra: string) => GROUP_BASE.replace('    groupBy:\n      property: note.status\n', `${extra}    groupBy:\n      - property: note.status\n      - property: note.pillar\n`)
+    const indents = (el: HTMLElement) => [...new Set([...el.querySelectorAll<HTMLElement>('td.view-table__name')].map(td => td.style.getPropertyValue('--view-name-indent')))].sort()
+    // medium, 150px column: 28 and 56 fit (150 - 2 × 8px padding - 60 = 74)
+    expect(indents(mount(nested('')).el)).toEqual(['28px', '56px'])
+    unmount()
+    // large: the first column grows to fit its deepest indent and a readable value (YAZ-3746 13AL: 2 × 42 + 136 = 220px),
+    // so 84 fits whole and the title still keeps its 60px
+    expect(indents(mount(nested('    groupIndent: large\n')).el)).toEqual(['42px', '84px'])
+    unmount()
+    // a wide Name column keeps the full indent
+    expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 300\n')).el)).toEqual(['42px', '84px'])
+    unmount()
+    // a stored width narrower than that floor WINS (YAZ-4819): the indent shrinks to fit the title's room, never negative
+    expect(indents(mount(nested('    groupIndent: large\n    columnSize:\n      file.name: 60\n')).el)).toEqual(['0px'])
+  })
+  it('the CSS contract: a header steps in by the indent × --depth; a row\'s first cell by its --view-name-indent; both stay at 8px at depth 0', () => {
+    expect(viewsCss).toMatch(/\.view-table__group-cell > \.view-group \{[^}]*left: calc\(8px \+ var\(--view-group-indent, 28px\) \* var\(--depth, 0\)\)/s)
+    // The first column, Name or not, carries the indent (YAZ-3746 13AG).
+    expect(viewsCss).toMatch(/\.view-table tbody td\.view-table__indent \{[^}]*padding-left: calc\(var\(--view-table-cell-pad-x\) \+ var\(--view-name-indent, 0px\)\)/s)
+    expect(viewsCss).toMatch(/\.view-table \{[^}]*--view-table-cell-pad-x: 8px/s)
+  })
+})
+
+describe('YAZ-4819: your width wins on the first column of a grouped table', () => {
+  const firstWidth = (el: HTMLElement) => q<HTMLElement>(el, '.view-table thead th[data-col="0"]').style.width
+  const drag = (grip: Element, from: number, to: number) => {
+    act(() => void grip.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: from })))
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: to })))
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: to })))
+    draw()
+  }
+  it('with no saved width, a grouped first column still STARTS at its indent floor (28 + 136 = 164px); an ungrouped one at 150px', () => {
+    expect(firstWidth(mount(GROUP_BASE).el)).toBe('164px')
+    unmount()
+    expect(firstWidth(mount(GROUP_BASE.replace('    groupBy:\n      property: note.status\n', '')).el)).toBe('150px')
+  })
+  it('a saved width under the floor shows as saved (80px)', () => {
+    expect(firstWidth(mount(GROUP_BASE + '    columnSize:\n      file.name: 80\n').el)).toBe('80px')
+  })
+  it('dragging the first column\'s edge narrower follows the pointer down to 40px, and saves what it shows', () => {
+    const { el, yaml } = mount(GROUP_BASE)
+    const grip = q<HTMLElement>(el, '.view-table thead th[data-col="0"] .view-table__resize')
+    drag(grip, 300, 200)
+    expect(firstWidth(el)).toBe('64px')
+    expect(yaml()).toContain('file.name: 64')
+    drag(grip, 300, 0)
+    expect(firstWidth(el)).toBe('40px')
+    expect(yaml()).toContain('file.name: 40')
   })
 })

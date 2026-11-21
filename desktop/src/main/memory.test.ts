@@ -55,7 +55,7 @@ describe('memory meter', () => {
     const { meter } = setup([a, popup, b], [proc(1, 'Browser', 200), proc(2, 'GPU', 100), proc(3, 'Utility', 30), proc(10, 'Tab', 300), proc(11, 'Tab', 150), proc(20, 'Tab', 500), proc(30, 'Tab', 50)])
     const report = await meter.report()
     expect(report.windows).toEqual([
-      { id: 'a', title: 'Writing', open: '2 notes, 1 drawing, 1 diagram', bytes: 450 * MB, jsHeapBytes: 40 * MB, grew: false, tabs: a.tabs!.map((path) => ({ path, title: null, state: null, lastSeen: null, sleepsAt: null, changed: null })) },
+      { id: 'a', title: 'Writing', open: '2 pages, 1 drawing, 1 diagram', bytes: 450 * MB, jsHeapBytes: 40 * MB, grew: false, tabs: a.tabs!.map((path) => ({ path, title: null, state: null, lastSeen: null, sleepsAt: null, changed: null })) },
       { id: 'b', title: 'title b', open: '', bytes: 500 * MB, jsHeapBytes: null, grew: false, tabs: [] },
     ])
     expect(report.core).toEqual({ bytes: 380 * MB, main: 200 * MB, gpu: 100 * MB, utility: 30 * MB, other: 50 * MB })

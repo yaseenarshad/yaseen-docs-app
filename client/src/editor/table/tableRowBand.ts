@@ -7,7 +7,7 @@
  *   goes to a different row, so a key press adds no decoration work (`tableSpeed.test.ts`). The header row, a
  *   CellSelection (its own highlight shows) and a caret outside a table have none.
  * - THE MOUSE BAND is CSS only (`:hover` on a body row, `table.css`).
- * - THE SETTING, Settings › Editor › Tables › "Row band" (Off / Calendar tables / All tables), is `data-table-row-band`
+ * - THE SETTING, Settings › Tables › All tables › "Row band" (Off / Calendar tables / All tables), is `data-table-row-band`
  *   on `.app`: `table.css` draws the band for its value, so a change restyles and builds no decoration. The band is a
  *   background layer (`--table-band`), so a cell's fill shows under it, a frozen cell stays `sticky`, and the
  *   current-time marker shows on the same row. Nothing goes in the file.

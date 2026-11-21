@@ -7,8 +7,10 @@ interface UseMenuEventsOptions {
   onOpenFolder: () => void
   /** File › Open Recent chose `path` for this window: switch the root in place. */
   onOpenRoot: (path: string) => void
-  /** File › Search Vault (⌘K): show the sidebar's Search tab and focus its bar (YAZ-2638 D2), un-collapsing the sidebar first (YAZ-804). */
+  /** File › Search Vault (⌘K): show the sidebar's Search tab and focus its bar (YAZ-2638 D2), un-collapsing the sidebar first (YAZ-804); again with the search open, back to the page (YAZ-4994). */
   onSearch: () => void
+  /** File › Explore Vault… (⌘⇧F, YAZ-2571): open the explore stack, or add a search layer on top (`explore/ExploreStack`; YAZ-4994 keeps this). */
+  onExplore: () => void
   /** File › Switch Vault… (⌘O): open the sidebar header's vault switcher, un-collapsing the sidebar first (YAZ-1767 D8). */
   onSwitchVault: () => void
   /** Yaseen Docs › Settings… (⌘,): open the settings dialog (YAZ-1679). */
@@ -38,9 +40,9 @@ interface UseMenuEventsOptions {
   onNewItem: () => void
   /** File › Show in Sidebar (⌘D, YAZ-3556 D9): show the place of `settings.goTo`. */
   onGoTo: () => void
-  /** File › Open Today's Daily Note (YAZ-3607 D11): open today's daily note. */
-  onDailyNote: () => void
-  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the focused note (YAZ-1710), else the sidebar zoom (YAZ-3389). */
+  /** File › Open Today's Daily Page (YAZ-3607 D11): open today's daily page. */
+  onDailyPage: () => void
+  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the focused page (YAZ-1710), else the sidebar zoom (YAZ-3389). */
   onZoom: (step: ZoomStep) => void
   /** Help › What's New… (YAZ-2976 D8): open the "What's new" sheet, with or without an update. */
   onWhatsNew: () => void
@@ -57,13 +59,14 @@ interface UseMenuEventsOptions {
 }
 
 /** Menu gestures from the main process (GRO-2161, tabs GRO-2232); main sends them to the focused window only. */
-export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onBackNewTab, onForwardNewTab, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground }: UseMenuEventsOptions): void {
+export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onExplore, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onBackNewTab, onForwardNewTab, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyPage, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground }: UseMenuEventsOptions): void {
   useEffect(() => {
     const menu = api.menu
     const offs = [
       menu.onOpenFolder(onOpenFolder),
       menu.onOpenRoot(onOpenRoot),
       menu.onSearch(onSearch),
+      menu.onExplore(onExplore),
       menu.onSwitchVault(onSwitchVault),
       menu.onSettings(onSettings),
       menu.onToggleSidebar(onToggleSidebar),
@@ -79,7 +82,7 @@ export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVaul
       menu.onNewWindow(onNewWindow),
       menu.onNewItem(onNewItem),
       menu.onGoTo(onGoTo),
-      menu.onDailyNote(onDailyNote),
+      menu.onDailyPage(onDailyPage),
       menu.onZoom(onZoom),
       menu.onWhatsNew(onWhatsNew),
       menu.onKeySheet(onKeySheet),
@@ -89,5 +92,5 @@ export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVaul
       menu.onCanvasBackground(onCanvasBackground),
     ]
     return () => offs.forEach((off) => off())
-  }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onBackNewTab, onForwardNewTab, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground])
+  }, [onOpenFolder, onOpenRoot, onSearch, onExplore, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onBackNewTab, onForwardNewTab, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyPage, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground])
 }

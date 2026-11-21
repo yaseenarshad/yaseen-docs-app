@@ -1,23 +1,20 @@
-import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
-import type { ReviewSettings } from '@shared/reviews'
-import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { useUnit } from '../vault/unitWord'
+import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { DEFAULT_SETTINGS, folderSettingsPath, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type FindFolds, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, HotkeyAside } from '@shared/keys'
 import { api } from '../api'
-import { CommentsSection } from '../comments/CommentsSection'
-import { createDrawing } from '../drawings/createDrawing'
-import { DrawingModal } from '../drawings/DrawingModal'
+import { createBoardForPage } from '../drawings/createDrawing'
 import type { DrawingAppSettings } from '../drawings/ExcalidrawSurface'
-import { createDrawingFeed } from '../drawings/drawingFeed'
-import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
-import { FolderView } from '../views/FolderView'
+import { FolderPageChips, type FolderPageTab } from '../views/folderPageChipsContext'
 import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
-import type { LinkActions } from './linkMenu'
+import { placeRows, type LinkActions } from './linkMenu'
 import { redrawLinkPills } from './markdownLink'
-import { editorViewCtx } from '@milkdown/kit/core'
-import { createCrepe, editorViewOf, focusEditor, getCaretOf, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo } from './createCrepe'
+import { editorViewCtx, serializerCtx } from '@milkdown/kit/core'
+import { takePageId } from '../views/scaffold'
+import { createCrepe, editorViewOf, focusEditor, getCaretOf, giveCaretBack, keepCaretOf, type KeptCaret, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, postProcessMarkdown, setMarkdown, zoomPageTo } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { mergeExternalMarkdown } from './external/mergeExternal'
 import { FindBar } from './find/FindBar'
@@ -28,8 +25,9 @@ import { OutsideChangesBar } from './external/OutsideChangesBar'
 import { OutsideChangesList } from './external/OutsideChangesList'
 import { TableOfContents } from './toc/TableOfContents'
 import { createTocChannel } from './toc/tocChannel'
-import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
+import { PageFrame, TitleRowControls } from './PageFrame'
+import { usePageId } from '../search/showIds'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { redrawWikilinks, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
@@ -46,18 +44,28 @@ import './outline/bulletThreading.css'
 import './outline/sectionIndent.css'
 import './softBreaks.css'
 import { splitFrontmatter } from '@shared/frontmatter'
-import { noteOutsideGlow, notePageSwitches, setNoteOutsideGlow, setNotePageSwitch, type PageSwitchKey } from '@shared/pageSwitches'
-import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
-import { SaveIndicator } from './SaveIndicator'
-import { SyncIndicator } from './SyncIndicator'
-import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
+import { withLf } from '@shared/lineEnds'
+import { CODE_WIDTH_KEY, readBlockWidth, readFindFolds, readOutsideGlow, readPageSwitches, readPagePosition, readPageWidth, writeBlockWidth, writeFindFolds, writeOutsideGlow, writePagePosition, writePageSwitch, writePageWidth, TABLE_WIDTH_KEY, type PageSwitchKey } from '@shared/pageSwitches'
+import { columnStart, contentTextWidth } from '../lib/contentWidth'
+import { watchBlockRoom } from './blockRoom'
+import { undo } from '@milkdown/kit/prose/history'
+import { CODE_WIDTH_DRAGGED, codeBlockCount, codeWidthsToPage, type CodeWidthDragged } from './code/codeWidth'
+import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
+import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
+import { stepZoomByKey, useKeptZoom } from './DocumentZoom'
 import { FoldAllButton } from './FoldAllButton'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './outline/foldAllHotkeys'
 import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
 import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
-import { ReadOnlyChip } from './ReadOnlyChip'
-import { NoteMenu } from './noteMenu'
+import { readCardSides, writeCardSides, type CardSides } from '@shared/pageSwitches'
+import { cardBlockViewOfDom } from './card/cardBlockView'
+import { doneCardEmbedAt } from './card/embedCard'
+import { tellCardFoldChange } from './card/cardFold'
+import { HeadChipsSlot, LAYER_ESCAPE, LayerZoom, StatusChips } from './StatusChips'
+import { useTimedUnlock } from './useTimedUnlock'
+import { NO_VAULT_READ_ONLY, VaultReadOnly, type BeforeVaultLock, type VaultReadOnlyScope } from '../vault/readOnlyVault'
+import { PageMenu } from './pageMenu'
 import { ZOOM_EVENT } from './zoomRequest'
 import { onGoToNowRequest, takeGoToNow } from './table/goToNowRequest'
 import { openCellNoteByLabel } from './table/cellNoteCard'
@@ -66,29 +74,37 @@ import { goToNow } from './table/tableCalendar'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
-import type { ZoomStep } from '@shared/types'
+import type { FolderPagesSettings, ZoomStep } from '@shared/types'
 import type { ZoomFrom } from '../workspace/useWorkspace'
 import type { CodeSettingsPatch } from '../code/codeSettings'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
 import { BacklinksSection } from '../links/BacklinksSection'
-import { ReviewsSection } from '../review/ReviewsSection'
-import { pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
+import { isVaultRoot, pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
 import { namingTab } from '../lib/focusHandoff'
 import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
-import { onTwinSave } from '../lib/twinEditors'
+import { isAnnouncedWrite, onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
+import { holdPagePlace, keepPlace, readPagePlace, showPagePlace } from './pagePlace'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
-import type { NoticeKind, NoticeType } from '../lib/notice'
+import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { VaultLinksContext } from '../links/vaultLinks'
+import { redrawCardHeads } from '../review/cardHeadMarks'
+import { CardReviewDoor } from '../review/cardReviewDoor'
+import { useReviewOn } from '../review/useReviewSettings'
+import { useCardConvert } from './useCardConvert'
+import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import type { CardReview } from '@shared/cardLine'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
+import { isCardFileContent } from '@shared/cardFileFormat'
+import { CardFileNotice } from './CardFileNotice'
 
 /**
  * A drawing tab (YAZ-3028 D2): its chrome arrives with the first drawing a window opens, in its own
@@ -99,6 +115,14 @@ const DrawingEditor = lazy(() => import('../drawings/DrawingEditor').then((m) =>
 const DrawioEditor = lazy(() => import('../diagrams/DrawioEditor').then((m) => ({ default: m.DrawioEditor })))
 /** A code tab (YAZ-3448, D1/D2): the same rule — its host in its own chunk, and Monaco in the next (`code/monaco.ts`). */
 const CodeEditor = lazy(() => import('../code/CodeEditor').then((m) => ({ default: m.CodeEditor })))
+/** A card file's tab (YAZ-5037): the same rule — the card view and its card editor in their own chunk. */
+const CardFileView = lazy(() => import('./CardFileView').then((m) => ({ default: m.CardFileView })))
+/** On-demand editors, modals, and heavy page sections (YAZ-6008 D3): split out of the initial renderer bundle. */
+const FolderView = lazy(() => import('../views/FolderView').then((m) => ({ default: m.FolderView })))
+const DrawingModal = lazy(() => import('../drawings/DrawingModal').then((m) => ({ default: m.DrawingModal })))
+const ImageModal = lazy(() => import('./image/ImageModal').then((m) => ({ default: m.ImageModal })))
+const FrontmatterPanel = lazy(() => import('./FrontmatterPanel').then((m) => ({ default: m.FrontmatterPanel })))
+const CommentsSection = lazy(() => import('../comments/CommentsSection').then((m) => ({ default: m.CommentsSection })))
 
 /**
  * A save flips the chip unsaved → saving → saved, and each flip re-renders CrepeHost; these sections
@@ -108,7 +132,6 @@ const CodeEditor = lazy(() => import('../code/CodeEditor').then((m) => ({ defaul
 const MemoFrontmatterPanel = memo(FrontmatterPanel)
 const MemoCommentsSection = memo(CommentsSection)
 const MemoBacklinksSection = memo(BacklinksSection)
-const MemoReviewsSection = memo(ReviewsSection)
 /** Up to 200 names (YAZ-2700): the same reason, and every one of its props is stable across a save. */
 const MemoTableOfContents = memo(TableOfContents)
 
@@ -122,35 +145,61 @@ interface EditorProps {
   watch: WatchSource
   /** A folder's views open their row links through this (GRO-2135); App passes `openFile`. */
   onOpenFile: (path: string) => void
-  /** A folder's Table/Board actions open a note in the window's right panel. */
+  /** A folder's Table/Board actions open a page in the window's right panel. */
   onOpenFileRight?: (path: string) => void
+  /** A folder page's Folder chips and ↗ open a subfolder's page in a new tab (YAZ-4564): App's `openKeptPage`. Only a folder page uses it. */
+  onOpenFolderPage?: (path: string) => void
+  /** The mini window's ↗ opens its page in a new tab (YAZ-3746 13I): App's `openNewTabPage`. Only a folder page uses it. */
+  onOpenFileNewTab?: (path: string) => void
+  /** A folder's table opens a row in a window with this editor (YAZ-4547): App's, stable. Only a folder page uses it. */
+  renderPageEditor?: (path: string) => ReactNode
+  /** A folder table's "Delete page…" (YAZ-4592 S26): App's `trashMany`, the sidebar's delete. Only a folder page uses it. */
+  onDeleteEntries?: (paths: readonly string[], asked?: boolean) => Promise<void>
   /**
    * ⌘-click on an editor wiki link (Links C, GRO-2192) opens a background tab; App passes
    * the tabs API's `openBackground`. Absent → wiki-link clicks stay plain editing.
    */
   onOpenFileBackground?: (path: string) => void
   /**
-   * An open gesture on a link in the note (YAZ-3936): `where` its action says, this tab or a new tab. Only the note's
+   * An open gesture on a link in the page (YAZ-3936): `where` its action says, this tab or a new tab. Only the page's
    * `[[links]]` and Markdown links use it; a row of a folder view, a backlink and a code jump open through
    * `onOpenFile`. Absent → `onOpenFile`.
    */
   onOpenLink?: (path: string, where?: GestureAction) => void
-  /** "Open in a background tab" on a link in the note: a background tab whose Back returns to the note (YAZ-3644). Absent → `onOpenFileBackground`. */
+  /** "Open in a background tab" on a link in the page: a background tab whose Back returns to the page (YAZ-3644). Absent → `onOpenFileBackground`. */
   onOpenLinkBackground?: (path: string) => void
+  /** "Open in Explore" on a page pill (YAZ-4936): App's `openExploreOn`, a reading layer. Absent → no row. */
+  onOpenExplore?: (path: string) => void
+  /** This vault's "Clicking a link" (YAZ-4936), read at each click: a plain click on a page pill opens it in Explore. */
+  exploreOnClick?: () => boolean
+  /** This vault's "Show IDs in the title" (YAZ-4940): the page's ID after its title, drawn off the index. Absent = off. */
+  idInTitle?: boolean
+  /** This vault's Read only (YAZ-4939): every page this editor draws opens read only, with a timed "Allow edits". Absent = off. False while the vault's unlock runs (YAZ-5581). */
+  vaultReadOnly?: boolean
+  /** An Explore layer's timed "Allow edits" runs (YAZ-5974 Q6): the page's own Read only switch does not lock this editor either; the layer's chip counts and locks. */
+  pageUnlocked?: boolean
+  /** The vault's relock asks each surface here to save first (YAZ-5581, `ReadOnlyVaultState.beforeLock`). Stable. */
+  onVaultLock?: BeforeVaultLock
+  /** This vault's card review settings (YAZ-5000): the "Reviews (n)" table under each card in the page. Absent → no section. */
+  cardReviewSettings?: ReviewSettings
+  /** This vault's delete of one card review (`useCardReview.deleteReview`: a file write, Undo in its notice). */
+  onDeleteCardReview?: (path: string, id: string, review: CardReview) => Promise<void>
+  /** The door a file action of a read-only vault asks through (YAZ-4939): App's sheet, true = go on. Absent = always. */
+  onFileAction?: (root: string) => Promise<boolean>
   /**
    * The link menu's place rows (YAZ-3740): Show in sidebar, Focus and Favorites, "Open in ▸" — App's one object for
    * the window's life (a new one makes a new Crepe). Absent → no such rows.
    */
   linkActions?: LinkActions
-  /** Wiki-link create failures surface here (passive link-notice style); App passes `notify`. A drawing's export says where its file landed. */
-  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
+  /** Wiki-link create failures surface here (passive link-notice style); App passes `notify`. A drawing's export says where its file landed. A folder view's move adds its Undo (YAZ-4541 S6). */
+  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType, action?: Notice['action']) => void
   /**
    * Root-relative folder where a bare unresolved `[[link]]` creates its page (C2-, GRO-2240;
-   * YAZ-1643): App passes a STABLE getter over the Files & Links setting (`newNoteBase`) that
+   * YAZ-1643): App passes a STABLE getter over the Files & Links setting (`newPageBase`) that
    * takes the SOURCE page's path — this editor binds its own, so a right-panel editor or a
    * folder's outline creates beside itself, never beside the main tab. Absent → the vault root.
    */
-  newNoteFolderFor?: (sourcePath: string) => string
+  newPageFolderFor?: (sourcePath: string) => string
   /** Wikilink resolve source (GRO-2190): App owns ONE per window, fed by WikilinkIndexBridge. */
   wikilinks: WikilinkResolveSource
   /** Separate navigation-only resolver for supported non-Markdown files. */
@@ -191,8 +240,12 @@ interface EditorProps {
   foldingOnByDefault?: boolean
   /** Settings › "Bullet threading default" (YAZ-4432): for a page that made no choice in its cog. Absent → off. */
   bulletThreadingOnByDefault?: boolean
-  /** The content width setting: with the note's own width it decides whether `auto` shows names or lines. Absent → `narrow`, the default. */
+  /** The content width setting: with the page's own width it decides whether `auto` shows names or lines. Absent → `narrow`, the default. */
   contentWidth?: ContentWidth
+  /** Settings › Appearance › Page position (YAZ-5871 D2): the page's position when it has no `page-position`. Absent → `center`, the default. */
+  contentPosition?: ContentPosition
+  /** Settings › Review › Card width (YAZ-5144): a card file's Default (YAZ-5871 D4); `null` follows `contentWidth`. Absent → `null`. */
+  cardWidth?: number | null
   /** The table of contents' own "Pin" / "Unpin" write the SETTING through this. */
   onChangeTableOfContents?: (mode: TableOfContentsMode) => void
   /** The width setting of the table of contents' names column (YAZ-2752), px. Absent → `TOC_DEFAULT_W`. */
@@ -203,11 +256,9 @@ interface EditorProps {
   tocZoom?: number
   /** Its − and +, and ⌘+ / ⌘− / ⌘0 over it, write the SETTING through this. */
   onChangeTocZoom?: (percent: number) => void
-  /** The vault's review settings (YAZ-2322): App owns the one `useReviewSettings`; the Reviews section computes its dates from them. */
-  reviewSettings?: ReviewSettings
   /**
-   * The user changed this note's text (YAZ-2648 D2): App keeps the preview tab that shows it. Said
-   * when the note turns unsaved, so never for a change made outside the app. A main tab's editor
+   * The user changed this page's text (YAZ-2648 D2): App keeps the preview tab that shows it. Said
+   * when the page turns unsaved, so never for a change made outside the app. A main tab's editor
    * gets it; the right panel has no preview tab.
    */
   onUserEdit?: (path: string) => void
@@ -251,14 +302,18 @@ interface EditorProps {
   codeOutlineHidden?: SettingsState['codeOutlineHidden']
   /** "…" › Show › "Variables inside functions" (YAZ-3507), one value for every code file. */
   codeOutlineLocals?: SettingsState['codeOutlineLocals']
-  /** Settings › Preview on hover › Links in notes (YAZ-3403): resting on a resolved [[link]] shows the sidebar's panel beside it. */
+  /** Settings › Preview on hover › Links in pages (YAZ-3403): resting on a resolved [[link]] shows the sidebar's panel beside it. */
   hoverLinks?: boolean
-  /** A board's link pills (YAZ-3943): their own "Preview on hover" row, "Links in drawings". */
+  /** A board's link pills (YAZ-3943): their own "Preview on hover" row, "Links in drawings and diagrams". */
   hoverDrawingLinks?: boolean
-  /** Settings › Preview on hover › Linked mentions (YAZ-3403): resting on an entry shows the linking note beside the list. */
+  /** Settings › Preview on hover › Linked mentions (YAZ-3403): resting on an entry shows the linking page beside the list. */
   hoverBacklinks?: boolean
-  /** Settings › Preview on hover › Folder views (YAZ-3403): resting on a row or a card of a folder's view shows it beside the item. */
+  /** Settings › Folder pages › Preview rows on hover (YAZ-3403): resting on a row or a card of a folder's view shows it beside the item. */
   hoverFolderViews?: boolean
+  /** Settings › Folder pages › Preview links on hover (demo 13D): resting on a link pill in a cell shows the linked page. */
+  hoverFolderLinks?: boolean
+  /** Settings › Folder pages (YAZ-4585, D34): handed to a folder page's `ViewsPane`. */
+  folderPages?: FolderPagesSettings
   /** What a hover panel needs of a page's vault (YAZ-3403): App's `boardPreviewScope`. Absent → no hover panel here. */
   previewScope?: (path: string) => PreviewScope
   /** `settings.hotkeys` (YAZ-3564): the keys the user changed, for the editors that follow them. Absent → the defaults. */
@@ -267,27 +322,69 @@ interface EditorProps {
   hotkeysAside?: HotkeyAside
   /** Settings › Editor › Outside changes › Glow (YAZ-3704 D5): `settings.outsideChangeGlow`. Absent → until checked. */
   outsideChangeGlow?: SettingsState['outsideChangeGlow']
+  /** Settings › Editor › Find › Folded bullets (YAZ-4787): `settings.findFolds`. A page's `find-folds` key wins. Absent → the one you are on. */
+  findFolds?: SettingsState['findFolds']
   /** Settings › Editor › Outside changes › Pin default: `settings.outsideListPinned`. Absent → not pinned (the dropdown), as the table of contents. */
   outsideListPinned?: boolean
   /** The list's Pin and Unpin write the setting through this. */
   onChangeOutsideListPinned?: (pinned: boolean) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
+/** The vault's Read only (YAZ-4939) reaches every page the editor draws — a page, a board, a code tab, a folder page and its cells — through one context. */
+/** `EditorProps.pageUnlocked` for the page's editor inside (YAZ-5974 Q6). */
+const PageUnlocked = createContext(false)
+
+export function Editor(props: EditorProps) {
+  const { vaultReadOnly = false, onFileAction, onVaultLock, cardReviewSettings, onDeleteCardReview } = props
+  const vault = useMemo(
+    (): VaultReadOnlyScope => ({ on: vaultReadOnly, allowFileAction: onFileAction ?? NO_VAULT_READ_ONLY.allowFileAction, beforeLock: onVaultLock ?? NO_VAULT_READ_ONLY.beforeLock }),
+    [vaultReadOnly, onFileAction, onVaultLock],
+  )
+  // One door for the editor's life: the settings are read at each draw, so a change of them makes no new Crepe.
+  const reviewSettings = useRef(cardReviewSettings)
+  reviewSettings.current = cardReviewSettings
+  const hasReview = cardReviewSettings !== undefined && onDeleteCardReview !== undefined
+  const cardReviews = useMemo(() => (!hasReview ? null : { settings: () => reviewSettings.current!, deleteReview: onDeleteCardReview }), [hasReview, onDeleteCardReview])
+  // The settings are read at each draw; a change of Review or of Show card titles redraws the card heads' marks (YAZ-5913).
+  const firstSettings = useRef(true)
+  useEffect(() => {
+    if (firstSettings.current) firstSettings.current = false
+    else redrawCardHeads()
+  }, [cardReviewSettings?.enabled, cardReviewSettings?.titleAt, cardReviewSettings?.titleMark])
+  return (
+    <VaultReadOnly.Provider value={vault}>
+      <CardReviewDoor.Provider value={cardReviews}>
+        <PageUnlocked.Provider value={props.pageUnlocked === true}>
+          <EditorBody {...props} />
+        </PageUnlocked.Provider>
+      </CardReviewDoor.Provider>
+    </VaultReadOnly.Provider>
+  )
+}
+
+function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderPageEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
-  // YAZ-4436: the drawing settings, built once for a drawing tab and for a note's drawing popup, so they cannot drift
+  // YAZ-4436: the drawing settings, built once for a drawing tab and for a page's drawing popup, so they cannot drift
   const drawingSettings: DrawingAppSettings = { canvasPrefs, onCanvasPrefsChange: onChangeCanvasPrefs }
   // The folder itself is a tab (YAZ-2290 D3), and only the Files tree can say which path is one:
-  // a folder may be named `Notes.md`. Until the tree for an in-root path is known, nothing is guessed.
-  const inRoot = path.startsWith(`${root.replace(/\/+$/, '')}/`)
+  // a folder may be named `Pages.md`. Until the tree for an in-root path is known, nothing is guessed.
+  // The vault root is a folder too (YAZ-4921): its page lists the whole vault, and `useTreeKind` answers for it at once.
+  const inRoot = path.startsWith(`${root.replace(/\/+$/, '')}/`) || isVaultRoot(root, path)
   if (inRoot) {
     if (inTree === null) return <section className="editor" />
     if (inTree === 'dir') {
+      // The Page tab (YAZ-4584 D38): the page editor on the folder's `.folder.md`, with this tab's link, sync and page
+      // props. No Back steps (`tabId`, `zoomKey`, `onZoom`) and no start view: those are the folder tab's.
+      const renderPage = () => (
+        <MarkdownEditor inFolderPage drawingSettings={drawingSettings} root={root} path={folderSettingsPath(path)} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
+      )
       return (
         <section className="editor">
-          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} previewScope={previewScope} diagramDarkColors={diagramDarkColors} foldingOnByDefault={foldingOnByDefault} />
+          <Suspense fallback={null}>
+            <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenFolderPage={onOpenFolderPage} onOpenFileNewTab={onOpenFileNewTab} renderPageEditor={renderPageEditor} onDeleteEntries={onDeleteEntries} renderPage={renderPage} tabId={tabId} viewKey={viewKey} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} hoverLinks={hoverFolderLinks} folderPages={folderPages} previewScope={previewScope} diagramDarkColors={diagramDarkColors} sync={sync} onSyncNow={onSyncNow} />
+          </Suspense>
         </section>
       )
     }
@@ -295,7 +392,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
   const kind = fileKind(path)
   if (kind === 'text') {
     // The document host renders its own `section.editor editor--code`, as a board's does. The code
-    // Outline (YAZ-3486) reads the note's table of contents setting and width.
+    // Outline (YAZ-3486) reads the page's table of contents setting and width.
     return (
       <Suspense fallback={<section className="editor" />}>
         <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} codeReadOnly={codeReadOnly} codeWrap={codeWrap} codeMinimap={codeMinimap} onChangeCodeSettings={onChangeCodeSettings} startView={startViewRef.current} onOpenFile={onOpenFile} viewKey={viewKey} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} codeOutlineSort={codeOutlineSort} codeOutlineHidden={codeOutlineHidden} codeOutlineLocals={codeOutlineLocals} />
@@ -321,14 +418,14 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     // commands are dispatched on), so nothing wraps it here.
     return (
       <Suspense fallback={<section className="editor" />}>
-        <DrawingEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} startView={startViewRef.current} {...drawingSettings} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} hotkeys={hotkeys} hotkeysAside={hotkeysAside} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink ?? onOpenFile} onOpenLinkBackground={onOpenLinkBackground ?? onOpenFileBackground} linkActions={linkActions} newNoteFolderFor={newNoteFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+        <DrawingEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} startView={startViewRef.current} {...drawingSettings} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} hotkeys={hotkeys} hotkeysAside={hotkeysAside} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink ?? onOpenFile} onOpenLinkBackground={onOpenLinkBackground ?? onOpenFileBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
       </Suspense>
     )
   }
   if (kind === 'diagram') {
     return (
       <Suspense fallback={<section className="editor" />}>
-        <DrawioEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} darkColors={diagramDarkColors} onNotice={onNotice} />
+        <DrawioEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} darkColors={diagramDarkColors} onNotice={onNotice} hotkeys={hotkeys} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink ?? onOpenFile} onOpenLinkBackground={onOpenLinkBackground ?? onOpenFileBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} />
       </Suspense>
     )
   }
@@ -341,30 +438,68 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor drawingSettings={drawingSettings} root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
+  return <MarkdownEditor drawingSettings={drawingSettings} root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
 }
 
-/** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ drawingSettings, root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps & { drawingSettings: DrawingAppSettings }) {
-  const state = useFile(path)
+/**
+ * What the Page tab of a folder page changes (YAZ-4584 D38): the editor sits in the folder page, so it has no section,
+ * scroller, title, properties, comments, mentions or toolbar of its own — the folder page has them. Its page
+ * switches and save state go to the folder page's toolbar (`FolderPageChips`), and the folder's Read only locks it.
+ */
+interface FolderPageMode {
+  inFolderPage?: boolean
+}
+
+/**
+ * Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks.
+ *
+ * A CARD FILE (YAZ-5037): after the ONE read, a file whose properties hold `kind: card` gets the card view
+ * (`CardFileView`), which takes the file it read and reads again on each new index version. When it reads a file that
+ * lost `kind: card`, it hands that file back: the page view mounts on it, under the notice "This file is no longer a
+ * card file.", until the tab reads the file again. A second card is the card view's own notice, never the page. A
+ * folder page's Page tab is never a card file.
+ */
+function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps & FolderPageMode & { drawingSettings: DrawingAppSettings }) {
+  // A convert that kept the file's name (YAZ-5037: a page turned into a card file, or back) reads it again: the right view.
+  const [revision, setRevision] = useState(0)
+  const reread = useCallback(() => setRevision((n) => n + 1), [])
+  const state = useFile(path, revision)
   const titles = usePathTitles(wikilinks)
-  const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
-  return (
-    <section className="editor">
+  const read = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
+  // The file the card view handed back once it was no longer a card file: the page, until the next read of this tab.
+  const [noLongerCard, setNoLongerCard] = useState<{ from: FileResponse; file: FileResponse } | null>(null)
+  const wasCard = noLongerCard !== null && noLongerCard.from === read
+  const file = wasCard ? noLongerCard.file : read
+  const cardFile = useMemo(() => !inFolderPage && !wasCard && read !== null && isCardFileContent(read.content), [inFolderPage, wasCard, read])
+  const toPage = useCallback((next: FileResponse) => read !== null && setNoLongerCard({ from: read, file: next }), [read])
+  const content = (
+    <>
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
-      {file !== null && (
-        <CrepeHost key={file.path} {...drawingSettings} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
+      {wasCard && <CardFileNotice text="This file is no longer a card file." />}
+      {file !== null && cardFile && (
+        <Suspense fallback={null}>
+          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} newPageFolderFor={newPageFolderFor} hoverLinks={hoverLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} hotkeys={hotkeys} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} contentWidth={contentWidth} contentPosition={contentPosition} cardWidth={cardWidth} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} />
+        </Suspense>
       )}
-    </section>
+      {file !== null && !cardFile && (
+        <CrepeHost key={file.path} inFolderPage={inFolderPage} {...drawingSettings} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newPageFolderFor={newPageFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} contentPosition={contentPosition} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} onReread={reread} />
+      )}
+    </>
   )
+  // The Page tab's editor sits inside the folder page's own section (YAZ-4584 D38).
+  return inFolderPage ? content : <section className="editor">{content}</section>
 }
+
+/** No store to follow: a page outside a folder page's Page tab. */
+const noSubscribe = (): (() => void) => () => undefined
 
 /** The setters of a mount that threads no table of contents setting: one identity, so the memoised table of contents never sees a new one. */
 const noTableOfContentsChange = (): void => undefined
 
 /** Mounts exactly one Crepe instance for `file`; remounted (via `key`) when the path changes. */
 function CrepeHost({
+  inFolderPage = false,
   root,
   file,
   titles,
@@ -374,9 +509,12 @@ function CrepeHost({
   onOpenFileBackground,
   onOpenLink = onOpenFile,
   onOpenLinkBackground = onOpenFileBackground,
+  onOpenExplore,
+  exploreOnClick,
+  idInTitle,
   linkActions,
   onNotice,
-  newNoteFolderFor,
+  newPageFolderFor,
   wikilinks,
   viewOnlyLinks,
   wikilinkCandidates,
@@ -392,12 +530,12 @@ function CrepeHost({
   foldingOnByDefault = DEFAULT_SETTINGS.foldingOnByDefault,
   bulletThreadingOnByDefault = DEFAULT_SETTINGS.bulletThreading,
   contentWidth = 'narrow',
+  contentPosition = 'center',
   onChangeTableOfContents = noTableOfContentsChange,
   tableOfContentsWidth = TOC_DEFAULT_W,
   onChangeTableOfContentsWidth = noTableOfContentsChange,
   tocZoom = 100,
   onChangeTocZoom = noTableOfContentsChange,
-  reviewSettings,
   onUserEdit,
   startView,
   tabId,
@@ -408,15 +546,18 @@ function CrepeHost({
   hoverLinks,
   hoverDrawingLinks,
   hoverBacklinks,
+  folderPages,
   previewScope,
   hotkeys,
   hotkeysAside,
   outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow,
+  findFolds = DEFAULT_SETTINGS.findFolds,
   outsideListPinned = DEFAULT_SETTINGS.outsideListPinned,
   onChangeOutsideListPinned,
   canvasPrefs,
   onCanvasPrefsChange,
-}: DrawingAppSettings & {
+  onReread,
+}: DrawingAppSettings & FolderPageMode & {
   root: string
   file: FileResponse
   titles: PathTitles
@@ -426,9 +567,12 @@ function CrepeHost({
   onOpenFileBackground?: (path: string) => void
   onOpenLink?: (path: string, where?: GestureAction) => void
   onOpenLinkBackground?: (path: string) => void
+  onOpenExplore?: (path: string) => void
+  exploreOnClick?: () => boolean
+  idInTitle?: boolean
   linkActions?: LinkActions
-  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
-  newNoteFolderFor?: (sourcePath: string) => string
+  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType, action?: Notice['action']) => void
+  newPageFolderFor?: (sourcePath: string) => string
   wikilinks?: WikilinkResolveSource
   viewOnlyLinks?: ViewOnlyLinkSource
   wikilinkCandidates?: WikilinkCandidateSource
@@ -436,6 +580,8 @@ function CrepeHost({
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
+  /** Settings › Folder pages: the properties panel reads "Show parent folders' columns" (YAZ-4713 C12). */
+  folderPages?: FolderPagesSettings
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
   tableOfContents?: TableOfContentsMode
@@ -444,12 +590,12 @@ function CrepeHost({
   foldingOnByDefault?: boolean
   bulletThreadingOnByDefault?: boolean
   contentWidth?: ContentWidth
+  contentPosition?: ContentPosition
   onChangeTableOfContents?: (mode: TableOfContentsMode) => void
   tableOfContentsWidth?: number
   onChangeTableOfContentsWidth?: (width: number) => void
   tocZoom?: number
   onChangeTocZoom?: (percent: number) => void
-  reviewSettings?: ReviewSettings
   onUserEdit?: (path: string) => void
   startView?: PageView
   tabId?: string
@@ -458,7 +604,7 @@ function CrepeHost({
   onOpenBullet?: (tabId: string, zoom: string | null, background: boolean, label: string | null) => void
   diagramDarkColors: DiagramDarkColors
   hoverLinks: boolean
-  /** The note popup's board pills follow "Links in drawings" (YAZ-3943). */
+  /** The page popup's board pills follow "Links in drawings and diagrams" (YAZ-3943). */
   hoverDrawingLinks: boolean
   hoverBacklinks: boolean
   previewScope?: (path: string) => PreviewScope
@@ -467,13 +613,19 @@ function CrepeHost({
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
   outsideChangeGlow?: SettingsState['outsideChangeGlow']
+  /** Settings › Editor › Find › Folded bullets (YAZ-4787): `settings.findFolds`. A page's `find-folds` key wins. Absent → the one you are on. */
+  findFolds?: SettingsState['findFolds']
   /** Settings › Editor › Outside changes › Pin default: `settings.outsideListPinned`. Absent → not pinned (the dropdown), as the table of contents. */
   outsideListPinned?: boolean
   /** The list's Pin and Unpin write the setting through this. */
   onChangeOutsideListPinned?: (pinned: boolean) => void
+  /** The page turned into a card file under its own name (YAZ-5037): the tab reads it again, to show it as one. */
+  onReread?: () => void
 }) {
-  // A copied page starts at its source's text size (YAZ-2951 S5); after that it changes on its own.
-  const [documentZoom, setDocumentZoom] = useState(startView?.magnification ?? 100)
+  const unit = useUnit()
+  // A copied page starts at its source's text size (YAZ-2951 S5); after that it changes on its own. In the mini window
+  // each page starts at the window's last zoom, and a change is the window's (YAZ-5607).
+  const [documentZoom, setDocumentZoom] = useKeptZoom(startView?.magnification ?? 100)
   // Mirror for the ⌘ listener below, which is registered once (`[]`) and must read the live value.
   const documentZoomRef = useRef(documentZoom)
   documentZoomRef.current = documentZoom
@@ -481,19 +633,19 @@ function CrepeHost({
   const [lineNumbersOn, setLineNumbersOn] = useState(false)
   // The same kind of switch (YAZ-2700): every heading of THIS page says its level. Per page, never stored.
   const [headingLevelsOn, setHeadingLevelsOn] = useState(false)
-  // What this page's table of contents is built from (YAZ-2700 D14). Stored with the note in the
+  // What this page's table of contents is built from (YAZ-2700 D14). Stored with the page in the
   // app state, as its folds are, and `null` (Auto) is no entry.
   const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
-  // The folded rows of the table of contents (YAZ-3939 D1), as saved for this note when it mounted.
+  // The folded rows of the table of contents (YAZ-3939 D1), as saved for this page when it mounted.
   const [tocFolds] = useState(() => storage.getTocFolds(root, file.path))
   // Stable: the table of contents is memoised.
   const changeTocFolds = useCallback((keys: string[]) => storage.setTocFolds(root, file.path, keys), [root, file.path])
   const hostRef = useRef<HTMLDivElement>(null)
   // A copied page's start (YAZ-2940 D7, YAZ-2951 D1): a ref, so the create effect does not depend on it, and used once.
   const startViewRef = useRef(startView)
-  // The hover panel of the note's [[links]] (YAZ-3403): the sidebar's own panel beside a resolved link. A hover's id is
+  // The hover panel of the page's [[links]] (YAZ-3403): the sidebar's own panel beside a resolved link. A hover's id is
   // its page: the plugin leaves one page before it hovers the next. The link's box is kept here; the dwell lives in the
-  // panel's tiny store, so nothing of the note draws for it. The plugin is wired once, with the editor; the setting is
+  // panel's tiny store, so nothing of the page draws for it. The plugin is wired once, with the editor; the setting is
   // read live by the dwell.
   const linkAt = useRef<{ path: string; rect: AnchorRect; editable: boolean } | null>(null)
   const linkPreview = useCardPreview(hoverLinks, (path) => (linkAt.current?.path === path ? linkAt.current.rect : null))
@@ -507,12 +659,16 @@ function CrepeHost({
       linkAt.current = null
     },
   }))
-  // The card says how to open the link, as the gestures are now (YAZ-3879 point 9): "⌘-click to open".
-  const linkCard = (_: string, path: string): { root: string | null; name: string; hint?: string } => ({ root: null, name: pageLabel(path, false, titles), hint: linkOpenHint(hotkeysNow(), linkAt.current?.editable ?? true) })
-  // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
+  // The properties panel's link pills (YAZ-4544 4G): a page link's doors and this page's link card. Stable, for its memo.
+  const panelLinks = useMemo(() => ({ open: { onOpenFile: onOpenLink, onOpenFileBackground: onOpenLinkBackground, onOpenFileRight }, hover: linkHover }), [onOpenLink, onOpenLinkBackground, onOpenFileRight, linkHover])
+  // The card says how to open the link, as the gestures are now (YAZ-3879 point 9): "⌘-click to open"; a page pill while
+  // the vault's "Clicking a link" is Explore: "Click to open in Explore", on a read-only page too (YAZ-4939).
+  const linkCard = (_: string, path: string): { root: string | null; name: string; hint?: string } => ({ root: null, name: pageLabel(path, false, titles), hint: linkOpenHint(hotkeysNow(), linkAt.current?.editable ?? true, exploreOnClick?.() === true && fileKind(path) === 'markdown') })
+  // This page owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
   // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
   useEffect(() => {
-    const section = hostRef.current?.closest('.editor')
+    // The folder page's zoom is its toolbar's, never the Page tab's (YAZ-4584 D38).
+    const section = inFolderPage ? null : hostRef.current?.closest('.editor')
     if (!section) return
     const onZoom = (event: Event) => {
       event.preventDefault()
@@ -521,10 +677,10 @@ function CrepeHost({
     }
     section.addEventListener(ZOOM_EVENT, onZoom)
     return () => section.removeEventListener(ZOOM_EVENT, onZoom)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- `inFolderPage` is fixed for the mount
   // Zoom anchors on the caret (YAZ-1710 D11): the line being edited stays where it was on screen,
   // as in a design tool zooming around the cursor, so the eye never has to find it again. A caret
-  // that was off screen (or none in this note) comes to the middle instead. The anchor is measured
+  // that was off screen (or none in this page) comes to the middle instead. The anchor is measured
   // BEFORE the zoom applies — every zoom change goes through `changeZoom` — and settled in a layout
   // effect after it. The scroller itself is unzoomed (D14), so screen px and `scrollTop` px agree.
   const caretAnchor = useRef<number | null>(null)
@@ -546,13 +702,13 @@ function CrepeHost({
   // exactly the room needed to drag it back to where it would sit unzoomed. Re-measured when the
   // zoom changes and when the body grows or shrinks (typing a deeper bullet while zoomed).
   useEffect(() => {
-    const scroller = hostRef.current?.closest<HTMLElement>('.editor-host')
+    const scroller = inFolderPage ? null : hostRef.current?.closest<HTMLElement>('.editor-host')
     const body = hostRef.current?.querySelector('.ProseMirror')
     if (!scroller || !body) return
     const sync = () => {
       const zoom = documentZoomRef.current / 100
       // At 100% the slack is 0 by definition (deepest − deepest / 1): skip the per-bullet rect walk,
-      // 5.7 ms per Enter on a 5k-line note (YAZ-2196).
+      // 5.7 ms per Enter on a 5k-line page (YAZ-2196).
       if (zoom === 1) {
         scroller.style.setProperty('--zoom-slack', '0px')
         return
@@ -569,7 +725,7 @@ function CrepeHost({
   }, [documentZoom])
 
   useLayoutEffect(() => {
-    const scroller = hostRef.current?.closest('.editor-host')
+    const scroller = inFolderPage ? null : hostRef.current?.closest('.editor-host')
     const rect = caretRect()
     if (!scroller || !rect) return
     const box = scroller.getBoundingClientRect()
@@ -601,6 +757,8 @@ function CrepeHost({
   // The zoom breadcrumb's first crumb (YAZ-2420 🔒 D14), read as it draws: the Crepe below is made once.
   const titleRef = useRef('')
   titleRef.current = pageLabel(file.path, false, titles)
+  // The ID after the title (YAZ-4940 "In the title"), off the index: with the choice Off nothing is read or subscribed to.
+  const pageId = usePageId(idInTitle === true ? wikilinks : undefined, file.path)
   // The tab's zoom level and its doors (YAZ-3647 D2, YAZ-3646 D10), read through refs too: the Crepe below is made once.
   const zoomKeyRef = useRef(zoomKey)
   zoomKeyRef.current = zoomKey
@@ -621,7 +779,7 @@ function CrepeHost({
   }, [reportZoom])
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused } = autosave
-  // The user's own edit keeps a preview tab (YAZ-2648 D2), and the signal is the note turning
+  // The user's own edit keeps a preview tab (YAZ-2648 D2), and the signal is the page turning
   // UNSAVED, never `onMarkdownUpdated`: that fires for a silent reload of an outside change too.
   // The autosave turns unsaved only when the editor's text differs from what it last read or
   // wrote, and a reload makes the reloaded text that baseline (`markReloaded`) before the listener
@@ -642,33 +800,128 @@ function CrepeHost({
   /** The disk-truth file both panels read: one identity per `disk`, so the memoised panels skip a save. */
   const diskFile = useMemo(() => ({ ...file, content: disk }), [file, disk])
   /**
-   * The note's read-only switch (YAZ-3076 D1): `readonly: true` IN its frontmatter, so the disk truth
+   * The page's read-only switch (YAZ-3076 D1): `readonly: true` IN its frontmatter, so the disk truth
    * decides it — an agent's edit, another window's toggle or this one's all land through `disk`.
    * Parsed once per `disk`, never per keystroke or per save.
    */
-  const readOnly = useMemo(() => isNoteReadOnly(disk), [disk])
+  const diskReadOnly = useMemo(() => isPageReadOnly(disk), [disk])
   /**
-   * The page cog's on/off rows (YAZ-4094 G4, G1): IN the note's frontmatter too, read off `disk` the same
+   * The folder page's toolbar store, for the Page tab alone (YAZ-4584 D38): a page window inside a folder page sits
+   * under the same context, and must not take the folder's toolbar.
+   */
+  const chipsHere = useContext(FolderPageChips)
+  /** In an Explore layer (YAZ-5164 Option A): its head holds this page's chips, and Esc is the layer's (back to reading). */
+  const inExplore = useContext(HeadChipsSlot) !== null
+  /** An Explore layer's title-row controls (YAZ-5974): drawn in the page's header, before Properties. */
+  const titleRowControls = useContext(TitleRowControls)
+  // The page zoom as drawn (YAZ-5640): an Explore layer's zoom wins over this editor's own on its scroller (explore.css).
+  const drawnZoom = useContext(LayerZoom) ?? documentZoom
+  const folderChips = inFolderPage ? chipsHere : null
+  /** A read-only folder page (YAZ-3746 D36) keeps its Page read only, whatever the `.folder.md` bytes say yet. */
+  const folderLocked = useSyncExternalStore(folderChips?.subscribe ?? noSubscribe, () => folderChips?.getState().readOnly ?? false)
+  /** The vault's Read only (YAZ-4939). A folder page's Page tab takes it through the folder's store above: one unlock for the whole tab. */
+  const vaultScope = useContext(VaultReadOnly)
+  /** The vault's card review (YAZ-5000), read at click time: "Reviews (n)" under each card. */
+  const cardReviews = useContext(CardReviewDoor)
+  const cardReviewsRef = useRef(cardReviews)
+  cardReviewsRef.current = cardReviews
+  const vaultLocked = vaultScope.on && !inFolderPage
+  /** The read-only door at click time (YAZ-4985): a link to a missing page asks it before the page is made. */
+  const fileDoor = useRef(vaultScope.allowFileAction)
+  fileDoor.current = vaultScope.allowFileAction
+  /** The page is under Read only: its own switch, its folder page's, or the vault's. The chip shows while this is true. */
+  /** An Explore layer's timed unlock runs (YAZ-5974 Q6): the page's own switch does not lock this editor either. */
+  const pageUnlocked = useContext(PageUnlocked) && !inFolderPage
+  const lockedBase = (diskReadOnly && !pageUnlocked) || folderLocked || vaultLocked
+  /** The convert actions (YAZ-5037 phase 5): its cards' "Move to its own file", its embeds' "Put back", the cog's "Turn into a card file". */
+  const diskRef = useRef(disk)
+  diskRef.current = disk
+  const reviewOn = useReviewOn(root)
+  const convert = useCardConvert({ root, path: file.path, wikilinks, reviewOn, inFolderPage, disk: () => diskRef.current, allowFileAction: vaultScope.allowFileAction, onNotice, onReread, onOpenCardFile: onOpenFile })
+  /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves (including any open card editor, YAZ-6052), then locks again. */
+  const unlock = useTimedUnlock(() => {
+    const openCards = hostRef.current?.querySelectorAll('.card.card--editing') ?? []
+    for (const openCard of openCards) {
+      cardBlockViewOfDom(openCard)?.done()
+      doneCardEmbedAt(openCard)
+    }
+    return autosave.flushNow()
+  })
+  const readOnly = lockedBase && unlock.until === null
+  /**
+   * Esc and ⌘↵ in the text lock this page again while its timed unlock runs (YAZ-4997): save, then lock, as Lock now.
+   * Read at the key (the editor is built once); false with nothing to lock, so the keys keep their own meaning.
+   */
+  const lockAgainRef = useRef<() => boolean>(() => false)
+  lockAgainRef.current = () => {
+    if (!lockedBase || unlock.until === null) return false
+    unlock.lock()
+    return true
+  }
+  /**
+   * The page cog's on/off rows (YAZ-4094 G4, G1): IN the page's frontmatter too, read off `disk` the same
    * way, so a toggle in another tab or window, or an agent's edit, shows here at once. A key that is absent
    * follows the app default; the page's own choice wins, also over Off (YAZ-3558 D1). Section indent's
    * default is off (YAZ-2709 D2).
    */
-  const pageSwitches = useMemo(() => notePageSwitches(disk), [disk])
+  const pageSwitches = useMemo(() => readPageSwitches(disk), [disk])
   const sectionIndentOn = pageSwitches['section-indent'] ?? false
   const tableOfContentsOn = pageSwitches.toc ?? tocOnByDefault
   const guideLinesOn = pageSwitches['guide-lines'] ?? guideLinesOnByDefault
   const foldingOn = pageSwitches.folding ?? foldingOnByDefault
   const threadingOn = pageSwitches['bullet-threading'] ?? bulletThreadingOnByDefault
-  // This page's glow for outside changes (YAZ-4272 D2), else Settings'. Read when the note on disk changes, never per key.
-  const pageGlow = useMemo(() => noteOutsideGlow(disk), [disk])
+  // This page's glow for outside changes (YAZ-4272 D2), else Settings'. Read when the page on disk changes, never per key.
+  const pageGlow = useMemo(() => readOutsideGlow(disk), [disk])
+  /** This page's own ⌘F fold choice (YAZ-4787), else the app's. */
+  const pageFindFolds = useMemo(() => readFindFolds(disk), [disk])
+  /**
+   * This page's width for every code block and every table (YAZ-4783 layer 2): its `code-width` / `table-width` keys,
+   * read off `disk` as the cog's other rows. On the editor's mount (`mountWidths`) they win over Settings' on `.app`;
+   * absent, the page follows Settings. A block's own width wins over both (app.css).
+   */
+  const pageCodeWidth = useMemo(() => readBlockWidth(disk, CODE_WIDTH_KEY), [disk])
+  const pageTableWidth = useMemo(() => readBlockWidth(disk, TABLE_WIDTH_KEY), [disk])
+  /**
+   * This page's own Content width (YAZ-5640): its `page-width` key, read off `disk` as the cog's other rows. It wins over
+   * Settings › Appearance › Content width on the page's scroller. A folder page's Page tab has no row and ignores the
+   * key: it draws in the folder page's scroller, which the folder's views share.
+   */
+  const diskPageWidth = useMemo(() => readPageWidth(disk), [disk])
+  const pageWidth = inFolderPage ? null : diskPageWidth
+  /** This page's own position (YAZ-5871 D2): its `page-position` key, as `page-width`. With Full there is none (`columnStart`). */
+  const diskPagePosition = useMemo(() => readPagePosition(disk), [disk])
+  const pagePosition = inFolderPage ? null : diskPagePosition
+  /**
+   * This page's own card sides (YAZ-5904): its `card-sides` key, read off `disk` as the cog's other rows. On the editor's
+   * mount (`data-card-sides`) it wins over Settings › Cards › Card look › Card sides in pages (`card.css`); the cards fold
+   * again at each change (`tellCardFoldChange`).
+   */
+  const pageCardSides = useMemo(() => readCardSides(disk), [disk])
+  useEffect(() => tellCardFoldChange(), [pageCardSides])
   // Read by the editor's mount (createCrepe), which must not re-run when the switch turns: the effect below sends the change.
   const foldingOnRef = useRef(foldingOn)
   foldingOnRef.current = foldingOn
   /** The chip's "Allow edits?" box is open (YAZ-3076 D4): this tab's own, and gone once read only is. */
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
-    if (!readOnly) setAskingUnlock(false)
-  }, [readOnly])
+    if (!lockedBase) setAskingUnlock(false)
+  }, [lockedBase])
+  /**
+   * The caret or selection the page had when the box opened (YAZ-4997 round 2, Yaseen: "return the caret to where I was
+   * previously or where I was selecting"): the box takes the keyboard, and its choice, Cancel or Esc gives both back.
+   */
+  const keptCaret = useRef<KeptCaret | null>(null)
+  const askUnlock = () => {
+    const crepe = crepeRef.current
+    keptCaret.current = crepe !== null && crepe === readyCrepe ? keepCaretOf(crepe) : null
+    setAskingUnlock(true)
+  }
+  const caretBack = (to: 'ask' | 'lock') => {
+    const crepe = crepeRef.current
+    const kept = to === 'ask' ? keptCaret.current : null
+    keptCaret.current = null
+    if (crepe !== null && crepe === readyCrepe) giveCaretBack(crepe, kept)
+  }
   /**
    * Counts the outside changes that landed in this editor (YAZ-2643): a reload, a frontmatter-only
    * absorb. `disk` cannot say it — it does not follow this editor's own saves, so a file put back
@@ -676,13 +929,7 @@ function CrepeHost({
    */
   const [diskLandings, diskLanded] = useReducer((count: number) => count + 1, 0)
   /**
-   * The drawing wiring (YAZ-879), ONE per host: the preview plugin subscribes to this feed and the
-   * modal pokes it on close after a save (YAZ-3528), so a scene written back re-renders every preview of it in this editor
-   * without a remount. Stable identity — a new feed would silently orphan the subscription.
-   */
-  const drawingFeed = useMemo(() => createDrawingFeed(), [])
-  /**
-   * The CMD+F wiring (YAZ-968/969), ONE per host on the drawing feed's terms: the engine binds
+   * The CMD+F wiring (YAZ-968/969), ONE per host, a holder the host makes: the engine binds
    * itself to this channel at view creation and the bar below drives it. Stable identity — a new
    * channel would remount the editor and leave the bar talking to nothing.
    */
@@ -705,33 +952,39 @@ function CrepeHost({
   // The Glow setting goes through the channel, never the Crepe effect's deps: a change rebuilds no editor (D5).
   // Declared before that effect, so the first state already has it.
   useEffect(() => outsideChanges.setGlow(pageGlow ?? outsideChangeGlow), [outsideChanges, pageGlow, outsideChangeGlow])
+  useEffect(() => findChannel.setFolds(pageFindFolds ?? findFolds), [findChannel, pageFindFolds, findFolds])
   /**
    * The table of contents wiring (YAZ-2700), ONE per host on the same terms: the engine publishes
-   * the note's rows (its headings or its bullets) to this channel and answers its jump and its
+   * the page's rows (its headings or its bullets) to this channel and answers its jump and its
    * scroll spy; the table of contents below draws them. Stable identity, for the find channel's
    * reason.
    */
+  const tocActive = tableOfContentsOn && tableOfContents !== 'off'
   const tocChannel = useMemo(() => {
     const channel = createTocChannel()
     // The saved source (the state above, as it was read at this mount) is in the channel BEFORE
-    // the editor exists, so the engine's first scan is already by it: a note saved as Bullets
+    // the editor exists, so the engine's first scan is already by it: a page saved as Bullets
     // never shows its Auto list first.
     channel.setSource(tocSource)
+    channel.setEnabled(tocActive)
     return channel
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- once per mount; a later choice goes through `changeTocSource`
+  useEffect(() => {
+    tocChannel.setEnabled(tocActive)
+  }, [tocChannel, tocActive])
   /** The reader chose in the cog: this page's state, the app state file, and the engine, which scans again at once. */
   const changeTocSource = (source: TocSource | null): void => {
     setTocSource(source)
     storage.setTocSource(root, file.path, source)
     tocChannel.setSource(source)
   }
-  /** Esc in the table of contents hands the caret back to the note. Stable: the table of contents is memoised. */
-  const focusNote = useCallback(() => {
+  /** Esc in the table of contents hands the caret back to the page. Stable: the table of contents is memoised. */
+  const focusPage = useCallback(() => {
     const crepe = crepeRef.current
     if (crepe !== null) focusEditor(crepe)
   }, [])
-  /** The target whose modal is open; the preview's click sets it, close clears it. */
-  const [openDrawing, setOpenDrawing] = useState<string | null>(null)
+  /** The drawing whose modal is open, at its vault root ("Edit in a popup" sets it, close clears it): a board image may be in another vault (A11). */
+  const [openDrawing, setOpenDrawing] = useState<{ root: string; target: string } | null>(null)
   /**
    * The lightbox's gallery (YAZ-1656): every image on the page and the one double-clicked; the
    * node view sets it, close clears it.
@@ -746,6 +999,8 @@ function CrepeHost({
     el.className = 'editor-instance'
     host.appendChild(el)
     const { frontmatter, body } = splitFrontmatter(file.content)
+    // The editor holds the body with `\n` alone; the save writes the page's own line end back (YAZ-5150).
+    const text = withLf(body)
     // A copied page starts with its source's LIVE folds (YAZ-2951 S2), never the ones another copy stored last.
     const start = startViewRef.current
     const startFolds = start?.folds ?? storage.getFolds(root, file.path)
@@ -761,12 +1016,19 @@ function CrepeHost({
     // seed, not a change: it is not written until a fold changes in this copy (YAZ-2951 S10).
     let bulletSeedPending = start !== undefined
     let headingSeedPending = start !== undefined
-    // Where this note's links and pasted paths are read from (YAZ-3609): its vault's `[[` picker rows, and the window's other vaults.
-    const linkPlace = wikilinkCandidates === undefined ? undefined : { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf }
+    // Where this page's links and pasted paths are read from (YAZ-3609): its vault's `[[` picker rows, and the window's other vaults.
+    const linkPlace = wikilinkCandidates === undefined ? undefined : { root, pagePath: file.path, candidates: wikilinkCandidates, candidatesOf }
     const crepe = createCrepe({
       root: el,
-      defaultValue: body,
+      defaultValue: text,
       onMarkdownUpdated: (md) => controller?.update(md),
+      // Cards (YAZ-4961): `/card` takes its ID from the vault's door at once; the card's open hook names this page.
+      cards: { path: file.path, mintId: takePageId, convert: convert.door },
+      // "Reviews (n)" under each card with reviews (YAZ-5000): the vault's door, read when a section opens or deletes.
+      cardReviews:
+        cardReviewsRef.current === null
+          ? undefined
+          : { settings: () => cardReviewsRef.current?.settings() ?? DEFAULT_REVIEW_SETTINGS, deleteReview: (path, id, review) => cardReviewsRef.current?.deleteReview(path, id, review) ?? Promise.resolve(), vault: () => ({ root, wikilinks }) },
       // A calendar table's marker moves each minute here (YAZ-4162 D2, D9); a preview card starts no timer.
       calendarClock: true,
       // The table zoom pill on each table (YAZ-4091); the previews and the outline view have none (YAZ-4176).
@@ -820,7 +1082,7 @@ function CrepeHost({
       wikilinkCandidates,
       // Wiki-link navigation (Links C, GRO-2192): the open gestures of Settings › Hotkeys (YAZ-3936, read at each click)
       // open in this tab, a new tab or a background tab; unresolved → create (bare targets under `createFolder` — App's
-      // `newNoteFolderFor` getter over the Files & Links location setting, C2- GRO-2240, bound to THIS file's path so
+      // `newPageFolderFor` getter over the Files & Links location setting, C2- GRO-2240, bound to THIS file's path so
       // the page lands beside the editor the link was clicked in, YAZ-1643; absent → the vault root) then open. Wired
       // only when App threads the background opener — mounts without it keep clicks as plain editing.
       wikilinkNav:
@@ -829,28 +1091,34 @@ function CrepeHost({
           : {
               ...linkActions,
               root,
-              createFolder: () => newNoteFolderFor?.(file.path) ?? '',
+              createFolder: () => newPageFolderFor?.(file.path) ?? '',
               openCurrent: (path) => onOpenLink(path, 'thisTab'),
               openNewTab: (path) => onOpenLink(path, 'newTab'),
               openBackground: onOpenLinkBackground,
+              // "Open in Explore" and the vault's "Clicking a link" (YAZ-4936).
+              openExplore: onOpenExplore,
+              exploreClick: exploreOnClick,
               hotkeys: hotkeysNow,
               onNotice: onNotice ?? (() => undefined),
+              allowFileAction: (vault) => fileDoor.current(vault),
             },
       // The window's vaults by their ID letters (YAZ-3905 S23): an unresolved `[[INL-4]]` names its vault.
       vaultsOfLetters: (letters) => vaultLinks.current?.vaultsOfLetters?.(letters) ?? [],
-      // The hover panel of a resolved [[link]] (YAZ-3403): this note editor's alone, never a read-only preview's.
+      // The hover panel of a resolved [[link]] (YAZ-3403): this page editor's alone, never a read-only preview's.
       // A Markdown link pill previews its page too (YAZ-3609 D20): its address resolves as a click resolves it.
       wikilinkHover: { ...linkHover, markdownPath: (href) => (linkPlace === undefined ? null : hrefTarget(href, linkPlace)) },
       linkLook: { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
       // Standard Markdown links (YAZ-1309) leave through one typed host boundary. The active
-      // note path travels with the untouched href so main—not the renderer—owns relative-file
+      // page path travels with the untouched href so main—not the renderer—owns relative-file
       // resolution, protocol validation, and the choice of OS API.
       markdownLinkNav: {
         ...linkActions,
         open: (href) => api.shell.openLink({ href, sourcePath: file.path }),
         // A link to a page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8).
         inApp: (href) => (linkPlace === undefined ? null : hrefTarget(href, linkPlace)),
-        openPath: (target, where) => (where === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : onOpenLink(target, where)),
+        openPath: (target, where) => (where === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : where === 'explore' ? (onOpenExplore ?? ((p: string) => onOpenLink(p, 'thisTab')))(target) : onOpenLink(target, where)),
+        // A Markdown pill to a page follows the vault's "Clicking a link" as a [[link]] does (YAZ-4936).
+        exploreClick: exploreOnClick,
         hotkeys: hotkeysNow,
         // A link into a vault the app knows but this window does not show asks to add that vault (YAZ-3609 D21).
         elsewhere: (href, background) => {
@@ -868,39 +1136,100 @@ function CrepeHost({
       pathPaste: linkPlace === undefined ? undefined : { ...linkPlace, onNotice },
       // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator
       // needs; failures ride the same passive notice as a failed link create.
-      drawing: { create: () => createDrawing(root), onNotice },
-      // Drawing previews (YAZ-878): the root is all a preview needs — the embed's own target
-      // carries the rest and `readAsset` resolves it. Both live wires are YAZ-879's: the feed
-      // the modal pokes on close after a save, and the click that opens that modal.
-      drawingPreview: { root, feed: drawingFeed, onOpenDrawing: setOpenDrawing },
-      // First-class images (YAZ-1656): the root and THIS note's absolute path are what a relative
+      // "/drawing" and "/diagram" (YAZ-4831): the board is named after this page and goes where Settings say. The bare
+      // name is the embed's target only when no other file of the vault has it.
+      drawing: {
+        create: (kind) =>
+          createBoardForPage(
+            {
+              root,
+              pagePath: file.path,
+              title: titleRef.current,
+              nameTaken: (name) => {
+                const resolve = viewOnlyLinks?.resolve ?? wikilinks?.resolve ?? null
+                return resolve === null || resolve(name) !== null
+              },
+            },
+            kind,
+          ),
+        onNotice,
+      },
+      // Board embeds (YAZ-4827): a window into each `![[x.drawio]]` / `![[x.excalidraw]]`. The window loads from this
+      // root and refreshes from the watcher itself; "Edit in a popup" opens the drawing modal (D7, the old click path).
+      boardEmbeds: { root, onEditInPopup: (target) => setOpenDrawing({ root, target }) },
+      // First-class images (YAZ-1656): the root and THIS page's absolute path are what a relative
       // src resolves against (main's `app://vault/` protocol); double-click opens the lightbox
       // below, and a paste that could not be written rides the same passive notice.
-      image: { root, notePath: file.path, onOpenImage: setOpenImage, onNotice },
+      image: {
+        root,
+        pagePath: file.path,
+        onOpenImage: setOpenImage,
+        onNotice,
+        // A board in another vault of the window (YAZ-4828): `![name|640x360](../Other/x.drawio)` is a window, found as
+        // the Markdown link pill finds its file, opened as it opens, with the same link rows.
+        boards:
+          linkPlace === undefined
+            ? undefined
+            : {
+                place: (src) => {
+                  const target = vaultHref(src, linkPlace)
+                  if (target === null) return null
+                  const own = rootOfPath([root], target) !== null
+                  return { root: own ? root : (rootOfPath(vaultLinks.current?.roots ?? [], target) ?? root), path: target, vault: own ? null : (vaultLinks.current?.vaultOf(target) ?? null) }
+                },
+                icon: (target) => fileIconDecoration(icons.current, target, false),
+                // A11: the drawing popup at the board's own vault, as a vault-relative target.
+                onEditInPopup: (boardRoot, target) => setOpenDrawing({ root: boardRoot, target: target.startsWith(`${boardRoot}/`) ? target.slice(boardRoot.length + 1) : target }),
+                open: (target, how) => (how === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : onOpenLink(target, how)),
+                linkMenu: (target) => {
+                  const notice = onNotice ?? (() => undefined)
+                  return {
+                    labels: [],
+                    open: () => onOpenLink(target, 'thisTab'),
+                    openNew: () => (onOpenLinkBackground ?? onOpenLink)(target),
+                    ...placeRows(target, linkActions, notice),
+                  }
+                },
+              },
+      },
       find: findChannel,
       outsideChanges,
       toc: tocChannel,
-      // A read-only note keeps its keyboard (YAZ-3125, YAZ-3127): this is a note editor, not a preview.
+      // A read-only page keeps its keyboard (YAZ-3125, YAZ-3127): this is a page editor, not a preview.
       readOnlyKeys: true,
-      // The note keys as the user set them (YAZ-3564 K4): read as the note opens, so a change applies to the next one.
+      // The page keys as the user set them (YAZ-3564 K4): read as the page opens, so a change applies to the next one.
       hotkeys: storage.getSettings()?.hotkeys,
       // Without folded lines says what it left out (YAZ-3653); Settings › Notifications › "Copy, cut or paste" can turn it off.
       onCopyNotice: onNotice === undefined ? undefined : (text) => onNotice(text, 'copy', 'clipboard'),
+      lockAgain: () => lockAgainRef.current(),
+      // In Explore, Esc is the layer's: back to reading (YAZ-4997), never a step out to the sidebar.
+      onEscape: inExplore ? () => el.dispatchEvent(new CustomEvent(LAYER_ESCAPE, { bubbles: true })) || true : undefined,
     })
     crepeRef.current = crepe
     zoomedOutRef.current = () => tellRealZoom(crepe, zoomKeyRef.current ?? null)
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
     let offPageView: (() => void) | null = null
+    /** The stop of the start place kept while the page draws (YAZ-5164 round 2). */
+    let stopKeeping: (() => void) | null = null
     const ready = crepe.create().then(() => {
       if (cancelled) return
-      controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
+      // Capture immutable initial doc lazily (YAZ-6028) so opening a large page skips startup Markdown serialization.
+      // Guard `'editor' in crepe` so tests that mock `createCrepe` fall back to eager `getContent()`.
+      const getBaseline =
+        'editor' in crepe && crepe.editor !== undefined
+          ? (() => {
+              const initDoc = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc)
+              return () => crepe.editor.action((ctx) => postProcessMarkdown(ctx.get(serializerCtx)(initDoc)))
+            })()
+          : undefined
+      controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body, getBaseline)
       setReadyCrepe(crepe)
       // An in-app rename carried another window's (or this window's) DIRTY buffer into this
       // path (Links E1, GRO-2194): apply it OVER the fresh disk baseline as an unsaved
       // change, so autosave writes it to the NEW path — the buffer survives the rename.
       const buf = takeRenameBuffer(file.path)
-      if (buf !== null && buf.body !== body) {
+      if (buf !== null && buf.body !== text) {
         setMarkdown(crepe, buf.body)
         // A rebuilt state starts zoomed out: back to the tab's bullet, as a rebuild from disk does (E1). A rename keeps
         // its zoom (YAZ-3676 F3); a bullet the buffer does not have stays zoomed out, and the report below says so.
@@ -928,16 +1257,24 @@ function CrepeHost({
       // A copy starts where its source stood (YAZ-2940 D7) — after the caret grab, which may scroll,
       // and after the start drill-in, which the editor state already holds (YAZ-2951 S6).
       const scroller = hostRef.current?.closest('.editor-host')
-      if (start !== undefined && scroller) scroller.scrollTop = start.scrollTop
+      // Explore's reading layer gives its place in the text (YAZ-5164): px of that other view would land elsewhere. Once
+      // more a frame later, when the blocks above have drawn (a card, a picture).
+      const top = start?.top
+      if (start !== undefined && scroller && (top === undefined || !showPagePlace(editorViewOf(crepe), scroller, top))) scroller.scrollTop = start.scrollTop
+      // Again while the blocks above still draw, until the person scrolls or types (round 2).
+      if (top !== undefined && scroller) stopKeeping = keepPlace(scroller, () => !cancelled && showPagePlace(editorViewOf(crepe), scroller, top))
       startViewRef.current = undefined
-      // This tab's page view, read only when a copy action asks (YAZ-2951 D4): nothing runs per keystroke.
-      if (scroller) {
+      // This tab's page view, read only when a copy action asks (YAZ-2951 D4): nothing runs per keystroke. The folder
+      // page's scroller is the folder tab's, not the Page tab's (YAZ-4584 D38).
+      if (scroller && !inFolderPage) {
         offPageView = registerPageView(scroller, () => ({
           scrollTop: scroller.scrollTop,
           zoomKey: getZoomKeyOf(crepe),
           folds: [...lockedKeys, ...bulletFoldKeys, ...headingFoldKeys],
           magnification: documentZoomRef.current,
           selection: getCaretOf(crepe),
+          // The place in the text (YAZ-5164): Explore's reading layer, another view, opens there when its edit ends.
+          top: readPagePlace(editorViewOf(crepe), scroller) ?? undefined,
         }))
       }
     })
@@ -951,8 +1288,9 @@ function CrepeHost({
       const fresh = await api.readFile(file.path)
       if (cancelled) return
       const split = splitFrontmatter(fresh.content)
-      // A rewrite rebuilds the note, so nothing can glow: the one-line note says the whole note changed (YAZ-3704).
-      if (applyExternalMarkdown(crepe, split.body, quiet) === 'rebuilt' && !quiet) outsideChanges.markWholeNote()
+      const freshText = withLf(split.body)
+      // A rewrite rebuilds the page, so nothing can glow: the one-line note says the whole page changed (YAZ-3704).
+      if (applyExternalMarkdown(crepe, freshText, quiet) === 'rebuilt' && !quiet) outsideChanges.markWholePage()
       // A rebuild makes new plugin views, so the zoom's settle timer is gone: a bullet the rewrite removed is told here (YAZ-3676 F3).
       tellRealZoom(crepe, zoomKeyRef.current ?? null)
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
@@ -995,25 +1333,28 @@ function CrepeHost({
         if (!c.dirty) return void reload(quiet)
         // Unsaved typing (YAZ-3704 D1): merge the outside edit over it. The bar only when it cannot be
         // placed (D2), and then nothing changed. A merge makes the new file the baseline, so the merged
-        // note differs from it and the autosave writes it 500 ms later, against the new mtime.
+        // page differs from it and the autosave writes it 500 ms later, against the new mtime.
         const split = splitFrontmatter(fresh.content)
-        const merge = mergeExternalMarkdown(crepe, diskParts().body, split.body, quiet)
+        const freshText = withLf(split.body)
+        const merge = mergeExternalMarkdown(crepe, diskParts().body, freshText, quiet)
         if (merge === 'conflict') return reportConflict(mtime)
-        // 'unchanged': the file already holds the typing, so the live note is the baseline and nothing saves.
-        markReloaded(merge === 'unchanged' ? () => getMarkdownForSave(crepe) : () => split.body, fresh.mtime, split.frontmatter, split.body)
+        // 'unchanged': the file already holds the typing, so the live page is the baseline and nothing saves.
+        markReloaded(merge === 'unchanged' ? () => getMarkdownForSave(crepe) : () => freshText, fresh.mtime, split.frontmatter, split.body)
         c.update(getMarkdownForSave(crepe))
         setDisk(fresh.content)
         diskLanded()
       })
     }
     const unsubscribe = watch.subscribe((ev) => {
-      if (ev.type === 'change' && ev.path === file.path) onDiskChange(ev.mtime)
+      // An app write of this page (`announcedWrite`: an Inbox answer) is told through the twin channel, quietly.
+      if (ev.type === 'change' && ev.path === file.path && !isAnnouncedWrite(file.path, ev.mtime)) onDiskChange(ev.mtime)
     })
     const offTwin = onTwinSave(file.path, (mtime) => onDiskChange(mtime, true))
     const offRefused = onSaveRefused((mtime) => onDiskChange(mtime))
 
     return () => {
       cancelled = true
+      stopKeeping?.()
       crepeRef.current = null
       offPageView?.()
       unsubscribe()
@@ -1021,7 +1362,7 @@ function CrepeHost({
       offRefused()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, drawingFeed, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, linkActions, onNotice, newPageFolderFor, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom, inFolderPage, inExplore])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1), and the cog's on/off rows
@@ -1032,7 +1373,7 @@ function CrepeHost({
    * refusal is one passive notice; nothing changes.
    */
   const writeOwnKey = useCallback(
-    async (transform: (content: string) => string, row: string): Promise<void> => {
+    async (transform: (content: string) => string, row: string): Promise<boolean> => {
       try {
         await flushRenamedPath(file.path)
         const landed = await transformFile(file.path, transform)
@@ -1040,20 +1381,33 @@ function CrepeHost({
           setDisk(landed.content)
           diskLanded()
         }
+        return true
       } catch (err) {
         onNotice?.(`${row} could not change: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        return false
       }
     },
     [file.path, absorbFrontmatterOnly, onNotice],
   )
-  const setReadOnly = useCallback((on: boolean) => writeOwnKey((content) => setNoteReadOnly(content, on), 'Read only'), [writeOwnKey])
-  const setPageSwitch = useCallback((key: PageSwitchKey, row: string, on: boolean) => writeOwnKey((content) => setNotePageSwitch(content, key, on), row), [writeOwnKey])
+  const setReadOnly = useCallback((on: boolean) => writeOwnKey((content) => setPageReadOnly(content, on), 'Read only'), [writeOwnKey])
+  const setPageSwitch = useCallback((key: PageSwitchKey, row: string, on: boolean) => writeOwnKey((content) => writePageSwitch(content, key, on), row), [writeOwnKey])
   const toggleSectionIndent = () => void setPageSwitch('section-indent', 'Section indent', !sectionIndentOn)
   const toggleTableOfContents = () => void setPageSwitch('toc', 'Table of contents', !tableOfContentsOn)
   const toggleGuideLines = () => void setPageSwitch('guide-lines', 'Guide lines', !guideLinesOn)
   const toggleFolding = () => void setPageSwitch('folding', 'Folding', !foldingOn)
   const toggleThreading = () => void setPageSwitch('bullet-threading', 'Bullet threading', !threadingOn)
-  const changeOutsideGlow = (glow: OutsideChangeGlow | null) => void writeOwnKey((content) => setNoteOutsideGlow(content, glow), 'Outside changes glow')
+  const changeOutsideGlow = (glow: OutsideChangeGlow | null) => void writeOwnKey((content) => writeOutsideGlow(content, glow), 'Outside changes glow')
+  /** The find bar's fold menu (YAZ-4787): this page's choice, or null to follow Settings again. */
+  const findFoldsMenu = { own: pageFindFolds, app: findFolds, cards: reviewOn, onChange: (folds: FindFolds | null) => void writeOwnKey((content) => writeFindFolds(content, folds), 'Find folded bullets') }
+  /** The cog's "Code block width" / "Table width" (YAZ-4783 layer 2): this page's px, or null to follow Settings again. */
+  const changeCodeWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, CODE_WIDTH_KEY, width), 'Code block width')
+  const changeTableWidth = (width: number | null) => void writeOwnKey((content) => writeBlockWidth(content, TABLE_WIDTH_KEY, width), 'Table width')
+  /** The cog's "Page width" (YAZ-5640): this page's step, or null to follow Settings again. */
+  const changePageWidth = (width: ContentWidth | null) => void writeOwnKey((content) => writePageWidth(content, width), unit('Page width'))
+  /** The cog's "Position" (YAZ-5871 D2): this page's Centre or Left, or null to follow Settings again. */
+  const changePagePosition = (position: ContentPosition | null) => void writeOwnKey((content) => writePagePosition(content, position), 'Position')
+  /** The cog's "Card sides" (YAZ-5904): this page's fold of its cards' Side 2 and after, or null to follow the card look again. */
+  const changeCardSides = (sides: CardSides | null) => void writeOwnKey((content) => writeCardSides(content, sides), 'Card sides')
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
@@ -1093,10 +1447,10 @@ function CrepeHost({
       cancelled = true
     }
   }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts, onNotice])
-  // "The note at now" (YAZ-4164 D11): a request for this note (the daily-note button, ⌘D) is taken once the editor is
+  // "The page at now" (YAZ-4164 D11): a request for this page (the daily-page button, ⌘D) is taken once the editor is
   // ready and its tab shows — after the mount's caret and scroll — or at once by an editor that is open and in front.
   // A tab behind the page waits for its layer to show, so the tab in front never scrolls. A Linked mentions line in a
-  // cell note asks the same way for that note's card (YAZ-3818, `cellNoteRequest.ts`).
+  // cell note asks the same way for that cell note's card (YAZ-3818, `cellNoteRequest.ts`).
   useEffect(() => {
     const host = hostRef.current
     if (readyCrepe === null || crepeRef.current !== readyCrepe || host === null) return
@@ -1108,12 +1462,12 @@ function CrepeHost({
     }
     take()
     const off = onGoToNowRequest(take)
-    const offNote = onCellNoteRequest(take)
+    const offCellNote = onCellNoteRequest(take)
     const shown = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && take())
     shown?.observe(host)
     return () => {
       off()
-      offNote()
+      offCellNote()
       shown?.disconnect()
     }
   }, [readyCrepe, file.path])
@@ -1131,6 +1485,59 @@ function CrepeHost({
     dom.addEventListener(FOLDS_CHANGED_EVENT, changed)
     return () => dom.removeEventListener(FOLDS_CHANGED_EVENT, changed)
   }, [readyCrepe])
+  /**
+   * The room a wide code block or table may take on the right (YAZ-4783, `blockRoom.ts`): `--block-room` on the mount,
+   * measured when the scroller or the body changes width, and again when the zoom or the table of contents changes.
+   * Never on a keystroke.
+   */
+  useEffect(() => {
+    const mount = hostRef.current
+    if (readyCrepe === null || crepeRef.current !== readyCrepe || mount === null) return
+    return watchBlockRoom(mount, editorViewOf(readyCrepe).dom, documentZoom / 100).stop
+  }, [readyCrepe, documentZoom, tableOfContentsOn, tableOfContents])
+  /**
+   * After a drag wrote ONE code block's width (YAZ-4783 layer 2, `CODE_WIDTH_DRAGGED`), in a page with another code
+   * block: a toast offers "Use 900 px for all code blocks in this page". Its button takes every block's own width away
+   * in ONE transaction (one ⌘Z), then writes `code-width: 900` to the page, so they all follow the page's width. A
+   * write that fails takes the clear back.
+   */
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (crepe === null || crepeRef.current !== crepe || onNotice === undefined) return
+    const view = editorViewOf(crepe)
+    const onDragged = (event: Event) => {
+      const { width } = (event as CustomEvent<CodeWidthDragged>).detail
+      if (codeBlockCount(view.state.doc) < 2) return
+      // Short words (YAZ-4783 demo: "wow thats ugly"): the long button squeezed the message into a sliver.
+      onNotice(`Code block: ${width} px`, 'info', undefined, {
+        label: unit('Apply to all in this page'),
+        fades: true,
+        run: () => {
+          if (crepeRef.current !== crepe || !view.editable) return
+          // The blocks first, then the key (demo check): the key's write flushes the editor's text before it adds the
+          // key, so the file gets the cleared blocks AND the key. The other order left a block's comment on disk when
+          // the drag's own save was still in flight. A write that fails takes the clear back (one ⌘Z's worth).
+          const tr = codeWidthsToPage(view.state)
+          if (tr !== null) view.dispatch(tr)
+          void writeOwnKey((content) => writeBlockWidth(content, CODE_WIDTH_KEY, width), 'Code block width').then((wrote) => {
+            if (!wrote && tr !== null && crepeRef.current === crepe) undo(view.state, view.dispatch)
+          })
+        },
+      })
+    }
+    view.dom.addEventListener(CODE_WIDTH_DRAGGED, onDragged)
+    return () => view.dom.removeEventListener(CODE_WIDTH_DRAGGED, onDragged)
+  }, [readyCrepe, onNotice, writeOwnKey])
+  // A table section collapsed while the page is locked (YAZ-4939, `VIEW_ONLY_CHANGE`): a view change, so the live text
+  // counts as saved and no flush writes it while locked. An unlocked page's next save writes it with the text.
+  const keepAsSaved = autosave.keepAsSaved
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (crepe === null || crepeRef.current !== crepe) return
+    const dom = editorViewOf(crepe).dom
+    dom.addEventListener(VIEW_ONLY_CHANGE, keepAsSaved)
+    return () => dom.removeEventListener(VIEW_ONLY_CHANGE, keepAsSaved)
+  }, [readyCrepe, keepAsSaved])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null) return
@@ -1142,13 +1549,15 @@ function CrepeHost({
   // Read only (YAZ-3076 D2): the body takes the disk truth's switch — typing, paste, drop, cut, undo,
   // the task boxes, the code blocks and the tables all ask `view.editable`. Find, copy, links, folds,
   // the table of contents, the zoom and line numbers are views and keep working (S25).
-  // Said only while on, and taken back by the cleanup, as line numbers are: an editable note never pays for it.
+  // Said only while on, and taken back by the cleanup, as line numbers are: an editable page never pays for it.
+  // The switch keeps the place (YAZ-5164: Lock now, ⌘↵ and Esc "jump me somewhere else"): the block at the top stays at
+  // the same spot on screen, as each switch of Explore's layer keeps it (`pagePlace.ts`).
   useEffect(() => {
     const crepe = readyCrepe
     if (!readOnly || crepe === null || crepeRef.current !== crepe) return
-    crepe.setReadonly(true)
+    holdPagePlace(editorViewOf(crepe), () => crepe.setReadonly(true))
     return () => {
-      if (crepeRef.current === crepe) crepe.setReadonly(false)
+      if (crepeRef.current === crepe) holdPagePlace(editorViewOf(crepe), () => crepe.setReadonly(false))
     }
   }, [readOnly, readyCrepe])
 
@@ -1173,29 +1582,81 @@ function CrepeHost({
     if (crepe !== null && crepeRef.current === crepe) showFolding(crepe, foldingOn)
   }, [foldingOn, readyCrepe])
 
+  /**
+   * The scroller's switches, as the editor CSS reads them on `.editor-host`. A page's own scroller wears them; on a
+   * folder page the Page tab puts them on the folder page's scroller (YAZ-4584 D38), and takes them off as it goes.
+   */
+  const scrollerData = {
+    'data-read-only': readOnly ? 'true' : undefined,
+    'data-line-numbers': lineNumbersOn ? 'true' : undefined,
+    'data-section-indent': sectionIndentOn ? 'true' : undefined,
+    'data-guide-lines': pageSwitches['guide-lines'] === undefined ? undefined : pageSwitches['guide-lines'] ? 'on' : 'off',
+    'data-folding': pageSwitches.folding === undefined ? undefined : pageSwitches.folding ? 'on' : 'off',
+    'data-threading': pageSwitches['bullet-threading'] === undefined ? undefined : pageSwitches['bullet-threading'] ? 'on' : 'off',
+    'data-heading-levels': headingLevelsOn ? 'true' : undefined,
+  }
+  const scrollerDataKey = JSON.stringify(scrollerData)
+  useLayoutEffect(() => {
+    const scroller = inFolderPage ? hostRef.current?.closest<HTMLElement>('.editor-host') : null
+    if (!scroller) return
+    const set = Object.entries(JSON.parse(scrollerDataKey) as Record<string, string>)
+    for (const [name, value] of set) scroller.setAttribute(name, value)
+    return () => {
+      for (const [name] of set) scroller.removeAttribute(name)
+    }
+  }, [inFolderPage, scrollerDataKey])
+
+  // Collapse all / Expand all (YAZ-3938 D1): the ⌘⇧U / ⌘⇧I command, left of the cog.
+  // Folding off (YAZ-4094 F1): nothing on the page can fold, so the button goes.
+  const foldAllButton = foldingOn && (
+    <FoldAllButton
+      read={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? nextDocumentFold(editorViewOf(readyCrepe).state) : 'none')}
+      run={(collapse) => {
+        if (readyCrepe === null || crepeRef.current !== readyCrepe) return
+        const view = editorViewOf(readyCrepe)
+        setAllDocumentFolds(collapse)(view.state, view.dispatch)
+        focusEditor(readyCrepe)
+      }}
+      subscribe={subscribeFolds}
+      keys={{ collapse: 'page.foldAll', expand: 'page.unfoldAll' }}
+    />
+  )
+  /** The cog's page switches: a page's own cog, or the folder page's for its Page tab (YAZ-4584 D38). */
+  const cog: FolderPageTab['cog'] = { lineNumbers: lineNumbersOn, onToggleLineNumbers: () => setLineNumbersOn((on) => !on), sectionIndent: sectionIndentOn, onToggleSectionIndent: toggleSectionIndent, guideLines: guideLinesOn, onToggleGuideLines: toggleGuideLines, folding: foldingOn, onToggleFolding: toggleFolding, bulletThreading: threadingOn, onToggleBulletThreading: toggleThreading, headingLevels: headingLevelsOn, onToggleHeadingLevels: () => setHeadingLevelsOn((on) => !on), tableOfContents: tableOfContentsOn, onToggleTableOfContents: toggleTableOfContents, tocSource, onChangeTocSource: tableOfContentsOn ? changeTocSource : undefined, outsideGlow: pageGlow, appGlow: outsideChangeGlow, onChangeOutsideGlow: changeOutsideGlow, ...(!inFolderPage && { pageWidth, appContentWidth: contentWidth, onChangePageWidth: changePageWidth, pagePosition, appContentPosition: contentPosition, onChangePagePosition: changePagePosition }), codeWidth: pageCodeWidth, onChangeCodeWidth: changeCodeWidth, tableWidth: pageTableWidth, onChangeTableWidth: changeTableWidth, readText: () => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '') }
+  // The Page tab hands its switches, save state and fold-all button to the folder page's toolbar while it shows, again
+  // on each render (a switch or the save state moved), and takes them back as it goes (YAZ-4584 D38, YAZ-3746 D35, 10D).
+  // A render is a save cycle or a switch, never a keystroke.
+  // YAZ-5904: the cog's "Card sides" row, this page's `card-sides`.
+  cog.cardSides = pageCardSides
+  cog.onChangeCardSides = changeCardSides
+  useEffect(() => {
+    folderChips?.set({ page: { cog, save: autosave.status, foldAll: foldAllButton || null } })
+  })
+  useEffect(() => () => folderChips?.set({ page: null }), [folderChips])
+  /** This page's widths on its editor's mount (YAZ-4783 layer 2): nearer than Settings' on `.app`, so they win (app.css). */
+  const mountWidths = {
+    'data-code-block-width': pageCodeWidth === null ? undefined : '',
+    'data-table-width': pageTableWidth === null ? undefined : '',
+    // YAZ-5904: this page's card sides (`card.css`).
+    'data-card-sides': pageCardSides ?? undefined,
+    // YAZ-5918: the card sides opened here stay open while this page is open in this tab (`cardFold.ts`).
+    'data-fold-scope': file.path,
+    style: { ...(pageCodeWidth !== null && { '--code-block-width': `${pageCodeWidth}px` }), ...(pageTableWidth !== null && { '--table-width': `${pageTableWidth}px` }) } as CSSProperties,
+  }
+
   return (
     <>
-      {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
-      <div className="status-chips">
-        {/* Collapse all / Expand all (YAZ-3938 D1): the ⌘⇧U / ⌘⇧I command, left of the cog. */}
-        {/* Folding off (YAZ-4094 F1): nothing on the page can fold, so the button goes. */}
-        {foldingOn && <FoldAllButton
-          read={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? nextDocumentFold(editorViewOf(readyCrepe).state) : 'none')}
-          run={(collapse) => {
-            if (readyCrepe === null || crepeRef.current !== readyCrepe) return
-            const view = editorViewOf(readyCrepe)
-            setAllDocumentFolds(collapse)(view.state, view.dispatch)
-            focusEditor(readyCrepe)
-          }}
-          subscribe={subscribeFolds}
-          keys={{ collapse: 'note.foldAll', expand: 'note.unfoldAll' }}
-        />}
-        <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} guideLines={guideLinesOn} onToggleGuideLines={toggleGuideLines} folding={foldingOn} onToggleFolding={toggleFolding} bulletThreading={threadingOn} onToggleBulletThreading={toggleThreading} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContentsOn ? changeTocSource : undefined} outsideGlow={pageGlow} appGlow={outsideChangeGlow} onChangeOutsideGlow={changeOutsideGlow} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
-        <DocumentZoom value={documentZoom} onChange={changeZoom} />
-        {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={() => setAskingUnlock(true)} onAllow={() => { setAskingUnlock(false); void setReadOnly(false) }} onCancel={() => setAskingUnlock(false)} />}
-        {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
-        <SaveIndicator status={autosave.status} />
-      </div>
+      {/* Document zoom stays local to this mounted editor; sync remains vault-wide. The toolbar a folder page shares
+          (YAZ-3746 D35): this page's fold-all button and cog, then the shared chips. A folder's Page tab has none of its
+          own: it hands its fold-all button, cog and save state to the folder page's toolbar (YAZ-4584 D38, 10D, below). */}
+      {/* The chip's box (YAZ-4939): a time choice unlocks this tab; "Turn Read only off" writes the page's own switch, and is not there while the vault's lock would keep the page locked anyway. */}
+      {!inFolderPage && (
+        <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={lockedBase ? { asking: askingUnlock, onAsk: askUnlock, onAllow: (choice) => { setAskingUnlock(false); unlock.allow(choice) }, onCancel: () => setAskingUnlock(false), onTurnOff: diskReadOnly && !vaultLocked ? () => { setAskingUnlock(false); void setReadOnly(false) } : undefined, editingUntil: unlock.until, onLock: unlock.lock, lockKeys: true, onReturn: caretBack } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
+          {foldAllButton}
+          {/* The cog's row reads the page's lock; a click while a timed unlock runs is "Lock now". */}
+          <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : askUnlock()) : void setReadOnly(true))} {...cog} rows={convert.rows} />
+        </StatusChips>
+      )}
       {/* The one-line note of outside changes (YAZ-3704 D6) takes the conflict bar's place and hides while it shows. */}
       {autosave.conflictMtime !== null ? (
         <div className="conflict-bar" role="alert">
@@ -1212,65 +1673,92 @@ function CrepeHost({
       )}
       {/* The scroller holds SIX stacked blocks, in this order. Block ZERO is the page title
           (⚡ YAZ-888) — the file's own name, React-side and never a ProseMirror node; block ONE is
-          the properties panel (⚡ YAZ-883), the note's frontmatter as raw YAML; then the Crepe
-          mount; then three blocks of the note's own: the comment stream (YAZ-1472, 🔒 D4 — always
+          the properties panel (⚡ YAZ-883), the page's frontmatter as raw YAML; then the Crepe
+          mount; then three blocks of the page's own: the comment stream (YAZ-1472, 🔒 D4 — always
           there, the composer being the door to the first comment), then "Linked mentions"
-          (Links D, GRO-2193), then "Reviews" (YAZ-2322), which stays last. All of it scrolls WITH
-          the note, never in a panel. */}
-      <div className="editor-host" data-page="note" data-read-only={readOnly || undefined} data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} data-guide-lines={pageSwitches['guide-lines'] === undefined ? undefined : pageSwitches['guide-lines'] ? 'on' : 'off'} data-folding={pageSwitches.folding === undefined ? undefined : pageSwitches.folding ? 'on' : 'off'} data-threading={pageSwitches['bullet-threading'] === undefined ? undefined : pageSwitches['bullet-threading'] ? 'on' : 'off'} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
-        {/* Title and properties share ONE header row (YAZ-918): the panel sits to
-            the title's right and wraps under it when the title runs long. */}
-        <div className="page-header">
-          <PageTitle
-            path={file.path}
-            titles={titles}
-            readOnly={readOnly}
-            onRetitle={(title) => onRetitle(file.path, title, 'file')}
-            onArrowDown={() => {
-              const crepe = crepeRef.current
-              if (crepe !== null) focusEditor(crepe)
-            }}
-          />
-          {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
-              folder view — ONE registry, so a type declared in a row types the same column in
-              every folder's views. */}
-          <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} />
+          (Links D, GRO-2193). All of it scrolls WITH
+          the page, never in a panel. */}
+      {inFolderPage ? (
+        // The Page tab (YAZ-4584 D38): the body alone, in the folder page's scroller, where the view body would be.
+        // Its CMD+F bar comes first, so it sticks to the top of the folder page's scroller as the reader goes down.
+        <div className="folder-page-doc">
+          <FindBar channel={findChannel} scope="folder" hostRef={hostRef} folds={findFoldsMenu} />
+          <div className="editor-mount" ref={hostRef} {...mountWidths} />
         </div>
-        <div className="editor-mount" ref={hostRef} />
-        {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
-            writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
-        <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />
-        {wikilinks !== undefined && (
-          <MemoBacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} hoverPreview={hoverBacklinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
-        )}
-        {/* The log from the disk truth, the date from the index record: renders nothing until it has the settings and the record. */}
-        <MemoReviewsSection file={diskFile} source={wikilinks} settings={reviewSettings} />
-      </div>
+      ) : (
+        <PageFrame
+          {...scrollerData}
+          // The page's own width (YAZ-5640) over Settings' on `.app`: app.css works out `--content-max-width` from it here.
+          // Its own position (YAZ-5871 D2) too, as `--column-start`: only when the page has a key of its own, else it inherits `.app`'s.
+          style={{ '--document-zoom': documentZoom / 100, ...(pageWidth !== null && { '--content-text-width': contentTextWidth(pageWidth) }), ...((pageWidth !== null || pagePosition !== null) && { '--column-start': columnStart(pagePosition ?? contentPosition, pageWidth ?? contentWidth) }) } as CSSProperties}
+          header={
+            <>
+              <PageTitle
+                path={file.path}
+                titles={titles}
+                readOnly={readOnly}
+                id={pageId}
+                onNotice={onNotice}
+                onRetitle={(title) => onRetitle(file.path, title, 'file')}
+                onArrowDown={() => {
+                  const crepe = crepeRef.current
+                  if (crepe !== null) focusEditor(crepe)
+                }}
+              />
+              {/* An Explore layer's page controls (YAZ-5974): on the title row, before Properties. */}
+              {titleRowControls}
+              {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
+                  folder view — ONE registry, so a type declared in a row types the same column in
+                  every folder's views. */}
+              <Suspense fallback={null}>
+                <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />
+              </Suspense>
+            </>
+          }
+        >
+          {/* A target of the course's guided tour (YAZ-5123): the page's text. */}
+          <div className="editor-mount" data-tour="page-editor" ref={hostRef} {...mountWidths} />
+          {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
+              writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
+          <Suspense fallback={null}>
+            <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />
+          </Suspense>
+          {wikilinks !== undefined && (
+            <MemoBacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} hoverPreview={hoverBacklinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+          )}
+        </PageFrame>
+      )}
       {/* CMD+F (YAZ-969) floats OVER that scroller rather than in it: `section.editor` is the
-          positioned ancestor, so the bar holds its corner while the note scrolls under it. */}
-      <FindBar channel={findChannel} scope="note" hostRef={hostRef} />
-      {/* The note's own right-click menu (YAZ-3653), in the look of the tab and sidebar menus. */}
-      <NoteMenu view={readyCrepe !== null && crepeRef.current === readyCrepe ? editorViewOf(readyCrepe) : null} />
+          positioned ancestor, so the bar holds its corner while the page scrolls under it. */}
+      {!inFolderPage && <FindBar channel={findChannel} scope="page" hostRef={hostRef} folds={findFoldsMenu} />}
+      {/* The page's own right-click menu (YAZ-3653), in the look of the tab and sidebar menus. */}
+      <PageMenu view={readyCrepe !== null && crepeRef.current === readyCrepe ? editorViewOf(readyCrepe) : null} />
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
       {/* The table of contents (YAZ-2700) floats beside that scroller the same way: at the
-          section's right edge, from the scroller's top to its bottom. It draws nothing for a note
+          section's right edge, from the scroller's top to its bottom. It draws nothing for a page
           with fewer than two rows (its headings or its bullets), while this page shows none (its
           choice, else "Table of contents default", YAZ-3558), and while a bullet is zoomed. */}
-      {/* The numbered list of outside changes (YAZ-3998) floats in the room LEFT of the note the same way. */}
+      {/* The numbered list of outside changes (YAZ-3998) floats in the room LEFT of the page the same way. */}
       {outsideListPinned && <OutsideChangesList channel={outsideChanges} hostRef={hostRef} onPin={onChangeOutsideListPinned} />}
-      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusNote} folds={tocFolds} onChangeFolds={changeTocFolds} zoom={tocZoom} onChangeZoom={onChangeTocZoom} />
+      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={pageWidth ?? contentWidth} pageZoom={drawnZoom} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusPage} folds={tocFolds} onChangeFolds={changeTocFolds} zoom={tocZoom} onChangeZoom={onChangeTocZoom} />
+      {/* Put back's ask (YAZ-5037): other pages embed the card. */}
+      {convert.sheet}
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
-          note. Keyed by target so reopening a different drawing is a fresh canvas, and the
+          page. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}
       {openDrawing !== null && (
-        <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} feed={drawingFeed} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} newNoteFolderFor={newNoteFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+        <Suspense fallback={null}>
+          <DrawingModal key={`${openDrawing.root}\n${openDrawing.target}`} root={openDrawing.root} target={openDrawing.target} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+        </Suspense>
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing
           modal, opened by the node view's double-click with the whole gallery (every image on
           the page, resolved srcs) and the index of the one clicked. */}
       {openImage !== null && (
         // Keyed on the clicked image so a reopen remounts with a fresh cursor.
-        <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />
+        <Suspense fallback={null}>
+          <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />
+        </Suspense>
       )}
     </>
   )

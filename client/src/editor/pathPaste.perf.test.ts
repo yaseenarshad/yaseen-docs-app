@@ -9,19 +9,19 @@ const ROWS = 20_000
 
 describe('pathPaste', () => {
   it('perf smoke: the first paste after an index change builds the map for 20,000 rows; a click after it is a lookup', () => {
-    const rows: LinkCandidate[] = Array.from({ length: ROWS }, (_, i) => ({ name: `Note ${i}`, insert: `YAZ-${i}`, label: `Note ${i}`, path: `/vault/folder${i % 50}/note-${i}.md` }))
+    const rows: LinkCandidate[] = Array.from({ length: ROWS }, (_, i) => ({ name: `Page ${i}`, insert: `YAZ-${i}`, label: `Page ${i}`, path: `/vault/folder${i % 50}/page-${i}.md` }))
     const candidates = createWikilinkCandidateSource()
-    const options = { root: '/vault', notePath: '/vault/folder0/note-0.md', candidates }
+    const options = { root: '/vault', pagePath: '/vault/folder0/page-0.md', candidates }
     // Each run is a new index snapshot: a fresh array, so the map is built again, as after a save.
     const firstPaste = () => {
       candidates.update([...rows])
-      return linkFor(`/vault/folder${(ROWS - 1) % 50}/note-${ROWS - 1}.md`, options)
+      return linkFor(`/vault/folder${(ROWS - 1) % 50}/page-${ROWS - 1}.md`, options)
     }
     firstPaste() // warm-up (JIT)
     const { result: link, median: build } = timeMedian(5, firstPaste)
-    const { result: target, median: click } = timeMedian(5, () => hrefTarget('../folder9/note-9.md', options))
+    const { result: target, median: click } = timeMedian(5, () => hrefTarget('../folder9/page-9.md', options))
     expect(link).toBe(`[[YAZ-${ROWS - 1}]]`)
-    expect(target).toBe('/vault/folder9/note-9.md')
+    expect(target).toBe('/vault/folder9/page-9.md')
     console.log(`pathPaste perf: ${ROWS} rows, first paste median ${build.toFixed(1)} ms, click lookup median ${click.toFixed(3)} ms`)
     // Paste and click are no keystroke path; the budget keeps the map one pass over the rows.
     expect(build).toBeLessThan(budgetMs(50))

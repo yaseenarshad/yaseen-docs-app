@@ -16,7 +16,7 @@ const uri = (p: string) => pathToFileURL(p).href
 
 interface Fake extends LanguageServer {
   root: string
-  notes: [string, unknown][]
+  pages: [string, unknown][]
   requests: [string, unknown][]
   crash(): void
 }
@@ -39,7 +39,7 @@ function harness(opts: { answers?: Record<string, (params: unknown) => unknown>;
       root: options.rootPath,
       capabilities: {},
       exited,
-      notes: [],
+      pages: [],
       requests: [],
       request: async <R,>(method: string, params?: unknown) => {
         fake.requests.push([method, params])
@@ -47,7 +47,7 @@ function harness(opts: { answers?: Record<string, (params: unknown) => unknown>;
         if (answer === undefined) throw new Error(`${method}: no answer`)
         return answer(params) as R
       },
-      notify: (method, params) => void fake.notes.push([method, params]),
+      notify: (method, params) => void fake.pages.push([method, params]),
       onNotification: () => () => undefined,
       onRequest: () => undefined,
       stop: async () => {
@@ -82,7 +82,7 @@ const open = (pool: LspPool, p: string, text = 'x', owner = 1) => pool.open(owne
 describe('LspPool (YAZ-3454)', () => {
   it('gives no handle for a file no helper takes: another language, or no project (S7)', () => {
     const { pool, started } = harness()
-    expect(open(pool, file('p1', 'notes.md'))).toBeNull()
+    expect(open(pool, file('p1', 'pages.md'))).toBeNull()
     expect(open(pool, file('none', 'a.ts'))).toBeNull()
     expect(started).toHaveLength(0)
   })
@@ -94,7 +94,7 @@ describe('LspPool (YAZ-3454)', () => {
     await settle()
     expect(started).toHaveLength(1)
     expect(started[0].root).toBe(file('p1'))
-    expect(started[0].notes).toEqual([['textDocument/didOpen', { textDocument: { uri: uri(file('p1', 'a.ts')), languageId: 'typescript', version: 1, text: 'let a = 1' } }]])
+    expect(started[0].pages).toEqual([['textDocument/didOpen', { textDocument: { uri: uri(file('p1', 'a.ts')), languageId: 'typescript', version: 1, text: 'let a = 1' } }]])
   })
 
   it('two tabs on one file share one document; the last of them closes it, and the helper stops (S6)', async () => {
@@ -104,15 +104,15 @@ describe('LspPool (YAZ-3454)', () => {
     await settle()
     expect(started).toHaveLength(1)
     const helper = started[0]
-    expect(helper.notes.filter(([m]) => m === 'textDocument/didOpen')).toHaveLength(1)
+    expect(helper.pages.filter(([m]) => m === 'textDocument/didOpen')).toHaveLength(1)
     pool.change(1, b.handle, 'two')
-    expect(helper.notes.at(-1)).toEqual(['textDocument/didChange', { textDocument: { uri: uri(file('p1', 'a.tsx')), version: 2 }, contentChanges: [{ text: 'two' }] }])
+    expect(helper.pages.at(-1)).toEqual(['textDocument/didChange', { textDocument: { uri: uri(file('p1', 'a.tsx')), version: 2 }, contentChanges: [{ text: 'two' }] }])
     pool.change(1, a.handle, 'two') // the same text: nothing sent
-    expect(helper.notes).toHaveLength(2)
+    expect(helper.pages).toHaveLength(2)
     pool.close(1, a.handle)
     expect(helper.stopRequested).toBe(false)
     pool.close(1, b.handle)
-    expect(helper.notes.at(-1)).toEqual(['textDocument/didClose', { textDocument: { uri: uri(file('p1', 'a.tsx')) } }])
+    expect(helper.pages.at(-1)).toEqual(['textDocument/didClose', { textDocument: { uri: uri(file('p1', 'a.tsx')) } }])
     expect(helper.stopRequested).toBe(true)
     expect(pool.running()).toEqual([])
   })
@@ -145,7 +145,7 @@ describe('LspPool (YAZ-3454)', () => {
     })
     const { handle } = open(pool, file('p1', 'a.ts'))!
     await settle()
-    expect(started[0].notes[0]).toEqual(['textDocument/didOpen', expect.objectContaining({ textDocument: expect.objectContaining({ uri: uri(real(file('p1', 'a.ts'))) }) })])
+    expect(started[0].pages[0]).toEqual(['textDocument/didOpen', expect.objectContaining({ textDocument: expect.objectContaining({ uri: uri(real(file('p1', 'a.ts'))) }) })])
     expect((await pool.definition(1, handle, { line: 0, character: 0 }))!.map((p) => p.path)).toEqual([file('p1', 'a.ts')])
   })
 
@@ -162,7 +162,7 @@ describe('LspPool (YAZ-3454)', () => {
     expect(await pool.definition(2, handle, { line: 0, character: 0 })).toBeNull()
     pool.change(2, handle, 'other')
     pool.close(2, handle)
-    expect(started[0].notes).toHaveLength(1)
+    expect(started[0].pages).toHaveLength(1)
     expect(started[0].stopRequested).toBe(false)
     expect(await pool.definition(1, 'h999', { line: 0, character: 0 })).toBeNull()
   })
@@ -186,7 +186,7 @@ describe('LspPool (YAZ-3454)', () => {
     const p2Helpers = started.filter((s) => s.root === file('p2'))
     expect(p2Helpers).toHaveLength(2)
     // The new helper got both open documents of p2.
-    expect(p2Helpers[1].notes.filter(([m]) => m === 'textDocument/didOpen')).toHaveLength(2)
+    expect(p2Helpers[1].pages.filter(([m]) => m === 'textDocument/didOpen')).toHaveLength(2)
   })
 
   it('typing in a tab (its debounced change) counts as use for the 3-helper limit', async () => {
@@ -212,7 +212,7 @@ describe('LspPool (YAZ-3454)', () => {
     await settle()
     await settle()
     expect(started).toHaveLength(2)
-    expect(started[1].notes[0]).toEqual(['textDocument/didOpen', expect.objectContaining({ textDocument: expect.objectContaining({ text: 'text now' }) })])
+    expect(started[1].pages[0]).toEqual(['textDocument/didOpen', expect.objectContaining({ textDocument: expect.objectContaining({ text: 'text now' }) })])
     expect(await pool.definition(1, handle, { line: 0, character: 0 })).toEqual([])
     started[1].crash()
     await settle()

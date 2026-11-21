@@ -37,7 +37,7 @@ export function SidebarPanelIcon() {
   )
 }
 
-/** A calendar page, for the sidebar footer's "Open today's daily note" (YAZ-3607 D7). The cog's size and line. */
+/** A calendar page, for the sidebar footer's "Open today's daily page" (YAZ-3607 D7). The cog's size and line. */
 export function CalendarIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
@@ -141,6 +141,16 @@ export const CopyIcon = () => (
   </svg>
 )
 
+/** Tabler's pencil on a 24 grid. The column mark's ✎ draws the same path (YAZ-5770). */
+export const PENCIL_PATH = 'M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4M13.5 6.5l4 4'
+
+/** A pencil: every menu row that changes a name, at the Copy icon's size and line (YAZ-5770). */
+export const PencilIcon = () => (
+  <svg {...svg} width={15} height={15} viewBox="0 0 24 24" strokeWidth={2} className="pencil-icon">
+    <path d={PENCIL_PATH} />
+  </svg>
+)
+
 /** Circled "i", for the vault switcher row's full-path tooltip (YAZ-1974 D2). */
 export const InfoIcon = () => (
   <svg {...svg}>
@@ -184,6 +194,16 @@ export const FolderIcon = ({ size, className }: { size: number; className?: stri
   </svg>
 )
 
+/** An inbox tray, as Mochi draws it: one shape for the sidebar's Inbox row (YAZ-5131) and the Inbox's "All cards" (`cardInboxIcons`). */
+export const INBOX_TRAY_PATH = 'M2.5 9.5 4 3.5h8l1.5 6v3h-11zM2.5 9.5h3.2l.8 1.5h3l.8-1.5h3.2'
+
+/** The sidebar's Inbox row (YAZ-5131): the tray at the sidebar's 14px and line, before the word. */
+export const InboxIcon = ({ className }: { className?: string }) => (
+  <svg {...svg} className={className}>
+    <path d={INBOX_TRAY_PATH} />
+  </svg>
+)
+
 /** The tab row's "More tabs" button (YAZ-3273 D2): three dots, filled, at the tabs' 15px. */
 export const MoreIcon = () => (
   <svg {...svg} width={15} height={15}>
@@ -195,7 +215,7 @@ export const MoreIcon = () => (
   </svg>
 )
 
-/** The shortcut mark (YAZ-2290 D2): a file manager's alias arrow, beside a note's name wherever it shows in a folder it does not live in — the tree row and every view's title. */
+/** The shortcut mark (YAZ-2290 D2): a file manager's alias arrow, beside a page's name wherever it shows in a folder it does not live in — the tree row and every view's title. */
 export const ShortcutIcon = () => (
   <svg {...svg} width={11} height={11} className="shortcut-mark">
     <path d="M5.5 4H12v6.5M12 4 4 12" />
@@ -245,6 +265,20 @@ const TYPE_GLYPHS: Record<string, ReactElement> = {
       <rect x="10.8" y="2.5" width="3.2" height="9" rx="0.8" />
     </>
   ),
+  // The calendar tab (YAZ-4540): `CalendarIcon`'s page.
+  calendar: (
+    <>
+      <rect x="1.75" y="2.75" width="12.5" height="11.5" rx="1.5" />
+      <path d="M1.75 6.25h12.5M5 1.25V4M11 1.25V4" />
+    </>
+  ),
+  // The Page tab (YAZ-4584 D38): the folder's own document, a page with lines of text.
+  page: (
+    <>
+      <path d="M4 2h5l3 3v9H4z" />
+      <path d="M9 2v3h3M6 8.5h4M6 11h4" />
+    </>
+  ),
 }
 
 /** Small glyph for a view's `type`; unknown types get a plain frame. */
@@ -252,7 +286,7 @@ export function ViewTypeIcon({ type }: { type: string }) {
   return <svg {...svg}>{TYPE_GLYPHS[type] ?? <rect x="2" y="3" width="12" height="10" rx="1.2" />}</svg>
 }
 
-/** A `file.*` field in the properties list (YAZ-1513): the page's own facts, never a note property. */
+/** A `file.*` field in the properties list (YAZ-1513): the page's own facts, never a page property. */
 export const FileFieldIcon = () => (
   <svg {...svg}>
     <path d="M4 2h5l3 3v9H4z" />

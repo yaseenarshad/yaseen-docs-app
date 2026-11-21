@@ -11,7 +11,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
-import { TABLE_HANDLE_MENU } from '../noteMenu'
+import { TABLE_HANDLE_MENU } from '../pageMenu'
 import { cellDOM, cellPos, dragColumnEdge, mountTable as mount, mouseAt, unmountAll } from './tableTestKit'
 
 afterEach(unmountAll)
@@ -116,12 +116,13 @@ describe('table block: resize columns (YAZ-3696 D2)', () => {
     expect(Array.from(tableDOM(view).querySelectorAll('col'), col => col.style.width)).toEqual(['', ''])
   })
 
-  it('a column is not narrower than 60 px, and widths on each column fix the table width', async () => {
+  // 24 px, not 60 (YAZ-4791: a column of numbers drags close to them).
+  it('a column is not narrower than 24 px, and widths on each column fix the table width', async () => {
     const view = await mount()
     dragColumnEdge(view, 0, -80)
     dragColumnEdge(view, 1, 40)
-    expect(colwidths(view)[0]).toEqual([[60], [140]])
-    expect(tableDOM(view).style.width).toBe('200px')
+    expect(colwidths(view)[0]).toEqual([[24], [140]])
+    expect(tableDOM(view).style.width).toBe('164px')
   })
 
   it('a resize drag across other cells selects no cells', async () => {
@@ -158,7 +159,7 @@ describe('table block: resize columns (YAZ-3696 D2)', () => {
     expect(colwidths(view).flat().every(width => width === null)).toBe(true)
   })
 
-  it('a read-only note shows no grip and does not resize', async () => {
+  it('a read-only page shows no grip and does not resize', async () => {
     const view = await mount()
     view.setProps({ editable: () => false })
     dragColumnEdge(view, 0, 50)
@@ -265,7 +266,7 @@ describe('table block: a handle opens the app\'s table menu (YAZ-3820)', () => {
     expect(got).toEqual([{ x: 7, y: 9, pos: kind === 'col' ? cellPos(view, 0, 1) : cellPos(view, 1, 0) }])
   })
 
-  it('in a read-only note a handle click or right-click selects nothing and asks nothing', async () => {
+  it('in a read-only page a handle click or right-click selects nothing and asks nothing', async () => {
     const view = await mount()
     const got = asks(view)
     mouse('pointermove', cellDOM(view, 1, 1).firstChild!, 1, 1)

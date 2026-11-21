@@ -13,6 +13,7 @@ vi.mock('../api', async (importOriginal) => ({
   api: {
     github: { history: vi.fn(), version: vi.fn(), restore: vi.fn() },
     drawing: { load: vi.fn() },
+    diagram: { load: vi.fn() },
   },
 }))
 vi.mock('../diagrams/renderDiagram', () => ({ renderDiagramPreview: vi.fn(async () => 'data:image/svg+xml;base64,PHN2Zy8+') }))
@@ -26,12 +27,12 @@ vi.mock('../lib/scenePreview', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/scenePreview')>()),
   createScenePreviewPng: vi.fn(async () => 'data:image/png;base64,eA=='),
 }))
-vi.mock('../share/liveShare', () => ({ noteBoardSaved: vi.fn() }))
+vi.mock('../share/liveShare', () => ({ pageBoardSaved: vi.fn() }))
 
 import { api } from '../api'
 import { renderDiagramPreview } from '../diagrams/renderDiagram'
 import { createScenePreviewPng } from '../lib/scenePreview'
-import { noteBoardSaved } from '../share/liveShare'
+import { pageBoardSaved } from '../share/liveShare'
 import { VersionHistory } from './VersionHistory'
 
 const github = vi.mocked(api.github)
@@ -52,9 +53,10 @@ beforeEach(() => {
   github.version.mockReset().mockImplementation(async (_r, _p, ref) => ({ kind: 'drawing', json: SCENES[ref] ?? scene([]), files: {} }))
   github.restore.mockReset().mockResolvedValue(undefined)
   vi.mocked(api.drawing.load).mockReset().mockResolvedValue({ path: P, json: scene(['x', 'y']), mtime: 1, size: 1, files: {}, stored: [] })
+  vi.mocked(api.diagram.load).mockReset().mockResolvedValue({ path: '/v/Flow.drawio', xml: '<mxfile><diagram id="p"></diagram></mxfile>', mtime: 1, size: 1 })
   vi.mocked(createScenePreviewPng).mockClear()
   vi.mocked(renderDiagramPreview).mockClear()
-  vi.mocked(noteBoardSaved).mockClear()
+  vi.mocked(pageBoardSaved).mockClear()
 })
 afterEach(() => {
   act(() => root?.unmount())
@@ -67,13 +69,13 @@ const flush = () =>
     for (let i = 0; i < 20; i++) await Promise.resolve()
   })
 
-async function mount(fromMerge = false, path = P) {
+async function mount(fromMerge = false, path = P, allowFileAction?: (root: string) => Promise<boolean>) {
   const onClose = vi.fn()
   const onNotice = vi.fn()
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  act(() => root?.render(<VersionHistory root={ROOT} path={path} fromMerge={fromMerge} darkColors="adapt" onClose={onClose} onNotice={onNotice} />))
+  act(() => root?.render(<VersionHistory root={ROOT} path={path} fromMerge={fromMerge} darkColors="adapt" allowFileAction={allowFileAction} onClose={onClose} onNotice={onNotice} />))
   await flush()
   const $ = <T extends Element = HTMLElement>(sel: string) => document.querySelector<T & HTMLElement>(sel)
   const rows = () => [...document.querySelectorAll<HTMLElement>('.history-list__row')]
@@ -153,7 +155,7 @@ describe('VersionHistory', () => {
     act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
     await flush()
     expect(github.restore).toHaveBeenCalledWith(ROOT, P, VERSIONS[1].ref)
-    expect(noteBoardSaved).toHaveBeenCalledWith(ROOT, P)
+    expect(pageBoardSaved).toHaveBeenCalledWith(ROOT, P)
     expect(d.onNotice).toHaveBeenCalledWith('Restored “Roadmap” to the version from 2 minutes ago.')
     expect(d.onClose).toHaveBeenCalled()
   })
@@ -227,8 +229,101 @@ describe('VersionHistory', () => {
       act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
       await flush()
       expect(github.restore).toHaveBeenCalledWith(ROOT, FLOW, FLOW_VERSIONS[1].ref)
-      expect(noteBoardSaved).toHaveBeenCalledWith(ROOT, FLOW)
+      expect(pageBoardSaved).toHaveBeenCalledWith(ROOT, FLOW)
       expect(d.onClose).toHaveBeenCalled()
+    })
+
+    it('YAZ-5989: refuses Restore when the diagram itself is marked read only', async () => {
+      vi.mocked(api.diagram.load).mockResolvedValueOnce({ path: FLOW, xml: '<mxfile yaseendraw-readonly="1"><diagram id="p"></diagram></mxfile>', mtime: 1, size: 1 })
+      const d = await mount(false, FLOW)
+      await d.key(d.$('.history-list') as HTMLElement, 'ArrowDown')
+      act(() => d.$('[data-testid="history-restore"]')?.click())
+      act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
+      await flush()
+      expect(github.restore).not.toHaveBeenCalled()
+      expect(d.text('.history-dialog__problem')).toBe('This board is read only.')
+      expect(d.onClose).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('YAZ-5989: Read-only guards on Restore', () => {
+    it('asks allowFileAction before restoring; Cancel does not restore and shows no error; Allow proceeds', async () => {
+      const allow = vi.fn(async () => false)
+      const d = await mount(true, P, allow)
+      act(() => d.$('[data-testid="history-restore"]')?.click())
+      act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
+      await flush()
+      expect(allow).toHaveBeenCalledExactlyOnceWith(ROOT)
+      expect(github.restore).not.toHaveBeenCalled()
+      expect(d.$('.history-dialog__problem')).toBeNull()
+      expect(d.onClose).not.toHaveBeenCalled()
+
+      allow.mockResolvedValueOnce(true)
+      act(() => d.$('[data-testid="history-restore"]')?.click())
+      act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
+      await flush()
+      expect(github.restore).toHaveBeenCalledExactlyOnceWith(ROOT, P, VERSIONS[1].ref)
+      expect(d.onClose).toHaveBeenCalledOnce()
+    })
+
+    it('refuses Restore when the drawing itself has readonly: true in yaseendraw', async () => {
+      const lockedScene = JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 1, readonly: true }, type: 'excalidraw', elements: [{ id: 'x', type: 'rectangle', x: 0, y: 0, width: 10, height: 10, isDeleted: false }, { id: 'y', type: 'rectangle', x: 0, y: 0, width: 10, height: 10, isDeleted: false }], appState: {}, files: {} })
+      vi.mocked(api.drawing.load).mockResolvedValueOnce({ path: P, json: lockedScene, mtime: 1, size: 1, files: {}, stored: [] })
+      const allow = vi.fn(async () => true)
+      const d = await mount(true, P, allow)
+      act(() => d.$('[data-testid="history-restore"]')?.click())
+      act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
+      await flush()
+      expect(allow).not.toHaveBeenCalled()
+      expect(github.restore).not.toHaveBeenCalled()
+      expect(d.text('.history-dialog__problem')).toBe('This board is read only.')
+    })
+
+    it('YAZ-6036: yields keyboard events to a sibling ConfirmSheet dialog mounted on top while allowFileAction awaits', async () => {
+      const ask: { resolve?: (ok: boolean) => void } = {}
+      const allow = vi.fn(() => new Promise<boolean>((r) => { ask.resolve = r }))
+      const d = await mount(true, P, allow)
+      act(() => d.$('[data-testid="history-restore"]')?.click())
+      act(() => d.$('[data-testid="history-restore-confirm"]')?.click())
+      await flush()
+      expect(allow).toHaveBeenCalledOnce()
+      // Simulate App mounting <ConfirmSheet role="dialog" /> after VersionHistory in document order
+      const sheet = document.createElement('div')
+      sheet.setAttribute('role', 'dialog')
+      const btn = document.createElement('button')
+      btn.textContent = 'Just this once'
+      sheet.append(btn)
+      document.body.append(sheet)
+      const received: string[] = []
+      const onSheetKey = (e: KeyboardEvent) => received.push(e.key)
+      window.addEventListener('keydown', onSheetKey)
+      try {
+        btn.focus()
+        await d.key(btn, 'Enter')
+        await d.key(btn, 'ArrowDown')
+        await d.key(btn, 'Escape')
+        expect(received).toEqual(['Enter', 'ArrowDown', 'Escape'])
+        expect(document.activeElement).toBe(btn)
+      } finally {
+        window.removeEventListener('keydown', onSheetKey)
+        sheet.remove()
+        ask.resolve?.(false)
+        await flush()
+      }
+    })
+
+    it('YAZ-6036: does not yield Escape to a non-modal aria-modal="false" sibling (e.g. CardPreview)', async () => {
+      const d = await mount(false)
+      const preview = document.createElement('div')
+      preview.setAttribute('role', 'dialog')
+      preview.setAttribute('aria-modal', 'false')
+      document.body.append(preview)
+      try {
+        await d.key(document.body, 'Escape')
+        expect(d.onClose).toHaveBeenCalledOnce()
+      } finally {
+        preview.remove()
+      }
     })
   })
 })

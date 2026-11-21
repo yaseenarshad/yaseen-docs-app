@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DocumentZoom, stepZoom, stepZoomByKey } from './DocumentZoom'
+import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
+import { stepZoom } from './zoomSteps'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 

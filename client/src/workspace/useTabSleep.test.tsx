@@ -33,7 +33,7 @@ function Probe({ initial }: { initial: SleepWorld }) {
   return null
 }
 
-const world = (over: Partial<SleepWorld> = {}): SleepWorld => ({ setting: '15m' as TabSleepAfter, tabs: TABS, mounted: TABS.map((t) => t.id), active: 'a', shown: 'a', boardOpen: false, review: null, away: false, ...over })
+const world = (over: Partial<SleepWorld> = {}): SleepWorld => ({ setting: '15m' as TabSleepAfter, tabs: TABS, mounted: TABS.map((t) => t.id), active: 'a', shown: 'a', boardOpen: false, away: false, ...over })
 /** The first render takes the whole world; after it, `change` moves only what a test names, as App's renders do. */
 const render = (w: SleepWorld): void => act(() => reactRoot?.render(<Probe initial={w} />))
 const change = (over: Partial<SleepWorld>): void => act(() => setWorld((w) => ({ ...w, ...over })))
@@ -81,20 +81,20 @@ afterEach(() => {
 })
 
 describe('who sleeps, and when (D5, S21)', () => {
-  it('a tab unseen for the setting sleeps, saved first, with its view kept; never the active one, the review layer or a dragged tab; ONE change per round', async () => {
+  it('a tab unseen for the setting sleeps, saved first, with its view kept; never the active one or a dragged tab; ONE change per round', async () => {
     const b = editor('/v/b.md', () => false)
     layer('b', VIEW_B)
     const dragged = document.createElement('div')
     dragged.className = 'tabbar__tab tabbar__tab--dragging'
     dragged.dataset.tab = 'e'
     document.body.appendChild(dragged)
-    render(world({ review: 'd' }))
+    render(world())
     await pass(SLEEP_TICK_MS) // the first round starts every clock
     await pass(14 * MIN)
     expect(sleep).not.toHaveBeenCalled()
     await pass(MIN)
     expect(b.flushes).toBe(1)
-    expect(sleep.mock.calls).toEqual([[['b', 'c']]])
+    expect(sleep.mock.calls).toEqual([[['b', 'c', 'd']]])
     expect(startView.get('b')).toEqual(VIEW_B)
     // c has no editor that answers (a PDF, an image): it sleeps with no view.
     expect(startView.has('c')).toBe(false)

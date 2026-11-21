@@ -13,9 +13,8 @@
 import { isDiagram } from '@shared/fileKind'
 import { api } from '../api'
 import { renderDiagramPreview } from '../diagrams/renderDiagram'
-import { createScenePreviewPng, visibleElements, type PreviewBounds } from '../lib/scenePreview'
-import { parseSceneText } from '../drawings/drawingScene'
-import { loadExcalidraw } from '../drawings/engine'
+import { createScenePreviewPng, type PreviewBounds } from '../lib/scenePreview'
+import { readDrawingForPicture } from '../drawings/drawingScene'
 import { createPreviewCache } from '../lib/previewCache'
 import { parseKey } from './boardPreviewKey'
 
@@ -34,16 +33,10 @@ const IMAGE_MAX_PX = Math.max(BOARD_PREVIEW_BOUNDS.maxWidth, BOARD_PREVIEW_BOUND
 async function drawBoardPreview(key: string): Promise<string> {
   const { root, path, theme, darkColors } = parseKey(key)
   if (isDiagram(path)) return renderDiagramPreview((await api.diagram.load({ root, path })).xml, theme, darkColors, BOARD_PREVIEW_BOUNDS)
-  const [res, engine] = await Promise.all([api.drawing.load({ root, path, imageMaxPx: IMAGE_MAX_PX }), loadExcalidraw()])
-  const parsed = parseSceneText(res.json)
-  const elements = visibleElements(engine.restoreElements(parsed.elements as never, null))
+  const { engine, appState, elements, files } = await readDrawingForPicture(root, path, IMAGE_MAX_PX)
   if (elements.length === 0) return ''
-  // The image map exactly as the editor builds it (`DrawingEditor`'s `toDocument`).
-  const files: Record<string, unknown> = {}
-  const created = Date.now()
-  for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
   // The file's own appState (its background colour) with the APP's theme on top: the panel sits in the app's chrome.
-  return createScenePreviewPng(engine, { elements, appState: { ...parsed.appState, theme }, files }, BOARD_PREVIEW_BOUNDS)
+  return createScenePreviewPng(engine, { elements, appState: { ...appState, theme }, files }, BOARD_PREVIEW_BOUNDS)
 }
 
 /** The sidebar's one board-picture cache; 32 settled pictures, least recently seen out first. */

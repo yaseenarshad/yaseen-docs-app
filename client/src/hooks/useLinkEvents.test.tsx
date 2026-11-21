@@ -77,13 +77,13 @@ describe('useLinkEvents', () => {
     root = createRoot(document.createElement('div'))
     act(() => root?.render(<Probe onOpenFile={onOpenFile} onNotice={onNotice} onTakeTab={onTakeTab} />))
 
-    act(() => b.emitOpenFile('/vaults/notes/a.md'))
-    expect(onOpenFile).toHaveBeenCalledWith('/vaults/notes/a.md')
+    act(() => b.emitOpenFile('/vaults/pages/a.md'))
+    expect(onOpenFile).toHaveBeenCalledWith('/vaults/pages/a.md')
     act(() => b.emitNotice("Can't open link"))
     expect(onNotice).toHaveBeenCalledWith("Can't open link")
     // A tab another window moved here (YAZ-3091 D1).
-    act(() => b.emitTakeTab({ path: '/vaults/notes/b.md', name: 'Outline' }))
-    expect(onTakeTab).toHaveBeenCalledWith({ path: '/vaults/notes/b.md', name: 'Outline' })
+    act(() => b.emitTakeTab({ path: '/vaults/pages/b.md', name: 'Outline' }))
+    expect(onTakeTab).toHaveBeenCalledWith({ path: '/vaults/pages/b.md', name: 'Outline' })
 
     act(() => root?.unmount())
     root = null

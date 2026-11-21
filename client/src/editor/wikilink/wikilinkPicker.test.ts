@@ -14,25 +14,27 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { IndexRecord } from '@shared/types'
-import { isNoteId } from '@shared/noteId'
+import { isPageId } from '@shared/pageId'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { OPEN_ID_LINK } from './idLinkCaret'
 import { api, BridgeRequestError } from '../../api'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
-  api: { createFile: vi.fn(), readFile: vi.fn(), mintNoteId: vi.fn() },
+  api: { createFile: vi.fn(), readFile: vi.fn(), mintPageId: vi.fn() },
 }))
 const createFile = vi.mocked(api.createFile)
-const mintNoteId = vi.mocked(api.mintNoteId)
-import { linkCandidates, nameCandidate } from '../../links/completion'
+const mintPageId = vi.mocked(api.mintPageId)
+import { MAX_SUGGESTIONS, linkCandidates, nameCandidate } from '../../links/completion'
 import { folderLinkCandidates, linkResolver } from '../../links/folderLinks'
 import { resolverFor } from '../../views/engine'
+import { listenTour } from '../../course/tourBus'
 import { WIKILINK_CLASS, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilinkPlugin'
 import {
   WIKILINK_PICKER_CLASS,
   WIKILINK_PICKER_CREATE_CLASS,
   createWikilinkCandidateSource,
+  rowsFor,
   type MutableWikilinkCandidateSource,
 } from './wikilinkPicker'
 
@@ -138,7 +140,7 @@ describe('wikilink picker: open / filter (GRO-2191)', () => {
   })
 
   it('suggestions cap at 8', async () => {
-    const many = Array.from({ length: 12 }, (_, i) => `Note ${i}`)
+    const many = Array.from({ length: 12 }, (_, i) => `Page ${i}`)
     const { crepe } = await mount('X\n', source(...many))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[')
@@ -175,6 +177,30 @@ describe('wikilink picker: open / filter (GRO-2191)', () => {
     caret(crepe, posOf(crepe, 'and text', 'and text'.length))
     type(crepe, '[[')
     expect(rows()).toEqual(['Alpha'])
+  })
+})
+
+describe('wikilink picker: the guided tour hears it (YAZ-5123)', () => {
+  it('opening fires link-picker-open once; a card row fires card-link-added once; a page row fires none', async () => {
+    const heard: string[] = []
+    const stop = listenTour((name) => heard.push(name))
+    try {
+      const s = createWikilinkCandidateSource()
+      s.update([nameCandidate('Alpha'), { name: 'Estar', insert: 'DEMO-127', label: 'Estar', lower: 'estar', card: true }])
+      const { crepe } = await mount('X\n', s)
+      caret(crepe, posOf(crepe, 'X', 1))
+      type(crepe, '[[')
+      type(crepe, 'es')
+      expect(heard).toEqual(['link-picker-open'])
+      expect(popup()?.dataset.tour).toBe('link-picker')
+      expect(press(crepe, 'Enter')).toBe(true)
+      expect(heard).toEqual(['link-picker-open', 'card-link-added'])
+      type(crepe, ' [[alp')
+      press(crepe, 'Enter')
+      expect(heard).toEqual(['link-picker-open', 'card-link-added', 'link-picker-open'])
+    } finally {
+      stop()
+    }
   })
 })
 
@@ -240,13 +266,13 @@ describe('wikilink picker: navigate / insert', () => {
   })
 
   it('duplicate basenames insert their disambiguated folder form', async () => {
-    const { crepe } = await mount('X\n', source('Note', 'sub/Note'))
+    const { crepe } = await mount('X\n', source('Page', 'sub/Page'))
     caret(crepe, posOf(crepe, 'X', 1))
-    type(crepe, '[[note')
-    expect(rows()).toEqual(['Note', 'sub/Note'])
+    type(crepe, '[[page')
+    expect(rows()).toEqual(['Page', 'sub/Page'])
     press(crepe, 'ArrowDown')
     press(crepe, 'Enter')
-    expect(getMarkdownForSave(crepe)).toBe('X[[sub/Note]]\n')
+    expect(getMarkdownForSave(crepe)).toBe('X[[sub/Page]]\n')
   })
 
   it('view-only candidates, including images, insert the explicit extension and spaces verbatim', async () => {
@@ -280,7 +306,7 @@ describe('wikilink picker: navigate / insert', () => {
 describe('wikilink picker: create-new row', () => {
   beforeEach(() => {
     createFile.mockReset()
-    mintNoteId.mockReset()
+    mintPageId.mockReset()
     vi.mocked(api.readFile).mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
   })
 
@@ -294,7 +320,7 @@ describe('wikilink picker: create-new row', () => {
   /** The door in the main process (YAZ-2677 D4), which answers when the test says: `give` is its answer to the oldest request. */
   const door = () => {
     const asked: { resolve: (id: string | null) => void; reject: (err: unknown) => void }[] = []
-    mintNoteId.mockImplementation(() => new Promise<string | null>((resolve, reject) => asked.push({ resolve, reject })))
+    mintPageId.mockImplementation(() => new Promise<string | null>((resolve, reject) => asked.push({ resolve, reject })))
     const settle = async (act: (request: (typeof asked)[number]) => void) => {
       act(asked.shift()!)
       // The number, the link, the template read and the create: each is one turn of the loop at most.
@@ -324,9 +350,9 @@ describe('wikilink picker: create-new row', () => {
     // At once: the brackets are closed around the typed name, the picker is shut, and the door is asked, one time, for the vault's next ID.
     expect(getMarkdownForSave(crepe)).toBe('X[[New Page]]\n')
     expect(rows()).toEqual([])
-    expect(mintNoteId).toHaveBeenCalledExactlyOnceWith('/vault')
+    expect(mintPageId).toHaveBeenCalledExactlyOnceWith('/vault')
     expect(createFile).not.toHaveBeenCalled()
-    // The note is made only once the link holds its id.
+    // The page is made only once the link holds its id.
     let linkAtCreate = ''
     createFile.mockImplementation(async () => ((linkAtCreate = getMarkdownForSave(crepe)), { path: '', mtime: 1, size: 0 }))
     await main.give('YAZ-43')
@@ -392,24 +418,24 @@ describe('wikilink picker: create-new row', () => {
 
   it('YAZ-3748 B1: Create shows below the matches while no matched row has the typed name (trimmed, any case); an exact name takes it away (an alias too: the alias tests below show no Create)', async () => {
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
-    mintNoteId.mockResolvedValue('YAZ-43')
+    mintPageId.mockResolvedValue('YAZ-43')
     const n = nav()
-    const { crepe } = await mount('X\n', source('Meeting notes Q4', 'Q4 meeting notes archive'), n, vault(true))
+    const { crepe } = await mount('X\n', source('Meeting pages Q4', 'Q4 meeting pages archive'), n, vault(true))
     caret(crepe, posOf(crepe, 'X', 1))
-    type(crepe, '[[q4 meeting notes')
-    // A prefix match and a word match (the words of `Meeting notes Q4` in another order), then Create; the best match keeps the highlight.
-    expect(rows()).toEqual(['Q4 meeting notes archive', 'Meeting notes Q4', 'Create "q4 meeting notes"'])
-    expect(selectedRow()).toBe('Q4 meeting notes archive')
+    type(crepe, '[[q4 meeting pages')
+    // A prefix match and a word match (the words of `Meeting pages Q4` in another order), then Create; the best match keeps the highlight.
+    expect(rows()).toEqual(['Q4 meeting pages archive', 'Meeting pages Q4', 'Create "q4 meeting pages"'])
+    expect(selectedRow()).toBe('Q4 meeting pages archive')
     press(crepe, 'ArrowUp') // wraps to the last row: Create
-    expect(selectedRow()).toBe('Create "q4 meeting notes"')
+    expect(selectedRow()).toBe('Create "q4 meeting pages"')
     press(crepe, 'Enter')
-    await vi.waitFor(() => expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/q4-meeting-notes-yaz-43.md', content: '---\ntitle: q4 meeting notes\n---\n', id: 'YAZ-43' }))
+    await vi.waitFor(() => expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/q4-meeting-pages-yaz-43.md', content: '---\ntitle: q4 meeting pages\n---\n', id: 'YAZ-43' }))
     expect(getMarkdownForSave(crepe)).toBe('X[[YAZ-43]]\n')
 
-    const exact = await mount('Y\n', source('Meeting notes Q4', 'Q4 meeting notes archive'), nav(), vault(true))
+    const exact = await mount('Y\n', source('Meeting pages Q4', 'Q4 meeting pages archive'), nav(), vault(true))
     caret(exact.crepe, posOf(exact.crepe, 'Y', 1))
-    type(exact.crepe, '[[ MEETING NOTES q4 ')
-    expect(rows()).toEqual(['Meeting notes Q4', 'Q4 meeting notes archive'])
+    type(exact.crepe, '[[ MEETING PAGES q4 ')
+    expect(rows()).toEqual(['Meeting pages Q4', 'Q4 meeting pages archive'])
   })
 
   it('a click on the Create row does the same', async () => {
@@ -457,7 +483,7 @@ describe('wikilink picker: create-new row', () => {
     expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "New Page"')
   })
 
-  it('the user changes the text in the brackets during the wait: the link is theirs and stays as they left it, and the note is still made, with its number', async () => {
+  it('the user changes the text in the brackets during the wait: the link is theirs and stays as they left it, and the page is still made, with its number', async () => {
     const main = door()
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const { crepe, n } = await picked('Plan')
@@ -477,7 +503,7 @@ describe('wikilink picker: create-new row', () => {
     expect(getMarkdownForSave(other.crepe)).toBe('X[[My Draft]]\n')
   })
 
-  it('the user deletes the link during the wait: nothing is put back in the text, and the note is still made', async () => {
+  it('the user deletes the link during the wait: nothing is put back in the text, and the page is still made', async () => {
     const main = door()
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const { crepe } = await picked('Gone')
@@ -489,7 +515,7 @@ describe('wikilink picker: create-new row', () => {
     expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/gone-yaz-43.md', content: '---\ntitle: Gone\n---\n', id: 'YAZ-43' })
   })
 
-  it('the editor closes during the wait (the tab was closed): nothing throws, and the note is still made', async () => {
+  it('the editor closes during the wait (the tab was closed): nothing throws, and the page is still made', async () => {
     const main = door()
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const { crepe, n } = await picked('Left')
@@ -507,7 +533,7 @@ describe('wikilink picker: create-new row', () => {
     const { crepe } = await picked('#Section')
     await new Promise((r) => setTimeout(r, 0))
     expect(getMarkdownForSave(crepe)).toBe('X[[#Section]]\n')
-    expect(mintNoteId).not.toHaveBeenCalled()
+    expect(mintPageId).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
   })
 
@@ -523,7 +549,7 @@ describe('wikilink picker: create-new row', () => {
     expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/New Page.md', content: '' })
     expect(getMarkdownForSave(crepe)).toBe('X[[New Page#Section]]\n')
     expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "New Page"')
-    expect(mintNoteId).not.toHaveBeenCalled()
+    expect(mintPageId).not.toHaveBeenCalled()
   })
 
   it('there a click on the Create row does the same, and a failure is said through the notice with the link left as typed', async () => {
@@ -597,7 +623,7 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
     expect(popup()?.dataset.show).toBe('true')
   })
 
-  it('Enter on an alias row inserts the PIPED form; the note still inserts bare under its own name', async () => {
+  it('Enter on an alias row inserts the PIPED form; the page still inserts bare under its own name', async () => {
     const { crepe } = await mount('X\n', indexSource(CAC))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[cac')
@@ -612,7 +638,7 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
     expect(getMarkdownForSave(second.crepe)).toBe('Y[[Customer Acquisition Cost]]\n')
   })
 
-  it('a note with an id is still typed and read by name or alias, and BOTH rows insert the plain [[id]] (YAZ-2293)', async () => {
+  it('a page with an id is still typed and read by name or alias, and BOTH rows insert the plain [[id]] (YAZ-2293)', async () => {
     const withId = { ...CAC, id: 'k3m9x2pq7abc' }
     for (const typed of ['[[cac', '[[customer']) {
       const { crepe } = await mount('X\n', indexSource(withId))
@@ -624,7 +650,7 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
     }
   })
 
-  it('picked by its ALIAS, a note with an id is linked [[id]] and reads as its TITLE once the caret leaves — never the alias (YAZ-2293, scenario D1, D2)', async () => {
+  it('picked by its ALIAS, a page with an id is linked [[id]] and reads as its TITLE once the caret leaves — never the alias (YAZ-2293, scenario D1, D2)', async () => {
     const withId = { ...CAC, id: 'k3m9x2pq7abc' }
     // The window's two real feeds off one index snapshot: the picker's rows and the resolver the decorations read.
     const resolve = resolverFor([withId], '/vault')
@@ -671,7 +697,7 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
 })
 
 describe('wikilink picker: folders, by id (scenario K)', () => {
-  const NOTE_ID = 'k3m9x2pq7abc'
+  const PAGE_ID = 'k3m9x2pq7abc'
   const FOLDER_ID = 'f7n2w8rt4xyz'
   const record = (path: string, id: string): IndexRecord => ({
     path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, ''), title: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, ''),
@@ -679,9 +705,9 @@ describe('wikilink picker: folders, by id (scenario K)', () => {
     properties: {}, aliases: [], tags: [], links: [], embeds: [],
   })
 
-  /** The bridge's own composition: a note and a folder both named Projects, each with its id. */
+  /** The bridge's own composition: a page and a folder both named Projects, each with its id. */
   async function mountVault() {
-    const records = [record('/vault/Projects.md', NOTE_ID)]
+    const records = [record('/vault/Projects.md', PAGE_ID)]
     const folders = [{ ...record('/vault/Projects/.folder.md', FOLDER_ID), title: 'Projects' }]
     const resolve = linkResolver(records, '/vault', ['/vault/Projects'], folders)
     const wikilinks = createWikilinkResolveSource()
@@ -697,12 +723,12 @@ describe('wikilink picker: folders, by id (scenario K)', () => {
     return { crepe, shown: () => Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => el.textContent) }
   }
 
-  it('K3 — a folder and a note share a name: the rows read "<name>" and "<name> (folder)", the note first', async () => {
+  it('K3 — a folder and a page share a name: the rows read "<name>" and "<name> (folder)", the page first', async () => {
     const { crepe } = await mountVault()
     type(crepe, '[[proj')
     expect(rows()).toEqual(['Projects', 'Projects (folder)', 'Create "proj"'])
     press(crepe, 'Enter')
-    expect(getMarkdownForSave(crepe)).toBe(`X[[${NOTE_ID}]]\n`)
+    expect(getMarkdownForSave(crepe)).toBe(`X[[${PAGE_ID}]]\n`)
   })
 
   it('K2 — pick the folder row: `[[<folder id>]]` is inserted and shows the folder\'s name, never "(folder)"', async () => {
@@ -727,6 +753,15 @@ describe('wikilink picker: alias and dismissal', () => {
     await tick()
     expect(rows()).toEqual([])
     expect(popup()?.dataset.show).toBe('false')
+  })
+
+  it('YAZ-4935: words first, then | and an ID: the suggestions stay closed too (the picker writes the page first)', async () => {
+    const { crepe } = await mount('X\n', source('Alpha'))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[staging|WIKI-1')
+    await tick()
+    expect(rows()).toEqual([])
+    expect(popup()?.dataset.show ?? 'false').toBe('false')
   })
 
   it('Esc dismisses leaving the typed text; the same [[ stays closed while typing continues', async () => {
@@ -869,5 +904,62 @@ describe('wikilink picker: a row reads as the sidebar names the page (YAZ-3778 S
     ])
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('X[[LN Scenarios Diagram.drawio]]\n')
+  })
+})
+
+describe('wikilink picker: a page found by its ID (YAZ-4992)', () => {
+  const page = (path: string, id?: string, aliases: string[] = []): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases, tags: [], links: [], embeds: [], ...(id === undefined ? {} : { id }) }
+  }
+  // Redis is WIKI-40; the others start with 4 or hold "40" in their title. The vault was OLD before it was WIKI.
+  const records = [
+    page('/vault/Redis.md', 'WIKI-40', ['Remote dictionary']),
+    page('/vault/Postgres.md', 'WIKI-4'),
+    page('/vault/Kafka.md', 'WIKI-400'),
+    page('/vault/Mongo.md', 'WIKI-41'),
+    page('/vault/Top 40 songs.md', 'WIKI-7'),
+    page('/vault/Memcached.md', 'WIKI-140'),
+  ]
+  const candidates = linkCandidates(records)
+  const shown = (fragment: string, was?: readonly string[]) => rowsFor(fragment, candidates, was).map((row) => (row.create ? `Create "${row.label}"` : `${row.label} → ${row.insert}`))
+
+  it('the number alone: the exact ID first, then the IDs whose number starts with it in number order, then the title matches; Create stays last', () => {
+    expect(shown('40')).toEqual(['WIKI-40 — Redis → WIKI-40', 'WIKI-400 — Kafka → WIKI-400', 'Top 40 songs → WIKI-7', 'Create \"40\"'])
+    // WIKI-140 holds a 4 but does not start with it: no row.
+    expect(shown('4')).toEqual(['WIKI-4 — Postgres → WIKI-4', 'WIKI-40 — Redis → WIKI-40', 'WIKI-41 — Mongo → WIKI-41', 'WIKI-400 — Kafka → WIKI-400', 'Top 40 songs → WIKI-7', 'Create \"4\"'])
+  })
+
+  it('the full ID in any letter case, with a space or no hyphen, and the old letters of the vault', () => {
+    for (const typed of ['WIKI-40', 'wiki-40', 'Wiki 40', 'wiki40']) expect(shown(typed)[0], typed).toBe('WIKI-40 — Redis → WIKI-40')
+    expect(shown('OLD-40', ['WIKI', 'OLD'])[0]).toBe('WIKI-40 — Redis → WIKI-40')
+    expect(shown('OLD-40')[0]).toBe('Create \"OLD-40\"')
+    // An ID is held whole: WIKI-4 does not find WIKI-40.
+    expect(shown('wiki-4')).toEqual(['WIKI-4 — Postgres → WIKI-4', 'Create \"wiki-4\"'])
+  })
+
+  it('a page is one row: its alias row does not show again under its ID; the rows stay at the cap', () => {
+    expect(shown('40').filter((row) => row.includes('Redis'))).toEqual(['WIKI-40 — Redis → WIKI-40'])
+    const many = linkCandidates(Array.from({ length: 30 }, (_, i) => page(`/vault/N${i}.md`, `WIKI-${i + 1}`)))
+    expect(rowsFor('1', many).filter((row) => !row.create)).toHaveLength(MAX_SUGGESTIONS)
+  })
+
+  it('a vault without IDs is unchanged: a number finds titles only', () => {
+    const plain = linkCandidates(records.map(({ id: _id, ...r }) => r as IndexRecord))
+    expect(rowsFor('40', plain)).toEqual(rowsFor('40', plain.map(({ id: _id, ...c }) => c)))
+    expect(rowsFor('40', plain).map((row) => row.label)).toEqual(['Top 40 songs', '40'])
+  })
+
+  it('in a page: [[40 lists Redis at the top, and Enter links it by its ID', async () => {
+    const s = createWikilinkCandidateSource()
+    s.update(candidates)
+    const { crepe } = await mount('X\n', s)
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, ' [[40')
+    await tick()
+    expect(rows()[0]).toBe('WIKI-40 — Redis')
+    expect(rows().at(-1)).toBe('Create "40"')
+    expect(press(crepe, 'Enter')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('X [[WIKI-40]]\n')
   })
 })

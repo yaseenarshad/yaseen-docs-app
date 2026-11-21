@@ -12,7 +12,7 @@
  * A clean twin reloads as a diff (folds, caret and scroll stay); a dirty twin shows the conflict
  * bar. The watcher event for the same write then matches the twin's new mtime and is skipped.
  *
- * Module-scoped, i.e. PER RENDERER: two windows on one note still sync through the watcher (YAZ-2942).
+ * Module-scoped, i.e. PER RENDERER: two windows on one page still sync through the watcher (YAZ-2942).
  */
 
 type TwinSaveListener = (mtime: number) => void
@@ -34,12 +34,59 @@ export function onTwinSave(path: string, listener: TwinSaveListener): () => void
 
 /** A save of `path` landed on disk with `mtime`: tell every editor of that path. O(copies of the path). */
 export function announceTwinSave(path: string, mtime: number): void {
+  saved.delete(path)
+  saved.set(path, mtime)
+  if (saved.size > 500) saved.delete(saved.keys().next().value!)
   const set = listeners.get(path)
   if (set === undefined) return
   for (const listener of [...set]) listener(mtime)
 }
 
+/** The mtime of this window's last save of each path (`announceTwinSave`): the card glow's "own write" (YAZ-5925). */
+const saved = new Map<string, number>()
+
+/** The paths with an app write of `announcedWrite` in flight, and how many. */
+const writing = new Map<string, number>()
+/** The mtime the last `announcedWrite` of each path got: the watcher's event of that write carries it. */
+const announced = new Map<string, number>()
+
+/**
+ * An app write to a page that is no typing of its editor (YAZ-4946: an Inbox answer, a review delete, the card window's
+ * ⋯): the open editors of `path` take the new bytes QUIETLY, as a twin's save — out of the undo history, with no
+ * "outside changes" bar, no glow and no entry in the change list. While the write runs the editors ignore the watcher
+ * for `path`, and after it the watcher's event that carries the write's mtime (`isAnnouncedWrite`): that event cannot
+ * land as an outside change, whichever comes first.
+ */
+export async function announcedWrite<T extends { mtime: number }>(path: string, write: () => Promise<T>): Promise<T> {
+  writing.set(path, (writing.get(path) ?? 0) + 1)
+  try {
+    const landed = await write()
+    announced.delete(path)
+    announced.set(path, landed.mtime)
+    // One mtime for each path written: never more entries than the pages the app wrote this way.
+    if (announced.size > 500) announced.delete(announced.keys().next().value!)
+    announceTwinSave(path, landed.mtime)
+    return landed
+  } finally {
+    const left = (writing.get(path) ?? 1) - 1
+    if (left === 0) writing.delete(path)
+    else writing.set(path, left)
+  }
+}
+
+/** Is the watcher's change of `path` at `mtime` an `announcedWrite` (one in flight, or the last one's mtime)? */
+export const isAnnouncedWrite = (path: string, mtime: number): boolean => writing.has(path) || announced.get(path) === mtime
+
+/**
+ * Is the version of `path` at `mtime` this window's own write (YAZ-5925): an `announcedWrite`, or a save of a page's
+ * editor? A card page and an embed glow only for what is not.
+ */
+export const isOwnWrite = (path: string, mtime: number | undefined): boolean => mtime !== undefined && (isAnnouncedWrite(path, mtime) || saved.get(path) === mtime)
+
 /** Test hook. */
 export function _resetTwinEditors(): void {
+  saved.clear()
   listeners.clear()
+  writing.clear()
+  announced.clear()
 }

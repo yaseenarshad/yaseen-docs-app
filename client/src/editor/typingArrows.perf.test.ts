@@ -15,11 +15,11 @@ import { mount, unmountAll } from './marks/markTestKit'
 afterEach(unmountAll)
 
 const LONG = 'word '.repeat(110).trim()
-const NOTE = `${Array.from({ length: 2000 }, (_, i) => `* line ${i} [[Plan.excalidraw]] ${i === 1000 ? LONG : 'tail'}`).join('\n')}\n`
+const PAGE = `${Array.from({ length: 2000 }, (_, i) => `* line ${i} [[Plan.excalidraw]] ${i === 1000 ? LONG : 'tail'}`).join('\n')}\n`
 
-describe('the typing handlers on a big note', () => {
+describe('the typing handlers on a big page', () => {
   it('perf smoke: a plain letter at the end of a 550-character line, all typing handlers take under 0.5 ms', async () => {
-    const { view } = await mount(NOTE)
+    const { view } = await mount(PAGE)
     let end = -1
     view.state.doc.descendants((node, pos) => {
       if (end < 0 && node.isTextblock && node.textContent.endsWith(LONG)) end = pos + node.nodeSize - 1
@@ -41,7 +41,7 @@ describe('the typing handlers on a big note', () => {
   }, 60_000)
 
   it('perf smoke: the key that makes an arrow (`-` then `>`), at the end of a 550-character line, takes under one frame (16 ms)', async () => {
-    const { view } = await mount(NOTE)
+    const { view } = await mount(PAGE)
     let end = -1
     view.state.doc.descendants((node, pos) => {
       if (end < 0 && node.isTextblock && node.textContent.endsWith(LONG)) end = pos + node.nodeSize - 1

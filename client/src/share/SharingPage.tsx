@@ -26,6 +26,7 @@ import type { SettingsCtx, SettingsSection } from '../settings/registry'
 import { isPending } from './liveShare'
 import { errorText, liveLine, type Line } from './shareText'
 import type { SharingState } from './useSharing'
+import { withKeys } from '@shared/keyLabel'
 import './share.css'
 
 const isReady = (sharing: SharingState | undefined): boolean => sharing?.status?.state === 'ready'
@@ -204,7 +205,7 @@ function SharedBoards({ sharing }: SettingsCtx) {
   return (
     <>
       {rows.length === 0 ? (
-        <p className="sharing__muted">Nothing in {vaultName} is shared. Right-click a board › Share, or File › Share Link (⌘⇧L).</p>
+        <p className="sharing__muted">Nothing in {vaultName} is shared. Right-click a board › Share, or {withKeys('File › Share Link', '⌘⇧L')}.</p>
       ) : (
         <ul className="sharing__boards">
           {rows.map((row) => {

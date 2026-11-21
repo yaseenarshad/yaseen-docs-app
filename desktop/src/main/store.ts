@@ -1,5 +1,6 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
-import { isValidDailyNoteFormat } from '@shared/dailyNote'
+import { applyCoursePatch, cleanCourseState, type CoursePatch } from '@shared/courseState'
+import { isValidDailyPageFormat } from '@shared/dailyPage'
 import { isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
@@ -9,13 +10,22 @@ import {
   CODE_OUTLINE_SORTS,
   CODE_SYMBOL_KINDS,
   COMMENTS_ORDERS,
-  CONTENT_WIDTHS,
+  COMMENTS_RESOLVED_PLACES,
+  isCommentProfile,
+  isContentPosition,
+  isContentWidth,
+  isExploreWidth,
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
   DEFAULT_SIDEBAR_TABS,
   DEFAULT_TOOLBAR,
   HEADING_KEYS,
   HOVER_PLACES,
+  DEFAULT_FOLDER_PAGES,
+  FOLDER_PAGE_CHOICES,
+  type FolderPagesSettings,
+  calLine,
+  readColorStrength,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
@@ -25,12 +35,13 @@ import {
   MAX_SESSIONS,
   MAX_SESSION_TABS,
   MAX_VAULT_SETS,
-  NEW_NOTE_LOCATIONS,
+  NEW_PAGE_LOCATIONS,
   NEW_BOARD_PICTURES,
   NEW_TAB_PLACES,
   type NewBoardPictures,
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
+  FIND_FOLDS,
   ALL_NOTES_OPENS_AT,
   TABLE_NOW_MARKS,
   TABLE_DIM_PASTS,
@@ -38,12 +49,14 @@ import {
   TABLE_SHADE_MIN,
   TABLE_SHADE_STEP,
   TABLE_CELL_BULLET_GAP_MAX,
-  NOTE_BULLET_GAP_MAX,
-  NOTE_BULLET_GAP_MIN,
-  NOTE_BULLET_INDENT_MAX,
-  NOTE_BULLET_INDENT_MIN,
+  PAGE_BULLET_GAP_MAX,
+  PAGE_BULLET_GAP_MIN,
+  PAGE_BULLET_INDENT_MAX,
+  PAGE_BULLET_INDENT_MIN,
+  CELL_NOTE_PREVIEW_LINES_MAX,
+  CELL_NOTE_PREVIEW_LINES_MIN,
   CELL_NOTE_TEMPLATE_MAX,
-  NEW_NOTE_TITLE_MAX,
+  NEW_PAGE_TITLE_MAX,
   TABLE_CELL_BULLET_GAP_MIN,
   TABLE_CELL_BULLET_INDENT_MAX,
   TABLE_CELL_BULLET_INDENT_MIN,
@@ -53,16 +66,35 @@ import {
   TABLE_BAND_STRENGTH_MIN,
   TABLE_BAND_STRENGTH_STEP,
   isBandColour,
+  isBlockWidth,
+  isCardWidth,
+  isCardTextSize,
+  isCardTitleSize,
   type TableBandRows,
-  DAILY_NOTE_OPENS,
-  type DailyNoteOpens,
+  DAILY_PAGE_OPENS,
+  type DailyPageOpens,
   type TableDimPast,
   type TableNowMark,
   type TableRowBand,
+  TABLE_NEW_STYLES,
+  type TableNewStyle,
+  TABLE_TEXT_IN_CELLS,
+  type TableTextInCells,
+  TABLE_POSITIONS,
+  type TablePosition,
+  CARD_TABLE_POSITIONS,
+  type CardTablePosition,
+  INBOX_OPEN_AT,
+  type InboxOpenAt,
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
   RIGHT_PANEL_MIN_W,
   SECTION_LINES,
+  SHOWN_HIDDEN_WORDS,
+  type ShownHiddenWords,
+  CARD_SPACINGS,
+  CARD_BLOCK_GAP_MAX,
+  type CardSpacing,
   GUIDE_LINES_SHOW,
   GUIDE_LINE_DARKNESS_MAX,
   GUIDE_LINE_DARKNESS_MIN,
@@ -71,6 +103,7 @@ import {
   SECTION_STEPS,
   SIDEBAR_DEFAULT_W,
   SIDEBAR_ARROW_MOTIONS,
+  SIDEBAR_PLACES,
   SIDEBAR_FILE_ICONS,
   SIDEBAR_FOLDER_ICONS,
   SIDEBAR_ICON_KINDS,
@@ -81,6 +114,8 @@ import {
   SIDEBAR_MIN_W,
   SIDEBAR_ZOOM_MAX,
   SIDEBAR_ZOOM_MIN,
+  SIDEBAR_ROW_HEIGHT_MAX,
+  SIDEBAR_ROW_HEIGHT_MIN,
   SIDEBAR_BUTTONS,
   SIDEBAR_TABS,
   STARTUP_WINDOWS,
@@ -96,6 +131,8 @@ import {
   addOpen,
   addRecentRoot,
   cleanVaultKey,
+  cleanUpNextTaken,
+  cleanCardsAdded,
   cleanVaultName,
   isZoomKey,
   defaultAppState,
@@ -104,27 +141,30 @@ import {
   freeVaultKey,
   isSidebarLens,
   isTocSource,
-  isValidNewNoteFolder,
+  isValidNewPageFolder,
   mergeFavoritesOrder,
   normalizeRoots,
   rootOfPath,
+  placeVaults,
   stripSlash,
   type AppState,
   type CodeOutlineSort,
   type CodeSymbolKind,
   type CommentsOrder,
-  type ContentWidth,
+  type CommentsResolvedPlace,
+  type CommentProfile,
   type FolderPatch,
   type FolderState,
   type GoToPlace,
   type HeadingStyles,
   type HoverPlace,
-  type NewNoteLocation,
+  type NewPageLocation,
   type NoticeLength,
   type MediaHoverZoomSize,
   type TabSleepAfter,
   type OpenStat,
   type OutsideChangeGlow,
+  type FindFolds,
   type AllNotesOpensAt,
   type RecentRoots,
   type RightPanelIdentity,
@@ -133,6 +173,7 @@ import {
   type Session,
   type SidebarLens,
   type SidebarArrowMotion,
+  type SidebarPlace,
   type SidebarFileIcons,
   type SidebarFolderIcons,
   type SidebarIconColors,
@@ -162,6 +203,10 @@ import {
   type WindowBounds,
   type WindowEntry,
   DIAGRAM_DARK_COLORS,
+  EMBED_REST_SECONDS,
+  NEW_BOARD_FOLDERS,
+  type EmbedRestSeconds,
+  type NewBoardFolder,
   NOTICE_LENGTHS,
   MEDIA_HOVER_ZOOM_SIZES,
   TAB_SLEEP_AFTER,
@@ -179,6 +224,11 @@ import {
   type TabCanvasState,
   type TabRef,
   normalizeFilesZoom,
+  DEFAULT_HEADER_ROW,
+  DEFAULT_SUBHEADER_ROW,
+  HEADER_ROW_PARTS,
+  headerRowOwn,
+  type HeaderRow,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isValidPicturesFolder } from '@shared/drawingAssets'
@@ -186,6 +236,7 @@ import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
 import { isMediaFilters, isPinnedPacks, sanitizeMediaFilters } from '@shared/iconPacks'
+import { movedSettings } from '@shared/legacyNames'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, asideId, gestureRow, isDefaultGesture, isGestureEntry, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
@@ -224,6 +275,15 @@ export interface Store {
   /** Settings › Files & Links › "Allowed picture folders" › Remove: off the list only; no file moves or goes. Not on it: no commit. */
   removePictureFolder(folder: string): void
   /**
+   * YAZ-5602 round 2: Time in slot and Show seconds as this Mac's state file held them at start (an app setting of
+   * before; the state omits them, so the next write drops them). `tableLookMoves` writes them into each vault once.
+   */
+  slotTimeToMove(): SlotTimeToMove
+  /** YAZ-5487 (the YAZ-5491 rule): this Mac seeded (or found) `<root>/.yaseendocs/<name>` once already. */
+  seededConfig(root: string, name: string): boolean
+  /** Marks `<root>/.yaseendocs/<name>` as seeded or found, so it is never seeded again. */
+  markSeededConfig(root: string, name: string): void
+  /**
    * The settings of another Mac's newer file (YAZ-3276 D3), and its `savedAt`. Only fields that travel are
    * taken. A field that the file lacks, or that this build can't read and can't repair, keeps this Mac's value.
    */
@@ -237,13 +297,13 @@ export interface Store {
   removeRecent(path: string): void
   setFolder(root: string, patch: FolderPatch): void
   setFolds(root: string, file: string, keys: readonly string[]): void
-  /** The folded rows of one note's table of contents (YAZ-3939 D1); an empty list removes the entry. */
+  /** The folded rows of one page's table of contents (YAZ-3939 D1); an empty list removes the entry. */
   setTocFolds(root: string, file: string, keys: readonly string[]): void
-  /** What one note's table of contents is built from (YAZ-2700 D14). `null` is Auto: the entry goes, and Auto is never stored. */
+  /** What one page's table of contents is built from (YAZ-2700 D14). `null` is Auto: the entry goes, and Auto is never stored. */
   setTocSource(root: string, file: string, source: TocSource | null): void
-  /** One code file's "Table of contents" switch (YAZ-2950, YAZ-3506). `true` and `false` are both stored; nothing here removes an entry. A note's switch is in its frontmatter (YAZ-4094 G4). */
+  /** One code file's "Table of contents" switch (YAZ-2950, YAZ-3506). `true` and `false` are both stored; nothing here removes an entry. A page's switch is in its frontmatter (YAZ-4094 G4). */
   setTocSwitch(root: string, file: string, on: boolean): void
-  /** The one-time move of a note's switch into its frontmatter (`movePageSwitches.ts`, YAZ-4094 G4) is done: the entry goes. */
+  /** The one-time move of a page's switch into its frontmatter (`movePageSwitches.ts`, YAZ-4094 G4) is done: the entry goes. */
   dropPageSwitch(root: string, file: string, list: 'sectionIndents' | 'tocSwitches'): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   /**
@@ -259,7 +319,7 @@ export interface Store {
    * or of a hidden file of the vault (a dot name inside it), commits nothing.
    */
   addEdit(roots: readonly string[], file: string, now?: number): void
-  /** Closed notes (YAZ-3487 D9): each of `files` goes to the vault of `roots` that holds it (the most specific), at `now`, in ONE commit. A file no vault holds is left out; nothing left commits nothing. */
+  /** Closed pages (YAZ-3487 D9): each of `files` goes to the vault of `roots` that holds it (the most specific), at `now`, in ONE commit. A file no vault holds is left out; nothing left commits nothing. */
   addClosed(roots: readonly string[], files: readonly string[], now?: number): void
   /** "Remove from Recently closed" (YAZ-3487 D14): drop `files` from their vaults' lists; with `null`, clear the list of each vault of `roots`. ONE commit; nothing to drop commits nothing. */
   forgetClosed(roots: readonly string[], files: readonly string[] | null): void
@@ -279,6 +339,8 @@ export interface Store {
    * that changes nothing commits nothing.
    */
   setTabCanvas(patch: TabCanvasPatch): void
+  /** The card course (YAZ-5120): the fields of `patch` over `course`, by `applyCoursePatch`, in ONE commit; a patch that changes nothing commits nothing. */
+  setCourse(patch: CoursePatch): void
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`), recents, each
@@ -371,10 +433,10 @@ const sanitizeCanvasPanel = (raw: unknown): CanvasPanelState => {
 export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
   isRecord(v) && Object.entries(v).every(([key, style]) => (HEADING_KEYS as readonly string[]).includes(key) && isHeadingStyle(style))
 
-/** One tab's sort (YAZ-3227 D1): Files has no manual order. */
+/** One tab's sort (YAZ-3227 D1): Files has no manual order. `kinds` (YAZ-4614 D66) is a boolean or absent; anything else fails the sort. */
 const isTabSort = (v: unknown, manual: boolean, best = false): v is TabSort =>
-  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best'))
-const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, false) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
+  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best')) && (v.kinds === undefined || typeof v.kinds === 'boolean')
+const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, true) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
 
 /** A list of known names, each once (YAZ-3273 D8). */
 const isNameSet = <T,>(v: unknown, known: readonly T[]): v is T[] => Array.isArray(v) && v.every((x) => known.includes(x as T)) && new Set(v).size === v.length
@@ -448,11 +510,72 @@ const isSidebarIconColors = (v: unknown): v is SidebarIconColors => isRecord(v) 
 /** The icon colours on load: each entry that does not read (an unknown kind, a colour that is no `#rrggbb`) is dropped, so that kind has its built-in colour. */
 export const sanitizeSidebarIconColors = (raw: unknown): SidebarIconColors => (isSidebarIconColors(raw) ? raw : isRecord(raw) && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).filter(isIconColour)) : {})
 
-/** The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from before a place existed shows it. */
+/**
+ * The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from
+ * before a place existed shows it. One exception (YAZ-4601 demo 13D): a missing `folderLinks` reads as the stored
+ * `folderViews`, the one folder-page switch it was split from, so a user's Off covers both.
+ */
 export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean> {
   const src = isRecord(raw) ? raw : {}
-  return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : true])) as Record<HoverPlace, boolean>
+  const fallback = (place: HoverPlace): boolean => (place === 'folderLinks' && typeof src.folderViews === 'boolean' ? src.folderViews : true)
+  return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : fallback(place)])) as Record<HoverPlace, boolean>
 }
+
+/** Settings › Folder pages (YAZ-4585): each part's guard. A choice row is one of its `FOLDER_PAGE_CHOICES`; the two "as …" switches may be null. */
+const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
+const oneOf = (choices: readonly unknown[]) => (v: unknown): boolean => choices.includes(v)
+const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => boolean } = {
+  weekStartsOn: oneOf(FOLDER_PAGE_CHOICES.weekStartsOn),
+  rowBand: (v) => v === null || isBool(v),
+  keepWindowPinned: (v) => v === null || isBool(v),
+  rowHeight: oneOf(FOLDER_PAGE_CHOICES.rowHeight),
+  rowNumbers: isBool,
+  columnTypeIcons: isBool,
+  folderIcons: isBool,
+  folderCounts: isBool,
+  textInCells: oneOf(FOLDER_PAGE_CHOICES.textInCells),
+  groupIndent: oneOf(FOLDER_PAGE_CHOICES.groupIndent),
+  // YAZ-4798: a file from before them reads On, On hover and plain lines (`sanitizeFolderPages`).
+  stickyGroups: isBool,
+  groupLines: oneOf(FOLDER_PAGE_CHOICES.groupLines),
+  groupLineStyle: oneOf(FOLDER_PAGE_CHOICES.groupLineStyle),
+  showEmptyGroups: isBool,
+  showEmptyColumns: isBool,
+  subfolders: oneOf(FOLDER_PAGE_CHOICES.subfolders),
+  foldersFirst: isBool,
+  calendarScale: oneOf(FOLDER_PAGE_CHOICES.calendarScale),
+  cardTitles: oneOf(FOLDER_PAGE_CHOICES.cardTitles),
+  hideWeekends: isBool,
+  // YAZ-4878: a width 1–12 and a colour the app reads; a file from before them reads 1 px, Gray.
+  weekLine: (v) => calLine(v) === v,
+  dayLine: (v) => calLine(v) === v,
+  weekLineColor: (v) => readColorStrength(v) !== null,
+  dayLineColor: (v) => readColorStrength(v) !== null,
+  showFolderPageFiles: isBool,
+  askBeforeDelete: isBool,
+  confirmChanges: isBool,
+  showNewButtons: isBool,
+  showOtherFiles: isBool,
+  inheritColumns: isBool,
+  columnMarks: oneOf(FOLDER_PAGE_CHOICES.columnMarks),
+  // YAZ-5582: a file from before it reads Background tab.
+  cardClickOpens: oneOf(FOLDER_PAGE_CHOICES.cardClickOpens),
+}
+const FOLDER_PAGES_PARTS = Object.keys(FOLDER_PAGES_PART_OK) as (keyof FolderPagesSettings)[]
+const isFolderPages = (v: unknown): v is FolderPagesSettings => isRecord(v) && FOLDER_PAGES_PARTS.every((part) => FOLDER_PAGES_PART_OK[part](v[part]))
+/** The Folder pages settings on load: each valid part is kept, a missing or broken one is its default (a file from before a part existed). */
+export function sanitizeFolderPages(raw: unknown): FolderPagesSettings {
+  const src = isRecord(raw) ? raw : {}
+  const out = Object.fromEntries(FOLDER_PAGES_PARTS.map((part) => [part, FOLDER_PAGES_PART_OK[part](src[part]) ? src[part] : DEFAULT_FOLDER_PAGES[part]])) as unknown as FolderPagesSettings
+  // One "Show empty groups" fed the Board and the Table before the split (YAZ-4608 C2): a file without the Board's part starts it from the one it has.
+  if (!isBool(src.showEmptyColumns) && isBool(src.showEmptyGroups)) out.showEmptyColumns = src.showEmptyGroups
+  return out
+}
+
+/** Settings › Tables › Header row (YAZ-4774) on load: each valid part is kept, a missing or broken one is its default. */
+export const sanitizeHeaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_HEADER_ROW, ...headerRowOwn(raw) })
+/** Settings › Tables › Subheader row (YAZ-4899): the default's parts under what reads. */
+export const sanitizeSubheaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_SUBHEADER_ROW, ...headerRowOwn(raw) })
 
 /**
  * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
@@ -464,7 +587,7 @@ export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean
 const isHotkeyEntry = ([id, key]: [string, unknown]): boolean => {
   // A click's gesture (YAZ-3936): 'links.thisTab' → 'CmdOrCtrl+Click', or null for "No gesture".
   if (gestureRow(id) !== undefined) return isGestureEntry(id, key)
-  // Any place's key since YAZ-3564 (K2): a scoped id of a changeable row ('note.bold'), or an old unscoped App id.
+  // Any place's key since YAZ-3564 (K2): a scoped id of a changeable row ('page.bold'), or an old unscoped App id.
   const row = keyRow(id)
   if (row === undefined || !row.changeable) return false
   if (key === null) return true
@@ -548,7 +671,7 @@ export function sanitizeOutlineHidden(raw: unknown): CodeSymbolKind[] {
 
 /**
  * ⌘D's place (YAZ-3556 D2), strict: a known tab, a folder or a file by a root-relative path ('' only for the vault root,
- * a folder), or today's daily note (YAZ-3607 D1). Only the keys of its kind: a value with extra keys does not read, so a
+ * a folder), or today's daily page (YAZ-3607 D1). Only the keys of its kind: a value with extra keys does not read, so a
  * merge by part can never mix two places.
  */
 export const isGoToPlace = (v: unknown): v is GoToPlace => {
@@ -557,7 +680,7 @@ export const isGoToPlace = (v: unknown): v is GoToPlace => {
   if (v.kind === 'tab') return keys === 'kind,tab' && isSidebarLens(v.tab)
   if (v.kind === 'daily') return keys === 'kind'
   if (v.kind !== 'folder' && v.kind !== 'file') return false
-  return keys === 'kind,path' && typeof v.path === 'string' && isValidNewNoteFolder(v.path) && (v.kind === 'folder' || v.path !== '')
+  return keys === 'kind,path' && typeof v.path === 'string' && isValidNewPageFolder(v.path) && (v.kind === 'folder' || v.path !== '')
 }
 
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
@@ -572,9 +695,10 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   guideLineDarkness: (v): v is number => isFiniteNumber(v) && v >= GUIDE_LINE_DARKNESS_MIN && v <= GUIDE_LINE_DARKNESS_MAX && v % GUIDE_LINE_DARKNESS_STEP === 0,
   foldingOnByDefault: (v): v is boolean => typeof v === 'boolean',
   theme: (v): v is Theme => typeof v === 'string' && (THEMES as readonly string[]).includes(v),
-  contentWidth: (v): v is ContentWidth => typeof v === 'string' && (CONTENT_WIDTHS as readonly string[]).includes(v),
-  newNoteLocation: (v): v is NewNoteLocation => typeof v === 'string' && (NEW_NOTE_LOCATIONS as readonly string[]).includes(v),
-  newNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
+  contentWidth: isContentWidth,
+  contentPosition: isContentPosition,
+  newPageLocation: (v): v is NewPageLocation => typeof v === 'string' && (NEW_PAGE_LOCATIONS as readonly string[]).includes(v),
+  newPageFolder: (v): v is string => typeof v === 'string' && isValidNewPageFolder(v),
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
   newTabPlace: (v): v is NewTabPlace => typeof v === 'string' && (NEW_TAB_PLACES as readonly string[]).includes(v),
   newBoardPictures: (v): v is NewBoardPictures => typeof v === 'string' && (NEW_BOARD_PICTURES as readonly string[]).includes(v),
@@ -584,6 +708,10 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   hoverPreview: (v): v is boolean => typeof v === 'boolean',
   hoverPreviewIn: isHoverPreviewIn,
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
+  commentsResolved: (v): v is CommentsResolvedPlace => typeof v === 'string' && (COMMENTS_RESOLVED_PLACES as readonly string[]).includes(v),
+  commentsHint: (v): v is boolean => typeof v === 'boolean',
+  cardSkillInSidebar: (v): v is boolean => typeof v === 'boolean',
+  profile: (v): v is CommentProfile | null => v === null || isCommentProfile(v),
   sidebarSort: isSidebarSort,
   searchSort: (v): v is TabSort => isTabSort(v, false, true),
   rowDates: (v): v is RowDates => isRecord(v) && SORT_MENU_TABS.every((tab) => typeof v[tab] === 'boolean'),
@@ -596,30 +724,65 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   vaultOpensOn: (v): v is VaultOpensOn => typeof v === 'string' && (VAULT_OPENS_ON as readonly string[]).includes(v),
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
   sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),
+  shownHiddenWords: (v): v is ShownHiddenWords => typeof v === 'string' && (SHOWN_HIDDEN_WORDS as readonly string[]).includes(v),
+  markNextHidden: (v): v is boolean => typeof v === 'boolean',
+  nextHiddenColour: (v): v is string | null => v === null || isHexColour(v),
+  cardTips: (v): v is boolean => typeof v === 'boolean',
+  cardSpacing: (v): v is CardSpacing => typeof v === 'string' && (CARD_SPACINGS as readonly string[]).includes(v),
+  cardWidth: (v): v is number | null => v === null || isCardWidth(v),
+  cardTextSize: (v): v is number | null => v === null || isCardTextSize(v),
+  cardTitleSize: (v): v is number | null => v === null || isCardTitleSize(v),
+  cardTablePosition: (v): v is CardTablePosition => typeof v === 'string' && (CARD_TABLE_POSITIONS as readonly string[]).includes(v),
+  cardSidesFold: (v): v is boolean => typeof v === 'boolean',
+  cardSidesFoldCardPages: (v): v is boolean => typeof v === 'boolean',
+  cardSidesFoldExplore: (v): v is boolean => typeof v === 'boolean',
+  inboxOpenAt: (v): v is InboxOpenAt => typeof v === 'string' && (INBOX_OPEN_AT as readonly string[]).includes(v),
+  cardLineSpacing: (v): v is number => isFiniteNumber(v) && v >= 1 && v <= 3,
+  cardBlockGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= 0 && v <= CARD_BLOCK_GAP_MAX,
+  cardBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= PAGE_BULLET_INDENT_MIN && v <= PAGE_BULLET_INDENT_MAX,
+  cardBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= PAGE_BULLET_GAP_MIN && v <= PAGE_BULLET_GAP_MAX,
+  cardBulletSpace: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= 0 && v <= CARD_BLOCK_GAP_MAX,
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
   tocOnByDefault: (v): v is boolean => typeof v === 'boolean',
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
+  findFolds: (v): v is FindFolds => typeof v === 'string' && (FIND_FOLDS as readonly string[]).includes(v),
   outsideChangeGlow: (v): v is OutsideChangeGlow => typeof v === 'string' && (OUTSIDE_CHANGE_GLOWS as readonly string[]).includes(v),
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
+  // YAZ-4783: "Text column" (`null`) or whole px in range; anything else falls back to Text column, the look before.
+  codeBlockWidth: (v): v is number | null => v === null || isBlockWidth(v),
+  tableWidth: (v): v is number | null => v === null || isBlockWidth(v),
   tableRowBand: (v): v is TableRowBand => typeof v === 'string' && (TABLE_ROW_BANDS as readonly string[]).includes(v),
   tableBandColour: isBandColour,
   tableBandStrength: (v): v is number => isFiniteNumber(v) && v >= TABLE_BAND_STRENGTH_MIN && v <= TABLE_BAND_STRENGTH_MAX && v % TABLE_BAND_STRENGTH_STEP === 0,
   tableBandRows: (v): v is TableBandRows => typeof v === 'string' && (TABLE_BAND_ROWS as readonly string[]).includes(v),
   tableBandBold: (v): v is boolean => typeof v === 'boolean',
+  tableHeaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
+  tableSubheaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
+  tableStickySubheaders: (v): v is boolean => typeof v === 'boolean',
+  tableStickyHeader: (v): v is boolean => typeof v === 'boolean',
+  tableTextInCells: (v): v is TableTextInCells => typeof v === 'string' && (TABLE_TEXT_IN_CELLS as readonly string[]).includes(v),
+  tablePosition: (v): v is TablePosition => typeof v === 'string' && (TABLE_POSITIONS as readonly string[]).includes(v),
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
+  tableNextShade: (v): v is boolean => typeof v === 'boolean',
+  tableNextColour: isBandColour,
   tableNowButton: (v): v is boolean => typeof v === 'boolean',
+  tableCellNoteButton: (v): v is boolean => typeof v === 'boolean',
+  tableNewStyle: (v): v is TableNewStyle => typeof v === 'string' && (TABLE_NEW_STYLES as readonly string[]).includes(v),
   tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
   tableShadeDarkness: (v): v is number => isFiniteNumber(v) && v >= TABLE_SHADE_MIN && v <= TABLE_SHADE_MAX && v % TABLE_SHADE_STEP === 0,
-  noteBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_INDENT_MIN && v <= NOTE_BULLET_INDENT_MAX,
-  noteBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_GAP_MIN && v <= NOTE_BULLET_GAP_MAX,
+  pageBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= PAGE_BULLET_INDENT_MIN && v <= PAGE_BULLET_INDENT_MAX,
+  pageBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= PAGE_BULLET_GAP_MIN && v <= PAGE_BULLET_GAP_MAX,
   tableCellBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= TABLE_CELL_BULLET_INDENT_MIN && v <= TABLE_CELL_BULLET_INDENT_MAX,
   tableCellBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= TABLE_CELL_BULLET_GAP_MIN && v <= TABLE_CELL_BULLET_GAP_MAX,
   tableCellNoteTemplate: (v): v is string => typeof v === 'string' && v.length <= CELL_NOTE_TEMPLATE_MAX,
   tableCellNotePinned: (v): v is boolean => typeof v === 'boolean',
+  tableCellNotePreviewLines: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= CELL_NOTE_PREVIEW_LINES_MIN && v <= CELL_NOTE_PREVIEW_LINES_MAX,
   typingArrows: (v): v is boolean => typeof v === 'boolean',
+  enterKeepsStylePages: (v): v is boolean => typeof v === 'boolean',
+  enterKeepsStyleBoxes: (v): v is boolean => typeof v === 'boolean',
   tableAllNotesOpensAt: (v): v is AllNotesOpensAt => typeof v === 'string' && (ALL_NOTES_OPENS_AT as readonly string[]).includes(v),
-  newNoteTitleTemplate: (v): v is string => typeof v === 'string' && v.length <= NEW_NOTE_TITLE_MAX && !v.includes('/'),
+  newPageTitleTemplate: (v): v is string => typeof v === 'string' && v.length <= NEW_PAGE_TITLE_MAX && !v.includes('/'),
   tableDayStart: isCalendarDayTime,
   tableDayEnd: isCalendarDayTime,
   tableTimeFormat: (v): v is string => typeof v === 'string' && isValidTimeFormat(v),
@@ -632,11 +795,14 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sidebarFolderIcons: (v): v is SidebarFolderIcons => typeof v === 'string' && (SIDEBAR_FOLDER_ICONS as readonly string[]).includes(v),
   sidebarArrowMotion: (v): v is SidebarArrowMotion => typeof v === 'string' && (SIDEBAR_ARROW_MOTIONS as readonly string[]).includes(v),
   sidebarRevealActive: (v): v is boolean => typeof v === 'boolean',
+  sidebarPlace: (v): v is SidebarPlace => typeof v === 'string' && (SIDEBAR_PLACES as readonly string[]).includes(v),
   sidebarIconColors: isSidebarIconColors,
   sidebarIconRules: isIconRules,
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.
   canvas: isCanvasPrefs,
   diagramDarkColors: (v): v is DiagramDarkColors => typeof v === 'string' && (DIAGRAM_DARK_COLORS as readonly string[]).includes(v),
+  embedRestSeconds: (v): v is EmbedRestSeconds => typeof v === 'number' && (EMBED_REST_SECONDS as readonly number[]).includes(v),
+  newBoardFolder: (v): v is NewBoardFolder => typeof v === 'string' && (NEW_BOARD_FOLDERS as readonly string[]).includes(v),
   // YAZ-3038 (Draw's 🔒 YAZ-1775 D5): an absolute path the user picked, or null for `<userData>/library`. Never
   // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
   libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
@@ -657,9 +823,15 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   hotkeys: isHotkeyOverrides,
   hotkeysAside: isHotkeyAside,
   sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
+  // YAZ-5885 D1: a row height in CSS px, 20–40 (Compact 22 · Default 25.5 · Roomy 30 · any Custom px in the range).
+  sidebarRowHeight: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ROW_HEIGHT_MIN && v <= SIDEBAR_ROW_HEIGHT_MAX,
   tocZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
   // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
   appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
+  // YAZ-5881: Explore size, on the App sizes too; a stored value off them loads as 125 (the default).
+  exploreSize: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
+  // YAZ-5976: Default (null) or a whole px in the Custom range; anything else loads as Default.
+  exploreWidth: isExploreWidth,
   codeReadOnly: (v): v is boolean => typeof v === 'boolean',
   codeWrap: (v): v is boolean => typeof v === 'boolean',
   codeMinimap: (v): v is boolean => typeof v === 'boolean',
@@ -668,13 +840,14 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   codeOutlineLocals: (v): v is boolean => typeof v === 'boolean',
   codeLanguageHelpers: (v): v is boolean => typeof v === 'boolean',
   goTo: isGoToPlace,
-  dailyNotes: (v): v is boolean => typeof v === 'boolean',
-  dailyNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
-  dailyNoteFormat: (v): v is string => typeof v === 'string' && isValidDailyNoteFormat(v),
-  dailyNoteDayFolder: (v): v is boolean => typeof v === 'boolean',
-  dailyNoteOpens: (v): v is DailyNoteOpens => typeof v === 'string' && (DAILY_NOTE_OPENS as readonly string[]).includes(v),
+  dailyPages: (v): v is boolean => typeof v === 'boolean',
+  dailyPageFolder: (v): v is string => typeof v === 'string' && isValidNewPageFolder(v),
+  dailyPageFormat: (v): v is string => typeof v === 'string' && isValidDailyPageFormat(v),
+  dailyPageDayFolder: (v): v is boolean => typeof v === 'boolean',
+  dailyPageOpens: (v): v is DailyPageOpens => typeof v === 'string' && (DAILY_PAGE_OPENS as readonly string[]).includes(v),
   tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
   memoryReload: (v): v is boolean => typeof v === 'boolean',
+  folderPages: isFolderPages,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -683,7 +856,8 @@ const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsStat
  * longer has is dropped: `linkOpen` (YAZ-3609 D11) went with YAZ-3936, as the gestures of Settings › Hotkeys took its place.
  */
 export function sanitizeSettings(raw: unknown): SettingsState {
-  const src = isRecord(raw) ? raw : {}
+  // YAZ-5036: the names that said "note" move to "page" first (`movedSettings`), so no setting and no custom key resets.
+  const src = isRecord(raw) ? movedSettings(raw) : {}
   const out = { ...DEFAULT_SETTINGS }
   for (const k of SETTINGS_KEYS) {
     const v = src[k]
@@ -697,6 +871,9 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.selectionToolbar = sanitizeToolbarPrefs(src.selectionToolbar)
   out.highlightCustomColors = sanitizeHighlightCustomColors(src.highlightCustomColors)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
+  out.folderPages = sanitizeFolderPages(src.folderPages)
+  out.tableHeaderRow = sanitizeHeaderRow(src.tableHeaderRow)
+  out.tableSubheaderRow = sanitizeSubheaderRow(src.tableSubheaderRow)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)
@@ -705,6 +882,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
   // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
+  // YAZ-5885 D3: the sidebar zoom's rule. A number outside 20–40 is clamped; missing or not a number reads Default (25.5).
+  if (isFiniteNumber(src.sidebarRowHeight)) out.sidebarRowHeight = Math.min(SIDEBAR_ROW_HEIGHT_MAX, Math.max(SIDEBAR_ROW_HEIGHT_MIN, src.sidebarRowHeight))
   if (isFiniteNumber(src.tocZoom)) out.tocZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.tocZoom))
   // YAZ-3558 D2: a store from before the split said Off in `tableOfContents`. It reads as "Table of contents default" Off, and "Pin default" Off (`auto`).
   if (src.tableOfContents === 'off' && typeof src.tocOnByDefault !== 'boolean') out.tocOnByDefault = false
@@ -724,7 +903,9 @@ const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside
  * that the file lacks or that the repair had to change keeps this Mac's part. A field with no repair by part
  * (`sidebarSort`) that the repair resets as a whole keeps this Mac's whole field (YAZ-3302).
  */
-export function mergeFolderSettings(current: SettingsState, incoming: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
+export function mergeFolderSettings(current: SettingsState, given: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
+  // YAZ-5036: a Mac on an older build writes the old names; they move here, before the merge picks the travelling keys.
+  const incoming = movedSettings(given)
   const isObject = (v: unknown): v is Record<string, unknown> => isRecord(v) && !Array.isArray(v)
   const taken = Object.fromEntries(
     Object.entries(incoming)
@@ -908,7 +1089,7 @@ function sanitizeTocSources(raw: unknown): Record<string, TocSource> {
   return out
 }
 
-/** A page switch of the cog — "Section indent" (YAZ-2709 D2) and "Table of contents" (YAZ-2950): page → `true` or `false`. A wrong entry drops alone — a path that is not absolute, or a value that is not a boolean (`1`, `"true"`, `null`) — and the note then reads as a note with no entry. */
+/** A page switch of the cog — "Section indent" (YAZ-2709 D2) and "Table of contents" (YAZ-2950): page → `true` or `false`. A wrong entry drops alone — a path that is not absolute, or a value that is not a boolean (`1`, `"true"`, `null`) — and the page then reads as a page with no entry. */
 function sanitizeSwitches(raw: unknown): Record<string, boolean> {
   if (!isRecord(raw)) return {}
   const out: Record<string, boolean> = {}
@@ -937,6 +1118,12 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     tocSwitches: sanitizeSwitches(raw.tocSwitches),
     name: cleanVaultName(raw.name),
     key: cleanVaultKey(raw.key),
+    // "A folder of <vault>" (YAZ-4922 D3): kept only as an absolute path; whether it holds the bucket is `sanitizeFolders`'.
+    ...(typeof raw.in === 'string' && isAbsolute(raw.in) && { in: stripSlash(raw.in) }),
+    // "Up next a day" (YAZ-5028): today's taken marks; a junk entry is none.
+    ...(cleanUpNextTaken(raw.upNext) !== null && { upNext: cleanUpNextTaken(raw.upNext)! }),
+    // "Add more for today" (YAZ-5042): the day's added numbers; a junk entry is none.
+    ...(cleanCardsAdded(raw.added) !== null && { added: cleanCardsAdded(raw.added)! }),
   }
 }
 
@@ -952,6 +1139,8 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
       if (taken.has(clean.key)) clean.key = null
       else taken.add(clean.key)
     }
+    // A folder of a vault must sit inside that vault (YAZ-4922 D3): any other `in` is dropped.
+    if (clean.in != null && !root.startsWith(`${clean.in}/`)) delete clean.in
     out[root] = clean
   }
   return out
@@ -1076,10 +1265,13 @@ export function sanitizeTabCanvas(raw: unknown, windows: readonly WindowEntry[])
 }
 
 /** The file's shape: each folder bucket minus its session field (YAZ-1642) — what a relaunch restores, nothing more. */
-function toDisk(state: AppState): unknown {
+function toDisk(state: AppState, slotTime: SlotTimeToMove = {}): unknown {
   const folders = Object.fromEntries(Object.entries(state.folders).map(([root, { expanded: _e, ...kept }]) => [root, kept]))
-  return { ...state, folders }
+  return { ...state, settings: { ...state.settings, ...slotTime }, folders }
 }
+
+/** The mark `tableLookMoves` sets on a vault once its Time in slot is in (or found in) its table-look.json. */
+export const SLOT_MARK = 'table-look.json#slot'
 
 function sanitizeState(raw: unknown): AppState | null {
   if (!isRecord(raw) || raw.version !== 1) return null
@@ -1109,7 +1301,29 @@ function sanitizeState(raw: unknown): AppState | null {
     settingsSavedAt: isFiniteNumber(raw.settingsSavedAt) && raw.settingsSavedAt >= 0 ? raw.settingsSavedAt : 0,
     // YAZ-3343 D1: absent is the default; an old build drops the key.
     tabCanvas: sanitizeTabCanvas(raw.tabCanvas, windows),
+    // YAZ-5120: absent is the default; each bad field reads its default; an old build drops the key.
+    course: cleanCourseState(raw.course),
+    // YAZ-5487 (the YAZ-5491 rule): absolute roots, each with config file names; anything else is dropped.
+    ...seededOf(raw.seededVaultConfig),
   }
+}
+
+/** The key only when it holds a mark, so a state with none reads as it always did. */
+const seededOf = (raw: unknown): Pick<AppState, 'seededVaultConfig'> => {
+  const seeded = sanitizeSeeded(raw)
+  return Object.keys(seeded).length === 0 ? {} : { seededVaultConfig: seeded }
+}
+
+/** `seededVaultConfig`: absolute roots to lists of plain config names (`<name>.json`, or `<name>.json#<part>`), each once. */
+function sanitizeSeeded(raw: unknown): Record<string, string[]> {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, string[]> = {}
+  for (const [root, names] of Object.entries(raw)) {
+    if (!isAbsolute(root) || !Array.isArray(names)) continue
+    const clean = [...new Set(names.filter((n): n is string => typeof n === 'string' && /^[\w.-]+\.json(#[\w-]+)?$/.test(n)))]
+    if (clean.length > 0) out[root] = clean
+  }
+  return out
 }
 
 // ---------- loading ----------
@@ -1127,6 +1341,22 @@ export function parseState(text: string): AppState | null {
 interface Loaded {
   state: AppState
   legacyHeadingStyles: HeadingStyles
+  /** YAZ-5602 round 2: Time in slot and Show seconds as an app setting of before, for the move into table-look.json. */
+  slotTimeToMove?: SlotTimeToMove
+}
+
+/** Time in slot and Show seconds (YAZ-5602) as a build of before saved them in `settings`: each only when it reads. */
+export interface SlotTimeToMove {
+  tableSlotTime?: 'off' | 'down' | 'up'
+  tableSlotSeconds?: boolean
+}
+const slotTimeOf = (settings: unknown): SlotTimeToMove => {
+  if (!isRecord(settings)) return {}
+  const mode = settings.tableSlotTime
+  return {
+    ...(mode === 'off' || mode === 'down' || mode === 'up' ? { tableSlotTime: mode } : {}),
+    ...(typeof settings.tableSlotSeconds === 'boolean' ? { tableSlotSeconds: settings.tableSlotSeconds } : {}),
+  }
 }
 
 /**
@@ -1144,7 +1374,7 @@ function parseStateDetailed(text: string): Loaded | null {
   const state = sanitizeState(raw)
   if (state === null) return null
   const legacy = isRecord(raw) && isRecord(raw.settings) ? raw.settings.headingStyles : undefined
-  return { state, legacyHeadingStyles: isHeadingStyles(legacy) ? legacy : {} }
+  return { state, legacyHeadingStyles: isHeadingStyles(legacy) ? legacy : {}, slotTimeToMove: slotTimeOf(isRecord(raw) ? raw.settings : undefined) }
 }
 
 /** Reads the file synchronously; a corrupt one is moved aside as `<file>.corrupt-<epoch>` and defaults are used. */
@@ -1175,6 +1405,19 @@ export function createStore(filePath: string): Store {
   let state = loaded.state
   /** The 1.0.15 heading styles (YAZ-3066 D11), handed out once. */
   let legacyHeadingStyles: HeadingStyles | null = loaded.legacyHeadingStyles
+  /** YAZ-5602 round 2: the Time in slot this file held at start; the state omits it, so the next write drops it. */
+  const slotTimeToMove: SlotTimeToMove = Object.freeze({ ...loaded.slotTimeToMove })
+  /**
+   * YAZ-5649 item 1: written back into the file's settings until every known vault (window and recent) has the
+   * `table-look.json#slot` mark, so a launch where the move did not run (offline, no pull yet, the vault not open)
+   * never loses it.
+   */
+  const slotTimeKept = (s: AppState): SlotTimeToMove => {
+    if (Object.keys(slotTimeToMove).length === 0) return slotTimeToMove
+    const known = new Set(placeVaults(s.folders, [...s.windows.flatMap((w) => w.roots), ...s.recents.map((r) => r.path)]))
+    const moved = known.size > 0 && [...known].every((root) => s.seededVaultConfig?.[root]?.includes(SLOT_MARK) === true)
+    return moved ? {} : slotTimeToMove
+  }
   const listeners = new Set<(state: AppState) => void>()
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -1192,7 +1435,7 @@ export function createStore(filePath: string): Store {
     const snapshot = state
     chain = chain
       .then(async () => {
-        const text = `${JSON.stringify(toDisk(snapshot), null, 2)}\n`
+        const text = `${JSON.stringify(toDisk(snapshot, slotTimeKept(snapshot)), null, 2)}\n`
         if (text === lastWritten) return
         mkdirSync(dirname(filePath), { recursive: true })
         await atomicWrite(filePath, text)
@@ -1244,6 +1487,20 @@ export function createStore(filePath: string): Store {
       return true
     },
 
+    slotTimeToMove() {
+      return slotTimeToMove
+    },
+
+    seededConfig(root, name) {
+      return state.seededVaultConfig?.[root]?.includes(name) === true
+    },
+
+    markSeededConfig(root, name) {
+      const held = state.seededVaultConfig ?? {}
+      if (held[root]?.includes(name) === true) return
+      commit({ ...state, seededVaultConfig: { ...held, [root]: [...(held[root] ?? []), name] } })
+    },
+
     removePictureFolder(folder) {
       if (!state.approvedPictureFolders.includes(folder)) return
       commit({ ...state, approvedPictureFolders: state.approvedPictureFolders.filter((f) => f !== folder) })
@@ -1285,6 +1542,12 @@ export function createStore(filePath: string): Store {
         ...(patch.lastFile !== undefined ? { lastFile: patch.lastFile } : {}),
         ...(patch.name !== undefined ? { name: cleanVaultName(patch.name) } : {}),
         ...(key !== undefined ? { key } : {}),
+        // "A folder of <vault>" (YAZ-4922 D3): an absolute folder strictly inside the vault, else nothing; null ends it.
+        ...(patch.in !== undefined ? { in: typeof patch.in === 'string' && isAbsolute(patch.in) && root.startsWith(`${stripSlash(patch.in)}/`) ? stripSlash(patch.in) : null } : {}),
+        // "Up next a day" (YAZ-5028): the renderer hands in the whole day's list; a junk one changes nothing.
+        ...(patch.upNext !== undefined && cleanUpNextTaken(patch.upNext) !== null ? { upNext: cleanUpNextTaken(patch.upNext)! } : {}),
+        // "Add more for today" (YAZ-5042): the renderer hands in the day's numbers whole; a junk value changes nothing.
+        ...(patch.added !== undefined && cleanCardsAdded(patch.added) !== null ? { added: cleanCardsAdded(patch.added)! } : {}),
       }
       // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
@@ -1308,7 +1571,7 @@ export function createStore(filePath: string): Store {
 
     setTocSource(root, file, source) {
       const cur = folderOf(root)
-      // Auto on a note that is on Auto already: nothing to write, nothing to tell the windows.
+      // Auto on a page that is on Auto already: nothing to write, nothing to tell the windows.
       if (source === null ? !(file in cur.tocSources) : cur.tocSources[file] === source) return
       const tocSources = { ...cur.tocSources }
       if (source === null) delete tocSources[file]
@@ -1343,7 +1606,8 @@ export function createStore(filePath: string): Store {
       const normalized = withTabStrip({ ...entry, roots: normalizeRoots(entry.roots ?? [], entry.root), tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }, entry.tabStrip)
       const windows = state.windows.some((w) => w.id === entry.id) ? state.windows.map((w) => (w.id === entry.id ? normalized : w)) : [...state.windows, normalized]
       // The use goes in the commit of the window (YAZ-2663 R2): one write, one broadcast. Its vault is the one of the window that holds the page.
-      const vault = opened === null ? null : rootOfPath(normalized.roots, opened)
+      // A folder of a vault (YAZ-4922 D3) counts the use for its vault: its Recents are the vault's, under the folder.
+      const vault = opened === null ? null : rootOfPath(placeVaults(state.folders, normalized.roots), opened)
       const folders = opened === null || vault === null ? state.folders : { ...state.folders, [vault]: { ...folderOf(vault), opens: addOpen(folderOf(vault).opens, opened, now) } }
       // The board's places of tabs this window no longer has go in the same commit (D28): a stale card would take a cell.
       commit({ ...state, windows, folders, tabCanvas: pruneCanvas(state.tabCanvas, normalized) })
@@ -1411,6 +1675,11 @@ export function createStore(filePath: string): Store {
       if (tabCanvas !== state.tabCanvas) commit({ ...state, tabCanvas })
     },
 
+    setCourse(patch) {
+      const course = applyCoursePatch(state.course, patch)
+      if (course !== state.course) commit({ ...state, course })
+    },
+
     renamePath(oldPath, newPath) {
       // E1b (GRO-2241): `oldPath` may be a DIRECTORY — every stored path AT or UNDER it
       // follows: window roots (a subfolder opened as a vault!), files and tabs, recents,
@@ -1464,6 +1733,8 @@ export function createStore(filePath: string): Store {
           remap(root),
           {
             ...folder,
+            // A folder of a vault (YAZ-4922 D3) follows its vault's folder, as its own path follows its own.
+            ...(folder.in != null && { in: remap(folder.in) }),
             expanded: folder.expanded.map(remapFold),
             lastFile: folder.lastFile === null ? null : remap(folder.lastFile),
             folds: remapKeys(folder.folds, remap),
@@ -1472,11 +1743,11 @@ export function createStore(filePath: string): Store {
             opens: remapKeys(folder.opens, remap),
             // The save log (YAZ-3235 S5), keyed by file as well: a renamed file keeps its last save.
             edits: remapKeys(folder.edits, remap),
-            // And the closed notes (YAZ-3487 D9): a renamed note stays in "Recently closed".
+            // And the closed pages (YAZ-3487 D9): a renamed page stays in "Recently closed".
             closed: remapKeys(folder.closed, remap),
-            // And the table of contents source (YAZ-2700 D14), keyed the same way: the choice follows its note.
+            // And the table of contents source (YAZ-2700 D14), keyed the same way: the choice follows its page.
             tocSources: remapKeys(folder.tocSources, remap),
-            // And the folded rows of the table of contents (YAZ-3939 D1): they follow their note.
+            // And the folded rows of the table of contents (YAZ-3939 D1): they follow their page.
             tocFolds: remapKeys(folder.tocFolds, remap),
             // And the "Table of contents" switch (YAZ-2950).
             tocSwitches: remapKeys(folder.tocSwitches, remap),

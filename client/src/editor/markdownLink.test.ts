@@ -11,10 +11,12 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { addLinkOn, type MarkdownLinkNav } from './markdownLink'
+import type { IndexRecord } from '@shared/types'
+import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 const mounted: Array<{ crepe: ReturnType<typeof createCrepe>; root: HTMLElement }> = []
 
-async function mount(markdown = '[Example](https://example.com)\n', overrides: Partial<MarkdownLinkNav> = {}) {
+async function mount(markdown = '[Example](https://example.com)\n', overrides: Partial<MarkdownLinkNav> = {}, wikilinks?: MutableWikilinkResolveSource) {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const nav: MarkdownLinkNav = {
@@ -24,7 +26,7 @@ async function mount(markdown = '[Example](https://example.com)\n', overrides: P
     hotkeys: () => SUITE_KEYS,
     ...overrides,
   }
-  const crepe = createCrepe({ root, defaultValue: markdown, markdownLinkNav: nav })
+  const crepe = createCrepe({ root, defaultValue: markdown, markdownLinkNav: nav, wikilinks })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, nav, root, view: crepe.editor.ctx.get(editorViewCtx) }
@@ -43,7 +45,7 @@ const rowsOf = (view: EditorView) => Array.from(popupOf(view)!.querySelectorAll<
 const rowNamed = (view: EditorView, label: string) => rowsOf(view).find((row) => row.textContent === label)!
 
 /**
- * The "Links in a note" gestures (YAZ-3936). Browser style by default (YAZ-3747 demo): ⌘-click opens a background tab,
+ * The "Links in a page" gestures (YAZ-3936). Browser style by default (YAZ-3747 demo): ⌘-click opens a background tab,
  * and "Open in this tab" has no click; the suite binds ⌘⌥-click to it (`SUITE_KEYS`) unless a test gives its own.
  */
 const SUITE_KEYS: HotkeyOverrides = { 'links.thisTab': 'CmdOrCtrl+Alt+Click' }
@@ -78,7 +80,7 @@ describe('primary click', () => {
     ['fragment-only links', '[Section](#section)\n', { button: 0 }],
     ['middle clicks', '[Example](https://example.com)\n', { button: 1 }],
     ['a click no gesture has', '[Example](https://example.com)\n', { button: 0, shiftKey: true }],
-    // YAZ-3935 C1: in an editable note a plain click puts the caret in the link's words, as on text.
+    // YAZ-3935 C1: in an editable page a plain click puts the caret in the link's words, as on text.
     ['a plain click', '[Example](https://example.com)\n', { button: 0 }],
   ])('leaves %s to the editor/browser', async (_name, markdown, init) => {
     const { nav, root } = await mount(markdown)
@@ -110,21 +112,35 @@ describe('the gestures of Settings › Hotkeys, read at the click (YAZ-3936)', (
   it('a changed binding works at once: "the old way" makes a plain click open; Open in a new tab goes where its gesture says', async () => {
     const openPath = vi.fn()
     let hotkeys = {}
-    const { root } = await mount('[Note](../note.md)\n', { inApp: () => '/v/note.md', openPath, hotkeys: () => hotkeys })
+    const { root } = await mount('[Page](../page.md)\n', { inApp: () => '/v/page.md', openPath, hotkeys: () => hotkeys })
     expect(mouse(anchorOf(root), 'mousedown', { button: 0 }).defaultPrevented).toBe(false)
     hotkeys = { 'links.thisTab': 'Click', 'links.newTab': 'Alt+Click' }
     expect(mouse(anchorOf(root), 'mousedown', { button: 0 }).defaultPrevented).toBe(true)
     mouse(anchorOf(root), 'mousedown', { button: 0, altKey: true })
     expect(mouse(anchorOf(root), 'mousedown', OPEN).defaultPrevented).toBe(false) // ⌘⌥-click has no action now
-    expect(openPath.mock.calls).toEqual([['/v/note.md', 'thisTab'], ['/v/note.md', 'newTab']])
+    expect(openPath.mock.calls).toEqual([['/v/page.md', 'thisTab'], ['/v/page.md', 'newTab']])
   })
 
-  it('a read-only note keeps "a click opens" (YAZ-3879 point 6)', async () => {
+  it('a read-only page keeps "a click opens" (YAZ-3879 point 6)', async () => {
     const openPath = vi.fn()
-    const { crepe, root } = await mount('[Note](../note.md)\n', { inApp: () => '/v/note.md', openPath })
+    const { crepe, root } = await mount('[Page](../page.md)\n', { inApp: () => '/v/page.md', openPath })
     crepe.setReadonly(true)
     expect(mouse(anchorOf(root), 'mousedown', { button: 0 }).defaultPrevented).toBe(true)
-    expect(openPath).toHaveBeenCalledExactlyOnceWith('/v/note.md', 'thisTab')
+    expect(openPath).toHaveBeenCalledExactlyOnceWith('/v/page.md', 'thisTab')
+  })
+
+  it('the vault\'s "Clicking a link: Explore" holds on a read-only page too (YAZ-4939); ⌘-click keeps its door', async () => {
+    const openPath = vi.fn()
+    let explore = true
+    const { crepe, root } = await mount('[Page](../page.md)\n', { inApp: () => '/v/page.md', openPath, exploreClick: () => explore })
+    // A single click (`detail` 1), as the browser sends it.
+    expect(mouse(anchorOf(root), 'mousedown', { button: 0, detail: 1 }).defaultPrevented).toBe(true)
+    crepe.setReadonly(true)
+    expect(mouse(anchorOf(root), 'mousedown', { button: 0, detail: 1 }).defaultPrevented).toBe(true)
+    mouse(anchorOf(root), 'mousedown', BEHIND)
+    explore = false
+    mouse(anchorOf(root), 'mousedown', { button: 0, detail: 1 })
+    expect(openPath.mock.calls).toEqual([['/v/page.md', 'explore'], ['/v/page.md', 'explore'], ['/v/page.md', 'backgroundTab'], ['/v/page.md', 'thisTab']])
   })
 })
 
@@ -146,7 +162,7 @@ describe('a link into a vault this window does not show (YAZ-3609 D21)', () => {
 })
 
 describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
-  const inApp = (href: string) => (href === '../note.md' ? '/v/note.md' : null)
+  const inApp = (href: string) => (href === '../page.md' ? '/v/page.md' : null)
 
   it.each([
     ['L1 the Open-in-this-tab gesture opens the current tab', OPEN, 'thisTab'],
@@ -154,12 +170,12 @@ describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
     ['L1 a ⌘⇧-click opens a new tab in front', { button: 0, metaKey: true, shiftKey: true }, 'newTab'],
   ])('%s, and never asks the OS', async (_name, init, where) => {
     const openPath = vi.fn()
-    const { crepe, nav, root } = await mount('[Note](../note.md)\n', { inApp, openPath })
+    const { crepe, nav, root } = await mount('[Page](../page.md)\n', { inApp, openPath })
     const event = mouse(anchorOf(root), 'mousedown', init)
     expect(event.defaultPrevented).toBe(true)
-    expect(openPath).toHaveBeenCalledWith('/v/note.md', where)
+    expect(openPath).toHaveBeenCalledWith('/v/page.md', where)
     expect(nav.open).not.toHaveBeenCalled()
-    expect(getMarkdownForSave(crepe)).toBe('[Note](../note.md)\n')
+    expect(getMarkdownForSave(crepe)).toBe('[Page](../page.md)\n')
   })
 
   it.each([
@@ -203,9 +219,10 @@ describe('a Markdown link into a vault of the window is a pill (YAZ-3609 D19)', 
     const vaultTag = (path: string) => (path.startsWith('/v/other/') ? 'Other Vault' : null)
     const { crepe, root } = await mount('[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n', { vaultPath, icon, vaultTag })
     // The vault's name is the pill's own last piece, inside the link and after its text (YAZ-3738 D4).
-    const tagged = Array.from(root.querySelectorAll<HTMLElement>('.link-pill__vault'))
-    expect(tagged.map((el) => [el.textContent, el.closest('a') !== null, el.previousElementSibling?.textContent])).toEqual([[' (Other Vault)', true, ' end']])
-    // A widget: the saved note does not change.
+    // Since YAZ-4924 the name is inside the pill's tail piece (`link-pill__tail`), which is the last piece.
+    const tagged = Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail'))
+    expect(tagged.map((el) => [el.textContent, el.closest('a') !== null, el.previousElementSibling?.textContent, el.querySelector('.link-pill__vault')?.textContent])).toEqual([[' (Other Vault)', true, ' end', 'Other Vault']])
+    // A widget: the saved page does not change.
     expect(getMarkdownForSave(crepe)).toBe('[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n')
   })
 
@@ -240,7 +257,7 @@ describe('a Markdown link into a vault of the window is a pill (YAZ-3609 D19)', 
 describe('the address in the link popup (YAZ-3645)', () => {
   it('follows the link as a click on it does: a vault page opens in a tab, never a new browser window', async () => {
     const openPath = vi.fn()
-    const { nav, root, view } = await mount('[Note](../note.md) and [Web](https://example.com)\n', { inApp: (href) => (href === '../note.md' ? '/v/note.md' : null), openPath })
+    const { nav, root, view } = await mount('[Page](../page.md) and [Web](https://example.com)\n', { inApp: (href) => (href === '../page.md' ? '/v/page.md' : null), openPath })
     const popup = (href: string) => {
       const a = document.createElement('a')
       a.className = 'link-display'
@@ -249,11 +266,11 @@ describe('the address in the link popup (YAZ-3645)', () => {
       view.dom.closest('.milkdown')!.appendChild(a)
       return a
     }
-    const vault = popup('../note.md')
+    const vault = popup('../page.md')
     const event = new MouseEvent('click', { bubbles: true, cancelable: true })
     vault.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
-    expect(openPath).toHaveBeenCalledWith('/v/note.md', 'thisTab')
+    expect(openPath).toHaveBeenCalledWith('/v/page.md', 'thisTab')
     popup('https://example.com').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
     expect(nav.open).toHaveBeenCalledWith('https://example.com')
     expect(root).toBeDefined()
@@ -261,10 +278,10 @@ describe('the address in the link popup (YAZ-3645)', () => {
 
   it('YAZ-3650 a right-click on the address opens nothing', async () => {
     const openPath = vi.fn()
-    const { nav, view } = await mount('[Note](../note.md)\n', { inApp: () => '/v/note.md', openPath })
+    const { nav, view } = await mount('[Page](../page.md)\n', { inApp: () => '/v/page.md', openPath })
     const a = document.createElement('a')
     a.className = 'link-display'
-    a.setAttribute('href', '../note.md')
+    a.setAttribute('href', '../page.md')
     view.dom.closest('.milkdown')!.appendChild(a)
     a.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 2 }))
     expect(openPath).not.toHaveBeenCalled()
@@ -273,10 +290,10 @@ describe('the address in the link popup (YAZ-3645)', () => {
 
   it('leaves an anchor outside the editor alone', async () => {
     const openPath = vi.fn()
-    await mount('[Note](../note.md)\n', { inApp: () => '/v/note.md', openPath })
+    await mount('[Page](../page.md)\n', { inApp: () => '/v/page.md', openPath })
     const outside = document.createElement('a')
     outside.className = 'link-display'
-    outside.setAttribute('href', '../note.md')
+    outside.setAttribute('href', '../page.md')
     document.body.appendChild(outside)
     const event = new MouseEvent('click', { bubbles: true, cancelable: true })
     outside.dispatchEvent(event)
@@ -286,8 +303,8 @@ describe('the address in the link popup (YAZ-3645)', () => {
   })
 })
 
-describe('"Add link…" from the note menu (YAZ-3609 D17)', () => {
-  it('opens the link box on the selection, and only with one, in a note that can change; nothing after the editor is gone', async () => {
+describe('"Add link…" from the page menu (YAZ-3609 D17)', () => {
+  it('opens the link box on the selection, and only with one, in a page that can change; nothing after the editor is gone', async () => {
     const { crepe, view } = await mount('Read the plan first.\n')
     const addLink = vi.fn()
     crepe.editor.ctx.update(linkTooltipAPI.key, (api) => ({ ...api, addLink }))
@@ -329,7 +346,7 @@ describe('right-click menu', () => {
     })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
     // No App doors here: of the place rows only Copy path (YAZ-3740; with the doors: `linkMenu.test.ts`).
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Edit link', 'Remove link'])
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Edit link', 'Remove link'])
     expect(rowsOf(view).some((row) => row.disabled)).toBe(false)
     rowNamed(view, 'Open in new tab').click()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
@@ -337,7 +354,14 @@ describe('right-click menu', () => {
     expect(openPath.mock.calls).toEqual([['/Other/Plan.md', 'backgroundTab'], ['/Other/Plan.md', 'thisTab']])
   })
 
-  it('a read-only note (YAZ-3076 D2) offers no Edit and no Remove: they would change the note', async () => {
+  it('"Show as embed" on a board in another vault: a NEW embed, so its view starts locked (YAZ-2571 round 7)', async () => {
+    const { crepe, root, view } = await mount('[CloudFront](../Other/CloudFront.drawio)\n', { inApp: () => '/Other/CloudFront.drawio', vaultPath: () => '/Other/CloudFront.drawio' })
+    mouse(anchorOf(root), 'contextmenu', { button: 2 })
+    rowNamed(view, 'Show as embed').click()
+    expect(getMarkdownForSave(crepe)).toBe('![CloudFront|locked](../Other/CloudFront.drawio)\n')
+  })
+
+  it('a read-only page (YAZ-3076 D2) offers no Edit and no Remove: they would change the page', async () => {
     const { crepe, root, view } = await mount()
     crepe.setReadonly(true)
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
@@ -419,5 +443,48 @@ describe('ownership and cleanup', () => {
     mounted.splice(0)
     expect(parent.querySelector('.ctx-menu--editor')).toBeNull()
     expect(mouse(anchor, 'contextmenu', { button: 2 }).defaultPrevented).toBe(false)
+  })
+})
+
+describe("the vault's link pills look on a Markdown link pill (YAZ-4924)", () => {
+  it('the head and the tail are the pill\'s first and last pieces, inside the link; the vault name, the ID and the folder as on a [[link]]; the page keeps every byte', async () => {
+    const vaultTag = (path: string) => (path.startsWith('/v/other/') ? 'Other Vault' : null)
+    const icon = (path: string, folder: boolean) => ({ class: 'probe-icon', 'data-path': path, 'data-folder': String(folder) })
+    const vaultPath = (href: string) => (href.startsWith('../') ? `/v/${href.slice(3)}` : null)
+    const source = createWikilinkResolveSource()
+    const record = { path: '/v/here.md', id: 'YAZ-7', name: 'here.md', basename: 'here', title: 'Here', folder: 'Top', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] } as unknown as IndexRecord
+    source.update(() => null, [record], [], true, ['YAZ'])
+    const md = '[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n'
+    const { crepe, root } = await mount(md, { vaultPath, icon, vaultTag }, source)
+    source.setLook({ format: '[{icon}{name} {id} {folder} ({vault})]', vault: 'always' }, 'Mine')
+    const pills = Array.from(root.querySelectorAll<HTMLElement>('.link-pill')).map((el) => [el.textContent, el.classList.contains('link-pill--first'), el.classList.contains('link-pill--last'), el.closest('a') !== null])
+    expect(pills).toEqual([
+      ['[', true, false, true],
+      ['Plan ', false, false, true],
+      ['bold', false, false, true],
+      [' end', false, false, true],
+      [' (Other Vault)]', false, true, true],
+      ['[', true, false, true],
+      ['Here', false, false, true],
+      [' YAZ-7 Top (Mine)]', false, true, true],
+    ])
+    expect(root.querySelectorAll('.probe-icon')).toHaveLength(2)
+    expect(getMarkdownForSave(crepe)).toBe(md)
+    // Never: the other vault's name goes too, and a tail with nothing left is not drawn.
+    source.setLook({ vault: 'never' }, 'Mine')
+    expect(root.querySelectorAll('.link-pill__tail, .link-pill__head')).toHaveLength(0)
+    // The icon where the format puts it: a piece of the tail, with the icon's attributes; none without `{icon}`.
+    source.setLook({ format: '{name} {icon}' }, 'Mine')
+    expect(Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail .probe-icon')).map((el) => [el.className, el.dataset.path])).toEqual([['probe-icon link-pill__icon', '/v/other/plan.md'], ['probe-icon link-pill__icon', '/v/here.md']])
+    expect(root.querySelectorAll('.link-pill.probe-icon')).toHaveLength(0)
+    source.setLook({ format: '{name}' }, 'Mine')
+    expect(root.querySelectorAll('.probe-icon')).toHaveLength(0)
+    // Round 5: `{number}` is the ID's number alone (none on the other vault's page, so its "#" goes), `{mark}` an icon.
+    source.setLook({ format: '{name} #{number}{mark}' }, 'Mine')
+    expect(Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail')).map((el) => [el.textContent, el.querySelector<HTMLElement>('.link-pill__mark')?.style.getPropertyValue('--pill-mark-icon').startsWith('url(') === true])).toEqual([
+      ['', true],
+      [' #7', true],
+    ])
+    expect(getMarkdownForSave(crepe)).toBe(md)
   })
 })

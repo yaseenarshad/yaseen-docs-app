@@ -3,7 +3,7 @@
  *
  * `findChannel.ts`'s terms: the host makes ONE per editor mount and hands it to `createCrepe` (the plugin
  * binds itself at view creation, unbinds on destroy) and to `OutsideChangesBar`, which subscribes and calls
- * the commands. The channel owns what the bar reads (the count and whole-note mode, nothing else, so a Next re-renders no bar),
+ * the commands. The channel owns what the bar reads (the count and whole-page mode, nothing else, so a Next re-renders no bar),
  * what the numbered list reads (a version that moves only when the list, a change's text or the ring changes, never on a
  * keystroke; YAZ-3998), and the
  * Glow setting (D5), which it keeps while unbound so a rebuilt state starts with it; every command goes to the
@@ -15,8 +15,8 @@ import type { SavedOutsideChanges } from './outsideChangesMemory'
 export interface OutsideChangesSnapshot {
   /** Changes in the list, one per changed textblock (D4). */
   count: number
-  /** The note changed as a whole (a rebuild, or more than the limit): no glow, the bar says so. */
-  wholeNote: boolean
+  /** The page changed as a whole (a rebuild, or more than the limit): no glow, the bar says so. */
+  wholePage: boolean
   /** When the last glow goes, with a timed Glow (ms since the epoch): the bar counts down to it. Null: until checked. */
   fadesAt: number | null
 }
@@ -39,10 +39,10 @@ export interface OutsideChangesController {
   go(id: number): void
   /** The rows of the numbered list, in number order, built when asked. */
   rows(): OutsideChangeRow[]
-  /** Mark all checked, and Dismiss in whole-note mode: the list empties. */
+  /** Mark all checked, and Dismiss in whole-page mode: the list empties. */
   clear(): void
-  /** The host rebuilt the note from an outside save: whole-note mode. */
-  markWholeNote(): void
+  /** The host rebuilt the page from an outside save: whole-page mode. */
+  markWholePage(): void
   setGlow(glow: OutsideChangeGlow): void
 }
 
@@ -51,7 +51,7 @@ export interface OutsideChangesChannel {
   go(id: number): void
   rows(): OutsideChangeRow[]
   clear(): void
-  markWholeNote(): void
+  markWholePage(): void
   /** Settings › Editor › Outside changes › Glow, pushed by the host: it never rebuilds the editor. */
   setGlow(glow: OutsideChangeGlow): void
   getGlow(): OutsideChangeGlow
@@ -78,7 +78,7 @@ export interface OutsideChangesMemory {
   read(): SavedOutsideChanges | null
 }
 
-const EMPTY: OutsideChangesSnapshot = { count: 0, wholeNote: false, fadesAt: null }
+const EMPTY: OutsideChangesSnapshot = { count: 0, wholePage: false, fadesAt: null }
 
 export function createOutsideChangesChannel(onZoomOut: () => void = () => undefined, memory: OutsideChangesMemory | null = null): OutsideChangesChannel {
   let controller: OutsideChangesController | null = null
@@ -100,7 +100,7 @@ export function createOutsideChangesChannel(onZoomOut: () => void = () => undefi
     go: (id) => controller?.go(id),
     rows: () => controller?.rows() ?? [],
     clear: () => controller?.clear(),
-    markWholeNote: () => controller?.markWholeNote(),
+    markWholePage: () => controller?.markWholePage(),
     setGlow(next) {
       if (next === glow) return
       glow = next
@@ -135,7 +135,7 @@ export function createOutsideChangesChannel(onZoomOut: () => void = () => undefi
         seen = nextVersion
         rowsChanged()
       }
-      if (next.count === snapshot.count && next.wholeNote === snapshot.wholeNote && next.fadesAt === snapshot.fadesAt) return
+      if (next.count === snapshot.count && next.wholePage === snapshot.wholePage && next.fadesAt === snapshot.fadesAt) return
       snapshot = next
       listeners.forEach((listener) => listener())
     },

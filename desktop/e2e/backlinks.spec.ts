@@ -1,9 +1,9 @@
 /**
- * Links D (GRO-2193): the "Linked mentions" section against the REAL app. Two notes mention the
+ * Links D (GRO-2193): the "Linked mentions" section against the REAL app. Two pages mention the
  * open one — Alpha by name, Gamma through the target's frontmatter ALIAS (E2, GRO-2214) — so the
  * count, the entries and the snippets all go through the ONE shared resolver. Asserted here:
- * the collapsed header carries N, expanding lists both notes with their mention lines, a click
- * opens the referencing note in the CURRENT tab, and editing a referencing note ON DISK drops N
+ * the collapsed header carries N, expanding lists both pages with their mention lines, a click
+ * opens the referencing page in the CURRENT tab, and editing a referencing page ON DISK drops N
  * LIVE (the acceptance criterion — the list rides the existing index refetch, no new watcher).
  * Same harness as links.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault,
  * `backlinks-` step screenshots); serial by design — each step continues the previous state.
@@ -16,7 +16,7 @@ import { activeTab, appWindow, buildFixtureVault, copyVault, editorOf, launchApp
 
 test.describe.configure({ mode: 'serial' })
 
-/** The open note: the one everybody mentions. `Bee` is its frontmatter alias. */
+/** The open page: the one everybody mentions. `Bee` is its frontmatter alias. */
 const TARGET_FILE = 'B.md'
 const TARGET_BODY = 'backlinks-target-body'
 const ALIAS = 'Bee'
@@ -40,7 +40,7 @@ let win: Page
 /** Everything below is scoped to the VISIBLE tab layer — hidden layers keep their own DOM. */
 const backlinks = (w: Page) => layer(w).locator('.backlinks')
 const header = (w: Page) => backlinks(w).locator('.backlinks__header')
-const entries = (w: Page) => backlinks(w).locator('.backlinks__note')
+const entries = (w: Page) => backlinks(w).locator('.backlinks__page')
 const snippets = (w: Page) => backlinks(w).locator('.backlinks__snippet')
 
 /** Opens a file from the sidebar by its exact row label (basename, no extension). */
@@ -62,7 +62,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — the open note shows "Linked mentions (2)" at the bottom, collapsed', async () => {
+test('step 1 — the open page shows "Linked mentions (2)" at the bottom, collapsed', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, TARGET_FILE)) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(TARGET_BODY)
@@ -70,21 +70,21 @@ test('step 1 — the open note shows "Linked mentions (2)" at the bottom, collap
   await expect(header(win)).toHaveText('Linked mentions (2)')
   await expect(header(win)).toHaveAttribute('aria-expanded', 'false') // collapsed by default (locked)
   await expect(backlinks(win).locator('.backlinks__list')).toHaveCount(0)
-  // It lives inside the note's own scroller, after the editor mount — it scrolls WITH the note.
+  // It lives inside the page's own scroller, after the editor mount — it scrolls WITH the page.
   await expect(layer(win).locator('.editor-host > .backlinks')).toHaveCount(1)
   await shoot(win, 'backlinks-01-collapsed')
 })
 
-test('step 2 — expanding lists both referencing notes with their mention lines (alias included)', async () => {
+test('step 2 — expanding lists both referencing pages with their mention lines (alias included)', async () => {
   await header(win).click()
   await expect(header(win)).toHaveAttribute('aria-expanded', 'true')
-  await expect(entries(win)).toHaveText(['Alpha', 'Gamma']) // path-sorted, one row per note
+  await expect(entries(win)).toHaveText(['Alpha', 'Gamma']) // path-sorted, one row per page
   await expect(snippets(win)).toHaveText([ALPHA_SNIPPET, GAMMA_SNIPPET])
   await expect(backlinks(win).locator('.backlinks__match')).toHaveText(['B', ALIAS])
   await shoot(win, 'backlinks-02-expanded')
 })
 
-test('step 3 — clicking a mention opens that note in the CURRENT tab', async () => {
+test('step 3 — clicking a mention opens that page in the CURRENT tab', async () => {
   await entries(win).first().click()
   await expect(activeTab(win)).toHaveText('Alpha')
   await expect(editorOf(win)).toContainText(ALPHA_BODY)

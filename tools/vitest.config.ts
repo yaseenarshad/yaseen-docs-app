@@ -15,7 +15,7 @@ export default defineConfig({
   test: {
     name: 'tools',
     environment: 'node',
-    include: ['*.test.mjs', 'perf/*.test.mjs'],
+    include: ['*.test.mjs', 'perf/*.test.mjs', 'course-audio/*.test.mjs'],
     // Packaging cases run real tools.
     testTimeout: 60_000,
   },

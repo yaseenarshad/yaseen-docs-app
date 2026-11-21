@@ -17,13 +17,13 @@
  *                  consumed inside any list item (leaf = no-op), falls through outside lists so the
  *                  native ⌘↑/⌘↓ document jump still works in prose.
  *  - `Mod-Shift-x` toggle strikethrough (Obsidian); Crepe's own `Mod-Alt-x` keeps working (one row,
- *                  `note.strikethrough`, holds both keys and gives them to both keymaps).
+ *                  `page.strikethrough`, holds both keys and gives them to both keymaps).
  *  - `Mod-z`       fold panic-undo (GRO-2075): reverts the most recent fold iff it is the latest
  *                  VIEW action (a zoom after it takes over, GRO-2091 B); declines otherwise, so
  *                  zoom.ts's zoom undo and then history's own `Mod-z` get the key.
  *
  * Registered with priority 100 (above Crepe's 50), like `listCommands.ts`. The keys above are the
- * defaults: each is a row of `shared/keys/note.ts`, and a user's change replaces it (YAZ-3564 K4).
+ * defaults: each is a row of `shared/keys/page.ts`, and a user's change replaces it (YAZ-3564 K4).
  */
 import { commandsCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -33,7 +33,7 @@ import type { MarkType, Node, NodeType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
 import { coveredLines, eachVisibleTextblock } from '../lineSelection'
-import { rowShortcuts } from '../noteKeys'
+import { rowShortcuts } from '../pageKeys'
 import { setOutlineFoldAtSelection, undoLastFold } from './outlineFolding'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
@@ -126,12 +126,12 @@ export const obsidianHotkeys = $shortcut((ctx: Ctx) => {
   const itemType = listItemSchema.type(ctx)
   const strikeType = strikethroughSchema.type(ctx)
   const strike: Command = () => ctx.get(commandsCtx).call(toggleStrikethroughCommand.key)
-  // The keys are the rows' (`shared/keys/note.ts`, YAZ-3564 K4).
+  // The keys are the rows' (`shared/keys/page.ts`, YAZ-3564 K4).
   return {
-    ...rowShortcuts(ctx, 'note.cycleTask', 'CycleTask', { priority: PRIORITY, onRun: () => cycleTaskCommand(itemType, strikeType) }),
-    ...rowShortcuts(ctx, 'note.foldHere', 'FoldItem', { priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(true) }),
-    ...rowShortcuts(ctx, 'note.unfoldHere', 'UnfoldItem', { priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(false) }),
-    ...rowShortcuts(ctx, 'note.undo', 'UndoFold', { priority: PRIORITY, onRun: () => undoLastFold }),
-    ...rowShortcuts(ctx, 'note.strikethrough', 'Strikethrough', { priority: PRIORITY, onRun: () => strike }),
+    ...rowShortcuts(ctx, 'page.cycleTask', 'CycleTask', { priority: PRIORITY, onRun: () => cycleTaskCommand(itemType, strikeType) }),
+    ...rowShortcuts(ctx, 'page.foldHere', 'FoldItem', { priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(true) }),
+    ...rowShortcuts(ctx, 'page.unfoldHere', 'UnfoldItem', { priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(false) }),
+    ...rowShortcuts(ctx, 'page.undo', 'UndoFold', { priority: PRIORITY, onRun: () => undoLastFold }),
+    ...rowShortcuts(ctx, 'page.strikethrough', 'Strikethrough', { priority: PRIORITY, onRun: () => strike }),
   }
 })

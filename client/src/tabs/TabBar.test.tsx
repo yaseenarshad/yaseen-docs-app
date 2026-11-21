@@ -16,6 +16,7 @@ import { setBoardHighlight } from './boardHighlight'
 import { holdOverStrip, releaseOverStrip } from './stripDrop'
 import { IconsContext } from '../sidebar/FileIcon'
 import { buildRowIcons, rowIcon } from '../sidebar/rowIcons'
+import { INBOX_TRAY_PATH } from '../views/view/icons'
 
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
@@ -182,12 +183,12 @@ describe('TabBar', () => {
   })
 
   it('renders a labelled tablist: one role=tab per path, extension-stripped label, full path as tooltip', () => {
-    const el = mount({ tabs: ['/v/Note.md', '/v/sub/Plan.markdown'], active: '/v/Note.md', ...noop, ...noNav })
+    const el = mount({ tabs: ['/v/Page.md', '/v/sub/Plan.markdown'], active: '/v/Page.md', ...noop, ...noNav })
     expect(el.querySelector('.tabbar')?.getAttribute('role')).toBe('tablist')
     expect(el.querySelector('.tabbar')?.getAttribute('aria-label')).toBe('Open files')
     const tabsEls = [...el.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-    expect(tabsEls.map((t) => t.textContent)).toEqual(['Note', 'Plan'])
-    expect(tabsEls.map((t) => t.title)).toEqual(['/v/Note.md', '/v/sub/Plan.markdown'])
+    expect(tabsEls.map((t) => t.textContent)).toEqual(['Page', 'Plan'])
+    expect(tabsEls.map((t) => t.title)).toEqual(['/v/Page.md', '/v/sub/Plan.markdown'])
   })
 
   it('the preview tab wears the preview class and a double click on a tab asks to keep it (YAZ-2648 D1, D2); the grid button after ▶ toggles the overview and is pressed while it shows (D8)', () => {
@@ -202,9 +203,83 @@ describe('TabBar', () => {
 
     const nav = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
     expect(nav.map((b) => b.getAttribute('aria-label'))).toEqual(['Back', 'Forward', 'Show all open tabs'])
-    expect([nav[2].title, nav[2].getAttribute('aria-pressed')]).toEqual(['Show all open tabs (⌘⇧M)', 'true'])
+    expect([nav[2].title, nav[2].getAttribute('aria-pressed')]).toEqual(['Show all open tabs (Cmd+Shift+M)', 'true'])
     act(() => nav[2].click())
     expect(onToggleOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-5011: the Inbox tab stands after the page tabs; while it is on show no page tab is active; a click brings it to the front; its ✕ and a middle click close it', () => {
+    const onActivate = vi.fn()
+    const onClose = vi.fn()
+    const inbox = { label: 'Inbox', active: true, onActivate: vi.fn(), onClose: vi.fn() }
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', inbox, ...noop, onActivate, onClose, ...noNav })
+    const tabs = [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+    expect(tabs.map((t) => [t.textContent, t.getAttribute('aria-selected')])).toEqual([['a', 'false'], ['b', 'false'], ['Inbox', 'true']])
+    const tab = tabs[2].closest<HTMLElement>('.tabbar__tab')!
+    expect(tab.className).toContain('tabbar__tab--active')
+    act(() => tabs[2].click())
+    expect(inbox.onActivate).toHaveBeenCalledOnce()
+    act(() => tab.querySelector<HTMLButtonElement>('[aria-label="Close Inbox"]')?.click())
+    act(() => void tabs[2].dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 })))
+    expect(inbox.onClose).toHaveBeenCalledTimes(2)
+    expect(onClose).not.toHaveBeenCalled()
+    // Behind a page tab: the page tab is the active one again.
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md']} active="/v/a.md" inbox={{ ...inbox, active: false }} {...noop} onActivate={onActivate} onClose={onClose} {...noNav} />))
+    expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+  })
+
+  it('YAZ-5374: the Inbox tab wears the sidebar Inbox row\'s tray icon before its name, at the 14px of a page tab\'s icon', () => {
+    const el = mount({ tabs: ['/v/a.md'], active: '/v/a.md', inbox: { label: 'Inbox', active: false, onActivate: vi.fn(), onClose: vi.fn() }, ...noop, ...noNav })
+    const label = el.querySelector('.tabbar__tab--inbox .tabbar__label')!
+    const icon = label.firstElementChild!
+    expect(icon.matches('svg.tabbar__inbox-icon')).toBe(true)
+    expect([icon.getAttribute('width'), icon.getAttribute('height')]).toEqual(['14', '14'])
+    expect(icon.querySelector('path')?.getAttribute('d')).toBe(INBOX_TRAY_PATH)
+    expect(label.textContent).toBe('Inbox')
+  })
+
+  it('YAZ-5016: the Inbox tab\'s right-click menu has only the tab\'s own items, no file item; each asks App', () => {
+    const inbox = { label: 'Inbox', active: true, at: 1, onActivate: vi.fn(), onClose: vi.fn(), onCloseOthers: vi.fn(), onCloseToRight: vi.fn() }
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', inbox, ...noop, ...noNav })
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    const open = () => act(() => void el.querySelector('.tabbar__tab--inbox')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    open()
+    expect(items().map((item) => [item.textContent, item.disabled])).toEqual([['Close tab', false], ['Close other tabs', false], ['Close tabs to the right', false]])
+    for (const file of ['Copy path', 'Reveal in Finder', 'Open in VS Code', 'Rename file', 'Show in sidebar', 'Set display name', 'Duplicate tab', 'Move to new window']) expect(el.querySelector('.ctx-menu')?.textContent).not.toContain(file)
+    act(() => items()[1].click())
+    expect(inbox.onCloseOthers).toHaveBeenCalledOnce()
+    open()
+    act(() => items()[2].click())
+    expect(inbox.onCloseToRight).toHaveBeenCalledOnce()
+    open()
+    act(() => items()[0].click())
+    expect(inbox.onClose).toHaveBeenCalledOnce()
+    expect(noop.onClose).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-5054: the Inbox tab\'s menu moves it as a page tab moves — "Move to new window" and "Move to ▸" the other windows (no Right panel); still no file item', () => {
+    const moveTargets = vi.fn(() => [{ id: 'w2', label: 'Work · 2 tabs' }])
+    const inbox = { label: 'Inbox', active: true, at: 1, onActivate: vi.fn(), onClose: vi.fn(), onCloseOthers: vi.fn(), onCloseToRight: vi.fn(), onMoveToNewWindow: vi.fn(), moveTargets, onMoveToWindow: vi.fn() }
+    const onHighlightWindow = vi.fn()
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', inbox, ...noop, onMoveToRight: vi.fn(), onHighlightWindow, ...noNav })
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    const open = () => act(() => void el.querySelector('.tabbar__tab--inbox')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    expect(moveTargets).not.toHaveBeenCalled() // read when the menu opens
+    open()
+    expect(items().map((item) => item.textContent)).toEqual(['Move to new window', 'Move to', 'Close tab', 'Close other tabs', 'Close tabs to the right'])
+    for (const file of ['Copy path', 'Reveal in Finder', 'Open in VS Code', 'Rename file', 'Show in sidebar', 'Set display name', 'Duplicate tab']) expect(el.querySelector('.ctx-menu')?.textContent).not.toContain(file)
+    act(() => items()[0].click())
+    expect(inbox.onMoveToNewWindow).toHaveBeenCalledOnce()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    open()
+    act(() => items().find((item) => item.textContent === 'Move to')?.click())
+    expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Work · 2 tabs'])
+    act(() => items().find((item) => item.textContent === 'Work · 2 tabs')?.click())
+    expect(inbox.onMoveToWindow).toHaveBeenCalledExactlyOnceWith('w2')
+    // With no other window, no "Move to".
+    moveTargets.mockReturnValue([])
+    open()
+    expect(items().map((item) => item.textContent)).toEqual(['Move to new window', 'Close tab', 'Close other tabs', 'Close tabs to the right'])
   })
 
   it('the blank tab (YAZ-2655 D10) is the last tab, named "New tab", and the active one while it shows: its ✕ and a middle click close it, it does not drag and has no menu; the "+" stands after the tabs, outside the scroller (S87)', () => {
@@ -225,7 +300,7 @@ describe('TabBar', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
 
     const plus = el.querySelector<HTMLButtonElement>('button[aria-label="New tab"]')!
-    expect(plus.title).toBe('New tab (⌘T)')
+    expect(plus.title).toBe('New tab (Cmd+T)')
     // After the tabs, and no child of the scroller: it stays on show when the strip scrolls.
     expect(plus.closest('.tabbar')).toBeNull()
     expect(el.querySelector('.tabbar')?.compareDocumentPosition(plus)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
@@ -236,7 +311,7 @@ describe('TabBar', () => {
   it('the tooltips name the keys as they are NOW (YAZ-3410 item 3): a changed key, and no key at all', () => {
     const base = { tabs: ['/v/a.md'], active: '/v/a.md', onNewTab: vi.fn(), onToggleOverview: vi.fn(), ...noop, ...noNav }
     const titles = (el: HTMLElement) => [el.querySelector<HTMLButtonElement>('button[aria-label="New tab"]')?.title, el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.title]
-    expect(titles(mount({ ...base, hotkeys: { newTab: 'CmdOrCtrl+Alt+T', tabOverview: null } }))).toEqual(['New tab (⌥⌘T)', 'Show all open tabs'])
+    expect(titles(mount({ ...base, hotkeys: { newTab: 'CmdOrCtrl+Alt+T', tabOverview: null } }))).toEqual(['New tab (Option+Cmd+T)', 'Show all open tabs'])
   })
 
   it('E: a tab is labelled with its title, a folder tab with its folder\'s; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
@@ -252,13 +327,13 @@ describe('TabBar', () => {
   })
 
   it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {
-    const el = mount({ roots: ['/named'], tabs: ['/named/Notes.md', '/named/Plan.md'], active: '/named/Notes.md', ...noop, ...noNav })
+    const el = mount({ roots: ['/named'], tabs: ['/named/Pages.md', '/named/Plan.md'], active: '/named/Pages.md', ...noop, ...noNav })
     const labels = () => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)
-    expect(labels()).toEqual(['Notes', 'Plan']) // no tree yet: nothing says it is a folder
-    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/named/Notes.md', children: [] }], generatedAt: 1 })
+    expect(labels()).toEqual(['Pages', 'Plan']) // no tree yet: nothing says it is a folder
+    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Pages.md', path: '/named/Pages.md', children: [] }], generatedAt: 1 })
     await act(async () => void (await fetchTree('/named')))
-    expect(labels()).toEqual(['Notes.md', 'Plan'])
-    expect(el.querySelector('[aria-label="Close Notes.md"]')).not.toBeNull()
+    expect(labels()).toEqual(['Pages.md', 'Plan'])
+    expect(el.querySelector('[aria-label="Close Pages.md"]')).not.toBeNull()
   })
 
   it("each tab shows its file's tree icon before its name: a folder page the folder's, a display name its file's, a file outside the vaults Material's (YAZ-3440 D11)", async () => {
@@ -281,7 +356,7 @@ describe('TabBar', () => {
     expect(icon('o').hasAttribute('data-icon-custom')).toBe(false)
   })
 
-  it("a board tab holds its extension after its name, for File icons Off to show (YAZ-3536 D4); a display name, a folder page and a note hold none", async () => {
+  it("a board tab holds its extension after its name, for File icons Off to show (YAZ-3536 D4); a display name, a folder page and a page hold none", async () => {
     container = document.body.appendChild(document.createElement('div'))
     root = createRoot(container)
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/v', tree: [{ type: 'dir', name: 'Plan.drawio', path: '/v/Plan.drawio', children: [] }], generatedAt: 1 })
@@ -342,6 +417,37 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: xOn(target, clientX) })))
   /** The frame after a drag starts, when the grabbed tab leaves the strip (YAZ-3808 6A). */
   const nextFrame = () => act(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
+
+  it('YAZ-5016: the Inbox tab drags like a page tab: let go before a, it stands first; a page tab dragged past it moves among the page tabs, and the Inbox tab by the tab it now stands after', async () => {
+    const onMove = vi.fn()
+    const inbox = { label: 'Inbox', active: false, at: 3, onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() }
+    const el = mount({ tabs: TABS, active: '/v/a.md', inbox, onActivate: vi.fn(), onClose: vi.fn(), onMove, ...noNav })
+    const names = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+    expect(names()).toEqual(['a', 'b', 'c', 'Inbox'])
+    // The Inbox tab is a tab of the strip's slots: it parts the tabs and leaves its own room, as a page tab does.
+    fire(tabAt(el, 3), 'dragstart')
+    await nextFrame()
+    expect(tabAt(el, 3).classList.contains('tabbar__tab--dragging')).toBe(true)
+    fire(tabAt(el, 0), 'dragover', -5)
+    expect(tabAt(el, 0).classList.contains('tabbar__tab--gap-before')).toBe(true)
+    fire(tabAt(el, 0), 'drop', -5)
+    expect(inbox.onMove).toHaveBeenCalledExactlyOnceWith(null) // first: after no page tab
+    expect(onMove).not.toHaveBeenCalled() // no page tab moved
+    // App puts it there: the strip draws it first.
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={TABS} active="/v/a.md" inbox={{ ...inbox, at: 0 }} onActivate={vi.fn()} onClose={vi.fn()} onMove={onMove} {...noNav} />))
+    expect(names()).toEqual(['Inbox', 'a', 'b', 'c'])
+    // c, let go before the Inbox tab: c is the first page tab now, and the Inbox tab stands after it.
+    fire(tabAt(el, 3), 'dragstart')
+    fire(tabAt(el, 0), 'drop', -5)
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(2, 0)
+    expect(inbox.onMove).toHaveBeenLastCalledWith('/v/c.md')
+    // The drag carries no page: no other window, panel or page takes the Inbox tab.
+    const data = { types: [] as string[], setData(type: string) { this.types.push(type) }, effectAllowed: '' }
+    const start = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(start, 'dataTransfer', { value: data })
+    act(() => void tabAt(el, 0).dispatchEvent(start))
+    expect(data.types).toEqual(['application/x-yaseen-inbox-tab'])
+  })
 
   it('dropping past a tab\'s midpoint calls onMove with the final index; the grab class and the gap classes mark the drag', async () => {
     const onMove = vi.fn()
@@ -674,8 +780,8 @@ describe('TabBar keeps the active tab in view (I3 overflow polish)', () => {
 })
 
 describe('TabBar right-click menu (YAZ-922)', () => {
-  const TABS = ['/vault/Note.md', '/vault/sub/Deep Note.md']
-  const props = { tabs: TABS, active: '/vault/Note.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
+  const TABS = ['/vault/Page.md', '/vault/sub/Deep Page.md']
+  const props = { tabs: TABS, active: '/vault/Page.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
 
   /** jsdom has no clipboard; the menu's only job is to hand the path to it, so spy on writeText. */
   let writeText: ReturnType<typeof vi.fn>
@@ -720,7 +826,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const el = mount({ ...props, onActivate, onShowInSidebar })
     rightClick(tabAt(el, 1))
     act(() => items(el)[0]?.click())
-    expect(onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
+    expect(onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Page.md')
     expect(onActivate).not.toHaveBeenCalled()
     expect(menuOf(el)).toBeNull()
   })
@@ -732,7 +838,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     act(() => items(el).find((item) => item.textContent === 'Move to')?.click())
     const move = items(el).find((item) => item.textContent === 'Right panel')
     act(() => move?.click())
-    expect(onMoveToRight).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
+    expect(onMoveToRight).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Page.md')
     expect(menuOf(el)).toBeNull()
   })
 
@@ -746,7 +852,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
       const el = mount(props)
       rightClick(tabAt(el, 0), 1000, 700)
       expect(menuOf(el)?.style.left).toBe('864px')
-      expect(menuOf(el)?.style.top).toBe('588px')
+      expect(menuOf(el)?.style.top).toBe('580px') // 768 - 8 - 180: the window's edge keeps 8 px (YAZ-4970)
     } finally {
       rect.mockRestore()
     }
@@ -756,33 +862,18 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const el = mount(props)
     rightClick(tabAt(el, 1))
     act(() => items(el)[1]?.click())
-    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Note.md')
+    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Page.md')
     expect(menuOf(el)).toBeNull()
   })
 
-  it('"Copy path" is a tab\'s one copy item, a note\'s and a folder\'s: nothing else is named Copy — no "Copy ID" (YAZ-2420 D22, D31)', async () => {
+  it('"Copy path" is a tab\'s one copy item, a page\'s and a folder\'s: nothing else is named Copy — no "Copy ID" (YAZ-2420 D22, D31)', async () => {
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/one', tree: [{ type: 'dir', name: 'Projects', path: '/one/Projects', children: [] }], generatedAt: 1 })
     await fetchTree('/one')
-    const el = mount({ ...props, roots: ['/one'], tabs: ['/one/Note.md', '/one/Projects'] })
+    const el = mount({ ...props, roots: ['/one'], tabs: ['/one/Page.md', '/one/Projects'] })
     for (const i of [0, 1]) {
       rightClick(tabAt(el, i))
       expect(items(el).map((b) => b.textContent).filter((label) => label?.startsWith('Copy'))).toEqual(['Copy path'])
     }
-  })
-
-  it.each([
-    [true, 'Turn review off'],
-    [false, 'Turn review on'],
-  ])('a note whose review state is %s gets "%s" under Copy path, and it asks for the opposite (YAZ-2322)', (state, label) => {
-    const reviewState = vi.fn(() => state)
-    const onSetReview = vi.fn()
-    const el = mount({ ...props, reviewState, onSetReview })
-    rightClick(tabAt(el, 1))
-    expect(reviewState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', label, 'Reveal in Finder', 'Open in VS Code'])
-    act(() => items(el)[2]?.click())
-    expect(onSetReview).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md', !state)
-    expect(menuOf(el)).toBeNull()
   })
 
   it('YAZ-3264 D2, S14: the tab\'s list state is read when the menu opens; "Add to focus" and "Remove from favorites" toggle THAT path with it', () => {
@@ -790,19 +881,19 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const [onToggleFocus, onToggleFavorite] = [vi.fn(), vi.fn()]
     const el = mount({ ...props, listState, onToggleFocus, onToggleFavorite })
     rightClick(tabAt(el, 1))
-    expect(listState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
+    expect(listState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Page.md')
     expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Add to focus', 'Copy path', 'Remove from favorites', 'Reveal in Finder', 'Open in VS Code'])
     act(() => items(el)[1]?.click())
-    expect(onToggleFocus).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Note.md'], false)
+    expect(onToggleFocus).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Page.md'], false)
     expect(menuOf(el)).toBeNull()
     rightClick(tabAt(el, 1))
     act(() => items(el)[3]?.click())
-    expect(onToggleFavorite).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Note.md'], true)
+    expect(onToggleFavorite).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Page.md'], true)
   })
 
-  it('a tab with no review state — a folder, a PDF, a note the index has not seen, any note with upkeep off — gets no review item', () => {
-    const el = mount({ ...props, reviewState: () => null, onSetReview: vi.fn() })
-    rightClick(tabAt(el, 0))
+  it('a tab menu has no review item: a card is turned off on the card (YAZ-4967, D6)', () => {
+    const el = mount(props)
+    rightClick(tabAt(el, 1))
     expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 
@@ -812,7 +903,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     rightClick(tabAt(el, 1))
     act(() => items(el)[1]?.click())
     expect(writeText).toHaveBeenCalledTimes(1)
-    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Note.md')
+    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Page.md')
   })
 
   it('Escape anywhere in the window dismisses the menu', () => {
@@ -838,7 +929,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menuOf(el)).not.toBeNull()
     // …and the press that survived is followed by the click that actually copies.
     act(() => items(el)[1]?.click())
-    expect(writeText).toHaveBeenCalledWith('/vault/Note.md')
+    expect(writeText).toHaveBeenCalledWith('/vault/Page.md')
   })
 
   it('closing the menu unhooks its window listeners (no stray dismissals after the fact)', () => {
@@ -866,7 +957,7 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
     const el = mount({ ...tabs, ...noNav })
     const labels = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
     expect(labels.map((b) => b.getAttribute('aria-label'))).toEqual(['Back', 'Forward'])
-    expect(labels.map((b) => b.title)).toEqual(['Back (⌥⌘←)', 'Forward (⌥⌘→)'])
+    expect(labels.map((b) => b.title)).toEqual(['Back (Option+Cmd+Left)', 'Forward (Option+Cmd+Right)'])
     // Outside .tabbar, so the strip's own drop guards (e.target !== e.currentTarget) are untouched.
     expect(el.querySelector('.tabbar .tabbar-nav__btn')).toBeNull()
   })
@@ -874,8 +965,8 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
   it('with a new tab to open a step in, the tooltip names the clicks that are not a step too (YAZ-4156 1)', () => {
     const el = mount({ ...tabs, ...noNav, onOpenStep: vi.fn() })
     expect([...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')].map((b) => b.title)).toEqual([
-      'Back (⌥⌘←)\n⌘-click: open in a new tab\nRight-click or hold: history',
-      'Forward (⌥⌘→)\n⌘-click: open in a new tab\nRight-click or hold: history',
+      'Back (Option+Cmd+Left)\n⌘-click: open in a new tab\nRight-click or hold: history',
+      'Forward (Option+Cmd+Right)\n⌘-click: open in a new tab\nRight-click or hold: history',
     ])
   })
 
@@ -1045,7 +1136,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
     const base: TabBarProps = {
       roots: ['/vault'],
       titles: new Map(),
-      tabs: ['/vault/A.md', '/vault/sub/Deep Note.md'],
+      tabs: ['/vault/A.md', '/vault/sub/Deep Page.md'],
       active: '/vault/A.md',
       onActivate: vi.fn(),
       onClose: vi.fn(),
@@ -1070,7 +1161,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
     const el = mountWith()
     rightClick(tabAt(el, 1))
     act(() => itemNamed(el, 'Reveal in Finder')?.click())
-    expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Note.md' })
+    expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Page.md' })
     expect(menuOf(el)).toBeNull()
   })
 
@@ -1095,7 +1186,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
     expect(String(onNotice.mock.calls[0][0])).toMatch(/no longer there|Can't reveal/i)
   })
 
-  it('E: the stale-tab notice names the note by its title (YAZ-2420 D14)', async () => {
+  it('E: the stale-tab notice names the page by its title (YAZ-2420 D14)', async () => {
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
     const onNotice = vi.fn()
     const el = mountWith({ onNotice, titles: new Map([['/vault/A.md', 'UP-001 - Abdul']]) })
@@ -1131,6 +1222,10 @@ describe('the tab of the page the board highlights (YAZ-2648)', () => {
 describe('the widths of the tabs (YAZ-2689)', () => {
   /** The declarations of the ONE rule whose selector is exactly `selector`. */
   const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
+
+  it('YAZ-5375: focus mode — the workspace marked `data-inbox-focus` (App: the Inbox tab on show, focus mode on) hides the tab row', () => {
+    expect(rule('.workspace[data-inbox-focus] > .tabbar-row')).toMatch(/display:\s*none;/)
+  })
 
   it('YAZ-3808 6F: with no hover to trust (a drag, and after it until the mouse moves), a tab under the pointer does not light up', () => {
     expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before')).toMatch(/background:\s*var\(--tab-fill\);/)

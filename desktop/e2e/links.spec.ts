@@ -1,15 +1,15 @@
 /**
  * Links C (GRO-2192): wiki-link click navigation against the REAL app — real mouse events on
  * the rendered `.wikilink` decoration spans. The open gestures are Settings › Hotkeys › "Links in
- * a note" (YAZ-3936; a plain click puts the caret, YAZ-3935): ⌘-click opens in the CURRENT tab (an
+ * a page" (YAZ-3936; a plain click puts the caret, YAZ-3935): ⌘-click opens in the CURRENT tab (an
  * already-open file's tab is activated, never duplicated), ⌘⇧-click appends a BACKGROUND tab
  * (activation and the visible editor stay put), and an open gesture on an UNRESOLVED link CREATES the
  * page at the vault root and opens it. Steps 6-7 add Links E2 (GRO-2214): a page declaring
  * frontmatter `aliases` is reachable by them — `[[CAC]]` renders RESOLVED and opens the aliased
  * page, and typing `[[cac` in the picker links the page by its NAME, the alias its label: the
- * vault is plain (YAZ-2523 🔒 V3), the default, so no note has an id to link by.
- * Steps 8-9 add YAZ-3609: a pasted path of a vault note becomes its link (Keep as path gives the
- * path back), and a Markdown link to a vault note opens in a tab, ⌘⇧ in a background tab.
+ * vault is plain (YAZ-2523 🔒 V3), the default, so no page has an id to link by.
+ * Steps 8-9 add YAZ-3609: a pasted path of a vault page becomes its link (Keep as path gives the
+ * path back), and a Markdown link to a vault page opens in a tab, ⌘⇧ in a background tab.
  * Same harness as tabs.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault,
  * `links-` step screenshots); serial by design — each step continues the previous state.
  */
@@ -17,6 +17,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { withCommentsHint } from '../../shared/frontmatter'
 import {
   activeTab,
   appWindow,
@@ -35,19 +36,19 @@ import {
 
 test.describe.configure({ mode: 'serial' })
 
-/** Seeded on top of the fixture vault: a hub note whose body is wiki links. */
+/** Seeded on top of the fixture vault: a hub page whose body is wiki links. */
 const HUB_FILE = 'Links hub.md'
 const HUB_BODY = 'hub-links-body'
 /** Bodies of the fixture's other files (helpers.buildFixtureVault). */
 const IDEAS_BODY = 'synthetic-idea-body'
 const ROADMAP_BODY = 'synthetic-roadmap-body'
 /** The unresolved link's target — no such file until step 5 creates it. */
-const FRESH = 'Fresh note'
+const FRESH = 'Fresh page'
 /** The aliased page (E2): `Metrics.md` declares `aliases: [CAC]`, so `[[CAC]]` reaches it. */
 const METRICS_FILE = 'Metrics.md'
 const METRICS_BODY = 'synthetic-metrics-body'
 const ALIAS = 'CAC'
-/** A standard Markdown link to a vault note (YAZ-3609 D8): it opens in a tab, never in the OS. */
+/** A standard Markdown link to a vault page (YAZ-3609 D8): it opens in a tab, never in the OS. */
 const MD_LINK = 'the roadmap'
 
 let userData: string
@@ -106,9 +107,10 @@ test('step 2 — ⌘⇧-click a resolved link (Links › Open in a background ta
   await expect(editorOf(win)).toContainText(HUB_BODY) // still the hub — focus never moved
   expect(await windowCount(app)).toBe(1)
 
-  // ⌘⇧-click a link to an ALREADY-OPEN file: the tabs dedupe — count and activation unchanged.
+  // A background tab is always a new tab, a copy when the page is open, as browsers do (YAZ-3943 5B): a second
+  // ⌘-click adds a second Ideas tab, and activation stays.
   await linkIn(win, 'Ideas').click({ modifiers: ['Meta'] })
-  await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas'])
+  await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas', 'Ideas'])
   await expect(activeTab(win)).toHaveText('Links hub')
   await shoot(win, 'links-02-background-tab')
 })
@@ -117,7 +119,7 @@ test('step 3 — ⌘-click (Links › Open in this tab) a link whose file is alr
   await linkIn(win, 'Ideas').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Ideas')
   await expect(editorOf(win)).toContainText(IDEAS_BODY)
-  await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas']) // activated, never duplicated
+  await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas', 'Ideas']) // activated, never duplicated
   await shoot(win, 'links-03-activate-existing')
 })
 
@@ -127,11 +129,11 @@ test('step 4 — ⌘-click a resolved link: the target replaces the CURRENT tab 
   await linkIn(win, 'Roadmap').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Roadmap')
   await expect(editorOf(win)).toContainText(ROADMAP_BODY)
-  await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas']) // the hub's slot, not a new tab
+  await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas', 'Ideas']) // the hub's slot, not a new tab
   await shoot(win, 'links-04-open-current')
 })
 
-test('step 5 — click an UNRESOLVED link: the note is created beside the hub (at the vault root) and opened', async () => {
+test('step 5 — click an UNRESOLVED link: the page is created beside the hub (at the vault root) and opened', async () => {
   // Reopen the hub and wait for the index gate again. A sidebar click opens the preview tab
   // (YAZ-2648 D1): a NEW tab at the end here, and the Roadmap tab — a kept tab — stays.
   await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
@@ -140,18 +142,19 @@ test('step 5 — click an UNRESOLVED link: the note is created beside the hub (a
 
   await linkIn(win, FRESH).click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText(FRESH) // opened in the CURRENT tab, the hub's…
-  await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas', FRESH]) // …so the link added no tab: the hub's own was the third
-  // …and the file exists ON DISK at the vault root, empty: the default location is the SOURCE page's
+  await expect(tabsOf(win)).toHaveText(['Roadmap', FRESH, 'Ideas', 'Ideas']) // …so the link added no tab: the hub's own, next to the tab it was opened from
+  // …and the file exists ON DISK at the vault root: the default location is the SOURCE page's
   // folder (YAZ-1643), and the hub is seeded at the root, so 'current' == root here.
-  // Named as the link spells it, with nothing written inside: a plain vault (YAZ-2523 🔒 V3).
-  await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8').catch(() => null)).toBe('')
+  // Named as the link spells it, with nothing about the page written inside (a plain vault, YAZ-2523 🔒 V3): only the
+  // comment hint every new page carries (YAZ-4615 D10, on by default).
+  await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8').catch(() => null)).toBe(withCommentsHint(''))
   await shoot(win, 'links-05-create-on-click')
 })
 
 test('step 6 — an ALIAS-form link renders resolved and opens the aliased page (E2)', async () => {
   await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
   await expect(editorOf(win)).toContainText(HUB_BODY)
-  // Step 5 made the note, and `[[Fresh note]]` finds it by its name: nothing dims now.
+  // Step 5 made the page, and `[[Fresh page]]` finds it by its name: nothing dims now.
   await expect(linkIn(win, FRESH)).not.toHaveClass(/wikilink--unresolved/)
   await expect(win.locator('.wikilink--unresolved')).toHaveCount(0)
   await expect(linkIn(win, ALIAS)).not.toHaveClass(/wikilink--unresolved/) // `[[CAC]]` found Metrics.md
@@ -179,7 +182,7 @@ test('step 7 — the picker suggests the page by alias and links it by its name,
   expect(await readFile(path.join(vault, METRICS_FILE), 'utf8')).toBe(`---\naliases: [${ALIAS}]\n---\n\n${METRICS_BODY}\n`)
 })
 
-test('step 8 — a pasted path of a vault note is its link; Keep as path gives the path back (YAZ-3609 D1, D2)', async () => {
+test('step 8 — a pasted path of a vault page is its link; Keep as path gives the path back (YAZ-3609 D1, D2)', async () => {
   const ideas = path.join(vault, 'Ideas.md')
   const hub = () => readFile(path.join(vault, HUB_FILE), 'utf8')
   await pasteText(win, ideas) // the caret is still after step 7's link
@@ -195,7 +198,7 @@ test('step 8 — a pasted path of a vault note is its link; Keep as path gives t
   await expect(keep).toHaveCount(0)
 })
 
-test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Back returns (YAZ-3609 D2; YAZ-3647 D4)', async () => {
+test('step 8b — ⌘Z gives the path back; a pasted link opens its page, and Back returns (YAZ-3609 D2; YAZ-3647 D4)', async () => {
   const ideas = path.join(vault, 'Ideas.md')
   const hub = () => readFile(path.join(vault, HUB_FILE), 'utf8')
   await pasteText(win, ideas)
@@ -216,10 +219,11 @@ test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Ba
   await expect(activeTab(win)).toHaveText('Links hub')
 })
 
-test('step 9 — a Markdown link to a vault note opens in this tab on ⌘-click, in a background tab on ⌘⇧-click (YAZ-3609 D8, YAZ-3936)', async () => {
+test('step 9 — a Markdown link to a vault page opens in this tab on ⌘-click, in a background tab on ⌘⇧-click (YAZ-3609 D8, YAZ-3936)', async () => {
   const mdLink = editorOf(win).locator('a', { hasText: MD_LINK })
   await mdLink.click({ modifiers: ['Meta'] })
-  await expect(tabsOf(win).filter({ hasText: 'Roadmap' })).toHaveCount(1)
+  // Roadmap is open already: the background tab is a copy, as browsers do (YAZ-3943 5B).
+  await expect(tabsOf(win).filter({ hasText: 'Roadmap' })).toHaveCount(2)
   await expect(activeTab(win)).toHaveText('Links hub') // a background tab: the hub stays in front
   await mdLink.click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Roadmap')

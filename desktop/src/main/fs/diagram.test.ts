@@ -46,7 +46,7 @@ describe('diagram:load', () => {
     const cases: Array<[string, string, RegExp]> = [
       ['Empty.drawio', '', /empty/],
       ['Corrupt.drawio', 'this is not xml', /not a draw.io diagram/],
-      ['Foreign.drawio', '<note><to>Tove</to></note>', /not a draw.io diagram/],
+      ['Foreign.drawio', '<page><to>Tove</to></page>', /not a draw.io diagram/],
       ['Cut.drawio', '<mxfile><diagram id="a">', /cut short/],
     ]
     for (const [name, body, why] of cases) {

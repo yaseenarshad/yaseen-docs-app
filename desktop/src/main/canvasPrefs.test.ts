@@ -40,13 +40,15 @@ describe('DEFAULT_CANVAS_PREFS', () => {
       newShapesMatchZoom: true,
       // YAZ-4469 demo: the hover outline is on.
       hoverOutline: true,
+      // YAZ-5771: a double click on a text box edge only shrinks it.
+      textEdgeDoubleClick: 'shrink',
     })
   })
 
-  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247), the four fold arrow keys, "New shapes and text", "Text color follows the fill" and "New shapes match the zoom" (YAZ-4277), "Hover outline" (YAZ-4469 demo), and no more', () => {
-    expect(CANVAS_PREF_KEYS).toHaveLength(27)
-    expect(CANVAS_PREF_KEYS.slice(-11, -8)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
-    expect(CANVAS_PREF_KEYS.slice(-8)).toEqual(['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize', 'newElementStyle', 'fillSetsTextColor', 'newShapesMatchZoom', 'hoverOutline'])
+  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247), the four fold arrow keys, "New shapes and text", "Text color follows the fill" and "New shapes match the zoom" (YAZ-4277), "Hover outline" (YAZ-4469 demo), "Double-click a text box edge" (YAZ-5771), and no more', () => {
+    expect(CANVAS_PREF_KEYS).toHaveLength(28)
+    expect(CANVAS_PREF_KEYS.slice(-12, -9)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
+    expect(CANVAS_PREF_KEYS.slice(-9)).toEqual(['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize', 'newElementStyle', 'fillSetsTextColor', 'newShapesMatchZoom', 'hoverOutline', 'textEdgeDoubleClick'])
     // The round-4 amendment removed the properties-toolbar pref: the toolbar mode is a constant.
     expect(CANVAS_PREF_KEYS).not.toContain('propertiesToolbar')
   })
@@ -211,6 +213,7 @@ describe('appStateToPrefs', () => {
       fillSetsTextColor: true,
       newShapesMatchZoom: true,
       hoverOutline: true,
+      textEdgeDoubleClick: 'shrink',
     })
   })
 
@@ -318,4 +321,24 @@ describe('YAZ-4404 4H "Text color follows the fill" and YAZ-4406 4J "New shapes 
       expect(appStateToPrefs({ gridModeEnabled: true }, off)[key]).toBe(false)
     })
   }
+})
+
+describe('YAZ-5771 "Double-click a text box edge"', () => {
+  it("Only shrink by default, Fit the text when picked, saved and reloaded, a bad value or an old store gives Only shrink, and never appState (the engine's prop)", () => {
+    expect(DEFAULT_CANVAS_PREFS.textEdgeDoubleClick).toBe('shrink')
+    const fit = prefs({ textEdgeDoubleClick: 'fit' })
+    expect(isCanvasPrefs(fit)).toBe(true)
+    expect(sanitizeCanvasPrefs(JSON.parse(JSON.stringify(fit)))).toEqual(fit)
+    for (const bad of ['Fit', 'grow', true, null]) {
+      expect(isCanvasPrefs({ ...fit, textEdgeDoubleClick: bad }), String(bad)).toBe(false)
+      expect(sanitizeCanvasPrefs({ ...fit, textEdgeDoubleClick: bad }).textEdgeDoubleClick, String(bad)).toBe('shrink')
+    }
+    // a settings file from before the key existed loads whole, as Only shrink
+    const { textEdgeDoubleClick: _drop, ...before } = fit
+    expect(sanitizeCanvasPrefs(before)).toEqual({ ...fit, textEdgeDoubleClick: 'shrink' })
+    expect(isCanvasPrefs(before)).toBe(false)
+    expect(prefsToAppState(fit, ['textEdgeDoubleClick'])).toEqual({})
+    expect(Object.keys(prefsToAppState(fit))).not.toContain('textEdgeDoubleClick')
+    expect(appStateToPrefs({ gridModeEnabled: true }, fit).textEdgeDoubleClick).toBe('fit')
+  })
 })

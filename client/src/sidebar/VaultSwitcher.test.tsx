@@ -1,3 +1,4 @@
+// rename-note-to-page: skip-file (its test vaults are named "Notes": a user's folder name, not the word)
 /**
  * The vault switcher (YAZ-1767): the sidebar header's trigger + panel. Pins the locked decisions —
  * D3 the current vault is a row (`aria-current`), D4 "Open folder…" last, D5 dead folders stay in
@@ -547,6 +548,25 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     expect(rightClick(trigger(el))).toBe(true)
     expect(menuLabels()).toEqual(['Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     expect(panel(el)).toBeNull()
+  })
+
+  it('YAZ-4921: with the Sidebar\'s door the trigger\'s menu LEADS with "Open folder page", which hands it the vault root; a row of the panel for a vault of this window has it too, and the panel closes; another vault\'s row has none', () => {
+    const onOpenFolderPage = vi.fn()
+    const { el } = render({ onOpenFolderPage })
+    rightClick(trigger(el))
+    expect(menuLabels()[0]).toBe('Open folder page')
+    pick('Open folder page')
+    expect(onOpenFolderPage).toHaveBeenCalledExactlyOnceWith(ROOT)
+    expect(vaultMenu()).toBeNull()
+    openPanel(el)
+    rightClick(rows(el)[0])
+    expect(menuLabels()[0]).toBe('Open folder page')
+    pick('Open folder page')
+    expect(onOpenFolderPage).toHaveBeenLastCalledWith(ROOT)
+    expect(panel(el)).toBeNull()
+    openPanel(el)
+    rightClick(otherRow(el))
+    expect(menuLabels()).not.toContain('Open folder page')
   })
 
   it('the current vault\'s own row gets the same six; another row gets all ten, "Open by itself" first (YAZ-2858 D2) — and the highlight never moves', () => {

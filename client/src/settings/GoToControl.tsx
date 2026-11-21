@@ -2,7 +2,7 @@
  * Settings › Sidebar › Show in sidebar (YAZ-3556 D8): where "Show in sidebar" (⌘D) goes. One dropdown: the five tabs of the
  * sidebar, "A folder…" and "A file…". The last two open the place picker (D6) on the window's vaults, files too for
  * "A file…", and the pick is stored by its path in the vault (D2). A folder or a file shows its path and "Change…".
- * A window with no vault has no picker: the two rows do nothing there. With Daily notes on, "Today's daily note" is
+ * A window with no vault has no picker: the two rows do nothing there. With Daily pages on, "Today's daily page" is
  * an eighth row (YAZ-3607 D1).
  */
 import { useState } from 'react'
@@ -24,8 +24,8 @@ export const GO_TO_OPTIONS: readonly Option<GoToChoice>[] = [
   { label: 'A file…', value: 'file' },
 ]
 
-/** The row Daily notes adds (YAZ-3607 D1). */
-const DAILY_OPTION: Option<GoToChoice> = { label: "Today's daily note", value: 'daily' }
+/** The row Daily pages adds (YAZ-3607 D1). */
+const DAILY_OPTION: Option<GoToChoice> = { label: "Today's daily page", value: 'daily' }
 
 interface GoToControlProps {
   settings: SettingsState
@@ -48,7 +48,7 @@ export function GoToControl({ settings, onChange, vaults }: GoToControlProps) {
 
   return (
     <>
-      <Select options={settings.dailyNotes || goTo.kind === 'daily' ? [...GO_TO_OPTIONS, DAILY_OPTION] : GO_TO_OPTIONS} value={goTo.kind === 'tab' ? goTo.tab : goTo.kind} onChange={choose} ariaLabel="What Show in sidebar shows" />
+      <Select options={settings.dailyPages || goTo.kind === 'daily' ? [...GO_TO_OPTIONS, DAILY_OPTION] : GO_TO_OPTIONS} value={goTo.kind === 'tab' ? goTo.tab : goTo.kind} onChange={choose} ariaLabel="What Show in sidebar shows" />
       {(goTo.kind === 'folder' || goTo.kind === 'file') && (
         <span className="settings__place">
           <span className="settings__place-path" title={goTo.path}>

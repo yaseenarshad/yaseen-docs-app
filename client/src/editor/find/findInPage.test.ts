@@ -35,6 +35,7 @@ import { createFindChannel, type FindChannel } from './findChannel'
 import { FIND_ACTIVE_CLASS, FIND_MATCH_CLASS, findThreadAnchor } from './findInPage'
 import { WIKILINK_CLASS, WIKILINK_SYNTAX_CLASS, createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
+import { linkResolver } from '../../links/folderLinks'
 import { buildViewOnlyCatalogFromEntries, type ViewOnlyEntry } from '../../links/viewOnlyCatalog'
 import { headingFoldHidden } from '../outline/headingFoldTestKit'
 
@@ -208,7 +209,7 @@ describe('the thread anchor', () => {
     expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'apple one'))
   })
 
-  it('a click or a key in the note gives it back, also when the caret does not move (YAZ-3200)', async () => {
+  it('a click or a key in the page gives it back, also when the caret does not move (YAZ-3200)', async () => {
     const { view, channel } = await mountFind('apple one apple two')
     channel.open()
     channel.setQuery('apple')
@@ -218,7 +219,7 @@ describe('the thread anchor', () => {
     expect(findThreadAnchor(view.state)).toBeNull()
     channel.next()
     expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple two'))
-    // A modifier alone is not a key in the note; an arrow key at the end of the doc moves nothing.
+    // A modifier alone is not a key in the page; an arrow key at the end of the doc moves nothing.
     view.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Shift' }))
     expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple two'))
     view.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }))
@@ -289,6 +290,8 @@ describe('fold reveal', () => {
     const { root, view, channel } = await mountFind(doc, {
       folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey('Parent', 0), getOutlineFoldKey('Fruit', 0)]) },
     })
+    // "Open all folds" (YAZ-4787 `all`): every fold that hides a match opens; the default `current` opens the active one's only.
+    channel.setFolds('all')
     channel.open()
     channel.setQuery('apple')
     expect(channel.getState()).toMatchObject({ total: 2, activeIndex: 0 })
@@ -301,6 +304,23 @@ describe('fold reveal', () => {
     expect(matchEls(root)).toHaveLength(0)
     expect(channel.getState().open).toBe(false)
     expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'apple one'))
+  })
+
+  it('by default (YAZ-4787 `current`) only the folds hiding the ACTIVE match open, and fold again on the next step', async () => {
+    const doc = `* Parent
+  * apple one
+* Fruit
+  * apple two
+`
+    const { root, channel } = await mountFind(doc, {
+      folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey('Parent', 0), getOutlineFoldKey('Fruit', 0)]) },
+    })
+    channel.open()
+    channel.setQuery('apple')
+    expect(channel.getState()).toMatchObject({ total: 2, activeIndex: 0, folds: 'current' })
+    expect(foldedEls(root).map((el) => el.textContent)).toEqual([expect.stringContaining('apple two')])
+    channel.next()
+    expect(foldedEls(root).map((el) => el.textContent)).toEqual([expect.stringContaining('apple one')])
   })
 })
 
@@ -349,7 +369,7 @@ describe('zoom', () => {
 * Beta
   * apple outside
 `
-    const { view, channel } = await mountFind(doc, { zoom: { title: () => 'Notes' } })
+    const { view, channel } = await mountFind(doc, { zoom: { title: () => 'Pages' } })
     channel.open()
     channel.setQuery('apple')
     expect(channel.getState().total).toBe(2)
@@ -362,21 +382,21 @@ describe('zoom', () => {
 })
 
 describe('cell notes (YAZ-3818 D19)', () => {
-  const NOTE = `Intro apple
+  const PAGE = `Intro apple
 
 | Day | Plan |
 | --- | --- |
 | Mon | x[^cell-1] |
 
-[^cell-1]: note apple
+[^cell-1]: page apple
 
 Outro apple
 `
   const openType = (view: EditorView) => (openCellNoteLabel(view.state) === null ? null : 'cell_note')
 
-  it('in the note view a match in a cell note counts; a step onto it opens the note\'s card, the next step closes it', async () => {
+  it('in the page view a match in a cell note counts; a step onto it opens the page\'s card, the next step closes it', async () => {
     const onZoom = vi.fn()
-    const { view, channel } = await mountFind(NOTE, { zoom: { title: () => 'Notes', onZoom } })
+    const { view, channel } = await mountFind(PAGE, { zoom: { title: () => 'Pages', onZoom } })
     channel.open()
     channel.setQuery('apple')
     expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 0 })
@@ -385,8 +405,8 @@ Outro apple
     expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 1 })
     expect(openType(view)).toBe('cell_note')
     expect(getZoomedItemPos(view.state)).toBeNull()
-    // An edit in the opened note: the count is still the whole note's.
-    view.dispatch(view.state.tr.insertText('!', posOfText(view.state.doc, 'note apple')))
+    // An edit in the opened page: the count is still the whole page's.
+    view.dispatch(view.state.tr.insertText('!', posOfText(view.state.doc, 'page apple')))
     expect(channel.getState().total).toBe(3)
     channel.next()
     expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 2 })
@@ -395,15 +415,15 @@ Outro apple
     expect(onZoom).not.toHaveBeenCalled()
   })
 
-  it('close on a match in the note: the card stays open with the caret in the note', async () => {
+  it('close on a match in the page: the card stays open with the caret in the page', async () => {
     const onZoom = vi.fn()
-    const { view, channel } = await mountFind(NOTE, { zoom: { title: () => 'Notes', onZoom } })
+    const { view, channel } = await mountFind(PAGE, { zoom: { title: () => 'Pages', onZoom } })
     channel.open()
     channel.setQuery('apple')
     channel.next()
     channel.close()
     expect(openType(view)).toBe('cell_note')
-    expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'note apple') + 5)
+    expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'page apple') + 5)
     expect(view.state.selection.$from.node(1).type.name).toBe('cell_note')
     expect(onZoom).not.toHaveBeenCalled()
   })
@@ -448,7 +468,7 @@ describe('pills (YAZ-3744 S9, S17)', () => {
 
   async function mountPills(markdown = LINE) {
     const wikilinks = createWikilinkResolveSource()
-    // A vault with IDs (`YAS`): an ID no note has is a missing note (S10).
+    // A vault with IDs (`YAS`): an ID no page has is a missing page (S10).
     wikilinks.update((target) => PATHS[target] ?? null, [], [], true, ['YAS'])
     const viewOnlyLinks = createViewOnlyLinkSource()
     viewOnlyLinks.update(buildViewOnlyCatalogFromEntries('/v', [
@@ -463,6 +483,20 @@ describe('pills (YAZ-3744 S9, S17)', () => {
     line.querySelectorAll(`.${WIKILINK_SYNTAX_CLASS}`).forEach((el) => el.remove())
     return line.textContent
   }
+
+  it('YAZ-5834: finds a card pill by its title and marks the title (the group around it draws nothing)', async () => {
+    const records = [{ path: '/v/verbs.md', name: 'verbs.md', basename: 'verbs', title: 'verbs', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], id: 'YAS-1', cards: [{ id: 'YAS-126', off: false, next: false, reviews: [], title: 'Ser' }] }]
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update(linkResolver(records, '/v', [], [], ['YAS']), records, [], true, ['YAS'])
+    const { root, channel } = await mountFind('pad [[YAS-126]] tail\n', { wikilinks })
+    const title = root.querySelector<HTMLElement>('.wikilink--card')!
+    expect(title.textContent).toBe('Ser')
+    channel.open()
+    channel.setQuery('ser')
+    expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })
+    expect(matchEls(root)).toEqual([title])
+    expect(activeEls(root)).toEqual([title])
+  })
 
   it('finds an ID pill by its title: one match, the title widget marked', async () => {
     const { root, channel } = await mountPills()
@@ -493,9 +527,9 @@ describe('pills (YAZ-3744 S9, S17)', () => {
     expect(matchEls(root).map((el) => el.textContent).join('')).toBe('Named')
   })
 
-  it('a missing note (S10): its ID marks the "Missing note" widget, one match (YAZ-3910 A1)', async () => {
+  it('a missing page (S10): its ID marks the "Missing page" widget, one match (YAZ-3910 A1)', async () => {
     const { root, channel } = await mountPills('pad [[YAS-999]] tail\n')
-    expect(titleEl(root).textContent).toBe('Missing note · YAS-999')
+    expect(titleEl(root).textContent).toBe('Missing page · YAS-999')
     channel.open()
     channel.setQuery('YAS-999') // in the widget's text and in the hidden ID: one pill, one match
     expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })

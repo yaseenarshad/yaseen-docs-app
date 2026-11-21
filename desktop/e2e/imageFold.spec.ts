@@ -19,7 +19,7 @@
  *    and none of that is a document change: the markdown on disk is byte-identical to the
  *    fixture and its mtime never moved (rule 5 — toggles are metadata-only transactions, no
  *    autosave).
- *  4 the fold is persisted by key (`folders[root].folds[note]`), so a cold relaunch on the same
+ *  4 the fold is persisted by key (`folders[root].folds[page]`), so a cold relaunch on the same
  *    user-data-dir comes back with the image bullet still folded — and still text-height.
  *
  * Same harness as imageRender.spec.ts: temp `--user-data-dir`, a COPY of a generated fixture
@@ -35,7 +35,7 @@ import { pngBytes } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Shots.md'
+const PAGE = 'Shots.md'
 const ROW_ONE = 'text row one'
 const ROW_TWO = 'text row two'
 const IMAGES_DIR = path.join('assets', 'images')
@@ -50,7 +50,7 @@ const PAIR = { file: 'pair.png', bytes: pngBytes(600, 400, 43) }
  * Four bullets, two of them image bullets — one image alone on its line, one with words after it.
  * Already in remark's normalised form, and the whole point is that it is never rewritten anyway.
  */
-const NOTE_TEXT = `* ${ROW_ONE}\n* ![Shot|400](${IMAGES_DIR}/${SHOT.file})\n* ${ROW_TWO}\n* ![Pair|300](${IMAGES_DIR}/${PAIR.file}) and words after it\n`
+const PAGE_TEXT = `* ${ROW_ONE}\n* ![Shot|400](${IMAGES_DIR}/${SHOT.file})\n* ${ROW_TWO}\n* ![Pair|300](${IMAGES_DIR}/${PAIR.file}) and words after it\n`
 
 /** Rule 5's decorations, as the DOM shows them. */
 const FOLDED = 'data-outline-folded-image'
@@ -59,7 +59,7 @@ const FOLDABLE = 'data-outline-foldable-image'
 let userData: string
 let vaultSrc: string
 let vault: string
-let notePath: string
+let pagePath: string
 let mtimeBefore: number
 let app: ElectronApplication
 let win: Page
@@ -81,8 +81,8 @@ const shotImg = (w: Page) => shotView(w).locator('img')
 const shotChevron = (w: Page) => shotRow(w).locator('.outline-toggle')
 
 const rowHeight = (row: Locator): Promise<number> => row.evaluate((el) => el.getBoundingClientRect().height)
-const readNote = () => readFile(notePath, 'utf8')
-const foldKeys = async () => (await readState(userData)).folders[vault]?.folds[notePath] ?? []
+const readPageFile = () => readFile(pagePath, 'utf8')
+const foldKeys = async () => (await readState(userData)).folders[vault]?.folds[pagePath] ?? []
 
 /**
  * The folded chip, measured: the image row and the text row beside it are the SAME height, to
@@ -99,14 +99,14 @@ test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'imgfold-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  notePath = path.join(vault, NOTE)
+  pagePath = path.join(vault, PAGE)
   await mkdir(path.join(vault, IMAGES_DIR), { recursive: true })
   await Promise.all([
-    writeFile(notePath, NOTE_TEXT),
+    writeFile(pagePath, PAGE_TEXT),
     writeFile(path.join(vault, IMAGES_DIR, SHOT.file), SHOT.bytes),
     writeFile(path.join(vault, IMAGES_DIR, PAIR.file), PAIR.bytes),
   ])
-  mtimeBefore = (await stat(notePath)).mtimeMs
+  mtimeBefore = (await stat(pagePath)).mtimeMs
 })
 
 test.afterAll(async () => {
@@ -115,7 +115,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — ⌘↑ folds the image bullet into a chip exactly one text row tall', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(ROW_ONE)
   await expect(rows(win)).toHaveCount(4)
@@ -167,8 +167,8 @@ test('step 3 — the corner fold button appears on hover and folds it back; the 
   await shoot(win, 'imageFold-05-folded-by-corner-button')
 
   // Three toggles, zero document changes: the bytes are the fixture's and the mtime is the write's.
-  expect(await readNote()).toBe(NOTE_TEXT)
-  expect((await stat(notePath)).mtimeMs).toBe(mtimeBefore)
+  expect(await readPageFile()).toBe(PAGE_TEXT)
+  expect((await stat(pagePath)).mtimeMs).toBe(mtimeBefore)
 })
 
 test('step 4 — the fold is persisted by key and survives a cold relaunch, still text-height', async () => {
@@ -176,8 +176,8 @@ test('step 4 — the fold is persisted by key and survives a cold relaunch, stil
   // Exactly one bullet fold key (heading folds are the `h:` keys) — the Shot bullet's.
   const keys = await foldKeys()
   expect(keys.filter((k) => !k.startsWith('h:'))).toHaveLength(1)
-  expect(await readNote()).toBe(NOTE_TEXT)
-  expect((await stat(notePath)).mtimeMs).toBe(mtimeBefore)
+  expect(await readPageFile()).toBe(PAGE_TEXT)
+  expect((await stat(pagePath)).mtimeMs).toBe(mtimeBefore)
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')

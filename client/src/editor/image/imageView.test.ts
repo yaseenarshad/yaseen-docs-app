@@ -21,13 +21,13 @@ import type { ImageOptions } from './imageOptions'
 import { HANDLE_DIRECTIONS, IMAGE_BROKEN_CLASS, IMAGE_FOLD_CLASS, IMAGE_HANDLE_CLASS, IMAGE_SELECTED_CLASS, IMAGE_VIEW_CLASS, MIN_WIDTH } from './imageView'
 
 const ROOT = '/v'
-const NOTE = '/v/notes/a.md'
-const VAULT_URL = (ref: string) => `app://vault/${encodeURIComponent(ROOT)}/${ref}?from=notes`
+const PAGE = '/v/pages/a.md'
+const VAULT_URL = (ref: string) => `app://vault/${encodeURIComponent(ROOT)}/${ref}?from=pages`
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
 /** `image: null` mounts WITHOUT the option (a bare `undefined` would take the default). */
-async function mount(markdown: string, image: ImageOptions | null = { root: ROOT, notePath: NOTE }) {
+async function mount(markdown: string, image: ImageOptions | null = { root: ROOT, pagePath: PAGE }) {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const crepe = createCrepe({ root, defaultValue: markdown, ...(image === null ? {} : { image }) })
@@ -132,14 +132,14 @@ describe('selection and interaction', () => {
 
   it('double-click on the image calls onOpenImage with the resolved src and the alt TEXT', async () => {
     const onOpenImage = vi.fn()
-    const { root } = await mount('![alt|300](images/a.png)\n', { root: ROOT, notePath: NOTE, onOpenImage })
+    const { root } = await mount('![alt|300](images/a.png)\n', { root: ROOT, pagePath: PAGE, onOpenImage })
     imgOf(root)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     expect(onOpenImage).toHaveBeenCalledWith({ images: [{ src: VAULT_URL('images/a.png'), alt: 'alt' }], index: 0 })
   })
 
   it('double-click hands over EVERY image on the page in document order, and the index of the one clicked', async () => {
     const onOpenImage = vi.fn()
-    const { root } = await mount('![first|300](images/a.png)\n\nsome text\n\n![second](images/b.png)\n', { root: ROOT, notePath: NOTE, onOpenImage })
+    const { root } = await mount('![first|300](images/a.png)\n\nsome text\n\n![second](images/b.png)\n', { root: ROOT, pagePath: PAGE, onOpenImage })
     const imgs = root.querySelectorAll<HTMLImageElement>(`.${IMAGE_VIEW_CLASS} img`)
     expect(imgs).toHaveLength(2)
     imgs[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
@@ -283,7 +283,7 @@ describe('selection and interaction', () => {
 
   it('a broken image never opens the lightbox: there is no <img> to double-click', async () => {
     const onOpenImage = vi.fn()
-    const { root } = await mount('![a](missing/x.png)\n', { root: ROOT, notePath: NOTE, onOpenImage })
+    const { root } = await mount('![a](missing/x.png)\n', { root: ROOT, pagePath: PAGE, onOpenImage })
     imgOf(root)?.dispatchEvent(new Event('error'))
     viewEl(root)?.querySelector(`.${IMAGE_BROKEN_CLASS}`)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     viewEl(root)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))

@@ -66,7 +66,7 @@ const GROUPED_BASE = `views:
       note.priority: Sum
 `
 
-/** Five one-note records exercising every cover shape; based on the fixture's first record. */
+/** Five one-page records exercising every cover shape; based on the fixture's first record. */
 const cover = (name: string, properties: Record<string, unknown>): IndexRecord => ({
   ...TEST_RECORDS[0],
   path: `/vault/${name}.md`,
@@ -175,7 +175,7 @@ const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `To
 // ---------- tests ----------
 
 describe('grid', () => {
-  it('renders one flat grid of cards — file name title over typed label/value rows; the title opens the note', () => {
+  it('renders one flat grid of cards — file name title over typed label/value rows; the title opens the page', () => {
     const { el, onOpenFile } = mount(CARDS_BASE)
     expect(el.querySelector('.view-cards__grid')).not.toBeNull()
     expect(el.querySelector('.view-cards__group')).toBeNull()
@@ -192,7 +192,7 @@ describe('grid', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 
-  it('a right-click on a card opens the page menu: "Copy path", and no "Copy ID" though its note has an id (YAZ-2420 D31)', () => {
+  it('a right-click on a card opens the page menu: "Copy path", and no "Copy ID" though its page has an id (YAZ-2420 D31)', () => {
     const { el } = mount(CARDS_BASE, { records: TEST_RECORDS.map((r) => ({ ...r, id: 'k3m9x2pq7abc' })) })
     act(() => void cardOf(el, 'Agentic Agency').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const labels = [...document.querySelectorAll('.ctx-menu__item')].map((item) => item.textContent)
@@ -202,7 +202,7 @@ describe('grid', () => {
 })
 
 describe('the title (YAZ-2420 D14)', () => {
-  it('E: a card\'s title shows the note\'s title, not its file name; a note with none shows its file name', () => {
+  it('E: a card\'s title shows the page\'s title, not its file name; a page with none shows its file name', () => {
     const { el } = mount(CARDS_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
     const titles = [...el.querySelectorAll('.view-card__title')].map((b) => b.textContent)
     expect(titles).toContain('UP-001 - Abdul')
@@ -212,7 +212,7 @@ describe('the title (YAZ-2420 D14)', () => {
 })
 
 describe('an id link (YAZ-2293 D8)', () => {
-  it('a card property and a group header both read as the title of the note the id names', () => {
+  it('a card property and a group header both read as the title of the page the id names', () => {
     const ID = 'k3m9x2pq7abc'
     const records = TEST_RECORDS.map((r) =>
       r.basename === 'Attribution' ? { ...r, id: ID } : r.basename === 'VSL-v1' ? { ...r, properties: { ...r.properties, related: `[[${ID}]]` } } : r,
@@ -221,7 +221,7 @@ describe('an id link (YAZ-2293 D8)', () => {
       records,
       folder: testFolderHost({ vaultRecords: records }),
     })
-    expect(q(cardOf(el, 'VSL-v1'), '.view-table__chip--link').textContent).toBe('Attribution')
+    expect(q(cardOf(el, 'VSL-v1'), '.view-link-pill').textContent).toBe('Attribution')
     expect([...el.querySelectorAll('.view-group__value')].map((v) => v.textContent)).toEqual(['Agentic Agency', 'Attribution', 'No value'])
   })
 })
@@ -361,5 +361,51 @@ describe('grouped sections', () => {
     expect(sections(el).map((s) => q(s, '.view-group__count').textContent)).toEqual(['1', '1'])
     expect(sections(el)[1].querySelector('.view-group__summary')?.textContent).toBe('Sum2')
     expect(q(el, '.view-toolbar__count').textContent).toBe('2 / 8 items')
+  })
+})
+
+const THREE_CARDS = `views:
+  - type: cards
+    name: C
+    order:
+      - file.name
+    groupBy:
+      - property: note.dept
+      - property: note.proc
+      - property: note.step
+`
+
+const THREE_RECS = [
+  ['a11', { dept: 'A', proc: 'p1', step: 's1' }],
+  ['a1d', { dept: 'A', proc: 'p1', step: 'p1' }],
+  ['a12', { dept: 'A', proc: 'p1', step: 's2' }],
+  ['b21', { dept: 'B', proc: 'p2', step: 's1' }],
+] as const
+const threeRecords = (): IndexRecord[] =>
+  THREE_RECS.map(([name, properties]) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, name: `${name}.md`, basename: name, title: name, properties: { ...properties } }))
+
+describe('three group levels (YAZ-4531)', () => {
+  /** Each section as `label@depth`, depth = how many sections hold it. */
+  const tree = (el: ParentNode): string[] =>
+    sections(el).map((s) => {
+      let depth = 0
+      for (let p = s.parentElement?.closest('.view-cards__group'); p; p = p.parentElement?.closest('.view-cards__group')) depth++
+      return `${q(s, '.view-group__value').textContent}@${depth}`
+    })
+
+  it('renders every level, each section inside its parent, the direct rows before the inner sections', () => {
+    const { el } = mount(THREE_CARDS, { records: threeRecords() })
+    expect(tree(el)).toEqual(['A@0', 'p1@1', 's1@2', 's2@2', 'B@0', 'p2@1', 's1@2'])
+    expect(titles(el)).toEqual(['a1d', 'a11', 'a12', 'b21'])
+    expect(sections(el).map((s) => q(s, '.view-group__count').textContent)).toEqual(['3', '3', '1', '1', '1', '1', '1'])
+  })
+
+  it('a level-2 chevron folds its whole branch under its path key', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(THREE_CARDS, { records: threeRecords() })
+    click(toggleOf(el, 'p1'))
+    expect(tree(el)).toEqual(['A@0', 'p1@1', 'B@0', 'p2@1', 's1@2'])
+    expect(titles(el)).toEqual(['b21'])
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::C', ['v:A\u001fv:p1'])
   })
 })

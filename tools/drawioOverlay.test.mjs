@@ -17,8 +17,10 @@ const OVERLAY_JS = fileURLToPath(new URL('../desktop/drawio-overlay/js/', import
 const APP_MIN_JS = fileURLToPath(new URL(`../desktop/.cache/drawio/${DRAWIO_TAG}/js/app.min.js`, import.meta.url))
 
 /** The globals PostConfig.js patches, each prototype method standing in for draw.io's original. */
-function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () => '@font-face {}' }), shortcuts = drawioConfig('adapt').keyboardShortcuts } = {}) {
+function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () => '@font-face {}' }), shortcuts = drawioConfig('adapt').keyboardShortcuts, linksLoad = true } = {}) {
   const posted = []
+  /** The scripts PostConfig.js adds to the page (YAZ-4748: the link pills), each loading at once, or failing. */
+  const scripts = []
   const fontCss = []
   const listeners = []
   /** draw.io's own `window.focus`, before PostConfig.js wraps it. */
@@ -115,6 +117,15 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
     console: { error: vi.fn() },
     parent: { postMessage: (data, origin) => posted.push({ ...JSON.parse(data), origin }) },
     addEventListener: (type, listener) => listeners.push({ type, listener }),
+    document: {
+      createElement: () => ({}),
+      head: {
+        appendChild: (el) => {
+          scripts.push(el.src)
+          void Promise.resolve().then(linksLoad ? el.onload : el.onerror)
+        },
+      },
+    },
     focus: windowFocus,
     setTimeout,
   }
@@ -127,7 +138,7 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
     for (const l of listeners) if (l.type === 'message') l.listener(evt)
     return evt.stopImmediatePropagation.mock.calls.length > 0
   }
-  return { env, posted, fontCss, message, windowFocus }
+  return { env, posted, fontCss, message, windowFocus, scripts }
 }
 
 function geometry(x, y, width, height, relative = false) {
@@ -256,6 +267,19 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     expect(broken.posted).toEqual([{ event: 'yaseenReady', origin: '*' }])
   })
 
+  it('YAZ-4748: loads the link pills before it says yaseenReady — and still says it when they will not load', async () => {
+    const ok = loadPostConfig()
+    expect(ok.scripts).toEqual(['js/yaseen-links.js'])
+    expect(ok.posted).toEqual([])
+    await settle()
+    expect(ok.posted).toEqual([{ event: 'yaseenReady', origin: '*' }])
+
+    const broken = loadPostConfig({ linksLoad: false })
+    await settle()
+    expect(broken.posted).toEqual([{ event: 'yaseenReady', origin: '*' }])
+    expect(broken.env.console.error).toHaveBeenCalledWith('Yaseen links', 'js/yaseen-links.js')
+  })
+
   it('opens every diagram with the shapes panel collapsed, and ⌘-wheel zooms like ctrl-wheel', () => {
     const { env } = loadPostConfig()
     const { ui } = openEditor(env)
@@ -356,7 +380,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
     it('give text the dark shade as its font colour and, with Shift, the light shade as its background — text being anything that LOOKS like text', () => {
       const { env } = loadPostConfig()
-      const [text, title] = [cell(TEXT, { label: 'Note' }), cell(AI_TITLE, { label: 'Find the bottleneck' })]
+      const [text, title] = [cell(TEXT, { label: 'Page' }), cell(AI_TITLE, { label: 'Find the bottleneck' })]
       const editor = openEditor(env)
       editor.select(text, title)
       editor.press('g')
@@ -380,7 +404,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
     it('t, b and w are one value wherever they land', () => {
       const { env } = loadPostConfig()
-      const [shape, text] = [cell(RECT), cell(TEXT, { label: 'Note' })]
+      const [shape, text] = [cell(RECT), cell(TEXT, { label: 'Page' })]
       const editor = openEditor(env)
       editor.select(shape, text)
       editor.press('t')
@@ -418,7 +442,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
   it('1–0 set a text’s font size and give anything else a new long side, aspect and centre kept', () => {
     const { env } = loadPostConfig()
-    const text = cell(TEXT, { label: 'Note' })
+    const text = cell(TEXT, { label: 'Page' })
     const shape = cell(RECT, { geo: geometry(0, 0, 100, 50) })
     const edge = cell(EDGE, { edge: true, geo: geometry(0, 0, 0, 0, true) })
     const editor = openEditor(env)
@@ -436,7 +460,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
   it('⌘⇧X toggles strikethrough', () => {
     const { env } = loadPostConfig()
-    const text = cell(TEXT, { label: 'Note' })
+    const text = cell(TEXT, { label: 'Page' })
     const editor = openEditor(env)
     editor.select(text)
     editor.press('x', { metaKey: true, shiftKey: true })
@@ -460,7 +484,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     const open = (hotkeys) => {
       const { env } = loadPostConfig({ shortcuts: drawioConfig('adapt', hotkeys, {}, true).keyboardShortcuts })
       const editor = openEditor(env)
-      const text = cell(TEXT, { label: 'Note' })
+      const text = cell(TEXT, { label: 'Page' })
       editor.select(text)
       return { editor, text }
     }
@@ -569,7 +593,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
   it('a corner drag scales a text’s font with its height; a side drag and a shape’s label do not', () => {
     const { env } = loadPostConfig()
-    const text = cell(TEXT, { label: 'Note', geo: geometry(0, 0, 200, 60) })
+    const text = cell(TEXT, { label: 'Page', geo: geometry(0, 0, 200, 60) })
     const shape = cell(RECT, { label: 'Box', geo: geometry(0, 0, 200, 60) })
     const editor = openEditor(env)
     const before = geometry(0, 0, 100, 30)

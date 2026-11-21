@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 interface TextFieldProps {
   value: string
@@ -6,8 +6,15 @@ interface TextFieldProps {
   onCommit: (next: string) => void
   /** Canonicalizes a committed draft; null rejects it and visibly restores `value`. */
   normalize?: (draft: string) => string | null
+  /**
+   * A draft that cannot be saved (YAZ-5580: a title a file cannot be named): the message, shown under the field as it is
+   * typed. Enter and blur then keep the field and its text and commit nothing (`onDone` waits); Escape still restores.
+   */
+  check?: (draft: string) => string | null
   /** After Enter, blur or Escape, whether or not anything was committed. */
   onDone?: () => void
+  /** Each edit's text as typed, before any commit (YAZ-4919 round 2: the Contains box's live count). */
+  onDraft?: (draft: string) => void
   /** Enter commits the text also when it is still `value`: a suggested name that is right as it stands (YAZ-2602 S63). Blur still commits an edit only. */
   commitOnEnter?: boolean
   className?: string
@@ -27,8 +34,10 @@ interface TextFieldProps {
 }
 
 /** Text input that reports its value once per edit (GRO-2135), so every config change is one `onChange`. */
-export function TextField({ value, onCommit, normalize, onDone, commitOnEnter, selectOnMount, ...rest }: TextFieldProps) {
+export function TextField({ value, onCommit, normalize, check, onDone, onDraft, commitOnEnter, selectOnMount, ...rest }: TextFieldProps) {
   const [draft, setDraft] = useState(value)
+  const problem = check?.(draft) ?? null
+  const problemId = useId()
   const done = useRef(false)
   const input = useRef<HTMLInputElement>(null)
   useEffect(() => setDraft(value), [value])
@@ -38,6 +47,7 @@ export function TextField({ value, onCommit, normalize, onDone, commitOnEnter, s
 
   const finish = (commit: boolean, same = false) => {
     if (done.current) return
+    if (commit && problem !== null) return
     done.current = true
     if (commit && (same || draft !== value)) {
       const next = normalize === undefined ? draft : normalize(draft)
@@ -50,14 +60,17 @@ export function TextField({ value, onCommit, normalize, onDone, commitOnEnter, s
     onDone?.()
   }
 
-  return (
+  const field = (
     <input
       {...rest}
       ref={input}
       value={draft}
+      aria-invalid={problem !== null || undefined}
+      aria-describedby={problem !== null ? problemId : undefined}
       onChange={(e) => {
         done.current = false
         setDraft(e.target.value)
+        onDraft?.(e.target.value)
       }}
       onBlur={() => finish(true)}
       onKeyDown={(e) => {
@@ -70,5 +83,16 @@ export function TextField({ value, onCommit, normalize, onDone, commitOnEnter, s
         }
       }}
     />
+  )
+  if (check === undefined) return field
+  return (
+    <>
+      {field}
+      {problem !== null && (
+        <span id={problemId} className="title-problem" role="alert">
+          {problem}
+        </span>
+      )}
+    </>
   )
 }

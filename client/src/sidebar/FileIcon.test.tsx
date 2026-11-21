@@ -48,7 +48,7 @@ describe('a file\'s icon outside the tree (YAZ-3440 D11)', () => {
     expect(fileIconAttrs(h, '/v/a.ts', false)['data-icon-custom']).toBeUndefined()
     expect(fileIconAttrs(h, '/v/a.zip', false)['data-kind']).toBe('other')
     expect(fileIconAttrs(h, '/v/src', true)).toMatchObject({ 'data-kind': 'folder', 'data-icon': 'folder-src' })
-    expect(fileIconAttrs(h, '/v/notes.md', false)['data-icon']).toBe(rowIcon(h.rowIcons, '/v/notes.md', 'notes.md', 'file').id)
+    expect(fileIconAttrs(h, '/v/pages.md', false)['data-icon']).toBe(rowIcon(h.rowIcons, '/v/pages.md', 'pages.md', 'file').id)
   })
 
   it("a path outside the window's vaults gets Material's icon: no pick and no rule; so does a mount with no App", () => {
@@ -64,6 +64,24 @@ describe('a file\'s icon outside the tree (YAZ-3440 D11)', () => {
     expect(fileIconAttrs(plain, '/elsewhere/src', true)['data-icon']).toBe('folder')
     expect(fileIconAttrs(plain, '/v/trips', true)).toMatchObject({ 'data-icon': 'folder-images', 'data-icon-custom': '' })
     expect(fileIconAttrs(plain, '/v/a.ts', false)['data-icon']).toBe('typescript')
+  })
+
+  it('a card file (YAZ-5037) is the kind `card` from the index, whatever its name, with no Material icon; a pick still wins; a page of that name is a page', () => {
+    const cards = new Set(['/v/geo-140.md', '/v/odd-name.txt.md'])
+    const h = { ...here({ '/v/mine.md': 'python' }), cards }
+    expect(fileIconAttrs(h, '/v/geo-140.md', false)).toEqual({ 'data-kind': 'card', style: {} })
+    expect(fileIconAttrs(h, '/v/odd-name.txt.md', false)['data-kind']).toBe('card')
+    expect(fileIconAttrs({ ...h, cards: new Set([...cards, '/v/mine.md']) }, '/v/mine.md', false)).toMatchObject({ 'data-kind': 'markdown', 'data-icon': 'python', 'data-icon-custom': '' })
+    expect(fileIconAttrs(h, '/v/page.md', false)).toMatchObject({ 'data-kind': 'markdown' })
+    expect(fileIconAttrs(here(), '/v/geo-140.md', false)['data-kind']).toBe('markdown')
+    const el = draw(
+      <IconsContext.Provider value={h}>
+        <FileIcon path="/v/geo-140.md" />
+      </IconsContext.Provider>,
+    )
+    const span = el.querySelector<HTMLElement>('.file-icon')!
+    expect(span.dataset.kind).toBe('card')
+    expect(span.hasAttribute('data-icon')).toBe(false)
   })
 
   it('draws one aria-hidden span with the attributes; a new pick from App draws it again', () => {

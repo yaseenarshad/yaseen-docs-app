@@ -61,7 +61,7 @@ describe('getIndex: drains in-flight watcher scans (YAZ-986)', () => {
     await cleanup()
   })
 
-  it('a snapshot requested while a created note is mid-scan still includes that note', async () => {
+  it('a snapshot requested while a created page is mid-scan still includes that page', async () => {
     const file = path.join(root, 'Raced.md')
     gate.close()
     await writeFile(file, '---\nrelated:\n  - "[[VSL-v1]]"\n---\n\n# raced\n')

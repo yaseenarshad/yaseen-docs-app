@@ -10,7 +10,7 @@ afterEach(() => {
 })
 
 describe('requestZoom (YAZ-1710, YAZ-3389)', () => {
-  it('lets the note that contains the focus claim the step, and then the sidebar zoom is not called', () => {
+  it('lets the page that contains the focus claim the step, and then the sidebar zoom is not called', () => {
     const section = document.createElement('section')
     const input = document.createElement('input')
     section.append(input)
@@ -27,7 +27,7 @@ describe('requestZoom (YAZ-1710, YAZ-3389)', () => {
     expect(zoom).not.toHaveBeenCalled()
   })
 
-  it('hands the step to the unclaimed fallback (the sidebar zoom) when nothing claims it — focus outside every note, or nowhere at all', () => {
+  it('hands the step to the unclaimed fallback (the sidebar zoom) when nothing claims it — focus outside every page, or nowhere at all', () => {
     const button = document.createElement('button')
     document.body.append(button)
     button.focus()
@@ -40,16 +40,16 @@ describe('requestZoom (YAZ-1710, YAZ-3389)', () => {
     expect(zoom).toHaveBeenLastCalledWith(0)
   })
 
-  it('YAZ-3125 (D8): with the focus nowhere, the read-only note the reader clicked in claims it — its body takes no focus', () => {
+  it('YAZ-3125 (D8): with the focus nowhere, the read-only page the reader clicked in claims it — its body takes no focus', () => {
     const section = document.createElement('section')
     const body = document.createElement('div')
     body.className = 'ProseMirror'
     body.setAttribute('contenteditable', 'false')
     const text = document.createTextNode('read-only text')
     body.append(text)
-    // The note's page (YAZ-3140), where the reader clicked (YAZ-3145: the last click decides).
+    // The page's page (YAZ-3140), where the reader clicked (YAZ-3145: the last click decides).
     const page = document.createElement('div')
-    page.dataset.page = 'note'
+    page.dataset.page = 'page'
     page.append(body)
     section.append(page)
     document.body.append(section)
@@ -73,7 +73,7 @@ describe('requestZoom (YAZ-1710, YAZ-3389)', () => {
     document.getSelection()!.removeAllRanges()
   })
 
-  it('a caret left in an EDITABLE note does not claim it with the focus elsewhere: the sidebar zooms', () => {
+  it('a caret left in an EDITABLE page does not claim it with the focus elsewhere: the sidebar zooms', () => {
     const section = document.createElement('section')
     const body = document.createElement('div')
     body.className = 'ProseMirror'
@@ -90,7 +90,7 @@ describe('requestZoom (YAZ-1710, YAZ-3389)', () => {
     document.getSelection()!.removeAllRanges()
   })
 
-  it('YAZ-3128: a read-only note in a HIDDEN tab never claims it, though the DOM selection stayed there after the tab switch', () => {
+  it('YAZ-3128: a read-only page in a HIDDEN tab never claims it, though the DOM selection stayed there after the tab switch', () => {
     const layer = document.createElement('div')
     layer.style.visibility = 'hidden'
     const section = document.createElement('section')

@@ -44,7 +44,7 @@ describe('readBoardHead (🔒 YAZ-1834 D6)', () => {
 })
 
 describe('fs:board-head — the Info popover`s one read (YAZ-3028 D11)', () => {
-  it('answers the dates, size and mtime of a stamped board, null dates for an unstamped one, and refuses a note or a missing board', async () => {
+  it('answers the dates, size and mtime of a stamped board, null dates for an unstamped one, and refuses a page or a missing board', async () => {
     const stamped = path.join(root, 'Stamped.excalidraw')
     await writeFile(stamped, '{\n  "yaseendraw": { "createdAt": 1000, "updatedAt": 2000 },\n  "elements": []\n}\n')
     const st = await stat(stamped)
@@ -52,7 +52,7 @@ describe('fs:board-head — the Info popover`s one read (YAZ-3028 D11)', () => {
     const plain = path.join(root, 'Plain.drawio')
     await writeFile(plain, '<mxfile><diagram id="a"></diagram></mxfile>\n')
     expect((await boardHead(plain)).meta).toBeNull()
-    expect((await failure(boardHead(path.join(root, 'Note.md')))).code).toBe('UNSUPPORTED_EXTENSION')
+    expect((await failure(boardHead(path.join(root, 'Page.md')))).code).toBe('UNSUPPORTED_EXTENSION')
     expect((await failure(boardHead(path.join(root, 'Gone.excalidraw')))).code).toBe('NOT_FOUND')
     expect((await failure(boardHead('Rel.excalidraw'))).code).toBe('NOT_ABSOLUTE')
   })

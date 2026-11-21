@@ -15,6 +15,11 @@ const chrome = EditorView.theme({
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': {
     backgroundColor: 'var(--code-selection)',
   },
+  // YAZ-5837: CodeMirror draws the selection BEHIND the text (z-index -2), and the focused line's band below is a
+  // background ON the line, so it hid a selection on the caret's line. The layer goes above the lines; the colour is
+  // see-through (app.css `--code-selection`), so text, syntax colours and code marks show through it. The caret's
+  // own layer stays on top (CodeMirror sets each layer's z-index inline, 150 for the caret, hence the `!important`).
+  '.cm-selectionLayer': { zIndex: '1 !important' },
   // Only the block being edited marks its line; at rest a block is plain.
   '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'transparent' },
   '&.cm-focused .cm-activeLine, &.cm-focused .cm-activeLineGutter': { backgroundColor: 'var(--bg-hover)' },

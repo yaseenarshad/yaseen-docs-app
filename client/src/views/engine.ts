@@ -1,12 +1,16 @@
-import { vaultNoteId } from '@shared/noteId'
+import type { ReviewSettings } from '@shared/reviews'
 import { READ_ONLY_KEY } from '@shared/readOnly'
-import { type IndexRecord, inFolder } from '@shared/types'
-import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, groupByLevels } from './viewSchema'
+import { keyFold, spellings } from '@shared/propertyKeys'
+import { alsoIn } from '@shared/alsoIn'
+import { FOLDER_SETTINGS_FILE, type IndexRecord, inFolder } from '@shared/types'
+import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, type SortSpec, folderDepthOf, folderLayoutOf, shownGroupLevels } from './viewSchema'
 import {
   DateValue, DurationValue, ErrorValue, type Expr, FileValue, LinkValue, type Resolver, type Scope, type Value,
-  compile, equals, evaluate, fromYaml, isTruthy, linkText, render, stripBrackets,
+  compile, equals, evaluate, fromYaml, isTruthy, linkText, render,
 } from './expr'
 import { summarize } from './summaries'
+import { CARD_FIELD_LABELS, DEFAULT_CARD_ORDER, cardPropertyKeys, cardRowOfRecord, cardRowsOf, cardValues, isCardKey } from './cardRows'
+import { isCardLens } from './cardView'
 
 /**
  * Query engine for one Bases view (GRO-2133): filters → values → sort → limit → group → summaries
@@ -19,6 +23,8 @@ export interface Row {
   file: FileValue
   /** Keyed by the property key as written in the view (`file.name`, `status`, `note.status`, `formula.x`). */
   values: Record<string, Value>
+  /** The page matches the view's `crossOut` (YAZ-4864): a calendar card is crossed out whole. Absent = no. */
+  crossed?: true
 }
 
 export interface Group {
@@ -27,7 +33,7 @@ export interface Group {
   /** null for the trailing "No value" group. */
   key: Value | null
   label: string
-  /** EVERY row under the group — with two levels that is `direct` plus every child's rows. */
+  /** EVERY row under the group — with nested levels that is `direct` plus every child's rows. */
   rows: Row[]
   summaries: Record<string, Value>
   /**
@@ -37,12 +43,17 @@ export interface Group {
    */
   fannedOut: boolean
   /**
-   * The inner groups (YAZ-745): present — possibly empty — on every group when the view groups on
-   * two levels, absent in single-level mode. A child never has children of its own.
+   * The inner groups (YAZ-745, up to `MAX_GROUP_LEVELS` levels: three since YAZ-4531, five since YAZ-3746 13AF): present — possibly empty — on
+   * every group above the view's last level, absent on the last level (so a single level has none).
    */
   children?: Group[]
   /** The rows the merge rule keeps directly under this group; same presence rule as `children`. */
   direct?: Row[]
+  /**
+   * A Folder group whose `children` are its subfolders' groups, on the SAME view level (YAZ-4918, a Depth of 2, 3 or
+   * All): a consumer that maps groups to the view's levels steps down a level only past a group without it.
+   */
+  nested?: true
 }
 
 export interface EngineError {
@@ -59,11 +70,21 @@ export interface ViewResult {
   errors: EngineError[]
   /** Rows passing the filters, before `limit`. */
   total: number
+  /** The subfolder rows among `total` (YAZ-4595 S36): the toolbar's "N folders". */
+  folders: number
 }
 
 export interface RunOptions {
-  /** The folder's declared column names — shown by default before any note carries them (YAZ-1549). */
+  /** The folder's declared column names — shown by default before any page carries them (YAZ-1549). */
   declared?: readonly string[]
+  /**
+   * The run's clock (YAZ-4919): `today()`, `now()` and a date's `isToday()` / `isThisWeek()` / `isThisMonth()` read it,
+   * so a relative filter reads the day ONCE per run, never per row. Absent: `Date.now()` at the run. A view that stays
+   * open past midnight shows the new day on its next run (a change, a switch); no timer.
+   */
+  now?: number
+  /** Settings › Folder pages › Week starts on, for `isThisWeek()`; absent: Sunday. */
+  weekStartsOn?: 'sunday' | 'monday'
   /** Vault root; lets link targets written as `<root>/…` resolve. */
   root?: string
   /**
@@ -76,7 +97,39 @@ export interface RunOptions {
    * The folder whose page this is (as the index names it), the vault's folder records and the vault's
    * name (YAZ-2541): given, a Folder level groups by the folders below the page, each headed by its title.
    */
-  page?: { folder: string; folders: readonly IndexRecord[]; vault: string }
+  page?: {
+    folder: string
+    folders: readonly IndexRecord[]
+    vault: string
+    /**
+     * A page's `also_in` folder ids by its path (YAZ-4799): the folder page hands the views rows with the app's keys taken
+     * out (`rowValues`), `also_in` among them, so the shortcut places are read off the index's own records.
+     */
+    alsoIn?: (path: string) => readonly string[]
+  }
+  /**
+   * The options of a Select or Multi-select column, in the column editor's order (YAZ-3940); else
+   * undefined. Given, sorts and groups on that column follow it unless the spec says `by: value`.
+   */
+  optionOrder?: (property: string) => readonly string[] | undefined
+  /**
+   * A Select or Multi-select column's option parents (YAZ-4799): its parent column and each option's parent option; else
+   * undefined. Grouped parent › child, a page joins only the child groups whose parent is the group it is in.
+   */
+  optionParent?: (property: string) => { column: string; of: Readonly<Record<string, string>> } | undefined
+  /** An Image column (YAZ-4802): its sort goes by the picture's file name, not the folder it is in. */
+  byFileName?: (property: string) => boolean
+  /**
+   * The vault's card review settings (YAZ-4967): a Card table's review columns (`cardValues`) and the Type column read
+   * them. Absent (a vault no scope has open), the review columns are blank.
+   */
+  cardSettings?: ReviewSettings
+  /**
+   * The page's Linked mentions columns (YAZ-4738 L1, L3): their keys, and each one's value for a record — the links to
+   * the pages that mention it, worked out from the index. A row reads it under the key, as if the page held it (cells,
+   * filters, search), but no page does. A sort on one sorts by how many there are.
+   */
+  mentions?: { keys: readonly string[]; of: (record: IndexRecord, key: string) => readonly string[] }
 }
 
 /** Value of one property key for one row's scope. */
@@ -93,155 +146,8 @@ const NO_VALUE = 'No value'
 
 // ---------- link resolution (GRO-2132) ----------
 
-const normalise = (s: string) => s.replace(/^\/+|\/+$/g, '').replace(/\.(md|markdown)$/, '').toLowerCase()
-
-/** A link target as the resolver reads it: brackets, `#heading` and `|alias` off, trimmed, lowercased. */
-export const targetKey = (target: string) => stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()
-
-/**
- * A basename as `targetBasename` spells it: lowercased, with the one context-dependent lowercase
- * mapping (Greek final sigma: `ΟΔΟΣ.md` lowercases its Σ to σ, `ΟΔΟΣ` alone to ς) folded away.
- */
-export const basenameKey = (basename: string): string => basename.toLowerCase().replace(/ς/g, 'σ')
-
-/**
- * The `basenameKey` of every note `target` can resolve to without aliases: each path and name match
- * in `makeResolver` ends in that basename. A note whose basename no link spells has no references
- * (YAZ-2241: the rename detector skips those without building a resolver per rename).
- */
-export function targetBasename(target: string): string {
-  const rel = normalise(targetKey(target))
-  return basenameKey(rel.slice(rel.lastIndexOf('/') + 1))
-}
-
-/** `makeResolver` / `resolverFor` knobs; every field is optional and defaults to today's behaviour. */
-export interface ResolverOptions {
-  /**
-   * Consult frontmatter `aliases` (default true, E2 GRO-2214). `false` builds a NAME-ONLY
-   * resolver — the rename engine's referencing-set probe (`links/renameLinks.ts`), which must
-   * not treat an alias-form link as a reference to rewrite: the alias lives in the moved file's
-   * own frontmatter and travels with it.
-   */
-  aliases?: boolean
-  /**
-   * Resolve a target that IS a note's id (default true, YAZ-2293 D5). `false` for the rename
-   * engine's probe too: an id link names the note itself, not its place, so no rename rewrites it.
-   */
-  ids?: boolean
-  /**
-   * The vault's ID letters (`IndexResponse.letters`, YAZ-2677 R5): the current ones, then each it
-   * had before. Given, a target with letters of before finds the note of that number: `[[OLD-12]]`
-   * is `YAZ-12` (S82). Without them an id is found by the letters its record holds.
-   */
-  letters?: readonly string[]
-  /**
-   * The snapshot's folder settings records (YAZ-2478). Given, a pathed target no file path answers
-   * is read as a path of TITLES: `Sub/Page` is the note titled Page in the folder `Sub` names
-   * (`typedFolders`). The rename engine's probe gives them too, and rewrites such a link to the note's id.
-   */
-  folders?: readonly IndexRecord[]
-}
-
-/**
- * The folder a typed segment names inside `parent` (YAZ-2478): the one there with that title, else
- * the one in that directory, else undefined. Folders are as the index names them (root-relative,
- * '' the root, which no segment names) and come off their settings records; case-insensitive.
- */
-export function typedFolders(folders: readonly IndexRecord[]): (parent: string, segment: string) => string | undefined {
-  const byTitle = new Map<string, string>()
-  const byName = new Map<string, string>()
-  for (const { folder, title } of folders) {
-    if (folder === '') continue
-    const typed = `${folder.slice(0, folder.lastIndexOf('/') + 1)}${title}`.toLowerCase()
-    if (!byTitle.has(typed)) byTitle.set(typed, folder)
-    byName.set(folder.toLowerCase(), folder)
-  }
-  return (parent, segment) => {
-    const typed = `${parent === '' ? '' : `${parent}/`}${segment}`.toLowerCase()
-    return byTitle.get(typed) ?? byName.get(typed)
-  }
-}
-
-/**
- * A link target's key (`targetKey`) as the key an id is found under (YAZ-2677 R1, R5): an ID is read
- * in any case, so the key is the id in lowercase; one with letters the vault had before is the key
- * of the same number with the current letters. Any other key is itself.
- */
-export function idKey(key: string, letters?: readonly string[]): string {
-  if (letters === undefined || letters.length < 2) return key
-  return vaultNoteId(key, letters)?.toLowerCase() ?? key
-}
-
-/**
- * Link target → note: the note's own id (YAZ-2293 — first, so a note merely NAMED like an id
- * never captures it; a target that is the id of NO note falls through to the names below, so
- * `[[YAZ-7]]` still opens a note that is only named so: YAZ-2677 R6, S26), absolute path, root-relative path (with or without `.md` / leading slash),
- * TITLE (YAZ-2420 🔒 D17 — a note with no `title:` is titled by its file name), bare basename —
- * duplicates of either resolve to the SHALLOWEST folder (Obsidian's shortest-path rule,
- * GRO-2190), equal depth to the first in the given (path-sorted) order — a pathed target as a
- * path of TITLES (YAZ-2478, `ResolverOptions.folders`), and finally a
- * frontmatter ALIAS (E2, GRO-2214), by the same shallowest-then-first rule, so a real name
- * always beats an alias. Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
- */
-export function makeResolver(files: readonly FileValue[], root?: string, opts: ResolverOptions = {}): Resolver {
-  const byId = new Map<string, FileValue>()
-  const byPath = new Map<string, FileValue>()
-  const byRel = new Map<string, FileValue>()
-  const byTitle = new Map<string, { file: FileValue; depth: number }>()
-  const byBase = new Map<string, { file: FileValue; depth: number }>()
-  const byAlias = new Map<string, { file: FileValue; depth: number }>()
-  /** `<folder>/<title>`, the folder as the index names it, to the first note of that title there; empty with no `folders`. */
-  const byFolderTitle = new Map<string, FileValue>()
-  const typedFolder = typedFolders(opts.folders ?? [])
-  const shallowest = (map: Map<string, { file: FileValue; depth: number }>, key: string, file: FileValue, depth: number) => {
-    const prev = map.get(key)
-    if (prev === undefined || depth < prev.depth) map.set(key, { file, depth })
-  }
-  for (const f of files) {
-    const r = f.record
-    // By the id in lowercase: a target is read in any case (YAZ-2677 R1, S17), and its key is lowercase.
-    const id = opts.ids === false ? undefined : r.id?.toLowerCase()
-    if (id !== undefined && !byId.has(id)) byId.set(id, f)
-    byPath.set(r.path.toLowerCase(), f)
-    const rel = normalise(r.folder ? `${r.folder}/${r.basename}` : r.basename)
-    if (!byRel.has(rel)) byRel.set(rel, f)
-    const depth = r.folder === '' ? 0 : r.folder.split('/').length
-    shallowest(byTitle, r.title.toLowerCase(), f, depth)
-    shallowest(byBase, r.basename.toLowerCase(), f, depth)
-    if (opts.folders !== undefined) {
-      const titled = `${r.folder}/${r.title}`.toLowerCase()
-      if (!byFolderTitle.has(titled)) byFolderTitle.set(titled, f)
-    }
-    if (opts.aliases !== false) for (const alias of r.aliases) shallowest(byAlias, alias.toLowerCase(), f, depth)
-  }
-  const rootKey = root ? `${root.replace(/\/+$/, '').toLowerCase()}/` : null
-  /** A path of titles: its last segment a note's title, the ones before it its folders, from the root down. */
-  const titledPath = (rel: string): FileValue | null => {
-    const segments = rel.split('/')
-    const title = segments.pop()
-    let dir = ''
-    for (const segment of segments) dir = typedFolder(dir, segment)?.toLowerCase() ?? (dir === '' ? segment : `${dir}/${segment}`)
-    return byFolderTitle.get(`${dir}/${title}`) ?? null
-  }
-  const cache = new Map<string, FileValue | null>()
-  return target => {
-    const hit = cache.get(target)
-    if (hit !== undefined) return hit
-    const key = targetKey(target)
-    let found: FileValue | null = null
-    if (key) {
-      found = byId.get(idKey(key, opts.letters)) ?? byPath.get(key) ?? null
-      if (!found) {
-        const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
-        found = byRel.get(rel) ?? byTitle.get(key)?.file ?? (rel.includes('/') ? titledPath(rel) : byBase.get(rel)?.file ?? null)
-      }
-      // Aliases last: a page named `CAC` always wins the target `CAC` over one merely aliased so.
-      if (!found) found = byAlias.get(key)?.file ?? null
-    }
-    cache.set(target, found)
-    return found
-  }
-}
+// The rule lives in `@shared/linkResolver` (YAZ-4740), so `yaseendocs mentions` resolves as the app does.
+import { makeResolver, type ResolverOptions } from '@shared/linkResolver'
 
 /** FileValue wrappers per records array identity — `runView` and `resolverFor` share the instances. */
 const filesCache = new WeakMap<readonly IndexRecord[], FileValue[]>()
@@ -323,9 +229,22 @@ const member = (object: string, name: string): Expr => ({ type: 'member', object
 /**
  * `file.x` → file field, `formula.x` → formula (a compile error is reported once at `formula.x`
  * and the cell is an ErrorValue; an unknown formula is the evaluator's ErrorValue, no report),
- * anything else → note property (`note.` optional) through `fromYaml`.
+ * anything else → page property (`note.` optional) through `fromYaml`.
  */
-function makeGetter(key: string, def: ViewSet, errors: EngineError[]): Getter {
+function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettings?: ReviewSettings): Getter {
+  // A card row's columns (YAZ-5319): the scope's `card`, which only a card row has; a page's row reads blank.
+  if (isCardKey(key)) {
+    const name = key.slice(5)
+    return (scope) => (scope.card !== undefined && Object.hasOwn(scope.card, name) ? scope.card[name] : null)
+  }
+  // The Type column (YAZ-5047): a card file is a Card only while the vault's Review is on (YAZ-5037); with it off, a page.
+  if (key === 'file.kind') {
+    const expr = member('file', 'kind')
+    return (scope) => {
+      const kind = evaluate(expr, scope)
+      return kind === 'card' && cardSettings?.enabled !== true ? 'page' : kind
+    }
+  }
   if (key.startsWith('file.')) {
     const expr = member('file', key.slice(5))
     return scope => evaluate(expr, scope)
@@ -341,7 +260,7 @@ function makeGetter(key: string, def: ViewSet, errors: EngineError[]): Getter {
     return scope => evaluate(expr, scope)
   }
   const name = key.startsWith('note.') ? key.slice(5) : key
-  return scope => fromYaml(Object.hasOwn(scope.note, name) ? scope.note[name] : undefined)
+  return scope => fromYaml(Object.hasOwn(scope.page, name) ? scope.page[name] : undefined)
 }
 
 // ---------- ordering ----------
@@ -367,10 +286,10 @@ const rank = (v: Value): number => {
 /**
  * Type-aware comparison: numbers numeric, dates/durations by ms, strings natural and
  * case-insensitive, booleans false < true, links by what they read as (`linkText` — through
- * `resolve`, an id link by its note's title, YAZ-2293 D8), files by title; mixed types by
+ * `resolve`, an id link by its page's title, YAZ-2293 D8), files by title; mixed types by
  * rank. Missing (null / undefined / error) always sorts last whatever the direction.
  */
-function compareValues(a: Value | undefined, b: Value | undefined, direction: 'ASC' | 'DESC' = 'ASC', resolve?: Resolver): number {
+export function compareValues(a: Value | undefined, b: Value | undefined, direction: 'ASC' | 'DESC' = 'ASC', resolve?: Resolver): number {
   const x = sortKey(a)
   const y = sortKey(b)
   const mx = isMissing(x)
@@ -390,9 +309,47 @@ function compareValues(a: Value | undefined, b: Value | undefined, direction: 'A
   return sign * c
 }
 
+type Compare = (a: Value | undefined, b: Value | undefined) => number
+
+/** A picture's value as its file name (YAZ-4802): `[[assets/images/acme.png]]` sorts as `acme.png`; no value stays none. */
+function fileNameOf(v: Value | undefined): Value | undefined {
+  const x = sortKey(v)
+  const text = x instanceof LinkValue ? x.target : typeof x === 'string' ? x : null
+  return text === null ? x : text.slice(text.lastIndexOf('/') + 1)
+}
+
+/**
+ * The order of one sort or group level (YAZ-3940). A column with options ranks its values by them:
+ * ASC is option order, DESC reverses it. A value that is not an option comes after the options,
+ * A to Z, and a missing value is last. `by: value`, or no options, is `compareValues`.
+ */
+function compareBy(spec: SortSpec | GroupBySpec, resolve: Resolver, optionOrder: RunOptions['optionOrder'], byFileName?: RunOptions['byFileName']): Compare {
+  const direction = spec.direction === 'DESC' ? 'DESC' : 'ASC'
+  if (byFileName?.(spec.property) === true) return (a, b) => compareValues(fileNameOf(a), fileNameOf(b), direction, resolve)
+  const options = spec.by === 'value' ? undefined : optionOrder?.(spec.property)
+  if (!options?.length) return (a, b) => compareValues(a, b, direction, resolve)
+  const index = new Map(options.map((option, i) => [option, i]))
+  const sign = direction === 'DESC' ? -1 : 1
+  return (a, b) => {
+    const x = sortKey(a)
+    const y = sortKey(b)
+    const ix = typeof x === 'string' ? index.get(x) : undefined
+    const iy = typeof y === 'string' ? index.get(y) : undefined
+    if (ix !== undefined && iy !== undefined) return sign * (ix - iy)
+    if (ix !== undefined || iy !== undefined) return ix !== undefined ? -1 : 1
+    return compareValues(x, y, 'ASC', resolve)
+  }
+}
+
+/** A subfolder's row (YAZ-4579 D31): its record is the folder's `.folder.md` (`links/shortcuts.ts` `isFolderRow`). */
+const isFolderEntry = (e: Entry): boolean => e.row.record.name === FOLDER_SETTINGS_FILE
+
 const byPath = (a: Entry, b: Entry): number => (a.row.record.path < b.row.record.path ? -1 : a.row.record.path > b.row.record.path ? 1 : 0)
 
 // ---------- grouping ----------
+
+/** A column key without its `note.` prefix: a view names `Layer` or `note.Layer`, a column declaration `Layer`. */
+const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : key)
 
 const isNoValue = (v: Value): boolean => v === null || v === '' || v instanceof ErrorValue || (Array.isArray(v) && v.length === 0)
 
@@ -406,20 +363,66 @@ export function folderAt(folder: string, page: string, depth: number): string {
 // ---------- public API ----------
 
 /**
- * `view.order` if set, else `file.name` plus every note property key seen OR declared, sorted, as
- * `note.<key>`. `declared` is the folder's own column names (YAZ-1549): a declared column is
- * a column before any note carries it, so a new folder shows its `status` at once. Every key
- * the rows hold is one: a folder's values where the vault uses IDs, and where it does not the
- * notes' own properties — `id`, `title` and `also_in` like the rest (YAZ-2523 🔒 V12).
+ * YAZ-4769 (one key, capitals ignored): a view key that names one of the page's columns (`spelled`, by fold) in other
+ * capitals is that column's key — `note.Dessert Column` in a view of a page whose column is `dessert column` reads and
+ * writes `note.dessert column`. `file.*` and `formula.*` keys are their own.
+ */
+export function columnKey(spelled: ReadonlyMap<string, string> | undefined, key: string): string {
+  if (spelled === undefined || key.startsWith('file.') || key.startsWith('formula.') || isCardKey(key)) return key
+  const name = key.startsWith('note.') ? key.slice(5) : key
+  const column = spelled.get(keyFold(name))
+  return column === undefined || column === name ? key : `note.${column}`
+}
+
+/** A view's order in the page's column spellings (YAZ-4769): a column named twice in two capitals shows once, where it is first named. */
+function orderInColumnSpelling(order: readonly string[], spelled: ReadonlyMap<string, string>): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const key of order) {
+    const column = columnKey(spelled, key)
+    const name = column.startsWith('note.') ? column.slice(5) : column
+    if (!column.startsWith('file.') && !column.startsWith('formula.') && !isCardKey(column) && spelled.has(keyFold(name))) {
+      if (seen.has(name)) continue
+      seen.add(name)
+    }
+    out.push(column)
+  }
+  return out
+}
+
+/**
+ * `view.order` if set, else `file.name` plus the page's columns, sorted, as `page.<key>`. `declared` is the page's
+ * column names (YAZ-1549; since YAZ-4713 C2 its own and its parent folders'): a declared column is a column before any
+ * page carries it. A page with columns shows them alone (C4): the pages' other fields wait in Columns ⚙ › "Other
+ * properties in these pages". A page with NO column shows every key the rows hold, as a plain vault does — the folder
+ * host has taken the app's own keys out of the rows already (`columnReservedKeys`).
  * Except the read-only switch (`readonly`, a reserved key the index keeps so the views can lock a
- * note's cells, YAZ-3122): one locked note must not put a "Readonly" row on every card (YAZ-3130
+ * page's cells, YAZ-3122): one locked page must not put a "Readonly" row on every card (YAZ-3130
  * nit). It shows only where a view orders it or the folder declares it; the menus still offer it.
  * (`comments` and `reviews` never reach here: the index drops them.)
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
-  if (view.order) return [...view.order]
+  // A view listing cards (YAZ-5319) has its own columns: the name, the card columns and the cards' own properties
+  // (YAZ-5385), never a page's property.
+  // The view is seen through the card lens (`cardView.ts`): `order` is the cards' own, `declared` the card columns.
+  if (cardRowsOf(view)) {
+    const own = [...new Set([...declared.map((k) => `note.${k}`), ...cardPropertyKeys(records)])].sort()
+    // A page's column left in the card order never shows there: only a card column, or a property some card holds, does.
+    if (view.order !== undefined) return view.order.filter((key) => key.startsWith('file.') || key.startsWith('formula.') || isCardKey(key) || own.includes(key))
+    return [...DEFAULT_CARD_ORDER, ...own]
+  }
+  // A page's view shows no card column: a card's are its rows' alone. Nor the page's card counts, which left with
+  // YAZ-5793 (D3): a view saved with one drops it here, and its order is written again only with the next change.
+  if (view.order) return (declared.length === 0 ? [...view.order] : orderInColumnSpelling(view.order, spellings(declared))).filter((key) => !isCardKey(key) && !GONE_PAGE_KEYS.has(key))
+  // A calendar card is small (YAZ-4857 item 4): with no column choice it shows the name alone, and the Columns panel says "Shown · 1".
+  if (view.type === 'calendar') return ['file.name']
+  return defaultKeys(records, declared)
+}
+
+/** `file.name` plus the page's columns (or, with none, every key the rows hold): `propertyKeys` with no `order`, for every view type but the calendar. */
+export function defaultKeys(records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   const keys = new Set<string>(declared.map((k) => `note.${k}`))
-  for (const r of records) for (const k of Object.keys(r.properties)) if (k !== READ_ONLY_KEY) keys.add(`note.${k}`)
+  if (declared.length === 0) for (const r of records) for (const k of Object.keys(r.properties)) if (k !== READ_ONLY_KEY) keys.add(`note.${k}`)
   return ['file.name', ...[...keys].sort()]
 }
 
@@ -430,7 +433,7 @@ export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly Ind
  * The KEY is never touched.
  */
 export function defaultLabel(key: string): string {
-  const file = FILE_FIELD_LABELS[key]
+  const file = FILE_FIELD_LABELS[key] ?? CARD_FIELD_LABELS[key]
   if (file !== undefined) return file
   const last = key.slice(key.lastIndexOf('.') + 1).replaceAll('_', ' ')
   return last.charAt(0).toUpperCase() + last.slice(1)
@@ -442,6 +445,8 @@ const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
   'file.basename': 'File name',
   'file.path': 'Path',
   'file.folder': 'Folder',
+  // YAZ-5047: one word, "Type" (Page, Card, Folder: `typeWord`); the key stays `kind`.
+  'file.kind': 'Type',
   'file.ext': 'Extension',
   'file.size': 'Size',
   'file.ctime': 'Created',
@@ -451,27 +456,51 @@ const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
   'file.embeds': 'Embeds',
 }
 
-/** `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else `defaultLabel(key)`. */
+/**
+ * `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else `defaultLabel(key)`. In a
+ * Card table (`isCardLens`, YAZ-5793) the name column is "Title", and a card's own column that would wear a card
+ * column's name says so: "Status (card property)".
+ */
 export function propertyLabel(def: ViewSet, key: string): string {
   const bare = key.startsWith('note.') ? key.slice(5) : key
   const props = def.properties
-  return props?.[key]?.displayName ?? props?.[bare]?.displayName ?? props?.[`note.${bare}`]?.displayName ?? defaultLabel(key)
+  const named = props?.[key]?.displayName ?? props?.[bare]?.displayName ?? props?.[`note.${bare}`]?.displayName
+  if (named !== undefined) return named
+  if (!isCardLens(def)) return defaultLabel(key)
+  if (key === 'file.name') return 'Title'
+  const label = defaultLabel(key)
+  return key.startsWith('note.') && CARD_LABEL_NAMES.has(label.toLowerCase()) ? `${label} (card property)` : label
 }
+
+/** The card columns' names, lower case: a card's own column with one of them gets "(card property)" (YAZ-5793). */
+const CARD_LABEL_NAMES: ReadonlySet<string> = new Set(['title', ...Object.values(CARD_FIELD_LABELS).map((l) => l.toLowerCase())])
+
+/** The page columns that left the Pages table (YAZ-5793 D3): the card counts. A saved order that names one skips it. */
+const GONE_PAGE_KEYS: ReadonlySet<string> = new Set(['file.cards', 'file.due', 'file.archived'])
 
 export function runView(def: ViewSet, view: ViewDef, records: readonly IndexRecord[], opts: RunOptions = {}): ViewResult {
   const errors: EngineError[] = []
-  const viewIndex = def.views.indexOf(view)
+  // By name too (YAZ-4585): ViewsPane hands the view with Settings filled in, a copy of the one in `def`.
+  const viewIndex = def.views.findIndex((v) => v === view || v.name === view.name)
   const viewWhere = viewIndex >= 0 ? `views[${viewIndex}]` : 'view'
   const files = fileValuesFor(records)
   const resolve = opts.resolve ?? resolverFor(records, opts.root)
+  // One reading of the clock per run (YAZ-4919), in every row's scope.
+  const now = opts.now ?? Date.now()
+  const weekStartsOn = opts.weekStartsOn
   const formulas = def.formulas ?? {}
   const baseFilter = compileFilter(def.filters, 'filters', errors)
   const viewFilter = compileFilter(view.filters, `${viewWhere}.filters`, errors)
+  // A calendar's "Cross out when" (YAZ-4864): the filter compiler, once per run; each shown row is tested once below.
+  const crossOut = compileFilter(view.crossOut, `${viewWhere}.crossOut`, errors)
 
   const getters = new Map<string, Getter>()
+  // YAZ-4769: a sort, group or summary key that names a page column in other capitals reads that column. Worked out
+  // once per key per run, never per row.
+  const spelled = opts.declared === undefined || opts.declared.length === 0 ? undefined : spellings(opts.declared)
   const getter = (key: string): Getter => {
     let g = getters.get(key)
-    if (!g) getters.set(key, (g = makeGetter(key, def, errors)))
+    if (!g) getters.set(key, (g = makeGetter(columnKey(spelled, key), def, errors, opts.cardSettings)))
     return g
   }
   const valueOf = (entry: Entry, key: string): Value => {
@@ -481,14 +510,28 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     return v
   }
 
+  // A Linked mentions column (YAZ-4738) reads as a field of the row's page: one copy of the fields per row, only where the page has one.
+  const mentions = opts.mentions !== undefined && opts.mentions.keys.length > 0 ? opts.mentions : undefined
+  const pageOf = (record: IndexRecord): Record<string, unknown> => {
+    if (mentions === undefined) return record.properties
+    const page: Record<string, unknown> = { ...record.properties }
+    for (const key of mentions.keys) page[key] = mentions.of(record, key)
+    return page
+  }
+
   // filters
   const entries: Entry[] = []
   for (let i = 0; i < records.length; i++) {
     // `this` is null: the views are a FOLDER's, and a folder is no record (YAZ-2290).
-    const scope: Scope = { note: records[i].properties, file: files[i], formulas, this: null, resolve }
+    const scope: Scope = { page: pageOf(records[i]), file: files[i], formulas, this: null, resolve, now, weekStartsOn }
+    // A card row (YAZ-5319) carries its card's columns: `card.status`, `card.nextReview`, …
+    const card = cardRowOfRecord(records[i])
+    if (card !== undefined) scope.card = cardValues(card, opts.cardSettings, now)
     if (baseFilter && !baseFilter(scope)) continue
     if (viewFilter && !viewFilter(scope)) continue
-    entries.push({ row: { record: records[i], file: files[i], values: {} }, scope, cache: new Map() })
+    const row: Row = { record: records[i], file: files[i], values: {} }
+    if (crossOut?.(scope)) row.crossed = true
+    entries.push({ row, scope, cache: new Map() })
   }
 
   // values
@@ -496,23 +539,45 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   const columnGetters = keys.map(k => [k, getter(k)] as const)
   for (const entry of entries) for (const [k, g] of columnGetters) entry.row.values[k] = g(entry.scope)
 
+  // One comparator per sort or group level, built once: an inner level buckets once per outer (YAZ-3940).
+  const compares = new Map<SortSpec | GroupBySpec, Compare>()
+  const compareOf = (spec: SortSpec | GroupBySpec): Compare => {
+    let c = compares.get(spec)
+    if (!c) compares.set(spec, (c = compareBy(spec, resolve, opts.optionOrder, opts.byFileName)))
+    return c
+  }
+
   // sort (stable: path breaks ties)
   const sort = (view.sort ?? []).filter(s => s && typeof s.property === 'string')
   if (sort.length) {
     const sortValues = new Map<Entry, Value[]>(entries.map(e => [e, sort.map(s => valueOf(e, s.property))]))
+    // A Linked mentions column sorts by count (L3): fewest first, ASC.
+    const counted = (s: SortSpec): boolean => mentions !== undefined && mentions.keys.includes(s.property.startsWith('note.') ? s.property.slice(5) : s.property)
+    const count = (v: Value | undefined): number => (Array.isArray(v) ? v.length : 0)
+    const sortCompares = sort.map((s): Compare => (counted(s) ? (a, b) => (s.direction === 'DESC' ? -1 : 1) * (count(a) - count(b)) : compareOf(s)))
     entries.sort((a, b) => {
       const va = sortValues.get(a)!
       const vb = sortValues.get(b)!
       for (let i = 0; i < sort.length; i++) {
-        const c = compareValues(va[i], vb[i], sort[i].direction === 'DESC' ? 'DESC' : 'ASC', resolve)
+        const c = sortCompares[i](va[i], vb[i])
         if (c) return c
       }
       return byPath(a, b)
     })
   }
 
+  // Folders first (YAZ-4579 D33): the subfolder rows before the pages, each part in the view's order. A
+  // stable split, and only where a folder row is: a page without one costs one pass of name checks.
+  if (view.foldersFirst !== false && entries.some(isFolderEntry)) {
+    const folders = entries.filter(isFolderEntry)
+    const pages = entries.filter(e => !isFolderEntry(e))
+    entries.splice(0, entries.length, ...folders, ...pages)
+  }
+
   // limit
   const total = entries.length
+  let folders = 0
+  for (const e of entries) if (isFolderEntry(e)) folders++
   const limit = typeof view.limit === 'number' && view.limit > 0 ? Math.floor(view.limit) : null
   const kept = limit === null ? entries : entries.slice(0, limit)
 
@@ -529,14 +594,40 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
    * One level over `list`: its distinct keys in the level's direction, then the value-less entries.
    * `depth` > 0 is a Folder level under a page (YAZ-2541): the key is the folder that many steps below it.
    */
-  const bucket = (list: Entry[], { property, direction }: GroupBySpec, depth: number) => {
+  /**
+   * The folders a page shows in on a Folder level (YAZ-4799: "next.js is both in two layers"): its home, then each folder
+   * its `also_in` names that is on this page, so a shortcut counts in the folder it is a shortcut in (a fan-out, as a
+   * multi-select's). Under a Folder group (`within`) only the places inside that group: a path keeps its pair (App + API)
+   * and never mixes it with the other place's (Clients + API). One place: the home alone, as before.
+   */
+  let folderIds: Map<string, string> | undefined
+  const placesOf = (entry: Entry, home: string, page: string, within: string | undefined): string[] => {
+    const ids = opts.page!.alsoIn?.(entry.row.record.path) ?? alsoIn(entry.row.record.properties)
+    if (ids.length === 0) return [home]
+    folderIds ??= new Map(opts.page!.folders.filter((f) => typeof f.id === 'string').map((f) => [f.id!, f.folder] as const))
+    const places = [home]
+    for (const id of ids) {
+      const dir = folderIds.get(id)
+      if (dir !== undefined && inFolder(dir, page) && !places.includes(dir)) places.push(dir)
+    }
+    return within === undefined ? places : places.filter((dir) => inFolder(dir, within))
+  }
+  const bucket = (list: Entry[], spec: GroupBySpec, depth: number, within?: string, allow?: (key: Value) => boolean) => {
+    const { property } = spec
     const page = depth > 0 ? opts.page!.folder : null
     const valued: { key: Value; entries: Entry[] }[] = []
     const noValue: Entry[] = []
+    // YAZ-4799 option parents: an entry whose every value belongs under another parent sits directly under this one.
+    const orphans: Entry[] = []
     let fannedOut = false
     for (const entry of list) {
       const own = valueOf(entry, property)
-      const key = page !== null && typeof own === 'string' ? folderAt(own, page, depth) : own
+      let key: Value = page !== null && typeof own === 'string' ? folderAt(own, page, depth) : own
+      if (page !== null && typeof own === 'string') {
+        const keys = [...new Set(placesOf(entry, own, page, within).map((dir) => folderAt(dir, page, depth)))]
+        if (keys.length > 1) key = keys
+        else if (keys.length === 1) key = keys[0]!
+      }
       // On a Folder level the vault root ('', a shortcut's home) is a folder, not a missing value.
       if (isNoValue(key) && !(page !== null && key === '')) {
         noValue.push(entry)
@@ -545,19 +636,28 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
       // Scalar grouping is the common case and keeps the original single-lookup path — wrapping
       // every value in a throwaway array here cost 4-6x on the 1000-record budget under load.
       if (!Array.isArray(key)) {
+        if (allow !== undefined && !allow(key)) {
+          orphans.push(entry)
+          continue
+        }
         const g = valued.find(x => equals(x.key, key))
         if (g) g.entries.push(entry)
         else valued.push({ key, entries: [entry] })
         continue
       }
-      // A LIST fans out: the entry joins one group per DISTINCT non-empty element (D1), so a note
+      // A LIST fans out: the entry joins one group per DISTINCT non-empty element (D1), so a page
       // in two funnels shows under both instead of forming a combination group. Empty elements are
       // dropped, and a list left with none falls to "No value" exactly as `[]` already does.
       fannedOut = true
       let joined = 0
+      let held = false
       for (let i = 0; i < key.length; i++) {
         const k = key[i]
         if (isNoValue(k)) continue
+        if (allow !== undefined && !allow(k)) {
+          held = true
+          continue
+        }
         let seen = false
         for (let j = 0; j < i; j++) if (equals(key[j], k)) { seen = true; break }
         if (seen) continue
@@ -566,52 +666,123 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
         if (g) g.entries.push(entry)
         else valued.push({ key: k, entries: [entry] })
       }
-      if (joined === 0) noValue.push(entry)
+      if (joined === 0) (held ? orphans : noValue).push(entry)
     }
     // The homes of shortcuts come after the page's own folders, whichever the direction.
     const outside = (key: Value): number => Number(page !== null && typeof key === 'string' && !inFolder(key, page))
-    valued.sort((a, b) => outside(a.key) - outside(b.key) || compareValues(a.key, b.key, direction === 'DESC' ? 'DESC' : 'ASC', resolve))
-    return { valued, noValue, fannedOut }
+    const compare = compareOf(spec)
+    valued.sort((a, b) => outside(a.key) - outside(b.key) || compare(a.key, b.key))
+    return { valued, noValue, orphans, fannedOut }
   }
   let titles: Map<string, string> | undefined
   /** A Folder group (YAZ-2541) is headed as the sidebar names its folder: by title, a folder with no settings file by its directory, the root by the vault's name. */
-  const labelOf = (key: Value, depth: number): string => {
-    if (depth === 0 || typeof key !== 'string') return render(key, resolve)
+  const titleOf = (dir: string): string => {
     titles ??= new Map([...opts.page!.folders.map(f => [f.folder, f.title] as const), ['', opts.page!.vault]])
-    return titles.get(key) ?? key.slice(key.lastIndexOf('/') + 1)
+    return titles.get(dir) ?? dir.slice(dir.lastIndexOf('/') + 1)
   }
-  const groupOf = (key: Value | null, entries: Entry[], fannedOut: boolean, depth: number): Group =>
-    ({ key, label: key === null ? NO_VALUE : labelOf(key, depth), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut })
+  /** Full path (YAZ-4918): a Folder group's folders from the page down to it, each by its title, " › " between; a folder not under the page by its title alone. */
+  const pathLabelOf = (key: string): string => {
+    const page = opts.page!.folder
+    if (!inFolder(key, page) || key === page) return titleOf(key)
+    const parts = key.split('/')
+    const from = page === '' ? 0 : page.split('/').length
+    const out: string[] = []
+    for (let i = from + 1; i <= parts.length; i++) out.push(titleOf(parts.slice(0, i).join('/')))
+    return out.join(' › ')
+  }
+  const labelOf = (key: Value, at: number, step: number): string => {
+    if (step === 0 || typeof key !== 'string') return render(key, resolve)
+    return folderLayoutOf(levels[at]) === 'path' ? pathLabelOf(key) : titleOf(key)
+  }
+  const groupOf = (key: Value | null, entries: Entry[], at: number, step: number): Group =>
+    ({ key, label: key === null ? NO_VALUE : labelOf(key, at, step), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut: false })
 
   let groups: Group[] | null = null
-  // Levels past the second are ignored in v1 (YAZ-745); a level without a property name is not one.
-  const levels = groupByLevels(view).filter(g => g && typeof g.property === 'string').slice(0, 2)
-  // How far below the page each Folder level groups (YAZ-2541): the first one step, a second two; 0 = not a Folder level.
+  // Levels past the fifth are ignored (YAZ-4531, YAZ-3746 13AF); a level without a property name is not one.
+  const levels = shownGroupLevels(view)
+  /**
+   * How far below the page each Folder level STARTS (YAZ-2541): the first one step, a second one past the first's Depth
+   * (YAZ-4918; a plain level is one deep, All every step), a third past both; 0 = not a Folder level. A Full path level
+   * keys on its Depth's step at once (`stepOf`), the whole folder for All.
+   */
   const byFolder = (l: GroupBySpec): boolean => opts.page !== undefined && l.property === 'file.folder'
-  const depths = levels.map((l, i) => (byFolder(l) ? levels.slice(0, i + 1).filter(byFolder).length : 0))
-  if (levels.length) {
-    const outer = bucket(kept, levels[0], depths[0])
-    const branches: { key: Value | null; entries: Entry[] }[] = [...outer.valued]
-    if (outer.noValue.length) branches.push({ key: null, entries: outer.noValue })
-    if (levels.length === 1) {
-      groups = branches.map(b => groupOf(b.key, b.entries, outer.fannedOut, depths[0]))
-    } else {
-      const nested = branches.map(b => ({ ...b, inner: bucket(b.entries, levels[1], depths[1]) }))
-      // Fan-out is a flag per LEVEL, not per branch: one list anywhere inside marks every inner group.
-      const innerFanned = nested.some(b => b.inner.fannedOut)
-      groups = nested.map(b => {
-        // MERGE RULE (YAZ-745): an inner key equal to its outer's is no child — its rows sit
-        // DIRECTLY under the outer, as do the value-less rows of a "No value" outer, which
-        // therefore never carries a "No value" child. Folder then Folder (YAZ-2541) rides on it:
-        // a subfolder's own notes resolve to the subfolder at both depths, so they sit directly under it.
-        const merges = (key: Value): boolean => b.key !== null && equals(key, b.key)
-        const children = b.inner.valued.filter(x => !merges(x.key)).map(x => groupOf(x.key, x.entries, innerFanned, depths[1]))
-        if (b.key !== null && b.inner.noValue.length) children.push(groupOf(null, b.inner.noValue, innerFanned, depths[1]))
-        const direct = b.key === null ? b.inner.noValue : b.inner.valued.filter(x => merges(x.key)).flatMap(x => x.entries)
-        return { ...groupOf(b.key, b.entries, outer.fannedOut, depths[0]), children, direct: direct.map(e => e.row) }
-      })
+  const depths: number[] = []
+  let below = 0
+  for (const l of levels) {
+    depths.push(byFolder(l) ? below + 1 : 0)
+    const depth = byFolder(l) ? folderDepthOf(l) : 0
+    below += depth === 'all' ? Infinity : depth
+  }
+  const stepOf = (at: number): number => {
+    if (depths[at] === 0 || folderLayoutOf(levels[at]) !== 'path') return depths[at]
+    const depth = folderDepthOf(levels[at])
+    return depth === 'all' ? Infinity : depths[at] + depth - 1
+  }
+  /** Whether a nested Folder level `at` goes a step deeper than `step` (YAZ-4918): under its Depth, or All. */
+  const nestsPast = (at: number, step: number): boolean => {
+    const depth = folderDepthOf(levels[at])
+    return depth === 'all' || step - depths[at] + 1 < depth
+  }
+  // Fan-out is a flag per LEVEL, not per branch (YAZ-745): one list anywhere in a level marks every group of it.
+  const fanned = levels.map(() => false)
+  const built: Group[][] = levels.map(() => [])
+  /**
+   * The groups of level `at` over `list`, under a parent keyed `parent` (`undefined` at the top).
+   * MERGE RULE (YAZ-745, per parent since YAZ-4531): a key equal to the parent's is no group — its
+   * entries sit DIRECTLY under the parent, as do the value-less entries of a "No value" parent, which
+   * therefore never carries a "No value" child. Folder then Folder (YAZ-2541) rides on it: a
+   * subfolder's own pages resolve to the subfolder at every deeper level, so they sit directly under it.
+   * Direct entries are not split further.
+   * `step` is the folder step below the page a Folder level keys on: its own (`depths[at]`), or, nested (YAZ-4918),
+   * the next one under its own group; `within` keeps a shortcut's places inside the folder group above (YAZ-4799).
+   */
+  const split = (list: Entry[], at: number, parent?: Value | null, step = stepOf(at), within?: string): { children: Group[]; direct: Entry[] } => {
+    // Option parents (YAZ-4799): under a group of this column's parent column, only the options whose parent it is.
+    const ties = at > 0 && typeof parent === 'string' ? opts.optionParent?.(levels[at].property) : undefined
+    const above = at > 0 ? levels[at - 1].property : undefined
+    const tied = ties !== undefined && above !== undefined && bare(above) === bare(ties.column)
+    const allow = tied ? (key: Value) => typeof key !== 'string' || ties.of[key] === undefined || ties.of[key] === parent : undefined
+    const level = bucket(list, levels[at], step, within, allow)
+    if (level.fannedOut) fanned[at] = true
+    const merges = (key: Value): boolean => parent !== undefined && parent !== null && equals(key, parent)
+    const children = level.valued.filter(x => !merges(x.key)).map(x => toGroup(x.key, x.entries, at, step))
+    if (parent !== null && level.noValue.length) children.push(toGroup(null, level.noValue, at, step))
+    const direct = [...(parent === null ? level.noValue : level.valued.filter(x => merges(x.key)).flatMap(x => x.entries)), ...level.orphans]
+    return { children, direct }
+  }
+  /** The next view level's split under a Folder group (YAZ-4799): a Folder level right under it keeps a shortcut's places inside the group. */
+  const nextLevel = (list: Entry[], at: number, key: Value | null) =>
+    split(list, at + 1, key, stepOf(at + 1), depths[at + 1] > 1 && depths[at] > 0 && typeof key === 'string' ? key : undefined)
+  /**
+   * One group of level `at`, keyed at folder `step` (0 off a Folder level); above the last level it carries `children`
+   * and `direct`, possibly empty. A nested Folder level (YAZ-4918) first tries the step below its own group: the
+   * subfolders' groups become its `children`, its own pages `direct`, and the group is `nested`. A folder with no
+   * subfolder goes on to the next view level, so "Folder (All), then Status" puts the Status groups inside each
+   * deepest folder, and on the last level it is a leaf.
+   */
+  const toGroup = (key: Value | null, list: Entry[], at: number, step: number): Group => {
+    const group = groupOf(key, list, at, step)
+    built[at].push(group)
+    if (step > 0 && typeof key === 'string' && folderLayoutOf(levels[at]) === 'nested' && nestsPast(at, step)) {
+      const inner = split(list, at, key, step + 1, key)
+      if (inner.children.length > 0) {
+        group.nested = true
+        group.children = inner.children
+        group.direct = inner.direct.map(e => e.row)
+        return group
+      }
     }
+    if (at + 1 < levels.length) {
+      const inner = nextLevel(list, at, key)
+      group.children = inner.children
+      group.direct = inner.direct.map(e => e.row)
+    }
+    return group
+  }
+  if (levels.length) {
+    groups = split(kept, 0).children
+    for (let i = 0; i < levels.length; i++) if (fanned[i]) for (const g of built[i]) g.fannedOut = true
   }
 
-  return { rows: kept.map(e => e.row), groups, summaries: summaryOf(kept), errors, total }
+  return { rows: kept.map(e => e.row), groups, summaries: summaryOf(kept), errors, total, folders }
 }

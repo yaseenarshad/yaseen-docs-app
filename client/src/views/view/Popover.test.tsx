@@ -70,11 +70,15 @@ describe('anchored popover', () => {
     expect(mount().pop.getAttribute('style')).toBeNull()
   })
 
-  it('clamps back inside the viewport at the right edge', () => {
+  it('clamps back inside the viewport at the right edge, 8 px from it (the YAZ-4820 checker: the Style panel touched the edge)', () => {
     const { pop } = mount(anchorAt({ top: 20, bottom: 48, left: 1000, right: 1024 }))
     expect(window.innerWidth).toBe(1024)
-    expect(pop.style.left).toBe('824px')
+    expect(pop.style.left).toBe('816px')
     expect(pop.style.top).toBe('54px')
+    // The top-left corner keeps the margin too.
+    const corner = mount(anchorAt({ top: -30, bottom: -10, left: 0, right: 20 }))
+    expect(corner.pop.style.top).toBe('8px')
+    expect(corner.pop.style.left).toBe('8px')
   })
 
   it('closes on a mousedown away from the anchor, not on the anchor itself', () => {
@@ -115,12 +119,12 @@ describe('anchored popover', () => {
     expect(observe).toHaveBeenCalledWith(pop)
     pop.getBoundingClientRect = () => rect({ width: 300, height: 350 })
     act(() => resized([], {} as ResizeObserver))
-    expect(pop.style.top).toBe('418px')
-    expect(pop.style.left).toBe('724px')
+    expect(pop.style.top).toBe('410px')
+    expect(pop.style.left).toBe('716px')
     pop.getBoundingClientRect = () => rect({ width: 200, height: 100 })
     act(() => resized([], {} as ResizeObserver))
     expect(pop.style.top).toBe('656px')
-    expect(pop.style.left).toBe('824px')
+    expect(pop.style.left).toBe('816px')
     act(() => pop.firstElementChild?.dispatchEvent(new Event('scroll')))
     expect(onClose).not.toHaveBeenCalled()
     act(() => root?.unmount())

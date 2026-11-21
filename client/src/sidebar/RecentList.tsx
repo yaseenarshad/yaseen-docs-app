@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type MouseEvent } from 'react'
+import { memo, useCallback, type ReactNode, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type MouseEvent } from 'react'
 import { hasHoverPreview } from './hoverPreviewKinds'
 import type { TreeResponse } from '@shared/types'
 import type { OnListFold } from './listFold'
@@ -9,6 +9,7 @@ import { FileIcon, NameEnding } from './FileIcon'
 import { rowArrows } from './Tree'
 import { typeOf, type SearchType } from '../search/searchFilter'
 import { byVault, MAX_RECENTS, recentDays, recentFiles, timeOf, type RecentFile, type RecentGroup } from './recents'
+import { useLocalDay } from '../review/localDay'
 
 type Log = Readonly<Record<string, number>>
 
@@ -39,28 +40,6 @@ function useEdits(roots: readonly string[]): readonly Log[] {
 /** A vault group's fold key (YAZ-4450 D7): its day and its vault. */
 const groupKey = (day: string, group: RecentGroup): string => `${day}|${group.root}`
 
-/** The ms from `now` to the next local midnight. */
-const toMidnight = (now: Date): number => new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime()
-
-/**
- * Today's date (`toDateString`), live (YAZ-3235 S16): a timer to the next midnight moves it, and so
- * does a focus of the window — a timer can fire late after the Mac sleeps. The same day sets the
- * same string, so React draws nothing.
- */
-function useToday(): string {
-  const [today, setToday] = useState(() => new Date().toDateString())
-  useEffect(() => {
-    const check = () => setToday(new Date().toDateString())
-    const timer = window.setTimeout(check, toMidnight(new Date()) + 1000)
-    window.addEventListener('focus', check)
-    return () => {
-      window.clearTimeout(timer)
-      window.removeEventListener('focus', check)
-    }
-  }, [today])
-  return today
-}
-
 interface RecentListProps {
   /** The days' fold, for the expand-all button (YAZ-3511 D19). */
   onFold?: OnListFold
@@ -86,9 +65,17 @@ interface RecentListProps {
   onOpenFileBackground: (path: string) => void
   /** A right-click on a row (D7, S20): the Sidebar opens the one-row file menu, "Show in sidebar" first. */
   onMenu: (path: string, e: MouseEvent) => void
-  /** The sidebar's hover preview (YAZ-3403): a note or board row previews beside the sidebar, as a Files row does. */
+  /** The sidebar's hover preview (YAZ-3403): a page or board row previews beside the sidebar, as a Files row does. */
   onHoverFile?: (node: { path: string } | null) => void
+  /**
+   * The empty Search tab (YAZ-5774): only the latest 2 days that have saves (Monday: Today, then Friday), and no limit line. With none, or with the trees
+   * on their way, it draws `none` (the Search tab's own line): with recents that line goes, and "Today" is the top row.
+   */
+  recentOnly?: { none: ReactNode }
 }
+
+/** The empty Search tab shows the latest days that have saves (YAZ-5774): as the Recents tab, an empty day is no day. */
+const SEARCH_DAYS = 2
 
 /**
  * The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window,
@@ -96,11 +83,15 @@ interface RecentListProps {
  * the tab shows. Memo: App draws again on each app-state broadcast; the list draws only when its own
  * props, a save log or the day change.
  */
-export const RecentList = memo(function RecentList({ trees, roots, only = null, type = 'all', groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
+export const RecentList = memo(function RecentList({ trees, roots, only = null, type = 'all', groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold, recentOnly }: RecentListProps) {
   const edits = useEdits(roots)
-  const today = useToday()
+  // Rule 17 (Review rules v1, YAZ-5655): the ONE day timer (`useLocalDay`): midnight, focus and `visibilitychange`.
+  const today = useLocalDay()
   const files = useMemo(() => recentFiles(trees, roots, edits, only, type === 'all' ? undefined : (path) => typeOf({ kind: 'file', path }) === type), [trees, roots, edits, only, type])
-  const days = useMemo(() => recentDays(files, new Date()), [files, today]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
+  const days = useMemo(() => {
+    const all = recentDays(files, new Date())
+    return recentOnly !== undefined ? all.slice(0, SEARCH_DAYS) : all
+  }, [files, today, recentOnly]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
   // Each day's vault groups (YAZ-4450 D7), cut once per list: 200 rows at most.
   const grouped = groups !== undefined
   const dayGroups = useMemo(() => (grouped ? new Map(days.map((day) => [day.key, byVault(day.files, roots)])) : null), [grouped, days, roots])
@@ -125,6 +116,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
     [],
   )
 
+  if (recentOnly !== undefined && days.length === 0) return recentOnly.none
   if (files.length === 0) {
     // A tree still on its way: the list cannot say yet which logged files are there.
     if (!roots.every((root) => trees.has(root))) return <p className="sidebar__msg">Loading…</p>
@@ -177,7 +169,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
         })}
       </ul>
       {/* The limit (D3, S21): the 200 newest files show, and a line says so. */}
-      {files.length === MAX_RECENTS && <p className="sidebar__msg">Showing the {MAX_RECENTS} newest files.</p>}
+      {files.length === MAX_RECENTS && recentOnly === undefined && <p className="sidebar__msg">Showing the {MAX_RECENTS} newest files.</p>}
     </>
   )
 })
@@ -192,7 +184,7 @@ interface RecentRowProps extends Pick<RecentListProps, 'titles' | 'onOpenFile' |
 /** One file (D6, S18): its page name, and the time of its save on the right; the path is the tooltip. */
 function RecentRow({ file, active, indent, titles, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentRowProps) {
   const { path, edited } = file
-  // A board or note row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike. The item's `data-path`
+  // A board or page row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike. The item's `data-path`
   // puts a Files window's floating panel level with the row (`previewRowRect`); the button has none, for the keys: it walks by `data-walk`.
   const hover = onHoverFile === undefined || !hasHoverPreview(path) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   return (

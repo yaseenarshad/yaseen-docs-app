@@ -1,8 +1,11 @@
 import { createElement, type ReactNode } from 'react'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
-import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, FolderIcon, HeartIcon, PencilIcon } from '../views/view/icons'
+import type { CreateKind } from './createEntry'
+import { NewKindIcon } from './FileIcon'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -20,7 +23,7 @@ import type { MenuTargets } from './Sidebar'
  * text — a shortcut hint rides on `hint` and is drawn by CSS from `data-hint`, so `textContent`
  * and the accessible name stay what every test pins.
  *
- * NOTE (🔒 D7): grouping moves "Copy N paths" below the Open group, which loosens 🔒 D5 of
+ * PAGE (🔒 D7): grouping moves "Copy N paths" below the Open group, which loosens 🔒 D5 of
  * YAZ-1337 ("the plural pair leads") — "Open N in new tabs" still leads the whole menu, and the
  * plural copy still leads its own group.
  *
@@ -38,6 +41,8 @@ interface MenuItemBase {
   /** Right-aligned shortcut hint (⌘X …), drawn from `data-hint` by CSS — never part of the label. */
   hint?: string
   danger?: boolean
+  /** The row's `data-tour` name: a target of the course's guided tour (YAZ-5123). */
+  tour?: string
 }
 
 /** A leaf: selecting it runs `onSelect`, then the whole menu closes. */
@@ -50,9 +55,18 @@ export interface MenuAction extends MenuItemBase {
   tip?: string
   /**
    * A two-click row (YAZ-4460 demo, the tab board's Close, YAZ-3343): the first click turns it red with these words
-   * and keeps the menu open; the second runs it. The pointer leaving the row puts it back.
+   * and keeps the menu open; the second runs it. The pointer leaving the row puts it back. With `radio`, the second
+   * click picks it and closes the menu (YAZ-5966: a card's Title in review choice).
    */
   confirm?: string
+  /** An armed `confirm` row in the accent colour, not red: it adds or sets, it takes nothing away (YAZ-5966). */
+  confirmAdd?: boolean
+  /**
+   * A row that asks in place (YAZ-5697: the card ⋯'s Archive card, Title on the front, Turn into a page): the first
+   * click turns the row into `question` with Cancel (first, focused) and `yes`; only `yes` runs it. Cancel, the focus
+   * leaving the ask (a click elsewhere in the menu) or Escape run nothing.
+   */
+  ask?: { question: string; yes: string; danger?: boolean }
   /**
    * A check row that keeps the menu open (YAZ-4460 demo: "Show it in"): its ✓ flips at the click, and `onToggle` gets
    * the new state; `onSelect` does not run.
@@ -81,7 +95,7 @@ export interface MenuAction extends MenuItemBase {
  * A parent ("Open in ▸", D7 amended): with no `onSelect`, selecting it only opens its flyout.
  * The children are ONE level of leaves in their own groups, so a separator inside the flyout is
  * simply a second non-empty section; the component skips empty ones exactly as it does at the root.
- * A parent MAY have a default (YAZ-3085 D1): "New note ▸" makes a note on a click or Enter, as a
+ * A parent MAY have a default (YAZ-3085 D1): "New page ▸" makes a page on a click or Enter, as a
  * leaf does, and its flyout opens on hover or ArrowRight only.
  */
 export interface MenuParent extends MenuItemBase {
@@ -89,6 +103,12 @@ export interface MenuParent extends MenuItemBase {
   children: readonly MenuAction[][]
   /** A glyph before the label, as a leaf has: "Add to focus ▸" keeps its eye (YAZ-4460 F4). */
   icon?: ReactNode
+  /**
+   * The flyout drawn by DOM code instead of `children` (then `[]`): the page's table menu shows the six-dot menu's own
+   * tabbed "Subheader row ›" panel (YAZ-4899, `editor/blockHandleMenu.ts` `fillFlyout`), one panel in one place. It
+   * fills `host` (the flyout's box, with the editor menu's classes); `close` closes the whole menu.
+   */
+  panel?: (host: HTMLElement, close: () => void) => void
 }
 
 /** One button of a strip: its icon, its name as the tooltip and the accessible name, lit when `active`. */
@@ -100,7 +120,7 @@ export interface MenuStripButton {
 }
 
 /**
- * A row of icon buttons (YAZ-3727 D15): the block menu's Turn into strip in a note's right-click menu. A
+ * A row of icon buttons (YAZ-3727 D15): the block menu's Turn into strip in a page's right-click menu. A
  * click runs one and closes the whole menu, as a leaf does. It has no hint, glyph slot or flyout.
  */
 export interface MenuStrip {
@@ -113,7 +133,7 @@ export interface MenuStrip {
 
 export type MenuItem = MenuAction | MenuParent
 
-/** What `ContextMenu` draws: an item, or a strip (only a note's menu has one). */
+/** What `ContextMenu` draws: an item, or a strip (only a page's menu has one). */
 export type MenuEntry = MenuItem | MenuStrip
 
 export type MenuSection = MenuItem[]
@@ -124,7 +144,10 @@ export type MenuSection = MenuItem[]
  * while this menu stands (🔒 D1, YAZ-1674). `hotkeys` is `settings.hotkeys` (YAZ-3397 D2), read at
  * render time too: Copy path's hint is its key as it is now (YAZ-3410).
  */
-export type MenuSectionTargets = MenuTargets & { clip: FileClipState; hotkeys: HotkeyOverrides }
+export type MenuSectionTargets = MenuTargets & { clip: FileClipState; hotkeys: HotkeyOverrides; /** The target vault's word for a page (YAZ-4938); absent reads as "page". */ unit?: UnitText }
+
+/** The vault's word in a label (YAZ-4938): `unit(t, 'New page')`. */
+const unit = (t: MenuSectionTargets, text: string): string => (t.unit ?? SAME_WORD)(text)
 
 export interface MenuHandlers {
   /** "Open folder page" on a folder row (YAZ-2290 D3, YAZ-3377 D2): the folder opens as a kept tab (YAZ-2648 D2). */
@@ -161,27 +184,31 @@ export interface MenuHandlers {
    * `PageContextMenu` reports it — a copy that quietly did nothing is the worst kind of no-op.
    */
   onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
-  onNewNote: () => void
-  /** "New dated note" (YAZ-2242): a note born with today's `MM_DD- ` seed. Never hidden, same as `onNewNote`. */
-  onNewDatedNote: () => void
+  onNewPage: () => void
+  /** "New dated page" (YAZ-2242): a page born with today's `MM_DD- ` seed. Never hidden, same as `onNewPage`. */
+  onNewDatedPage: () => void
   onNewFolder: () => void
   /** "New dated folder" (YAZ-1604): a disk folder born with today's `MM_DD- ` seed. Never hidden, same as `onNewFolder`. */
   onNewDatedFolder: () => void
-  /** "New Excalidraw drawing" (YAZ-3028 D9): the name box, then an empty drawing, then its tab. Never hidden, same as `onNewNote`. */
+  /** "New Excalidraw drawing" (YAZ-3028 D9): the name box, then an empty drawing, then its tab. Never hidden, same as `onNewPage`. */
   onNewDrawing: () => void
   /** "New dated Excalidraw drawing" (YAZ-3028 D9): the same, the box seeded with today's `MM_DD- `. */
   onNewDatedDrawing: () => void
   /** "New draw.io diagram" (YAZ-3028 D9): the name box, then an empty diagram, then its tab. There is no dated twin. */
   onNewDiagram: () => void
+  /** "New card" (YAZ-5037): a card file in that folder, at once (no name box), then its tab in Edit card. */
+  onNewCard: (dir: string) => void
   /** "Add to favorites" / "Remove N from favorites" (YAZ-1766 D3): the paths and the direction the menu read. */
   onToggleFavorite: (paths: string[], isOn: boolean) => void
   /** "Review this folder" (YAZ-2322): the folder's absolute path; the caller starts the session. */
   onReviewFolder: (dir: string) => void
-  /** "Turn review off" / "Turn review on" (YAZ-2322): the note and the state to SET. */
-  onSetReview: (path: string, on: boolean) => void
-  /** "Add note shortcut" on a folder row (YAZ-2290 D2): the caller opens the picker for that folder. */
+  /** "Review this page" (YAZ-4967, idea 4): the page's absolute path; the caller starts the session over its cards. */
+  onReviewPage: (path: string) => void
+  /** "Add page shortcut" on a folder row (YAZ-2290 D2): the caller opens the picker for that folder. */
   onAddShortcut: (dir: string) => void
-  /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the note, and the folder it stops appearing in. */
+  /** "Hide all others" / "Show all" on a Files folder row (YAZ-5790): the folder to show alone, or null to show all. */
+  onHideOthers?: (dir: string | null) => void
+  /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the page, and the folder it stops appearing in. */
   onRemoveShortcut: (path: string, dir: string) => void
   onRename: (path: string) => void
   /** "Change icon ▸ This file…" (YAZ-3440 D8): the row, or every row of the 2+ selection; the caller opens the icon picker for their picks. */
@@ -202,7 +229,7 @@ export interface MenuHandlers {
   onRemoveVault: (root: string) => void
   /** "Open by itself" on a vault row (YAZ-2858 D4): the vault's root, for main's `window.openAlone`. */
   onOpenAlone: (root: string) => void
-  /** "Remove from Recently closed" (YAZ-3487 D14): this note leaves the list. */
+  /** "Remove from Recently closed" (YAZ-3487 D14): this page leaves the list. */
   onForgetClosed: (path: string) => void
   /** "Clear Recently closed" (YAZ-3487 D14): the list of each vault of this window is emptied. */
   onClearClosed: () => void
@@ -212,6 +239,10 @@ export interface MenuHandlers {
   onHistory: (path: string) => void
   /** "Share" (YAZ-3040, Draw's YAZ-1799 D6): open the Share dialog on the board — Info's gate. */
   onShare: (path: string) => void
+  /** "Hide card skill" on the card skill's row (YAZ-5108): the switch goes to Hide, its tabs close, and a notice says where the switch is. */
+  onHideCardSkill?: () => void
+  /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109): that vault's root; App copies, and asks first when `Card skill` is there. */
+  onDuplicateCardSkill?: (vault: string) => void
 }
 
 type Item = (t: MenuSectionTargets, h: MenuHandlers) => MenuItem | null
@@ -230,7 +261,7 @@ export const errorText = (error: unknown) => (error instanceof Error ? error.mes
 const open: Leaf = (t, h) => {
   const path = t.openPath
   if (path === null) return null
-  return { id: 'open', label: 'Open folder page', onSelect: () => h.onOpen(path) }
+  return { id: 'open', label: 'Open folder page', icon: createElement(FolderIcon, { size: 15 }), onSelect: () => h.onOpen(path) }
 }
 
 /**
@@ -272,7 +303,7 @@ const focus: Item = (t, h) => {
   const item = { id: 'focus', label: isOn ? `Remove ${n}from focus` : `Add ${n}to focus`, icon: createElement(EyeIcon), onSelect: () => h.onToggleFocus(paths, isOn) }
   const into = h.onFocusInFolder
   if (into === undefined) return item
-  // YAZ-4460 F4, the New note pattern (YAZ-3085 D1): a click adds (or removes) as before; the flyout moves the rows
+  // YAZ-4460 F4, the New page pattern (YAZ-3085 D1): a click adds (or removes) as before; the flyout moves the rows
   // into a focus folder — also when they are in focus already (YAZ-4460 demo).
   return { ...item, children: [...focusPlaces(t.focusFolders ?? [], isOn ? (t.focusFolderOf ?? null) : undefined, (to) => into(paths, to)), ...scopeRows('focus', t.focusScopes, paths, h)] }
 }
@@ -414,44 +445,57 @@ const copyPath: Leaf = (t, h) => {
 // 🔒 E1's own group. With no directory to target —
 // blank space under two or more vaults (YAZ-2602 S10) — there is nothing to create in. ----
 
-const create = (id: string, label: string, pick: (h: MenuHandlers) => () => void): Leaf => (t, h) => (t.targetDir === null ? null : { id, label, onSelect: pick(h) })
+/** The icon of what a New row makes (YAZ-5100): the tree's own icon for that kind. */
+const kindIcon = (kind: CreateKind): ReactNode => createElement(NewKindIcon, { kind })
 
-const newNote = create('new-note', 'New note', (h) => h.onNewNote)
+const create = (id: string, label: string, kind: CreateKind, pick: (h: MenuHandlers) => () => void): Leaf => (t, h) => (t.targetDir === null ? null : { id, label: unit(t, label), icon: kindIcon(kind), onSelect: pick(h) })
 
-const newFolder = create('new-folder', 'New folder', (h) => h.onNewFolder)
+const newPage = create('new-page', 'New page', 'file', (h) => h.onNewPage)
 
-const newDatedNote = create('new-dated-note', 'New dated note', (h) => h.onNewDatedNote)
+const newFolder = create('new-folder', 'New folder', 'dir', (h) => h.onNewFolder)
 
-const newDatedFolder = create('new-dated-folder', 'New dated folder', (h) => h.onNewDatedFolder)
+const newDatedPage = create('new-dated-page', 'New dated page', 'file', (h) => h.onNewDatedPage)
+
+const newDatedFolder = create('new-dated-folder', 'New dated folder', 'dir', (h) => h.onNewDatedFolder)
 
 // The boards (YAZ-3028 D9): Draw's names (YAZ-1802 D13), in "New drawing ▸"; one dated twin, the drawing's.
-const newDrawing = create('new-drawing', 'New Excalidraw drawing', (h) => h.onNewDrawing)
+const newDrawing = create('new-drawing', 'New Excalidraw drawing', 'drawing', (h) => h.onNewDrawing)
 
-const newDatedDrawing = create('new-dated-drawing', 'New dated Excalidraw drawing', (h) => h.onNewDatedDrawing)
+const newDatedDrawing = create('new-dated-drawing', 'New dated Excalidraw drawing', 'drawing', (h) => h.onNewDatedDrawing)
 
-const newDiagram = create('new-diagram', 'New draw.io diagram', (h) => h.onNewDiagram)
+const newDiagram = create('new-diagram', 'New draw.io diagram', 'diagram', (h) => h.onNewDiagram)
 
 /**
  * A create parent (YAZ-3085 D1): its click IS the first leaf of its flyout, so the two can never
  * disagree, and no leaf means no parent — `create`'s null-directory rule reaches it through them.
  */
-const createParent = (id: string, label: string, sections: readonly (readonly Leaf[])[]): Item => (t, h) => {
+const createParent = (id: string, label: string, kind: CreateKind, sections: readonly (readonly Leaf[])[]): Item => (t, h) => {
   const children = sections.map((section) => build(section, t, h))
   const first = children.flat()[0]
   if (first === undefined) return null
-  return { id, label, onSelect: first.onSelect, children }
+  return { id, label: unit(t, label), icon: kindIcon(kind), onSelect: first.onSelect, children }
 }
 
-// The order is note, drawing, folder (Yasin, YAZ-3085 D3); the separator in the drawing flyout keeps the two apps apart.
-const newNoteMenu = createParent('new-note-menu', 'New note', [[newNote, newDatedNote]])
-const newDrawingMenu = createParent('new-drawing-menu', 'New drawing', [[newDrawing, newDatedDrawing], [newDiagram]])
-const newFolderMenu = createParent('new-folder-menu', 'New folder', [[newFolder, newDatedFolder]])
+/**
+ * "New card" (YAZ-5037): after New page and before New drawing, a plain item with no flyout. It opens the name box as
+ * New page does (YAZ-5101); the typed name is the card's title, and the file is named after it. Only where the vault makes cards: it uses IDs and its Review is on
+ * (`cardDir`). "Card" is no page word: it never goes through the vault's word (`unit`).
+ */
+const newCard: Leaf = (t, h) => {
+  const dir = t.cardDir ?? null
+  return t.targetDir === null || dir === null ? null : { id: 'new-card', label: 'New card', icon: kindIcon('card'), tour: 'new-card', onSelect: () => h.onNewCard(dir) }
+}
+
+// The order is page, drawing, folder (Yasin, YAZ-3085 D3); the separator in the drawing flyout keeps the two apps apart.
+const newPageMenu = createParent('new-page-menu', 'New page', 'file', [[newPage, newDatedPage]])
+const newDrawingMenu = createParent('new-drawing-menu', 'New drawing', 'drawing', [[newDrawing, newDatedDrawing], [newDiagram]])
+const newFolderMenu = createParent('new-folder-menu', 'New folder', 'dir', [[newFolder, newDatedFolder]])
 
 // ---- (4) This row: acts ON the right-clicked row, so it sits after the Create group ----
 
 /**
  * "Review this folder" (YAZ-2322): a FOLDER row only, either lens — a review session over the
- * notes due inside it, subfolders included. It leads the group: Rename keeps the bottom.
+ * pages due inside it, subfolders included. It leads the group: Rename keeps the bottom.
  */
 const reviewFolder: Leaf = (t, h) => {
   const dir = t.reviewDir
@@ -460,21 +504,23 @@ const reviewFolder: Leaf = (t, h) => {
 }
 
 /**
- * The review toggle (YAZ-2322 🔒 D6): ONE state-aware item, both directions, on a NOTE row only —
- * the caller's null target hides it for a folder, blank space and any file the index does not hold.
+ * "Review this page" (YAZ-4967, idea 4): a PAGE row that holds a card, either lens — a review session over that
+ * page's due cards alone; "Review this card" on a card file (YAZ-5037). Beside "Review this folder"; the caller's null
+ * target hides it.
  */
-const toggleReview: Leaf = (t, h) => {
-  const path = t.reviewPath
+const reviewPage: Leaf = (t, h) => {
+  const path = t.reviewPage
   if (path === null) return null
-  const isOn = t.reviewIsOn
-  return { id: 'toggle-review', label: isOn ? 'Turn review off' : 'Turn review on', onSelect: () => h.onSetReview(path, !isOn) }
+  // A card file's row (YAZ-5037): the same session, over its one card.
+  return { id: 'review-page', label: t.reviewCard === true ? 'Review this card' : 'Review this page', onSelect: () => h.onReviewPage(path) }
 }
 
 /** Rename — a concrete row only, NEVER blank space: main refuses to rename a window's own vault root (E1b, GRO-2241). */
 const rename: Leaf = (t, h) => {
   const path = t.renamePath
   if (path === null) return null
-  return { id: 'rename', label: 'Rename', onSelect: () => h.onRename(path) }
+  // The pencil marks every row that changes a name (YAZ-5770).
+  return { id: 'rename', label: 'Rename', icon: createElement(PencilIcon), onSelect: () => h.onRename(path) }
 }
 
 /**
@@ -484,7 +530,7 @@ const rename: Leaf = (t, h) => {
  * the settings for every row like it, in every vault, and a selection whose rows want different rules has none.
  * Below a separator, "Reset this file" and "Reset all .gif files" where there is a pick or that rule to remove.
  * Each "…" opens the icon picker. A file or folder row or its selection, never a vault row, a shortcut row (its icon
- * is its note's) or blank space.
+ * is its page's) or blank space.
  */
 const changeIcon: Item = (t, h) => {
   const paths = t.iconPaths
@@ -524,14 +570,26 @@ const toggleFavorite: Item = (t, h) => {
 }
 
 /**
- * "Add note shortcut" (YAZ-2290 D2) — a FOLDER row outside a plural selection: pick one
+ * "Hide all others" (YAZ-5790) — a FOLDER row of the Files tab: the Files tab shows that folder alone, as the Focus
+ * tab's folder item does (YAZ-4460 F8). On the folder already shown alone it reads "Show all". Right after the favorite
+ * toggle (Yaseen's place). A VIEW verb: nothing on disk changes, and nothing is saved.
+ */
+const hideOthers: Leaf = (t, h) => {
+  const row = t.hideOthers
+  const set = h.onHideOthers
+  if (row == null || set === undefined) return null
+  return row.on ? { id: 'files-show-all', label: 'Show all', onSelect: () => set(null) } : { id: 'files-hide-others', label: 'Hide all others', onSelect: () => set(row.dir) }
+}
+
+/**
+ * "Add page shortcut" (YAZ-2290 D2) — a FOLDER row outside a plural selection: pick one
  * note that lives elsewhere, and it also appears in this folder. Under the favorite toggle: the
- * other item that shows a note in a second place.
+ * other item that shows a page in a second place.
  */
 const addShortcut: Leaf = (t, h) => {
   const dir = t.shortcutDir
   if (dir === null) return null
-  return { id: 'add-shortcut', label: 'Add note shortcut', onSelect: () => h.onAddShortcut(dir) }
+  return { id: 'add-shortcut', label: unit(t, 'Add page shortcut'), onSelect: () => h.onAddShortcut(dir) }
 }
 
 /**
@@ -548,7 +606,7 @@ const openAlone: Leaf = (t, h) => {
 // ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
 
 /**
- * "Open in new window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. Out of the "Open in ▸" flyout
+ * "Open in new window" — a FILE row (D2, GRO-2168), and a FOLDER row since YAZ-4778 (its folder page); blank space hides it. Out of the "Open in ▸" flyout
  * since YAZ-4470: at the top, in the open group, where a file row of Files or Search shows it at once.
  */
 const openInNewWindow: Leaf = (t, h) => {
@@ -616,7 +674,7 @@ const del: Leaf = (t, h) => {
 }
 
 /**
- * "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6): ONE drawing or diagram row — never a note, a folder,
+ * "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6): ONE drawing or diagram row — never a page, a folder,
  * blank space or a multi-select — directly above Delete, in its group. A read-only item.
  */
 const info: Leaf = (t, h) => {
@@ -643,7 +701,7 @@ const history: Leaf = (t, h) => {
 }
 
 /**
- * "Remove shortcut" (YAZ-2290 E5) stands where Delete would on a SHORTCUT row: the note stops
+ * "Remove shortcut" (YAZ-2290 E5) stands where Delete would on a SHORTCUT row: the page stops
  * appearing in this folder and stays where it lives — the only place it can be deleted from. Not
  * `danger`, and no confirm: nothing is destroyed.
  */
@@ -693,17 +751,55 @@ const clearClosed: Leaf = (t, h) => (t.forgetClosed === null ? null : { id: 'cle
 const CLOSED_GROUP: readonly Item[] = [forgetClosed, clearClosed]
 const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, openInNewWindow, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
-const CREATE_GROUP: readonly Item[] = [newNoteMenu, newDrawingMenu, newFolderMenu]
-const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename, changeIcon]
-const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
+const CREATE_GROUP: readonly Item[] = [newPageMenu, newCard, newDrawingMenu, newFolderMenu]
+const ROW_GROUP: readonly Item[] = [reviewFolder, reviewPage, rename, changeIcon]
+const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, hideOthers, addShortcut, openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>
   group.map((rule) => rule(t, h)).filter((item): item is T => item !== null)
 
+/** The words of the card skill's own rows (YAZ-5108, YAZ-5109): one place, for the menu and its tests. */
+export const CARD_SKILL_MENU = {
+  copyPath: 'Copy path',
+  prompt: 'Copy prompt for your agent',
+  duplicate: (vault: string) => `Duplicate into ${vault}…`,
+  hide: 'Hide card skill',
+} as const
+
+/**
+ * The card skill's row (YAZ-5108; decisions 4 and 5, suggestion 19): the app's own vault, read only, so none of a
+ * vault's rows (Rename, Remove from this window, Open by itself, New …, Paste). Three groups: Copy path, Copy prompt for
+ * your agent · Duplicate into <vault>… · Hide card skill. The prompt is `cardSkillPrompt`, the sentence with the path
+ * of the skill the vault uses (its own `Card skill` when it has one, `cardSkillFolder`); the menu pins it at the right-click.
+ */
+function cardSkillSections(root: string, t: MenuSectionTargets, h: MenuHandlers): MenuSection[] {
+  const copy = copyPath({ ...t, copyPath: root }, h)!
+  const prompt = t.cardSkillPrompt
+  const into = t.cardSkillInto
+  const copyPrompt: MenuAction | null =
+    prompt == null
+      ? null
+      : {
+          id: 'copy-card-skill-prompt',
+          label: CARD_SKILL_MENU.prompt,
+          onSelect: () => {
+            void navigator.clipboard.writeText(prompt).then(
+              () => h.onNotice('Copied the prompt for your agent', 'info', 'clipboard'),
+              (error: unknown) => h.onNotice(`Can't copy the prompt: ${errorText(error)}`),
+            )
+          },
+        }
+  const duplicate: MenuAction | null = into == null || h.onDuplicateCardSkill === undefined ? null : { id: 'duplicate-card-skill', label: CARD_SKILL_MENU.duplicate(into.name), onSelect: () => h.onDuplicateCardSkill?.(into.root) }
+  const hide: MenuAction | null = h.onHideCardSkill === undefined ? null : { id: 'hide-card-skill', label: CARD_SKILL_MENU.hide, onSelect: () => h.onHideCardSkill?.() }
+  const some = (...items: (MenuAction | null)[]): MenuAction[] => items.filter((item): item is MenuAction => item !== null)
+  return [some(copy, copyPrompt), some(duplicate), some(hide)]
+}
+
 /** The six groups of 🔒 D7 (as amended), in order, every null item dropped. An empty group is the component's to skip. */
 export function buildMenuSections(targets: MenuSectionTargets, handlers: MenuHandlers): MenuSection[] {
+  if (targets.cardSkill != null) return cardSkillSections(targets.cardSkill, targets, handlers)
   // A row of "Recently closed" (YAZ-3487 D14) adds its own group in front; every other menu keeps its six.
   return [...(targets.forgetClosed === null ? [] : [CLOSED_GROUP]), OPEN_GROUP, CLIPBOARD_GROUP, CREATE_GROUP, ROW_GROUP, OPEN_IN_GROUP, DELETE_GROUP].map((group) => build(group, targets, handlers))
 }

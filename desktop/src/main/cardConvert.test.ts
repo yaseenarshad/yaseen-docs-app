@@ -1,0 +1,267 @@
+// The convert actions (YAZ-5037 phase 5): each one moves a card block and its card line byte for byte, so the ID, the
+// reviews and every link stay; and the ID sweep makes no copy of a card that moved.
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { canBeCardFile, cardFileAsPage, cardFromText, embedLine, keysLostOnPutBack, moveCardOut, moveTextIntoCard, pageAsCardFile, putCardBack, splitCardFile } from '@shared/cardConvert'
+import { readComments, threadsOf } from '@shared/comments'
+import { cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
+import { CardNotFoundError, cardRecords } from '@shared/cardLine'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { IDS_FILE } from '@shared/pageId'
+import type { IndexRecord } from '@shared/types'
+import { makeFirstMac, removeVault, sleep } from './fs/testFixture'
+import { subscribe } from './fs/watchers'
+import { writeConfig } from './vaultConfig'
+import { _swept, sweepIds } from './vaultIndex/idSweep'
+import { _evictAll, getIndex, indexWrote } from './vaultIndex'
+import { scanFile } from './vaultIndex/scan'
+
+const LINE = '<!-- card: GEO-140, title "Capital of France", 2026-11-01T09:00:00.000Z good 12s, 2026-11-05T09:00:00.000Z again -->'
+const BLOCK = ['```card', 'What is the capital of **France**?', '---', 'The capital is {{Paris}}.', '```', LINE].join('\n')
+const indented = (block: string, indent: string) => block.split('\n').map((l) => indent + l).join('\n')
+const TITLE = 'Capital of France'
+/** A card file (YAZ-5308): `kind: card` (and `props`), then the block as it is, its title on its card line. */
+const cardFileOf = (block: string, props = '') => `---\nkind: card\n${props}---\n${block}\n`
+const props = (content: string) => parseFrontmatter(splitFrontmatter(content).frontmatter).properties
+
+describe('Move to its own file', () => {
+  it('the card file holds the block byte for byte, its title on its card line (YAZ-5308): nothing is translated; the page holds `![[GEO-140]]` at its place; the rest of the page stays', () => {
+    const page = `---\nid: GEO-1\n---\n# Europe\n\nAbove.\n\n${BLOCK}\n\nBelow.\n`
+    const { page: next, card } = moveCardOut(page, 'GEO-140')
+    expect(card).toEqual({ content: cardFileOf(BLOCK), name: 'capital-of-france-geo-140.md', id: 'GEO-140', title: TITLE })
+    expect(next).toBe('---\nid: GEO-1\n---\n# Europe\n\nAbove.\n\n![[GEO-140]]\n\nBelow.\n')
+  })
+
+  it('an indented card (in a list) leaves without its indent, and its embed keeps the indent', () => {
+    const page = `- Capitals\n${indented(BLOCK, '  ')}\n- Next\n`
+    const { page: next, card } = moveCardOut(page, 'GEO-140')
+    expect(card.content).toBe(cardFileOf(BLOCK))
+    expect(next).toBe('- Capitals\n  ![[GEO-140]]\n- Next\n')
+  })
+
+  it('two cards with one ID: the one at `index` moves; a card with no title is named by its ID; an ID no card holds throws, and a card with no ID cannot move', () => {
+    const page = `${BLOCK}\n\n${BLOCK.replace('France', 'Spain').replace(' title "Capital of France",', '')}\n`
+    const out = moveCardOut(page, 'GEO-140', 1)
+    expect([out.card.title, out.card.name]).toEqual(['', 'geo-140.md'])
+    expect(() => moveCardOut(page, 'GEO-9')).toThrow(CardNotFoundError)
+    expect(() => moveCardOut('```card\nNo ID\n```\n', 'GEO-140')).toThrow(CardNotFoundError)
+  })
+})
+
+describe('Put back into this page', () => {
+  const cardFile = cardFileOf(BLOCK, 'tags: [geo]\n')
+
+  it('the embed alone on its line becomes the block and card line, at the embed\'s indent: Move and Put back give the page back byte for byte', () => {
+    const page = `# Europe\n\nAbove.\n\n${BLOCK}\n\n- Item\n${indented(BLOCK, '  ')}\n`
+    const moved = moveCardOut(page, 'GEO-140', 1)
+    expect(putCardBack(moved.page, 'GEO-140', 0, moved.card.content, 'GEO-140')).toBe(page)
+    const first = moveCardOut(page, 'GEO-140', 0)
+    expect(putCardBack(first.page, 'GEO-140', 0, cardFile, 'GEO-140')).toBe(page)
+  })
+
+  it('the nth embed of that text: an embed inside a code block, a card or a line with other words is none', () => {
+    const body = 'See ![[GEO-140]] here.\n\n```\n![[GEO-140]]\n```\n\n```card\n![[GEO-140]]\n```\n\n![[GEO-140]]\n\n  ![[GEO-140]]\n'
+    expect(embedLine(body, 'GEO-140', 0)).toBe(10)
+    expect(embedLine(body, 'GEO-140', 1)).toBe(12)
+    expect(embedLine(body, 'GEO-140', 2)).toBe(-1)
+    expect(putCardBack(body, 'GEO-140', 1, cardFile, 'GEO-140')).toBe(`See ![[GEO-140]] here.\n\n\`\`\`\n![[GEO-140]]\n\`\`\`\n\n\`\`\`card\n![[GEO-140]]\n\`\`\`\n\n![[GEO-140]]\n\n${indented(BLOCK, '  ')}\n`)
+    expect(() => putCardBack('No embed.\n', 'GEO-140', 0, cardFile, 'GEO-140')).toThrow()
+    expect(() => putCardBack('![[GEO-140]]\n', 'GEO-140', 0, '---\nkind: card\n---\nNo card.\n', 'GEO-140')).toThrow(CardNotFoundError)
+  })
+})
+
+describe('Put back into this page keeps the card file\'s comments (YAZ-5647 item 1)', () => {
+  const COMMENTS = 'comments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-11-14T10:00:00Z\n    body: Check the year\n  - id: bbbbbbbb\n    n: 1\n    at: 2026-11-14T11:00:00Z\n    reply_to: aaaaaaaa\n    by: sam\n    body: Done\n  - id: cccccccc\n    n: 2\n    at: 2026-11-14T12:00:00Z\n    body: Second\n'
+
+  it('the card file\'s comments move into the page\'s `comments`, threads kept', () => {
+    const page = putCardBack('# Plan\n\n![[GEO-140]]\n', 'GEO-140', 0, cardFileOf(BLOCK, COMMENTS), 'GEO-140')
+    expect(splitFrontmatter(page).body).toBe(`# Plan\n\n${BLOCK}\n`)
+    const threads = threadsOf(readComments(page))
+    expect(threads.map((t) => [t.comment.id, t.comment.n, t.comment.body, t.replies.map((r) => [r.id, r.n, r.by, r.body])])).toEqual([
+      ['aaaaaaaa', 1, 'Check the year', [['bbbbbbbb', 1, 'sam', 'Done']]],
+      ['cccccccc', 2, 'Second', []],
+    ])
+  })
+
+  it('after the page\'s own comments: top-level numbers go on from the page\'s, an ID the page has is given a new one (its replies follow it)', () => {
+    const own = '---\ncomments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-11-01T10:00:00Z\n    body: Page note\n  - id: dddddddd\n    n: 4\n    at: 2026-11-01T11:00:00Z\n    body: Page note 4\n---\n# Plan\n\n![[GEO-140]]\n'
+    const page = putCardBack(own, 'GEO-140', 0, cardFileOf(BLOCK, COMMENTS), 'GEO-140')
+    const threads = threadsOf(readComments(page))
+    expect(threads.map((t) => [t.comment.n, t.comment.body, t.replies.map((r) => r.body)])).toEqual([
+      [1, 'Page note', []],
+      [4, 'Page note 4', []],
+      [5, 'Check the year', ['Done']],
+      [6, 'Second', []],
+    ])
+    const moved = threads[2].comment
+    expect(moved.id).not.toBe('aaaaaaaa')
+    expect(threads[2].replies[0].reply_to).toBe(moved.id)
+    expect(new Set(readComments(page).map((c) => c.id)).size).toBe(5)
+  })
+
+  it('a page whose `comments` is not a comment list is never overwritten: the Put back stops', () => {
+    expect(() => putCardBack('---\ncomments: my own\n---\n![[GEO-140]]\n', 'GEO-140', 0, cardFileOf(BLOCK, COMMENTS), 'GEO-140')).toThrow()
+  })
+
+  it('the other properties of the card file are named first (the caller asks); `kind`, `comments` and a `title` its card line holds are not', () => {
+    expect(keysLostOnPutBack(cardFileOf(BLOCK, COMMENTS))).toEqual([])
+    expect(keysLostOnPutBack(cardFileOf(BLOCK, `title: ${TITLE}\n`))).toEqual([])
+    expect(keysLostOnPutBack(cardFileOf(BLOCK, 'aliases: [Paris]\ntitle: Old\ntags: [geo]\n' + COMMENTS))).toEqual(['aliases', 'title', 'tags'])
+    expect(keysLostOnPutBack(cardFileOf(BLOCK, 'comments: my own\n'))).toEqual(['comments'])
+  })
+})
+
+describe('Turn into a page, Turn into a card file', () => {
+  it('a card file turns into a page: `kind: card` goes, the card`s title is the page`s `title:` too, and the card stays byte for byte', () => {
+    const { content, title } = cardFileAsPage(cardFileOf(BLOCK, 'tags: [geo]\n'))
+    expect(title).toBe(TITLE)
+    expect(content).toBe(`---\ntags: [geo]\ntitle: ${TITLE}\n---\n${BLOCK}\n`)
+    expect(isCardFileContent(content)).toBe(false)
+    // A card with no title: the page takes none.
+    const untitled = BLOCK.replace(' title "Capital of France",', '')
+    expect(cardFileAsPage(cardFileOf(untitled))).toEqual({ title: '', content: `---\n---\n${untitled}\n` })
+  })
+
+  it('a page with one card and no other text turns into a card file: `kind: card`, its title among `aliases`, its `id:` kept, the card\'s name; no `title:` property', () => {
+    const page = `---\nid: GEO-7\ntitle: Capitals\naliases: [Caps]\n---\n${BLOCK}\n`
+    const out = pageAsCardFile(page)!
+    expect(out.name).toBe('capital-of-france-geo-140.md')
+    expect(props(out.content)).toEqual({ id: 'GEO-7', aliases: ['Caps', 'Capitals'], kind: 'card' })
+    expect(splitFrontmatter(out.content).body).toBe(`${BLOCK}\n`)
+    expect(cardFileShape(splitFrontmatter(out.content).body).problem).toBe('ok')
+    // And back: Turn into a page takes the card's title; the old page title stays among the aliases.
+    expect(props(cardFileAsPage(out.content).content)).toEqual({ id: 'GEO-7', aliases: ['Caps', 'Capitals'], title: TITLE })
+  })
+
+  it('a card with no title takes the page`s title onto its card line', () => {
+    const untitled = BLOCK.replace(' title "Capital of France",', '')
+    const out = pageAsCardFile(`---\nid: GEO-7\ntitle: Capitals\n---\n${untitled}\n`)!
+    expect(out.name).toBe('capitals-geo-140.md')
+    expect(splitFrontmatter(out.content).body).toBe(`${untitled.replace('GEO-140,', 'GEO-140, title "Capitals",')}\n`)
+  })
+
+  it('a page with no title line takes no aliases; a page with other text, two cards, or a card with no ID cannot', () => {
+    expect(props(pageAsCardFile(`---\nid: GEO-7\n---\n\n${BLOCK}\n\n`)!.content)).toEqual({ id: 'GEO-7', kind: 'card' })
+    expect(canBeCardFile(`# Head\n\n${BLOCK}\n`)).toBe(false)
+    expect(canBeCardFile(`${BLOCK}\n\n${BLOCK}\n`)).toBe(false)
+    expect(canBeCardFile('```card\nNo ID\n```\n')).toBe(false)
+    expect(canBeCardFile('Just text.\n')).toBe(false)
+    expect(pageAsCardFile('Just text.\n')).toBeNull()
+  })
+})
+
+describe('the notice\'s fixes', () => {
+  it('Split: the first card stays; each other leaves byte for byte, with its ID, title and history, for a card file of its name', () => {
+    const second = BLOCK.replace('France', 'Spain').replace('GEO-140', 'GEO-141').replace('Capital of France', 'Capital of Spain')
+    const third = '```card\nThird\n```\n<!-- card: GEO-142 -->'
+    const out = splitCardFile(`---\nkind: card\n---\n${BLOCK}\n\n${second}\n\n${third}\n`)!
+    expect(out.keep).toBe(`---\nkind: card\n---\n${BLOCK}\n`)
+    expect(cardFileShape(splitFrontmatter(out.keep).body).problem).toBe('ok')
+    expect(out.cards.map((c) => [c.name, c.content])).toEqual([
+      ['capital-of-spain-geo-141.md', cardFileOf(second)],
+      ['geo-142.md', cardFileOf(third)],
+    ])
+    expect(splitCardFile(`---\nkind: card\n---\n${BLOCK}\n`)).toBeNull()
+    expect(splitCardFile(`---\nkind: card\n---\n${BLOCK}\n\n\`\`\`card\nNo ID yet\n\`\`\`\n`)).toBeNull()
+  })
+
+  it('Move into the card: the text above starts the front, the text below ends the last side; the card line stays', () => {
+    const next = moveTextIntoCard(`---\nkind: card\n---\nAbove it.\n\n${BLOCK}\n\nBelow it.\n`)!
+    expect(next).toBe(`---\nkind: card\n---\n\`\`\`card\nAbove it.\n\nWhat is the capital of **France**?\n---\nThe capital is {{Paris}}.\n\nBelow it.\n\`\`\`\n${LINE}\n`)
+    expect(cardRecords(splitFrontmatter(next).body)[0].reviews).toHaveLength(2)
+    expect(moveTextIntoCard(`---\nkind: card\n---\n${BLOCK}\n`)).toBeNull()
+  })
+
+  it('Make a card from the text: the body becomes one card with no ID yet and no title (no line is read as one); its properties stay; an empty body gives an empty card titled "Title"', () => {
+    expect(cardFromText('---\nkind: card\ntags: [geo]\n---\nParis is the capital.\n\nOf France.\n')).toBe('---\nkind: card\ntags: [geo]\n---\n```card\nParis is the capital.\n\nOf France.\n```\n')
+    expect(cardFromText('---\nkind: card\n---\n\n')).toBe('---\nkind: card\n---\n```card\n\n```\n<!-- card: title "Title" -->\n')
+    expect(cardFromText(`---\nkind: card\n---\n${BLOCK}\n`)).toBeNull()
+  })
+})
+
+describe('the ID sweep makes no copy of a card that moved (CARD_MOVE_WAIT_MS)', () => {
+  let root: string
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'mdapp-cardconvert-'))
+    await writeConfig(root, IDS_FILE, { enabled: true, letters: 'GEO' })
+  })
+  afterEach(async () => {
+    _evictAll()
+    await removeVault(root)
+  })
+  const at = (...p: string[]) => path.join(root, ...p)
+  const read = (rel: string) => readFile(at(rel), 'utf8')
+  const PAGE = `---\nid: GEO-1\n---\n# Europe\n\n${BLOCK}\n`
+
+  async function scanAll(files: Record<string, string>, records = new Map<string, IndexRecord>()): Promise<Map<string, IndexRecord>> {
+    for (const [rel, content] of Object.entries(files)) {
+      await mkdir(path.dirname(at(rel)), { recursive: true })
+      await writeFile(at(rel), content)
+      records.set(at(rel), await scanFile(root, at(rel)))
+    }
+    return records
+  }
+
+  it('Move: the card file lands first (both hold GEO-140, nothing is written), then the page; after the wait the card file keeps its ID and history', async () => {
+    const records = await scanAll({ 'Europe.md': PAGE })
+    const { page, card } = moveCardOut(PAGE, 'GEO-140')
+    const waits = new Map<string, number>()
+    await scanAll({ [card.name]: card.content }, records)
+    await sweepIds(root, records, [records.get(at(card.name))!], () => undefined, [], { cardWaits: waits })
+    expect(await read(card.name)).toBe(card.content)
+    await scanAll({ 'Europe.md': page }, records)
+    await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id, [], { cardWaits: waits, cardOver: new Set(waits.keys()) })
+    expect(await read(card.name)).toBe(card.content)
+    expect(await read('Europe.md')).toBe(page)
+  })
+
+  const EUROPE = '---\nid: GEO-2\n---\n# Europe\n\n![[GEO-140]]\n'
+  it('Put back and Split: the card on its new file keeps its ID and history after the wait', async () => {
+    const cardFile = `---\nkind: card\n---\n${BLOCK}\n\n${BLOCK.replace('GEO-140', 'GEO-141').replace('France', 'Spain')}\n`
+    const records = await scanAll({ 'capitals.md': cardFile, 'Europe.md': EUROPE })
+    const split = splitCardFile(cardFile)!
+    const waits = new Map<string, number>()
+    await scanAll({ [split.cards[0].name]: split.cards[0].content }, records)
+    await sweepIds(root, records, [records.get(at(split.cards[0].name))!], () => undefined, [], { cardWaits: waits })
+    await scanAll({ 'capitals.md': split.keep }, records)
+    await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id, [], { cardWaits: waits, cardOver: new Set(waits.keys()) })
+    expect(await read(split.cards[0].name)).toBe(split.cards[0].content)
+    // Put back: the page takes the card while its card file still holds it; then the card file goes.
+    const back = putCardBack(EUROPE, 'GEO-140', 0, split.keep, 'GEO-140')
+    await scanAll({ 'Europe.md': back }, records)
+    await sweepIds(root, records, [records.get(at('Europe.md'))!], (p) => records.get(p)?.id, [], { cardWaits: waits })
+    expect(await read('Europe.md')).toBe(back)
+    await scanAll({ 'capitals.md': '---\nkind: card\n---\n' }, records)
+    await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id, [], { cardWaits: waits, cardOver: new Set(waits.keys()) })
+    expect(await read('Europe.md')).toBe(back)
+  })
+
+  it('the live index: both writes taken at once (`indexWrote`, as the app\'s quiet writes are), and no file changes', async () => {
+    await makeFirstMac(root)
+    await scanAll({ 'Europe.md': PAGE })
+    const ready = new Promise<void>((resolve) => {
+      const off = subscribe(root, (ev) => {
+        if (ev.type !== 'ready') return
+        queueMicrotask(() => off())
+        resolve()
+      })
+    })
+    await getIndex(root)
+    await ready
+    const { page, card } = moveCardOut(PAGE, 'GEO-140')
+    await writeFile(at(card.name), card.content)
+    await indexWrote(at(card.name))
+    await writeFile(at('Europe.md'), page)
+    await indexWrote(at('Europe.md'))
+    const index = await getIndex(root)
+    expect(index.records.find((r) => r.path === at(card.name))?.cards?.map((c) => c.id)).toEqual(['GEO-140'])
+    expect(index.records.find((r) => r.path === at('Europe.md'))?.cards ?? []).toEqual([])
+    await _swept(root)
+    await sleep(200)
+    await _swept(root)
+    expect(await read(card.name)).toBe(card.content)
+    expect(await read('Europe.md')).toBe(page)
+  })
+})

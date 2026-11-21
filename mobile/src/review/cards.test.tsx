@@ -1,0 +1,214 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { VaultMedia } from '../media/ui/vaultMedia'
+import { NOW, cardBlock, cardFile, page, reviewSetup, type ReviewHarness } from './testing'
+
+/** 4B: each kind of card draws with the Mac's own `renderCard`, and a tap steps through it. */
+let h: ReviewHarness
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(NOW)
+})
+afterEach(() => {
+  h?.unmount()
+  vi.useRealTimers()
+})
+
+const one = (text: string, extra: Record<string, string> = {}) => ({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock(text, 'QA-1')), ...extra })
+
+describe('Review: the kinds of card', () => {
+  it('no hidden word, one side: fully shown at once; a tap changes nothing; the answers work', async () => {
+    h = await reviewSetup(one('Paris is the capital of France.'))
+    expect(h.cardText()).toBe('Paris is the capital of France.')
+    expect(h.button('The card is fully shown')?.disabled).toBe(true)
+    await h.tap()
+    expect(h.cardText()).toBe('Paris is the capital of France.')
+    await h.click('Remembered')
+    expect(h.answers.waiting().map((w) => w.op.kind)).toEqual(['review'])
+  })
+
+  it('one hidden word: a blank, then the word', async () => {
+    h = await reviewSetup(one('The capital of France is {{Paris}}.'))
+    expect(h.cardText()).toBe('The capital of France is _.')
+    await h.tap()
+    expect(h.cardText()).toBe('The capital of France is Paris.')
+  })
+
+  it('five hidden words: one tap shows one word, in order', async () => {
+    h = await reviewSetup(one('{{one}} {{two}} {{three}} {{four}} {{five}}'))
+    expect(h.cardText()).toBe('_ _ _ _ _')
+    const seen: string[] = []
+    for (let i = 0; i < 5; i++) {
+      await h.tap()
+      seen.push(h.cardText()!)
+    }
+    expect(seen).toEqual(['one _ _ _ _', 'one two _ _ _', 'one two three _ _', 'one two three four _', 'one two three four five'])
+  })
+
+  it('two sides: the back shows on the tap; "Side 1 of 2", then "Side 2 of 2"', async () => {
+    h = await reviewSetup(one('Front words\n---\nBack words'))
+    expect(h.cardText()).toBe('Front words')
+    expect(h.text()).toContain('Side 1 of 2')
+    await h.tap()
+    expect(h.cardText()).toBe('Front words Back words')
+    expect(h.text()).toContain('Side 2 of 2')
+  })
+
+  it('a table: a real table, its hidden word a blank, in a box that scrolls sideways', async () => {
+    h = await reviewSetup(one('Verbs\n\n| I | you |\n| -- | -- |\n| soy | {{eres}} |'))
+    const table = h.host.querySelector('.review__card table')
+    expect(table).not.toBeNull()
+    expect(h.host.querySelector('.card__table')).not.toBeNull()
+    expect(h.cardText()).toContain('soy _')
+    await h.tap()
+    expect(h.cardText()).toContain('soy eres')
+  })
+
+  it('code: a code block keeps its lines', async () => {
+    // A card that holds a code block is fenced with four backticks, as the Mac writes it.
+    const block = '````card\nWhat prints?\n\n```js\nconsole.log(1 + 1)\n```\n---\n{{2}}\n````\n<!-- card: QA-1 -->'
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', block) })
+    expect(h.cardText()).toBe('What prints? console.log(1 + 1)')
+    expect(h.host.querySelector('.review__card pre code')?.textContent).toContain('console.log(1 + 1)')
+  })
+
+  it('a picture: from 3D as a URL, resolved from the file that holds the card', async () => {
+    const asked: string[] = []
+    const media: VaultMedia = { show: async (path) => (asked.push(path), { status: 'ready', path, url: 'blob:fake-1', type: 'image/png' }) }
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'cards/img/cat.png': 'made-up bytes', 'cards/p.md': page('P', cardBlock('What is this?\n\n![a cat](img/cat.png)', 'QA-1')) }, { media })
+    expect(asked).toEqual(['cards/img/cat.png'])
+    expect(h.host.querySelector('.review__card img')?.getAttribute('src')).toBe('blob:fake-1')
+  })
+
+  it('a picture that is not here with no signal: a calm line in its place, and the text shows (round 12: N3)', async () => {
+    const media: VaultMedia = { show: async (path) => ({ status: 'missing', path, why: 'offline' }) }
+    h = await reviewSetup(one('What is this?\n\n![a cat](cat.png)\n\nA cat.', { 'cat.png': 'made-up bytes' }), { media })
+    expect((h.host.querySelector('.review__card img') as HTMLElement | null)?.hidden).toBe(true)
+    expect(h.cardText()).toBe('What is this? Picture · cat.png · Needs a connection A cat.')
+  })
+
+  it('a sound: the player, which plays from its own tap (no step)', async () => {
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:fake-sound', type: 'audio/mpeg' }) }
+    h = await reviewSetup(one('Listen\n\n![[hola.mp3]]\n---\n{{Hello}}', { 'hola.mp3': 'made-up bytes' }), { media })
+    expect(h.host.querySelector('.card__audio')?.getAttribute('data-card-audio')).toBe('blob:fake-sound')
+  })
+
+  it('a long card: it scrolls with the screen; the answer buttons are in a dock that stays at the bottom', async () => {
+    const long = Array.from({ length: 120 }, (_, i) => `Line ${i + 1} of a long card.`).join('\n\n')
+    h = await reviewSetup(one(`${long}\n---\n{{end}}`))
+    const dock = h.host.querySelector('.review__dock')!
+    expect(dock.contains(h.button('Remembered'))).toBe(true)
+    expect(dock.contains(h.button('Forgot'))).toBe(true)
+    // jsdom has no layout: the sticky rule is checked in `style.test.ts`. The card is before the dock, the last word too.
+    expect(h.host.querySelector('.review__card')!.compareDocumentPosition(dock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await h.tap()
+    expect(h.cardText()).toMatch(/Line 120 of a long card\. _$/)
+    await h.tap()
+    expect(h.cardText()).toMatch(/Line 120 of a long card\. end$/)
+  })
+
+  it('a card file: the head is its title and ID, with no page; ⋯ says "Open card" and opens the card alone', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'cards/light-nc-17.md': cardFile('Speed of light', cardBlock('How fast is light?\n---\n{{300,000 km/s}}', 'NC-17')) })
+    expect(h.head()).toBe('Speed of light · NC-17')
+    await h.click('More card actions')
+    expect(h.button('Open page')).toBeNull()
+    await h.click('Open card')
+    expect(h.opened).toEqual([{ kind: 'card', path: 'cards/light-nc-17.md', id: 'NC-17' }])
+  })
+
+  it('a card embedded on two pages counts one time', async () => {
+    h = await reviewSetup({
+      '.yaseendocs/review.json': '{}',
+      'cards/light-nc-17.md': cardFile('Speed of light', cardBlock('How fast is light?\n---\n{{300,000 km/s}}', 'NC-17')),
+      'a.md': page('A', '![[NC-17]]'),
+      'b.md': page('B', '![[NC-17]]'),
+    })
+    expect(h.text()).toContain('0 / 1')
+  })
+
+  it('"Title on the front: Hide" (notitle, YAZ-5695): the ID alone, fully shown too; the title never shows', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('What is {{this}}?', 'QA-1, title "Secret title", notitle')) })
+    expect(h.head()).toBe('QA-1')
+    expect(h.cardText()).not.toContain('Secret title')
+    await h.tap()
+    expect(h.head()).toBe('QA-1')
+    expect(h.text()).not.toContain('Secret title')
+  })
+
+  it('a card file that is not valid (two cards): "This card file needs a fix on the Mac."; review works', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'cards/two.md': cardFile('Two', cardBlock('First?\n---\n{{one}}', 'NC-1'), `\n${cardBlock('Second?\n---\n{{two}}', 'NC-2')}\n`) })
+    expect(h.text()).toContain('This card file needs a fix on the Mac.')
+    await h.click('Remembered')
+    expect(h.answers.waiting().map((w) => w.op.id)).toEqual(['NC-1'])
+  })
+
+  it('YAZ-5298: a short card with a sound: a tap on the middle (the player\'s name, time or empty part) shows side 2; only Play is the player\'s', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:fake-fifth', type: 'audio/mpeg' }) }
+    h = await reviewSetup(one('Listen. Which interval is this?\n\n![[fifth.mp3]]\n---\n{{A fifth}}', { 'fifth.mp3': 'made-up bytes' }), { media })
+    await h.seen()
+    const before = h.cardText()
+    await act(async () => h.host.querySelector<HTMLElement>('.review__card .card__audio-play')!.click())
+    await h.settle()
+    expect(h.cardText()).toBe(before)
+    expect(play).toHaveBeenCalledTimes(1)
+    // The middle of a short card is on the player's pill: its name. A tap there steps, as on any card (decision 11).
+    await act(async () => h.host.querySelector<HTMLElement>('.review__card .card__audio-name')!.click())
+    await h.settle()
+    // Side 2 shows, with its hidden word as "_" (the next tap shows it).
+    expect(h.cardText()).toBe(`${before} _`)
+    play.mockRestore()
+  })
+
+  it('YAZ-5333: a tap on the progress bar steps the card and does not seek (the bar is no control on the phone)', async () => {
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:fake-fifth', type: 'audio/mpeg' }) }
+    h = await reviewSetup(one('Listen.\n\n![[fifth.mp3]]\n---\n{{A fifth}}', { 'fifth.mp3': 'made-up bytes' }), { media })
+    await h.seen()
+    const before = h.cardText()
+    const seeks: string[] = []
+    const bar = h.host.querySelector<HTMLElement>('.review__card .card__audio-bar')!
+    bar.addEventListener('click', () => void seeks.push('bar'))
+    await act(async () => bar.click())
+    await h.settle()
+    expect(h.cardText()).not.toBe(before)
+    expect(seeks).toEqual([])
+  })
+
+  it('YAZ-5298: a tap on the pill itself (between its parts) steps too', async () => {
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:fake-fifth', type: 'audio/mpeg' }) }
+    h = await reviewSetup(one('Listen.\n\n![[fifth.mp3]]\n---\n{{A fifth}}', { 'fifth.mp3': 'made-up bytes' }), { media })
+    await h.seen()
+    const before = h.cardText()
+    await act(async () => h.host.querySelector<HTMLElement>('.review__card .card__audio')!.click())
+    await h.settle()
+    expect(h.cardText()).not.toBe(before)
+  })
+
+  it('M1 (checker): a tap on a link or a picture in the card is theirs, never a step', async () => {
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:cat', type: 'image/png' }) }
+    h = await reviewSetup(one('See [the site](https://example.com) and ![a cat](cat.png)\n---\n{{hidden}}', { 'cat.png': 'made-up bytes' }), { media })
+    const before = h.cardText()
+    for (const el of [h.host.querySelector<HTMLElement>('.review__card a[href]')!, h.host.querySelector<HTMLElement>('.review__card img')!]) {
+      el.addEventListener('click', (e) => e.preventDefault(), { once: true })
+      await act(async () => el.click())
+      await h.settle()
+      expect(h.cardText()).toBe(before)
+    }
+    await h.tap()
+    expect(h.cardText()).not.toBe(before)
+  })
+
+  it('YAZ-5229: VoiceOver reads the question; a step says what it showed; there is a button to show the next part', async () => {
+    h = await reviewSetup(one('Capital of France?\n---\nIt is {{Paris}}.'))
+    const box = h.host.querySelector('.review__card')!
+    expect(box.getAttribute('role')).toBeNull()
+    expect(box.getAttribute('aria-label')).toBeNull()
+    expect(box.textContent).toContain('Capital of France?')
+    expect(box.textContent).not.toContain('Paris')
+    await h.click('Show the next part')
+    await h.click('Show the next part')
+    expect(h.host.querySelector('[aria-live="polite"].sr-only')?.textContent).toBe('Paris')
+    for (const b of h.host.querySelectorAll('.review__answer')) expect((b.textContent ?? '').trim()).not.toBe('')
+  })
+})

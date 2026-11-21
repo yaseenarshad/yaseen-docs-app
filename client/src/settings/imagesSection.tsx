@@ -8,7 +8,7 @@
  * - The library folder (Draw's 🔒 YAZ-1775 D5): ONE folder every vault shares, for saved components and
  *   media favorites; `SettingsState.libraryFolder`, null = `<settings folder>/library` with a settings folder
  *   (YAZ-4364), else `<userData>/library`. Draw keeps it under
- *   Files; in Docs, Files & Links is about notes, and the library is the canvas panel's.
+ *   Files; in Docs, Files & Links is about pages, and the library is the canvas panel's.
  * - The favorites (YAZ-4363): their count, the size of their own copies, and "all saved" or "3 still saving".
  * - Icon packs (YAZ-4359), its own group: every Iconify pack on this Mac, and where they live (`IconPacksControl`).
  * - Add panel › Hover zoom (YAZ-4447, D34): the same `mediaHoverZoom` as the panel's Filter › Hover zoom, and Hover

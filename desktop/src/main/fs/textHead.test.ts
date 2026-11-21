@@ -67,7 +67,7 @@ describe('readTextHead', () => {
   })
 
   it('only a text kind file; a missing one is NOT_FOUND', async () => {
-    await expect(readTextHead(await put('note.md', '# hi'))).rejects.toMatchObject({ code: 'UNSUPPORTED_EXTENSION' })
+    await expect(readTextHead(await put('page.md', '# hi'))).rejects.toMatchObject({ code: 'UNSUPPORTED_EXTENSION' })
     await expect(readTextHead(path.join(dir, 'gone.ts'))).rejects.toMatchObject({ code: 'NOT_FOUND' })
     expect((await readTextHead(await put('Dockerfile', 'FROM node:22\n'))).text).toBe('FROM node:22\n')
   })

@@ -5,6 +5,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': fileURLToPath(new URL('../shared', import.meta.url)),
+      // The phone's name for this folder, for phone modules a client test loads (see tsconfig.json).
+      '@client': fileURLToPath(new URL('./src', import.meta.url)),
     },
     // The engine is a workspace link (YAZ-3574): its imports resolve from the app's node_modules, as in the build.
     preserveSymlinks: true,
@@ -21,7 +23,9 @@ export default defineConfig({
     // Timing budgets live in the `perf` project (vitest.perf.config.ts), which runs AFTER this
     // one on an idle pool. They flaked here under parallel load, and widening them to cope would
     // have hidden a real 4-6x regression — see YAZ-740.
-    exclude: ['**/node_modules/**', 'src/**/*.perf.test.{ts,tsx}'],
+    // SKIP_MAC_ONLY=1 (CI's Linux shards, .github/workflows/ci.yml): leave out what needs the Mac. Monaco gives the Mac's
+    // keys only on a Mac (`codeKeys.test.ts`); CI's `mac-tests` job runs it.
+    exclude: ['**/node_modules/**', 'src/**/*.perf.test.{ts,tsx}', ...(process.env.SKIP_MAC_ONLY === '1' ? ['src/code/codeKeys.test.ts'] : [])],
     testTimeout: 30_000,
     // The engine's dist imports `roughjs/bin/rough` without an extension, which Node's ESM loader
     // refuses; inlining lets Vite resolve it, so a test can run the REAL engine (Draw's config, ported

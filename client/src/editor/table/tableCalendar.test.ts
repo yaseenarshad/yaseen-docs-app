@@ -15,7 +15,10 @@ import { formatTableComment, parseTableComment, plainTable } from './tableCommen
 import { readTime } from '@shared/timeFormat'
 import { calendarTick } from './tableCalendar'
 import { cellPos } from './tableTestKit'
-import tableCss from './table.css?inline'
+import cardTableCss from './cardTable.css?inline'
+import editorTableCss from './table.css?inline'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 afterEach(async () => {
   await unmountAll()
@@ -40,6 +43,7 @@ const DAY = Array.from({ length: 40 }, (_, i) => clock(240 + 30 * i))
 const rowsOf = (view: EditorView) => [...view.dom.querySelectorAll<HTMLTableRowElement>('tbody[data-content-dom] > tr')]
 const nowRows = (view: EditorView) => rowsOf(view).flatMap((row, i) => (row.classList.contains('table-now-row') ? [{ i, now: row.style.getPropertyValue('--table-now') }] : []))
 const pastRows = (view: EditorView) => rowsOf(view).flatMap((row, i) => (row.classList.contains('table-past-row') ? [i] : []))
+const nextRows = (view: EditorView) => rowsOf(view).flatMap((row, i) => (row.classList.contains('table-next-row') ? [i] : []))
 
 /** Mount at a wall-clock time today: only `Date` is fake, so the editor's own timers run. */
 async function mountAt(hours: number, minutes: number, markdown: string, options: Parameters<typeof mount>[1] = {}) {
@@ -143,10 +147,53 @@ describe('the now row and the past rows (D2, D14)', () => {
     expect(pastRows(view)).toEqual([])
   })
 
-  it('a read-only note shows the marker', async () => {
+  it('a read-only page shows the marker', async () => {
     const { crepe, view } = await mountAt(11, 40, calendar(DAY))
     crepe.setReadonly(true)
     expect(nowRows(view)).toEqual([{ i: 16, now: '0.333' }])
+  })
+})
+
+describe('the next time slot (YAZ-5541)', () => {
+  it('the body row right after the now row gets `table-next-row`; it is never past and never the now row', async () => {
+    const { view } = await mountAt(11, 40, calendar(DAY))
+    expect(nextRows(view)).toEqual([17])
+    expect(pastRows(view)).not.toContain(17)
+    calendarTick(view, 12 * 60 + 5)
+    expect(nowRows(view).map(({ i }) => i)).toEqual([17])
+    expect(nextRows(view)).toEqual([18])
+  })
+
+  it('before the first slot it is the first slot (the next to come); with the now row the last, and after the last slot, none', async () => {
+    const { view } = await mountAt(3, 10, calendar(DAY))
+    expect(nextRows(view)).toEqual([1])
+    const last = await mountAt(22, 30, calendar(['9:00 pm', '10:00 pm'], 'calendar 60m'))
+    expect(nowRows(last.view).map(({ i }) => i)).toEqual([2])
+    expect(nextRows(last.view)).toEqual([])
+    calendarTick(last.view, 23 * 60 + 30)
+    expect(nextRows(last.view)).toEqual([])
+  })
+
+  it('YAZ-5557: after midnight the rows count on: 11:40 pm\'s next slot is the 12:00 am row, 12:20 am\'s the 1:00 am row', async () => {
+    const night = calendar(['10:00 pm', '11:00 pm', '12:00 am', '1:00 am'], 'calendar 60m')
+    const { view } = await mountAt(23, 40, night)
+    expect([nowRows(view).map(({ i }) => i), nextRows(view)]).toEqual([[2], [3]])
+    calendarTick(view, 20)
+    expect([nowRows(view).map(({ i }) => i), nextRows(view), pastRows(view)]).toEqual([[3], [4], [1, 2]])
+  })
+
+  it('YAZ-5557: the day ends after midnight: now in the last row has no next; after the last slot, the first slot is the next to come', async () => {
+    const { view } = await mountAt(1, 30, calendar(['10:00 pm', '11:00 pm', '12:00 am', '1:00 am'], 'calendar 60m'))
+    expect([nowRows(view).map(({ i }) => i), nextRows(view)]).toEqual([[4], []])
+    calendarTick(view, 2 * 60 + 30)
+    expect([nowRows(view), nextRows(view), pastRows(view)]).toEqual([[], [1], []])
+  })
+
+  it('a row with no time right after the now row is the next row (the row after, as the spec says); a plain table has none', async () => {
+    const { view } = await mountAt(9, 15, calendar(['9:00 am', 'Lunch?', '10:00 am']))
+    expect(nextRows(view)).toEqual([2])
+    const plain = await mountAt(9, 15, '| Time | Plan |\n| --- | --- |\n| 9:00 am | |\n| 9:30 am | |\n')
+    expect(nextRows(plain.view)).toEqual([])
   })
 })
 
@@ -317,16 +364,27 @@ describe('the marker in table.css (D2, D6, D14)', () => {
     for (const { selector, body } of calendarRules) expect(body, selector).not.toMatch(/(^|[;\s])position\s*:/)
   })
 
-  it('the look follows `data-table-now`: the line by default, none of it for the tint; past rows grey for `text` and `shade` of `data-table-dim-past`, shaded for `shade` only', () => {
-    expect(calendarRules.find(({ selector }) => selector.startsWith("[data-table-now='tint']"))?.body).toMatch(/--table-now-line:\s*none/)
-    const past = calendarRules.filter(({ selector }) => selector.includes('table-past-row'))
-    const grey = past.find(({ body }) => body.trim() === 'color: var(--fg-muted);')
-    expect(grey?.selector).toMatch(/^:is\(\[data-table-dim-past='text'\], \[data-table-dim-past='shade'\]\)/)
-    const shade = past.find(({ body }) => body.includes('--table-past:'))
-    expect(shade?.selector).toMatch(/^\[data-table-dim-past='shade'\]/)
-    // Both cell rules paint the shade as a layer, under the band and over a fill.
-    const paint = rules.filter(({ body }) => /background-image:\s*var\(--table-note-mark, none\), var\(--table-open-ring, none\), var\(--table-band, none\)/.test(body))
-    expect(paint.length).toBe(2)
+  it('the look follows `--table-now-mark` (YAZ-5487: a style query, the nearest surface\'s value): the line by default, none of it for the tint; past rows grey for `text` and `shade` of `--table-dim-past`, shaded for `shade` only', () => {
+    const css = tableCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(css).toMatch(/@container style\(--table-now-mark: tint\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-now-row \{\s*--table-now-line: none;/)
+    expect(css).toMatch(/@container style\(--table-dim-past: text\) or style\(--table-dim-past: shade\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-past-row > :is\(th, td\) \{\s*color: var\(--fg-muted\);/)
+    expect(css).toMatch(/@container style\(--table-dim-past: shade\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-past-row > :is\(th, td\) \{\s*--table-past:/)
+    // No attribute on an ancestor decides it any more (two vaults side by side would clash).
+    expect(css).not.toMatch(/\[data-table-(now|dim-past)=/)
+    // Each cell rule (a cell, a frozen cell, a sticky subheader cell, YAZ-4899) paints the shade as a layer, under the band and over a fill.
+    const paint = rules.filter(({ body }) => /background-image:\s*var\(--table-page-mark, none\), var\(--table-open-ring, none\), var\(--table-band, none\)/.test(body))
+    expect(paint.length).toBe(3)
     for (const { body } of paint) expect(body).toMatch(/var\(--table-band, none\), var\(--table-past, none\)/)
+  })
+
+  it('YAZ-5541: the next slot is tinted only with `--table-next-shade: on`, at the now tint\'s 12%, in `--table-next-colour` (the now mark\'s red without one), on the past shade\'s layer', () => {
+    const css = tableCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    const now = /--table-now-tint: linear-gradient\(color-mix\(in srgb, var\(--table-now-colour\) (\d+)%/.exec(css)?.[1]
+    const next = /@container style\(--table-next-shade: on\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-next-row > :is\(th, td\) \{\s*--table-past: linear-gradient\(color-mix\(in srgb, var\(--table-next-colour, var\(--table-text-red\)\) (\d+)%/.exec(css)?.[1]
+    expect(next).toBe('12')
+    expect(next).toBe(now)
+    expect(/--table-now-colour: var\(--table-text-red\)/.test(css)).toBe(true)
+    // Nowhere else is the next row painted: off, it reads as any row.
+    expect(rules.filter(({ selector }) => selector.includes('table-next-row'))).toHaveLength(1)
   })
 })

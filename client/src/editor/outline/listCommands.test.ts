@@ -528,7 +528,7 @@ describe('YAZ-3695 2- and 3- Delete (D3, D4)', () => {
     expect(md(crepe)).toBe('text Head\n')
   })
 
-  it('24. at the end of the note: nothing happens', async () => {
+  it('24. at the end of the page: nothing happens', async () => {
     const { crepe } = await mount('* a\n')
     caretIn(crepe, 'a')
     press(crepe, 'Delete')
@@ -610,7 +610,7 @@ describe('YAZ-3695 3- Backspace joins into the previous VISIBLE line (D5, D6, D7
     expect(caretPos(crepe)).toBe(posOf(crepe, 'a') + 1)
   })
 
-  it('34. the first bullet of the note lifts to plain text (unchanged)', async () => {
+  it('34. the first bullet of the page lifts to plain text (unchanged)', async () => {
     const { crepe } = await mount('* a\n* b\n')
     caretIn(crepe, 'a', 0)
     press(crepe, 'Backspace')
@@ -706,7 +706,7 @@ describe('YAZ-3695 3- Backspace joins into the previous VISIBLE line (D5, D6, D7
     expect(isOpen(root, 'ck')).toBe(true)
   })
 
-  it('43. a heading at the top of the note becomes plain text in one step', async () => {
+  it('43. a heading at the top of the page becomes plain text in one step', async () => {
     const { crepe } = await mount('## Head\n\nbody\n')
     caretIn(crepe, 'Head', 0)
     expect(press(crepe, 'Backspace')).toBe(true)
@@ -756,7 +756,7 @@ describe('YAZ-3695 4- the caret never stays in a hidden line, and no placeholder
   })
 })
 
-/** One ⌘Z row: the case, the note, the label folded first (it must be folded again after ⌘Z), a setup step (its own ⌘Z event), the edit. */
+/** One ⌘Z row: the case, the page, the label folded first (it must be folded again after ⌘Z), a setup step (its own ⌘Z event), the edit. */
 type UndoRow = [string, string, string | null, ((c: Crepe) => void) | null, (c: Crepe) => unknown]
 const toTop = (c: Crepe) => insertEmptyParagraph(c, 0)
 const zoomInto = (c: Crepe, text: string) => (caretIn(c, text), press(c, 'Mod-.'))
@@ -890,7 +890,7 @@ describe('YAZ-3695 round 1 bugs', () => {
       expect(md(mirror.crepe)).toBe(joined)
     })
 
-    it('at the top of the note: declines (native: nothing)', async () => {
+    it('at the top of the page: declines (native: nothing)', async () => {
       const { crepe } = await mount('text\n\n* a\n')
       caretIn(crepe, 'text', 0)
       expect(press(crepe, 'Backspace')).toBe(false)
@@ -1039,7 +1039,7 @@ describe('YAZ-3695 round 1 bugs', () => {
   })
 })
 
-describe('YAZ-3695 6C. Backspace on an empty line at the top of the note removes it (YAZ-3798)', () => {
+describe('YAZ-3695 6C. Backspace on an empty line at the top of the page removes it (YAZ-3798)', () => {
   it('a folded heading below moves up, stays folded, and gets the caret at its start', async () => {
     const { crepe, root } = await mount('## Plan for May\n\nfirst hidden line\n\n## Next Section\n')
     fold(root, 'Plan for May')
@@ -1092,7 +1092,7 @@ describe('YAZ-3695 6C. Backspace on an empty line at the top of the note removes
     expect(isFolded(root, 'Plan for May')).toBe(true)
   })
 
-  it('the only line of the note: nothing happens', async () => {
+  it('the only line of the page: nothing happens', async () => {
     const { crepe } = await mount('')
     select(crepe, 1)
     expect(press(crepe, 'Backspace')).toBe(false)
@@ -1100,30 +1100,30 @@ describe('YAZ-3695 6C. Backspace on an empty line at the top of the note removes
   })
 })
 
-describe('YAZ-3695 the day note, one flow', () => {
+describe('YAZ-3695 the day page, one flow', () => {
   it('fold, Enter at the start, Delete on the empty top line, Delete at a start, Backspace after a fold, Backspace on a heading', async () => {
-    const { crepe, root } = await mount(`${DAY}\n## Notes\n\nbody\n`)
+    const { crepe, root } = await mount(`${DAY}\n## Pages\n\nbody\n`)
     fold(root, '653am')
     caretIn(crepe, '653am', 0)
     press(crepe, 'Enter')
-    expect(md(crepe)).toBe(`*\n${DAY}\n## Notes\n\nbody\n`)
+    expect(md(crepe)).toBe(`*\n${DAY}\n## Pages\n\nbody\n`)
     select(crepe, 3)
     expect(press(crepe, 'Delete')).toBe(true)
-    expect(md(crepe)).toBe(`${DAY}\n## Notes\n\nbody\n`)
+    expect(md(crepe)).toBe(`${DAY}\n## Pages\n\nbody\n`)
     expect(caretPos(crepe)).toBe(posOf(crepe, '653am'))
     caretIn(crepe, 'Eng', 0)
     expect(press(crepe, 'Delete')).toBe(false)
     press(crepe, 'Backspace')
-    expect(md(crepe)).toBe('* 653am Eng\n  * ok plan\n  * where\n\n## Notes\n\nbody\n')
-    caretIn(crepe, 'Notes', 0)
+    expect(md(crepe)).toBe('* 653am Eng\n  * ok plan\n  * where\n\n## Pages\n\nbody\n')
+    caretIn(crepe, 'Pages', 0)
     press(crepe, 'Backspace')
-    expect(md(crepe)).toBe('* 653am Eng Notes\n  * ok plan\n  * where\n\nbody\n')
-    expect(isFolded(root, '653am Eng Notes')).toBe(true)
+    expect(md(crepe)).toBe('* 653am Eng Pages\n  * ok plan\n  * where\n\nbody\n')
+    expect(isFolded(root, '653am Eng Pages')).toBe(true)
   })
 })
 
 /**
- * YAZ-3727's note: a numbered list right after a bullet, inside `Anatomy`. Two lists of different kinds are siblings
+ * YAZ-3727's page: a numbered list right after a bullet, inside `Anatomy`. Two lists of different kinds are siblings
  * in Markdown; at the top level the save puts an empty line between them.
  */
 const ANATOMY = '* Anatomy\n  * Keys\n  1. id\n     * child of id\n  2. version\n  3. status\n'
@@ -1421,7 +1421,7 @@ describe('YAZ-3818 D5: Tab and Shift-Tab in a table cell', () => {
     expect(caretCell(crepe)).toBe('d1')
     press(crepe, 'Shift-Tab')
     expect(caretCell(crepe)).toBe('c2')
-    // A first bullet cannot indent, as in the note: the key is taken and the caret stays in its cell.
+    // A first bullet cannot indent, as in the page: the key is taken and the caret stays in its cell.
     caretIn(crepe, 'a')
     expect(press(crepe, 'Tab')).toBe(true)
     expect(md(crepe)).toContain('| <ul><li>a</li></ul> |')

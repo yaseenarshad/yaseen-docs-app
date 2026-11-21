@@ -6,32 +6,30 @@
  *
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`),
  * on `KPIs` — the folder whose settings file already SHIPS three declarations (`funnel_stages`
- * multi-link with a target, `kpi_category`, `unit`), five notes, and a Table view whose
+ * multi-link with a target, `kpi_category`, `unit`), five pages, and a Table view whose
  * `order` names four columns. So every step below adds to a real declaration block rather than
  * creating one, which is what makes the merge-don't-replace half of each write visible.
  *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1 "+ Add column" declares `unit_notes` and SHOWS it, in one `folder_settings` write
+ *   1 "+ Add column" declares `unit_pages` and SHOWS it, in one `folder_settings` write
  *     (🔒 D3): the header appears, the declaration lands on disk, the Table view's `order`
- *     gains `note.unit_notes` — and NOT ONE note is written: a column is never stamped empty
- *     into the notes it is declared over (YAZ-2290 E1), so every file is byte-identical
+ *     gains `note.unit_pages` — and NOT ONE page is written: a column is never stamped empty
+ *     into the pages it is declared over (YAZ-2290 E1), so every file is byte-identical
  *   2 the Type select retypes it `text` → `number`: the DECLARATION moves and nothing else does —
- *     🔒 C1, proven by byte-equality over every note again
- *   3 the retyped column edits as a NUMBER, and the value lands on the note's own file on disk
- *   4 "New" births a note in the folder with NO declared column in it — a missing value is an
+ *     🔒 C1, proven by byte-equality over every page again
+ *   3 the retyped column edits as a NUMBER, and the value lands on the page's own file on disk
+ *   4 "New" births a page in the folder with NO declared column in it — a missing value is an
  *     empty cell, never an empty key
  *   5 quit → relaunch: the column and its declaration are in the settings file, not in the session
  *   6 a name that is not a property name is refused inline, and NOTHING is written
  *
  * The harness: a temp `--user-data-dir`, a COPY of the fixture, `columns-` step screenshots.
  */
-// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
-// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '../../shared/frontmatter'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter, withCommentsHint } from '../../shared/frontmatter'
 import { activeTab, appWindow, contents, copyVault, launchApp, openFolder, quitApp, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -39,12 +37,12 @@ test.describe.configure({ mode: 'serial' })
 /** The committed encyclopedia. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDER = 'KPIs'
-/** Its notes, in the order the table lists them (no `sort`, so the index order stands). */
+/** Its pages, in the order the table lists them (no `sort`, so the index order stands). */
 const MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
-/** The column this spec declares, and the note whose cell it fills. */
-const COLUMN = 'unit_notes'
+/** The column this spec declares, and the page whose cell it fills. */
+const COLUMN = 'unit_pages'
 /** …and the LABEL its header and its Properties row wear (YAZ-1513: sentence case, `_` → space). */
-const COLUMN_LABEL = 'Unit notes'
+const COLUMN_LABEL = 'Unit pages'
 /** The shipped Table's headers: the `#` gutter first, then every column by its label (YAZ-1513). */
 const HEADERS = ['#', 'Name', 'Kpi category', 'Unit', 'Funnel stages']
 const SUBJECT = 'CAC'
@@ -56,11 +54,11 @@ let userData: string
 let vault: string
 let app: ElectronApplication
 let win: Page
-/** Every note before launch; includes RETAINED's seeded legacy declared value. */
+/** Every page before launch; includes RETAINED's seeded legacy declared value. */
 let memberBytes: Record<string, string>
 
-const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
-/** The name cell shows the page TITLE: for a fixture note, which has no `title:`, its file name without `.md` (YAZ-2420 🔒 D14). */
+const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer):not(.view-table__new)')
+/** The name cell shows the page TITLE: for a fixture page, which has no `title:`, its file name without `.md` (YAZ-2420 🔒 D14). */
 const rowNames = (scope: Locator) => scope.locator('.view-table__name')
 const headers = (scope: Locator) => scope.locator('.view-table thead th')
 /** `data-cell="row:col"` indexes DATA columns only — the `#` gutter carries none. */
@@ -92,7 +90,7 @@ async function settingsOnDisk(): Promise<OnDiskSettings> {
   return (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as OnDiskSettings
 }
 
-/** Every note's full bytes, keyed by name — the before/after pair E1 and C1 are proven with. */
+/** Every page's full bytes, keyed by name — the before/after pair E1 and C1 are proven with. */
 async function readMembers(): Promise<Record<string, string>> {
   const entries = await Promise.all(MEMBERS.map(async (name) => [name, await readFile(memberPath(name), 'utf8')] as const))
   return Object.fromEntries(entries)
@@ -100,7 +98,7 @@ async function readMembers(): Promise<Record<string, string>> {
 
 /** Opens the Properties menu on the folder's Table view; the outline is never offered one. */
 async function openProperties(): Promise<Locator> {
-  await contents(win).locator('[aria-label="Properties"]').click()
+  await contents(win).locator('[aria-label="Columns and view"]').click()
   const menu = propsMenu(contents(win))
   await expect(menu).toBeVisible()
   return menu
@@ -119,14 +117,14 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — "+ Add column" declares a column and shows it, in one settings write, and stamps it into no note', async () => {
+test('step 1 — "+ Add column" declares a column and shows it, in one settings write, and stamps it into no page', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
   await openFolder(win, folderPath())
 
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   // The shipped shape this step adds to: four columns from the view's `order` (each header its
-  // LABEL, behind the `#` gutter — YAZ-1513), five notes named by their titles.
+  // LABEL, behind the `#` gutter — YAZ-1513), five pages named by their titles.
   await expect(headers(contents(win))).toHaveText(HEADERS)
   await expect(rowNames(contents(win))).toHaveText(MEMBERS)
   // Opening a folder writes nothing (YAZ-2290): a declaration with an already-present legacy value
@@ -166,29 +164,31 @@ test('step 1 — "+ Add column" declares a column and shows it, in one settings 
     `note.${COLUMN}`,
   ])
 
-  // YAZ-2290 E1: a column is NEVER stamped empty into the notes — not on open, not when it is
+  // YAZ-2290 E1: a column is NEVER stamped empty into the pages — not on open, not when it is
   // added. The settings write above has landed and been indexed (the header shows it), and every
-  // note is still byte for byte what it was before launch, the legacy value among them.
+  // page is still byte for byte what it was before launch, the legacy value among them.
   expect(await readMembers()).toEqual(memberBytes)
   expect(parseFrontmatter(splitFrontmatter(memberBytes[RETAINED]!).frontmatter).properties[RETAINED_KEY]).toEqual(RETAINED_VALUE)
 })
 
-test('step 2 — retyping moves the DECLARATION and nothing else: every note is byte-identical', async () => {
+test('step 2 — retyping moves the DECLARATION and nothing else: every page is byte-identical', async () => {
   // The per-key Type select (YAZ-897) lives one level down since YAZ-1513: the list row the
   // declaration made offerable opens the column's DETAIL panel, and the select sits there.
   const menu = propsMenu(contents(win))
   await menu.locator(`[aria-label="Open ${COLUMN_LABEL}"]`).click()
+  // The Type is a button naming the type, then a list of every type (YAZ-3746 13L).
   const kind = menu.locator(`[aria-label="Edit property ${COLUMN_LABEL}"]`)
-  await expect(kind).toHaveValue('text')
-  await kind.selectOption('number')
+  await expect(kind).toHaveText('Text')
+  await kind.click()
+  await win.locator('.type-picker__option').filter({ has: win.locator('.type-picker__name', { hasText: /^Number$/ }) }).click()
   await expect.poll(async () => (await settingsOnDisk()).columns?.[COLUMN], { timeout: 10_000 }).toEqual({ kind: 'number' })
-  // The select is CONTROLLED off the folder's own declarations, so it reads `number` once the
+  // The picker is CONTROLLED off the folder's own declarations, so it reads Number once the
   // write is in hand — the honest signal that the new rung is live (step 3 types into it as a
   // number, which is the same rung answering).
-  await expect(kind).toHaveValue('number')
+  await expect(kind).toHaveText('Number')
   await shoot(win, 'columns-03-retyped-number')
 
-  // 🔒 C1 (locked): a retype never touches notes — no migration, no rewrite, not one byte.
+  // 🔒 C1 (locked): a retype never touches pages — no migration, no rewrite, not one byte.
   expect(await readMembers()).toEqual(memberBytes)
 
   // `views` was not passed to this write, so the order it does not own is untouched.
@@ -197,7 +197,7 @@ test('step 2 — retyping moves the DECLARATION and nothing else: every note is 
   expect(settings.columns?.kpi_category).toEqual({ kind: 'text' })
 })
 
-test('step 3 — the retyped column edits as a number, onto the NOTE’s own file', async () => {
+test('step 3 — the retyped column edits as a number, onto the PAGE’s own file', async () => {
   // Back out of the detail panel, then close the Properties popover; the table is what edits now.
   await propsMenu(contents(win)).locator('[aria-label="Back to columns"]').click()
   await expect(propsMenu(contents(win)).locator(`[aria-label="Open ${COLUMN_LABEL}"]`)).toBeVisible()
@@ -214,6 +214,9 @@ test('step 3 — the retyped column edits as a number, onto the NOTE’s own fil
   await expect(input).toBeVisible()
   await input.fill('42')
   await win.keyboard.press('Enter')
+  // A folder page asks before it changes a page (Confirm changes, YAZ-3746 13AN); Change writes it.
+  await win.locator('.change-ask .change-ask__go').click()
+  await expect(win.locator('.change-ask')).toHaveCount(0)
 
   const subject = memberPath(SUBJECT)
   await expect.poll(() => readFile(subject, 'utf8'), { timeout: 10_000 }).toContain(`${COLUMN}: 42`)
@@ -222,22 +225,22 @@ test('step 3 — the retyped column edits as a number, onto the NOTE’s own fil
   expect(after).toContain(`# ${SUBJECT}`) // and so is the body
   await shoot(win, 'columns-04-number-cell-write')
 
-  // Only the edited note moved; the other four are still byte-identical to what launched.
+  // Only the edited page moved; the other four are still byte-identical to what launched.
   const now = await readMembers()
   for (const name of MEMBERS.filter((n) => n !== SUBJECT)) expect(now[name]).toBe(memberBytes[name])
 })
 
-test('step 4 — "New" births a note in the folder with no declared column stamped into it', async () => {
-  await contents(win).locator('[aria-label="New note"]').click()
+test('step 4 — "New" births a page in the folder with no declared column stamped into it', async () => {
+  await contents(win).locator('[aria-label="New page"]').click()
 
   // Born IN the folder being viewed (YAZ-2290 D4), from its template and the view's seed alone.
   // `KPIs` has no `.template.md` and the Table no filter, and the vault is plain (YAZ-2523 🔒 V3):
-  // the newborn is `Untitled.md` with nothing written in it, so none of the four declared columns
-  // is a key of it.
+  // the newborn is `Untitled.md` with nothing about it written in it — only the comment hint every new page carries
+  // (YAZ-4615 D10) — so none of the four declared columns is a key of it.
   const created = path.join(folderPath(), 'Untitled.md')
-  await expect.poll(() => readFile(created, 'utf8').catch(() => null), { timeout: 10_000 }).toBe('')
+  await expect.poll(() => readFile(created, 'utf8').catch(() => null), { timeout: 10_000 }).toBe(withCommentsHint(''))
   await expect(activeTab(win)).toHaveText('Untitled')
-  await shoot(win, 'columns-05-born-note')
+  await shoot(win, 'columns-05-born-page')
 })
 
 test('step 5 — the column lives in the settings file, not in the session: it survives quit → relaunch', async () => {
@@ -258,21 +261,23 @@ test('step 5 — the column lives in the settings file, not in the session: it s
   await shoot(win, 'columns-06-survives-relaunch')
 })
 
-test('step 6 — a name that is not a property name is refused inline, and nothing is written', async () => {
-  // Parsed, not read as bytes: creating step 4's note made this folder a vault the app may
+test('step 6 — a name a built-in column owns is refused inline, and nothing is written', async () => {
+  // Parsed, not read as bytes: creating step 4's page made this folder a vault the app may
   // give ids in, and an `id` landing on the settings file is not what this step is about.
   const before = await settingsOnDisk()
 
   const menu = await openProperties()
   await menu.locator('.view-menu__action', { hasText: '+ Add column' }).click()
-  await menu.locator('[aria-label="Column name"]').fill('Bad Name!')
+  // A column's name is free text now (capitals, spaces, any letter); what it cannot be is a name the built-in
+  // columns use (YAZ-4637 M7): `file.x` would read as a file field, never as this column.
+  await menu.locator('[aria-label="Column name"]').fill('file.size')
   await menu.locator('[aria-label="Save column"]').click()
 
   const alert = menu.locator('[role="alert"]')
   await expect(alert).toBeVisible()
-  await expect(alert).toHaveText('Use lower case letters, digits and _, starting with a letter')
+  await expect(alert).toHaveText('file.size starts with file., which the built-in columns use — choose another name')
   // The form stays open on the rejected name — the refusal is a correction, not a dismissal.
-  await expect(menu.locator('[aria-label="Column name"]')).toHaveValue('Bad Name!')
+  await expect(menu.locator('[aria-label="Column name"]')).toHaveValue('file.size')
   await shoot(win, 'columns-07-bad-name-refused')
 
   // Nothing was written: the folder's settings are the ones step 5 read back.

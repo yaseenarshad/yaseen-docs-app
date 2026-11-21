@@ -1,6 +1,6 @@
 /**
  * The `yaseendocs://` deep-link format (E1, GRO-2171; locked decision D7): path-only,
- * absolute, percent-encoded — `yaseendocs:///Users/me/vault/My%20note.md` — no vault id.
+ * absolute, percent-encoded — `yaseendocs:///Users/me/vault/My%20page.md` — no vault id.
  * An optional `?root=` (also a percent-encoded absolute path) overrides which folder the
  * link opens under. Shared so main's parser and the client's generator agree byte-for-byte
  * on one encoding.

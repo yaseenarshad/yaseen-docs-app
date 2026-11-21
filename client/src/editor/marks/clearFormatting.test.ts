@@ -1,14 +1,14 @@
 /**
- * ⌘\ "Clear formatting" in a note (YAZ-4420, D28): real editors (`createCrepe`), the key through ProseMirror's own
- * `handleKeyDown` chain, and the bytes the note would save. The letter styles go (bold, italic, underline, strike,
+ * ⌘\ "Clear formatting" in a page (YAZ-4420, D28): real editors (`createCrepe`), the key through ProseMirror's own
+ * `handleKeyDown` chain, and the bytes the page would save. The letter styles go (bold, italic, underline, strike,
  * inline code, highlight; a text box's color), a heading becomes a paragraph (one in a bullet stays in its bullet),
  * and the structure stays: bullets, numbered lists, check items, quotes, links and `[[` pills. One undo step; Read
- * only blocks it; the key is the row `note.clearFormatting`, so Settings › Hotkeys can move it.
+ * only blocks it; the key is the row `page.clearFormatting`, so Settings › Hotkeys can move it.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { Selection, TextSelection } from '@milkdown/kit/prose/state'
-import { NOTE_KEYS } from '@shared/keys/note'
+import { PAGE_KEYS } from '@shared/keys/page'
 import { ALL_KEYS } from '@shared/keys'
 import { sameKey } from '@shared/hotkeyBindings'
 import { caretIn, marksOn, md, mount, pressKey, selectAcross, unmountAll } from './markTestKit'
@@ -158,8 +158,8 @@ describe('⌘\\ is one undo step (YAZ-4420)', () => {
   })
 })
 
-describe('⌘\\ in a Read only note (YAZ-4420)', () => {
-  it('changes nothing: the same press that clears an editable note does nothing once the note is read only', async () => {
+describe('⌘\\ in a Read only page (YAZ-4420)', () => {
+  it('changes nothing: the same press that clears an editable page does nothing once the page is read only', async () => {
     const start = '# **Title**\n'
     const editable = await mount(start, { readOnlyKeys: true })
     selectAll(editable.crepe)
@@ -177,27 +177,27 @@ describe('⌘\\ in a Read only note (YAZ-4420)', () => {
   })
 })
 
-describe('the key row note.clearFormatting (YAZ-4420)', () => {
-  it('is ⌘\\ by default, changeable, and the note scope binds ⌘\\ to nothing else', () => {
-    const row = NOTE_KEYS.find((r) => r.id === 'note.clearFormatting')!
+describe('the key row page.clearFormatting (YAZ-4420)', () => {
+  it('is ⌘\\ by default, changeable, and the page scope binds ⌘\\ to nothing else', () => {
+    const row = PAGE_KEYS.find((r) => r.id === 'page.clearFormatting')!
     expect(row).toMatchObject({ label: 'Clear formatting', keys: ['CmdOrCtrl+\\'] })
     expect(row.changeable).toBe(true)
-    const others = NOTE_KEYS.filter((r) => r.id !== row.id && r.keys.some((k) => sameKey(k, 'CmdOrCtrl+\\')))
+    const others = PAGE_KEYS.filter((r) => r.id !== row.id && r.keys.some((k) => sameKey(k, 'CmdOrCtrl+\\')))
     expect(others).toEqual([])
     // the drawing's own ⌘\ (reset to the default style) is another scope's row: a text box keeps it (the engine
     // takes it in the capture phase during an edit, `hostTextWysiwyg.ts`); draw.io's is the diagram's
-    expect(ALL_KEYS.filter((r) => r.keys.some((k) => sameKey(k, 'CmdOrCtrl+\\'))).map((r) => [r.id, r.scope]).sort()).toEqual([['diagram.removeFormat', 'diagram'], ['drawing.clearTextFormatting', 'drawing'], ['note.clearFormatting', 'note']])
+    expect(ALL_KEYS.filter((r) => r.keys.some((k) => sameKey(k, 'CmdOrCtrl+\\'))).map((r) => [r.id, r.scope]).sort()).toEqual([['diagram.removeFormat', 'diagram'], ['drawing.clearTextFormatting', 'drawing'], ['page.clearFormatting', 'page']])
   })
 
   it('a new key in Settings › Hotkeys clears; ⌘\\ then does nothing; No key binds nothing', async () => {
-    const moved = await mount('**x**\n', { hotkeys: { 'note.clearFormatting': 'CmdOrCtrl+Alt+K' } })
+    const moved = await mount('**x**\n', { hotkeys: { 'page.clearFormatting': 'CmdOrCtrl+Alt+K' } })
     selectAll(moved.crepe)
     expect(clear(moved.crepe)).toBe(false)
     expect(md(moved.crepe)).toBe('**x**\n')
     expect(press(moved.crepe, new KeyboardEvent('keydown', { key: 'k', metaKey: true, altKey: true, bubbles: true, cancelable: true }))).toBe(true)
     expect(md(moved.crepe)).toBe('x\n')
 
-    const none = await mount('**x**\n', { hotkeys: { 'note.clearFormatting': null } })
+    const none = await mount('**x**\n', { hotkeys: { 'page.clearFormatting': null } })
     selectAll(none.crepe)
     expect(clear(none.crepe)).toBe(false)
     expect(md(none.crepe)).toBe('**x**\n')

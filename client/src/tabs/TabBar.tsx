@@ -1,12 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { rootOfPath, type DiagramDarkColors, type ScreenPoint, type TabRef } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, slotAt, slotUnder } from '../lib/dragSlot'
 import { edgeScroller } from '../lib/edgeScroll'
+import { PART_MS, drawnPlaces as drawnAt, gapOf, glide, motionOff, partGap, partShift, partTransform, roomOf as roomAlong, useEndSlides } from '../lib/liveGap'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
+import { ContextMenu } from '../sidebar/ContextMenu'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
-import { AsleepIcon, GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
+import { AsleepIcon, GridIcon, InboxIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
 import { dragWidth, foreignDrag, readPageDrag, windowTabOf, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import { duplicateTabIds, type Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
@@ -34,6 +36,14 @@ export interface TabBarProps {
    * of `tabs` is, whatever `active` says. It is no file: it does not drag and has no menu.
    */
   blank?: boolean
+  /**
+   * The Inbox tab (YAZ-5011): the window's one review session. No file: no tooltip of a path. While `active`, no tab of
+   * `tabs` is the active one. Its ✕ and a middle click close it. It stands at `at`, a slot of `tabs` (absent: after
+   * them), and drags along the strip like a page tab (YAZ-5016); it never leaves the strip, so no other window, panel
+   * or tear-off takes it. Its menu has only the tab's own items: Move to new window and Move to ▸ another window
+   * (YAZ-5054), Close tab, Close other tabs, Close tabs to the right.
+   */
+  inbox?: InboxTab
   /** ⌘T's button, the "+" after the tabs: App shows the blank tab and puts the caret in the search bar. Absent on a mount with no blank tab. */
   onNewTab?: () => void
   /** The blank tab's ✕ and a middle click on it: it closes alone. */
@@ -120,12 +130,6 @@ export interface TabBarProps {
   /** The window's titles (YAZ-2420 🔒 D14): a tab is labelled with its page's title. */
   titles: PathTitles
   /**
-   * The review toggle (YAZ-2322), the sidebar row's item on a tab: whether a path is in review —
-   * null for anything that is not a note in the index — and the write. App's, like the row's.
-   */
-  reviewState?: (path: string) => boolean | null
-  onSetReview?: (path: string, on: boolean) => void
-  /**
    * Focus and Favorites on a tab (YAZ-3264 D2), the sidebar row's items: where a path stands in the
    * two lists — null hides both items — and the two toggles. App's lists (D1), so they work with the
    * sidebar hidden; a toggle only toasts (D3).
@@ -152,22 +156,45 @@ const NONE_ASLEEP: ReadonlySet<string> = new Set()
 
 /** How long a tab slides open or shut, in ms (YAZ-2656 D12). The row hands it to the stylesheet as `--tab-slide-ms`, so the slide and the ghost's timer take the same time. */
 const SLIDE_MS = 150
-/** How long the tabs take to slide aside for the live gap of a drag, in ms (YAZ-3808 6A; tuned in the demo). The row hands it to the stylesheet as `--tab-part-ms`. */
-const PART_MS = 150
+/** The live gap's slide (`PART_MS`, shared since YAZ-4606): the row hands it to the stylesheet as `--tab-part-ms`. */
 const SLIDE = { '--tab-slide-ms': `${SLIDE_MS}ms`, '--tab-part-ms': `${PART_MS}ms` } as CSSProperties
 /** The room the tabs open for a tab from elsewhere, in px (YAZ-3808 6A): about one tab, whose width is not known until it lands. */
 const ARRIVAL_ROOM = 124
 /** How long the gap waits for a tab of another window that was let go here, in ms (YAZ-3808 6A1): a take refused, or one that asks first, never lands. */
 const LANDING_MS = 1500
-/** How long a tab glides to its new place after a reorder, in ms (YAZ-3808 D6; tuned in the demo). */
-const GLIDE_MS = 200
-
 /** A tab that closed, for as long as it slides shut: its label, and the id of the tab it stood before (null: the end). */
 interface Ghost {
   key: number
   label: string
   before: string | null
 }
+
+/** The Inbox tab of the strip (YAZ-5011, YAZ-5016): see `TabBarProps.inbox`. */
+export interface InboxTab {
+  label: string
+  active: boolean
+  /** Its slot in `tabs`: how many page tabs stand before it. Absent: after them all. */
+  at?: number
+  onActivate: () => void
+  onClose: () => void
+  /** A drag along the strip let it go: it now stands right after this page tab, by id, or first (null). */
+  onMove?: (after: string | null) => void
+  /** Its menu's "Close other tabs": every page tab and the blank tab close. */
+  onCloseOthers?: () => void
+  /** Its menu's "Close tabs to the right": the page tabs after it and the blank tab close. */
+  onCloseToRight?: () => void
+  /** Its menu's "Move to new window" (YAZ-5054): the Inbox leaves for a window of its own, as a page tab does (YAZ-2933). */
+  onMoveToNewWindow?: () => void
+  /** The other windows that can take it (YAZ-5054), read when its menu opens: "Move to ▸". None: no "Move to". */
+  moveTargets?: () => readonly MoveTarget[]
+  /** "Move to ▸ <window>" (YAZ-5054): the Inbox goes to the open window `to`. */
+  onMoveToWindow?: (to: string) => void
+}
+
+/** The Inbox tab's id in the strip's own list (YAZ-5016): no page tab has it, so every slot counts it as a tab. */
+export const INBOX_TAB = ':inbox'
+/** The one type an Inbox tab's drag carries (YAZ-5016): no page, so no other window, panel or page takes it. */
+export const INBOX_DRAG_MIME = 'application/x-yaseen-inbox-tab'
 
 /** In-flight drag state: the grabbed tab's index + the hovered insertion slot (0…tabs.length). */
 interface DragState {
@@ -179,16 +206,16 @@ interface DragState {
   lifted: boolean
 }
 
-/** The room a tab of the strip takes: its width and the strip's gap between tabs, in px (YAZ-3808 6A). */
-const columnGapOf = (strip: HTMLElement | null): number => (strip === null ? 0 : parseFloat(getComputedStyle(strip).columnGap) || 0)
+/** The room a tab of the strip takes: its width and the strip's gap between tabs, in px (YAZ-3808 6A; `lib/liveGap`, YAZ-4606). */
+const columnGapOf = (strip: HTMLElement | null): number => gapOf(strip, 'x')
 
-const roomOf = (tab: HTMLElement, strip: HTMLElement | null): number => tab.offsetWidth + columnGapOf(strip)
+const roomOf = (tab: HTMLElement, strip: HTMLElement | null): number => roomAlong(tab, strip, 'x')
 
 /** A tab's slide in the live gap (6A), and the width a close holds for it (6A5). */
 const tabStyle = (shift: number, width: number | undefined): CSSProperties | undefined =>
   shift === 0 && width === undefined
     ? undefined
-    : { ...(shift === 0 ? {} : { transform: `translateX(${shift}px)` }), ...(width === undefined ? {} : { minWidth: width, maxWidth: width }) }
+    : { ...(shift === 0 ? {} : { transform: partTransform(shift, 'x') }), ...(width === undefined ? {} : { minWidth: width, maxWidth: width }) }
 
 /**
  * A tab's width as the tab on show (YAZ-3808 6A4): as wide as its whole name, in its least and most width. The tab is
@@ -227,7 +254,7 @@ const Chevron = ({ d }: { d: string }) => (
  * The window tab strip (Tabs I2/I3, GRO-2234/2235): each tab keyed by its own id, since two tabs
  * may show one file (YAZ-2940 D1) — ViewTabs' tablist
  * semantics (role=tab, aria-selected). The tabs are pills (YAZ-2656 R40, R41): each has a fill of
- * its own, the active one the brightest, and none joins the page. Labels hide the extension of a note,
+ * its own, the active one the brightest, and none joins the page. Labels hide the extension of a page,
  * a drawing and a diagram (YAZ-3536 D1); other files keep theirs, a folder's is its whole name (YAZ-2290) and
  * every full path lives in the title tooltip. Tabs reorder by HTML5 drag (the
  * groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none), the other tabs
@@ -252,12 +279,26 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs: pages, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
+  // THE INBOX TAB IN THE STRIP (YAZ-5016): one list of the page tabs and the Inbox tab, at its slot. Every slot, drag and
+  // glide of the strip reads this list; what goes out to App is in page tabs (`pageSlot`, `drop`).
+  const inboxAt = inbox === undefined ? null : Math.min(Math.max(inbox.at ?? pages.length, 0), pages.length)
+  const inboxLabel = inbox?.label
+  const tabs = useMemo<readonly Tab[]>(
+    () => (inboxAt === null ? pages : [...pages.slice(0, inboxAt), { id: INBOX_TAB, path: '', name: inboxLabel }, ...pages.slice(inboxAt)]),
+    [pages, inboxAt, inboxLabel],
+  )
+  /** A slot of the strip's list as a slot of the page tabs: a slot after the Inbox tab is one less. */
+  const pageSlot = (slot: number): number => (inboxAt === null || slot <= inboxAt ? slot : slot - 1)
+  const pageSlotRef = useRef(pageSlot)
+  pageSlotRef.current = pageSlot
+  /** The Inbox tab's own menu (YAZ-5016), where it stands. */
+  const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number; targets: readonly MoveTarget[] } | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
   // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code). The items are
-  // `TabMenu`'s, which the board's pages open too (YAZ-2648). The note's review state (YAZ-2322)
+  // `TabMenu`'s, which the board's pages open too (YAZ-2648). The page's review state (YAZ-2322)
   // is read when the menu opens, so the review item is about the tab that was right-clicked; a
   // null state hides it. Focus and Favorites (YAZ-3264 D2) are read the same way.
   const [menu, setMenu] = useState<TabMenuAt | null>(null)
@@ -394,7 +435,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         const slot = x === undefined || y === undefined ? null : slotUnder(stripRef.current, x, y)
         // Another window's card lands through main: its gap waits for it (6A1). This window's own card only moves.
         if (slot !== null && boardOwnRef.current === null) setArrival({ at: slot, count: tabCount.current, room: ARRIVAL_ROOM, yields: false })
-        return slot
+        // The board's cards are page tabs: their slot is one of the page tabs, past the Inbox tab (YAZ-5016).
+        return slot === null ? null : pageSlotRef.current(slot)
       },
     })
     return () => {
@@ -463,7 +505,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     const gone: Ghost[] = []
     if (tabs.length < was.tabs.length) {
       was.tabs.forEach((tab, i) => {
-        if (!open.has(tab.id)) gone.push({ key: ++ghostKey.current, label: labelOf(tab.path), before: was.tabs.slice(i + 1).find((next) => open.has(next.id))?.id ?? null })
+        if (!open.has(tab.id)) gone.push({ key: ++ghostKey.current, label: tab.id === INBOX_TAB ? (tab.name ?? 'Inbox') : labelOf(tab.path), before: was.tabs.slice(i + 1).find((next) => open.has(next.id))?.id ?? null })
       })
     }
     // The blank tab that went unused; one that a page filled is that page's tab now.
@@ -491,12 +533,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const order = useRef<readonly string[]>([])
   const glideFrom = useRef<Map<string, number> | null>(null)
   const ids = tabs.map((t) => t.id)
-  const drawnPlaces = (): Map<string, number> => {
-    const strip = stripRef.current
-    const origin = strip === null ? 0 : strip.getBoundingClientRect().left + strip.clientLeft - strip.scrollLeft
-    const drawn = [...(strip?.querySelectorAll<HTMLElement>('[data-tab]:not(.tabbar__tab--dragging)') ?? [])]
-    return new Map(drawn.map((el) => [el.dataset.tab!, el.getBoundingClientRect().left - origin]))
-  }
+  const drawnPlaces = (): Map<string, number> =>
+    drawnAt(stripRef.current, stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]:not(.tabbar__tab--dragging)') ?? [], (el) => el.dataset.tab!)
   // A tab that lands in the live gap (6A1) does not glide; the tabs after it glide the rest of the way, from the room
   // the gap held to the room the tab takes.
   if (arrived || (ids.length === order.current.length && ids.some((id, i) => id !== order.current[i]) && ids.every((id) => order.current.includes(id)))) {
@@ -508,7 +546,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // the tabs glide to their own widths.
   const [held, setHeld] = useState<{ widths: ReadonlyMap<string, number>; ids: string } | null>(null)
   const holding = held !== null && held.ids === ids.join('\n') ? held : null
-  const closeByMouse = (id: string) => {
+  const closeByMouse = (id: string, close: (id: string) => void = onClose) => {
     const i = tabs.findIndex((t) => t.id === id)
     const drawn = [...(stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? [])]
     const widths = new Map(drawn.map((el) => [el.dataset.tab!, el.getBoundingClientRect().width]))
@@ -516,7 +554,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     if (next !== undefined && widths.has(id)) widths.set(next.id, widths.get(id)!)
     widths.delete(id)
     setHeld({ widths, ids: ids.filter((t) => t !== id).join('\n') })
-    onClose(id)
+    close(id)
   }
   useEffect(() => {
     if (held === null) return
@@ -541,12 +579,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     order.current = tabs.map((t) => t.id)
     const from = glideFrom.current
     glideFrom.current = null
-    if (from === null || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== false) return
-    for (const el of stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? []) {
-      const dx = (from.get(el.dataset.tab!) ?? el.offsetLeft) - el.offsetLeft
-      // Under a pixel is rounding, not a move.
-      if (Math.abs(dx) >= 1) el.animate?.([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: GLIDE_MS, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' })
-    }
+    if (from === null || motionOff()) return
+    glide(stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? [], (el) => el.dataset.tab!, from)
   }, [tabs, held])
   const ghostsBefore = (id: string | null) =>
     ghosts
@@ -588,7 +622,20 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     if (drag === null) return
     setDrag(null)
     const to = dropIndex(drag.from, insertion)
-    if (to !== drag.from) onMove(drag.from, to)
+    if (to === drag.from) return
+    if (inboxAt === null) return onMove(drag.from, to)
+    // With the Inbox tab in the strip (YAZ-5016): the new order of the whole strip, then what moved in it — the page tab
+    // among the page tabs, and the Inbox tab by the page tab it now stands after.
+    const order = tabs.map((t) => t.id)
+    const [moved] = order.splice(drag.from, 1)
+    order.splice(to, 0, moved)
+    if (moved !== INBOX_TAB) {
+      const pageFrom = pages.findIndex((t) => t.id === moved)
+      const pageTo = order.filter((id) => id !== INBOX_TAB).indexOf(moved)
+      if (pageFrom !== pageTo) onMove(pageFrom, pageTo)
+    }
+    const after = order[order.indexOf(INBOX_TAB) - 1] ?? null
+    if (after !== (inboxAt === 0 ? null : pages[inboxAt - 1].id)) inbox?.onMove?.(after)
   }
 
   const externalPage = (event: DragEvent): PageDrag | null => {
@@ -613,14 +660,14 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       if (tab === null) return
       event.preventDefault()
       setArrival({ at: insertion, count: tabs.length, room, yields: true })
-      onDropFromWindow?.(tab.from, tab.ref, insertion)
+      onDropFromWindow?.(tab.from, tab.ref, pageSlot(insertion))
       return
     }
     const page = externalPage(event)
     if (page === null) return
     event.preventDefault()
     setArrival({ at: insertion, count: tabs.length, room, yields: true })
-    onDropPage?.(page, insertion)
+    onDropPage?.(page, pageSlot(insertion))
   }
 
   /** The slot at a client x of the strip (6A): by the layout, which the live gap does not move. */
@@ -691,16 +738,12 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // A tab board card over the strip (YAZ-3808 D1) opens the same gap.
   const over = drag?.over ?? externalOver ?? boardOver ?? waiting?.at ?? null
   const from = drag?.from ?? (boardOver === null || boardOwn === null ? -1 : tabs.findIndex((t) => t.id === boardOwn))
-  const gap = over === null || (from !== -1 && (over === from || over === from + 1)) ? null : over
+  const gap = partGap(over, from)
   // THE LIVE GAP (YAZ-3808 6A): the grabbed tab's room moves to the slot. The tabs between the two slide toward the
   // grab point by one room; a tab from elsewhere has no room in the strip, so the tabs after the slot slide into room
   // opened at the strip's end.
   const room = drag?.room ?? (from !== -1 ? boardRoom.current : externalOver !== null ? (externalRoom.current?.room ?? ARRIVAL_ROOM) : (waiting?.room ?? ARRIVAL_ROOM))
-  const shiftOf = (i: number): number => {
-    if (gap === null) return 0
-    if (from === -1) return i >= gap ? room : 0
-    return from < i && i < gap ? -room : gap <= i && i < from ? room : 0
-  }
+  const shiftOf = (i: number): number => partShift(i, from, gap, room)
   const parting = drag !== null || externalOver !== null || boardOver !== null || waiting !== null
   // A tab let go here from elsewhere opens as the tab on show (YAZ-3637 D4), and the tab on show now goes back to its own
   // width. In a full strip that width is less, so the tabs after it moved under the drop (6A4). It goes back while the
@@ -719,15 +762,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // The drag's slides end with it (YAZ-3808 6G): a slide still running when the drag ends — the tab on show grabbed,
   // most often — kept the tab drawn one room off its new place, and it slid back (a jump, in the demo). The glide
   // starts each tab from where it was drawn, so the new place shows at once and moves nothing more.
-  const wasParting = useRef(false)
-  useLayoutEffect(() => {
-    if (wasParting.current && !parting) {
-      for (const el of stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? []) {
-        for (const slide of el.getAnimations?.() ?? []) if ('transitionProperty' in slide) slide.cancel()
-      }
-    }
-    wasParting.current = parting
-  }, [parting])
+  useEndSlides(parting, () => stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? [])
   // A tab board card's tab, where it will land (6D): the board clips the card at its own edge, right under the strip,
   // so the gap would be empty. Its place is read from the layout, as the slot is, and only while a card is held here.
   const landingAt = (): { left: number; width: number } | null => {
@@ -748,6 +783,86 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     return { left, width: room - between }
   }
   const landing = boardOver === null || boardLabel === null ? null : landingAt()
+  /**
+   * The Inbox tab (YAZ-5011, YAZ-5016), at `i` of the strip's list: a tab of the strip in every way a drag reads — its
+   * slot, the live gap, the glide — and no file: no tooltip of a path, no hover card, no page in its drag. A click brings
+   * it to the front; its ✕ and a middle click close it. Its drag carries `INBOX_DRAG_MIME` alone, so it lands only in
+   * this strip: let go anywhere else, it stays where it stood (no tear-off).
+   */
+  const inboxTab = (i: number) => {
+    if (inbox === undefined) return null
+    const shown = inbox.active && !blank
+    const cls = ['tabbar__tab', 'tabbar__tab--inbox']
+    if (shown) cls.push('tabbar__tab--active')
+    if (shown && yielding) cls.push('tabbar__tab--yield')
+    if (slidIn.current.has(INBOX_TAB)) cls.push('tabbar__tab--in')
+    if (drag !== null && drag.lifted && drag.from === i) cls.push('tabbar__tab--dragging')
+    if (gap === i) cls.push('tabbar__tab--gap-before')
+    if (gap === tabs.length && i === tabs.length - 1) cls.push('tabbar__tab--gap-after')
+    return (
+      <div
+        key={INBOX_TAB}
+        data-tab={INBOX_TAB}
+        ref={shown ? activeRef : undefined}
+        className={cls.join(' ')}
+        style={tabStyle(shiftOf(i), holding?.widths.get(INBOX_TAB))}
+        draggable
+        onAnimationEnd={(e) => {
+          if (e.target !== e.currentTarget || !slidIn.current.delete(INBOX_TAB)) return
+          e.currentTarget.classList.remove('tabbar__tab--in')
+        }}
+        onDragStart={(e) => {
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move'
+            e.dataTransfer.setData(INBOX_DRAG_MIME, windowId)
+          }
+          setExternalOver(null)
+          setStaleHover(true)
+          setDrag({ from: i, over: null, room: roomOf(e.currentTarget, stripRef.current), lifted: false })
+          requestAnimationFrame(() => setDrag((now) => (now === null || now.from !== i ? now : { ...now, lifted: true })))
+        }}
+        onDragEnd={() => {
+          scroller.stop()
+          setDrag(null)
+          setExternalOver(null)
+        }}
+        onDragEnter={overTab}
+        onDragOver={overTab}
+        onDrop={(e) => {
+          const at = pointSlot(e.clientX)
+          if (drag !== null) {
+            e.preventDefault()
+            drop(at)
+          } else dropExternal(e, at)
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          // The other windows are read once, as the menu opens (YAZ-5054, as a page tab's, YAZ-3091 S7).
+          setInboxMenu({ x: e.clientX, y: e.clientY, targets: inbox.onMoveToWindow === undefined ? [] : (inbox.moveTargets?.() ?? []) })
+        }}
+      >
+        <button
+          type="button"
+          role="tab"
+          className="tabbar__btn"
+          aria-selected={shown}
+          onClick={inbox.onActivate}
+          onAuxClick={(e) => {
+            if (e.button === 1) closeByMouse(INBOX_TAB, inbox.onClose)
+          }}
+        >
+          {/* The sidebar Inbox row's tray (YAZ-5374), where a page tab has its file's icon, at that icon's 14px. */}
+          <span className="tabbar__label">
+            <InboxIcon className="tabbar__inbox-icon" />
+            <span className="tabbar__name">{inbox.label}</span>
+          </span>
+        </button>
+        <button type="button" className="tabbar__close" aria-label={`Close ${inbox.label}`} title={`Close ${inbox.label}`} onClick={() => closeByMouse(INBOX_TAB, inbox.onClose)}>
+          ✕
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -828,8 +943,9 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       >
         {/* ONE keyed list, ghosts and tabs: a tab that closes or moves builds no other tab again. */}
         {tabs.flatMap(({ id, path, name, zoom }, i) => {
-          // Under the blank tab no tab of the strip is the active one (YAZ-2655).
-          const isActive = !blank && id === active
+          if (id === INBOX_TAB) return [...ghostsBefore(id), inboxTab(i)]
+          // Under the blank tab, and under the Inbox tab (YAZ-5011), no tab of the strip is the active one (YAZ-2655).
+          const isActive = !blank && inbox?.active !== true && id === active
           // A display name stands in for the page name (YAZ-2949 D5); every file call still takes the path.
           const label = name ?? labelOf(path)
           // The tooltip's first line: the page, and " › bullet" when the tab is zoomed (YAZ-3647 E4).
@@ -915,7 +1031,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 // A right-click in the name's field is the field's own (YAZ-2949): no tab menu over it.
                 if (id === renaming) return
                 e.preventDefault()
-                setMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null, named: name !== undefined, lists: listState?.(path) ?? null })
+                setMenu({ x: e.clientX, y: e.clientY, id, path, named: name !== undefined, lists: listState?.(path) ?? null })
               }}
             >
               {id === renaming ? (
@@ -963,7 +1079,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         {ghostsBefore(null)}
         {/* The blank tab (YAZ-2655 D10): no file, so no drag, no menu and no tooltip. Its ✕ and a middle click close it alone. */}
         {blank && (
-          <div ref={activeRef} className="tabbar__tab tabbar__tab--active tabbar__tab--in" style={shiftOf(tabs.length) === 0 ? undefined : { transform: `translateX(${shiftOf(tabs.length)}px)` }} {...blankSlot}>
+          <div ref={activeRef} className="tabbar__tab tabbar__tab--active tabbar__tab--in" style={shiftOf(tabs.length) === 0 ? undefined : { transform: partTransform(shiftOf(tabs.length), 'x') }} {...blankSlot}>
             <button
               type="button"
               role="tab"
@@ -997,7 +1113,29 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       )}
       <div className="tabbar-tail" {...endSlot} />
       <CardPreviewHost store={tabPreview.store} cardOf={previewTab} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} side="below" />
-      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onRenameFile={onRenameFile} onSetReview={onSetReview} onToggleFocus={onToggleFocus} onToggleFavorite={onToggleFavorite} onNotice={onNotice} />}
+      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onRenameFile={onRenameFile} onToggleFocus={onToggleFocus} onToggleFavorite={onToggleFavorite} onNotice={onNotice} />}
+      {/* The Inbox tab's menu (YAZ-5016, YAZ-5054): only the tab's own items. It shows no file, so no file item (Copy path, Reveal in Finder, Rename file …). */}
+      {inboxMenu !== null && inbox !== undefined && (
+        <ContextMenu
+          x={inboxMenu.x}
+          y={inboxMenu.y}
+          onClose={() => setInboxMenu(null)}
+          sections={[
+            // Where it goes (YAZ-5054), as a page tab's first group: no "Duplicate tab" (one Inbox per window) and no "Right panel" (no page).
+            [
+              ...(inbox.onMoveToNewWindow === undefined ? [] : [{ id: 'new-window', label: 'Move to new window', onSelect: inbox.onMoveToNewWindow }]),
+              ...(inbox.onMoveToWindow === undefined || inboxMenu.targets.length === 0
+                ? []
+                : [{ id: 'move-to', label: 'Move to', children: [inboxMenu.targets.map((t) => ({ id: `move-window:${t.id}`, label: t.label, onSelect: () => inbox.onMoveToWindow?.(t.id), onPreview: (on: boolean) => onHighlightWindow?.(on ? t.id : null) }))] }]),
+            ],
+            [{ id: 'close', label: 'Close tab', onSelect: inbox.onClose }],
+            [
+              ...(inbox.onCloseOthers === undefined ? [] : [{ id: 'close-others', label: 'Close other tabs', disabled: pages.length === 0 && !blank, onSelect: inbox.onCloseOthers }]),
+              ...(inbox.onCloseToRight === undefined ? [] : [{ id: 'close-right', label: 'Close tabs to the right', disabled: (inboxAt ?? pages.length) >= pages.length && !blank, onSelect: inbox.onCloseToRight }]),
+            ],
+          ]}
+        />
+      )}
       {/* The menu of ‹ or › (YAZ-3647 E3): the steps that way, the nearest first, as the tab menu draws its rows. */}
       {navMenu !== null && (
         <ContextMenuSurface x={navMenu.x} y={navMenu.y} onClose={() => setNavMenu(null)}>
@@ -1044,7 +1182,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                   type="button"
                   className="ctx-menu__item"
                   role="menuitem"
-                  disabled={tabs.length === 0}
+                  disabled={pages.length === 0}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     setGridMenu(null)
@@ -1062,7 +1200,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 type="button"
                 className="ctx-menu__item"
                 role="menuitem"
-                disabled={duplicateTabIds({ tabs, active }).length === 0}
+                disabled={duplicateTabIds({ tabs: pages, active }).length === 0}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   setGridMenu(null)
@@ -1074,10 +1212,10 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
             )}
             <button
               type="button"
-              className={tabs.length === 0 ? 'ctx-menu__item' : 'ctx-menu__item ctx-menu__item--danger'}
+              className={pages.length === 0 ? 'ctx-menu__item' : 'ctx-menu__item ctx-menu__item--danger'}
               role="menuitem"
-              disabled={tabs.length === 0}
-              // So does the press on the item: a sheet that is cancelled then gives the keys back to the board, or to the note.
+              disabled={pages.length === 0}
+              // So does the press on the item: a sheet that is cancelled then gives the keys back to the board, or to the page.
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setGridMenu(null)

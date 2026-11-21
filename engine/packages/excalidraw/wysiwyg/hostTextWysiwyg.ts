@@ -6,6 +6,7 @@ import {
   THEME,
   applyDarkModeFilter,
   getFontString,
+  getVerticalOffset,
   isDarwin,
   isTestEnv,
   isWritableElement,
@@ -69,9 +70,23 @@ export const CARET_SCREEN_PX = 1.5;
 export const getCaretWidth = (zoom: number) => CARET_SCREEN_PX / zoom;
 
 /**
- * Puts a 1 px node over a rectangle in board px, by a transform. The overlay
- * is scaled by the zoom, and layout snaps a box's edges to whole board px: at
+ * YAZ-4902: the base box, in px, of a caret or highlight node before its
+ * transform scales it to its rectangle. It was 1 px: at a fractional device
+ * pixel ratio (the App size: 150 % on a 1x screen is 1.5) Chromium paints a
+ * 1 px node as 2 device px, and the scale carries that error: the highlight
+ * drew 1.33 times too wide, and 0.8 at 125 %. 100 px is a whole number of
+ * device px at every App size, so the scale starts from an exact box.
+ */
+export const OVERLAY_NODE_PX = 100;
+
+/**
+ * Puts a node over a rectangle in board px, by a transform. The overlay is
+ * scaled by the zoom, and layout snaps a box's edges to whole board px: at
  * 3000% a 0.05 px caret drew 0 or 30 px wide. A transform is never snapped.
+ * The node's own box is `OVERLAY_NODE_PX` square, not 1 px (YAZ-4902): the
+ * box is painted in whole device px, and a 1 px box at a fractional pixel
+ * ratio came out 2 device px, which the scale turned into a highlight a
+ * third too wide.
  */
 const placeOverlayRect = (
   node: HTMLElement,
@@ -81,11 +96,69 @@ const placeOverlayRect = (
     position: "absolute",
     left: "0",
     top: "0",
-    width: "1px",
-    height: "1px",
+    width: `${OVERLAY_NODE_PX}px`,
+    height: `${OVERLAY_NODE_PX}px`,
     transformOrigin: "0 0",
-    transform: `translate(${rect.left}px, ${rect.top}px) scale(${rect.width}, ${rect.height})`,
+    transform: `translate(${rect.left}px, ${rect.top}px) scale(${
+      rect.width / OVERLAY_NODE_PX
+    }, ${rect.height / OVERLAY_NODE_PX})`,
   });
+
+/**
+ * YAZ-3746 13BE: the band of a line the letters fill, in px from the line's
+ * top: from the top of tall letters (H, d, l) to the bottom of the deep ones
+ * (g, p, y) or of an underline. The caret and the highlight cover this band,
+ * not the whole line, which keeps room above and below for the line gap.
+ */
+type LetterBand = { top: number; bottom: number };
+let letterBandContext: CanvasRenderingContext2D | null | undefined;
+const letterBands = new Map<string, LetterBand>();
+const getLetterBand = (
+  element: ExcalidrawTextElement,
+  lineHeightPx: number,
+): LetterBand => {
+  const font = getFontString(element);
+  const key = `${font}|${lineHeightPx}`;
+  const known = letterBands.get(key);
+  if (known) {
+    return known;
+  }
+  const whole = { top: 0, bottom: lineHeightPx };
+  if (letterBandContext === undefined) {
+    letterBandContext = document.createElement("canvas").getContext("2d");
+  }
+  if (!letterBandContext) {
+    return whole;
+  }
+  letterBandContext.font = font;
+  const ascent = letterBandContext.measureText("Hdlbk").actualBoundingBoxAscent;
+  const descent =
+    letterBandContext.measureText("gjpqy").actualBoundingBoxDescent;
+  if (!Number.isFinite(ascent) || !Number.isFinite(descent) || ascent <= 0) {
+    return whole;
+  }
+  const { fontSize } = element;
+  const baseline = getVerticalOffset(
+    element.fontFamily,
+    fontSize,
+    lineHeightPx,
+  );
+  // a hair of room, and an underline (`renderElement`: 0.08 em under the
+  // baseline, 1/16 em thick) is inside the band
+  const room = fontSize * 0.06;
+  const band = {
+    top: Math.max(0, baseline - ascent - room),
+    bottom: Math.min(
+      lineHeightPx,
+      baseline + Math.max(descent, fontSize * 0.08 + fontSize / 16) + room,
+    ),
+  };
+  if (letterBands.size > 200) {
+    letterBands.clear();
+  }
+  letterBands.set(key, band);
+  return band;
+};
 
 /** The CSS transform that puts a box-sized node over the box: scaled by the zoom from its top left, turned about its center. */
 const getTransform = (
@@ -259,6 +332,7 @@ export const hostTextWysiwyg = ({
     angle: number;
     textAlign: ExcalidrawTextElement["textAlign"];
     lineHeightPx: number;
+    band: LetterBand;
     color: string;
   } | null = null;
   let lastFont = "";
@@ -299,10 +373,23 @@ export const hostTextWysiwyg = ({
             Math.min(selection.anchor, selection.head),
             Math.max(selection.anchor, selection.head),
           ).flatMap(([start, end]) => geometryOf(start, end).rectangles);
+    // YAZ-3746 13BE: each part covers its letters' band; a part under a
+    // selected line reaches up to that line's part, so the highlight is one
+    // piece across lines
+    const { band, lineHeightPx } = layout;
+    const selectedLines = new Set(rectangles.map((r) => r.lineIndex));
     for (const rectangle of rectangles) {
+      const lineTop = rectangle.lineIndex * lineHeightPx;
+      const top = selectedLines.has(rectangle.lineIndex - 1)
+        ? lineTop - lineHeightPx + band.bottom
+        : lineTop + band.top;
       const span = document.createElement("span");
       span.className = "excalidraw-wysiwyg-selection";
-      placeOverlayRect(span, rectangle);
+      placeOverlayRect(span, {
+        ...rectangle,
+        top,
+        height: lineTop + band.bottom - top,
+      });
       overlay.appendChild(span);
     }
     if (geometry.caret) {
@@ -311,6 +398,8 @@ export const hostTextWysiwyg = ({
       caret.className = "excalidraw-wysiwyg-caret";
       placeOverlayRect(caret, {
         ...geometry.caret,
+        top: geometry.caret.top + band.top,
+        height: band.bottom - band.top,
         width: getCaretWidth(app.state.zoom.value),
       });
       caret.style.backgroundColor = layout.color;
@@ -389,6 +478,7 @@ export const hostTextWysiwyg = ({
       angle,
       textAlign: current.textAlign,
       lineHeightPx,
+      band: getLetterBand(current, lineHeightPx),
       color: applyDarkModeFilter(
         current.strokeColor,
         app.state.theme === THEME.DARK,

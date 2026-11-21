@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Suspense, createContext, lazy, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { FlyoutParent, useFlyout } from '../components/Flyout'
+import { fitMenu } from '../lib/fitMenu'
 import type { MenuAction, MenuEntry, MenuParent, MenuStrip } from './menuSections'
 
-/** How long a hover waits before it swaps or closes an open flyout (YAZ-3085 D4): the pointer's time to cross a row. */
-export const SWITCH_MS = 200
+export { SWITCH_MS } from '../components/Flyout'
 
 interface ContextMenuProps {
   x: number
@@ -54,6 +55,10 @@ const MenuHeading = ({ label, tip }: { label: string; tip?: string }) => (
   </div>
 )
 
+/** A row's ask in place (`ask`, YAZ-5697, `RowAsk.tsx`): its own chunk, fetched once a menu with an asking row opens (no eager weight). */
+const loadRowAsk = () => import('./RowAsk')
+const RowAsk = lazy(loadRowAsk)
+
 function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
   // The item's preview (YAZ-3091 D8): on while the pointer or the focus is on it, off when both leave or it unmounts.
   const previewing = useRef(false)
@@ -77,14 +82,44 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
   const hint = item.onToggle !== undefined ? (checked ? '✓' : undefined) : item.radio !== undefined ? (radioOn ? '✓' : undefined) : item.hint
   // A two-click check row (`twoClick`): armed, it says what the second click does — add (accent) or remove (red).
   const shown = armed && item.twoClick === true ? (checked ? 'Click again to remove' : 'Click again to add') : label
-  const armedClass = !armed ? '' : item.twoClick === true && !checked ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
+  const armedClass = !armed ? '' : (item.twoClick === true && !checked) || (item.confirm !== undefined && item.confirmAdd === true) ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
+  // An ask in place (`ask`, YAZ-5697): Cancel gives the keyboard back to the row.
+  const row = useRef<HTMLButtonElement>(null)
+  const refocus = useRef(false)
+  useLayoutEffect(() => {
+    if (armed || !refocus.current) return
+    refocus.current = false
+    row.current?.focus({ preventScroll: true })
+  }, [armed])
+  useEffect(() => {
+    if (item.ask !== undefined) void loadRowAsk()
+  }, [item.ask])
+  if (armed && item.ask !== undefined)
+    return (
+      <Suspense fallback={null}>
+        <RowAsk
+          ask={item.ask}
+          tour={item.tour}
+          onYes={() => {
+            item.onSelect()
+            onClose()
+          }}
+          onNo={() => {
+            refocus.current = document.activeElement instanceof Element && document.activeElement.closest('.ctx-menu__ask') !== null
+            setArmed(false)
+          }}
+        />
+      </Suspense>
+    )
   return (
     <button
+      ref={row}
       type="button"
       role="menuitem"
       className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}${armedClass}`}
       disabled={item.disabled}
       data-hint={armed ? undefined : hint}
+      data-tour={item.tour}
       title={item.tip}
       onMouseEnter={() => {
         onMouseEnter?.()
@@ -92,22 +127,28 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
       }}
       onMouseLeave={() => {
         setPreview(false)
-        setArmed(false)
+        if (item.ask === undefined) setArmed(false)
       }}
       onFocus={() => setPreview(true)}
       onBlur={() => {
         setPreview(false)
-        setArmed(false)
+        // The row's ask takes the focus as it opens: that blur is not a leave.
+        if (item.ask === undefined) setArmed(false)
       }}
       // An item whose handler already closes the menu (the create group's inline input) just
       // sets the same null twice — harmless.
       onClick={() => {
-        if (item.confirm !== undefined && !armed) return setArmed(true)
+        if ((item.confirm !== undefined || item.ask !== undefined) && !armed) return setArmed(true)
         if (item.onToggle !== undefined) {
           if (item.twoClick === true && !armed) return setArmed(true)
           setArmed(false)
           setChecked(!checked)
           return item.onToggle(!checked)
+        }
+        if (item.radio !== undefined && item.confirm !== undefined) {
+          // A two-click radio row (YAZ-5966): the second click picks it and closes the menu.
+          if (!radioOn) item.onSelect()
+          return onClose()
         }
         if (item.radio !== undefined) {
           // A radio row keeps the menu open, and its ✓ moves here.
@@ -156,98 +197,57 @@ function StripButtons({ item, onClose, onMouseEnter }: { item: MenuStrip; onClos
 }
 
 /**
- * The flyout (D7 amended, YAZ-1674): a second `.ctx-menu`, opened to the RIGHT of its parent row,
- * top-aligned with it, measured after the first paint like the root — and when its right edge
- * would spill off the viewport it opens to the LEFT of the parent instead (Finder's rule), the
- * top clamped exactly as the root clamps. Hidden until measured so it never flashes at 0,0.
- */
-function Flyout({ anchor, sections, onClose, onCloseFlyout }: { anchor: RefObject<HTMLButtonElement | null>; sections: readonly (readonly MenuAction[])[]; onClose: () => void; onCloseFlyout: () => void }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
-
-  // Once per open: the anchor ref is stable and the flyout mounts only while it is open.
-  useLayoutEffect(() => {
-    const el = ref.current
-    const parent = anchor.current
-    if (el === null || parent === null) return
-    const r = el.getBoundingClientRect()
-    const p = parent.getBoundingClientRect()
-    const left = p.right + r.width > window.innerWidth ? Math.max(0, p.left - r.width) : p.right
-    setPos({ left, top: Math.max(0, Math.min(p.top, window.innerHeight - r.height)) })
-  }, [anchor])
-
-  // A glyph on any row (the Search menu's Type list, YAZ-3511 D13): the rows without one line up after its slot.
-  const glyphs = sections.some((section) => section.some((item) => item.icon !== undefined))
-  return (
-    <div
-      ref={ref}
-      className={`ctx-menu ctx-menu__sub${glyphs ? ' ctx-menu--glyphs' : ''}`}
-      role="menu"
-      style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos === null ? 'hidden' : undefined }}
-      onMouseDown={(e) => e.stopPropagation()}
-      // ArrowLeft steps back out of the flyout alone; Escape does the same through the root's
-      // window listener, which asks whether a flyout is open before closing everything.
-      onKeyDown={(e) => {
-        if (e.key !== 'ArrowLeft') return
-        e.preventDefault()
-        e.stopPropagation()
-        onCloseFlyout()
-      }}
-    >
-      <Groups sections={sections} render={(item) => <ActionButton key={item.id} item={item} onClose={onClose} />} />
-    </div>
-  )
-}
-
-/**
- * A parent ("Open in ▸"): a `menuitem` with `aria-haspopup`, its chevron drawn by CSS so the text
- * stays the bare label. Opens on hover AND on click (and ArrowRight / Enter). A parent WITH a
- * default (YAZ-3085 D1, "New note ▸") runs it on a click or Enter and closes the menu, as a leaf
- * does; only hover and ArrowRight open its flyout. The flyout stays while the pointer is inside the
- * row or the flyout — there is no leave rule — and closes when the pointer enters a DIFFERENT
- * top-level item, after the root's hover wait (D4).
+ * A parent ("Open in ▸", D7 amended, YAZ-1674): the app's one flyout row (`components/Flyout.tsx`, YAZ-4544 4F), its
+ * flyout drawn by the SAME group renderer, one level deep. A parent WITH a default (YAZ-3085 D1, "New page ▸") runs
+ * it on a click or Enter and closes the menu, as a leaf does; only hover and ArrowRight open its flyout. The flyout
+ * stays while the pointer is inside the row or the flyout — there is no leave rule — and closes when the pointer
+ * enters a DIFFERENT top-level item, after the root's hover wait (D4).
  * Keyboard: Tab already reaches every item (they are buttons), so Tab + Enter + Escape is the
  * complete path; ArrowRight to open (and Enter, on a parent with no default) and ArrowLeft to close
  * are sugar on top of it.
  */
 function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { item: MenuParent; open: boolean; onHover: () => void; onOpen: () => void; onCloseFlyout: () => void; onClose: () => void }) {
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const choose = () => {
-    if (item.onSelect === undefined) return onOpen()
-    item.onSelect()
-    onClose()
-  }
+  const onSelect = item.onSelect
+  // A glyph on any row (the Search menu's Type list, YAZ-3511 D13): the rows without one line up after its slot.
+  const glyphs = item.children.some((section) => section.some((child) => child.icon !== undefined))
+  const panel = item.panel
   return (
-    <div className="ctx-menu__parent" onMouseEnter={onHover}>
-      <button
-        ref={buttonRef}
-        type="button"
-        role="menuitem"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="ctx-menu__item ctx-menu__item--parent"
-        data-hint={item.hint}
-        onClick={choose}
-        onKeyDown={(e) => {
-          if (e.key !== 'ArrowRight' && e.key !== 'Enter') return
-          e.preventDefault()
-          e.stopPropagation()
-          if (e.key === 'Enter') choose()
-          else onOpen()
-        }}
-      >
-        {item.icon === undefined ? (
-          item.label
-        ) : (
-          <span className="ctx-menu__label">
-            {item.icon}
-            {item.label}
-          </span>
-        )}
-      </button>
-      {open && <Flyout anchor={buttonRef} sections={item.children} onClose={onClose} onCloseFlyout={onCloseFlyout} />}
-    </div>
+    <FlyoutParent
+      label={item.icon === undefined ? item.label : <span className="ctx-menu__label">{item.icon}{item.label}</span>}
+      open={open}
+      hint={item.hint}
+      // A DOM panel (YAZ-4899) is the editor's own: its classes dress the tabs as the six-dot menu's.
+      menuClassName={panel !== undefined ? 'ctx-menu--editor' : glyphs ? 'ctx-menu--glyphs' : undefined}
+      onHover={onHover}
+      onOpen={onOpen}
+      onCloseFlyout={onCloseFlyout}
+      onChoose={onSelect === undefined ? undefined : () => {
+        onSelect()
+        onClose()
+      }}
+    >
+      {panel !== undefined ? <DomPanel panel={panel} onClose={onClose} /> : <Groups sections={item.children} render={(child) => <ActionButton key={child.id} item={child} onClose={onClose} />} />}
+    </FlyoutParent>
   )
+}
+
+/**
+ * A parent's `panel` (YAZ-4899): DOM code fills the flyout's box once, when it mounts, before the flyout is measured.
+ * Opened with the keyboard (the parent row has the focus), its first row takes the focus, as the six-dot menu's does.
+ */
+function DomPanel({ panel, onClose }: { panel: NonNullable<MenuParent['panel']>; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const latest = useRef({ panel, onClose })
+  latest.current = { panel, onClose }
+  useLayoutEffect(() => {
+    const host = ref.current
+    if (host === null) return
+    latest.current.panel(host, () => latest.current.onClose())
+    const row = host.closest('.ctx-menu__parent')?.querySelector('.ctx-menu__item--parent')
+    if (row !== undefined && row === document.activeElement) host.querySelector<HTMLButtonElement>('.ctx-menu__item:not(:disabled)')?.focus({ preventScroll: true })
+    return () => host.replaceChildren()
+  }, [])
+  return <div ref={ref} className="ctx-menu__panel" />
 }
 
 /** The sidebar's right-click menu — the file tree's (GRO-2022) and the vault switcher's (YAZ-1798) — and a tab's (YAZ-2949 D6). The overlay catches click-away and stray right-clicks. */
@@ -255,47 +255,42 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
   // A glyph on any row (YAZ-3264 D6) leaves an empty slot on the rows without one, so every label
   // starts at the same place, as in a Finder menu. A flyout is its own menu and keeps its own rule.
   const glyphs = sections.some((section) => section.some((item) => item.kind !== 'strip' && item.icon !== undefined))
-  // The ONE open flyout (D7 amended): at most one parent is expanded at a time.
-  const [openId, setOpenId] = useState<string | null>(null)
-  // Hover intent (YAZ-3085 D4): three parents stand in a column, so a pointer on its way into a
-  // flyout crosses the next one. A SWITCH away from an open flyout waits SWITCH_MS; the pointer that
-  // reaches the flyout re-enters its own parent (the flyout is its child) and cancels it. The first
-  // flyout opens at once, and a click or a key never waits.
-  const switchTimer = useRef<number | undefined>(undefined)
-  const hover = (id: string | null) => {
-    window.clearTimeout(switchTimer.current)
-    if (openId === null) setOpenId(id)
-    else if (id !== openId) switchTimer.current = window.setTimeout(() => setOpenId(id), SWITCH_MS)
-  }
-  // A click or a key opens (or, with null, closes) at once, and drops any switch the pointer left pending.
-  const openNow = (id: string | null) => {
-    window.clearTimeout(switchTimer.current)
-    setOpenId(id)
-  }
-  useEffect(() => () => window.clearTimeout(switchTimer.current), [])
+  // The ONE open flyout (D7 amended), with the hover wait (YAZ-3085 D4): three parents stand in a column, so a
+  // pointer on its way into a flyout crosses the next one; the pointer that reaches the flyout re-enters its own
+  // parent (the flyout is its child) and cancels the switch.
+  const { open: openId, hover, openNow } = useFlyout<string>()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      window.clearTimeout(switchTimer.current)
-      // A flyout owns its own Escape: the first press closes it alone, the next closes the menu.
-      if (openId !== null) setOpenId(null)
+      // A flyout owns its own Escape (`components/Flyout.tsx`): the first press closes it alone, the next closes the menu.
+      if (openId !== null) openNow(null)
       else onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, openId])
+  }, [onClose, openId, openNow])
 
   // Viewport clamping (GRO-2204): render at the cursor, then measure and pull the menu back
-  // inside the window instead of spilling off an edge.
+  // inside the window instead of spilling off an edge. YAZ-4970: a menu taller than the window (the table's row menu)
+  // was only moved to the top, its last rows below the window and out of reach; now it fits the window and scrolls,
+  // as `ContextMenuSurface` does (`lib/fitMenu.ts`).
   const menuRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ left: x, top: y })
 
   useLayoutEffect(() => {
     const el = menuRef.current
     if (el === null) return
-    const r = el.getBoundingClientRect()
-    setPos({ left: Math.max(0, Math.min(x, window.innerWidth - r.width)), top: Math.max(0, Math.min(y, window.innerHeight - r.height)) })
+    const place = () => {
+      const at = fitMenu(el, x, y)
+      setPos((was) => (was.left === at.left && was.top === at.top ? was : at))
+    }
+    place()
+    // A menu whose rows change while it is open is placed again; the observer fires only on a change of its own size.
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(place)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [x, y])
 
   return (
@@ -307,7 +302,17 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
         onClose()
       }}
     >
-      <div ref={menuRef} className={`ctx-menu${glyphs ? ' ctx-menu--glyphs' : ''}`} style={{ left: pos.left, top: pos.top }} onMouseDown={(e) => e.stopPropagation()} role="menu">
+      <div
+        ref={menuRef}
+        className={`ctx-menu${glyphs ? ' ctx-menu--glyphs' : ''}`}
+        style={{ left: pos.left, top: pos.top }}
+        onMouseDown={(e) => e.stopPropagation()}
+        // A flyout stands beside the row it opened from; the menu scrolled under it (YAZ-4970) would leave it astray.
+        onScroll={(e) => {
+          if (e.target === e.currentTarget && openId !== null) openNow(null)
+        }}
+        role="menu"
+      >
         <Groups
           sections={sections}
           render={(item) =>

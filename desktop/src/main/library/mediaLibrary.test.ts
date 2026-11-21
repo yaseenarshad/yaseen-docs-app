@@ -293,7 +293,7 @@ describe('recordUse — one add (YAZ-4157 D1, D9)', () => {
     expect(state.favorites).toEqual([stamp(item(), 30)])
   })
 
-  it('removing a favorite that was never added to a board changes only the favorites, and notes the removal (YAZ-4364)', () => {
+  it('removing a favorite that was never added to a board changes only the favorites, and pages the removal (YAZ-4364)', () => {
     expect(removeFavorite(lib({ favorites: [stored()] }), stored().itemKey, 7000)).toEqual(lib({ removed: { [stored().itemKey]: 7000 } }))
   })
 

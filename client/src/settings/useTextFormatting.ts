@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { TEXT_FORMATTING_FILE, sanitizeTextFormatting, textFormattingFile, type TextFormatting } from '@shared/textFormatting'
+import { TEXT_FORMATTING_FILE, TEXT_FORMATTING_KEYS, sanitizeTextFormatting, textFormattingFile, type TextFormatting } from '@shared/textFormatting'
 import { BridgeRequestError, api } from '../api'
 import type { NoticeKind } from '../lib/notice'
 
@@ -67,7 +67,7 @@ export function useTextFormatting(root: string | null, onNotice: (text: string, 
       if (malformed.current) return onNotice(`Can't save the text formatting: ${TEXT_FORMATTING_FILE} is not valid JSON`, 'error')
       const clean = settled(next)
       setFormatting(clean)
-      api.vaultConfig.write(root, TEXT_FORMATTING_FILE, textFormattingFile(clean)).catch(() =>
+      api.vaultConfig.write(root, TEXT_FORMATTING_FILE, textFormattingFile(clean), TEXT_FORMATTING_KEYS).catch(() =>
         api.vaultConfig.read(root, TEXT_FORMATTING_FILE).then(
           (raw) => setFormatting(settled(raw)),
           () => undefined,

@@ -1,0 +1,827 @@
+/* The reader (4C): a page and a card, read only, on the Mac's tokens (`styles.css`). The card's own look is the
+   Mac's `card.css` (imported with `renderCard`); the link pills are the Mac's `wikilink.css`. The look is tuned with Yaseen
+   in the demo round (7-); this is the clean first build. */
+:root {
+  /* The card icon of a card pill: the Mac's (`client/src/app.css`). */
+  --card-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='5.25' width='10' height='8' rx='1.25'/%3E%3Cpath d='M4.5 3h8.25a1.25 1.25 0 0 1 1.25 1.25v6.25'/%3E%3C/svg%3E");
+}
+
+.reader__title {
+  margin: 4px 0 12px;
+  font-size: 22px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.reader__notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg-side);
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.reader__body {
+  overflow-wrap: anywhere;
+}
+/* Nothing in the reader (the card view's lines too: its page, its facts) makes the screen wider. */
+.reader {
+  overflow-wrap: anywhere;
+}
+
+/* THE READING LOOK: the Mac's page on a small screen. Each value is the Mac's DEFAULT, under the Mac's own
+   variable name, so that one setting moves the same thing on both:
+    - `--edit-line-height` (1.5) and `--edit-block-gap` (4px): Settings › Editor › Line spacing and Space between
+      blocks (`app.css`). A paragraph is `gap` above and below (Crepe's padding), so two paragraphs are 2 × gap apart;
+      a heading has 3 × gap above and 1 × gap below, so it sits nearer the text it starts.
+    - `--page-bullet-indent` (2.15em) and `--page-bullet-gap` (10px): Settings › Editor › Outline (`bullets.css`).
+    - `--guide-line-darkness` (15%): the guide line under a parent's dot (`guideLines.css`).
+    - `--text-size` (16px) and `--hN-size` … : the vault's text formatting (`text-formatting.json`, `headingStyles.ts`).
+   YAZ-5485 (page spacing as a vault setting): set these on `.reader` from the vault's file, as `vaultLook.ts` sets the
+   `--hN-*` today (`VaultLook.style`, the `style` of `<article class="reader">`); nothing here changes. */
+.reader__body {
+  --page-line: var(--edit-line-height, 1.5);
+  --page-gap: var(--edit-block-gap, 4px);
+  /* The list's geometry, as `bullets.css`: the dot's column (`--list-gutter`, fixed), the gap to the text, the step of
+     a level. A line's text starts gutter + gap in; a child list starts one indent in from its parent's dot. */
+  --list-label-gap: var(--page-bullet-gap, 10px);
+  --list-indent: var(--page-bullet-indent, 2.15em);
+  --list-gutter: calc(2.15em - 10px);
+  /* YAZ-5568 (the phone only): a top-level list starts this much further in, so a top-level task's fold arrow has a
+     tap strip left of its box's 44 px tap area (gutter / 2 - 6px + this, from the screen's edge: 14 px at 16 px text;
+     the max keeps 14 px at smaller text). Not in a table cell (YAZ-5567's cell spacing) or a card (the card's own). */
+  --list-edge: max(8px, calc(25px - 1.075em));
+  --list-bullet-size: 0.42em;
+  --list-ring-border: max(1px, 0.094em);
+  --list-marker-color: color-mix(in srgb, currentColor 78%, transparent);
+  /* Inline code: Crepe's frame theme (`--crepe-color-inline-code` on `--crepe-color-inline-area` at 60%). */
+  --page-code-fg: #ba1a1a;
+  --page-code-bg: #dfdfdf;
+  /* The quote's bar (`--crepe-color-selected`) and the rule (`--crepe-color-outline` at 20%). */
+  --page-quote-bar: #d5d5d5;
+  font-size: var(--text-size, 16px);
+  line-height: var(--page-line);
+}
+:where([data-scheme='dark']) .reader__body {
+  --page-code-fg: #ff6666;
+  --page-code-bg: #303030;
+  --page-quote-bar: #3a3a3a;
+}
+
+/* The blocks: no margins of their own but the Mac's; a paragraph's room is its padding (Crepe's), so it never
+   collapses into its neighbour's, and two paragraphs are always 2 × gap apart, in a list, a quote or a callout too. */
+.reader__body :is(p, ul, ol, li, blockquote, pre, figure) {
+  margin: 0;
+}
+.reader__body p {
+  padding: var(--page-gap) 0;
+}
+
+/* Headings: the Mac's sizes and weights (`app.css`), or the vault's (`--hN-*`); 3 × gap above, 1 × gap below, and
+   Crepe's 2px in them. The first block of the page sits at the top. */
+.reader__body :is(h1, h2, h3, h4, h5, h6) {
+  margin: calc(var(--page-gap) * 3) 0 var(--page-gap);
+  padding: 2px 0;
+  line-height: 1.3;
+}
+.reader__body h1 {
+  font-size: var(--h1-size, 1.802em);
+  font-weight: var(--h1-weight, 700);
+  text-decoration: var(--h1-decoration, none);
+}
+.reader__body h2 {
+  font-size: var(--h2-size, 1.602em);
+  font-weight: var(--h2-weight, 600);
+  text-decoration: var(--h2-decoration, none);
+}
+.reader__body h3 {
+  font-size: var(--h3-size, 1.424em);
+  font-weight: var(--h3-weight, 600);
+  text-decoration: var(--h3-decoration, none);
+}
+.reader__body h4 {
+  font-size: var(--h4-size, 1.266em);
+  font-weight: var(--h4-weight, 600);
+  text-decoration: var(--h4-decoration, none);
+}
+.reader__body h5 {
+  font-size: var(--h5-size, 1.125em);
+  font-weight: var(--h5-weight, 600);
+  text-decoration: var(--h5-decoration, none);
+}
+.reader__body h6 {
+  font-size: var(--h6-size, 1em);
+  font-weight: var(--h6-weight, 600);
+  text-decoration: var(--h6-decoration, none);
+}
+/* In a bullet a heading is a row (the Mac's Roam rule): a paragraph's room, no section margins. */
+.reader__body li :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  padding: var(--page-gap) 0;
+}
+.reader__body > :first-child {
+  margin-top: 0;
+}
+.reader__body > :last-child {
+  margin-bottom: 0;
+}
+
+/* SECTION INDENT (YAZ-5566): the page's own `section-indent: true` (`pageSwitches.ts`), the Mac's `sectionIndent.css`.
+   Each top-level block inside a section carries `data-sd`, its depth: a transparent left border of depth steps, and in
+   it a `border-image` gradient, the grey lines, line k one third into step k. One step is the Mac's narrow column's,
+   18px (a column of 480px or less); a wider screen (an iPad) has the Mac's default, 30. The grey is opaque (14% of the
+   text in the page's colour), so the outsets that cross the margins never add up to a darker dash. The phone has no
+   caret, so no purple path. A card in a section loses its own left frame to the indent, as on the Mac. */
+.reader__body[data-section-indent] {
+  container: page / inline-size;
+}
+.reader__body[data-section-indent] > [data-sd] {
+  --section-step-n: 30;
+  --step: calc(var(--section-step-n) * 1px);
+  --section-line: color-mix(in srgb, currentColor 14%, var(--bg));
+  border-left: calc(var(--sd) * var(--step)) solid transparent;
+  border-image-source: linear-gradient(
+    to right,
+    transparent calc(var(--step) * 1 / 3 - 0.5px),
+    var(--section-line) 0 calc(var(--step) * 1 / 3 + 0.5px),
+    transparent 0 calc(var(--step) * 4 / 3 - 0.5px),
+    var(--section-line) 0 calc(var(--step) * 4 / 3 + 0.5px),
+    transparent 0 calc(var(--step) * 7 / 3 - 0.5px),
+    var(--section-line) 0 calc(var(--step) * 7 / 3 + 0.5px),
+    transparent 0 calc(var(--step) * 10 / 3 - 0.5px),
+    var(--section-line) 0 calc(var(--step) * 10 / 3 + 0.5px),
+    transparent 0 calc(var(--step) * 13 / 3 - 0.5px),
+    var(--section-line) 0 calc(var(--step) * 13 / 3 + 0.5px),
+    transparent 0
+  );
+  border-image-slice: 0 0 0 calc(var(--sd) * var(--section-step-n));
+}
+@container page (max-width: 480px) {
+  .reader__body[data-section-indent] > [data-sd] {
+    --section-step-n: 18;
+  }
+}
+.reader__body[data-section-indent] > [data-sd='1'] { --sd: 1; }
+.reader__body[data-section-indent] > [data-sd='2'] { --sd: 2; }
+.reader__body[data-section-indent] > [data-sd='3'] { --sd: 3; }
+.reader__body[data-section-indent] > [data-sd='4'] { --sd: 4; }
+.reader__body[data-section-indent] > [data-sd='5'] { --sd: 5; }
+/* The lines cross the gap above a block: the outset is that block's own margin (the reader's, below), and down across
+   its bottom margin, which no block after it covers. */
+.reader__body[data-section-indent] > :is(h2, h3, h4, h5, h6)[data-sd] {
+  border-image-outset: calc(var(--page-gap) * 3) 0 var(--page-gap);
+}
+.reader__body[data-section-indent] > :is(pre, .page-table-box, .page-callout)[data-sd] {
+  border-image-outset: calc(var(--page-gap) * 2) 0;
+}
+.reader__body[data-section-indent] > blockquote:not(.page-callout)[data-sd] {
+  border-image-outset: var(--page-gap) 0;
+}
+.reader__body[data-section-indent] > :is(.card, .card-embed--missing)[data-sd] {
+  border-image-outset: 12px 0;
+}
+/* A code block's own colour stops at its text column: a background runs under a border. */
+.reader__body[data-section-indent] > :is(pre, .page-callout, .card)[data-sd] {
+  background-clip: padding-box;
+}
+/* A callout's bar (the phone's own drawing; the Mac shows a quote) would be the indent's border: it is drawn inside. */
+.reader__body[data-section-indent] > .page-callout[data-sd] {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.reader__body[data-section-indent] > .page-callout:is([data-callout='warning'], [data-callout='caution'])[data-sd] {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.reader__body[data-section-indent] > .page-callout:is([data-callout='danger'], [data-callout='error'])[data-sd] {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+/* An empty line of the Mac (an empty paragraph is `<br />` in the file) or an empty paragraph: no second gap. */
+.reader__body > br,
+.reader__body p:empty {
+  display: none;
+}
+
+/* LISTS (`bullets.css`, `guideLines.css`): the text of each level starts gutter + gap in, so a wrapped line hangs under
+   its first word; a child level starts one indent in from its parent's dot. Each row is a paragraph's room (gap above
+   and below); a child list adds its own. */
+.reader__body :is(ul, ol) {
+  padding: 0 0 0 calc(var(--list-gutter) + var(--list-label-gap));
+}
+.reader__body li :is(ul, ol) {
+  position: relative;
+  margin: var(--page-gap) 0 calc(var(--page-gap) * -1) calc(var(--list-indent) - var(--list-gutter) - var(--list-label-gap));
+}
+.reader__body li {
+  position: relative;
+  padding: var(--page-gap) 0;
+}
+/* A loose item: its paragraphs have the room already. An empty item keeps one line, with its dot. */
+.reader__body li:has(> p:first-child) {
+  padding: 0;
+}
+.reader__body li:empty {
+  min-height: calc(var(--page-line) * 1em + var(--page-gap) * 2);
+}
+/* The guide line: 1px under the parent's dot, the length of its children (the Mac's default: on, at 15%). */
+.reader__body li > :is(ul, ol)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--list-gutter) / 2 - var(--list-indent) - 0.5px);
+  border-left: 1px solid color-mix(in srgb, currentColor var(--guide-line-darkness, 15%), transparent);
+  pointer-events: none;
+}
+/* The page's own Guide lines off (`guide-lines: false`, YAZ-5566; the Mac's `guideLines.css`): no line. */
+.reader__body[data-guide-lines='off'] li > :is(ul, ol)::before {
+  content: none;
+}
+
+/* Bullets: ● solid circle, ○ ring, ■ square, again from level 4; an ordered level counts as a level (the Mac's
+   rule). Centred in the dot's column on the first line, 78% of the text's colour. */
+.reader__body ul {
+  list-style: none;
+}
+.reader__body ul > li::before {
+  content: '';
+  position: absolute;
+  top: calc(var(--page-gap) + (var(--page-line) * 1em - var(--list-bullet-size)) / 2);
+  left: calc(var(--list-gutter) / -2 - var(--list-label-gap) - var(--list-bullet-size) / 2);
+  box-sizing: border-box;
+  width: var(--list-bullet-size);
+  height: var(--list-bullet-size);
+  border-radius: 50%;
+  background: var(--list-marker-color);
+}
+.reader__body :is(ul, ol) ul > li::before,
+.reader__body :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  border: var(--list-ring-border) solid var(--list-marker-color);
+  border-radius: 50%;
+  background: transparent;
+}
+.reader__body :is(ul, ol) :is(ul, ol) ul > li::before,
+.reader__body :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  --list-bullet-size: 0.38em;
+  border: 0;
+  border-radius: 0.04em;
+  background: var(--list-marker-color);
+}
+.reader__body :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  border: 0;
+  border-radius: 50%;
+  background: var(--list-marker-color);
+}
+
+/* Numbers: the bullets' colour, lined up at their dots (a long "10." runs out to the left, never into its text), with
+   the Mac's gap to the text. */
+.reader__body ol {
+  padding-left: calc(var(--list-gutter) + var(--list-label-gap) - 0.3em);
+}
+.reader__body ol > li {
+  padding-left: 0.3em;
+}
+/* A top-level list (not inside an item, a quote, a table or a card) starts `--list-edge` further in (YAZ-5568). A
+   list in a quote moves with its quote (below). */
+.reader__body :is(ul, ol):not(li *, blockquote *, table *, .card *) {
+  padding-left: calc(var(--list-gutter) + var(--list-label-gap) + var(--list-edge));
+}
+.reader__body ol:not(li *, blockquote *, table *, .card *) {
+  padding-left: calc(var(--list-gutter) + var(--list-label-gap) - 0.3em + var(--list-edge));
+}
+.reader__body ol > li::marker {
+  color: var(--list-marker-color);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A task: the box in the dot's column (no dot), level with the first line; the text where a bullet's text is. Read
+   only: a mark, not a control. The box is Crepe's (18 of 24 px, the Mac's checkbox), in the muted grey. */
+.reader__body li:has(> .page-task:first-child, > p:first-child > .page-task:first-child)::before {
+  content: none;
+}
+.page-task {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.35em;
+  vertical-align: -0.12em;
+  border: 1.5px solid var(--fg-muted);
+  border-radius: 4px;
+}
+.reader__body li > .page-task:first-child,
+.reader__body li > p:first-child > .page-task:first-child {
+  position: absolute;
+  top: calc(var(--page-gap) + (var(--page-line) * 1em - 1.125em) / 2);
+  left: calc((var(--list-gutter) + 1.125em) / -2 - var(--list-label-gap));
+  width: 1.125em;
+  height: 1.125em;
+  margin: 0;
+  border-width: 0.125em;
+  border-radius: 0.15em;
+}
+/* YAZ-5510 (follow-up, the Mac's rule: Crepe's `renderLabel` draws a task's box in the label's place, numbered or not):
+   a numbered task shows only its box, in the number's column, the number hidden; the text where the numbers' text is,
+   and the lines that wrap start under the text. The item keeps the numbers' 0.3em, so the box moves that far right to
+   sit where a bullet task's box sits. */
+.reader__body ol > li:has(> .page-task:first-child, > p:first-child > .page-task:first-child) {
+  list-style-type: none;
+}
+.reader__body ol > li:has(> .page-task:first-child, > p:first-child > .page-task:first-child)::marker {
+  content: none;
+}
+.reader__body ol > li > .page-task:first-child,
+.reader__body ol > li > p:first-child > .page-task:first-child {
+  left: calc((var(--list-gutter) + 1.125em) / -2 - var(--list-label-gap) + 0.3em);
+}
+.page-task[data-checked='true'] {
+  border-color: var(--fg-muted);
+  background: var(--fg-muted);
+}
+.page-task[data-checked='true']::after {
+  content: '';
+  display: block;
+  width: 30%;
+  height: 58%;
+  margin: 2% auto 0;
+  border: solid var(--bg);
+  border-width: 0 0.12em 0.12em 0;
+  transform: rotate(45deg);
+}
+/* A done task reads as done (the Mac: its own line struck and dimmed; its children keep their own state). The strike
+   is drawn only on an item with no child list: a strike reaches every line under it, and the children are not done. */
+.reader__body li:has(> .page-task[data-checked='true']:first-child, > p:first-child > .page-task[data-checked='true']:first-child) {
+  color: var(--fg-muted);
+}
+.reader__body li:has(> .page-task[data-checked='true']:first-child):not(:has(> ul, > ol)),
+.reader__body li > p:first-child:has(> .page-task[data-checked='true']:first-child) {
+  text-decoration: line-through;
+}
+.reader__body li:has(> .page-task[data-checked='true']:first-child, > p:first-child > .page-task[data-checked='true']:first-child) > :is(ul, ol) {
+  color: var(--fg);
+}
+
+/* Inline code: the Mac's (Crepe's) red on grey, 87.5%; it wraps with its box on each line. */
+.reader__body code {
+  padding: 0.05em 0.25em;
+  border-radius: 4px;
+  background: var(--page-code-bg);
+  color: var(--page-code-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.reader__body pre {
+  margin: calc(var(--page-gap) * 2) 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--bg-side);
+  line-height: 1.5;
+}
+/* A code block wraps its long lines, as the Mac's page does: no side scroll. `pre-wrap` keeps the
+   indents and the line breaks; a long word (a URL, a hash) breaks anywhere. The page, a card in it, and the card view;
+   Review has its own (`review.css`). Inline code too: a long one breaks, where a table cell keeps its words whole. */
+:is(.reader__body, .card-view__card) pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:is(.reader__body, .card-view__card) code {
+  overflow-wrap: anywhere;
+}
+.reader__body pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: 13px;
+}
+
+/* A quote (Crepe's): a 4px round bar at its left, inset by a gap, its text in the page's colour, one bullet's step in
+   (the Mac: 40px), so a quote's text lines up with a list's. A gap above and below. A top-level quote (not in an item,
+   a table or a card) moves `--list-edge` in with the top-level lists, its bar too (YAZ-5568). A callout keeps its own. */
+.reader__body blockquote {
+  position: relative;
+  margin: var(--page-gap) 0;
+  padding: 0 0 0 calc(var(--list-gutter) + var(--list-label-gap));
+}
+.reader__body blockquote:not(.page-callout)::before {
+  content: '';
+  position: absolute;
+  top: var(--page-gap);
+  bottom: var(--page-gap);
+  left: 0;
+  width: 4px;
+  border-radius: 100px;
+  background: var(--page-quote-bar);
+}
+.reader__body blockquote:not(.page-callout, li *, table *, .card *) {
+  padding-left: calc(var(--list-gutter) + var(--list-label-gap) + var(--list-edge));
+}
+.reader__body blockquote:not(.page-callout, li *, table *, .card *)::before {
+  left: var(--list-edge);
+}
+.reader__body .page-callout {
+  margin: calc(var(--page-gap) * 2) 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.page-callout__title {
+  padding: var(--page-gap) 0 0;
+  font-weight: 600;
+}
+.page-callout[data-callout='warning'],
+.page-callout[data-callout='caution'] {
+  border-left-color: var(--warn);
+}
+.page-callout[data-callout='danger'],
+.page-callout[data-callout='error'] {
+  border-left-color: var(--danger);
+}
+
+/* A rule, as the Mac's line (`editor/line/line.css`, YAZ-3164): the vault's default line (`text-formatting.json` ›
+   `line`, `--line-default-*` from the Mac's `lineVars`, YAZ-5566), else the app's 50% of the text colour, 3px, solid.
+   The colour is the content box (6px above and below), so the band is 12px + the thickness. Dotted and dashed are the
+   Mac's background tiles. */
+.reader__body hr {
+  --line-thick: var(--line-default-thickness, 3px);
+  --line-color: color-mix(in srgb, var(--fg) var(--line-default-darkness, 50%), transparent);
+  box-sizing: border-box;
+  height: calc(12px + var(--line-thick));
+  margin: 0;
+  padding: 6px 0;
+  border: 0;
+  background: var(--line-color) content-box;
+}
+@container style(--line-default-pattern: dashed) {
+  .reader__body hr {
+    background: linear-gradient(to right, var(--line-color) 60%, transparent 60%);
+    background-origin: content-box;
+    background-clip: content-box;
+    background-repeat: repeat-x;
+    background-size: calc(5 * var(--line-thick)) 100%;
+  }
+}
+@container style(--line-default-pattern: dotted) {
+  .reader__body hr {
+    background: radial-gradient(circle closest-side, var(--line-color) 92%, transparent 100%);
+    background-origin: content-box;
+    background-clip: content-box;
+    background-repeat: repeat-x;
+    background-size: calc(2 * var(--line-thick)) 100%;
+  }
+}
+.reader__body mark {
+  border-radius: 3px;
+  background: #fff3a3;
+  color: inherit;
+}
+:where([data-scheme='dark']) .reader__body mark {
+  background: #6b5d1c;
+}
+
+/* Tables: `tables.css`, with `tableLayout.ts`. Here only the room around the box: a code
+   block's. */
+.reader__body > .page-table-box {
+  margin: calc(var(--page-gap) * 2) 0;
+}
+
+.reader__body img,
+.card-view__card img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: calc(var(--page-gap, 4px) * 2) 0;
+  border-radius: 8px;
+}
+.reader__body audio {
+  width: 100%;
+}
+
+/* The media line (`.page-media`) is in `media/mediaLine.css`: Review's card draws it too. */
+
+.reader__body a.wikilink {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* A card: the page's own, and an embedded one (round 15, item 1). */
+.card.page-card,
+.card.card-embed {
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+/* A card's head and title band, as the Mac's read card (`card.css`: `.card__head`, `.card-band`): the ID first,
+   small and grey, then its marks; the title bold in the shaded band under it. The band's colour is the Mac's
+   `--card-title-band` (`app.css`), one step darker than the head. Card title size is the vault's (card-look.json,
+   `--card-title-size`, read by `card.css`), Default with no file. */
+.reader {
+  --card-title-band: #ededf0;
+}
+:where([data-scheme='dark']) .reader {
+  --card-title-band: #2d2d30;
+}
+.reader .card .card__head {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 13px;
+}
+.reader .card .card__head .card__id {
+  padding: 0;
+  font-size: 12px;
+}
+.reader .card .card-band {
+  padding: 8px 14px 9px;
+}
+/* The embed's head: `↗ Embedded from "<name>" · ID` (the Mac's `cardEmbed.ts`); its first part opens the card alone. */
+.reader .card-embed__head {
+  min-height: var(--tap);
+  padding: 0 12px 0 4px;
+}
+.card__head .card-embed__from {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.card__head .card-embed__arrow {
+  margin-right: 4px;
+}
+.card-embed__dot {
+  flex: none;
+  color: var(--fg-muted);
+}
+.card-embed--missing {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+/* A card alone. */
+.card-view__id {
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 0.8em;
+  /* One word ("· NC-48"): never broken over two lines. The title before it wraps. */
+  white-space: nowrap;
+}
+.card-view__in {
+  margin: -8px 0 12px;
+}
+.card-view__card {
+  margin: 0 0 12px;
+}
+/* The card alone at the page's Text size (the vault's, YAZ-5566), or Card text size's Custom px: the Mac's card window
+   (`cardScreens.css`, `.card.card-screen`). */
+.card.card-view__card {
+  font-size: var(--card-text-size, var(--text-size, 16px));
+}
+.card-view__history {
+  margin-bottom: 16px;
+}
+.card-view__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.card-view__table :is(th, td) {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.card-view__table th {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+/* The page's own first heading says its title: the reader's title then stays for VoiceOver only. */
+.reader__title--same {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* A picture or a sound that waits for its bytes (no signal) is hidden behind its calm line: no broken-picture icon. */
+.reader [hidden] {
+  display: none !important;
+}
+
+
+/* Footnotes: the mark, and the note where it is written, as the Mac's page shows them. */
+.page-fnref a {
+  text-decoration: none;
+  font-size: 0.8em;
+}
+.page-footnote {
+  margin: 0;
+  padding: var(--page-gap, 4px) 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+.page-footnote__label {
+  margin-right: 0.4em;
+  font-size: 0.8em;
+  vertical-align: super;
+}
+/* A cell note's mark; the note stays hidden under its table, as on the Mac. */
+.page-cellnote {
+  color: var(--fg-muted);
+}
+/* Block math: its source, as code (the Mac draws no math: YAZ-977). */
+.reader__body pre.page-math {
+  font-style: italic;
+}
+
+/* The vault's Card width (card-look.json, `readCardLook`, `media/ui/cardDraw.ts`) only as a max on the phone: a narrow screen fills its
+   width, a wide one stops at the card's line. No file, or Same as pages: no max. */
+.reader .card {
+  max-width: calc(var(--card-text-width, 100vw) + 34px);
+}
+
+/* YAZ-5904 Q2: a folded card side's line ("▸ Side 2", `cardFold.ts`) is a finger's target on the phone: the
+   whole line, 44 px tall, across the card (an invisible box over the dashed line), with room above and below so it never
+   covers the text. A tap opens the side (▾), a second tap folds it. The Mac keeps its slim line (`card.css`). */
+.reader .card .card__rule[data-fold] {
+  margin-top: 30px;
+  margin-bottom: 30px;
+  -webkit-tap-highlight-color: transparent;
+}
+.reader .card .card__rule[data-fold]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -22px;
+  height: 44px;
+}
+.reader .card .card__rule[data-fold]::before {
+  font-size: 13px;
+  line-height: 20px;
+  padding: 0 8px;
+}
+.reader .card .card__rule[data-fold] + .card__side[hidden] + .card__rule {
+  margin-top: 30px;
+}
+
+/* STICKY HEADINGS (YAZ-5591, `stickyHeadings.ts`), phone only: the layer of stuck headings, a zero-height box just before
+   the page's body that sticks at the scroller's top edge, under the top bar (`.screen` has 12px of top padding, and a
+   sticky box stops below it, so `top` takes it back, as Search's `.tree__stuck`; an Explore panel's has none). It is as
+   wide as the scroller (its 16px sides too), so nothing of the page shows beside a stuck heading. Each stuck heading is a
+   copy of its heading at its slot, the shallower on top: the page's colour, opaque, the thin line under it (Search's
+   stuck rows). Zero height and copies: nothing in the page moves when a heading sticks. */
+.reader__stuck {
+  --stuck-gutter: 16px;
+  position: sticky;
+  top: -12px;
+  z-index: 3;
+  height: 0;
+  margin: 0 calc(var(--stuck-gutter) * -1);
+}
+.explore-sheet__body .reader__stuck {
+  top: 0;
+}
+.reader__stuck-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  padding-right: var(--stuck-gutter);
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--border);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.reader__stuck-row:active {
+  background: var(--bg-side);
+}
+.reader__stuck-row > * {
+  position: relative;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* A link in a stuck heading is the heading's words: a tap scrolls back to the heading. */
+.reader__stuck-row a {
+  pointer-events: none;
+}
+
+/* FOLDING (YAZ-5568, option A; `folds.ts`): the Mac's chevron (`headingFolding.css`, `outlineFolding.css`), 14 px and
+   muted, always shown (a phone has no hover), turned right when folded. Each is a 44 px button: a heading's in the left
+   margin on its first line (it runs over the first letters; a tap there folds), a bullet's one step left of its dot,
+   the arrow and the dot together. A task's stops where its box's 44 px tap area starts (YAZ-5568: a tap on or near
+   the box always ticks it), so it only has the room left of that: on a top-level task the strip from the screen's
+   edge (top-level lists start `--list-edge` further in for it), on a nested one up to 44 px. No count. A hidden block is `display: none`: off the screen and out of
+   VoiceOver's reading order. */
+.reader__body [data-fold-hidden] {
+  display: none !important;
+}
+.reader__body :is(h1, h2, h3):has(> .fold-btn) {
+  position: relative;
+}
+.fold-btn {
+  position: absolute;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.fold-btn svg {
+  /* The Mac's 14 px chevron (24 units), its box cut to the stroke (`folds.ts`: units 5 to 19), so a box drawn in a
+     narrow strip stays on the screen; the lefts below add the cut back (`--arrow-cut`). A tap on it is its button's. */
+  --arrow-cut: calc(14px * 5 / 24);
+  position: absolute;
+  top: calc(15px + var(--arrow-cut));
+  width: calc(14px * 14 / 24);
+  height: calc(14px * 14 / 24);
+  pointer-events: none;
+  transition: transform 0.12s;
+}
+.fold-btn[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+.fold-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* A heading's: the Mac's 18 px column left of its text (the arrow's middle 9 px left of the text), on the first line. */
+.fold-btn--heading {
+  left: -16px;
+  top: calc(2px + 0.65em - 22px);
+}
+.fold-btn--heading svg {
+  left: var(--arrow-cut);
+}
+/* A bullet's: the arrow 16 px left of the dot's middle; the button from there over the dot. */
+.reader__body li > .fold-btn--bullet {
+  left: calc(var(--list-gutter) / -2 - var(--list-label-gap) - 30px);
+  top: calc(var(--page-gap) + var(--page-line) * 0.5em - 22px);
+}
+.fold-btn--bullet svg {
+  left: calc(7px + var(--arrow-cut));
+}
+/* A task's (YAZ-5568): the button ends where the box's tap area starts (the box's middle less 22 px), the arrow's
+   middle 2 px inside it, so the two never share a point. Its left part may run off the screen. */
+.reader__body li:has(> .page-task:first-child, > p:first-child > .page-task:first-child) > .fold-btn--bullet {
+  left: calc(var(--list-gutter) / -2 - var(--list-label-gap) - 66px);
+}
+.reader__body ol > li:has(> .page-task:first-child, > p:first-child > .page-task:first-child) > .fold-btn--bullet {
+  left: calc(var(--list-gutter) / -2 - var(--list-label-gap) - 66px + 0.3em);
+}
+.reader__body li:has(> .page-task:first-child, > p:first-child > .page-task:first-child) > .fold-btn--bullet svg {
+  left: calc(42px - 14px * 7 / 24);
+}
+
+/* A box with its line (`data-task`) is a check box a tap ticks (`taskTicks.ts`): its tap area is 44 px around
+   it (an empty `::before`; the box's look does not change; tasks one line apart share the gap between them), and no
+   grey flash on a tap. */
+.page-task[data-task] {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.reader__body li > .page-task[data-task]:first-child::before,
+.reader__body li > p:first-child > .page-task[data-task]:first-child::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+.page-task[data-task]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+

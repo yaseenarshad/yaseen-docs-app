@@ -2,15 +2,15 @@ import { rendererUrlFor } from './rendererUrl'
 import { startAutomationServer, type AutomationServer } from '../automation/server'
 import { prepareAutomation } from './automation'
 import { registerAutomationIpc } from './ipc/automation'
-import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
+import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
+import { enableCompileCache } from 'node:module'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { fileKind } from '@shared/fileKind'
 import { fileLink, isAppLink, parseFileLink } from '@shared/links'
-import { FILES_PREVIEW_FRAME, MEMORY_SAMPLE_MS, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
+import { FILES_PREVIEW_FRAME, GITHUB_TOKEN_SECRET, MEMORY_SAMPLE_MS, placeVaults, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createSpellWait } from '@shared/spelling'
@@ -21,28 +21,37 @@ import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
-import { broadcastAll, rootsOf } from './ipc/broadcast'
+import { broadcastAll, excludeFromBroadcast, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
+import { registerFriendsIpc } from './ipc/friends'
+import { onRendererSecretSet } from './ipc/secrets'
+import { FRIENDS_ENABLED } from '@shared/features'
 import { registerSpellerIpc } from './ipc/speller'
 import { registerUpdateIpc } from './ipc/update'
 import { askHeap, askTabs, askViews, registerMemoryIpc } from './ipc/memory'
 import { createMemoryMeter, createReloadWatch, helperRss, type MemoryMeter, type ReloadWatch } from './memory'
 import { claimDeepLinkScheme } from './deepLinkScheme'
-import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
-import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
+import { cleanupTreeWatcherProbes } from './fs/treeWatcher'
+import { watchDailyPages } from './dailyPagesVaultFile'
+import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
+import { COURSE_VOICE_HOST, type CourseAudio } from './courseAudio/courseAudio'
+import { registerCourseAudioIpc } from './ipc/courseAudio'
 import { followSettingsFolder } from './settingsFolder'
-import { drawingInFront, hotkeyRecording } from './hotkeyRecording'
+import { drawingInFront, hotkeyRecording, noPageInFront } from './hotkeyRecording'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
-import { movePageSwitches } from './movePageSwitches'
 import { runQuitSequence } from './quitSequence'
 import { createSpeller, nativeMenuAsker, spellerPath } from './speller'
+import { cardSkillStamp, ensureCardSkill, shippedCardSkill } from './cardSkill'
+import { setCardSkillVault } from '@shared/appVaults'
 import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
+import { watchSelectionColour } from './selectionColour'
+import { registerSelectionColourIpc } from './ipc/selectionColour'
 import { appZoomFactor, subscribeAppZoom } from './appZoom'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
@@ -55,6 +64,12 @@ import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName(APP_NAME)
 applyUserDataOverride(app, process.env.YASEEN_DOCS_USER_DATA_DIR)
+// Cache main-process V8 bytecode across warm launches (Node 22+, YAZ-6008 🔒 D10).
+try {
+  enableCompileCache?.(join(app.getPath('userData'), 'v8-compile-cache'))
+} catch {
+  // best-effort accelerator; never blocks launch
+}
 
 /** One running instance (GRO-2160): a second launch focuses the first; a link in its argv routes (E1). */
 const isPrimaryInstance = app.requestSingleInstanceLock()
@@ -106,7 +121,7 @@ protocol.registerSchemesAsPrivileged([APP_SCHEME])
 const RENDERER_DIR = join(__dirname, '../renderer')
 // The macOS spell checker's guesses for both right-click menus (YAZ-4464): one helper, started at the first ask.
 const speller = createSpeller(spellerPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname }))
-/** The native menu's wait for its guesses, as the note menu's (S2): 1 s until the helper first answers, then 400 ms. */
+/** The native menu's wait for its guesses, as the page menu's (S2): 1 s until the helper first answers, then 400 ms. */
 const nativeSpellWait = createSpellWait()
 /** The draw.io webapp (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4/D5): the pack cache in dev, `out/drawio` in a build. */
 const DRAWIO_DIR = resolveDrawioDir({ mainDir: __dirname, appPath: app.getAppPath(), isPackaged: app.isPackaged, exists: existsSync })
@@ -158,6 +173,7 @@ const manager = createWindowManager(store, {
       previewByOwner.get(ownerId)?.destroy()
       previewByOwner.set(ownerId, child)
       previewPopups.add(child)
+      excludeFromBroadcast(child)
       child.setParentWindow(win)
       child.setIgnoreMouseEvents(true)
       child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -208,7 +224,7 @@ const manager = createWindowManager(store, {
         revealImage: (src) => void revealVaultImage(src, (file) => revealItem({ path: file })),
       })).popup({ window: win })
     })
-    // The window's own zoom is the App size and nothing else (YAZ-3432; ⌘+ zooms a note or the sidebar, YAZ-3389), a
+    // The window's own zoom is the App size and nothing else (YAZ-3432; ⌘+ zooms a page or the sidebar, YAZ-3389), a
     // Files window too. Chromium keeps a zoom per origin, so each load sets it again: a zoom from an older build goes.
     win.webContents.on('did-finish-load', () => win.webContents.setZoomFactor(appZoomFactor(store.get().settings)))
     // `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is.
@@ -285,6 +301,8 @@ let lastFocusedWcId: number | undefined
 
 /** The per-vault GitHub sync manager (YAZ-1081), created with the rest of the IPC once `ready` fires. */
 let gitSync: GitSyncManager | undefined
+/** The course sound (YAZ-5159): made with the other doors; `app://course-voice` answers 404 before. */
+let courseAudio: CourseAudio | null = null
 
 /** The memory meter (YAZ-3737 D1), made on `ready`: a window that closes drops its history. */
 let meter: MemoryMeter | undefined
@@ -300,7 +318,8 @@ app.on('browser-window-focus', (_event, win) => {
   // YAZ-1081 D2: focusing a vault's window is a PULL trigger — alt-tabbing back from another
   // machine should converge without waiting out a timer. The manager's own cooldown throttles it.
   // Every vault the window shows (YAZ-2602 S43).
-  for (const root of store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.roots ?? []) gitSync?.notifyFocus(root)
+  // A folder of a vault (YAZ-4922 D3) pulls its vault.
+  for (const root of placeVaults(store.get().folders, store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.roots ?? [])) gitSync?.notifyFocus(root)
 })
 
 /** The CLI's local connection (YAZ-4502). Quit closes it first, waiting at most 3 s for accepted work. */
@@ -317,6 +336,29 @@ app.whenReady().then(() => {
   subscribeNativeTheme(store, (theme) => {
     nativeTheme.themeSource = theme
   })
+  // The Mac's selection colour for the editor in dark (YAZ-5941): read now, and again when the Highlight colour changes
+  // (`AppleColorPreferencesChangedNotification`) or the appearance does (`updated`, the app's setting too); every
+  // window hears a change. `getColor` follows the Mac's appearance only: see selectionColour.ts.
+  const selection = watchSelectionColour(
+    {
+      read: () => systemPreferences.getColor('selected-text-background'),
+      subscribe: (changed) => {
+        nativeTheme.on('updated', changed)
+        // Read again a moment later too, in case AppKit's colour lags the notification; a read that finds no change sends nothing.
+        const later = () => {
+          changed()
+          setTimeout(changed, 500)
+        }
+        const id = process.platform === 'darwin' ? systemPreferences.subscribeNotification('AppleColorPreferencesChangedNotification', later) : undefined
+        return () => {
+          nativeTheme.off('updated', changed)
+          if (id !== undefined) systemPreferences.unsubscribeNotification(id)
+        }
+      },
+    },
+    (colour) => broadcastAll(CONTRACT.app.onSelectionColour.channel, colour),
+  )
+  registerSelectionColourIpc(selection.current)
   // The App size (YAZ-3432): every window at once, the Files windows (an origin of their own) and their popups too.
   // First each Files window takes its new width, so its page keeps its width (YAZ-3441).
   subscribeAppZoom(store, (factor, before) => {
@@ -329,6 +371,8 @@ app.whenReady().then(() => {
     // `app://drawio/…` (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4): the diagram editor's OWN origin, every
     // answer under its no-network CSP; every other host is the renderer bundle, exactly as before.
     if (host === 'vault') return serveVaultImage(req, (u) => net.fetch(u))
+    // `app://course-voice/<chapter>/<clip>.m4a` (YAZ-5159): a clip of a course chapter whose downloaded file was checked.
+    if (host === COURSE_VOICE_HOST) return courseAudio?.serve(req) ?? new Response(null, { status: 404 })
     if (host === DRAWIO_HOST) {
       return serveDrawio(DRAWIO_DIR, pathname, {
         fetchFile: (url) => net.fetch(url),
@@ -383,33 +427,46 @@ app.whenReady().then(() => {
   // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10) are enabled only while the window a
   // menu action would target has a board of the right kind in front. Read at build time from the same
   // window `menuTarget` names, so the answer and the send target can never disagree.
-  const activeFileKind = () => {
+  // What the keys follow (YAZ-3564 K9): a drawing open over the page is in front of it; the board items stay the tab's.
+  // With no page on show (YAZ-5041: the Inbox tab, the blank tab), neither follows the tab stored under it.
+  const kindsInFront = () => {
     const wc = menuTarget()
     const id = wc === undefined ? undefined : manager.idFor(wc)
     const file = id === undefined ? null : (store.get().windows.find((w) => w.id === id)?.file ?? null)
-    return file === null ? null : fileKind(file)
+    return menuKindsInFront(file, { drawingOver: wc !== undefined && drawingInFront.has(wc.id), noPage: wc !== undefined && noPageInFront.has(wc.id) })
   }
-  // What the keys follow (YAZ-3564 K9): a drawing open over the note is in front of it; the board items stay the tab's.
-  const frontKind = (): FileKind | null => {
+  const activeFileKind = (): FileKind | null => kindsInFront().activeKind
+  const frontKind = (): FileKind | null => kindsInFront().frontKind
+  // File › Open Today's Daily Page (YAZ-5491): shown while Daily pages are on for the window a menu action targets, by
+  // its vaults' daily-pages.json (the one source), else the app value. A file that changes rebuilds the menu.
+  let dailyMoved: () => void = () => undefined
+  const dailyFiles = watchDailyPages(store, () => dailyMoved())
+  const dailyInFront = (): boolean => {
     const wc = menuTarget()
-    return wc !== undefined && drawingInFront.has(wc.id) ? 'drawing' : activeFileKind()
+    const id = wc === undefined ? undefined : manager.idFor(wc)
+    const state = store.get()
+    const win = id === undefined ? undefined : state.windows.find((w) => w.id === id)
+    return win === undefined ? state.settings.dailyPages : dailyFiles.on(placeVaults(state.folders, win.roots), state.settings)
   }
   const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(activeFileKind, () =>
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(
         buildMenuTemplate(
           // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
-          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyNotes: store.get().settings.dailyNotes },
+          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyPages: dailyInFront() },
           handlers,
         ),
       ),
     ),
     frontKind,
+    () => String(dailyInFront()),
   )
+  dailyMoved = applyMenu
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
   hotkeyRecording.onChange(applyMenu)
   drawingInFront.onChange(() => applyIfMoved())
+  noPageInFront.onChange(() => applyIfMoved())
   // A tab switch changes which file is in front; a focus change changes which window is asked. Either
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
@@ -424,10 +481,26 @@ app.whenReady().then(() => {
     appPath: app.getAppPath(),
     macId: () => macId(),
   }, settingsFolder)
+  // The Mac sends the numbers too (YAZ-5086, decision 16): with the same token, when a file with cards changes, and once
+  // after the start. A new token (or a removed one) starts over.
+  // YAZ-5652: only with Friends on (`shared/features.ts`). Off, nothing starts: no sender, no gist call, no
+  // `friends:status`; and the sender is a chunk of its own (`import()`), so with the switch off the build drops it.
+  if (FRIENDS_ENABLED) {
+    const friendsSend = import('./friends').then((m) => m.startFriendsSend(store, secrets, app.getPath('userData')))
+    registerFriendsIpc(async () => (await friendsSend).look())
+    onRendererSecretSet((name) => {
+      if (name === GITHUB_TOKEN_SECRET) void friendsSend.then((f) => f.tokenChanged())
+    })
+  }
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'), store.get().settingsFolder)
   gitSync = sync
+  // The course sound (YAZ-5159): downloaded per chapter while the course is open. At start only the clean-up runs, at
+  // most once a day: the folder goes 30 days after the course was last open. Defer past first window restore (YAZ-6008 D4).
+  courseAudio = registerCourseAudioIpc({ userData: app.getPath('userData'), isPackaged: app.isPackaged })
+  const sweepCourseAudio = courseAudio
+  setTimeout(() => void sweepCourseAudio.sweep().catch((err: unknown) => console.warn(`[course-audio] the clean-up failed: ${String(err)}`)), 5000).unref()
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),
     restartToUpdate: () => {
@@ -476,22 +549,10 @@ app.whenReady().then(() => {
   // rather than at module scope because powerMonitor is only safe to touch after `ready`.
   powerMonitor.on('resume', () => sync.notifyWake())
   powerMonitor.on('unlock-screen', () => sync.notifyWake())
-  // Draw's data, copied one time into the gaps (YAZ-3028 D6): the app-data half now, each vault's half when it opens.
-  startDrawImport({
-    drawDir: join(app.getPath('appData'), DRAW_APP_NAME),
-    userData: app.getPath('userData'),
-    store,
-    secrets,
-    appData: shouldImportDrawAppData(process.env),
-    rootsOf,
-  })
   // The 1.0.15 heading styles move once into the vaults (YAZ-3066 D11). Before `restore`, which
   // drops the windows a launch does not bring back: every vault of the last session gets its copy.
   // It never holds up a window: a renderer that read no file yet hears the write as a change.
   void moveLegacyHeadingStyles(store).catch((err: unknown) => console.error(`[textFormatting] the move failed: ${String(err)}`))
-  // The page switches the app state held for notes move once into the notes (YAZ-4094 G4). The same terms: a
-  // window that has the note open hears the write as an outside change of its frontmatter.
-  void movePageSwitches(store).catch((err: unknown) => console.error(`[pageSwitches] the move failed: ${String(err)}`))
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
@@ -499,9 +560,18 @@ app.whenReady().then(() => {
     const link = parseFileLink(url)
     return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
   })
+  // The card skill's copy in the profile (YAZ-5107): made before the first window, never while the app runs. A
+  // checkout stamps its version with the shipped files' hash, so an edit of `skills/card-skill` reaches the copy.
+  // A failed copy is logged and never stops the start.
+  const shippedSkill = shippedCardSkill({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
+  const cardSkillReady = (app.isPackaged ? Promise.resolve(app.getVersion()) : cardSkillStamp(shippedSkill, app.getVersion()))
+    .then((version) => ensureCardSkill(app.getPath('userData'), shippedSkill, version))
+    // The copy is the app's own vault from now on (YAZ-5108): each window's identity names it, and no list of the person takes it.
+    .then((copy) => setCardSkillVault(copy))
+    .catch((err: unknown) => console.error(`[cardSkill] the copy failed: ${String(err)}`))
   // The first window waits for the settings folder's first read (YAZ-3276 D4), so a theme that the other Mac
   // changed shows no flash. At most 500 ms: a slow or lost folder never holds up a launch. No folder: at once.
-  void Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]).then(() => {
+  void Promise.all([Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]), cardSkillReady]).then(() => {
     manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
     links.flush()
   })
@@ -530,6 +600,7 @@ app.on('before-quit', (event) => {
     stopHelpers: () => Promise.all([stopAllLanguageServers(), cancelHelperInstall(), speller.stop()]).then(() => undefined),
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
+      cleanupTreeWatcherProbes()
       updater.installOnExit(reopenAfterQuit)
       app.exit(0)
     },

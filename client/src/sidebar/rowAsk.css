@@ -1,0 +1,8 @@
+/* A row that asks in place (YAZ-5697, `RowAsk.tsx`, a lazy chunk): its question over the confirm sheet's buttons, Cancel first. */
+.ctx-menu__ask {
+  padding: var(--menu-row-padding);
+}
+
+.ctx-menu__ask .confirm__text {
+  margin-bottom: 8px;
+}

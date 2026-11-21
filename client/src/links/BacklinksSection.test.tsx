@@ -23,8 +23,8 @@ vi.mock('../api', async (importOriginal) => ({
   api: { readFile: vi.fn(), window: { open: vi.fn(async () => undefined) } },
 }))
 
-// The sidebar's note panel (YAZ-3403): a stand-in that says which note it shows and where it was told to go.
-vi.mock('../sidebar/NotePreview', () => ({ default: ({ name, anchor }: { name: string; anchor: { side?: string } }) => <div className="note-preview" data-side={anchor.side ?? ''} aria-label={`Preview of ${name}`} /> }))
+// The sidebar's page panel (YAZ-3403): a stand-in that says which page it shows and where it was told to go.
+vi.mock('../sidebar/PagePreview', () => ({ default: ({ name, anchor }: { name: string; anchor: { side?: string } }) => <div className="page-preview" data-side={anchor.side ?? ''} aria-label={`Preview of ${name}`} /> }))
 
 import { api } from '../api'
 
@@ -98,7 +98,7 @@ async function flush(): Promise<void> {
 }
 
 const header = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.backlinks__header')
-const notes = (el: HTMLElement) => [...el.querySelectorAll('.backlinks__note')] as HTMLElement[]
+const pages = (el: HTMLElement) => [...el.querySelectorAll('.backlinks__page')] as HTMLElement[]
 const snippets = (el: HTMLElement) => [...el.querySelectorAll('.backlinks__snippet')] as HTMLElement[]
 
 function click(el: Element, modifiers: { metaKey?: boolean; shiftKey?: boolean } = {}): void {
@@ -121,7 +121,7 @@ afterEach(() => {
 })
 
 describe('BacklinksSection (Links D, GRO-2193)', () => {
-  it('YAZ-3429, D12 amended: a rest of 400 ms on a mention or a snippet opens the linking note\'s panel at the window\'s right edge, never beside the row', async () => {
+  it('YAZ-3429, D12 amended: a rest of 400 ms on a mention or a snippet opens the linking page\'s panel at the window\'s right edge, never beside the row', async () => {
     feed(RECORDS)
     const el = mount(B, true)
     click(header(el)!)
@@ -133,21 +133,21 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
       })
       await flush()
     }
-    await rest(notes(el)[0])
-    const panel = document.querySelector('.note-preview')
+    await rest(pages(el)[0])
+    const panel = document.querySelector('.page-preview')
     expect(panel?.getAttribute('aria-label')).toBe('Preview of A')
     expect(panel?.getAttribute('data-side')).toBe('edge')
-    act(() => void notes(el)[0].dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
-    expect(document.querySelector('.note-preview')).toBeNull()
+    act(() => void pages(el)[0].dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+    expect(document.querySelector('.page-preview')).toBeNull()
     await rest(snippets(el)[0])
-    expect(document.querySelector('.note-preview')?.getAttribute('data-side')).toBe('edge')
+    expect(document.querySelector('.page-preview')?.getAttribute('data-side')).toBe('edge')
   })
 
   it('renders nothing before the first index snapshot', () => {
     expect(mount().innerHTML).toBe('')
   })
 
-  it('renders nothing at all when no note mentions this one (zero-mention rule)', () => {
+  it('renders nothing at all when no page mentions this one (zero-mention rule)', () => {
     const el = mount('/vault/D.md')
     feed(RECORDS)
     expect(el.innerHTML).toBe('')
@@ -163,14 +163,14 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     expect(readFile).not.toHaveBeenCalled()
   })
 
-  it('expanding lists the referencing notes (basename + full-path tooltip) and lazily reads them', async () => {
+  it('expanding lists the referencing pages (basename + full-path tooltip) and lazily reads them', async () => {
     const el = mount()
     feed(RECORDS)
     click(header(el)!)
     expect(header(el)?.getAttribute('aria-expanded')).toBe('true')
-    // Path order, one entry per referencing note.
-    expect(notes(el).map((n) => n.textContent)).toEqual(['A', 'C'])
-    expect(notes(el).map((n) => n.getAttribute('title'))).toEqual([A, C])
+    // Path order, one entry per referencing page.
+    expect(pages(el).map((n) => n.textContent)).toEqual(['A', 'C'])
+    expect(pages(el).map((n) => n.getAttribute('title'))).toEqual([A, C])
     // A skeleton stands in while the reads are in flight — never an empty flash.
     expect(el.querySelectorAll('.backlinks__skeleton')).toHaveLength(2)
     await flush()
@@ -193,10 +193,10 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     feed(RECORDS)
     click(header(el)!)
     await flush()
-    click(notes(el)[0])
+    click(pages(el)[0])
     expect(openCurrent).toHaveBeenCalledWith(A)
     expect(openBackground).not.toHaveBeenCalled()
-    click(notes(el)[1], { metaKey: true })
+    click(pages(el)[1], { metaKey: true })
     expect(openBackground).toHaveBeenCalledWith(C)
     click(snippets(el)[0])
     expect(openCurrent).toHaveBeenLastCalledWith(A)
@@ -204,14 +204,14 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     expect(openBackground).toHaveBeenLastCalledWith(C)
   })
 
-  it('⇧⌘-click opens the note in a new window, entry and snippet alike (YAZ-4444 D32): no tab', async () => {
+  it('⇧⌘-click opens the page in a new window, entry and snippet alike (YAZ-4444 D32): no tab', async () => {
     storage.mirrorRoots(['/vault'])
     vi.mocked(api.window.open).mockClear()
     const el = mount()
     feed(RECORDS)
     click(header(el)!)
     await flush()
-    click(notes(el)[1], { metaKey: true, shiftKey: true })
+    click(pages(el)[1], { metaKey: true, shiftKey: true })
     click(snippets(el)[0], { metaKey: true, shiftKey: true })
     expect(vi.mocked(api.window.open).mock.calls).toEqual([[{ root: '/vault', file: C }], [{ root: '/vault', file: A }]])
     expect(openCurrent).not.toHaveBeenCalled()
@@ -224,7 +224,7 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     feed(RECORDS)
     click(header(el)!)
     await flush()
-    expect(notes(el).map((n) => n.textContent)).toEqual(['A', 'C'])
+    expect(pages(el).map((n) => n.textContent)).toEqual(['A', 'C'])
     expect(snippets(el)).toHaveLength(0)
     expect(el.querySelector('.backlinks__skeleton')).toBeNull()
   })
@@ -240,7 +240,7 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     expect(el.innerHTML).toBe('')
   })
 
-  it('while expanded, a referencing note whose mtime moved re-reads its snippets (changed files only)', async () => {
+  it('while expanded, a referencing page whose mtime moved re-reads its snippets (changed files only)', async () => {
     const el = mount()
     feed(RECORDS)
     click(header(el)!)
@@ -257,7 +257,7 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     CONTENT[A] = '# A\n\nSee [[B]] for the details.\n'
   })
 
-  it('a note linking by ID is listed, and its snippet shows the linked note\'s title (YAZ-2293)', async () => {
+  it('a page linking by ID is listed, and its snippet shows the linked page\'s title (YAZ-2293)', async () => {
     const ID = 'k3m9x2pq7abc'
     readFile.mockImplementation(async (path: string) => ({ path, content: `# A\n\nSee [[${ID}]] for the details.\n`, mtime: 1, size: 1 }))
     const el = mount()
@@ -265,73 +265,81 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     expect(header(el)?.textContent).toBe('Linked mentions (1)')
     click(header(el)!)
     await flush()
-    expect(notes(el).map((n) => n.textContent)).toEqual(['A'])
+    expect(pages(el).map((n) => n.textContent)).toEqual(['A'])
     expect(snippets(el).map((s) => s.textContent)).toEqual(['See B for the details.'])
     expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B'])
   })
 
-  it('E: a referencing note and folder are listed by their titles, and the snippet shows the linked note\'s title (YAZ-2420 D14)', async () => {
+  it('E: a referencing page and folder are listed by their titles, and the snippet shows the linked page\'s title (YAZ-2420 D14)', async () => {
     const ID = 'k3m9x2pq7abc'
     readFile.mockImplementation(async (path: string) => ({ path, content: `See [[${ID}]] for the details.\n`, mtime: 1, size: 1 }))
     const el = mount()
     feed(
       [{ ...rec(A, { links: [ID] }), title: 'UP-001 - Abdul' }, { ...rec(B), id: ID, title: 'Bee Plan' }],
-      [{ ...rec('/vault/upwork-2026/.folder.md'), title: 'Upwork 2026', properties: { folder_settings: { views: [{ type: 'outline', name: 'Outline', outline: `- [[${ID}]]` }] } } }],
+      [{ ...rec('/vault/upwork-2026/.folder.md', { links: [ID] }), title: 'Upwork 2026' }],
     )
     click(header(el)!)
     await flush()
-    expect(notes(el).map((n) => n.textContent)).toEqual(['UP-001 - Abdul', 'Upwork 2026'])
-    expect(snippets(el).map((s) => s.textContent)).toEqual(['See Bee Plan for the details.', 'Bee Plan'])
+    expect(pages(el).map((n) => n.textContent)).toEqual(['UP-001 - Abdul', 'Upwork 2026'])
+    expect(snippets(el).map((s) => s.textContent)).toEqual(['See Bee Plan for the details.', 'See Bee Plan for the details.'])
   })
 
   describe('links from folder pages', () => {
     const PROJECTS = '/vault/Projects'
-    /** The folder Projects, whose settings hold `folder_settings`. */
-    const folder = (folder_settings: Record<string, unknown>, mtime = 1): IndexRecord => ({ ...rec(`${PROJECTS}/.folder.md`, { mtime }), title: 'Projects', properties: { folder_settings } })
-    const OUTLINE = { views: [{ type: 'outline', name: 'Outline', outline: '- intro\n    - [[B]]' }] }
+    const PAGE = `${PROJECTS}/.folder.md`
+    /** The folder Projects: its Page (the `.folder.md` body, YAZ-4584 D40) links `links`, its settings hold `folder_settings`. */
+    const folder = (links: string[], folder_settings: Record<string, unknown> = { views: [{ type: 'page', name: 'Page' }] }, mtime = 1): IndexRecord => ({ ...rec(PAGE, { mtime, links }), title: 'Projects', properties: { folder_settings } })
+    /** What the Page's file holds: a frontmatter whose own link is no snippet, then the body. */
+    const onDisk = (body: string): void =>
+      void readFile.mockImplementation(async (path: string) => ({ path, content: path === PAGE ? `---\nowner: "[[B]]"\n---\n${body}` : (CONTENT[path] ?? ''), mtime: 1, size: 1 }))
 
-    it('a folder\'s outline has a link to a note: the note\'s Linked mentions lists the folder, by its name', async () => {
+    it('a folder\'s Page has a link to a page: the page\'s Linked mentions lists the folder, by its name', async () => {
+      onDisk('- intro\n    - [[B]]\n')
       const el = mount()
-      feed(RECORDS, [folder(OUTLINE)])
+      feed(RECORDS, [folder(['B'])])
       expect(header(el)?.textContent).toBe('Linked mentions (3)')
       click(header(el)!)
       await flush()
       // Path order: the folder sorts by its settings file's path.
-      expect(notes(el).map((n) => n.textContent)).toEqual(['A', 'Projects', 'C'])
-      expect(notes(el)[1].getAttribute('title')).toBe(PROJECTS)
+      expect(pages(el).map((n) => n.textContent)).toEqual(['A', 'Projects', 'C'])
+      expect(pages(el)[1].getAttribute('title')).toBe(PROJECTS)
     })
 
-    it('snippet for a folder entry: the line of its outline that holds the link, with no file read', async () => {
+    it('snippet for a folder entry: the lines of its Page body that hold the link, read as a page\'s are; never its frontmatter', async () => {
+      onDisk('- intro\n    - [[B]]\n')
       const el = mount()
-      feed([rec(B)], [folder(OUTLINE)])
+      feed([rec(B)], [folder(['B'])])
       click(header(el)!)
-      expect(el.querySelector('.backlinks__skeleton')).toBeNull() // the index already holds the outline
-      expect(snippets(el).map((s) => s.textContent)).toEqual(['B'])
-      expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B'])
       await flush()
-      expect(readFile).not.toHaveBeenCalled()
-      // The outline moved on disk: the next snapshot's settings are what the snippet reads.
-      feed([rec(B)], [folder({ views: [{ type: 'outline', name: 'Outline', outline: '- [[B]]\n- and [[B]] again, in a sentence' }] }, 2)])
-      expect(snippets(el).map((s) => s.textContent)).toEqual(['B', 'and B again, in a sentence'])
+      expect(readFile).toHaveBeenCalledWith(PAGE)
+      // The line as a page's shows (its bullet marker too), the frontmatter's own `owner: "[[B]]"` never.
+      expect(snippets(el).map((s) => s.textContent)).toEqual(['- B'])
+      expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B'])
+      // The Page moved on disk: its record's new mtime reads the body again.
+      onDisk('- [[B]]\n- and [[B]] again, in a sentence\n')
+      feed([rec(B)], [folder(['B', 'B'], undefined, 2)])
+      await flush()
+      expect(snippets(el).map((s) => s.textContent)).toEqual(['- B', '- and B again, in a sentence'])
     })
 
     it('a folder that links by a view\'s `order` or a link column\'s `target` is listed the same way, with no snippet', async () => {
+      onDisk('')
       const el = mount()
-      feed([rec(B)], [folder({ columns: { owner: { kind: 'link', target: '[[B]]' } }, views: [{ type: 'outline', name: 'Outline', order: ['[[B]]'] }] })])
+      feed([rec(B)], [folder([], { columns: { owner: { kind: 'link', target: '[[B]]' } }, views: [{ type: 'page', name: 'Page', order: ['[[B]]'] }] })])
       expect(header(el)?.textContent).toBe('Linked mentions (1)')
       click(header(el)!)
       await flush()
-      expect(notes(el).map((n) => n.textContent)).toEqual(['Projects'])
+      expect(pages(el).map((n) => n.textContent)).toEqual(['Projects'])
       expect(snippets(el)).toHaveLength(0)
-      expect(el.querySelector('.backlinks__skeleton')).toBeNull()
     })
 
     it('clicking a folder in Linked mentions opens the folder\'s page: plain → current tab, ⌘ → background tab (entry and snippet alike)', async () => {
+      onDisk('- [[B]]\n')
       const el = mount()
-      feed([rec(B)], [folder(OUTLINE)])
+      feed([rec(B)], [folder(['B'])])
       click(header(el)!)
       await flush()
-      click(notes(el)[0])
+      click(pages(el)[0])
       expect(openCurrent).toHaveBeenCalledExactlyOnceWith(PROJECTS)
       click(snippets(el)[0], { metaKey: true })
       expect(openBackground).toHaveBeenCalledExactlyOnceWith(PROJECTS)

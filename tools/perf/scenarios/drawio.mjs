@@ -2,14 +2,14 @@
  * drawio (Draw's YAZ-1802 scenario, ported by YAZ-3044 A19 under YAZ-3028 D5): click a `.drawio` in
  * the tree → draw.io's `load` answer, i.e. the diagram is on screen in the real app. The mark is the
  * scenario's own: a `message` listener in the page sets `window.__drawioLoad` on the first
- * `"event":"load"` draw.io posts, so the app carries no perf code. The window opens on a small note
- * first (every session waits for a painted note), then the row is clicked.
+ * `"event":"load"` draw.io posts, so the app carries no perf code. The window opens on a small page
+ * first (every session waits for a painted page), then the row is clicked.
  *
  * Ceiling: `perf["drawio.drawioOpenMs"]` in budget.json (Draw's 760 ms, D5).
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { writeNote } from '../genVault.mjs'
+import { writePageFile } from '../genVault.mjs'
 import { row, session } from '../lib/session.mjs'
 import { sleep } from '../lib/app.mjs'
 
@@ -25,7 +25,7 @@ export function flowDiagram(n) {
 
 export function setup(dir) {
   const vault = path.join(dir, 'vault')
-  const small = writeNote(vault, 'Small', 'bullets', 20)
+  const small = writePageFile(vault, 'Small', 'bullets', 20)
   const flow = path.join(vault, 'Flow.drawio')
   fs.writeFileSync(flow, flowDiagram(30))
   return { profile: path.join(dir, 'profile'), vault, small, flow }

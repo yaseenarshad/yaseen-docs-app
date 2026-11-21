@@ -64,16 +64,14 @@ export async function detectRepo(bin: string, root: string): Promise<RepoFacts> 
   const inside = await git(bin, root, ['rev-parse', '--is-inside-work-tree'])
   if (inside.code !== 0 || inside.stdout.trim() !== 'true') return notARepo()
 
-  // Exit 2 is `remote get-url`'s "No such remote" — the normal state of a repo that has never
-  // been wired to GitHub, not a failure. Any other non-zero is treated the same way: no URL.
-  const remote = await git(bin, root, ['remote', 'get-url', 'origin'])
+  // Run the 3 independent read-only git probes concurrently (YAZ-6027).
+  const [remote, head, status] = await Promise.all([
+    git(bin, root, ['remote', 'get-url', 'origin']),
+    git(bin, root, ['rev-parse', '--abbrev-ref', 'HEAD']),
+    git(bin, root, ['status', '--porcelain=v1']),
+  ])
   const remoteUrl = remote.code === 0 ? remote.stdout.trim() || null : null
 
-  // `rev-parse --abbrev-ref HEAD` prints the branch, or the literal `HEAD` when detached. It
-  // FAILS (exit 128) on a repo with zero commits, because the branch HEAD names has no commit to
-  // resolve — note it prints `HEAD` to stdout there too, so the exit code is what we branch on.
-  // `symbolic-ref` reads HEAD's ref without resolving it, which is exactly the unborn-branch case.
-  const head = await git(bin, root, ['rev-parse', '--abbrev-ref', 'HEAD'])
   let branch: string | null
   if (head.code === 0) {
     const name = head.stdout.trim()
@@ -83,10 +81,6 @@ export async function detectRepo(bin: string, root: string): Promise<RepoFacts> 
     branch = sym.code === 0 ? sym.stdout.trim() || null : null
   }
 
-  // Untracked files included (porcelain's default), since an unsynced new note is exactly the
-  // state this flag exists to catch. Untracked DIRECTORIES collapse to a single `dir/` entry —
-  // fine for "is there anything to commit", and 2B stages with `add -A` regardless.
-  const status = await git(bin, root, ['status', '--porcelain=v1'])
   const dirtyFiles =
     status.code === 0
       ? status.stdout

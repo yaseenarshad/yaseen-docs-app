@@ -40,6 +40,31 @@ const pkgDir = (name) => {
   throw new Error(`${name} not found — run npm install`)
 }
 
+/** Unused Excalidraw editor leaves stripped from the read-only PNG-only share viewer (YAZ-6008 🔒 D4). */
+const SHARE_VIEWER_UNUSED_LEAVES = [
+  /^@excalidraw\/mermaid-to-excalidraw$/,
+  /^pako$/,
+  /^pica$/,
+  /^image-blob-reduce$/,
+  /\/subset-(shared\.chunk|worker-[\w-]+)(\.js)?$/,
+  /\/CodeMirrorEditor-[\w-]+(\.js)?$/,
+  /\/gifShrinkWorker-[\w-]+(\.js)?$/,
+  /\/data\/image-[\w-]+(\.js)?$/,
+  /\/locales\/(?!en-)[\w-]+\.js$/,
+]
+
+const trimUnusedEngineLeaves = {
+  name: 'yaseen-share-viewer-trim',
+  setup(b) {
+    b.onResolve({ filter: /.*/ }, (args) => {
+      if (!/(^|\/)(@excalidraw|engine\/packages)\//.test(args.importer)) return null
+      if (SHARE_VIEWER_UNUSED_LEAVES.some((r) => r.test(args.path))) return { path: args.path, namespace: 'share-off' }
+      return null
+    })
+    b.onLoad({ filter: /.*/, namespace: 'share-off' }, () => ({ contents: 'throw new Error("Unused in read-only share viewer")', loader: 'js' }))
+  },
+}
+
 async function main() {
   if (!fs.existsSync(path.join(DRAWIO, 'yaseen-fonts', 'fonts.css'))) throw new Error(`draw.io ${DRAWIO_TAG} is not unpacked at ${DRAWIO} — run \`npm run drawio:pack\``)
   fs.rmSync(path.join(REPO, 'share', 'dist'), { recursive: true, force: true })
@@ -63,6 +88,7 @@ async function main() {
     preserveSymlinks: true,
     define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.DEV': 'false', 'import.meta.env.PROD': 'true' },
     loader: { '.woff2': 'file', '.png': 'dataurl', '.svg': 'dataurl' },
+    plugins: [trimUnusedEngineLeaves],
     logLevel: 'warning',
     metafile: true,
   })

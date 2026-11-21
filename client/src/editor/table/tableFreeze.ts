@@ -1,5 +1,5 @@
 /**
- * Frozen rows and columns of a note table (YAZ-3769, YAZ-3696 🔒 S3): `freezeRows` rows from the
+ * Frozen rows and columns of a page table (YAZ-3769, YAZ-3696 🔒 S3): `freezeRows` rows from the
  * top and `freezeCols` columns from the left (`tableStyle.ts`), set from the right-click menu
  * (`tableMenu.ts`).
  *
@@ -33,7 +33,9 @@
  *   is not typing (the editor may draw a frozen row again), the offset that keeps the frozen rows at
  *   the scroller's top, stopped at the table's end, moves each frozen row: a Web Animation holds its
  *   `translateY` (YAZ-3792). It writes no attribute, so ProseMirror sees no mutation, and it restyles
- *   only that row; a custom property on the block restyled every cell of the table on each scroll.
+ *   only that row; a custom property on the block restyled every cell of the table on each scroll. A scroll frame does
+ *   nothing for a table farther than one scroller height from the note's box (`watchNear`, YAZ-4834 P4: the header row
+ *   sticks by default, so every table is frozen), and writes no keyframe when the offset did not change.
  *   Whole device pixels, rounded up the page (YAZ-3788). Layout px: divided by the document zoom, as
  *   the folder page does, and by the table's own zoom (YAZ-4091): the zoom at the `<table>`. The frozen rows' height ends at the last frozen row shown: a row of a folded run
  *   (`table-fold-hidden`, YAZ-4165) has no box.
@@ -41,59 +43,113 @@
  *   the rows. When the offset changes, the block gets `TABLE_HANDLE_PLACE` and places its shown
  *   handles again; over a pinned header, the column handle goes inside its top edge (YAZ-4170).
  * An unfrozen or removed table drops its listeners, its custom properties and its rows' animations.
+ *
+ * MERGED CELLS (YAZ-4792): the columns are the table map's. A merged cell is frozen when its left column is, and the
+ * freeze line is drawn after it when it reaches or crosses the line; the columns a merged header cell spans share
+ * its left edge.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { TableMap } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
-import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
+import { pinnedHeaderOffset, verticalScrollParent, watchNear } from '../../lib/pinnedHeader'
 import { changedTables, typingOnly } from './tableStyle'
+import { onStickyHeaderSetting, stickyHeaderSetting } from './timeFormatSetting'
 
-/** A table's freeze counts, inside the table. */
-function counts(table: ProseNode): { rows: number; cols: number } {
+/** The header row sticks (YAZ-4899 round 2): the table's own choice (`stickyHeader`), else Settings › Tables › Sticky header row. */
+export const stickyHeaderOn = (table: ProseNode, sticky = stickyHeaderSetting()): boolean => (table.attrs.stickyHeader as boolean | null) ?? sticky
+
+/**
+ * The rows frozen from the top, inside the table: the table's own freeze (`freezeRows`, which wins), else one row for a
+ * sticky header row (YAZ-4899 round 2). The subheader pinner sits under them (`tableSubhead.ts`).
+ */
+export const frozenRowCount = (table: ProseNode, sticky = stickyHeaderSetting()): number => {
+  const own = table.attrs.freezeRows as number
+  return Math.max(0, Math.min(own > 0 ? own : stickyHeaderOn(table, sticky) ? 1 : 0, table.childCount))
+}
+
+/** A change of Settings › Tables › Sticky header row: the plugin draws every table's frozen rows again. */
+const FREEZE_REFRESH = 'mdapp-table-freeze-refresh'
+
+/** The table's columns: the grid's, not the header row's children (a merged header cell is one child, YAZ-4792). */
+const widthOf = (table: ProseNode): number => TableMap.get(table).width
+
+/** A table's frozen counts, inside the table: the rows with a sticky header row counted in (`frozenRowCount`). */
+function counts(table: ProseNode, sticky: boolean): { rows: number; cols: number } {
+  const cols = Math.min(table.attrs.freezeCols as number, widthOf(table))
+  return { rows: frozenRowCount(table, sticky), cols: Math.max(0, cols) }
+}
+
+/** The table's OWN counts clamped inside it (the file's, a sticky header row not counted). */
+function ownCounts(table: ProseNode): { rows: number; cols: number } {
   const rows = Math.min(table.attrs.freezeRows as number, table.childCount)
-  const cols = Math.min(table.attrs.freezeCols as number, table.firstChild?.childCount ?? 0)
+  const cols = Math.min(table.attrs.freezeCols as number, widthOf(table))
   return { rows: Math.max(0, rows), cols: Math.max(0, cols) }
 }
 
 const overCounts = (table: ProseNode): boolean => {
-  const { rows, cols } = counts(table)
+  const { rows, cols } = ownCounts(table)
   return rows !== table.attrs.freezeRows || cols !== table.attrs.freezeCols
 }
 
+/** Every table's decorations in `doc`. */
+function allDecorations(doc: ProseNode, sticky: boolean): Decoration[] {
+  const decorations: Decoration[] = []
+  doc.descendants((node, pos) => {
+    if (node.type.name !== 'table') return !node.isTextblock
+    decorations.push(...frozenDecorations(node, pos, sticky))
+    return false
+  })
+  return decorations
+}
+
 /** What the decorations of a table depend on, besides its positions: the counts, rows and columns. */
-const shapeOf = (table: ProseNode): string => {
-  const { rows, cols } = counts(table)
-  return `${rows} ${cols} ${table.childCount} ${table.firstChild?.childCount ?? 0}`
+const shapeOf = (table: ProseNode, sticky: boolean): string => {
+  const { rows, cols } = counts(table, sticky)
+  return `${rows} ${cols} ${table.childCount} ${widthOf(table)}`
+}
+
+/**
+ * Each cell of `table` whose grid column (its left one, for a merged cell) is before `cols`, with its position in the
+ * table and whether the freeze line ends at or inside it (YAZ-4792: the column is the map's, not the row's child index).
+ */
+function frozenCells(table: ProseNode, cols: number): Array<{ pos: number; cell: ProseNode; left: number; end: boolean }> {
+  const map = TableMap.get(table)
+  const out: Array<{ pos: number; cell: ProseNode; left: number; end: boolean }> = []
+  const seen = new Set<number>()
+  for (const pos of map.map) {
+    if (seen.has(pos)) continue
+    seen.add(pos)
+    const { left, right } = map.findCell(pos)
+    if (left < cols) out.push({ pos, cell: table.nodeAt(pos)!, left, end: right >= cols })
+  }
+  return out
 }
 
 /** How many decorations `frozenDecorations` gives the table. */
-function decorationCount(table: ProseNode): number {
-  const { rows, cols } = counts(table)
+function decorationCount(table: ProseNode, sticky: boolean): number {
+  const { rows, cols } = counts(table, sticky)
   if (rows === 0 && cols === 0) return 0
-  let n = 1 + rows
-  table.forEach((row) => {
-    n += Math.min(cols, row.childCount)
-  })
-  return n
+  return 1 + rows + (cols > 0 ? frozenCells(table, cols).length : 0)
 }
 
 /** The decorations of one table: none when nothing is frozen. */
-function frozenDecorations(table: ProseNode, pos: number): Decoration[] {
-  const { rows, cols } = counts(table)
+function frozenDecorations(table: ProseNode, pos: number, sticky: boolean): Decoration[] {
+  const { rows, cols } = counts(table, sticky)
   if (rows === 0 && cols === 0) return []
-  const out = [Decoration.node(pos, pos + table.nodeSize, { 'data-table-frozen': '' }, { frozenTable: true, shape: shapeOf(table) })]
+  const out = [Decoration.node(pos, pos + table.nodeSize, { 'data-table-frozen': '' }, { frozenTable: true, shape: shapeOf(table, sticky) })]
   table.forEach((row, rowOffset, r) => {
     const rowPos = pos + 1 + rowOffset
     if (r < rows) out.push(Decoration.node(rowPos, rowPos + row.nodeSize, { class: r === rows - 1 ? 'table-frozen-row table-frozen-row-end' : 'table-frozen-row' }))
-    row.forEach((cell, cellOffset, c) => {
-      if (c >= cols) return
-      const cellPos = rowPos + 1 + cellOffset
-      const className = c === cols - 1 ? 'table-frozen-col table-frozen-col-end' : 'table-frozen-col'
-      out.push(Decoration.node(cellPos, cellPos + cell.nodeSize, { class: className, style: `--table-frozen-left: var(--table-frozen-x-${c}, 0px)` }))
-    })
   })
+  if (cols > 0) {
+    for (const { pos: cellPos, cell, left, end } of frozenCells(table, cols)) {
+      const className = end ? 'table-frozen-col table-frozen-col-end' : 'table-frozen-col'
+      out.push(Decoration.node(pos + 1 + cellPos, pos + 1 + cellPos + cell.nodeSize, { class: className, style: `--table-frozen-left: var(--table-frozen-x-${left}, 0px)` }))
+    }
+  }
   return out
 }
 
@@ -103,6 +159,8 @@ interface FreezeState {
   over: number[]
   /** Counts each transaction that is not typing: the view runs only when it moves. */
   generation: number
+  /** Sticky header row's default for this editor (YAZ-5487): its vault's (`stickyHeaderSetting(view)`), the app's at first. */
+  sticky: boolean
 }
 
 const freezeKey = new PluginKey<FreezeState>('mdapp-table-freeze')
@@ -120,6 +178,9 @@ class Freezer {
   #measure = false
   #scroller: HTMLElement | null = null
   #observer: ResizeObserver | null = null
+  /** The table is within one scroller height of the note's box (`watchNear`); until the observer reports, it is. */
+  #near = true
+  #unwatch: (() => void) | null = null
   /** Each moved row's animation (YAZ-3792). */
   #moved = new Map<HTMLElement, Animation>()
   /** The rows' offset now, in layout px: a change moves the table block's handles too (YAZ-4170). */
@@ -138,7 +199,8 @@ class Freezer {
     if (node === this.node) return
     const old = this.node
     this.node = node
-    const { rows, cols } = counts(node)
+    const sticky = stickyHeaderSetting(this.block)
+    const { rows, cols } = counts(node, sticky)
     for (let c = cols; c < this.#cols; c++) this.block.style.removeProperty(`--table-frozen-x-${c}`)
     if (this.#observer === null) {
       this.#observer = new ResizeObserver(this.#relayout)
@@ -149,12 +211,15 @@ class Freezer {
     else if (this.#scroller === null) {
       this.#scroller = verticalScrollParent(this.block)
       this.#scroller?.addEventListener('scroll', this.#schedule, { passive: true })
-      if (this.#scroller !== null) this.#observer.observe(this.#scroller)
+      if (this.#scroller !== null) {
+        this.#observer.observe(this.#scroller)
+        this.#unwatch = watchNear(this.#scroller, this.block, this.#onNear)
+      }
     }
     this.#rows = rows
     this.#cols = cols
     // The column widths are the first row's (`colwidth`); a row's new height resizes the table (the observer).
-    if (old === null || shapeOf(old) !== shapeOf(node) || old.firstChild !== node.firstChild) this.#relayout()
+    if (old === null || shapeOf(old, sticky) !== shapeOf(node, sticky) || old.firstChild !== node.firstChild) this.#relayout()
     // The editor may have drawn a frozen row again (a sort, a paste): the new <tr> has no animation yet.
     else if (rows > 0) this.#schedule()
   }
@@ -165,30 +230,44 @@ class Freezer {
       this.#observer?.unobserve(this.#scroller)
     }
     this.#scroller = null
+    this.#unwatch?.()
+    this.#unwatch = null
+    this.#near = true
     this.#move([], 0)
-    this.#offset = 0
   }
 
-  /** `frozen` moves down by `y` layout px; any other row this freezer moved goes back (its animation ends). */
-  #move(frozen: HTMLElement[], y: number): void {
+  /**
+   * `frozen` moves down by `y` layout px; any other row this freezer moved goes back (its animation ends). A row moved
+   * before gets new keyframes only when `y` changed (YAZ-4834 P4). Whether the offset changed.
+   */
+  #move(frozen: HTMLElement[], y: number): boolean {
     for (const [row, animation] of this.#moved) {
       if (frozen.includes(row)) continue
       animation.cancel()
       this.#moved.delete(row)
     }
+    const changed = y !== this.#offset
+    this.#offset = y
     const keyframes = [{ transform: `translateY(${y}px)` }]
     for (const row of frozen) {
       // jsdom has no `animate`.
       if (typeof row.animate !== 'function') continue
       const animation = this.#moved.get(row)
       if (animation === undefined) this.#moved.set(row, row.animate(keyframes, { duration: 0, fill: 'forwards' }))
-      else (animation.effect as KeyframeEffect).setKeyframes(keyframes)
+      else if (changed) (animation.effect as KeyframeEffect).setKeyframes(keyframes)
     }
+    return changed
   }
 
-  /** A scroll: the rows' offset only. */
+  /** A scroll: the rows' offset only. A table far from the note's box waits until it comes near. */
   #schedule = (): void => {
-    if (this.#frame === 0) this.#frame = requestAnimationFrame(this.#sync)
+    if (this.#near && this.#frame === 0) this.#frame = requestAnimationFrame(this.#sync)
+  }
+
+  /** The observer's word (`watchNear`): a table that comes near catches up in the next frame. */
+  #onNear = (near: boolean): void => {
+    this.#near = near
+    if (near) this.#schedule()
   }
 
   /** A table change or a resize: the columns' offsets and the rows'. */
@@ -203,12 +282,16 @@ class Freezer {
     if (parts === null) return
     if (this.#measure) {
       this.#measure = false
+      // The header row's cells, each over its columns: a merged header cell (YAZ-4792) gives every column it spans
+      // its own left edge, so the columns under it stick together.
       const first = parts.body.rows[0]
       let left = 0
-      for (let c = 0; c < this.#cols; c++) {
-        this.block.style.setProperty(`--table-frozen-x-${c}`, `${left}px`)
-        left += (first?.cells[c] as HTMLElement | undefined)?.offsetWidth ?? 0
+      let c = 0
+      for (const cell of first?.cells ?? []) {
+        for (let span = 0; span < Math.max(1, cell.colSpan) && c < this.#cols; span++, c++) this.block.style.setProperty(`--table-frozen-x-${c}`, `${left}px`)
+        left += (cell as HTMLElement).offsetWidth
       }
+      for (; c < this.#cols; c++) this.block.style.setProperty(`--table-frozen-x-${c}`, `${left}px`)
       this.block.toggleAttribute('data-table-scrolls', this.#cols > 0 && this.block.scrollWidth > this.block.clientWidth)
     }
     const scroller = this.#scroller
@@ -227,10 +310,7 @@ class Freezer {
     const ratio = window.devicePixelRatio || 1
     const screen = Math.floor(pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, frozenHeight) * ratio) / ratio
     const offset = screen / zoom
-    this.#move(Array.from({ length: this.#rows }, (_, r) => rows[r] as HTMLElement), offset)
-    if (offset === this.#offset) return
-    this.#offset = offset
-    this.block.dispatchEvent(new Event(TABLE_HANDLE_PLACE))
+    if (this.#move(Array.from({ length: this.#rows }, (_, r) => rows[r] as HTMLElement), offset)) this.block.dispatchEvent(new Event(TABLE_HANDLE_PLACE))
   }
 
   destroy(): void {
@@ -284,15 +364,14 @@ export const tableFreeze = $prose(
       key: freezeKey,
       state: {
         init: (_, { doc }) => {
-          const decorations: Decoration[] = []
-          doc.descendants((node, pos) => {
-            if (node.type.name !== 'table') return !node.isTextblock
-            decorations.push(...frozenDecorations(node, pos))
-            return false
-          })
-          return { set: DecorationSet.create(doc, decorations), over: [], generation: 0 }
+          const sticky = stickyHeaderSetting()
+          return { set: DecorationSet.create(doc, allDecorations(doc, sticky)), over: [], generation: 0, sticky }
         },
         apply: (tr: Transaction, value) => {
+          // The Settings default changed (YAZ-4899 round 2), or this editor's vault's (YAZ-5487): every table's frozen
+          // rows, drawn again from the new default.
+          const refresh = tr.getMeta(FREEZE_REFRESH) as boolean | undefined
+          if (typeof refresh === 'boolean') return { set: DecorationSet.create(tr.doc, allDecorations(tr.doc, refresh)), over: value.over, generation: value.generation + 1, sticky: refresh }
           if (!tr.docChanged) return value
           let set = value.set.map(tr.mapping, tr.doc)
           if (value.over.length === 0 && typingOnly(tr)) return { ...value, set }
@@ -302,16 +381,16 @@ export const tableFreeze = $prose(
             const end = pos + node.nodeSize
             const old = set.find(pos, end).filter((deco) => deco.from >= pos && deco.to <= end)
             const outer = old.find((deco) => deco.from === pos && deco.to === end)
-            if (old.length === decorationCount(node) && (old.length === 0 || outer?.spec.shape === shapeOf(node))) continue
+            if (old.length === decorationCount(node, value.sticky) && (old.length === 0 || outer?.spec.shape === shapeOf(node, value.sticky))) continue
             if (old.length > 0) set = set.remove(old)
-            const fresh = frozenDecorations(node, pos)
+            const fresh = frozenDecorations(node, pos, value.sticky)
             if (fresh.length > 0) set = set.add(tr.doc, fresh)
           }
           const over = [...new Set([...value.over.map((pos) => tr.mapping.map(pos)), ...tables.keys()])].filter((pos) => {
             const node = tr.doc.nodeAt(pos)
             return node?.type.name === 'table' && overCounts(node)
           })
-          return { set, over, generation: value.generation + 1 }
+          return { set, over, generation: value.generation + 1, sticky: value.sticky }
         },
       },
       appendTransaction: (_trs, _old, state) => {
@@ -320,12 +399,32 @@ export const tableFreeze = $prose(
         const tr = state.tr
         for (const pos of over) {
           const table = state.doc.nodeAt(pos)!
-          const { rows, cols } = counts(table)
+          const { rows, cols } = ownCounts(table)
           tr.setNodeMarkup(pos, undefined, { ...table.attrs, freezeRows: rows, freezeCols: cols })
         }
         return tr
       },
       props: { decorations: (state) => freezeKey.getState(state)!.set },
-      view: (view) => new FreezeView(view),
+      view: (view) => {
+        const freezer = new FreezeView(view)
+        // The default of THIS editor's vault (YAZ-5487, `tableLookAt`): read once its DOM is in its surface, and again
+        // on each change of a sticky default; a refresh only when it differs from the one drawn.
+        let live = true
+        const refresh = (): void => {
+          if (!live) return
+          const sticky = stickyHeaderSetting(view)
+          if (freezeKey.getState(view.state)?.sticky !== sticky) view.dispatch(view.state.tr.setMeta(FREEZE_REFRESH, sticky))
+        }
+        queueMicrotask(refresh)
+        const unsubscribe = onStickyHeaderSetting(refresh)
+        return {
+          update: (v, prev) => freezer.update(v, prev),
+          destroy: () => {
+            live = false
+            unsubscribe()
+            freezer.destroy()
+          },
+        }
+      },
     }),
 )

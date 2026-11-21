@@ -3,7 +3,7 @@ import { CONTRACT } from '@shared/ipc'
 /**
  * Where a drag out of the sidebar landed (YAZ-3263). A window learns only of a drop on ITSELF, so a
  * drag that ends in a SECOND window of the app looks, to the first, like a drag that ended in Finder
- * (D9B, S26): it would ask "Copied N items to Finder?" though nothing was copied. Main sees both
+ * (D9B, S26): its box would say Finder got a copy, though nothing was copied. Main sees both
  * ends: the paths of the first window's `fs:drag-out`, then the same paths dropped in the second.
  * So main keeps the last drag out, and tells its window once when another window takes it.
  *

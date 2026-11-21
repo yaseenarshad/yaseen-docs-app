@@ -5,7 +5,7 @@ import type { Rollup } from 'vite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dropMonacoTsWorkerUrl, renderSourcemapsAside } from './electron.vite.config'
+import { dropMonacoTsWorkerUrl, friendsOffInMain, renderSourcemapsAside } from './electron.vite.config'
 
 describe('renderSourcemapsAside (YAZ-2183)', () => {
   let root = ''
@@ -35,6 +35,26 @@ describe('renderSourcemapsAside (YAZ-2183)', () => {
     await build(['assets/index-d4.js', 'assets/index-d4.js.map'])
     expect(await files(maps())).toEqual(['assets/index-d4.js.map'])
   })
+
+  it('keeps sibling main and renderer sourcemap directories disjoint across sequential builds (YAZ-6026)', async () => {
+    const mainOut = path.join(root, 'out', 'main')
+    const mainMaps = path.join(maps(), 'main')
+    const rendererMaps = path.join(maps(), 'renderer')
+    await mkdir(mainOut, { recursive: true })
+    await writeFile(path.join(mainOut, 'index.js'), 'main')
+    await writeFile(path.join(mainOut, 'index.js.map'), 'main-map')
+    const mainHook = renderSourcemapsAside(mainOut, mainMaps).writeBundle as (options: unknown, bundle: Rollup.OutputBundle) => Promise<void>
+    await mainHook({}, Object.fromEntries(['index.js', 'index.js.map'].map((n) => [n, {}])) as Rollup.OutputBundle)
+
+    await mkdir(path.join(out(), 'assets'), { recursive: true })
+    await writeFile(path.join(out(), 'assets', 'index-a1.js'), 'renderer')
+    await writeFile(path.join(out(), 'assets', 'index-a1.js.map'), 'renderer-map')
+    const rendererHook = renderSourcemapsAside(out(), rendererMaps).writeBundle as (options: unknown, bundle: Rollup.OutputBundle) => Promise<void>
+    await rendererHook({}, Object.fromEntries(['assets/index-a1.js', 'assets/index-a1.js.map'].map((n) => [n, {}])) as Rollup.OutputBundle)
+
+    expect(await files(mainMaps)).toEqual(['index.js.map'])
+    expect(await files(rendererMaps)).toEqual(['assets/index-a1.js.map'])
+  })
 })
 
 describe('dropMonacoTsWorkerUrl (YAZ-3501)', () => {
@@ -52,5 +72,23 @@ describe('dropMonacoTsWorkerUrl (YAZ-3501)', () => {
   it('leaves every other file alone, and fails the build when the call moved', () => {
     expect(transform("new Worker(new URL('ts.worker.js', import.meta.url), { type: \"module\" })", '/x/other.js')).toBeNull()
     expect(() => transform('export {}', file)).toThrow(/YAZ-3501/)
+  })
+})
+
+describe('friendsOffInMain (YAZ-5652)', () => {
+  const resolve = (on: boolean, source: string, importer?: string) => (friendsOffInMain(on).resolveId as (s: string, i?: string) => string | null)(source, importer)
+  const INDEX = '/repo/desktop/src/main/index.ts'
+
+  it("off: main's `./friends` is an empty module, so the sender and its count worker are not built", () => {
+    const stub = resolve(false, './friends', INDEX)
+    expect(stub).toBe('\0friends-off')
+    const load = friendsOffInMain(false).load as (id: string) => string | null
+    expect(load(stub!)).toContain('export function startFriendsSend')
+  })
+
+  it('on, or any other import: left to Vite', () => {
+    expect(resolve(true, './friends', INDEX)).toBeNull()
+    expect(resolve(false, './friends', '/repo/desktop/src/main/other.ts')).toBeNull()
+    expect(resolve(false, './ipc/friends', INDEX)).toBeNull()
   })
 })

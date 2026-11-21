@@ -8,9 +8,12 @@
  * The bridge is mocked: this Mac's Spotlight is on ⌥Space, so ⌘Space is free.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MACOS_HOTKEYS } from '@shared/macosHotkeys'
+import { sameKey, toDisplay } from '@shared/hotkeyBindings'
 import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
 import { api } from '../api'
 import { SettingsDialog } from './SettingsDialog'
@@ -187,6 +190,56 @@ describe('a changeable key (D6, D7)', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+W', 'app.newFilesWindow': null, 'app.closeTab': null } })
   })
 
+  it('YAZ-4941: an App key that takes ⌘K groups the Code two-step keys into ONE line, with "Show all" for the list; they stay blocked, not stripped; the swap Search → ⌘⇧F, Explore → ⌘K works end to end', async () => {
+    const { ALL_KEYS, keysOf, clashesOf, keyRow } = await import('@shared/keys')
+    const codeOnK = ALL_KEYS.filter((r) => r.scope === 'code' && keysOf(r, {}).some((k) => sameKey(k.split(' ')[0], 'CmdOrCtrl+K')))
+    expect(codeOnK.length).toBeGreaterThan(20)
+    await mount()
+    // Step 1: Search takes ⌘⇧F from Explore. Explore moves; the diagram's To front stays blocked, not stripped.
+    click(keyButton('search'))
+    press('F', 'KeyF', { metaKey: true, shiftKey: true })
+    expect(says()).toEqual(['Change the key for Search the vault?', '⌘K → ⌘⇧F', '⌘⇧F is App › Explore the vault now. It will lose its key.', '⌘⇧F is Diagram › To front now. It stays blocked while ⌘⇧F is an app key.'])
+    click(button(popup() as HTMLElement, 'Move it here'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+F', 'app.explore': null } })
+    // Step 2: Explore takes ⌘K. Nobody moves; the Code keys are one line, the single-key places one each.
+    click(keyButton('explore'))
+    press('k', 'KeyK', { metaKey: true })
+    const said = says()
+    expect(said.slice(0, 2)).toEqual(['Change the key for Explore the vault?', 'No key → ⌘K'])
+    // One line per place, in the places' order; the Code line counts its keys and names the first two.
+    const [first, second] = codeOnK.map((r) => keysOf(r, {})[0].split(' ').map(toDisplay).join(' '))
+    expect(said.slice(2)).toEqual([
+      '⌘K is Drawing › Add a link now. It stays blocked while ⌘K is an app key.',
+      '⌘K is Diagram › Edit tags now. It stays blocked while ⌘K is an app key.',
+      `⌘K starts ${codeOnK.length} Code keys (${first}, ${second}, …). They stay blocked while ⌘K is an app key.`,
+    ])
+    expect(said).toHaveLength(5)
+    // "Show all" opens the full list in a box that scrolls; the list names every Code key.
+    click(button(popup() as HTMLElement, 'Show all'))
+    const list = popup()?.querySelector<HTMLElement>('.hotkeys__clash-list')
+    expect(list).not.toBeNull()
+    expect(list?.querySelectorAll('li')).toHaveLength(codeOnK.length)
+    expect(list?.textContent).toContain(first)
+    // Each row is one line (YAZ-4941 nit): its keys, then its action in its own part that cuts with "…", with the full text on hover.
+    for (const li of list?.querySelectorAll('li') ?? []) {
+      expect([...li.children].map((c) => c.className)).toEqual(['hotkeys__clash-key', 'hotkeys__clash-action'])
+      expect(li.querySelector('.hotkeys__clash-action')?.getAttribute('title')).toBe(li.querySelector('.hotkeys__clash-action')?.textContent)
+    }
+    const css = readFileSync(path.join(__dirname, 'settings.css'), 'utf8')
+    const ruleOf = (selector: string) => css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.*]/g, '\\$&')} \\{([^}]*)\\}`))?.[1] ?? ''
+    expect(ruleOf('.hotkeys__clash-list li')).toMatch(/display: flex;[\s\S]*white-space: nowrap;/)
+    expect(ruleOf('.hotkeys__clash-key')).toContain('flex: none;')
+    expect(ruleOf('.hotkeys__clash-action')).toMatch(/min-width: 0;[\s\S]*overflow: hidden;[\s\S]*text-overflow: ellipsis;/)
+    click(button(popup() as HTMLElement, 'Save'))
+    const written = onChange.mock.calls.at(-1)?.[0] as SettingsState
+    expect(written.hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Shift+F', 'app.explore': 'CmdOrCtrl+K' })
+    // Afterwards: ⌘K is Explore's and ⌘⇧F is Search's, and a Code two-step key is blocked on its card, as under Search before.
+    expect(keyButton('explore').textContent).toBe('⌘K')
+    expect(keyButton('search').textContent).toBe('⌘⇧F')
+    expect(lines('code-addCommentLine')[0]).toBe('No key here now: ⌘K is App › Explore the vault. Change it on ⌘K')
+    expect(clashesOf(keyRow('code.addCommentLine')!, 'CmdOrCtrl+K CmdOrCtrl+C', written.hotkeys, {}).map((o) => o.id)).toContain('app.explore')
+  })
+
   it('"Reset all hotkeys" is there only with a change, and asks in the confirm sheet with the list of changes', async () => {
     await mount({ search: 'CmdOrCtrl+Shift+K', closeTab: null })
     click(button(row('hotkeys-reset-all'), 'Reset all hotkeys'))
@@ -249,7 +302,7 @@ describe('the page (D5, D8)', () => {
     for (const [key, code, mods, answer] of [
       ['Y', 'KeyY', { metaKey: true, altKey: true }, '⌥⌘Y is free. You can use it.'],
       // Every action on the key, in every place (YAZ-3564 K10).
-      ['j', 'KeyJ', { metaKey: true }, '⌘J: Note › Table of contents; Diagram › Fit the page.'],
+      ['j', 'KeyJ', { metaKey: true }, '⌘J: Page › Table of contents; Diagram › Fit the page.'],
       ['Q', 'KeyQ', { metaKey: true, shiftKey: true }, "⌘⇧Q: macOS uses it for Log out. You can't use it."],
     ] as const) {
       click(button(search(), 'Press keys to search'))
@@ -310,7 +363,7 @@ describe('one card per key (YAZ-3564)', () => {
     expect(row('hotkey-drawing-colorRed').querySelector('.hotkeys__lost')).toBeNull()
     expect(rows('T').slice(0, 2)).toEqual(['hotkey-drawing-text', 'hotkey-drawing-colorTransparent'])
     expect(action('drawing-colorTransparent')).toBe('Transparent, with a selection (on an icon: takes off the outline)')
-    expect(rows('1')).toEqual(['hotkey-drawing-size1', 'hotkey-diagram-size'])
+    expect(rows('1')).toEqual(['hotkey-drawing-size1', 'hotkey-diagram-size', 'hotkey-review-forgot', 'hotkey-review-again'])
     expect(action('drawing-size1')).toBe('Size: text 12, anything else 48 on its long side, with a selection')
     expect(action('drawing-size0')).toBe('Size: text 128, anything else 1024 on its long side, with a selection')
     // Neither is a clash: Rectangle's key is a button with no "Blocked" line.
@@ -337,11 +390,26 @@ describe('one card per key (YAZ-3564)', () => {
     expect(picked('⌘D', 'diagrams')).toBe('Duplicate') // one tab at a time
     expect(lostLine('drawing-duplicate')).toBe('Duplicate has no key here now.')
     // The App box says where Show in sidebar works now.
-    expect(row('hotkey-goTo').querySelector('.hotkeys__box-tab')?.textContent).toBe('Notes · Folder views · Drawings')
+    expect(row('hotkey-goTo').querySelector('.hotkeys__box-tab')?.textContent).toBe('Pages · Folder views · Drawings')
     choose('⌘D', 'drawings', 'Duplicate')
     expect(asked()).toEqual(['⌘D in drawings: Duplicate?', 'App › Show in sidebar will not work in drawings.'])
     click(button(popup() as HTMLElement, 'Take it'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: {} })
+  })
+
+  it('YAZ-2571: the ⌘⇧F card holds Explore the vault and draw.io\'s To front; explore wins in diagrams by default, and the pick gives the key back', async () => {
+    await mount()
+    expect([...card('⌘⇧F').querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)).toEqual(['hotkey-explore', 'hotkey-diagram-toFront'])
+    expect(card('⌘⇧F').querySelector('.hotkeys__card-head .hotkeys__hint')?.textContent).toBe('Shared: each tab picks what it does.')
+    expect(picked('⌘⇧F', 'diagrams')).toBe('Explore the vault')
+    expect(lostLine('diagram-toFront')).toBe('To front has no key here now.')
+    expect(row('hotkey-explore').querySelector('.hotkeys__box-tab')?.textContent).toBe('Every tab')
+    choose('⌘⇧F', 'diagrams', 'To front')
+    expect(asked()).toEqual(['⌘⇧F in diagrams: To front?', 'App › Explore the vault will not work in diagrams.'])
+    click(button(popup() as HTMLElement, 'Take it'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.explore@diagram': true } })
+    expect(picked('⌘⇧F', 'diagrams')).toBe('To front')
+    expect(lostLine('diagram-toFront')).toBeUndefined()
   })
 
   it('a group chip shows one place; "Shared keys only" keeps the shared cards and the rows an App key took', async () => {
@@ -352,7 +420,7 @@ describe('one card per key (YAZ-3564)', () => {
     toggle('Shared keys only')
     expect(shownRows()).toEqual(expect.arrayContaining(['hotkey-goTo', 'hotkey-drawing-duplicate', 'hotkey-search', 'hotkey-drawing-link', 'hotkey-code-addCommentLine']))
     expect(shownRows()).not.toContain('hotkey-newTab')
-    expect(shownRows()).not.toContain('hotkey-note-bold')
+    expect(shownRows()).not.toContain('hotkey-page-bold')
   })
 
   it('a changed pick is a change: "Changed from default" shows it, and Reset puts every tab back (an old one-switch entry too)', async () => {
@@ -368,17 +436,43 @@ describe('one card per key (YAZ-3564)', () => {
 
   it('a place key moves off another place\'s row with "Move it here" (K8), and "Changed from default" shows the changes with "Reset all shown" (K7)', async () => {
     await mount()
-    // A note's Quote has no key (D10); give it Bold's ⌘B.
-    click(keyButton('note-quote'))
+    // A page's Quote has no key (D10); give it Bold's ⌘B.
+    click(keyButton('page-quote'))
     press('b', 'KeyB', { metaKey: true })
-    expect(says()).toEqual(['Change the key for Quote?', 'No key → ⌘B', '⌘B is Note › Bold now. It will lose its key.'])
+    expect(says()).toEqual(['Change the key for Quote?', 'No key → ⌘B', '⌘B is Page › Bold now. It will lose its key.'])
     click(button(popup() as HTMLElement, 'Move it here'))
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'note.bold': null, 'note.quote': 'CmdOrCtrl+B' } })
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'page.bold': null, 'page.quote': 'CmdOrCtrl+B' } })
     toggle('Changed from default')
-    expect(new Set(shownRows().filter((id) => id?.startsWith('hotkey-')))).toEqual(new Set(['hotkey-note-bold', 'hotkey-note-quote']))
+    expect(new Set(shownRows().filter((id) => id?.startsWith('hotkey-')))).toEqual(new Set(['hotkey-page-bold', 'hotkey-page-quote']))
     click(button(row('hotkeys-reset-all'), 'Reset all shown'))
     click(button(el.querySelector('.confirm') as HTMLElement, 'Reset 2 hotkeys'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })
+  })
+
+  it('YAZ-5996: Review chip shows review hotkeys; Remembered can take 1 from Forgot without touching 4-button Again, and built-in O is refused', async () => {
+    await mount()
+    click(chip('Review'))
+    expect(shownRows().filter((id) => id?.startsWith('hotkey-')).every((id) => id?.startsWith('hotkey-review-'))).toBe(true)
+    expect(keyButton('review-forgot').textContent).toBe('1')
+    expect(keyButton('review-remembered').textContent).toBe('0')
+    // Built-in O is refused.
+    click(keyButton('review-remembered'))
+    press('o', 'KeyO')
+    expect(lines('review-remembered')[0]).toBe('O is built in: Review › Open page or card. Pick a different key.')
+    // Bare letter J is accepted.
+    press('j', 'KeyJ')
+    expect(says()).toEqual(['Change the key for Remembered?', '0 → J'])
+    click(button(popup() as HTMLElement, 'Save'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'review.remembered': 'J' } })
+    // Reset Remembered to 0, then move 1 to Remembered: only Forgot loses its key, 4-button Again keeps 1.
+    click(button(row('hotkey-review-remembered'), 'Reset'))
+    click(button(popup() as HTMLElement, 'Reset'))
+    click(keyButton('review-remembered'))
+    press('1', 'Digit1')
+    expect(says()).toEqual(['Change the key for Remembered?', '0 → 1', '1 is Review › Forgot now. It will lose its key.'])
+    click(button(popup() as HTMLElement, 'Move it here'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'review.forgot': null, 'review.remembered': '1' } })
+    expect(keyButton('review-again').textContent).toBe('1')
   })
 })
 
@@ -402,7 +496,7 @@ describe('the clicks and drags (YAZ-3936)', () => {
     expect(cardOf('bullets-newTab')).toBe('⇧-click')
     expect(cardOf('links-newTab')).toBe('⌘⇧-click')
     expect(cardOf('links-thisTab')).toBe('Clicks with no gesture')
-    expect([tagOf('links-backgroundTab'), tagOf('bullets-backgroundTab')]).toEqual(['Links in notes and drawings', 'Bullet dots'])
+    expect([tagOf('links-backgroundTab'), tagOf('bullets-backgroundTab')]).toEqual(['Links in pages and drawings', 'Bullet dots'])
     expect(clickBox('links-thisTab').textContent).toBe('No gesture')
     // The other clicks are built in, in the same boxes: muted text, no button.
     const drag = row('hotkey-mouse-move-block')
@@ -430,7 +524,7 @@ describe('the clicks and drags (YAZ-3936)', () => {
     expect(clickBox('links-thisTab').textContent).toBe('Hold keys, click here')
     expect(recording).not.toHaveBeenCalled() // a click takes no key from the menu
     clickWith(clickBox('links-thisTab'), { altKey: true })
-    expect(says()).toEqual(['Change the gesture for Links in notes and drawings › Open in this tab?', 'No gesture → ⌥-click'])
+    expect(says()).toEqual(['Change the gesture for Links in pages and drawings › Open in this tab?', 'No gesture → ⌥-click'])
     expect(onChange).not.toHaveBeenCalled()
     click(button(popup() as HTMLElement, 'Save'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'links.thisTab': 'Alt+Click' } })
@@ -438,7 +532,7 @@ describe('the clicks and drags (YAZ-3936)', () => {
     expect(clickBox('links-thisTab').classList.contains('hotkeys__key--changed')).toBe(true)
 
     click(button(row('hotkey-links-thisTab'), 'Reset'))
-    expect(says()).toEqual(['Reset Links in notes and drawings › Open in this tab?', '⌥-click → No gesture'])
+    expect(says()).toEqual(['Reset Links in pages and drawings › Open in this tab?', '⌥-click → No gesture'])
     click(button(popup() as HTMLElement, 'Reset'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })
   })
@@ -447,14 +541,14 @@ describe('the clicks and drags (YAZ-3936)', () => {
     await mount()
     click(clickBox('links-thisTab'))
     clickWith(clickBox('links-thisTab'))
-    expect(says()).toEqual(['Change the gesture for Links in notes and drawings › Open in this tab?', 'No gesture → Click'])
+    expect(says()).toEqual(['Change the gesture for Links in pages and drawings › Open in this tab?', 'No gesture → Click'])
     expect(button(popup() as HTMLElement, 'Save')).toBeDefined()
     click(button(popup() as HTMLElement, 'Save'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'links.thisTab': 'Click' } })
     // Click is Bullet dots › Open in this tab too: another place, no clash. ⌘-click is Links › background's: it moves.
     click(clickBox('links-newTab'))
     clickWith(clickBox('links-newTab'), { metaKey: true })
-    expect(says()).toEqual(['Change the gesture for Links in notes and drawings › Open in a new tab?', '⌘⇧-click → ⌘-click', '⌘-click is Links in notes and drawings › Open in a background tab now. It will lose its gesture.'])
+    expect(says()).toEqual(['Change the gesture for Links in pages and drawings › Open in a new tab?', '⌘⇧-click → ⌘-click', '⌘-click is Links in pages and drawings › Open in a background tab now. It will lose its gesture.'])
     click(button(popup() as HTMLElement, 'Move it here'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'links.thisTab': 'Click', 'links.newTab': 'CmdOrCtrl+Click', 'links.backgroundTab': null } })
   })
@@ -494,15 +588,15 @@ describe('the clicks and drags (YAZ-3936)', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'bullets.newTab': null } })
   })
 
-  it('the page\'s search finds a row by its place and by its action: "links in a note" → the three Links rows; Reset all lists a click change too', async () => {
+  it('the page\'s search finds a row by its place and by its action: "links in a page" → the three Links rows; Reset all lists a click change too', async () => {
     await mount({ 'links.thisTab': 'Click' })
-    type(hotkeyBox(), 'links in notes and drawings')
+    type(hotkeyBox(), 'links in pages and drawings')
     expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-links-thisTab', 'hotkey-links-backgroundTab', 'hotkey-links-newTab', 'hotkey-links-newWindow'])
     type(hotkeyBox(), 'open in a background tab')
     expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-links-backgroundTab', 'hotkey-bullets-backgroundTab'])
     type(hotkeyBox(), '')
     click(button(row('hotkeys-reset-all'), 'Reset all hotkeys'))
-    expect([...(el.querySelector('.hotkeys__changes') as HTMLElement).querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Links in notes and drawings › Open in this tab: Click → No gesture'])
+    expect([...(el.querySelector('.hotkeys__changes') as HTMLElement).querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Links in pages and drawings › Open in this tab: Click → No gesture'])
     click(button(el.querySelector('.confirm') as HTMLElement, 'Reset 1 hotkey'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })
   })

@@ -56,7 +56,7 @@
   background: color-mix(in srgb, var(--fg) 14%, transparent);
 }
 
-/* The one scroller of a note; a viewer fills the box and scrolls inside itself. */
+/* The one scroller of a page; a viewer fills the box and scrolls inside itself. */
 .quicklook__body {
   display: flex;
   flex: 1;
@@ -66,7 +66,7 @@
 }
 
 /* `.editor-instance` has no lead-in of its own: the page's title row gives it one, and here the header does not. */
-.quicklook__note {
+.quicklook__page {
   padding-top: 20px;
 }
 

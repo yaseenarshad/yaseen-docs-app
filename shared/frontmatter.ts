@@ -1,4 +1,5 @@
-import { type Document, isMap, parse, parseDocument } from 'yaml'
+import { type Document, Scalar, isMap, isScalar, parse, parseDocument } from 'yaml'
+import { splitFrontmatter } from './frontmatterSplit'
 
 /**
  * Frontmatter handling rule (locked in GRO-1961):
@@ -7,30 +8,17 @@ import { type Document, isMap, parse, parseDocument } from 'yaml'
  * strips the leading frontmatter block BEFORE loading markdown into Crepe and
  * re-prepends it byte-identically on save (`frontmatter + body`).
  *
- * A frontmatter block is: file starts with `---\n` (or `---\r\n`), followed by
- * any lines (possibly none — `---\n---\n` is the empty block a delete of the
- * last key leaves behind, GRO-2216), terminated by a line that is exactly
- * `---` (or `...`).
+ * The block rule and `splitFrontmatter` live in `./frontmatterSplit` (no imports, YAZ-5509).
  *
  * Shared with the main process's Bases index (GRO-2127), which parses the block via `parseFrontmatter`.
  */
-export interface SplitMarkdown {
-  /** The raw frontmatter block including both `---` fences and trailing newline; '' if none. */
-  frontmatter: string
-  /** Everything after the frontmatter block. */
-  body: string
-}
+export { splitFrontmatter, type SplitMarkdown } from './frontmatterSplit'
 
-const FM_RE = /^(---\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$))/
-
-export function splitFrontmatter(markdown: string): SplitMarkdown {
-  const m = FM_RE.exec(markdown)
-  if (!m) return { frontmatter: '', body: markdown }
-  const frontmatter = m[1]
-  return { frontmatter, body: markdown.slice(frontmatter.length) }
-}
-
-const OPEN_FENCE_RE = /^---[ \t]*\r?\n/
+const OPEN_FENCE_RE = /^\uFEFF?---[ \t]*\r?\n/
+/** A byte order mark: it stays the page's first character through every write (YAZ-5512 C1). */
+const BOM = '\uFEFF'
+/** The BOM a write keeps first: the block's own, or, with no block, the body's. */
+const bomOf = (frontmatter: string, body: string): string => ((frontmatter === '' ? body : frontmatter).startsWith(BOM) ? BOM : '')
 const CLOSE_FENCE_RE = /(?:^|\r?\n)(?:---|\.\.\.)[ \t]*(?:\r?\n)?$/
 
 /**
@@ -43,7 +31,7 @@ const CLOSE_FENCE_RE = /(?:^|\r?\n)(?:---|\.\.\.)[ \t]*(?:\r?\n)?$/
  * come off, every other byte — comments, key order, quoting, blank lines — stays exactly as the
  * file has it. The inverse of `replaceFrontmatter` (⚡ YAZ-883) and the one place the fence
  * regexes are applied, so the parser and the raw panel can never disagree about where a block
- * ends. Note the trailing newline goes with the terminator: `---\na: 1\n---\n` → `a: 1`.
+ * ends. Page the trailing newline goes with the terminator: `---\na: 1\n---\n` → `a: 1`.
  */
 export function frontmatterInterior(frontmatter: string): string {
   return frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, '')
@@ -62,7 +50,7 @@ export function parseFrontmatter(frontmatter: string): { properties: Record<stri
   return { properties: value as Record<string, unknown> }
 }
 
-/** Thrown instead of writing when a note's frontmatter is not valid YAML, or is not a map (GRO-2141). */
+/** Thrown instead of writing when a page's frontmatter is not valid YAML, or is not a map (GRO-2141). */
 export class FrontmatterWriteError extends Error {
   constructor(message: string) {
     super(message)
@@ -82,10 +70,32 @@ const YAML_OUT = { lineWidth: 0, flowCollectionPadding: false } as const
  * are preserved byte-for-byte (GRO-2141, ruling D4).
  *
  * Values go in as YAML natively (strings, numbers, booleans, null, arrays, plain objects);
- * a `Date` is out of scope — callers pass ISO strings.
+ * a `Date` is out of scope — callers pass ISO strings. A `null` value is written as `key:` with no
+ * value, Obsidian's empty property, as `buildFrontmatter` writes it (YAZ-4551).
  */
 export function setFrontmatterProperty(content: string, key: string, value: unknown): string {
   return setFrontmatterIn(content, [key], value)
+}
+
+/**
+ * YAZ-4615 D10: the one line a new page carries for an agent — where comments go and the two keys
+ * an agent's comment needs. A YAML comment at the TOP of the block: every `setFrontmatterIn` write
+ * keeps it (yaml's Document holds a leading comment), the properties panel never shows it, and the
+ * reader (`shared/comments.ts`) shows a `{by, body}` entry and numbers it on its next write.
+ */
+export const COMMENTS_HINT = '# comments: - {by: <name>, body: <text>}'
+
+/** `content` with the hint as its frontmatter's first line; a block is made when there is none. Unchanged when the line is there. */
+export function withCommentsHint(content: string): string {
+  const { frontmatter, body } = splitFrontmatter(content)
+  if (frontmatter === '') {
+    const bom = bomOf(frontmatter, body)
+    return `${bom}---\n${COMMENTS_HINT}\n---\n${content.slice(bom.length)}`
+  }
+  if (frontmatter.split(/\r?\n/).some((line) => line.trim() === COMMENTS_HINT)) return content
+  const open = OPEN_FENCE_RE.exec(frontmatter)?.[0] ?? '---\n'
+  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
+  return `${open}${COMMENTS_HINT}${eol}${frontmatter.slice(open.length)}${body}`
 }
 
 /**
@@ -95,47 +105,94 @@ export function setFrontmatterProperty(content: string, key: string, value: unkn
  */
 export function setFrontmatterIn(content: string, path: readonly string[], value: unknown): string {
   const { frontmatter, body } = splitFrontmatter(content)
+  // A null value prints as `key:`: a null scalar keeps an empty source, as a parsed `key:` does (YAZ-4551).
+  const leaf = value === null ? Object.assign(new Scalar(null), { source: '' }) : value
 
   if (frontmatter === '') {
     if (value === undefined) return content
     const doc = parseDocument('')
-    doc.setIn(path, value)
-    return `---\n${doc.toString(YAML_OUT)}---\n${body}`
+    doc.setIn(path, leaf)
+    const bom = bomOf(frontmatter, body)
+    return `${bom}---\n${doc.toString(YAML_OUT)}---\n${body.slice(bom.length)}`
   }
 
-  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
-  const terminator = TERMINATOR_RE.exec(frontmatter)?.[1] ?? '---'
-  const trailingEol = /\r?\n$/.test(frontmatter) ? eol : ''
-
-  const doc = parseDocument(frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, ''))
-  const err = doc.errors[0]
-  if (err) throw new FrontmatterWriteError(`frontmatter is not valid YAML: ${err.message}`)
-  if (doc.contents !== null && !isMap(doc.contents)) throw new FrontmatterWriteError('frontmatter is not a map')
-
-  if (value === undefined) {
-    if (!doc.hasIn(path)) return content
-    doc.deleteIn(path)
-  } else {
+  return editFrontmatter(content, frontmatter, body, (doc) => {
+    if (doc.contents !== null && !isMap(doc.contents)) throw new FrontmatterWriteError('frontmatter is not a map')
+    if (value === undefined) {
+      if (!doc.hasIn(path)) return false
+      doc.deleteIn(path)
+      return
+    }
     // The deepest map on the way that is not there yet takes the rest of the path as a new map.
     let at = path.length - 1
-    let set: unknown = value
+    let set: unknown = leaf
     for (let i = 1; i < path.length; i++) {
       const held = doc.getIn(path.slice(0, i))
       if (isMap(held)) continue
       if (held != null) throw new FrontmatterWriteError(`"${path.slice(0, i).join('.')}" is not a map of values`)
       at = i - 1
-      set = path.slice(i).reduceRight<unknown>((inner, key) => ({ [key]: inner }), value)
+      set = path.slice(i).reduceRight<unknown>((inner, key) => ({ [key]: inner }), leaf)
       break
     }
     doc.setIn(path.slice(0, at + 1), set)
-  }
-
-  const yaml = serializeInner(doc)
-  return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
+  })
 }
 
 /**
- * Replace a note's WHOLE frontmatter interior with the user's literal text (⚡ YAZ-883, the raw
+ * The one parse and layout of an existing block (YAZ-4544), for `setFrontmatterIn` and `renameFrontmatterKey`: the
+ * block's line ends, its closing fence and the line end after it stay as they were. `edit` changes the parsed block in
+ * place, throws to refuse, or returns false for no change: then `content` comes back as it was.
+ */
+function editFrontmatter(content: string, frontmatter: string, body: string, edit: (doc: Document) => boolean | void): string {
+  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
+  const terminator = TERMINATOR_RE.exec(frontmatter)?.[1] ?? '---'
+  const trailingEol = /\r?\n$/.test(frontmatter) ? eol : ''
+  const doc = parseDocument(frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, ''))
+  const err = doc.errors[0]
+  if (err) throw new FrontmatterWriteError(`frontmatter is not valid YAML: ${err.message}`)
+  if (edit(doc) === false) return content
+  const yaml = keepHint(frontmatter, serializeInner(doc))
+  return `${bomOf(frontmatter, body)}---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
+}
+
+/**
+ * Rename ONE key in place (YAZ-4551, the Properties panel's Rename…): its value, its comments and
+ * its place in the block stay, and nothing else is laid out again. `parent` names the map the key
+ * sits in — `[]` for the top level, `['in', <folder id>]` for a folder's block. A missing key, or a
+ * name that map holds already, is refused.
+ */
+export function renameFrontmatterKey(content: string, parent: readonly string[], from: string, to: string): string {
+  const { frontmatter, body } = splitFrontmatter(content)
+  return editFrontmatter(content, frontmatter, body, (doc) => {
+    const map = parent.length === 0 ? doc.contents : doc.getIn(parent, true)
+    const keyOf = (pair: { key: unknown }): unknown => (isScalar(pair.key) ? pair.key.value : pair.key)
+    const pair = isMap(map) ? map.items.find((p) => keyOf(p) === from) : undefined
+    if (frontmatter === '' || !isMap(map) || pair === undefined) throw new FrontmatterWriteError(`"${from}" is not a property`)
+    if (map.items.some((p) => keyOf(p) === to)) throw new FrontmatterWriteError(`"${to}" is already a property`)
+    // The key's own scalar keeps its comment (a comment above a key rides on it).
+    if (isScalar(pair.key)) pair.key.value = to
+    else pair.key = doc.createNode(to)
+  })
+}
+
+/**
+ * YAZ-4615 D10: the hint stays the block's first line through EVERY write — a comment, a property,
+ * a merge. yaml drops a block's only comment once its last key goes, and parts it from a first key
+ * with a blank line; this puts it back where it stood. A block that never had it is not touched.
+ */
+function keepHint(before: string, yaml: string): string {
+  const hadIt = before.replace(OPEN_FENCE_RE, '').split(/\r?\n/, 1)[0]?.trim() === COMMENTS_HINT
+  if (!hadIt) return yaml
+  const rest = yaml.split('\n')
+  const at = rest.findIndex((line) => line.trim() === COMMENTS_HINT)
+  if (at !== -1) rest.splice(at, 1)
+  while (rest[0] === '') rest.shift()
+  const tail = rest.join('\n')
+  return `${COMMENTS_HINT}\n${tail}`
+}
+
+/**
+ * Replace a page's WHOLE frontmatter interior with the user's literal text (⚡ YAZ-883, the raw
  * properties panel). The text goes back VERBATIM — never parsed and re-serialised — so comments,
  * key order and quoting styles survive exactly as typed; validation is the CALLER's job
  * (`parseFrontmatter` on the result), because a block that will not parse would corrupt the index.
@@ -147,15 +204,17 @@ export function setFrontmatterIn(content: string, path: readonly string[], value
  * round-trips to the identical string and the caller can skip the write.
  */
 export function replaceFrontmatter(content: string, yamlText: string): string {
-  const { frontmatter, body } = splitFrontmatter(content)
-  if (yamlText === '') return body
+  const { frontmatter, body: whole } = splitFrontmatter(content)
+  const bom = bomOf(frontmatter, whole)
+  const body = frontmatter === '' ? whole.slice(bom.length) : whole
+  if (yamlText === '') return `${bom}${body}`
 
   const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
   const terminator = TERMINATOR_RE.exec(frontmatter)?.[1] ?? '---'
   // A block the file ends on without a newline keeps that shape; a fresh block always gets one.
   const trailingEol = frontmatter === '' || /\r?\n$/.test(frontmatter) ? eol : ''
   const interior = /\r?\n$/.test(yamlText) ? yamlText : `${yamlText}${eol}`
-  return `---${eol}${interior}${terminator}${trailingEol}${body}`
+  return `${bom}---${eol}${interior}${terminator}${trailingEol}${body}`
 }
 
 /** An emptied map serialises as `{}`; we want the block to just be empty instead. */

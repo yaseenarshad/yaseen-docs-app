@@ -307,7 +307,7 @@ describe('a double-click on a word next to a link selects only that word (YAZ-39
 /**
  * YAZ-4275: text typed at a link's edge goes to that edge, never inside the link. At a line's end, after ⌘→, the editor's
  * caret is at the link's end, but the browser keeps its own caret at the end of the shown name, before the hidden
- * `.excalidraw]]`, and types there. In the vault a note link is an ID link, whose title is a widget AT the link's end, so
+ * `.excalidraw]]`, and types there. In the vault a page link is an ID link, whose title is a widget AT the link's end, so
  * that caret is already outside: why only drawing and diagram links broke. A name link (`[[Named]]`) has hidden text after
  * its shown name too, so it is pinned here as well.
  */
@@ -330,7 +330,7 @@ describe('a letter the browser types inside a closed link goes to its edge (YAZ-
     expect(await markdown(crepe)).toBe(`pad [[${DRAWING}]] x`)
   })
 
-  it('a name link to a note breaks the same way, and is fixed the same way', async () => {
+  it('a name link to a page breaks the same way, and is fixed the same way', async () => {
     const { crepe, view } = await mount('pad [[Named]]\n')
     arrow(view, 'ArrowRight', 14)
     typeAt(view, 12, ' ') // after the shown "Named", before the hidden `]]`
@@ -377,16 +377,16 @@ describe('a letter the browser types inside a closed link goes to its edge (YAZ-
     expect(await markdown(table.crepe)).toContain(`[[${DRAWING}]]x`)
 
     // A cell note: a footnote block under the table, hidden until its card opens; its lines are textblocks too.
-    const note = await mount(`| a |\n| --- |\n| b[^cell-1] |\n\n[^cell-1]: pad [[${DRAWING}]]\n`)
-    let noteEnd = 0
-    note.view.state.doc.descendants((node, pos) => {
-      if (node.isTextblock && node.textContent.includes(DRAWING)) noteEnd = pos + node.nodeSize - 1
+    const page = await mount(`| a |\n| --- |\n| b[^cell-1] |\n\n[^cell-1]: pad [[${DRAWING}]]\n`)
+    let pageEnd = 0
+    page.view.state.doc.descendants((node, pos) => {
+      if (node.isTextblock && node.textContent.includes(DRAWING)) pageEnd = pos + node.nodeSize - 1
     })
-    expect(noteEnd).toBeGreaterThan(0)
-    arrow(note.view, 'ArrowRight', noteEnd)
-    typeAt(note.view, noteEnd - '.excalidraw]]'.length, ' ')
-    typeAt(note.view, note.view.state.selection.head, 'x')
-    expect(await markdown(note.crepe)).toContain(`[^cell-1]: pad [[${DRAWING}]] x`)
+    expect(pageEnd).toBeGreaterThan(0)
+    arrow(page.view, 'ArrowRight', pageEnd)
+    typeAt(page.view, pageEnd - '.excalidraw]]'.length, ' ')
+    typeAt(page.view, page.view.state.selection.head, 'x')
+    expect(await markdown(page.crepe)).toContain(`[^cell-1]: pad [[${DRAWING}]] x`)
   })
 
   it('a caret where the browser types (all normal typing), an open link, and a composition stay the browser\'s', async () => {

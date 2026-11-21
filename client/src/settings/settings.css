@@ -147,8 +147,8 @@
   right: 12px;
   /* The pane comes later in the tree, so a positioned box in it (a dropdown's wrapper) that scrolls
      under the button would otherwise paint OVER it and eat the click (DL8, found when the pane
-     itself was positioned). */
-  z-index: 1;
+     itself was positioned). Over the open find bar's band (z-index 3, YAZ-5978) too. */
+  z-index: 4;
   display: flex;
   padding: 6px 9px;
   border-radius: 6px;
@@ -179,7 +179,7 @@
   color: var(--fg);
 }
 
-/* The one section-level note (Sync: these settings travel with the vault, not the app). */
+/* The one section-level page (Sync: these settings travel with the vault, not the app). */
 .settings-section__note {
   margin: -6px 0 14px;
   font-size: 13px;
@@ -390,6 +390,23 @@
 
 .settings__input--error {
   border-color: var(--danger);
+}
+
+/* A review list (the FSRS weights, YAZ-4946): the whole list shows, wrapped; no second gap under the hint. The box
+   grows to its text (`field-sizing: content`, YAZ-4964): 21 numbers take 3 lines at 960 px, more in a narrow window,
+   and a fixed `rows` cut the last line. Its width stays the row's (`.settings__input`'s 100%), so it never runs past
+   the panel's side. */
+.settings__input--list {
+  margin-top: 0;
+  field-sizing: content;
+  max-width: 100%;
+  /* A floor of 3 lines (with the field's padding and border); the text grows it past that. */
+  min-height: calc(3lh + 14px);
+  resize: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 /* A review number (YAZ-2322): the same field, a few digits wide, on the row beside its unit. */
@@ -671,10 +688,6 @@
   color: var(--fg-muted);
 }
 
-.hotkeys__label--command {
-  color: var(--fg);
-}
-
 .hotkeys__hint {
   color: var(--fg-muted);
 }
@@ -736,6 +749,44 @@
 }
 
 /* The change pop-up (D6): the key now → the key it will have, big enough to read at a glance. */
+/* The change pop-up never grows past the window (YAZ-4941): its "Show all" list scrolls inside it. */
+.hotkeys__box .confirm {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+}
+.hotkeys__clash-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40vh;
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.6;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+/* One line per row (YAZ-4941): the keys stay whole, a long action cuts with "…" and shows in full on hover. */
+.hotkeys__clash-list li {
+  display: flex;
+  gap: 0.5em;
+  white-space: nowrap;
+}
+.hotkeys__clash-key {
+  flex: none;
+  min-width: 6.5em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-muted);
+}
+.hotkeys__clash-action {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .hotkeys__swap {
   display: flex;
   align-items: flex-end;
@@ -1622,6 +1673,89 @@
 }
 
 /* "Band colour" (the YAZ-3818 demo): the accent, the ten table colours and Custom…, as the cell toolbar's Fill. */
+/* Header row (YAZ-4774, `registry.tsx`): Color, Strength and Text, each its word then its control. */
+.settings__header-row {
+  display: grid;
+  /* YAZ-4794: the names share one column, and the controls' column may shrink below their width (they wrap, never
+     push the dialog sideways). */
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.settings__header-row > * {
+  min-width: 0;
+}
+
+.settings__header-row-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* YAZ-4794: the segments a size smaller here, so Text colour (Muted, Full and eight swatches) and Align fit one line. */
+.settings__header-row .settings__options {
+  flex-wrap: wrap;
+}
+
+.settings__header-row .settings__option {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+/* Reset: a quiet word at the end of the last row, not a button of its own row. */
+.settings__header-row-reset {
+  margin-left: auto;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings__header-row-reset:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+/* The live preview (YAZ-4794): a sample page table header row and one row under it, the `table.css` variables painted
+   as a page table paints them. Fixed layout at the card's width, so it never widens the dialog. */
+.header-row-preview {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 440px;
+  margin-bottom: 4px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.header-row-preview :is(th, td) {
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+}
+
+.header-row-preview th {
+  background: color-mix(in srgb, var(--table-header-hue, var(--fg)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), transparent);
+  font-weight: var(--table-header-weight, bold);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), var(--fg)));
+}
+
+/* Align: the columns' own (inline, Follow column) unless the row's is Left, Center or Right. */
+.header-row-preview[data-table-header-align]:not([data-table-header-align='follow']) th {
+  text-align: var(--table-header-align) !important;
+}
+
 .settings__band-colours {
   display: flex;
   flex-wrap: wrap;
@@ -1742,4 +1876,373 @@
   margin: 0;
   padding: 3px 6px;
   text-align: right;
+}
+
+/* YAZ-4615 D7: Settings › General › You — the picture, then the name and the handle. */
+.profile-control {
+  display: grid;
+  gap: 10px;
+  max-width: 420px;
+}
+
+.profile-control__picture {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-control__picture-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.profile-control__field {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.profile-control__field span {
+  color: var(--fg-muted);
+}
+
+.profile-control__field input {
+  min-width: 0;
+  padding: 5px 8px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.profile-control__field input[aria-invalid='true'] {
+  border-color: var(--danger, #d14343);
+}
+
+.profile-control__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger, #d14343);
+}
+
+/* Settings › Link pills (YAZ-4924, `LinkPillsControl.tsx`): one row — the format box with its chips and the ready
+   formats, the vault rule, the preview (a "Preview" label and ONE sample pill; it wears the vault's look as a page
+   does, in the page's text size) and, under it, the toolbar of the part clicked. */
+.link-pills-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.link-pills-format {
+  width: 100%;
+  max-width: 520px;
+}
+
+/* The format box in the code font: a brace reads as a brace. */
+.link-pills-format .settings__input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+/* The token chips: small, in the code font, as the tokens they put in. */
+.link-pills-chips {
+  flex-wrap: wrap;
+}
+.link-pills-chip {
+  padding: 3px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.link-pills-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fg);
+  cursor: default;
+}
+.link-pills-preview__samples {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  min-width: 0;
+}
+/* The "Preview" label: small and muted, no part of the pill. */
+.link-pills-preview__label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.link-pills-preview__mark {
+  background: var(--mark-bg);
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+.link-pills-preview__ext {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.link-pills-preview__hover-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.link-pills-preview__hover-toggle:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.link-pills-preview__hover-toggle--on {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.link-pills-preview__hover-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.45;
+}
+.link-pills-preview__hover-toggle--on .link-pills-preview__hover-dot {
+  opacity: 1;
+}
+/* A part of a pill is a click target: the hand says so. */
+.link-pills-preview .wikilink,
+.link-pills-preview .wikilink * {
+  cursor: pointer;
+}
+
+/* The style panel: the cell toolbar's look (`table.css` `.cell-toolbar`: Crepe's surface and shadow), a title line
+   ("Styling: the name", the part a quiet dropdown) and three rows, each with its short label on the left (round 3:
+   the unnamed strip read as four ways to style one thing). */
+.pill-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  /* Wide enough for the Colour row on one line: Accent · Text · Muted and the ten swatches. */
+  max-width: 600px;
+  padding: 8px 10px 10px;
+  border-radius: 8px;
+  background: var(--crepe-color-surface, var(--bg));
+  box-shadow: var(--crepe-shadow-1, 0 2px 8px rgba(0, 0, 0, 0.12));
+}
+.pill-toolbar__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.pill-toolbar__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+/* The title's dropdown reads as the title's last words, not as a form control: no box, the title's weight, a chevron. */
+.pill-toolbar__title .settings__select {
+  padding: 2px 20px 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pill-toolbar__title .settings__select:hover {
+  border-color: var(--border);
+}
+.pill-toolbar__title .settings__select-wrap::after {
+  right: 6px;
+}
+/* No wrap: the label keeps its controls beside it; a long group (the colours) wraps inside itself instead. */
+.pill-toolbar__row {
+  display: flex;
+  align-items: center;
+  gap: 4px 8px;
+}
+.pill-toolbar__label {
+  flex: 0 0 56px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.pill-toolbar__group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.pill-toolbar .pill-toolbar__item,
+.link-pills-hover .pill-toolbar__item {
+  min-width: 32px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+/* The mark's Icon row (YAZ-4924 round 5): each button is the small icon itself, centred, a little bigger than the words. */
+.pill-toolbar .pill-toolbar__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+.pill-toolbar__b {
+  font-weight: 700;
+}
+.pill-toolbar__i {
+  font-style: italic;
+}
+.pill-toolbar__u {
+  text-decoration: underline;
+}
+.pill-toolbar .pill-toolbar__close {
+  margin-left: auto;
+  color: var(--fg-muted);
+}
+
+/* Settings › Review › How cards come back (YAZ-5020): a quiet line that opens; small, muted text. */
+.review-how {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+.review-how > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  width: max-content;
+}
+.review-how > summary:hover {
+  color: var(--fg);
+}
+.review-how ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.review-how li + li {
+  margin-top: 2px;
+}
+.review-how b {
+  font-weight: 600;
+  color: var(--fg);
+}
+.review-how p {
+  margin: 6px 0 0;
+}
+
+
+/* Settings › Cards › Friends (YAZ-5098): how to make a GitHub token, shown only while none is saved. */
+.settings__steps {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+/* ⌘F in the open section (YAZ-5968): the page's find bar at the pane's top, kept clear of the ✕. While open the dock is
+   a band of its own in the pane's flow (YAZ-5978): it pushes the section down, so no row starts under the bar, and it
+   sticks opaque to the pane's top as the pane scrolls, so a row goes under the band whole, as past the pane's edge.
+   The negative margins take the band over the pane's padding to its edges; its padding puts the bar where it was. */
+.find-bar-dock--settings.find-bar-dock--open {
+  position: sticky;
+  top: -24px;
+  z-index: 3;
+  display: flex;
+  justify-content: flex-end;
+  height: auto;
+  margin: -24px -28px 8px;
+  padding: 8px 48px 8px 28px;
+  background: var(--bg);
+}
+
+.find-bar-dock--settings.find-bar-dock--open .find-bar {
+  position: static;
+}
+
+/* A sub-heading in a long group (YAZ-5969, Q4 "Box per sub-group"): each sub-group is its own card, its label above
+   it in the text's colour, as macOS System Settings groups its rows. The shapes show the groups: no line, no colour. */
+.settings-subheading {
+  margin: 16px 0 6px 4px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.settings-group__card + .settings-subheading {
+  margin-top: 18px;
+}
+
+/* Link pills' icon rows (YAZ-5972): "Pages and files" and "Cards" need a wider label than one word. */
+.pill-toolbar .pill-toolbar__label--wide {
+  flex-basis: 96px;
+}
+/* "Custom colour…" (YAZ-5972) at the end of a pill colour row: the words until a custom colour is picked, then its
+   swatch. Its colour box opens on a line of its own under the swatches, the width of the table's. */
+.pill-toolbar .pill-toolbar__custom,
+.link-pills-hover .pill-toolbar__custom {
+  white-space: nowrap;
+}
+/* Settings › Files & Links › Link pills › Hover (YAZ-5991 / D5): visible right under Preview so hovering the sample pills tests it immediately. */
+.link-pills-hover {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 600px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.link-pills-hover__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.pill-toolbar__custom-box {
+  flex: 0 0 100%;
+}
+.pill-toolbar__custom-box[hidden] {
+  display: none;
+}
+.pill-toolbar__custom-box .colour-box {
+  width: 190px;
+  margin: 4px 0 2px;
+}
+/* With the box open the row is tall: its label lines up with the row's first line of buttons (one button high, 28 px),
+   not the row's middle beside the box. */
+.pill-toolbar__row:has(.pill-toolbar__custom-box:not([hidden])) {
+  align-items: flex-start;
+}
+.pill-toolbar__row:has(.pill-toolbar__custom-box:not([hidden])) > .pill-toolbar__label {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
 }

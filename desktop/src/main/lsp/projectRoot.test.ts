@@ -19,15 +19,15 @@ describe('findProjectRoot (YAZ-3454)', () => {
 
   it('a stray package.json in the home folder makes no project (S7: one-file help)', () => {
     const exists = disk(path.join(H, 'package.json'))
-    expect(findProjectRoot(path.join(H, 'notes', 'a.ts'), ['package.json'], exists, [H])).toBeNull()
+    expect(findProjectRoot(path.join(H, 'pages', 'a.ts'), ['package.json'], exists, [H])).toBeNull()
   })
 
   it('YAZ-3458: the walk stops at `top` (the vault): a marker above it makes no project', () => {
     const exists = disk(path.join(H, 'repo', 'package.json'), path.join(H, 'repo', 'vault', 'app', 'tsconfig.json'))
     const vault = path.join(H, 'repo', 'vault')
-    expect(findProjectRoot(path.join(vault, 'notes', 'a.ts'), ['tsconfig.json', 'package.json'], exists, [H], vault)).toBeNull()
+    expect(findProjectRoot(path.join(vault, 'pages', 'a.ts'), ['tsconfig.json', 'package.json'], exists, [H], vault)).toBeNull()
     expect(findProjectRoot(path.join(vault, 'app', 'src', 'a.ts'), ['tsconfig.json', 'package.json'], exists, [H], vault)).toBe(path.join(vault, 'app'))
-    expect(findProjectRoot(path.join(vault, 'notes', 'a.ts'), ['tsconfig.json', 'package.json'], exists, [H])).toBe(path.join(H, 'repo'))
+    expect(findProjectRoot(path.join(vault, 'pages', 'a.ts'), ['tsconfig.json', 'package.json'], exists, [H])).toBe(path.join(H, 'repo'))
   })
 
   it('isInside: the folder itself and what is under it, nothing beside it', () => {

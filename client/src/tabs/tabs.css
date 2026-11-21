@@ -37,8 +37,7 @@
 
 /* The strip's outer row (YAZ-721): the nav buttons, the scrolling tablist, the "+" and the tail.
    The look is Linear's bar (YAZ-2656 D12, as the owner changed it): a tall row, every tab a
-   rounded pill centred in it, in three fills — inactive, hover, active — set per theme above.
-   The review bar wears this row too (reviewBar.css), so it is as tall and as tinted. */
+   rounded pill centred in it, in three fills — inactive, hover, active — set per theme above. */
 .tabbar-row {
   display: flex;
   align-items: center;
@@ -46,6 +45,11 @@
   height: 44px;
   border-bottom: 1px solid var(--border);
   background: var(--tab-row);
+}
+
+/* Focus mode (YAZ-5375 C): while the Inbox tab shows, the tab row steps aside (App's `data-inbox-focus`). */
+.workspace[data-inbox-focus] > .tabbar-row {
+  display: none;
 }
 
 /* Room at the row's end for the floating "Show right panel" button while that panel is closed (S93). */
@@ -301,6 +305,13 @@
   /* Room after the name for the fade and for the ✕, which stands over it (YAZ-2689 D4). A short name is clear of both. */
   padding-right: 18px;
   mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+}
+
+/* The Inbox tab's tray (YAZ-5374): the sidebar Inbox row's icon, placed and coloured as a page tab's file icon. */
+.tabbar__inbox-icon {
+  flex: none;
+  margin-right: 6px;
+  color: var(--fg-muted);
 }
 
 /* The name after the file icon and a sleeping tab's zzz (YAZ-4003): it runs on under the label's end and fades there. */
@@ -807,7 +818,7 @@
 }
 
 /* A card (D15): short and wide, its title row, a "Page: …"
-   line when named, two lines of the note — at its place in its group. It lifts under the pointer. */
+   line when named, two lines of the page — at its place in its group. It lifts under the pointer. */
 .taboverview__page {
   position: absolute;
   z-index: 1;
@@ -939,7 +950,7 @@
   white-space: nowrap;
 }
 
-/* Under a folder line and a "Page:" line the note keeps one line; the card is 96 px. */
+/* Under a folder line and a "Page:" line the page keeps one line; the card is 96 px. */
 .taboverview__page--framed .taboverview__pagename + .taboverview__lines {
   -webkit-line-clamp: 1;
 }
@@ -986,7 +997,7 @@
   visibility: hidden;
 }
 
-/* The note's first lines (D6): plain text, the note's own line breaks kept, two at most on a card — the
+/* The page's first lines (D6): plain text, the page's own line breaks kept, two at most on a card — the
    preview panel is the place to read (D18). */
 .taboverview__lines {
   display: -webkit-box;

@@ -17,8 +17,8 @@
  * Each tab follows them live. "Allow edits" on the chip unlocks this tab until it closes; the setting going
  * on again locks it again. ⌥Z flips this tab's wrap and saves nothing; a change of the setting overrides it.
  *
- * A NOTE TAB'S FEATURES (YAZ-3451, D7): Monaco's find box (⌘F, ⌘⌥F); folds remembered by the text of
- * their first line (`codeFolds.ts`); the note's text size (⌘+ / ⌘− / ⌘0, the zoom pill), per tab, never
+ * A PAGE TAB'S FEATURES (YAZ-3451, D7): Monaco's find box (⌘F, ⌘⌥F); folds remembered by the text of
+ * their first line (`codeFolds.ts`); the page's text size (⌘+ / ⌘− / ⌘0, the zoom pill), per tab, never
  * stored; "Duplicate tab" reads folds, scroll and text size through `registerPageView`. An outside
  * reload is ONE undoable edit over the part that changed (`reloadEdit.ts`): ⌘Z still works after it.
  * Scroll and cursor survive a tab switch because the tab stays mounted (a hidden layer sends Monaco's
@@ -32,26 +32,28 @@
  * goes on to Monaco. Save now (⌘S, the row `code.save`) saves at once, as on a drawing.
  *
  * THE CODE KEYS (YAZ-3564 K4) are Monaco's, as the key list and the user's changes say (`codeKeys.ts`): one rule
- * set for the window, live. The note's fold keys are code rows there too (YAZ-3478): ⌘⇧U folds every block, ⌘⇧I
+ * set for the window, live. The page's fold keys are code rows there too (YAZ-3478): ⌘⇧U folds every block, ⌘⇧I
  * unfolds every block, ⌘↑ / ⌘↓ fold / unfold the block at the cursor, each a rule on Monaco's own fold action, so
  * the folds are remembered as any fold is. While the suggest list is open they step aside, and ⌘↑ / ⌘↓ move in the
  * list (K14). On a Mac ⌘↑ / ⌘↓ therefore do not go to the top / bottom of the file: ⌘Home / ⌘End do (with ⇧,
  * they select). A right-click on a fold chevron opens the app's menu: "Collapse all", "Expand all", with the keys
  * as they are now.
  *
- * THE TABLE OF CONTENTS (YAZ-3486; called so since YAZ-3506): VS Code's Outline in the note table of
+ * THE TABLE OF CONTENTS (YAZ-3486; called so since YAZ-3506): VS Code's Outline in the page table of
  * contents' place and frame (`outline/CodeOutline.tsx`), on the same setting and width. Its feed
  * (`outline/outlineFeed.ts`) is made with the editor and goes with it. The cog's "Table of contents" row
  * turns it off for this file only, saved for the file in the app state (`tocSwitches`, `usePageSwitch`): a code file
- * has no frontmatter, so it cannot hold the switch as a note does (`toc`, YAZ-4094 G4).
+ * has no frontmatter, so it cannot hold the switch as a page does (`toc`, YAZ-4094 G4).
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
 import { HOTKEY_COMMANDS, appKeyId, keyFor, sameKey, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
 import { keyRow, stepsAside, type HotkeyAside } from '@shared/keys'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
+import { useTimedUnlock } from '../editor/useTimedUnlock'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { FoldNext } from '../editor/FoldAllButton'
 import { usePageSwitch } from '../editor/usePageSwitch'
@@ -91,7 +93,7 @@ export interface CodeEditorProps extends DocumentHostProps {
   codeMinimap?: boolean
   /** The cog's rows and the Outline's "…" menu write these settings for every code file; absent = no cog. */
   onChangeCodeSettings?: (patch: CodeSettingsPatch) => void
-  /** The Outline (YAZ-3486) on the note's setting (Settings › "Pin default") and width; absent = off. */
+  /** The Outline (YAZ-3486) on the page's setting (Settings › "Pin default") and width; absent = off. */
   tableOfContents?: TableOfContentsMode
   /** Settings › "Table of contents default" (YAZ-3558): for a file that made no choice in its cog. Absent = the default, on. */
   tocOnByDefault?: boolean
@@ -211,10 +213,16 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
   const closedText = useRef<string | null>(null)
   /** True while a reload puts disk truth in: those changes are not edits. */
   const applyingDisk = useRef(false)
-  /** "Allow edits" on this tab's chip (YAZ-3449 S2): this tab only, until it closes. */
-  const [unlocked, setUnlocked] = useState(false)
+  /** The vault's Read only (YAZ-4939): this tab opens locked as the setting locks it. */
+  const vaultLocked = useContext(VaultReadOnly).on
+  /** The flush of the host below, for the unlock's end: the host is made after `locked` is needed, so a ref. */
+  const flushRef = useRef<() => void>(() => undefined)
+  /** A time choice on this tab's chip (YAZ-3449 S2, YAZ-4939): this tab only, for that long; at zero the tab saves, then locks. */
+  const unlock = useTimedUnlock(() => flushRef.current())
   const [askingUnlock, setAskingUnlock] = useState(false)
-  const locked = codeReadOnly && !unlocked
+  /** This tab is under Read only: the setting or the vault. The chip shows while it is. */
+  const lockedBase = codeReadOnly || vaultLocked
+  const locked = lockedBase && unlock.until === null
   /** This tab's wrap: the setting, or ⌥Z's flip of it until the setting changes (S4). */
   const wrap = useRef(codeWrap)
   /** The text size, per tab (YAZ-3451): a copy starts at its source's (S5); never stored. */
@@ -222,7 +230,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   // This file's "Table of contents" row (YAZ-3506): Settings › "Table of contents default" until this file makes its own
-  // choice, which wins, also over Off (YAZ-3558 D1). Saved with the file in the app state, as a note's is.
+  // choice, which wins, also over Off (YAZ-3558 D1). Saved with the file in the app state, as a page's is.
   const [tocOn, toggleToc] = usePageSwitch(root, path, storage.getTocSwitch, storage.setTocSwitch, tocOnByDefault)
   const tocMode: TableOfContentsMode = tocOn ? tableOfContents : 'off'
   /** The values the editor is born with; the effects below follow every change after. */
@@ -309,6 +317,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
     focus: () => editorRef.current?.focus(),
   })
   const { start, autosave, retired } = doc
+  flushRef.current = doc.flush
 
   // One editor and one model for the host's life; both disposed with it (no leak per tab).
   useEffect(() => {
@@ -422,12 +431,15 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
     // Mount once: `loaded` and `path` are fixed for this host (the shell keys it by path), and a theme change is the effect below.
   }, [])
 
-  // Settings › Code, live in every tab (S1, S4, S5). A setting going on again locks a tab that was unlocked (S1).
+  // Settings › Code, live in every tab (S1, S4, S5). A setting going on again locks a tab that was unlocked (S1); so does the vault's (YAZ-4939).
+  const { lock } = unlock
   useEffect(() => {
-    if (codeReadOnly) setUnlocked(false)
-  }, [codeReadOnly])
+    if (codeReadOnly || vaultLocked) lock()
+  }, [codeReadOnly, vaultLocked, lock])
   useEffect(() => {
-    if (!locked) setAskingUnlock(false)
+    if (!lockedBase) setAskingUnlock(false)
+  }, [lockedBase])
+  useEffect(() => {
     editorRef.current?.updateOptions({ readOnly: locked })
   }, [locked])
   useEffect(() => {
@@ -438,7 +450,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
     editorRef.current?.updateOptions({ minimap: { enabled: codeMinimap } })
   }, [codeMinimap])
 
-  // The text size (YAZ-3451): the note's keys and pill. ⌘+ / ⌘− / ⌘0 bubble from the focus to this
+  // The text size (YAZ-3451): the page's keys and pill. ⌘+ / ⌘− / ⌘0 bubble from the focus to this
   // tab's section as `ZOOM_EVENT` (`zoomRequest.ts`), and this tab claims them; ⌘0 is 100 %.
   useEffect(() => {
     const section = doc.hostRef.current?.closest('.editor')
@@ -502,15 +514,17 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
             tableOfContents={{ on: tocOn, onToggle: toggleToc }}
             zoom={zoom}
             onZoom={setZoom}
-            locked={locked}
+            locked={lockedBase}
             asking={askingUnlock}
             onAsk={() => setAskingUnlock(true)}
-            onAllow={() => {
+            onAllow={(choice) => {
               setAskingUnlock(false)
-              setUnlocked(true)
+              unlock.allow(choice)
               editorRef.current?.focus()
             }}
             onCancel={() => setAskingUnlock(false)}
+            editingUntil={unlock.until}
+            onLock={unlock.lock}
             fold={{
               read: readFold,
               subscribe: subscribeFolds,

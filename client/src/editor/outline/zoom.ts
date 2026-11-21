@@ -50,9 +50,12 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { gestureAction } from '@shared/keys'
-import { rowShortcuts } from '../noteKeys'
+import { rowShortcuts } from '../pageKeys'
 import { openCellNote, canOpenCellNote } from '../table/cellNoteCard'
 import { cellNoteAround } from '../table/cellNotes'
+import { typingOnly } from '../table/tableStyle'
+import { boardCheckOf } from '../drawing/boardEmbedScan'
+import type { BoardCheck } from '../drawing/boardEmbedText'
 import { ancestorItemPositions, cellPosAround, innermostItemPos, isListItem, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
@@ -60,7 +63,7 @@ import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 export interface ZoomOptions {
   /** The page's title (YAZ-2420 🔒 D14), read as the breadcrumb is drawn: the first crumb; clicking it zooms out fully. */
   title: () => string
-  /** A bullet's text as its labels show it (YAZ-3744 D6): each `[[link]]` as the note shows it. Absent: as written. */
+  /** A bullet's text as its labels show it (YAZ-3744 D6): each `[[link]]` as the page shows it. Absent: as written. */
   linkText?: (text: string) => string
   /** The zoom key to start drilled into (YAZ-2951 D1): a copied page view's `zoomKey`. Absent, null or not found = zoomed out. */
   startKey?: string | null
@@ -182,16 +185,16 @@ export const getZoomKey = (state: EditorState): string | null => {
   return itemPos === null ? null : zoomKeyAt(state.doc, itemPos)
 }
 
-/** Breadcrumb label: the item's first-block text, truncated. */
-const itemLabel = (item: ProseNode, linkText: (text: string) => string = (text) => text): string => {
-  const text = linkText(itemLabelText(item))
+/** Breadcrumb label: the item's first-block text, truncated; an id embed reads as a board's (`isBoard`, YAZ-4920). */
+const itemLabel = (item: ProseNode, linkText: (text: string) => string = (text) => text, isBoard?: BoardCheck): string => {
+  const text = linkText(itemLabelText(item, isBoard))
   return text.length > LABEL_MAX_CHARS ? `${text.slice(0, LABEL_MAX_CHARS - 1).trimEnd()}…` : text
 }
 
 /** The crumb text of the list_item at `itemPos` (YAZ-3647 E3, E4): what the Back list's menu and the tab's tooltip show. */
 export const zoomLabelAt = (state: EditorState, itemPos: number): string | null => {
   const item = state.doc.nodeAt(itemPos)
-  return isListItem(item) ? itemLabel(item, pluginKey.getState(state)?.linkText) : null
+  return isListItem(item) ? itemLabel(item, pluginKey.getState(state)?.linkText, boardCheckOf(state)) : null
 }
 
 /** The zoomed bullet's crumb text, or null when not zoomed (YAZ-3647 E3). */
@@ -389,9 +392,25 @@ const itemPosFromGlyphClick = (view: EditorView, event: MouseEvent): number | nu
   return isListItem($pos.parent) && canZoomInto(view.state.doc, $pos.before()) ? $pos.before() : null
 }
 
+/** O(depth) key of the breadcrumb labels for `itemPos` (captures page title, ancestor labels, zoomed label, and live wikilink titles). */
+const crumbsKeyOf = (doc: ProseNode, itemPos: number, title: string, linkText?: (text: string) => string): string | null => {
+  const $item = doc.resolve(itemPos)
+  const zoomed = $item.nodeAfter
+  if (!isListItem(zoomed)) return null
+  let key = `${itemPos}\u0000${title}`
+  for (let depth = 0; depth <= $item.depth; depth++) {
+    const container = $item.node(depth)
+    if (isListItem(container)) key += `\u0000${itemLabel(container, linkText)}`
+  }
+  key += `\u0000${itemLabel(zoomed, linkText)}`
+  return key
+}
+
 export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, linkText, hotkeys }: ZoomOptions) => {
   // Used by the FIRST state only: a rebuilt state (`setMarkdown` → `replaceAll(md, true)`) starts zoomed out, as before.
   let pendingStartKey = startKey
+  // Cached zoomed DecorationSet so selection moves and inline typing in zoomed children avoid rebuilding every frame (YAZ-6028).
+  let cachedDecos: { doc: ProseNode; crumbsKey: string; set: DecorationSet } | null = null
   return $prose(
     () =>
       new Plugin<ZoomState>({
@@ -407,6 +426,7 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
           apply: (transaction, previous, _oldState, newState) => {
             const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)
             if (meta !== undefined) {
+              cachedDecos = null
               // ⌘Z-revertible while it is the latest view action; the revert itself consumes it.
               return { ...previous, itemPos: meta, undoLevel: transaction.getMeta(UNDO_META) ? undefined : previous.itemPos, changes: previous.changes + 1 }
             }
@@ -430,6 +450,16 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
                 const inside = transaction.mapping.mapResult(itemPos + 1, 1)
                 const pos = !mapped.deleted ? mapped.pos : !inside.deleted ? inside.pos - 1 : null
                 itemPos = pos !== null && isListItem(newState.doc.nodeAt(pos)) ? pos : null
+              }
+              if (cachedDecos !== null && itemPos !== null && itemPos === previous.itemPos && typingOnly(transaction)) {
+                const nextCrumbsKey = crumbsKeyOf(newState.doc, itemPos, title(), linkText)
+                if (nextCrumbsKey !== null && nextCrumbsKey === cachedDecos.crumbsKey) {
+                  cachedDecos = { doc: newState.doc, crumbsKey: nextCrumbsKey, set: cachedDecos.set.map(transaction.mapping, newState.doc) }
+                } else {
+                  cachedDecos = null
+                }
+              } else {
+                cachedDecos = null
               }
             }
             return itemPos === previous.itemPos && undoLevel === previous.undoLevel ? previous : { ...previous, itemPos, undoLevel }
@@ -481,7 +511,14 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
           decorations: (state) => {
             const itemPos = getZoomedItemPos(state)
             if (itemPos === null) return DecorationSet.empty
-            return DecorationSet.create(state.doc, buildDecorations(state, itemPos, title(), linkText))
+            const currentTitle = title()
+            const crumbsKey = crumbsKeyOf(state.doc, itemPos, currentTitle, linkText)
+            if (crumbsKey !== null && cachedDecos !== null && cachedDecos.doc === state.doc && cachedDecos.crumbsKey === crumbsKey) {
+              return cachedDecos.set
+            }
+            const set = DecorationSet.create(state.doc, buildDecorations(state, itemPos, currentTitle, linkText))
+            cachedDecos = crumbsKey !== null ? { doc: state.doc, crumbsKey, set } : null
+            return set
           },
           handleDOMEvents: {
             click: (view, event) => {
@@ -507,12 +544,12 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
 
 /**
  * Keymap: `Mod-.` / `Mod-Shift-.` / `Mod-z` (zoom panic-undo) plus the escape guard; register with `editor.use(zoomKeymap)`.
- * The chords are the rows' (`shared/keys/note.ts`, YAZ-3564 K4): the guard follows Outdent's key.
+ * The chords are the rows' (`shared/keys/page.ts`, YAZ-3564 K4): the guard follows Outdent's key.
  */
 export const zoomKeymap = $shortcut((ctx: Ctx) => ({
-  ...rowShortcuts(ctx, 'note.zoomIn', 'ZoomIn', { priority: PRIORITY, onRun: () => zoomIntoSelection }),
-  ...rowShortcuts(ctx, 'note.undo', 'UndoZoom', { priority: PRIORITY, onRun: () => undoLastZoom }),
-  ...rowShortcuts(ctx, 'note.zoomOut', 'ZoomOut', { priority: PRIORITY, onRun: () => zoomOutOneLevel }),
+  ...rowShortcuts(ctx, 'page.zoomIn', 'ZoomIn', { priority: PRIORITY, onRun: () => zoomIntoSelection }),
+  ...rowShortcuts(ctx, 'page.undo', 'UndoZoom', { priority: PRIORITY, onRun: () => undoLastZoom }),
+  ...rowShortcuts(ctx, 'page.zoomOut', 'ZoomOut', { priority: PRIORITY, onRun: () => zoomOutOneLevel }),
   ZoomLiftGuardTab: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => blockEscapingLift },
-  ...rowShortcuts(ctx, 'note.outdent', 'ZoomLiftGuardBracket', { priority: PRIORITY, onRun: () => blockEscapingLift }),
+  ...rowShortcuts(ctx, 'page.outdent', 'ZoomLiftGuardBracket', { priority: PRIORITY, onRun: () => blockEscapingLift }),
 }))

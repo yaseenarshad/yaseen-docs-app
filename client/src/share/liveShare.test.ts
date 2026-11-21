@@ -6,7 +6,7 @@ vi.mock('../api', () => ({ api: { share: { publish: (...a: unknown[]) => publish
 const build = vi.fn()
 vi.mock('./shareContent', () => ({ buildShareContent: (...a: unknown[]) => build(...a) }))
 
-const { noteBoardSaved, noteBoardRenamed, isPending, onLiveShareChange, resetLiveShareForTests, SETTLE_MS } = await import('./liveShare')
+const { pageBoardSaved, pageBoardRenamed, isPending, onLiveShareChange, resetLiveShareForTests, SETTLE_MS } = await import('./liveShare')
 
 const ROOT = '/v'
 const P = '/v/Board.excalidraw'
@@ -28,7 +28,7 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
 
   it('waits for the saves to settle: three quick saves are ONE upload, 10 s after the last', async () => {
     for (let i = 0; i < 3; i++) {
-      noteBoardSaved(ROOT, P)
+      pageBoardSaved(ROOT, P)
       await vi.advanceTimersByTimeAsync(2_000)
     }
     expect(publish).not.toHaveBeenCalled()
@@ -45,7 +45,7 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
   it('YAZ-3044 A29: tells its listeners only when a board starts waiting, not on every autosave', async () => {
     const heard = vi.fn()
     const off = onLiveShareChange(heard)
-    for (let i = 0; i < 5; i++) noteBoardSaved(ROOT, P)
+    for (let i = 0; i < 5; i++) pageBoardSaved(ROOT, P)
     expect(heard).toHaveBeenCalledTimes(1)
     expect(isPending(P)).toBe(true)
     off()
@@ -53,7 +53,7 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
 
   it('never uploads a board that is not shared', async () => {
     get.mockResolvedValueOnce(null)
-    noteBoardSaved(ROOT, P)
+    pageBoardSaved(ROOT, P)
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     await flush()
     expect(build).not.toHaveBeenCalled()
@@ -62,7 +62,7 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
 
   it('while sharing is not set up, main refuses (and records NOT_SET_UP); nothing retries until the next save', async () => {
     publish.mockRejectedValueOnce(Object.assign(new Error('Sharing is not set up on this computer yet.'), { code: 'NOT_SET_UP' }))
-    noteBoardSaved(ROOT, P)
+    pageBoardSaved(ROOT, P)
     await vi.advanceTimersByTimeAsync(SETTLE_MS * 3)
     await flush()
     expect(publish).toHaveBeenCalledTimes(1)
@@ -72,12 +72,12 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
   it('one upload in flight; a save that lands mid-upload runs exactly one more after it (latest wins)', async () => {
     let finish!: () => void
     publish.mockImplementationOnce(() => new Promise<void>((r) => (finish = r)))
-    noteBoardSaved(ROOT, P)
+    pageBoardSaved(ROOT, P)
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     await flush()
     expect(publish).toHaveBeenCalledTimes(1)
-    noteBoardSaved(ROOT, P)
-    noteBoardSaved(ROOT, P)
+    pageBoardSaved(ROOT, P)
+    pageBoardSaved(ROOT, P)
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     await flush()
     expect(publish).toHaveBeenCalledTimes(1) // still in flight: queued, not doubled
@@ -90,10 +90,10 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
 
   it('a failed upload is swallowed here (main records it) and the next save tries again', async () => {
     publish.mockRejectedValueOnce(new Error('offline'))
-    noteBoardSaved(ROOT, P)
+    pageBoardSaved(ROOT, P)
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     await flush()
-    noteBoardSaved(ROOT, P)
+    pageBoardSaved(ROOT, P)
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     await flush()
     expect(publish).toHaveBeenCalledTimes(2)
@@ -101,9 +101,9 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
 
   it('an edit saved just before an in-app rename still uploads, under the new path', async () => {
     const Q = '/v/Renamed.excalidraw'
-    noteBoardSaved(ROOT, P)
+    pageBoardSaved(ROOT, P)
     await vi.advanceTimersByTimeAsync(3_000)
-    noteBoardRenamed(P, Q)
+    pageBoardRenamed(P, Q)
     expect([isPending(P), isPending(Q)]).toEqual([false, true])
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     await flush()
@@ -116,13 +116,13 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
     let finish!: () => void
     publish.mockImplementationOnce(() => new Promise<void>((r) => (finish = r)))
     const inDir = '/v/Dir/Board.excalidraw'
-    noteBoardSaved(ROOT, inDir)
+    pageBoardSaved(ROOT, inDir)
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     await flush()
     expect(publish).toHaveBeenCalledTimes(1) // in flight under the old path
-    noteBoardSaved(ROOT, inDir)
+    pageBoardSaved(ROOT, inDir)
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
-    noteBoardRenamed('/v/Dir', '/v/Moved')
+    pageBoardRenamed('/v/Dir', '/v/Moved')
     finish()
     await flush()
     await flush()
@@ -134,10 +134,10 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
   it('an upload that failed because the board was renamed under it runs again under the new path', async () => {
     const Q = '/v/Renamed.excalidraw'
     build.mockImplementationOnce(async () => {
-      noteBoardRenamed(P, Q) // the rename lands while the board is being read
+      pageBoardRenamed(P, Q) // the rename lands while the board is being read
       throw new Error('NOT_FOUND')
     })
-    noteBoardSaved(ROOT, P)
+    pageBoardSaved(ROOT, P)
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     await flush()
     await flush()

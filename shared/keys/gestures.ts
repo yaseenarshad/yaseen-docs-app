@@ -1,6 +1,6 @@
 /**
  * THE CLICKS THE USER CAN CHANGE (YAZ-3936, demo round 1 C4 of YAZ-3879): a gesture is a set of modifiers and a
- * click ('CmdOrCtrl+Click', 'Shift+Click', 'Click'). Three places have rows: "Links in notes and drawings" and
+ * click ('CmdOrCtrl+Click', 'Shift+Click', 'Click'). Three places have rows: "Links in pages and drawings" and
  * "Bullet dots" open in this tab, a new tab or a background tab; links and "Files in lists" open a file in a new window
  * (YAZ-4444, D32 of YAZ-4278). The other clicks and drags of the app are built in (Settings › Hotkeys shows them from
  * `client/src/settings/hotkeys.ts`).
@@ -36,8 +36,8 @@ export interface GestureRow {
   gesture: string | null
 }
 
-/** The place tags of Settings › Hotkeys; the page's search finds a row by them ("links in notes"). */
-export const GESTURE_PLACE_TITLES: Record<GesturePlace, string> = { links: 'Links in notes and drawings', bullets: 'Bullet dots', files: 'Files in lists' }
+/** The place tags of Settings › Hotkeys; the page's search finds a row by them ("links in pages"). */
+export const GESTURE_PLACE_TITLES: Record<GesturePlace, string> = { links: 'Links in pages and drawings', bullets: 'Bullet dots', files: 'Files in lists' }
 
 const LINK_HINT = 'A [[link]] or a Markdown link. A link to a page that does not exist makes the page first.'
 const BULLET_HINT = 'Zoomed into the bullet. The names in the zoom path too.'

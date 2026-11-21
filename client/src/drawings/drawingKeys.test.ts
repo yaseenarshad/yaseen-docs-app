@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { sameKey } from '@shared/hotkeyBindings'
 import { ALL_KEYS, clashesOf, keysOf } from '@shared/keys'
 import { DRAWING_ACTIONS, DRAWING_KEYS, SELECTION_COLOURS, SELECTION_SIZES, SHIFT_KEPT } from '@shared/keys/drawing'
-import { drawingKeyBindings, NOTE_KEYS_ON_DRAWINGS, pressed, toEngineChord } from './drawingKeys'
+import { drawingKeyBindings, PAGE_KEYS_ON_DRAWINGS, pressed, toEngineChord } from './drawingKeys'
 
 type EngineAction = { name: string; keyTest?: (event: KeyboardEvent, appState: unknown, elements: unknown[], app: unknown) => boolean }
 const engine = async () => (await import('@excalidraw/excalidraw')) as unknown as { registeredActions: readonly EngineAction[]; TOOLS: Record<string, { letterKey?: string | readonly string[]; shiftKey?: boolean }>; restoreAppState: (a: null, b: null) => Record<string, unknown> }
@@ -22,8 +22,8 @@ const namesOf = (id: string): readonly string[] => [DRAWING_ACTIONS[id] ?? []].f
 describe('the drawing key list vs the vendored engine (drift)', () => {
   it('every engine action with a key, and every tool, has a row', async () => {
     const { registeredActions, TOOLS } = await engine()
-    // YAZ-4277 D9: fold all / unfold all on selected text boxes take the notes' fold keys.
-    const named = new Set([...Object.keys(DRAWING_ACTIONS).flatMap(namesOf), ...Object.values(NOTE_KEYS_ON_DRAWINGS)])
+    // YAZ-4277 D9: fold all / unfold all on selected text boxes take the pages' fold keys.
+    const named = new Set([...Object.keys(DRAWING_ACTIONS).flatMap(namesOf), ...Object.values(PAGE_KEYS_ON_DRAWINGS)])
     const withKey = registeredActions.filter((a) => a.keyTest !== undefined).map((a) => a.name)
     expect(withKey.length).toBeGreaterThan(40)
     expect(withKey.filter((name) => !named.has(name))).toEqual([])
@@ -136,14 +136,14 @@ describe('the drawing rows (K1, K6)', () => {
   })
 })
 
-describe('the notes’ fold keys on a drawing (YAZ-4277 D9)', () => {
-  it("the engine's fold actions answer the notes' default fold keys, with a free text box selected and not in edit", async () => {
+describe('the pages’ fold keys on a drawing (YAZ-4277 D9)', () => {
+  it("the engine's fold actions answer the pages' default fold keys, with a free text box selected and not in edit", async () => {
     const { registeredActions, restoreAppState } = await engine()
     const box = { id: 't', type: 'text', containerId: null, isDeleted: false }
     const appState = { ...restoreAppState(null, null), selectedElementIds: { t: true } }
     // the engine asks the app whether folding is off (YAZ-4401 2E): here it is on
     const app = { isFoldingOff: () => false }
-    for (const [id, name] of Object.entries(NOTE_KEYS_ON_DRAWINGS)) {
+    for (const [id, name] of Object.entries(PAGE_KEYS_ON_DRAWINGS)) {
       const action = registeredActions.find((a) => a.name === name)
       for (const key of ALL_KEYS.find((row) => row.id === id)!.keys) {
         const event = new KeyboardEvent('keydown', { ...toEngineChord(key)!, bubbles: true })
@@ -158,9 +158,9 @@ describe('the notes’ fold keys on a drawing (YAZ-4277 D9)', () => {
 
   it('a rebinding of a fold key reaches the engine as its fold action; no change, no binding', () => {
     expect(drawingKeyBindings(undefined).map((b) => b.name)).not.toContain('foldTextBoxes')
-    const fold = drawingKeyBindings({ 'note.foldHere': 'CmdOrCtrl+Alt+F' }).find((b) => b.name === 'foldTextBoxes')
+    const fold = drawingKeyBindings({ 'page.foldHere': 'CmdOrCtrl+Alt+F' }).find((b) => b.name === 'foldTextBoxes')
     expect(fold).toMatchObject({ defaults: [{ code: 'ArrowUp', metaKey: true, shiftKey: false }], keys: [{ code: 'KeyF', metaKey: true, altKey: true }] })
-    expect(drawingKeyBindings({ 'note.unfoldHere': null }).find((b) => b.name === 'unfoldTextBoxes')).toMatchObject({ keys: [] })
+    expect(drawingKeyBindings({ 'page.unfoldHere': null }).find((b) => b.name === 'unfoldTextBoxes')).toMatchObject({ keys: [] })
   })
 })
 

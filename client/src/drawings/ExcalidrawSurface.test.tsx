@@ -331,7 +331,7 @@ describe('the exported copy and the board itself (YAZ-3943)', () => {
     const api = { getSceneElements: () => ELEMENTS, getAppState: () => ({}), getFiles: () => ({}), refresh: () => undefined, updateScene: () => undefined, updateFrameRendering: () => undefined }
     act(() => (last().onExcalidrawAPI as (a: unknown) => void)(api))
     expect(fontsOf(await handle!.exportScene())).toEqual([6, 8])
-    // The mount's baseline snapshot: what a save writes, in a tab and in the note's popup.
+    // The mount's baseline snapshot: what a save writes, in a tab and in the page's popup.
     expect(fontsOf(snapshot!.serialize().json)).toEqual([10, 14])
   })
 
@@ -389,5 +389,14 @@ describe('the engine props of the round 1 switches', () => {
       })
       expect(last().hoverOutline, `app ${app}, board ${board}`).toBe(expected)
     }
+  })
+
+  it('YAZ-5771: "Double-click a text box edge" reaches the engine as its prop: Only shrink by default, Fit the text when picked; never appState', async () => {
+    const { DEFAULT_CANVAS_PREFS } = await import('@shared/types')
+    await mountWith(undefined)
+    expect(last().textEdgeDoubleClick).toBe('shrink')
+    expect((last().initialData as { appState: Record<string, unknown> }).appState).not.toHaveProperty('textEdgeDoubleClick')
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, textEdgeDoubleClick: 'fit' })
+    expect(last().textEdgeDoubleClick).toBe('fit')
   })
 })

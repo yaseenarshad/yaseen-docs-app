@@ -8,14 +8,16 @@ import { APP_KEYS } from './app'
 import { CODE_KEYS } from './code'
 import { DIAGRAM_KEYS } from './diagram'
 import { DRAWING_KEYS } from './drawing'
-import { NOTE_KEYS } from './note'
+import { EXPLORE_KEYS } from './explore'
+import { PAGE_KEYS } from './page'
+import { REVIEW_KEYS } from './review'
 import { ASIDE_PLACES, type AsidePlace, type KeyRow, type KeyScope } from './types'
 import { VIEW_KEYS } from './views'
 
 export * from './types'
 export * from './gestures'
 
-export const ALL_KEYS: readonly KeyRow[] = [...APP_KEYS, ...NOTE_KEYS, ...DRAWING_KEYS, ...DIAGRAM_KEYS, ...CODE_KEYS, ...VIEW_KEYS]
+export const ALL_KEYS: readonly KeyRow[] = [...APP_KEYS, ...PAGE_KEYS, ...DRAWING_KEYS, ...DIAGRAM_KEYS, ...CODE_KEYS, ...VIEW_KEYS, ...EXPLORE_KEYS, ...REVIEW_KEYS]
 
 const BY_ID = new Map(ALL_KEYS.map((row) => [row.id, row]))
 /** The row of an id, scoped or an old unscoped App id; undefined for an id this build does not have. */
@@ -116,7 +118,11 @@ export function clashesOf(row: KeyRow, key: string, overrides: HotkeyOverrides |
     // A key that acts only with a selection (the colour letters, the size digits) shares its key with a tool by design.
     if (other.withSelection === true || row.withSelection === true) return false
     const theirs = keysOf(other, overrides)
-    if (other.scope === row.scope) return theirs.some((k) => sameKey(k, key))
+    if (other.scope === row.scope) {
+      // Mutually exclusive modes (two-button vs four-button review) never clash with each other (YAZ-5996).
+      if (row.mode !== undefined && other.mode !== undefined && row.mode !== other.mode) return false
+      return theirs.some((k) => sameKey(k, key))
+    }
     if (other.scope === 'app') return (other.onlyIn === undefined || other.onlyIn.includes(row.scope)) && menuWinsIn(other, row.scope) && !stepsAside(other, row.scope, aside) && theirs.some((k) => sameKey(k, firstStep(key)))
     if (row.scope === 'app') return row.passesToPages !== true && (row.onlyIn === undefined || row.onlyIn.includes(other.scope)) && menuWinsIn(row, other.scope) && !stepsAside(row, other.scope, aside) && theirs.some((k) => sameKey(firstStep(k), key))
     return false
@@ -131,14 +137,14 @@ export function blockersOf(row: KeyRow, overrides: HotkeyOverrides | undefined, 
 }
 
 /**
- * A key a row may take (K6): a drawing or diagram row takes a bare letter or digit (their tools are letters); every other row needs ⌘
- * or ⌃ (or ⌥, or an F-key), as an App key always did. Each step of a two-step key must be usable.
+ * A key a row may take (K6): a drawing, diagram or review row takes a bare letter or digit (tools and answer keys);
+ * every other row needs ⌘ or ⌃ (or ⌥, or an F-key), as an App key always did. Each step of a two-step key must be usable.
  */
 export function isUsableFor(row: KeyRow, key: string): boolean {
   return key.split(' ').every((step) => {
     const chord = parseAccelerator(step)
     if (chord === null) return false
-    if ((row.scope === 'drawing' || row.scope === 'diagram') && /^[A-Z0-9]$/.test(chord.key)) return true
+    if ((row.scope === 'drawing' || row.scope === 'diagram' || row.scope === 'review') && /^[A-Z0-9]$/.test(chord.key)) return true
     return isUsableKey(step) || chord.alt
   })
 }

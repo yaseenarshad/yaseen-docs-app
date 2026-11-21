@@ -9,8 +9,11 @@
  * never stuck in the block's sideways scroll.
  */
 import { describe, expect, it } from 'vitest'
-import tableCss from './table.css?inline'
+import cardTableCss from './cardTable.css?inline'
+import editorTableCss from './table.css?inline'
 import tablesCss from '@milkdown/kit/prose/tables/style/tables.css?inline'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 const rules = (css: string) =>
   [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({
@@ -65,7 +68,8 @@ describe('the freeze line (YAZ-3804)', () => {
   const LINE = 'min(100%, calc(var(--table-border-darkness, 20%) + 40%))'
   it('the last frozen row draws a 3px bottom border, darker than the table\'s border', () => {
     expect(bodyOf(`${FROZEN} .table-frozen-row-end > *`)).toBe(
-      `border-bottom-width: 3px; border-bottom-color: color-mix(in srgb, var(--crepe-color-outline) ${LINE}, transparent);`,
+      // A card's header row draws the same line (YAZ-5136): outside a page, Crepe's outline is `--table-outline`.
+      `border-bottom-width: 3px; border-bottom-color: color-mix(in srgb, var(--crepe-color-outline, var(--table-outline)) ${LINE}, transparent);`,
     )
   })
 

@@ -8,11 +8,12 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, placeVaults, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
 import { RELOAD_QUIET_MS } from './memory'
+import { isAppVault } from '@shared/appVaults'
 
 export interface WindowLike {
   webContents: { id: number }
@@ -69,7 +70,12 @@ const DEFAULT_BOUNDS: WindowBounds = { x: 100, y: 100, width: 1200, height: 800 
 /** The slice of `BrowserWindow` the manager drives; a test fake implements it in a few lines. */
 export interface ManagedWindow {
   /** `reload()` like Electron's: the same `webContents` loads its page again (YAZ-3737 D2, only after a clean flush). */
-  webContents: { id: number; send(channel: string, ...args: unknown[]): void; reload(): void }
+  webContents: {
+    id: number
+    send(channel: string, ...args: unknown[]): void
+    reload(): void
+    on?(event: 'render-process-gone', listener: () => void): unknown
+  }
   getBounds(): WindowBounds
   isDestroyed(): boolean
   isMinimized(): boolean
@@ -157,6 +163,18 @@ export interface WindowManager extends WindowLookup {
    * its vaults holds `path` (D2): no vault is added. Nothing is stored here: the target stores its own new tab.
    */
   moveTo(to: string, path: string, carry?: PopOutCarry): boolean
+  /**
+   * The Inbox tab's "Move to new window" and the Inbox row's "Open in new window" (YAZ-5054): a window as `popOut`'s —
+   * `from`'s vaults (by value) and lens, the sidebar hidden, the right panel empty, cascaded (beside a Files window) —
+   * with NO page tab, and `link:take-inbox` with `carry`, held until its page listens. No MRU bump. The new window's
+   * id. Nothing of the Inbox is stored: it is session-only, as in any window (YAZ-5011).
+   */
+  inboxToNewWindow(from: WindowEntry, carry: InboxCarry): string
+  /**
+   * The Inbox tab's "Move to ▸ <window>" (YAZ-5054): raise the live full window `to` and push `link:take-inbox`.
+   * `false` = `to` is not live, is a Files window, or does not show `carry.root`.
+   */
+  moveInboxTo(to: string, carry: InboxCarry): boolean
   /**
    * A card of another window on the tab board (YAZ-3343 D3): raise the live window `to` and push `link:focus-tab`
    * with `ref`, held like any link push until its page listens. `false` = `to` is not live. The target finds the tab itself.
@@ -358,7 +376,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'appNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'inboxToNewWindow' | 'moveInboxTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'appNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -612,13 +630,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
    * last when the door raises a vault's windows.
    */
   const focusOrder: string[] = []
-  const noteFocused = (id: string): void => {
+  const pageFocused = (id: string): void => {
     const at = focusOrder.indexOf(id)
     if (at !== -1) {
       // A vault is "last used" when a window on it takes focus (YAZ-2555 D5), not only when ⌘O opens it.
       // Not on a window's FIRST focus: a relaunch focuses every restored window in turn, and that
       // must not reorder the list. Not during a quit either (S36): each window destroyed hands focus to the next.
-      if (!quitting) noteUsed(activeVault(entryOf(id)))
+      if (!quitting) recordUsed(activeVault(entryOf(id)))
       focusOrder.splice(at, 1)
     }
     focusOrder.unshift(id)
@@ -634,8 +652,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
    * Bump a window's vault to the top of the MRU (YAZ-2555 D5). Already on top → no write; a Welcome
    * window (root null) is not a vault. Trailing slash off, like `resolveLinkTarget`: one row per vault.
    */
-  const noteUsed = (root: string | null): void => {
-    if (root === null) return
+  const recordUsed = (root: string | null): void => {
+    // The app's own vault (the card skill, YAZ-5108) is never "used" as a vault of the person.
+    if (root === null || isAppVault(root)) return
     const path = stripSlash(root)
     if (store.get().recents[0]?.path !== path) store.pushRecent(path)
   }
@@ -701,7 +720,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     win.on('resize', scheduleBounds)
     win.on('focus', () => {
       blurredSince.delete(id)
-      noteFocused(id)
+      pageFocused(id)
     })
     win.on('blur', () => blurredSince.set(id, Date.now()))
     // Minimized in the Dock (YAZ-3343 D23): the board tags the frame until it is restored.
@@ -725,8 +744,15 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       })
     })
 
+    // If a renderer crashes mid-flush, settle immediately instead of stalling quit/reload for FLUSH_TIMEOUT_MS (YAZ-6024).
+    win.webContents.on?.('render-process-gone', () => {
+      pendingFlush.get(wcId)?.settle('dirty')
+    })
+
     win.on('closed', () => {
       cancelBoundsTimer()
+      // If a window dies mid-flush, settle immediately instead of stalling quit/reload for FLUSH_TIMEOUT_MS (YAZ-6024).
+      pendingFlush.get(wcId)?.settle('dirty')
       unregister()
       live.delete(id)
       closingWins.delete(id)
@@ -756,11 +782,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // A user close forgets the window; the LAST one closing quits the app (`window-all-closed`), so that is
       // a quit too: its entry stays, and the vault it was working in is the "last vault" (YAZ-2589 A1, YAZ-2602 A8).
       if (live.size > 0) {
-        // A window you close puts its notes in "Recently closed" (YAZ-3487 D10). A quit does not: its tabs come back.
+        // A window you close puts its pages in "Recently closed" (YAZ-3487 D10). A quit does not: its tabs come back.
         const entry = entryOf(id)
-        if (entry !== undefined && !isFilesWindow(entry)) store.addClosed(entry.roots, entry.tabs)
+        if (entry !== undefined && !isFilesWindow(entry)) store.addClosed(placeVaults(store.get().folders, entry.roots), entry.tabs)
         store.removeWindow(id)
-      } else noteUsed(activeVault(entryOf(id)))
+      } else recordUsed(activeVault(entryOf(id)))
     })
   }
 
@@ -818,7 +844,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   /** A new full window; `bounds` = where a Files window puts it (YAZ-3357), else the default spot. Answers its id. */
   const openWindow = (opts: OpenWindowOptions, bounds?: WindowBounds): string => {
     // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
-    noteUsed(opts.root)
+    recordUsed(opts.root)
     const id = randomUUID()
     open({ id, root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: bounds ?? clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
     return id
@@ -903,8 +929,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return false
     }
     // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here
-    // — through `noteUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
-    noteUsed(path)
+    // — through `recordUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
+    recordUsed(path)
     // Already open (YAZ-1767 🔒 D9) — in a window that shows it, alone or beside others (YAZ-2602 D6): raise that vault's live windows instead of opening a third
     // copy. Roots compare like `resolveLinkTarget`: trailing slash off. "Open by itself" counts only a window with this vault alone (YAZ-2858 D1).
     const wanted = stripSlash(path)
@@ -916,7 +942,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
   const openRecentBeside = (path: string, from?: string): boolean => openVault(path, false, from)
 
-  /** What a new window on `vault` opens on (YAZ-3487 D15): blank (D7), or with "Its last note" the remembered `lastFile`. */
+  /** What a new window on `vault` opens on (YAZ-3487 D15): blank (D7), or with "Its last page" the remembered `lastFile`. */
   const startFile = (vault: string): string | null => (store.get().settings.vaultOpensOn === 'last' ? (store.get().folders[vault]?.lastFile ?? null) : null)
 
   /**
@@ -1063,6 +1089,25 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const entry = entryOf(to)
       if (win === undefined || entry === undefined || isFilesWindow(entry) || from === to || liveWindow(from) === undefined) return false
       sendLink(win, CONTRACT.link.onAddVaultAndTake.channel, { vault, from, ref: { path: ref.path, copy: ref.copy } })
+      return true
+    },
+
+    inboxToNewWindow(from, carry) {
+      const id = randomUUID()
+      // Another window, as `openBlank`'s (not `from`'s strip, name, focus list or kind), with the sidebar hidden as a
+      // moved tab's (`popOut`) — but from a Files window it shows, as every window made from one (YAZ-3357 D8).
+      open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: !isFilesWindow(from), sidebarLens: from.sidebarLens, bounds: madeFrom(from) })
+      const win = live.get(id)
+      if (win !== undefined) sendLink(win, CONTRACT.link.onTakeInbox.channel, carry)
+      return id
+    },
+
+    moveInboxTo(to, carry) {
+      const win = liveWindow(to)
+      const entry = entryOf(to)
+      if (win === undefined || entry === undefined || isFilesWindow(entry) || !entry.roots.some((root) => stripSlash(root) === stripSlash(carry.root))) return false
+      focusWindow(win)
+      sendLink(win, CONTRACT.link.onTakeInbox.channel, carry)
       return true
     },
 
@@ -1221,7 +1266,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     vaultNotice(root, message) {
       for (const [id, win] of live) {
-        if (!win.isDestroyed() && entryOf(id)?.roots.includes(root) === true) sendLink(win, CONTRACT.link.onNotice.channel, message)
+        // A folder of the vault (YAZ-4922 D3) is told too: its pages are the vault's.
+        const entry = entryOf(id)
+        if (!win.isDestroyed() && entry !== undefined && placeVaults(store.get().folders, entry.roots).includes(root)) sendLink(win, CONTRACT.link.onNotice.channel, message)
       }
     },
 
@@ -1406,7 +1453,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // because a window's first focus does not bump it (YAZ-2555 D5). So record it here, before `quitting`
       // stops the bumps and the windows go; `runQuitSequence` flushes the store after this. Of a window that
       // shows several vaults it is the active one (YAZ-2602 A8).
-      noteUsed(activeVault(entryOf(focusOrder[0])))
+      recordUsed(activeVault(entryOf(focusOrder[0])))
       quitting = true
       // Every renderer at once (YAZ-2198): quit waits one FLUSH_TIMEOUT_MS cap in total, not one per
       // window, and still resolves only once every window has flushed (`runQuitSequence`'s order).

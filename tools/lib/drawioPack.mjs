@@ -171,6 +171,8 @@ const PRUNED = [
   [/^images\/sidebar-[^/]+\.png$/, 'More Shapes’ big previews — offline it is the compact dialog, which has none'],
   [/^stencils\//, 'the stencil sets as separate files — js/stencils.min.js carries every one'],
   [/^shapes\//, 'the library shapes’ code as separate files — js/shapes-14-6-5.min.js and viewer-static.min.js carry it'],
+  [/^templates\/network\/fortinet\.xml$/, '3.44 MB Fortinet vendor template (YAZ-6008 🔒 D8)'],
+  [/^math4\/es5\/(?:output\/chtml\.js|fonts\/mathjax-tex-font\/chtml\/)/, 'MathJax CHTML output and fonts — draw.io uses SVG output (YAZ-6008 🔒 D8)'],
 ]
 
 /** A `LICENSE` is never pruned, whatever folder it sits in: the terms of what ships, bundled or not. */

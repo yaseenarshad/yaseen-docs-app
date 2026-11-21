@@ -12,10 +12,10 @@ const FORMULAS = {
 
 function record(i: number): FileRecordLike {
   return {
-    path: `Library/${i % 7}/Note ${i}.md`,
-    name: `Note ${i}.md`,
-    basename: `Note ${i}`,
-    title: `Note ${i}`,
+    path: `Library/${i % 7}/Page ${i}.md`,
+    name: `Page ${i}.md`,
+    basename: `Page ${i}`,
+    title: `Page ${i}`,
     folder: `Library/${i % 7}`,
     ext: i % 13 === 0 ? 'markdown' : 'md',
     size: i * 10,
@@ -24,14 +24,14 @@ function record(i: number): FileRecordLike {
     properties: {},
     aliases: [],
     tags: ['book', `genre/${i % 5}`],
-    links: [`Note ${i + 1}`],
+    links: [`Page ${i + 1}`],
     embeds: [],
   }
 }
 
 function scope(i: number): Scope {
   return {
-    note: { status: i % 3 ? 'todo' : 'done', price: i % 50, title: `Note ${i}`, tags: ['a', 'b'], due: '2026-08-01' },
+    page: { status: i % 3 ? 'todo' : 'done', price: i % 50, title: `Page ${i}`, tags: ['a', 'b'], due: '2026-08-01' },
     file: new FileValue(record(i)),
     formulas: FORMULAS,
     this: null,

@@ -1,7 +1,7 @@
 /**
- * THE PAGE COG'S ON/OFF ROWS, stored IN the note (YAZ-4094 G4), the way `readonly` is (`readOnly.ts`):
+ * THE PAGE COG'S ON/OFF ROWS, stored IN the page (YAZ-4094 G4), the way `readonly` is (`readOnly.ts`):
  * they move with the file, GitHub sync carries them to the other Mac, a rename by any tool keeps them,
- * and an agent that reads the file sees them. Each open editor reads them off the note's text, so a
+ * and an agent that reads the file sees them. Each open editor reads them off the page's text, so a
  * toggle in one tab shows in every tab at once (G1).
  *
  *  - `toc: true | false`: "Table of contents" (YAZ-2950).
@@ -11,7 +11,10 @@
  *  - `bullet-threading: true | false`: "Bullet threading" (YAZ-4277 D29, YAZ-4432).
  *
  * The cog's one choice that is not on/off lives here too, by the same rules: `outside-glow` (YAZ-4272 D2), this page's
- * glow for outside changes, one of `OUTSIDE_CHANGE_GLOWS`.
+ * glow for outside changes, one of `OUTSIDE_CHANGE_GLOWS`. So does `find-folds` (YAZ-4787), this page's ⌘F fold choice,
+ * one of `FIND_FOLDS`, set from the find bar. So do `code-width` and `table-width` (YAZ-4783), this page's width for its
+ * code blocks and its tables, whole px. So does `page-width` (YAZ-5640), this page's Content width, one of `CONTENT_WIDTHS`
+ * or Custom whole px (YAZ-5871), and `page-position` (YAZ-5871), this page's position, one of `CONTENT_POSITIONS`.
  *
  * NO KEY MEANS "FOLLOW THE APP DEFAULT", so old files and files from other tools need no migration.
  * Both `true` and `false` are stored: the page's choice wins over the default in both directions. Any
@@ -19,7 +22,7 @@
  * nothing. Pure: no fs, no DOM. Tests: `pageSwitches.test.ts`.
  */
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { OUTSIDE_CHANGE_GLOWS, type OutsideChangeGlow } from './types'
+import { FIND_FOLDS, isBlockWidth, isContentPosition, isContentWidth, OUTSIDE_CHANGE_GLOWS, type ContentPosition, type ContentWidth, type FindFolds, type OutsideChangeGlow } from './types'
 
 export const PAGE_SWITCH_KEYS = ['toc', 'section-indent', 'guide-lines', 'folding', 'bullet-threading'] as const
 export type PageSwitchKey = (typeof PAGE_SWITCH_KEYS)[number]
@@ -37,35 +40,137 @@ function pageSwitchesOf(properties: Readonly<Record<string, unknown>>): PageSwit
 }
 
 /**
- * The note's own choices. A block that names none of the keys is not parsed at all (read once per
- * change of the note, never per keystroke); a block that does not parse holds no choice.
+ * The page's own choices. A block that names none of the keys is not parsed at all (read once per
+ * change of the page, never per keystroke); a block that does not parse holds no choice.
  */
-export function notePageSwitches(content: string): PageSwitches {
+export function readPageSwitches(content: string): PageSwitches {
   const { frontmatter } = splitFrontmatter(content)
   if (!PAGE_SWITCH_KEYS.some((key) => frontmatter.includes(key))) return {}
   return pageSwitchesOf(parseFrontmatter(frontmatter).properties)
 }
 
 /**
- * The note with the page's choice for `key`, every other byte kept (`setFrontmatterProperty`). Throws
+ * The page with the page's choice for `key`, every other byte kept (`setFrontmatterProperty`). Throws
  * `FrontmatterWriteError` on a block that does not parse.
  */
-export function setNotePageSwitch(content: string, key: PageSwitchKey, on: boolean): string {
-  return notePageSwitches(content)[key] === on ? content : setFrontmatterProperty(content, key, on)
+export function writePageSwitch(content: string, key: PageSwitchKey, on: boolean): string {
+  return readPageSwitches(content)[key] === on ? content : setFrontmatterProperty(content, key, on)
+}
+
+/** This page's ⌘F fold choice (YAZ-4787): Settings › Editor › Find › Folded bullets when absent. */
+export const FIND_FOLDS_KEY = 'find-folds'
+
+/** The page's own ⌘F fold choice, or null: no key, or a value that is not one (parsed only when the block names the key). */
+export function readFindFolds(content: string): FindFolds | null {
+  const { frontmatter } = splitFrontmatter(content)
+  if (!frontmatter.includes(FIND_FOLDS_KEY)) return null
+  const value = parseFrontmatter(frontmatter).properties[FIND_FOLDS_KEY]
+  return FIND_FOLDS.includes(value as FindFolds) ? (value as FindFolds) : null
+}
+
+/** The page with its ⌘F fold choice; `null` removes the key, so the page follows the app setting again. */
+export function writeFindFolds(content: string, folds: FindFolds | null): string {
+  return readFindFolds(content) === folds ? content : setFrontmatterProperty(content, FIND_FOLDS_KEY, folds ?? undefined)
 }
 
 /** This page's glow for outside changes (YAZ-4272 D2): Settings › Editor › Outside changes › Glow when absent. */
 export const OUTSIDE_GLOW_KEY = 'outside-glow'
 
 /** The page's own glow, or null: no key, or a value that is not a glow (the block is parsed only when it names the key). */
-export function noteOutsideGlow(content: string): OutsideChangeGlow | null {
+export function readOutsideGlow(content: string): OutsideChangeGlow | null {
   const { frontmatter } = splitFrontmatter(content)
   if (!frontmatter.includes(OUTSIDE_GLOW_KEY)) return null
   const value = parseFrontmatter(frontmatter).properties[OUTSIDE_GLOW_KEY]
   return OUTSIDE_CHANGE_GLOWS.includes(value as OutsideChangeGlow) ? (value as OutsideChangeGlow) : null
 }
 
-/** The note with the page's glow; `null` removes the key, so the page follows the app setting again. */
-export function setNoteOutsideGlow(content: string, glow: OutsideChangeGlow | null): string {
-  return noteOutsideGlow(content) === glow ? content : setFrontmatterProperty(content, OUTSIDE_GLOW_KEY, glow ?? undefined)
+/** The page with the page's glow; `null` removes the key, so the page follows the app setting again. */
+export function writeOutsideGlow(content: string, glow: OutsideChangeGlow | null): string {
+  return readOutsideGlow(content) === glow ? content : setFrontmatterProperty(content, OUTSIDE_GLOW_KEY, glow ?? undefined)
+}
+
+/**
+ * This page's own Content width (YAZ-5640): `page-width: narrow | medium | full`, or Custom, whole px from
+ * `PAGE_WIDTH_MIN` to `PAGE_WIDTH_MAX` (`page-width: 760`, YAZ-5871 D1). The page cog's "Page width" writes it;
+ * "Default" removes the key, and the page follows Settings › Appearance › Content width again. It sizes the page's title
+ * row, text, comments, linked mentions and table of contents. A card file holds it too (YAZ-5871 D4): its card's width.
+ */
+export const PAGE_WIDTH_KEY = 'page-width'
+
+/** The page's own width, or null: no key, or a value that is not a step or Custom px (the block is parsed only when it names the key). */
+export function readPageWidth(content: string): ContentWidth | null {
+  const { frontmatter } = splitFrontmatter(content)
+  if (!frontmatter.includes(PAGE_WIDTH_KEY)) return null
+  const value = parseFrontmatter(frontmatter).properties[PAGE_WIDTH_KEY]
+  return isContentWidth(value) ? value : null
+}
+
+/** The page with its own width; `null` removes the key, so the page follows the app setting again. */
+export function writePageWidth(content: string, width: ContentWidth | null): string {
+  return readPageWidth(content) === width ? content : setFrontmatterProperty(content, PAGE_WIDTH_KEY, width ?? undefined)
+}
+
+/**
+ * This page's own position (YAZ-5871 D2): `page-position: center | left`. The page cog's "Position" writes it; "Default"
+ * removes the key, and the page follows Settings › Appearance › Page position again. Off with Full. A card file holds it
+ * too (D4).
+ */
+export const PAGE_POSITION_KEY = 'page-position'
+
+/** The page's own position, or null: no key, or a value that is not a position (parsed only when the block names the key). */
+export function readPagePosition(content: string): ContentPosition | null {
+  const { frontmatter } = splitFrontmatter(content)
+  if (!frontmatter.includes(PAGE_POSITION_KEY)) return null
+  const value = parseFrontmatter(frontmatter).properties[PAGE_POSITION_KEY]
+  return isContentPosition(value) ? value : null
+}
+
+/** The page with its own position; `null` removes the key, so the page follows the app setting again. */
+export function writePagePosition(content: string, position: ContentPosition | null): string {
+  return readPagePosition(content) === position ? content : setFrontmatterProperty(content, PAGE_POSITION_KEY, position ?? undefined)
+}
+
+/**
+ * This page's width for its code blocks and its tables (YAZ-4783 layer 2): `code-width: 900`, `table-width: 1000`, whole
+ * px at 100% zoom (`isBlockWidth`). The page cog's "Code block width" / "Table width" write them; "Default" removes the
+ * key, and the page follows Settings › Editor › Code blocks › Width / Settings › Tables › All tables › Width again. A
+ * block's own width (`<!-- code: width … -->`, a table's dragged columns) wins over it.
+ */
+export const CODE_WIDTH_KEY = 'code-width'
+export const TABLE_WIDTH_KEY = 'table-width'
+export type BlockWidthKey = typeof CODE_WIDTH_KEY | typeof TABLE_WIDTH_KEY
+
+/** The page's own width for `key`, or null: no key, or a value that is not a width (parsed only when the block names the key). */
+export function readBlockWidth(content: string, key: BlockWidthKey): number | null {
+  const { frontmatter } = splitFrontmatter(content)
+  if (!frontmatter.includes(key)) return null
+  const value = parseFrontmatter(frontmatter).properties[key]
+  return isBlockWidth(value) ? value : null
+}
+
+/** The page with its width for `key`; `null` removes the key, so the page follows the app setting again. */
+export function writeBlockWidth(content: string, key: BlockWidthKey, width: number | null): string {
+  return readBlockWidth(content, key) === width ? content : setFrontmatterProperty(content, key, width ?? undefined)
+}
+
+/**
+ * This page's card sides (YAZ-5904 D1): `card-sides: fold | show`. The page cog's and a card page's cog's "Card sides"
+ * row writes it; "Default" removes the key, and the page follows Settings › Cards › Card look › Card sides in pages
+ * again. `fold` starts Side 2 and after of each card folded; `show` shows every side. Explore never reads it (D3).
+ */
+export const CARD_SIDES_KEY = 'card-sides'
+export const CARD_SIDES = ['fold', 'show'] as const
+export type CardSides = (typeof CARD_SIDES)[number]
+
+/** The page's own card sides, or null: no key, or a value that is not one (the block is parsed only when it names the key). */
+export function readCardSides(content: string): CardSides | null {
+  const { frontmatter } = splitFrontmatter(content)
+  if (!frontmatter.includes(CARD_SIDES_KEY)) return null
+  const value = parseFrontmatter(frontmatter).properties[CARD_SIDES_KEY]
+  return CARD_SIDES.includes(value as CardSides) ? (value as CardSides) : null
+}
+
+/** The page with its own card sides; `null` removes the key, so the page follows the card look again. */
+export function writeCardSides(content: string, sides: CardSides | null): string {
+  return readCardSides(content) === sides ? content : setFrontmatterProperty(content, CARD_SIDES_KEY, sides ?? undefined)
 }

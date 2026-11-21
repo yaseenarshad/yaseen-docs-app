@@ -3,9 +3,9 @@
  *
  * THE SRC IN THE MARKDOWN IS NEVER REWRITTEN. `![a](images/x.png)` stays those bytes on disk; only
  * the DOM's `src` attribute is the resolved URL. Resolution itself lives in MAIN behind the
- * `app://vault/...` protocol (note-relative first, then root-relative, then Obsidian's basename
+ * `app://vault/...` protocol (page-relative first, then root-relative, then Obsidian's basename
  * search, 404 otherwise) — the renderer only names the two things main needs: which vault, and
- * which directory the note sits in. So an image that Obsidian would show, this shows, and the
+ * which directory the page sits in. So an image that Obsidian would show, this shows, and the
  * one it would not is a broken chip, with no filesystem knowledge in the renderer at all.
  *
  * Pass-through: anything with a URL scheme (`https:`, `data:`, `blob:`, `app:`, `file:`) is left
@@ -30,13 +30,13 @@ export function hasScheme(src: string): boolean {
 }
 
 /**
- * Root-relative directory of `notePath` under `root` ('' at the root, or when the note is not
+ * Root-relative directory of `pagePath` under `root` ('' at the root, or when the page is not
  * under the root at all). Posix semantics only — the app ships mac-only.
  */
-export function noteDirRel(root: string, notePath: string): string {
+export function pageDirRel(root: string, pagePath: string): string {
   const base = root.replace(/\/+$/, '')
-  if (!notePath.startsWith(`${base}/`)) return ''
-  const rel = notePath.slice(base.length + 1)
+  if (!pagePath.startsWith(`${base}/`)) return ''
+  const rel = pagePath.slice(base.length + 1)
   const cut = rel.lastIndexOf('/')
   return cut === -1 ? '' : rel.slice(0, cut)
 }
@@ -60,13 +60,13 @@ function decodeSegment(seg: string): string {
 }
 
 /**
- * The URL the `<img>` loads for `src` as written in a note whose directory is `noteDirRel`
- * (see `noteDirRel()`); schemed srcs pass through untouched.
+ * The URL the `<img>` loads for `src` as written in a page whose directory is `pageDirRel`
+ * (see `pageDirRel()`); schemed srcs pass through untouched.
  */
-export function imageSrc(root: string, noteDirRel: string, src: string): string {
+export function imageSrc(root: string, pageDirRel: string, src: string): string {
   if (hasScheme(src)) return src
   const ref = src.replace(/^\/+/, '')
-  return `app://vault/${encodeURIComponent(root)}/${encodeRef(ref)}?from=${encodeURIComponent(noteDirRel)}`
+  return `app://vault/${encodeURIComponent(root)}/${encodeRef(ref)}?from=${encodeURIComponent(pageDirRel)}`
 }
 
 /** `'x|400'` → text `x`, width 400; `'|400'` → `''`, 400; `'x'` / `'a|b'` → no width. */

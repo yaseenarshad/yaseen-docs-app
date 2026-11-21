@@ -24,8 +24,8 @@
  *    Empty task items are `* [ ]` on disk and `* [ ] <br />` inside Milkdown (GRO-2018).
  *  - Obsidian hotkeys (GRO-2027, `outline/hotkeys.ts` + `outline/foldAllHotkeys.ts`): Mod-Enter
  *    task cycle, Mod-Shift-u/i fold/unfold all bullets + headings, Mod-Shift-x strikethrough.
- *  - The keys are the defaults of `shared/keys/note.ts` with the user's changes (YAZ-3564 K4,
- *    `noteKeys.ts`): read once in a config, before create, so an open note keeps its keys.
+ *  - The keys are the defaults of `shared/keys/page.ts` with the user's changes (YAZ-3564 K4,
+ *    `pageKeys.ts`): read once in a config, before create, so an open page keeps its keys.
  *  - Underline mark (GRO-2028, `marks/underline.ts`): Mod-u ↔ `<u>text</u>` inline HTML.
  *  - Highlight mark (YAZ-1480, `marks/highlight.ts`): ONE mark with an optional `color`. Yellow
  *    (Mod-Shift-h / typing `==x==` / the first toolbar swatch) is Obsidian's `==text==` on disk —
@@ -59,7 +59,7 @@
  *  - Wikilinks (GRO-2190, `wikilink/wikilinkPlugin.ts`): `[[target]]` renders Obsidian
  *    live-preview style via decorations only (brackets hidden, alias/heading display,
  *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`; an id link's id hidden
- *    too, its note's current title drawn by a widget, YAZ-2293) — never a schema or serializer
+ *    too, its page's current title drawn by a widget, YAZ-2293) — never a schema or serializer
  *    change, round-trip byte-identical. Every link is one unit (YAZ-3744 D1, YAZ-3935): it opens
  *    its raw text only from "Edit link".
  *  - Link caret (YAZ-3744 D1, YAZ-3935, `wikilink/idLinkCaret.ts`): a caret that lands inside a
@@ -68,15 +68,15 @@
  *  - Pill selection (YAZ-3747 demo, `wikilink/pillSelection.ts`): a link inside a selection lights
  *    up as one box, its icon and padding too.
  *  - Wikilink clicks (GRO-2192, YAZ-3935, YAZ-3936, `wikilink/wikilinkClick.ts`): MOUSEDOWN on a
- *    collapsed `.wikilink` span. In an editable note a plain click puts the caret at the pill's
+ *    collapsed `.wikilink` span. In an editable page a plain click puts the caret at the pill's
  *    nearer edge and a double-click selects the link; the gestures of Settings › Hotkeys ›
- *    "Links in a note" open it (⌘ → background tab, ⌘⇧ → new tab in front by default; unresolved →
- *    create-then-open via `createFromLink`); a read-only note opens on a plain click. Both
+ *    "Links in a page" open it (⌘ → background tab, ⌘⇧ → new tab in front by default; unresolved →
+ *    create-then-open via `createFromLink`); a read-only page opens on a plain click. Both
  *    preventDefault, so the link never flashes its raw text; revealed raw text stays editable.
  *    Registered only when `opts.wikilinkNav` provides the handlers.
  *  - Wikilink hover (YAZ-3403, `wikilink/wikilinkHover.ts`): the pointer on a resolved `.wikilink` span tells the
  *    host which page it opens, for the hover panel. Registered only when `opts.wikilinkHover` is passed: the
- *    note editor's, never a read-only preview's.
+ *    page editor's, never a read-only preview's.
  *  - Link menu (YAZ-2293, YAZ-3609 D23, YAZ-3740, `wikilink/wikilinkMenu.ts`): right-click on a rendered
  *    `[[link]]` shows the one link menu (`linkMenu.ts`): its name and id, the Open rows and Show in
  *    sidebar, the copy rows, Focus, Favorites and "Open in ▸", Edit link, Remove link. Registered with
@@ -88,7 +88,7 @@
  *    priority 100 and equal priorities run in addition order — the picker wins while open and
  *    declines (falls through) while closed.
  *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): an open gesture (YAZ-3936; a plain
- *    click in an editable note puts the caret, YAZ-3935) opens before caret placement — a link into
+ *    click in an editable page puts the caret, YAZ-3935) opens before caret placement — a link into
  *    a vault of the window in a tab (where the gesture says, YAZ-3609 D8, D14),
  *    anything else through the host — and such a link draws as a pill (D19); right-click shows the
  *    one link menu (D23, `linkMenu.ts`). Edit/remove
@@ -116,10 +116,11 @@
  *    the patched Crepe (`client/vendor/milkdown-crepe-7.22.1-yaz3550.*`) opens the menu in a
  *    bullet too and filters by a row's `keywords`; Divider and Bullet List are hidden there.
  *    "Current time" (`h:mmam - `, plain text) ends the Text group on every editor.
- *  - Drawing previews (YAZ-878, `drawing/drawingPreview.ts`): `![[x.excalidraw]]` renders as the
- *    scene through inline decorations only (the match's text hidden, a widget in its place,
- *    caret-inside reveals the raw syntax) — never a schema or serializer change. Registered only
- *    when `opts.drawingPreview` gives it the vault root; every other embed is untouched.
+ *  - Board embeds (YAZ-4827, was YAZ-878's drawing preview; `drawing/boardEmbed.ts`): `![[x.excalidraw|…]]` and
+ *    `![[x.drawio|…]]` render as a window into the board (`embed/types.ts`, lazy) through inline decorations only
+ *    (the match's text hidden, a widget in its place, rescanned only in the blocks an edit touched) — never a schema
+ *    or serializer change. Its pill rows, its open and its icon are the link plugins' own sources. Registered only
+ *    when `opts.boardEmbeds` gives it the vault root; every other embed is untouched.
  *  - CMD+F find (YAZ-968, `find/findInPage.ts`): matches + highlight decorations + fold-reveal,
  *    driven through the `FindChannel` the host also gives the find bar. Registered only when
  *    `opts.find` supplies that channel; every transaction it makes is metadata-only.
@@ -127,9 +128,9 @@
  *    removed text is a thin red mark, each changed line has a Checked button on hover; the one-line note reads
  *    the count and drives Next through the `OutsideChangesChannel` the host also gives the bar. Registered only
  *    when `opts.outsideChanges` supplies that channel. Memory only; every transaction it makes is metadata-only.
- *  - Table of contents (YAZ-2700, `toc/tocPlugin.ts`): the note's rows — its H1-H5 outside lists,
+ *  - Table of contents (YAZ-2700, `toc/tocPlugin.ts`): the page's rows — its H1-H5 outside lists,
  *    or its bullets three levels deep when it has fewer than two of those, or what the reader
- *    chose for this note (the channel's source, D14: every heading, or the bullets) — scanned at
+ *    chose for this page (the channel's source, D14: every heading, or the bullets) — scanned at
  *    view creation, 150 ms after the last document change and at once when the source changes,
  *    published through the `TocChannel` the host also gives `toc/TableOfContents.tsx`; the same
  *    channel carries the jump and the scroll spy. No state field, no decorations. Registered
@@ -164,9 +165,9 @@
  *    stays byte-identical. Vault-relative srcs
  *    load through main's `app://vault/` protocol (`image/imageSrc.ts`); eight aspect-locked handles
  *    resize into Obsidian's `alt|width`; double-click opens the host's lightbox (`image/ImageModal`).
- *    Paste/drop of image BYTES writes `assets/images/<note>-<stamp>.<ext>` and inserts the node
+ *    Paste/drop of image BYTES writes `assets/images/<page>-<stamp>.<ext>` and inserts the node
  *    (`image/insertImage.ts`, wired in `clipboardPaste.ts` through the `imageOptionsCtx` slice).
- *    Registered only when `opts.image` supplies the root + note path; without it images render as
+ *    Registered only when `opts.image` supplies the root + page path; without it images render as
  *    Crepe's stock `<img>` — the folder outline (its bullets-only lock has no `image`) and the
  *    hover preview card (no root in reach) say so where they mount.
  *  - The line's style (YAZ-3164, `line/lineStyle.ts`): the `hr` node gains `darkness`, `thickness`,
@@ -184,8 +185,12 @@
  *    header, stripes, height, wrap and freeze attributes, and each cell `fill` and `color`
  *    — the SECOND exception to the images rule. A plain table stays the GFM table; one with
  *    settings is the table then the next block `<!-- table: … -->`, joined on load as the line's.
+ *  - A code block's width (YAZ-4783, `code/codeWidth.ts`): the `code_block` node gains `width` and
+ *    `unknownParts` — the THIRD exception. A plain code block stays the fence; one with a width is
+ *    the fence then `<!-- code: width 1300 -->` on the line right under it, joined on load as the
+ *    table's. A node decoration sizes the box; its right edge drags the width, written on mouseup.
  *  - Cell notes (YAZ-3818 D4, D12, `table/cellNotes.ts`): a footnote labelled `cell-N` is a `cell_note` block, hidden
- *    in the note view; after a table, a cell note or a mark moves, each cell note goes back under its table. Its mark
+ *    in the page view; after a table, a cell note or a mark moves, each cell note goes back under its table. Its mark
  *    is a corner triangle; the "Add cell note" button (`table/cellNoteButton.ts`), a click on the mark, ⌘. on a plain
  *    cell line and the table menu open it as a card beside its cell (`table/cellNoteCard.ts`, the YAZ-3818 demo); a
  *    rest on the cell previews it (`table/cellNotePreview.ts`, D14). A cell's and a cell note's bullets hold lines and lists only: another block put
@@ -216,7 +221,7 @@
  *  - Fold rows (YAZ-4165, `table/tableFold.ts`): a run of folded rows is one bar, drawn by row decorations; a
  *    mousedown on the bar opens it, also just before `tableEditing`, so it starts no cell selection.
  *  - The row band (YAZ-4167, `table/tableRowBand.ts`): one decoration on the caret's body row, the mouse's by CSS;
- *    Settings › Editor › Tables › Row band is `data-table-row-band` on `.app`.
+ *    Settings › Tables › All tables › Row band is `data-table-row-band` on `.app`.
  *  - The table zoom (YAZ-4091, `table/tableZoomPill.tsx`): the page zoom pill (`DocumentZoom`) in a widget before each
  *    table sets its `zoom`; `table.css` zooms the block's content, so it multiplies with the page zoom.
  *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
@@ -227,15 +232,19 @@
  *  - Table menus (YAZ-3766): the table's settings on its six-dot handle (`table/tableRows.ts`), the
  *    cell toolbar over two or more selected cells (`table/cellToolbar.ts`; its custom colour pick,
  *    `table/colours.ts`), and frozen rows and columns (`table/tableFreeze.ts`; the right-click
- *    Table part is `noteMenu.tsx`'s).
+ *    Table part is `pageMenu.tsx`'s).
  */
+import { holdPagePlace } from './pagePlace'
+import { fileKind } from '@shared/fileKind'
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { codeTheme } from './codeTheme'
 import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
 import { commandsCtx, editorViewCtx, serializerCtx } from '@milkdown/kit/core'
+import { listener } from '@milkdown/kit/plugin/listener'
 import type { Ctx } from '@milkdown/kit/ctx'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import {
   hardbreakClearMarkPlugin,
   headingKeymap,
@@ -248,18 +257,19 @@ import {
   wrapInHeadingCommand,
   wrapInOrderedListInputRule,
 } from '@milkdown/kit/preset/commonmark'
-import { extendListItemSchemaForTask, wrapInTaskListInputRule as gfmTaskListInputRule } from '@milkdown/kit/preset/gfm'
-import { type Command, Selection, TextSelection } from '@milkdown/kit/prose/state'
-import { $shortcut, replaceAll } from '@milkdown/kit/utils'
+import { extendListItemSchemaForTask, keepTableAlignPlugin, wrapInTaskListInputRule as gfmTaskListInputRule } from '@milkdown/kit/preset/gfm'
+import { type Command, Plugin, PluginKey, Selection, TextSelection } from '@milkdown/kit/prose/state'
+import { $prose, $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
 import { readOnlyKeys } from './readOnlyKeys'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { breakMarks } from './breakMarks'
-import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/drawingPreview'
+import { BOARD_VIEW_META, createBoardEmbed } from './drawing/boardEmbed'
+import { flushBoardWindows } from './embed/hostWindow'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
-import { createSlashMenu } from './slashMenu'
+import { createSlashMenu, type SlashMenuGroups } from './slashMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
-import { createImageView, imageParseDefaults } from './image/imageView'
+import { createImageView, imageBoardKeys, imageParseDefaults } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
 import { createFindInPage } from './find/findInPage'
 import type { OutsideChangesChannel } from './external/outsideChangesChannel'
@@ -281,12 +291,15 @@ import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHigh
 import { highlightPanel, MORE_KEY, panelColour, toggleHighlightPanel } from './highlightPanel'
 import { showMoreColour } from './toolbarHost'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
-import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
+import { recordCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
 import { inlineBreaks } from './inlineBreaks'
 import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
 import { tableStyle } from './table/tableStyle'
+import { codeBlockWidth, codeCommentStringify } from './code/codeWidth'
+import { CODE_BUTTON_KINDS, CODE_TOOLBAR_KEYS, codeHasMark, codeMarkCommand, codeMarkDecorations, codeMarkKeys, codeMarksPlugin, codeSelection, codeToolbarCtx } from './code/codeMarks'
+import { shallowRef, type ShallowRef } from 'vue'
 import { cellBlocksOnly } from './table/cellBlocks'
 import { cellNotes, withoutEmptyCellNotes } from './table/cellNotes'
 import { cellNoteButton } from './table/cellNoteButton'
@@ -311,8 +324,10 @@ import { tableColumnResize } from './table/tableColumnResize'
 import { tableShiftArrow } from './table/tableShiftArrow'
 import { tableHandleSelect } from './table/tableHandleSelect'
 import { tableFold } from './table/tableFold'
+import { tableSubhead } from './table/tableSubhead'
 import { tableRowBand } from './table/tableRowBand'
 import { tableZoomPill } from './table/tableZoomPill'
+import { createSuperTables } from './table/super/superTables'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyLinkTextCtx, copyMarkdownCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
@@ -328,30 +343,45 @@ import { headingLevelTag } from './outline/headingLevelTag'
 import { headingText } from './outline/headingText'
 import { foldAllHotkeys, foldsChanged } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
+import { addLineCodeKeys, addLineKeymap, addLineViews } from './outline/addLineBeside'
 import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { listMarkers } from './outline/listMarkers'
 import { listMarkerTyping, undoListMarker, wrapInTaskListInputRule } from './listMarkerTyping'
 import { typingArrows, undoTypingArrow } from './typingArrows'
+import { enterKeepsStyle, enterKeepsStyleInPages } from './enterKeepsStyle'
 import { createFoldingSwitch } from './outline/foldingSwitch'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
 import { foldAllRows } from './outline/foldAllRows'
 import { openBulletRow } from './outline/openBulletRow'
 import { focusSidebar } from '../lib/focusHandoff'
-import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikilink/wikilinkClick'
+import { createWikilinkClick, wikilinkFollower, type LinkFollow, type LinkWhere, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
-import { createWikilinkMenu } from './wikilink/wikilinkMenu'
+import { createWikilinkMenu, linkMenuOf } from './wikilink/wikilinkMenu'
+import { linkMenuRows } from './linkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import { createWikilink, createWikilinkResolveSource, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createWikilink, createWikilinkResolveSource, linkCard, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { languages as codeLanguages } from '@codemirror/language-data'
+import { flushCardEditor, CARD_ID_META, CARD_MIRROR_META, cardCodeKeys, cardLanguage, cardBlockPlugins, cardRow, type CardDeps, type CardHost, type CardReviewDoorApi } from './card/cardBlockView'
+import { cardKeyRow } from './card/cardEditKeys'
+import { cardLook } from './card/cardLook'
+import { desktopBoardPicture } from './card/boardPictureDesktop'
+// A card's look moved to its own file (YAZ-5153); it is given out here as before.
+export { cardLook } from './card/cardLook'
+import { cardEditorOptions } from './card/cardEditorFeatures'
+import { mountCardEditor } from './card/cardEditor'
+import { changeCardLine } from '../review/cardFile'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createPillSelection } from './wikilink/pillSelection'
-import { createMarkdownLink, noPreviewOnPills, type MarkdownLinkNav } from './markdownLink'
+import { createMarkdownLink, markdownLinkMenuOf, noPreviewOnPills, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
 import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { keyRow, keysOf } from '@shared/keys'
-import { applyNoteKeys, noteHotkeysCtx } from './noteKeys'
+import { applyPageKeys, pageHotkeysCtx } from './pageKeys'
+import { codeBlockFind } from './find/codeBlockFind'
+import { blockConfig } from '@milkdown/kit/plugin/block'
 
 export interface CreateCrepeOptions {
   root: HTMLElement
@@ -374,7 +404,7 @@ export interface CreateCrepeOptions {
   find?: FindChannel
   /** Outside changes channel (YAZ-3704 D6): the host's one channel per mount, shared with the one-line note. Absent → no change list at all. */
   outsideChanges?: OutsideChangesChannel
-  /** Table of contents channel (YAZ-2700): the host's one channel per mount, shared with the table of contents. Absent → the note is never scanned. */
+  /** Table of contents channel (YAZ-2700): the host's one channel per mount, shared with the table of contents. Absent → the page is never scanned. */
   toc?: TocChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource
@@ -396,45 +426,87 @@ export interface CreateCrepeOptions {
   pathPaste?: PathPasteOptions
   /** Drawing creator (YAZ-877): the host writes the sidecar, the item inserts the embed. Absent → NO Drawing row is added to the slash menu. */
   drawing?: DrawingCreator
-  /** Drawing previews (YAZ-878): the vault root to read scenes against, plus the optional refresh feed and click handler. Absent → `.excalidraw` embeds stay plain text. */
-  drawingPreview?: DrawingPreviewOptions
-  /** First-class images (YAZ-1656): root + note path for src resolution, the lightbox opener, the paste notice. Absent → stock `<img>`, and pasted image bytes are not written. */
+  /**
+   * Board embeds (YAZ-4827): the vault root the boards load from, and "Edit in a popup" (D7, the drawing modal).
+   * Absent → `![[x.excalidraw]]` and `![[x.drawio]]` stay plain text.
+   */
+  boardEmbeds?: { root: string; onEditInPopup?: (target: string) => void }
+  /** First-class images (YAZ-1656): root + page path for src resolution, the lightbox opener, the paste notice. Absent → stock `<img>`, and pasted image bytes are not written. */
   image?: ImageOptions
   /**
-   * Feature overrides for a NON-note instance (YAZ-901's bullets-only outline editor passes
-   * `outlineFeatures`). The note editor passes none and gets `featureConfig.ts`'s allowlist
+   * Feature overrides for a NON-page instance (a drawing's text box). The page editor passes
+   * none and gets `featureConfig.ts`'s allowlist
    * verbatim — which is what `featureConfig.test.ts` keeps honest.
    */
   features?: Partial<Record<CrepeFeature, boolean>>
   /**
-   * The note editor (a tab, the right panel): while read only it takes the focus and answers its view
+   * The page editor (a tab, the right panel): while read only it takes the focus and answers its view
    * keys itself (`readOnlyKeys.ts`, YAZ-3125, YAZ-3127). Absent on the read-only previews.
    */
   readOnlyKeys?: boolean
   /**
-   * `settings.hotkeys` (YAZ-3564 K4): the note keys the user changed. Read once, here: a change applies to the notes
-   * that open next (`noteKeys.ts`). Absent = the defaults.
+   * `settings.hotkeys` (YAZ-3564 K4): the page keys the user changed. Read once, here: a change applies to the pages
+   * that open next (`pageKeys.ts`). Absent = the defaults.
    */
   hotkeys?: HotkeyOverrides
   /** Copy as › Without folded lines' toast (YAZ-3653): how many folded lines the copy left out. Absent → no toast. */
   onCopyNotice?: (text: string) => void
   /**
-   * The note editor (YAZ-4162 D2, D9): a calendar table's current-time marker moves each minute (`table/tableCalendar.ts`).
+   * The page's timed unlock (YAZ-4997): while one runs ("Editing · 9:52"), save and lock the page again, as Lock now, and
+   * say true; else false. Esc (before it goes to the sidebar) and ⌘↵ ask it. Absent: neither key locks.
+   */
+  lockAgain?: () => boolean
+  /**
+   * What Esc does in the text when nothing else takes it: absent, it steps out to the sidebar (YAZ-936). An Explore
+   * layer's editor hands it to its layer instead (back to reading, YAZ-4997). True: it was taken.
+   */
+  onEscape?: () => boolean
+  /**
+   * The page editor (YAZ-4162 D2, D9): a calendar table's current-time marker moves each minute (`table/tableCalendar.ts`).
    * Absent on the hover preview card and the other previews: they show the marker of the time they opened and start no timer.
    */
   calendarClock?: boolean
   /**
-   * The note editor (YAZ-4091, YAZ-4176): the table zoom pill on each table (`table/tableZoomPill.tsx`). Absent on the
+   * The page editor (YAZ-4091, YAZ-4176): the table zoom pill on each table (`table/tableZoomPill.tsx`). Absent on the
    * hover preview card, the read-only previews and the outline view: they mount no React root for each table.
    */
   tableZoomPill?: boolean
   /**
-   * A NON-note instance's rows that never show (YAZ-4277 D4, a drawing text box): toolbar buttons and slash rows by
-   * key. Absent → every row, as a note.
+   * A NON-page instance's rows that never show (YAZ-4277 D4, a drawing text box): toolbar buttons and slash rows by
+   * key. Absent → every row, as a page.
    */
   hidden?: { toolbar?: readonly string[]; slash?: readonly string[] }
-  /** A NON-note instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build. */
-  extendToolbar?: (builder: ToolbarBuilder) => void
+  /**
+   * A NON-page instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build.
+   * They form the strip's last group ("Other", `arrangeToolbar`), unless it returns `{ after }`: that group goes right
+   * after the group of that key (the card editor's "Hide word" after the heading buttons, YAZ-5026 round 2).
+   */
+  extendToolbar?: (builder: ToolbarBuilder) => void | { after: string }
+  /** Whether Enter keeps the line's style (YAZ-3746 13AB). Absent → the pages' switch; a drawing text box passes its own. */
+  enterKeepsStyle?: () => boolean
+  /**
+   * Cards (YAZ-4961): the page's path and the vault's ID door. Absent → no "Card" slash row; a card still
+   * draws (a preview, a read layer). The row also hides while the vault gives no IDs (idea 9, `wikilinks.ids`).
+   */
+  cards?: CardHost
+  /** The vault's card review (YAZ-5000): "Reviews (n)" under each card with reviews. Absent (a hover preview) → no section. */
+  cardReviews?: CardReviewDoorApi
+  /**
+   * Does a ```` ```card ```` block draw as a card here? False: a code block, as in a vault with no IDs — the card
+   * editor's own editor (YAZ-5026: no card in a card). Absent → it does.
+   */
+  cardBlocks?: boolean
+  /** Zoom into a bullet (GRO-2029): its click and its keys. False in the card editor (YAZ-5026). Absent → on. */
+  outlineZoom?: boolean
+  /** Cell notes' button, preview, card and keys (YAZ-3818). False in the card editor (YAZ-5026). Absent → on. */
+  cellNotes?: boolean
+  /**
+   * Formatting inside a code block (YAZ-5794): its marks, the toolbar in code and the keys. False in the card editor:
+   * the Inbox cannot draw them. Absent → on.
+   */
+  codeMarks?: boolean
+  /** A NON-page instance's own `/` rows (YAZ-5026: the card editor's "New side"), added after the Drawing row. */
+  extendSlash?: (builder: SlashMenuGroups) => void
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -449,6 +521,33 @@ export interface ToolbarBuilder {
 }
 
 const viewState = (ctx: Ctx) => ctx.get(editorViewCtx).state
+
+type BuiltItem = { key: string; onRun?: (ctx: Ctx) => void; active?: (ctx: Ctx) => boolean }
+
+/**
+ * The toolbar in a code block (YAZ-5794 D3, D4). Bold, Italic, Underline and Strikethrough run the code's own marks
+ * when the selection is in code, and light from them; elsewhere they run as before. The highlight buttons and their
+ * ▾ need nothing here: their commands know code (`marks/highlight.ts`). While the selection is in code (`inCode`, a
+ * Vue ref the toolbar's `computed` reads, so the strip rebuilds when it flips) only the Text style group shows:
+ * `CODE_TOOLBAR_KEYS`, in the user's order, and a group left empty goes with its divider. The builder's own array is
+ * changed in place, as `arrangeToolbar` does.
+ */
+function codeButtons(groups: ReturnType<ToolbarBuilder['build']>, inCode: boolean): void {
+  for (const group of groups)
+    for (const item of group.items as BuiltItem[]) {
+      const kind = CODE_BUTTON_KINDS[item.key]
+      const { onRun, active } = item
+      if (kind === undefined || onRun === undefined) continue
+      item.onRun = (ctx) => (codeSelection(viewState(ctx)) !== null ? runOnView(ctx, codeMarkCommand(kind)) : onRun(ctx))
+      item.active = (ctx) => {
+        const range = codeSelection(viewState(ctx))
+        return range !== null ? codeHasMark(range, kind) : (active?.(ctx) ?? false)
+      }
+    }
+  if (!inCode) return
+  for (const group of groups) group.items = group.items.filter((item) => CODE_TOOLBAR_KEYS.includes(item.key))
+  for (let i = groups.length - 1; i >= 0; i--) if (groups[i].items.length === 0) groups.splice(i, 1)
+}
 /** Run a ProseMirror command on the editor's view, as Crepe's own buttons do through their commands. */
 const runOnView = (ctx: Ctx, command: Command): void => {
   const view = ctx.get(editorViewCtx)
@@ -499,7 +598,7 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * would keep Crepe's order and raise nothing; `headingToolbar.test.ts` reads the strip of a real
  * editor and fails on it.
  */
-function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: (builder: ToolbarBuilder) => void): void {
+function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: CreateCrepeOptions['extendToolbar'], inCode?: ShallowRef<boolean>): void {
   const formatting = builder.getGroup('formatting')
   for (const color of [null, ...QUICK_HIGHLIGHTS] as HighlightColor[]) {
     const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue')
@@ -527,8 +626,8 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
   formatting.addItem('underline', {
     icon: ownIcon('underline'),
     label: TOOLBAR_LABELS.underline,
-    // Underline's key is the app's own keymap, not a Milkdown slice `keymapRef` can name: its row, as the note opened.
-    shortcut: toDisplay(keysOf(keyRow('note.underline')!, hotkeys)[0] ?? null) || undefined,
+    // Underline's key is the app's own keymap, not a Milkdown slice `keymapRef` can name: its row, as the page opened.
+    shortcut: toDisplay(keysOf(keyRow('page.underline')!, hotkeys)[0] ?? null) || undefined,
     active: (ctx) => visibleRangeHasMark(viewState(ctx), underlineSchema.type(ctx)),
     onRun: (ctx) => runOnView(ctx, toggleUnderline(ctx)),
   })
@@ -560,12 +659,21 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       onRun: (ctx) => runOnView(ctx, toggleListKind(kind)),
     })
   }
-  extend?.(builder)
+  const place = extend?.(builder)
   // The default order leads with the Heading group (YAZ-2700): the toolbar opens over the start of
   // the selection, so its first buttons are the ones under the hand after a double click.
   const groups = builder.build()
-  noteCrepeIcons(groups)
+  recordCrepeIcons(groups)
   arrangeToolbar(groups, toolbarPrefs.value)
+  if (place) {
+    // The instance's own buttons right after the group it names; that group hidden in Settings: first.
+    const at = groups.findIndex((group) => group.key === 'other')
+    if (at >= 0) {
+      const [own] = groups.splice(at, 1)
+      groups.splice(groups.findIndex((group) => group.key === place.after) + 1, 0, own)
+    }
+  }
+  if (inCode !== undefined) codeButtons(groups, inCode.value)
   if (hidden.length === 0) return
   for (const group of groups) group.items = group.items.filter((item) => !hidden.includes(item.key))
   groups.splice(0, groups.length, ...groups.filter((group) => group.items.length > 0))
@@ -578,16 +686,48 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
  * anything that means something by Esc (the `[[` picker's dismiss at 100, menus) wins first; and
  * it DECLINES when neither is on screen (collapsed sidebar), so Esc stays free everywhere else.
  */
-const escapeToSidebar = $shortcut(() => ({
-  EscapeToSidebar: {
-    key: 'Escape',
-    priority: 10,
-    onRun: () => () => focusSidebar(),
-  },
-}))
+const escapeToSidebar = (lockAgain?: () => boolean, onEscape: () => boolean = focusSidebar) =>
+  $shortcut(() => ({
+    EscapeToSidebar: {
+      key: 'Escape',
+      priority: 10,
+      // An unlocked page locks first (YAZ-4997): this Esc saves it and locks it again, and only a later Esc goes on.
+      onRun: () => () => lockAgain?.() === true || onEscape(),
+    },
+  }))
+
+/**
+ * ⌘↵ in a page unlocked for a time (YAZ-4997, Yaseen: "hit CMD Enter and/or esc to go back to read only mode"): save and
+ * lock it again at once, as Lock now. Priority 300, above the page's own ⌘↵ (a card's Open card at 220, a line
+ * below a table or an embed at 200 and 210, the task box's cycle): while the page is unlocked, the lock wins in the
+ * text. Inside a code block, or a card's text, the key stays theirs (their editor takes it first). It DECLINES
+ * on a page with nothing to lock: there ⌘↵ keeps its meaning.
+ */
+const lockAgainKey = (lockAgain: () => boolean) =>
+  $shortcut(() => ({
+    LockAgain: {
+      key: 'Mod-Enter',
+      priority: 300,
+      onRun: () => () => lockAgain(),
+    },
+  }))
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
-  const slashMenu = createSlashMenu(opts.drawing === undefined ? undefined : drawingMenu(opts.drawing), opts.hidden?.slash)
+  // The "Card" row (YAZ-4961, idea 9): only in a vault that gives IDs, read at each update of the menu's flags.
+  const cardSlash = opts.cards === undefined ? undefined : { row: cardRow(opts.cards), on: () => (opts.wikilinks?.ids ?? false) }
+  const drawingRows = opts.drawing === undefined ? undefined : drawingMenu(opts.drawing)
+  const extendSlash = opts.extendSlash
+  const slashRows =
+    extendSlash === undefined
+      ? drawingRows
+      : (builder: SlashMenuGroups) => {
+          drawingRows?.(builder)
+          extendSlash(builder)
+        }
+  const slashMenu = createSlashMenu(slashRows, opts.hidden?.slash, cardSlash)
+  // YAZ-5794: true while this editor's selection is in a code block (`codeToolbarCtx`); the toolbar reads it.
+  const codeMarksOn = opts.codeMarks !== false
+  const inCode = shallowRef(false)
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
@@ -607,13 +747,21 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
       // YAZ-1480 adds Highlight into Crepe's own Formatting group from the same builder.
-      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar, opts.extendToolbar) },
+      // YAZ-5794: in a code block, the Text style group only, on the code's own marks (`inCode`, `codeButtons`).
+      [CrepeFeature.Toolbar]: {
+        buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar, opts.extendToolbar, codeMarksOn ? inCode : undefined),
+        // The vendored Crepe patch: a selection in a code block's CodeMirror shows the toolbar; a card's never does.
+        inNestedEditor: (view) => codeMarksOn && codeSelection(view.state) !== null,
+      },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
       // app.css `--code-*` so they follow Appearance (codeTheme.ts replaces Crepe's One Dark).
       // `codeLines` (YAZ-2643 D8): a code block's own line numbers are lines of the file while the numbers show.
-      [CrepeFeature.CodeMirror]: { theme: codeTheme, extensions: [CodeMirrorView.lineWrapping, codeLines] },
+      // `addLineCodeKeys` (YAZ-4800 demo): ⌘↵ / ⌘⇧↵ add a line below / above the code block, before Crepe's exit-code.
+      // `cardCodeKeys` (YAZ-4961): in a card's editor ⌘↵ opens the card and Esc is Done, before `addLineCodeKeys`.
+      // The `card` language: Markdown with spell check (idea 8).
+      [CrepeFeature.CodeMirror]: { theme: codeTheme, languages: [...codeLanguages, cardLanguage], extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, ...(codeMarksOn ? [codeMarkDecorations, codeMarkKeys(opts.hotkeys)] : []), cardCodeKeys, addLineCodeKeys] },
     },
   })
   crepe.editor.use(
@@ -634,8 +782,17 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(highlightPanel)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
-  // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
+  // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment. Milkdown's
+  // column-alignment keeper reads the header row by a cell's index, wrong under a merged cell (YAZ-4792); ours is in `tableStyle`.
+  void crepe.editor.remove(keepTableAlignPlugin)
   crepe.editor.use(tableStyle)
+  // A code block's own width (YAZ-4783): the fence + the `<!-- code: width 1300 -->` line right under it, the right
+  // edge's grip and its drag. The join rule keeps the comment on the line under the fence.
+  crepe.editor.use(codeBlockWidth)
+  crepe.editor.config(codeCommentStringify)
+  // Formatting inside a code block (YAZ-5794): the marks follow typing, CodeMirror draws them, the toolbar knows code.
+  crepe.editor.config((ctx) => void ctx.inject(codeToolbarCtx, inCode))
+  if (codeMarksOn) crepe.editor.use(codeMarksPlugin)
   // Cell notes (YAZ-3818 D4, D12): a `cell-N` footnote is a `cell_note`, hidden, and it stays under its table. Before
   // `inlineBreaks`: its remark step reads a footnote's `<br />` line first.
   crepe.editor.use(cellNotes)
@@ -656,7 +813,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(breakMarks)
   // Milkdown's text handler saves a line that is only `1. ` or `# ` raw, so it reloads as a list or a heading (YAZ-3727 B5); ours escapes it.
   crepe.editor.config(textStringify)
-  // Milkdown's list-number plugin walks the whole note on each change and fixes numbered lists only (YAZ-3727 D2); ours replaces it.
+  // Milkdown's list-number plugin walks the whole page on each change and fixes numbered lists only (YAZ-3727 D2); ours replaces it.
   void crepe.editor.remove(syncListOrderPlugin)
   crepe.editor.use(listMarkers)
   // Before the fold plugins: their `apply` reads the switch's NEW value off the state being built (YAZ-4094 F1).
@@ -672,13 +829,13 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
   // to Markdown creation, including in isolated createCrepe consumers outside App.
   const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
-  // ⌘F reads a pill as the note draws it (YAZ-3744 S9): the same two sources.
+  // ⌘F reads a pill as the page draws it (YAZ-3744 S9): the same two sources.
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find, { wikilinks, viewOnly: viewOnlyLinks }))
   if (opts.outsideChanges !== undefined) crepe.editor.use(createOutsideChanges(opts.outsideChanges))
-  // A row of the table of contents, a crumb, the tab's tooltip and its Back list name a line's links as the note shows them (YAZ-3744 D6).
+  // A row of the table of contents, a crumb, the tab's tooltip and its Back list name a line's links as the page shows them (YAZ-3744 D6).
   const linkText = (text: string) => linksAsShown(text, wikilinks, viewOnlyLinks)
   if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc, { linkText, subscribe: wikilinks.subscribe }))
-  crepe.editor.use(createOutlineZoom({ title: () => 'Untitled', ...opts.zoom, linkText }))
+  if (opts.outlineZoom !== false) crepe.editor.use(createOutlineZoom({ title: () => 'Untitled', ...opts.zoom, linkText }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
   crepe.editor.use(sectionIndent)
@@ -695,68 +852,112 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableHandleSelect)
   // Folded rows (YAZ-4165): the bar and the hidden rows; a mousedown on a bar opens it, also before `tableEditing`.
   crepe.editor.use(tableFold)
+  // Subheader rows (YAZ-4899): the look, the chevron and the collapsed sections, the sticky rows, the keys and the drag.
+  crepe.editor.use(tableSubhead)
   // Fill down (YAZ-3696 S4): the corner handle of the selected cells.
   crepe.editor.use(tableFill)
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
   crepe.editor.use(cellToolbar)
   // Cell notes (YAZ-3818 D8, D14): the "Add cell note" button in a cell's corner, the preview on a cell with a note,
-  // and the open note's card beside its cell (the demo): Esc and the arrows at its edges at priority 90.
-  crepe.editor.use(cellNoteButton)
-  crepe.editor.use(cellNotePreview)
-  crepe.editor.use(cellNoteCard)
-  crepe.editor.use(cellNoteCardKeymap)
-  // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole note; priority 80, under the cell's 90.
+  // and the open cell note's card beside its cell (the demo): Esc and the arrows at its edges at priority 90.
+  if (opts.cellNotes !== false) crepe.editor.use(cellNoteButton).use(cellNotePreview).use(cellNoteCard).use(cellNoteCardKeymap)
+  // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole page; priority 80, under the cell's 90.
   crepe.editor.use(bulletSelectAllKeymap)
   // The table menu's Custom colour… box and its target cells (YAZ-3817, YAZ-4366), kept through edits while it is open.
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
   crepe.editor.use(tableFreeze)
-  // Calendar tables (YAZ-4162): the now row and the past rows; the minute clock in the note editor only.
+  // Calendar tables (YAZ-4162): the now row and the past rows; the minute clock in the page editor only.
   crepe.editor.use(createTableCalendar(opts.calendarClock === true))
   // The row band on the caret's row (YAZ-4167): one row decoration, moved only when the caret goes to another row.
   crepe.editor.use(tableRowBand)
-  // The table zoom (YAZ-4091): the page zoom pill in a widget before each table, for the table's own `zoom`; the note editor only (YAZ-4176).
+  // The table zoom (YAZ-4091): the page zoom pill in a widget before each table, for the table's own `zoom`; the page editor only (YAZ-4176).
   if (opts.tableZoomPill === true) crepe.editor.use(tableZoomPill)
-  // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
+  // Super tables (YAZ-4869): the active tab, the redraw of a changed table's view, the header rename and find; the page
+  // editor only, beside the zoom pill whose anchor draws the views. The page's place keys what this Mac remembers.
+  if (opts.tableZoomPill === true) crepe.editor.use(createSuperTables(opts.image === undefined ? null : { root: opts.image.root, pagePath: opts.image.pagePath }))
+  // A read-only PAGE's keyboard (YAZ-3125, YAZ-3127): the page editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))
   // Every [[link]] is one unit (YAZ-3744 D1, YAZ-3935): the caret steps over it, Backspace removes it whole.
   crepe.editor.use(createIdLinkCaret())
   // A selected link is one lit box, not its letters alone (YAZ-3747 demo).
   crepe.editor.use(createPillSelection())
-  if (opts.wikilinkNav !== undefined) {
-    // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
-    const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)
+  // A click, the link menu's Open rows and a board embed's open follow a link the same way (YAZ-3609 D23, YAZ-4829).
+  const allowHighlight = opts.hidden?.toolbar?.includes('highlight') !== true
+  const follow = opts.wikilinkNav === undefined ? undefined : wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)
+  if (opts.wikilinkNav !== undefined && follow !== undefined) {
     const nav = opts.wikilinkNav
-    crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.())).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
+    // A plain click opens a page pill in Explore while the vault says so (YAZ-4936): a page that is there, never a board or a folder.
+    // A card link's plain click always opens its card window (YAZ-5030), as Explore does a page's with the setting on.
+    const exploreClick = (inner: string): boolean => linkCard(inner, wikilinks) !== null || (nav.exploreClick?.() === true && fileKind(linkPath(inner, wikilinks, viewOnlyLinks) ?? '') === 'markdown')
+    crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.(), exploreClick)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters, allowHighlight))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
-  if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav)).config(noPreviewOnPills)
+  // Cards (YAZ-4961): a ```card block draws as a card in every editor that has code blocks (idea 10: the hover
+  // preview, QuickLook, read-only pages and Explore too); its pills, images and links as the page's.
+  const cardsHere = { ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false && opts.cardBlocks !== false
+  const cardDeps = cardsHere ? cardDepsOf(opts, wikilinks, viewOnlyLinks, follow) : undefined
+  if (cardDeps !== undefined) crepe.editor.use(cardBlockPlugins(cardDeps))
+  if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav, wikilinks, allowHighlight)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
-  if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
+  if (opts.boardEmbeds !== undefined) {
+    // The same sources as the pills (YAZ-4827): a board's path and icon, its open, and its link's menu rows.
+    const nav = opts.wikilinkNav
+    crepe.editor.use(
+      createBoardEmbed({
+        ...opts.boardEmbeds,
+        source: wikilinks,
+        viewOnly: viewOnlyLinks,
+        look: opts.linkLook,
+        follow,
+        linkMenu: nav === undefined || follow === undefined ? undefined : (inner) => linkMenuOf(inner, wikilinks, nav, follow, viewOnlyLinks, opts.vaultsOfLetters, undefined, undefined),
+        // Card embeds (YAZ-5037) wherever a card draws as a card (not in the card editor: no card in a card), with the
+        // page card's doors; the card's images by its own page.
+        cards:
+          cardDeps === undefined
+            ? undefined
+            : {
+                look: (path) => cardLook(wikilinks, viewOnlyLinks, opts.image === undefined ? undefined : { ...opts.image, pagePath: path, boardPicture: desktopBoardPicture }, opts.linkLook),
+                edit:
+                  cardDeps.editor === undefined
+                    ? undefined
+                    : // A card file's title shows in the Title field, unchanged here: the file's own tab renames it (YAZ-5164 part 3).
+                      (root, text, title, done, fileCard) => ({ editor: mountCardEditor({ root, text, title, make: cardDeps.editor!, titleField: fileCard ? 'show' : 'edit', doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
+                follow,
+                hotkeys: cardDeps.hotkeys,
+                openHref: cardDeps.openHref,
+                pillMenu: cardDeps.pillMenu,
+                onNotice: cardDeps.onNotice,
+                putBack: opts.cards?.convert?.putBack,
+                reviews: cardDeps.reviews,
+              },
+      }),
+    )
+  }
   // Images (YAZ-1656): the node view takes the options directly; the ctx slice carries the SAME
   // object to `clipboardPaste`, which has no constructor of its own. Injected on every editor (null
   // when the host gave none) so the paste handler can always read it and simply decline.
   crepe.editor.config((ctx) => {
     ctx.inject(imageOptionsCtx, opts.image ?? null)
     ctx.inject(copyNoticeCtx, opts.onCopyNotice ?? null)
-    // A plain-text copy names each link as the note shows it, an ID link with its ID (YAZ-3744 S8).
+    // A plain-text copy names each link as the page shows it, an ID link with its ID (YAZ-3744 S8).
     ctx.inject(copyLinkTextCtx, (text) => linksAsShown(text, wikilinks, viewOnlyLinks, true))
     // Copy as Markdown writes each `[[link]]` as a save does, never `\[\[link]]` (YAZ-3747).
     ctx.inject(copyMarkdownCtx, postProcessMarkdown)
   })
-  // The note keys (YAZ-3564 K4): the user's changes for the app's keymaps, and Milkdown's keymap slices set from them,
+  // The page keys (YAZ-3564 K4): the user's changes for the app's keymaps, and Milkdown's keymap slices set from them,
   // before any keymap is read.
   crepe.editor.config((ctx) => {
-    ctx.inject(noteHotkeysCtx, opts.hotkeys ?? {})
-    applyNoteKeys(ctx)
+    ctx.inject(pageHotkeysCtx, opts.hotkeys ?? {})
+    applyPageKeys(ctx)
     // YAZ-3695 D3: Delete at a line's start deletes the next character. Milkdown's `LiftFirstListItem` (a `joinBackward`)
     // keeps Backspace only, and `DowngradeHeading` (a heading one level BIGGER) loses both: the outliner's join (D6) owns
-    // Backspace at a heading's start. `applyNoteKeys` leaves both entries alone: they are on no key row.
+    // Backspace at a heading's start. `applyPageKeys` leaves both entries alone: they are on no key row.
     ctx.update(listItemKeymap.key, (prev) => ({ ...prev, LiftFirstListItem: { ...prev.LiftFirstListItem, shortcuts: 'Backspace' } }))
     ctx.update(headingKeymap.key, (prev) => ({ ...prev, DowngradeHeading: { ...prev.DowngradeHeading, shortcuts: [] } }))
   })
-  if (opts.image !== undefined) crepe.editor.use(createImageView(opts.image))
+  if (opts.image !== undefined) crepe.editor.use(createImageView(opts.image)).use(imageBoardKeys)
   // The line (YAZ-3164): its look and its length handle, on every editor — the line's style is in the schema.
   crepe.editor.use(lineView)
   crepe.editor.use(outlinePaste)
@@ -769,6 +970,22 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(clipboardCopyOut)
   crepe.editor.use(copyVisibleHotkey)
   crepe.editor.use(blockHandleGate)
+  // YAZ-4800: a table that is a bullet's first block is no handle target of its own (the table's handle stood on the
+  // bullet's dot and took its right-click). The handle goes to the bullet, left of the dot, as a code block's does; its
+  // menu holds the bullet strip and the table's settings (`tableRows`). Crepe's own rule stays: nothing inside a table,
+  // a quote or inline math.
+  // Only where the handle is on: an editor built without it (a preview) has no `blockConfig` to set.
+  // A statement, not `&&`: a config callback returns void (YAZ-4800, tsc).
+  crepe.editor.config((ctx) => {
+    if (!ctx.isInjected(blockConfig.key)) return
+    ctx.set(blockConfig.key, {
+      filterNodes: (pos, node) => {
+        if (node.type.name === 'table' && pos.parent.type.name === 'list_item' && pos.index() === 0) return false
+        for (let depth = pos.depth; depth > 0; depth--) if (['table', 'blockquote', 'math_inline'].includes(pos.node(depth).type.name)) return false
+        return true
+      },
+    })
+  })
   // YAZ-3727 D8, D9: Milkdown's list typing rules fire inside bullets and on Enter, and undo badly; ours
   // replace them (plain lines, a typed space, a clean undo). The toolbar's Numbered button (YAZ-3806 T2) is the click
   // path; Mod-Alt-7 and the slash-menu row stay absent. GFM's `[ ] ` rule reached past a table cell (YAZ-3818).
@@ -776,6 +993,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listMarkerTyping).use(undoListMarker).use(wrapInTaskListInputRule)
   // Arrows while typing (YAZ-4273): `->` → `→` and the rest, off from Settings › Editor › Typing.
   crepe.editor.use(typingArrows).use(undoTypingArrow)
+  // Enter keeps the text style (YAZ-3746 13AB): off in pages, on in drawing text boxes, from Settings › Editor › Typing.
+  crepe.editor.use(enterKeepsStyle(opts.enterKeepsStyle ?? enterKeepsStyleInPages))
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its kind (the toolbar's list
   // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
   // own numbered list as bullets with written numbers (YAZ-3727 D12),
@@ -804,44 +1023,152 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(foldsChanged)
   crepe.editor.use(headingHotkeys)
   crepe.editor.use(obsidianHotkeys)
-  crepe.editor.use(escapeToSidebar)
-  crepe.editor.use(zoomKeymap)
+  // YAZ-4800 demo: ⌘↵ / ⌘⇧↵ in a table add a line below / above it (priority 200, above the ⌘↵ above); the code block's
+  // keys find their editor through `addLineViews`.
+  crepe.editor.use(addLineKeymap).use(addLineViews)
+  crepe.editor.use(escapeToSidebar(opts.lockAgain, opts.onEscape))
+  if (opts.lockAgain !== undefined) crepe.editor.use(lockAgainKey(opts.lockAgain))
+  if (opts.outlineZoom !== false) crepe.editor.use(zoomKeymap)
   // YAZ-1734 D3: a list_item left without its own paragraph (its line deleted) yields its children one level up, whatever path produced it.
   crepe.editor.use(liftHeadlessItems)
   // YAZ-1734 D6: typing over a selection that spans folded lines replaces only the visible pieces.
   crepe.editor.use(visibleTypeOver)
+  // YAZ-6028: Milkdown's built-in `listener` plugin synchronously serializes the full document on every
+  // `init` (even for read-only previews and unedited opens) and runs `prevDoc.eq(doc)` on every edit.
+  // Removing it and using our own lean plugin below skips all startup serialization and double post-processing.
+  void crepe.editor.remove(listener)
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
-    crepe.on((listener) => {
-      listener.markdownUpdated((ctx, markdown, prev) => {
-        // Compared as it would be SAVED. Crepe's trailing empty paragraph (added on start-up to any
-        // document ending in a list) differs raw but vanishes in `postProcessMarkdown`, and an
-        // update the file would not notice is not an update (YAZ-968's save-path contract). An empty
-        // cell note is left out, as `getMarkdownForSave` leaves it out (YAZ-3818 D15).
-        const next = postProcessMarkdown(savedMarkdown(ctx) ?? markdown)
-        if (next !== postProcessMarkdown(prev)) cb(next)
-      })
-    })
+    crepe.editor.use(
+      $prose((ctx) => {
+        const key = new PluginKey<number>('mdapp-markdown-updated')
+        return new Plugin({
+          key,
+          state: {
+            init: () => 0,
+            apply: (tr, n) => {
+              if (!tr.docChanged) return n
+              // Track normal history edits plus the three deliberate out-of-undo saves (YAZ-4820, YAZ-4961, YAZ-5026).
+              if (tr.getMeta('addToHistory') !== false || tr.getMeta(BOARD_VIEW_META) === true || tr.getMeta(CARD_ID_META) === true || tr.getMeta(CARD_MIRROR_META) === true) {
+                return n + 1
+              }
+              return n
+            },
+          },
+          view: (initView) => {
+            let baselineDoc: ProseNode = initView.state.doc
+            let lastDoc: ProseNode = initView.state.doc
+            let lastSeenVer = key.getState(initView.state) ?? 0
+            let lastPublished: string | null = null
+            let timer: ReturnType<typeof setTimeout> | undefined
+            return {
+              update: (view) => {
+                const ver = key.getState(view.state) ?? 0
+                if (ver === lastSeenVer) {
+                  // A silent outside change / reload while no local edit is pending advances the baseline.
+                  if (view.state.doc !== lastDoc && timer === undefined) {
+                    baselineDoc = view.state.doc
+                    lastPublished = null
+                  }
+                  lastDoc = view.state.doc
+                  return
+                }
+                lastSeenVer = ver
+                lastDoc = view.state.doc
+                clearTimeout(timer)
+                timer = setTimeout(() => {
+                  timer = undefined
+                  if (view.isDestroyed) return
+                  const next = serializeForSave(crepe, ctx, view.state)
+                  if (lastPublished === null) lastPublished = serializeDoc(crepe, ctx, baselineDoc)
+                  if (next !== lastPublished) {
+                    lastPublished = next
+                    baselineDoc = view.state.doc
+                    cb(next)
+                  }
+                }, 200)
+              },
+              destroy: () => clearTimeout(timer),
+            }
+          },
+        })
+      }),
+    )
   }
   return crepe
 }
 
-/**
- * The doc's Markdown without each empty cell note and its mark (YAZ-3818 D15, `withoutEmptyCellNotes`), or null when
- * the doc has none: then the editor's own serialization is the save.
- */
-const savedMarkdown = (ctx: Ctx): string | null => {
-  const { state } = ctx.get(editorViewCtx)
-  const doc = withoutEmptyCellNotes(state)
-  return doc === state.doc ? null : ctx.get(serializerCtx)(doc)
+/** What the cards of one editor read (YAZ-4961): the editor's own link sources, follower, images and doors. */
+function cardDepsOf(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, follow: LinkFollow | undefined): CardDeps {
+  const image = opts.image
+  const nav = opts.markdownLinkNav
+  const look = cardLook(wikilinks, viewOnly, image === undefined ? undefined : { ...image, boardPicture: desktopBoardPicture }, opts.linkLook)
+  const followHref = (href: string, where: LinkWhere) => {
+    if (nav === undefined) return
+    const path = nav.inApp?.(href) ?? null
+    if (path !== null && nav.openPath !== undefined) nav.openPath(path, where)
+    else if (nav.elsewhere?.(href, where === 'backgroundTab') !== true) void nav.open(href)
+  }
+  return {
+    host: opts.cards,
+    path: image?.pagePath ?? null,
+    ids: () => opts.wikilinks?.ids ?? true,
+    writeLine: changeCardLine,
+    look: () => look,
+    subscribe: (listener) => wikilinks.subscribe(listener),
+    follow,
+    hotkeys: () => opts.wikilinkNav?.hotkeys?.(),
+    openHref: nav === undefined ? undefined : (href) => followHref(href, 'explore'),
+    pillMenu: (hit) => {
+      if (hit.kind === 'wikilink') {
+        if (opts.wikilinkNav === undefined || follow === undefined) return null
+        return linkMenuRows(linkMenuOf(hit.inner, wikilinks, opts.wikilinkNav, follow, viewOnly, opts.vaultsOfLetters, undefined, undefined))
+      }
+      if (nav === undefined) return null
+      return linkMenuRows(markdownLinkMenuOf(hit.href, nav, followHref))
+    },
+    onNotice: opts.wikilinkNav?.onNotice ?? nav?.onNotice,
+    reviews: opts.cardReviews,
+    // Edit card with the page's editor (YAZ-5026): a second editor of this one's kind, with the card's on/off list.
+    editor: (root) => {
+      const crepe = createCrepe(cardEditorOptions(opts, root))
+      return { crepe, markdown: (doc) => postProcessMarkdown(crepe.editor.action((ctx) => ctx.get(serializerCtx)(doc))) }
+    },
+  }
+}
+
+/** Per-editor cache of post-processed Markdown by immutable ProseMirror doc node (YAZ-6028). */
+const docMarkdownCache = new WeakMap<Crepe, WeakMap<ProseNode, string>>()
+
+function serializeDoc(crepe: Crepe, ctx: Ctx, doc: ProseNode): string {
+  let cache = docMarkdownCache.get(crepe)
+  if (cache === undefined) docMarkdownCache.set(crepe, (cache = new WeakMap()))
+  let md = cache.get(doc)
+  if (md === undefined) {
+    md = postProcessMarkdown(ctx.get(serializerCtx)(doc))
+    cache.set(doc, md)
+  }
+  return md
+}
+
+function serializeForSave(crepe: Crepe, ctx: Ctx, state: EditorView['state']): string {
+  const clean = withoutEmptyCellNotes(state)
+  return serializeDoc(crepe, ctx, clean)
 }
 
 /**
  * Markdown as it should be written to disk (frontmatter is added by the caller). An empty cell note stays out of it,
- * so it never reaches the file, by whatever route its page closes (YAZ-3818 D15, 5A-5).
+ * so it never reaches the file, by whatever route its page closes (YAZ-3818 D15, 5A-5). A board window's view that
+ * still waits for its 800 ms write is written first (YAZ-4834 A8): every save flush (close, quit, rename) reads here.
  */
 export function getMarkdownForSave(crepe: Crepe): string {
-  return postProcessMarkdown(crepe.editor.action(savedMarkdown) ?? crepe.getMarkdown())
+  return crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    flushBoardWindows(view)
+    // A card in Edit card (YAZ-5026): its text as it is now, into the page, before the page is read.
+    flushCardEditor(view)
+    return serializeForSave(crepe, ctx, view.state)
+  })
 }
 
 /**
@@ -864,7 +1191,7 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
   })
 }
 
-/** The note's ProseMirror view, for what lives beside the editor and acts on it: the note's right-click menu (YAZ-3653). */
+/** The page's ProseMirror view, for what lives beside the editor and acts on it: the page's right-click menu (YAZ-3653). */
 export const editorViewOf = (crepe: Crepe): EditorView => crepe.editor.action((ctx) => ctx.get(editorViewCtx))
 
 /** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
@@ -907,10 +1234,43 @@ export function placeCaret(crepe: Crepe, at: { anchor: number; head: number }): 
   })
 }
 
-/** The note's caret, for its page view (YAZ-3737 D3). */
+/** The page's caret, for its page view (YAZ-3737 D3). */
 export function getCaretOf(crepe: Crepe): { anchor: number; head: number } {
   const { anchor, head } = editorViewOf(crepe).state.selection
   return { anchor, head }
+}
+
+/** The selection a page kept while a box over it had the keyboard (YAZ-4997 round 2), and the document it was in. */
+export interface KeptCaret {
+  selection: Selection
+  doc: unknown
+}
+
+/** Keep the page's caret or selection as it is now, for `giveCaretBack`. */
+export function keepCaretOf(crepe: Crepe): KeptCaret {
+  const { selection, doc } = editorViewOf(crepe).state
+  return { selection, doc }
+}
+
+/**
+ * The keyboard back to the page (YAZ-4997 round 2, Yaseen: "return the caret to where I was previously or where I was
+ * selecting"): the kept selection, exactly (a node or a cell selection too), when the document is the same; cut to it
+ * when the document changed meanwhile (an outside change). Then the focus, with no scroll: the page stays where it is.
+ * No `kept`: the focus alone, the caret where it is. Locked or not, `view.focus` lands in the body (`focusReadOnlyBody`).
+ */
+export function giveCaretBack(crepe: Crepe, kept: KeptCaret | null): void {
+  const view = editorViewOf(crepe)
+  if (view.isDestroyed) return
+  // The page stays where it is (YAZ-5164): a caret out of view, or a focus that scrolls, never moves it.
+  holdPagePlace(view, () => {
+    if (kept !== null) {
+      const { doc } = view.state
+      const pos = (n: number) => doc.resolve(Math.max(0, Math.min(n, doc.content.size)))
+      const selection = kept.doc === doc ? kept.selection : TextSelection.between(pos(kept.selection.anchor), pos(kept.selection.head))
+      if (!selection.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(selection))
+    }
+    view.focus()
+  })
 }
 
 /** The drilled-in bullet's zoom key, or null (YAZ-2951 D4): the page view reader asks once, on a copy action. */

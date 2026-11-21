@@ -3,6 +3,7 @@ import { link, mkdir, open, readdir, readFile, rename, stat, unlink } from 'node
 import path from 'node:path'
 import { folderSettingsPath, type BridgeError, type FileKind, type TreeNode } from '@shared/types'
 import { ASSETS_DIR } from '@shared/drawingAssets'
+import { nameOrderCi } from '@shared/assetLookup'
 import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSkipped, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
@@ -79,8 +80,9 @@ export async function* vaultFiles(root: string): AsyncGenerator<{ full: string; 
   }
 }
 
+/** Names in a folder, case-insensitive: `nameOrderCi`, the one order the phone's asset lookup uses too (YAZ-5068). */
 export function byNameCi<T extends { name: string }>(a: T, b: T): number {
-  return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+  return nameOrderCi(a.name, b.name)
 }
 
 function errnoCode(err: unknown): string | undefined {
@@ -115,13 +117,14 @@ export function createRootChain(): <T>(root: string, fn: () => Promise<T>) => Pr
   const chains = new Map<string, Promise<unknown>>()
   return <T>(root: string, fn: () => Promise<T>): Promise<T> => {
     const run = (chains.get(root) ?? Promise.resolve()).then(fn, fn)
-    chains.set(
-      root,
-      run.then(
-        () => undefined,
-        () => undefined,
-      ),
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
     )
+    chains.set(root, settled)
+    void settled.then(() => {
+      if (chains.get(root) === settled) chains.delete(root)
+    })
     return run
   }
 }
@@ -160,8 +163,36 @@ export async function requireDir(dir: string): Promise<void> {
  * `node_modules` and crash-left atomic-write tmps (`isAtomicTmp`, YAZ-2179) are skipped;
  * unreadable subdirs are skipped.
  */
-export async function buildTree(dir: string): Promise<TreeNode[]> {
-  const entries = await readdir(dir, { withFileTypes: true })
+/** Max concurrent fs calls inside one `buildTree` walk so 10k-file vaults never flood libuv or hit EMFILE (YAZ-6027). */
+const TREE_CONCURRENCY = 32
+
+function createLimiter(max: number): <T>(fn: () => Promise<T>) => Promise<T> {
+  let active = 0
+  const queue: Array<() => void> = []
+  return <T>(fn: () => Promise<T>): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const run = () => {
+        active++
+        fn().then(
+          (v) => {
+            active--
+            queue.shift()?.()
+            resolve(v)
+          },
+          (err) => {
+            active--
+            queue.shift()?.()
+            reject(err)
+          },
+        )
+      }
+      if (active < max) run()
+      else queue.push(run)
+    })
+}
+
+async function buildTreeWith(dir: string, limit: <T>(fn: () => Promise<T>) => Promise<T>): Promise<TreeNode[]> {
+  const entries = await limit(() => readdir(dir, { withFileTypes: true }))
   const dirs: TreeNode[] = []
   const files: TreeNode[] = []
   await Promise.all(
@@ -169,10 +200,10 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
       if (isSkipped(e.name) || isAtomicTmp(e.name)) return
       const full = path.join(dir, e.name)
       if (e.isDirectory()) {
-        const children = await buildTree(full).catch(() => null)
+        const children = await buildTreeWith(full, limit).catch(() => null)
         if (children !== null) dirs.push({ type: 'dir', name: e.name, path: full, children })
       } else if (e.isFile()) {
-        const st = await stat(full).catch(() => undefined)
+        const st = await limit(() => stat(full)).catch(() => undefined)
         if (st) files.push({ type: 'file', name: e.name, path: full, size: st.size, mtime: st.mtimeMs, kind: fileKind(e.name) })
       }
     }),
@@ -180,10 +211,14 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
   return [...dirs.sort(byNameCi), ...files.sort(byNameCi)]
 }
 
+export async function buildTree(dir: string): Promise<TreeNode[]> {
+  return buildTreeWith(dir, createLimiter(TREE_CONCURRENCY))
+}
+
 /**
  * Opens, writes and fsyncs before closing (YAZ-2177; libuv issues F_FULLFSYNC on macOS): the bytes
  * are on disk before a rename or link gives them a real name, so a crash or power loss can't
- * surface an empty or torn note, state file or image under it. A string lands as UTF-8; bytes (an
+ * surface an empty or torn page, state file or image under it. A string lands as UTF-8; bytes (an
  * image through `writeAsset`, YAZ-1661) land verbatim — `writeFile` ignores the encoding for a view.
  * `mode` sets the permissions a NEW file is born with (YAZ-3038: `secrets.json` is owner-only from the start).
  */
@@ -240,7 +275,7 @@ export async function atomicWrite(file: string, content: string | Uint8Array, mo
  *
  * The link only CLAIMS the name (YAZ-2380): the same bytes are then renamed in over it. macOS
  * reports nothing at all when a file whose first name was a since-removed hard link is later
- * deleted, so a note left on the linked inode could be deleted outside the app and stay in the
+ * deleted, so a page left on the linked inode could be deleted outside the app and stay in the
  * tree and the index for good. A renamed-in file — what every save already leaves — is seen to go.
  *
  * `mode` is the new file's permissions from its first byte (YAZ-3044 A7: the Draw import's copies).

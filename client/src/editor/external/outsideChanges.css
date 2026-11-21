@@ -2,7 +2,7 @@
    the Checked button of a changed line, and the one-line note (OutsideChangesBar.tsx).
 
    The glow tokens live on :root beside app.css's palette and swap under [data-theme='dark'], as
-   find.css's do. The note is the conflict bar's family, but calm: it informs, it asks for nothing. */
+   find.css's do. The page is the conflict bar's family, but calm: it informs, it asks for nothing. */
 :root {
   --outside-change-bg: rgba(124, 58, 237, 0.14);
 }
@@ -16,11 +16,11 @@
   border-radius: 2px;
 }
 
-/* A cell whose cell note holds a change (YAZ-4319): the note is hidden until its card opens, so the cell's note
+/* A cell whose cell note holds a change (YAZ-4319): the page is hidden until its card opens, so the cell's page
    triangle shows the change, full size in the agents' colour. One more class than the cell's own hover and open rules
    (table.css), so it wins over both. */
 .milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note.outside-change-cell {
-  --table-note-mark: linear-gradient(225deg, var(--agent) 5.66px, transparent 5.66px);
+  --table-page-mark: linear-gradient(225deg, var(--agent) 5.66px, transparent 5.66px);
 }
 
 /* Next change's ring (D9): on the glow, on a removed mark, or on the block when it has neither. */
@@ -76,11 +76,11 @@
   border-radius: 2px;
 }
 
-/* YAZ-3998: the numbered list, in the room LEFT of the note (OutsideChangesList.tsx; the table of contents has the
+/* YAZ-3998: the numbered list, in the room LEFT of the page (OutsideChangesList.tsx; the table of contents has the
    right). Chrome, as the table of contents is: a sibling of the scroller inside `section.editor`, so it holds its place
-   while the note scrolls. The component sets `top` (the scroller's top); the width is `--outside-list-width`, pinned (4J). */
+   while the page scrolls. The component sets `top` (the scroller's top); the width is `--outside-list-width`, pinned (4J). */
 :root {
-  /* The pinned list's width; the note's text makes room for it, as for the table of contents' column. */
+  /* The pinned list's width; the page's text makes room for it, as for the table of contents' column. */
   --outside-list-width: 220px;
 }
 
@@ -156,7 +156,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Two lines at most; the mouse-over box in the note shows the rest. */
+/* Two lines at most; the mouse-over box in the page shows the rest. */
 .outside-list__text {
   display: -webkit-box;
   overflow: hidden;

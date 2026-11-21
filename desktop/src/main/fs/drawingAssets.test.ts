@@ -178,10 +178,10 @@ describe('stampBoardMeta (🔒 YAZ-1834 D3/D5/D7)', () => {
   })
 
   it('keeps an existing createdAt and every unknown key, bumps only updatedAt — the backfill contract', () => {
-    const backfilled = lean({ [BOARD_META_KEY]: { createdAt: 1600000000000, updatedAt: 1600000000001, cloudId: 'abc', note: 'has a } brace' } })
+    const backfilled = lean({ [BOARD_META_KEY]: { createdAt: 1600000000000, updatedAt: 1600000000001, cloudId: 'abc', page: 'has a } brace' } })
     const out = stampBoardMeta(backfilled, at)
-    expect(block(out)).toEqual({ createdAt: 1600000000000, updatedAt: 2000, cloudId: 'abc', note: 'has a } brace' })
-    expect(parseBoardMetaBlock(out)).toEqual({ createdAt: 1600000000000, updatedAt: 2000, cloudId: 'abc', note: 'has a } brace' })
+    expect(block(out)).toEqual({ createdAt: 1600000000000, updatedAt: 2000, cloudId: 'abc', page: 'has a } brace' })
+    expect(parseBoardMetaBlock(out)).toEqual({ createdAt: 1600000000000, updatedAt: 2000, cloudId: 'abc', page: 'has a } brace' })
   })
 
   it('takes the block the FILE holds (`prior`) over one inside the text — the disk is the block`s truth on save', () => {
@@ -228,8 +228,8 @@ describe('parseBoardMetaBlock (🔒 YAZ-1834 D6/D7)', () => {
   })
 
   it('carries extra keys in the block back, even one whose value holds a brace', () => {
-    expect(parseBoardMetaBlock(head({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, note: 'a } b', cloudId: 'x' } }))).toEqual({ createdAt: 1, updatedAt: 2, note: 'a } b', cloudId: 'x' })
-    expect(parseBoardMetaBlock(head({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, note: 'esc \\" } q' } }))).toEqual({ createdAt: 1, updatedAt: 2, note: 'esc \\" } q' })
+    expect(parseBoardMetaBlock(head({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, page: 'a } b', cloudId: 'x' } }))).toEqual({ createdAt: 1, updatedAt: 2, page: 'a } b', cloudId: 'x' })
+    expect(parseBoardMetaBlock(head({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, page: 'esc \\" } q' } }))).toEqual({ createdAt: 1, updatedAt: 2, page: 'esc \\" } q' })
   })
 
   it('is null when the block is missing, not first, malformed, non-finite, or cut short', () => {

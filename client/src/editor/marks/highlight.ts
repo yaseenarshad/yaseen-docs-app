@@ -10,7 +10,7 @@
  *  - A custom colour (YAZ-4348 demo round 2, the ▾ panel's shades, hex code and picker) is `color: '#rrggbb'`, inline
  *    HTML `<mark style="background-color: #rrggbb">`: the one form that renders in any Markdown
  *    viewer without our CSS. Only that exact spelling (lowercase hex) is read, so any other
- *    `<mark style>` stays HTML with its bytes. The note paints it as a translucent wash, as the
+ *    `<mark style>` stays HTML with its bytes. The page paints it as a translucent wash, as the
  *    named colours, so the text keeps its own colour and stays readable in both themes.
  *  - `setHighlightCommand(color)` is the one command behind the toolbar's highlight buttons,
  *    `Mod-Shift-h` (yellow) and the `==x==` typing rule (yellow) — Bold's toggle rule (🔒 D5).
@@ -29,40 +29,18 @@ import { resolveAll } from 'micromark-util-resolve-all'
 import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokenizer } from 'micromark-util-types'
 import { isHighlightHex } from '@shared/types'
 import { rgbOf, solidHex } from '../../lib/colour'
+import { codeColorsIn, codeMarkCommand, codeSelection } from '../code/codeMarks'
 import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
+import { HIGHLIGHT_COLORS, HIGHLIGHT_HEX, type CustomHighlight, type HighlightColor } from './highlightColours'
 
-/** The named colours that are toolbar buttons after yellow (YAZ-4348 demo round 2: pink went into the ▾ panel). */
-export const QUICK_HIGHLIGHTS = ['green', 'blue'] as const
-/** The named colours only the toolbar's ▾ panel has (YAZ-4348 demo round 2). */
-export const MORE_HIGHLIGHTS = ['pink', 'orange', 'purple', 'red', 'gray'] as const
-/** Every named colour, each `<mark class="highlight-<name>">`; yellow is `null` (the default, and the only one with Markdown syntax). */
-export const HIGHLIGHT_COLORS = [...QUICK_HIGHLIGHTS, ...MORE_HIGHLIGHTS] as const
-export type HighlightName = (typeof HIGHLIGHT_COLORS)[number]
-/** A custom colour: lowercase `#rrggbb` (YAZ-4348 demo round 2). */
-export type CustomHighlight = `#${string}`
-export type HighlightColor = HighlightName | CustomHighlight | null
+export { QUICK_HIGHLIGHTS, MORE_HIGHLIGHTS, HIGHLIGHT_COLORS, HIGHLIGHT_HEX, type HighlightName, type CustomHighlight, type HighlightColor } from './highlightColours'
 
 /** A custom colour as the mark keeps it: exactly lowercase `#rrggbb` (the setting's own test, `@shared/types`). */
 export const isCustomHighlight: (value: unknown) => value is CustomHighlight = isHighlightHex
 
 /** How strong a custom colour's wash is: the named colours' 0.35–0.4, so text on it stays readable in both themes. */
 export const CUSTOM_WASH = 0.4
-
-/**
- * Each colour's solid hue, the `rgb` of its app.css wash token: what the panel's Hex code field shows for it, and
- * where its Shades start (YAZ-4348 demo round 2). A shade or a typed hex is a custom colour.
- */
-export const HIGHLIGHT_HEX: Record<HighlightName | 'yellow', CustomHighlight> = {
-  yellow: '#ffd500',
-  green: '#50c878',
-  blue: '#50a0ff',
-  pink: '#ff78b4',
-  orange: '#ff9632',
-  purple: '#a06eff',
-  red: '#ff5a50',
-  gray: '#969696',
-}
 
 /** A custom colour's see-through wash, `rgba(r, g, b, 0.4)`. */
 export function customWash(hex: CustomHighlight): string {
@@ -273,6 +251,9 @@ export const highlightSchema = $markSchema('highlight', () => ({
  * caret: the marks it would type with.
  */
 export const rangeHasHighlight = (state: EditorState, type: MarkType, color: HighlightColor): boolean => {
+  // In a code block (YAZ-5794 D4) the colour is a code mark: lit when any of the selected code has it.
+  const code = codeSelection(state)
+  if (code !== null) return codeColorsIn(code).includes(color)
   const { empty, $from } = state.selection
   const mark = type.create({ color })
   if (empty) return mark.isInSet(state.storedMarks ?? $from.marks())
@@ -299,6 +280,8 @@ const markApplies = (state: EditorState, type: MarkType): boolean => {
  * selected declines.
  */
 const setHighlight = (type: MarkType, color: HighlightColor, always = false): Command => (state, dispatch) => {
+  // In a code block (YAZ-5794 D4): the same flip, on the code's own marks.
+  if (codeSelection(state) !== null) return codeMarkCommand('highlight', color, always ? 'apply' : 'toggle')(state, dispatch)
   const ranges = visibleRanges(state)
   if (!markApplies(state, type) || (!state.selection.empty && ranges.length === 0)) return false
   const mark = type.create({ color })
@@ -336,6 +319,7 @@ export const applyHighlight = (type: MarkType, color: HighlightColor): Command =
  * caret would type with. Declines where there is no highlight to remove.
  */
 export const removeHighlight = (type: MarkType): Command => (state, dispatch) => {
+  if (codeSelection(state) !== null) return codeMarkCommand('highlight', undefined, 'remove')(state, dispatch)
   if (state.selection.empty) {
     if (type.isInSet(state.storedMarks ?? state.selection.$from.marks()) === undefined) return false
     dispatch?.(state.tr.removeStoredMark(type))
@@ -350,6 +334,8 @@ export const removeHighlight = (type: MarkType): Command => (state, dispatch) =>
 
 /** Every highlight colour on the visible selection (at a caret: the marks it would type with), in no set order. */
 export function highlightColorsIn(state: EditorState, type: MarkType): HighlightColor[] {
+  const code = codeSelection(state)
+  if (code !== null) return codeColorsIn(code) as HighlightColor[]
   const found = new Set<HighlightColor>()
   const add = (marks: readonly Mark[]) => {
     for (const mark of marks) if (mark.type === type) found.add((mark.attrs.color ?? null) as HighlightColor)
@@ -365,9 +351,11 @@ export function highlightColorsIn(state: EditorState, type: MarkType): Highlight
 
 /**
  * Whether a highlight on the visible selection (at a caret: the marks it would type with) has a colour that passes
- * `test`. The walk stops at the first one: the toolbar's ▾ asks on each update, also after ⌘A on a long note.
+ * `test`. The walk stops at the first one: the toolbar's ▾ asks on each update, also after ⌘A on a long page.
  */
 export function someHighlightColor(state: EditorState, type: MarkType, test: (color: HighlightColor) => boolean): boolean {
+  const code = codeSelection(state)
+  if (code !== null) return (codeColorsIn(code) as HighlightColor[]).some(test)
   const hit = (marks: readonly Mark[]) => marks.some((mark) => mark.type === type && test((mark.attrs.color ?? null) as HighlightColor))
   if (state.selection.empty) return hit(state.storedMarks ?? state.selection.$from.marks())
   let found = false

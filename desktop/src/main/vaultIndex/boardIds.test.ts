@@ -5,7 +5,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BOARD_META_KEY } from '@shared/drawingAssets'
-import { IDS_FILE, noteIdNumber } from '@shared/noteId'
+import { IDS_FILE, pageIdNumber } from '@shared/pageId'
 import { copyEntry } from '../fs/copy'
 import { loadDrawing, saveDrawing } from '../fs/drawing'
 import { makeFirstMac, removeVault, sleep } from '../fs/testFixture'
@@ -64,7 +64,7 @@ const opened = async (): Promise<void> => {
 const boards = async () => (await getIndex(root)).boards
 
 describe('a board gets its ID on its first save', () => {
-  it('in a vault that gives IDs: opening writes nothing, the first save gives the next number, the next save keeps it, and a note made after it takes the number after', async () => {
+  it('in a vault that gives IDs: opening writes nothing, the first save gives the next number, the next save keeps it, and a page made after it takes the number after', async () => {
     await idVault()
     await seed('Boards/Plan.excalidraw', scene())
     const before = await read('Boards/Plan.excalidraw')
@@ -77,9 +77,9 @@ describe('a board gets its ID on its first save', () => {
     const second = await saveDrawing({ root, path: 'Boards/Plan.excalidraw', json: scene([{ id: 'b' }]), newFiles: [] })
     expect(second.id).toBeUndefined()
     expect((await blockOf('Boards/Plan.excalidraw')).id).toBe('DEM-1')
-    // One door for notes and boards: the numbers never meet (the index gave the folder its `.folder.md` meanwhile).
+    // One door for pages and boards: the numbers never meet (the index gave the folder its `.folder.md` meanwhile).
     const [next] = await (await doorOf(root))!.mint(1)
-    expect(noteIdNumber(next)).toBeGreaterThan(1)
+    expect(pageIdNumber(next)).toBeGreaterThan(1)
   })
 
   it("an ID of another vault, or another tool's, is written over; a save the guard refuses gives no number", async () => {
@@ -108,10 +108,10 @@ describe('the index reads a board\'s ID off its head', () => {
     await seed('Boards/Plan.excalidraw', boardWith('dem-7'))
     await seed('Boards/No id.excalidraw', scene())
     await seed('Boards/Other vault.excalidraw', boardWith('OTH-3'))
-    await seed('note.md', 'body\n')
+    await seed('page.md', 'body\n')
     await opened()
     expect(await boards()).toEqual([{ path: at('Boards/Plan.excalidraw'), id: 'DEM-7' }])
-    expect((await getIndex(root)).records.map((r) => r.path)).toEqual([at('note.md')])
+    expect((await getIndex(root)).records.map((r) => r.path)).toEqual([at('page.md')])
 
     heard.length = 0
     await rename(at('Boards/Plan.excalidraw'), at('Boards/Renamed.excalidraw'))

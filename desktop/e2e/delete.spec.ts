@@ -2,7 +2,7 @@
  * In-app delete against the REAL app (GRO-2272 `D1-`/`D2-`): the sidebar context menu's
  * Delete → the confirm sheet → `shell.trashItem`.
  *
- * The step that justifies this whole spec is the **resurrection guard** (step 4): a note with
+ * The step that justifies this whole spec is the **resurrection guard** (step 4): a page with
  * a DIRTY, unsaved buffer is deleted, and after both the autosave debounce and the watcher's
  * settle have elapsed it must still be gone. Unit tests prove each seam in
  * isolation; only the real app proves the seams together, with the real timers.
@@ -19,6 +19,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { withCommentsHint } from '../../shared/frontmatter'
 import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf, LINK_HERE, openLinksHere } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -69,7 +70,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-// ---------------------------------------------------------------- D1: deleting a note
+// ---------------------------------------------------------------- D1: deleting a page
 
 test('step 1 — the menu offers Delete, and it opens the confirm sheet without deleting', async () => {
   app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, path.join(vault, 'Doomed.md'))) })
@@ -82,10 +83,10 @@ test('step 1 — the menu offers Delete, and it opens the confirm sheet without 
 
   await askDelete(win, fileRow(win, 'Doomed'))
   await shoot(win, 'delete-01-confirm-sheet')
-  // The sheet names the note by its title (YAZ-2420 🔒 D14), says where it goes, and reports the backlink count.
+  // The sheet names the page by its title (YAZ-2420 🔒 D14), says where it goes, and reports the backlink count.
   await expect(sheet(win)).toContainText('Delete "Doomed"?')
   await expect(sheet(win)).toContainText('moves to the Trash')
-  await expect(sheet(win)).toContainText('1 note links to this')
+  await expect(sheet(win)).toContainText('1 page links to this')
   expect(await gone(path.join(vault, 'Doomed.md'))).toBe(false) // nothing deleted yet
 })
 
@@ -121,7 +122,7 @@ test('step 4 — RESURRECTION GUARD: the dirty buffer never writes the file back
   expect(await gone(path.join(vault, 'Doomed.md'))).toBe(true)
 })
 
-test('step 5 — referencing notes are left BYTE-IDENTICAL: no link rewriting on delete', async () => {
+test('step 5 — referencing pages are left BYTE-IDENTICAL: no link rewriting on delete', async () => {
   const hub = await readFile(path.join(vault, 'Hub.md'), 'utf8')
   expect(hub).toBe(`# Hub\n\n${HUB_BODY}\n\nSee [[Doomed]] and [[Doomed|Dee]] here.\n\n![[Doomed]]\n`)
 })
@@ -135,8 +136,8 @@ test('step 6 — the links now render UNRESOLVED, and clicking one recreates the
   await shoot(win, 'delete-06-unresolved-link')
   await link.click({ modifiers: LINK_HERE }) // an open gesture (YAZ-3936): a plain click puts the caret
   // Create-on-click makes the page again, named as the link spells it (a plain vault, YAZ-2523
-  // 🔒 V3) — an accidental delete is recoverable here.
-  await expect.poll(() => readFile(path.join(vault, 'Doomed.md'), 'utf8').catch(() => null)).toBe('')
+  // 🔒 V3) — an accidental delete is recoverable here. A new page carries the comment hint (YAZ-4615 D10).
+  await expect.poll(() => readFile(path.join(vault, 'Doomed.md'), 'utf8').catch(() => null)).toBe(withCommentsHint(''))
   await expect(activeTab(win)).toHaveText('Doomed')
 })
 
@@ -150,8 +151,8 @@ test('step 7 — a folder sheet reports its whole subtree, and Escape cancels', 
 
   await askDelete(win, dirRow(win, 'Docs'))
   await expect(sheet(win)).toContainText('Delete "Docs"?')
-  // Recursive count: Inner.md + deep/Deeper.md = 2 notes, and the `deep` subfolder.
-  await expect(sheet(win)).toContainText('2 notes and 1 folder move to the Trash')
+  // Recursive count: Inner.md + deep/Deeper.md = 2 pages, and the `deep` subfolder.
+  await expect(sheet(win)).toContainText('2 pages and 1 folder move to the Trash')
   await shoot(win, 'delete-07-folder-sheet')
 
   await win.keyboard.press('Escape')

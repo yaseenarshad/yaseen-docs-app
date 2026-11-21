@@ -6,28 +6,30 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { isMarkdown, isSkipped } from '@shared/fileKind'
-import { BETWEEN_VAULTS, CLIP_CHANGED, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
+import { BETWEEN_VAULTS, CLIP_CHANGED, rootOfPath, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { playGestureSound } from '../../lib/gestureSound'
+import { storage } from '../../lib/storage'
 import type { MovedGesture } from '../../lib/moveHistory'
 import { gestureNotice, namedItems, onDisk, unlessFailed, type NoticeKind, type NoticeType } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
-import { fetchTree } from '../../lib/treeFeed'
-import { findDirNode, notesAt, treeHasPath } from '../../lib/treeState'
-import { dropFolderValuesAfterMove, dropStaleFolderValues, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
-import { createNote, folderPath } from '../../views/scaffold'
-import { transformFile } from '../../views/writeProperty'
-import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
+import { findDirNode, treeHasPath } from '../../lib/treeState'
+import type { Move } from '../../links/shortcuts'
+import { createPage, folderPath } from '../../views/scaffold'
+import { setSidebarDrag } from '../sidebarDrag'
+import { boardPath, renamedPath, targetDirFor, untitledNames, type CreateKind } from '../createEntry'
+import { createCardFile } from '../../review/newCardFile'
 import { dragPill, pillLabel } from '../dragPill'
+import { HOLD_HINT, intoHint, levelItems, LIFT_PX, liftHint, liftRow, liftsAt, movedOrder, overFor, type RowLift } from '../rowLift'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
-import type { PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
+import type { CreatePlace, PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
 /**
  * A new board (YAZ-3028 D9): name first, then birth. `fs:create-board` writes the empty scene or the
  * empty diagram and never over a file. What was typed is the file NAME — a board has no title and no
- * note ID. An EMPTY name (`''`, the box's seed alone) is `Untitled`, then `Untitled 2`, …: only that
+ * page ID. An EMPTY name (`''`, the box's seed alone) is `Untitled`, then `Untitled 2`, …: only that
  * case steps past a name that is taken; a typed name that is taken is refused, and the box says so.
  */
 async function createBoardFile(vault: string, parentDir: string, typed: string, kind: 'drawing' | 'diagram', seed: string): Promise<string> {
@@ -98,7 +100,7 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
    * The whole selection as a list, ordered by the PANEL (YAZ-1337, as ⚡ YAZ-1338 rules it): the
    * rows on screen first, in the order the eye reads them — never click order, which is not an
    * order the user can see — and every still-selected path with no row appended after them, so
-   * collapsing a folder over a selected note hides the row and keeps the note. The one rule lives
+   * collapsing a folder over a selected page hides the row and keeps the page. The one rule lives
    * in `orderedSelection`, which ⌘⇧C reads too: the menu and the chord cannot spell one selection
    * two ways.
    */
@@ -121,8 +123,8 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
 /** How long a drag holds over a closed folder before it opens (YAZ-3251 D8). */
 export const SPRING_MS = 700
 
-/** How far the pointer moves from the press before a row lifts (YAZ-3467 D1). Chromium alone lifts it at about 4 px. */
-export const LIFT_PX = 10
+/** How far the pointer moves from the press before a row lifts (YAZ-3467 D1; one value with the smooth drag, YAZ-5916 Q2). Chromium alone lifts it at about 4 px. */
+export { LIFT_PX }
 
 /** Which half of `row` the pointer is in — jsdom's zero rect and 0 clientY read as `after`. */
 const edgeOf = (clientY: number, row: HTMLElement): 'before' | 'after' => {
@@ -186,6 +188,12 @@ export function useTreeDrag(
    * focus folder row under it (`data-focus-folder`); true means it is done, false gives the tab's own reorder.
    */
   focusDrop?: (from: string, over: ReorderOver | null, folder: string | null) => boolean,
+  /** The Files tab's Manual order (YAZ-5916 D1): a folder's new order of item names, saved in the vault. */
+  saveFolderOrder?: (dir: string, names: string[]) => void,
+  /** A Manual reorder was written (YAZ-5917): its item's name, how to write the order back and forward again, and the vault for Files reorders. */
+  onReordered?: (name: string, undo: () => void, redo: () => void, vault?: string) => void,
+  /** The vault's read-only file-action door (YAZ-5989): Files manual reorder writes `.yaseendocs/files-order.json` in the vault. */
+  allowFileAction?: (root: string) => Promise<boolean>,
 ) {
   // Drag-to-move (E1b; folders and the selection since YAZ-3251): the dragged paths and the lit
   // target live in REFS (D2), so a hover renders nothing — the lit row wears its class by DOM.
@@ -201,19 +209,25 @@ export function useTreeDrag(
   // Where the last press came down (YAZ-3467 D1): a row lifts only LIFT_PX from it.
   const press = useRef({ x: 0, y: 0 })
   // The lift of a row whose `dragstart` came, while its pointer is not LIFT_PX from the press yet. Null: none.
-  const armed = useRef<(() => void) | null>(null)
+  // `vertical`: a reorder, which lifts only on a move that is mostly up or down (YAZ-5916 Q2); a move lifts any way.
+  const armed = useRef<{ fire: () => void; vertical: boolean } | null>(null)
   // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
-  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop })
-  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop }
+  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop, saveFolderOrder, onReordered, allowFileAction })
+  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop, saveFolderOrder, onReordered, allowFileAction }
   // Drag-to-reorder (YAZ-2631 D3), ONE for the tab that is shown. Since YAZ-3467 D2 it is mouse events, not the
   // page's HTML5 drag: the dragged top row, the hovered row and edge, and the pill live in refs. The hovered row
   // and edge are state too, ONLY to draw the line: they change when the row or the edge does, not at each move.
   const reorderFrom = useRef<string | null>(null)
   const reorderAt = useRef<ReorderOver | null>(null)
   const pill = useRef<HTMLImageElement | null>(null)
+  // The smooth drag's lift (YAZ-5916 Q1): the row's `li` follows the pointer and its list parts; null before the lift's
+  // first move found its list, and for a row in no list.
+  const lifted = useRef<RowLift | null>(null)
+  // A Files row's Manual drag (`folder`, D2: it reorders its folder, ⌘ moves into one) or a list's top row (`list`).
+  const liftKind = useRef<'list' | 'folder'>('list')
   const [reorderOver, setReorderOver] = useState<ReorderOver | null>(null)
 
-  const fileMove: TreeFileMove = useMemo(() => {
+  const fileMove = useMemo((): TreeFileMove & { into: (dir: string, paths: readonly string[]) => void } => {
     /**
      * The ONE place the lit target changes (D2): the old target loses its class, the new one gains
      * it, and a spring armed for the old one is cleared (D8). `open` arms a new one: a closed folder.
@@ -237,6 +251,7 @@ export function useTreeDrag(
     const accepts = (dir: string, files = false) => (dragging.current.length > 0 ? !dragging.current.some((path) => dir === path || dir.startsWith(`${path}/`)) : files)
     const end = () => {
       dragging.current = []
+      setSidebarDrag([])
       light(null, null)
     }
     /** The moves into `dir`, through the door the context menu's rename uses for one row, and App's list door for more (YAZ-3250 D1): links follow. */
@@ -266,6 +281,8 @@ export function useTreeDrag(
       const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults, finder: out, onNotice: say } = live.current
       const paths = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
       dragging.current = paths
+      // YAZ-4748 D4: a diagram's frame takes the drop of these pages.
+      setSidebarDrag(paths)
       droppedInside.current = false
       leftWindow.current = false
       // An unselected row first becomes the selection (S4), then goes alone.
@@ -279,12 +296,17 @@ export function useTreeDrag(
     }
     return {
       accepts,
+      into: (dir: string, paths: readonly string[]) => {
+        const { rootOf: vaultOf, onNotice: say } = live.current
+        if (paths.some((path) => vaultOf(path) !== vaultOf(dir))) return say(BETWEEN_VAULTS)
+        send(dir, paths)
+      },
       /**
        * Where every row drag to move begins (D5). The Tree stops the page's own drag at `dragstart`,
        * and that only ARMS the row (YAZ-3467 D1): it lifts at the first move LIFT_PX from the press.
        */
       start: (path, top) => {
-        armed.current = () => lift(path, top)
+        armed.current = { fire: () => lift(path, top), vertical: false }
       },
       end,
       hover: light,
@@ -311,11 +333,18 @@ export function useTreeDrag(
     }
   }, [])
   /**
-   * The reorder of a top row as mouse events (YAZ-3467 D2, D3). It lifts LIFT_PX from the press, as a
-   * move does; then a pill of the row's name follows the pointer, and the row stays in its place. The
-   * row under the pointer is the event's target: a top row of a list that reorders (`data-reorder`)
-   * takes the line at the half the pointer is in, and anything else takes none (R5). The release
-   * drops; Esc, the window's blur, and a move with no button end it with no drop (R7, R8).
+   * The reorder of a row as mouse events (YAZ-3467 D2, D3), smooth since YAZ-5916 Q1 (`rowLift.ts`). It lifts LIFT_PX
+   * from the press, mostly up or down (Q2); then the row's `li` follows the pointer and the rows of its own list slide
+   * aside to open the gap where it lands. Two kinds:
+   * - `list`: a top row of a list that reorders (Focus, Favorites, the vault rows of Files; YAZ-2631 D3) and an item of
+   *   a focus or favorite folder. Over its own list the gap is the marker. Off it — another list's top row
+   *   (`data-reorder`), a focus folder (`data-focus-folder`) — the gap closes, the pill follows the pointer, and the old
+   *   line or the folder's light shows where it lands (R5; YAZ-4460 F5).
+   * - `folder`: any row of Files under Manual (D2). It only reorders inside its own folder: the gap opens only among
+   *   its own folder's items, and no folder takes it. With ⌘ held the gap closes and the folder under the pointer
+   *   lights (a page row: its folder); the release moves the row, or the selection it is in, into that folder. A small
+   *   hint says so ("Hold ⌘ to move into a folder").
+   * The release drops; Esc, the window's blur, and a move with no button end it with no drop (R7, R8).
    */
   const reorderGesture = useMemo(() => {
     const show = (next: ReorderOver | null) => {
@@ -325,54 +354,170 @@ export function useTreeDrag(
       setReorderOver(next)
     }
     /** The top row of a list that reorders under the pointer, and the half of it the pointer is in; null over anything else (R5). */
-    const overAt = (e: MouseEvent): ReorderOver | null => {
-      const row = e.target instanceof Element ? e.target.closest<HTMLElement>('.tree__row[data-reorder]') : null
+    const overAt = (target: EventTarget | null, y: number): ReorderOver | null => {
+      const row = target instanceof Element ? target.closest<HTMLElement>('.tree__row[data-reorder]') : null
       const path = row?.dataset.path
-      return row === null || path === undefined ? null : { path, edge: edgeOf(e.clientY, row) }
+      return row === null || path === undefined ? null : { path, edge: edgeOf(y, row) }
     }
     /** The focus folder row under the pointer (YAZ-4460 F5): it lights as a drop target, by DOM. */
     let folderLit: HTMLElement | null = null
-    const folderAt = (e: MouseEvent): HTMLElement | null => (e.target instanceof Element ? e.target.closest<HTMLElement>('[data-focus-folder]') : null)
+    const folderAt = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? target.closest<HTMLElement>('[data-focus-folder]') : null)
     const lightFolder = (el: HTMLElement | null) => {
       if (folderLit === el) return
       folderLit?.classList.remove('focus-folder--drop')
       el?.classList.add('focus-folder--drop')
       folderLit = el
     }
+    const hint = liftHint()
+    /** The row under the pointer when it is of `from`'s own folder, as a slot of its level (a drop with no lift). */
+    const sameFolderAt = (target: EventTarget | null, y: number, from: string): { paths: string[]; fixed: boolean[]; from: number; slot: number } | null => {
+      const row = target instanceof Element ? target.closest<HTMLElement>('.tree__row[data-path]') : null
+      const list = row?.closest<HTMLElement>('li')?.parentElement ?? null
+      const path = row?.dataset.path
+      if (row == null || list === null || path === undefined) return null
+      const level = levelItems(list)
+      const at = level.paths.indexOf(path)
+      const i = level.paths.indexOf(from)
+      if (at < 0 || i < 0) return null
+      return { ...level, from: i, slot: edgeOf(y, row) === 'before' ? at : at + 1 }
+    }
+    /** The folder a ⌘ drop lands in (D2): the folder row under the pointer, or a page row's folder; null for none that takes it. */
+    let into: { dir: string; el: HTMLElement } | null = null
+    const intoAt = (target: EventTarget | null, from: string): { dir: string; el: HTMLElement } | null => {
+      const row = target instanceof Element ? target.closest<HTMLElement>('.tree__row[data-path]') : null
+      const path = row?.dataset.path
+      if (row === null || path === undefined || row.dataset.shortcut !== undefined) return null
+      let dir = path
+      let el: HTMLElement | null = row
+      if (!row.classList.contains('tree__row--dir')) {
+        dir = path.slice(0, path.lastIndexOf('/'))
+        el = row.closest('ul.tree')?.parentElement?.querySelector<HTMLElement>(':scope > .tree__row--dir') ?? row.closest('.sidebar')?.querySelector<HTMLElement>('.sidebar__header') ?? null
+      }
+      // Never into itself or a folder inside it (S6), never where it stands already (S7), never into another vault (R11).
+      if (el === null || dir === from || dir.startsWith(`${from}/`) || dir === from.slice(0, from.lastIndexOf('/'))) return null
+      const { rootOf: vaultOf } = live.current
+      return vaultOf(dir) === vaultOf(from) ? { dir, el } : null
+    }
+    const lightInto = (next: { dir: string; el: HTMLElement } | null) => {
+      if (into?.el === next?.el) return
+      into?.el.classList.remove('tree__row--drop', 'sidebar__header--drop')
+      next?.el.classList.add(next.el.classList.contains('sidebar__header') ? 'sidebar__header--drop' : 'tree__row--drop')
+      into = next
+    }
+    const showPill = (on: boolean, x = 0, y = 0) => {
+      const img = pill.current
+      if (img === null) return
+      img.style.visibility = on ? '' : 'hidden'
+      if (on) img.style.setProperty('transform', `translate(${x + 12}px, ${y + 8}px)`)
+    }
+    /** Everything of the gesture off; the lift slides home (`cancel`) unless the drop already settled it. */
     const end = () => {
       lightFolder(null)
+      lightInto(null)
+      hint.remove()
+      lifted.current?.cancel()
+      lifted.current = null
       reorderFrom.current = null
       pill.current?.remove()
       pill.current = null
       show(null)
     }
+    /** The last pointer of the drag, so a ⌘ press or release with no move redraws (D2). */
+    let last: { x: number; y: number; target: EventTarget | null } = { x: 0, y: 0, target: null }
+    const track = (x: number, y: number, target: EventTarget | null, meta: boolean) => {
+      last = { x, y, target }
+      const from = reorderFrom.current
+      const lift = lifted.current
+      if (from === null) return
+      if (liftKind.current === 'folder') {
+        const next = meta ? intoAt(target, from) : null
+        lightInto(next)
+        lift?.move(x, y, meta)
+        hint.show(x, y, meta ? (next === null ? 'Point at a folder' : intoHint(next.el.querySelector('.tree__label')?.textContent ?? '')) : HOLD_HINT)
+        return
+      }
+      // A list (R5): over its own list the gap is the marker; anywhere else the old line, the focus folder's light and the pill.
+      const away = lift === null || !(target instanceof Node && lift.list.contains(target))
+      show(away ? overAt(target, y) : null)
+      if (live.current.focusDrop !== undefined) lightFolder(away ? folderAt(target) : null)
+      lift?.move(x, y, away)
+      showPill(away, x, y)
+    }
     return {
-      lift: (path: string) => {
+      lift: (path: string, row: HTMLElement | undefined, kind: 'list' | 'folder') => {
         end() // a reorder still in flight goes first, with its pill (audit 5)
         reorderFrom.current = path
-        const img = document.createElement('img')
-        img.className = 'tree__reorder-pill'
-        img.alt = ''
-        img.src = dragPill(pillLabel([live.current.finder.nameOf(path)]))
-        document.body.append(img)
-        pill.current = img
+        liftKind.current = kind
+        lifted.current = row === undefined || !row.isConnected ? null : liftRow(row, press.current.y)
+        if (kind === 'list') {
+          const img = document.createElement('img')
+          img.className = 'tree__reorder-pill'
+          img.alt = ''
+          img.src = dragPill(pillLabel([live.current.finder.nameOf(path)]))
+          // With a lift the row itself is the picture: the pill shows only off its list.
+          if (lifted.current !== null) img.style.visibility = 'hidden'
+          document.body.append(img)
+          pill.current = img
+        }
       },
       track: (e: MouseEvent) => {
         if (e.buttons === 0) return end()
-        // The row's box is read before the pill moves, so a move costs one layout, not two.
-        show(overAt(e))
-        if (live.current.focusDrop !== undefined) lightFolder(folderAt(e))
-        pill.current?.style.setProperty('transform', `translate(${e.clientX + 12}px, ${e.clientY + 8}px)`)
+        track(e.clientX, e.clientY, e.target, e.metaKey)
+      },
+      /** ⌘ went down or up while a Files row drags (D2): the gap closes or opens again where the pointer is. */
+      meta: (on: boolean) => {
+        if (reorderFrom.current !== null && liftKind.current === 'folder') track(last.x, last.y, last.target, on)
       },
       /** The release drops on the row under IT, not on the last move's (audit 3): a release off the list saves nothing. */
       drop: (e: MouseEvent) => {
-        show(overAt(e))
         const from = reorderFrom.current
-        const over = reorderAt.current
-        const folder = folderAt(e)?.dataset.focusFolder ?? null
+        if (from === null) return end()
+        track(e.clientX, e.clientY, e.target, e.metaKey)
+        const lift = lifted.current
+        if (liftKind.current === 'folder') {
+          const target = into
+          if (e.metaKey) {
+            end()
+            if (target !== null) {
+              const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults } = live.current
+              fileMove.into(target.dir, dragSet(from, picked.paths, ordered, (p) => vaults.has(p)))
+            }
+            return
+          }
+          // The gap's slot; with no lift (no layout), the half of the row of the same folder under the pointer.
+          const under = lift === null ? sameFolderAt(e.target, e.clientY, from) : null
+          const level = lift ?? under
+          const slot = lift !== null ? lift.slot() : (under?.slot ?? null)
+          const order = level === null ? [] : movedOrder(level.paths.map((path, i) => ({ path, fixed: level.fixed[i] })), level.from, slot)
+          lifted.current = null
+          end()
+          lift?.settle()
+          if (level === null || slot === null || order.every((item, i) => item.path === level.paths[i])) return
+          const dir = from.slice(0, from.lastIndexOf('/'))
+          const save = live.current.saveFolderOrder
+          if (save === undefined) return
+          const after = order.filter((item) => !item.fixed).map((item) => basename(item.path))
+          const before = level.paths.filter((_, i) => !level.fixed[i]).map((path) => basename(path))
+          const vault = live.current.rootOf(dir)
+          const run = () => {
+            save(dir, after)
+            // One step of the window's undo list (YAZ-5917): ⌘Z writes the folder's order as it was, once.
+            live.current.onReordered?.(live.current.finder.nameOf(from), () => save(dir, before), () => save(dir, after), vault)
+          }
+          const ask = live.current.allowFileAction
+          if (ask !== undefined) void ask(vault).then((ok) => ok && run())
+          else run()
+          return
+        }
+        const away = lift === null || !(e.target instanceof Node && lift.list.contains(e.target))
+        const over = away ? reorderAt.current : overFor(lift.slot(), lift.from, lift.paths)
+        const folder = away ? (folderAt(e.target)?.dataset.focusFolder ?? null) : null
+        // The drop on its own list settles into the gap; any other drop puts the row back.
+        if (!away) lifted.current = null
         end()
-        if (from !== null && live.current.focusDrop?.(from, over, folder) === true) return
-        if (from === null || over === null || over.path === from) return
+        if (!away) lift?.settle()
+        if (live.current.focusDrop?.(from, over, folder) === true) return
+        if (over === null || over.path === from) return
         const order = orderRef.current
         if (!order.includes(from)) return // not a row of the shown tab's list (YAZ-2631 R24): nothing is written
         const without = order.filter((p) => p !== from)
@@ -380,11 +525,16 @@ export function useTreeDrag(
         if (i < 0) return
         const at = over.edge === 'before' ? i : i + 1
         if (order[at] === from) return // the row already stands there: nothing is written
-        live.current.saveOrder([...without.slice(0, at), from, ...without.slice(at)])
+        const next = [...without.slice(0, at), from, ...without.slice(at)]
+        const before = [...order]
+        const save = live.current.saveOrder
+        save(next)
+        // One step of the window's undo list (YAZ-5917): ⌘Z writes the list's order as it was.
+        live.current.onReordered?.(live.current.finder.nameOf(from), () => save(before), () => save(next))
       },
       end,
     }
-  }, [orderRef])
+  }, [orderRef, fileMove])
   // A spring left armed when the panel goes would open a folder of a tree that is gone.
   useEffect(
     () => () => {
@@ -406,7 +556,8 @@ export function useTreeDrag(
    * the app took left too, but main says so (`file:drag-landed`, YAZ-3263): it counts as a drop inside.
    *
    * On macOS main also watches the button (YAZ-3294 D24): at the release it pushes `file:drag-ended`
-   * with the drag's paths, and that ends the drag at once, the pointer still over Finder (S80). The
+   * with the drag's paths, and that ends the drag at once, the pointer still over Finder (S80). It
+   * also says whether the release was over Finder or the desktop: a drop anywhere else asks nothing (YAZ-5840 D1). The
    * first move stays the fallback (S82). One end per drag: whichever comes first; the other finds
    * no drag and does nothing. A push of other paths is no end of this drag.
    */
@@ -423,20 +574,25 @@ export function useTreeDrag(
     const left = (e: DragEvent) => {
       if (e.relatedTarget === null) leftWindow.current = true
     }
-    const ended = () => {
+    // `overFinder`: main's word at the release (YAZ-5840 D1). A drop on another app, the Dock or the menu bar
+    // made no copy, and asks nothing. The first move, the fallback (S82), has no such word: it asks as before.
+    const ended = (overFinder = true) => {
       const paths = dragging.current
-      const outside = leftWindow.current && !droppedInside.current
+      const outside = leftWindow.current && !droppedInside.current && overFinder
       fileMove.end()
       if (outside) live.current.finder.onDraggedOut(paths)
     }
     const moved = (e: MouseEvent) => {
       // An armed row (YAZ-3467 D1): a release first was a click; LIFT_PX from the press, it lifts.
+      // A reorder lifts only on a move that is mostly up or down (YAZ-5916 Q2): a sideways wobble stays a click.
       const pending = armed.current
       if (pending !== null) {
+        const dx = e.clientX - press.current.x
+        const dy = e.clientY - press.current.y
         if (e.buttons === 0) armed.current = null
-        else if (Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) >= LIFT_PX) {
+        else if (pending.vertical ? liftsAt(dx, dy) : Math.hypot(dx, dy) >= LIFT_PX) {
           armed.current = null
-          pending()
+          pending.fire()
         }
       }
       if (reorderFrom.current !== null) return reorderGesture.track(e)
@@ -452,6 +608,8 @@ export function useTreeDrag(
     // `dragstart`, and the old HTML5 drag never did. A click follows a release only on the row the
     // press was on: so only a release on the dragged row arms this, and it takes only the next click,
     // and only on that row. Any other click, or the next task, clears it.
+    // Since YAZ-5916 a lifted row takes no pointer events, so the release lands on the row under it and Chromium
+    // clicks the rows' common parent: a lift's release takes the next click of this task anywhere in the page.
     let releasedOn: Element | null = null
     const swallow = (e: MouseEvent) => {
       const row = releasedOn
@@ -466,10 +624,11 @@ export function useTreeDrag(
       armed.current = null
       const from = reorderFrom.current
       if (from === null) return
+      const hadLift = lifted.current !== null
       reorderGesture.drop(e)
       const row = e.target instanceof Element ? e.target.closest<HTMLElement>('.tree__row') : null
-      if (row?.dataset.path !== from) return
-      releasedOn = row
+      if (!hadLift && row?.dataset.path !== from) return
+      releasedOn = hadLift ? document.body : row
       window.addEventListener('click', swallow, true)
       setTimeout(() => {
         releasedOn = null
@@ -479,10 +638,14 @@ export function useTreeDrag(
     // Esc, or the window losing focus, ends a reorder and saves nothing (D2). That Esc is the reorder's
     // alone (audit 2): the row under it does not also clear the selection.
     const keyed = (e: KeyboardEvent) => {
+      if (e.key === 'Meta' && reorderFrom.current !== null) return reorderGesture.meta(true)
       if (e.key !== 'Escape' || reorderFrom.current === null) return
       e.preventDefault()
       e.stopPropagation()
       reorderGesture.end()
+    }
+    const unkeyed = (e: KeyboardEvent) => {
+      if (e.key === 'Meta' && reorderFrom.current !== null) reorderGesture.meta(false)
     }
     const blurred = () => {
       if (reorderFrom.current !== null) reorderGesture.end()
@@ -496,12 +659,13 @@ export function useTreeDrag(
     window.addEventListener('mousedown', pressed, true)
     window.addEventListener('mouseup', released, true)
     window.addEventListener('keydown', keyed, true)
+    window.addEventListener('keyup', unkeyed, true)
     window.addEventListener('blur', blurred)
     const offLanded = api.file.onDragLanded(({ paths }) => {
       if (dragging.current.length > 0 && sameItems(dragging.current, paths)) droppedInside.current = true
     })
-    const offEnded = api.file.onDragEnded(({ paths }) => {
-      if (dragging.current.length > 0 && sameItems(dragging.current, paths)) ended()
+    const offEnded = api.file.onDragEnded(({ paths, overFinder }) => {
+      if (dragging.current.length > 0 && sameItems(dragging.current, paths)) ended(overFinder)
     })
     return () => {
       offLanded()
@@ -516,6 +680,7 @@ export function useTreeDrag(
       window.removeEventListener('mousedown', pressed, true)
       window.removeEventListener('mouseup', released, true)
       window.removeEventListener('keydown', keyed, true)
+      window.removeEventListener('keyup', unkeyed, true)
       window.removeEventListener('blur', blurred)
     }
   }, [fileMove, reorderGesture])
@@ -524,14 +689,24 @@ export function useTreeDrag(
     () => ({
       over: reorderOver,
       // The reorder arms as a move does (YAZ-3467 D2), and lifts LIFT_PX from the press.
-      start: (path) => {
-        armed.current = () => reorderGesture.lift(path)
+      start: (path, row) => {
+        armed.current = { fire: () => reorderGesture.lift(path, row, 'list'), vertical: true }
       },
     }),
     [reorderOver, reorderGesture],
   )
+  /** A Files row's Manual drag (YAZ-5916 D2): it reorders its own folder; ⌘ moves it into one. One identity for the hook's life. */
+  const manual: TreeReorder = useMemo(
+    () => ({
+      over: null,
+      start: (path, row) => {
+        armed.current = { fire: () => reorderGesture.lift(path, row, 'folder'), vertical: true }
+      },
+    }),
+    [reorderGesture],
+  )
 
-  return { fileMove, reorder }
+  return { fileMove, reorder, manual }
 }
 
 /** Two answers about the clipboard that say the same: the verb and the paths, in order. */
@@ -556,6 +731,8 @@ export function useFileClipboard(
   onMoved: (gesture: MovedGesture, text: string, skipped: boolean) => void,
   /** ⌘⌫ (YAZ-3272 D20): the Sidebar's delete door — the question, then App's list delete door. */
   askDelete: (paths: string[]) => void,
+  /** A paste into a read-only vault asks first (YAZ-4939): App's sheet, true = go on. Absent: every paste goes. */
+  allowFileAction?: (root: string) => Promise<boolean>,
 ) {
   /**
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
@@ -567,14 +744,6 @@ export function useFileClipboard(
    * only labels the menu and gates ⌘V: each paste reads the clip FRESH and pastes that one (YAZ-3266, `pasteInto`).
    */
   const [clip, setClip] = useState<FileClipState>(null)
-  /**
-   * The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet
-   * (D21); null when it is closed. `clip` is the clip the sheet asks about: the one a fresh read confirmed (YAZ-3266), and
-   * the one its Move or Copy pastes — never whatever is on the clipboard by then.
-   */
-  const [pendingPaste, setPendingPaste] = useState<{ dir: string; top?: string; moves: Move[]; lost: LeftBehind; copy: boolean; clip: NonNullable<FileClipState> } | null>(null)
-  // The sheet speaks for the clipboard it was asked about: another one ends the question.
-  useEffect(() => setPendingPaste((open) => (open === null || sameClip(open.clip, clip) ? open : null)), [clip])
   /** Pushes seen so far: a read lands only when none came since it began (a push is newer than the read). */
   const pushes = useRef(0)
   /** False once unmounted: a read that answers late writes no state. */
@@ -630,39 +799,26 @@ export function useFileClipboard(
    * notice counts both halves and names the first failure. The target opens (the synthetic-child
    * idiom `startCreate` uses) and the tree refreshes EXPLICITLY: a copy moves nothing, so no
    * `fileRenamed` broadcast repairs it, and the watcher's add echo is a courtesy, not a contract
-   * (`refresh` is idempotent). A CUT is a move: each note it moved leaves the values of the folders
-   * it left behind (D20), judged on the index as it stood before the paste. A COPY's notes keep no
-   * values for the folders that do not show them (YAZ-2420 3E1), judged after it; the original is
-   * never written. The copies are listed off the tree that refresh reads — the index hears of them
-   * only once the watcher has — and a folder it has not heard of yet, the copy of one, keeps its block.
-   * In a vault that does not use IDs a copy is left as it landed (YAZ-2523 🔒 V3): by the data both
-   * branches do nothing there, and the gate on the copy's only saves its two fetches.
+   * (`refresh` is idempotent). A CUT is a move, and a COPY lands as main wrote it: neither removes a
+   * value from a page (YAZ-4713 C9 — a value no page shows is listed in the page's properties, with Clear).
    * The vault is the one `dir` is in (YAZ-2602 S46): a paste from another vault of this window is
    * judged as a paste from another window is.
    */
   const runPaste = useCallback(
     // `top`: the copy of Focus or Favorites the paste came from (YAZ-3131 S21), which opens the folder there too.
-    // `confirmed`: the clip a fresh read answered (YAZ-3266). It decides D20, the undo record and the sound, and main
+    // `confirmed`: the clip a fresh read answered (YAZ-3266). It decides the undo record and the sound, and main
     // pastes only it: another clip on the clipboard by now pastes nothing and fails `CONFLICT`.
     async (dir: string, confirmed: NonNullable<FileClipState>, top?: string) => {
       const { root: vault, index } = vaultOf(dir)
       try {
-        const before = confirmed.op === 'cut' ? { records: index.records, folders: index.folders } : null
         const res = await api.file.paste({ targetDir: dir, expect: { op: confirmed.op, paths: confirmed.paths } })
         openTo(`${dir}/x`, top)
         refresh(vault)
-        // What D20 cleared, for the undo list.
-        const cleared: MovedGesture['cleared'] = []
-        if (before !== null) for (const { from, to, kind } of res.pasted) cleared.push(...(await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })))
-        else if (index.ids) {
-          const [{ tree }, { folders }] = await Promise.all([fetchTree(vault), api.index(vault)])
-          for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(vault, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
-        }
         // Each item that did not land, by its page name; the titles are read only when one did not.
         const titles = res.failed.length === 0 ? undefined : pathTitles(index.records, index.folders)
         const failed = titles === undefined ? [] : res.failed.map((f) => `${pageName(vault, f.from, titles)} — ${f.message}`)
-        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves and what they cleared go on the undo list.
-        const gesture: MovedGesture | null = before === null ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared }
+        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves go on the undo list.
+        const gesture: MovedGesture | null = confirmed.op !== 'cut' ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })) }
         // What landed, by kind and by its name on disk (YAZ-3293 D23): a copy may have a new free name.
         const pasted = res.pasted.map(({ to, kind }) => onDisk(to, kind))
         const text = gestureNotice(res.pasted.length === 0 ? null : `Pasted ${namedItems(pasted)}`, failed, "Couldn't paste")
@@ -689,18 +845,15 @@ export function useFileClipboard(
   )
 
   /**
-   * Paste's one door, the menu's and ⌘V's: a Cut that would clear a folder's values asks first
-   * (D21), by the window's own snapshot, and so does a Copy whose copies would not keep them
-   * (YAZ-2420 3E1); anything else pastes at once. The moves are the clipboard's paths into `dir` —
-   * one already there is no move (main skips a cut, D2; a copy beside its original leaves nothing
-   * behind), and a folder is one the tree holds as a folder. A path outside this vault matches no
-   * record, so it never asks: the index cannot speak for it.
+   * Paste's one door, the menu's and ⌘V's: it pastes at once — a paste clears no value (YAZ-4713 C9), so D21's sheet is gone.
    * The clip is read FRESH first (YAZ-3266), never taken from the window's cached `clip`: the system clipboard can change
-   * with no event (text copied in a note), and main pastes what it holds at paste time. That one answer decides the
-   * sheet, D20, the undo record and the sound, and the paste carries it, so main runs that clip or nothing.
+   * with no event (text copied in a page), and main pastes what it holds at paste time. That one answer decides the
+   * undo record and the sound, and the paste carries it, so main runs that clip or nothing.
    */
   const pasteInto = useCallback(
     async (dir: string, top?: string) => {
+      const target = vaultOf(dir).root
+      if (allowFileAction !== undefined && !(await allowFileAction(target))) return
       let now: FileClipState
       try {
         now = await readClip()
@@ -708,31 +861,26 @@ export function useFileClipboard(
         return onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
       if (now === null) return onNotice('Nothing to paste', 'info')
-      const moves = now.paths.flatMap((oldPath): Move[] => {
-        const newPath = `${dir}/${basename(oldPath)}`
-        return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
-      })
-      const { root: vault, index } = vaultOf(dir)
-      const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
-      if (lost.folders.length > 0) return setPendingPaste({ dir, top, moves, lost, copy: now.op === 'copy', clip: now })
+      // A paste of a CUT moves the items out of their vault (YAZ-4985): each other vault they leave asks too — one of this
+      // window, or one the app knows that only ANOTHER window shows (the cut was made there). App's door reads that vault's
+      // own Read only. A path in no vault the app knows is no vault's file.
+      if (allowFileAction !== undefined && now.op === 'cut') {
+        const known = storage.listVaults().map((vault) => vault.path)
+        const from = new Set(now.paths.flatMap((path) => {
+          const here = vaultOf(path).root
+          const vault = path.startsWith(`${here}/`) ? here : rootOfPath(known, path)
+          return vault !== null && vault !== target ? [vault] : []
+        }))
+        for (const vault of from) if (!(await allowFileAction(vault))) return
+      }
       await runPaste(dir, now, top)
     },
-    [vaultOf, dirs, runPaste, readClip, onNotice],
+    [runPaste, readClip, onNotice, vaultOf, allowFileAction],
   )
 
   /**
-   * The sheet's Move or Copy: the paste runs as it does unasked, for the clip the sheet asked about (YAZ-3266). Its
-   * Cancel only closes it — the clipboard stays as it was.
-   */
-  const confirmPaste = useCallback(() => {
-    if (pendingPaste === null) return
-    setPendingPaste(null)
-    void runPaste(pendingPaste.dir, pendingPaste.clip, pendingPaste.top)
-  }, [pendingPaste, runPaste])
-
-  /**
    * ⌘V's target (D6, YAZ-1674): beside the FIRST ordered selected row — a dir → into it, a file →
-   * its parent (the "New note" rule, `targetDirFor`) — or the vault root with no selection at all.
+   * its parent (the "New page" rule, `targetDirFor`) — or the vault root with no selection at all.
    * With two or more vaults no selection names no vault (YAZ-2602 S10): null, and nothing is pasted.
    */
   const pasteTargetDir = useCallback((): string | null => {
@@ -786,12 +934,14 @@ export function useFileClipboard(
    * opens, the tree reads again (the watcher's echo is a courtesy), and ONE notice counts what
    * landed and names the first item that did not (S19). An item of another open vault says the rule
    * of drags between vaults (S22). Items that come from outside every vault left no folder of it,
-   * so no values are cleared (D20). Copies are not moves: only `moved` goes on the undo list, and
+   * and no value is cleared (YAZ-4713 C9). Copies are not moves: only `moved` goes on the undo list, and
    * its toast has Undo (YAZ-3255 S18, S40).
    */
   const importFiles = useCallback(
     async (dir: string, paths: string[]) => {
       const { root: vault } = vaultOf(dir)
+      // Finder's drop is a paste from outside: a read-only vault asks first (YAZ-4939).
+      if (allowFileAction !== undefined && !(await allowFileAction(vault))) return
       try {
         const { moved, copied, failed } = await api.file.import({ paths, targetDir: dir })
         if (moved.length + copied.length > 0) {
@@ -815,21 +965,21 @@ export function useFileClipboard(
           playGestureSound('land')
           onNotice(text, 'paste', unlessFailed('clipboard', failed))
         }
-        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text, failed.length > 0)
+        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })) }, text, failed.length > 0)
       } catch (err: unknown) {
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice, onMoved],
+    [vaultOf, refresh, openTo, onNotice, onMoved, allowFileAction],
   )
 
-  return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null), importFiles }
+  return { clip, clipTo, pasteInto, importFiles }
 }
 
 export function useInlineEdits(
   /** The top of a list tab, in a window with one vault: its root. Null with two or more, where no one folder stands above the rows. */
   root: string | null,
-  /** The vault that holds a path (YAZ-2602 R4): a new note is made as the vault it is made in makes one. */
+  /** The vault that holds a path (YAZ-2602 R4): a new page is made as the vault it is made in makes one. */
   vaultOf: (path: string) => SidebarVault,
   menu: MenuTargets | null,
   setMenu: (menu: MenuTargets | null) => void,
@@ -841,26 +991,40 @@ export function useInlineEdits(
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>,
   openTo: (file: string, top?: string) => void,
+  /** A placed create's item, made on disk (YAZ-4782): it joins the Focus or the Favorites list at `place`. */
+  onPlace?: (place: CreatePlace, path: string) => void,
+  /** A New … in a read-only vault asks first (YAZ-4939), before the name field opens: App's sheet, true = go on. Absent: the field opens at once. */
+  allowFileAction?: (root: string) => Promise<boolean>,
 ) {
-  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null } | null>(null)
+  const [creating, setCreating] = useState<{ kind: CreateKind; seed: string; parentDir: string; top: string | null; place?: CreatePlace } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
 
   /**
    * The name field for a new `kind` in `targetDir`, as the right-click "New …" opens it: the menu's row, or the New… box
    * (⌘N, YAZ-3556 D4), which asks for it in Files with no menu open.
    */
-  const startCreateAt = useCallback(
-    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null }) => {
+  const startCreateNow = useCallback(
+    (kind: CreateKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
       const menu = at
+      // A New … on the Focus or the Favorites tab with a place in its list (YAZ-4782: a pinned file row, a focus folder,
+      // blank space): the field opens there, on the tab, and the item joins the list there (`submitCreate`). The tab
+      // stays: no hop to Files, and no folder to open — the row, the folder or the list's end is on show.
+      if (at.place != null) {
+        setCreating({ kind, seed, parentDir: at.targetDir, top: at.top, place: at.place })
+        return
+      }
       // Favorites and Focus each show a SUBSET of the vault (YAZ-1766 3B1, YAZ-2619 S36): a target dir
       // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
       // mount, so the create moves to Files, where the `openTo` below opens that dir.
       // A FOLDER made at the root goes there too: it is no item of the list, so the tab would never
-      // show it. A note made there opens as a tab, so it stays (YAZ-2619 R18, YAZ-2845 D2).
+      // show it. A page made there opens as a tab, so it stays (YAZ-2619 R18, YAZ-2845 D2).
       // The reveal hop's rule (D10), applied to the other gesture that needs a row. With two or more
       // vaults a vault's root is held only as its row (YAZ-2602), and neither tab has that row (YAZ-2631 D1).
       const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
-      const toFiles = shown !== null && (menu.targetDir === root ? shown.length === 0 || kind === 'dir' : findDirNode(shown, menu.targetDir) === null)
+      // A dir at or under the right-clicked row's top row is on show in that copy (YAZ-4782): `shown` holds the top level
+      // alone, and a pinned folder in a focus or a favorite folder — and its subfolders — stand in that folder's tree instead.
+      const inCopy = menu.top !== null && (menu.targetDir === menu.top || menu.targetDir.startsWith(`${menu.top}/`))
+      const toFiles = shown !== null && !inCopy && (menu.targetDir === root ? shown.length === 0 || kind === 'dir' : findDirNode(shown, menu.targetDir) === null)
       // The input renders inside the target dir's children, so that dir must be open — and its
       // vault's row with it; `openTo` opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       // In a copy of Focus or Favorites it opens there too, and in that copy alone (YAZ-3131 S20).
@@ -872,10 +1036,19 @@ export function useInlineEdits(
     [root, favoriteNodes, focusNodes, onLensChange, openTo],
   )
 
+  /** The door every New … takes (YAZ-4939): a read-only vault asks first, then the field opens. */
+  const startCreateAt = useCallback(
+    (kind: CreateKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
+      if (allowFileAction === undefined) startCreateNow(kind, seed, at)
+      else void allowFileAction(vaultOf(at.targetDir).root).then((ok) => ok && startCreateNow(kind, seed, at))
+    },
+    [allowFileAction, vaultOf, startCreateNow],
+  )
+
   const startCreate = useCallback(
-    (kind: EntryKind, seed = '') => {
+    (kind: CreateKind, seed = '') => {
       if (menu === null || menu.targetDir === null) return
-      startCreateAt(kind, seed, { targetDir: menu.targetDir, lens: menu.lens, top: menu.top })
+      startCreateAt(kind, seed, { targetDir: menu.targetDir, lens: menu.lens, top: menu.top, place: menu.place })
       setMenu(null)
     },
     [menu, startCreateAt],
@@ -890,6 +1063,7 @@ export function useInlineEdits(
         const board = await createBoardFile(vault, creating.parentDir, name, creating.kind, creating.seed)
         setCreating(null)
         refresh(vault)
+        if (creating.place !== undefined) onPlace?.(creating.place, board)
         onOpenFile(board)
         return
       }
@@ -897,14 +1071,22 @@ export function useInlineEdits(
       if (index.resolve === null) throw new Error('Vault index is still loading — try again in a moment')
       // What was typed is the TITLE (YAZ-2420 🔒 D6, D20): the name on disk is built from it.
       // In a vault that does not use IDs it is the name itself (YAZ-2523 🔒 V3).
-      let note: string | null = null
-      if (creating.kind === 'dir') await api.createDir({ path: folderPath(creating.parentDir, name, index.ids), ...(index.ids && { title: name }) })
-      else note = await createNote(creating.parentDir, name, index.ids)
+      let page: string | null = null
+      let made: string
+      // A card file (YAZ-5101): what was typed is its title, on its card line (YAZ-5308), and the file is named
+      // after it (`cardFileName`). Its tab opens in Edit card, on the empty card.
+      if (creating.kind === 'card') made = page = await createCardFile(creating.parentDir, name)
+      else if (creating.kind === 'dir') {
+        made = folderPath(creating.parentDir, name, index.ids)
+        await api.createDir({ path: made, ...(index.ids && { title: name }) })
+      } else made = page = await createPage(creating.parentDir, name, index.ids)
       setCreating(null)
       refresh(vault)
-      if (note !== null) onOpenFile(note)
+      // In the list where the New … was picked (YAZ-4782), before the page opens, so its tab lights the new row.
+      if (creating.place !== undefined) onPlace?.(creating.place, made)
+      if (page !== null) onOpenFile(page)
     },
-    [creating, refresh, onOpenFile, vaultOf],
+    [creating, refresh, onOpenFile, vaultOf, onPlace],
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
@@ -915,7 +1097,7 @@ export function useInlineEdits(
       const { path, kind } = renamingEntry
       setRenamingEntry(null)
       // App owns the whole flow (and routes failures to the passive notice — never a dialog);
-      // the tree row follows via the watcher's unlink+add refresh. What was typed for a note or
+      // the tree row follows via the watcher's unlink+add refresh. What was typed for a page or
       // a folder is its TITLE (YAZ-2420 🔒 D16); for any other file, its name.
       if (kind === 'dir' || isMarkdown(path)) return onRetitle(path, name, kind)
       const target = renamedPath(path, name)
@@ -939,6 +1121,7 @@ export function useInlineEdits(
             seed: creating.seed,
             parentDir: creating.parentDir,
             top: creating.top,
+            ...(creating.place !== undefined && { place: creating.place }),
             onSubmit: submitCreate,
             onCancel: cancelCreate,
           },

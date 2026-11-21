@@ -1,0 +1,81 @@
+/**
+ * The page keys (YAZ-3564 K1, D11 of YAZ-3556): every key a page's editor binds, in the tab and the right panel (and a
+ * folder view's outline, which is the same editor). They change when a page opens (K4): `client/src/editor/pageKeys.ts`
+ * sets Milkdown's keymap slices from these rows, and the app's own page keymaps, ⌘F and ⌘J read them. The menu's page
+ * keys (⌘+ / ⌘− / ⌘0, ⌘⇧V) are App rows. `pageKeys.test.ts` reads the editor's real keys and fails on one with no row.
+ *
+ * Built in (K6): the typing keys, the Mac's edit keys (⌘Z, ⌘A) and the keys inside a pop-up.
+ */
+import type { KeyRow } from './types'
+
+const page = (id: string, label: string, keys: readonly string[], extra: Pick<KeyRow, 'hint'> & { builtIn?: true } = {}): KeyRow => ({
+  id: `page.${id}`,
+  scope: 'page',
+  label,
+  ...(extra.hint === undefined ? {} : { hint: extra.hint }),
+  keys,
+  changeable: extra.builtIn !== true,
+})
+
+const HEADINGS = [1, 2, 3, 4, 5, 6].map((n) => page(`heading${n}`, `Heading ${n}`, [`CmdOrCtrl+Alt+${n}`]))
+
+export const PAGE_KEYS: readonly KeyRow[] = [
+  // The marks (Milkdown's commonmark and gfm keymaps; underline and highlight are the app's).
+  page('bold', 'Bold', ['CmdOrCtrl+B']),
+  page('italic', 'Italic', ['CmdOrCtrl+I']),
+  page('underline', 'Underline', ['CmdOrCtrl+U']),
+  page('strikethrough', 'Strikethrough', ['CmdOrCtrl+Shift+X', 'CmdOrCtrl+Alt+X']),
+  page('highlight', 'Highlight', ['CmdOrCtrl+Shift+H']),
+  page('inlineCode', 'Inline code', ['CmdOrCtrl+E']),
+  // YAZ-4277 demo round 1: as Google Docs' ⌘\; a text box's ⌘\ is the drawing's own (`drawing.clearTextFormatting`).
+  page('clearFormatting', 'Clear formatting', ['CmdOrCtrl+\\'], { hint: 'Letter styles go and a heading becomes text; bullets, lists, quotes and links stay' }),
+  // The blocks.
+  page('text', 'Text', ['CmdOrCtrl+Alt+0'], { hint: 'Turn the block into plain text' }),
+  ...HEADINGS,
+  // D10: ⌘⇧B is Toggle sidebar now.
+  page('quote', 'Quote', []),
+  page('codeBlock', 'Code block', ['CmdOrCtrl+Alt+C']),
+  page('bulletList', 'Bullet list', ['CmdOrCtrl+Alt+8']),
+  page('cycleTask', 'Cycle bullet → task → done', ['CmdOrCtrl+Enter'], { hint: 'On text or a heading outside a bullet: strikes the line through. In a table or a code block: a new line below it (⌘⇧↵ above)' }),
+  // The outline.
+  page('indent', 'Indent bullet', ['CmdOrCtrl+]'], { hint: 'In a table: the next cell' }),
+  page('outdent', 'Outdent bullet', ['CmdOrCtrl+['], { hint: 'In a table: the cell before' }),
+  page('foldHere', 'Fold the bullet or heading section at the caret', ['CmdOrCtrl+Up'], { hint: 'In a table with subheader rows: collapses the section at the caret' }),
+  page('unfoldHere', 'Unfold the bullet or heading section at the caret', ['CmdOrCtrl+Down'], { hint: 'In a table with subheader rows: opens the section at the caret' }),
+  page('foldAll', 'Fold all bullets and headings', ['CmdOrCtrl+Shift+U'], { hint: 'Collapses every subheader row of every table too' }),
+  page('unfoldAll', 'Unfold all bullets and headings', ['CmdOrCtrl+Shift+I'], { hint: 'Opens every subheader row of every table too' }),
+  page('zoomIn', 'Zoom into the bullet at the caret', ['CmdOrCtrl+.']),
+  page('zoomOut', 'Zoom out one level', ['CmdOrCtrl+Shift+.']),
+  // Cell notes (YAZ-3818, round 4 of the demo): the card beside a table cell.
+  page('openCellNote', 'Open the cell note of the cell at the caret', ['CmdOrCtrl+Alt+M'], { hint: 'Makes one if the cell has none. ⌘. on a plain line of a cell opens it too' }),
+  page('nextCellNote', 'Next cell note', ['CmdOrCtrl+Alt+Down'], { hint: 'While a cell note is open: the next one of the page' }),
+  page('previousCellNote', 'Previous cell note', ['CmdOrCtrl+Alt+Up'], { hint: 'While a cell note is open: the one before' }),
+  page('cellNoteBack', 'Back in the cell note', ['CmdOrCtrl+Alt+['], { hint: 'While a cell note is open: the cell note you opened before it' }),
+  page('cellNoteForward', 'Forward in the cell note', ['CmdOrCtrl+Alt+]'], { hint: 'Again, after Back' }),
+  // YAZ-4276 A6: no key by default.
+  page('allCellNotes', 'All notes of a calendar table', [], { hint: 'From a cell: every time block of its column, in the card. Again: back to the cell note' }),
+  page('nextTimeBlock', 'Next time block', ['Alt+Down'], { hint: 'In a calendar table\'s All notes: makes its note when it has none' }),
+  page('previousTimeBlock', 'Previous time block', ['Alt+Up'], { hint: 'In a calendar table\'s All notes' }),
+  // YAZ-3653: Edit › Copy as › Without folded lines; no key by default, every free one is some editor's.
+  page('copyVisible', 'Copy without folded lines', [], { hint: 'With nothing selected: the bullet at the caret' }),
+  // The page's panels.
+  page('find', 'Find in the page', ['CmdOrCtrl+F'], { hint: '⏎ / ⇧⏎ next / previous match, Esc closes' }),
+  page('toc', 'Table of contents', ['CmdOrCtrl+J'], { hint: '↑ ↓ pick a name, ⏎ goes to it, Esc closes' }),
+  // Built in: the Mac's edit keys.
+  page('undo', 'Undo', ['CmdOrCtrl+Z'], { hint: 'Also reverts the latest fold or zoom', builtIn: true }),
+  page('redo', 'Redo', ['CmdOrCtrl+Shift+Z', 'CmdOrCtrl+Y'], { builtIn: true }),
+  page('selectAll', 'Select all the text of the page', ['CmdOrCtrl+A'], { hint: 'On a bullet: its line first, then the whole page. In a table cell: the cell first', builtIn: true }),
+  // Built in: the typing keys.
+  page('enter', 'New line, or a new bullet', ['Enter'], { hint: 'In a pop-up: pick the row', builtIn: true }),
+  page('lineBreak', 'Line break inside the block', ['Shift+Enter'], { builtIn: true }),
+  // YAZ-4820 item 8: in the [[ picker, a drawing's or a diagram's row goes in as a window into it, not a pill.
+  page('embedPick', 'Pick a drawing or diagram as an embed', ['Alt+Enter'], { hint: 'In the [[ pop-up. Any other row goes in as a link', builtIn: true }),
+  page('tab', 'Indent / outdent bullet', ['Tab', 'Shift+Tab'], { hint: 'In a table: the next / previous cell', builtIn: true }),
+  page('delete', 'Delete backward / forward', ['Backspace', 'Delete', 'Shift+Backspace', 'Control+H', 'Control+D'], { hint: "Backspace at a line's start or Delete at its end: joins two lines (the upper format wins)", builtIn: true }),
+  page('deleteMore', 'Delete backward / forward, then join the blocks', ['CmdOrCtrl+Backspace', 'Alt+Backspace', 'CmdOrCtrl+Delete', 'Alt+Delete', 'Control+Alt+Backspace', 'Alt+D'], { builtIn: true }),
+  page('lineStartEnd', 'Select to the start / end of the block', ['Control+A', 'Control+E'], { builtIn: true }),
+  page('selectLines', 'Select to the start / end of this line, then one whole line per press', ['Shift+Up', 'Shift+Down'], { builtIn: true }),
+  page('escape', 'Back to the sidebar', ['Escape'], { hint: 'With a pop-up or the find bar open: close it', builtIn: true }),
+  // Built in: the keys inside a pop-up (the [[ link picker, the / menu).
+  page('popupMove', 'In a pop-up: move up / down the list', ['Up', 'Down'], { builtIn: true }),
+]

@@ -14,7 +14,7 @@
  * (the Share dialog and Settings › Sharing show it) and the next save simply tries again. Nothing
  * here retries on a timer.
  *
- * RENAMES: a board is keyed by path, so an in-app rename (`file:renamed`, via `noteBoardRenamed`)
+ * RENAMES: a board is keyed by path, so an in-app rename (`file:renamed`, via `pageBoardRenamed`)
  * re-keys whatever is pending, queued or in flight — an edit saved seconds before the rename
  * still uploads, under the new path. The upload names its link (`id`), so main lands it on the
  * record even when the rename overtakes it.
@@ -55,7 +55,7 @@ export function onLiveShareChange(listener: () => void): () => void {
  * (re)arms a timer. It tells the listeners only when `isPending` flips (YAZ-3044 A29): autosave fires
  * about every 500 ms while you draw, and each tell re-derives the sidebar's share marks.
  */
-export function noteBoardSaved(root: string, path: string, settleMs = SETTLE_MS): void {
+export function pageBoardSaved(root: string, path: string, settleMs = SETTLE_MS): void {
   const was = isPending(path)
   const b = boards.get(path) ?? { root, path, timer: null, inFlight: false, again: false }
   b.root = root
@@ -69,7 +69,7 @@ export function noteBoardSaved(root: string, path: string, settleMs = SETTLE_MS)
 }
 
 /** An in-app rename or move of `oldPath` (a board, or a folder holding some): pending uploads follow it. */
-export function noteBoardRenamed(oldPath: string, newPath: string): void {
+export function pageBoardRenamed(oldPath: string, newPath: string): void {
   let moved = false
   for (const [path, b] of [...boards]) {
     if (!inFolder(path, oldPath)) continue

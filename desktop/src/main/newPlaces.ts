@@ -1,6 +1,8 @@
 import path from 'node:path'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { NEW_PLACE_SLOTS, NEW_PLACES_FILE, parseNewPlaces, type NewPlacesConfig } from '@shared/newPlaces'
+import { NEW_PLACE_SLOTS, NEW_PLACES_FILE, NEW_PLACES_KEYS, newPlacesOfSettings, parseNewPlaces, type NewPlacesConfig, type NewPlacesFields } from '@shared/newPlaces'
+import { stat } from 'node:fs/promises'
+import { seedVaultPart, type MoveStep } from './vaultSettingsMove'
 import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
 import { toAbs, toRel, under } from './favorites'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
@@ -47,7 +49,7 @@ export async function setNewPlaces(root: string, places: unknown): Promise<void>
     const raw = await readRaw(r)
     if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', 'new-places.json is malformed; fix or delete it', { path: raw.file })
     const value: NewPlacesConfig = { version: 1, places: (places as Array<string | null>).map((p) => (p === null ? null : toRel(r, p))) }
-    await writeConfig(r, NEW_PLACES_FILE, value)
+    await writeConfig(r, NEW_PLACES_FILE, value, NEW_PLACES_KEYS)
   })
 }
 
@@ -57,4 +59,42 @@ export function subscribeNewPlaces(root: string, listener: (change: { root: stri
   return subscribeConfig(r, (c) => {
     if (c.name === NEW_PLACES_FILE) listener({ root: r })
   })
+}
+
+const isFolder = (at: string): Promise<boolean> =>
+  stat(at).then(
+    (s) => s.isDirectory(),
+    () => false,
+  )
+
+/** A vault-relative folder (not '' and not absolute) that this vault holds; any other value is not one vault's. */
+const holdsOrNotRelative = async (root: string, folder: string): Promise<boolean> => folder === '' || folder.startsWith('/') || isFolder(path.join(root, folder))
+
+/**
+ * The parts the one-time move writes into `root` (YAZ-5486): `newPage` and `newBoard` as the app has them, each null when
+ * it is the default. A part that names a vault-relative folder goes only to a vault that HOLDS that folder: the old
+ * value was applied to every vault, and a missing folder got made in each (the bug this fixes).
+ */
+export async function newPlacesParts(root: string, s: NewPlacesFields): Promise<{ newPage: Record<string, unknown> | null; newBoard: Record<string, unknown> | null }> {
+  const { newPage, newBoard } = newPlacesOfSettings(s)
+  const page = Object.keys(newPage).length === 0 || (newPage.location === 'folder' && !(await holdsOrNotRelative(root, newPage.folder ?? ''))) ? null : { newPage }
+  const board = Object.keys(newBoard).length === 0 || (newBoard.pictures === 'folder' && !(await holdsOrNotRelative(root, newBoard.picturesFolder ?? ''))) ? null : { newBoard }
+  return { newPage: page, newBoard: board }
+}
+
+const EMPTY_FILE = { version: 1, places: [null, null, null] }
+
+/** The move of where new things go (`moveSettingsIntoVaults`): every vault of every window, each part on its own. */
+export const NEW_PLACES_MOVE: MoveStep = {
+  name: 'where new things go',
+  key: (s) => newPlacesOfSettings(s),
+  run: async (roots, s, store, canSeed) => {
+    for (const root of roots) {
+      const parts = await newPlacesParts(root, s)
+      await seedVaultPart(root, NEW_PLACES_FILE, parts.newPage, ['newPage'], store, canSeed, `${NEW_PLACES_FILE}#newPage`, EMPTY_FILE)
+      await seedVaultPart(root, NEW_PLACES_FILE, parts.newBoard, ['newBoard'], store, canSeed, `${NEW_PLACES_FILE}#newBoard`, EMPTY_FILE)
+      // YAZ-5490: the comment hint, only when it is off (on is the default).
+      await seedVaultPart(root, NEW_PLACES_FILE, s.commentsHint ? null : { commentsHint: false }, ['commentsHint'], store, canSeed, `${NEW_PLACES_FILE}#commentsHint`, EMPTY_FILE)
+    }
+  },
 }

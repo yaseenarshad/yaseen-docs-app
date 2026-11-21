@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { TreeNode, TreeResponse } from '@shared/types'
 import { byVault, MAX_RECENTS, recentDays, recentFiles, recentSections, timeOf, type RecentFile } from './recents'
 
-const note = (path: string, kind: 'markdown' | null = 'markdown'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind })
+const page = (path: string, kind: 'markdown' | null = 'markdown'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind })
 const dir = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 const tree = (root: string, nodes: TreeNode[]): TreeResponse => ({ root, tree: nodes, generatedAt: 1 })
 const at = (y: number, m: number, d: number, h = 12, min = 0) => new Date(y, m - 1, d, h, min).getTime()
@@ -11,10 +11,10 @@ describe('recentFiles (YAZ-3235 D3, S14, S22)', () => {
   it('S14: one list for the vaults of the window; a file that two nested vaults logged is one row, at its newest save; a vault that the window does not show adds nothing', () => {
     // `/a/b` is a vault inside the vault `/a`: both trees have `/a/b/n.md`.
     const trees = new Map([
-      ['/a', tree('/a', [note('/a/x.md'), dir('/a/b', [note('/a/b/n.md')])])],
-      ['/a/b', tree('/a/b', [note('/a/b/n.md')])],
-      ['/w', tree('/w', [note('/w/y.md')])],
-      ['/gone', tree('/gone', [note('/gone/z.md')])],
+      ['/a', tree('/a', [page('/a/x.md'), dir('/a/b', [page('/a/b/n.md')])])],
+      ['/a/b', tree('/a/b', [page('/a/b/n.md')])],
+      ['/w', tree('/w', [page('/w/y.md')])],
+      ['/gone', tree('/gone', [page('/gone/z.md')])],
     ])
     const files = recentFiles(trees, ['/a', '/a/b', '/w'], [{ '/a/x.md': 10, '/a/b/n.md': 20 }, { '/a/b/n.md': 30 }, { '/w/y.md': 25 }])
     expect(files).toEqual([
@@ -28,9 +28,9 @@ describe('recentFiles (YAZ-3235 D3, S14, S22)', () => {
 
   it('YAZ-4450 D5: `only` keeps the files of that vault, the most specific one — the rule of its Recents group — before the 200 cut', () => {
     const trees = new Map([
-      ['/a', tree('/a', [note('/a/x.md'), dir('/a/b', [note('/a/b/n.md')])])],
-      ['/a/b', tree('/a/b', [note('/a/b/n.md')])],
-      ['/w', tree('/w', [note('/w/y.md')])],
+      ['/a', tree('/a', [page('/a/x.md'), dir('/a/b', [page('/a/b/n.md')])])],
+      ['/a/b', tree('/a/b', [page('/a/b/n.md')])],
+      ['/w', tree('/w', [page('/w/y.md')])],
     ])
     // `/a` logged `/a/b/n.md` while it was open alone: that file is the nested vault's, in its filter and in its group.
     const logs: Record<string, number>[] = [{ '/a/x.md': 10, '/a/b/n.md': 20 }, {}, { '/w/y.md': 25 }]
@@ -38,29 +38,29 @@ describe('recentFiles (YAZ-3235 D3, S14, S22)', () => {
     expect(recentFiles(trees, ['/a', '/a/b', '/w'], logs, '/a/b')).toEqual([{ path: '/a/b/n.md', edited: 20 }])
     expect(byVault(recentFiles(trees, ['/a', '/a/b', '/w'], logs), ['/a', '/a/b', '/w']).map((g) => [g.root, g.files.map((f) => f.path)])).toEqual([['/a', ['/a/x.md']], ['/a/b', ['/a/b/n.md']], ['/w', ['/w/y.md']]])
     const many = Object.fromEntries(Array.from({ length: MAX_RECENTS + 5 }, (_, i) => [`/w/n${i}.md`, 1000 + i]))
-    const big = new Map([...trees, ['/w', tree('/w', Object.keys(many).map((p) => note(p)))]])
+    const big = new Map([...trees, ['/w', tree('/w', Object.keys(many).map((p) => page(p)))]])
     expect(recentFiles(big, ['/a', '/w'], [{ '/a/x.md': 1 }, many], '/a')).toEqual([{ path: '/a/x.md', edited: 1 }]) // never cut away by the other vault's 200
   })
 
   it('S7, S22: a logged file that the tree no longer has, a folder, and a file that the app cannot open (kind null) draw no row; a vault with no tree yet adds nothing', () => {
-    const trees = new Map([['/v', tree('/v', [note('/v/a.md'), note('/v/b.zip', null), dir('/v/sub', [])])]])
+    const trees = new Map([['/v', tree('/v', [page('/v/a.md'), page('/v/b.zip', null), dir('/v/sub', [])])]])
     expect(recentFiles(trees, ['/v', '/w'], [{ '/v/a.md': 1, '/v/b.zip': 2, '/v/sub': 3, '/v/moved.md': 4 }, { '/w/a.md': 5 }])).toEqual([{ path: '/v/a.md', edited: 1 }])
     expect(recentFiles(new Map(), ['/v'], [{ '/v/a.md': 1 }])).toEqual([])
   })
 
   it('equal times stand in path order; a new tree is read again', () => {
-    const first = tree('/v', [note('/v/c.md'), note('/v/a.md'), note('/v/b.md')])
+    const first = tree('/v', [page('/v/c.md'), page('/v/a.md'), page('/v/b.md')])
     const log = { '/v/c.md': 5, '/v/b.md': 5, '/v/a.md': 5, '/v/d.md': 6 }
     expect(recentFiles(new Map([['/v', first]]), ['/v'], [log]).map((f) => f.path)).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
     // The watcher brings a tree with `d.md`: a new object, so its files are read again.
-    const next = tree('/v', [...first.tree, note('/v/d.md')])
+    const next = tree('/v', [...first.tree, page('/v/d.md')])
     expect(recentFiles(new Map([['/v', next]]), ['/v'], [log]).map((f) => f.path)).toEqual(['/v/d.md', '/v/a.md', '/v/b.md', '/v/c.md'])
   })
 
   it(`S21: more than ${MAX_RECENTS} logged files: the ${MAX_RECENTS} newest`, () => {
     const paths = Array.from({ length: 250 }, (_, i) => `/v/n${i}.md`)
     const log = Object.fromEntries(paths.map((path, i) => [path, i]))
-    const files = recentFiles(new Map([['/v', tree('/v', paths.map((p) => note(p)))]]), ['/v'], [log])
+    const files = recentFiles(new Map([['/v', tree('/v', paths.map((p) => page(p)))]]), ['/v'], [log])
     expect(files).toHaveLength(MAX_RECENTS)
     expect([files[0], files[MAX_RECENTS - 1]]).toEqual([{ path: '/v/n249.md', edited: 249 }, { path: '/v/n50.md', edited: 50 }])
   })
@@ -112,17 +112,17 @@ describe('byVault and the Recents menu (YAZ-4450 D5, D7, D8)', () => {
   })
 
   it('the menu: "All vaults" apart, then each vault, ✓ on the pick; "Group by vault" last, only while all vaults show', () => {
-    const vaults = [{ root: '/v', name: 'Notes' }, { root: '/w', name: 'Work' }]
+    const vaults = [{ root: '/v', name: 'Pages' }, { root: '/w', name: 'Work' }]
     const picks: (string | null)[] = []
     const grouped = { on: true, set: (on: boolean) => picks.push(on ? 'on' : 'off') }
     const all = recentSections(vaults, null, (root) => picks.push(root), grouped)
-    expect(all.map((group) => group.map((item) => `${item.label}${'hint' in item && item.hint !== undefined ? item.hint : ''}`))).toEqual([['All vaults✓'], ['Notes', 'Work'], ['Group by vault✓']])
+    expect(all.map((group) => group.map((item) => `${item.label}${'hint' in item && item.hint !== undefined ? item.hint : ''}`))).toEqual([['All vaults✓'], ['Pages', 'Work'], ['Group by vault✓']])
     const work = all[1][1]
     if ('onSelect' in work) work.onSelect?.()
     const group = all[2][0]
     if ('onSelect' in group) group.onSelect?.()
     expect(picks).toEqual(['/w', 'off'])
     const one = recentSections(vaults, '/w', () => undefined, grouped)
-    expect(one.map((g) => g.map((item) => `${item.label}${'hint' in item && item.hint !== undefined ? item.hint : ''}`))).toEqual([['All vaults'], ['Notes', 'Work✓']])
+    expect(one.map((g) => g.map((item) => `${item.label}${'hint' in item && item.hint !== undefined ? item.hint : ''}`))).toEqual([['All vaults'], ['Pages', 'Work✓']])
   })
 })

@@ -62,10 +62,10 @@ describe('open-file paths through the link queue', () => {
 
   it('a path queued before flush (cold start) routes after flush, bytes intact', () => {
     const { q, routed } = routedQueue()
-    q.push(fileLink('/v/My note #1?.md'))
+    q.push(fileLink('/v/My page #1?.md'))
     expect(routed).toEqual([])
     q.flush()
-    expect(routed).toEqual(['/v/My note #1?.md'])
+    expect(routed).toEqual(['/v/My page #1?.md'])
   })
 
   it('a path pushed after flush (hot) routes immediately', () => {

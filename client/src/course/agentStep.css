@@ -1,0 +1,197 @@
+/* The AI step's panel (YAZ-5124). In the course's chunk; the app's tokens, so light and dark follow the app. */
+.agent-step {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: min(640px, 100%);
+  margin: 0 auto;
+  text-align: left;
+}
+
+.agent-step__part {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.agent-step__label {
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.agent-step__text,
+.agent-step__prompt {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-side);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.agent-step__text {
+  resize: vertical;
+}
+
+.agent-step__prompt {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-step__copied,
+.agent-step__line {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.agent-step__line--problem {
+  color: var(--fg);
+}
+
+.agent-step__list {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-step__item + .agent-step__item {
+  margin-top: 6px;
+}
+
+.agent-step__open {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-step__open:hover {
+  background: var(--bg-hover);
+}
+
+.agent-step__open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.agent-step__read {
+  color: var(--accent);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.agent-step__card {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-side);
+}
+
+.agent-step__card-title {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.agent-step__card-face + .agent-step__card-face {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.agent-step__face-label {
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agent-step__side {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.agent-step__side mark {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The wait for the agent (YAZ-5347): a live timer and a small, calm moving sign, so the screen never looks frozen. */
+.agent-step__wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+.agent-step__clock {
+  font-variant-numeric: tabular-nums;
+}
+.agent-step__pulse {
+  display: inline-flex;
+  gap: 4px;
+}
+.agent-step__pulse i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.3;
+  animation: agent-step-pulse 1.5s ease-in-out infinite;
+}
+.agent-step__pulse i:nth-child(2) {
+  animation-delay: 0.25s;
+}
+.agent-step__pulse i:nth-child(3) {
+  animation-delay: 0.5s;
+}
+@keyframes agent-step-pulse {
+  50% {
+    opacity: 1;
+  }
+}
+/* Reduced motion: the dots stay still; the numbers still change. */
+@media (prefers-reduced-motion: reduce) {
+  .agent-step__pulse i {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+.agent-step__ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent-step__ask .agent-step__line {
+  color: var(--fg);
+}
+.agent-step__ask-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -6,8 +6,8 @@
  * 🔒 A MODAL, NEVER A NODE VIEW. The embed stays plain markdown text under decorations (rule 27),
  * so there is no node to host an editor in — and a full drawing canvas inside a text column would
  * fight the caret for every key it owns. This is React beside the editor, the `FolderView`
- * / `PageTitle` precedent: `Editor`'s `CrepeHost` holds `openDrawing`, the preview's click sets it
- * (`drawingPreview.onOpenDrawing`), and this renders over the window.
+ * / `PageTitle` precedent: `Editor`'s `CrepeHost` holds `openDrawing`, the board embed's
+ * "Edit in a popup" row sets it (YAZ-4820 D7), and this renders over the window.
  *
  * 🔒 CHROME ONLY. Everything about the ENGINE — the canvas, what "changed" means, how a scene
  * serializes — lives behind `ExcalidrawSurface`, and nothing in this file imports the package or
@@ -30,8 +30,7 @@
  * one per pointer move. The quit handshake (`window.onFlush`) and an unmount both save what is
  * pending. A read-only drawing gets no autosave at all.
  *
- * LEAVING (YAZ-3528 D3): Esc / click-away / ✕ are one gesture — save what is left, poke the
- * previews once if anything landed, close. Only a save that FAILED, or one a conflict blocks,
+ * LEAVING (YAZ-3528 D3): Esc / click-away / ✕ are one gesture — save what is left, then close. Only a save that FAILED, or one a conflict blocks,
  * raises the inline strip below the title bar — deliberately not a second sheet stacked over this
  * one, which is a modal over a modal for a one-line question. Discard then writes nothing more.
  *
@@ -44,7 +43,7 @@
  * opens as the error state (message + close, nothing to save), and a failed write leaves the modal
  * open with its error line and the canvas untouched — a save that failed must not eat the drawing.
  */
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
 import { api } from '../api'
@@ -52,20 +51,20 @@ import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
-import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingAppSettings, DrawingSnapshot } from './ExcalidrawSurface'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
 import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import type { NoticeKind } from '../lib/notice'
 import { CardPreviewHost } from '../tabs/cardPreview'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import { usePicturesFolderAllow } from './usePicturesFolderAllow'
 import './drawingModal.css'
 
 /**
  * The ONE canvas, in its own chunk (YAZ-3028): since a drawing tab shares it, it carries Draw's engine
- * options (canvas prefs, fit-on-open, the toolbar mode), and a note that is only being read never
+ * options (canvas prefs, fit-on-open, the toolbar mode), and a page that is only being read never
  * needs them. It arrives with the first open, beside the engine it loads anyway.
  */
 const ExcalidrawSurface = lazy(() => import('./ExcalidrawSurface').then((m) => ({ default: m.ExcalidrawSurface })))
@@ -76,27 +75,25 @@ export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is
 /** The inline confirm's copy (an in-modal strip, not a sheet), asked only when a save failed or a conflict blocks it. */
 export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 
-/** Page links in the drawing's text (YAZ-4039): the props the note's own `[[links]]` get, as a drawing tab has them. */
+/** Page links in the drawing's text (YAZ-4039): the props the page's own `[[links]]` get, as a drawing tab has them. */
 interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings {
   /** Vault root; with the target it is all `openDrawing` needs. */
   root: string
-  /** The embed's raw target, exactly as the note spells it — the resolution rule is the pipe's. */
+  /** The embed's raw target, exactly as the page spells it — the resolution rule is the pipe's. */
   target: string
   /** The app's resolved appearance, handed straight to the surface. */
   theme: 'light' | 'dark'
-  /** Poked on close when a save landed, so every preview of this target re-reads (YAZ-878's feed). */
-  feed?: MutableDrawingFeed
   /** Close: the host drops the modal (it is unmounted, never hidden). */
   onClose: () => void
   /** `settings.hotkeys` (YAZ-3564 K5): the drawing keys as the user set them. Omitted = the defaults. */
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
-  /** The note's passive notice: what a link's open or a new page says, and missing pictures (an error). */
+  /** The page's passive notice: what a link's open or a new page says, and missing pictures (an error). */
   onNotice?: (message: string, icon?: NoticeKind) => void
 }
 
-export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, canvasPrefs, onCanvasPrefsChange, ...linkProps }: DrawingModalProps) {
+export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAside, onNotice, canvasPrefs, onCanvasPrefsChange, ...linkProps }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   /** The sheet: the link menu, the Edit link box and the `[[` picker go in it, so a click on them is not a click-away. */
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -113,8 +110,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   /** The status and the conflict as the close reads them right after its own flush (state lags a render). */
   const statusRef = useRef<SaveStatus>('saved')
   const conflictRef = useRef<number | null>(null)
-  /** The disk moved under the previews (a save landed, or Reload read a newer scene): close pokes them once. */
-  const stale = useRef(false)
   /** A close is saving: a second Esc / ✕ / click-away while it does is the same close, not another. */
   const closing = useRef(false)
   /** The modal has left (closed or discarded): a close still saving must not leave it a second time. */
@@ -169,8 +164,8 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   // Focus lands here on mount so Esc works before the canvas exists (and stays inside afterwards).
   useEffect(() => overlayRef.current?.focus(), [])
 
-  // A drawing is in front of the note while this is open (YAZ-3564 K9, K11): main's menu lets it keep ⌘D, and the
-  // key sheet lists its keys. Best effort: a failed send only leaves the note's menu keys.
+  // A drawing is in front of the page while this is open (YAZ-3564 K9, K11): main's menu lets it keep ⌘D, and the
+  // key sheet lists its keys. Best effort: a failed send only leaves the page's menu keys.
   useEffect(() => {
     setPlaceOverTab('drawing')
     void api.hotkeys.drawingInFront(true).catch(() => undefined)
@@ -180,10 +175,14 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     }
   }, [])
 
-  /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
-  const readOnly = loaded?.scene.readOnly === true
+  /**
+   * The drawing's own file says read only (YAZ-3076 D2, S28), or the vault is (YAZ-4939): the engine's view mode, and
+   * nothing to save. The popup has no timed unlock: to edit a board of a read-only vault, open it in its tab.
+   */
+  const vaultLocked = useContext(VaultReadOnly).on
+  const readOnly = loaded?.scene.readOnly === true || vaultLocked
   // The drawing's page links (YAZ-4039), as in a drawing tab: pills, hover, the open gestures, the menu, the picker, paste.
-  // The hover preview: "Links in drawings" AND the board's own switch (YAZ-3943 demo 2), read from the file.
+  // The hover preview: "Links in drawings and diagrams" AND the board's own switch (YAZ-3943 demo 2), read from the file.
   const hoverLinks = linkProps.hoverLinks === true && loaded?.scene.hoverLinksOff !== true
   const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path: loaded?.path ?? root, readOnly, hotkeys, onNotice, hostRef: sheetRef, props: { ...linkProps, hoverLinks } })
   // YAZ-3943 demo round 3: a board naming an outside pictures folder this Mac has not allowed asks once when it opens here too.
@@ -212,7 +211,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
         if (res.inside === true || res.movedOut === true) persisted.current = new Set(res.persisted)
         else for (const id of res.persisted) persisted.current.add(id)
         if (res.movedOut === true) onNotice?.(PICTURES_MOVED_OUT)
-        stale.current = true
         setError(null)
         return { mtime: res.mtime }
       } catch (err) {
@@ -229,18 +227,18 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       if (generation !== generationRef.current) return
       snapshot.current = next
       const drawing = loadedRef.current
-      // Read only: never an edit, so there is nothing to autosave.
-      if (drawing === null || drawing.scene.readOnly === true) return
+      // Read only (the file's switch or the vault's): never an edit, so there is nothing to autosave.
+      if (drawing === null || drawing.scene.readOnly === true || vaultLocked) return
       const a = autosave.current
       // The first snapshot IS the clean baseline (the surface restored the disk scene first).
       if (a === null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus, onConflict })
       else a.update(next.version)
     },
-    [write, onStatus, onConflict, generation],
+    [write, onStatus, onConflict, generation, vaultLocked],
   )
 
   // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
-  // It answers whether the drawing is clean (YAZ-3737 D2). Unmounted any other way (the note closed under it):
+  // It answers whether the drawing is clean (YAZ-3737 D2). Unmounted any other way (the page closed under it):
   // save what is pending, then never write again.
   useEffect(() => {
     const offFlush = api.window.onFlush(async () => {
@@ -279,7 +277,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       }
     }
     left.current = true
-    if (stale.current) feed?.poke(target)
     onClose()
   }
 
@@ -288,7 +285,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     if (left.current) return
     left.current = true
     autosave.current?.dispose()
-    if (stale.current) feed?.poke(target)
     onClose()
   }
 
@@ -316,7 +312,6 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       // The remounted surface's first snapshot is the new baseline.
       autosave.current = null
       snapshot.current = null
-      stale.current = true
       onStatus('saved')
       setLoaded(drawing)
       setGeneration(generationRef.current)

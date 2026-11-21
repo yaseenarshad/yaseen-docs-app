@@ -1,5 +1,6 @@
 import { useAutomationSurface } from '../automation/surfaces'
-import { useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import { useUnit } from '../vault/unitWord'
 import { createPortal } from 'react-dom'
 import { MAX_VAULT_NAME, cleanVaultName, type FocusFolder } from '@shared/types'
 import { resolveItem, type FolderItem } from '../lists/focusFolders'
@@ -7,8 +8,12 @@ import { ConfirmSheet } from '../components/ConfirmSheet'
 import { TextField } from '../views/view/TextField'
 import { ContextMenu } from './ContextMenu'
 import { LIFT_PX } from './hooks/rowGestures'
-import { rowArrows } from './Tree'
+import { PlacedCreate, rowArrows, type PendingCreate } from './Tree'
+import type { EntryKind } from './createEntry'
 import { scopeGroup } from './menuSections'
+import { NewKindIcon } from './FileIcon'
+import { PencilIcon } from '../views/view/icons'
+import type { OnListFold } from './listFold'
 
 /** Two clicks on a name inside this gap rename it, as on a session (YAZ-3147, YAZ-4460 F3). */
 const RENAME_CLICK_GAP_MS = 300
@@ -33,6 +38,22 @@ const StackIcon = () => (
 
 /** The folders folded shut, for each tab, for the session (YAZ-4470, 9): out here, so a tab switch's unmount keeps them. */
 const SHUT: Record<'focus' | 'favorites', ReadonlySet<string>> = { focus: new Set(), favorites: new Set() }
+/** The mounted lists that draw a set of `SHUT` (YAZ-5664): one for each list on screen, gone when it unmounts. */
+const shutListeners = new Set<() => void>()
+const subscribeShut = (listener: () => void) => {
+  shutListeners.add(listener)
+  return () => void shutListeners.delete(listener)
+}
+
+/** The ids of the stack folders folded shut on the Focus or the Favorites tab (YAZ-5664): a page tab saves them (YAZ-5701). */
+export const shutStackFolders = (kind: 'focus' | 'favorites'): ReadonlySet<string> => SHUT[kind]
+
+/** Replace the stack folders folded shut on a tab (YAZ-5664): a list on screen draws the new set at once. */
+export function setShutStackFolders(kind: 'focus' | 'favorites', shut: ReadonlySet<string>): void {
+  if (SHUT[kind] === shut) return
+  SHUT[kind] = shut
+  for (const listener of shutListeners) listener()
+}
 
 interface FocusFolderListProps {
   /** Whose folders: the Focus tab's, or the Favorites tab's (YAZ-4460 demo) — the words differ, nothing else. */
@@ -66,6 +87,18 @@ interface FocusFolderListProps {
   onReorderFolders: (ids: string[]) => void
   /** The scope this tab shows: its check, off, takes the folder off the screen, so a box asks first. */
   scope: 'workspace' | 'vault'
+  /**
+   * "New page" / "New drawing" / "New folder" on a folder's menu (YAZ-4782): the Sidebar opens the name field in that
+   * folder, and the item, made in a vault's root, joins it. Absent: the menu has no New rows.
+   */
+  onNew?: (id: string, kind: EntryKind) => void
+  /** The open name field of a New … (YAZ-4782): one placed first in a folder of this list (`place.after` null) shows there. */
+  pending?: PendingCreate | null
+  /**
+   * The fold of the stack folders, for the tab row's Collapse all (YAZ-5664): reported after each change, `null` when the
+   * list goes. The folder shown alone ("Hide all others") is always open, so it is not in the report.
+   */
+  onFold?: OnListFold
 }
 
 /**
@@ -75,13 +108,10 @@ interface FocusFolderListProps {
  * to add their vault. A drop on a folder row puts the dragged item in it (`data-focus-folder`, read by the drag).
  * The folds last the session (YAZ-4470, 9): a tab switch keeps them, a relaunch opens every folder again.
  */
-export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only, scopesOf, onSetScope, scope, openableOf, onOpenAll, onReorderFolders }: FocusFolderListProps) {
-  const [shut, setShutHere] = useState<ReadonlySet<string>>(() => SHUT[kind])
-  const setShut = (next: (was: ReadonlySet<string>) => ReadonlySet<string>) =>
-    setShutHere((was) => {
-      SHUT[kind] = next(was)
-      return SHUT[kind]
-    })
+export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only, scopesOf, onSetScope, scope, openableOf, onOpenAll, onReorderFolders, onNew, pending = null, onFold }: FocusFolderListProps) {
+  const unit = useUnit()
+  const shut = useSyncExternalStore(subscribeShut, () => SHUT[kind])
+  const setShut = (next: (was: ReadonlySet<string>) => ReadonlySet<string>) => setShutStackFolders(kind, next(SHUT[kind]))
   // CLI navigation (YAZ-4502): open the named group, and each group that holds the target.
   useAutomationSurface(`groups:${kind}`, {
     ready: true,
@@ -98,6 +128,22 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
       return next
     }),
   })
+  // The report to Collapse all (YAZ-5664), keyed on the ids: the Sidebar hands a new array while one folder shows alone.
+  const foldIds = folders.flatMap((folder) => (folder.id === only ? [] : [folder.id])).join('\n')
+  const ids = useMemo(() => (foldIds === '' ? [] : foldIds.split('\n')), [foldIds])
+  useEffect(() => {
+    if (onFold === undefined) return
+    const setAll = (open: boolean) => {
+      const next = new Set(SHUT[kind])
+      for (const id of ids) {
+        if (open) next.delete(id)
+        else next.add(id)
+      }
+      setShutStackFolders(kind, next)
+    }
+    onFold({ open: ids.some((id) => !shut.has(id)), any: ids.length > 0, setAll })
+  }, [onFold, kind, ids, shut])
+  useEffect(() => (onFold === undefined ? undefined : () => onFold(null)), [onFold])
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   // "Delete focus folder" asks first (YAZ-4460 demo): two clicks, as "Delete session".
   const [deleting, setDeleting] = useState<FocusFolder | null>(null)
@@ -167,6 +213,16 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
       if (!next.delete(id)) next.add(id)
       return next
     })
+  /** A New … on a folder's menu (YAZ-4782): a folded folder opens first, so its field — and then its new row — shows. */
+  const newIn = (id: string, entry: EntryKind) => {
+    setShut((was) => {
+      if (!was.has(id)) return was
+      const next = new Set(was)
+      next.delete(id)
+      return next
+    })
+    onNew?.(id, entry)
+  }
   const click = (e: MouseEvent, id: string) => {
     if (dragged.current) {
       dragged.current = false
@@ -208,6 +264,14 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
               )}
               {open && (
                 <div className="focus-folder__items">
+                  {/* A New … of this folder (its menu, or blank space while it shows alone; YAZ-4782): the name field first in it. */}
+                  {pending?.place?.list === kind && pending.place.folder === folder.id && pending.place.after === null && (
+                    <ul className="tree" role="group" style={{ '--tree-depth': 1 } as CSSProperties}>
+                      <li>
+                        <PlacedCreate pending={pending} level={1} />
+                      </li>
+                    </ul>
+                  )}
                   {paths.length > 0 && renderItems(folder, paths)}
                   {ghosts.length > 0 && (
                     <ul className="tree" role="group" style={{ '--tree-depth': 1 } as CSSProperties}>
@@ -245,7 +309,13 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
               const f = folders.find((x) => x.id === menu.id)
               const paths = f === undefined ? [] : openableOf(f.items.flatMap((item) => { const at = resolveItem(item, roots); return 'path' in at ? [at.path] : [] }))
               return paths.length === 0 ? [] : [{ id: 'focus-folder-open-all', label: 'Open all in tabs', tip: 'Open each item of this folder in a tab of its own. A folder opens as its folder page.', onSelect: () => onOpenAll(paths) }]
-            })()], [{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], scopeGroup(kind, scopesOf(menu.id), (to, on) => onSetScope(menu.id, to, on), { scope, ask: () => leave(menu.id) }), [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
+            })()], ...(onNew === undefined ? [] : [[
+              // YAZ-4782: the tree menu's New rows, in its order; the item is made in a vault's root and joins this folder.
+              // YAZ-5100: each with the icon of what it makes, as the tree menu's.
+              { id: 'focus-folder-new-page', label: unit('New page'), icon: <NewKindIcon kind="file" />, onSelect: () => newIn(menu.id, 'file') },
+              { id: 'focus-folder-new-drawing', label: 'New drawing', icon: <NewKindIcon kind="drawing" />, onSelect: () => newIn(menu.id, 'drawing') },
+              { id: 'focus-folder-new-folder', label: 'New folder', icon: <NewKindIcon kind="dir" />, onSelect: () => newIn(menu.id, 'dir') },
+            ]]), [{ id: 'focus-folder-rename', label: 'Rename', icon: <PencilIcon />, onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], scopeGroup(kind, scopesOf(menu.id), (to, on) => onSetScope(menu.id, to, on), { scope, ask: () => leave(menu.id) }), [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
             onClose={() => setMenu(null)}
           />,
           document.body,

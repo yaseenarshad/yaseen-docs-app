@@ -71,7 +71,7 @@ describe('renameSlots', () => {
   })
 
   it('a rename that holds no vault changes nothing', () => {
-    expect(renameSlots(three, '/v/notes', '/v/pages')).toBe(three)
+    expect(renameSlots(three, '/v/pages', '/v/pages')).toBe(three)
   })
 })
 

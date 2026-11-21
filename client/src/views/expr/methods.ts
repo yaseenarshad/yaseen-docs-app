@@ -1,9 +1,10 @@
-import { inFolder } from '@shared/types'
-import { formatDate, relativeDate, startOfDay } from './dates'
+import { FOLDER_SETTINGS_FILE, inFolder } from '@shared/types'
+import { stripBrackets } from '@shared/linkResolver'
+import { type DateSpan, formatDate, relativeDate, spanOf, startOfDay } from './dates'
 import { ArgError } from './ops'
 import {
   DateValue, DurationValue, ErrorValue, FileValue, type FileRecordLike, LinkValue, RegexValue, type Scope, type Value, type ValueType,
-  equals, fromYaml, isEmpty, isTruthy, linkTargetsMatch, render, stripBrackets, typeOf,
+  equals, fromYaml, isEmpty, isTruthy, linkTargetsMatch, render, typeOf,
 } from './values'
 
 /** Fields and type methods (GRO-2131). `filter/map/reduce` are special-cased in the evaluator; `scope` carries the resolver (GRO-2132). */
@@ -26,10 +27,14 @@ const FILE_FIELDS: Record<string, (r: FileRecordLike) => Value> = {
   basename: r => r.basename,
   path: r => r.path,
   folder: r => r.folder,
+  // A folder page's subfolder row is the folder's `.folder.md` (YAZ-4579 D31): `folder`; a card file (YAZ-5037, the
+  // index's `kind`): `card`; every other record is a `page` (YAZ-5036 renames it `page`).
+  kind: r => (r.name === FOLDER_SETTINGS_FILE ? 'folder' : r.kind === 'card' ? 'card' : 'page'),
   ext: r => r.ext,
   size: r => r.size,
-  ctime: r => new DateValue(r.ctime, true),
-  mtime: r => new DateValue(r.mtime, true),
+  // 0 = no file yet: the row of a folder with no `.folder.md` (YAZ-4579 D31) has no dates, never 1970 (YAZ-3746 2D).
+  ctime: r => (r.ctime === 0 ? null : new DateValue(r.ctime, true)),
+  mtime: r => (r.mtime === 0 ? null : new DateValue(r.mtime, true)),
   tags: r => [...r.tags],
   links: r => r.links.map(l => new LinkValue(l)),
   embeds: r => r.embeds.map(l => new LinkValue(l)),
@@ -100,11 +105,20 @@ const NUMBER: Table<number> = {
   toFixed: (n, [p]) => n.toFixed(needNumber('toFixed', p)),
 }
 
+/** `isToday()` / `isThisWeek()` / `isThisMonth()` (YAZ-4919): the date falls in the run's day, week or month — LIVE, by the scope's clock. */
+const inSpan = (span: DateSpan): Method<DateValue> => (d, _, { now, weekStartsOn }) => {
+  const { start, end } = spanOf(span, now ?? Date.now(), weekStartsOn)
+  return d.ms >= start && d.ms < end
+}
+
 const DATE: Table<DateValue> = {
   date: d => new DateValue(startOfDay(d.ms), false),
   format: (d, [f]) => formatDate(d.ms, needString('format', f)),
   time: d => formatDate(d.ms, 'HH:mm:ss'),
   relative: d => relativeDate(d.ms),
+  isToday: inSpan('day'),
+  isThisWeek: inSpan('week'),
+  isThisMonth: inSpan('month'),
 }
 
 /** Sort order: null, numbers, dates/durations (by ms), strings (localeCompare), then everything else. */
@@ -134,7 +148,7 @@ const median = (ns: number[]): number => {
 }
 
 const LIST: Table<Value[]> = {
-  // Resolved like `==` (YAZ-1469): a link in the list matches a link to the same note, not merely the same text.
+  // Resolved like `==` (YAZ-1469): a link in the list matches a link to the same page, not merely the same text.
   contains: (l, [x], { resolve }) => l.some(v => equals(v, x ?? null, resolve)),
   containsAll: (l, xs, { resolve }) => xs.every(x => l.some(v => equals(v, x, resolve))),
   containsAny: (l, xs, { resolve }) => xs.some(x => l.some(v => equals(v, x, resolve))),

@@ -1,5 +1,5 @@
 /**
- * `shared/comments.ts` (YAZ-1472): a note's comment stream lives under the reserved frontmatter
+ * `shared/comments.ts` (YAZ-1472): a page's comment stream lives under the reserved frontmatter
  * key `comments` as a FLAT list of maps — a reply carries `reply_to`, one level deep. Every
  * mutation goes through `setFrontmatterProperty`, so the rest of the block and the body survive
  * byte-for-byte; unknown keys on an entry and unknown entries in the list are carried over, never
@@ -15,13 +15,16 @@ import {
   editComment,
   newCommentId,
   nowIso,
+  ownedBy,
   readComments,
+  setResolved,
   threadsOf,
   type PageComment,
 } from '@shared/comments'
+import { COMMENTS_HINT, setFrontmatterProperty, withCommentsHint } from '@shared/frontmatter'
 
 /** The schema from the brief, verbatim — the round-trip target. */
-const NOTE = `---
+const PAGE = `---
 title: Funnel
 comments:
   - id: 3f9a1c2e
@@ -43,13 +46,13 @@ Some body text with a stray \`---\` below.
 ---
 `
 
-const BODY = NOTE.slice(NOTE.indexOf('\n---\n\n') + 5)
+const BODY = PAGE.slice(PAGE.indexOf('\n---\n\n') + 5)
 
 const at = (n: number): string => `2026-09-11T2${n}:00:00Z`
 
 describe('readComments', () => {
   it('round-trips the schema, sorted by `at`', () => {
-    expect(readComments(NOTE)).toEqual([
+    expect(readComments(PAGE)).toEqual([
       { id: '3f9a1c2e', at: '2026-09-11T18:22:31Z', body: 'Reworked the funnel numbers, need to re-check churn.' },
       {
         id: '8b02d7e4',
@@ -79,7 +82,7 @@ describe('readComments', () => {
   it('no key, null, a non-list value or a broken block → []', () => {
     expect(readComments('---\ntitle: x\n---\nbody\n')).toEqual([])
     expect(readComments('---\ncomments:\n---\n')).toEqual([])
-    expect(readComments('---\ncomments: "my note"\n---\n')).toEqual([])
+    expect(readComments('---\ncomments: "my page"\n---\n')).toEqual([])
     expect(readComments('---\ncomments: [unclosed\n---\n')).toEqual([])
     expect(readComments('no frontmatter at all\n')).toEqual([])
   })
@@ -91,8 +94,8 @@ describe('commentsShape', () => {
     expect(commentsShape('---\ntitle: x\n---\n')).toBe('absent')
     expect(commentsShape('---\ncomments:\n---\n')).toBe('absent')
     expect(commentsShape('---\ncomments: []\n---\n')).toBe('list')
-    expect(commentsShape(NOTE)).toBe('list')
-    expect(commentsShape('---\ncomments: "my note"\n---\n')).toBe('foreign')
+    expect(commentsShape(PAGE)).toBe('list')
+    expect(commentsShape('---\ncomments: "my page"\n---\n')).toBe('foreign')
     expect(commentsShape('---\ncomments: {a: 1}\n---\n')).toBe('foreign')
     expect(commentsShape('---\ncomments: [unclosed\n---\n')).toBe('invalid')
     expect(commentsShape('---\n- not a map\n---\n')).toBe('invalid')
@@ -100,15 +103,15 @@ describe('commentsShape', () => {
 })
 
 describe('addComment', () => {
-  it('grows a note with no frontmatter into the schema, body untouched', () => {
+  it('grows a page with no frontmatter into the schema, body untouched', () => {
     const out = addComment('# Funnel\n\nText.\n', 'First!  \n\n', { id: '3f9a1c2e', at: '2026-09-11T18:22:31Z' })
     expect(out).toBe('---\ncomments:\n  - id: 3f9a1c2e\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: First!\n---\n# Funnel\n\nText.\n')
   })
 
   it('appends; a multi-line body serialises as a block scalar; other keys and the body are byte-identical', () => {
-    const out = addComment(NOTE, 'Line one\nLine two', { id: 'c0ffee00', at: '2026-09-11T20:00:00Z' })
+    const out = addComment(PAGE, 'Line one\nLine two', { id: 'c0ffee00', at: '2026-09-11T20:00:00Z' })
     expect(out).toBe(
-      NOTE.replace(
+      PAGE.replace(
         '      Fixed in the table.\n---\n',
         '      Fixed in the table.\n  - id: c0ffee00\n    n: 1\n    at: 2026-09-11T20:00:00Z\n    body: |-\n      Line one\n      Line two\n---\n',
       ),
@@ -118,9 +121,9 @@ describe('addComment', () => {
   })
 
   it('a reply carries `reply_to`; a reply to a REPLY is filed under the top-level parent', () => {
-    const direct = addComment(NOTE, 'Direct', { id: 'd1', at: at(1), replyTo: '3f9a1c2e' })
+    const direct = addComment(PAGE, 'Direct', { id: 'd1', at: at(1), replyTo: '3f9a1c2e' })
     expect(readComments(direct).at(-1)).toEqual({ id: 'd1', n: 1, at: at(1), reply_to: '3f9a1c2e', body: 'Direct' })
-    const nested = addComment(NOTE, 'Nested', { id: 'n1', at: at(1), replyTo: '8b02d7e4' })
+    const nested = addComment(PAGE, 'Nested', { id: 'n1', at: at(1), replyTo: '8b02d7e4' })
     expect(readComments(nested).at(-1)).toEqual({ id: 'n1', n: 1, at: at(1), reply_to: '3f9a1c2e', body: 'Nested' })
     // The key order on disk is the schema's: id, n, at, reply_to, body.
     expect(nested).toContain('  - id: n1\n    n: 1\n    at: 2026-09-11T21:00:00Z\n    reply_to: 3f9a1c2e\n    body: Nested\n')
@@ -133,8 +136,8 @@ describe('addComment', () => {
   })
 
   it('refuses to touch a foreign value or a block that does not parse', () => {
-    expect(() => addComment('---\ncomments: "my note"\n---\n', 'B', { id: 'b', at: at(1) })).toThrow(CommentsShapeError)
-    expect(() => addComment('---\ncomments: "my note"\n---\n', 'B', { id: 'b', at: at(1) })).toThrow(/foreign/)
+    expect(() => addComment('---\ncomments: "my page"\n---\n', 'B', { id: 'b', at: at(1) })).toThrow(CommentsShapeError)
+    expect(() => addComment('---\ncomments: "my page"\n---\n', 'B', { id: 'b', at: at(1) })).toThrow(/foreign/)
     expect(() => addComment('---\ncomments: [unclosed\n---\n', 'B', { id: 'b', at: at(1) })).toThrow(/invalid/)
   })
 })
@@ -148,12 +151,12 @@ describe('editComment', () => {
   })
 
   it('re-stamps an existing `edited` in place', () => {
-    const out = editComment(NOTE, '8b02d7e4', 'Again', at(3), '')
+    const out = editComment(PAGE, '8b02d7e4', 'Again', at(3), '')
     expect(out).toContain(`    reply_to: 3f9a1c2e\n    edited: ${at(3)}\n    body: Again\n---\n`)
   })
 
   it('an unknown id leaves the content unchanged', () => {
-    expect(editComment(NOTE, 'nope', 'X', at(1), '')).toBe(NOTE)
+    expect(editComment(PAGE, 'nope', 'X', at(1), '')).toBe(PAGE)
   })
 
   it('refuses foreign and invalid shapes', () => {
@@ -164,14 +167,14 @@ describe('editComment', () => {
 
 describe('deleteComment', () => {
   it('removes the entry and every reply to it', () => {
-    const withReply = addComment(NOTE, 'Third', { id: 't3', at: at(1) })
+    const withReply = addComment(PAGE, 'Third', { id: 't3', at: at(1) })
     const out = deleteComment(withReply, '3f9a1c2e')
     expect(readComments(out).map((c) => c.id)).toEqual(['t3'])
     expect(out).toBe(`---\ntitle: Funnel\ncomments:\n  - id: t3\n    n: 1\n    at: ${at(1)}\n    body: Third\n---\n${BODY}`)
   })
 
   it('deleting the last comment deletes the KEY, never leaving `comments: []`', () => {
-    const out = deleteComment(deleteComment(NOTE, '8b02d7e4'), '3f9a1c2e')
+    const out = deleteComment(deleteComment(PAGE, '8b02d7e4'), '3f9a1c2e')
     expect(out).toBe(`---\ntitle: Funnel\n---\n${BODY}`)
     expect(out).not.toContain(COMMENTS_KEY)
   })
@@ -182,8 +185,8 @@ describe('deleteComment', () => {
   })
 
   it('an unknown id leaves the content unchanged; foreign and invalid shapes throw', () => {
-    expect(deleteComment(NOTE, 'nope')).toBe(NOTE)
-    expect(() => deleteComment('---\ncomments: "my note"\n---\n', 'a')).toThrow(CommentsShapeError)
+    expect(deleteComment(PAGE, 'nope')).toBe(PAGE)
+    expect(() => deleteComment('---\ncomments: "my page"\n---\n', 'a')).toThrow(CommentsShapeError)
     expect(() => deleteComment('---\ncomments: [unclosed\n---\n', 'a')).toThrow(CommentsShapeError)
   })
 })
@@ -230,15 +233,15 @@ describe('ids and stamps', () => {
 
 describe('title and by (🔒 D3, D7, D11)', () => {
   it('a title lands between `at` and `body`; blank means no key at all', () => {
-    const titled = addComment(NOTE, 'Body', { id: 't1', at: at(1), title: '  Funnel  ' })
+    const titled = addComment(PAGE, 'Body', { id: 't1', at: at(1), title: '  Funnel  ' })
     expect(titled).toContain(`  - id: t1\n    n: 1\n    at: ${at(1)}\n    title: Funnel\n    body: Body\n---\n`)
     expect(readComments(titled).at(-1)).toEqual({ id: 't1', n: 1, at: at(1), title: 'Funnel', body: 'Body' })
-    const blank = addComment(NOTE, 'Body', { id: 't2', at: at(1), title: '   ' })
+    const blank = addComment(PAGE, 'Body', { id: 't2', at: at(1), title: '   ' })
     expect(blank).toContain(`  - id: t2\n    n: 1\n    at: ${at(1)}\n    body: Body\n---\n`)
   })
 
   it('a titled reply keeps the order id, n, at, reply_to, title, body', () => {
-    const out = addComment(NOTE, 'R', { id: 'r1', at: at(1), replyTo: '3f9a1c2e', title: 'Re' })
+    const out = addComment(PAGE, 'R', { id: 'r1', at: at(1), replyTo: '3f9a1c2e', title: 'Re' })
     expect(out).toContain(`  - id: r1\n    n: 1\n    at: ${at(1)}\n    reply_to: 3f9a1c2e\n    title: Re\n    body: R\n---\n`)
   })
 
@@ -291,7 +294,7 @@ describe('numbers (🔒 D15): `n` is one past the highest in its run, never reas
   const numbered = (content: string): [string, number | undefined, string | null][] => readComments(content).map((c) => [c.id, c.n, c.reply_to ?? null])
 
   it('a top-level run counts 1, 2, 3; a delete leaves its gap and the next is one past the HIGHEST, not the count', () => {
-    let c = addComment('# Note\n', 'A', { id: 'a', at: stamp(1) })
+    let c = addComment('# Page\n', 'A', { id: 'a', at: stamp(1) })
     c = addComment(c, 'B', { id: 'b', at: stamp(2) })
     c = addComment(c, 'C', { id: 'c', at: stamp(3) })
     expect(numbered(c)).toEqual([
@@ -314,7 +317,7 @@ describe('numbers (🔒 D15): `n` is one past the highest in its run, never reas
   })
 
   it('a reply run is per parent (`#3.1`, `#3.2` as n: 1, n: 2 with reply_to), independent of the top-level run and of other parents', () => {
-    let c = addComment('# Note\n', 'P', { id: 'p', at: stamp(1) })
+    let c = addComment('# Page\n', 'P', { id: 'p', at: stamp(1) })
     c = addComment(c, 'Q', { id: 'q', at: stamp(2) })
     c = addComment(c, 'R1', { id: 'r1', at: stamp(3), replyTo: 'p' })
     // A reply to a reply files under the parent AND numbers in the parent's run.
@@ -363,5 +366,79 @@ describe('numbers (🔒 D15): `n` is one past the highest in its run, never reas
   it('a bare `reply_to:` reads as top level (the bare-optionals rule), so its number is in the top-level run', () => {
     const content = `---\ncomments:\n  - id: a\n    n: 3\n    at: ${at(1)}\n    reply_to:\n    body: A\n---\n`
     expect(readComments(addComment(content, 'B', { id: 'b', at: at(2) })).at(-1)).toMatchObject({ id: 'b', n: 4 })
+  })
+})
+
+describe('YAZ-4615: resolve, ownership, hand-written entries, the hint', () => {
+  const base = `---\ncomments:\n  - id: a\n    n: 1\n    at: ${at(1)}\n    by: sam\n    body: A\n  - id: r\n    n: 1\n    at: ${at(2)}\n    reply_to: a\n    body: R\n---\n`
+
+  it('setResolved stamps `resolved` and `resolved_by` before the body; reopen deletes both; replies keep their own state', () => {
+    const done = setResolved(base, 'a', at(3), 'yaseen')
+    expect(done).toContain(`    by: sam\n    resolved: ${at(3)}\n    resolved_by: yaseen\n    body: A\n`)
+    expect(readComments(done).find((c) => c.id === 'r')?.resolved).toBeUndefined()
+    expect(setResolved(done, 'a', null)).toBe(base)
+    expect(setResolved(base, 'a', null)).toBe(base) // reopen of an open one: nothing
+    expect(setResolved(base, 'nope', at(3))).toBe(base)
+    expect(setResolved(base, 'a', at(3))).not.toContain('resolved_by') // no profile, no resolver
+  })
+
+  it('ownedBy: a writer owns only what it signed; no `by`, a blank one, or another name is never theirs', () => {
+    expect(ownedBy({ by: 'agent' }, 'agent')).toBe(true)
+    expect(ownedBy({ by: ' claude ' }, 'claude')).toBe(true)
+    expect(ownedBy({ by: 'yaseen' }, 'agent')).toBe(false)
+    expect(ownedBy({}, 'agent')).toBe(false)
+    expect(ownedBy({ by: '  ' }, '  ')).toBe(false)
+  })
+
+  it('D10: a hand-written `{by, body}` shows, sorts last, and takes an id and the next number on the next write', () => {
+    const hand = `---\ncomments:\n  - {id: a, n: 4, at: "${at(1)}", body: A}\n  - {by: claude, body: Fix the intro.}\n---\n`
+    const [first, mine] = readComments(hand)
+    expect(first.id).toBe('a')
+    expect(mine).toMatchObject({ by: 'claude', body: 'Fix the intro.', at: '' })
+    expect(mine.id).toMatch(/^[0-9a-f]{8}$/)
+    expect(readComments(hand)[1].id).toBe(mine.id) // stable between reads
+    const out = addComment(hand, 'B', { id: 'b', at: at(2) })
+    const after = readComments(out)
+    expect(after.find((c) => c.id === mine.id)?.n).toBe(5)
+    expect(after.find((c) => c.id === 'b')?.n).toBe(6)
+    // An edit through the derived id lands on the hand-written entry.
+    expect(readComments(editComment(hand, mine.id, 'Done', at(3), '')).find((c) => c.id === mine.id)?.body).toBe('Done')
+  })
+
+  it('D10: a hand-written number is kept unless it clashes in its run (audit 6)', () => {
+    const kept = readComments(addComment(`---\ncomments:\n  - {by: claude, n: 7, body: Seven}\n---\n`, 'B', { id: 'b', at: at(2) }))
+    expect(kept.find((c) => c.id === 'b')?.n).toBe(8)
+    expect(kept.find((c) => c.body === 'Seven')?.n).toBe(7)
+    const clash = readComments(addComment(`---\ncomments:\n  - {id: a, n: 1, at: "${at(1)}", body: A}\n  - {by: claude, n: 1, body: Also one}\n---\n`, 'B', { id: 'b', at: at(2) }))
+    expect(clash.find((c) => c.body === 'Also one')?.n).toBe(2)
+  })
+
+  it('D10: the hint stays first through a PROPERTY write too — add, and remove the last key (audit 1)', () => {
+    const plain = withCommentsHint('# Hello\n')
+    const withProp = setFrontmatterProperty(plain, 'status', 'draft')
+    expect(withProp).toBe(`---\n${COMMENTS_HINT}\nstatus: draft\n---\n# Hello\n`)
+    expect(setFrontmatterProperty(withProp, 'status', undefined)).toBe(plain)
+  })
+
+  it('D10: the hint at the top of the block outlives every comment write, the last delete included', () => {
+    const hinted = withCommentsHint('# Hello\n')
+    expect(hinted).toBe(`---\n${COMMENTS_HINT}\n---\n# Hello\n`)
+    const added = addComment(hinted, 'A', { id: 'a', at: at(1) })
+    expect(added.startsWith(`---\n${COMMENTS_HINT}\ncomments:\n`)).toBe(true)
+    expect(deleteComment(added, 'a')).toBe(hinted)
+    const idPage = withCommentsHint('---\nid: YAZ-1\n---\n')
+    expect(addComment(idPage, 'A', { id: 'a', at: at(1) }).startsWith(`---\n${COMMENTS_HINT}\nid: YAZ-1\ncomments:\n`)).toBe(true)
+    expect(withCommentsHint(idPage)).toBe(idPage)
+  })
+})
+
+describe('YAZ-5512 C1: a page that starts with a BOM', () => {
+  it('the Mac comment goes into the page own block, the BOM first, and it reads back', () => {
+    const page = '\uFEFF---\ntitle: Plan\n---\n# Plan\n'
+    const out = addComment(page, 'Hi', { id: 'a1b2c3d4', at: '2026-11-14T06:00:00Z', by: 'sam' })
+    expect(out.startsWith('\uFEFF---\ntitle: Plan\ncomments:\n')).toBe(true)
+    expect(out.match(/^\uFEFF?---$/gm)).toHaveLength(2)
+    expect(readComments(out).map((c) => c.id)).toEqual(['a1b2c3d4'])
+    expect(addComment(out, 'Again', { id: 'b1b2c3d4', at: '2026-11-14T06:01:00Z' }).match(/^ {2}- id:/gm)).toHaveLength(2)
   })
 })

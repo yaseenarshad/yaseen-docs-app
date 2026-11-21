@@ -23,6 +23,7 @@ npm run desktop:build
 - The first packaging run on a clean machine needs network: electron-builder downloads its Electron dist zip and dmgbuild once, then caches them.
 - `npm run build` (and `npm run dev`) first runs `tools/packDrawio.mjs` (YAZ-3028 D5): the first run on a machine downloads the pinned `draw.war` (v31.5.2, 54 MB, sha256-checked) into the gitignored `desktop/.cache/drawio/`, unpacks and prunes it there, and lays `desktop/drawio-overlay/` over it; later runs only re-lay the overlay. `npm run drawio:pack` does it alone. The build then copies it to `desktop/out/drawio`, which the app serves as `app://drawio`.
 - `npm run build` ends with `tools/buildShareViewer.mjs` (YAZ-3040; `npm run dev` runs it before electron-vite): it bundles the share-link viewer into the gitignored `share/dist/assets/`, which the packaged app carries as the `share-viewer` extraResource. To try sharing without a Cloudflare account, run `node tools/fakeCloudflare.mjs --data <a temp dir>` and start a dev build with the two URLs it prints as `YASEEN_DOCS_CLOUDFLARE_API` and `YASEEN_DOCS_SHARE_ORIGIN` (a packaged app ignores both).
+- The packaged app carries no course sound (YAZ-5159). Main downloads one file for each chapter when the person starts that chapter, from the GitHub release `course-audio-1` (`desktop/src/main/courseAudio/courseAudio.ts`), and checks it against `desktop/src/main/courseAudio/course-audio.json`. To make the files and that manifest from a voice build folder (`tools/cardCourseVoice.mjs`, YAZ-5122), run `node tools/course-audio/pack.mjs --from <build/card-course-audio>` (Node 22.18 or later): it writes `build/card-course-audio-packs/` (git-ignored through `.git/info/exclude`) and the app's manifest. To play the real voice before an upload, start a dev build with `YASEEN_DOCS_COURSE_AUDIO=<absolute path of build/card-course-audio-packs>` (or an `http(s)` base URL that serves the files); a packaged app ignores the variable. The files still pass the same size and sha-256 checks.
 - The packaged app carries no language helper (YAZ-3500; before, YAZ-3453 / YAZ-3455 shipped them in `Resources/lsp/`). The first time Settings › Code › "Jump across files" is turned on, the app asks, then main downloads the pinned TypeScript 7 package of the platform (`@typescript/typescript-<platform>-<arch>`, root `optionalDependencies`) and `pyright` (root `devDependencies`) from the npm registry, checks each against the lockfile's sha512, and unpacks them to `<userData>/lsp/<name>-<version>/` (`desktop/src/main/lsp/download.ts`). The versions, URLs and hashes are `desktop/src/main/lsp/pins.ts`, made from `package-lock.json` by `node tools/lspPins.mjs`: run it after a helper version changes (`tools/lspPins.test.mjs` fails until then). A dev build also uses the `node_modules` copies, so the switch turns on with no download; start it with `YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1` to see the box and the download as a packaged app does (a packaged app ignores the variable). `build.files` still excludes `node_modules/@typescript/**`, so the binary never lands in `app.asar`.
 - Install: drag `Yaseen Docs.app` into `/Applications` in Finder — either straight from `desktop/dist-app/mac-arm64/`, or from the mounted dmg:
 
@@ -37,7 +38,7 @@ open desktop/dist-app/*.dmg
 ## App state — where it lives, how to reset it
 
 - ONE user-global file, owned by the main process: `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (settings, recents, open windows with their vaults, tabs and sidebar lens, per-folder view state, saved workspaces — schema in `docs/CONTRACTS.md` "App state"). Nothing is ever stored in the browser profile.
-- These things live in the vault, by design: they are the user's own data rather than app state, so they travel with the notes and stay after a quit. Each one is created lazily on its first write; reading creates nothing.
+- These things live in the vault, by design: they are the user's own data rather than app state, so they travel with the pages and stay after a quit. Each one is created lazily on its first write; reading creates nothing.
   - `<folder>/.folder.md`: a folder's settings — its views and columns under the single `folder_settings` key, with the folder's own properties and comments beside them (frontmatter only; created by the first change, never by opening the folder).
   - `<vault>/.yaseendocs/properties.json`: the vault-wide property declarations, in the `.obsidian`-style dotfolder.
   - `<vault>/.yaseendocs/favorites.json`: the Favorites (YAZ-1766).
@@ -45,8 +46,8 @@ open desktop/dist-app/*.dmg
   - `<vault>/.yaseendocs/focus.<mac id>.json`: the focus list, one file for each Mac; the newest file is the list, and no window holds one (YAZ-2702).
   - `<vault>/.yaseendocs/shares.json`: which boards are shared as links, and their ids (YAZ-3040). Sync merges it per entry.
   - `<vault>/.yaseendocs/github.json`: the vault's sync switch (YAZ-1081).
-  - `<vault>/assets/<sha1>.<ext>`: the pictures inside drawings, one file per picture by its hash (Draw's store, kept where Draw put it; YAZ-3028). Note images stay in `assets/images/`.
-  - A change of a list file starts a GitHub sync, as a note edit does (YAZ-2706). Sync never edits the vault's `.gitignore` (YAZ-3044 A3); the board merge rule lives in `.git/info/attributes`, this machine only.
+  - `<vault>/assets/<sha1>.<ext>`: the pictures inside drawings, one file per picture by its hash (Draw's store, kept where Draw put it; YAZ-3028). Page images stay in `assets/images/`.
+  - A change of a list file starts a GitHub sync, as a page edit does (YAZ-2706). Sync never edits the vault's `.gitignore` (YAZ-3044 A3); the board merge rule lives in `.git/info/attributes`, this machine only.
   - Everything else about a vault stays in the state file above — the order of the Favorites and of the focus rows ACROSS the vaults of one window too (`favoritesOrder`, `focusOrder`), which is per Mac.
 - Beside the state file, in the same app-data folder (YAZ-3028; most ported from Draw), each made lazily:
   - `secrets.json` (YAZ-3038, YAZ-3040): the Pixabay API key, the Cloudflare API token and the share upload password. Owner-only (0600), plain text, never sent to a renderer.
@@ -57,6 +58,7 @@ open desktop/dist-app/*.dmg
   - `media-cache/` (YAZ-3038): Image Studio search pages and tile pictures, kept 24 h; swept at launch and each hour.
   - `thumbs/` (YAZ-3035): preview-sized copies of a drawing's pictures for the hover preview, with a byte cap.
   - `draw-import.json` (YAZ-3041): the Draw import's marker — when the app-data half ran, and each vault's half.
+  - `card-skill/` (YAZ-5107): the app's copy of the card skill (`skills/card-skill`, shipped as `Resources/card-skill`). Made at each start when the app's version changed or a file is missing, before the first window; its files are read only. A dev build stamps the version with a hash of `skills/card-skill`, so an edit there reaches the copy at the next `npm run dev`. Never edit it: the next start replaces it.
 - To reset or hand-edit: **quit the app first** (⌘Q — quitting flushes the file), then delete or edit the JSON; on the next launch a missing file gets defaults and a corrupt one is moved aside as `yaseendocs.json.corrupt-<epoch>`, never silently overwritten. To find it (the folder first appears after the app has run once against the real state):
 
 ```bash
@@ -80,11 +82,11 @@ npm run perf -- all --runs 5 --app <after.app> --vs <before.app>   # local perf 
 ```
 
 - The drawing engine is the app's own copy of Excalidraw, in `engine/` with its history: change it there, in the same PR. How it builds, the one rule (`preserveSymlinks`), and how to take new Excalidraw changes: `engine/README-docs-app.md`. After an engine change, a dev server that ran before it can keep serving its old pre-bundled copy: stop it, delete `client/node_modules/.vite/deps`, and start it again (YAZ-4157 demo 6L).
-- The budget gate (`tools/perf/measureBudget.mjs`) fails when a size row crosses its ceiling in `tools/perf/budget.json` or a shipped file goes missing. **The ratchet:** a change that shrinks a row lowers its ceiling in the same PR; raising one needs Yasin's OK in the PR description. `tools/perf/baseline.json` holds the frozen v0.9.27 numbers. CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, build and `perf:budget:ci` on every PR and push to main; e2e stays local and runs only when Yasin asks.
+- The budget gate (`tools/perf/measureBudget.mjs`) fails when a size row crosses its ceiling in `tools/perf/budget.json` or a shipped file goes missing. **The ratchet:** a change that shrinks a row lowers its ceiling in the same PR; raising one needs Yasin's OK in the PR description. `tools/perf/baseline.json` holds the frozen v0.9.27 numbers. CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, build and `perf:budget:ci` on every PR and push to main, in jobs that run at the same time: the `client` and `mobile` tests in 4 shards on Linux (but `codeKeys.test.ts` and `waiting150.test.tsx`, which need the Mac); the `desktop` and `tools` tests on macOS; typecheck, build, phone build and the size gate on macOS, so the gate measures the Mac build, then the timing budgets (`perf`, `perf-engine`) on that same Mac. The `check` job passes only when all of them pass; it is the status `main` requires. A new push to a PR cancels its older run. e2e stays local and runs only when Yasin asks.
 
 - If `npm` isn't in the shell's PATH (agent shells often lack it), use its install location directly — e.g. `/opt/homebrew/bin/npm` (ARM mac), `/usr/local/bin/npm` (Intel mac), or the Volta/nvm/fnm install under `$HOME`.
 
-### Agent note: live checks
+### Agent page: live checks
 
 The preview tool is gone — there is no browser mode and no URL to point one at. A check must never take Yasin's mouse, keyboard or focus, so do not drive the app with Playwright unless he asks for that run. Check a running app over its debug port:
 
@@ -93,6 +95,10 @@ The preview tool is gone — there is no browser mode and no URL to point one at
 3. A short node script reads `http://127.0.0.1:9333/json`, opens the page's `webSocketDebuggerUrl` with Node's global `WebSocket`, and sends `Runtime.evaluate` (clicks, input values, keys) and `Page.captureScreenshot`. One-off scripts go under `node_modules/.verify/`, gitignored.
 
 A window appears, but the mouse and keyboard are never taken. When the screen is off the window is hidden and `Input.dispatchMouseEvent` does nothing: dispatch in-page events (`el.click()`, `new MouseEvent('dblclick', { bubbles: true })`) instead. Script clicks do not move focus like real clicks, so leave focus checks to the demo. A scratch vault that is a git repo makes `git status` the proof of what was written.
+
+### The course scenes preview
+
+`tools/course-preview/` (YAZ-5121) is a dev page, outside the app, that mounts any clip's scene of the card course with the course's seams (the clock, the marks, `done`, the host). It has light and dark, reduced motion and three stage sizes. It ships nowhere. Build it with `node tools/course-preview/build.mjs [--audio <folder of the voice build>]`; without `--audio`, each clip is silent and runs on the reading-time estimate. Serve `tools/course-preview/dist` with any static server, for example `python3 -m http.server 4178 -d tools/course-preview/dist`, then open http://localhost:4178.
 
 ## Gotchas
 

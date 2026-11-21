@@ -255,7 +255,7 @@ describe('chevron rendering (GRO-2093)', () => {
 })
 
 describe('image bullets fold to a chip (YAZ-1709)', () => {
-  const IMAGE_OPTS = { image: { root: '/v', notePath: '/v/n.md' } }
+  const IMAGE_OPTS = { image: { root: '/v', pagePath: '/v/n.md' } }
   const IMAGES = `* ![Shot|400](a.png)
 * Text leaf
 * ![Pair](b.png)

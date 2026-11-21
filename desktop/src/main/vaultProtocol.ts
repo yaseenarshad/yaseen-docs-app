@@ -1,6 +1,9 @@
+import { createReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import path from 'node:path'
+import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
-import { IMAGE_EXTENSIONS } from '@shared/types'
+import { AUDIO_EXTENSIONS, IMAGE_EXTENSIONS } from '@shared/types'
 import { mimeFor, resolveAsset } from './fs/assets'
 
 /**
@@ -14,13 +17,13 @@ import { mimeFor, resolveAsset } from './fs/assets'
  *
  * The grammar the renderer builds (each `<seg>` `encodeURIComponent`-encoded, joined by `/`):
  *
- *     app://vault/<root>/<ref seg>[/<ref seg>…][?from=<note dir>]
+ *     app://vault/<root>/<ref seg>[/<ref seg>…][?from=<page dir>]
  *
  * `<root>` is the ABSOLUTE vault root as ONE segment — its own slashes encoded, which the URL
  * parser never decodes, so it survives as one piece; `<ref>` is the image link as written in
- * the markdown, split on `/`; `from` is the linking note's ROOT-RELATIVE directory (`''` at
- * the root) so a note's own `./pic.png` beats a same-named file elsewhere. Resolution is
- * `resolveAsset`'s Obsidian order (note-relative → root-relative → shortest-path basename),
+ * the markdown, split on `/`; `from` is the linking page's ROOT-RELATIVE directory (`''` at
+ * the root) so a page's own `./pic.png` beats a same-named file elsewhere. Resolution is
+ * `resolveAsset`'s Obsidian order (page-relative → root-relative → shortest-path basename),
  * restricted to `IMAGE_EXTENSIONS`; a drawing, a text file, an escape or a miss is a plain 404
  * with no file read — the `<img>` shows nothing, exactly as for a dead `http` source.
  *
@@ -44,6 +47,11 @@ import { mimeFor, resolveAsset } from './fs/assets'
  * next paint rather than serving the stale cache entry — a pasted screenshot is never
  * overwritten (`create`), but a user swapping a file in Finder is.
  *
+ * SOUND (YAZ-5014): `AUDIO_EXTENSIONS` (mp3, m4a, wav, ogg) ride the same grammar, resolver and vault edge, for a
+ * card's one-line player. An `<audio>` seeks with a `Range: bytes=a-b` request, so a sound file answers
+ * `Accept-Ranges: bytes` and a range with a 206 and its `Content-Range` (read from the file here, not by the fetch);
+ * a range past the end is a 416. The scheme's `stream` privilege (`appScheme.ts`) lets the player stream it.
+ *
  * Pure Node: the file fetch and the Finder reveal are parameters, so this whole module tests
  * without Electron; `index.ts` passes `net.fetch` and `revealItem`.
  */
@@ -53,7 +61,7 @@ export interface VaultUrl {
   root: string
   /** The image link as written, path segments decoded and re-joined with `/`. */
   ref: string
-  /** Root-relative directory of the linking note, decoded; absent when the URL carries no `from`. */
+  /** Root-relative directory of the linking page, decoded; absent when the URL carries no `from`. */
   from?: string
 }
 
@@ -87,13 +95,16 @@ export interface VaultImage {
   mime: string
 }
 
-/** A well-formed vault URL naming an existing image under its root; null for anything else. */
+/** What the protocol serves: images, and sound for a card's player (YAZ-5014). */
+const SERVED: readonly string[] = [...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS]
+
+/** A well-formed vault URL naming an existing image or sound under its root; null for anything else. */
 export async function resolveVaultUrl(url: string): Promise<VaultImage | null> {
   const target = parseVaultUrl(url)
   if (target === null) return null
   const ext = path.extname(target.ref).slice(1).toLowerCase()
   const mime = mimeFor(ext)
-  if (mime === undefined || !(IMAGE_EXTENSIONS as readonly string[]).includes(ext)) return null
+  if (mime === undefined || !SERVED.includes(ext)) return null
   const file = await resolveAsset(target.root, target.ref, target.from)
   return file === null ? null : { path: file, mime }
 }
@@ -109,8 +120,36 @@ export async function resolveVaultUrl(url: string): Promise<VaultImage | null> {
 export async function serveVaultImage(req: Request, fetchFile: (fileUrl: string) => Promise<Response>): Promise<Response> {
   const image = await resolveVaultUrl(req.url)
   if (image === null) return new Response(null, { status: 404 })
+  if (image.mime.startsWith('audio/')) return serveVaultAudio(req, image)
   const upstream = await fetchFile(pathToFileURL(image.path).toString())
   return new Response(upstream.body, { status: 200, headers: { 'Content-Type': image.mime, 'Cache-Control': 'no-cache' } })
+}
+
+/** `bytes=a-b`, `bytes=a-` or `bytes=-n` over a file of `size` bytes: the inclusive range, 'bad' past the end, null without one. */
+export function parseRange(header: string | null, size: number): { start: number; end: number } | 'bad' | null {
+  if (header === null) return null
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (m === null || (m[1] === '' && m[2] === '')) return null
+  if (m[1] === '') {
+    const n = Number(m[2])
+    return n === 0 || size === 0 ? 'bad' : { start: Math.max(0, size - n), end: size - 1 }
+  }
+  const start = Number(m[1])
+  const end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1)
+  return start >= size || end < start ? 'bad' : { start, end }
+}
+
+/** A sound file (YAZ-5014): the whole file, or the asked range as a 206, read straight from disk. */
+async function serveVaultAudio(req: Request, file: VaultImage): Promise<Response> {
+  const { size } = await stat(file.path)
+  const headers: Record<string, string> = { 'Content-Type': file.mime, 'Cache-Control': 'no-cache', 'Accept-Ranges': 'bytes' }
+  const range = parseRange(req.headers.get('Range'), size)
+  if (range === 'bad') return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${size}` } })
+  const { start, end } = range ?? { start: 0, end: size - 1 }
+  const body = size === 0 ? null : (Readable.toWeb(createReadStream(file.path, { start, end })) as ReadableStream<Uint8Array>)
+  headers['Content-Length'] = String(size === 0 ? 0 : end - start + 1)
+  if (range === null) return new Response(body, { status: 200, headers })
+  return new Response(body, { status: 206, headers: { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}` } })
 }
 
 /**

@@ -13,7 +13,7 @@
  * Everything below the canvas frame is the CHROME INSIDE the engine (Draw's YAZ-1812: the rail, the
  * docked canvas panel, the parity rules), scoped under
  * `.editor--drawing .excalidraw` so the engine's own design tokens apply unchanged and nothing
- * leaks into the shell or into the note embed's modal.
+ * leaks into the shell or into the page embed's modal.
  */
 
 .drawing-editor {
@@ -58,14 +58,6 @@
 .editor--drawing .excalidraw .drawing-editor__chips .page-settings button,
 .editor--drawing .excalidraw .drawing-editor__chips .read-only-chip button {
   font-size: 12px;
-}
-
-/* YAZ-4071 7J: the cog menu, its "i" panel and the engine's text toolbar (`z-index: var(--zIndex-ui-top)`,
-   100) are in one stacking context, and the app's rules are 10: the toolbar covered the cog's rows. They open
-   above the toolbar and stay under the engine's main menu (110). */
-.editor--drawing .excalidraw .drawing-editor__chips .page-settings__menu,
-.editor--drawing .excalidraw .drawing-editor__chips .page-settings__tip {
-  z-index: calc(var(--zIndex-ui-top, 100) + 1);
 }
 
 /* YAZ-4071 7P: the engine's top row is `1fr 2fr 1fr` (`1fr 1fr 1fr` from 1536 px), and an `fr` column never gets
@@ -207,7 +199,7 @@
 
 /* 🔒 Draw's YAZ-1775 D10: the engine's own menu trigger is not this app's door — the rail's hamburger is.
    This is the web app's own rule (`AppSidebar.scss:3-5`); the tab's export and background come from the
-   application menu (YAZ-3037). Scoped to the TAB: the note embed's modal keeps the engine's menu and
+   application menu (YAZ-3037). Scoped to the TAB: the page embed's modal keeps the engine's menu and
    has no rail and no canvas panel (rule 28). */
 .editor--drawing .excalidraw .main-menu-trigger {
   display: none;
