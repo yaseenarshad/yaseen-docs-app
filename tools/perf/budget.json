@@ -54,8 +54,8 @@
       "$comment": "Shipped .map bytes inside out/renderer (must stay 0)."
     },
     "mainBundleBytes": {
-      "max": 892893,
-      "$comment": "Main process and CLI bundle bytes in out/main (measured 892,893 B on feat/yaz-4502-cli-navigation; raised with Yasin's OK)."
+      "max": 929081,
+      "$comment": "Main process and CLI bundle bytes in out/main (measured 929,081 B on feat/yaz-6151-cli-cards-boards; raised with Yasin's OK on YAZ-6152)."
     },
     "shareViewerBytes": {
       "max": 2220000,

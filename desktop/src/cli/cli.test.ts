@@ -1403,7 +1403,7 @@ describe('no card check (YAZ-5116: removed)', () => {
     expect(await run(['card', 'new', path.join(root, 'geo'), '--title', 'Title', '--strict'])).toEqual({ code: 2, out: '', err: `unknown flag: --strict\n${USAGE}\n` })
     expect(await readFile(deck, 'utf8')).toBe(before)
     expect(await readdir(path.join(root, 'geo'))).toEqual(['a.md'])
-    expect((await run(['card'])).err).toBe(`card needs add, new, next or guide\n${USAGE}\n`)
+    expect((await run(['card'])).err).toBe(`card needs add, new, edit, archive, extract, inline, next or guide\n${USAGE}\n`)
     for (const text of [USAGE, HELP]) {
       expect(text).not.toContain('card check')
       expect(text).not.toContain('--strict')
@@ -1462,5 +1462,113 @@ describe('comments on a card file (YAZ-5466)', () => {
     const after = await readFile(p, 'utf8')
     expect(after.replace(/\r\n/g, '')).not.toContain('\n')
     expect(after.endsWith('```card\r\nQ\r\n---\r\nA\r\n```\r\n<!-- card: YAZ-3, title "River" -->\r\n')).toBe(true)
+  })
+})
+
+describe('YAZ-6151: card lifecycle and board CLI wiring', () => {
+  it('wires card edit, archive, extract, and inline through main() with exit code 2 on usage errors', async () => {
+    const root = await vault('cards-e2e', {
+      'geo.md': '---\nid: YAZ-1\n---\n# Geo\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-10, title "France", tags "old", level "A1" -->\n',
+      'Cards/.keep': '',
+    })
+    const geo = path.join(root, 'geo.md')
+
+    // card edit (repeatable --prop and --remove-prop, --hide-title, --json)
+    const edited = await run(['card', 'edit', 'YAZ-10', root, '--title', 'Capital of France', '--prop', 'tags=europe', '--prop', 'tags=capitals', '--remove-prop', 'level', '--hide-title', '--json'])
+    expect(edited.code).toBe(0)
+    expect(JSON.parse(edited.out)).toEqual({ id: 'YAZ-10', page: geo, title: 'Capital of France' })
+    expect(await readFile(geo, 'utf8')).toContain('<!-- card: YAZ-10, title "Capital of France", tags "europe" "capitals", notitle -->')
+
+    // card archive + --unarchive
+    const archived = await run(['card', 'archive', 'YAZ-10', root, '--json'])
+    expect(archived.code).toBe(0)
+    expect(JSON.parse(archived.out)).toEqual({ id: 'YAZ-10', page: geo, archived: true })
+    const unarchived = await run(['card', 'archive', 'YAZ-10', root, '--unarchive', '--json'])
+    expect(unarchived.code).toBe(0)
+    expect(JSON.parse(unarchived.out)).toEqual({ id: 'YAZ-10', page: geo, archived: false })
+
+    // card extract --to
+    const extracted = await run(['card', 'extract', 'YAZ-10', root, '--to', path.join(root, 'Cards'), '--json'])
+    expect(extracted.code).toBe(0)
+    const cardPath = path.join(root, 'Cards/capital-of-france-yaz-10.md')
+    expect(JSON.parse(extracted.out)).toEqual({ id: 'YAZ-10', page: geo, card: cardPath, title: 'Capital of France' })
+    expect(await readFile(geo, 'utf8')).toContain('![[YAZ-10]]')
+
+    // card inline back into geo.md
+    const inlined = await run(['card', 'inline', 'YAZ-10', geo, '--json'])
+    expect(inlined.code).toBe(0)
+    expect(JSON.parse(inlined.out)).toEqual({ id: 'YAZ-10', page: geo, trashed: cardPath })
+    expect(await readFile(geo, 'utf8')).toContain('<!-- card: YAZ-10, title "Capital of France", tags "europe" "capitals", notitle -->')
+
+    // Exit code 2 on usage errors
+    for (const argv of [
+      ['card', 'edit'],
+      ['card', 'edit', 'YAZ-10', root],
+      ['card', 'edit', 'YAZ-10', root, '--hide-title', '--show-title'],
+      ['card', 'archive'],
+      ['card', 'extract'],
+      ['card', 'inline', 'YAZ-10'],
+    ]) {
+      expect((await run(argv)).code, argv.join(' ')).toBe(2)
+    }
+  })
+
+  it('wires board new, readonly, pictures, inline, and extract through main() with exit code 2 on usage errors', async () => {
+    const root = await vault('boards-e2e', { 'notes.md': '---\nid: YAZ-1\n---\n# Notes\n' })
+    const notes = path.join(root, 'notes.md')
+
+    // board new drawing
+    const created = await run(['board', 'new', root, '--title', 'Architecture', '--json'])
+    expect(created.code).toBe(0)
+    const drawing = path.join(root, 'Architecture.excalidraw')
+    expect(JSON.parse(created.out)).toMatchObject({ path: drawing, kind: 'drawing' })
+
+    // board readonly on & off
+    expect(JSON.parse((await run(['board', 'readonly', drawing, '--json'])).out)).toMatchObject({ path: drawing, readOnly: true })
+    expect(JSON.parse((await run(['board', 'readonly', drawing, '--off', '--json'])).out)).toMatchObject({ path: drawing, readOnly: false })
+
+    // board pictures --inside
+    expect(JSON.parse((await run(['board', 'pictures', drawing, '--inside', '--json'])).out)).toMatchObject({ path: drawing, out: false })
+
+    // board inline (pull-in with --trash) then board extract
+    const inlined = await run(['board', 'inline', notes, '--from', drawing, '--title', 'Arch', '--trash', '--json'])
+    expect(inlined.code).toBe(0)
+    expect(JSON.parse(inlined.out)).toMatchObject({ page: notes, index: 0, from: drawing, trashed: true, title: 'Arch' })
+
+    const extracted = await run(['board', 'extract', notes, '--title', 'ArchOut', '--json'])
+    expect(extracted.code).toBe(0)
+    expect(JSON.parse(extracted.out)).toEqual({ page: notes, board: path.join(root, 'ArchOut.excalidraw'), index: 0 })
+    expect(await readFile(notes, 'utf8')).toContain('![[ArchOut.excalidraw|locked]]')
+
+    // Exit code 2 on usage errors
+    for (const argv of [
+      ['board'],
+      ['board', 'nope'],
+      ['board', 'new', root],
+      ['board', 'pictures', drawing],
+      ['board', 'pictures', drawing, '--out', '--inside'],
+      ['board', 'readonly'],
+      ['board', 'inline'],
+      ['board', 'extract'],
+    ]) {
+      expect((await run(argv)).code, argv.join(' ')).toBe(2)
+    }
+  })
+
+  it('HELP documents all 9 new card and board commands', () => {
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const cmd of [
+      'card edit',
+      'card archive',
+      'card extract',
+      'card inline',
+      'board new',
+      'board pictures',
+      'board readonly',
+      'board inline',
+      'board extract',
+    ]) {
+      expect(help).toContain(cmd)
+    }
   })
 })
