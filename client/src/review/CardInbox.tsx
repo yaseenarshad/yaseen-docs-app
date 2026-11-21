@@ -127,6 +127,7 @@ import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, bandTitleStep, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey, reviewAnswerKeyLabel } from './cardInboxKeys'
+import { arrowGlide } from './inboxScroll'
 import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
 import { ContextMenu } from '../sidebar/ContextMenu'
@@ -412,6 +413,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
       }
       if (key.kind === 'move') {
         if (key.delta < 0 ? session.canBack : session.canNext) review.move(key.delta)
+        return
+      }
+      if (key.kind === 'scroll') {
+        if (!moreOpen && rootRef.current !== null) arrowGlide(rootRef.current, key.delta)
         return
       }
       if (key.kind === 'answer') {

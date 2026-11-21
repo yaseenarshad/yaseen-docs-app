@@ -22,6 +22,7 @@ import { useEffect, useRef, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import type { CardPreviewRequest } from '../editor/card/cardOpen'
 import { toggleCardAudio } from '../editor/card/cardMedia'
+import { arrowGlide } from './inboxScroll'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBand, CardId, CardStrip, type CardLinkDoors } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, bandTitleStep, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
@@ -102,6 +103,13 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
         event.stopPropagation()
         if (event.repeat && steps.done) return
         if (!steps.stepOn()) steps.restart()
+        return
+      }
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        if (event.shiftKey || rootRef.current === null) return
+        event.preventDefault()
+        event.stopPropagation()
+        arrowGlide(rootRef.current, event.key === 'ArrowUp' ? -1 : 1)
         return
       }
       if (event.key === 'p' || event.key === 'P') {

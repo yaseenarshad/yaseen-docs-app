@@ -2314,9 +2314,9 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 40 }))
       })
 
-      it('THE END: the last word shows and nothing moves; then a Space brings the card`s end in (no ring), and the next one rings the buttons', () => {
+      it('THE END (YAZ-6058): the last Space shows the last word and smooth-scrolls to the bottom; once at the bottom, the next Space rings the buttons', () => {
         mount(THREE)
-        scroller()
+        const view = scroller()
         const answers = () => el.querySelector('.card-inbox__answers')!
         press(' ')
         press(' ')
@@ -2324,30 +2324,29 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         place.panel = [110, 700]
         press(' ')
         expect(blanks()).toBe(0)
-        expect(scrollTo).not.toHaveBeenCalled()
-        press(' ')
-        // The card's end is its strip (YAZ-5380: every card's last side has one), 36 tall under the panel.
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 + 36 - 400 + 6 }))
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 5000, behavior: 'smooth' })
         expect(answers().hasAttribute('data-nudge')).toBe(false)
         scrollTo.mockClear()
+        // Already at the bottom: one more Space moves nothing and rings the buttons.
+        view.scrollTop = 5000
         place.panel = [110, 350]
         press(' ')
         expect(scrollTo).not.toHaveBeenCalled()
         expect(answers().getAttribute('data-nudge')).not.toBeNull()
       })
 
-      it('THE END with reviews: the end is the Reviews strip under the card (YAZ-5105)', async () => {
+      it('THE END with reviews (YAZ-6058): last Space scrolls to the bottom, and Space while scrolled up returns to the bottom', async () => {
         mount(THREE)
         session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
         render()
         await flush()
-        scroller()
+        const view = scroller()
         for (let i = 0; i < 3; i++) press(' ')
-        expect(scrollTo).not.toHaveBeenCalled()
-        place.panel = [110, 380]
-        place.strip = [384, 420]
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 5000, behavior: 'smooth' })
+        scrollTo.mockClear()
+        view.scrollTop = 4800
         press(' ')
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 400 + 6 }))
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 5000, behavior: 'smooth' })
       })
 
       it('after a scroll by hand took the next blank out of view: Space only brings it back', () => {
@@ -2468,9 +2467,9 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       })
     })
 
-    it('THE END: the hint row drops Space; one more Space moves nothing and gives the answer buttons one soft nudge, each time', () => {
+    it('THE END: the hint row drops Space; one more Space at the bottom moves nothing and gives the answer buttons one soft nudge, each time', () => {
       mount(THREE)
-      scroller()
+      const view = scroller()
       const answers = () => el.querySelector('.card-inbox__answers')!
       const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
       press(' ')
@@ -2479,6 +2478,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       press(' ')
       expect(hints()).not.toContain('Show (Space)')
       expect(answers().hasAttribute('data-nudge')).toBe(false)
+      view.scrollTop = 5000
       scrollTo.mockClear()
       press(' ')
       expect(scrollTo).not.toHaveBeenCalled()

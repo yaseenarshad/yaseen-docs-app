@@ -5,14 +5,14 @@
  * (`CardPreview`) both draw their card with these, so a preview IS the Inbox's card: no copy of its look or its steps.
  * What each adds is its own: the Inbox its answers, its timer and its session; the Preview none of them.
  */
-import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { reviewTitleOf, type CardTitleAt, type CardTitleShow } from '@shared/cardLine'
 import { reviewTitleAt, titleShows, titleStepOf, type TitleStep } from '@shared/cardTitleShows'
 import { cardSides, hiddenCount } from '@shared/cardText'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBody, type CardLinkDoors } from './cardParts'
 import { CARD_MEDIA, CARD_OPENS, stopCardAudio } from '../editor/card/cardMedia'
-import { glideView, spaceMove } from './inboxScroll'
+import { glideToBottom, glideView, spaceMove } from './inboxScroll'
 import { START, hide, markOf, nextStep, reveal, shownParts, type Reveal } from './cardSteps'
 
 /** The step a card is at (D18): how many sides show, which hidden words, and the marked blank (`cardSteps.ts`, YAZ-5049 round 4). */
@@ -88,6 +88,13 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
   const titleNow = after !== null && after.titled && !step.titled
   const mark = titleNow ? null : markOf(step, hiddenUpTo(step.sides))
   const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.open.length > 0 || done)
+  const scrollBottomRef = useRef(false)
+  useEffect(() => {
+    if (!done || !scrollBottomRef.current) return
+    scrollBottomRef.current = false
+    const view = viewRef.current
+    if (view !== null) glideToBottom(view)
+  }, [done, step.key, viewRef])
   const stepOn = useCallback(
     (by: 'key' | 'mouse' = 'key'): boolean => {
       if (text === null) return false
@@ -103,10 +110,12 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
         }
       }
       if (after === null) return false
+      // YAZ-6058: on the final keyboard Space reveal, smooth-scroll all the way to the bottom so Forgot / Remembered show.
+      if (by === 'key' && nextStep(after, counts, title) === null) scrollBottomRef.current = true
       setStep({ ...after, key: step.key })
       return true
     },
-    [done, after, text, step, viewRef, titleNow, mark],
+    [done, after, text, step, viewRef, titleNow, mark, counts, title],
   )
   const showWord = useCallback(
     (word: number) => {

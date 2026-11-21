@@ -44,6 +44,7 @@ import type { CardPlace } from '../editor/card/cardOpen'
 import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import { CardPane, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { useTransientCardWidth } from '../review/inboxCardWidth'
+import { arrowGlide } from '../review/inboxScroll'
 import { HoverTip } from '../components/HoverTip'
 import { ImageModal } from '../editor/image/ImageModal'
 import type { GalleryImage } from '../editor/image/imageOptions'
@@ -194,6 +195,18 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
   /** E on the card window: Edit card (YAZ-5003), as the page's Edit card. Not in a field, not read only. */
   const preview = () => card !== null && previewCardOf(bodyRef.current, path, card)
   const onBodyKey = (event: React.KeyboardEvent) => {
+    // YAZ-6057: Up/Down scroll a larger, smooth step while reading a card (never in fields or menus).
+    if (!editing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      const target = event.target instanceof Element ? event.target : null
+      if (target === null || target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="menu"], [role="listbox"]') === null) {
+        if (bodyRef.current !== null) {
+          event.preventDefault()
+          event.stopPropagation()
+          arrowGlide(bodyRef.current, event.key === 'ArrowUp' ? -1 : 1)
+          return
+        }
+      }
+    }
     // P (YAZ-5152): Preview, as the Inbox shows the card; nothing saved.
     if (!editing && card !== null && isCardPreviewKey(event)) {
       event.preventDefault()

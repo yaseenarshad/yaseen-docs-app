@@ -18,6 +18,7 @@ export type CardInboxKey =
   | { kind: 'edit' }
   | { kind: 'close' }
   | { kind: 'move'; delta: -1 | 1 }
+  | { kind: 'scroll'; delta: -1 | 1 }
   | { kind: 'play' }
   | { kind: 'focus' }
 
@@ -85,6 +86,8 @@ export function cardInboxKey(event: KeyPress, buttons: 2 | 4 = 2, overrides?: Ho
   if (event.key === 'f' || event.key === 'F') return { kind: 'focus' }
   if (event.key === 'ArrowLeft') return { kind: 'move', delta: -1 }
   if (event.key === 'ArrowRight') return { kind: 'move', delta: 1 }
+  if (event.key === 'ArrowUp') return { kind: 'scroll', delta: -1 }
+  if (event.key === 'ArrowDown') return { kind: 'scroll', delta: 1 }
   return null
 }
 
