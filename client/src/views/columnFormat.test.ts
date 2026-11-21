@@ -4,7 +4,8 @@
  * kind has no use for.
  */
 import { describe, expect, it } from 'vitest'
-import { formatDateValue, formatFits, formatNumber, readFormat } from './columnFormat'
+import { formatCustomDate, formatDateValue, formatFits, formatNumber, propertyFormatOf, readFormat, setPropertyFormat } from './columnFormat'
+import type { ViewSet } from './viewSchema'
 import { folderSettings } from './folderSettings'
 import { declarationForKind } from './view/declarationForKind'
 import type { IndexRecord } from '@shared/types'
@@ -54,6 +55,26 @@ describe('S22: date formats', () => {
   ])('relative: %s (time %s) reads "%s"', (ms, hasTime, shown) => {
     expect(formatDateValue(ms, hasTime, { style: 'relative' }, now)).toBe(shown)
   })
+
+  it('YAZ-6167: custom date patterns support all tokens and [literal] escapes', () => {
+    // 2026-11-07 is a Saturday
+    const pm = new Date(2026, 10, 7, 15, 5, 9).getTime()
+    const midnight = new Date(2026, 0, 5, 0, 7, 0).getTime()
+    const noon = new Date(2026, 6, 4, 12, 30, 45).getTime()
+    expect(formatCustomDate(pm, 'ddd MMM D')).toBe('Sat Nov 7')
+    expect(formatCustomDate(pm, 'dddd, MMMM DD, YYYY (YY)')).toBe('Saturday, November 07, 2026 (26)')
+    expect(formatCustomDate(pm, 'M/D/YY HH:mm:ss')).toBe('11/7/26 15:05:09')
+    expect(formatCustomDate(pm, 'H:mm h:mm A hh:mm a')).toBe('15:05 3:05 PM 03:05 pm')
+    expect(formatCustomDate(midnight, 'YYYY-MM-DD hh:mm A H:mm')).toBe('2026-01-05 12:07 AM 0:07')
+    expect(formatCustomDate(noon, 'h:mm:ss a')).toBe('12:30:45 pm')
+    expect(formatCustomDate(pm, '[Created on] ddd MMM D [at] h:mm A')).toBe('Created on Sat Nov 7 at 3:05 PM')
+    expect(formatDateValue(pm, false, { style: 'custom', pattern: 'ddd MMM D' }, now)).toBe('Sat Nov 7')
+    // Missing or empty pattern falls back to null (ISO rendering).
+    expect(formatDateValue(pm, false, { style: 'custom' }, now)).toBeNull()
+    expect(formatDateValue(pm, false, { style: 'custom', pattern: '   ' }, now)).toBeNull()
+    // Capped pattern cache handles >64 distinct patterns cleanly.
+    for (let i = 0; i < 80; i++) expect(formatCustomDate(pm, `[p${i}] YYYY`)).toBe(`p${i} 2026`)
+  })
 })
 
 describe('the declaration', () => {
@@ -96,5 +117,48 @@ describe('the declaration', () => {
     expect(declarationForKind({ kind: 'number', format: { style: 'grouped' } }, 'link')).toEqual({ kind: 'link' })
     expect(declarationForKind({ kind: 'date', format: { style: 'medium' } }, 'date')).toEqual({ kind: 'date', format: { style: 'medium' } })
     expect(formatFits('number', { style: 'percent' })).toBe(true)
+    expect(formatFits('date', { style: 'custom', pattern: 'ddd MMM D' })).toBe(true)
+  })
+
+  it('YAZ-6167: readFormat validates custom date pattern and folderSettings reads properties[key].format', () => {
+    const problems: string[] = []
+    expect(readFormat('date', { style: 'custom', pattern: 'ddd MMM D' }, problems, 'x')).toEqual({ style: 'custom', pattern: 'ddd MMM D' })
+    expect(problems).toEqual([])
+    expect(readFormat('date', { style: 'custom', pattern: '' }, problems, 'x')).toEqual({ style: 'custom' })
+    expect(readFormat('date', { style: 'custom', pattern: 'Y'.repeat(65) }, problems, 'x')).toEqual({ style: 'custom' })
+    expect(readFormat('date', { style: 'medium', pattern: 'YYYY' }, problems, 'x')).toEqual({ style: 'medium' })
+    expect(problems).toHaveLength(3)
+
+    const s = folderSettings(
+      {
+        path: '/v/.folder.md',
+        properties: {
+          folder_settings: {
+            properties: {
+              'file.ctime': { displayName: 'Added', format: { style: 'custom', pattern: 'ddd MMM D' } },
+              'file.mtime': { format: { style: 'relative' } },
+              'card.created': { displayName: 'Born', format: { style: 'bogus' } },
+            },
+          },
+        },
+      } as unknown as IndexRecord,
+      true,
+    )
+    expect(s.properties).toEqual({
+      'file.ctime': { displayName: 'Added', format: { style: 'custom', pattern: 'ddd MMM D' } },
+      'file.mtime': { format: { style: 'relative' } },
+      'card.created': { displayName: 'Born' },
+    })
+    expect(s.problems).toHaveLength(1)
+
+    const def: ViewSet = { views: [{ type: 'table', name: 'T' }], properties: { 'file.ctime': { displayName: 'Added' } } }
+    setPropertyFormat(def, 'file.ctime', { style: 'custom', pattern: 'ddd MMM D' })
+    expect(propertyFormatOf(def.properties, 'file.ctime')).toEqual({ style: 'custom', pattern: 'ddd MMM D' })
+    expect(def.properties?.['file.ctime']?.displayName).toBe('Added')
+    setPropertyFormat(def, 'file.ctime', { style: 'iso' })
+    expect(def.properties).toEqual({ 'file.ctime': { displayName: 'Added' } })
+    delete def.properties!['file.ctime'].displayName
+    setPropertyFormat(def, 'file.ctime', undefined)
+    expect(def.properties).toBeUndefined()
   })
 })

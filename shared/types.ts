@@ -4294,14 +4294,16 @@ export interface MentionsFrom {
 }
 
 /**
- * A Number or Date column's display format (YAZ-4591). Number styles: `plain` (the default),
+ * A Number or Date column's display format (YAZ-4591, YAZ-6167). Number styles: `plain` (the default),
  * `grouped` (1,234), `currency`, `percent`, with `decimals` 0–4 and `currency` an ISO 4217 code.
- * Date styles: `iso` (the default), `medium` ("Nov 7, 2026") and `relative` ("in 3 days").
+ * Date styles: `iso` (the default), `medium` ("Nov 7, 2026"), `relative` ("in 3 days") and `custom`
+ * (with token `pattern`, e.g. `ddd MMM D`).
  */
 export interface PropertyFormat {
-  style: 'plain' | 'grouped' | 'currency' | 'percent' | 'iso' | 'medium' | 'relative'
+  style: 'plain' | 'grouped' | 'currency' | 'percent' | 'iso' | 'medium' | 'relative' | 'custom'
   decimals?: number
   currency?: string
+  pattern?: string
 }
 
 export interface PropertiesResponse {

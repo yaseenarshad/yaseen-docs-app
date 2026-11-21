@@ -1,9 +1,9 @@
-import type { PropertyDecl } from '@shared/types'
+import type { PropertyDecl, PropertyFormat } from '@shared/types'
 import type { Group, Row } from './engine'
 import { propertyLabel } from './engine'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from './expr'
-import { formatDateValue, formatNumber } from './columnFormat'
+import { formatDateValue, formatNumber, propertyFormatOf } from './columnFormat'
 import type { ViewSet } from './viewSchema'
 import { canonicalKey } from './view/keys'
 import { cardCellText } from './cardRows'
@@ -18,6 +18,8 @@ export interface CellTextContext {
   resolve?: Resolver
   /** The folder's declarations by bare name: a Number or Date column's `format` (YAZ-4591). */
   decls: Readonly<Record<string, PropertyDecl>>
+  /** The view's `def.properties` for built-in date column formats (YAZ-6167). */
+  properties?: ViewSet['properties']
   /** The folder page's own folder, as the index names it: a page directly in it has an empty Folder cell. */
   pageFolder: string
   /** A folder's title, as its Folder chip shows it (YAZ-4564). */
@@ -32,15 +34,16 @@ const inlineLinkText = (text: string, resolve: Resolver | undefined): string =>
   })
 
 /** One value as a cell shows it: a link by its page's title, a list joined by ", ", a formatted Number or Date. */
-function valueText(v: Value | undefined, resolve: Resolver | undefined, decl?: PropertyDecl): string {
+function valueText(v: Value | undefined, resolve: Resolver | undefined, decl?: PropertyDecl, format?: PropertyFormat): string {
   if (v === undefined || v === null) return ''
   if (v instanceof ErrorValue) return '#ERROR'
   if (Array.isArray(v)) return v.map((item) => valueText(item, resolve)).join(', ')
   if (v instanceof LinkValue) return linkText(v, resolve)
   if (v instanceof FileValue) return v.record.title
-  if (decl?.format !== undefined) {
-    if (decl.kind === 'number' && typeof v === 'number') return formatNumber(v, decl.format)
-    if (decl.kind === 'date' && v instanceof DateValue) return formatDateValue(v.ms, v.hasTime, decl.format) ?? render(v, resolve)
+  const fmt = format ?? decl?.format
+  if (fmt !== undefined) {
+    if (decl?.kind === 'number' && typeof v === 'number') return formatNumber(v, fmt)
+    if (v instanceof DateValue && (format !== undefined || decl?.kind === 'date')) return formatDateValue(v.ms, v.hasTime, fmt) ?? render(v, resolve)
   }
   if (typeof v === 'string' && v.includes('[[')) return inlineLinkText(v, resolve)
   return render(v, resolve)
@@ -54,7 +57,7 @@ export function cellText(row: Row, key: string, ctx: CellTextContext): string {
   // A card row's success rate (YAZ-5319), in percent as its cell shows it.
   const card = cardCellText(c, row.values[key])
   if (card !== null) return card
-  return valueText(row.values[key], ctx.resolve, c.startsWith('note.') ? ctx.decls[c.slice('note.'.length)] : undefined)
+  return valueText(row.values[key], ctx.resolve, c.startsWith('note.') ? ctx.decls[c.slice('note.'.length)] : undefined, propertyFormatOf(ctx.properties, c))
 }
 
 /**
@@ -84,7 +87,8 @@ export function shownRows(rows: readonly Row[], groups: readonly Group[] | null)
 export function viewTable(def: ViewSet, keys: readonly string[], rows: readonly Row[], ctx: CellTextContext): string[][] {
   const name = keys.find((k) => canonicalKey(k) === 'file.name') ?? 'file.name'
   const columns = [name, ...keys.filter((k) => canonicalKey(k) !== 'file.name')]
-  return [columns.map((k) => propertyLabel(def, k)), ...rows.map((row) => columns.map((k) => cellText(row, k, ctx)))]
+  const fullCtx = ctx.properties === undefined && def.properties !== undefined ? { ...ctx, properties: def.properties } : ctx
+  return [columns.map((k) => propertyLabel(def, k)), ...rows.map((row) => columns.map((k) => cellText(row, k, fullCtx)))]
 }
 
 /** RFC 4180: a field with a quote, a comma or a line break is quoted, a quote doubled; lines end in CRLF. */

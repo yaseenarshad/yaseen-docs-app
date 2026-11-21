@@ -80,7 +80,7 @@ describe('literals and scope', () => {
     expect(ev('file.folder')).toBe('Required Reading')
     expect(ev('file.ext')).toBe('md')
     expect(ev('file.size')).toBe(1234)
-    expect(ev('file.ctime')).toEqual(new DateValue(record.ctime, true))
+    expect(ev('file.ctime')).toEqual(new DateValue(record.ctime, false))
     expect(ev('file.mtime')).toEqual(new DateValue(record.mtime, true))
     expect(ev('file.tags')).toEqual(['School/Math', 'book'])
     expect(ev('file.links')).toEqual([new LinkValue('Textbook'), new LinkValue('People/Alice')])

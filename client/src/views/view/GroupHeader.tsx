@@ -5,12 +5,12 @@ import { isFolderRow, isShortcut } from '../../links/shortcuts'
 import { HIGHLIGHT_HEX } from '../../editor/marks/highlightColours'
 import { type ViewSet, type ViewDef, type GroupBySpec, shownGroupLevels } from '../viewSchema'
 import { type Row, propertyLabel } from '../engine'
-import { isFolderSettingsPath, type PropertyDecl } from '@shared/types'
+import { isFolderSettingsPath, type PropertyDecl, type PropertyFormat } from '@shared/types'
 import { basename, dirname } from '../../lib/paths'
 import { fileKind } from '@shared/fileKind'
 import { FileIcon } from '../../sidebar/FileIcon'
 import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value, fromYaml, linkText, render } from '../expr'
-import { formatDateValue, formatNumber } from '../columnFormat'
+import { formatDateValue, formatNumber, propertyFormatOf } from '../columnFormat'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import '../../editor/wikilink/wikilink.css'
 import type { PathInfo } from '../../editor/wikilink/linkPillLook'
@@ -173,8 +173,8 @@ export const FolderPages = createContext<FolderPagesValue | null>(null)
  */
 export const ColumnDecls = createContext<Readonly<Record<string, PropertyDecl>>>({})
 
-/** The `file.folder` column (YAZ-4564 D26): every view draws its cell here; a page key's through its column's format (YAZ-4591), the rest through `cellContent`. */
-export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode => {
+/** The `file.folder` column (YAZ-4564 D26): every view draws its cell here; a page key's through its column's format (YAZ-4591), built-in date columns through `format` (YAZ-6167), the rest through `cellContent`. */
+export const rowCell = (row: Row, key: string, resolve?: Resolver, format?: PropertyFormat): ReactNode => {
   const c = canonicalKey(key)
   if (c === 'file.folder') return <FolderCell row={row} value={row.values[key]} resolve={resolve} />
   if (c === 'file.kind') return typeWord(row.values[key])
@@ -182,8 +182,8 @@ export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode =>
   if (c === 'card.page') return <CardPageCell row={row} value={row.values[key]} />
   const card = cardCellText(c, row.values[key])
   if (card !== null) return card
-  if (c.startsWith('note.')) return <PageCell value={row.values[key]} name={c.slice('note.'.length)} resolve={resolve} />
-  return cellContent(row.values[key], resolve)
+  if (c.startsWith('note.')) return <PageCell value={row.values[key]} name={c.slice('note.'.length)} resolve={resolve} format={format} />
+  return cellContent(row.values[key], resolve, undefined, format)
 }
 
 /** A card row's Page cell (YAZ-5319): the page's title as a link chip; a click opens it, landed on the card. A card file's: blank. */
@@ -209,7 +209,7 @@ function CardPageCell({ row, value }: { row: Row; value: Value }) {
 /** The pills a Linked mentions cell shows (YAZ-4738 L3); the rest are "+N", their titles in its tooltip. */
 export const MENTIONS_SHOWN = 3
 
-function PageCell({ value, name, resolve }: { value: Value; name: string; resolve?: Resolver }) {
+function PageCell({ value, name, resolve, format }: { value: Value; name: string; resolve?: Resolver; format?: PropertyFormat }) {
   const decl = useContext(ColumnDecls)[name]
   // An Image column's picture (YAZ-4802), at its column's size and shape: a board card's line, a read-only cell.
   if (decl?.kind === 'image') return <ImageOf value={value} decl={decl} />
@@ -224,7 +224,7 @@ function PageCell({ value, name, resolve }: { value: Value; name: string; resolv
       </>
     )
   }
-  return <>{cellContent(value, resolve, decl)}</>
+  return <>{cellContent(value, resolve, decl, format)}</>
 }
 
 /**
@@ -338,7 +338,7 @@ const folderOfRow = ({ path, folder }: Row['record']): string => {
  * Typed cell body (shared by table cells and board cards): error chip, read-only checkbox (editing is 5B), chips for lists/links,
  * `render()` for the rest. `decl`, the cell's column: a Number or Date column's `format` shapes a number or a date (YAZ-4591).
  */
-export function cellContent(v: Value, resolve?: Resolver, decl?: PropertyDecl) {
+export function cellContent(v: Value, resolve?: Resolver, decl?: PropertyDecl, format?: PropertyFormat) {
   if (v instanceof ErrorValue)
     return (
       <span className="view-table__chip view-table__chip--error" title={v.message}>
@@ -348,18 +348,20 @@ export function cellContent(v: Value, resolve?: Resolver, decl?: PropertyDecl) {
   if (typeof v === 'boolean') return <input type="checkbox" checked={v} disabled readOnly />
   if (Array.isArray(v)) return v.map((item, i) => chip(item, i, resolve))
   if (v instanceof LinkValue || v instanceof FileValue) return chip(v, undefined, resolve)
-  if (decl?.format !== undefined) {
-    if (decl.kind === 'number' && typeof v === 'number') return formatNumber(v, decl.format)
-    if (decl.kind === 'date' && v instanceof DateValue) return formatDateValue(v.ms, v.hasTime, decl.format) ?? render(v, resolve)
+  const fmt = format ?? decl?.format
+  if (fmt !== undefined) {
+    if (decl?.kind === 'number' && typeof v === 'number') return formatNumber(v, fmt)
+    if (v instanceof DateValue && (format !== undefined || decl?.kind === 'date')) return formatDateValue(v.ms, v.hasTime, fmt) ?? render(v, resolve)
   }
   if (typeof v === 'string' && v.includes('[[')) return <InlineLinks text={v} resolve={resolve} />
   return render(v, resolve)
 }
 
-/** The group value by type: chips for lists and links/files, `render()` for the rest. */
-function groupValue(v: Value, resolve?: Resolver) {
+/** The group value by type: chips for lists and links/files, formatted date when `format` is set, `render()` for the rest. */
+function groupValue(v: Value, resolve?: Resolver, format?: PropertyFormat) {
   if (Array.isArray(v)) return v.map((item, i) => chip(item, i, resolve))
   if (v instanceof LinkValue || v instanceof FileValue) return chip(v, undefined, resolve)
+  if (format !== undefined && v instanceof DateValue) return formatDateValue(v.ms, v.hasTime, format) ?? render(v, resolve)
   return render(v, resolve)
 }
 
@@ -405,7 +407,14 @@ export interface GroupHeaderProps {
 export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, newButton = true, resolve, level = 0, gk }: GroupHeaderProps) {
   const unit = useUnit()
   // `level` counts the levels that group (YAZ-4544): an entry with no property is none.
-  const look = groupValueLook(shownGroupLevels(view)[level])
+  const levelSpec = shownGroupLevels(view)[level]
+  const look = groupValueLook(levelSpec)
+  const decls = useContext(ColumnDecls)
+  const levelProp = levelSpec?.property
+  const levelFormat =
+    levelProp === undefined
+      ? undefined
+      : propertyFormatOf(def.properties, levelProp) ?? (levelProp.startsWith('note.') ? decls[levelProp.slice(5)]?.format : decls[levelProp]?.format)
   // A Folder level's group (YAZ-4564 D27) opens that folder's page; the page's own folder and the vault root have none.
   const pages = useContext(FolderPages)
   const open = pages?.open
@@ -458,7 +467,7 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
       </button>
       {/* A text name too long for the header is cut; the tooltip holds the rest, as a chip's does. */}
       <span className={`${look.className}${groupKey === null ? ' view-group__value--none' : ''}`} style={look.style} title={typeof groupKey === 'string' ? label : undefined}>
-        {typeof groupKey === 'string' ? label : groupKey === null ? 'No value' : groupValue(groupKey, resolve)}
+        {typeof groupKey === 'string' ? label : groupKey === null ? 'No value' : groupValue(groupKey, resolve, levelFormat)}
       </span>
       <span className="view-group__count">{rows.length}</span>
       {openFolder !== undefined && (

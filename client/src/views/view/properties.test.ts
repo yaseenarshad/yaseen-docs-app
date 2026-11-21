@@ -23,7 +23,11 @@ describe('allPropertyKeys', () => {
   it('offers every other field the rows hold, after the columns, sorted: Columns ⚙ › "Other properties in these pages" (YAZ-4713 C4)', () => {
     const { def: open } = parseViews('views:\n  - type: table\n    name: T\n')
     const rows = [{ ...TEST_RECORDS[0], properties: { domain: 'Billing', tags: 'x', aliases: ['y'] } }]
-    expect(allPropertyKeys(open, open.views[0], rows, { domain: { kind: 'text' } }).slice(0, 4)).toEqual(['file.name', 'note.domain', 'note.aliases', 'note.tags'])
+    expect(allPropertyKeys(open, open.views[0], rows, { domain: { kind: 'text' } }).slice(0, 5)).toEqual(['file.name', 'note.domain', 'file.ctime', 'note.aliases', 'note.tags'])
+  })
+
+  it('YAZ-6167: always offers file.ctime even when a view has a custom order without it', () => {
+    expect(allPropertyKeys(def, view, TEST_RECORDS)).toContain('file.ctime')
   })
 
   it('a declared column already seen in the values is listed once, not twice', () => {

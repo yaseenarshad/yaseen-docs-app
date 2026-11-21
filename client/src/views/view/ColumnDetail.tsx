@@ -7,7 +7,7 @@ import type { FolderHost } from '../ViewsPane'
 import { defaultLabel, propertyLabel } from '../engine'
 import { columnTyping } from '../editorType'
 import { undeletableReason } from '../deleteColumn'
-import { CURRENCIES, DATE_STYLES, MAX_DECIMALS, NUMBER_STYLES } from '../columnFormat'
+import { BUILTIN_DATE_KEYS, CURRENCIES, DATE_STYLES, MAX_DATE_PATTERN, MAX_DECIMALS, NUMBER_STYLES, formatCustomDate, propertyFormatOf, setPropertyFormat } from '../columnFormat'
 import { canonicalKey } from './keys'
 import { isCardKey } from '../cardRows'
 import { displayNameOf, setDisplayName } from './columnLabel'
@@ -37,7 +37,7 @@ const FOLDER_COLUMN_OPTIONS = [['path', 'From this page'], ['full', 'Full path']
 const SETTINGS_OPTIONS = [['shared', 'Shared'], ['own', 'Only here']] as const satisfies readonly (readonly ['shared' | 'own', string])[]
 
 const NUMBER_LABELS: Record<(typeof NUMBER_STYLES)[number], string> = { plain: 'Plain', grouped: '1,234', currency: 'Currency', percent: 'Percent' }
-const DATE_LABELS: Record<(typeof DATE_STYLES)[number], string> = { iso: '2026-11-07', medium: 'Nov 7, 2026', relative: 'Relative (in 3 days)' }
+const DATE_LABELS: Record<(typeof DATE_STYLES)[number], string> = { iso: '2026-11-07', medium: 'Nov 7, 2026', relative: 'Relative (in 3 days)', custom: 'Custom…' }
 
 /** A folder link as `from.folder` stores it (YAZ-4739): `[[API]]`, so a rename keeps it on its folder; typed bare, it gets the brackets. */
 const folderLinkOf = (text: string): string => (text.startsWith('[[') ? text : `[[${text}]]`)
@@ -193,17 +193,29 @@ function OptionParentRows({ decl, name, label, columns, onChange }: { decl: Colu
 }
 
 /**
- * The Format rows (YAZ-4591 S21/S22). Number: the style, the currency (currency style only) and the
- * decimals ("Auto" = the style's own). Date: the style. The default style with no decimals writes no
- * `format` at all; a style change drops a currency the new style has no use for.
+ * The Format rows (YAZ-4591 S21/S22, YAZ-6167). Number: the style, the currency (currency style only) and the
+ * decimals ("Auto" = the style's own). Date: the style, plus a Pattern input with live preview when Custom… is
+ * selected. The default style with no decimals passes `undefined` so callers delete the `format` key.
  */
-function FormatRows({ decl, label, onChange }: { decl: ColumnDecl; label: string; onChange: (next: ColumnDecl) => void }) {
-  const number = decl.kind === 'number'
-  const format = decl.format ?? { style: number ? 'plain' : 'iso' }
+function FormatRows({
+  kind,
+  format: current,
+  label,
+  onChange,
+}: {
+  kind: 'number' | 'date'
+  format: PropertyFormat | undefined
+  label: string
+  onChange: (next: PropertyFormat | undefined) => void
+}) {
+  const number = kind === 'number'
+  const format = current ?? { style: number ? 'plain' : 'iso' }
+  const [patternDraft, setPatternDraft] = useState(format.pattern ?? '')
+  useEffect(() => setPatternDraft(format.pattern ?? ''), [format.pattern])
+  const previewMs = useMemo(() => Date.now(), [])
   const write = (next: PropertyFormat) => {
-    const out: ColumnDecl = { ...decl, format: next }
-    if (next.style === (number ? 'plain' : 'iso') && next.decimals === undefined) delete out.format
-    onChange(out)
+    if (next.style === (number ? 'plain' : 'iso') && next.decimals === undefined) onChange(undefined)
+    else onChange(next)
   }
   return (
     <>
@@ -216,8 +228,9 @@ function FormatRows({ decl, label, onChange }: { decl: ColumnDecl; label: string
           onChange={(e) => {
             const style = e.target.value as PropertyFormat['style']
             const next: PropertyFormat = { style }
-            if (format.decimals !== undefined) next.decimals = format.decimals
+            if (number && format.decimals !== undefined) next.decimals = format.decimals
             if (style === 'currency') next.currency = format.currency ?? 'USD'
+            if (style === 'custom' && format.pattern !== undefined && format.pattern.trim() !== '') next.pattern = format.pattern
             write(next)
           }}
         >
@@ -228,6 +241,28 @@ function FormatRows({ decl, label, onChange }: { decl: ColumnDecl; label: string
           ))}
         </select>
       </div>
+      {!number && format.style === 'custom' && (
+        <>
+          <div className="column-detail__row">
+            <RowLabel icon="format">Pattern</RowLabel>
+            <TextField
+              className="view-input"
+              aria-label={`Date pattern for ${label}`}
+              placeholder="ddd MMM D"
+              maxLength={MAX_DATE_PATTERN}
+              value={format.pattern ?? ''}
+              onDraft={setPatternDraft}
+              onCommit={(text) => {
+                const trimmed = text.trim()
+                write(trimmed ? { style: 'custom', pattern: trimmed.slice(0, MAX_DATE_PATTERN) } : { style: 'custom' })
+              }}
+            />
+          </div>
+          <p className="column-detail__source" aria-label={`Preview of ${label} format`}>
+            Preview: {formatCustomDate(previewMs, patternDraft.trim() || 'ddd MMM D')}
+          </p>
+        </>
+      )}
       {format.style === 'currency' && (
         <div className="column-detail__row">
           <RowLabel icon="currency">Currency</RowLabel>
@@ -668,7 +703,28 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
         {/* Option parents (YAZ-4799): the column one level up and each option's parent there. */}
         {choice && decl !== undefined && isPage && <OptionParentRows decl={decl} name={name} label={label} columns={folder.settings.columns} onChange={(next) => void writeDeclaration(next)} />}
         {/* A Number or Date column's display format (YAZ-4591 S21/S22): one declaration write per pick. */}
-        {(kind === 'number' || kind === 'date') && decl !== undefined && <FormatRows decl={decl} label={label} onChange={(next) => void writeDeclaration(next)} />}
+        {(kind === 'number' || kind === 'date') && decl !== undefined && (
+          <FormatRows
+            kind={kind}
+            format={decl.format}
+            label={label}
+            onChange={(next) => {
+              const out: ColumnDecl = { ...decl }
+              if (next === undefined) delete out.format
+              else out.format = next
+              void writeDeclaration(out)
+            }}
+          />
+        )}
+        {/* Built-in date column display format (YAZ-6167): stored on `def.properties[key].format` (works in Folder and Cards tables). */}
+        {BUILTIN_DATE_KEYS.has(c) && (
+          <FormatRows
+            kind="date"
+            format={propertyFormatOf(def.properties, c)}
+            label={label}
+            onChange={(next) => onUpdate((d) => setPropertyFormat(d, c, next))}
+          />
+        )}
         {/* An Image column's look (YAZ-4802): size and shape. */}
         {kind === 'image' && decl !== undefined && <ImageRows decl={decl} label={label} onChange={(next) => void writeDeclaration(next)} />}
         {/* A Linked mentions column's narrowing (YAZ-4739 L2): which links count. Blank is every link. */}

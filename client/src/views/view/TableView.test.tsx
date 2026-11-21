@@ -959,7 +959,7 @@ describe('windowing', () => {
     expect(links(el)).not.toContain('n599')
     const spacer = q<HTMLTableRowElement>(el, '.view-table__spacer')
     expect(spacer).not.toBeNull()
-    expect(q<HTMLTableCellElement>(spacer, 'td').colSpan).toBe(2)
+    expect(q<HTMLTableCellElement>(spacer, 'td').colSpan).toBe(3)
     expect(spacer.querySelector('.view-table__frozen')).toBeNull()
   })
 

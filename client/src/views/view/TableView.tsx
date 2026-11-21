@@ -5,7 +5,8 @@ import { type FilterNode, type ViewSet, type ViewDef, type Mutate, shownGroupLev
 import { type GroupSpan, groupLinesHover, groupSpans, groupThread, holdersOf, measureGroupGuides, stuckDistance, windowedGuide, windowedLine } from './groupGuides'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
-import { type Resolver, type Value, fromYaml, render, typeOf } from '../expr'
+import { DateValue, type Resolver, type Value, fromYaml, render, typeOf } from '../expr'
+import { formatDateValue, propertyFormatOf } from '../columnFormat'
 import { pageColumnKeys, type ColumnDecl, type FolderSettings } from '../folderSettings'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
@@ -1104,7 +1105,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   }
 
   /** A cell as text (YAZ-4593 ⌘C): what it renders, the Name cell's title. */
-  const cellText = (row: Row, c: number): string => (c === nameCol ? row.record.title : render(row.values[keys[c]] ?? null, resolve))
+  const cellText = (row: Row, c: number): string => {
+    if (c === nameCol) return row.record.title
+    const v = row.values[keys[c]] ?? null
+    if (v instanceof DateValue) {
+      const fmt = propertyFormatOf(def.properties, keys[c])
+      if (fmt !== undefined) return formatDateValue(v.ms, v.hasTime, fmt) ?? render(v, resolve)
+    }
+    return render(v, resolve)
+  }
   const copyArea = (area: { rows: number[]; cols: number[] }): void => {
     const text = toTsv(area.rows.map((r) => area.cols.map((c) => cellText(flat[r], c))))
     // The values as stored, beside the readable text (YAZ-4636 T9c): a paste of this very copy keeps `[[id]]`.
@@ -2027,7 +2036,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     onCommit={(next) => commitCell(line.row.record.path, bares[c]!, next)}
                   />
                 ) : (
-                  rowCell(line.row, key, resolve)
+                  rowCell(line.row, key, resolve, propertyFormatOf(def.properties, key))
                 )}
               </td>
             )

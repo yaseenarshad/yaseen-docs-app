@@ -33,7 +33,8 @@ const FILE_FIELDS: Record<string, (r: FileRecordLike) => Value> = {
   ext: r => r.ext,
   size: r => r.size,
   // 0 = no file yet: the row of a folder with no `.folder.md` (YAZ-4579 D31) has no dates, never 1970 (YAZ-3746 2D).
-  ctime: r => (r.ctime === 0 ? null : new DateValue(r.ctime, true)),
+  // YAZ-6150 D5: Created displays date-only by default while sorting by exact ms.
+  ctime: r => (r.ctime === 0 ? null : new DateValue(r.ctime, false)),
   mtime: r => (r.mtime === 0 ? null : new DateValue(r.mtime, true)),
   tags: r => [...r.tags],
   links: r => r.links.map(l => new LinkValue(l)),

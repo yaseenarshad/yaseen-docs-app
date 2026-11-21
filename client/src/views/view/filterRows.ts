@@ -15,6 +15,7 @@ const CARD_TYPES: Readonly<Record<string, PropertyType>> = {
   'card.upNext': 'checkbox',
   'card.nextReview': 'date',
   'card.lastReview': 'date',
+  'card.created': 'date',
   'card.reviews': 'number',
   'card.successRate': 'number',
   // YAZ-5793: Wait time, Times forgotten, Recall chance (whole percent) and Days overdue.
