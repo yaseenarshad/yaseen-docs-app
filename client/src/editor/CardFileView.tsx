@@ -394,6 +394,10 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     onNotice,
   }
 
+  // YAZ-6054: one-time in-memory drag-to-resize edges (resets to default when closed/reopened). Called before the
+  // early return below so the hook order never changes (rules-of-hooks).
+  const dragCentered = (readPagePosition(content ?? '') ?? positionOf(contentPosition ?? storage.getSettings()?.contentPosition)) !== 'left'
+  const dragWidth = useTransientCardWidth(bodyRef, bodyRef, path, dragCentered, 48)
   if (content === null || shape === null) return <p className="editor-msg">This card file is no longer there</p>
   const id = card?.id ?? null
   const notice = shapeNotice(shape.problem, shape.cards.length)
@@ -460,8 +464,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const ownPosition = readPagePosition(content)
   const width = ownWidth ?? defaultWidth
   const effectivePos = ownPosition ?? appPosition
-  // YAZ-6054: one-time in-memory drag-to-resize edges (resets to default when closed/reopened).
-  const dragWidth = useTransientCardWidth(bodyRef, bodyRef, path, effectivePos !== 'left', 48)
   // YAZ-6053: let `--card-text-width` (from Settings or vault card-look.json) expand `.card-file__page` past narrow
   // page `--content-text-width`, while preserving own-page `page-width` and transient drag overrides.
   const fileStyle: CSSProperties = {
