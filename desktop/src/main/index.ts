@@ -90,11 +90,30 @@ app.on('second-instance', (_event, argv) => {
 
 claimDeepLinkScheme(app, process.env)
 
+/** Matches `yaseendocs://friend#<code>` and `yaseendocs://group#<code>` invite deep links (YAZ-6219). */
+function parseFriendsInviteDeepLink(rawUrl: string): { kind: 'friend' | 'group'; code: string } | null {
+  const m = /^yaseendocs:\/\/\/?(friend|group)[#/?](?:code=)?([a-z0-9]{6,32})$/i.exec(rawUrl.trim())
+  if (!m) return null
+  return { kind: m[1].toLowerCase() as 'friend' | 'group', code: m[2].toLowerCase() }
+}
+
 /** A parsed link routes to the best window; a bad one gets the unobtrusive notice, never a dialog. */
 function handleLink(url: string): void {
   if (isGithubAuthCallback(url)) {
     void githubAuth?.handleCallback(url)
     return
+  }
+  if (FRIENDS_ENABLED) {
+    const invite = parseFriendsInviteDeepLink(url)
+    if (invite !== null) {
+      broadcastAll(CONTRACT.friends.onInviteLink.channel, invite)
+      const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w))
+      if (win !== undefined) {
+        if (win.isMinimized()) win.restore()
+        win.focus()
+      }
+      return
+    }
   }
   const parsed = parseFileLink(url)
   if (parsed === null) {
@@ -478,6 +497,7 @@ app.whenReady().then(() => {
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
   rebuildMenuOnFocus = applyIfMoved
+  let friendsTokenChanged: (() => void) | undefined
   const { sync, githubAuth: auth, secrets, lsp } = registerIpc(store, manager, {
     userData: app.getPath('userData'),
     // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
@@ -489,17 +509,17 @@ app.whenReady().then(() => {
     macId: () => macId(),
     openExternal: (url) => shell.openExternal(url),
     openPath: (appPath) => shell.openPath(appPath),
+    onGithubAuthChange: () => friendsTokenChanged?.(),
   }, settingsFolder)
   githubAuth = auth
-  // The Mac sends the numbers too (YAZ-5086, decision 16): with the same token, when a file with cards changes, and once
-  // after the start. A new token (or a removed one) starts over.
-  // YAZ-5652: only with Friends on (`shared/features.ts`). Off, nothing starts: no sender, no gist call, no
-  // `friends:status`; and the sender is a chunk of its own (`import()`), so with the switch off the build drops it.
+  // Friends backend (YAZ-6219): D1 API service + background stats sender, reusing GitHub App auth (`githubAuth.getValidAuth()`).
+  // YAZ-5652: only with Friends on (`shared/features.ts`). Off, nothing starts and the build drops the `./friends` chunk.
   if (FRIENDS_ENABLED) {
-    const friendsSend = import('./friends').then((m) => m.startFriendsSend(store, secrets, app.getPath('userData')))
-    registerFriendsIpc(async () => (await friendsSend).look())
+    const friendsSend = import('./friends').then((m) => m.startFriendsSend(store, { githubAuth: auth, secrets }, app.getPath('userData')))
+    friendsTokenChanged = () => void friendsSend.then((f) => f.tokenChanged())
+    registerFriendsIpc(() => friendsSend)
     onRendererSecretSet((name) => {
-      if (name === GITHUB_TOKEN_SECRET) void friendsSend.then((f) => f.tokenChanged())
+      if (name === GITHUB_TOKEN_SECRET) friendsTokenChanged?.()
     })
   }
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a

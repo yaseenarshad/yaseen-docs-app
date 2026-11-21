@@ -44,6 +44,9 @@ import { PlaceBubble } from '@client/review/PlaceBubble'
 import { CardActions } from '../cardMenu/lazy'
 import { ZoomRow, useReviewZoom, zoomStyle } from './ReviewZoom'
 import { overlayCount } from '../app/browserHistory'
+import { FRIENDS_ENABLED } from '@shared/features'
+import { sanitizeSharedCard } from '@shared/friendsShare'
+import type { FriendsService } from '../friends/ui/service'
 import { reviewKey } from './keys'
 import './review.css'
 
@@ -99,6 +102,8 @@ export interface ReviewViewProps {
    * title no room, as before.
    */
   titleRoom?: boolean
+  /** Lazy Friends service for "Share with friend or group…" in the ⋯ menu (YAZ-6218). */
+  getFriendsService?: () => Promise<FriendsService | null>
 }
 
 interface Setup {
@@ -169,7 +174,7 @@ type Step = Reveal & { key: string | null }
 /** `words` and `rating`: the hint line's "✓ Remembered · Capital of Spain · back in 9 days · Undo", right after the answer (the Mac's, YAZ-5693). */
 type Line = { kind: 'answer'; count: number; path: string; id: string; words: AnswerWords; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
-function ReviewSession({ link, vault, vaultName, unit, open, showInSearch, source, host, media, pick: firstPick, order: firstOrder, shown = true, titleRoom = false }: ReviewViewProps & Setup) {
+function ReviewSession({ link, vault, vaultName, unit, open, showInSearch, source, host, media, pick: firstPick, order: firstOrder, shown = true, titleRoom = false, getFriendsService }: ReviewViewProps & Setup) {
   const { ready, settings: vaultSettings } = useSourceState(source)
   // Where new cards come from — the Mac's rule (`setNewFrom` → `saveSettings` → `newFrom`), this phone's pick.
   const [pick, setPick] = useState(firstPick)
@@ -242,7 +247,7 @@ function ReviewSession({ link, vault, vaultName, unit, open, showInSearch, sourc
       </div>
     )
   if (session === null) return <Waiting />
-  return <SessionScreen {...{ link, unit, open, showInSearch, source, host, media, retry, review, session, answers, notice, setNotice, shown, cardLook, titleRoom }} />
+  return <SessionScreen {...{ link, unit, open, showInSearch, source, host, media, retry, review, session, answers, notice, setNotice, shown, cardLook, titleRoom, getFriendsService }} />
 }
 
 function SessionScreen({
@@ -262,6 +267,7 @@ function SessionScreen({
   shown,
   cardLook,
   titleRoom,
+  getFriendsService,
 }: {
   link: ReviewLink
   unit: UnitText
@@ -281,6 +287,7 @@ function SessionScreen({
   cardLook: Record<string, string>
   /** Title room (YAZ-5880): true keeps a waiting title's room. */
   titleRoom: boolean
+  getFriendsService?: () => Promise<FriendsService | null>
 }) {
   // The end of Due today has its own screen (`DueTodayEnd`, in `DoneScreen`); the YAZ-5465 shim that went on at once is gone.
   const card = session.card
@@ -441,7 +448,7 @@ function SessionScreen({
   }, [card, page, cardFile, link])
 
   // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards").
-  const [menu, setMenu] = useState<'filter' | 'from' | 'more' | 'place' | null>(null)
+  const [menu, setMenu] = useState<'filter' | 'from' | 'more' | 'place' | 'share' | null>(null)
   // YAZ-5706: the card's zoom (the ⋯ menu's Zoom row), kept on this phone.
   const [zoom, setZoom] = useReviewZoom()
   const [line, setLine] = useState<Line | null>(null)
@@ -874,6 +881,17 @@ function SessionScreen({
                   act(a.done, () => host.changeCardLine(card.path, card.id, a.change), () => host.changeCardLine(card.path, card.id, a.undo))
                 }}
               />
+              {FRIENDS_ENABLED && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="review__menu-row"
+                  disabled={page === null}
+                  onClick={() => setMenu('share')}
+                >
+                  Share with friend or group…
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"
@@ -887,6 +905,18 @@ function SessionScreen({
               </button>
               <ZoomRow zoom={zoom} onZoom={setZoom} />
             </div>
+          )}
+          {menu === 'share' && FRIENDS_ENABLED && text !== null && (
+            <ShareCardPicker
+              title={cardName || card.id}
+              markdown={text}
+              getFriendsService={getFriendsService}
+              onClose={() => setMenu(null)}
+              onShared={(msg) => {
+                setMenu(null)
+                setLine({ kind: 'mark', text: msg, key: cardKey })
+              }}
+            />
           )}
         </div>
       )}
@@ -1084,3 +1114,156 @@ function LostAnswers({ answers, link }: { answers: AnswersState; link: ReviewLin
 
 /** The Review tab's lost rows ARE the dot's (one function). */
 export { lostRows }
+
+/** Compact friend/group picker opened from the Review ⋯ menu (YAZ-6218). */
+function ShareCardPicker({
+  title,
+  markdown,
+  getFriendsService,
+  onClose,
+  onShared,
+}: {
+  title: string
+  markdown: string
+  getFriendsService?: () => Promise<FriendsService | null>
+  onClose: () => void
+  onShared: (message: string) => void
+}) {
+  const [loading, setLoading] = useState(true)
+  const [friends, setFriends] = useState<{ id: number; name: string }[]>([])
+  const [groups, setGroups] = useState<{ id: string; name: string }[]>([])
+  const [service, setService] = useState<FriendsService | null>(null)
+  const [selectedFriends, setSelectedFriends] = useState<number[]>([])
+  const [selectedGroup, setSelectedGroup] = useState<string>('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      try {
+        const svc = (await getFriendsService?.()) ?? null
+        if (!live) return
+        setService(svc)
+        if (!svc) {
+          setLoading(false)
+          return
+        }
+        const board = await svc.board()
+        if (!live) return
+        if (board.kind === 'ok') {
+          setFriends(
+            board.friends
+              .filter((f) => f.userId !== undefined)
+              .map((f) => ({ id: f.userId!, name: f.name.replace(/[\u2068\u2069]/g, '') })),
+          )
+          setGroups(
+            (board.d1Groups ?? [])
+              .filter((g) => g.myStatus === 'active')
+              .map((g) => ({ id: g.id, name: g.name })),
+          )
+        }
+      } catch {
+        if (live) setError('Could not load friends.')
+      } finally {
+        if (live) setLoading(false)
+      }
+    })()
+    return () => {
+      live = false
+    }
+  }, [getFriendsService])
+
+  const toggleFriend = (id: number) => {
+    setSelectedGroup('')
+    setSelectedFriends((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  const send = async () => {
+    if (!service?.shareCards || busy) return
+    if (!selectedGroup && selectedFriends.length === 0) return
+    setBusy(true)
+    setError(null)
+    try {
+      const clean = sanitizeSharedCard(title, markdown, note)
+      const res = await service.shareCards({
+        ...(selectedGroup ? { groupId: selectedGroup } : { toUserIds: selectedFriends }),
+        cards: [clean],
+      })
+      if (!res.ok) return setError(res.error)
+      onShared(selectedGroup ? 'Shared card with group' : `Shared card with ${selectedFriends.length} ${selectedFriends.length === 1 ? 'friend' : 'friends'}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const canSend = !busy && (selectedGroup !== '' || selectedFriends.length > 0)
+
+  return (
+    <div className="review__menu review__menu--more" role="dialog" aria-label="Share with friend or group">
+      <div style={{ padding: '8px 12px' }}>
+        <p style={{ margin: '0 0 8px', fontWeight: 600 }}>Share card</p>
+        {loading ? (
+          <p className="muted" style={{ margin: '4px 0' }}>Loading friends…</p>
+        ) : friends.length === 0 && groups.length === 0 ? (
+          <p className="muted" style={{ margin: '4px 0' }}>Add a friend or group in the Friends tab first.</p>
+        ) : (
+          <>
+            {friends.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                {friends.map((f) => (
+                  <label key={f.id} className="row" style={{ minHeight: 36 }}>
+                    <input
+                      type="checkbox"
+                      className="check"
+                      checked={selectedFriends.includes(f.id)}
+                      onChange={() => toggleFriend(f.id)}
+                      disabled={busy}
+                    />
+                    <span className="row__main">{f.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {groups.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                {groups.map((g) => (
+                  <label key={g.id} className="row" style={{ minHeight: 36 }}>
+                    <input
+                      type="radio"
+                      className="check"
+                      name="share-group"
+                      checked={selectedGroup === g.id}
+                      onChange={() => {
+                        setSelectedFriends([])
+                        setSelectedGroup(g.id)
+                      }}
+                      disabled={busy}
+                    />
+                    <span className="row__main">Group: {g.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <label className="field" style={{ marginBottom: 8 }}>
+              <span className="field__label">Note (optional)</span>
+              <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="Why you're sharing this" disabled={busy} />
+            </label>
+            <button type="button" className="btn btn--primary btn--wide" disabled={!canSend} aria-busy={busy} onClick={() => void send()}>
+              {busy ? 'Sharing…' : 'Share'}
+            </button>
+          </>
+        )}
+        {error !== null && (
+          <p className="muted" role="alert" style={{ marginTop: 6 }}>
+            {error}
+          </p>
+        )}
+        <button type="button" className="link-btn" onClick={onClose} disabled={busy} style={{ marginTop: 6 }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}

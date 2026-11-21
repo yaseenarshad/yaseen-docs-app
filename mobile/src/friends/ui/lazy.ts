@@ -28,13 +28,17 @@ export function lazyFriends(
   const load = () => (made ??= options.load?.() ?? import('./service').then((m) => m.createFriendsService({ store, tokens, engine })))
   return {
     async hasFriends() {
+      if (typeof globalThis.location?.search === 'string' && new URLSearchParams(globalThis.location.search).get('friendsDemo') === '1') {
+        return true
+      }
       const fact = await store.getState<boolean>(PHONE, HAS_FRIENDS_STATE)
       if (typeof fact === 'boolean') return fact
       // No fact yet: read the list once (it writes the fact), for a short time at most; else Review (decision 21).
       let timer: ReturnType<typeof setTimeout> | undefined
       const late = new Promise<'late'>((r) => (timer = setTimeout(() => r('late'), options.waitMs ?? HAS_FRIENDS_WAIT_MS)))
       const read = load().then(async (s) => {
-        await s.list?.rows()
+        if ('list' in s && s.list) await s.list.rows()
+        else await s.board()
         return s.port.hasFriends()
       })
       const answer = await Promise.race([read.catch(() => false), late])
@@ -43,6 +47,12 @@ export function lazyFriends(
     },
     settings: async () => (await load()).port.settings(),
     saveSettings: async (s) => (await load()).port.saveSettings(s),
+    deleteMe: async () => {
+      const s = await load()
+      if (s.port.deleteMe) return s.port.deleteMe()
+      if (s.deleteMe) return s.deleteMe()
+      return { ok: false, error: 'unsupported' }
+    },
     service: () => load(),
     stop: async () => {
       if (made !== null) await (await made).stop()

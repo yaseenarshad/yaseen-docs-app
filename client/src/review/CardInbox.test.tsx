@@ -672,7 +672,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(actions().map((b) => [b.textContent, b.disabled])).toEqual([['Undo last review', true]])
     // The other ⋯ swaps the menu; the same ⋯ again closes it.
     act(() => head.click())
-    expect(actions().map((b) => b.textContent)).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review'])
+    expect(actions().map((b) => b.textContent)).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review', 'Share with friend or group…'])
     expect(head.getAttribute('aria-expanded')).toBe('true')
     act(() => head.click())
     expect(actions()).toEqual([])
@@ -698,6 +698,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       ['Move to Up next', false],
       ['Archive card', false],
       ['Title in review', false],
+      ['Share with friend or group…', false],
     ])
     press('Escape')
     expect(actions()).toEqual([])
@@ -1853,7 +1854,8 @@ describe('YAZ-5689: the top row`s right end is the count and ONE sliders icon, "
     withFocus(false, vi.fn())
     const bar = el.querySelector('.card-inbox__bar')!
     expect(bar.querySelector('.card-inbox__tools, .document-zoom, .card-inbox__focus, .card-inbox__time')).toBeNull()
-    expect(view()!.previousElementSibling?.className).toBe('card-inbox__place')
+    expect(view()!.previousElementSibling?.className).toBe('card-inbox__friends-btn')
+    expect(view()!.previousElementSibling?.previousElementSibling?.className).toBe('card-inbox__place')
     expect(bar.lastElementChild).toBe(view())
     expect([view()!.type, view()!.getAttribute('aria-label'), view()!.getAttribute('aria-haspopup'), view()!.getAttribute('aria-expanded'), view()!.tabIndex]).toEqual(['button', 'View', 'dialog', 'false', 0])
     // The page header's "adjust" icon (`PropertiesIcon`): two lines with a knob each.
@@ -2139,10 +2141,10 @@ describe('YAZ-5430: To fix never shows in the Inbox (Yaseen: "As long as to fix 
       press('Escape')
       return out
     }
-    expect(labels()).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review'])
+    expect(labels()).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review', 'Share with friend or group…'])
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, fix: true } } }
     render()
-    expect(labels()).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review'])
+    expect(labels()).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review', 'Share with friend or group…'])
   })
 })
 

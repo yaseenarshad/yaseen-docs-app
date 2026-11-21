@@ -1,0 +1,698 @@
+/* Desktop Friends UI (YAZ-6220): matches mobile/src/friends/ui/friends.css tokens & hierarchy (D12) inside CardInbox. */
+
+:root {
+  --fr-muted: #6b6b6b;
+  --fr-cheer: #4a5ae8;
+  --fr-started: #9a6700;
+  --fr-done: var(--ok, #1a7f37);
+}
+
+:root[data-theme='dark'],
+:root[data-scheme='dark'] {
+  --fr-muted: #9e9e9e;
+  --fr-cheer: var(--accent, #6c8cff);
+  --fr-started: var(--warn, #d29922);
+  --fr-done: var(--ok, #3fb950);
+}
+
+/* ---- CardInboxBar Friends icon button (D5: between SessionCount and View sliders) ---- */
+.card-inbox__friends-btn {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.card-inbox__place ~ .card-inbox__friends-btn {
+  margin-left: 2px;
+}
+
+.card-inbox__friends-btn + .card-inbox__view {
+  margin-left: 2px;
+}
+
+.card-inbox__friends-btn:hover,
+.card-inbox__friends-btn[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+
+.card-inbox__friends-btn[aria-pressed='true'] {
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--accent);
+}
+
+.card-inbox__friends-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.card-inbox__friends-btn[data-unread]::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--bg-side, var(--bg));
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ---- DoneScreen 1-line Friends summary ---- */
+.card-inbox__done-friends {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.card-inbox__done-friends-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.card-inbox__done-friends-btn:hover {
+  text-decoration: underline;
+}
+
+/* ---- FriendsPane container ---- */
+.fr-pane {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 20px 36px;
+  box-sizing: border-box;
+  color: var(--fg);
+}
+
+.fr-pane__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fr-pane__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.fr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-side, transparent);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.fr-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+.fr-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.fr-btn--primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+
+.fr-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  background: var(--accent);
+}
+
+.fr-btn--ghost {
+  border-color: transparent;
+  background: none;
+  color: var(--fr-muted);
+}
+
+.fr-btn--danger {
+  color: var(--danger, #cf222e);
+}
+
+.fr-btn--sm {
+  min-height: 26px;
+  padding: 2px 9px;
+  font-size: 12px;
+}
+
+/* ---- Quiet toast on incoming unseen Cheer/Nudge ---- */
+.fr-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 10px;
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent));
+  font-size: 13px;
+}
+
+/* ---- Signed-out state ---- */
+.fr-signed-out {
+  margin: 32px auto;
+  padding: 24px 20px;
+  max-width: 420px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-side, transparent);
+  text-align: center;
+}
+
+.fr-signed-out h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.fr-signed-out p {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--fr-muted);
+}
+
+/* ---- Segmented controls (period + sort + tabs) ---- */
+.fr-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.fr-seg {
+  display: flex;
+  flex: 1 1 240px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.fr-seg button {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  color: var(--fr-muted);
+  cursor: pointer;
+}
+
+.fr-seg button[aria-pressed='true'] {
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.fr-sort {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.fr-sort button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--fr-muted);
+  cursor: pointer;
+}
+
+.fr-sort button[aria-pressed='true'] {
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* ---- Scope pills (All friends + Groups) ---- */
+.fr-lists {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 0 0 10px;
+}
+
+.fr-pill {
+  min-height: 30px;
+  max-width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  font-size: 13px;
+  color: var(--fr-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fr-pill[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 14%, transparent));
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.fr-pill--add {
+  margin-left: auto;
+}
+
+/* ---- Leaderboard rows (D12: Cards hero + 🔥 streak + 7-day chain + time) ---- */
+.fr-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 60px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fr-row__tap {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-row__tap:disabled {
+  cursor: default;
+}
+
+.fr-rank {
+  width: 18px;
+  flex: none;
+  font-size: 12px;
+  color: var(--fr-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-av {
+  display: inline-flex;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 14%, transparent));
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+.fr-av img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fr-av--big {
+  width: 48px;
+  height: 48px;
+  font-size: 18px;
+}
+
+.fr-who {
+  flex: 1;
+  min-width: 0;
+}
+
+.fr-name-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.fr-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.fr-name--you {
+  font-weight: 600;
+}
+
+.fr-emojis {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  font-size: 13px;
+}
+
+.fr-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--fr-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-chain {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fr-chain__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+.fr-chain__dot--done {
+  background: var(--fr-done);
+}
+
+.fr-chain__dot--open {
+  border: 1px solid var(--fr-started);
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.fr-chain__dot--missed {
+  background: color-mix(in srgb, var(--fg) 15%, transparent);
+}
+
+.fr-nums {
+  flex: none;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fr-hero-cards {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--fg);
+}
+
+.fr-hero-unit {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fr-muted);
+  margin-left: 3px;
+}
+
+.fr-mark {
+  display: inline-block;
+  width: 18px;
+  flex: none;
+  text-align: center;
+  font-size: 14px;
+}
+
+.fr-mark--not-started {
+  color: var(--fr-muted);
+}
+
+.fr-mark--started {
+  color: var(--fr-started);
+}
+
+.fr-mark--finished {
+  color: var(--fr-done);
+  font-weight: 700;
+}
+
+.fr-mark-btn {
+  flex: none;
+  min-height: 26px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  font-size: 12px;
+  color: var(--fr-cheer);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fr-mark-btn:hover:not(:disabled) {
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 12%, transparent));
+}
+
+.fr-mark-btn:disabled {
+  color: var(--fr-muted);
+  cursor: default;
+}
+
+/* ---- Panels, incoming cards, groups ---- */
+.fr-panel {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-side, transparent);
+}
+
+.fr-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fr-panel__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fr-card-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.fr-card-item:first-of-type {
+  border-top: 0;
+}
+
+.fr-card-item__info {
+  min-width: 0;
+  flex: 1;
+}
+
+.fr-card-item__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fr-card-item__meta {
+  font-size: 12px;
+  color: var(--fr-muted);
+  margin-top: 2px;
+}
+
+.fr-card-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.fr-group-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-side, transparent);
+  font-size: 13px;
+}
+
+/* ---- You vs Friend ---- */
+.fr-vs {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 1fr;
+  align-items: center;
+  justify-items: center;
+  padding: 6px 0;
+  text-align: center;
+}
+
+.fr-vs__label {
+  font-size: 13px;
+  color: var(--fr-muted);
+}
+
+.fr-vs__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fr-vs__who {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fr-vs__shared {
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-side, transparent);
+  border: 1px solid var(--border);
+  text-align: center;
+  font-size: 13px;
+  color: var(--fr-muted);
+}
+
+.fr-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ---- Modals & Sheets (Add/Join, AcceptCardSheet, ShareCardModal) ---- */
+.fr-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 16px;
+}
+
+.fr-modal {
+  width: 100%;
+  max-width: 440px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+}
+
+.fr-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.fr-modal__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.fr-qr {
+  width: 148px;
+  height: 148px;
+  margin: 10px auto;
+  padding: 8px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+
+.fr-qr svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.fr-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.fr-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.fr-line {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--fr-muted);
+}
+
+.fr-error {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--danger, #cf222e);
+}

@@ -73,6 +73,8 @@ export type IpcPlaces = ShareIpcPlaces & {
   openExternal?: (url: string) => Promise<void> | void
   /** Opens a local app bundle (GitHub AutoSync fallback; YAZ-6190). */
   openPath?: (appPath: string) => Promise<string> | string
+  /** Optional listener invoked whenever GitHub App auth status changes (e.g. Friends session refresh; YAZ-6219). */
+  onGithubAuthChange?: () => void
 }
 
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; githubAuth: GithubAuthManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
@@ -143,7 +145,10 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   const githubAuth = createGithubAuth({
     secrets,
     openExternal: (url) => places.openExternal?.(url),
-    onChange: (status) => broadcastAll(CONTRACT.github.onAuthChanged.channel, status),
+    onChange: (status) => {
+      broadcastAll(CONTRACT.github.onAuthChanged.channel, status)
+      places.onGithubAuthChange?.()
+    },
   })
   const sync = registerGithubIpc(
     store,

@@ -2,8 +2,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FRIENDS_ENABLED } from '@shared/features'
 import { openingTab, tabIn, tabsOf } from './app/nav'
+
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: false }))
 import { checkSignIn } from './auth/check'
 import { fakeGithub } from './github/testing'
 import { GOOD, mount, signInWithForm, type Harness } from './screens/testing'
@@ -26,9 +27,10 @@ afterEach(() => {
 
 const tabs = (x: Harness) => [...x.host.querySelectorAll('[role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
 
-describe('Friends off on the phone (YAZ-5652)', () => {
-  it('the switch is off in the app', () => {
-    expect(FRIENDS_ENABLED).toBe(false)
+describe('Friends off on the phone (YAZ-5652, YAZ-6200)', () => {
+  it('the switch is enabled by default in the app (YAZ-6200)', async () => {
+    const actual = await vi.importActual<typeof import('@shared/features')>('@shared/features')
+    expect(actual.FRIENDS_ENABLED).toBe(true)
   })
 
   it('no Friends tab, even with Review on; a way to Friends lands on Review or Search', () => {

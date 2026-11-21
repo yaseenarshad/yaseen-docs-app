@@ -56,14 +56,14 @@ async function mount(v: FriendsSendView) {
 const row = () => el.querySelector<HTMLElement>('[data-setting="friendsSend"]')!
 
 describe('Settings › Cards › Friends (YAZ-5086)', () => {
-  it('says what is sent and to whom, and when; no switch (decision 22)', async () => {
+  it('says what is sent and to whom, and when, plus the Show Friends in Inbox toggle (YAZ-6220)', async () => {
     await mount(view({}))
     expect(status).toHaveBeenCalledTimes(1)
     expect(row().textContent).toContain('Only your numbers')
     expect(row().textContent).toContain('Never your cards or your pages')
     expect(row().textContent).toContain('Sent to 3 friends and 1 group')
     expect(row().textContent).toContain('4 minutes ago')
-    expect(row().querySelector('input, [role="switch"], [aria-pressed]')).toBeNull()
+    expect(row().textContent).toContain('Show Friends in Inbox')
   })
 
   it.each<[Partial<FriendsSendView>, string]>([

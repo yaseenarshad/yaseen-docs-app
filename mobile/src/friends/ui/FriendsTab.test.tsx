@@ -571,7 +571,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
       )
     await tap(h, /^Number 1, Sam/)
     await until(h, '.fr-week')
-    const cheer = btn(h, 'Cheer')!
+    const cheer = btn(h, /^Cheer/)!
     await act(async () => {
       cheer.click()
       cheer.click()
@@ -602,7 +602,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
       why: 'offline',
       retryAt: null,
     })
-    await tap(h, 'Cheer')
+    await tap(h, /^Cheer/)
     expect(statusText(h)).toContain('No connection. Your cheer goes when you are online.')
   })
 
@@ -612,7 +612,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     s.markAnswer = async (_m, kind) => ({ kind: 'already', mark: { kind, at: new Date(NOW).toISOString() } })
     await tap(h, /^Number 1, Sam/)
     await until(h, '.fr-week')
-    await tap(h, 'Cheer')
+    await tap(h, /^Cheer/)
     expect(statusText(h)).toContain('You cheered Sam today. One cheer a day.')
     s.markAnswer = async (_m, kind) => ({ kind: 'waiting', mark: { kind, at: '' }, why: 'marks-limit', retryAt: NOW + 600_000 })
     await tap(h, 'Nudge')
@@ -791,5 +791,154 @@ describe('the states of the friends list v2 (round 3) on the tab', () => {
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
     await h.settle()
     expect(s.calls.remove).toEqual([board.friends[0].mine])
+  })
+})
+
+describe('YAZ-6218: D1 Friends UI additions', () => {
+  it('supports Cards | Time | Streak sort toggle and shows 7-day chain + Study Buddy Emojis', async () => {
+    const base = demoBoard(NOW)
+    const sam = { ...base.friends[0], userId: 101, login: 'sam', since: new Date(NOW - 30 * 86_400_000).toISOString(), sharedCardCount: 12 }
+    const priya = { ...base.friends[1], userId: 102, login: 'priya', since: new Date(NOW - 5 * 86_400_000).toISOString(), sharedCardCount: 2 }
+    ;({ h } = await open({ ...base, friends: [sam, priya] }))
+
+    // Study Buddy Emojis with tooltips render next to Sam
+    const emojis = [...h.host.querySelectorAll('.fr-emoji')]
+    expect(emojis.length).toBeGreaterThan(0)
+    expect(emojis[0].getAttribute('title')).toContain(':')
+
+    // 7-day chain dots render
+    expect(h.host.querySelectorAll('.fr-chain__dot').length).toBeGreaterThanOrEqual(7)
+
+    // Switch to Streak sort
+    await tap(h, 'Streak')
+    expect(plain(h.text())).toContain('🔥 8d')
+
+    // You vs Sam shows shared card count + smart Cheer button
+    await tap(h, /^Number 1, Sam/)
+    await until(h, '.fr-week')
+    expect(plain(h.text())).toContain('12 cards shared together')
+    expect(btn(h, 'Cheer 8d streak')).not.toBeNull()
+  })
+
+  it('shows local QR SVG on Share my link', async () => {
+    vi.stubGlobal('navigator', { ...navigator, share: async () => undefined })
+    ;({ h } = await open(demoBoard(NOW)))
+    await tap(h, 'Add a friend or a group')
+    await tap(h, 'Share my link')
+    const shareBtn = [...h.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement
+    await act(async () => shareBtn.click())
+    await h.settle()
+    expect(h.host.querySelector('.fr-qr svg')).not.toBeNull()
+  })
+
+  it('shows pinned Incoming cards with AcceptCardSheet (Put in Shared Cards) and Dismiss / Undo dismiss', async () => {
+    const card = {
+      id: 'card-1',
+      folderId: null,
+      senderId: 101,
+      senderLogin: 'sam',
+      title: 'Spaced Repetition',
+      markdown: 'What is FSRS?\n---\nFree Spaced Repetition Scheduler',
+      note: 'Great card!',
+      attachments: [],
+      status: 'pending' as const,
+      createdAt: new Date(NOW).toISOString(),
+    }
+    const board = demoBoard(NOW, { incomingCards: [card] })
+    const accepted: { folder: string; upNext?: boolean }[] = []
+    const states: { id: string; status: string }[] = []
+    let s: FakeService
+    ;({ h, s } = await open(board))
+    s.vaultFolders = async () => ['Biology', 'History']
+    s.acceptCardToVault = async (input) => {
+      accepted.push({ folder: input.folder, upNext: input.upNext })
+      return { ok: true, path: `${input.folder}/spaced-repetition-SH-100001.md` }
+    }
+    s.setCardState = async (id, status) => {
+      states.push({ id, status })
+      return { ok: true }
+    }
+
+    expect(plain(h.text())).toContain('Incoming cards (1)')
+    expect(plain(h.text())).toContain('Spaced Repetition')
+
+    await tap(h, 'Add to vault')
+    expect(h.host.querySelector('[role="dialog"][aria-label="Add shared card to vault"]')).not.toBeNull()
+    await tap(h, 'Put in Shared Cards')
+    expect(accepted).toEqual([{ folder: 'Shared Cards', upNext: false }])
+
+    // Dismiss works
+    await tap(h, 'Dismiss')
+    expect(states).toEqual([{ id: 'card-1', status: 'dismissed' }])
+  })
+
+  it('shows Group Leaderboard | Shared Cards tabs with 1-shot Import folder and Undo dismiss', async () => {
+    const folder = {
+      id: 'folder-1',
+      name: 'Anatomy Week 1',
+      senderId: 101,
+      senderLogin: 'sam',
+      createdAt: new Date(NOW).toISOString(),
+      cards: [
+        {
+          id: 'gc-1',
+          folderId: 'folder-1',
+          senderId: 101,
+          senderLogin: 'sam',
+          title: 'Femur',
+          markdown: 'Longest bone',
+          note: null,
+          attachments: [],
+          status: 'pending' as const,
+          createdAt: new Date(NOW).toISOString(),
+        },
+      ],
+    }
+    const grp = demoGroup(NOW, 'Study Group')
+    const d1Grp = {
+      id: grp.group,
+      name: 'Study Group',
+      adminId: 1,
+      isAdmin: true,
+      myStatus: 'active' as const,
+      inviteCode: 'grp23def45',
+      members: [],
+      pending: [],
+      sharedFolders: [folder],
+      sharedCards: [],
+    }
+    const board = demoBoard(NOW, { groups: [grp], d1Groups: [d1Grp] })
+    const imported: string[] = []
+    let s: FakeService
+    ;({ h, s } = await open(board))
+    s.vaultFolders = async () => ['Med School']
+    s.importFolderToVault = async (input) => {
+      imported.push(`${input.targetDir}/${input.folder.name}`)
+      return { ok: true, paths: ['Shared Cards/Anatomy Week 1/femur-SH-100001.md'] }
+    }
+
+    await tap(h, 'Study group')
+    await tap(h, 'Shared Cards (1)')
+    expect(plain(h.text())).toContain('Anatomy Week 1')
+    await tap(h, 'Import folder (1)')
+    await tap(h, 'Put in Shared Cards')
+    expect(imported).toEqual(['Shared Cards/Anatomy Week 1'])
+  })
+
+  it('shows Delete my Friends data in Settings with confirmation calling deleteMe()', async () => {
+    let deleted = false
+    let s: FakeService
+    ;({ h, s } = await open(demoBoard(NOW)))
+    s.deleteMe = async () => {
+      deleted = true
+      return { ok: true, deleted: true }
+    }
+    await tap(h, 'Settings')
+    await tap(h, 'Delete my Friends data')
+    expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Delete all your Friends data?')
+    await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
+    await h.settle()
+    expect(deleted).toBe(true)
+    expect(statusText(h)).toContain('Your Friends data has been deleted.')
   })
 })

@@ -229,9 +229,11 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
  */
 function FriendsPart() {
   const app = useApp()
-  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | 'zone' | null>(null)
-  const toggle = (part: 'account' | 'vaults' | 'name' | 'zone') => setEditing(editing === part ? null : part)
+  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | 'zone' | 'delete' | null>(null)
+  const toggle = (part: 'account' | 'vaults' | 'name' | 'zone' | 'delete') => setEditing(editing === part ? null : part)
   const [zoneSaid, setZoneSaid] = useState<string | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteSaid, setDeleteSaid] = useState<string | null>(null)
   const fa = app.friendsAccount
   const alert = friendsMessage(fa)
   const choices = app.list.vaults.filter((v) => app.accounts[vaultId(v)]?.gists === 'yes')
@@ -369,6 +371,38 @@ function FriendsPart() {
                 Save name
               </button>
             </form>
+          )}
+        </li>
+        <li>
+          <div className="row">
+            <button type="button" className="row__button btn--danger" aria-expanded={editing === 'delete'} onClick={() => toggle('delete')}>
+              Delete my Friends data
+            </button>
+          </div>
+          {deleteSaid !== null && editing !== 'delete' && (
+            <p className="muted" role="status">
+              {deleteSaid}
+            </p>
+          )}
+          {editing === 'delete' && (
+            <div className="sheet">
+              <Confirm
+                question="Delete all your Friends data? This removes your profile, friendships, invites, cheers, and shared cards from the Friends server. Your vault and cards on GitHub are not touched."
+                yes="Delete my Friends data"
+                busy={deleteBusy}
+                onYes={() => {
+                  setDeleteBusy(true)
+                  setDeleteSaid(null)
+                  void (app.services.friends.deleteMe?.() ?? Promise.resolve({ ok: false as const, error: 'unavailable' }))
+                    .then((res) => {
+                      setDeleteSaid(res.ok ? 'Your Friends data has been deleted.' : 'Could not delete your Friends data. Try again.')
+                      setEditing(null)
+                    })
+                    .finally(() => setDeleteBusy(false))
+                }}
+                onNo={() => setEditing(null)}
+              />
+            </div>
           )}
         </li>
       </ul>

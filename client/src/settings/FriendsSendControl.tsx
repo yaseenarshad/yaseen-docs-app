@@ -1,13 +1,33 @@
 /**
- * "Friends" (YAZ-5086, decision 16; Settings › Cards › "Friends"): the Mac sends the numbers too. The row
- * says what is sent and to whom, and why it did not send, in plain words. No switch (decision 22): with at least one
- * friend or group the numbers go; with none, nothing goes. It asks main once (`friends:status`), with no network call.
+ * "Friends" (YAZ-5086, YAZ-6220; Settings › Cards › "Friends"):
+ * Shows send status, a `Show Friends in Inbox` toggle (default ON), `Vaults that count` checkboxes,
+ * and a `Delete my Friends data` button with confirmation.
  */
 import { useEffect, useState } from 'react'
 import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
 import type { FriendsSendView } from '@shared/types'
 import { api } from '../api'
 import { useUnit } from '../vault/unitWord'
+
+export const FRIENDS_INBOX_VISIBLE_KEY = 'friends:showInInbox'
+export const FRIENDS_INBOX_VISIBILITY_EVENT = 'friends:inbox-visibility-changed'
+
+export function readShowFriendsInInbox(): boolean {
+  try {
+    return localStorage.getItem(FRIENDS_INBOX_VISIBLE_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+export function writeShowFriendsInInbox(show: boolean): void {
+  try {
+    localStorage.setItem(FRIENDS_INBOX_VISIBLE_KEY, show ? 'true' : 'false')
+  } catch {
+    // ignore storage errors
+  }
+  window.dispatchEvent(new CustomEvent(FRIENDS_INBOX_VISIBILITY_EVENT, { detail: show }))
+}
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
@@ -29,11 +49,6 @@ function whom(v: FriendsSendView): string {
 /** "1 vault … is" or "2 vaults … are". */
 const vaults = (n: number, rest: string, one: string, many: string) => `${n === 1 ? `1 vault that counts for friends ${one}` : `${n} vaults that count for friends ${many}`} ${rest}`
 
-/**
- * YAZ-5252: why the vaults that count cannot be counted on this Mac ("holds" means "on this Mac": open, or a closed vault
- * that the app knows). Three kinds, each in its own words: not on this Mac, older than GitHub's copy (YAZ-5391), and
- * not readable (YAZ-5388, YAZ-5395, YAZ-5396).
- */
 function missingWords(v: FriendsSendView): string {
   const behind = v.behind ?? 0
   const unreadable = v.unreadable ?? 0
@@ -55,7 +70,6 @@ function sendLine(v: FriendsSendView, now: number): string {
     case 'no-friends':
       return 'No friends yet, so nothing is sent. Add a friend in the phone app.'
     case 'no-list':
-      // YAZ-5254 (round 13, item 4: one GitHub account for friends): say whose list is missing, and what to do.
       return `No friends list on ${v.login ? `@${v.login}` : 'this token\'s GitHub account'}, so nothing is sent. Friends use the GitHub account of the phone app. Add a friend there, or save a token of that account above.`
     case 'missing-vaults':
       return `Not sent: ${missingWords(v)}`
@@ -74,12 +88,10 @@ function sendLine(v: FriendsSendView, now: number): string {
     case 'needs-newer-app':
       return 'Not sent: your friends list is from a newer app. Update this app.'
     case 'list-elsewhere':
-      // YAZ-5083: the list is in one vault of the person; this Mac reads it there.
       return `Not sent: your friends list is in the vault ${v.home ?? 'of the phone app'}. Open that vault once in this app, and the numbers go.`
     case 'no-list-access':
       return 'Not sent: the token cannot read the vault that holds your friends list. On GitHub, give it Contents (Read and write) on that vault, then save it again above.'
     case 'failed':
-      // YAZ-5389: a count that failed waits (5 minutes, doubled each time, at most 1 hour) before the next one.
       return `Not sent: something went wrong. The app tries again ${v.retryAt === null ? 'when your cards change' : `at ${clock(v.retryAt)}`}.`
     default: {
       if (v.friends + v.groups === 0) return 'No friends yet, so nothing is sent. Add a friend in the phone app.'
@@ -90,23 +102,143 @@ function sendLine(v: FriendsSendView, now: number): string {
 
 export function FriendsSendControl() {
   const [view, setView] = useState<FriendsSendView | null>(null)
+  const [showInInbox, setShowInInbox] = useState<boolean>(() => readShowFriendsInInbox())
+  const [allVaults, setAllVaults] = useState<string[]>([])
+  const [countedVaults, setCountedVaults] = useState<string[]>([])
+  const [savingVaults, setSavingVaults] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null)
   const unit = useUnit()
+
   useEffect(() => {
     let live = true
     api.friends.status().then(
       (v) => live && setView(v),
       () => undefined,
     )
+    if (typeof api.friends.board === 'function') {
+      api.friends.board(false).then(
+        (res) => {
+          if (!live || !res.ok) return
+          const picked = res.board.me.vaults ?? []
+          setCountedVaults(picked)
+          setAllVaults((prev) => Array.from(new Set([...prev, ...picked])))
+        },
+        () => undefined,
+      )
+    }
+    if (typeof api.state?.get === 'function') {
+      api.state.get().then(
+        (st) => {
+          if (!live || !st?.folders) return
+          const names = Object.entries(st.folders).map(([p, f]) => f.name || p.split('/').pop() || p)
+          setAllVaults((prev) => Array.from(new Set([...prev, ...names])))
+        },
+        () => undefined,
+      )
+    }
     return () => {
       live = false
     }
   }, [])
+
+  const toggleShowInInbox = (next: boolean) => {
+    setShowInInbox(next)
+    writeShowFriendsInInbox(next)
+  }
+
+  const toggleVault = async (vault: string) => {
+    if (savingVaults || typeof api.friends.updatePrefs !== 'function') return
+    const next = countedVaults.includes(vault) ? countedVaults.filter((v) => v !== vault) : [...countedVaults, vault]
+    setCountedVaults(next)
+    setSavingVaults(true)
+    try {
+      const res = await api.friends.updatePrefs({ vaults: next })
+      if (res.ok) setCountedVaults(res.vaults)
+    } finally {
+      setSavingVaults(false)
+    }
+  }
+
+  const handleDeleteMe = async () => {
+    if (deleting || typeof api.friends.deleteMe !== 'function') return
+    setDeleting(true)
+    setDeleteNotice(null)
+    try {
+      const res = await api.friends.deleteMe()
+      if (res.ok) {
+        setConfirmDelete(false)
+        setCountedVaults([])
+        setDeleteNotice('Your Friends data has been deleted.')
+        api.friends.status().then((v) => setView(v), () => undefined)
+      } else {
+        setDeleteNotice(`Could not delete Friends data: ${res.error}`)
+      }
+    } catch {
+      setDeleteNotice('Could not delete Friends data.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
-    <>
+    <div className="friends-settings">
       <p className="settings__key-status">{unit('Only your numbers: cards, minutes and streaks, with your GitHub name and picture. Never your cards or your pages.')}</p>
       <p className="settings__key-status" role="status">
         {view === null ? '…' : sendLine(view, Date.now())}
       </p>
-    </>
+
+      <label className="friends-settings__toggle" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13 }}>
+        <input
+          type="checkbox"
+          checked={showInInbox}
+          onChange={(e) => toggleShowInInbox(e.target.checked)}
+        />
+        <span>Show Friends in Inbox</span>
+      </label>
+
+      {allVaults.length > 0 && (
+        <fieldset className="friends-settings__vaults" style={{ border: 0, padding: 0, margin: '12px 0 0' }}>
+          <legend style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 6 }}>Vaults that count</legend>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {allVaults.map((vault) => (
+              <label key={vault} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={countedVaults.includes(vault)}
+                  disabled={savingVaults}
+                  onChange={() => void toggleVault(vault)}
+                />
+                <span>{vault}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      <div className="friends-settings__danger" style={{ marginTop: 14 }}>
+        {!confirmDelete ? (
+          <button
+            type="button"
+            className="settings__btn settings__btn--danger"
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete my Friends data
+          </button>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Delete all Friends stats, groups, and shared cards?</span>
+            <button type="button" className="settings__btn" disabled={deleting} onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </button>
+            <button type="button" className="settings__btn settings__btn--danger" disabled={deleting} onClick={() => void handleDeleteMe()}>
+              {deleting ? 'Deleting…' : 'Confirm delete'}
+            </button>
+          </div>
+        )}
+        {deleteNotice !== null && <p className="settings__key-status" role="status">{deleteNotice}</p>}
+      </div>
+    </div>
   )
 }

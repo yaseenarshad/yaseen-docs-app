@@ -2,31 +2,40 @@ import type { EntryKind } from '@shared/friendGists'
 import { WHAT_FRIENDS_SEE, type FriendRow, type PasteResult } from '@shared/friendsList'
 import { numbersFor } from '@shared/friendSend'
 import { parseFriendStats, type FriendMark, type FriendStats } from '@shared/friendStats'
-import type { FriendsPort } from '../../app/friendsPort'
+import {
+  DEFAULT_FRIENDS_ORIGIN,
+  FriendsApiError,
+  createFriendsApiClient,
+  type FriendsApiClient,
+  type FriendsBoardPayload,
+  type GroupBoardItem,
+  type SharedCardItem,
+  type SharedCardStatus,
+  type SharedFolderItem,
+} from '@shared/friendsApi'
+import { buildAcceptedCardFile, parseInviteInput } from '@shared/friendsShare'
+import { deviceZone } from '@shared/timeZone'
+import { localFriends, type FriendsPort, type FriendsSettings } from '../../app/friendsPort'
 import { loadAccount } from '../../auth/account'
-import { loadFriendsAccount } from '../../auth/friends'
-import type { FetchLike } from '../../github/client'
+import { githubClient, type FetchLike } from '../../github/client'
 import { PHONE, loadVaultList, vaultId, type TokenStore, type VaultStore } from '../../store'
 import type { SyncEngine } from '../../sync/engine'
+import { githubRemote, type Change } from '../../sync/githubRemote'
 import { createOwnNumbers, type OwnNumbers } from '../ownNumbers'
-import { queuedMines } from '../removeQueue'
-import { createFriendsList, type FriendsList, type ShareResult, type Unavailable } from '../list'
-import { createFriendsSender, type FriendsSendState, type FriendsSender } from '../sender'
-import { avatarUrl, gistText, type SeenMark } from './board'
-import type { GroupView, GroupsPort, JoinRequest, JoinResult } from './groups'
-import { createMarks, type MarkKind, type MarkSend, type Marks, type OutMark } from './marks'
+import type { ShareResult, Unavailable } from '../list'
+import type { FriendsSendState } from '../sender'
+import { addDays, avatarUrl, gistText, localDay, type SeenMark } from './board'
+import type { GroupMemberRow, GroupView, GroupsPort, JoinRequest, JoinResult } from './groups'
+import { HAS_FRIENDS_STATE } from './lazy'
+import type { MarkKind, MarkSend, OutMark } from './marks'
 
 /**
- * What the Friends screens (4E4) use: 4E2's list (`createFriendsList`), 4E1's sender (`createFriendsSender`), the
- * cheers and nudges (`marks.ts`), my own numbers, and 4E3's groups when they are there. It is 4A's `FriendsPort` too
- * (`hasFriends` opens the app on Friends, decision 21; "Vaults that count" and "Name" are in the list gist).
- * The screens get it through `lazyFriends` (`lazy.ts`), so this file and the friends logic load as a chunk of their own.
+ * What the Friends screens use: wired directly to Cloudflare D1 (`@shared/friendsApi`),
+ * using the existing GitHub App token from `TokenStore`. No Gist API calls.
  */
 export interface Me {
   name: string
   avatar: string | null
-  /** My numbers, counted on this phone with 2C's `friendStats` (what the next send writes). Null: the phone does not
-   *  hold every vault that counts. */
   stats: FriendStats | null
 }
 
@@ -36,15 +45,18 @@ export interface FriendEntry {
   name: string
   avatar: string | null
   state: FriendRow['state']
-  /** 4E2's words for a row that is not `ok` ("Waiting for Sam to add you", "No longer shares with you", …). */
   label: string | null
-  /** My link to send back (a "Waiting…" row). */
   sendBack: string | null
   stats: FriendStats | null
-  /** GitHub's time of their numbers gist. */
   updatedAt: number | null
-  /** Their cheer or nudge for me, as their pointer holds it (the "seen" rule is the screen's, `markToShow`). */
   mark: FriendMark | undefined
+  /** D1 fields (YAZ-6218). */
+  userId?: number
+  login?: string
+  since?: string
+  sharedCardCount?: number
+  incomingMarkMessage?: string | null
+  outgoingMark?: { kind: MarkKind; message?: string | null; at: string } | null
 }
 
 export type Board =
@@ -56,12 +68,12 @@ export type Board =
       groups: GroupView[]
       seen: Record<string, SeenMark>
       outbox: Record<string, OutMark>
-      /** No answer from GitHub this time: the numbers are the last ones read. */
       offline: boolean
-      /** This phone's send of my numbers (`sender.ts`), as it is now. Absent until the sync engine loaded. */
       sending?: FriendsSendState
-      /** Friends who added me back since the last read (their names): the tab says so one time. */
       newlyPaired?: string[]
+      /** D1 fields (YAZ-6218). */
+      incomingCards?: SharedCardItem[]
+      d1Groups?: GroupBoardItem[]
     }
   | Unavailable
 
@@ -72,25 +84,51 @@ export interface FriendsService {
   share(): Promise<ShareResult | Unavailable>
   paste(text: string): Promise<PasteAnswer>
   remove(mine: string, asked?: EntryKind): Promise<{ kind: 'done' } | { kind: 'paused'; why: string; retryAt: number | null } | { kind: 'not-found' } | Unavailable>
-  /** The way out when the home vault is gone (`FriendsList.restart`). */
-  restart?(vault: string): ReturnType<FriendsList['restart']>
-  mark(mine: string, kind: MarkKind): Promise<MarkSend>
+  restart?(vault: string): Promise<{ kind: 'done' } | { kind: 'home-is-there' } | { kind: 'too-many-gists' } | Unavailable>
+  mark(mine: string, kind: MarkKind, message?: string): Promise<MarkSend>
   see(marks: readonly { theirs: string; mark: FriendMark }[]): Promise<void>
   groups: GroupsPort | null
   whatFriendsSee: string
+  /** D1 card/folder sharing & group management (YAZ-6218). */
+  shareCards?(input: {
+    groupId?: string
+    toUserIds?: number[]
+    folderName?: string
+    cards: { title: string; markdown: string; note?: string | null }[]
+  }): Promise<{ ok: true; count: number } | { ok: false; error: string }>
+  setCardState?(cardId: string, status: SharedCardStatus): Promise<{ ok: true } | { ok: false; error: string }>
+  setFolderState?(folderId: string, status: SharedCardStatus): Promise<{ ok: true } | { ok: false; error: string }>
+  deleteSharedCard?(cardId: string): Promise<{ ok: true } | { ok: false; error: string }>
+  approveMember?(groupId: string, userId: number): Promise<{ ok: true } | { ok: false; error: string }>
+  rotateGroupInvite?(groupId: string): Promise<{ ok: true; inviteCode: string; link: string } | { ok: false; error: string }>
+  vaultFolders?(): Promise<string[]>
+  acceptCardToVault?(input: {
+    card: SharedCardItem
+    folder: string
+    upNext?: boolean
+  }): Promise<{ ok: true; path: string } | { ok: false; error: string }>
+  importFolderToVault?(input: {
+    folder: SharedFolderItem
+    targetDir: string
+    upNext?: boolean
+  }): Promise<{ ok: true; paths: string[] } | { ok: false; error: string }>
+  deleteMe?(): Promise<{ ok: true; deleted: true } | { ok: false; error: string }>
 }
 
-/** 4A's port with the screens' service; `stop` before "Sign out and erase this phone". */
 export interface FriendsServices extends FriendsPort {
   service(): Promise<FriendsService>
   stop(): Promise<void>
 }
 
 const BOARD_COPY = 'friendsBoardCopy'
+const SEEN_STATE = 'friendsSeenMarks'
+
 type BoardCopy = {
   friends: FriendEntry[]
   shared: Extract<Board, { kind: 'ok' }>['shared']
   groups: GroupView[]
+  incomingCards?: SharedCardItem[]
+  d1Groups?: GroupBoardItem[]
 }
 
 export interface ServiceOptions {
@@ -98,82 +136,409 @@ export interface ServiceOptions {
   tokens: TokenStore
   fetch?: FetchLike
   now?: () => number
-  /** 3B's engine once it loads: the sender listens to its passes (4E1). Absent in tests. */
+  origin?: string
   engine?: Promise<SyncEngine>
   sleep?: (ms: number) => Promise<void>
-  /** The kept count of my numbers (tests pass one to count the counts). */
   numbers?: OwnNumbers
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
+}
+
+function generateCardId(): string {
+  const bytes = new Uint8Array(4)
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < 4; i++) bytes[i] = Math.floor(Math.random() * 256)
+  }
+  const n = ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0
+  return `SH-${(n % 899_999) + 100_000}`
+}
+
+function mapApiError(err: unknown): Unavailable {
+  if (err instanceof FriendsApiError) {
+    if (err.status === 401) return { kind: 'unauthorized' }
+    if (err.status === 429) return { kind: 'rate-limited' }
+    return { kind: 'failed' }
+  }
+  return { kind: 'offline' }
+}
+
+/** Computes consecutive days (ending today or yesterday) where every active member finished due cards. */
+function computeGroupStreak(g: GroupBoardItem, myStats: FriendStats | null, nowMs: number): number {
+  const today = localDay(nowMs)
+  const memberStats: (FriendStats | null)[] = g.members.map((m) => m.stats ?? (m.id === g.adminId && g.isAdmin ? myStats : null))
+  if (memberStats.length === 0) return 0
+  const allDone = (day: string) =>
+    memberStats.every((s) => s !== null && s.days.some((d) => d.day === day && d.done === true))
+  let streak = 0
+  let offset = allDone(today) ? 0 : -1
+  while (offset > -365) {
+    const day = addDays(today, offset)
+    if (!allDone(day)) break
+    streak++
+    offset--
+  }
+  return streak
+}
+
+function toGroupView(g: GroupBoardItem, myId: number, myStats: FriendStats | null, nowMs: number): GroupView {
+  if (g.myStatus === 'pending') {
+    return {
+      kind: 'waiting',
+      group: g.id,
+      name: gistText(g.name, 30) || 'Group',
+      sendToAdmin: '',
+    }
+  }
+  const members: GroupMemberRow[] = g.members.map((m) => {
+    const isMe = m.id === myId
+    const stats = isMe ? myStats ?? m.stats : m.stats
+    return {
+      pointer: String(m.id),
+      login: gistText(m.login),
+      name: gistText(m.name || m.login) || 'Member',
+      me: isMe,
+      admin: m.id === g.adminId,
+      mark: null,
+      state: 'ok',
+      label: null,
+      read: stats
+        ? {
+            kind: 'ok',
+            stats,
+            pointer: { v: 1, stats: '' },
+            updatedAt: m.statsAt ? Date.parse(m.statsAt) : null,
+          }
+        : null,
+    }
+  })
+  return {
+    kind: 'ok',
+    group: g.id,
+    name: gistText(g.name, 30) || 'Group',
+    admin: String(g.adminId),
+    iAmAdmin: g.isAdmin,
+    streak: computeGroupStreak(g, myStats, nowMs),
+    members,
+    firstSeen: false,
+  }
+}
+
+export function isFriendsDemo(): boolean {
+  if (typeof globalThis.location?.search !== 'string') return false
+  return new URLSearchParams(globalThis.location.search).get('friendsDemo') === '1'
+}
+
+function makeDemoStats(nowMs: number, login: string, name: string, todayCards: number, todayMins: number, doneToday: boolean, streak: number): FriendStats {
+  const today = localDay(nowMs)
+  const days = Array.from({ length: 7 }, (_, idx) => {
+    const offset = -idx
+    const isToday = offset === 0
+    return {
+      day: addDays(today, offset),
+      cards: isToday ? todayCards : Math.max(10, todayCards - idx * 3),
+      seconds: (isToday ? todayMins : Math.max(5, todayMins - idx * 2)) * 60,
+      remembered: isToday ? Math.max(0, todayCards - 2) : 18,
+      forgot: isToday ? Math.min(2, todayCards) : 1,
+      newCards: isToday ? Math.min(8, todayCards) : 4,
+      done: isToday ? doneToday : idx < streak,
+    }
+  })
+  return {
+    v: 1,
+    login,
+    name,
+    avatar: '',
+    days,
+    totals: {
+      cards: 1420,
+      inReview: 980,
+      newLeft: 440,
+      mature: 610,
+      dueLeft: doneToday ? 0 : 7,
+      addedThisWeek: 24,
+      streak,
+      bestStreak: Math.max(streak, 21),
+      bestDay: Math.max(todayCards, 72),
+      bestWeek: 310,
+    },
+    at: new Date(nowMs).toISOString(),
+  }
+}
+
+function createDemoFriendsApiClient(origin: string, now: () => number): FriendsApiClient {
+  const t = now()
+  const iso = new Date(t).toISOString()
+  let seq = 1
+  const state: FriendsBoardPayload = {
+    me: {
+      id: 1,
+      login: 'yaseen',
+      name: 'Yaseen',
+      nickname: null,
+      avatarUrl: null,
+      zone: 'America/Denver',
+      vaults: [],
+      stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14),
+      statsAt: iso,
+    },
+    friends: [
+      {
+        id: 2,
+        login: 'maya',
+        name: 'Maya',
+        avatarUrl: null,
+        since: new Date(t - 30 * 86_400_000).toISOString(),
+        stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21),
+        statsAt: new Date(t - 15 * 60_000).toISOString(),
+        incomingMark: null,
+        outgoingMark: null,
+        sharedCardCount: 12,
+      },
+      {
+        id: 3,
+        login: 'sam',
+        name: 'Sam',
+        avatarUrl: null,
+        since: new Date(t - 10 * 86_400_000).toISOString(),
+        stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9),
+        statsAt: new Date(t - 40 * 60_000).toISOString(),
+        incomingMark: { kind: 'cheer', message: 'cheered your 14-day streak! 🔥', at: new Date(t - 20 * 60_000).toISOString(), seenAt: null },
+        outgoingMark: null,
+        sharedCardCount: 4,
+      },
+    ],
+    invites: [],
+    groups: [
+      {
+        id: 'grp_demo_med',
+        name: 'Med Study',
+        adminId: 1,
+        isAdmin: true,
+        myStatus: 'active',
+        inviteCode: 'medstudy26',
+        members: [
+          { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: null, since: iso, stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14), statsAt: iso },
+          { id: 2, login: 'maya', name: 'Maya', avatarUrl: null, since: iso, stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21), statsAt: iso },
+          { id: 3, login: 'sam', name: 'Sam', avatarUrl: null, since: iso, stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9), statsAt: iso },
+        ],
+        pending: [{ id: 4, login: 'nina', name: 'Nina', avatarUrl: null }],
+        sharedFolders: [
+          {
+            id: 'fld_demo_biochem',
+            name: 'Biochem',
+            senderId: 2,
+            senderLogin: 'maya',
+            createdAt: iso,
+            cards: [
+              { id: 'sc_b1', folderId: 'fld_demo_biochem', senderId: 2, senderLogin: 'maya', title: 'ATP Synthase', markdown: 'Which complex synthesizes ATP?\n---\nComplex V (ATP synthase)', note: 'High-yield!', attachments: [], status: 'pending', createdAt: iso },
+              { id: 'sc_b2', folderId: 'fld_demo_biochem', senderId: 2, senderLogin: 'maya', title: 'PFK-1 Regulation', markdown: 'Rate-limiting enzyme of glycolysis?\n---\nPhosphofructokinase-1 (PFK-1)', note: null, attachments: [], status: 'pending', createdAt: iso },
+              { id: 'sc_b3', folderId: 'fld_demo_biochem', senderId: 2, senderLogin: 'maya', title: 'Michaelis-Menten Km', markdown: 'What does Km represent?\n---\nSubstrate concentration at 1/2 Vmax', note: null, attachments: [], status: 'pending', createdAt: iso },
+            ],
+          },
+        ],
+        sharedCards: [
+          { id: 'sc_g1', folderId: null, senderId: 3, senderLogin: 'sam', title: 'Krebs Cycle Mnemonic', markdown: 'Citrate Is Krebs Starting Substrate For Making Oxaloacetate', note: 'Saved me on the quiz', attachments: [], status: 'pending', createdAt: iso },
+          { id: 'sc_g2', folderId: null, senderId: 2, senderLogin: 'maya', title: 'Beta-Oxidation Location', markdown: 'Where does beta-oxidation occur?\n---\nMitochondrial matrix', note: null, attachments: [], status: 'dismissed', createdAt: iso },
+        ],
+      },
+    ],
+    incomingCards: [
+      { id: 'sc_inc1', folderId: null, senderId: 2, senderLogin: 'maya', title: 'Henderson-Hasselbalch', markdown: 'pH = pKa + log([A-]/[HA])', note: 'Good formula card', attachments: [], status: 'pending', createdAt: iso },
+    ],
+  }
+
+  const allCards = (): SharedCardItem[] => [
+    ...state.incomingCards,
+    ...state.groups.flatMap((g) => [...g.sharedCards, ...g.sharedFolders.flatMap((f) => f.cards)]),
+  ]
+
+  return {
+    async ensureSession() {
+      return 'demo-session'
+    },
+    clearSession() {},
+    async board() {
+      return structuredClone(state)
+    },
+    async sendStats(stats) {
+      state.me.stats = stats
+      state.me.statsAt = new Date(now()).toISOString()
+      return { ok: true, statsAt: state.me.statsAt }
+    },
+    async updatePrefs(prefs) {
+      if (prefs.vaults !== undefined) state.me.vaults = prefs.vaults
+      if (prefs.zone !== undefined) state.me.zone = prefs.zone
+      if (prefs.nickname !== undefined) state.me.nickname = prefs.nickname
+      return { ok: true, vaults: state.me.vaults, zone: state.me.zone, nickname: state.me.nickname }
+    },
+    async createInvite() {
+      const code = `demo${String(seq++).padStart(6, '0')}`
+      const createdAt = new Date(now()).toISOString()
+      const expiresAt = new Date(now() + 7 * 86_400_000).toISOString()
+      state.invites.push({ code, expiresAt, createdAt })
+      return { code, link: `${origin}/friend#${code}`, expiresAt }
+    },
+    async acceptInvite(_code) {
+      return { kind: 'friend', friendId: 2 }
+    },
+    async removeFriend(userId) {
+      state.friends = state.friends.filter((f) => f.id !== userId)
+      return { ok: true }
+    },
+    async sendMark(toUserId, kind, message) {
+      const at = new Date(now()).toISOString()
+      const f = state.friends.find((x) => x.id === toUserId)
+      if (f) f.outgoingMark = { kind, message: message ?? null, at }
+      return { ok: true, kind, message: message ?? null, at }
+    },
+    async markSeen(fromUserIds) {
+      const at = new Date(now()).toISOString()
+      for (const f of state.friends) {
+        if (f.incomingMark && (!fromUserIds || fromUserIds.includes(f.id))) f.incomingMark.seenAt = at
+      }
+      return { ok: true }
+    },
+    async createGroup(name) {
+      const id = `grp_demo_${seq++}`
+      const inviteCode = `grp${String(seq++).padStart(7, '0')}`
+      state.groups.push({
+        id,
+        name,
+        adminId: 1,
+        isAdmin: true,
+        myStatus: 'active',
+        inviteCode,
+        members: [{ id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: null, since: iso, stats: state.me.stats, statsAt: state.me.statsAt }],
+        pending: [],
+        sharedFolders: [],
+        sharedCards: [],
+      })
+      return { id, name, inviteCode, link: `${origin}/group#${inviteCode}` }
+    },
+    async approveMember(groupId, userId) {
+      const g = state.groups.find((x) => x.id === groupId)
+      if (g) {
+        const p = g.pending.find((x) => x.id === userId)
+        if (p) {
+          g.pending = g.pending.filter((x) => x.id !== userId)
+          g.members.push({ ...p, since: new Date(now()).toISOString(), stats: null, statsAt: null })
+        }
+      }
+      return { ok: true }
+    },
+    async removeMember(groupId, userId) {
+      const g = state.groups.find((x) => x.id === groupId)
+      if (g) {
+        if (userId === undefined) state.groups = state.groups.filter((x) => x.id !== groupId)
+        else {
+          g.members = g.members.filter((m) => m.id !== userId)
+          g.pending = g.pending.filter((m) => m.id !== userId)
+        }
+      }
+      return { ok: true }
+    },
+    async rotateGroupInvite(groupId) {
+      const inviteCode = `rot${String(seq++).padStart(7, '0')}`
+      const g = state.groups.find((x) => x.id === groupId)
+      if (g) g.inviteCode = inviteCode
+      return { inviteCode, link: `${origin}/group#${inviteCode}` }
+    },
+    async shareCards(input) {
+      return { ok: true, folderId: null, cardIds: input.cards.map((_, i) => `demo_sent_${seq++}_${i}`), count: input.cards.length }
+    },
+    async setCardState(cardId, status) {
+      const c = allCards().find((x) => x.id === cardId)
+      if (c) c.status = status
+      return { ok: true, status }
+    },
+    async setFolderState(folderId, status) {
+      let count = 0
+      for (const g of state.groups) {
+        const f = g.sharedFolders.find((x) => x.id === folderId)
+        if (f) {
+          for (const c of f.cards) {
+            c.status = status
+            count++
+          }
+        }
+      }
+      return { ok: true, status, count }
+    },
+    async deleteSharedCard(cardId) {
+      state.incomingCards = state.incomingCards.filter((c) => c.id !== cardId)
+      for (const g of state.groups) g.sharedCards = g.sharedCards.filter((c) => c.id !== cardId)
+      return { ok: true }
+    },
+    async deleteMe() {
+      state.friends = []
+      state.groups = []
+      state.invites = []
+      state.incomingCards = []
+      return { ok: true, deleted: true }
+    },
+  }
 }
 
 export function createFriendsService(options: ServiceOptions): FriendsService & {
   port: FriendsPort
   stop(): Promise<void>
-  list: FriendsList
-  marks: Marks
+  api: FriendsApiClient
 } {
   const { store, tokens } = options
   const now = options.now ?? Date.now
-  const clock = {
-    now,
-    setTimeout: (fn: () => void, ms: number) => globalThis.setTimeout(fn, ms),
-    clearTimeout: (h: unknown) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
-  }
-  const list = createFriendsList({
-    store,
-    tokens,
-    fetch: options.fetch,
-    clock,
-    sleep: options.sleep,
-    lock: options.lock,
-  })
-  const marks = createMarks({
-    store,
-    tokens,
-    fetch: options.fetch,
-    now,
-    lock: options.lock,
-  })
-  // 4E3: groups run by an admin, on the same list.
-  const groups: GroupsPort = list.groups
-  // My numbers, counted once for each change and kept; my row and the sender read the same count.
-  const own: OwnNumbers = options.numbers ?? createOwnNumbers(store)
+  const local = localFriends(store)
+  const demoMode = isFriendsDemo()
+  const origin =
+    options.origin ??
+    (typeof globalThis.location?.origin === 'string' && /^https:\/\//.test(globalThis.location.origin)
+      ? globalThis.location.origin
+      : DEFAULT_FRIENDS_ORIGIN)
 
-  let sender: FriendsSender | null = null
-  /** My pointers at the last read (one remove-reserve update each), for a mark on a phone the sender has not counted yet. */
-  let pointerCount = 0
-  let stopped = false
-  const onHidden = () => {
-    if (document.visibilityState === 'hidden') void sender?.background()
-  }
-  let unfollow: (() => void) | null = null
-  void options.engine?.then((engine) => {
-    if (stopped) return
-    unfollow = own.follow(engine)
-    sender = createFriendsSender({
-      numbers: own,
-      store,
-      tokens,
-      sync: engine,
-      fetch: options.fetch,
-      clock,
-      sleep: options.sleep,
-      lock: options.lock,
-    })
-    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onHidden)
-  })
-
-  /** My own row: my numbers as this phone counts them now (the same 2C function the send uses). */
-  async function me(): Promise<Me> {
-    const settings = await list.port.settings()
-    const account = await loadFriendsAccount(store)
-    const vault = account.kind === 'ok' || account.kind === 'two-accounts' ? account.vault : null
-    const profile = vault === null ? undefined : await loadAccount(store, vault)
-    const name = gistText(settings.nickname ?? profile?.name ?? profile?.login ?? '') || 'You'
+  async function getGithubToken(): Promise<string | null> {
     const phone = await loadVaultList(store)
+    const ids = [
+      ...(phone.open ? [phone.open] : []),
+      ...phone.vaults.map(vaultId).filter((id) => id !== phone.open),
+    ]
+    for (const id of ids) {
+      const tok = await tokens.read(id)
+      if (tok) return tok
+    }
+    const accounts = await tokens.githubAccounts()
+    for (const login of accounts) {
+      const tok = await tokens.accessFor(login)
+      if (tok) return tok
+    }
+    return null
+  }
+
+  const api = demoMode
+    ? createDemoFriendsApiClient(origin, now)
+    : createFriendsApiClient({
+        origin,
+        getGithubToken,
+        fetch: options.fetch as ((url: string, init?: RequestInit) => Promise<Response>) | undefined,
+        now,
+      })
+
+  const own: OwnNumbers = options.numbers ?? createOwnNumbers(store)
+  let stopped = false
+  let lastSentJson: string | null = null
+  let lastSentAt: number | null = null
+  let sendStatus: FriendsSendState['status'] = 'idle'
+  let unfollow: (() => void) | null = null
+  let unsubEngine: (() => void) | null = null
+  let syncEngine: SyncEngine | null = null
+
+  async function computeMyStats(settings: FriendsSettings): Promise<{ name: string; avatar: string | null; stats: FriendStats | null }> {
+    const phone = await loadVaultList(store)
+    const primaryVault = phone.open ?? (phone.vaults[0] ? vaultId(phone.vaults[0]) : null)
+    const profile = primaryVault === null ? undefined : await loadAccount(store, primaryVault)
+    const name = gistText(settings.nickname ?? profile?.name ?? profile?.login ?? '') || 'You'
     const ids = settings.vaults ?? phone.vaults.map(vaultId)
     const repos = phone.vaults.filter((v) => ids.includes(vaultId(v))).map((v) => v.repo.toLowerCase())
-    const counted = await own.counted(repos, now(), settings.zone) // The home time zone of the days
+    const counted = await own.counted(repos, now(), settings.zone)
     const stats =
       counted === null
         ? null
@@ -190,131 +555,464 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     return { name, avatar: avatarUrl(profile?.avatarUrl), stats }
   }
 
-  const entryOf = (row: FriendRow): FriendEntry => {
-    const ok = row.read !== null && row.read.kind === 'ok' ? row.read : null
-    return {
-      theirs: row.theirs,
-      mine: row.mine,
-      name: gistText(row.name) || 'Friend',
-      avatar: avatarUrl(ok?.stats.avatar),
-      state: row.state,
-      // 4E2's words hold the raw name ("Waiting for <name> to add you"): the cleaned one goes in its place.
-      label: row.label === null ? null : row.name === '' ? row.label : row.label.split(row.name).join(gistText(row.name) || 'your friend'),
-      sendBack: row.sendBack,
-      stats: ok?.stats ?? null,
-      updatedAt: ok?.updatedAt ?? null,
-      mark: ok?.pointer.mark,
+  async function pushMyStats(): Promise<void> {
+    if (stopped) return
+    const settings = await local.settings()
+    const { stats } = await computeMyStats(settings)
+    if (stats === null) return
+    const payload = JSON.stringify({ days: stats.days, totals: stats.totals })
+    if (payload === lastSentJson) return
+    try {
+      await api.sendStats(stats, settings.zone ?? deviceZone())
+      lastSentJson = payload
+      lastSentAt = now()
+      sendStatus = 'sent'
+    } catch {
+      sendStatus = 'offline'
     }
   }
 
-  async function saveCopy(copy: BoardCopy) {
+  const onHidden = () => {
+    if (document.visibilityState === 'hidden') void pushMyStats()
+  }
+
+  void options.engine?.then((engine) => {
+    if (stopped) return
+    syncEngine = engine
+    unfollow = own.follow(engine)
+    unsubEngine = engine.subscribe((e) => {
+      if (e.type === 'state' && e.state.status === 'synced') void pushMyStats()
+    })
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onHidden)
+  })
+
+  async function loadSeen(): Promise<Record<string, SeenMark>> {
+    return (await store.getState<Record<string, SeenMark>>(PHONE, SEEN_STATE)) ?? {}
+  }
+
+  async function saveCopy(copy: BoardCopy): Promise<void> {
     if ((await loadVaultList(store)).vaults.length === 0) return
     await (await store.session(PHONE)).setState(PHONE, BOARD_COPY, copy).catch(() => undefined)
   }
+
   async function loadCopy(): Promise<BoardCopy | null> {
     const copy = await store.getState<BoardCopy>(PHONE, BOARD_COPY)
     if (copy === undefined || copy === null || !Array.isArray(copy.friends)) return null
-    // Read again as a friend's file: a stored copy is checked as the gist was.
     const friends = copy.friends.map((f) => {
       const read = f.stats === null ? null : parseFriendStats(JSON.stringify(f.stats))
       return { ...f, stats: read !== null && read.ok ? read.value : null }
     })
-    // The groups too, each member's numbers checked again as a friend's file.
-    const groups = (Array.isArray(copy.groups) ? copy.groups : []).map((g): GroupView => {
-      if (g.kind !== 'ok') return g
-      return {
-        ...g,
-        members: g.members.map((m) => {
-          if (m.read === null || m.read.kind !== 'ok') return m
-          const read = parseFriendStats(JSON.stringify(m.read.stats))
-          return read.ok ? { ...m, read: { ...m.read, stats: read.value } } : { ...m, read: null, state: 'unreadable' as const }
-        }),
+    return {
+      friends,
+      shared: copy.shared ?? [],
+      groups: Array.isArray(copy.groups) ? copy.groups : [],
+      incomingCards: Array.isArray(copy.incomingCards) ? copy.incomingCards : [],
+      d1Groups: Array.isArray(copy.d1Groups) ? copy.d1Groups : [],
+    }
+  }
+
+  const groups = {
+    async all() {
+      try {
+        const payload = await api.board()
+        const settings = await local.settings()
+        const myLocal = await computeMyStats(settings)
+        return payload.groups.map((g) => toGroupView(g, payload.me.id, myLocal.stats ?? payload.me.stats, now()))
+      } catch (err) {
+        return mapApiError(err)
       }
-    })
-    return { friends, shared: copy.shared ?? [], groups }
+    },
+    async create(name: string) {
+      const clean = name.replace(/\s+/g, ' ').trim()
+      if (!clean) return { kind: 'bad-name' as const }
+      try {
+        const res = await api.createGroup(clean)
+        return {
+          kind: 'ok' as const,
+          group: res.id,
+          link: res.link,
+          title: 'Yaseen Docs group link',
+          text: `Join my group ${clean} on Yaseen Docs.`,
+        }
+      } catch (err) {
+        return mapApiError(err)
+      }
+    },
+    async add(_group: string, _text: string) {
+      return { kind: 'done' }
+    },
+    async remove(group: string, pointer: string) {
+      try {
+        await api.removeMember(group, Number(pointer))
+        return { kind: 'done' }
+      } catch (err) {
+        return mapApiError(err)
+      }
+    },
+    async leave(group: string) {
+      try {
+        await api.removeMember(group)
+        return { kind: 'done' as const }
+      } catch (err) {
+        return mapApiError(err)
+      }
+    },
+    async delete(group: string) {
+      try {
+        await api.removeMember(group)
+        return { kind: 'done' as const }
+      } catch (err) {
+        return mapApiError(err)
+      }
+    },
+  } as unknown as GroupsPort
+
+  async function deleteMe(): Promise<{ ok: true; deleted: true } | { ok: false; error: string }> {
+    try {
+      const res = await api.deleteMe()
+      await store.setState(PHONE, HAS_FRIENDS_STATE, false).catch(() => undefined)
+      await store.removeState(PHONE, BOARD_COPY).catch(() => undefined)
+      await store.removeState(PHONE, SEEN_STATE).catch(() => undefined)
+      lastSentJson = null
+      lastSentAt = null
+      return res
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'delete_failed' }
+    }
+  }
+
+  const port: FriendsPort = {
+    async hasFriends() {
+      const fact = await store.getState<boolean>(PHONE, HAS_FRIENDS_STATE)
+      return fact === true
+    },
+    settings: () => local.settings(),
+    async saveSettings(next: FriendsSettings) {
+      await local.saveSettings(next)
+      await api
+        .updatePrefs({
+          vaults: next.vaults ?? [],
+          zone: next.zone ?? null,
+          nickname: next.nickname ?? null,
+        })
+        .catch(() => undefined)
+    },
+    deleteMe,
+  }
+
+  async function commitToOpenVault(
+    changes: Change[],
+    message: string,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    if (demoMode) return { ok: true }
+    const phone = await loadVaultList(store)
+    const openId = phone.open ?? (phone.vaults[0] ? vaultId(phone.vaults[0]) : null)
+    const vault = phone.vaults.find((v) => vaultId(v) === openId)
+    if (!vault || !openId) return { ok: false, error: 'No open vault on this phone.' }
+    const tok = await tokens.read(openId)
+    if (!tok) return { ok: false, error: 'Sign in again to add cards to your vault.' }
+    const remote = githubRemote(githubClient(tok, { fetch: options.fetch, now }), vault.repo, vault.branch)
+    const head = await remote.head()
+    if (head === 'unchanged') return { ok: false, error: 'Could not read vault branch head.' }
+    await remote.commit(head.sha, changes, message)
+    // Also mirror locally so the file appears before the next sync pass.
+    for (const c of changes) {
+      if (!('delete' in c) && typeof c.content === 'string') {
+        await store.write(openId, c.path, c.content).catch(() => undefined)
+      }
+    }
+    if (syncEngine) void syncEngine.syncNow().catch(() => undefined)
+    return { ok: true }
   }
 
   return {
-    list,
-    marks,
+    api,
     groups,
     whatFriendsSee: WHAT_FRIENDS_SEE,
-    port: list.port,
+    port,
     async board() {
-      // The list first: it drains the phone's remove queue (removes go before marks), and gives the pointers.
-      const rows = await list.rows()
-      const [mine, seen] = await Promise.all([me(), marks.seen()])
-      if (rows.kind === 'ok') {
-        const all = await groups.all()
-        // A group that cannot be read now keeps its last view (its members' "updated … ago" say how old).
-        const kept = Array.isArray(all) && all.every((g) => g.kind !== 'offline') ? [] : (await loadCopy())?.groups ?? []
-        const last = (g: GroupView) => (g.kind === 'offline' ? kept.find((k) => k.kind === 'ok' && k.group === g.group) ?? g : g)
-        const groupViews = Array.isArray(all) ? all.map(cleanGroup).map(last) : kept
-        const queued = await queuedMines(store)
-        const friends = rows.rows.map(entryOf).map(removing(queued))
-        // Waiting marks go now, only to friends who still share and whose remove does not wait, and
-        // with the remove reserve of the list's pointers.
-        const reach = new Set(friends.filter((f) => f.state === 'ok' || f.state === 'waiting').map((f) => f.mine))
-        await marks.flush({ pointers: rows.rows.length + rows.shared.length + (Array.isArray(all) ? all.length : 0), keep: (m) => reach.has(m) })
-        const outbox = await marks.outbox()
-        pointerCount = rows.rows.length + rows.shared.length + groupViews.length
-        const offline = rows.rows.some((r) => r.read?.kind === 'ok' && r.read.stale !== undefined) || rows.rows.some((r) => r.state === 'offline')
-        await saveCopy({ friends, shared: rows.shared, groups: groupViews })
+      const settings = await local.settings()
+      const [myLocal, seen] = await Promise.all([computeMyStats(settings), loadSeen()])
+      try {
+        const payload = await api.board()
+        const meStats = myLocal.stats ?? payload.me.stats
+        const me: Me = {
+          name: gistText(payload.me.nickname ?? payload.me.name ?? payload.me.login) || myLocal.name,
+          avatar: avatarUrl(payload.me.avatarUrl) ?? myLocal.avatar,
+          stats: meStats,
+        }
+        const friends: FriendEntry[] = payload.friends.map((m) => ({
+          theirs: String(m.id),
+          mine: String(m.id),
+          userId: m.id,
+          login: m.login,
+          since: m.since,
+          sharedCardCount: m.sharedCardCount,
+          name: gistText(m.name || m.login) || 'Friend',
+          avatar: avatarUrl(m.avatarUrl),
+          state: 'ok',
+          label: null,
+          sendBack: null,
+          stats: m.stats,
+          updatedAt: m.statsAt ? Date.parse(m.statsAt) : null,
+          mark: m.incomingMark ? { kind: m.incomingMark.kind, at: m.incomingMark.at } : undefined,
+          incomingMarkMessage: m.incomingMark?.message ?? null,
+          outgoingMark: m.outgoingMark,
+        }))
+        const outbox: Record<string, OutMark> = {}
+        for (const m of payload.friends) {
+          if (m.outgoingMark) {
+            outbox[String(m.id)] = {
+              mark: { kind: m.outgoingMark.kind, at: m.outgoingMark.at },
+              state: 'sent',
+            }
+          }
+        }
+        const shared = payload.invites.map((inv) => ({
+          mine: inv.code,
+          link: `${origin}/friend#${inv.code}`,
+          at: inv.createdAt,
+        }))
+        const groupViews = payload.groups.map((g) => toGroupView(g, payload.me.id, meStats, now()))
+        const hasAny = friends.length > 0 || payload.groups.length > 0
+        await (await store.session(PHONE)).setState(PHONE, HAS_FRIENDS_STATE, hasAny).catch(() => undefined)
+        await saveCopy({
+          friends,
+          shared,
+          groups: groupViews,
+          incomingCards: payload.incomingCards,
+          d1Groups: payload.groups,
+        })
         return {
           kind: 'ok',
-          me: mine,
+          me,
           friends,
-          shared: rows.shared,
+          shared,
           groups: groupViews,
           seen,
           outbox,
-          offline,
-          ...(sender !== null && { sending: sender.state() }),
-          newlyPaired: rows.rows.filter((r) => rows.newlyPaired.includes(r.mine)).map((r) => gistText(r.name) || 'Your friend'),
+          offline: false,
+          ...(lastSentAt !== null && { sending: { status: sendStatus, lastSentAt, retryAt: null } as FriendsSendState }),
+          incomingCards: payload.incomingCards,
+          d1Groups: payload.groups,
+        }
+      } catch (err) {
+        const mapped = mapApiError(err)
+        if (mapped.kind === 'offline' || mapped.kind === 'rate-limited') {
+          const copy = await loadCopy()
+          if (copy !== null) {
+            return {
+              kind: 'ok',
+              me: myLocal,
+              ...copy,
+              seen,
+              outbox: {},
+              offline: true,
+              ...(lastSentAt !== null && { sending: { status: sendStatus, lastSentAt, retryAt: null } as FriendsSendState }),
+            }
+          }
+        }
+        return mapped
+      }
+    },
+    async share() {
+      try {
+        const inv = await api.createInvite()
+        return {
+          kind: 'ok',
+          mine: inv.code,
+          link: inv.link,
+          title: 'Yaseen Docs friend link',
+          text: 'Add me as a friend on Yaseen Docs.',
+          whatFriendsSee: WHAT_FRIENDS_SEE,
+        }
+      } catch (err) {
+        return mapApiError(err)
+      }
+    },
+    async paste(text: string): Promise<PasteAnswer> {
+      const parsed = parseInviteInput(text)
+      if (parsed === null) return { kind: 'not-a-link' }
+      try {
+        const res = await api.acceptInvite(parsed.code)
+        if (res.kind === 'friend') {
+          return { kind: 'added', name: 'Your friend', paired: true, sendBack: null } as unknown as PasteAnswer
+        }
+        return { kind: 'joined', name: gistText(res.name, 30) || 'Group', group: res.groupId, sendToAdmin: '' } as unknown as PasteAnswer
+      } catch (err) {
+        if (err instanceof FriendsApiError) {
+          if (err.code === 'invite_not_found' || err.code === 'invite_expired') return { kind: 'not-found' }
+          if (err.code === 'cannot_add_self') return { kind: 'own-link' }
+          if (err.code === 'already_friends') return { kind: 'already', name: 'This person' }
+          if (err.code === 'already_member') return { kind: 'already', name: 'this group' }
+        }
+        return mapApiError(err)
+      }
+    },
+    async remove(mine: string) {
+      const id = Number(mine)
+      if (!Number.isFinite(id)) return { kind: 'done' }
+      try {
+        await api.removeFriend(id)
+        return { kind: 'done' }
+      } catch (err) {
+        return mapApiError(err)
+      }
+    },
+    async mark(mine: string, kind: MarkKind, message?: string): Promise<MarkSend> {
+      try {
+        const res = await api.sendMark(Number(mine), kind, message)
+        return { kind: 'sent', mark: { kind: res.kind, at: res.at } }
+      } catch (err) {
+        if (err instanceof FriendsApiError) {
+          if (err.status === 401) return { kind: 'unauthorized' }
+          if (err.status === 404) return { kind: 'gone' }
+          if (err.status === 429) return { kind: 'already', mark: { kind, at: new Date(now()).toISOString() } }
+        }
+        return { kind: 'failed' }
+      }
+    },
+    async see(marks) {
+      if (marks.length === 0) return
+      const current = await loadSeen()
+      const next = { ...current }
+      const ids: number[] = []
+      const t = now()
+      for (const m of marks) {
+        if (next[m.theirs]?.at !== m.mark.at) {
+          next[m.theirs] = { at: m.mark.at, seenAt: t }
+          const n = Number(m.theirs)
+          if (Number.isFinite(n)) ids.push(n)
         }
       }
-      if (rows.kind === 'offline' || rows.kind === 'rate-limited') {
-        const copy = await loadCopy()
-        const outbox = await marks.outbox()
-        // A remove asked with no signal waits on the phone: its row says "Removing…" (also after a restart).
-        if (copy !== null) return { kind: 'ok', me: mine, ...copy, friends: copy.friends.map(removing(await queuedMines(store))), seen, outbox, offline: true, ...(sender !== null && { sending: sender.state() }) }
-      }
-      return rows
+      await (await store.session(PHONE)).setState(PHONE, SEEN_STATE, next).catch(() => undefined)
+      if (ids.length > 0) await api.markSeen(ids).catch(() => undefined)
     },
-    share: () => list.share(),
-    paste: async (text) => cleanAnswer(await list.pasteAny(text)),
-    remove: (mine, asked) => list.remove(mine, asked),
-    restart: (vault) => list.restart(vault),
-    mark: (mine, kind) => marks.send(mine, kind, pointerCount),
-    see: (seen) => marks.see(seen),
+    async shareCards(input) {
+      try {
+        const res = await api.shareCards(input)
+        return { ok: true, count: res.count }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'share_failed' }
+      }
+    },
+    async setCardState(cardId, status) {
+      try {
+        await api.setCardState(cardId, status)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'state_failed' }
+      }
+    },
+    async setFolderState(folderId, status) {
+      try {
+        await api.setFolderState(folderId, status)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'state_failed' }
+      }
+    },
+    async deleteSharedCard(cardId) {
+      try {
+        await api.deleteSharedCard(cardId)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'delete_failed' }
+      }
+    },
+    async approveMember(groupId, userId) {
+      try {
+        await api.approveMember(groupId, userId)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'approve_failed' }
+      }
+    },
+    async rotateGroupInvite(groupId) {
+      try {
+        const res = await api.rotateGroupInvite(groupId)
+        return { ok: true, inviteCode: res.inviteCode, link: res.link }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'rotate_failed' }
+      }
+    },
+    async vaultFolders() {
+      if (demoMode) return ['Biochem', 'Spanish', 'Shared Cards']
+      const phone = await loadVaultList(store)
+      const openId = phone.open ?? (phone.vaults[0] ? vaultId(phone.vaults[0]) : null)
+      if (!openId) return []
+      const files = await store.list(openId)
+      const dirs = new Set<string>()
+      for (const f of files) {
+        const parts = f.path.split('/')
+        if (parts.length <= 1) continue
+        if (parts[0].startsWith('.')) continue
+        let acc = ''
+        for (let i = 0; i < parts.length - 1; i++) {
+          acc = acc ? `${acc}/${parts[i]}` : parts[i]
+          dirs.add(acc)
+        }
+      }
+      return [...dirs].sort((a, b) => a.localeCompare(b))
+    },
+    async acceptCardToVault({ card, folder, upNext }) {
+      try {
+        const cleanDir = folder.replace(/^\/+|\/+$/g, '')
+        const built = buildAcceptedCardFile({
+          title: card.title,
+          markdown: card.markdown,
+          senderLogin: card.senderLogin,
+          newId: generateCardId(),
+          nowMs: now(),
+          upNext,
+        })
+        const path = cleanDir ? `${cleanDir}/${built.filename}` : built.filename
+        const committed = await commitToOpenVault([{ path, content: built.content }], `friends: accept "${card.title}" from @${card.senderLogin}`)
+        if (!committed.ok) return committed
+        await api.setCardState(card.id, 'accepted')
+        return { ok: true, path }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'accept_failed' }
+      }
+    },
+    async importFolderToVault({ folder, targetDir, upNext }) {
+      try {
+        const cleanBase = targetDir.replace(/^\/+|\/+$/g, '')
+        const safeSub = folder.name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Shared folder'
+        const dir = cleanBase ? `${cleanBase}/${safeSub}` : safeSub
+        const pending = folder.cards.filter((c) => c.status !== 'accepted')
+        const toImport = pending.length > 0 ? pending : folder.cards
+        if (toImport.length === 0) return { ok: true, paths: [] }
+        const changes: Change[] = []
+        const paths: string[] = []
+        for (const card of toImport) {
+          const built = buildAcceptedCardFile({
+            title: card.title,
+            markdown: card.markdown,
+            senderLogin: card.senderLogin,
+            newId: generateCardId(),
+            nowMs: now(),
+            upNext,
+          })
+          const path = `${dir}/${built.filename}`
+          changes.push({ path, content: built.content })
+          paths.push(path)
+        }
+        const committed = await commitToOpenVault(changes, `friends: import folder "${folder.name}" (${changes.length} cards)`)
+        if (!committed.ok) return committed
+        await api.setFolderState(folder.id, 'accepted')
+        return { ok: true, paths }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'import_failed' }
+      }
+    },
+    deleteMe,
     async stop() {
       stopped = true
       unfollow?.()
+      unsubEngine?.()
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onHidden)
-      list.stop()
-      marks.stop()
-      await sender?.stop()
+      api.clearSession()
     },
   }
-}
-
-/** A friend whose remove waits in the phone's queue: "Removing…", no numbers, no mark, no tap. */
-const removing =
-  (queued: Set<string>) =>
-  (f: FriendEntry): FriendEntry =>
-    queued.has(f.mine) ? { ...f, state: 'removing', label: 'Removing…', stats: null, sendBack: null, mark: undefined, updatedAt: null } : f
-
-/** Each name and login of a group view from a gist, cleaned once (`gistText`). */
-function cleanGroup(view: GroupView): GroupView {
-  if (view.kind === 'not-found') return view
-  const named = { ...view, name: gistText(view.name, 30) || 'Group' }
-  if (named.kind !== 'ok') return named
-  return { ...named, members: named.members.map((m) => ({ ...m, name: gistText(m.name) || gistText(m.login) || 'Member', login: gistText(m.login) })) }
-}
-
-/** The names in a paste answer (a friend, a group, a person who asks to join), cleaned before the words. */
-function cleanAnswer(answer: PasteAnswer): PasteAnswer {
-  const out = { ...answer } as Record<string, unknown>
-  for (const field of ['name', 'groupName', 'login']) if (typeof out[field] === 'string') out[field] = gistText(out[field])
-  return out as PasteAnswer
 }

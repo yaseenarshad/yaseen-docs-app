@@ -34,6 +34,13 @@ import { todayDone } from './reviewTime'
 
 export type { DoneLook }
 
+export interface DoneFriendsSummary {
+  friendsCount: number
+  finishedToday: number
+  myStreak: number
+  onOpenFriends?: () => void
+}
+
 interface Props {
   review: Pick<CardReviewApi, 'dueCount' | 'start' | 'setFilter' | 'goOn'>
   session: CardReviewSession
@@ -50,9 +57,11 @@ interface Props {
   unit: (text: string) => string
   /** The Mac's course offer in an empty vault (YAZ-5120), in place of the way on. */
   offer?: ReactNode
+  /** Optional Friends streak/cheer summary (YAZ-6220); hidden when 0 friends. */
+  friendsSummary?: DoneFriendsSummary | null
 }
 
-export function DoneScreen({ review, session, shown, look, addKinds, adds, from, unit, offer }: Props) {
+export function DoneScreen({ review, session, shown, look, addKinds, adds, from, unit, offer, friendsSummary }: Props) {
   // YAZ-6041: 2-step add trigger — Click 1 expands the add controls in place, Click 2 adds immediately.
   const [addOpen, setAddOpen] = useState(false)
   useEffect(() => {
@@ -233,10 +242,29 @@ export function DoneScreen({ review, session, shown, look, addKinds, adds, from,
         {after}
       </>
     )
+  const friendsPrompt =
+    friendsSummary && friendsSummary.friendsCount > 0 ? (
+      <p className="card-inbox__done-friends">
+        {friendsSummary.myStreak > 0 && <span>🔥 {friendsSummary.myStreak}d streak · </span>}
+        <span>
+          {friendsSummary.finishedToday} of {friendsSummary.friendsCount} {friendsSummary.friendsCount === 1 ? 'friend' : 'friends'} finished today
+        </span>
+        {friendsSummary.onOpenFriends !== undefined && (
+          <>
+            {' · '}
+            <button type="button" className="card-inbox__done-friends-btn" onMouseDown={(e) => e.preventDefault()} onClick={friendsSummary.onOpenFriends}>
+              {friendsSummary.finishedToday > 0 ? 'Cheer them' : 'Open Friends'}
+            </button>
+          </>
+        )}
+      </p>
+    ) : null
+
   return (
     <>
       {body}
       {!inlineToday && todayEl}
+      {friendsPrompt}
     </>
   )
 }

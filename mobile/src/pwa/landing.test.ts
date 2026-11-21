@@ -78,3 +78,26 @@ describe('the Home Screen steps come from the app (one source)', () => {
     expect(bare).toEqual([])
   })
 })
+
+describe('YAZ-6218: "Open in Mac app" deep-link button on /friend and /group', () => {
+  it('/friend#<code> shows "Open in Mac app" linking to yaseendocs://friend#<code>', async () => {
+    await open('/friend#abc23def45')
+    const mac = document.getElementById('open-mac') as HTMLAnchorElement
+    expect(mac.hasAttribute('hidden')).toBe(false)
+    expect(mac.textContent).toBe('Open in Mac app')
+    expect(mac.getAttribute('href')).toBe('yaseendocs://friend#abc23def45')
+  })
+
+  it('/group#<code> shows "Open in Mac app" linking to yaseendocs://group#<code>', async () => {
+    await open('/group#grp23def45')
+    const mac = document.getElementById('open-mac') as HTMLAnchorElement
+    expect(mac.hasAttribute('hidden')).toBe(false)
+    expect(mac.getAttribute('href')).toBe('yaseendocs://group#grp23def45')
+  })
+
+  it('/join#... keeps "Open in Mac app" hidden', async () => {
+    await open(`/join#${ID}-${ID}`)
+    const mac = document.getElementById('open-mac') as HTMLAnchorElement
+    expect(mac.hasAttribute('hidden')).toBe(true)
+  })
+})

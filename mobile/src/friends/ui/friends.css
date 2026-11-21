@@ -331,3 +331,138 @@
   white-space: nowrap;
   unicode-bidi: isolate;
 }
+
+/* ---- YAZ-6218 additions: sort pill, 7-day chain, buddy emojis, QR, incoming/shared cards ---- */
+
+.fr-sort {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0 8px;
+}
+
+.fr-sort__label {
+  font-size: 12px;
+  color: var(--fr-muted);
+  margin-right: 2px;
+}
+
+.fr-sort__btn {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  font-size: 12px;
+  color: var(--fr-muted);
+  white-space: nowrap;
+}
+
+.fr-sort__btn[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.fr-nums__sub {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.fr-chain {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fr-chain__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.fr-chain__dot--done {
+  background: var(--fr-done);
+}
+
+.fr-chain__dot--open {
+  background: var(--fr-started);
+}
+
+.fr-emoji {
+  margin-left: 4px;
+  font-size: 13px;
+}
+
+.fr-qr {
+  width: 168px;
+  height: 168px;
+  margin: 10px auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.fr-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.fr-cards-box {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-side);
+}
+
+.fr-cards-box__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fr-cards-box__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fr-card-item {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.fr-card-item__title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.fr-card-item__meta {
+  font-size: 12px;
+  color: var(--fr-muted);
+  margin-top: 2px;
+}
+
+.fr-card-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.fr-card-item__actions .btn {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}

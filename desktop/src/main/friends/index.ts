@@ -1,7 +1,7 @@
 /**
- * The Mac's send of the numbers (YAZ-5086, 4E5), wired to the app: the token from the ONE secrets store (YAZ-5098's
- * `githubToken`, Settings › Cards › "Friends"), the open vaults and their live index, the stored state in
- * `<userData>/friends-send.json`, the trigger (`cardTrigger.ts`) and one try at the app's start.
+ * Mac Friends backend (YAZ-6219): wires `githubAuth.getValidAuth()` (with legacy `githubToken` fallback),
+ * the Cloudflare D1 Friends API service (`service.ts`), the background stats sender (`macSender.ts`),
+ * the card-file watcher trigger (`cardTrigger.ts`), and the count worker (`countWorker.ts`).
  */
 import { join } from 'node:path'
 import { isRecord } from '@shared/guards'
@@ -12,24 +12,22 @@ import { atomicWrite, createChain, readOrQuarantine } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
 import { detectRepo } from '../git/detect'
 import { resolveGit } from '../git/exec'
-import { rootsOf } from '../ipc/broadcast'
 import { repoOfRemote } from '../git/repoOfRemote'
+import type { GithubAuthManager } from '../githubAuth'
+import { rootsOf } from '../ipc/broadcast'
 import type { Secrets } from '../secrets'
 import type { Store } from '../store'
 import { readConfigDetailed } from '../vaultConfig'
 import { getIndex } from '../vaultIndex'
 import { watchCardFiles } from './cardTrigger'
-import { makeCounter } from './countJob'
 import { gitFolderFacts, knownClosedVaults } from './closedVaults'
+import { makeCounter } from './countJob'
 import countWorker from './countWorker?modulePath'
-import { macGistsApi, readProfile } from './gistsHttp'
-import { macRepoPort } from './repoHttp'
 import { createMacSender, type MacSendSaved, type MacSender } from './macSender'
+import { createFriendsService, type FriendsService } from './service'
 
 export const FRIENDS_SEND_FILE = 'friends-send.json'
-/** YAZ-5390: the closed-vault scan's own cache (`<userData>/friends-scan`): each file's cards, by its time and size. */
 export const FRIENDS_SCAN_DIR = 'friends-scan'
-/** The first try after the app starts: after the windows and their vaults are open, never in the way of the start. */
 export const START_TRY_MS = 30_000
 
 /** The stored state, as `createMacSender` reads it. A file that is not one is moved aside and the state starts empty. */
@@ -45,25 +43,46 @@ export function sendStateFile(file: string): { load(): Promise<MacSendSaved | nu
 
 export interface FriendsSend {
   sender: MacSender
+  service: FriendsService
   /** For Settings: the last state, with no network call. */
   look(): Promise<FriendsSendView>
   tokenChanged(): void
   stop(): Promise<void>
 }
 
-export function startFriendsSend(store: Store, secrets: Pick<Secrets, 'read'>, userData: string, fetch: typeof globalThis.fetch = globalThis.fetch): FriendsSend {
+export interface FriendsAuthSource {
+  githubAuth?: Pick<GithubAuthManager, 'getValidAuth'>
+  secrets?: Pick<Secrets, 'read'>
+}
+
+export function startFriendsSend(
+  store: Store,
+  auth: FriendsAuthSource | Pick<Secrets, 'read'>,
+  userData: string,
+  fetch: typeof globalThis.fetch = globalThis.fetch,
+): FriendsSend {
   const state = sendStateFile(join(userData, FRIENDS_SEND_FILE))
-  const readToken = async () => {
-    const stored = await secrets.read(GITHUB_TOKEN_SECRET)
-    return stored === null ? null : cleanToken(stored)
+  const authSource: FriendsAuthSource = 'read' in auth ? { secrets: auth } : auth
+
+  const readToken = async (): Promise<string | null> => {
+    const valid = await authSource.githubAuth?.getValidAuth().catch(() => null)
+    if (valid?.token) return valid.token
+    if (authSource.secrets) {
+      const stored = await authSource.secrets.read(GITHUB_TOKEN_SECRET)
+      return stored === null ? null : cleanToken(stored)
+    }
+    return null
   }
-  // YAZ-5250, YAZ-5252: one count worker for the open vaults' pack and the closed vaults' scans. YAZ-5390: the scan keeps
-  // each file's cards in its own cache (never in the vault), and reads the app's index cache of a vault open once.
+
+  const service = createFriendsService({
+    getGithubToken: readToken,
+    fetch,
+  })
+
   const counter = makeCounter(countWorker, { scanDir: join(userData, FRIENDS_SCAN_DIR), indexDir: join(userData, 'index-cache') })
   const sender = createMacSender({
     readToken,
-    api: (token) => macGistsApi(token, fetch),
-    profile: (token) => readProfile(token, fetch),
+    client: service.client,
     async vaults() {
       const bin = await resolveGit()
       const out = new Map<string, string>()
@@ -75,29 +94,20 @@ export function startFriendsSend(store: Store, secrets: Pick<Secrets, 'read'>, u
       }
       return out
     },
-    // YAZ-5083: the friends list in one open vault: read only, on the vault's own branch (the one this Mac syncs).
-    async repo(token, repo, root) {
-      // A vault that is not open here: the repo's default branch (the one the phone syncs, unless it chose another).
-      if (root === null) return macRepoPort(token, fetch, repo, null)
-      const bin = await resolveGit()
-      const facts = bin === null ? null : await detectRepo(bin, root).catch(() => null)
-      return macRepoPort(token, fetch, repo, facts?.branch ?? null)
-    },
     async count(root) {
       const [index, config] = await Promise.all([getIndex(root), readConfigDetailed(root, REVIEW_SETTINGS_FILE)])
       return { pages: index.records, settings: sanitizeReviewSettings(config.state === 'ok' ? config.value : null) }
     },
     state,
-    // YAZ-5250: the count runs on a worker thread; main only packs the cards and waits.
     stats: (text, now, closed, zone) => counter(text, now, closed, zone),
-    // YAZ-5252: the closed vaults that count, among the vaults the app knows (never a path from a gist or a renderer).
     async closed(wanted) {
       const bin = await resolveGit()
       if (bin === null) return new Map()
-      const state = store.get()
-      return knownClosedVaults(listVaults(state).map((v) => v.path), new Set(rootsOf(state)), gitFolderFacts(bin), wanted)
+      const current = store.get()
+      return knownClosedVaults(listVaults(current).map((v) => v.path), new Set(rootsOf(current)), gitFolderFacts(bin), wanted)
     },
   })
+
   const stopTrigger = watchCardFiles({
     roots: () => rootsOf(store.get()),
     onRootsChange: (listener) => store.onChange(() => listener()),
@@ -107,18 +117,20 @@ export function startFriendsSend(store: Store, secrets: Pick<Secrets, 'read'>, u
   })
   const startTry = setTimeout(() => void sender.attempt('pass'), START_TRY_MS)
   startTry.unref?.()
+
   return {
     sender,
+    service,
     async look() {
       const view = sender.view()
       if (view.status !== 'idle') return view
       const saved = await state.load().catch(() => null)
       const base = { ...view, lastSentAt: saved?.lastSentAt ?? null, friends: saved?.friends ?? 0, groups: saved?.groups ?? 0 }
       if ((await readToken()) === null) return { ...base, status: 'no-token' }
-      if (saved?.refused) return { ...base, status: 'no-gists' }
       return base
     },
     tokenChanged: () => {
+      service.clearSession()
       sender.tokenChanged()
       void sender.attempt('pass')
     },

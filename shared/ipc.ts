@@ -23,6 +23,7 @@ import type { SystemHotkey } from './macosHotkeys'
 import type { VaultIcons } from './vaultIcons'
 import type { RendererCommand, RendererReply } from './automationNavigation'
 import type { FilesOrderState, FilesSort } from './filesOrder'
+import type { FriendsBoardPayload } from './friendsApi'
 
 /** Result of `fs:backfill-created` (YAZ-6168): how many files were stamped and how many were skipped. */
 export interface BackfillCreatedResult {
@@ -223,11 +224,38 @@ export const CONTRACT = {
     has: invoke<[req: SecretHasRequest], boolean>('secrets:has', 1),
   },
   /**
-   * The Mac's send of the numbers to friends (YAZ-5086, decision 16): its last state for Settings › Cards › "Friends",
-   * with no network call. Numbers and words only: no token, no gist ID, no repo name.
+   * Friends backend (YAZ-6219): Cloudflare D1 API + Mac stats sender + card importer + deep-link push.
+   * Tokens stay in main process; renderers never see GitHub or Friends session tokens.
    */
   friends: {
     status: invoke<[], FriendsSendView>('friends:status', 0),
+    board: invoke<[force?: boolean], { ok: true; board: FriendsBoardPayload } | { ok: false; error: string }>('friends:board', 1),
+    updatePrefs: invoke<
+      [prefs: { vaults?: string[]; zone?: string | null; nickname?: string | null }],
+      { ok: true; vaults: string[]; zone: string | null; nickname: string | null } | { ok: false; error: string }
+    >('friends:update-prefs', 1),
+    createInvite: invoke<[], { ok: true; code: string; link: string; expiresAt: string } | { ok: false; error: string }>('friends:create-invite', 0),
+    acceptInvite: invoke<[code: string], { ok: true; result: unknown } | { ok: false; error: string }>('friends:accept-invite', 1),
+    removeFriend: invoke<[userId: number, block?: boolean], { ok: true } | { ok: false; error: string }>('friends:remove-friend', 2),
+    sendMark: invoke<[toUserId: number, kind: 'cheer' | 'nudge', message?: string], { ok: true } | { ok: false; error: string }>('friends:send-mark', 3),
+    markSeen: invoke<[fromUserIds?: number[]], { ok: true } | { ok: false; error: string }>('friends:mark-seen', 1),
+    createGroup: invoke<[name: string], { ok: true; id: string; name: string; inviteCode: string; link: string } | { ok: false; error: string }>('friends:create-group', 1),
+    approveMember: invoke<[groupId: string, userId: number], { ok: true } | { ok: false; error: string }>('friends:approve-member', 2),
+    removeMember: invoke<[groupId: string, userId?: number], { ok: true; deleted?: boolean } | { ok: false; error: string }>('friends:remove-member', 2),
+    rotateGroupInvite: invoke<[groupId: string], { ok: true; inviteCode: string; link: string } | { ok: false; error: string }>('friends:rotate-group-invite', 1),
+    shareCards: invoke<
+      [input: { groupId?: string; toUserIds?: number[]; folderName?: string; cards: { title: string; markdown: string; note?: string | null }[] }],
+      { ok: true; count: number } | { ok: false; error: string }
+    >('friends:share-cards', 1),
+    setCardState: invoke<[cardId: string, status: 'pending' | 'accepted' | 'dismissed'], { ok: true } | { ok: false; error: string }>('friends:set-card-state', 2),
+    setFolderState: invoke<[folderId: string, status: 'pending' | 'accepted' | 'dismissed'], { ok: true } | { ok: false; error: string }>('friends:set-folder-state', 2),
+    deleteSharedCard: invoke<[cardId: string], { ok: true } | { ok: false; error: string }>('friends:delete-shared-card', 1),
+    importCards: invoke<
+      [input: { root: string; dir: string; cards: { id: string; title: string; markdown: string; senderLogin: string; upNext?: boolean }[]; createFolder?: string }],
+      { ok: true; paths: string[] } | { ok: false; error: string }
+    >('friends:import-cards', 1),
+    deleteMe: invoke<[], { ok: true } | { ok: false; error: string }>('friends:delete-me', 0),
+    onInviteLink: push<{ kind: 'friend' | 'group'; code: string }>('friends:invite-link'),
   },
   /** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */
   state: {

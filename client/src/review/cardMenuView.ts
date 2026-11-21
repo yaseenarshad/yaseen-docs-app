@@ -46,6 +46,8 @@ export interface CardMenuDoors {
   moveOut?: () => void
   putBack?: () => void
   toPage?: () => void
+  /** Share with friend or group (YAZ-6220): shown when FRIENDS_ENABLED is on. */
+  shareFriend?: () => void
   /** A row of the place's own that goes first (the Inbox's Undo last review). */
   first?: MenuAction
   /** The place runs a review row its own way (the Inbox: Archive card on the Undo stack). True: it did. */
@@ -67,6 +69,7 @@ export function cardMenuOf(d: CardMenuDoors): CardMenuItem[][] {
     locked: d.locked,
     copyId: d.copyId,
     copyLink: d.copyLink,
+    shareFriend: d.shareFriend !== undefined,
     reset: d.reset,
     unit: d.unit,
     titleGlobal: d.path == null ? undefined : titleShowFor(d.path),
@@ -104,6 +107,8 @@ export function runCardMenuItem(item: CardMenuItem, d: CardMenuDoors): void {
     case 'copy-link':
       if (id !== null) void import('../editor/linkMenu').then(({ copyText }) => copyText(`[[${id}]]`, 'card link', d.onNotice, undefined, true))
       return
+    case 'share-friend':
+      return d.shareFriend?.()
     case 'reset':
       return void import('../editor/card/askResetHistory').then(({ askResetHistory }) => askResetHistory(id, () => d.change(withoutCardReviews)))
   }

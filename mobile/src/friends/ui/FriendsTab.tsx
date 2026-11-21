@@ -1,12 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
 import { LIST_CUT, NO_LIST_ACCESS, TOO_MANY_GISTS, homeGoneMessage, listElsewhereMessage, pasteMessage, restartAction, restartWarning, type PasteResult } from '@shared/friendsList'
+import type { FriendBoardMember, GroupBoardItem, SharedCardItem, SharedCardStatus, SharedFolderItem } from '@shared/friendsApi'
+import { qrCodeSvg } from '@shared/qrSvg'
 import { useApp } from '../../app/AppState'
 import { friendsMessage } from '../../auth/friends'
 import { Confirm } from '../../screens/Confirm'
 import { Problem } from '../../screens/Frame'
 import type { Unavailable } from '../list'
-import { MARK_LINE, PERIODS, boardRows, gistText, markToShow, markWords, sendLine, updatedLabel, type BoardEntry, type Period } from './board'
+import {
+  MARK_LINE,
+  PERIODS,
+  SORTS,
+  boardRows,
+  computeBuddyEmojis,
+  filterSharedCards,
+  gistText,
+  markToShow,
+  markWords,
+  sendLine,
+  sevenDayChain,
+  updatedLabel,
+  type BoardEntry,
+  type BuddyEmoji,
+  type LeaderboardSort,
+  type Period,
+} from './board'
 import './friends.css'
 import {
   GROUP_NAME_MAX,
@@ -39,6 +58,25 @@ type Entry = BoardEntry & {
   group?: string
   pointer?: string
   left?: boolean
+  emojis?: BuddyEmoji[]
+  chain?: ('done' | 'open' | 'missed')[]
+}
+
+const LAST_FOLDER_KEY = 'yaseendocs.friends.lastFolder'
+
+function toD1Member(f: FriendEntry): FriendBoardMember {
+  return {
+    id: f.userId ?? 0,
+    login: f.login ?? f.name,
+    name: f.name,
+    avatarUrl: f.avatar,
+    since: f.since ?? new Date(0).toISOString(),
+    stats: f.stats,
+    statsAt: f.updatedAt ? new Date(f.updatedAt).toISOString() : null,
+    incomingMark: f.mark ? { kind: f.mark.kind, message: f.incomingMarkMessage ?? null, at: f.mark.at, seenAt: null } : null,
+    outgoingMark: f.outgoingMark ?? null,
+    sharedCardCount: f.sharedCardCount ?? 0,
+  }
 }
 
 export default function FriendsTab() {
@@ -199,8 +237,15 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   const app = useApp()
   const now = useNow()
   const [period, setPeriod] = useState<Period>('today')
+  const [sort, setSort] = useState<LeaderboardSort>('cards')
   const [list, setList] = useState<string>('friends')
+  const [groupTab, setGroupTab] = useState<'leaderboard' | 'cards'>('leaderboard')
   const [panel, setPanel] = useState<Panel>(null)
+  const [acceptTarget, setAcceptTarget] = useState<
+    | null
+    | { kind: 'card'; card: SharedCardItem }
+    | { kind: 'folder'; folder: SharedFolderItem }
+  >(null)
   const [asking, setAsking] = useState<null | {
     question: string
     yes: string
@@ -210,6 +255,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   const [said, setSaid] = useState<string | null>(null)
 
   const group = board.groups.find((g) => g.kind !== 'not-found' && g.group === list) as Exclude<GroupView, { kind: 'not-found' }> | undefined
+  const d1Group: GroupBoardItem | undefined = board.d1Groups?.find((g) => g.id === list)
   const showGroup = list !== 'friends' && group !== undefined
   /** This phone's send of my numbers, in one line (the Mac's Settings row says its own). */
   const sent = board.sending === undefined ? null : sendLine(board.sending, now)
@@ -220,11 +266,14 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
       name: gistText(board.me.name),
       you: true,
       stats: board.me.stats,
+      streak: board.me.stats?.totals.streak ?? 0,
+      chain: board.me.stats ? sevenDayChain(board.me.stats, now) : undefined,
       avatar: board.me.avatar,
       sub: board.me.stats === null ? ['Your numbers need each vault that counts on this phone.'] : [],
       cheer: null,
       dim: false,
     }
+    const d1Friends = board.friends.filter((f) => f.userId !== undefined).map(toD1Member)
     const them = board.friends.map((f): Entry => {
       const shown = markToShow(f.mark, board.seen[f.theirs], now)
       const numbers = f.state === 'ok' || f.state === 'waiting'
@@ -233,17 +282,21 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
       // Not read yet: with no signal, say so (round 3); else 4E2's "no update yet".
       if (!numbers && f.label === null) sub.push(f.state === 'offline' ? 'No connection. Not read yet.' : 'no update yet')
       const ago = numbers ? updatedLabel(f.updatedAt, now) : undefined
+      const emojis = f.userId !== undefined ? computeBuddyEmojis(toD1Member(f), { stats: board.me.stats }, d1Friends, now) : []
       return {
         key: f.theirs,
         name: gistText(f.name) || 'Friend',
         you: false,
         stats: numbers ? f.stats : null,
+        streak: numbers ? f.stats?.totals.streak ?? 0 : 0,
+        chain: numbers && f.stats ? sevenDayChain(f.stats, now) : undefined,
         avatar: f.avatar,
         friend: f,
         sub,
         ago,
-        cheer: shown === null ? null : MARK_LINE[shown.kind],
+        cheer: shown === null ? null : f.incomingMarkMessage || MARK_LINE[shown.kind],
         dim: f.state === 'gone',
+        emojis,
       }
     })
     return [me, ...them]
@@ -255,11 +308,14 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
       const ok = m.read !== null && m.read.kind === 'ok' ? m.read : null
       const sub: string[] = []
       if (m.state !== 'ok' && m.label !== null) sub.push(m.label)
+      const memberStats = m.me ? board.me.stats : ok?.stats ?? null
       return {
         key: m.pointer,
         name: m.me ? board.me.name : gistText(m.name) || gistText(m.login) || 'Member',
         you: m.me,
-        stats: m.me ? board.me.stats : ok?.stats ?? null,
+        stats: memberStats,
+        streak: memberStats?.totals.streak ?? 0,
+        chain: memberStats ? sevenDayChain(memberStats, now) : undefined,
         avatar: null,
         sub,
         ago: !m.me && ok !== null ? updatedLabel(ok.updatedAt, now) : undefined,
@@ -273,7 +329,13 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   }, [group, board, now])
 
   const entries = showGroup ? groupEntries : friendEntries
-  const rows = boardRows(entries, period, now)
+  const rows = boardRows(entries, period, now, sort)
+  const incomingCards = board.incomingCards ?? []
+  const groupSharedCount =
+    d1Group === undefined
+      ? 0
+      : d1Group.sharedCards.filter((c) => c.status === 'pending').length +
+        d1Group.sharedFolders.reduce((acc, f) => acc + f.cards.filter((c) => c.status === 'pending').length, 0)
 
   // A friend who just added me back: said one time (the list marks the pair, so the next read has none).
   const paired = (board.newlyPaired ?? []).join(', ')
@@ -281,7 +343,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
     if (paired !== '') setSaid(`${paired} added you back. You are friends now.`)
   }, [paired])
 
-  const nobody = board.friends.length === 0 && board.groups.length === 0 && board.shared.length === 0
+  const nobody = board.friends.length === 0 && board.groups.length === 0 && board.shared.length === 0 && incomingCards.length === 0
 
   // Decision 24, YAZ-5262: a cheer or nudge is "seen" when its line was really on the screen (`CheerLine`).
   const seenOnce = useRef(new Set<string>())
@@ -333,12 +395,29 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
             ))}
           </div>
           <div className="fr-lists" role="group" aria-label="Lists">
-            <button type="button" className="fr-pill" aria-pressed={!showGroup} onClick={() => setList('friends')}>
+            <button
+              type="button"
+              className="fr-pill"
+              aria-pressed={!showGroup}
+              onClick={() => {
+                setList('friends')
+                setGroupTab('leaderboard')
+              }}
+            >
               Friends
             </button>
             {board.groups.map((g) =>
               g.kind === 'not-found' ? null : (
-                <button key={g.group} type="button" className="fr-pill" aria-pressed={showGroup && list === g.group} onClick={() => setList(g.group)}>
+                <button
+                  key={g.group}
+                  type="button"
+                  className="fr-pill"
+                  aria-pressed={showGroup && list === g.group}
+                  onClick={() => {
+                    setList(g.group)
+                    setGroupTab('leaderboard')
+                  }}
+                >
                   {gistText(g.name, 30) || 'Group'}
                 </button>
               ),
@@ -353,6 +432,26 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
               + Add
             </button>
           </div>
+          {(!showGroup || groupTab === 'leaderboard') && (
+            <div className="fr-sort" role="group" aria-label="Sort by">
+              <span className="fr-sort__label">Sort:</span>
+              {SORTS.map((s) => (
+                <button key={s.id} type="button" className="fr-sort__btn" aria-pressed={s.id === sort} onClick={() => setSort(s.id)}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {showGroup && d1Group !== undefined && (
+            <div className="fr-seg" role="tablist" aria-label="Group sections" style={{ marginBottom: 10 }}>
+              <button type="button" role="tab" aria-selected={groupTab === 'leaderboard'} aria-pressed={groupTab === 'leaderboard'} onClick={() => setGroupTab('leaderboard')}>
+                Leaderboard
+              </button>
+              <button type="button" role="tab" aria-selected={groupTab === 'cards'} aria-pressed={groupTab === 'cards'} onClick={() => setGroupTab('cards')}>
+                {groupSharedCount > 0 ? `Shared Cards (${groupSharedCount})` : 'Shared Cards'}
+              </button>
+            </div>
+          )}
         </>
       )}
       <AddPanel panel={panel} setPanel={setPanel} service={service} refresh={refresh} />
@@ -365,6 +464,15 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
               {said}
             </p>
           )}
+          {!showGroup && incomingCards.length > 0 && (
+            <IncomingCardsSection
+              cards={incomingCards}
+              service={service}
+              refresh={refresh}
+              say={setSaid}
+              onAccept={(card) => setAcceptTarget({ kind: 'card', card })}
+            />
+          )}
           {showGroup && group !== undefined && group.kind === 'ok' && (
             <p className="fr-line">
               {group.streak === 1 ? 'Group streak: 1 day that everyone finished' : `Group streak: ${group.streak} days that everyone finished`}
@@ -373,41 +481,111 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
           {/* B8: who joined today, in 4E3's words, once and quietly under the streak. */}
           {showGroup && group !== undefined && group.kind === 'ok' && groupViewMessage(group) !== null && <p className="fr-line">{groupViewMessage(group)}</p>}
           {showGroup && group !== undefined && group.kind !== 'ok' && <GroupProblem view={group} />}
-          <ul className="rows" aria-label={showGroup ? `${gistText(group?.name ?? '')} members` : 'Friends'}>
-            {rows.map(({ entry: e, rank, numbers }) => {
-              // Round 10, item 12 (mockup version 9): "updated … ago" below the name, on Today.
-              const entry = period === 'today' && e.ago !== undefined ? { ...e, sub: [...e.sub, e.ago] } : e
-              return (
-                <li key={entry.key || entry.friend?.mine} className={entry.dim ? 'fr-row fr-row--gone' : 'fr-row'}>
-                  <button
-                    type="button"
-                    className="fr-row__tap"
-                    onClick={() => open(entry)}
-                    disabled={entry.you || entry.friend?.state === 'removing'}
-                    aria-label={rowWords(entry, rank, numbers, period)}
-                  >
-                    <span className="fr-rank" aria-hidden="true">
-                      {rank ?? ''}
-                    </span>
-                    <Avatar name={entry.name} url={entry.avatar} />
-                    <span className="fr-who" aria-hidden="true">
-                      <span className={entry.you ? 'fr-name fr-name--you' : 'fr-name'}>{entry.you ? 'You' : entry.name}</span>
-                      {(entry.cheer !== null || entry.sub.length > 0) && (
-                        <span className="fr-sub">
-                          {entry.cheer !== null && entry.friend !== undefined && <CheerLine text={entry.cheer} onSeen={() => seeOnce(entry.friend!)} />}
-                          {entry.cheer !== null && entry.sub.length > 0 && ' · '}
-                          {entry.sub.join(' · ')}
+          {showGroup && d1Group !== undefined && d1Group.isAdmin && d1Group.pending.length > 0 && groupTab === 'leaderboard' && (
+            <div className="fr-cards-box" aria-label="Pending join requests">
+              <div className="fr-cards-box__head">
+                <h2 className="fr-cards-box__title">Pending requests ({d1Group.pending.length})</h2>
+              </div>
+              {d1Group.pending.map((p) => (
+                <div key={p.id} className="fr-card-item">
+                  <div className="fr-card-item__title">{gistText(p.name || p.login) || 'Member'}</div>
+                  <div className="fr-card-item__meta">@{p.login}</div>
+                  <div className="fr-card-item__actions">
+                    <button
+                      type="button"
+                      className="btn btn--primary"
+                      onClick={() =>
+                        void service.approveMember?.(d1Group.id, p.id).then((r) => {
+                          setSaid(r?.ok ? `${gistText(p.name || p.login)} joined the group.` : 'Could not approve member.')
+                          void refresh()
+                        })
+                      }
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() =>
+                        void service.groups?.remove(d1Group.id, String(p.id)).then(() => {
+                          setSaid(`Declined ${gistText(p.name || p.login)}.`)
+                          void refresh()
+                        })
+                      }
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {showGroup && d1Group !== undefined && groupTab === 'cards' ? (
+            <GroupSharedCards
+              group={d1Group}
+              service={service}
+              refresh={refresh}
+              say={setSaid}
+              onAcceptCard={(card) => setAcceptTarget({ kind: 'card', card })}
+              onImportFolder={(folder) => setAcceptTarget({ kind: 'folder', folder })}
+            />
+          ) : (
+            <ul className="rows" aria-label={showGroup ? `${gistText(group?.name ?? '')} members` : 'Friends'}>
+              {rows.map(({ entry: e, rank, numbers }) => {
+                // Round 10, item 12 (mockup version 9): "updated … ago" below the name, on Today.
+                const entry = period === 'today' && e.ago !== undefined ? { ...e, sub: [...e.sub, e.ago] } : e
+                return (
+                  <li key={entry.key || entry.friend?.mine} className={entry.dim ? 'fr-row fr-row--gone' : 'fr-row'}>
+                    <button
+                      type="button"
+                      className="fr-row__tap"
+                      onClick={() => open(entry)}
+                      disabled={entry.you || entry.friend?.state === 'removing'}
+                      aria-label={rowWords(entry, rank, numbers, period)}
+                    >
+                      <span className="fr-rank" aria-hidden="true">
+                        {rank ?? ''}
+                      </span>
+                      <Avatar name={entry.name} url={entry.avatar} />
+                      <span className="fr-who" aria-hidden="true">
+                        <span className={entry.you ? 'fr-name fr-name--you' : 'fr-name'}>
+                          {entry.you ? 'You' : entry.name}
+                          {entry.emojis && entry.emojis.length > 0 && (
+                            <span className="fr-emojis">
+                              {entry.emojis.map((em) => (
+                                <span key={em.emoji} className="fr-emoji" title={`${em.label}: ${em.reason}`}>
+                                  {em.emoji}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </span>
+                        {(entry.cheer !== null || entry.sub.length > 0) && (
+                          <span className="fr-sub">
+                            {entry.cheer !== null && entry.friend !== undefined && <CheerLine text={entry.cheer} onSeen={() => seeOnce(entry.friend!)} />}
+                            {entry.cheer !== null && entry.sub.length > 0 && ' · '}
+                            {entry.sub.join(' · ')}
+                          </span>
+                        )}
+                      </span>
+                      {numbers !== null && (
+                        <span className="fr-nums" aria-hidden="true">
+                          {numbers.mark !== null && <Mark mark={numbers.mark} period={period} />} <b>{numbers.cards}</b> cards
+                          <br />
+                          <span className="fr-nums__sub">
+                            {(entry.streak ?? 0) > 0 && sort === 'streak' && <span>🔥 {entry.streak}d</span>}
+                            {entry.chain && (
+                              <span className="fr-chain">
+                                {entry.chain.map((st, idx) => (
+                                  <span key={idx} className={`fr-chain__dot fr-chain__dot--${st}`} />
+                                ))}
+                              </span>
+                            )}
+                            <span>{numbers.minutes} min</span>
+                          </span>
                         </span>
                       )}
-                    </span>
-                    {numbers !== null && (
-                      <span className="fr-nums" aria-hidden="true">
-                        {numbers.mark !== null && <Mark mark={numbers.mark} period={period} />} <b>{numbers.cards}</b> cards
-                        <br />
-                        {numbers.minutes} min
-                      </span>
-                    )}
-                  </button>
+                    </button>
                   {entry.friend?.state === 'stopped' && (
                     // The link I pasted is gone and they never added me: the one way on is a new link of mine.
                     <button type="button" className="btn" aria-label="Share a new link" onClick={() => setPanel('share')}>
@@ -452,7 +630,8 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                 </li>
               )
             })}
-          </ul>
+            </ul>
+          )}
           {!showGroup && board.shared.length > 0 && (
             <>
               <h2 className="section">Links you shared</h2>
@@ -472,8 +651,22 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
               </ul>
             </>
           )}
-          {showGroup && group !== undefined && service.groups !== null && <GroupActions view={group} service={service} ask={ask} say={setSaid} />}
+          {showGroup && group !== undefined && service.groups !== null && (
+            <GroupActions view={group} d1Group={d1Group} service={service} ask={ask} say={setSaid} refresh={refresh} />
+          )}
         </>
+      )}
+      {acceptTarget !== null && (
+        <AcceptCardSheet
+          target={acceptTarget}
+          service={service}
+          onClose={() => setAcceptTarget(null)}
+          onDone={(msg) => {
+            setAcceptTarget(null)
+            setSaid(msg)
+            void refresh()
+          }}
+        />
       )}
       {asking !== null && <Confirm question={asking.question} yes={asking.yes} busy={busy} onYes={() => void doAsk()} onNo={() => setAsking(null)} />}
     </div>
@@ -501,35 +694,67 @@ function GroupProblem({ view }: { view: Exclude<GroupView, { kind: 'not-found' }
 
 function GroupActions({
   view,
+  d1Group,
   service,
   ask,
   say,
+  refresh,
 }: {
   view: Exclude<GroupView, { kind: 'not-found' }>
+  d1Group?: GroupBoardItem
   service: FriendsService
   ask: (q: string, yes: string, run: () => Promise<unknown>) => void
   say: (s: string | null) => void
+  refresh: () => Promise<void>
 }) {
   const groups = service.groups!
   const name = gistText(view.name) || 'this group'
   const [link, setLink] = useState<string | null>(null)
+  const [qrUrl, setQrUrl] = useState<string | null>(null)
+  const inviteUrl =
+    d1Group?.inviteCode
+      ? ownSiteLink(`https://docs.yaseenarshad.com/group#${d1Group.inviteCode}`)
+      : ownSiteLink(groupLink(view.group))
   const invite = async (data: { title: string; text: string; url: string }) => {
+    setQrUrl(data.url)
     const how = await shareOut(data)
     if (how === 'show') setLink(data.url)
     say(how === 'copied' ? 'Link copied. Send it.' : null)
   }
   return (
     <div className="stack" style={{ marginTop: 16 }}>
-      {(view.kind === 'waiting' || view.kind === 'not-added') && (
+      {(view.kind === 'waiting' || view.kind === 'not-added') && view.sendToAdmin !== '' && (
         <button type="button" className="btn btn--wide" onClick={() => void invite(joinShareText(name, ownSiteLink(view.sendToAdmin)))}>
           Send my join link to the admin
         </button>
       )}
       {view.kind === 'ok' && view.iAmAdmin && (
-        <button type="button" className="btn btn--wide" onClick={() => void invite(groupShareText(name, ownSiteLink(groupLink(view.group))))}>
+        <button type="button" className="btn btn--wide" onClick={() => void invite(groupShareText(name, inviteUrl))}>
           Share the group link
         </button>
       )}
+      {view.kind === 'ok' && view.iAmAdmin && d1Group !== undefined && service.rotateGroupInvite !== undefined && (
+        <button
+          type="button"
+          className="btn btn--wide"
+          onClick={() =>
+            void service.rotateGroupInvite!(d1Group.id).then((r) => {
+              if (r.ok) {
+                const nextUrl = ownSiteLink(r.link)
+                setQrUrl(nextUrl)
+                setLink(nextUrl)
+                say('Group invite link rotated.')
+                void refresh()
+              } else {
+                say('Could not rotate the invite link.')
+              }
+            })
+          }
+        >
+          Rotate invite link
+        </button>
+      )}
+      {qrUrl !== null && <div className="fr-qr" dangerouslySetInnerHTML={{ __html: qrCodeSvg(qrUrl) }} />}
       {link !== null && <LinkToCopy link={link} />}
       {view.kind === 'removing' ? null : view.kind === 'ok' && view.iAmAdmin ? (
         <button
@@ -607,18 +832,19 @@ const UNAVAILABLE_WORDS: Record<Unavailable['kind'], string> = {
   failed: 'Something went wrong. Try again.',
 }
 
-/** "Share my link": a new link for ONE friend (4E2), then the share sheet, with what a friend sees (decision 22). */
+/** "Share my link": 1-step invite link + local QR SVG (YAZ-6218). */
 function SharePanel({ service, close, refresh }: { service: FriendsService; close: () => void; refresh: () => Promise<void> }) {
   const [state, setState] = useState<{
     busy: boolean
     said: string | null
     link: string | null
-  }>({ busy: false, said: null, link: null })
+    qrUrl: string | null
+  }>({ busy: false, said: null, link: null, qrUrl: null })
   const running = useRef(false)
   const go = async () => {
     if (running.current) return
     running.current = true
-    setState({ busy: true, said: null, link: null })
+    setState({ busy: true, said: null, link: null, qrUrl: null })
     try {
       const made = await service.share()
       if (made.kind !== 'ok')
@@ -626,16 +852,19 @@ function SharePanel({ service, close, refresh }: { service: FriendsService; clos
           busy: false,
           said: UNAVAILABLE_WORDS[made.kind],
           link: null,
+          qrUrl: null,
         })
+      const url = ownSiteLink(made.link)
       const how = await shareOut({
         title: made.title,
         text: made.text,
-        url: ownSiteLink(made.link),
+        url,
       })
       setState({
         busy: false,
         said: SHARED_WORDS[how],
-        link: how === 'show' ? ownSiteLink(made.link) : null,
+        link: how === 'show' ? url : null,
+        qrUrl: url,
       })
       void refresh()
     } finally {
@@ -644,11 +873,12 @@ function SharePanel({ service, close, refresh }: { service: FriendsService; clos
   }
   return (
     <div className="fr-panel" role="group" aria-label="Share my link">
-      <p>Each link is for one friend. Your friend opens it and adds you.</p>
+      <p>Each link is for one friend. Your friend opens or scans it and you are connected.</p>
       <p className="muted">{service.whatFriendsSee}</p>
       <button type="button" className="btn btn--primary" onClick={() => void go()} disabled={state.busy} aria-busy={state.busy}>
         {state.busy ? 'Making your link…' : 'Share my link'}
       </button>
+      {state.qrUrl !== null && <div className="fr-qr" dangerouslySetInnerHTML={{ __html: qrCodeSvg(state.qrUrl) }} />}
       {state.said !== null && (
         <p role="status" style={{ marginTop: 8 }}>
           {state.said}
@@ -713,7 +943,11 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
     await add(read)
   }
   const sendBack =
-    answer !== null && answer.kind === 'added' && !answer.paired ? answer.sendBack : answer !== null && answer.kind === 'joined' ? answer.sendToAdmin : null
+    answer !== null && answer.kind === 'added' && !answer.paired
+      ? answer.sendBack
+      : answer !== null && answer.kind === 'joined' && answer.sendToAdmin !== ''
+      ? answer.sendToAdmin
+      : null
   const request = answer !== null && answer.kind === 'request' ? answer : null
   return (
     <div className="fr-panel" role="group" aria-label="Paste a friend's link">
@@ -801,12 +1035,13 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
   )
 }
 
-/** "New group" (decision 18): a name, then the group's link to share. I am its admin. */
+/** "New group" (decision 18): a name, then the group's link + local QR SVG to share. I am its admin. */
 function GroupPanel({ service, close, refresh }: { service: FriendsService; close: () => void; refresh: () => Promise<void> }) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [said, setSaid] = useState<string | null>(null)
   const [link, setLink] = useState<string | null>(null)
+  const [qrUrl, setQrUrl] = useState<string | null>(null)
   const running = useRef(false)
   const make = async () => {
     if (running.current || service.groups === null) return
@@ -817,11 +1052,11 @@ function GroupPanel({ service, close, refresh }: { service: FriendsService; clos
       if (made.kind === 'bad-name') return setSaid('Give the group a name.')
       if (made.kind !== 'ok') return setSaid(UNAVAILABLE_WORDS[made.kind])
       void refresh()
-      // The site the app runs on, and words that tell the true step (no page shows a group code yet).
       const data = groupShareText(gistText(name, 30), ownSiteLink(made.link))
+      setQrUrl(data.url)
       const how = await shareOut(data)
       if (how === 'show') setLink(data.url)
-      setSaid('Group made. Send its link to the people you want in it. Then paste the join link each one sends you.')
+      setSaid('Group made. Share the link or QR code with the people you want in it.')
     } finally {
       running.current = false
       setBusy(false)
@@ -836,6 +1071,7 @@ function GroupPanel({ service, close, refresh }: { service: FriendsService; clos
       <button type="button" className="btn btn--primary" onClick={() => void make()} disabled={busy || name.trim() === ''} aria-busy={busy}>
         {busy ? 'Making the group…' : 'Make the group'}
       </button>
+      {qrUrl !== null && <div className="fr-qr" dangerouslySetInnerHTML={{ __html: qrCodeSvg(qrUrl) }} />}
       {said !== null && (
         <p role="status" style={{ marginTop: 8 }}>
           {said}
@@ -892,5 +1128,290 @@ function CheerLine({ text, onSeen }: { text: string; onSeen: () => void }) {
     <span ref={ref} className="fr-cheer">
       {text}
     </span>
+  )
+}
+
+const CARD_FILTERS: readonly { id: SharedCardStatus; label: string }[] = [
+  { id: 'pending', label: 'Pending' },
+  { id: 'accepted', label: 'Added' },
+  { id: 'dismissed', label: 'Dismissed' },
+]
+
+function SharedCardRow({
+  card,
+  service,
+  refresh,
+  say,
+  onAccept,
+}: {
+  card: SharedCardItem
+  service: FriendsService
+  refresh: () => Promise<void>
+  say: (s: string | null) => void
+  onAccept: (card: SharedCardItem) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const setStatus = async (status: SharedCardStatus) => {
+    if (!service.setCardState || busy) return
+    setBusy(true)
+    try {
+      const r = await service.setCardState(card.id, status)
+      if (!r.ok) say('Could not update card status.')
+      else say(status === 'dismissed' ? 'Card dismissed.' : status === 'pending' ? 'Restored to pending.' : null)
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="fr-card-item">
+      <div className="fr-card-item__title">{gistText(card.title, 80) || 'Shared card'}</div>
+      <div className="fr-card-item__meta">
+        from @{gistText(card.senderLogin, 40)}
+        {card.note ? ` · ${gistText(card.note, 120)}` : ''}
+      </div>
+      <div className="fr-card-item__actions">
+        {card.status === 'pending' && (
+          <>
+            <button type="button" className="btn btn--primary" disabled={busy} onClick={() => onAccept(card)}>
+              Add to vault
+            </button>
+            <button type="button" className="btn" disabled={busy} onClick={() => void setStatus('dismissed')}>
+              Dismiss
+            </button>
+          </>
+        )}
+        {card.status === 'dismissed' && (
+          <button type="button" className="btn" disabled={busy} onClick={() => void setStatus('pending')}>
+            Undo dismiss
+          </button>
+        )}
+        {card.status === 'accepted' && <span className="fr-card-item__meta">Added ✓</span>}
+      </div>
+    </div>
+  )
+}
+
+/** Pinned 1-on-1 Incoming cards section at the top of the Friends tab (hidden when 0). */
+function IncomingCardsSection({
+  cards,
+  service,
+  refresh,
+  say,
+  onAccept,
+}: {
+  cards: SharedCardItem[]
+  service: FriendsService
+  refresh: () => Promise<void>
+  say: (s: string | null) => void
+  onAccept: (card: SharedCardItem) => void
+}) {
+  const [status, setStatus] = useState<SharedCardStatus>('pending')
+  const pendingCount = cards.filter((c) => c.status === 'pending').length
+  const visible = filterSharedCards(cards, status)
+  return (
+    <section className="fr-cards-box" aria-label="Incoming cards">
+      <div className="fr-cards-box__head">
+        <h2 className="fr-cards-box__title">Incoming cards ({pendingCount})</h2>
+      </div>
+      <div className="fr-sort" role="group" aria-label="Incoming card filter">
+        {CARD_FILTERS.map((f) => (
+          <button key={f.id} type="button" className="fr-sort__btn" aria-pressed={f.id === status} onClick={() => setStatus(f.id)}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {visible.length === 0 ? (
+        <p className="fr-line">No {status} cards.</p>
+      ) : (
+        visible.map((c) => <SharedCardRow key={c.id} card={c} service={service} refresh={refresh} say={say} onAccept={onAccept} />)
+      )}
+    </section>
+  )
+}
+
+/** Group "Shared Cards" tab: shared folders (with 1-shot Import folder + Undo dismiss) and loose cards. */
+function GroupSharedCards({
+  group,
+  service,
+  refresh,
+  say,
+  onAcceptCard,
+  onImportFolder,
+}: {
+  group: GroupBoardItem
+  service: FriendsService
+  refresh: () => Promise<void>
+  say: (s: string | null) => void
+  onAcceptCard: (card: SharedCardItem) => void
+  onImportFolder: (folder: SharedFolderItem) => void
+}) {
+  const [status, setStatus] = useState<SharedCardStatus>('pending')
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const folders = group.sharedFolders.filter((f) => f.cards.some((c) => c.status === status))
+  const cards = filterSharedCards(group.sharedCards, status)
+
+  const setFolderStatus = async (folderId: string, next: SharedCardStatus) => {
+    if (!service.setFolderState || busyId !== null) return
+    setBusyId(folderId)
+    try {
+      const r = await service.setFolderState(folderId, next)
+      if (!r.ok) say('Could not update folder status.')
+      else say(next === 'dismissed' ? 'Folder dismissed.' : 'Folder restored to pending.')
+      await refresh()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <section className="fr-cards-box" aria-label="Group shared cards">
+      <div className="fr-sort" role="group" aria-label="Shared card filter">
+        {CARD_FILTERS.map((f) => (
+          <button key={f.id} type="button" className="fr-sort__btn" aria-pressed={f.id === status} onClick={() => setStatus(f.id)}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {folders.length === 0 && cards.length === 0 ? (
+        <p className="fr-line">No {status} shared cards in this group.</p>
+      ) : (
+        <>
+          {folders.map((folder) => {
+            const matching = folder.cards.filter((c) => c.status === status)
+            return (
+              <div key={folder.id} className="fr-card-item">
+                <div className="fr-card-item__title">📁 {gistText(folder.name, 60) || 'Shared folder'}</div>
+                <div className="fr-card-item__meta">
+                  from @{gistText(folder.senderLogin, 40)} · {matching.length} {matching.length === 1 ? 'card' : 'cards'}
+                </div>
+                <div className="fr-card-item__actions">
+                  {status === 'pending' && (
+                    <>
+                      <button type="button" className="btn btn--primary" disabled={busyId !== null} onClick={() => onImportFolder(folder)}>
+                        Import folder ({matching.length})
+                      </button>
+                      <button type="button" className="btn" disabled={busyId !== null} onClick={() => void setFolderStatus(folder.id, 'dismissed')}>
+                        Dismiss
+                      </button>
+                    </>
+                  )}
+                  {status === 'dismissed' && (
+                    <button type="button" className="btn" disabled={busyId !== null} onClick={() => void setFolderStatus(folder.id, 'pending')}>
+                      Undo dismiss
+                    </button>
+                  )}
+                  {status === 'accepted' && <span className="fr-card-item__meta">Imported ✓</span>}
+                </div>
+              </div>
+            )
+          })}
+          {cards.map((c) => (
+            <SharedCardRow key={c.id} card={c} service={service} refresh={refresh} say={say} onAccept={onAcceptCard} />
+          ))}
+        </>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Accept sheet (D8): pick any existing folder in the vault (remembers last pick) OR 1-click "Put in Shared Cards",
+ * plus optional "Move to Up next", committing via `githubRemote.commit()`.
+ */
+function AcceptCardSheet({
+  target,
+  service,
+  onClose,
+  onDone,
+}: {
+  target: { kind: 'card'; card: SharedCardItem } | { kind: 'folder'; folder: SharedFolderItem }
+  service: FriendsService
+  onClose: () => void
+  onDone: (message: string) => void
+}) {
+  const [folders, setFolders] = useState<string[]>([])
+  const [picked, setPicked] = useState<string>(() => {
+    try {
+      return globalThis.localStorage?.getItem(LAST_FOLDER_KEY) ?? ''
+    } catch {
+      return ''
+    }
+  })
+  const [upNext, setUpNext] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let live = true
+    void service.vaultFolders?.().then((list) => {
+      if (live) setFolders(list)
+    })
+    return () => {
+      live = false
+    }
+  }, [service])
+
+  const commit = async (dir: string) => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      try {
+        globalThis.localStorage?.setItem(LAST_FOLDER_KEY, dir)
+      } catch {
+        // ignore storage errors
+      }
+      if (target.kind === 'card') {
+        const res = await service.acceptCardToVault?.({ card: target.card, folder: dir, upNext })
+        if (!res?.ok) return setError(res?.error ?? 'Could not add card to vault.')
+        onDone(`Added "${gistText(target.card.title, 60)}" to ${dir || 'vault root'}.`)
+      } else {
+        const res = await service.importFolderToVault?.({ folder: target.folder, targetDir: dir, upNext })
+        if (!res?.ok) return setError(res?.error ?? 'Could not import folder.')
+        onDone(`Imported ${res.paths.length} ${res.paths.length === 1 ? 'card' : 'cards'} into ${dir ? `${dir}/${target.folder.name}` : target.folder.name}.`)
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fr-panel" role="dialog" aria-label={target.kind === 'card' ? 'Add shared card to vault' : 'Import shared folder to vault'}>
+      <p>
+        <b>{target.kind === 'card' ? gistText(target.card.title, 80) : `📁 ${gistText(target.folder.name, 60)}`}</b>
+      </p>
+      <div className="stack" style={{ gap: 8 }}>
+        <button type="button" className="btn btn--primary btn--wide" disabled={busy} aria-busy={busy} onClick={() => void commit('Shared Cards')}>
+          {busy ? 'Adding to vault…' : 'Put in Shared Cards'}
+        </button>
+        <label className="field">
+          <span className="field__label">Or pick a vault folder</span>
+          <select aria-label="Vault folder" value={picked} onChange={(e) => setPicked(e.target.value)} disabled={busy}>
+            <option value="">Vault root</option>
+            {folders.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="row" style={{ minHeight: 36 }}>
+          <input type="checkbox" className="check" checked={upNext} onChange={(e) => setUpNext(e.target.checked)} disabled={busy} />
+          <span className="row__main">Move to Up next</span>
+        </label>
+        <button type="button" className="btn btn--wide" disabled={busy} onClick={() => void commit(picked)}>
+          {target.kind === 'card' ? `Add to ${picked || 'vault root'}` : `Import into ${picked || 'vault root'}`}
+        </button>
+      </div>
+      {error !== null && (
+        <p className="fr-line" role="alert">
+          {error}
+        </p>
+      )}
+      <button type="button" className="link-btn" onClick={onClose} disabled={busy}>
+        Cancel
+      </button>
+    </div>
   )
 }

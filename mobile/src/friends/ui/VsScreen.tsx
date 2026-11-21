@@ -3,7 +3,7 @@ import { useApp } from '../../app/AppState'
 import type { Route } from '../../app/nav'
 import { Confirm } from '../../screens/Confirm'
 import { Frame, Problem } from '../../screens/Frame'
-import { MARK_LINE, gistText, initialOf, markToShow, updatedLabel, vsBoard, type VsLine } from './board'
+import { MARK_LINE, gistText, initialOf, markToShow, smartMarkSuggestion, updatedLabel, vsBoard, type VsLine } from './board'
 import './friends.css'
 import type { MarkKind, MarkSend } from './marks'
 import type { GroupView } from './groups'
@@ -100,6 +100,12 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
       </div>
       <p className="fr-line" style={{ textAlign: 'center' }}>
         {name}: updated {updatedLabel(updatedAt, now)}
+        {friend?.sharedCardCount !== undefined && friend.sharedCardCount > 0 && (
+          <>
+            {' · '}
+            {friend.sharedCardCount === 1 ? '1 card shared together' : `${friend.sharedCardCount} cards shared together`}
+          </>
+        )}
       </p>
       <Lines lines={vs.side} name={name} />
       <h2 className="fr-vs__head">Their vault</h2>
@@ -124,7 +130,13 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
         {vs.bothWon === 1 ? 'You both won 1 day of 7.' : `You both won ${vs.bothWon} days of 7.`}
       </p>
       {friend !== null && friend.state !== 'gone' && service !== null && (
-        <CheerNudge name={name} mine={friend.mine} send={(kind) => service.mark(friend.mine, kind)} sent={ok.outbox[friend.mine]} />
+        <CheerNudge
+          name={name}
+          mine={friend.mine}
+          suggestion={smartMarkSuggestion({ name, stats: theirStats }, now)}
+          send={(kind, message) => service.mark(friend.mine, kind, message)}
+          sent={ok.outbox[friend.mine]}
+        />
       )}
       {(friend !== null || (group !== undefined && group.kind === 'ok' && group.iAmAdmin && member !== null && !member.me)) && (
         <div className="stack" style={{ marginTop: 24 }}>
@@ -183,12 +195,14 @@ function Lines({ lines, name }: { lines: VsLine[]; name: string }) {
  */
 function CheerNudge({
   name,
+  suggestion,
   send,
   sent,
 }: {
   name: string
   mine: string
-  send: (kind: MarkKind) => Promise<MarkSend>
+  suggestion: ReturnType<typeof smartMarkSuggestion>
+  send: (kind: MarkKind, message?: string) => Promise<MarkSend>
   sent:
     | {
         mark: { kind: MarkKind; at: string }
@@ -206,7 +220,8 @@ function CheerNudge({
     lock.current = true
     setRunning(kind)
     try {
-      setResult(await send(kind))
+      const msg = suggestion.kind === kind ? suggestion.message : undefined
+      setResult(await send(kind, msg))
     } finally {
       lock.current = false
       setRunning(null)
@@ -256,11 +271,23 @@ function CheerNudge({
   return (
     <>
       <div className="fr-actions">
-        <button type="button" className="btn" onClick={() => void tap('cheer')} disabled={running !== null} aria-busy={running === 'cheer'}>
-          {running === 'cheer' ? 'Sending…' : 'Cheer'}
+        <button
+          type="button"
+          className={suggestion.kind === 'cheer' ? 'btn btn--primary' : 'btn'}
+          onClick={() => void tap('cheer')}
+          disabled={running !== null}
+          aria-busy={running === 'cheer'}
+        >
+          {running === 'cheer' ? 'Sending…' : suggestion.kind === 'cheer' ? suggestion.buttonLabel : 'Cheer'}
         </button>
-        <button type="button" className="btn" onClick={() => void tap('nudge')} disabled={running !== null} aria-busy={running === 'nudge'}>
-          {running === 'nudge' ? 'Sending…' : 'Nudge'}
+        <button
+          type="button"
+          className={suggestion.kind === 'nudge' ? 'btn btn--primary' : 'btn'}
+          onClick={() => void tap('nudge')}
+          disabled={running !== null}
+          aria-busy={running === 'nudge'}
+        >
+          {running === 'nudge' ? 'Sending…' : suggestion.kind === 'nudge' ? suggestion.buttonLabel : 'Nudge'}
         </button>
       </div>
       {said !== null && (

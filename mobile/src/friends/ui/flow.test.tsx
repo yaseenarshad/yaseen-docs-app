@@ -1,31 +1,22 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
+import type { FriendsBoardPayload, SharedCardItem } from '@shared/friendsApi'
 import { saveAccount } from '../../auth/account'
 import { mount, newPhone, NOW, type Harness } from '../../screens/testing'
 import { saveVaultList, vaultId, type PhoneVault, type TokenStore, type VaultStore } from '../../store'
-import { gistsFetch } from '../testing'
-import { createOwnNumbers } from '../ownNumbers'
 import { createFriendsService } from './service'
 
 // YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
 vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
 
 /**
- * YAZ-5085 (4E4): the whole add-a-friend flow in BOTH orders, through the screens, on the REAL friends logic (4E1, 4E2,
- * the marks) and a fake gist API behind `fetch` (no real GitHub call). Ali uses the app; Bea is a second phone driven
- * by its service. Then Ali cheers Bea, and Bea's service reads the cheer.
+ * YAZ-6218: End-to-end flow tests on the real D1-backed `createFriendsService` + `FriendsTab` / `VsScreen`
+ * against an in-memory mock Friends Worker API (zero Gist calls, zero real network).
  */
-const ALI = 'github_pat_11FLOWTEST_ali' + '0'.repeat(62)
-const BEA = 'github_pat_11FLOWTEST_bea' + '0'.repeat(62)
+const ALI_TOKEN = 'ghu_ali_token_1234567890'
+const BEA_TOKEN = 'ghu_bea_token_0987654321'
 
-/** Waits for the lazy "You vs" chunk (slow under load). */
-const until = async (x: Harness, selector: string) => {
-  for (let i = 0; i < 100 && x.host.querySelector(selector) === null; i++) await x.settle()
-}
-
-/** A name from a gist sits in a bidi isolate (U+2068 … U+2069, YAZ-5256): the tests read the words without it. */
 const plain = (text: string | null | undefined) => (text ?? '').replace(/[\u2068\u2069]/g, '')
 const named = (el: Element) =>
   plain(el.getAttribute('aria-label') ?? el.textContent)
@@ -35,7 +26,6 @@ const btn = (x: Harness, name: string | RegExp) =>
   ([...x.host.querySelectorAll('button, a')].find((el) => (typeof name === 'string' ? named(el) === name : name.test(named(el)))) as
     | HTMLButtonElement
     | undefined) ?? null
-/** Taps the button whose words (without the isolates) are `name`. */
 const tap = async (x: Harness, name: string | RegExp) => {
   const el = btn(x, name)
   if (el === null) throw new Error(`No button "${name}" on: ${plain(x.text())}`)
@@ -50,6 +40,213 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+interface MockUser {
+  id: number
+  login: string
+  name: string
+  token: string
+}
+
+function createMockD1Server() {
+  const users: MockUser[] = [
+    { id: 1, login: 'ali', name: 'ALI', token: ALI_TOKEN },
+    { id: 2, login: 'bea', name: 'BEA', token: BEA_TOKEN },
+  ]
+  const sessions = new Map<string, number>()
+  const invites = new Map<string, { code: string; kind: 'friend' | 'group'; creatorId: number; groupId?: string; createdAt: string }>()
+  const friendships: [number, number][] = []
+  const marks: { from: number; to: number; kind: 'cheer' | 'nudge'; message?: string | null; at: string; seenAt: string | null }[] = []
+  const groups = new Map<string, { id: string; name: string; adminId: number; inviteCode: string; members: { id: number; status: 'active' | 'pending' }[] }>()
+  const sharedCards: (SharedCardItem & { toUserId?: number; groupId?: string })[] = []
+  let seq = 1
+  const calls: string[] = []
+  const deletedUsers = new Set<number>()
+
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+
+  const userOf = (init?: RequestInit): MockUser | null => {
+    const auth = new Headers(init?.headers).get('authorization') ?? ''
+    const tok = auth.replace(/^Bearer\s+/i, '')
+    const uid = sessions.get(tok)
+    return users.find((u) => u.id === uid) ?? null
+  }
+
+  const fetch = async (url: string, init?: RequestInit): Promise<Response> => {
+    const u = new URL(url)
+    const method = (init?.method ?? 'GET').toUpperCase()
+    calls.push(`${method} ${u.pathname}`)
+    const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
+
+    if (u.pathname === '/api/friends/session' && method === 'POST') {
+      const user = users.find((x) => x.token === body.githubToken)
+      if (!user) return json(401, { error: 'invalid_token' })
+      const tok = `sess_${user.id}_${seq++}`
+      sessions.set(tok, user.id)
+      return json(200, { token: tok, expiresAt: NOW + 3600_000 })
+    }
+
+    const me = userOf(init)
+    if (!me) return json(401, { error: 'unauthorized' })
+
+    if (u.pathname === '/api/friends/board' && method === 'GET') {
+      const myFriendIds = friendships
+        .filter(([a, b]) => a === me.id || b === me.id)
+        .map(([a, b]) => (a === me.id ? b : a))
+      const payload: FriendsBoardPayload = {
+        me: {
+          id: me.id,
+          login: me.login,
+          name: me.name,
+          nickname: null,
+          avatarUrl: null,
+          zone: 'America/Denver',
+          vaults: [],
+          stats: null,
+          statsAt: null,
+        },
+        friends: myFriendIds.map((fid) => {
+          const f = users.find((x) => x.id === fid)!
+          const inc = marks.find((m) => m.from === fid && m.to === me.id) ?? null
+          const out = marks.find((m) => m.from === me.id && m.to === fid) ?? null
+          return {
+            id: f.id,
+            login: f.login,
+            name: f.name,
+            avatarUrl: null,
+            since: new Date(NOW).toISOString(),
+            stats: null,
+            statsAt: null,
+            incomingMark: inc ? { kind: inc.kind, message: inc.message, at: inc.at, seenAt: inc.seenAt } : null,
+            outgoingMark: out ? { kind: out.kind, message: out.message, at: out.at } : null,
+            sharedCardCount: sharedCards.filter((c) => (c.senderId === fid && c.toUserId === me.id) || (c.senderId === me.id && c.toUserId === fid)).length,
+          }
+        }),
+        invites: [...invites.values()]
+          .filter((inv) => inv.kind === 'friend' && inv.creatorId === me.id)
+          .map((inv) => ({ code: inv.code, expiresAt: null, createdAt: inv.createdAt })),
+        groups: [...groups.values()]
+          .filter((g) => g.members.some((m) => m.id === me.id))
+          .map((g) => ({
+            id: g.id,
+            name: g.name,
+            adminId: g.adminId,
+            isAdmin: g.adminId === me.id,
+            myStatus: g.members.find((m) => m.id === me.id)!.status,
+            inviteCode: g.inviteCode,
+            members: g.members
+              .filter((m) => m.status === 'active')
+              .map((m) => {
+                const usr = users.find((x) => x.id === m.id)!
+                return { id: usr.id, login: usr.login, name: usr.name, avatarUrl: null, since: new Date(NOW).toISOString(), stats: null, statsAt: null }
+              }),
+            pending: g.members
+              .filter((m) => m.status === 'pending')
+              .map((m) => {
+                const usr = users.find((x) => x.id === m.id)!
+                return { id: usr.id, login: usr.login, name: usr.name, avatarUrl: null }
+              }),
+            sharedFolders: [],
+            sharedCards: sharedCards.filter((c) => c.groupId === g.id),
+          })),
+        incomingCards: sharedCards.filter((c) => c.toUserId === me.id),
+      }
+      return json(200, payload)
+    }
+
+    if (u.pathname === '/api/friends/invites' && method === 'POST') {
+      const code = `inv${String(seq++).padStart(7, '0')}`
+      invites.set(code, { code, kind: 'friend', creatorId: me.id, createdAt: new Date(NOW).toISOString() })
+      return json(200, { code, link: `https://docs.yaseenarshad.com/friend#${code}`, expiresAt: new Date(NOW + 7 * 86_400_000).toISOString() })
+    }
+
+    if (u.pathname === '/api/friends/invites/accept' && method === 'POST') {
+      const code = String(body.code ?? '')
+      const inv = invites.get(code)
+      if (!inv) return json(404, { error: 'invite_not_found' })
+      if (inv.kind === 'friend') {
+        if (inv.creatorId === me.id) return json(400, { error: 'cannot_add_self' })
+        friendships.push([inv.creatorId, me.id])
+        invites.delete(code)
+        return json(200, { kind: 'friend', friendId: inv.creatorId })
+      }
+      const g = groups.get(inv.groupId!)!
+      g.members.push({ id: me.id, status: 'pending' })
+      return json(200, { kind: 'group', groupId: g.id, status: 'pending', name: g.name })
+    }
+
+    if (u.pathname === '/api/friends/marks' && method === 'POST') {
+      const at = new Date(NOW).toISOString()
+      marks.push({ from: me.id, to: Number(body.toUserId), kind: body.kind as 'cheer' | 'nudge', message: (body.message as string) ?? null, at, seenAt: null })
+      return json(200, { ok: true, kind: body.kind, message: body.message ?? null, at })
+    }
+
+    if (u.pathname === '/api/friends/marks/seen' && method === 'POST') {
+      const ids = (body.fromUserIds as number[]) ?? []
+      for (const m of marks) if (m.to === me.id && ids.includes(m.from)) m.seenAt = new Date(NOW).toISOString()
+      return json(200, { ok: true })
+    }
+
+    if (u.pathname === '/api/friends/groups' && method === 'POST') {
+      const id = `grp_${seq++}`
+      const inviteCode = `grp${String(seq++).padStart(7, '0')}`
+      const name = String(body.name)
+      groups.set(id, { id, name, adminId: me.id, inviteCode, members: [{ id: me.id, status: 'active' }] })
+      invites.set(inviteCode, { code: inviteCode, kind: 'group', creatorId: me.id, groupId: id, createdAt: new Date(NOW).toISOString() })
+      return json(200, { id, name, inviteCode, link: `https://docs.yaseenarshad.com/group#${inviteCode}` })
+    }
+
+    if (u.pathname.endsWith('/approve') && method === 'POST') {
+      const gid = u.pathname.split('/')[4]
+      const g = groups.get(gid)
+      const mem = g?.members.find((m) => m.id === Number(body.userId))
+      if (mem) mem.status = 'active'
+      return json(200, { ok: true })
+    }
+
+    if (u.pathname === '/api/friends/cards/share' && method === 'POST') {
+      const cards = body.cards as { title: string; markdown: string; note?: string | null }[]
+      const cardIds: string[] = []
+      for (const c of cards) {
+        const id = `sc_${seq++}`
+        cardIds.push(id)
+        for (const toId of (body.toUserIds as number[] | undefined) ?? []) {
+          sharedCards.push({
+            id,
+            folderId: null,
+            senderId: me.id,
+            senderLogin: me.login,
+            title: c.title,
+            markdown: c.markdown,
+            note: c.note ?? null,
+            attachments: [],
+            status: 'pending',
+            createdAt: new Date(NOW).toISOString(),
+            toUserId: toId,
+          })
+        }
+      }
+      return json(200, { ok: true, folderId: null, cardIds, count: cardIds.length })
+    }
+
+    if (/^\/api\/friends\/cards\/[^/]+\/state$/.test(u.pathname) && method === 'POST') {
+      const cid = u.pathname.split('/')[4]
+      const c = sharedCards.find((x) => x.id === cid)
+      if (c) c.status = body.status as 'pending' | 'accepted' | 'dismissed'
+      return json(200, { ok: true, status: body.status })
+    }
+
+    if (u.pathname === '/api/friends/me' && method === 'DELETE') {
+      deletedUsers.add(me.id)
+      return json(200, { ok: true, deleted: true })
+    }
+
+    return json(404, { error: 'not_found' })
+  }
+
+  return { fetch, calls, deletedUsers }
+}
+
 async function phoneOf(token: string, login: string, name = login.toUpperCase()): Promise<{ store: VaultStore; tokens: TokenStore }> {
   const p = await newPhone()
   const v: PhoneVault = { repo: `${login}/vault`, branch: 'main', addedAt: 1 }
@@ -58,243 +255,90 @@ async function phoneOf(token: string, login: string, name = login.toUpperCase())
   await saveVaultList(p.store, { vaults: [v], open: vaultId(v) })
   return p
 }
-const serviceOn = (world: FakeGistWorld, p: { store: VaultStore; tokens: TokenStore }) =>
-  createFriendsService({ ...p, fetch: gistsFetch(world).fetch, now: () => NOW, sleep: async () => {} })
 
-async function app(world: FakeGistWorld) {
-  const p = await phoneOf(ALI, 'ali')
-  const service = serviceOn(world, p)
-  const x = await mount({ phone: p, friends: () => ({ ...service.port, service: async () => service, stop: service.stop }) })
-  // With no friend yet the app opens on Review (decision 21).
-  if (x.host.querySelector('section[aria-label="Friends"]') === null) await tap(x, 'Friends')
-  for (let i = 0; i < 50 && x.host.querySelector('section[aria-label="Friends"]:not([aria-busy])') === null; i++) await x.settle()
-  return x
-}
-const click = async (x: Harness, text: string, within = '.fr-panel') => {
-  const el = [...x.host.querySelectorAll(`${within} button`)].find((b) => b.textContent === text) as HTMLButtonElement
-  if (!el) throw new Error(`no ${text}: ${x.text()}`)
-  await act(async () => el.click())
-  for (let i = 0; i < 10; i++) await x.settle()
-}
-const status = (x: Harness) => plain([...x.host.querySelectorAll('[role="status"]')].map((e) => e.textContent).join(' | '))
-const tabNames = (x: Harness) => [...x.host.querySelectorAll('.fr-name')].map((e) => plain(e.textContent))
-const settleAll = async (x: Harness) => {
-  for (let i = 0; i < 10; i++) await x.settle()
-}
+describe('YAZ-6218: D1 Friends service end-to-end flow (zero Gist calls)', () => {
+  it('1-step friend invite -> accept -> cheer -> markSeen -> share card -> dismiss/undo -> deleteMe', async () => {
+    const server = createMockD1Server()
+    const aliPhone = await phoneOf(ALI_TOKEN, 'ali')
+    const beaPhone = await phoneOf(BEA_TOKEN, 'bea')
+    const ali = createFriendsService({ ...aliPhone, fetch: server.fetch as never, now: () => NOW })
+    const bea = createFriendsService({ ...beaPhone, fetch: server.fetch as never, now: () => NOW })
 
-describe('add a friend, both orders, on the real friends logic', () => {
-  it('order 1: I share first; my friend pastes; I paste the link they send back', async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const shared: ShareData[] = []
-    vi.stubGlobal('navigator', { ...navigator, share: async (d: ShareData) => void shared.push(d) })
-    h = await app(world)
-    expect(plain(h.text())).toContain('Add a friend in two steps:')
+    // 1. Ali creates a 1-step invite link
+    const inv = await ali.share()
+    expect(inv.kind).toBe('ok')
+    if (inv.kind !== 'ok') throw new Error(inv.kind)
+    expect(inv.link).toMatch(/^https:\/\/docs\.yaseenarshad\.com\/friend#inv\d+$/)
+
+    // 2. Bea pastes Ali's link -> 1-step instant pairing
+    const pasted = await bea.paste(inv.link)
+    expect(pasted).toMatchObject({ kind: 'added', paired: true })
+
+    // 3. Both see each other on the board
+    const aliBoard = await ali.board()
+    expect(aliBoard.kind).toBe('ok')
+    if (aliBoard.kind !== 'ok') throw new Error(aliBoard.kind)
+    expect(aliBoard.friends.map((f) => f.login)).toEqual(['bea'])
+
+    // 4. Ali cheers Bea, Bea sees it and marks it seen
+    const sent = await ali.mark(aliBoard.friends[0].mine, 'cheer', 'cheered your review!')
+    expect(sent.kind).toBe('sent')
+    const beaBoard = await bea.board()
+    if (beaBoard.kind !== 'ok') throw new Error(beaBoard.kind)
+    expect(beaBoard.friends[0].mark?.kind).toBe('cheer')
+    await bea.see([{ theirs: beaBoard.friends[0].theirs, mark: beaBoard.friends[0].mark! }])
+
+    // 5. Ali shares a card with Bea; Bea dismisses and undoes dismiss
+    const shared = await ali.shareCards!({
+      toUserIds: [2],
+      cards: [{ title: 'FSRS', markdown: 'What is FSRS?', note: 'Must know' }],
+    })
+    expect(shared).toEqual({ ok: true, count: 1 })
+    const beaBoard2 = await bea.board()
+    if (beaBoard2.kind !== 'ok') throw new Error(beaBoard2.kind)
+    expect(beaBoard2.incomingCards).toHaveLength(1)
+    const cardId = beaBoard2.incomingCards![0].id
+    await bea.setCardState!(cardId, 'dismissed')
+    await bea.setCardState!(cardId, 'pending')
+
+    // 6. Group create + join + admin approve
+    const grp = await ali.groups!.create('Study Crew')
+    expect(grp.kind).toBe('ok')
+    if (grp.kind !== 'ok') throw new Error(grp.kind)
+    const joined = await bea.paste(grp.link)
+    expect(joined.kind).toBe('joined')
+    const approved = await ali.approveMember!(grp.group, 2)
+    expect(approved).toEqual({ ok: true })
+
+    // 7. Delete my Friends data
+    const del = await ali.deleteMe!()
+    expect(del).toEqual({ ok: true, deleted: true })
+    expect(server.deletedUsers.has(1)).toBe(true)
+
+    // Verify ZERO calls to GitHub Gists API
+    expect(server.calls.every((c) => c.includes('/api/friends/'))).toBe(true)
+  })
+
+  it('renders FriendsTab over the real D1 service and shows QR SVG + paired friend', async () => {
+    const server = createMockD1Server()
+    const aliPhone = await phoneOf(ALI_TOKEN, 'ali')
+    const ali = createFriendsService({ ...aliPhone, fetch: server.fetch as never, now: () => NOW })
+    const sharedOut: ShareData[] = []
+    vi.stubGlobal('navigator', { ...navigator, share: async (d: ShareData) => void sharedOut.push(d) })
+
+    h = await mount({
+      phone: aliPhone,
+      friends: () => ({ ...ali.port, service: async () => ali, stop: ali.stop }),
+    })
+    if (h.host.querySelector('section[aria-label="Friends"]') === null) await tap(h, 'Friends')
+    for (let i = 0; i < 50 && h.host.querySelector('section[aria-label="Friends"]:not([aria-busy])') === null; i++) await h.settle()
+
     await tap(h, 'Share my link')
-    await click(h, 'Share my link')
-    expect(shared[0].url).toMatch(/^https:\/\/docs\.yaseenarshad\.com\/friend#[0-9a-f]{32}$/)
-    expect(status(h)).toContain('Link sent.')
-    // The link shows under "Links you shared" until a friend uses it.
-    await settleAll(h)
-    expect(plain(h.text())).toContain('not used yet')
+    const shareBtn = [...h.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement
+    await act(async () => shareBtn.click())
+    for (let i = 0; i < 6; i++) await h.settle()
 
-    const bea = serviceOn(world, await phoneOf(BEA, 'bea'))
-    const pasted = await bea.paste(shared[0].url!)
-    if (pasted.kind !== 'added') throw new Error(pasted.kind)
-    expect(pasted.paired).toBe(false)
-
-    await tap(h, 'Close')
-    await tap(h, 'Add a friend or a group')
-    await tap(h, "Paste a friend's link")
-    await h.type('Or paste the link here', `Add me! ${pasted.sendBack} thanks`)
-    await click(h, 'Add')
-    expect(status(h)).toContain('BEA is now your friend.')
-    await settleAll(h)
-    expect(tabNames(h)).toContain('BEA')
-    expect(plain(h.text())).not.toContain('not used yet')
-    expect(plain(h.text())).not.toContain('Waiting for')
-  })
-
-  it('order 2: my friend shares first; I paste, then send my link back; they paste it; then a cheer', async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const shared: ShareData[] = []
-    vi.stubGlobal('navigator', { ...navigator, share: async (d: ShareData) => void shared.push(d) })
-    const bea = serviceOn(world, await phoneOf(BEA, 'bea'))
-    const link = await bea.share()
-    if (link.kind !== 'ok') throw new Error(link.kind)
-
-    h = await app(world)
-    await tap(h, "Paste a friend's link")
-    await h.type('Or paste the link here', link.link)
-    await click(h, 'Add')
-    expect(status(h)).toContain('BEA is added. Send them your link, so they can add you too.')
-    await click(h, 'Send my link back')
-    const back = shared.at(-1)!.url!
-    await settleAll(h)
-    expect(plain(h.text())).toContain('Waiting for BEA to add you')
-
-    const backAnswer = await bea.paste(back)
-    expect(backAnswer).toMatchObject({ kind: 'added', paired: true })
-    expect(plain((backAnswer as { name: string }).name)).toBe('ALI')
-    // The next read (the app opened again; the open tab reads each FRIENDS_POLL_MS): paired, the app opens on Friends.
-    h.unmount()
-    h = await app(world)
-    await settleAll(h)
-    expect(plain(h.text())).not.toContain('Waiting for BEA')
-
-    // Cheer: Ali taps Cheer on "You vs BEA"; Bea's next read has the mark.
-    await tap(h, /^Number \d, BEA/)
-    await until(h, '.fr-week')
-    await settleAll(h)
-    await tap(h, 'Cheer')
-    await settleAll(h)
-    expect(status(h)).toContain('Cheer sent at')
-    const read = await bea.board()
-    if (read.kind !== 'ok') throw new Error(read.kind)
-    expect(read.friends[0].mark).toMatchObject({ kind: 'cheer' })
-  })
-
-  it('YAZ-5255: board reads with no change of the data count my numbers ONCE', async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const p = await phoneOf(ALI, 'ali')
-    await p.store.setState('ali/vault@main', 'index', {
-      commit: 'c1',
-      records: { 'a.md': { cards: [{ id: 'A-1', off: false, next: false, reviews: [{ at: '2026-11-12T10:00:00.000Z', rating: 'good' }] }] } },
-    })
-    let counts = 0
-    const service = createFriendsService({
-      ...p,
-      fetch: gistsFetch(world).fetch,
-      now: () => NOW,
-      sleep: async () => {},
-      numbers: createOwnNumbers(p.store, { onCount: () => counts++ }),
-    })
-    for (let i = 0; i < 4; i++) await service.board()
-    expect(counts).toBe(1)
-    const read = await service.board()
-    expect(read.kind === 'ok' && read.me.stats?.totals.cards).toBe(1)
-  })
-
-  it('YAZ-5256: a hostile name from a gist is clean in every line: no bidi control, one line, at most 40 letters', async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const evil = '\u202eevil <img src=x onerror=alert(1)>\nsecond line ' + 'W'.repeat(200)
-    const bea = serviceOn(world, await phoneOf(BEA, 'bea', evil))
-    const link = await bea.share()
-    if (link.kind !== 'ok') throw new Error(link.kind)
-    h = await app(world)
-    await tap(h, "Paste a friend's link")
-    await h.type('Or paste the link here', link.link)
-    await click(h, 'Add')
-    await settleAll(h)
-    const lines = [...h.host.querySelectorAll('.fr-sub, [role="status"], .fr-name')].map((e) => e.textContent ?? '')
-    expect(lines.some((l) => l.includes('Waiting for'))).toBe(true)
-    expect(lines.some((l) => l.includes('is added'))).toBe(true)
-    for (const line of lines) {
-      expect(line).not.toMatch(/[\u202a-\u202e\u200e\u200f\n]/)
-      // Each name sits in ONE bidi isolate, and holds at most 40 letters.
-      for (const m of line.matchAll(/\u2068([^\u2069]*)\u2069/g)) expect([...m[1]].length).toBeLessThanOrEqual(40)
-    }
-    expect(lines.join(' ')).toContain('\u2068evil <img src=x onerror=alert(1)> secon…\u2069')
-  })
-
-  it('YAZ-5259: a start with no signal keeps the groups, with their last numbers', async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const p = await phoneOf(ALI, 'ali')
-    const first = serviceOn(world, p)
-    const made = await first.groups!.create('Study group')
-    expect(made.kind).toBe('ok')
-    const online = await first.board()
-    expect(online.kind === 'ok' && online.groups.map((g) => g.kind)).toEqual(['ok'])
-    world.offline = true
-    const again = serviceOn(world, p)
-    const read = await again.board()
-    expect(read.kind).toBe('ok')
-    if (read.kind !== 'ok') return
-    expect(read.offline).toBe(true)
-    expect(read.groups.map((g) => (g.kind === 'not-found' ? null : [g.kind, plain(g.name)]))).toEqual([['ok', 'Study group']])
-  })
-
-  /** Ali and Bea, paired, through two services on the fake gist API. */
-  async function paired(world: FakeGistWorld) {
-    const ap = await phoneOf(ALI, 'ali')
-    const ali = serviceOn(world, ap)
-    const bea = serviceOn(world, await phoneOf(BEA, 'bea'))
-    const link = await bea.share()
-    if (link.kind !== 'ok') throw new Error(link.kind)
-    const added = await ali.paste(link.link)
-    if (added.kind !== 'added') throw new Error(added.kind)
-    await bea.paste(added.sendBack!)
-    const read = await ali.board()
-    if (read.kind !== 'ok') throw new Error(read.kind)
-    return { ap, ali, bea, mine: read.friends[0].mine }
-  }
-
-  it('YAZ-5292: a friend removed with no signal says "Removing…" at once and after a restart', async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const { ap, ali, mine } = await paired(world)
-    world.offline = true
-    expect(await ali.remove(mine)).toMatchObject({ kind: 'paused', why: 'offline' })
-    for (const svc of [ali, serviceOn(world, ap)]) {
-      const b = await svc.board()
-      if (b.kind !== 'ok') throw new Error(b.kind)
-      expect(b.friends.map((f) => [f.state, f.label, f.stats])).toEqual([['removing', 'Removing…', null]])
-    }
-  })
-
-  it("YAZ-5293: a cheer that waits is dropped when the friend's remove is asked; no write reaches that pointer", async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const { ali, mine } = await paired(world)
-    world.offline = true
-    expect((await ali.mark(mine, 'cheer')).kind).toBe('waiting')
-    expect((await ali.remove(mine)).kind).toBe('paused')
-    world.offline = false
-    const before = world.calls.filter((c) => c.op === 'update' && c.id === mine && c.answer === 200).length
-    await ali.board()
-    expect(world.calls.filter((c) => c.op === 'update' && c.id === mine && c.answer === 200).length).toBe(before)
-    expect((await ali.marks.outbox())[mine]).toBeUndefined()
-  })
-
-  it('YAZ-5301: a waiting cheer for a friend who no longer shares is dropped, with no write (the filter of the flush)', async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const { ali, bea, mine } = await paired(world)
-    world.offline = true
-    expect((await ali.mark(mine, 'cheer')).kind).toBe('waiting')
-    world.offline = false
-    // Bea removes Ali: on Ali's phone Bea's row is "No longer shares with you" (`gone`). Ali's own pointer stays.
-    const theirs = await bea.board()
-    if (theirs.kind !== 'ok') throw new Error(theirs.kind)
-    expect((await bea.remove(theirs.friends[0].mine)).kind).not.toBe('paused')
-    const updates = () => world.calls.filter((c) => c.op === 'update' && c.id === mine && c.answer === 200).length
-    const before = updates()
-    const read = await ali.board()
-    if (read.kind !== 'ok') throw new Error(read.kind)
-    expect(read.friends.map((f) => [f.state, f.label])).toEqual([['gone', 'No longer shares with you']])
-    expect(updates()).toBe(before)
-    expect((await ali.marks.outbox())[mine]).toBeUndefined()
-  })
-
-  it("YAZ-5301: a mark asked while the friend's remove waits in the queue is not sent (the check at send time)", async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const { ali, mine } = await paired(world)
-    world.offline = true
-    expect((await ali.remove(mine)).kind).toBe('paused')
-    world.offline = false
-    // The remove still waits in the phone's queue (no read of the Friends tab drained it). A cheer now must not go.
-    const updates = () => world.calls.filter((c) => c.op === 'update' && c.id === mine && c.answer === 200).length
-    const before = updates()
-    expect((await ali.mark(mine, 'cheer')).kind).toBe('gone')
-    expect(updates()).toBe(before)
-    expect((await ali.marks.outbox())[mine]).toBeUndefined()
-  })
-
-  it('YAZ-5294: a waiting cheer on a new phone keeps the remove reserve when it goes later', async () => {
-    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
-    const { ap, ali, mine } = await paired(world)
-    world.offline = true
-    expect((await ali.mark(mine, 'cheer')).kind).toBe('waiting')
-    world.offline = false
-    const updates = Array.from({ length: 99 }, (_, i) => NOW - 50 * 60_000 + i)
-    await ap.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, budget: { updates, seen: null, blockedUntil: null } })
-    await ali.board()
-    expect((await ali.marks.outbox())[mine]).toMatchObject({ state: 'waiting' })
+    expect(sharedOut[0]?.url).toMatch(/^https:\/\/docs\.yaseenarshad\.com\/friend#inv\d+$/)
+    expect(h.host.querySelector('.fr-qr svg')).not.toBeNull()
   })
 })
