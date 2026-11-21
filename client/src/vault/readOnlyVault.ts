@@ -28,6 +28,7 @@ export interface ReadOnlyVaultSettings {
   on: boolean
 }
 export const DEFAULT_READ_ONLY_VAULT: ReadOnlyVaultSettings = { on: false }
+const FORCED_READ_ONLY_VAULT: ReadOnlyVaultSettings = { on: true }
 /** The keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. */
 export const READ_ONLY_VAULT_KEYS: readonly string[] = Object.keys(DEFAULT_READ_ONLY_VAULT)
 
@@ -70,11 +71,13 @@ export interface ReadOnlyVaultState {
 
 export type BeforeVaultLock = (step: () => Promise<unknown> | void) => () => void
 
-/** `root` is nullable because App's hooks cannot be conditional: no vault, no bridge call, the default. */
-export function useReadOnlyVault(root: string | null): ReadOnlyVaultState {
+/** `root` is nullable because App's hooks cannot be conditional: no vault, no bridge call, the default. `forced` (YAZ-4502) keeps the vault read only in memory without writing `.yaseendocs/read-only.json`. */
+export function useReadOnlyVault(root: string | null, forced = false): ReadOnlyVaultState {
   const [settings, setSettings] = useState(DEFAULT_READ_ONLY_VAULT)
   const now = useRef(settings)
   now.current = settings
+  const forcedRef = useRef(forced)
+  forcedRef.current = forced
   /** When the unlock ends: a ref for the actions (read with the clock of the moment), state for the renders. */
   const unlockedUntil = useRef(0)
   const [until, setUntil] = useState<number | null>(null)
@@ -179,14 +182,14 @@ export function useReadOnlyVault(root: string | null): ReadOnlyVaultState {
   }, [relock])
   const save = useCallback(
     (next: ReadOnlyVaultSettings) => {
-      if (root === null) return
+      if (root === null || forced) return
       const clean = sanitizeReadOnlyVault(next)
       show(clean)
       api.vaultConfig.write(root, READ_ONLY_VAULT_FILE, clean, READ_ONLY_VAULT_KEYS).catch(() => api.vaultConfig.read(root, READ_ONLY_VAULT_FILE).then((raw) => show(sanitizeReadOnlyVault(raw)), () => undefined))
     },
-    [root, show],
+    [root, forced, show],
   )
-  const fileActionsAllowed = useCallback(() => !now.current.on || Date.now() < unlockedUntil.current, [])
+  const fileActionsAllowed = useCallback(() => !(forcedRef.current || now.current.on) || Date.now() < unlockedUntil.current, [])
   const unlock = useCallback(
     (choice: VaultUnlockFor = 'ten') => {
       const end = Date.now() + VAULT_UNLOCK_MS[choice]
@@ -203,8 +206,9 @@ export function useReadOnlyVault(root: string | null): ReadOnlyVaultState {
     steps.current.add(step)
     return () => void steps.current.delete(step)
   }, [])
-  const unlocked = settings.on ? until : null
-  return { settings, save, locked: settings.on && unlocked === null, fileActionsAllowed, unlock, lock, unlockedUntil: unlocked, beforeLock }
+  const on = forced || settings.on
+  const unlocked = on ? until : null
+  return { settings: forced ? FORCED_READ_ONLY_VAULT : settings, save, locked: on && unlocked === null, fileActionsAllowed, unlock, lock, unlockedUntil: unlocked, beforeLock }
 }
 
 /**

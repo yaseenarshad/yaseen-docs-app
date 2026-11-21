@@ -121,9 +121,13 @@ export interface WindowHost {
 
 export interface WindowManager extends WindowLookup {
   /** CLI navigation (YAZ-4502): the live full windows, most recently focused first. */
-  automationWindows(): WindowEntry[]
+  automationWindows(): Array<WindowEntry & { readOnly?: true }>
   /** CLI navigation: `openWindow`, answering the new window's id. */
   openAutomationWindow(opts: OpenWindowOptions): string
+  /** Transient read-only window opened via `--read-only` (YAZ-4502). Never persisted. */
+  isReadOnly(id: string): boolean
+  /** True iff `root` is open in >=1 live window and every live window holding `root` is transient read-only (YAZ-4502). */
+  isTransientReadOnlyRoot(root: string): boolean
   /**
    * The stored windows that come back at launch (YAZ-2589), bounds clamped: those on the vaults in
    * `which` (a launch that asked for them, D1), or what the setting says (D2): every one, those of
@@ -376,7 +380,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'inboxToNewWindow' | 'moveInboxTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'appNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'inboxToNewWindow' | 'moveInboxTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'appNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'> & Partial<Pick<WindowManager, 'isReadOnly' | 'isTransientReadOnlyRoot'>>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -560,6 +564,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const emptyStarts = new Set<string>()
   /** The NEW windows (⌘⇧N, the board's "New window", a new Files window) until their first identity read: their tree starts closed (YAZ-3487). */
   const collapsedStarts = new Set<string>()
+  /** Transient read-only windows opened with `--read-only` (YAZ-4502). Never stored. */
+  const readOnlyWins = new Set<string>()
   /** The live windows the tab board made, built hidden and not shown yet (YAZ-3343). Never stored. */
   const hiddenWins = new Set<string>()
   /** The live windows minimized in the Dock (YAZ-3343). Never stored. */
@@ -636,7 +642,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // A vault is "last used" when a window on it takes focus (YAZ-2555 D5), not only when ⌘O opens it.
       // Not on a window's FIRST focus: a relaunch focuses every restored window in turn, and that
       // must not reorder the list. Not during a quit either (S36): each window destroyed hands focus to the next.
-      if (!quitting) recordUsed(activeVault(entryOf(id)))
+      if (!quitting && !readOnlyWins.has(id)) recordUsed(activeVault(entryOf(id)))
       focusOrder.splice(at, 1)
     }
     focusOrder.unshift(id)
@@ -763,6 +769,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       pushedAt.delete(wcId)
       emptyStarts.delete(id)
       collapsedStarts.delete(id)
+      const wasReadOnly = readOnlyWins.delete(id)
       heldLinks.delete(wcId)
       // A lit window goes dark with the window whose row lit it; a closed lit window is forgotten (YAZ-3091 D8).
       const target = lit.get(id)
@@ -786,7 +793,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         const entry = entryOf(id)
         if (entry !== undefined && !isFilesWindow(entry)) store.addClosed(placeVaults(store.get().folders, entry.roots), entry.tabs)
         store.removeWindow(id)
-      } else recordUsed(activeVault(entryOf(id)))
+      } else if (!wasReadOnly) recordUsed(activeVault(entryOf(id)))
     })
   }
 
@@ -844,8 +851,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   /** A new full window; `bounds` = where a Files window puts it (YAZ-3357), else the default spot. Answers its id. */
   const openWindow = (opts: OpenWindowOptions, bounds?: WindowBounds): string => {
     // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
-    recordUsed(opts.root)
+    // Transient read-only windows (YAZ-4502) never bump recents.
+    if (opts.readOnly !== true) recordUsed(opts.root)
     const id = randomUUID()
+    if (opts.readOnly === true) readOnlyWins.add(id)
     open({ id, root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: bounds ?? clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
     return id
   }
@@ -993,9 +1002,24 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     idFor,
     automationWindows: () => [...new Set([...focusOrder, ...live.keys()])].flatMap((id) => {
       const entry = entryOf(id)
-      return entry !== undefined && !isFilesWindow(entry) && liveWindow(id) !== undefined ? [entry] : []
+      if (entry === undefined || isFilesWindow(entry) || liveWindow(id) === undefined) return []
+      return [readOnlyWins.has(id) ? { ...entry, readOnly: true as const } : entry]
     }),
     openAutomationWindow: openWindow,
+    isReadOnly: (id) => readOnlyWins.has(id),
+    isTransientReadOnlyRoot(root) {
+      const target = stripSlash(root)
+      let found = false
+      for (const [id, win] of live) {
+        if (win.isDestroyed()) continue
+        const entry = entryOf(id)
+        if (entry === undefined) continue
+        if (!entry.roots.some((r) => stripSlash(r) === target)) continue
+        found = true
+        if (!readOnlyWins.has(id)) return false
+      }
+      return found
+    },
 
     rootFor(path, rootOverride) {
       if (host.dirExists(path)) return stripSlash(path)
@@ -1453,7 +1477,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // because a window's first focus does not bump it (YAZ-2555 D5). So record it here, before `quitting`
       // stops the bumps and the windows go; `runQuitSequence` flushes the store after this. Of a window that
       // shows several vaults it is the active one (YAZ-2602 A8).
-      recordUsed(activeVault(entryOf(focusOrder[0])))
+      if (focusOrder[0] === undefined || !readOnlyWins.has(focusOrder[0])) recordUsed(activeVault(entryOf(focusOrder[0])))
       quitting = true
       // Every renderer at once (YAZ-2198): quit waits one FLUSH_TIMEOUT_MS cap in total, not one per
       // window, and still resolves only once every window has flushed (`runQuitSequence`'s order).

@@ -94,6 +94,7 @@ export const USAGE = `usage:
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
+  yaseendocs open     [--new-window] [--read-only] [--root <repo>] [--line <n>] [<file[:line]> | <dir>]
   yaseendocs --help`
 
 export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, the pages that link to it, its cards and the ones due for review, the app's list of vaults, and a new page or the day's daily page, from the shell.

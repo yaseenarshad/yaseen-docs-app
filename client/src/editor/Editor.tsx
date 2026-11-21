@@ -49,6 +49,7 @@ import { CODE_WIDTH_KEY, readBlockWidth, readFindFolds, readOutsideGlow, readPag
 import { columnStart, contentTextWidth } from '../lib/contentWidth'
 import { watchBlockRoom } from './blockRoom'
 import { undo } from '@milkdown/kit/prose/history'
+import { Selection } from '@milkdown/kit/prose/state'
 import { CODE_WIDTH_DRAGGED, codeBlockCount, codeWidthsToPage, type CodeWidthDragged } from './code/codeWidth'
 import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
@@ -72,7 +73,9 @@ import { openCellNoteByLabel } from './table/cellNoteCard'
 import { onCellNoteRequest, takeCellNoteRequest } from './table/cellNoteRequest'
 import { goToNow } from './table/tableCalendar'
 import { fileLines } from './lineNumbers/fileLines'
+import { blockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
+import { useAutomationSurface } from '../automation/surfaces'
 import { showSectionIndent } from './outline/sectionIndent'
 import type { FolderPagesSettings, ZoomStep } from '@shared/types'
 import type { ZoomFrom } from '../workspace/useWorkspace'
@@ -493,6 +496,47 @@ function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, wat
 
 /** No store to follow: a page outside a folder page's Page tab. */
 const noSubscribe = (): (() => void) => () => undefined
+
+const LINE_CONTAINERS = new Set(['bullet_list', 'ordered_list', 'list_item', 'blockquote', 'footnote_definition', 'cell_note'])
+const LINE_LEAVES = new Set(['paragraph', 'heading', 'code_block', 'hr', 'table'])
+
+/** Jump the ProseMirror selection and scroller to the leaf block covering 1-based disk `line` (YAZ-4502). */
+function jumpViewToLine(crepe: ReturnType<typeof createCrepe>, frontmatter: string, body: string, line: number, scroller: HTMLElement | null | undefined): void {
+  if (!('editor' in crepe) || crepe.editor === undefined) return
+  const { text, toFileLine } = fileLines(frontmatter, body)
+  const blocks = blockLines(text)
+  if (blocks.lines.length === 0) return
+  let targetIndex = blocks.lines.length - 1
+  for (let i = 0; i < blocks.lines.length; i++) {
+    if (line <= toFileLine(blocks.ends[i])) {
+      targetIndex = i
+      break
+    }
+  }
+  const view = crepe.editor.ctx.get(editorViewCtx)
+  let index = 0
+  let targetPos: number | null = null
+  view.state.doc.descendants((node, pos) => {
+    if (targetPos !== null) return false
+    if (LINE_CONTAINERS.has(node.type.name)) return true
+    if (LINE_LEAVES.has(node.type.name)) {
+      if (index === targetIndex) targetPos = pos
+      index++
+    }
+    return false
+  })
+  if (targetPos === null) return
+  const pos = targetPos
+  const resolved = view.state.doc.resolve(Math.min(pos + 1, view.state.doc.content.size))
+  view.dispatch(view.state.tr.setSelection(Selection.near(resolved)).scrollIntoView())
+  const dom = view.nodeDOM(pos)
+  if (dom instanceof HTMLElement && scroller) {
+    const rect = dom.getBoundingClientRect()
+    const box = scroller.getBoundingClientRect()
+    if (box.height > 0) scroller.scrollTop += rect.top - box.top - box.height / 3
+    else dom.scrollIntoView?.({ block: 'center' })
+  }
+}
 
 /** The setters of a mount that threads no table of contents setting: one identity, so the memoised table of contents never sees a new one. */
 const noTableOfContentsChange = (): void => undefined
@@ -1447,6 +1491,21 @@ function CrepeHost({
       cancelled = true
     }
   }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts, onNotice])
+  // CLI navigation (YAZ-4502): jump to a 1-based disk line in this tab's markdown editor. Zero cost unless invoked.
+  useAutomationSurface(() => {
+    if (inExplore || inFolderPage) return null
+    const tab = hostRef.current?.closest<HTMLElement>('[data-tab]')?.dataset.tab
+    return tab === undefined ? null : `editor:${tab}`
+  }, {
+    ready: readyCrepe !== null,
+    inspect: () => ({}),
+    jumpToLine: (line) => {
+      const crepe = crepeRef.current
+      if (crepe === null || crepe !== readyCrepe) return
+      const { frontmatter, body } = diskParts()
+      jumpViewToLine(crepe, frontmatter, body, line, hostRef.current?.closest<HTMLElement>('.editor-host'))
+    },
+  })
   // "The page at now" (YAZ-4164 D11): a request for this page (the daily-page button, ⌘D) is taken once the editor is
   // ready and its tab shows — after the mount's caret and scroll — or at once by an editor that is open and in front.
   // A tab behind the page waits for its layer to show, so the tab in front never scrolls. A Linked mentions line in a

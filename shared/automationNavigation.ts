@@ -17,11 +17,14 @@ export interface NavigationInput {
   view?: string
   reveal?: boolean
   allowPartial?: boolean
+  readOnly?: boolean
+  line?: number
 }
 
 /** Resolved in main before opening or raising a window. No unresolved name can select an arbitrary item. */
 export interface NavigationTarget {
   path?: string
+  line?: number
   sidebar?: NavigationSidebar
   group?: string
   view?: string

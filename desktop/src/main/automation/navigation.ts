@@ -13,10 +13,12 @@ import { getFocus } from '../focus'
 import { getFocusFolders } from '../focusFolders'
 import { vaultIds } from '../vaultIndex/mint'
 
+export type NavigationWindow = WindowEntry & { readOnly?: boolean }
+
 export interface NavigationHost {
   state(): AppState
   /** Live full windows, most-recently-focused first. */
-  windows(): WindowEntry[]
+  windows(): NavigationWindow[]
   open(options: OpenWindowOptions): string
   raise(id: string): void
   apply(id: string, target: NavigationTarget): Promise<unknown>
@@ -122,6 +124,11 @@ async function resolveNavigation(state: AppState, input: NavigationInput, roots:
     if (!path || !(await stat(path)).isDirectory()) throw new AutomationFailure('INVALID_INPUT', 'A view needs a target folder.')
     target.view = await savedViewName(rootOfPath(roots, path) ?? path, path, input.view)
   }
+  if (input.line !== undefined) {
+    if (!Number.isInteger(input.line) || input.line < 1) throw new AutomationFailure('INVALID_INPUT', 'Line number must be a positive integer.')
+    if (!path || !(await stat(path)).isFile()) throw new AutomationFailure('INVALID_INPUT', 'A line number needs a target file.')
+    target.line = input.line
+  }
   if (list) {
     // The window shows the list its vaults and the switch choose. A scope checks that list; it never changes it.
     const scope = shownListScope(roots, state.settings.workspaceLists, list)
@@ -147,11 +154,13 @@ async function performNavigation(host: NavigationHost, input: NavigationInput) {
   const explicit = input.window === undefined ? undefined : live.find(window => window.id === input.window)
   if (input.window && !explicit) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window is not live.')
   const resolved = await scopeRoots(host.state(), input.workspace || input.root || input.roots ? input : { roots: explicit?.roots }, input.allowPartial)
+  const wantReadOnly = input.readOnly === true
   if (explicit && !sameVaults(explicit.roots, resolved.roots)) throw new AutomationFailure('WINDOW_SCOPE_MISMATCH', 'The target window has different vaults. Its working context was left unchanged.')
+  if (explicit && wantReadOnly && explicit.readOnly !== true) throw new AutomationFailure('WINDOW_SCOPE_MISMATCH', 'The target window is not read-only.')
   const target = await resolveNavigation(host.state(), input, resolved.roots)
-  // Reuse the most recently focused window on exactly these vaults; never take an unrelated window.
-  const reuse = input.mode === 'new' ? undefined : explicit ?? live.find(window => sameVaults(window.roots, resolved.roots))
-  const window = reuse?.id ?? host.open({ root: resolved.roots[0], roots: resolved.roots, file: null })
+  // Reuse the most recently focused window on exactly these vaults with matching readOnly mode; never take an unrelated window.
+  const reuse = input.mode === 'new' ? undefined : explicit ?? live.find(window => sameVaults(window.roots, resolved.roots) && (window.readOnly === true) === wantReadOnly)
+  const window = reuse?.id ?? host.open({ root: resolved.roots[0], roots: resolved.roots, file: null, ...(wantReadOnly ? { readOnly: true } : {}) })
   host.raise(window)
   const applied = await host.apply(window, target)
   if (resolved.workspace) await host.usedWorkspace(resolved.workspace)

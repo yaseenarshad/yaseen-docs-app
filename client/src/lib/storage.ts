@@ -243,6 +243,8 @@ export const storage = {
   getWindowId: (): string => identity.id,
   /** This window is a Files window (YAZ-3357 D1): only the sidebar, no tabs. Fixed for the window's life, so a render may read it. */
   isFilesWindow: (): boolean => identity.kind === 'files',
+  /** Transient read-only window (YAZ-4502): opened with `--read-only`; locks vaults in memory without writing `.yaseendocs/read-only.json`. */
+  isTransientReadOnly: (): boolean => identity.readOnly === true,
   /** The card skill's copy (YAZ-5108), the app's own vault, as main named it in this window's identity; null with no copy. */
   getCardSkill: (): string | null => identity.cardSkill ?? null,
   /**

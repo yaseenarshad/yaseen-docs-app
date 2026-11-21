@@ -7,6 +7,8 @@
 import { FolderView } from './views/FolderView'
 import type { WikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
 import type { RendererCommand } from '@shared/automationNavigation'
+import { useAutomationSurface } from './automation/surfaces'
+import { openCodeAt } from './code/codeOpener'
 import { FORMATS_CHAPTER_TITLE, requestCourse } from './course/openCourse'
 import { showTourPlace } from './course/tourBus'
 import { COURSE_NOTICE } from './course/courseFacts'
@@ -187,7 +189,12 @@ const captured = vi.hoisted(() => ({
   /** The card flow mounts the REAL page editor (`./editor/Editor`); every other test the stub. */
   realEditor: false,
   crepes: [] as import('@milkdown/crepe').Crepe[],
+  jumpedLines: [] as { path: string | null; line: number }[],
   editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void; folderPages?: FolderPagesSettings }[],
+}))
+
+vi.mock('./code/codeOpener', () => ({
+  openCodeAt: vi.fn((path: string, _place: { lineNumber: number; column: number }, open: (path: string) => void) => open(path)),
 }))
 
 vi.mock('./editor/Editor', async (importOriginal) => {
@@ -217,6 +224,11 @@ const EditorStub = ({ folderPages, vaultReadOnly, onVaultLock, root, path, onOpe
     captured.editorRetitle = onRetitle
     captured.titleIsName = useContext(TitleIsName)
     captured.viewOnlyLinks.push(viewOnlyLinks)
+    useAutomationSurface(tabId === undefined ? null : `editor:${tabId}`, {
+      ready: true,
+      inspect: () => ({}),
+      jumpToLine: (line) => captured.jumpedLines.push({ path, line }),
+    })
     if (path === '/v/Automation Folder') return <FolderView path={path} root={root} source={wikilinks as WikilinkResolveSource} onOpenFile={onOpenFile} onRetitle={() => {}} commentsOrder="oldest" onChangeCommentsOrder={() => {}} />
     return (
       <div data-editor data-root={root} data-path={path ?? ''}>
@@ -765,6 +777,7 @@ afterEach(() => {
   captured.editors = []
   captured.realEditor = false
   captured.crepes = []
+  captured.jumpedLines = []
   history.replaceState(null, '', '/')
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
@@ -8289,6 +8302,32 @@ describe('App CLI navigation acknowledgement (YAZ-4502)', () => {
   it('tells main the window is ready for navigation once it mounts', async () => {
     const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(bridge.automation.ready).toHaveBeenCalledWith(true)
+  })
+  it('transient read-only window locks the vault immediately and never writes people.json or read-only.json', async () => {
+    const appState = { ...defaultAppState(), settings: { ...defaultAppState().settings, profile: { name: 'Yasin', handle: 'yasin', picture: null } } }
+    const { bridge } = await mount(appState, { id: 'w1', root: '/v', file: '/v/Note.md', tabs: ['/v/Note.md'], readOnly: true }, { '/v/Note.md': { content: 'Hello', mtime: 1 } }, (b) => {
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'people.json' ? { yasin: { name: 'Old Name', handle: 'yasin' } } : null))
+    })
+    await act(async () => {})
+    expect(captured.sidebar?.vaults[0]?.readOnly).toBe(true)
+    expect(captured.editors.at(-1)?.vaultReadOnly).toBe(true)
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+  })
+  it('opens text files via openCodeAt when target.line is provided', async () => {
+    const path = '/v/index.ts'
+    const openCodeAtMock = vi.mocked(openCodeAt)
+    openCodeAtMock.mockClear()
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, { [path]: { content: 'const x = 1\n', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-code-line', action: 'navigate', target: { path, line: 42 } }))
+    expect(openCodeAtMock).toHaveBeenCalledWith(path, { lineNumber: 42, column: 1 }, expect.any(Function))
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-code-line', ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
+  })
+  it('jumps to the requested line in a markdown editor when target.line is provided', async () => {
+    const path = '/v/Notes.md'
+    const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, { [path]: { content: '# Title\n\nLine three\n', mtime: 1 } })
+    await act(async () => emitAutomation({ id: 'nav-md-line', action: 'navigate', target: { path, line: 3 } }))
+    expect(captured.jumpedLines).toEqual([{ path, line: 3 }])
+    expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-md-line', ok: true, value: expect.objectContaining({ path, acknowledged: true }) })
   })
 })
 

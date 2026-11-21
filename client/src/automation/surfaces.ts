@@ -7,6 +7,7 @@ export interface AutomationSurface {
   inspect(): Record<string, unknown>
   reveal?(target: NavigationTarget): void | Promise<void>
   selectView?(name: string): void
+  jumpToLine?(line: number): void
 }
 const surfaces = new Map<string, AutomationSurface>()
 const waiting = new Set<() => void>()
@@ -23,6 +24,7 @@ export function useAutomationSurface(key: string | null | (() => string | null),
     inspect: () => latest.current.inspect(),
     reveal: target => latest.current.reveal?.(target),
     selectView: name => latest.current.selectView?.(name),
+    jumpToLine: line => latest.current.jumpToLine?.(line),
   }))
   const at = useRef<string | null>(null)
   useLayoutEffect(() => {

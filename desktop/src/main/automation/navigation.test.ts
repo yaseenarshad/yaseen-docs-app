@@ -200,6 +200,41 @@ describe('exact context navigation', () => {
     expect(second).toMatchObject({ window: 'made', created: false, closedStartWindows: [] })
     expect(app.open).toHaveBeenCalledOnce()
   })
+
+  it('validates line numbers for files and rejects directories or missing paths (YAZ-4502)', async () => {
+    const app = host([entry('w1', [root])]), file = join(root, 'Mochi/card.md')
+    await checked(navigate(app, { root, path: file, line: 42 }))
+    expect(app.apply).toHaveBeenLastCalledWith('w1', { path: file, line: 42 })
+    vi.mocked(app.raise).mockClear()
+    await expect(navigate(app, { root, path: join(root, 'Mochi'), line: 10 })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(navigate(app, { root, path: root, line: 10 })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(navigate(app, { root, line: 10 })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(navigate(app, { root, path: file, line: 0 })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    expect(app.raise).not.toHaveBeenCalled()
+  })
+
+  it('matches readOnly mode strictly on window reuse and forwards readOnly to open (YAZ-4502)', async () => {
+    const writable = entry('w-rw', [root])
+    const readonly = { ...entry('w-ro', [root]), readOnly: true as const }
+
+    // readOnly request never reuses a writable window; opens a new readOnly window.
+    const appRwOnly = host([writable])
+    expect(await checked(navigate(appRwOnly, { root, readOnly: true }))).toMatchObject({ window: 'new', created: true })
+    expect(appRwOnly.open).toHaveBeenCalledWith({ root, roots: [root], file: null, readOnly: true })
+
+    // readOnly request reuses an existing readOnly window on the same root.
+    const appBoth = host([writable, readonly])
+    expect(await checked(navigate(appBoth, { root, readOnly: true }))).toMatchObject({ window: 'w-ro', created: false })
+    expect(appBoth.open).not.toHaveBeenCalled()
+
+    // Writable request never reuses a readOnly window; opens a new writable window.
+    const appRoOnly = host([readonly])
+    expect(await checked(navigate(appRoOnly, { root }))).toMatchObject({ window: 'new', created: true })
+    expect(appRoOnly.open).toHaveBeenCalledWith({ root, roots: [root], file: null })
+
+    // Explicit writable window refuses readOnly: true.
+    await expect(navigate(appRwOnly, { window: 'w-rw', readOnly: true })).rejects.toMatchObject({ code: 'WINDOW_SCOPE_MISMATCH' })
+  })
 })
 
 describe('targets the sidebar cannot show (YAZ-4638, YAZ-4639)', () => {

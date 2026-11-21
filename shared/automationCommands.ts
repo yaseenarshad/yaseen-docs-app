@@ -90,6 +90,8 @@ const navigationInput = object({
   group: string('A Favorites or Focus group ID or unique name to reveal.'), view: string('A saved view of the target folder page.'),
   reveal: { type: 'boolean', description: 'Reveal and expand the target in the sidebar list. Default true when a sidebar is named.' },
   allowPartial: { type: 'boolean', description: 'Open a workspace even when some of its vault folders are missing.' },
+  readOnly: { type: 'boolean', description: 'Open the window in transient read-only mode without writing .yaseendocs/.' },
+  line: { type: 'integer', minimum: 1, description: '1-based line number to jump to in the target file.' },
 })
 
 /** The allowlist grows only with an implemented adapter and its checks. No IPC channel discovery. */

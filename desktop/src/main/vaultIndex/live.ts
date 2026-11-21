@@ -120,7 +120,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       entry.waits.delete(ev.path)
       for (const key of entry.cardWaits.keys()) if (key.startsWith(`${ev.path}\n`)) entry.cardWaits.delete(key)
       schedulePersist(root, entry.records)
-      if (id !== undefined) void restoreFolderId(root, ev.path, id)
+      if (id !== undefined && !isTransientReadOnlyRoot?.(root)) void restoreFolderId(root, ev.path, id)
       return
     }
     case 'unlinkDir': {
@@ -255,6 +255,13 @@ export function onIdFixes(listener: FixListener | undefined): void {
   fixed = listener
 }
 
+let isTransientReadOnlyRoot: ((root: string) => boolean) | undefined
+
+/** One checker, set by the bridge at startup: skips automatic ID sweeps and writes for transient read-only roots (YAZ-4502). */
+export function setReadOnlyRootChecker(checker: ((root: string) => boolean) | undefined): void {
+  isTransientReadOnlyRoot = checker
+}
+
 /**
  * A sweep the INDEX starts — a file arrived, the index was built, a yes arrived by the sync — and
  * so one whose numbers wait on a Mac that is not the vault's first (YAZ-2677 🔒 D8, R31). What the
@@ -269,6 +276,7 @@ function sweep(
   over: readonly string[] = [],
   cardOver?: ReadonlySet<string>,
 ): Promise<void> {
+  if (isTransientReadOnlyRoot?.(root)) return Promise.resolve()
   return sweepIds(root, entry.records, among, knew, dirs, { waits: entry.waits, indexed: () => Promise.all([...entry.inFlight]), cardWaits: entry.cardWaits, ...(cardOver !== undefined && { cardOver }) }).then((result) => {
     // `over` are the files whose wait was over when this sweep started: whatever it did, they wait no more, so the timer never runs for one file two times.
     for (const file of over) entry.waits.delete(file)
@@ -395,7 +403,7 @@ async function build(root: string): Promise<Entry> {
     // unanswered, and so does one whose `ids.json` is not valid JSON: it is not written over. Each
     // other key of the file stays (YAZ-2677 R10), and an answer that arrived meanwhile stands.
     const ask = wouldWrite(own.records, own.dirs, letters)
-    if (answer === undefined && ask.pages === 0 && ask.folders === 0 && [...own.records.values()].some((r) => !isFolderSettingsPath(r.path) && vaultPageId(r.id, letters) !== undefined)) {
+    if (answer === undefined && !isTransientReadOnlyRoot?.(root) && ask.pages === 0 && ask.folders === 0 && [...own.records.values()].some((r) => !isFolderSettingsPath(r.path) && vaultPageId(r.id, letters) !== undefined)) {
       let now: boolean | undefined
       answer = await saveIds(root, (config) => ((now = idsAnswer(config)) === undefined ? { ...config, enabled: true } : undefined)).then(
         () => now ?? true,

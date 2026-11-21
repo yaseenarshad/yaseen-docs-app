@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'esbuild'
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -12,7 +12,7 @@ import { prepareAutomation } from '../main/automation'
 import { createServer } from 'node:net'
 import { dirname } from 'node:path'
 import { descriptorPath, endpointFor, privateDirectory } from '../automation/connection'
-import { AUTOMATION_HELP, isAutomationCommand, parsedValue, runAutomation } from './automation'
+import { AUTOMATION_HELP, OPEN_HELP, isAutomationCommand, parsedValue, runAutomation } from './automation'
 import { HELP } from './cli'
 
 const exec = promisify(execFile)
@@ -209,5 +209,94 @@ describe('flag values (YAZ-4575, YAZ-4569)', () => {
     expect(parsedValue({ type: 'array', items: { type: 'string' } }, '["/a","/b"]', '--roots')).toEqual(['/a', '/b'])
     expect(parsedValue({ type: ['number', 'string'] }, 'large', '--size')).toBe('large')
     expect(() => parsedValue({ type: 'boolean' }, 'yes', '--reveal')).toThrow('--reveal expects JSON (boolean).')
+  })
+})
+
+describe('yaseendocs open shorthand (YAZ-4502)', () => {
+  it('prints OPEN_HELP without a running app', async () => {
+    expect(isAutomationCommand(['open'])).toBe(true)
+    const res = await run('open', '--help')
+    expect(res).toMatchObject({ code: 0, stdout: OPEN_HELP })
+  })
+
+  it('parses file:line, detects .git/.yaseendocs root, maps --new-window and --read-only, and opens directories', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'docs-open-test-'))
+    const received: Array<{ command: string; args: Record<string, unknown> }> = []
+    const srv = await startAutomationServer(tmp, (req) => {
+      received.push({ command: req.command, args: req.args as Record<string, unknown> })
+      return { writes: [], run: async () => ({ window: 'w1', roots: [req.args.root], missing: [], created: true, applied: { path: req.args.path ?? null, tab: null, sidebar: 'files', sidebarCollapsed: false, acknowledged: true }, closedStartWindows: [] }) }
+    })
+    const cli = async (...argv: string[]) => {
+      let stdout = '', stderr = ''
+      const code = await runAutomation([...argv, '--profile', tmp], { stdin: async () => '', stdout: v => { stdout += v }, stderr: v => { stderr += v } })
+      return { code, stdout, stderr }
+    }
+    try {
+      // Repo with .git ancestor
+      const repo = join(tmp, 'my-repo')
+      const nested = join(repo, 'src/deep')
+      await mkdir(join(repo, '.git'), { recursive: true })
+      await mkdir(nested, { recursive: true })
+      const file = join(nested, 'index.ts')
+      await writeFile(file, 'line1\nline2\nline3\n')
+
+      // 1. file:line with auto-detected .git root
+      const r1 = await cli('open', `${file}:42`, '--read-only', '--new-window')
+      expect(r1.code, r1.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: repo, path: file, mode: 'new', readOnly: true, line: 42 },
+      })
+
+      // 2. --line flag without :line suffix
+      const r2 = await cli('open', '--line', '7', '--sidebar', 'files', '--reveal', 'true', file)
+      expect(r2.code, r2.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: repo, path: file, mode: 'reuse', line: 7, sidebar: 'files', reveal: true },
+      })
+
+      // 3. Directory target without --root uses directory as root
+      const r3 = await cli('open', repo)
+      expect(r3.code, r3.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: repo, mode: 'reuse' },
+      })
+
+      // 4. Directory target with explicit --root passes path + --view
+      const r4 = await cli('open', '--root', repo, nested, '--view', 'Table')
+      expect(r4.code, r4.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: repo, path: nested, mode: 'reuse', view: 'Table' },
+      })
+
+      // 5. Fallback root to dirname when no .git or .yaseendocs exists (inside isolated tmp dir)
+      const standaloneDir = join(tmp, 'plain-dir')
+      await mkdir(standaloneDir)
+      const plainFile = join(standaloneDir, 'notes.md')
+      await writeFile(plainFile, '# hi\n')
+      const r5 = await cli('open', plainFile)
+      expect(r5.code, r5.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: standaloneDir, path: plainFile, mode: 'reuse' },
+      })
+
+      // 6. Error cases
+      expect((await cli('open', `${file}:10`, '--line', '5')).code).toBe(2)
+      expect((await cli('open', repo, '--line', '5')).code).toBe(2)
+      expect((await cli('open', `${file}:0`)).code).toBe(2)
+      expect((await cli('open', '--line', '0', file)).code).toBe(2)
+      expect((await cli('open')).code).toBe(2)
+      expect((await cli('open', '--bogus', file)).code).toBe(2)
+      const missing = await cli('open', join(repo, 'does-not-exist.ts'))
+      expect(missing.code).toBe(1)
+      expect(JSON.parse(missing.stderr).error.code).toBe('NOT_FOUND')
+    } finally {
+      await srv.close()
+      await rm(tmp, { recursive: true, force: true })
+    }
   })
 })

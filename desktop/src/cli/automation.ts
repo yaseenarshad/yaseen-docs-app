@@ -11,9 +11,12 @@ import { userDataDir } from '../main/userData'
 import type { Io } from './cli'
 
 export const AUTOMATION_HELP = `Navigation (the running app; it starts Docs when needed):
+  yaseendocs open [--new-window] [--read-only] [--root <repo>] [--line <n>]
+      [--sidebar files|favorites|focus] [--reveal true|false] [--view <name>]
+      [--profile <absolute-path>] [--wait-ms <1..300000>] [--json] [<file[:line]> | <dir>]
   yaseendocs navigation open (--root <path> | --roots <JSON list> | --workspace <id or name> | --window <id>)
-      [--path <path>] [--sidebar files|favorites|focus] [--reveal true|false] [--group <id or name>]
-      [--view <name>] [--scope vault|workspace] [--mode reuse|new] [--allow-partial true]
+      [--path <path>] [--line <n>] [--read-only true|false] [--sidebar files|favorites|focus] [--reveal true|false]
+      [--group <id or name>] [--view <name>] [--scope vault|workspace] [--mode reuse|new] [--allow-partial true]
   yaseendocs app status
   yaseendocs request status --id <request-id>
   yaseendocs capabilities --json
@@ -27,11 +30,30 @@ them as one JSON object. Unknown fields and flags fail before anything is sent.
 A timeout is an unknown outcome: check the receipt with request status before you try again.
 
 Example:
+  # Open a file at line 42 in a transient read-only window without touching .yaseendocs/.
+  yaseendocs open --read-only src/app.ts:42
   # Open the Skills vault in a new window on Favorites, with its Mochi folder revealed and its Cards view.
   yaseendocs navigation open --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi" --sidebar favorites --view Cards --mode new
 `
 
-const RESOURCES = new Set(['capabilities', 'navigation', 'app', 'request'])
+export const OPEN_HELP = `usage:
+  yaseendocs open [--new-window] [--read-only] [--root <repo>] [--line <n>]
+      [--sidebar files|favorites|focus] [--reveal true|false] [--view <name>]
+      [--profile <absolute-path>] [--wait-ms <1..300000>] [--json] [<file[:line]> | <dir>]
+
+Opens a file or folder in Yaseen Docs (starting Docs when needed).
+  <file[:line]>  File to open; append :<line> to jump to a 1-based line number.
+  <dir>          Directory to open as a vault (or a folder inside --root).
+  --new-window   Always open a new window.
+  --read-only    Open in transient read-only mode without writing .yaseendocs/.
+  --root <repo>  Explicit vault/repo root (default: nearest .git or .yaseendocs ancestor, else file's directory).
+  --line <n>     1-based line number to jump to in the target file.
+  --sidebar      Sidebar list to show (files|favorites|focus).
+  --reveal       Reveal target in the sidebar (true|false).
+  --view <name>  Saved view of the target folder page.
+`
+
+const RESOURCES = new Set(['capabilities', 'navigation', 'app', 'request', 'open'])
 export const isAutomationCommand = (argv: readonly string[]): boolean => RESOURCES.has(argv[0] ?? '')
 
 /**
@@ -157,6 +179,136 @@ async function startOnce(profile: string): Promise<string | null> {
   } catch (error) { await unlink(lock).catch(() => {}); throw error }
 }
 
+const exists = (path: string): Promise<boolean> => stat(path).then(() => true, () => false)
+
+/** Walk up from `startDir` looking for `.git` or `.yaseendocs`, falling back to `startDir`. */
+async function detectRoot(startDir: string): Promise<string> {
+  let dir = startDir
+  while (true) {
+    if (await exists(join(dir, '.git')) || await exists(join(dir, '.yaseendocs'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) return startDir
+    dir = parent
+  }
+}
+
+async function parseOpenCommand(argv: readonly string[]): Promise<
+  | { help: true }
+  | { help: false; args: Record<string, unknown>; profile: string; waitMs: number; reference?: string }
+> {
+  const definition = commandDefinition('navigation.open')
+  let profile = userDataDir(process.env, process.platform, homedir())
+  let waitMs: number = AUTOMATION_LIMITS.waitMs
+  let reference: string | undefined
+  let newWindow = false
+  let readOnly = false
+  let rootFlag: string | undefined
+  let lineFlag: number | undefined
+  let sidebar: unknown
+  let reveal: unknown
+  let view: string | undefined
+  let positional: string | undefined
+  const seen = new Set<string>()
+  let afterDoubleDash = false
+
+  for (let i = 1; i < argv.length; i++) {
+    const arg = argv[i]
+    if (!afterDoubleDash && arg === '--') { afterDoubleDash = true; continue }
+    if (!afterDoubleDash && (arg === '--help' || arg === '-h')) return { help: true }
+    if (!afterDoubleDash && arg.startsWith('--')) {
+      if (seen.has(arg)) throw new AutomationFailure('INVALID_INPUT', `Repeated flag: ${arg}`)
+      seen.add(arg)
+      if (arg === '--json') continue
+      if (arg === '--new-window') { newWindow = true; continue }
+      if (arg === '--read-only') { readOnly = true; continue }
+      if (i + 1 >= argv.length) throw new AutomationFailure('INVALID_INPUT', `Expected a flag and value: ${arg}`)
+      const value = argv[++i]
+      switch (arg) {
+        case '--profile': profile = value; break
+        case '--wait-ms': waitMs = Number(value); break
+        case '--request': reference = value; break
+        case '--root': rootFlag = resolve(value); break
+        case '--line': {
+          const parsed = Number(value)
+          if (!Number.isInteger(parsed) || parsed < 1) throw new AutomationFailure('INVALID_INPUT', '--line must be a positive integer.')
+          lineFlag = parsed
+          break
+        }
+        case '--sidebar': sidebar = parsedValue(definition.input.properties!.sidebar, value, arg); break
+        case '--reveal': reveal = parsedValue(definition.input.properties!.reveal, value, arg); break
+        case '--view': view = value; break
+        default: throw new AutomationFailure('INVALID_INPUT', `Unknown flag: ${arg}`)
+      }
+      continue
+    }
+    if (!afterDoubleDash && arg.startsWith('-')) throw new AutomationFailure('INVALID_INPUT', `Unknown flag: ${arg}`)
+    if (positional !== undefined) throw new AutomationFailure('INVALID_INPUT', `Unexpected argument: ${arg}`)
+    positional = arg
+  }
+
+  if (!isAbsolute(profile)) throw new AutomationFailure('INVALID_INPUT', '--profile must be an absolute path.')
+  if (!Number.isInteger(waitMs) || waitMs < 1 || waitMs > 300_000) throw new AutomationFailure('INVALID_INPUT', '--wait-ms must be between 1 and 300000.')
+
+  let line = lineFlag
+  let targetPath: string | undefined
+  if (positional !== undefined) {
+    let raw = positional
+    const verbatim = resolve(raw)
+    if (!(await exists(verbatim))) {
+      const match = /^(.+):(\d+)$/.exec(raw)
+      if (match) {
+        const suffixLine = Number(match[2])
+        if (!Number.isInteger(suffixLine) || suffixLine < 1) throw new AutomationFailure('INVALID_INPUT', 'Line number must be a positive integer.')
+        if (lineFlag !== undefined) throw new AutomationFailure('INVALID_INPUT', 'Specify a line number with either :line or --line, not both.')
+        raw = match[1]
+        line = suffixLine
+      }
+    }
+    targetPath = resolve(raw)
+  }
+
+  if (targetPath === undefined && rootFlag === undefined) {
+    throw new AutomationFailure('INVALID_INPUT', 'Specify a file or folder to open. Run yaseendocs open --help.')
+  }
+
+  let root: string
+  let path: string | undefined
+  if (targetPath === undefined) {
+    root = rootFlag!
+    if (line !== undefined) throw new AutomationFailure('INVALID_INPUT', 'A line number needs a target file.')
+  } else {
+    const info = await stat(targetPath).catch(() => null)
+    if (!info) throw new AutomationFailure('NOT_FOUND', `Target not found: ${targetPath}`)
+    if (info.isDirectory()) {
+      if (line !== undefined) throw new AutomationFailure('INVALID_INPUT', 'A line number needs a target file.')
+      if (rootFlag !== undefined) {
+        root = rootFlag
+        if (targetPath !== root) path = targetPath
+      } else {
+        root = targetPath
+      }
+    } else if (info.isFile()) {
+      path = targetPath
+      root = rootFlag ?? await detectRoot(dirname(targetPath))
+    } else {
+      throw new AutomationFailure('INVALID_INPUT', `Target must be a file or directory: ${targetPath}`)
+    }
+  }
+
+  const args: Record<string, unknown> = {
+    root,
+    ...(path !== undefined ? { path } : {}),
+    mode: newWindow ? 'new' : 'reuse',
+    ...(readOnly ? { readOnly: true } : {}),
+    ...(line !== undefined ? { line } : {}),
+    ...(sidebar !== undefined ? { sidebar } : {}),
+    ...(reveal !== undefined ? { reveal } : {}),
+    ...(view !== undefined ? { view } : {}),
+  }
+  validateInput(definition.input, args)
+  return { help: false, args, profile, waitMs, reference }
+}
+
 /** Exit 0 done · 1 refused or failed · 2 invalid usage. Results print as one JSON line on stdout; failures before sending on stderr. */
 export async function runAutomation(argv: readonly string[], io: Io): Promise<number> {
   let request: AutomationRequest | undefined
@@ -165,6 +317,21 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
       if (argv.slice(1).some(arg => !['--json', '--help', '-h'].includes(arg))) throw new AutomationFailure('INVALID_INPUT', 'capabilities accepts only --json or --help.')
       io.stdout(argv.includes('--help') || argv.includes('-h') ? AUTOMATION_HELP : `${JSON.stringify({ version: AUTOMATION_VERSION, limits: AUTOMATION_LIMITS, commands: AUTOMATION_COMMANDS }, null, 2)}\n`)
       return 0
+    }
+    if (argv[0] === 'open') {
+      const parsed = await parseOpenCommand(argv)
+      if (parsed.help) { io.stdout(OPEN_HELP); return 0 }
+      const connected = Date.now()
+      const connection = await connectionFor(parsed.profile, true, parsed.waitMs)
+      request = makeRequest(connection, 'navigation.open', parsed.args)
+      if (parsed.reference !== undefined) {
+        const [session, id, issuedAt, extra] = parsed.reference.split('/')
+        if (!session || !id || !issuedAt || extra !== undefined || !Number.isFinite(Number(issuedAt))) throw new AutomationFailure('INVALID_INPUT', 'Invalid request reference.')
+        request = { ...request, session, id, issuedAt: Number(issuedAt) }
+      }
+      const result = await sendRequest(connection, request, Math.max(1, parsed.waitMs - (Date.now() - connected)))
+      io.stdout(`${JSON.stringify({ ...result, request: `${request.session}/${request.id}/${request.issuedAt}` })}\n`)
+      return result.ok ? 0 : 1
     }
     if (argv[1] === '--help' || argv[1] === '-h') { io.stdout(AUTOMATION_HELP); return 0 }
     if (argv[1] === undefined) throw new AutomationFailure('INVALID_INPUT', `Name an action: yaseendocs ${argv[0]} <action>. Run yaseendocs ${argv[0]} --help.`)
