@@ -24,6 +24,12 @@ import type { VaultIcons } from './vaultIcons'
 import type { RendererCommand, RendererReply } from './automationNavigation'
 import type { FilesOrderState, FilesSort } from './filesOrder'
 
+/** Result of `fs:backfill-created` (YAZ-6168): how many files were stamped and how many were skipped. */
+export interface BackfillCreatedResult {
+  written: number
+  skipped: number
+}
+
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
  * exist. `arity` is checked against `A`, and the preload forwards exactly that many arguments,
@@ -80,6 +86,11 @@ export const CONTRACT = {
    * when its index has none. One maker at a time on this Mac, the command too, so the two never make two pages.
    */
   makeDailyPage: invoke<[vault: string], FoundPage>('fs:make-daily-page', 1),
+  /**
+   * Opt-in backfill of permanent created dates (YAZ-6168): stamps `created:` on unstamped pages
+   * and `created <iso>` on unstamped card files under `root`, using each file's current OS birthtime.
+   */
+  backfillCreated: invoke<[root: string], BackfillCreatedResult>('fs:backfill-created', 1),
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index: invoke<[root: string], IndexResponse>('fs:index', 1),
   /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first `index(root)` build. Read it AFTER the first index snapshot. */

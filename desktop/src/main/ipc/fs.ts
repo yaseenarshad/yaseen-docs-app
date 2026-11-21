@@ -32,6 +32,7 @@ import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import { requireRequest, requireStringArray } from '../fs/validate'
+import { backfillCreated } from '../vaultIndex/backfillCreated'
 import type { Store } from '../store'
 import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
@@ -218,6 +219,10 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handleWithEvent(CONTRACT.ids.backfill, async (e, root: unknown) => {
     const r = ownVault(e, root)
     return thenTell(r, giveOldIdsNumbers(r, followed))
+  })
+  handleWithEvent(CONTRACT.backfillCreated, async (e, root: unknown) => {
+    const r = ownVault(e, root)
+    return thenTell(r, backfillCreated(r))
   })
   // A clash this Mac fixed (S45): a page whose file name followed its new ID (R26) takes the rename
   // handler's downstream, so its open tab, its favorite and its stored paths follow; then ONE

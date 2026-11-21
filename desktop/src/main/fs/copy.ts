@@ -1,8 +1,10 @@
 import { cp, mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { cardTime } from '@shared/cardLine'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { BOARD_ID_KEY, BOARD_META_HEAD_BYTES, BOARD_META_KEY, boardIdOf, FORMER_IDS_KEY, parseBoardMetaBlock, serializeBoard } from '@shared/drawingAssets'
 import { isDrawing } from '@shared/fileKind'
+import { CREATED_KEY } from '@shared/pageCreated'
 import { PAGE_ID_KEY, vaultPageId } from '@shared/pageId'
 import { TITLE_KEY, kebabTitle, pageFileName, titleOf } from '@shared/pageName'
 import { FOLDER_SETTINGS_FILE, folderSettingsPath, type PasteResponse, type RenameFileResponse } from '@shared/types'
@@ -97,12 +99,13 @@ async function freshFor(door: IdDoor, src: string, kind: 'file' | 'dir'): Promis
   }
 }
 
-/** `content`'s properties and `content` holding a fresh `id`; undefined when they do not parse: it can hold neither an id nor a title, and is copied as it is. */
+/** `content`'s properties and `content` holding a fresh `id` and `created`; undefined when they do not parse: it can hold neither an id nor a title, and is copied as it is. */
 function reborn(content: string, fresh: Fresh): { properties: Record<string, unknown>; id: string; content: string } | undefined {
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
   if (error !== undefined) return
   const id = fresh.next()
-  return { properties, id, content: setFrontmatterProperty(content, PAGE_ID_KEY, id) }
+  const withId = setFrontmatterProperty(content, PAGE_ID_KEY, id)
+  return { properties, id, content: setFrontmatterProperty(withId, CREATED_KEY, cardTime(Date.now())) }
 }
 
 /** A byte copy, whole and never over anything: an errno from it belongs to the TARGET (EEXIST → ALREADY_EXISTS on `to`). */

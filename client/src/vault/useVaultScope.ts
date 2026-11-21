@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { BackfillCreatedResult } from '@shared/ipc'
 import { isOldId } from '@shared/pageId'
 import type { IdsState, IndexRecord, IndexResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
@@ -94,6 +95,7 @@ export interface VaultScope {
         state: () => Promise<IdsState>
         reletter: (letters: string) => Promise<IdsState | null>
         backfill: () => Promise<IdsState | null>
+        backfillCreated: () => Promise<BackfillCreatedResult | null>
       }
     | undefined
   /** Every READY index snapshot of this vault, from its `WikilinkIndexBridge`. */
@@ -221,6 +223,11 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     if (allowFileAction !== undefined && !(await allowFileAction(root))) return null
     return api.ids.backfill(root)
   }
+  const backfillCreated = async (): Promise<BackfillCreatedResult | null> => {
+    if (root === null) throw new Error('no vault')
+    if (allowFileAction !== undefined && !(await allowFileAction(root))) return null
+    return api.backfillCreated(root)
+  }
 
   return {
     root,
@@ -247,7 +254,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     newPlaces,
     review,
     renames,
-    ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, set: saveIds, check: checkIds, old: vaultIds.old, unfinished: vaultIds.unfinished, state: idsState, reletter, backfill },
+    ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, set: saveIds, check: checkIds, old: vaultIds.old, unfinished: vaultIds.unfinished, state: idsState, reletter, backfill, backfillCreated },
     onSnapshot,
   }
 }

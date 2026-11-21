@@ -62,7 +62,8 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   const idsState = vi.fn((): Promise<IdsState> => (vaultIds?.state === undefined ? new Promise(() => undefined) : Promise.resolve(STATE)))
   const reletter = vi.fn(async (letters: string): Promise<IdsState> => ({ ...STATE, letters, stale: 0 }))
   const backfill = vi.fn(async (): Promise<IdsState> => ({ ...STATE, old: 0 }))
-  const ids = vaultIds === undefined ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask, set: setIds, check: checkIds, old: vaultIds.old ?? 0, unfinished: vaultIds.unfinished ?? false, state: idsState, reletter, backfill }
+  const backfillCreated = vi.fn(async () => ({ written: 3, skipped: 1 }))
+  const ids = vaultIds === undefined ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask, set: setIds, check: checkIds, old: vaultIds.old ?? 0, unfinished: vaultIds.unfinished ?? false, state: idsState, reletter, backfill, backfillCreated }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -70,7 +71,7 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName, readOnlyVault: readOnly, showIds }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, saveReadOnly, saveShowIds, el: container }
+  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, backfillCreated, rerender, saveReadOnly, saveShowIds, el: container }
 }
 
 /** Card review as a new vault has it: on (YAZ-4959 D14). */
@@ -2880,6 +2881,31 @@ describe('SettingsDialog: Old IDs (YAZ-2677 D6, S88 to S91)', () => {
     await act(async () => sheetBtn(el, 'Give them numbers').click())
     expect(backfill).toHaveBeenCalledTimes(2)
     expect(line(el)).toBe('Each page has a number now.')
+  })
+})
+
+describe('This vault › Created dates (YAZ-6168)', () => {
+  const button = (el: HTMLElement) => rowButtons(el, 'backfillCreated')[0]
+  const status = (el: HTMLElement) => row(el, 'backfillCreated')?.querySelector('[role="status"]')?.textContent ?? null
+
+  it('is absent when IDs are disabled and shown when IDs are enabled; stamps pages and reports the count', async () => {
+    expect(row(mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: false, held: false }).el, 'backfillCreated')).toBeNull()
+    const { el, backfillCreated } = mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: true, held: true, letters: 'YAZ' })
+    expect(row(el, 'backfillCreated')?.querySelector('.setting__label')?.textContent).toBe('Created dates')
+    expect(button(el).textContent).toBe('Stamp created dates')
+
+    await act(async () => button(el).click())
+    expect(backfillCreated).toHaveBeenCalledExactlyOnceWith()
+    expect(status(el)).toBe('Stamped 3 pages.')
+
+    backfillCreated.mockResolvedValueOnce({ written: 0, skipped: 4 })
+    await act(async () => button(el).click())
+    expect(status(el)).toBe('All pages already have a created date.')
+
+    // Read-only vault Cancel resolves null and shows no status message
+    backfillCreated.mockResolvedValueOnce(null as never)
+    await act(async () => button(el).click())
+    expect(status(el)).toBeNull()
   })
 })
 

@@ -58,7 +58,8 @@ import { RowSpacingControl } from './RowSpacingControl'
 import { UnitWordControl } from './UnitWordControl'
 import { ProfileControl } from './ProfileControl'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
-import { IdLettersControl, KeepIdsSheet, OldIdsControl, said, useRun } from './IdLettersControl'
+import type { BackfillCreatedResult } from '@shared/ipc'
+import { BackfillCreatedControl, IdLettersControl, KeepIdsSheet, OldIdsControl, said, useRun } from './IdLettersControl'
 import { TypedConfirmSheet } from '../components/TypedConfirmSheet'
 import { idsAskMessage, idsLettersAsk, keepIdsAskMessage } from './idsAskMessage'
 import { AllowedPictureFoldersControl } from './AllowedPictureFoldersControl'
@@ -430,6 +431,7 @@ export interface SettingsCtx {
     state: () => Promise<IdsState>
     reletter: (letters: string) => Promise<IdsState | null>
     backfill: () => Promise<IdsState | null>
+    backfillCreated?: () => Promise<BackfillCreatedResult | null>
   }
   /**
    * What the app calls the vault the three above are of (YAZ-2602 R10): the active tab's. Handed
@@ -2231,7 +2233,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         subheadings: [
           { title: 'Show IDs', rows: ['showIds', 'showIds.title', 'showIds.files'] },
           { title: 'Links and editing', rows: ['linkClick', 'readOnlyVault'] },
-          { title: 'Page IDs', rows: ['ids', 'duplicates', 'idLetters', 'oldIds'] }, // drawn through the vault's word: unit(ctx, title), SettingsDialog
+          { title: 'Page IDs', rows: ['ids', 'duplicates', 'idLetters', 'oldIds', 'backfillCreated'] }, // drawn through the vault's word: unit(ctx, title), SettingsDialog
         ],
         vault: true,
         items: [
@@ -2355,6 +2357,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             wide: true,
             available: (ctx) => ctx.ids?.enabled === true && (ctx.ids.old > 0 || ctx.ids.unfinished),
             render: ({ ids, vaultName }) => ids && <OldIdsControl ids={ids} vault={vaultName} />,
+          },
+          {
+            id: 'backfillCreated',
+            label: 'Created dates',
+            hint: 'Saves each page’s current file birth date into its frontmatter so it survives git clones and syncing across Macs. Pages that already have one are skipped.',
+            keywords: ['created', 'date', 'stamp', 'backfill', 'birthtime', 'ctime'],
+            wide: true,
+            available: (ctx) => ctx.ids?.enabled === true && ctx.ids.backfillCreated !== undefined,
+            render: ({ ids }) => ids?.backfillCreated && <BackfillCreatedControl backfillCreated={ids.backfillCreated} />,
           },
         ],
       },
