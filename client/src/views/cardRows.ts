@@ -19,11 +19,11 @@
  */
 import { cardsWithIds, withCardFix, withCardNext, withCardOff, withCardProperty, withoutCardProperty, type CardLine, type CardRecord } from '@shared/cardLine'
 import { cardDueAt, cardMemory, cardReviewNumbers, dayCount, isNewCard } from '@shared/cardSchedule'
+import { parseCreatedMs } from '@shared/pageCreated'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { cardRowPath } from '../search/searchCandidates'
 import { DateValue, type Value } from './expr'
-import { parseIsoDate } from './expr/dates'
 import type { ViewDef } from './viewSchema'
 
 /** What a card row is: its card, its ID and place, and where it lives. */
@@ -186,9 +186,7 @@ export function cardValues(row: CardRow, settings: ReviewSettings | undefined, n
   const due = scheduled ? cardDueAt(card.reviews, settings) : Number.NaN
   const memory = scheduled ? cardMemory(card.reviews, settings, now) : null
   const overdue = Number.isNaN(due) ? null : daysPast(due, now)
-  const rawCreated = (card as { created?: string }).created
-  const parsedCreated = typeof rawCreated === 'string' && rawCreated.trim() !== '' ? (parseIsoDate(rawCreated)?.ms ?? Date.parse(rawCreated)) : Number.NaN
-  const createdMs = Number.isFinite(parsedCreated) ? parsedCreated : row.pageTitle === null && (row.ctime ?? 0) > 0 ? row.ctime! : null
+  const createdMs = parseCreatedMs(card.created) ?? (row.pageTitle === null && (row.ctime ?? 0) > 0 ? row.ctime! : null)
   return {
     page: row.pageTitle,
     status,

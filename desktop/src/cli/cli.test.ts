@@ -1120,7 +1120,7 @@ describe('daily and new (YAZ-4269)', () => {
     const [name] = await pages(path.join(root, 'daily'))
     expect(made).toEqual({ code: 0, out: `made ${path.join(root, 'daily', name)}\n`, err: '' })
     expect(again).toEqual({ code: 0, out: `found ${path.join(root, 'daily', name)}\n`, err: '' })
-    expect(await readFile(path.join(root, 'daily', name), 'utf8')).toMatch(new RegExp(`^---\\ntitle: ${today()}\\nid: YAZ-\\d+\\n---\\nPLAN\\n$`))
+    expect(await readFile(path.join(root, 'daily', name), 'utf8')).toMatch(new RegExp(`^---\\ntitle: ${today()}\\nid: YAZ-\\d+\\ncreated: \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\n---\\nPLAN\\n$`))
   })
 
   it('five runs at one moment make ONE page (D2)', async () => {
@@ -1222,7 +1222,7 @@ describe('daily and new (YAZ-4269)', () => {
 
     const answer = JSON.parse(made.out) as { path: string; id: string }
     expect(answer).toMatchObject({ title: 'Gym plan', created: true, others: [], path: expect.stringMatching(/\/projects\/gym-plan-yaz-\d+\.md$/) })
-    expect(await readFile(answer.path, 'utf8')).toBe(`---\nstatus: doing\nowner: me\ntitle: Gym plan\nid: ${answer.id}\n---\n## Plan\n- Gym\n`)
+    expect(await readFile(answer.path, 'utf8')).toMatch(new RegExp(`^---\\nstatus: doing\\nowner: me\\ntitle: Gym plan\\nid: ${answer.id}\\ncreated: \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\n---\\n## Plan\\n- Gym\\n$`))
   })
 
   it('YAZ-4615 D10: with the comment hint on (the default), a new page carries it as the first line of its frontmatter — in both kinds of vault', async () => {

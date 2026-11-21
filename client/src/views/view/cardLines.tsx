@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 import { CARD_STYLE_KEYS, readCardText, readCardWeight, readColorStrength } from '@shared/types'
 import { type Row, propertyLabel } from '../engine'
+import { propertyFormatOf } from '../columnFormat'
 import type { Resolver } from '../expr'
 import type { ViewDef, ViewSet } from '../viewSchema'
 import { rowCell } from './GroupHeader'
@@ -33,7 +34,7 @@ export function CardProp({ def, view, row, field, resolve }: { def: ViewSet; vie
   return (
     <div className={`view-board__prop${styleClasses(style)}`}>
       {style.hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, field)}</span>}
-      <span className="view-board__prop-value">{rowCell(row, field, resolve)}</span>
+      <span className="view-board__prop-value">{rowCell(row, field, resolve, propertyFormatOf(def.properties, field))}</span>
     </div>
   )
 }

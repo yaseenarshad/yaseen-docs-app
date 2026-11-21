@@ -7,6 +7,7 @@ import { type LinkCandidate } from '../../links/completion'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { propertyFormatOf } from '../columnFormat'
 import { cellEditor, columnTyping } from '../editorType'
 import type { Resolver } from '../expr'
 import { pageColumnKeys, type FolderSettings } from '../folderSettings'
@@ -222,7 +223,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                   <span className="view-card__prop-name">{propertyLabel(def, key)}</span>
                   <span className="view-card__prop-value">
                     {bare === null ? (
-                      rowCell(row, key, resolve)
+                      rowCell(row, key, resolve, propertyFormatOf(def.properties, key))
                     ) : (
                       <EditableCell
                         propKey={bare}

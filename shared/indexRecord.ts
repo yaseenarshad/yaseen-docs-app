@@ -208,7 +208,7 @@ export function indexRecord(meta: IndexRecordMeta, text: string | null): IndexRe
   if (isCardKind(properties)) {
     record.kind = 'card'
     record.title = cards[0]?.title ?? cards[0]?.id ?? fileTitle(meta)
-    const cardCreatedMs = parseCreatedMs((cards[0] as { created?: string } | undefined)?.created)
+    const cardCreatedMs = parseCreatedMs(cards[0]?.created)
     if (cardCreatedMs !== null) record.ctime = cardCreatedMs
   }
   return { ...record, ...extractBody(properties, body), ...(cards.length > 0 && { cards }) }

@@ -40,7 +40,7 @@ describe('pageDisk', () => {
 
     expect(first).toBe(path.join(root, 'projects', 'gym-plan-yaz-1.md'))
     expect(second).toBe(path.join(root, 'projects', 'gym-plan-yaz-2.md'))
-    expect(await readFile(first, 'utf8')).toBe('---\nstatus: todo\ntitle: Gym plan\nid: YAZ-1\n---\n## Plan\n')
+    expect(await readFile(first, 'utf8')).toMatch(/^---\nstatus: todo\ntitle: Gym plan\nid: YAZ-1\ncreated: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\n---\n## Plan\n$/)
   })
 
   it('a vault without IDs: the file is named by the title, the template as it is; one that is there is refused as `isThere`', async () => {
@@ -62,6 +62,6 @@ describe('pageDisk', () => {
 
     const made = await createPage(disk, root, 'Inbox', true)
 
-    expect(await readFile(made, 'utf8')).toBe('---\ntitle: Inbox\nid: YAZ-1\n---\n')
+    expect(await readFile(made, 'utf8')).toMatch(/^---\ntitle: Inbox\nid: YAZ-1\ncreated: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\n---\n$/)
   })
 })

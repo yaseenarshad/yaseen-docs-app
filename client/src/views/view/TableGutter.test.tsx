@@ -229,7 +229,7 @@ describe('declared columns show by default (YAZ-1549)', () => {
     const folder = testFolderHost({ settings: { columns: { status: { kind: 'select', options: ['1-Backlog'] } }, views: [], problems: [] } })
     const { el } = mount(NO_ORDER, { records: [], folder })
     const headers = [...el.querySelectorAll('thead th:not(.view-table__gutter)')].map((th) => th.textContent?.trim())
-    expect(headers).toEqual(['Name', 'Status'])
+    expect(headers).toEqual(['Name', 'Status', 'Created'])
   })
 
   it('a declared key a member also carries is one column, not two', () => {

@@ -5,6 +5,7 @@ import { type LinkCandidate } from '../../links/completion'
 import { belongsToTitles, cellLinkCandidates } from '../../links/folderLinks'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { propertyFormatOf } from '../columnFormat'
 import { type Resolver, render } from '../expr'
 import { cellEditor, columnTyping } from '../editorType'
 import { pageColumnKeys, type FolderSettings } from '../folderSettings'
@@ -133,7 +134,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   }, [typings, vaultRecords, vaultFolders, resolveLink, root])
   const editable = (row: Row, key: string) => {
     const bare = bareOf(key)
-    if (bare === null) return rowCell(row, key, resolve)
+    if (bare === null) return rowCell(row, key, resolve, propertyFormatOf(def.properties, key))
     return (
       <EditableCell
         propKey={bare}

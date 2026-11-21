@@ -1,29 +1,13 @@
 import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { isCardKind } from '@shared/cardFileFormat'
-import { cardTime, rewritePageCards, type CardLine, type CardPart } from '@shared/cardLine'
+import { cardCreatedOf, cardTime, rewritePageCards, withCardCreated } from '@shared/cardLine'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import type { BackfillCreatedResult } from '@shared/ipc'
 import { CREATED_KEY } from '@shared/pageCreated'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES } from '@shared/types'
 import { atomicWrite } from '../fs/fsUtils'
 import { idsOwnedBy, ownOnly, walk } from './scan'
-
-const CARD_CREATED_RE = /^created[ \t]+\S/
-
-function hasCardCreated(line: CardLine): boolean {
-  return line.parts.some(
-    (p) => (p as { kind: string }).kind === 'created' || (p.kind === 'other' && CARD_CREATED_RE.test(p.text)),
-  )
-}
-
-function withCreatedPart(line: CardLine, iso: string): CardLine {
-  const part: CardPart = { kind: 'other', text: `created ${iso}` }
-  const idIdx = line.parts.findIndex((p) => p.kind === 'id')
-  const parts = [...line.parts]
-  parts.splice(idIdx === -1 ? 0 : idIdx + 1, 0, part)
-  return { parts }
-}
 
 /**
  * Opt-in backfill of permanent created dates (YAZ-6150, YAZ-6168): walks markdown pages and card
@@ -62,7 +46,7 @@ export async function backfillCreated(root: string): Promise<BackfillCreatedResu
         continue
       }
       if (isCardKind(properties)) {
-        const next = rewritePageCards(text, (card) => (hasCardCreated(card.line) ? undefined : withCreatedPart(card.line, iso)))
+        const next = rewritePageCards(text, (card) => (cardCreatedOf(card.line) !== null ? undefined : withCardCreated(card.line, iso)))
         if (next === text) {
           skipped += 1
           continue

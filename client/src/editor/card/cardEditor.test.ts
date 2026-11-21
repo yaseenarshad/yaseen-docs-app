@@ -563,7 +563,7 @@ describe('`/card` with the page`s editor', () => {
     expect(document.activeElement).toBe(field)
     expect([field.value, field.placeholder]).toEqual(['', 'Untitled card'])
     expect(inner.state.doc.textContent).toBe('')
-    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\n```\n<!-- card: WIKI-512 -->\n'))
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toMatch(/^```card\n```\n<!-- card: WIKI-512, created \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z -->\n$/))
     field.value = 'Capitals'
     field.dispatchEvent(new Event('input', { bubbles: true }))
     key(field, 'Enter')
@@ -574,7 +574,7 @@ describe('`/card` with the page`s editor', () => {
     await tick(CARD_MIRROR_MS + 50)
     expect(cardText(view)).toBe('Capital of {{France}}\n---\nParis')
     card.done()
-    expect(getMarkdownForSave(crepe)).toBe('```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-512, title "Capitals" -->\n')
+    expect(getMarkdownForSave(crepe)).toMatch(/^```card\nCapital of \{\{France\}\}\n---\nParis\n```\n<!-- card: WIKI-512, created \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z, title "Capitals" -->\n$/)
     undo(view.state, view.dispatch)
     expect([cardText(view), cardTitle(view)]).toEqual(['', ''])
     undo(view.state, view.dispatch)

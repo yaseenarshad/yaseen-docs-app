@@ -53,7 +53,7 @@ describe('dailyPage (D2)', () => {
     expect(all.filter((page) => page!.created)).toHaveLength(1)
     expect(new Set(all.map((page) => page!.path))).toEqual(new Set([path.join(root, 'daily', '11-03-tue-yaz-1.md')]))
     expect(all[0]).toMatchObject({ title: TITLE, id: 'YAZ-1', others: [] })
-    expect(await readFile(path.join(root, 'daily', '11-03-tue-yaz-1.md'), 'utf8')).toBe(`---\ntitle: ${TITLE}\nid: YAZ-1\n---\nPLAN\n`)
+    expect(await readFile(path.join(root, 'daily', '11-03-tue-yaz-1.md'), 'utf8')).toMatch(new RegExp(`^---\\ntitle: ${TITLE}\\nid: YAZ-1\\ncreated: \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\n---\\nPLAN\\n$`))
     // The lock is gone with the work.
     expect(await readdir(path.join(appDataDir(), LOCK_DIR))).toEqual([])
   })
