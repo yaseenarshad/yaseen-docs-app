@@ -6,7 +6,7 @@ import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import { sanitizeSpacing, spacingOf, spacingVars, type PageSpacing, type TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -26,7 +26,7 @@ import { countLinkReferences, linkingPages, renameNotice, updateLinksAfterRename
 import type { Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type ReorderStep, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
-import { holdColResize } from './lib/colResize'
+import { beginSidebarResize, useSidebarMotion } from './sidebar/sidebarMotion'
 import { dropIndex } from './lib/dragSlot'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -105,7 +105,7 @@ import { setNewBoardFolderOf } from './drawings/createDrawing'
 import { hasLetters } from '@shared/pageId'
 import { dailyPageVault, todaysPage } from './sidebar/dailyPage'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
-import { bumpVaultEpoch, clearPlaces, deletePlacesFilesOnly, dropBlankPlace, prunePlaces, prunePlacesFilesOnly, readCollapsed, renamePlacesFilesOnly, saveCollapsed } from './sidebar/tabPlace'
+import { bumpVaultEpoch, clearPlaces, deletePlacesFilesOnly, prunePlaces, prunePlacesFilesOnly, renamePlacesFilesOnly, saveCollapsed, saveWidth, stepTabSidebar } from './sidebar/tabPlace'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -483,6 +483,8 @@ export function App() {
   /** The last committed tab id for the per-tab collapsed effect (YAZ-6064 D2, YAZ-6105). */
   const collapsedTabRef = useRef<string | null | undefined>(undefined)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
+  const sidebarWidthRef = useRef(sidebarWidth)
+  sidebarWidthRef.current = sidebarWidth
   /** The sidebar's aside and animated shell: a resize drag writes its live width here, not to state (YAZ-2239, YAZ-6146). */
   const sidebarRef = useRef<HTMLElement>(null)
   const sidebarShellRef = useRef<HTMLDivElement>(null)
@@ -811,14 +813,18 @@ export function App() {
 
   // Settings and sidebar width are global. Visibility (YAZ-1280) and the lens (YAZ-1628) are
   // window identity and never follow another renderer's `state:changed` broadcast.
-  useEffect(
-    () =>
-      storage.subscribe(() => {
-        setSettings(storage.getSettings())
-        setSidebarWidth(storage.getSidebarWidth())
-      }),
-    [],
-  )
+  useEffect(() => {
+    let lastGlobalW = storage.getSidebarWidth()
+    return storage.subscribe(() => {
+      const nextSettings = storage.getSettings()
+      setSettings(nextSettings)
+      const nextW = storage.getSidebarWidth()
+      if (nextW !== lastGlobalW) {
+        lastGlobalW = nextW
+        if (nextSettings.sidebarPlace !== 'tab' || nextSettings.sidebarPerTabWidth === false) setSidebarWidth(nextW)
+      }
+    })
+  }, [])
 
   useEffect(() => {
     const resize = () => setWindowWidth(window.innerWidth)
@@ -829,6 +835,7 @@ export function App() {
   // The page keeps MAIN_WORKSPACE_MIN_W (YAZ-3511 D18): a sidebar wider than the window allows is drawn narrower (app.css), its stored width kept.
   const drawnSidebarWidth = (width: number) => Math.min(width, windowWidth - MAIN_WORKSPACE_MIN_W)
   const visibleSidebarWidth = root !== null && !sidebarCollapsed ? drawnSidebarWidth(sidebarWidth) : 0
+  useSidebarMotion(sidebarShellRef, sidebarCollapsed, drawnSidebarWidth(sidebarWidth), filesWindow || root === null, resizing)
   /** Whether the right panel overlays the workspace beside a sidebar this wide; a resize drag asks it per move. */
   const overlayAt = (sideWidth: number) => rightPanel.open && windowWidth < drawnSidebarWidth(sideWidth) + rightPanel.width + MAIN_WORKSPACE_MIN_W
   const overlayAtRef = useRef(overlayAt)
@@ -846,52 +853,23 @@ export function App() {
   }, [filesWindow])
 
 
-  // Dragging past 60% of the minimum reads as "close it" rather than "make it tiny" — the
-  // sidebar collapses and the remembered width stays whatever it was before the drag.
+  // Dragging past 60% of the minimum reads as "close it" rather than "make it tiny" (YAZ-2239, YAZ-3511 D18).
   const startSidebarResize = useCallback(
-    (e: ReactMouseEvent) => {
-      // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
-      if (e.button !== 0) return
-      e.preventDefault()
-      const start = sidebarWidth
-      const x0 = e.clientX
-      let raw = start
-      let width = start
-      // The width in state, which the right panel's overlay decision reads.
-      let rendered = start
-      // Each move writes the width straight to the aside (YAZ-2239): state per move re-rendered the
-      // whole app on every mouse move. State follows at the move that flips the right panel between
-      // split and overlay, so that still happens live, and on mouseup.
-      const move = (ev: MouseEvent) => {
-        raw = start + ev.clientX - x0
-        // As wide as the page lets it (YAZ-3511 D18): the page keeps MAIN_WORKSPACE_MIN_W.
-        width = Math.max(SIDEBAR_MIN_W, Math.min(SIDEBAR_MAX_W, window.innerWidth - MAIN_WORKSPACE_MIN_W, raw))
-        if (sidebarShellRef.current !== null) sidebarShellRef.current.style.width = `${width}px`
-        if (sidebarRef.current !== null) sidebarRef.current.style.width = `${width}px`
-        if (overlayAtRef.current(width) !== overlayAtRef.current(rendered)) {
-          rendered = width
-          setSidebarWidth(width)
-        }
-      }
-      const up = () => {
-        window.removeEventListener('mousemove', move)
-        window.removeEventListener('mouseup', up)
-        holdColResize(false)
-        setResizing(false)
-        if (raw < SIDEBAR_MIN_W * 0.6) {
-          if (sidebarRef.current !== null) sidebarRef.current.style.width = `${start}px`
-          setSidebarWidth(start)
-          toggleSidebar()
-          return
-        }
-        setSidebarWidth(width)
-        if (width !== start) storage.setSidebarWidth(width)
-      }
-      window.addEventListener('mousemove', move)
-      window.addEventListener('mouseup', up)
-      holdColResize(true)
-      setResizing(true)
-    },
+    (e: ReactMouseEvent) =>
+      beginSidebarResize(e, {
+        start: sidebarWidth,
+        shellRef: sidebarShellRef,
+        asideRef: sidebarRef,
+        overlayAt: (w) => overlayAtRef.current(w),
+        setResizing,
+        setWidth: setSidebarWidth,
+        onCollapse: toggleSidebar,
+        onCommit: (width, changed) => {
+          if (changed) storage.setSidebarWidth(width)
+          const s = storage.getSettings()
+          if (s.sidebarPlace === 'tab' && s.sidebarPerTabWidth !== false && shownRef.current !== null) saveWidth(shownRef.current, width)
+        },
+      }),
     [sidebarWidth, toggleSidebar],
   )
 
@@ -4102,14 +4080,10 @@ export function App() {
     const from = collapsedTabRef.current
     collapsedTabRef.current = shown
     if (filesWindow || sidebarPlace !== 'tab' || from === undefined || from === shown) return
-    if (from === null) dropBlankPlace()
-    else saveCollapsed(from, sidebarCollapsedRef.current)
-    const next = readCollapsed(shown)
-    if (next !== undefined && next !== sidebarCollapsedRef.current) {
-      sidebarCollapsedRef.current = next
-      setSidebarCollapsed(next)
-    }
-  }, [filesWindow, sidebarPlace, shown])
+    const { collapsed: nextC, width: nextW } = stepTabSidebar(from, shown, sidebarCollapsedRef.current, sidebarWidthRef.current, settings.sidebarPerTabWidth !== false)
+    if (nextC !== undefined) { sidebarCollapsedRef.current = nextC; setSidebarCollapsed(nextC) }
+    if (nextW !== undefined) { sidebarWidthRef.current = nextW; setSidebarWidth(nextW) }
+  }, [filesWindow, sidebarPlace, settings.sidebarPerTabWidth, shown])
   // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
   // each, so a hide of another window renders no App here.
   const hiddenHere = useWindowHidden(storage.getWindowId())
@@ -4379,7 +4353,7 @@ export function App() {
       {root !== null && (
         <div
           ref={sidebarShellRef}
-          className={`sidebar-shell${!filesWindow && sidebarCollapsed ? ' sidebar-shell--collapsed' : ''}${resizing ? ' sidebar-shell--resizing' : ''}`}
+          className={`sidebar-shell${!filesWindow && sidebarCollapsed ? ' sidebar-shell--collapsed' : ''}`}
           style={{ width: !filesWindow && sidebarCollapsed ? 0 : filesWindow ? filesNarrowW.current : sidebarWidth }}
           aria-hidden={!filesWindow && sidebarCollapsed ? true : undefined}
           inert={!filesWindow && sidebarCollapsed ? true : undefined}

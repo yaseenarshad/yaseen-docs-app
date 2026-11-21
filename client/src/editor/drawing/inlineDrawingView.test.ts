@@ -250,6 +250,7 @@ describe('InlineDrawingView + inlineDrawingPlugins', () => {
     fake.host.onContextMenu?.(new MouseEvent('contextmenu', { clientX: 50, clientY: 50, cancelable: true }))
     const moveBtn = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((el) => el.textContent?.includes('Move to its own file'))
     moveBtn?.click()
+    await vi.waitFor(() => expect(moveBtn?.isConnected).toBe(false))
     expect(onMoveToFile).not.toHaveBeenCalled()
 
     // Reopen menu and click "Open in new tab" -> calls onOpenInTab(0, false).

@@ -33,7 +33,7 @@ import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
 import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
-import { clearPlaces, readCollapsed, readPlace, savePlace } from './sidebar/tabPlace'
+import { clearPlaces, readCollapsed, readPlace, readWidth, savePlace } from './sidebar/tabPlace'
 import { registerPageView } from './lib/pageView'
 import { fetchTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
@@ -1525,18 +1525,28 @@ describe('"Hide all others" in Files (YAZ-5790)', () => {
     }
   })
 
-  it('YAZ-6146: sidebar shell animates width/collapsed state across tab switches and disables transition while resizing', async () => {
+  it('YAZ-6146: sidebar shell snaps width once and runs GPU FLIP transform animations across tab switches', async () => {
     clearPlaces()
+    const animCalls: Array<{ el: HTMLElement; frames: Keyframe[]; anim: { cancel: ReturnType<typeof vi.fn>; onfinish: (() => void) | null; oncancel: (() => void) | null } }> = []
+    const origAnimate = HTMLElement.prototype.animate
+    HTMLElement.prototype.animate = function (this: HTMLElement, frames: Keyframe[] | PropertyIndexedKeyframes | null) {
+      const anim = { cancel: vi.fn(), onfinish: null as (() => void) | null, oncancel: null as (() => void) | null }
+      animCalls.push({ el: this, frames: Array.isArray(frames) ? frames : [], anim })
+      return anim as unknown as Animation
+    }
     try {
       const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarPlace: 'tab' } }
       const { el, emitToggleSidebar } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
       const shell = el.querySelector<HTMLElement>('.sidebar-shell')!
+      const workspace = el.querySelector<HTMLElement>('.workspace')!
+      const aside = el.querySelector<HTMLElement>('[data-sidebar]')!
       expect(shell).not.toBeNull()
       expect(shell.classList.contains('sidebar-shell--collapsed')).toBe(false)
       expect(shell.style.width).toBe('260px')
       expect(shell.getAttribute('aria-hidden')).toBeNull()
+      expect(animCalls).toHaveLength(0) // initial mount does not animate
 
-      // Switch to Tab B and collapse: same shell element stays mounted, animates to 0px, and becomes inert/hidden.
+      // Switch to Tab B and collapse: same shell element stays mounted, snaps to 0px, and glides out on the GPU.
       const tabButtons = () => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
       act(() => tabButtons()[1]!.click())
       act(() => emitToggleSidebar())
@@ -1545,22 +1555,92 @@ describe('"Hide all others" in Files (YAZ-5790)', () => {
       expect(shell.style.width).toBe('0px')
       expect(shell.getAttribute('aria-hidden')).toBe('true')
       expect(shell.hasAttribute('inert')).toBe(true)
+      expect(shell.style.overflow).toBe('visible')
+      expect(animCalls.map((c) => c.el)).toEqual([workspace, aside])
+      expect(animCalls[0]!.frames).toEqual([{ transform: 'translateX(260px)' }, { transform: 'translateX(0)' }])
+      expect(animCalls[1]!.frames).toEqual([{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(-100%)', opacity: 0.4 }])
+      // Finishing the close animation restores shell overflow/opacity cleanly.
+      animCalls[1]!.anim.onfinish?.()
+      expect(shell.style.overflow).toBe('')
+      expect(shell.style.opacity).toBe('')
 
-      // Switch back to Tab A: shell expands back to sidebar width.
+      // Switch back to Tab A: shell snaps back to 260px and glides in on the GPU.
+      animCalls.length = 0
       act(() => tabButtons()[0]!.click())
       expect(shell.classList.contains('sidebar-shell--collapsed')).toBe(false)
       expect(shell.style.width).toBe('260px')
       expect(shell.getAttribute('aria-hidden')).toBeNull()
-
-      // Dragging the resize handle disables transition via .sidebar-shell--resizing and clears it on release.
-      act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 })))
-      expect(shell.classList.contains('sidebar-shell--resizing')).toBe(true)
-      act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 40 })))
-      expect(shell.style.width).toBe('300px')
-      act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 40 })))
-      expect(shell.classList.contains('sidebar-shell--resizing')).toBe(false)
-      expect(shell.style.width).toBe('300px')
+      expect(animCalls.map((c) => c.el)).toEqual([aside, workspace])
+      expect(animCalls[0]!.frames).toEqual([{ transform: 'translateX(-100%)', opacity: 0.4 }, { transform: 'translateX(0)', opacity: 1 }])
+      expect(animCalls[1]!.frames).toEqual([{ transform: 'translateX(-260px)' }, { transform: 'translateX(0)' }])
     } finally {
+      HTMLElement.prototype.animate = origAnimate
+      clearPlaces()
+    }
+  })
+
+  it('per-tab sidebar width saves and restores across tab switches when sidebarPerTabWidth is enabled, and stays shared when disabled', async () => {
+    clearPlaces()
+    const animCalls: Array<{ el: HTMLElement; frames: Keyframe[]; anim: { cancel: ReturnType<typeof vi.fn>; onfinish: (() => void) | null; oncancel: (() => void) | null } }> = []
+    const origAnimate = HTMLElement.prototype.animate
+    HTMLElement.prototype.animate = function (this: HTMLElement, frames: Keyframe[] | PropertyIndexedKeyframes | null) {
+      const anim = { cancel: vi.fn(), onfinish: null as (() => void) | null, oncancel: null as (() => void) | null }
+      animCalls.push({ el: this, frames: Array.isArray(frames) ? frames : [], anim })
+      return anim as unknown as Animation
+    }
+    try {
+      const resizeBy = (el: HTMLElement, dx: number) => {
+        act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 })))
+        act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: dx })))
+        act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: dx })))
+      }
+      // Enabled (default when sidebarPlace === 'tab'): Tab A and Tab B keep distinct widths.
+      const enabledState: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarPlace: 'tab', sidebarPerTabWidth: true } }
+      const { el, emitStateChanged } = await mount(enabledState, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
+      const tabButtons = () => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+      const shell = () => el.querySelector<HTMLElement>('.sidebar-shell')!
+      const workspace = el.querySelector<HTMLElement>('.workspace')!
+      const tabA = captured.sidebar?.activeTab ?? null
+      expect(shell().style.width).toBe('260px')
+      // Resize Tab A to 340px (manual drag-resize must NOT trigger FLIP animation).
+      resizeBy(el, 80)
+      expect(shell().style.width).toBe('340px')
+      expect(readWidth(tabA)).toBe(340)
+      expect(animCalls).toHaveLength(0)
+      act(() => tabButtons()[1]!.click())
+      resizeBy(el, -120)
+      expect(shell().style.width).toBe('220px')
+      expect(animCalls).toHaveLength(0)
+      // Switch back to Tab A (220px -> 340px): triggers GPU FLIP translateX(-120px) -> 0 on .workspace with temporary will-change.
+      act(() => tabButtons()[0]!.click())
+      expect(shell().style.width).toBe('340px')
+      expect(animCalls).toHaveLength(1)
+      expect(animCalls[0]!.el).toBe(workspace)
+      expect(animCalls[0]!.frames).toEqual([{ transform: 'translateX(-120px)' }, { transform: 'translateX(0)' }])
+      expect(workspace.style.willChange).toBe('transform')
+      animCalls[0]!.anim.onfinish?.()
+      expect(workspace.style.willChange).toBe('')
+      // Unrelated state:changed broadcasts (e.g. recents/window updates with global sidebarWidth=220) must NOT clobber Tab A's restored 340px width.
+      act(() => emitStateChanged({ ...enabledState, sidebarWidth: 220 }))
+      expect(shell().style.width).toBe('340px')
+      act(() => tabButtons()[1]!.click())
+      expect(shell().style.width).toBe('220px')
+
+      // Disabled (`sidebarPerTabWidth: false`): switching tabs keeps the current width and does not restore per-tab widths.
+      clearPlaces()
+      const disabledState: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarPlace: 'tab', sidebarPerTabWidth: false } }
+      const second = await mount(disabledState, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
+      const tabs2 = () => [...second.el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+      const shell2 = () => second.el.querySelector<HTMLElement>('.sidebar-shell')!
+      resizeBy(second.el, 60)
+      expect(shell2().style.width).toBe('320px')
+      act(() => tabs2()[1]!.click())
+      resizeBy(second.el, -40)
+      expect(shell2().style.width).toBe('280px')
+      act(() => tabs2()[0]!.click())
+      expect(shell2().style.width).toBe('280px')
+    } finally {
+      HTMLElement.prototype.animate = origAnimate
       clearPlaces()
     }
   })
@@ -8410,7 +8490,7 @@ describe('App CLI navigation acknowledgement (YAZ-4502)', () => {
     const path = '/v/Journal.md'
     const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Journal', mtime: 1 } })
     await act(async () => emitAutomation({ id: 'nav-2', action: 'navigate', target: { path } }))
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-2', ok: true, value: expect.objectContaining({ path, sidebarCollapsed: true }) })
   })
   it('tells main the window is ready for navigation once it mounts', async () => {

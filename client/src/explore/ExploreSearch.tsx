@@ -11,7 +11,7 @@ import { basename, rootOfPath } from '@shared/types'
 import { readNeedle } from '../links/completion'
 import { relTo, dirname } from '../lib/paths'
 import { idNeedle, marked } from '../search/marked'
-import type { SearchCandidate } from '../search/searchCandidates'
+import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { filterOn, filterTest, NO_FILTER, type SearchFilter, type SearchType } from '../search/searchType'
 import { storage } from '../lib/storage'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
@@ -120,7 +120,7 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
   const rows = useMemo(() => {
     const test = filterTest(filter, () => 0, undefined)
     if (typed) return exploreRows(test === undefined ? candidates : candidates.filter(test), query)
-    if (filter.type !== 'all') return dedupeByPath(test === undefined ? candidates : candidates.filter(test))
+    if (filter.type !== 'all') return dedupeByPath(test === undefined ? candidates : candidates.filter(test)).slice(0, SEARCH_CAP)
     return test === undefined ? recentRows : recentRows.filter(test)
   }, [candidates, query, typed, recentRows, filter])
   const needle = useMemo(() => (typed ? readNeedle(query) : undefined), [query, typed])

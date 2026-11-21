@@ -85,12 +85,16 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     }
   }, [])
 
-  // Built once per open: the searchable text is labels, hints and keywords, none of which a click
-  // inside the dialog changes in a way search needs to see — but a hotkey's text is its key (YAZ-3397 D5),
-  // so a changed key, or the Mac's keys arriving, builds them again. Never on a keystroke.
-  const hotkeysKey = JSON.stringify(ctx.settings.hotkeys)
-  const candidates = useMemo(() => settingCandidates(ctx), [hotkeysKey, systemHotkeys]) // eslint-disable-line react-hooks/exhaustive-deps -- see above
+  // Built lazily on first search: the searchable text is labels, hints and keywords, none of which
+  // a click inside the dialog changes in a way search needs to see — but a hotkey's text is its
+  // key (YAZ-3397 D5), so a changed key, or the Mac's keys arriving, builds them again. Never on
+  // a keystroke, and never on an empty-query open.
   const searching = query.trim() !== ''
+  const onHotkeys = shown.id === 'hotkeys'
+  const searchingHotkeys = onHotkeys && !searching && hotkeyQuery.trim() !== ''
+  const needsCandidates = searching || searchingHotkeys
+  const hotkeysKey = needsCandidates ? JSON.stringify(ctx.settings.hotkeys) : ''
+  const candidates = useMemo(() => (needsCandidates ? settingCandidates(ctx) : []), [needsCandidates, hotkeysKey, systemHotkeys]) // eslint-disable-line react-hooks/exhaustive-deps -- see above
   // ⌘F from a search (YAZ-5968): the search goes, and once the section shows again the bar finds in it.
   useEffect(() => {
     if (findOpen && searching) setQuery('')
@@ -102,8 +106,6 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const hits = searching ? searchSettings(candidates, query) : []
   /** The query "Press keys to search" put in the page's box (D5): its answer shows while that query stands. */
   const [keyQuery, setKeyQuery] = useState<string | null>(null)
-  const onHotkeys = shown.id === 'hotkeys'
-  const searchingHotkeys = onHotkeys && !searching && hotkeyQuery.trim() !== ''
   const hotkeyHits = searchingHotkeys ? searchSettings(candidates.filter((c) => c.section.id === 'hotkeys'), hotkeyQuery) : []
 
   const wantsSystemKeys = onHotkeys || searching

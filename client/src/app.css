@@ -1978,7 +1978,7 @@ button {
 
 /* ---------- sidebar ---------- */
 
-/* YAZ-6146: animated shell around .sidebar so collapsing/expanding on tab switch or toggle glides smoothly without reflowing the tree. */
+/* YAZ-6146: shell around .sidebar; width snaps once (zero layout reflows) while sidebarMotion.ts glides on the GPU. */
 .sidebar-shell {
   flex: none;
   display: flex;
@@ -1989,18 +1989,6 @@ button {
 .sidebar-shell--collapsed {
   opacity: 0;
   pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .sidebar-shell {
-    transition:
-      width 0.16s cubic-bezier(0.2, 0.7, 0.3, 1),
-      opacity 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
-  }
-
-  .sidebar-shell--resizing {
-    transition: none;
-  }
 }
 
 /* The width is set on .sidebar itself from AppState.sidebarWidth (YAZ-738, YAZ-2194). */
