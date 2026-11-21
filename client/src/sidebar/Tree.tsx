@@ -16,7 +16,7 @@ import { CloudOffIcon, LinkIcon, LockIcon, ShortcutIcon } from '../views/view/ic
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
 import { iconVars } from './materialIcons'
-import { CARD_KIND_ICON, NameEnding } from './FileIcon'
+import { CARD_KIND_ICON, FileIcon, NameEnding } from './FileIcon'
 import { NO_CARD_FILES } from './cardFiles'
 import { iconsChangedBelow, rowIcon, type RowIcons } from './rowIcons'
 import { NO_APP_ROWS, appRowsLast, keepsOrder, shownLabel, sortLevel, timeOf } from './treeSort'
@@ -338,6 +338,7 @@ interface TreeProps {
    */
   cardRows?: ReadonlyMap<string, readonly SearchCandidate[]>
   onOpenCard?: (row: SearchCandidate, background: boolean) => void
+  onCardContextMenu?: (e: React.MouseEvent, card: SearchCandidate) => void
   /** The way to the new tab page from a row of Files, Focus or Favorites (YAZ-2663 D8): → on a file row asks it. An open folder's → goes to its first row since YAZ-3440 D12. The top level's alone. */
   onLeaveToPage?: () => boolean
   /** The top row this level stands under (YAZ-2845 D1); none at the top level. It tells the copies of a row that shows twice apart. */
@@ -420,6 +421,7 @@ function TreeLevel({
   marks,
   cardRows,
   onOpenCard,
+  onCardContextMenu,
   onLeaveToPage,
   top,
   onHoverFile,
@@ -433,7 +435,7 @@ function TreeLevel({
   const level = depth + shift
   // The course's guided tour (YAZ-5123) marks its Course Cards folder and Course page; null outside a tour.
   const tour = useSyncExternalStore(subscribeTourPlaces, tourPlaces)
-  const recurse = { shift, vaultRows, appRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, cardRows, onOpenCard, onHoverFile, tooLarge, shareBadges, icons, cardFiles, sort, dates, scores, manual, manualOrder }
+  const recurse = { shift, vaultRows, appRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, cardRows, onOpenCard, onCardContextMenu, onHoverFile, tooLarge, shareBadges, icons, cardFiles, sort, dates, scores, manual, manualOrder }
   /** A board or page row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -554,10 +556,14 @@ function TreeLevel({
                 selection.set(card.path)
                 onOpenCard?.(card, e.metaKey)
               }}
-              onContextMenu={(e) => e.preventDefault()}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onCardContextMenu?.(e, card)
+              }}
             >
               <span className="tree__label">
-                <CardIcon />
+                {card.inlineDrawing === true ? <FileIcon path="drawing.excalidraw" /> : <CardIcon />}
                 {idFor(card.path)}
                 {marked(card.name, needleFor(card.path))}
               </span>

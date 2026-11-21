@@ -848,4 +848,62 @@ describe('Explore`s board layer: a resize of the layer (YAZ-4944 Tile)', () => {
     win.destroy()
     expect(observed[0].disconnect).toHaveBeenCalled()
   })
+
+  it('single Cmd+click on the canvas opens backgroundTab and Cmd+Shift+click opens newTab (YAZ-6134)', async () => {
+    const onOpen = vi.fn()
+    const onSelect = vi.fn()
+    const { win } = mount({ onOpen, onSelect })
+    await settle()
+
+    win.dom.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40, metaKey: true, bubbles: true, cancelable: true }))
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0, clientX: 40, clientY: 40, metaKey: true, bubbles: true }))
+    expect(onOpen).toHaveBeenLastCalledWith('backgroundTab')
+    expect(onSelect).not.toHaveBeenCalled()
+
+    win.dom.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }))
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0, clientX: 40, clientY: 40, metaKey: true, shiftKey: true, bubbles: true }))
+    expect(onOpen).toHaveBeenLastCalledWith('newTab')
+    expect(onSelect).not.toHaveBeenCalled()
+
+    // Plain single-click still selects without calling onOpen.
+    win.dom.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40, bubbles: true, cancelable: true }))
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0, clientX: 40, clientY: 40, bubbles: true }))
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onOpen).toHaveBeenCalledTimes(2)
+  })
+
+  it('matches stage background to picture.background and clears it on empty or release (YAZ-6141)', async () => {
+    vi.mocked(loadPicture).mockResolvedValueOnce({
+      key: 'dark-bg',
+      url: 'blob:dark',
+      bounds: { x: 0, y: 0, width: 400, height: 200 },
+      pages: [],
+      page: null,
+      frames: [],
+      bytes: 100,
+      background: '#121212',
+    })
+    const { win } = mount()
+    await settle()
+    const stage = win.dom.querySelector<HTMLElement>('.board-window__stage')!
+    expect(stage.style.backgroundColor).toBe('rgb(18, 18, 18)')
+
+    // Folding releases the picture and clears the stage background.
+    win.setFolded(true)
+    expect(stage.style.backgroundColor).toBe('')
+
+    // Unfolding into an empty picture keeps the stage background cleared.
+    vi.mocked(loadPicture).mockResolvedValueOnce({
+      key: 'empty-bg',
+      url: '',
+      bounds: null,
+      pages: [],
+      page: null,
+      frames: [],
+      bytes: 0,
+    })
+    win.setFolded(false)
+    await settle()
+    expect(stage.style.backgroundColor).toBe('')
+  })
 })

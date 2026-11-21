@@ -284,6 +284,22 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
   // glide of the strip reads this list; what goes out to App is in page tabs (`pageSlot`, `drop`).
   const inboxAt = inbox === undefined ? null : Math.min(Math.max(inbox.at ?? pages.length, 0), pages.length)
   const inboxLabel = inbox?.label
+  const [inlineTitles, setInlineTitles] = useState<ReadonlyMap<string, string>>(() => new Map())
+  useEffect(() => {
+    const onTitle = (e: Event) => {
+      const { path: p, index, title: t } = (e as CustomEvent<{ path: string; index: number; title: string }>).detail
+      const key = `${p}\0${index}`
+      setInlineTitles((prev) => {
+        if ((prev.get(key) ?? '') === t) return prev
+        const next = new Map(prev)
+        if (t === '') next.delete(key)
+        else next.set(key, t)
+        return next
+      })
+    }
+    window.addEventListener('mdapp:inline-drawing-title', onTitle)
+    return () => window.removeEventListener('mdapp:inline-drawing-title', onTitle)
+  }, [])
   const tabs = useMemo<readonly Tab[]>(
     () => (inboxAt === null ? pages : [...pages.slice(0, inboxAt), { id: INBOX_TAB, path: '', name: inboxLabel }, ...pages.slice(inboxAt)]),
     [pages, inboxAt, inboxLabel],
@@ -942,12 +958,13 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
         {...stripSlot}
       >
         {/* ONE keyed list, ghosts and tabs: a tab that closes or moves builds no other tab again. */}
-        {tabs.flatMap(({ id, path, name, zoom }, i) => {
+        {tabs.flatMap(({ id, path, name, zoom, inlineDrawing }, i) => {
           if (id === INBOX_TAB) return [...ghostsBefore(id), inboxTab(i)]
           // Under the blank tab, and under the Inbox tab (YAZ-5011), no tab of the strip is the active one (YAZ-2655).
           const isActive = !blank && inbox?.active !== true && id === active
           // A display name stands in for the page name (YAZ-2949 D5); every file call still takes the path.
-          const label = name ?? labelOf(path)
+          const inlineTitle = inlineDrawing === undefined ? '' : (inlineTitles.get(`${path}\0${inlineDrawing}`) ?? '')
+          const label = name ?? (inlineDrawing !== undefined ? (inlineTitle !== '' ? inlineTitle : `${labelOf(path)} · Drawing`) : labelOf(path))
           // The tooltip's first line: the page, and " › bullet" when the tab is zoomed (YAZ-3647 E4).
           const shownAt = atBullet(path, zoom)
           // Which copy of its page this tab is (YAZ-4156 10), as the tab board's "1 of 2" (YAZ-2940 D11): copies tell apart.
@@ -1059,13 +1076,13 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
                 {/* The file's icon, as its tree row has it (YAZ-3440 D11): a folder page's is the folder's, and a display name keeps the file's.
                     A copy's number (YAZ-4156 10) is drawn at the label's end from `data-copy` (3F1): no text of the tab, so its name stays the page's. */}
                 <span className="tabbar__label" data-copy={copy > 0 ? copy : undefined}>
-                  <FileIcon path={path} folder={isFolder(path)} />
+                  <FileIcon path={inlineDrawing !== undefined ? `${path}.excalidraw` : path} folder={inlineDrawing === undefined && isFolder(path)} />
                   {/* Asleep to save memory (YAZ-3737 D11): quiet, before the name, so no name hides it (YAZ-4003, D18). */}
                   {asleep.has(id) && <AsleepIcon className="tabbar__asleep" />}
                   <span className="tabbar__name">
                     {label}
                     {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
-                    {name === undefined && !isFolder(path) && <NameEnding path={path} />}
+                    {name === undefined && inlineDrawing === undefined && !isFolder(path) && <NameEnding path={path} />}
                   </span>
                 </span>
               </button>

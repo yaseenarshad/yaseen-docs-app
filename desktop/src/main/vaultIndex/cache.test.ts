@@ -319,9 +319,9 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
-  it('YAZ-6165: a snapshot of version 22 ignored frontmatter `created` / card `created` for `record.ctime` → version-mismatch, so the page is read again', async () => {
-    expect(CACHE_VERSION).toBeGreaterThanOrEqual(23)
-    await writeFile(file, JSON.stringify({ version: 22, root: '/vault', records: [record('/vault/a.md')] }))
+  it('YAZ-6165: a snapshot of version 23 ignored frontmatter `created` / card `created` for `record.ctime` → version-mismatch, so the page is read again', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(24)
+    await writeFile(file, JSON.stringify({ version: 23, root: '/vault', records: [record('/vault/a.md')] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
@@ -372,14 +372,18 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     'A card links [[Card Link]] and #card-tag',
     '```',
     '<!-- card: CAN-3, title "Card, links", tags "x" "y", level 2, off, next, notitle, fix, 2026-11-12T14:05:00.000Z good, 2026-11-13T09:00:00.000Z again 13s, 2026-11-14T08:30Z good -->',
+    '```excalidraw',
+    '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}',
+    '```',
+    '<!-- drawing: title "Flow", 640x360 locked -->',
     '',
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 23,
+    cacheVersion: 24,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
-    recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
+    recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'inlineDrawings', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
     extraction: {
       // The frontmatter `title` is lifted onto the record and stays a property too (YAZ-2420 🔒 D14).
       title: 'Canonical',
@@ -408,6 +412,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
       // Its `fix` (YAZ-5097) too: the Card fix status column reads no file. CACHE_VERSION 19: the demo (YAZ-5430) and the phone (YAZ-5309) each took 18.
       cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05:00.000Z', rating: 'good' }, { at: '2026-11-13T09:00:00.000Z', rating: 'again', seconds: 13 }, { at: '2026-11-14T08:30:00.000Z', rating: 'good' }], title: 'Card, links', notitle: true, fix: true, properties: { tags: ['x', 'y'], level: 2 } }],
+      inlineDrawings: [{ index: 0, title: 'Flow' }],
     },
     // A card file (YAZ-5037, CACHE_VERSION 15): `kind: card` in its properties, its title its card's (off its card line, YAZ-5308).
     cardFile: { kind: 'card', title: 'Capital of France?' },
@@ -430,7 +435,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
         cacheVersion: CACHE_VERSION,
         maxFileBytes: MAX_FILE_BYTES,
         recordKeys: [...new Set([...Object.keys(record), ...Object.keys(errored), ...Object.keys(card)])].sort(),
-        extraction: { title: record.title, properties: record.properties, aliases: record.aliases, tags: record.tags, links: record.links, embeds: record.embeds, cards: record.cards },
+        extraction: { title: record.title, properties: record.properties, aliases: record.aliases, tags: record.tags, links: record.links, embeds: record.embeds, cards: record.cards, inlineDrawings: record.inlineDrawings },
         cardFile: { kind: card.kind, title: card.title },
       }
       expect(actual, BUMP_MSG).toEqual(FINGERPRINT)

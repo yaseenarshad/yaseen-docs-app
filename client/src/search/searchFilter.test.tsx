@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { Fragment } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MenuAction, MenuParent } from '../sidebar/menuSections'
-import type { SearchCandidate } from './searchCandidates'
-import { filterSection, filterTest, NO_FILTER, timeStart, typeChip, typeOf } from './searchFilter'
+import { inlineDrawingRowPath, searchCandidates, type SearchCandidate } from './searchCandidates'
+import { filterChips, filterOn, filterSection, filterTest, NO_FILTER, timeStart, typeChip, typeOf } from './searchFilter'
 
 const row = (path: string, kind: 'file' | 'dir' = 'file', card = false): SearchCandidate => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -155,5 +155,75 @@ describe('the Type list\'s icons (YAZ-3511 D13)', () => {
     const [cards] = filterSection(NO_FILTER, vi.fn(), true) as MenuParent[]
     const second = renderToStaticMarkup(<>{(cards.children[1][1] as MenuAction).icon}</>)
     expect(second).toContain('class="card-icon"')
+  })
+})
+
+describe('YAZ-6143: inline Excalidraw drawings in search & Include inside pages filter', () => {
+  it('searchCandidates emits one candidate per inlineDrawing with fallback Untitled drawing and typeOf returns drawings', () => {
+    const rows = searchCandidates([
+      {
+        path: '/v/Plan.md',
+        folder: '',
+        basename: 'Plan',
+        title: 'Plan',
+        aliases: [],
+        tags: [],
+        links: [],
+        inlineDrawings: [
+          { index: 0, title: 'System Architecture' },
+          { index: 1, title: '' },
+        ],
+      } as never,
+    ])
+    const inline = rows.filter((r) => r.inlineDrawing === true)
+    expect(inline).toEqual([
+      {
+        kind: 'file',
+        name: 'System Architecture',
+        lower: 'system architecture',
+        label: 'System Architecture',
+        path: inlineDrawingRowPath('/v/Plan.md', 0),
+        folder: '',
+        inlineDrawing: true,
+        page: '/v/Plan.md',
+        index: 0,
+      },
+      {
+        kind: 'file',
+        name: 'Untitled drawing',
+        lower: 'untitled drawing',
+        label: 'Untitled drawing',
+        path: inlineDrawingRowPath('/v/Plan.md', 1),
+        folder: '',
+        inlineDrawing: true,
+        page: '/v/Plan.md',
+        index: 1,
+      },
+    ])
+    expect(typeOf(inline[0])).toBe('drawings')
+  })
+
+  it('includeInline: false hides both inline drawings and inline cards, triggers filterOn and Files only chip, and toggles via filterSection', () => {
+    const inlineDrawing: SearchCandidate = { ...row(inlineDrawingRowPath('/v/Plan.md', 0)), inlineDrawing: true, page: '/v/Plan.md', index: 0 }
+    const inlineCard: SearchCandidate = { ...row('/v/Plan.md#GEO-1', 'file', true), page: '/v/Plan.md', index: 0 }
+    const standaloneDrawing = row('/v/Sketch.excalidraw')
+    const standaloneCard = row('/v/geo-1.md', 'file', true)
+
+    expect(filterOn({ type: 'all', time: 'any', includeInline: false })).toBe(true)
+    expect(filterChips({ type: 'all', time: 'any', includeInline: false }).map((c) => [c.key, c.label])).toEqual([['includeInline', 'Files only']])
+
+    const keep = filterTest({ type: 'all', time: 'any', includeInline: false }, () => 0, undefined)!
+    expect(keep(inlineDrawing)).toBe(false)
+    expect(keep(inlineCard)).toBe(false)
+    expect(keep(standaloneDrawing)).toBe(true)
+    expect(keep(standaloneCard)).toBe(true)
+
+    const set = vi.fn()
+    const section = filterSection(NO_FILTER, set)
+    const toggle = section[2] as MenuAction
+    expect(toggle.label).toBe('Include inside pages')
+    expect(toggle.hint).toBe('✓')
+    toggle.onSelect()
+    expect(set).toHaveBeenCalledWith({ type: 'all', time: 'any', includeInline: false })
   })
 })

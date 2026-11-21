@@ -28,7 +28,7 @@ import { MAX_PICTURE_FOLDERS, PICTURE_FOLDERS_FULL } from '../fs/picturesFolders
 import { setBoardReadOnly } from '../fs/boardReadOnly'
 import { createBoard } from '../fs/createBoard'
 import { loadDiagram, saveDiagram } from '../fs/diagram'
-import { loadDrawing, saveDrawing } from '../fs/drawing'
+import { landDrawingAssets, loadDrawing, resolveDrawingAssets, saveDrawing } from '../fs/drawing'
 import { indexBoard } from '../vaultIndex'
 import type { Store } from '../store'
 import type { WindowManager } from '../windows'
@@ -61,6 +61,8 @@ export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit' | 'approve
     return res
   }
   handleWithEvent(CONTRACT.drawing.save, loggedSave(store, windows, save))
+  handle(CONTRACT.drawing.resolveAssets, (req: unknown) => resolveDrawingAssets(req, thumbs === null ? undefined : (files, elements, px) => thumbs.fit(files, elements, px)))
+  handle(CONTRACT.drawing.landAssets, landDrawingAssets)
   handle(CONTRACT.diagram.load, loadDiagram)
   handleWithEvent(CONTRACT.diagram.save, loggedSave(store, windows, saveDiagram))
   handle(CONTRACT.setBoardReadOnly, setBoardReadOnly)

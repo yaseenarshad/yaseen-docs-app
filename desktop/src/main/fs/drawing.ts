@@ -68,7 +68,7 @@
  */
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { DrawingFileEntry, DrawingLoadResponse, DrawingNewFile, DrawingSaveResponse } from '@shared/types'
+import type { DrawingFileEntry, DrawingLandAssetsResponse, DrawingLoadResponse, DrawingNewFile, DrawingResolveAssetsResponse, DrawingSaveResponse } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesFolderOf, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, BOARD_ID_KEY, boardIdOf, withSwitchTime, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
 import { vaultPageId } from '@shared/pageId'
@@ -298,4 +298,49 @@ export async function saveDrawing(req: unknown, approved: readonly string[] = []
   const persisted = await landAssets(dir, liftEmbedded(inside, elements).lifted)
   const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
   return { path: file, mtime, size, persisted, movedOut: true, ...given }
+}
+
+/**
+ * `drawing:resolve-assets` (YAZ-5040): resolves image `fileIds` from `<root>/assets/` for an inline Excalidraw
+ * drawing living inside a `.md` file. Optionally downscales via `fit` when `imageMaxPx` is given (preview window).
+ */
+export async function resolveDrawingAssets(
+  req: unknown,
+  fit?: (files: Record<string, DrawingFileEntry>, elements: readonly unknown[], maxPx: number) => Promise<Record<string, DrawingFileEntry>>,
+): Promise<DrawingResolveAssetsResponse> {
+  if (!isRecord(req)) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
+  const { root, fileIds, imageMaxPx } = req
+  if (typeof root !== 'string' || !path.isAbsolute(root)) throw new BridgeFailure('BAD_REQUEST', "'root' must be an absolute path")
+  if (!Array.isArray(fileIds)) throw new BridgeFailure('BAD_REQUEST', "'fileIds' must be an array")
+  if (imageMaxPx !== undefined && (typeof imageMaxPx !== 'number' || !Number.isInteger(imageMaxPx) || imageMaxPx <= 0)) {
+    throw new BridgeFailure('BAD_REQUEST', "'imageMaxPx' must be a positive integer")
+  }
+  await requireDir(root)
+  const valid = [...new Set(fileIds.filter((id): id is string => isValidFileId(id)))].sort()
+  const found = await fromStore(root, valid, null)
+  const stored = Object.keys(found).sort()
+  const files =
+    imageMaxPx === undefined || fit === undefined
+      ? found
+      : await fit(
+          found,
+          stored.map((fileId) => ({ type: 'image', fileId, isDeleted: false })),
+          imageMaxPx,
+        )
+  return { files, stored }
+}
+
+/**
+ * `drawing:land-assets` (YAZ-5040): lands pasted image bytes into `<root>/assets/` before saving an inline
+ * Excalidraw drawing back into `.md` (files: {} stays lean). Atomic `tmp + fsync + link`.
+ */
+export async function landDrawingAssets(req: unknown): Promise<DrawingLandAssetsResponse> {
+  if (!isRecord(req)) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
+  const { root, newFiles } = req
+  if (typeof root !== 'string' || !path.isAbsolute(root)) throw new BridgeFailure('BAD_REQUEST', "'root' must be an absolute path")
+  if (!Array.isArray(newFiles)) throw new BridgeFailure('BAD_REQUEST', "'newFiles' must be an array")
+  await requireDir(root)
+  const pending = newFiles.map((entry) => checkAsset(entry, root))
+  const persisted = pending.length === 0 ? [] : await landAssets(root, pending)
+  return { persisted }
 }

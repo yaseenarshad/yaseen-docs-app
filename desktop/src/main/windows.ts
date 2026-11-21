@@ -966,7 +966,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     const win = liveWindow(from)
     const entry = entryOf(from)
     if (win === undefined || entry === undefined || isFilesWindow(entry)) return false
-    if (entry.tabs.length > 0 || entry.file !== null || entry.rightPanel.items.length > 0) return false
+    // YAZ-6149: only replace a truly vault-less Welcome window in place; a window that already has a vault
+    // (even sitting on its blank tab) must never be hijacked by another vault — open a new window instead.
+    if (entry.roots.length > 0 || entry.tabs.length > 0 || entry.file !== null || entry.rightPanel.items.length > 0) return false
     sendLink(win, CONTRACT.link.onSetRoots.channel, [...roots])
     return true
   }

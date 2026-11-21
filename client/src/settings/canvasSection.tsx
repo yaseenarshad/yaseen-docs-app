@@ -21,7 +21,7 @@
 import type { ReactNode } from 'react'
 import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, SNAP_COLOR_PRESETS, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type SnapGapStyle, type TextAlign, type TextEdgeDoubleClickMode } from '@shared/types'
 import { Segmented, Select, Stepper } from './controls'
-import { DIAGRAM_DARK_COLORS_OPTIONS, EMBED_REST_OPTIONS, newBoardFolderOptions, ON_OFF_OPTIONS, type Option } from './options'
+import { DIAGRAM_DARK_COLORS_OPTIONS, EMBED_REST_OPTIONS, newBoardFolderOptions, newPageDrawingOptions, ON_OFF_OPTIONS, type Option } from './options'
 import { unit } from './unitLabel'
 import type { SettingDef, SettingsSection } from './registry'
 
@@ -446,6 +446,15 @@ export const CANVAS_SECTION: SettingsSection = {
           keywords: ['embed', 'window', 'rest', 'resting', 'idle', 'scroll', 'wheel', 'freeze', 'timeout', 'drawing', 'diagram'],
           render: ({ settings, onChange }) => (
             <Segmented options={EMBED_REST_OPTIONS} value={settings.embedRestSeconds} onChange={(embedRestSeconds) => onChange({ ...settings, embedRestSeconds })} ariaLabel="Embeds stop moving after" />
+          ),
+        },
+        {
+          id: 'newPageDrawing',
+          label: (ctx) => unit(ctx, 'New page drawings'),
+          hint: (ctx) => unit(ctx, 'Where /drawing puts a new Excalidraw drawing inside a page.'),
+          keywords: ['embed', 'inline', 'new drawing', 'excalidraw', 'slash', 'location'],
+          render: (ctx) => (
+            <Segmented options={newPageDrawingOptions((text) => unit(ctx, text))} value={ctx.settings.newPageDrawing} onChange={(newPageDrawing) => ctx.onChange({ ...ctx.settings, newPageDrawing })} ariaLabel={unit(ctx, 'New page drawings')} />
           ),
         },
         {

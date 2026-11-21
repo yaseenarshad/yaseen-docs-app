@@ -21,12 +21,15 @@
 import type { Ctx } from '@milkdown/kit/ctx'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { clearTextInCurrentBlockCommand } from '@milkdown/kit/preset/commonmark'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { newEmbed } from '@shared/embedOptions'
 
 /** How the menu items reach the host's file layer (App/Editor own the root and the notice). */
 export interface DrawingCreator {
   /** Creates one empty board of `kind` for the page and resolves the embed's target (`drawings/createDrawing.ts`). */
   create: (kind: 'drawing' | 'diagram') => Promise<string>
+  /** Inserts a new inline Excalidraw drawing block directly into the page (YAZ-5040). Return `false` to fall back to `create('drawing')`. */
+  createInline?: (view: EditorView) => boolean | void
   /** Create failure: the passive in-window notice, never a dialog. Absent → failures are silent. */
   onNotice?: (message: string) => void
 }
@@ -80,6 +83,9 @@ export function drawingMenu(drawing: DrawingCreator): (builder: SlashMenuBuilder
     icon,
     onRun: (ctx: Ctx) => {
       ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key)
+      if (kind === 'drawing' && drawing.createInline !== undefined && drawing.createInline(ctx.get(editorViewCtx)) !== false) {
+        return
+      }
       void drawing
         .create(kind)
         .then((name) => {

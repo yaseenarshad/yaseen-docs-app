@@ -35,7 +35,7 @@ const NO_SETTINGS: DrawingAppSettings = { canvasPrefs: undefined, onCanvasPrefsC
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
   // `app.home` and `pictureFolders` (YAZ-3943 demo round 3): the popup's ask for a board's outside pictures folder.
-  api: { readAsset: vi.fn(), drawing: { save: vi.fn(), load: vi.fn() }, window: { onFlush: vi.fn() }, hotkeys: { drawingInFront: vi.fn(async () => undefined) }, app: { home: vi.fn(async () => '/Users/me') }, pictureFolders: { list: vi.fn(async () => []), allow: vi.fn(async () => []) } },
+  api: { readAsset: vi.fn(), drawing: { save: vi.fn(), load: vi.fn(), resolveAssets: vi.fn(), landAssets: vi.fn() }, window: { onFlush: vi.fn() }, hotkeys: { drawingInFront: vi.fn(async () => undefined) }, app: { home: vi.fn(async () => '/Users/me') }, pictureFolders: { list: vi.fn(async () => []), allow: vi.fn(async () => []) } },
 }))
 
 /** The stand-in engine: it renders nothing and reports the props the modal handed it. */
@@ -51,6 +51,8 @@ vi.mock('./ExcalidrawSurface', () => ({
 
 const readAsset = vi.mocked(api.readAsset)
 const drawingSave = vi.mocked(api.drawing.save)
+const resolveAssets = vi.mocked(api.drawing.resolveAssets)
+const landAssets = vi.mocked(api.drawing.landAssets)
 const onFlush = vi.mocked(api.window.onFlush)
 /** The quit handshake's listener, as the modal registered it (main calls it before a window closes). */
 let quitFlush: (() => Promise<boolean | void> | boolean | void) | null = null
@@ -80,6 +82,10 @@ beforeEach(() => {
   readAsset.mockReset()
   drawingSave.mockReset()
   drawingSave.mockResolvedValue({ path: PATH, mtime: 999, size: BYTES.length, persisted: [] })
+  resolveAssets.mockReset()
+  resolveAssets.mockResolvedValue({ files: {}, stored: [] })
+  landAssets.mockReset()
+  landAssets.mockResolvedValue({ persisted: [] })
   quitFlush = null
   onFlush.mockReset()
   onFlush.mockImplementation((listener) => {
@@ -837,5 +843,130 @@ describe('the outside pictures folder in the popup', () => {
     })
     expect(list).not.toHaveBeenCalled()
     expect(container?.querySelector('.confirm__text')).toBeNull()
+  })
+})
+
+/** YAZ-5040 / YAZ-6120 / YAZ-6132 / YAZ-6134: inline mode loads from `.md` JSON, autosaves via `landAssets` + `onSave`, and supports "Open in tab" (with no one-click "Move to its own file" header button). */
+describe('inline mode (YAZ-5040)', () => {
+  const PAGE_PATH = '/v/Notes.md'
+  const png = (b64: string) => ({ mimeType: 'image/png', dataURL: `data:image/png;base64,${b64}` })
+
+  async function openInline(inline: { json: string; pagePath?: string; title?: string; autoFocusTitle?: boolean; onTitleChange?: (title: string) => void; onSave?: (compactJson: string) => void | Promise<void>; onMoveToFile?: (compactJson: string) => Promise<void>; onOpenInTab?: () => void | Promise<void> }) {
+    const onClose = vi.fn()
+    const onSave = inline.onSave ?? vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <DrawingModal
+          {...NO_SETTINGS}
+          root={ROOT}
+          theme="light"
+          onClose={onClose}
+          inline={{ json: inline.json, pagePath: inline.pagePath ?? PAGE_PATH, title: inline.title, autoFocusTitle: inline.autoFocusTitle, onTitleChange: inline.onTitleChange, onSave, onMoveToFile: inline.onMoveToFile, onOpenInTab: inline.onOpenInTab }}
+        />,
+      )
+    })
+    return { onClose, onSave }
+  }
+
+  it('loads via openInlineDrawing (resolving stored assets), renders the inline title input, and never calls readAsset', async () => {
+    const storedImg = png('b2xk')
+    resolveAssets.mockResolvedValueOnce({ files: { old: storedImg }, stored: ['old'] })
+    await openInline({ json: JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ type: 'image', fileId: 'old' }], appState: {}, files: {} }) })
+    expect(readAsset).not.toHaveBeenCalled()
+    expect(resolveAssets).toHaveBeenCalledWith({ root: ROOT, fileIds: ['old'] })
+    const titleInput = container?.querySelector<HTMLInputElement>('.drawing-modal__title-input')
+    expect(titleInput).not.toBeNull()
+    expect(titleInput?.placeholder).toBe('Untitled drawing')
+    expect(titleInput?.value).toBe('')
+    expect(seam.mounts).toBe(1)
+    expect(seam.props?.scene.files).toEqual({ old: expect.objectContaining({ id: 'old', ...storedImg }) })
+    expect(byText('Move to its own file')).toBeUndefined()
+  })
+
+  it('inline title input calls onTitleChange on input and blurs on Escape/Enter without closing the modal (YAZ-6136)', async () => {
+    const onTitleChange = vi.fn()
+    const { onClose } = await openInline({ json: '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}', title: 'Auth Flow', onTitleChange })
+    const input = container?.querySelector<HTMLInputElement>('.drawing-modal__title-input')
+    expect(input).not.toBeNull()
+    expect(input?.value).toBe('Auth Flow')
+    input!.focus()
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      set?.call(input, 'Auth Flow v2')
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onTitleChange).toHaveBeenLastCalledWith('Auth Flow v2')
+    // Escape inside the title input blurs it instead of closing the modal.
+    await escOn(input!)
+    expect(document.activeElement).not.toBe(input)
+    expect(onClose).not.toHaveBeenCalled()
+    // Enter inside the title input blurs it too.
+    input!.focus()
+    await act(async () => {
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(document.activeElement).not.toBe(input)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('autosaves by landing unpersisted images once, compacting scene JSON with files stripped, and calling onSave', async () => {
+    const onSave = vi.fn()
+    await openInline({ json: '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}', onSave })
+    const rawWithEmbedded = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 'i1', type: 'image', fileId: 'pic1' }], appState: {}, files: { pic1: { id: 'pic1', ...png('cGlj') } } }, null, 2)
+    act(() => seam.props?.onSnapshot({ version: 1, serialize: () => ({ json: rawWithEmbedded, files: {}, referenced: new Set() }) }))
+    landAssets.mockResolvedValueOnce({ persisted: ['pic1'] })
+    act(() => seam.props?.onSnapshot({ version: 2, serialize: () => ({ json: rawWithEmbedded, files: { pic1: png('cGlj') }, referenced: new Set(['pic1']) }) }))
+    await idle()
+    expect(drawingSave).not.toHaveBeenCalled()
+    expect(landAssets).toHaveBeenCalledTimes(1)
+    expect(landAssets).toHaveBeenCalledWith({ root: ROOT, newFiles: [{ fileId: 'pic1', ...png('cGlj') }] })
+    expect(onSave).toHaveBeenCalledTimes(1)
+    const saved = onSave.mock.calls[0][0] as string
+    expect(saved).not.toContain('\n')
+    expect(JSON.parse(saved)).toMatchObject({ elements: [{ id: 'i1', type: 'image', fileId: 'pic1' }], files: {} })
+    // Second save with the same image does not re-land it.
+    act(() => seam.props?.onSnapshot({ version: 3, serialize: () => ({ json: rawWithEmbedded, files: { pic1: png('cGlj') }, referenced: new Set(['pic1']) }) }))
+    await idle()
+    expect(landAssets).toHaveBeenCalledTimes(1)
+    expect(onSave).toHaveBeenCalledTimes(2)
+  })
+
+  it('never renders a header "Move to its own file" button; shows "Open in tab" before close, flushes pending edits, closes, and calls onOpenInTab', async () => {
+    const onSave = vi.fn()
+    const onMoveToFile = vi.fn(async (_compactJson: string) => undefined)
+    const onOpenInTab = vi.fn()
+    const { onClose } = await openInline({ json: '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}', onSave, onMoveToFile, onOpenInTab })
+    const buttons = [...(container?.querySelectorAll<HTMLButtonElement>('.drawing-modal__bar button') ?? [])]
+    expect(buttons.map((b) => b.textContent)).toEqual(['Open in tab', '✕'])
+    expect(byText('Move to its own file')).toBeUndefined()
+    const raw = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 'i2', type: 'image', fileId: 'pic2' }], appState: {}, files: { pic2: { id: 'pic2', ...png('cGljMg==') } } }, null, 2)
+    act(() => seam.props?.onSnapshot({ version: 1, serialize: () => ({ json: raw, files: {}, referenced: new Set() }) }))
+    act(() => seam.props?.onSnapshot({ version: 2, serialize: () => ({ json: raw, files: { pic2: png('cGljMg==') }, referenced: new Set(['pic2']) }) }))
+    landAssets.mockResolvedValueOnce({ persisted: ['pic2'] })
+    await click(byText('Open in tab'))
+    expect(landAssets).toHaveBeenCalledWith({ root: ROOT, newFiles: [{ fileId: 'pic2', ...png('cGljMg==') }] })
+    expect(onSave).toHaveBeenCalledTimes(1)
+    const saved = onSave.mock.calls[0][0] as string
+    expect(saved).not.toContain('\n')
+    expect(JSON.parse(saved)).toMatchObject({ elements: [{ id: 'i2', type: 'image', fileId: 'pic2' }], files: {} })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onOpenInTab).toHaveBeenCalledTimes(1)
+    expect(onMoveToFile).not.toHaveBeenCalled()
+  })
+
+  it('focuses title input on mount when autoFocusTitle is true, and keeps focus on overlay when omitted', async () => {
+    const json = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}'
+    await openInline({ json, onSave: vi.fn(), autoFocusTitle: true })
+    const titleInput = container?.querySelector<HTMLInputElement>('.drawing-modal__title-input')
+    expect(document.activeElement).toBe(titleInput)
+
+    // Unmount and reopen without autoFocusTitle -> focus stays on the overlay.
+    act(() => root?.unmount())
+    root = null
+    await openInline({ json, onSave: vi.fn() })
+    expect(document.activeElement).toBe(container?.querySelector('.drawing-modal-overlay'))
   })
 })

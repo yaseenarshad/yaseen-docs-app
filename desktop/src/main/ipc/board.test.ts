@@ -4,7 +4,7 @@ import { CONTRACT } from '@shared/ipc'
 import { registerBoardIpc } from './board'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, BrowserWindow: { getAllWindows: () => [] } }))
-vi.mock('../fs/drawing', () => ({ loadDrawing: vi.fn(), saveDrawing: vi.fn(async (req: { path: string }) => ({ path: req.path, mtime: 1, size: 1, persisted: [] })) }))
+vi.mock('../fs/drawing', () => ({ loadDrawing: vi.fn(), saveDrawing: vi.fn(async (req: { path: string }) => ({ path: req.path, mtime: 1, size: 1, persisted: [] })), resolveDrawingAssets: vi.fn(), landDrawingAssets: vi.fn() }))
 vi.mock('../fs/diagram', () => ({
   loadDiagram: vi.fn(),
   saveDiagram: vi.fn(async (req: { path: string }) => {

@@ -147,3 +147,40 @@ export async function readDrawingForPicture(root: string, path: string, imageMax
   for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
   return { engine, appState: parsed.appState, elements, files }
 }
+
+/** Opens an inline Excalidraw drawing from `.md` JSON text, resolving any referenced images from `<root>/assets/` (YAZ-5040). */
+export async function openInlineDrawing(root: string, json: string, pagePath: string): Promise<LoadedDrawing> {
+  const parsed = parseSceneText(json)
+  const own = parsed.files ?? {}
+  const missing = [...referencedFileIds(parsed.elements)].filter((id) => !(id in own))
+  const files: Record<string, unknown> = { ...own }
+  const stored: string[] = []
+  if (missing.length > 0 && root !== '') {
+    const resolved = await api.drawing.resolveAssets({ root, fileIds: missing }).catch(() => ({ files: {} as Record<string, DrawingFileEntry>, stored: [] as string[] }))
+    const created = Date.now()
+    for (const [id, entry] of Object.entries(resolved.files)) {
+      files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+    }
+    stored.push(...resolved.stored)
+  }
+  return { scene: { ...parsed, files }, path: pagePath, mtime: 0, stored }
+}
+
+/** Reads an inline Excalidraw JSON string for a preview window picture, resolving images from `<root>/assets/` (YAZ-5040). */
+export async function readInlineDrawingForPicture(root: string, json: string, imageMaxPx: number): Promise<DrawingForPicture> {
+  const parsed = parseSceneText(json)
+  const missing = [...referencedFileIds(parsed.elements)].filter((id) => parsed.files === null || !(id in parsed.files))
+  const [resolved, engine] = await Promise.all([
+    missing.length > 0 && root !== ''
+      ? api.drawing.resolveAssets({ root, fileIds: missing, imageMaxPx }).catch(() => ({ files: {} as Record<string, DrawingFileEntry>, stored: [] as string[] }))
+      : Promise.resolve({ files: {} as Record<string, DrawingFileEntry>, stored: [] as string[] }),
+    loadExcalidraw(),
+  ])
+  const elements = restoreForPicture(engine, parsed.elements)
+  const files: Record<string, unknown> = { ...parsed.files }
+  const created = Date.now()
+  for (const [id, entry] of Object.entries(resolved.files)) {
+    files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+  }
+  return { engine, appState: parsed.appState, elements, files }
+}

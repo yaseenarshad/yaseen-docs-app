@@ -24,6 +24,8 @@ import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, copyDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile, treeHasPath } from '../lib/treeState'
 import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { landOnCard } from '../editor/card/cardOpen'
+import { inlineRowMenuSections } from './inlineRowMenu'
+import { ScopeConfirm } from './ScopeConfirm'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
 import { useReviewOnRoots } from '../review/useReviewSettings'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -156,6 +158,8 @@ interface SidebarProps {
   onDuplicateCardSkill?: (vault: string) => void
   /** The width in px (YAZ-738), set on this aside alone (YAZ-2194). */
   width: number
+  /** True while the sidebar shell is animated shut (YAZ-6146): keeps global arrow-key listeners inactive while hidden. */
+  collapsed?: boolean
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
   asideRef?: Ref<HTMLElement>
   /** Right-click → "Version history" on one board row (YAZ-1897 D4, YAZ-3039): App opens the board's versions. */
@@ -169,6 +173,8 @@ interface SidebarProps {
   onKeepFile: (path: string) => void
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
+  /** Opens an inline Excalidraw drawing inside a page in its own tab (YAZ-6143). */
+  onOpenInlineDrawingTab?: (path: string, index: number, background: boolean) => void
   /** A tab behind the current one with no copy: a file already in a tab stays as it is (YAZ-4470, 17: "Open all in tabs"). Absent: `onOpenFileBackground`. */
   onOpenFileTab?: (path: string) => void
   /**
@@ -731,6 +737,7 @@ export function Sidebar({
   onOpenFile,
   onKeepFile,
   onOpenFileBackground,
+  onOpenInlineDrawingTab,
   onOpenFileTab,
   onRevealInFiles,
   previewPath,
@@ -805,6 +812,7 @@ export function Sidebar({
   onInbox,
   onInboxNewWindow,
   width,
+  collapsed = false,
   asideRef,
   onHistoryFile,
   onShareFile,
@@ -961,6 +969,8 @@ export function Sidebar({
   const [sortMenu, setSortMenu] = useState<{ tab: SortMenuTab | 'recents'; x: number; y: number } | null>(null)
   /** An Inbox row's own menu (YAZ-5054): the vault whose row was right-clicked, and where. */
   const [inboxMenu, setInboxMenu] = useState<{ root: string; x: number; y: number } | null>(null)
+  const [inlineRowMenu, setInlineRowMenu] = useState<{ card: SearchCandidate; x: number; y: number } | null>(null)
+  const openInlineRowMenu = useCallback((e: React.MouseEvent, card: SearchCandidate) => setInlineRowMenu({ card, x: e.clientX, y: e.clientY }), [])
   // The open sort menu's tab, while it is the tab that shows (a tab switch leaves it unmounted).
   const sortTab = sortMenu !== null && sortMenu.tab !== 'recents' && sortMenu.tab === sortedTab ? sortMenu.tab : null
   /** The focus folder whose name field is open (YAZ-4460 F3): "+ Folder" opens a new one's at once. */
@@ -1137,6 +1147,10 @@ export function Sidebar({
   const openSearchCard = (row: SearchCandidate, background: boolean, reveal = false) => {
     const page = row.page ?? row.path
     if (!background && reveal) return onRevealInFiles(page, true)
+    if (row.inlineDrawing === true && row.index !== undefined && onOpenInlineDrawingTab !== undefined) {
+      onOpenInlineDrawingTab(page, row.index, background)
+      return
+    }
     if (row.id !== undefined) landOnCard(page, row.id)
     if (background) onOpenFileBackground(page)
     else onOpenFile(page)
@@ -1257,7 +1271,7 @@ export function Sidebar({
   // On the Search tab the bar is the walk (D12): ↓ or ↑ from nowhere puts the caret in it.
   const menuOpen = menu !== null
   useEffect(() => {
-    if (menuOpen) return
+    if (menuOpen || collapsed) return
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowRight') return
@@ -1278,7 +1292,7 @@ export function Sidebar({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [searching, menuOpen, onLeaveToPage])
+  }, [searching, menuOpen, collapsed, onLeaveToPage])
   // The pinned items (YAZ-2662 D3): the rows of the Focus tab, then those of the Favorites tab. Their matches are the search's top group.
   const pinned = useMemo(() => pinnedRoots([...focusNodes, ...favoriteNodes]), [focusNodes, favoriteNodes])
   // A level of the search tree as `Tree` draws it (YAZ-3511 D4), by the one rule (`keepsOrder`): ↑/↓ walk these, so the
@@ -1288,7 +1302,7 @@ export function Sidebar({
       appRowsLast(nodes, depth, appRows, (level) => (keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > appRows.size }) ? level : sortLevel(level, searchSort, shownLabel(titles), scores))),
     [vaultRows, appRows, searchSort, titles],
   )
-  const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard)
+  const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard, settings.searchIncludeInline)
   /** ↑ on the first recent file of the empty Search tab, or on the day heading above it, goes back to the bar (YAZ-5774, YAZ-5777). */
   const recentUp = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowUp' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
@@ -2087,7 +2101,7 @@ export function Sidebar({
     dates: sortedTab !== null && settings.rowDates[sortedTab],
   }
   // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags. Its IDs are "Show IDs in search"'s (`marks`), not the files list's.
-  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, cardRows, onOpenCard: openTreeCard, sort: searchSort, dates: settings.rowDates.search, scores }
+  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, cardRows, onOpenCard: openTreeCard, onCardContextMenu: openInlineRowMenu, sort: searchSort, dates: settings.rowDates.search, scores }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
   const errorLines = errors.map((message, at) => (
@@ -2616,38 +2630,19 @@ export function Sidebar({
         <UpdatePill update={update} onOpen={onOpenWhatsNew} />
       </div>
       <RowDateTip body={bodyRef} />
-      {askScope !== null &&
-        createPortal(
-          (() => {
-            const { kind, paths, scope } = askScope
-            const list = kind === 'focus' ? 'focus' : 'favorites'
-            const other = scope === 'workspace' ? 'vault' : 'workspace'
-            const stays = lists.scopesOf(kind, paths)[other]
-            const what = paths.length === 1 ? `"${basename(paths[0]).replace(/\.md$/i, '')}"` : `${paths.length} items`
-            return (
-              <ConfirmSheet
-                labelId="confirm-scope-off-text"
-                text={
-                  <>
-                    <strong>
-                      Remove {what} from the {scope} {list}?
-                    </strong>
-                    <br />
-                    {paths.length === 1 ? 'It leaves' : 'They leave'} this list. {stays ? `${paths.length === 1 ? 'It stays' : 'They stay'} in the ${other} ${list}.` : `${paths.length === 1 ? 'It is' : 'They are'} in no other ${list} list.`} Your files do not change.
-                  </>
-                }
-                confirmLabel="Remove"
-                danger
-                onConfirm={() => {
-                  setAskScope(null)
-                  lists.setScope(kind, paths, scope, false)
-                }}
-                onCancel={() => setAskScope(null)}
-              />
-            )
-          })(),
-          document.body,
-        )}
+      {askScope !== null && (
+        <ScopeConfirm
+          kind={askScope.kind}
+          paths={askScope.paths}
+          scope={askScope.scope}
+          staysInOther={lists.scopesOf(askScope.kind, askScope.paths)[askScope.scope === 'workspace' ? 'vault' : 'workspace']}
+          onConfirm={() => {
+            setAskScope(null)
+            lists.setScope(askScope.kind, askScope.paths, askScope.scope, false)
+          }}
+          onCancel={() => setAskScope(null)}
+        />
+      )}
       {/* An Inbox row's menu (YAZ-5054): "Open in new tab" goes to the window's Inbox (one per window), or opens it. */}
       {inboxMenu !== null && (
         <ContextMenu
@@ -2655,6 +2650,14 @@ export function Sidebar({
           y={inboxMenu.y}
           sections={[[{ id: 'open-tabs', label: 'Open in new tab', onSelect: () => onInbox(inboxMenu.root) }, ...(onInboxNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: () => onInboxNewWindow(inboxMenu.root) }])]]}
           onClose={() => setInboxMenu(null)}
+        />
+      )}
+      {inlineRowMenu !== null && (
+        <ContextMenu
+          x={inlineRowMenu.x}
+          y={inlineRowMenu.y}
+          sections={inlineRowMenuSections(inlineRowMenu.card, { openSearchCard, onOpenFile, onOpenFileBackground, unit })}
+          onClose={() => setInlineRowMenu(null)}
         />
       )}
       {/* The sort menu (YAZ-3227 D4): it sorts the tab it opened on, and a tab switch leaves it unmounted. */}
@@ -2672,7 +2675,7 @@ export function Sidebar({
             },
             // The tab's date switch (YAZ-3511 D7, D10), and on Search its filters (D13, D14).
             { on: settings.rowDates[sortTab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortTab]: on } }) },
-            sortTab === 'search' ? filterSection(searchFilter, setSearchFilter, reviewRoots.size > 0) : undefined,
+            sortTab === 'search' ? filterSection(searchFilter.includeInline !== undefined || settings.searchIncludeInline ? searchFilter : { ...searchFilter, includeInline: false }, setSearchFilter, reviewRoots.size > 0, unit) : undefined,
             // YAZ-4450 D4: each list's own switch, in a window with two or more vaults only.
             multi && (sortTab === 'focus' || sortTab === 'favorites') ? workspaceRow(sortTab) : undefined,
           )}

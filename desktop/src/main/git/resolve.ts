@@ -5,6 +5,7 @@ import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
 import { mergePageComments, pageRest, type PageMerge } from '@shared/commentMerge'
 import { uniteCardLines } from '@shared/cardMerge'
+import { uniteInlineDrawings } from '@shared/inlineDrawingMerge'
 import { mergeConfigFile } from '@shared/configMerge'
 import { mergeLinesApart } from '@shared/lineMerge'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
@@ -275,7 +276,9 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
     try {
       // YAZ-5089 (decision 5 on YAZ-5055): a card answered or marked on both sides is no clash. Each side takes the union
       // of the card's reviews and the three-way result of its marks first (`shared/cardMerge.ts`); a card file too.
-      const [t, m] = uniteCardLines(b, theirs.toString('utf8'), mine.toString('utf8'))
+      // YAZ-6142: an inline Excalidraw block edited on both sides merges shape by shape (`shared/inlineDrawingMerge.ts`).
+      const [t0, m0] = uniteCardLines(b, theirs.toString('utf8'), mine.toString('utf8'))
+      const [t, m] = uniteInlineDrawings(b, t0, m0)
       merged = mergePageComments(b, t, m)
       if (merged?.copy !== undefined && b !== null) {
         const [restB, restT, restM] = [pageRest(b), pageRest(t), pageRest(m)]

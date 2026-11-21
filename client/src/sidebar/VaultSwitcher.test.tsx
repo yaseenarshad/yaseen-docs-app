@@ -34,6 +34,7 @@ const RECENTS: RecentRoots = [
 ]
 
 let openRecent: ReturnType<typeof vi.fn>
+let openAlone: ReturnType<typeof vi.fn>
 let setFolder: ReturnType<typeof vi.fn>
 /** Main's `state.onChange` broadcast into this window — another window's write landing here. */
 let broadcast: (state: AppState) => void
@@ -52,6 +53,7 @@ const withNames = (names: Record<string, string>): AppState =>
 beforeEach(async () => {
   vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
   openRecent = vi.fn(async () => true)
+  openAlone = vi.fn(async () => true)
   setFolder = vi.fn(async () => undefined)
   const state = {
     get: async () => seeded(),
@@ -62,7 +64,7 @@ beforeEach(async () => {
       return () => undefined
     },
   }
-  Object.defineProperty(window, 'yaseenDocs', { value: { window: { openRecent, identity: async () => ({}) }, state }, configurable: true, writable: true })
+  Object.defineProperty(window, 'yaseenDocs', { value: { window: { openRecent, openAlone, identity: async () => ({}) }, state }, configurable: true, writable: true })
   await storage.init()
   listSpy = vi.spyOn(storage, 'listVaults')
 })
@@ -242,22 +244,22 @@ describe('VaultSwitcher: the rows (D3/D4/D5)', () => {
     expect(listSpy).toHaveBeenCalledTimes(2)
   })
 
-  it('clicking a row — the current vault too (one rule for every row) — opens it through window.openRecent and closes the panel', async () => {
+  it('clicking a row — the current vault too (one rule for every row) — opens it through window.openAlone (YAZ-6149) and closes the panel', async () => {
     const { el } = render()
     openPanel(el)
     act(() => rows(el)[0].click())
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith(ROOT)
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith(ROOT)
     expect(panel(el)).toBeNull()
   })
 
-  it('a dead folder (openRecent → false): the row is disabled, its time slot says Folder not found, the panel STAYS open and the filter keeps focus', async () => {
-    openRecent.mockResolvedValueOnce(false)
+  it('a dead folder (openAlone → false): the row is disabled, its time slot says Folder not found, the panel STAYS open and the filter keeps focus', async () => {
+    openAlone.mockResolvedValueOnce(false)
     const { el } = render()
     openPanel(el)
     act(() => rows(el)[2].click())
     await settle()
-    expect(openRecent).toHaveBeenCalledWith('/v/Archive')
+    expect(openAlone).toHaveBeenCalledWith('/v/Archive')
     expect(panel(el)).not.toBeNull()
     const dead = rows(el)[2]
     expect(dead.disabled).toBe(true)
@@ -270,7 +272,7 @@ describe('VaultSwitcher: the rows (D3/D4/D5)', () => {
     expect(activeRow(el)).toBe(dead)
     key(el, 'Enter')
     await settle()
-    expect(openRecent).toHaveBeenCalledTimes(1)
+    expect(openAlone).toHaveBeenCalledTimes(1)
     expect(panel(el)).not.toBeNull()
   })
 
@@ -383,12 +385,12 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
     expect(activeRow(el)).toBe(openFolderRow(el))
   })
 
-  it('Enter opens the highlighted row through window.openRecent (the default: the last-used OTHER vault) and closes the panel', async () => {
+  it('Enter opens the highlighted row through window.openAlone (YAZ-6149, default: last-used OTHER vault) and closes the panel', async () => {
     const { el } = render()
     openPanel(el)
     key(el, 'Enter')
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
     expect(panel(el)).toBeNull()
   })
 
@@ -398,28 +400,28 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
     await type(el, 'notes arch')
     key(el, 'Enter')
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/v/Notes Archive')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/v/Notes Archive')
   })
 
-  it('⇧⏎ / ⇧-click open the vault IN this window (YAZ-1974 D8): onOpenHere, never openRecent; on the current vault they are a plain ⏎', async () => {
+  it('⇧⏎ / ⇧-click open the vault IN this window (YAZ-1974 D8): onOpenHere, never openAlone; on the current vault they are a plain ⏎', async () => {
     const { el, props } = render()
     openPanel(el)
     act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })))
     await settle()
     expect(props.onOpenHere).toHaveBeenCalledExactlyOnceWith('/w/Notes')
-    expect(openRecent).not.toHaveBeenCalled()
+    expect(openAlone).not.toHaveBeenCalled()
     expect(panel(el)).toBeNull()
 
     openPanel(el)
     act(() => void rows(el)[2].dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true })))
     await settle()
     expect(props.onOpenHere).toHaveBeenLastCalledWith('/v/Archive')
-    expect(openRecent).not.toHaveBeenCalled()
+    expect(openAlone).not.toHaveBeenCalled()
 
     openPanel(el)
     act(() => void rows(el)[0].dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true })))
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith(ROOT)
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith(ROOT)
     expect(props.onOpenHere).toHaveBeenCalledTimes(2)
   })
 
@@ -774,14 +776,14 @@ describe('VaultSwitcher: display names (YAZ-1974 D4/D5)', () => {
     await settle()
     expect(field(el)).toBeNull()
     expect(names(el)[2]).toBe('Old Stuff')
-    expect(openRecent).not.toHaveBeenCalled()
+    expect(openAlone).not.toHaveBeenCalled()
     expect(panel(el)).not.toBeNull()
     act(() => {
       rows(el)[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
       rows(el)[1].click()
     })
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
   })
 
   it('an empty field, or the folder name itself, is no custom name: back to the folder name, no Reset item', async () => {
@@ -928,7 +930,7 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
     openPanel(el)
     key(el, 'Enter')
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
   })
 
   it('with only this window\'s vault open, "Open" is its one row and the highlight starts on the first "Not open" row (S2)', () => {
@@ -963,7 +965,7 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
     expect(listing(el)).toEqual([`# ${GROUP_NOT_OPEN_TEXT}`, 'Old Stuff · yesterday'])
     key(el, 'Enter')
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
   })
 
   it('a row that is listed only for its number, and loses it, stays until the panel closes; the next open does not list it (A1, ruled on YAZ-2560)', () => {
@@ -1059,7 +1061,7 @@ describe('VaultSwitcher: one-line rows and the ⓘ path tooltip (YAZ-1974 D2)', 
   })
 
   it('the two "Notes" vaults tell apart by their tooltips; a dead row still shows its path', async () => {
-    openRecent.mockResolvedValueOnce(false)
+    openAlone.mockResolvedValueOnce(false)
     const { el } = render()
     openPanel(el)
     expect([pathOf(rows(el)[0]), pathOf(rows(el)[1])]).toEqual([ROOT, '/w/Notes'])
@@ -1078,7 +1080,7 @@ describe('VaultSwitcher: one-line rows and the ⓘ path tooltip (YAZ-1974 D2)', 
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     act(() => info.click())
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/v/Archive')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/v/Archive')
   })
 
   it('closing the panel takes the tooltip with it', () => {
@@ -1309,14 +1311,14 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     expect(openSet).toHaveBeenCalledExactlyOnceWith('set-homework')
   })
 
-  it('⌘O ⏎ with a saved workspace still goes to the last used OTHER vault, through window.openRecent — a workspace never takes that key over (YAZ-2555)', async () => {
+  it('⌘O ⏎ with a saved workspace still goes to the last used OTHER vault, through window.openAlone (YAZ-6149) — a workspace never takes that key over (YAZ-2555)', async () => {
     seedSets(WORK, READING)
     const { el, rerender } = render()
     rerender({ openRequest: 1 })
     expect(listing(el).slice(0, 3)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Work · 2 vaults', 'Reading · 3 vaults'])
     key(el, 'Enter')
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
     expect(openSet).not.toHaveBeenCalled()
     expect(panel(el)).toBeNull()
   })
@@ -1786,7 +1788,7 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
     expect(when(other)).not.toBe(OPEN_ALONE_TEXT)
     act(() => other.click())
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
+    expect(openAlone).toHaveBeenLastCalledWith(ARCHIVE)
     expect(props.onOpenHere).not.toHaveBeenCalled()
   })
 

@@ -123,21 +123,44 @@ export function takeCardLanding(path: string | null, id: string | null, now = Da
 /**
  * Lands on `el` once it shows, as a jump of the table of contents lands (`landOn`, YAZ-5164): at once when it does,
  * else when it first gets a size (its tab comes to the front). A card that never shows gives up after the landing's wait.
+ * Returns a cancel function; if cancelled before landing (e.g. React StrictMode double-mount or NodeView rebuild),
+ * `onCancelBeforeLand` runs so the caller can re-queue the landing for the surviving mount.
  */
-export function landWhenShown(el: HTMLElement): void {
-  const land = () => landOn(el)
+export function landWhenShown(el: HTMLElement, onCancelBeforeLand?: () => void): () => void {
+  let landed = false
+  let cancelled = false
+  let rafId = 0
   const shows = () => el.isConnected && el.getClientRects().length > 0
+  const land = () => {
+    rafId = 0
+    if (cancelled || landed || !shows()) return
+    landed = true
+    landOn(el)
+  }
   if (typeof ResizeObserver === 'undefined') {
-    requestAnimationFrame(() => shows() && land())
-    return
+    rafId = requestAnimationFrame(land)
+    return () => {
+      if (cancelled) return
+      cancelled = true
+      if (rafId !== 0) cancelAnimationFrame(rafId)
+      if (!landed) onCancelBeforeLand?.()
+    }
   }
   const observer = new ResizeObserver(() => {
-    if (!shows()) return
+    if (cancelled || landed || !shows()) return
     observer.disconnect()
     clearTimeout(timer)
     // A frame later: the page's own scroll on show (its tab's place) comes first.
-    requestAnimationFrame(land)
+    rafId = requestAnimationFrame(land)
   })
   const timer = setTimeout(() => observer.disconnect(), LANDING_MS)
   observer.observe(el)
+  return () => {
+    if (cancelled) return
+    cancelled = true
+    observer.disconnect()
+    clearTimeout(timer)
+    if (rafId !== 0) cancelAnimationFrame(rafId)
+    if (!landed) onCancelBeforeLand?.()
+  }
 }

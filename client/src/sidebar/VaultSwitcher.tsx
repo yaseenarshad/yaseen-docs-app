@@ -345,7 +345,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
       inputRef.current?.focus()
     })
   }
-  const choose = (path: string): void => settle(path, api.window.openRecent(path), 'openRecent')
+  const choose = (path: string): void => settle(path, api.window.openAlone(path), 'openAlone')
   /** "Open by itself" (YAZ-2858 D1): the window with the vault alone, raised or new — the same rule as a click. */
   const chooseAlone = (path: string): void => settle(path, api.window.openAlone(path), 'openAlone')
   /**

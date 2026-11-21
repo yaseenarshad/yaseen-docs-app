@@ -38,8 +38,8 @@
       "$comment": "Unbundled node_modules files inside app.asar (must stay 0)."
     },
     "rendererEagerJsBytes": {
-      "max": 3000000,
-      "$comment": "Renderer entry JS static import closure bytes (measured 2.96 MB on yaz-6008-speed)."
+      "max": 3035000,
+      "$comment": "Renderer entry JS static import closure bytes (measured 3,026,498 B on feat/yaz-5040-inline-excalidraw; raised with Yasin's OK)."
     },
     "rendererEagerCssBytes": {
       "max": 305000,
@@ -54,8 +54,8 @@
       "$comment": "Shipped .map bytes inside out/renderer (must stay 0)."
     },
     "mainBundleBytes": {
-      "max": 897598,
-      "$comment": "Main process and CLI bundle bytes in out/main (measured 897,598 B on feat/yaz-6150-date-created; raised from 892,893 B with Yasin's OK)."
+      "max": 910000,
+      "$comment": "Main process and CLI bundle bytes in out/main (measured 905,364 B on feat/yaz-5040-inline-excalidraw; raised with Yasin's OK)."
     },
     "shareViewerBytes": {
       "max": 2220000,

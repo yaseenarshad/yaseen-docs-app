@@ -75,6 +75,8 @@ export interface ExploreStackProps {
   linkActions?: LinkActions
   /** A page in a normal tab (⌘↵, ↗), a folder's page or another file (a drawing, a PDF): the stack closes. */
   openInTab: (path: string) => void
+  /** Opens an inline Excalidraw drawing inside `path` at 0-based `index` in its own tab (YAZ-6143). */
+  onOpenInlineDrawingTab?: (path: string, index: number, background: boolean) => void
   /** A link's bound gesture in a card window (⌘-click, YAZ-4962): App's link door; a background tab keeps the stack. */
   openLinkIn?: (path: string, where: GestureAction) => void
   onNotice: (message: string) => void
@@ -170,7 +172,7 @@ function focusCardFile(layer: HTMLElement): boolean {
   return body !== null && document.activeElement === body
 }
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false, exploreSize, exploreWidth = null, onExploreSize, linkPreview, hotkeys }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, onOpenInlineDrawingTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false, exploreSize, exploreWidth = null, onExploreSize, linkPreview, hotkeys }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -265,8 +267,8 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   }, [candidates])
   const rowOf = useCallback((path: string) => rowByPath.get(path), [rowByPath])
 
-  const doors = useRef({ onNotice, onClose, openInTab, openLinkIn, onRenameFile, linkActions })
-  doors.current = { onNotice, onClose, openInTab, openLinkIn, onRenameFile, linkActions }
+  const doors = useRef({ onNotice, onClose, openInTab, onOpenInlineDrawingTab, openLinkIn, onRenameFile, linkActions })
+  doors.current = { onNotice, onClose, openInTab, onOpenInlineDrawingTab, openLinkIn, onRenameFile, linkActions }
   /** The page menu on show (round 1, items 6 and 7): where, and for which page. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const pageSections = useCallback(
@@ -355,12 +357,19 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   /** A row of search layer `search` at `at` (round 3): the layer remembers them, so ‹ › step through that search. */
   const openRow = useCallback(
     (search: number, row: SearchCandidate, at: number) => {
+      // An inline Excalidraw drawing inside a page (YAZ-6143): open it in its own drawing tab and close the stack.
+      if (row.inlineDrawing === true && row.page !== undefined && row.index !== undefined) {
+        flushEdits()
+        doors.current.onOpenInlineDrawingTab?.(row.page, row.index, false)
+        doors.current.onClose()
+        return
+      }
       // A card inside a page (YAZ-5164): its page on top, landed on the card, as the Inbox's E lands. Not a step of ‹ ›.
       if (row.page !== undefined) return openPageAt(row.page, { id: row.id ?? null, index: row.index ?? 0 })
       if (layerKindOf(row.path) === null) return openPath(row.path)
       if (push(fileLayer(row.path, { search, at }))) rememberExploreRecent(row.path)
     },
-    [push, openPath, openPageAt],
+    [push, openPath, openPageAt, flushEdits],
   )
 
   /**
@@ -523,6 +532,11 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const rowToTab = useCallback(
     (row: SearchCandidate) => {
       flushEdits()
+      if (row.inlineDrawing === true && row.page !== undefined && row.index !== undefined) {
+        doors.current.onOpenInlineDrawingTab?.(row.page, row.index, false)
+        doors.current.onClose()
+        return
+      }
       // A card inside a page (YAZ-5164): its page's tab, landed on the card.
       if (row.page !== undefined && row.id !== undefined) landOnCard(row.page, row.id)
       doors.current.openInTab(row.page ?? row.path)

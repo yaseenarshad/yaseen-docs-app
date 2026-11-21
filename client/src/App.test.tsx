@@ -33,7 +33,7 @@ import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
 import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
-import { clearPlaces, readCollapsed, readPlace, savePlace } from './sidebar/tabPlace'
+import { clearPlaces, readCollapsed, readPlace, readWidth, savePlace } from './sidebar/tabPlace'
 import { registerPageView } from './lib/pageView'
 import { fetchTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
@@ -267,6 +267,10 @@ vi.mock('./sidebar/Sidebar', () => ({
     return <aside ref={props.asideRef} className="sidebar" data-sidebar data-root={root} />
   },
 }))
+
+/** The sidebar element when visible (mounted and not animated shut in `.sidebar-shell--collapsed`, YAZ-6146). */
+const visibleSidebar = (el: HTMLElement): HTMLElement | null =>
+  el.querySelector<HTMLElement>('.sidebar-shell:not(.sidebar-shell--collapsed) [data-sidebar]')
 
 import { App, preloadTabBoard, replayNotice } from './App'
 import { CARD_PREVIEW } from './editor/card/cardOpen'
@@ -799,9 +803,9 @@ const SLOW_RUNNER_MS = 15_000
 describe('App per-window sidebar visibility (YAZ-1280)', () => {
   it('boots from window identity and View › Toggle Sidebar reuses the one local toggle path', async () => {
     const { bridge, el, emitToggleSidebar } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     act(() => emitToggleSidebar())
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
   })
 
@@ -1467,30 +1471,30 @@ describe('"Hide all others" in Files (YAZ-5790)', () => {
       const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarPlace: 'tab' } }
       const { el, emitToggleSidebar } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
       const tabButtons = () => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
-      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      expect(visibleSidebar(el)).not.toBeNull()
       // Switch to Tab B and collapse the sidebar there.
       act(() => tabButtons()[1]!.click())
       act(() => emitToggleSidebar())
-      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      expect(visibleSidebar(el)).toBeNull()
       // Switch back to Tab A: sidebar reopens.
       act(() => tabButtons()[0]!.click())
-      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      expect(visibleSidebar(el)).not.toBeNull()
       // Save a TabPlace for Tab B's id and verify switching A -> B -> A preserves it and collapses/reopens the sidebar.
       const tabA = captured.sidebar?.activeTab ?? null
       expect(tabA).not.toBeNull()
       expect(readCollapsed(tabA)).toBe(false)
       act(() => tabButtons()[1]!.click())
-      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      expect(visibleSidebar(el)).toBeNull()
       // Verify switching back to Tab A reopens the sidebar again.
       act(() => tabButtons()[0]!.click())
-      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      expect(visibleSidebar(el)).not.toBeNull()
       // Seed a place on Tab A and verify readPlace stays intact across a round-trip to collapsed Tab B.
       const saved = { lens: 'focus' as const, expanded: ['/v/Docs'], shut: { focus: new Set<string>(), favorites: new Set<string>() }, scrollTop: 24, selected: [], filesOnly: null, focusOnly: null, closedVaults: [] }
       savePlace(tabA, saved)
       act(() => tabButtons()[1]!.click())
-      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      expect(visibleSidebar(el)).toBeNull()
       act(() => tabButtons()[0]!.click())
-      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      expect(visibleSidebar(el)).not.toBeNull()
       expect(readPlace(tabA)).toEqual(saved)
     } finally {
       clearPlaces()
@@ -1507,16 +1511,136 @@ describe('"Hide all others" in Files (YAZ-5790)', () => {
       expect(tabA).not.toBeNull()
       // Collapse sidebar on Tab A.
       act(() => emitToggleSidebar())
-      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      expect(visibleSidebar(el)).toBeNull()
       expect(readCollapsed(tabA)).toBe(true)
       // Open New tab (Cmd+T / "+" button): opens sidebar on Search.
       act(() => el.querySelector<HTMLButtonElement>('.tabbar__new')?.click())
-      expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+      expect(visibleSidebar(el)).not.toBeNull()
       // Switch back to Tab A: sidebar must collapse again and Tab A's collapsed state must still be true.
       act(() => tabButtons()[0]!.click())
-      expect(el.querySelector('[data-sidebar]')).toBeNull()
+      expect(visibleSidebar(el)).toBeNull()
       expect(readCollapsed(tabA)).toBe(true)
     } finally {
+      clearPlaces()
+    }
+  })
+
+  it('YAZ-6146: sidebar shell snaps width once and runs GPU FLIP transform animations across tab switches', async () => {
+    clearPlaces()
+    const animCalls: Array<{ el: HTMLElement; frames: Keyframe[]; anim: { cancel: ReturnType<typeof vi.fn>; onfinish: (() => void) | null; oncancel: (() => void) | null } }> = []
+    const origAnimate = HTMLElement.prototype.animate
+    HTMLElement.prototype.animate = function (this: HTMLElement, frames: Keyframe[] | PropertyIndexedKeyframes | null) {
+      const anim = { cancel: vi.fn(), onfinish: null as (() => void) | null, oncancel: null as (() => void) | null }
+      animCalls.push({ el: this, frames: Array.isArray(frames) ? frames : [], anim })
+      return anim as unknown as Animation
+    }
+    try {
+      const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarPlace: 'tab' } }
+      const { el, emitToggleSidebar } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
+      const shell = el.querySelector<HTMLElement>('.sidebar-shell')!
+      const workspace = el.querySelector<HTMLElement>('.workspace')!
+      const aside = el.querySelector<HTMLElement>('[data-sidebar]')!
+      expect(shell).not.toBeNull()
+      expect(shell.classList.contains('sidebar-shell--collapsed')).toBe(false)
+      expect(shell.style.width).toBe('260px')
+      expect(shell.getAttribute('aria-hidden')).toBeNull()
+      expect(animCalls).toHaveLength(0) // initial mount does not animate
+
+      // Switch to Tab B and collapse: same shell element stays mounted, snaps to 0px, and glides out on the GPU.
+      const tabButtons = () => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+      act(() => tabButtons()[1]!.click())
+      act(() => emitToggleSidebar())
+      expect(el.querySelector('.sidebar-shell')).toBe(shell)
+      expect(shell.classList.contains('sidebar-shell--collapsed')).toBe(true)
+      expect(shell.style.width).toBe('0px')
+      expect(shell.getAttribute('aria-hidden')).toBe('true')
+      expect(shell.hasAttribute('inert')).toBe(true)
+      expect(shell.style.overflow).toBe('visible')
+      expect(animCalls.map((c) => c.el)).toEqual([workspace, aside])
+      expect(animCalls[0]!.frames).toEqual([{ transform: 'translateX(260px)' }, { transform: 'translateX(0)' }])
+      expect(animCalls[1]!.frames).toEqual([{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(-100%)', opacity: 0.4 }])
+      // Finishing the close animation restores shell overflow/opacity cleanly.
+      animCalls[1]!.anim.onfinish?.()
+      expect(shell.style.overflow).toBe('')
+      expect(shell.style.opacity).toBe('')
+
+      // Switch back to Tab A: shell snaps back to 260px and glides in on the GPU.
+      animCalls.length = 0
+      act(() => tabButtons()[0]!.click())
+      expect(shell.classList.contains('sidebar-shell--collapsed')).toBe(false)
+      expect(shell.style.width).toBe('260px')
+      expect(shell.getAttribute('aria-hidden')).toBeNull()
+      expect(animCalls.map((c) => c.el)).toEqual([aside, workspace])
+      expect(animCalls[0]!.frames).toEqual([{ transform: 'translateX(-100%)', opacity: 0.4 }, { transform: 'translateX(0)', opacity: 1 }])
+      expect(animCalls[1]!.frames).toEqual([{ transform: 'translateX(-260px)' }, { transform: 'translateX(0)' }])
+    } finally {
+      HTMLElement.prototype.animate = origAnimate
+      clearPlaces()
+    }
+  })
+
+  it('per-tab sidebar width saves and restores across tab switches when sidebarPerTabWidth is enabled, and stays shared when disabled', async () => {
+    clearPlaces()
+    const animCalls: Array<{ el: HTMLElement; frames: Keyframe[]; anim: { cancel: ReturnType<typeof vi.fn>; onfinish: (() => void) | null; oncancel: (() => void) | null } }> = []
+    const origAnimate = HTMLElement.prototype.animate
+    HTMLElement.prototype.animate = function (this: HTMLElement, frames: Keyframe[] | PropertyIndexedKeyframes | null) {
+      const anim = { cancel: vi.fn(), onfinish: null as (() => void) | null, oncancel: null as (() => void) | null }
+      animCalls.push({ el: this, frames: Array.isArray(frames) ? frames : [], anim })
+      return anim as unknown as Animation
+    }
+    try {
+      const resizeBy = (el: HTMLElement, dx: number) => {
+        act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 })))
+        act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: dx })))
+        act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: dx })))
+      }
+      // Enabled (default when sidebarPlace === 'tab'): Tab A and Tab B keep distinct widths.
+      const enabledState: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarPlace: 'tab', sidebarPerTabWidth: true } }
+      const { el, emitStateChanged } = await mount(enabledState, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
+      const tabButtons = () => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+      const shell = () => el.querySelector<HTMLElement>('.sidebar-shell')!
+      const workspace = el.querySelector<HTMLElement>('.workspace')!
+      const tabA = captured.sidebar?.activeTab ?? null
+      expect(shell().style.width).toBe('260px')
+      // Resize Tab A to 340px (manual drag-resize must NOT trigger FLIP animation).
+      resizeBy(el, 80)
+      expect(shell().style.width).toBe('340px')
+      expect(readWidth(tabA)).toBe(340)
+      expect(animCalls).toHaveLength(0)
+      act(() => tabButtons()[1]!.click())
+      resizeBy(el, -120)
+      expect(shell().style.width).toBe('220px')
+      expect(animCalls).toHaveLength(0)
+      // Switch back to Tab A (220px -> 340px): triggers GPU FLIP translateX(-120px) -> 0 on .workspace with temporary will-change.
+      act(() => tabButtons()[0]!.click())
+      expect(shell().style.width).toBe('340px')
+      expect(animCalls).toHaveLength(1)
+      expect(animCalls[0]!.el).toBe(workspace)
+      expect(animCalls[0]!.frames).toEqual([{ transform: 'translateX(-120px)' }, { transform: 'translateX(0)' }])
+      expect(workspace.style.willChange).toBe('transform')
+      animCalls[0]!.anim.onfinish?.()
+      expect(workspace.style.willChange).toBe('')
+      // Unrelated state:changed broadcasts (e.g. recents/window updates with global sidebarWidth=220) must NOT clobber Tab A's restored 340px width.
+      act(() => emitStateChanged({ ...enabledState, sidebarWidth: 220 }))
+      expect(shell().style.width).toBe('340px')
+      act(() => tabButtons()[1]!.click())
+      expect(shell().style.width).toBe('220px')
+
+      // Disabled (`sidebarPerTabWidth: false`): switching tabs keeps the current width and does not restore per-tab widths.
+      clearPlaces()
+      const disabledState: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarPlace: 'tab', sidebarPerTabWidth: false } }
+      const second = await mount(disabledState, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
+      const tabs2 = () => [...second.el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+      const shell2 = () => second.el.querySelector<HTMLElement>('.sidebar-shell')!
+      resizeBy(second.el, 60)
+      expect(shell2().style.width).toBe('320px')
+      act(() => tabs2()[1]!.click())
+      resizeBy(second.el, -40)
+      expect(shell2().style.width).toBe('280px')
+      act(() => tabs2()[0]!.click())
+      expect(shell2().style.width).toBe('280px')
+    } finally {
+      HTMLElement.prototype.animate = origAnimate
       clearPlaces()
     }
   })
@@ -1825,11 +1949,11 @@ describe('App sidebar resize (YAZ-738)', () => {
   it('dragging well past the minimum collapses the sidebar instead of writing a sliver width', async () => {
     const { bridge, el, emitToggleSidebar } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => drag(el, 50 - 260))
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: true })
     expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
     act(() => emitToggleSidebar())
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     expect(sideW()).toBe(260)
   })
 })
@@ -1863,9 +1987,9 @@ describe('App sidebar lens (🔒 D4, YAZ-847)', () => {
     // The strip's Show-sidebar button exists only while the sidebar is hidden (YAZ-1759).
     expect(el.querySelector('[aria-label="Show sidebar"]')).toBeNull()
     act(() => captured.sidebar?.onCollapse())
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     act(() => el.querySelector<HTMLButtonElement>('.tabbar-nav__btn[aria-label="Show sidebar"]')?.click())
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     expect(captured.sidebar?.lens).toBe('files')
   })
 })
@@ -2185,7 +2309,7 @@ describe('App tab board across windows (YAZ-3343)', () => {
     act(() => captured.sidebar?.onRecentVault?.('/w'))
     expect(captured.sidebar?.recentVault).toBe('/w')
     act(() => emitToggleSidebar())
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     act(() => emitToggleSidebar())
     expect(captured.sidebar?.recentVault).toBe('/w')
     await act(async () => emitSetRoots(['/v']))
@@ -2734,7 +2858,7 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
     act(() => emitGoTo())
     await settle()
     expect(el.querySelector('.link-notice__text')?.textContent).toMatch(/Can't go to "Gone": no such folder in/)
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
   })
 })
 
@@ -2909,9 +3033,9 @@ describe('App ⌘⇧F explore (YAZ-2571)', () => {
 describe('App ⌘K search (D4, YAZ-804)', () => {
   it('from a collapsed sidebar it un-collapses through the global setting and mounts the sidebar with the focus flag already true', async () => {
     const { bridge, el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     act(() => emitSearch())
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
     expect(captured.sidebar?.pendingSearchFocus).toBe(true)
     expect(captured.sidebar?.lens).toBe('search') // S3 (YAZ-2638): the sidebar shows first, and it mounts on the Search tab
@@ -2983,7 +3107,7 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     bar.tabIndex = -1
     bar.focus()
     act(() => emitSearch())
-    expect(el.querySelector('[data-sidebar]')).toBeNull() // the key opened the sidebar: it closes again
+    expect(visibleSidebar(el)).toBeNull() // the key opened the sidebar: it closes again
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: true })
     expect(document.activeElement).toBe(page)
     act(() => emitToggleSidebar())
@@ -3024,12 +3148,12 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     aside.focus()
     expect(esc().defaultPrevented).toBe(true)
     expect(captured.sidebar?.lens).toBe('files')
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     expect(esc().defaultPrevented).toBe(true)
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: true })
     expect(esc().defaultPrevented).toBe(false)
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
   })
 
   it('YAZ-4995: Esc with the caret in the page text, or with a menu open, does not close the sidebar', async () => {
@@ -3039,17 +3163,17 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     el.appendChild(text)
     text.focus()
     act(() => void text.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     // A menu that closes on the window's Esc: this Esc is the menu's.
     text.remove()
     const menu = document.createElement('div')
     menu.className = 'ctx-menu'
     document.body.appendChild(menu)
     act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     menu.remove()
     act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
   })
 
   it('S16 (YAZ-2638): a switch to a different vault from the Search tab lands on Files (YAZ-1846), on a sidebar of its own key — so the text is gone', async () => {
@@ -3065,9 +3189,9 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
 describe('App ⌘O vault switcher (YAZ-1767 D8)', () => {
   it('from a collapsed sidebar it un-collapses first (the ⌘K handshake) and mounts the sidebar with a request pending', async () => {
     const { bridge, el, emitSwitchVault } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     act(() => emitSwitchVault())
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
     expect(captured.sidebar?.switcherOpenRequest).toBe(1)
   })
@@ -3359,9 +3483,9 @@ describe('App tabs (I2, GRO-2234)', () => {
 
   it('a folder row of the new tab page shows the folder in Files, open, with the keyboard focus on its row — the sidebar shows first when it is hidden — and opens no tab (YAZ-2663 S22)', async () => {
     const { el, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' })
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     act(() => captured.startPage?.onShowInFiles('/v/Projects'))
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     expect(captured.sidebar?.lens).toBe('files')
     expect(captured.sidebar?.revealRequest).toMatchObject({ path: '/v/Projects', focus: true })
     expect(stripLabels(el)).toEqual([])
@@ -3392,9 +3516,9 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => captured.sidebar?.onLensChange('favorites'))
     act(() => captured.sidebar?.onSearchFocusHandled())
     act(() => captured.sidebar?.onCollapse())
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     act(() => captured.startPage?.onBackToSearch())
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
 
     // The way back is to where the keyboard came from (YAZ-2663 D8). From a row of a sidebar tree — → on a
@@ -3466,10 +3590,10 @@ describe('App tabs (I2, GRO-2234)', () => {
 
   it('a right-click on a row of the new tab page asks the sidebar for its row menu of that path at the mouse; the sidebar shows first when it is hidden, and a consumed request does not replay (YAZ-2663 S27, S31)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' })
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     act(() => captured.startPage?.onRowMenu('/v/a.md', 412, 96))
     // S31: the sidebar mounts with the request already set, on the tab it had: a row menu changes no tab.
-    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
     expect(captured.sidebar?.lens).toBe('favorites')
     expect(captured.sidebar?.menuRequest).toMatchObject({ path: '/v/a.md', x: 412, y: 96 })
     expect(captured.sidebar?.revealRequest ?? null).toBeNull()
@@ -8366,7 +8490,7 @@ describe('App CLI navigation acknowledgement (YAZ-4502)', () => {
     const path = '/v/Journal.md'
     const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Journal', mtime: 1 } })
     await act(async () => emitAutomation({ id: 'nav-2', action: 'navigate', target: { path } }))
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-2', ok: true, value: expect.objectContaining({ path, sidebarCollapsed: true }) })
   })
   it('tells main the window is ready for navigation once it mounts', async () => {

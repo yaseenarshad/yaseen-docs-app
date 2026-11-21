@@ -13,6 +13,7 @@ import * as focus from '../focus'
 import { readAsset, writeAsset } from '../fs/assets'
 import { downloadImage } from '../fs/downloadImage'
 import { copyEntry, importCopy, isCrossDevice, pasteEntries, type PasteOps } from '../fs/copy'
+import { carryCrossVaultAssets } from '../fs/carryAssets'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, fsCall, isSkipped, requireAbsPath } from '../fs/fsUtils'
@@ -377,7 +378,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handleWithEvent(CONTRACT.file.paste, async (e, req: unknown) => {
     const { targetDir, expect: confirmed } = requireRequest(req)
     const dir = requireAbsPath(targetDir, 'targetDir')
-    if (rootOfPath(rootsOfSender(e), dir) === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that folder', { path: dir })
+    const targetRoot = rootOfPath(rootsOfSender(e), dir)
+    if (targetRoot === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that folder', { path: dir })
     const expected = requireExpect(confirmed)
     const now = clipNow()
     if (now === null || now.clip.op !== expected.op || !sameOrder(now.clip.paths, expected.paths)) throw new BridgeFailure('CONFLICT', CLIP_CHANGED)
@@ -385,6 +387,9 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const { clip } = now
     const ids = await doorFor(e, req, 'targetDir')
     const res = await pasteEntries(clip, req, { copy: (from, toDir) => copyEntry(from, toDir, ids), move: moveEntry })
+    if (res.pasted.length > 0) {
+      await carryCrossVaultAssets(res.pasted, targetRoot, rootsOf(store.get())).catch(() => undefined)
+    }
     if (clip.op === 'cut' && res.pasted.length > 0) {
       fileClip.clear()
       // The cut is spent: its old paths leave the system clipboard too, unless something was copied there since.

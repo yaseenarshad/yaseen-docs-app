@@ -11,12 +11,14 @@ export type SearchTime = 'any' | 'today' | 'week' | 'month' | 'year'
 export interface SearchFilter {
   type: SearchType
   time: SearchTime
+  /** Include inline drawings and cards inside pages (YAZ-6143). Undefined/true = include; false = files only. */
+  includeInline?: boolean
 }
 
 /** No filter: what a new search starts with (D15). */
 export const NO_FILTER: SearchFilter = { type: 'all', time: 'any' }
 
-export const filterOn = (filter: SearchFilter): boolean => filter.type !== 'all' || filter.time !== 'any'
+export const filterOn = (filter: SearchFilter): boolean => filter.type !== 'all' || filter.time !== 'any' || filter.includeInline === false
 
 /** The type of each file kind (D13): the app's own kinds, so a type holds what its icon shows in the tree. Text files are Other. */
 const OF_KIND = { markdown: 'pages', drawing: 'drawings', diagram: 'diagrams', image: 'images', pdf: 'pdfs', text: 'other' } as const
@@ -25,11 +27,12 @@ const IMAGES = new Set<string>(IMAGE_EXTENSIONS)
 
 /**
  * A row's type (D13): a folder, a card (YAZ-5047: the index's `kind`, which the row carries as `card` only while its
- * vault's Review is on — else a card file is a page), else its file's kind (`fileKind`, by the extension, case-blind).
+ * vault's Review is on — else a card file is a page), an inline drawing (YAZ-6143), else its file's kind (`fileKind`, by the extension, case-blind).
  */
-export function typeOf(row: Pick<SearchCandidate, 'kind' | 'path' | 'card'>): Exclude<SearchType, 'all'> {
+export function typeOf(row: Pick<SearchCandidate, 'kind' | 'path' | 'card' | 'inlineDrawing'>): Exclude<SearchType, 'all'> {
   if (row.kind === 'dir') return 'folders'
   if (row.card === true) return 'cards'
+  if (row.inlineDrawing === true) return 'drawings'
   const kind = fileKind(row.path)
   if (kind !== null && kind !== 'text') return OF_KIND[kind]
   return IMAGES.has(row.path.slice(row.path.lastIndexOf('.') + 1).toLowerCase()) ? 'images' : 'other'
@@ -41,6 +44,9 @@ export function typeOf(row: Pick<SearchCandidate, 'kind' | 'path' | 'card'>): Ex
  */
 export function filterTest(filter: SearchFilter, timeOf: (path: string) => number, from: number | undefined): ((row: SearchCandidate) => boolean) | undefined {
   if (!filterOn(filter)) return undefined
-  // A card in a page (YAZ-5037) has its page's time.
-  return (row) => (filter.type === 'all' || typeOf(row) === filter.type) && (from === undefined || timeOf(row.page ?? row.path) >= from)
+  // A card or inline drawing in a page (YAZ-5037, YAZ-6143) has its page's time.
+  return (row) =>
+    (filter.includeInline !== false || row.page === undefined) &&
+    (filter.type === 'all' || typeOf(row) === filter.type) &&
+    (from === undefined || timeOf(row.page ?? row.path) >= from)
 }

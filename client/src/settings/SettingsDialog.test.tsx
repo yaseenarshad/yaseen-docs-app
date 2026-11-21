@@ -172,13 +172,13 @@ const TABLES_GROUPS = ['All tables', 'Cell notes', 'Calendar tables']
  * Settings › Drawings and diagrams (YAZ-3037; the name since YAZ-4748 D11): one row per `CanvasPrefs` key the page shows, in
  * its groups, then the draw.io diagrams group, whose one row moved here from Appearance.
  */
-const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapGapStyle', 'snapColor', 'showResizeSizeBadge', 'measureDistancesInfo', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'textEdgeDoubleClick', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'embedRestSeconds', 'newBoardFolder', 'diagramDarkColors']
+const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapGapStyle', 'snapColor', 'showResizeSizeBadge', 'measureDistancesInfo', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'textEdgeDoubleClick', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'embedRestSeconds', 'newPageDrawing', 'newBoardFolder', 'diagramDarkColors']
 /** Settings › Images (YAZ-3038): the Pixabay key, the library folder and the favorites (YAZ-4363), then the icon packs (YAZ-4359). */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPacks', 'mediaHoverZoom', 'mediaHoverZoomSize']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
 // Daily pages (YAZ-3607 D12): off by default, so its group shows the switch alone.
 // New boards keep pictures and Allowed picture folders (YAZ-3943 demo 2, round 3); Links in drawings and diagrams (demo 2).
-const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyPages', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`)]
+const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyPages', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`), 'searchIncludeInline']
 /** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
@@ -455,7 +455,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     clickNav(el, 'Files & Links')
     // "When the app starts" moved to General (YAZ-3276 D7): with no vault, Files & Links' one titled group is Preview on hover (YAZ-3403).
-    expect(groupTitles(el)).toEqual(['New pages', 'Daily pages', 'Preview on hover'])
+    expect(groupTitles(el)).toEqual(['New pages', 'Daily pages', 'Preview on hover', 'Search'])
     expect(hints()).toEqual([])
     // Files & Links starts with "New pages" (YAZ-4246), then its untitled group.
     expect(el.querySelector('#settings-files .settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('New pages')
@@ -654,6 +654,11 @@ describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)
     expect(rest[1].getAttribute('aria-pressed')).toBe('true')
     act(() => rest[4].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, embedRestSeconds: 0 })
+    const pageDrawing = rowButtons(el, 'newPageDrawing')
+    expect(pageDrawing.map((b) => b.textContent)).toEqual(['Inside the page', 'Own .excalidraw file'])
+    expect(pageDrawing[0].getAttribute('aria-pressed')).toBe('true')
+    act(() => pageDrawing[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, newPageDrawing: 'file' })
     const folder = rowButtons(el, 'newBoardFolder')
     expect(folder.map((b) => b.textContent)).toEqual(["The page's folder", 'assets/drawings'])
     act(() => folder[1].click())

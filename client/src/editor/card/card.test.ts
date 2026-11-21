@@ -1072,6 +1072,19 @@ describe('YAZ-5164: landing on a card in its page, as the table of contents land
     landOnCard('/v/Other.md', 'WIKI-7')
     expect(takeCardLanding('/v/Other.md', 'WIKI-7')).toBe(true)
   })
+
+  it('survives StrictMode double-mount (detached first mount or destroy before landing) when a closed page opens fresh', async () => {
+    // Case A: detached first mount (StrictMode cleanup removed wrapper before crepe.create finished) does not steal the landing.
+    landOnCard('/v/Fresh.md', 'WIKI-8')
+    const detachedRoot = document.createElement('div')
+    const detachedCrepe = createCrepe({ root: detachedRoot, defaultValue: page, wikilinks: vault(true), cards: { path: '/v/Fresh.md' } })
+    await detachedCrepe.create()
+    await detachedCrepe.destroy()
+    const { root } = await mount(page, { wikilinks: vault(true), cards: { path: '/v/Fresh.md' } })
+    const cards = root.querySelectorAll('.card')
+    await vi.waitFor(() => expect(flashes).toEqual([cards[1]]))
+    expect(takeCardLanding('/v/Fresh.md', 'WIKI-8')).toBe(false)
+  })
 })
 
 /**

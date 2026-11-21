@@ -4,6 +4,7 @@ import { COMMENTS_KEY } from './comments'
 import { maskCode } from './fences'
 import { folderBlocks } from './folderValues'
 import { parseFrontmatter, splitFrontmatter } from './frontmatter'
+import { drawingTitleOf, findInlineDrawings } from './inlineDrawing'
 import { indexTarget, splitLink } from './linkParts'
 import { CREATED_KEY, parseCreatedMs } from './pageCreated'
 import { PAGE_ID_KEY, canonicalPageId, isPageId } from './pageId'
@@ -201,6 +202,10 @@ export function indexRecord(meta: IndexRecordMeta, text: string | null): IndexRe
   record.title = titleOf(properties, record.title)
   // The page's cards (YAZ-4960 D4): ID, title, off and reviews off each card line, no card text.
   const cards = cardRecords(body)
+  // Inline Excalidraw drawings (YAZ-6143): 0-based index and title ('' when untitled), fast-path guarded.
+  const inlineDrawings = body.includes('excalidraw')
+    ? findInlineDrawings(body).map((d, index) => ({ index, title: drawingTitleOf(d.drawingLine) }))
+    : []
   // A card file (YAZ-5037): the mark in its properties, never its shape — a file with 2 cards, or none, stays a card
   // file, and its tab says so. Its title is its card's, off the card line (YAZ-5308, decision D), so card pills, the
   // `[[` picker, search and the Inbox read one title; a card with none: its card's ID (YAZ-5309: as a link to it says,
@@ -211,5 +216,5 @@ export function indexRecord(meta: IndexRecordMeta, text: string | null): IndexRe
     const cardCreatedMs = parseCreatedMs(cards[0]?.created)
     if (cardCreatedMs !== null) record.ctime = cardCreatedMs
   }
-  return { ...record, ...extractBody(properties, body), ...(cards.length > 0 && { cards }) }
+  return { ...record, ...extractBody(properties, body), ...(cards.length > 0 && { cards }), ...(inlineDrawings.length > 0 && { inlineDrawings }) }
 }

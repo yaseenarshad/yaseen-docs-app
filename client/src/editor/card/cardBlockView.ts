@@ -77,7 +77,7 @@ import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, cardLineStepAt, changeCardLineAt, isCardNode, CARD_LANGUAGE, cardLineOf } from './cardBlockLine'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS, cardViewLinkHit, type CardViewLinkHit } from './cardMedia'
-import { CARD_OPEN, landWhenShown, previewCard, takeCardLanding, watchCardLanding, type CardOpenRequest } from './cardOpen'
+import { CARD_OPEN, landOnCard, landWhenShown, previewCard, takeCardLanding, watchCardLanding, type CardOpenRequest } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor, type CardTitleField } from './cardEditor'
 import { mountReviewsStrip, type ReviewsStripHandle, type StripPart } from './reviewsStrip'
@@ -272,6 +272,7 @@ export class CardBlockView implements NodeView {
   private readonly unfold: () => void
   /** This card's door to a landing asked while it shows (YAZ-5164, `watchCardLanding`). */
   private readonly unwatchLanding: () => void
+  private cancelLanding: (() => void) | null = null
   private closeMenu: (() => void) | null = null
   /** The Reviews strip (YAZ-5105 round 4): made only for a card with reviews. */
   private strip: ReviewsStripHandle | null = null
@@ -325,10 +326,17 @@ export class CardBlockView implements NodeView {
     this.draw()
     // A card link's ⌘-click, or a card row of search, opened this page to land on this card (YAZ-5030, YAZ-5164): it
     // lands once it shows, as the table of contents lands. Asked while the page is open already: it lands then.
-    if (takeCardLanding(this.path, cardIdOf(cardLineOf(node)))) landWhenShown(this.dom)
+    // Skip detached editors (e.g. React StrictMode first mount already removed) and re-queue if destroyed before landing.
+    const mountedAt = Date.now()
+    const initialCardId = cardIdOf(cardLineOf(node))
+    if (this.view.dom.isConnected && takeCardLanding(this.path, initialCardId)) {
+      this.cancelLanding = landWhenShown(this.dom, () => {
+        if (this.path !== null && initialCardId !== null && Date.now() - mountedAt < 2000) landOnCard(this.path, initialCardId)
+      })
+    }
     this.unwatchLanding = watchCardLanding((path, id) => {
-      if (path !== this.path || cardIdOf(cardLineOf(this.node))?.toLowerCase() !== id.toLowerCase()) return false
-      landWhenShown(this.dom)
+      if (!this.dom.isConnected || path !== this.path || cardIdOf(cardLineOf(this.node))?.toLowerCase() !== id.toLowerCase()) return false
+      this.cancelLanding = landWhenShown(this.dom)
       return true
     })
     this.unsubscribe = deps.subscribe?.(() => {
@@ -982,6 +990,8 @@ export class CardBlockView implements NodeView {
     this.unsubscribe?.()
     this.unfold()
     this.unwatchLanding()
+    this.cancelLanding?.()
+    this.cancelLanding = null
     this.code?.destroy?.()
     views.delete(this.dom)
   }
@@ -1002,8 +1012,10 @@ const staleCardViews = (editor: EditorView, ids: boolean): boolean => [...(cardB
 function cardNodeView(deps: CardDeps) {
   const view = $view(codeWidthSchema.node, (ctx: Ctx): NodeViewConstructor => {
     const ours: NodeViewConstructor = (node, editor, getPos, decorations, inner) => {
-      // Crepe's factory, registered before this one (`Object.fromEntries` takes the last, ours).
-      const crepe = ctx.get(nodeViewCtx).find(([id, make]) => id === 'code_block' && make !== ours)?.[1] ?? null
+      // Immediately preceding `code_block` factory (Crepe's, or another wrapper like inline drawings).
+      const factories = ctx.get(nodeViewCtx).filter(([id]) => id === 'code_block').map(([, make]) => make)
+      const idx = factories.lastIndexOf(ours)
+      const crepe = idx > 0 ? factories[idx - 1]! : null
       if (!isCardNode(node)) return crepe === null ? (undefined as unknown as NodeView) : crepe(node, editor, getPos, decorations, inner)
       // A vault that gives no IDs has no cards (D8): its ```card block is a code block, as the index reads it.
       const made = deps.ids?.() !== false
