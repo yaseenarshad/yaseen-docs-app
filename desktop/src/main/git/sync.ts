@@ -415,6 +415,8 @@ export async function connectVaultToRepo(root: string, repoFullName: string, opt
   if (!facts.isRepo) {
     const init = await git(bin, root, ['init', '-b', 'main'])
     if (init.code !== 0) return { ok: false, error: firstMeaningfulLine(init) }
+  } else if (facts.remoteUrl === null && facts.branch === 'master') {
+    await git(bin, root, ['branch', '-M', 'main'])
   }
 
   const remoteUrl = `https://github.com/${repoFullName}.git`
