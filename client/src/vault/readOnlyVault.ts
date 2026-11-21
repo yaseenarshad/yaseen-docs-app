@@ -43,6 +43,9 @@ export const VAULT_UNLOCK_CHANNEL = 'yaseen-docs:vault-unlock'
 type UnlockMessage = { root: string; until: number } | { root: string; lock: true } | { root: string; ask: true }
 
 /** What a refused file action says (the sheet's first words; a folder page's create error). */
+export const VAULT_READ_ONLY_TIP = 'This vault is read only'
+
+/** What a refused file action says (the sheet's first words; a folder page's create error). */
 
 /** What the file holds, or the default for anything else: only `true` counts, as a page's `readonly` does. */
 export function sanitizeReadOnlyVault(raw: unknown): ReadOnlyVaultSettings {
