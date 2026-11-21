@@ -5953,11 +5953,11 @@ describe('App: the card flow (YAZ-4962)', () => {
     for (let i = 0; i < 3; i++) await press(el, ' ')
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
     expect(el.querySelectorAll<HTMLButtonElement>('.card-inbox__answer')[1].getAttribute('aria-description')).toMatch(/^Remembered · (\d+ days?|today)$/)
-    await press(el, '1')
+    await press(el, '0')
     await vi.waitFor(() => expect(files[PAGE].content.match(review)).toHaveLength(2))
     expect(files[PAGE].content.replace(review, '')).toBe(page('<!-- card: WIKI-9 -->'))
-    // Nothing left in the session: the done screen.
-    await vi.waitFor(() => expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.'))
+    // Nothing left in the session: the done screen (YAZ-6041 rotating completion title).
+    await vi.waitFor(() => expect(el.querySelector('.card-inbox__done-title')?.textContent?.trim()).toBeTruthy())
     // ⌘Z: the last review comes off the line and the card shows again, from its first step.
     await press(el, 'z', { metaKey: true })
     await vi.waitFor(() => expect(files[PAGE].content).toBe(once))
