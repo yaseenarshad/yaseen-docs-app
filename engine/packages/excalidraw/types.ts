@@ -261,11 +261,16 @@ export type InteractiveCanvasAppState = Readonly<
     suggestedBinding: AppState["suggestedBinding"];
     hoveredArrowTextAnchor: AppState["hoveredArrowTextAnchor"];
     isRotating: AppState["isRotating"];
+    isResizing: AppState["isResizing"];
+    resizingElement: AppState["resizingElement"];
     elementsToHighlight: AppState["elementsToHighlight"];
     // Collaborators
     collaborators: AppState["collaborators"];
     // SnapLines
     snapLines: AppState["snapLines"];
+    snapGapStyle: AppState["snapGapStyle"];
+    snapColor: AppState["snapColor"];
+    showResizeSizeBadge: AppState["showResizeSizeBadge"];
     zenModeEnabled: AppState["zenModeEnabled"];
     editingTextElement: AppState["editingTextElement"];
     // Cropping
@@ -550,6 +555,9 @@ export interface AppState {
     y: number;
   } | null;
   objectsSnapModeEnabled: boolean;
+  snapGapStyle: "pill" | "bracket" | "band";
+  snapColor: string;
+  showResizeSizeBadge: boolean;
   /** the user's socket id & username who is being followed on the canvas */
   userToFollow: UserToFollow | null;
   /** the socket ids of the users following the current user */

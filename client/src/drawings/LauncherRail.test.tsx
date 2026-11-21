@@ -13,9 +13,10 @@ const actions = (): LauncherActions & { [K in keyof LauncherActions]: ReturnType
   openTab: vi.fn(),
   toggleWriting: vi.fn(),
   toggleFrames: vi.fn(),
+  toggleSnap: vi.fn(),
 })
 
-const initial: LauncherState = { ready: true, activeTab: null, writingMode: false, framesVisible: true }
+const initial: LauncherState = { ready: true, activeTab: null, writingMode: false, framesVisible: true, objectsSnapModeEnabled: false }
 
 describe('createLauncherStore', () => {
   it('is the shared store (pinned in lib/store.test.ts) with the surface`s actions beside it', () => {
@@ -47,12 +48,13 @@ function render(state: Partial<LauncherState> = {}) {
 }
 
 describe('LauncherRail', () => {
-  it('is the hamburger plus the two toggles, and NOTHING else (🔒 YAZ-1775 D10: the tabs are the panel`s own strip)', () => {
+  it('is the hamburger plus the three toggles, and NOTHING else (🔒 YAZ-1775 D10: the tabs are the panel`s own strip)', () => {
     const { container: _c, button } = { ...render(), container }
-    expect(container.querySelectorAll('button')).toHaveLength(3)
+    expect(container.querySelectorAll('button')).toHaveLength(4)
     expect(button('Open workspace panel')).not.toBeNull()
     expect(button('Writing mode')).not.toBeNull()
     expect(button('Show frames')).not.toBeNull()
+    expect(button('Snap to objects')).not.toBeNull()
   })
 
   it('the hamburger says open or close depending on the panel, and toggles it', () => {
@@ -65,23 +67,28 @@ describe('LauncherRail', () => {
     expect(button('Close workspace panel')?.getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('the two toggles report their state and their tooltip says which way it is', () => {
-    const { acts, store, button } = render({ writingMode: true, framesVisible: false })
+  it('the toggles report their state and their tooltip says which way it is', () => {
+    const { acts, store, button } = render({ writingMode: true, framesVisible: false, objectsSnapModeEnabled: true })
     expect(button('Writing mode')?.getAttribute('aria-pressed')).toBe('true')
     expect(button('Writing mode')?.title).toBe('Writing: on')
     expect(button('Show frames')?.getAttribute('aria-pressed')).toBe('false')
     expect(button('Show frames')?.title).toBe('Frames: hidden')
+    expect(button('Snap to objects')?.getAttribute('aria-pressed')).toBe('true')
+    expect(button('Snap to objects')?.title).toBe('Snap to objects (Option+S)')
     act(() => button('Writing mode')?.click())
     act(() => button('Show frames')?.click())
+    act(() => button('Snap to objects')?.click())
     expect(acts.toggleWriting).toHaveBeenCalledTimes(1)
     expect(acts.toggleFrames).toHaveBeenCalledTimes(1)
+    expect(acts.toggleSnap).toHaveBeenCalledTimes(1)
     // The value comes back down through the store, never from the click (🔒 YAZ-1775 D9's round trip).
-    act(() => store.set({ writingMode: false }))
+    act(() => store.set({ writingMode: false, objectsSnapModeEnabled: false }))
     expect(button('Writing mode')?.title).toBe('Writing: off')
+    expect(button('Snap to objects')?.getAttribute('aria-pressed')).toBe('false')
   })
 
   it('everything is disabled until the engine has handed its API over', () => {
     const { button } = render({ ready: false })
-    for (const label of ['Open workspace panel', 'Writing mode', 'Show frames']) expect(button(label)?.disabled, label).toBe(true)
+    for (const label of ['Open workspace panel', 'Writing mode', 'Show frames', 'Snap to objects']) expect(button(label)?.disabled, label).toBe(true)
   })
 })

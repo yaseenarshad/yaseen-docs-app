@@ -31,7 +31,7 @@
  */
 
 import { isRecord } from './guards'
-import { DEFAULT_CANVAS_PREFS, NEW_ELEMENT_STYLE_MODES, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_MODES, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FOLD_ARROW_THICKNESSES, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, TEXT_EDGE_DOUBLE_CLICK_MODES, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowPrefs, type FoldArrowThickness, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign, type TextEdgeDoubleClickMode } from './types'
+import { DEFAULT_CANVAS_PREFS, NEW_ELEMENT_STYLE_MODES, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_MODES, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FOLD_ARROW_THICKNESSES, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, SNAP_GAP_STYLES, TEXT_ALIGNS, TEXT_EDGE_DOUBLE_CLICK_MODES, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowPrefs, type FoldArrowThickness, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type SnapGapStyle, type TextAlign, type TextEdgeDoubleClickMode } from './types'
 
 /** Every pref key, in declaration order — the order `changedPrefKeys` reports in. */
 export const CANVAS_PREF_KEYS = Object.keys(DEFAULT_CANVAS_PREFS) as ReadonlyArray<keyof CanvasPrefs>
@@ -39,10 +39,14 @@ export const CANVAS_PREF_KEYS = Object.keys(DEFAULT_CANVAS_PREFS) as ReadonlyArr
 const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
 /** A stroke width is a positive number the engine could actually draw with; 0 and NaN are not widths. */
 const isWidth = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 100
+const SNAP_COLOR_HEX_RE = /^#[0-9a-fA-F]{6}$/
 
 const FIELD_OK: { [K in keyof CanvasPrefs]: (v: unknown) => v is CanvasPrefs[K] } = {
   gridModeEnabled: isBool,
   objectsSnapModeEnabled: isBool,
+  snapGapStyle: (v): v is SnapGapStyle => typeof v === 'string' && (SNAP_GAP_STYLES as readonly string[]).includes(v),
+  snapColor: (v): v is string => typeof v === 'string' && SNAP_COLOR_HEX_RE.test(v),
+  showResizeSizeBadge: isBool,
   snapToMidpoints: isBool,
   arrowBinding: isBool,
   selectOn: (v): v is SelectOn => typeof v === 'string' && (SELECT_ON_MODES as readonly string[]).includes(v),
@@ -95,6 +99,9 @@ export function sanitizeCanvasPrefs(raw: unknown): CanvasPrefs {
 export interface EngineAppStateSlice {
   gridModeEnabled?: boolean
   objectsSnapModeEnabled?: boolean
+  snapGapStyle?: string
+  snapColor?: string
+  showResizeSizeBadge?: boolean
   isMidpointSnappingEnabled?: boolean
   isBindingEnabled?: boolean
   boxSelectionMode?: 'contain' | 'overlap'
@@ -128,6 +135,15 @@ export function prefsToAppState(prefs: CanvasPrefs, keys: ReadonlyArray<keyof Ca
         break
       case 'objectsSnapModeEnabled':
         out.objectsSnapModeEnabled = prefs.objectsSnapModeEnabled
+        break
+      case 'snapGapStyle':
+        out.snapGapStyle = prefs.snapGapStyle
+        break
+      case 'snapColor':
+        out.snapColor = prefs.snapColor
+        break
+      case 'showResizeSizeBadge':
+        out.showResizeSizeBadge = prefs.showResizeSizeBadge
         break
       case 'snapToMidpoints':
         out.isMidpointSnappingEnabled = prefs.snapToMidpoints
@@ -207,6 +223,9 @@ export function appStateToPrefs(appState: EngineAppStateSlice, fallback: CanvasP
   return {
     gridModeEnabled: isBool(appState.gridModeEnabled) ? appState.gridModeEnabled : fallback.gridModeEnabled,
     objectsSnapModeEnabled: isBool(appState.objectsSnapModeEnabled) ? appState.objectsSnapModeEnabled : fallback.objectsSnapModeEnabled,
+    snapGapStyle: FIELD_OK.snapGapStyle(appState.snapGapStyle) ? appState.snapGapStyle : fallback.snapGapStyle,
+    snapColor: FIELD_OK.snapColor(appState.snapColor) ? appState.snapColor : fallback.snapColor,
+    showResizeSizeBadge: isBool(appState.showResizeSizeBadge) ? appState.showResizeSizeBadge : fallback.showResizeSizeBadge,
     snapToMidpoints: isBool(appState.isMidpointSnappingEnabled) ? appState.isMidpointSnappingEnabled : fallback.snapToMidpoints,
     arrowBinding: isBool(appState.isBindingEnabled) ? appState.isBindingEnabled : fallback.arrowBinding,
     selectOn: appState.boxSelectionMode === 'contain' ? 'wrap' : appState.boxSelectionMode === 'overlap' ? 'overlap' : fallback.selectOn,

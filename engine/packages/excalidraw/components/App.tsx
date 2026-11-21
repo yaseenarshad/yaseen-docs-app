@@ -382,6 +382,9 @@ import {
   actionToggleCropEditor,
   actionToggleColorEditor,
   actionToggleGifPlayback,
+  actionTidyUp,
+  distributeHorizontally,
+  distributeVertically,
 } from "../actions";
 import { actionWrapTextInContainer } from "../actions/actionBoundText";
 import { actionPaste, actionPasteAtFullSize } from "../actions/actionClipboard";
@@ -473,6 +476,7 @@ import { Fonts } from "../fonts";
 import { editorJotaiStore, type WritableAtom } from "../editor-jotai";
 import { ImageSceneDataError } from "../errors";
 import {
+  getAltHoverMeasureLines,
   getSnapLinesAtPointer,
   snapDraggedElements,
   isActiveToolNonLinearSnappable,
@@ -895,6 +899,8 @@ class App extends React.Component<AppProps, AppState> {
   private selectionHover: SelectionHover | null = null;
   /** YAZ-4469: what the current pointer move found; `handleCanvasPointerMove` applies it once. */
   private selectionHoverNext: NonDeleted<ExcalidrawElement> | null = null;
+  /** YAZ-6069 D7: true while Option/Alt-hover distance measurement guides are active. */
+  private showingAltMeasureSnaps = false;
   /** The scene's fonts are loaded: a pill's box can be measured. */
   private hostLinkFontsReady = false;
   /** YAZ-4101 3D: moves when the text editor's selection shows another style. */
@@ -1016,7 +1022,7 @@ class App extends React.Component<AppProps, AppState> {
       viewModeEnabled = false,
       zenModeEnabled = false,
       gridModeEnabled = false,
-      objectsSnapModeEnabled = false,
+      objectsSnapModeEnabled = defaultAppState.objectsSnapModeEnabled,
       theme = defaultAppState.theme,
       name = `${t("labels.untitled")}-${getDateTime()}`,
     } = props;
@@ -3478,6 +3484,14 @@ class App extends React.Component<AppProps, AppState> {
 
   private onBlur = withBatchedUpdates(() => {
     isHoldingSpace = false;
+    if (this.showingAltMeasureSnaps) {
+      this.showingAltMeasureSnaps = false;
+      this.setState((prevState) => ({
+        isBindingEnabled: prevState.bindingPreference === "enabled",
+        snapLines: prevState.snapLines.length ? [] : prevState.snapLines,
+      }));
+      return;
+    }
     this.setState({
       isBindingEnabled: this.state.bindingPreference === "enabled",
     });
@@ -6528,6 +6542,20 @@ class App extends React.Component<AppProps, AppState> {
         } else {
           maybeHandleArrowPointlikeDrag({ app: this, event });
         }
+        if (
+          !event.repeat &&
+          !this.state.newElement &&
+          !this.state.selectedElementsAreBeingDragged &&
+          !this.state.selectionElement &&
+          this.lastPointerMoveCoords &&
+          (this.state.activeTool.type === "selection" ||
+            this.state.activeTool.type === "lasso")
+        ) {
+          this.updateAltHoverMeasureSnaps(
+            this.lastPointerMoveCoords.x,
+            this.lastPointerMoveCoords.y,
+          );
+        }
       }
 
       if (this.maybeHandleLaserKeyDown(event)) {
@@ -6889,6 +6917,12 @@ class App extends React.Component<AppProps, AppState> {
 
     if (event.key === KEYS.ALT) {
       maybeHandleArrowPointlikeDrag({ app: this, event });
+      if (this.showingAltMeasureSnaps) {
+        this.showingAltMeasureSnaps = false;
+        this.setState((prevState) =>
+          prevState.snapLines.length ? { snapLines: [] } : null,
+        );
+      }
     }
 
     if (
@@ -9441,6 +9475,44 @@ class App extends React.Component<AppProps, AppState> {
    * names it only when a click there selects it, so every early return (a
    * handle, a tool, a fold arrow, a link icon) leaves no outline.
    */
+  private updateAltHoverMeasureSnaps = (
+    scenePointerX: number,
+    scenePointerY: number,
+  ) => {
+    const selectedElements = this.scene.getSelectedElements(this.state);
+    if (selectedElements.length === 0) {
+      if (this.showingAltMeasureSnaps) {
+        this.showingAltMeasureSnaps = false;
+        this.setState((prevState) =>
+          prevState.snapLines.length ? { snapLines: [] } : null,
+        );
+      }
+      return;
+    }
+
+    const hoveredElement = this.getElementAtPosition(
+      scenePointerX,
+      scenePointerY,
+      { includeLockedElements: true },
+    );
+    const measureLines = getAltHoverMeasureLines(
+      selectedElements,
+      hoveredElement,
+      this.scene.getNonDeletedElements(),
+      this.scene.getNonDeletedElementsMap(),
+    );
+    this.showingAltMeasureSnaps = measureLines.length > 0;
+    this.setState((prevState) => {
+      const nextSnapLines = updateStable(prevState.snapLines, measureLines);
+      if (prevState.snapLines === nextSnapLines) {
+        return null;
+      }
+      return {
+        snapLines: nextSnapLines,
+      };
+    });
+  };
+
   private handleCanvasPointerMove = (
     event: React.PointerEvent<HTMLCanvasElement>,
   ) => {
@@ -9553,14 +9625,24 @@ class App extends React.Component<AppProps, AppState> {
       !this.state.selectedElementsAreBeingDragged &&
       !this.state.selectionElement
     ) {
-      this.setState((prevState) => {
-        if (prevState.snapLines.length) {
-          return {
-            snapLines: [],
-          };
-        }
-        return null;
-      });
+      if (
+        event.altKey &&
+        !event.buttons &&
+        (this.state.activeTool.type === "selection" ||
+          this.state.activeTool.type === "lasso")
+      ) {
+        this.updateAltHoverMeasureSnaps(scenePointerX, scenePointerY);
+      } else if (this.showingAltMeasureSnaps || this.state.snapLines.length) {
+        this.showingAltMeasureSnaps = false;
+        this.setState((prevState) => {
+          if (prevState.snapLines.length) {
+            return {
+              snapLines: [],
+            };
+          }
+          return null;
+        });
+      }
     }
 
     if (
@@ -10292,7 +10374,8 @@ class App extends React.Component<AppProps, AppState> {
       this.setState({ contextMenu: null });
     }
 
-    if (this.state.snapLines) {
+    if (this.showingAltMeasureSnaps || this.state.snapLines.length) {
+      this.showingAltMeasureSnaps = false;
       this.setAppState({ snapLines: [] });
     }
 
@@ -13048,6 +13131,7 @@ class App extends React.Component<AppProps, AppState> {
           this.maybeCacheVisibleGaps(event, selectedElements);
           this.maybeCacheReferenceSnapPoints(event, selectedElements);
 
+          this.showingAltMeasureSnaps = false;
           const { snapOffset, snapLines } = snapDraggedElements(
             originalElements,
             dragOffset,
@@ -15982,6 +16066,10 @@ class App extends React.Component<AppProps, AppState> {
       actionBindText,
       actionWrapTextInContainer,
       actionUngroup,
+      CONTEXT_MENU_SEPARATOR,
+      actionTidyUp,
+      distributeHorizontally,
+      distributeVertically,
       CONTEXT_MENU_SEPARATOR,
       actionAddToLibrary,
       ...zIndexActions,

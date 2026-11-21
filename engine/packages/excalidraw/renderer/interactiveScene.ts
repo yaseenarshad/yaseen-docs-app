@@ -84,7 +84,7 @@ import type {
   NonDeletedSceneElementsMap,
 } from "@excalidraw/element/types";
 
-import { renderSnaps } from "../renderer/renderSnaps";
+import { renderResizeSizeBadge, renderSnaps } from "../renderer/renderSnaps";
 import { roundRect } from "../renderer/roundRect";
 import {
   getScrollBars,
@@ -2132,6 +2132,7 @@ const _renderInteractiveScene = ({
   });
 
   renderSnaps(context, appState);
+  renderResizeSizeBadge(context, appState, selectedElements);
 
   context.restore();
 

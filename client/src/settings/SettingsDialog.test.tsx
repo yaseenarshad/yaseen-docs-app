@@ -171,7 +171,7 @@ const TABLES_GROUPS = ['All tables', 'Cell notes', 'Calendar tables']
  * Settings › Drawings and diagrams (YAZ-3037; the name since YAZ-4748 D11): one row per `CanvasPrefs` key the page shows, in
  * its groups, then the draw.io diagrams group, whose one row moved here from Appearance.
  */
-const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'textEdgeDoubleClick', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'embedRestSeconds', 'newBoardFolder', 'diagramDarkColors']
+const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapGapStyle', 'snapColor', 'showResizeSizeBadge', 'measureDistancesInfo', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'textEdgeDoubleClick', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'embedRestSeconds', 'newBoardFolder', 'diagramDarkColors']
 /** Settings › Images (YAZ-3038): the Pixabay key, the library folder and the favorites (YAZ-4363), then the icon packs (YAZ-4359). */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPacks', 'mediaHoverZoom', 'mediaHoverZoomSize']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
@@ -2295,9 +2295,9 @@ describe('SettingsDialog search (D6)', () => {
     )
     type(searchInput(el), 'spacing')
     // The page's bullet spacing (the YAZ-3818 demo) too, under Outline. The sidebar's Row spacing (YAZ-5885) between them.
-    expect(headings(el)).toEqual(['Appearance › Spacing', 'Sidebar › Rows', 'Editor › Outline'])
-    // YAZ-5050 round 2: the Spacing preview with its rows.
-    expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'sidebarRowHeight', 'pageBulletIndent', 'pageBulletGap'])
+    expect(headings(el)).toEqual(['Appearance › Spacing', 'Sidebar › Rows', 'Editor › Outline', 'Drawings and diagrams › Drawing aids'])
+    // YAZ-5050 round 2: the Spacing preview with its rows; YAZ-5986: Drawing aids spacing rows.
+    expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'sidebarRowHeight', 'pageBulletIndent', 'pageBulletGap', 'canvas.snapGapStyle', 'canvas.snapColor', 'canvas.measureDistancesInfo'])
     // Comments is a group of Appearance now, so its breadcrumb says so.
     type(searchInput(el), 'comments')
     // A code key's row says "comment" too (YAZ-3564). General › You (YAZ-4615 D7, who you comment as) leads, then the Appearance group.
@@ -2338,8 +2338,8 @@ describe('SettingsDialog search (D6)', () => {
       const { el } = mount()
       type(searchInput(el), 'spacing')
       const arrows = [...el.querySelectorAll<HTMLButtonElement>('.settings-search__goto')]
-      // Appearance › Spacing, Sidebar › Rows (YAZ-5885), Editor › Outline.
-      expect(arrows.map((b) => b.getAttribute('aria-label'))).toEqual(['Show in settings', 'Show in settings', 'Show in settings'])
+      // Appearance › Spacing, Sidebar › Rows (YAZ-5885), Editor › Outline, Drawings and diagrams › Drawing aids (YAZ-5986).
+      expect(arrows.map((b) => b.getAttribute('aria-label'))).toEqual(['Show in settings', 'Show in settings', 'Show in settings', 'Show in settings'])
       act(() => arrows[2]!.click())
       expect(searchInput(el).value).toBe('')
       expect(headings(el)).toEqual(['Editor'])

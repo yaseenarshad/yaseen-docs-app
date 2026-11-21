@@ -8,7 +8,10 @@ describe('DEFAULT_CANVAS_PREFS', () => {
   it('is the engine`s own defaults (🔒 YAZ-1775 D9: the fork`s appState.ts / constants.ts)', () => {
     expect(DEFAULT_CANVAS_PREFS).toEqual({
       gridModeEnabled: false,
-      objectsSnapModeEnabled: false,
+      objectsSnapModeEnabled: true,
+      snapGapStyle: 'pill',
+      snapColor: '#e024a7',
+      showResizeSizeBadge: false,
       snapToMidpoints: true,
       arrowBinding: true,
       selectOn: 'wrap',
@@ -45,8 +48,8 @@ describe('DEFAULT_CANVAS_PREFS', () => {
     })
   })
 
-  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247), the four fold arrow keys, "New shapes and text", "Text color follows the fill" and "New shapes match the zoom" (YAZ-4277), "Hover outline" (YAZ-4469 demo), "Double-click a text box edge" (YAZ-5771), and no more', () => {
-    expect(CANVAS_PREF_KEYS).toHaveLength(28)
+  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247), the four fold arrow keys, "New shapes and text", "Text color follows the fill" and "New shapes match the zoom" (YAZ-4277), "Hover outline" (YAZ-4469 demo), "Double-click a text box edge" (YAZ-5771), "Snap gap style", "Snap guide color" & "Show size while resizing" (YAZ-5986), and no more', () => {
+    expect(CANVAS_PREF_KEYS).toHaveLength(31)
     expect(CANVAS_PREF_KEYS.slice(-12, -9)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
     expect(CANVAS_PREF_KEYS.slice(-9)).toEqual(['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize', 'newElementStyle', 'fillSetsTextColor', 'newShapesMatchZoom', 'hoverOutline', 'textEdgeDoubleClick'])
     // The round-4 amendment removed the properties-toolbar pref: the toolbar mode is a constant.
@@ -120,7 +123,10 @@ describe('prefsToAppState', () => {
   it('maps every key onto the engine`s own name, defaults included', () => {
     expect(prefsToAppState(prefs())).toEqual({
       gridModeEnabled: false,
-      objectsSnapModeEnabled: false,
+      objectsSnapModeEnabled: true,
+      snapGapStyle: 'pill',
+      snapColor: '#e024a7',
+      showResizeSizeBadge: false,
       isMidpointSnappingEnabled: true,
       isBindingEnabled: true,
       boxSelectionMode: 'contain',
@@ -186,6 +192,9 @@ describe('appStateToPrefs', () => {
     expect(appStateToPrefs(full, keep)).toEqual({
       gridModeEnabled: true,
       objectsSnapModeEnabled: true,
+      snapGapStyle: 'pill',
+      snapColor: '#e024a7',
+      showResizeSizeBadge: false,
       snapToMidpoints: false,
       arrowBinding: false,
       selectOn: 'overlap',
