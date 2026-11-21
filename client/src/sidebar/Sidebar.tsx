@@ -24,7 +24,8 @@ import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, copyDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile, treeHasPath } from '../lib/treeState'
 import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { landOnCard } from '../editor/card/cardOpen'
-import { landOnInlineDrawing } from '../editor/drawing/inlineDrawingLand'
+import { inlineRowMenuSections } from './inlineRowMenu'
+import { ScopeConfirm } from './ScopeConfirm'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
 import { useReviewOnRoots } from '../review/useReviewSettings'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -2629,38 +2630,19 @@ export function Sidebar({
         <UpdatePill update={update} onOpen={onOpenWhatsNew} />
       </div>
       <RowDateTip body={bodyRef} />
-      {askScope !== null &&
-        createPortal(
-          (() => {
-            const { kind, paths, scope } = askScope
-            const list = kind === 'focus' ? 'focus' : 'favorites'
-            const other = scope === 'workspace' ? 'vault' : 'workspace'
-            const stays = lists.scopesOf(kind, paths)[other]
-            const what = paths.length === 1 ? `"${basename(paths[0]).replace(/\.md$/i, '')}"` : `${paths.length} items`
-            return (
-              <ConfirmSheet
-                labelId="confirm-scope-off-text"
-                text={
-                  <>
-                    <strong>
-                      Remove {what} from the {scope} {list}?
-                    </strong>
-                    <br />
-                    {paths.length === 1 ? 'It leaves' : 'They leave'} this list. {stays ? `${paths.length === 1 ? 'It stays' : 'They stay'} in the ${other} ${list}.` : `${paths.length === 1 ? 'It is' : 'They are'} in no other ${list} list.`} Your files do not change.
-                  </>
-                }
-                confirmLabel="Remove"
-                danger
-                onConfirm={() => {
-                  setAskScope(null)
-                  lists.setScope(kind, paths, scope, false)
-                }}
-                onCancel={() => setAskScope(null)}
-              />
-            )
-          })(),
-          document.body,
-        )}
+      {askScope !== null && (
+        <ScopeConfirm
+          kind={askScope.kind}
+          paths={askScope.paths}
+          scope={askScope.scope}
+          staysInOther={lists.scopesOf(askScope.kind, askScope.paths)[askScope.scope === 'workspace' ? 'vault' : 'workspace']}
+          onConfirm={() => {
+            setAskScope(null)
+            lists.setScope(askScope.kind, askScope.paths, askScope.scope, false)
+          }}
+          onCancel={() => setAskScope(null)}
+        />
+      )}
       {/* An Inbox row's menu (YAZ-5054): "Open in new tab" goes to the window's Inbox (one per window), or opens it. */}
       {inboxMenu !== null && (
         <ContextMenu
@@ -2674,17 +2656,7 @@ export function Sidebar({
         <ContextMenu
           x={inlineRowMenu.x}
           y={inlineRowMenu.y}
-          sections={[
-            inlineRowMenu.card.inlineDrawing === true
-              ? [
-                  { id: 'open-drawing-tab', label: 'Open in new tab', onSelect: () => openSearchCard(inlineRowMenu.card, true) },
-                  { id: 'show-in-page', label: unit('Show in page'), onSelect: () => { const page = inlineRowMenu.card.page ?? inlineRowMenu.card.path; if (inlineRowMenu.card.index !== undefined) landOnInlineDrawing(page, inlineRowMenu.card.index); onOpenFile(page) } },
-                ]
-              : [
-                  { id: 'open-card-tab', label: 'Open in new tab', onSelect: () => { const page = inlineRowMenu.card.page ?? inlineRowMenu.card.path; if (inlineRowMenu.card.id !== undefined) landOnCard(page, inlineRowMenu.card.id); onOpenFileBackground(page) } },
-                  { id: 'show-in-page', label: unit('Show in page'), onSelect: () => { const page = inlineRowMenu.card.page ?? inlineRowMenu.card.path; if (inlineRowMenu.card.id !== undefined) landOnCard(page, inlineRowMenu.card.id); onOpenFile(page) } },
-                ],
-          ]}
+          sections={inlineRowMenuSections(inlineRowMenu.card, { openSearchCard, onOpenFile, onOpenFileBackground, unit })}
           onClose={() => setInlineRowMenu(null)}
         />
       )}

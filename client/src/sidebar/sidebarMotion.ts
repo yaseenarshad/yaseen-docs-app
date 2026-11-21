@@ -4,7 +4,9 @@
  * ProseMirror/flex reflows); Web Animations API glides on the compositor for 120 ms and
  * leaves no leftover `transform` when finished.
  */
-import { useLayoutEffect, useRef, type RefObject } from 'react'
+import { useLayoutEffect, useRef, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
+import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W } from '@shared/types'
+import { holdColResize } from '../lib/colResize'
 
 const SIDEBAR_GLIDE_MS = 120
 const SIDEBAR_GLIDE_EASING = 'cubic-bezier(0.16, 1, 0.3, 1)'
@@ -97,4 +99,54 @@ export function useSidebarMotion(shellRef: RefObject<HTMLElement | null>, collap
       animateSidebarWidthChange(main, prev.width - width)
     }
   }, [shellRef, collapsed, width, disabled, resizing])
+}
+
+export interface SidebarResizeCallbacks {
+  start: number
+  shellRef: RefObject<HTMLElement | null>
+  asideRef: RefObject<HTMLElement | null>
+  overlayAt: (width: number) => boolean
+  setResizing: (on: boolean) => void
+  setWidth: (width: number) => void
+  onCollapse: () => void
+  onCommit: (width: number, changed: boolean) => void
+}
+
+/** Handles left-button sidebar edge drag (YAZ-2239, YAZ-3511 D18, YAZ-3719 1B) with zero per-move React renders. */
+export function beginSidebarResize(e: ReactMouseEvent, cb: SidebarResizeCallbacks): void {
+  if (e.button !== 0) return
+  e.preventDefault()
+  const { start, shellRef, asideRef, overlayAt, setResizing, setWidth, onCollapse, onCommit } = cb
+  const x0 = e.clientX
+  let raw = start
+  let width = start
+  let rendered = start
+  const move = (ev: MouseEvent) => {
+    raw = start + ev.clientX - x0
+    width = Math.max(SIDEBAR_MIN_W, Math.min(SIDEBAR_MAX_W, window.innerWidth - MAIN_WORKSPACE_MIN_W, raw))
+    if (shellRef.current !== null) shellRef.current.style.width = `${width}px`
+    if (asideRef.current !== null) asideRef.current.style.width = `${width}px`
+    if (overlayAt(width) !== overlayAt(rendered)) {
+      rendered = width
+      setWidth(width)
+    }
+  }
+  const up = () => {
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', up)
+    holdColResize(false)
+    setResizing(false)
+    if (raw < SIDEBAR_MIN_W * 0.6) {
+      if (asideRef.current !== null) asideRef.current.style.width = `${start}px`
+      setWidth(start)
+      onCollapse()
+      return
+    }
+    setWidth(width)
+    onCommit(width, width !== start)
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', up)
+  holdColResize(true)
+  setResizing(true)
 }

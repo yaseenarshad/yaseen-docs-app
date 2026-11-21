@@ -8490,7 +8490,7 @@ describe('App CLI navigation acknowledgement (YAZ-4502)', () => {
     const path = '/v/Journal.md'
     const { bridge, el, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Journal', mtime: 1 } })
     await act(async () => emitAutomation({ id: 'nav-2', action: 'navigate', target: { path } }))
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(visibleSidebar(el)).toBeNull()
     expect(bridge.automation.reply).toHaveBeenCalledWith({ id: 'nav-2', ok: true, value: expect.objectContaining({ path, sidebarCollapsed: true }) })
   })
   it('tells main the window is ready for navigation once it mounts', async () => {

@@ -6,7 +6,7 @@ import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import { sanitizeSpacing, spacingOf, spacingVars, type PageSpacing, type TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -26,8 +26,7 @@ import { countLinkReferences, linkingPages, renameNotice, updateLinksAfterRename
 import type { Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type ReorderStep, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
-import { holdColResize } from './lib/colResize'
-import { useSidebarMotion } from './sidebar/sidebarMotion'
+import { beginSidebarResize, useSidebarMotion } from './sidebar/sidebarMotion'
 import { dropIndex } from './lib/dragSlot'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -854,54 +853,23 @@ export function App() {
   }, [filesWindow])
 
 
-  // Dragging past 60% of the minimum reads as "close it" rather than "make it tiny" — the
-  // sidebar collapses and the remembered width stays whatever it was before the drag.
+  // Dragging past 60% of the minimum reads as "close it" rather than "make it tiny" (YAZ-2239, YAZ-3511 D18).
   const startSidebarResize = useCallback(
-    (e: ReactMouseEvent) => {
-      // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
-      if (e.button !== 0) return
-      e.preventDefault()
-      const start = sidebarWidth
-      const x0 = e.clientX
-      let raw = start
-      let width = start
-      // The width in state, which the right panel's overlay decision reads.
-      let rendered = start
-      // Each move writes the width straight to the aside (YAZ-2239): state per move re-rendered the
-      // whole app on every mouse move. State follows at the move that flips the right panel between
-      // split and overlay, so that still happens live, and on mouseup.
-      const move = (ev: MouseEvent) => {
-        raw = start + ev.clientX - x0
-        // As wide as the page lets it (YAZ-3511 D18): the page keeps MAIN_WORKSPACE_MIN_W.
-        width = Math.max(SIDEBAR_MIN_W, Math.min(SIDEBAR_MAX_W, window.innerWidth - MAIN_WORKSPACE_MIN_W, raw))
-        if (sidebarShellRef.current !== null) sidebarShellRef.current.style.width = `${width}px`
-        if (sidebarRef.current !== null) sidebarRef.current.style.width = `${width}px`
-        if (overlayAtRef.current(width) !== overlayAtRef.current(rendered)) {
-          rendered = width
-          setSidebarWidth(width)
-        }
-      }
-      const up = () => {
-        window.removeEventListener('mousemove', move)
-        window.removeEventListener('mouseup', up)
-        holdColResize(false)
-        setResizing(false)
-        if (raw < SIDEBAR_MIN_W * 0.6) {
-          if (sidebarRef.current !== null) sidebarRef.current.style.width = `${start}px`
-          setSidebarWidth(start)
-          toggleSidebar()
-          return
-        }
-        setSidebarWidth(width)
-        if (width !== start) storage.setSidebarWidth(width)
-        const s = storage.getSettings()
-        if (s.sidebarPlace === 'tab' && s.sidebarPerTabWidth !== false && shownRef.current !== null) saveWidth(shownRef.current, width)
-      }
-      window.addEventListener('mousemove', move)
-      window.addEventListener('mouseup', up)
-      holdColResize(true)
-      setResizing(true)
-    },
+    (e: ReactMouseEvent) =>
+      beginSidebarResize(e, {
+        start: sidebarWidth,
+        shellRef: sidebarShellRef,
+        asideRef: sidebarRef,
+        overlayAt: (w) => overlayAtRef.current(w),
+        setResizing,
+        setWidth: setSidebarWidth,
+        onCollapse: toggleSidebar,
+        onCommit: (width, changed) => {
+          if (changed) storage.setSidebarWidth(width)
+          const s = storage.getSettings()
+          if (s.sidebarPlace === 'tab' && s.sidebarPerTabWidth !== false && shownRef.current !== null) saveWidth(shownRef.current, width)
+        },
+      }),
     [sidebarWidth, toggleSidebar],
   )
 

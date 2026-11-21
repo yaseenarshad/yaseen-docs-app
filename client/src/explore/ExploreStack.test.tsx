@@ -202,7 +202,7 @@ async function typeQuery(text: string) {
   await flush()
 }
 /** Each row's title, without its id (round 1, item 1: the id is its own span after the title). */
-const rows = () => [...top().querySelectorAll<HTMLElement>('.search-results__row')].map((r) => [...(r.querySelector('.search-results__label')?.childNodes ?? [])].filter((n) => !(n instanceof HTMLElement && n.classList.contains('explore__id'))).map((n) => n.textContent).join(''))
+const rows = () => [...top().querySelectorAll<HTMLElement>('.search-results__row')].map((r) => [...(r.querySelector('.search-results__label')?.childNodes ?? [])].filter((n) => !(n instanceof HTMLElement && (n.classList.contains('explore__id') || n.classList.contains('explore__inline-pill')))).map((n) => n.textContent).join(''))
 async function openResult() {
   key(input(), { key: 'Enter' })
   await flush()
