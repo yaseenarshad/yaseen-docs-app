@@ -18,13 +18,28 @@
  * word a Space just showed stays still, to study it. A Space never scrolls after it shows; when what it would show is
  * out of view, that Space only scrolls (`spaceMove`), and the next one shows. This replaces round 3's follow.
  */
-import { SHOW_GAP, leastScroll, type Span } from '../editor/find/leastScroll'
+import type { Span } from '../editor/find/leastScroll'
 import { cssZoom } from '../lib/cssZoom'
 
 /** Where a word may sit before the view moves: the top two thirds of the room. */
 export const READ_LINE = 2 / 3
 /** Where a move puts the word: a third of the way down the room. */
 export const LAND_LINE = 1 / 3
+/** Fraction of visible height per Up/Down press (YAZ-6057), matching Space's ~1/3-viewport glide. */
+export const ARROW_SCROLL_FRACTION = 0.35
+/** Minimum step (CSS px) per Up/Down press on shorter windows. */
+export const ARROW_SCROLL_MIN_PX = 180
+/** Fraction of visible room per Space page-down after the final reveal (YAZ-6058), keeping ~30% reading overlap. */
+export const SPACE_PAGE_FRACTION = 0.7
+
+const arrowState = new WeakMap<HTMLElement, { target: number; at: number }>()
+const ARROW_CHAIN_MS = 300
+
+function scrollViewTo(view: HTMLElement, top: number): void {
+  const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
+  if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
+  else view.scrollTop = top
+}
 
 /** The scroll (screen px, + is down) that shows `thing` with room below it in `room`; 0 when it shows so already. */
 export function readingScroll(thing: Span, room: Span, gap = 6): number {
@@ -35,12 +50,11 @@ export function readingScroll(thing: Span, room: Span, gap = 6): number {
   return 0
 }
 
-/** The part of the Inbox's view (`.card-inbox`) that shows the card: under its sticky top row, over its sticky buttons. */
+/** The part of the Inbox's view (`.card-inbox`) that shows the card: under its sticky top row, down to the view's bottom (YAZ-6055: the dock sits in normal flow below the card, not sticky over it). */
 export function inboxRoom(view: HTMLElement): Span {
   const box = view.getBoundingClientRect()
   const top = view.querySelector('.card-inbox__top')?.getBoundingClientRect().bottom ?? box.top
-  const dock = view.querySelector('.card-inbox__dock')?.getBoundingClientRect().top ?? box.bottom
-  return { start: Math.max(box.top, top), end: Math.min(box.bottom, dock) }
+  return { start: Math.max(box.top, top), end: box.bottom }
 }
 
 /**
@@ -51,10 +65,34 @@ export const inRoom = (thing: Span, room: Span): boolean => thing.start >= room.
 
 /** Moves the Inbox's view by `dy` screen px: a glide, or at once with Reduce motion. The target is absolute, so a call during a glide lands right. */
 export function glideView(view: HTMLElement, dy: number): void {
-  const top = view.scrollTop + dy / cssZoom(view)
-  const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
-  if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
-  else view.scrollTop = top
+  arrowState.delete(view)
+  scrollViewTo(view, view.scrollTop + dy / cssZoom(view))
+}
+
+/** Smooth-scrolls `view` by a larger step on Up/Down (YAZ-6057). Chains target while held so repeats never stall. */
+export function arrowGlide(view: HTMLElement, delta: -1 | 1): void {
+  const max = Math.max(0, view.scrollHeight - view.clientHeight)
+  if (max < 1) return
+  const step = Math.max(ARROW_SCROLL_MIN_PX, Math.round(view.clientHeight * ARROW_SCROLL_FRACTION))
+  const now = Date.now()
+  const prev = arrowState.get(view)
+  const base = prev !== undefined && now - prev.at <= ARROW_CHAIN_MS ? prev.target : view.scrollTop
+  const target = Math.min(max, Math.max(0, base + delta * step))
+  if (Math.abs(target - view.scrollTop) < 1 && (prev === undefined || Math.abs(target - prev.target) < 1)) return
+  arrowState.set(view, { target, at: now })
+  scrollViewTo(view, target)
+}
+
+/**
+ * On a final blank reveal (YAZ-6058), smooth-scroll to the bottom only when the bottom is already close
+ * (<= half a viewport away), so Forgot / Remembered appear without skipping past unread text.
+ */
+export function glideToBottomIfNear(view: HTMLElement): void {
+  const max = Math.max(0, view.scrollHeight - view.clientHeight)
+  const remaining = max - view.scrollTop
+  if (remaining < 1 || remaining > view.clientHeight * 0.5) return
+  arrowState.delete(view)
+  scrollViewTo(view, max)
 }
 
 /**
@@ -101,7 +139,10 @@ function wantedMove(view: HTMLElement, target: SpaceTarget): number {
   }
   const edge = view.querySelector('.card-inbox__panel')?.getBoundingClientRect().bottom
   if (target === 'side') return edge === undefined ? 0 : readingScroll({ start: edge, end: edge }, room)
-  const strip = view.querySelector('.card-reviews--strip')?.getBoundingClientRect()
-  const end = strip !== undefined ? { start: strip.top, end: strip.bottom } : edge !== undefined ? { start: edge, end: edge } : null
-  return end === null ? 0 : leastScroll(end, room, SHOW_GAP)
+  // YAZ-6058: at the end, page down smoothly (~70% of visible room per Space) so long tails/Side 2 are read in chunks,
+  // snapping cleanly to the very bottom (showing Forgot / Remembered) once within ~1.2× a page step.
+  const remaining = Math.max(0, view.scrollHeight - view.clientHeight - view.scrollTop) * cssZoom(view)
+  if (remaining < 1) return 0
+  const page = Math.max(ARROW_SCROLL_MIN_PX, Math.round((room.end - room.start) * SPACE_PAGE_FRACTION))
+  return remaining <= page * 1.2 ? remaining : page
 }

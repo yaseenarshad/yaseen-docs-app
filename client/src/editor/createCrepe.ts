@@ -356,9 +356,10 @@ import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap,
 import { foldAllRows } from './outline/foldAllRows'
 import { openBulletRow } from './outline/openBulletRow'
 import { focusSidebar } from '../lib/focusHandoff'
-import { createWikilinkClick, wikilinkFollower, type LinkFollow, type WikilinkNav } from './wikilink/wikilinkClick'
+import { createWikilinkClick, wikilinkFollower, type LinkFollow, type LinkWhere, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu, linkMenuOf } from './wikilink/wikilinkMenu'
+import { linkMenuRows } from './linkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, linkCard, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { languages as codeLanguages } from '@codemirror/language-data'
@@ -373,7 +374,7 @@ import { mountCardEditor } from './card/cardEditor'
 import { changeCardLine } from '../review/cardFile'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createPillSelection } from './wikilink/pillSelection'
-import { createMarkdownLink, noPreviewOnPills, type MarkdownLinkNav } from './markdownLink'
+import { createMarkdownLink, markdownLinkMenuOf, noPreviewOnPills, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
 import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -883,13 +884,14 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // A selected link is one lit box, not its letters alone (YAZ-3747 demo).
   crepe.editor.use(createPillSelection())
   // A click, the link menu's Open rows and a board embed's open follow a link the same way (YAZ-3609 D23, YAZ-4829).
+  const allowHighlight = opts.hidden?.toolbar?.includes('highlight') !== true
   const follow = opts.wikilinkNav === undefined ? undefined : wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)
   if (opts.wikilinkNav !== undefined && follow !== undefined) {
     const nav = opts.wikilinkNav
     // A plain click opens a page pill in Explore while the vault says so (YAZ-4936): a page that is there, never a board or a folder.
     // A card link's plain click always opens its card window (YAZ-5030), as Explore does a page's with the setting on.
     const exploreClick = (inner: string): boolean => linkCard(inner, wikilinks) !== null || (nav.exploreClick?.() === true && fileKind(linkPath(inner, wikilinks, viewOnlyLinks) ?? '') === 'markdown')
-    crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.(), exploreClick)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
+    crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.(), exploreClick)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters, allowHighlight))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   // Cards (YAZ-4961): a ```card block draws as a card in every editor that has code blocks (idea 10: the hover
@@ -897,7 +899,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const cardsHere = { ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false && opts.cardBlocks !== false
   const cardDeps = cardsHere ? cardDepsOf(opts, wikilinks, viewOnlyLinks, follow) : undefined
   if (cardDeps !== undefined) crepe.editor.use(cardBlockPlugins(cardDeps))
-  if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav, wikilinks)).config(noPreviewOnPills)
+  if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav, wikilinks, allowHighlight)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
   if (opts.boardEmbeds !== undefined) {
     // The same sources as the pills (YAZ-4827): a board's path and icon, its open, and its link's menu rows.
@@ -925,6 +927,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
                 follow,
                 hotkeys: cardDeps.hotkeys,
                 openHref: cardDeps.openHref,
+                pillMenu: cardDeps.pillMenu,
                 onNotice: cardDeps.onNotice,
                 putBack: opts.cards?.convert?.putBack,
                 reviews: cardDeps.reviews,
@@ -1100,6 +1103,12 @@ function cardDepsOf(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, 
   const image = opts.image
   const nav = opts.markdownLinkNav
   const look = cardLook(wikilinks, viewOnly, image === undefined ? undefined : { ...image, boardPicture: desktopBoardPicture }, opts.linkLook)
+  const followHref = (href: string, where: LinkWhere) => {
+    if (nav === undefined) return
+    const path = nav.inApp?.(href) ?? null
+    if (path !== null && nav.openPath !== undefined) nav.openPath(path, where)
+    else if (nav.elsewhere?.(href, where === 'backgroundTab') !== true) void nav.open(href)
+  }
   return {
     host: opts.cards,
     path: image?.pagePath ?? null,
@@ -1109,14 +1118,15 @@ function cardDepsOf(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, 
     subscribe: (listener) => wikilinks.subscribe(listener),
     follow,
     hotkeys: () => opts.wikilinkNav?.hotkeys?.(),
-    openHref:
-      nav === undefined
-        ? undefined
-        : (href) => {
-            const path = nav.inApp?.(href) ?? null
-            if (path !== null && nav.openPath !== undefined) nav.openPath(path, 'explore')
-            else void nav.open(href)
-          },
+    openHref: nav === undefined ? undefined : (href) => followHref(href, 'explore'),
+    pillMenu: (hit) => {
+      if (hit.kind === 'wikilink') {
+        if (opts.wikilinkNav === undefined || follow === undefined) return null
+        return linkMenuRows(linkMenuOf(hit.inner, wikilinks, opts.wikilinkNav, follow, viewOnly, opts.vaultsOfLetters, undefined, undefined))
+      }
+      if (nav === undefined) return null
+      return linkMenuRows(markdownLinkMenuOf(hit.href, nav, followHref))
+    },
     onNotice: opts.wikilinkNav?.onNotice ?? nav?.onNotice,
     reviews: opts.cardReviews,
     // Edit card with the page's editor (YAZ-5026): a second editor of this one's kind, with the card's on/off list.

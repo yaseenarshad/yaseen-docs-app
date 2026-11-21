@@ -22,6 +22,7 @@ import { blockMenuItems } from './blockHandleMenu'
 import { textLineTarget } from './blockHandleTarget'
 import { bulletToCopy, copyVisibleNext, forgetCopyVisible } from './clipboardCopyOut'
 import { addLinkOn } from './markdownLink'
+import { cardEditorViewFor } from './card/cardEditor'
 import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
 import { CellSelection, isInTable } from '@milkdown/kit/prose/tables'
@@ -233,6 +234,8 @@ export function imageMenuSections(image: { src: string; x: number; y: number }, 
 interface OpenMenu {
   x: number
   y: number
+  /** The ProseMirror view the menu acts on: the host view, or an inner card editor view (S1). */
+  view: EditorView
   /** The image right-clicked, by its `src` as loaded: then the menu is its rows only (D22). */
   image: string | null
   misspelling: Misspelling | null
@@ -282,39 +285,44 @@ export function PageMenu({ view, extra, reading = false }: { view: EditorView | 
   useEffect(() => {
     if (view === null) return
     // The selection before a right press (D15): the press can select the word under the pointer before the menu opens.
-    let pressed: { doc: EditorView['state']['doc']; selection: Selection } | null = null
+    let pressed: { view: EditorView; doc: EditorView['state']['doc']; selection: Selection } | null = null
     const onMouseDown = (event: MouseEvent) => {
-      if (event.button === 2 || event.ctrlKey) pressed = { doc: view.state.doc, selection: view.state.selection }
+      if (event.button === 2 || event.ctrlKey) {
+        const target = cardEditorViewFor(event.target) ?? view
+        pressed = { view: target, doc: target.state.doc, selection: target.state.selection }
+      }
     }
     // Only the latest right-click opens a menu: an earlier one still waiting for its guesses opens nothing.
     let latest = 0
     const onContextMenu = (event: MouseEvent) => {
-      const before = pressed !== null && pressed.doc === view.state.doc ? pressed.selection : view.state.selection
+      const target = cardEditorViewFor(event.target) ?? view
+      const before = pressed !== null && pressed.view === target && pressed.doc === target.state.doc ? pressed.selection : target.state.selection
       pressed = null
       // A link's own menu (`markdownLink.ts`, `wikilinkMenu.ts`) has claimed it first.
       if (event.defaultPrevented || !(event.target instanceof Element)) return
       event.preventDefault()
       const active = document.activeElement
       const image = event.target.closest('img')
-      const doc = view.state.doc
-      const pointer = pointerPos(view, event.target, event.clientX, event.clientY)
+      const doc = target.state.doc
+      const pointer = pointerPos(target, event.target, event.clientX, event.clientY)
       const ask = ++latest
       const open = (misspelling: Misspelling | null) => {
         // The page changed while the menu waited: its rows would act on old text.
-        if (ask !== latest || view.state.doc !== doc) return
+        if (ask !== latest || target.isDestroyed || target.state.doc !== doc) return
         setMenu({
           x: event.clientX,
           y: event.clientY,
+          view: target,
           image: image === null ? null : image.currentSrc || image.src,
           misspelling,
           pointer,
           doc,
           selection: before,
-          focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null,
+          focused: active instanceof HTMLElement && target.dom.contains(active) ? active : null,
           table: 'cells',
         })
       }
-      const word = image === null ? wordAt(view, event.clientX, event.clientY) : null
+      const word = image === null ? wordAt(target, event.clientX, event.clientY) : null
       if (word === null) return open(null)
       // YAZ-4464 D2: wait for the guesses, up to a limit; then open without them. A click or a key
       // anywhere during the wait means the person moved on: that menu opens nothing (S9).
@@ -332,10 +340,11 @@ export function PageMenu({ view, extra, reading = false }: { view: EditorView | 
     // A table's row or column handle (YAZ-3820): it selected its cells, and asks for this menu as a
     // right-click in `pos`, a cell of its row or column (the vendored table block, `operation.ts`).
     const onHandleMenu = (event: Event) => {
+      const target = cardEditorViewFor(event.target) ?? view
       const { x, y, pos } = (event as CustomEvent<{ x: number; y: number; pos: number }>).detail
       const active = document.activeElement
       // YAZ-4970: the row or column the handle selected names the menu: row actions, or column actions.
-      setMenu({ x, y, image: null, misspelling: null, pointer: pos + 1, doc: view.state.doc, selection: view.state.selection, focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null, table: handleKind(view.state.selection) })
+      setMenu({ x, y, view: target, image: null, misspelling: null, pointer: pos + 1, doc: target.state.doc, selection: target.state.selection, focused: active instanceof HTMLElement && target.dom.contains(active) ? active : null, table: handleKind(target.state.selection) })
     }
     view.dom.addEventListener('mousedown', onMouseDown, true)
     view.dom.addEventListener('contextmenu', onContextMenu)
@@ -373,26 +382,27 @@ export function PageMenu({ view, extra, reading = false }: { view: EditorView | 
       />
     )
   }
-  if (view === null || menu === null) return null
-  const pointer = menu.doc === view.state.doc ? menu.pointer : null
-  const refocus = () => (menu.focused ?? view.dom).focus()
+  if (view === null || menu === null || menu.view.isDestroyed) return null
+  const activeView = menu.view
+  const pointer = menu.doc === activeView.state.doc ? menu.pointer : null
+  const refocus = () => (menu.focused ?? activeView.dom).focus()
   const run = (action: PageMenuAction, arg?: PageMenuArg) => {
     refocus()
     // After the focus is back, so the bullet is checked against the selection the copy will see.
-    const bullet = action === 'copy-visible' && menu.pointer !== null && menu.doc === view.state.doc ? bulletToCopy(view.state, menu.pointer) : null
-    if (bullet !== null) copyVisibleNext(view, bullet)
+    const bullet = action === 'copy-visible' && menu.pointer !== null && menu.doc === activeView.state.doc ? bulletToCopy(activeView.state, menu.pointer) : null
+    if (bullet !== null) copyVisibleNext(activeView, bullet)
     api.menu.edit(action, arg).catch((error: unknown) => {
-      if (bullet !== null) forgetCopyVisible(view)
+      if (bullet !== null) forgetCopyVisible(activeView)
       console.error('Menu action failed', error)
     })
   }
-  const [spelling, ...rest] = pageMenuSections(view, menu.misspelling, run, pointer, reading, menu.table)
-  const more = extra?.() ?? []
+  const [spelling, ...rest] = pageMenuSections(activeView, menu.misspelling, run, pointer, reading, menu.table)
+  const more = activeView === view ? (extra?.() ?? []) : []
   return (
     <ContextMenu
       x={menu.x}
       y={menu.y}
-      sections={menu.image !== null ? imageMenuSections({ src: menu.image, x: menu.x, y: menu.y }, run) : [spelling, ...lineSections(view, pointer, menu.selection), ...rest, ...more]}
+      sections={menu.image !== null ? imageMenuSections({ src: menu.image, x: menu.x, y: menu.y }, run) : [spelling, ...lineSections(activeView, pointer, menu.selection), ...rest, ...more]}
       onClose={() => {
         setMenu(null)
         refocus()

@@ -48,11 +48,13 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { fileKind } from '@shared/fileKind'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
 import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
 import { tellReadOnlyEdit } from './readOnlyEdit'
 import { withCardNext } from '@shared/cardLine'
-import { DEFAULT_SETTINGS, isCardWidth, type CommentsOrder, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, isCardWidth, type CommentsOrder, type ContentPosition, type ContentWidth, type DiagramDarkColors, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type ZoomStep } from '@shared/types'
 import { readPagePosition, readPageWidth, writePagePosition, writePageWidth } from '@shared/pageSwitches'
 import { cardTextWidth, columnStart, positionOf, widthOf } from '../lib/contentWidth'
 import { storage } from '../lib/storage'
@@ -64,12 +66,20 @@ import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
 import { forgetNewCard, isNewCard } from '../review/newCardFile'
 import { CardPane, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
+import { useTransientCardWidth } from '../review/inboxCardWidth'
+import { arrowGlide } from '../review/inboxScroll'
 import { CardBand, CardId, CardNextChip, type CardStripPart } from '../review/cardParts'
 import { cardHeadMarks } from '../review/cardHeadMarks'
 import { PropertiesIcon } from '../views/view/icons'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
 import type { ExploreVault } from '../explore/ExplorePage'
-import { usePathTitles } from '../lib/pageLabel'
+import { usePathTitles, pageLabel } from '../lib/pageLabel'
+import type { AnchorRect } from '../sidebar/previewPlacement'
+import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
+import { ImageModal } from './image/ImageModal'
+import type { GalleryImage } from './image/imageOptions'
+import { linkOpenHint } from './linkGesture'
+import type { WikilinkHover } from './wikilink/wikilinkHover'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { cardMarksOf, cardMenuSections } from '../review/cardMenuView'
 import type { MenuSection } from '../sidebar/menuSections'
@@ -114,9 +124,18 @@ export interface CardFileViewProps {
   onOpenFile: (path: string) => void
   /** A link in the card, by its gesture (YAZ-3936). Absent → `onOpenFile`. */
   onOpenLink?: (path: string, where?: GestureAction) => void
+  /** A background-tab open for a link in the card (D2). Absent → `onOpenLink(p, 'backgroundTab')`. */
+  onOpenLinkBackground?: (path: string) => void
   /** A plain click on a link while the vault's "Clicking a link" says Explore (YAZ-4936). */
   onOpenExplore?: (path: string) => void
   exploreOnClick?: () => boolean
+  /** Where an unresolved `[[link]]` click or `[[` Create puts a new page, bound to the card file's path (D2). */
+  newPageFolderFor?: (path: string) => string
+  /** Link hover preview on resolved pills and Markdown links (D2). */
+  hoverLinks?: boolean
+  previewScope?: (path: string) => PreviewScope
+  diagramDarkColors?: DiagramDarkColors
+  hotkeys?: HotkeyOverrides
   onNotice?: (message: string) => void
   /** The file is no longer a card file (`kind: card` gone on disk): the page view, on the file just read. */
   onPage: (file: FileResponse) => void
@@ -159,7 +178,7 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, contentWidth, contentPosition, cardWidth, outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow, findFolds = DEFAULT_SETTINGS.findFolds }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, newPageFolderFor, hoverLinks = false, previewScope, diagramDarkColors = 'adapt', hotkeys, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, contentWidth, contentPosition, cardWidth, outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow, findFolds = DEFAULT_SETTINGS.findFolds }: CardFileViewProps) {
   const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
@@ -208,6 +227,26 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const shape = useMemo(() => (content === null ? null : cardFileShape(splitFrontmatter(content).body)), [content])
   const card = useMemo(() => (content === null ? null : cardInContent(path, content, null, 0)), [content, path])
   const titles = usePathTitles(wikilinks)
+  const [openImage, setOpenImage] = useState<{ images: GalleryImage[]; index: number } | null>(null)
+  const hotkeysRef = useRef(hotkeys)
+  hotkeysRef.current = hotkeys
+  const linkAt = useRef<{ path: string; rect: AnchorRect; editable: boolean } | null>(null)
+  const linkPreview = useCardPreview(hoverLinks, (p) => (linkAt.current?.path === p ? linkAt.current.rect : null))
+  const [linkHover] = useState<WikilinkHover>(() => ({
+    onHover: (p, rect, editable) => {
+      linkAt.current = { path: p, rect, editable }
+      linkPreview.hoverCard(p, p)
+    },
+    onLeave: () => {
+      if (linkAt.current !== null) linkPreview.leaveCard(linkAt.current.path)
+      linkAt.current = null
+    },
+  }))
+  const linkCard = (_: string, p: string): { root: string | null; name: string; hint?: string } => ({
+    root: null,
+    name: pageLabel(p, false, titles),
+    hint: linkOpenHint(hotkeysRef.current, linkAt.current?.editable ?? true, exploreOnClick?.() === true && fileKind(p) === 'markdown'),
+  })
   const settings = useVaultReviewSettings(root)
   const reviewOn = settings?.enabled === true
   const door = useContext(CardReviewDoor)
@@ -302,15 +341,18 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   /** The cog's "Outside changes glow" (YAZ-5925, D3): this file's own key, on the newest bytes; null follows Settings. */
   const changeGlow = (next: OutsideChangeGlow | null) =>
     void transformFile(path, (text) => writeOutsideGlow(text, next)).then(read, (err: unknown) => onNotice(`Outside changes glow could not change: ${err instanceof Error ? err.message : String(err)}`))
-  /** Done: the card's text, its sides only. The band is the only title: Edit card shows it, with no field (YAZ-5392). */
-  const editDone = (text: string) => {
+  /** Done: the card's text, plus any title change through App's title edit door (`onRetitle`, YAZ-6040). */
+  const editDone = (text: string, nextTitle?: string) => {
     setSave('saving')
+    const trimmed = nextTitle?.trim()
+    const renamed = trimmed !== undefined && trimmed !== '' && trimmed !== (card?.title ?? '') && onRetitle !== undefined
     writes.editDone(
       text,
       () => {
         setSave('saved')
         setEditing(false)
         tourEvent('card-edit-done', path)
+        if (renamed) void onRetitle(path, trimmed, 'file')
       },
       () => setSave('error'),
     )
@@ -330,6 +372,18 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   }
   const preview = () => card !== null && previewCardOf(bodyRef.current, path, card)
   const onKeyDown = (event: ReactKeyboardEvent) => {
+    // YAZ-6057: Up/Down scroll a larger, smooth step while reading a card page (never in fields or menus).
+    if (!editing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      const target = event.target instanceof Element ? event.target : null
+      if (target === null || target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="menu"], [role="listbox"]') === null) {
+        if (bodyRef.current !== null) {
+          event.preventDefault()
+          event.stopPropagation()
+          arrowGlide(bodyRef.current, event.key === 'ArrowUp' ? -1 : 1)
+          return
+        }
+      }
+    }
     // P (YAZ-5152): Preview, as the Inbox shows the card; nothing saved.
     if (!editing && card !== null && isCardPreviewKey(event)) {
       event.preventDefault()
@@ -344,10 +398,19 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   }
   const doors = {
     openLayer: (to: string) => (exploreOnClick?.() === true && onOpenExplore !== undefined ? onOpenExplore(to) : (onOpenLink ?? onOpenFile)(to)),
-    openTab: (to: string, where: GestureAction) => (onOpenLink === undefined ? onOpenFile(to) : onOpenLink(to, where)),
+    openTab: (to: string, where: GestureAction) =>
+      where === 'backgroundTab' && onOpenLinkBackground !== undefined
+        ? onOpenLinkBackground(to)
+        : onOpenLink === undefined
+          ? onOpenFile(to)
+          : onOpenLink(to, where),
     onNotice,
   }
 
+  // YAZ-6054: one-time in-memory drag-to-resize edges (resets to default when closed/reopened). Called before the
+  // early return below so the hook order never changes (rules-of-hooks).
+  const dragCentered = (readPagePosition(content ?? '') ?? positionOf(contentPosition ?? storage.getSettings()?.contentPosition)) !== 'left'
+  const dragWidth = useTransientCardWidth(bodyRef, bodyRef, path, dragCentered, 48)
   if (content === null || shape === null) return <p className="editor-msg">This card file is no longer there</p>
   const id = card?.id ?? null
   const notice = shapeNotice(shape.problem, shape.cards.length)
@@ -413,12 +476,18 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const ownWidth = readPageWidth(content)
   const ownPosition = readPagePosition(content)
   const width = ownWidth ?? defaultWidth
-  // Its own width sets its card's `--card-text-width`, and the column as wide (its 48 px sides), so Full fills the window.
-  const fileStyle = {
+  const effectivePos = ownPosition ?? appPosition
+  // YAZ-6053: let `--card-text-width` (from Settings or vault card-look.json) expand `.card-file__page` past narrow
+  // page `--content-text-width`, while preserving own-page `page-width` and transient drag overrides.
+  const fileStyle: CSSProperties = {
     '--document-zoom': zoom / 100,
-    '--column-start': columnStart(ownPosition ?? appPosition, width),
-    ...(ownWidth !== null && { '--card-text-width': cardTextWidth(ownWidth), '--content-max-width': `calc(${cardTextWidth(ownWidth)} + 96px)` }),
-  } as CSSProperties
+    '--column-start': columnStart(effectivePos, width),
+    ...(dragWidth.width !== null
+      ? { '--card-text-width': `${dragWidth.width}px`, '--content-max-width': `calc(${dragWidth.width}px + 130px)` }
+      : ownWidth !== null
+        ? { '--card-text-width': cardTextWidth(ownWidth), '--content-max-width': `calc(${cardTextWidth(ownWidth)} + 96px)` }
+        : { '--content-max-width': 'calc(max(var(--content-text-width), var(--card-text-width) + 34px) + 96px)' }),
+  } as unknown as CSSProperties
   const propertyCount = Object.keys(card?.properties ?? {}).length
   const propertiesLabel = propertyCount > 0 ? `Properties (${propertyCount})` : 'Properties'
 
@@ -487,7 +556,15 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               embeds
               fold
               glow={glow.body}
-              titleField="show"
+              createFolder={newPageFolderFor === undefined ? undefined : () => newPageFolderFor(path)}
+              openExplore={onOpenExplore}
+              exploreClick={exploreOnClick}
+              wikilinkHover={previewScope === undefined ? undefined : linkHover}
+              hotkeys={hotkeys}
+              onOpenImage={setOpenImage}
+              onEdgeDrag={dragWidth.startDrag}
+              onEdgeReset={dragWidth.reset}
+              titleField={!locked && onRetitle !== undefined ? 'edit' : 'show'}
               head={
                 <div className="card__head">
                   {id !== null && <CardId id={id} onNotice={onNotice} />}
@@ -523,6 +600,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
             column: the page's left edge, width and room above, never the card's width. */}
         {commentsOrder !== undefined && onChangeCommentsOrder !== undefined && <CommentsSection file={{ path, content }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />}
       </div>
+      {previewScope !== undefined && <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />}
+      {openImage !== null && <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />}
     </>
   )
 }

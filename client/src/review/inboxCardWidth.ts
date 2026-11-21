@@ -3,7 +3,7 @@
  * narrower, centred. The width lives in memory for the app's run — a card change, the Inbox tab closed and opened
  * again keep it; a quit forgets it. Nothing is written to disk.
  */
-import { useCallback, useEffect, useRef, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { cssZoom } from '../lib/cssZoom'
 
 /** The narrowest card (px). The widest is the Inbox tab's width less its side margins. */
@@ -75,4 +75,59 @@ export function useInboxCardWidth(column: RefObject<HTMLElement | null>, inbox: 
     [column, inbox, cardZoom],
   )
   return { width: current, startDrag }
+}
+
+/**
+ * One-time in-memory card width drag for Card Pages and Explore Cards (YAZ-6054): mirrors Inbox's left/right edge
+ * handles, but lives only in component state (never saved to disk, resets to default when closed and reopened).
+ * `resetKey` clears the override if the same mounted view switches to another card/path.
+ */
+export function useTransientCardWidth(
+  cardHost: RefObject<HTMLElement | null>,
+  scroller: RefObject<HTMLElement | null>,
+  resetKey: string,
+  centered = true,
+  sideMargin = 32,
+) {
+  const [width, setWidth] = useState<number | null>(null)
+  useEffect(() => {
+    setWidth(null)
+  }, [resetKey])
+  const drag = useRef<(() => void) | null>(null)
+  useEffect(() => () => drag.current?.(), [])
+  const startDrag = useCallback(
+    (side: -1 | 1) => (event: ReactPointerEvent<HTMLElement>) => {
+      const card = cardHost.current?.querySelector<HTMLElement>('.card:not(.card-pane__incoming)') ?? cardHost.current
+      const box = scroller.current
+      if (card === null || box === null || event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      const zoom = cssZoom(card)
+      // `--card-text-width` is card width minus 34px frame sides (`card.css:43`).
+      const startText = card.getBoundingClientRect().width / zoom - 34
+      const x0 = event.clientX
+      const room = Math.max(CARD_MIN_WIDTH, box.clientWidth / zoom - 2 * sideMargin - 34)
+      const factor = centered ? 2 : 1
+      const move = (e: PointerEvent | MouseEvent) => {
+        const next = clampCardWidth(startText + (side * factor * (e.clientX - x0)) / zoom, room)
+        setWidth(next)
+      }
+      const end = () => {
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', end)
+        window.removeEventListener('pointercancel', end)
+        document.body.classList.remove('card-inbox--sizing')
+        drag.current = null
+      }
+      drag.current?.()
+      drag.current = end
+      document.body.classList.add('card-inbox--sizing')
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', end)
+      window.addEventListener('pointercancel', end)
+    },
+    [cardHost, scroller, centered, sideMargin],
+  )
+  const reset = useCallback(() => setWidth(null), [])
+  return { width, startDrag, reset }
 }

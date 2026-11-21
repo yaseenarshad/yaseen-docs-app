@@ -72,10 +72,11 @@ import type { ReviewSettings } from '@shared/reviews'
 import { codeWidthSchema } from '../code/codeWidth'
 import { CARD_EDIT_KEYS, cardKeyRow, drawEditButton } from './cardEditKeys'
 import { copyText, openMenuAt } from '../linkMenu'
+import type { MenuRow } from '../blockHandleMenu'
 import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, cardLineStepAt, changeCardLineAt, isCardNode, CARD_LANGUAGE, cardLineOf } from './cardBlockLine'
-import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
+import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS, cardViewLinkHit, type CardViewLinkHit } from './cardMedia'
 import { CARD_OPEN, landWhenShown, previewCard, takeCardLanding, watchCardLanding, type CardOpenRequest } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor, type CardTitleField } from './cardEditor'
@@ -176,6 +177,8 @@ export interface CardDeps {
   hotkeys?: () => HotkeyOverrides | undefined
   /** A Markdown link's open (`markdownLinkNav`). Absent → a click on it does nothing. */
   openHref?: (href: string) => void
+  /** Right-click menu rows for a View-mode pill or Markdown link inside the card (S2). */
+  pillMenu?: (hit: CardViewLinkHit) => MenuRow[] | null
   onNotice?: (message: string) => void
   /** The vault's card review (YAZ-5000): "Reviews (n)" under a card with reviews. Absent (a hover preview): no section. */
   reviews?: CardReviewDoorApi
@@ -315,6 +318,7 @@ export class CardBlockView implements NodeView {
     if (deps.reviews !== undefined) this.dom.classList.add('card--reviews')
     this.dom.addEventListener('mousedown', this.onMouseDown)
     this.dom.addEventListener('click', this.onClick)
+    this.dom.addEventListener('contextmenu', this.onContextMenu)
     // The vault's review settings changed (YAZ-5913): the marks follow.
     window.addEventListener(CARD_HEADS_REDRAW, this.drawMarks)
     views.set(this.dom, this)
@@ -888,6 +892,23 @@ export class CardBlockView implements NodeView {
     if (link === null) return
     event.preventDefault()
     this.deps.openHref?.(link.getAttribute('href') ?? '')
+  }
+
+  /** Right-click on a View-mode pill or Markdown link opens the one link menu before falling through to the outer page menu (S2). */
+  private onContextMenu = (event: MouseEvent): void => {
+    const target = event.target instanceof Element ? event.target : null
+    if (target === null || this.editing || this.deps.pillMenu === undefined) return
+    const hit = cardViewLinkHit(target)
+    if (hit === null) return
+    const rows = this.deps.pillMenu(hit)
+    if (rows === null || rows.length === 0) return
+    event.preventDefault()
+    this.closeMenu?.()
+    const close = openMenuAt(this.view.dom.parentElement ?? document.body, event.clientX, event.clientY, rows)
+    this.closeMenu = () => {
+      close()
+      this.closeMenu = null
+    }
   }
 
   update(node: ProseNode, decorations: readonly Decoration[], inner: DecorationSource): boolean {

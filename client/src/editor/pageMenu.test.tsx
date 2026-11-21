@@ -13,7 +13,11 @@ import { caretIn, endOf, md, mount, posOf, runCommand, select, unmountAll } from
 import { isOutlineItemCollapsed, toggleOutlineFold } from './outline/outlineFolding'
 import { lineSections, misspellingOf, PageMenu, pageMenuSections, resetSpellWait, TABLE_HANDLE_MENU, wordAt } from './pageMenu'
 import { SPELL_WAIT_FIRST_MS, SPELL_WAIT_MS } from '@shared/spelling'
+import { editorViewCtx } from '@milkdown/kit/core'
 import { CellSelection } from '@milkdown/kit/prose/tables'
+import { createCrepe } from './createCrepe'
+import { cardBlockViewOfDom } from './card/cardBlockView'
+import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { cellDOM, cellPos, mountPage as mountTable, mouseAt, unmountAll as unmountTables } from './table/tableTestKit'
 
 let root: Root | null = null
@@ -632,5 +636,55 @@ describe('the right-click waits for its guesses (YAZ-4464 D2)', () => {
     const misspelling = (await misspellingAt(view, async () => ['Relevant']))!
     leaf(pageMenuSections(view, misspelling, vi.fn()), 'guess-0').onSelect()
     expect(md(crepe)).toBe('Why **Relevant** now\n')
+  })
+
+  it('YAZ-6000 (S1 + S2): on an inline card, View-mode pill right-click opens the link menu and Edit-mode text/table right-click routes PageMenu to the inner card view', async () => {
+    const source = createWikilinkResolveSource()
+    source.update((t) => (t === 'Known' ? '/vault/Known.md' : null), undefined, undefined, true)
+    const nav = { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
+    const el = document.createElement('div')
+    document.body.append(el)
+    const crepe = createCrepe({
+      root: el,
+      defaultValue: '```card\nSee [[Known]]\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n---\nBack\n```\n<!-- card: WIKI-1 -->\n',
+      wikilinks: source,
+      wikilinkNav: nav,
+    })
+    await crepe.create()
+    try {
+      const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+      window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: async () => null } } as typeof window.yaseenDocs
+      const host = document.createElement('div')
+      document.body.append(host)
+      act(() => {
+        root = createRoot(host)
+        root.render(<PageMenu view={view} />)
+      })
+
+      // S2: right-click a View-mode pill inside the inline card opens the link menu (not outer PageMenu).
+      const pill = el.querySelector<HTMLElement>('.card [data-card-link="Known"]')!
+      expect(pill).not.toBeNull()
+      act(() => void pill.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })))
+      const linkItems = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu--editor .ctx-menu__item')].map((b) => b.textContent)
+      expect(linkItems).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path'])
+      expect(document.querySelector('.ctx-menu:not(.ctx-menu--editor)')).toBeNull()
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+
+      // S1: open Edit card and dispatch TABLE_HANDLE_MENU from the inner card editor's table -> PageMenu uses the inner view!
+      const cardView = cardBlockViewOfDom(el.querySelector('.card'))!
+      cardView.edit()
+      await cardView.cardEditor!.ready
+      const innerView = cardView.cardEditor!.view()!
+      const innerTableCell = cellPos(innerView, 0, 1)
+      innerView.dispatch(innerView.state.tr.setSelection(CellSelection.colSelection(innerView.state.doc.resolve(innerTableCell))))
+      act(() => void innerView.dom.dispatchEvent(new CustomEvent(TABLE_HANDLE_MENU, { bubbles: true, detail: { x: 70, y: 80, pos: innerTableCell } })))
+      const tableLabels = [...document.querySelectorAll<HTMLElement>('.ctx-menu [role=menuitem]')].map((b) => b.textContent)
+      expect(tableLabels).toContain('Delete column')
+      expect(tableLabels).toContain('Sort')
+      host.remove()
+    } finally {
+      await crepe.destroy()
+      el.remove()
+    }
   })
 })

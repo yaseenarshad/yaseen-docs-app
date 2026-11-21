@@ -116,6 +116,9 @@
   user-select: none;
 }
 /* What the strip tucks under sits over it: the Inbox's card, the card file tab's and the card window's card. */
+.card-pane__editor {
+  position: relative;
+}
 :is(.card-inbox__panel, .card-screen, .card-pane__editor):has(+ .card-reviews--strip) {
   position: relative;
   z-index: 1;
@@ -979,29 +982,13 @@ body.card-inbox--sizing {
 /* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card (`--inbox-card-pad: 44px`), set by
    the card look's variables (YAZ-5484, `review/cardLook.ts`) with the vault's look. Its short line is Card width now
    (YAZ-5144): Clean sets it to Custom 520 px, Mochi's line, so one rule sets a card's line. */
-/* The buttons, their line and the key row (YAZ-5049 round 2, YAZ-5431): ONE band at the bottom of the view for every
-   card. A short card: the column fills the view and the band is pushed to its end (`margin-top: auto`). A long card:
-   the band sticks at the same bottom edge while the card scrolls under it, and at the scroll's end it sits right under
-   the card, so the card's last line is never under it. The page colour, fading in at the top, hides the card's text
-   under it. */
+/* The buttons, their line and the key row (YAZ-5049 round 2, YAZ-5431, YAZ-6055, as Mochi): in normal flow at the
+   bottom of the column. A short card: the column fills the view (`flex: 1 0 auto`) and `margin-top: auto` keeps the
+   dock at the view's bottom. A long card: the card takes the full vertical space with no sticky overlay; the dock sits
+   right below the card at the end of the scroll. */
 .card-inbox__dock {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
   margin-top: auto;
   padding-bottom: 16px;
-}
-/* Its page colour reaches over the card's shadow (into the view's side padding), and fades out at its ends, so the
-   card goes under it with no hard edge. */
-.card-inbox__dock::before {
-  content: '';
-  position: absolute;
-  inset: 0 -16px;
-  z-index: -1;
-  background: linear-gradient(to bottom, transparent, var(--bg-side) 22px);
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent);
-  mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent);
-  pointer-events: none;
 }
 /* The card: no frame of its own inside the panel, a little larger. */
 .card-inbox__card {
@@ -1205,6 +1192,55 @@ body.card-inbox--sizing {
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+/* YAZ-6041: subtle remaining count inside the done screen's Add pill ("Add [10] / 457 new cards"),
+   smart 2-phrase completion wrap, quiet divider, and 2-step add trigger/cancel. */
+.card-inbox__done-add-total {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.done-phrase {
+  display: inline-block;
+}
+.done-divider {
+  width: 44px;
+  height: 1px;
+  background: var(--border);
+  margin: 18px auto 16px;
+}
+.done-add-trigger {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.done-add-trigger:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+  border-color: color-mix(in srgb, var(--fg) 22%, var(--border));
+}
+.done-add-expanded {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.done-add-cancel {
+  padding: 2px 8px;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.done-add-cancel:hover {
+  color: var(--fg);
 }
 .card-inbox__done-add .card-inbox__add-number {
   border-color: var(--border);

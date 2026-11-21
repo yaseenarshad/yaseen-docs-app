@@ -12,6 +12,7 @@ import { ViewsPane } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import type { FolderSettings } from '../folderSettings'
+import * as imageCell from './imageCell'
 
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -150,5 +151,55 @@ describe('YAZ-4802 demo: an Image column goes as narrow as its picture', () => {
     mouse(window, 'mousemove', 0)
     mouse(window, 'mouseup', 0)
     expect(def().views[0].columnSize).toEqual({ 'note.status': 40 })
+  })
+})
+
+describe('YAZ-5989: ⌘V image paste checks locked rows before saving to assets/images/', () => {
+  const flush = () =>
+    act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve()
+    })
+
+  it('does not call saveImageFile when every target row is read only, and saves normally on an unlocked row', async () => {
+    const png = new File(['png'], 'clip.png', { type: 'image/png' })
+    const clipSpy = vi.spyOn(imageCell, 'clipboardImage').mockResolvedValue(png)
+    const saveSpy = vi.spyOn(imageCell, 'saveImageFile').mockResolvedValue('assets/images/pasted.png')
+    const writeValues = vi.fn(async () => undefined)
+    try {
+      const parsed = parseViews(table())
+      const settings: FolderSettings = { columns: { Logo: { kind: 'image' }, status: { kind: 'text' } }, views: [], problems: [] }
+      const locked = new Set(RECORDS.map((r) => r.path))
+      const folder = testFolderHost({ settings, vaultRecords: RECORDS, writeValues })
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      act(() => root?.render(<ViewsPane parsed={parsed} onChange={() => undefined} root="/vault" folderPath="/vault/Tools/.folder.md" records={RECORDS} readOnly={locked} folder={folder} onOpenFile={vi.fn()} />))
+
+      const cell = column(container, 0)[0]
+      act(() => {
+        cell.focus()
+        cell.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', metaKey: true, bubbles: true, cancelable: true }))
+      })
+      await flush()
+      expect(clipSpy).not.toHaveBeenCalled()
+      expect(saveSpy).not.toHaveBeenCalled()
+      expect(writeValues).not.toHaveBeenCalled()
+
+      // Unlocking the first row (Cloudflare) lets ⌘V save the image and write the cell.
+      const someLocked = new Set([RECORDS[0].path, RECORDS[1].path])
+      act(() => root?.render(<ViewsPane parsed={parsed} onChange={() => undefined} root="/vault" folderPath="/vault/Tools/.folder.md" records={RECORDS} readOnly={someLocked} folder={folder} onOpenFile={vi.fn()} />))
+      const cell2 = column(container, 0)[0]
+      act(() => {
+        cell2.focus()
+        cell2.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', metaKey: true, bubbles: true, cancelable: true }))
+      })
+      await flush()
+      expect(clipSpy).toHaveBeenCalledOnce()
+      expect(saveSpy).toHaveBeenCalledExactlyOnceWith('/vault', png, 'Cloudflare')
+      expect(writeValues).toHaveBeenCalledExactlyOnceWith('/vault/Tools/Cloudflare.md', [{ key: 'Logo', value: '[[assets/images/pasted.png]]' }])
+    } finally {
+      clipSpy.mockRestore()
+      saveSpy.mockRestore()
+    }
   })
 })

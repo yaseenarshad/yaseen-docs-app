@@ -40,6 +40,7 @@
  */
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
+import { HoverTip } from '../components/HoverTip'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardPlacePart, CardReviewApi, CardReviewSession } from './useCardReview'
 import { FileIcon } from '../sidebar/FileIcon'
@@ -135,9 +136,12 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
         {session.place.length > 0 && <CardPath parts={session.place} openPlace={openPlace} showInSidebar={showInSidebar} />}
         {/* YAZ-5680 check 2: on every finish screen too, as Mochi ("Finished learning cards." with 4 / 4). */}
         {session.progress.total > 0 && (
-          <span className="card-inbox__place">
+          <HoverTip
+            text={`${session.progress.done} done today · ${Math.max(0, session.progress.total - session.progress.done)} left${session.misses > 0 ? ` · ${session.misses} missed` : ''}`}
+            className="card-inbox__place"
+          >
             <SessionCount session={session} icon={<current.icon />} />
-          </span>
+          </HoverTip>
         )}
         {view}
         {menu !== null && (

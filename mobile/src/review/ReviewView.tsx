@@ -7,8 +7,6 @@ import { START, markOf, nextStep, reveal, shownParts, type Reveal } from '@clien
 import { newCardsFrom } from '@client/review/inboxMenu'
 import { addedLine, resetLine } from '@client/review/cardWords'
 import { reviewDuration, todayDuration, todayStudied } from '@client/review/reviewTime'
-import { AskInPlace } from '@client/components/AskInPlace'
-import { addQuestion } from '@client/review/AddMoreField'
 import type { AddKind } from '@shared/cardSchedule'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
@@ -315,7 +313,8 @@ function SessionScreen({
   const titleStep = titleStepOf(titleText, titleAt)
   const after = text === null ? null : nextStep(step, counts, titleStep)
   const done = text !== null && after === null
-  const mark = markOf(step, upTo(step.sides))
+  const titleNow = after !== null && after.titled && !step.titled
+  const mark = titleNow ? null : markOf(step, upTo(step.sides))
   // What the hint line counts: the hidden parts not shown yet, each side still to come, and the title's own tap.
   const left = text === null ? 0 : upTo(counts.length) - step.open.length + Math.max(0, counts.length - step.sides) + (titleStep !== null && !step.titled ? 1 : 0)
   // After an answer, taps wait until the next card is on the screen AND a short time has passed, so the
@@ -359,7 +358,6 @@ function SessionScreen({
     if (page === null || guarded) return
     firstAction()
     // The title's own tap (YAZ-5709) shows in the head, at the top: nothing to bring into view.
-    const titleNow = after !== null && after.titled && !step.titled
     const target: TapTarget = mark !== null ? mark : step.sides < counts.length ? 'side' : 'end'
     // The Mac's reading scroll: a part out of view first comes into view; that tap shows nothing.
     const view = cardBox.current
@@ -585,11 +583,15 @@ function SessionScreen({
   const canUndo = shownLine?.undo === true || session.canUndo
 
   const headTitle = titleShows({ title: titleText, at: titleAt, counts, sides: step.sides, open: step.open, titled: step.titled }) ? titleText : ''
-  // YAZ-5880 Title room: a title that waits (it has words, and its card shows it later). With `titleRoom` it keeps its
-  // room in the head line unseen; when it shows it fades in (`review__title--in`), so the ID beside it never moves.
+  // YAZ-5880 Title room + YAZ-6009 Layout C1: a title that is its own reveal step (`titleStep !== null`) always keeps
+  // its shaded band while waiting so the title-sized waiting/next blank shows; `titleRoom` (`Always`) also keeps the
+  // band on `Never` / untitled / `{{…}}` cards. When a waiting title shows, it fades in (`review__title--in`).
   const titleWaits = titleText !== '' && headTitle === ''
-  const titleKept = titleRoom && titleWaited.current === cardKey && headTitle !== ''
-  if (titleRoom && titleWaits) titleWaited.current = cardKey
+  const titleBlankWaits = titleWaits && titleStep !== null
+  const titleWaitsInBand = titleBlankWaits || (titleRoom && titleWaits)
+  const titleKept = titleWaited.current === cardKey && headTitle !== ''
+  if (titleWaitsInBand) titleWaited.current = cardKey
+  const showTitleBand = headTitle !== '' || titleBlankWaits || titleRoom
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
   // The crumb (YAZ-5132's place, from the first folder, YAZ-5682): "LEARNING / Memory", inside the card, on the chip's line;
   // too long, it folds from the start (YAZ-5713, `ReviewCrumb`).
@@ -669,8 +671,6 @@ function SessionScreen({
   // the line goes there whenever the box is there, NOT only while `shown` (a panel over Review rests it, `shown` false):
   // drawn in the screen instead, the line pushed the card 44 px down under the panel, and back up on its close.
   const topBox = useReviewTop()
-  // YAZ-5699: the finish screen's add waiting for its second tap.
-  const [addAsk, setAddAsk] = useState<AddKind | null>(null)
   // During the review only (the sheet's line): the time as Settings › Review › Time so far says. The finish screens show it always.
   const today = <TodayLine session={session} mode={review.settings.timeSoFar} />
   const fromButton = (
@@ -678,34 +678,31 @@ function SessionScreen({
       from {newCardsFrom(session)} ›
     </button>
   )
-  // "Add 10 new cards" (YAZ-5042) and its "from Spanish ›", "Add 2 Up next" (the Mac's pill has a field). YAZ-5699
-  // (Yaseen: "that should be a two click as well"): a tap asks in place, "Add 10 new cards to today?", Cancel first
-  // (`AskInPlace`, the Mac's); Add there adds. "Learn new cards" / "Review missed cards" stay one tap: they add nothing.
+  // YAZ-6041: DoneScreen's 2-step trigger button is the intentional first tap, so tapping Add inside the expanded
+  // panel adds immediately (still 2 taps total from the completion screen).
   const adds =
     addKinds.length === 0 ? null : (
       <div className="review__done-adds">
-        {addKinds.map((k) =>
-          addAsk === k ? (
-            <AskInPlace
-              key={k}
-              question={addQuestion(k, session.adds[k])}
-              yes="Add"
-              className="review__done-ask"
-              onYes={() => {
-                setAddAsk(null)
-                review.addCards(k)
-              }}
-              onNo={() => setAddAsk(null)}
-            />
-          ) : (
-            <span key={k} className="review__done-add">
-              <button type="button" className="btn review__add" onClick={() => setAddAsk(k)}>
-                {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
-              </button>
-              {k === 'new' && fromButton}
-            </span>
-          ),
-        )}
+        {addKinds.map((k) => (
+          <span key={k} className="review__done-add">
+            <button type="button" className="btn review__add" onClick={() => review.addCards(k)}>
+              {k === 'new' ? (
+                <>
+                  Add {session.adds.new}
+                  {session.more.new > 0 && <span className="review__add-total">{` / ${session.more.new}`}</span>}
+                  {` new card${session.adds.new === 1 ? '' : 's'}`}
+                </>
+              ) : (
+                <>
+                  Add {session.adds.next}
+                  {session.more.next > 0 && <span className="review__add-total">{` / ${session.more.next}`}</span>}
+                  {' Up next'}
+                </>
+              )}
+            </button>
+            {k === 'new' && fromButton}
+          </span>
+        ))}
       </div>
     )
 
@@ -739,6 +736,7 @@ function SessionScreen({
                     {AGAIN_LABEL}
                   </span>
                 )}
+                <span className="review__id">{card.id}</span>
                 {crumb.length > 0 && <ReviewCrumb parts={crumb} open={menu === 'place'} onTap={() => setMenu(menu === 'place' ? null : 'place')} />}
                 {counts.length > 1 && <span className="review__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</span>}
                 {menu === 'place' && crumb.length > 0 && (
@@ -752,29 +750,31 @@ function SessionScreen({
                   />
                 )}
               </div>
-              <p className="review__head">
-                {headTitle !== '' ? (
-                  <>
-                    {/* A title that waited in its room is a new span when it shows: it fades in once. */}
+              {showTitleBand && (
+                <div className="review__head" aria-hidden={headTitle === '' ? 'true' : undefined}>
+                  {headTitle !== '' ? (
+                    /* A title that waited in its band fades in once when it shows. */
                     <span className={`review__title${titleKept ? ' review__title--in' : ''}`}>
                       {headTitle}
                     </span>
-                    <span aria-hidden> · </span>
-                  </>
-                ) : (
-                  titleRoom &&
-                  titleWaits && (
-                    <span className="review__title-room" aria-hidden="true">
-                      <span className="review__title">{titleText}</span>
-                      <span> · </span>
-                    </span>
-                  )
-                )}
-                <span className="review__id">{card.id}</span>
-              </p>
+                  ) : (
+                    titleWaitsInBand && (
+                      <span className="review__title-room" aria-hidden="true">
+                        {titleStep !== null ? (
+                          <span className="review__title card-band__blank" data-next={titleNow ? '' : undefined}>
+                            <span className="card__word">{titleText}</span>
+                          </span>
+                        ) : (
+                          <span className="review__title">{titleText}</span>
+                        )}
+                      </span>
+                    )
+                  )}
+                </div>
+              )}
               {needsFix === card.path && <p className="review__fix">{NEEDS_FIX}</p>}
               {text !== null && page !== null ? (
-                <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, ...shownParts(step.open), next: mark ?? undefined }} links={source.links} files={source.files} media={media} retry={retry} onOpen={open} />
+                <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, ...shownParts(step.open), next: mark }} links={source.links} files={source.files} media={media} retry={retry} onOpen={open} />
               ) : (
                 <div className="review__card-wait" aria-busy="true" />
               )}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CardRating } from '@shared/cardLine'
-import { dueFirsts, filterCount, type SessionAnswer, type SessionCard } from './sessionProgress'
+import { dueFirsts, earlierAnswers, filterCount, type SessionAnswer, type SessionCard } from './sessionProgress'
 
 const key = (id: string) => `P.md\n${id}`
 const due = (id: string, rating: CardRating, first = true): SessionAnswer => ({ key: key(id), rating, isNew: false, next: false, first })
@@ -101,4 +101,35 @@ it('rule 7: an Up next card counts under Up next and All cards only, never under
   expect(filterCount([marked], [waiting], 'all')).toEqual({ done: 1, total: 2, waiting: 0 })
   expect(filterCount([marked], [waiting], 'new')).toEqual({ done: 0, total: 0, waiting: 0 })
   expect(filterCount([marked], [], 'due')).toEqual({ done: 0, total: 0, waiting: 0 })
+})
+
+describe('YAZ-6018: day-wide progress deduplication and earlierAnswers', () => {
+  const FROM = '2026-11-12T00:00:00.000Z'
+  const TO = '2026-11-13T00:00:00.000Z'
+
+  it('deduplicates a new card learned in both earlier and current session answers', () => {
+    const learnedNew = fresh('n1', 'good')
+    expect(filterCount([learnedNew], [learned('n1')], 'new', [learnedNew])).toEqual({ done: 1, total: 1, waiting: 0 })
+    expect(filterCount([learnedNew], [learned('n1')], 'all', [learnedNew])).toEqual({ done: 1, total: 2, waiting: 0 })
+  })
+
+  it('replays today`s reviews into New, Due, and Up next kinds and ignores prior days', () => {
+    const cards = [
+      // Known before today, remembered today → Due today
+      { key: key('d1'), id: 'd1', off: false, reviews: [{ at: '2026-10-01T08:00:00.000Z', rating: 'good' as const }, { at: '2026-11-12T09:00:00.000Z', rating: 'good' as const }] },
+      // Brand new today, learned + same-day reviewed → 1 New + 1 Due
+      { key: key('n1'), id: 'n1', off: false, reviews: [{ at: '2026-11-12T09:05:00.000Z', rating: 'good' as const }, { at: '2026-11-12T09:10:00.000Z', rating: 'good' as const }] },
+      // Due card answered from Up next today → Up next
+      { key: key('u1'), id: 'u1', off: false, reviews: [{ at: '2026-10-01T08:00:00.000Z', rating: 'good' as const }, { at: '2026-11-12T09:15:00.000Z', rating: 'good' as const }] },
+      // New card begun from Up next today, then same-day review → 1 Up next + 1 Due
+      { key: key('u2'), id: 'u2', off: false, reviews: [{ at: '2026-11-12T09:20:00.000Z', rating: 'good' as const }, { at: '2026-11-12T09:25:00.000Z', rating: 'good' as const }] },
+      // Reviewed yesterday only → 0 today
+      { key: key('old'), id: 'old', off: false, reviews: [{ at: '2026-11-11T23:59:59.000Z', rating: 'good' as const }] },
+    ]
+    const earlier = earlierAnswers(cards, FROM, TO, new Set(['u1', 'u2']), new Set(['u2']))
+    expect(filterCount([], [], 'due', earlier)).toEqual({ done: 3, total: 3, waiting: 0 })
+    expect(filterCount([], [], 'new', earlier)).toEqual({ done: 1, total: 1, waiting: 0 })
+    expect(filterCount([], [], 'next', earlier)).toEqual({ done: 2, total: 2, waiting: 0 })
+    expect(filterCount([], [], 'all', earlier)).toEqual({ done: 6, total: 6, waiting: 0 })
+  })
 })

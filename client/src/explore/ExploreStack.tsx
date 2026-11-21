@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { APP_ZOOM_STEPS, EXPLORE_SIZE_DEFAULT, rootOfPath, stepZoom, type CommentsOrder, type OpenStat, type PageView, type ZoomStep } from '@shared/types'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { LinkActions } from '../editor/linkMenu'
@@ -104,6 +105,8 @@ export interface ExploreStackProps {
   onExploreSize: (percent: number) => void
   /** The hover panel of a reading page layer's [[links]] (YAZ-5920): the setting, the panel's scope, the diagram colours. */
   linkPreview?: ExploreLinkPreview
+  /** Settings › Hotkeys overrides for card link gestures (YAZ-6040). */
+  hotkeys?: HotkeyOverrides
 }
 
 const noLog = () => ({})
@@ -167,7 +170,7 @@ function focusCardFile(layer: HTMLElement): boolean {
   return body !== null && document.activeElement === body
 }
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false, exploreSize, exploreWidth = null, onExploreSize, linkPreview }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false, exploreSize, exploreWidth = null, onExploreSize, linkPreview, hotkeys }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -790,6 +793,10 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 onOpenTab={openTabFromCard}
                 onOpenInTab={toTab}
                 onNotice={onNotice}
+                onRetitle={pageFrameOf?.(layer.path).onRetitle}
+                createFolder={() => createFolder(layer.path)}
+                linkPreview={linkPreview}
+                hotkeys={hotkeys}
                 onHeadDown={(e) => gestures.onHeadDown(layer.id, e)}
                 onHeadReset={(e) => gestures.reset(layer.id, e)}
                 onClose={() => close(layer.id)}

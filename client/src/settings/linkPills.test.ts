@@ -22,6 +22,7 @@ import {
   withLinkPillIconColor,
   sanitizeLinkPills,
   withLinkPillBox,
+  withLinkPillHover,
   withLinkPillPart,
   withLinkPillReady,
   withLinkPills,
@@ -233,6 +234,21 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
     expect(LINK_PILLS_VERSION).toBe(2)
     expect(linkPillsFile({ box: { shape: 'underline' } })).toEqual({ version: 2, box: { shape: 'underline' } })
     expect(linkPillsFile({})).toEqual({ version: 2 })
+  })
+
+  it('hover settings (YAZ-6002 / D5): v2 compatible, defaults dropped, style-dependent fields sanitized', () => {
+    expect(sanitizeLinkPills({ version: 2, hover: { style: 'wash', strength: 'light' } })).toEqual({})
+    expect(isDefaultLinkPills(sanitizeLinkPills({ version: 2, hover: { style: 'wash' } }))).toBe(true)
+    expect(sanitizeLinkPills({ version: 2, hover: { style: 'off', color: 'red', strength: 'strong' } })).toEqual({ hover: { style: 'off' } })
+    expect(sanitizeLinkPills({ version: 2, hover: { style: 'underline', color: 'blue', strength: 'medium' } })).toEqual({ hover: { style: 'underline' } })
+    expect(sanitizeLinkPills({ version: 2, hover: { style: 'text', color: '#FF00AA', strength: 'strong' } })).toEqual({ hover: { style: 'text', color: '#ff00aa' } })
+    expect(sanitizeLinkPills({ version: 2, hover: { color: 'accent', strength: 'medium' } })).toEqual({ hover: { color: 'accent', strength: 'medium' } })
+    expect(sanitizeLinkPills({ version: 2, hover: { color: 'mauve', strength: 'huge' } })).toEqual({})
+    expect(isDefaultLinkPills({ hover: { style: 'off' } })).toBe(false)
+    const withHover = withLinkPillHover({}, { color: 'teal', strength: 'strong' })
+    expect(withHover).toEqual({ hover: { color: 'teal', strength: 'strong' } })
+    expect(withLinkPillHover(withHover, { color: undefined, strength: undefined })).toEqual({})
+    expect(linkPillsFile(withHover)).toEqual({ version: 2, hover: { color: 'teal', strength: 'strong' } })
   })
 })
 

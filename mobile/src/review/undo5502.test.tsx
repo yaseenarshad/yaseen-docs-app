@@ -37,7 +37,7 @@ afterEach(() => {
 })
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-const head = () => h.host.querySelector('.review__head')?.textContent?.trim() ?? null
+const head = () => h.host.querySelector('.review__id')?.textContent?.trim() ?? null
 const undoInHint = () => h.host.querySelector<HTMLButtonElement>('.review__hint .review__undo')
 /** Waits by real time, outside `act` (the browser's way), until `ok` or `ms` pass. */
 async function within(ms: number, ok: () => boolean): Promise<boolean> {

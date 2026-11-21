@@ -190,8 +190,10 @@ export function useTreeDrag(
   focusDrop?: (from: string, over: ReorderOver | null, folder: string | null) => boolean,
   /** The Files tab's Manual order (YAZ-5916 D1): a folder's new order of item names, saved in the vault. */
   saveFolderOrder?: (dir: string, names: string[]) => void,
-  /** A Manual reorder was written (YAZ-5917): its item's name, and how to write the order back and forward again. */
-  onReordered?: (name: string, undo: () => void, redo: () => void) => void,
+  /** A Manual reorder was written (YAZ-5917): its item's name, how to write the order back and forward again, and the vault for Files reorders. */
+  onReordered?: (name: string, undo: () => void, redo: () => void, vault?: string) => void,
+  /** The vault's read-only file-action door (YAZ-5989): Files manual reorder writes `.yaseendocs/files-order.json` in the vault. */
+  allowFileAction?: (root: string) => Promise<boolean>,
 ) {
   // Drag-to-move (E1b; folders and the selection since YAZ-3251): the dragged paths and the lit
   // target live in REFS (D2), so a hover renders nothing — the lit row wears its class by DOM.
@@ -210,8 +212,8 @@ export function useTreeDrag(
   // `vertical`: a reorder, which lifts only on a move that is mostly up or down (YAZ-5916 Q2); a move lifts any way.
   const armed = useRef<{ fire: () => void; vertical: boolean } | null>(null)
   // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
-  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop, saveFolderOrder, onReordered })
-  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop, saveFolderOrder, onReordered }
+  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop, saveFolderOrder, onReordered, allowFileAction })
+  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop, saveFolderOrder, onReordered, allowFileAction }
   // Drag-to-reorder (YAZ-2631 D3), ONE for the tab that is shown. Since YAZ-3467 D2 it is mouse events, not the
   // page's HTML5 drag: the dragged top row, the hovered row and edge, and the pill live in refs. The hovered row
   // and edge are state too, ONLY to draw the line: they change when the row or the edge does, not at each move.
@@ -496,9 +498,15 @@ export function useTreeDrag(
           if (save === undefined) return
           const after = order.filter((item) => !item.fixed).map((item) => basename(item.path))
           const before = level.paths.filter((_, i) => !level.fixed[i]).map((path) => basename(path))
-          save(dir, after)
-          // One step of the window's undo list (YAZ-5917): ⌘Z writes the folder's order as it was, once.
-          live.current.onReordered?.(live.current.finder.nameOf(from), () => save(dir, before), () => save(dir, after))
+          const vault = live.current.rootOf(dir)
+          const run = () => {
+            save(dir, after)
+            // One step of the window's undo list (YAZ-5917): ⌘Z writes the folder's order as it was, once.
+            live.current.onReordered?.(live.current.finder.nameOf(from), () => save(dir, before), () => save(dir, after), vault)
+          }
+          const ask = live.current.allowFileAction
+          if (ask !== undefined) void ask(vault).then((ok) => ok && run())
+          else run()
           return
         }
         const away = lift === null || !(e.target instanceof Node && lift.list.contains(e.target))
@@ -962,7 +970,7 @@ export function useFileClipboard(
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice, onMoved],
+    [vaultOf, refresh, openTo, onNotice, onMoved, allowFileAction],
   )
 
   return { clip, clipTo, pasteInto, importFiles }

@@ -123,13 +123,13 @@ describe('YAZ-5613: a full day of reviews on the phone, step by step (YAZ-5611 r
     await answer('Remembered') // NEW-1's first ✓ (YAZ-5707: no stop before the new cards on All cards)
     expect(await look()).toEqual(row('NEW-2', '5 / 7', '5/7', 2, 1, 1))
     await reopen(60 * 60_000)
-    // YAZ-5707 (Mochi's E5): the run carries today's earlier work on its cards: NEW-1 learned already.
-    expect(await look()).toEqual(row('NEW-1', '1 / 3', '1/3', 2, 1, 1))
+    // YAZ-6018: the top count persists for the whole day across reopen (4 due done + NEW-1 learned = 5 / 7).
+    expect(await look()).toEqual(row('NEW-1', '5 / 7', '5/7', 2, 1, 1))
     await answer('Remembered')
-    expect(await look()).toEqual(row('NEW-2', '2 / 3', '2/3', 1, 0, 1))
+    expect(await look()).toEqual(row('NEW-2', '6 / 7', '6/7', 1, 0, 1))
     await answer('Remembered')
     await answer('Remembered')
-    expect(await look()).toEqual(row('done: Inbox complete.', null, '4/4', 0, 0, 0))
+    expect(await look()).toEqual(row('done: Inbox complete.', null, '8/8', 0, 0, 0))
     // The next day, 9:00: the new-card limit starts again (NEW-3, NEW-4), and no card of yesterday is a new card.
     vi.setSystemTime(new Date(2026, 10, 13, 9, 0).getTime())
     await reopen(0)

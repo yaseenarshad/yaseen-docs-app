@@ -49,10 +49,11 @@ describe('YAZ-5622: a card answered on the Mac', () => {
     await h.s.git.push({ 'a.md': page('A', card(1), card(2, MAC), card(3)) })
     await pull()
     expect(showing()).toBe('OD-1')
-    expect(place()).toEqual([0, 2])
+    // YAZ-6018: OD-2 answered on the Mac counts as done today (1 / 3).
+    expect(place()).toEqual([1, 3])
     await h.click('Remembered')
     expect(showing()).toBe('OD-3')
-    expect(place()).toEqual([1, 2])
+    expect(place()).toEqual([2, 3])
     await h.click('Remembered')
     expect(showing()).toBeNull()
   })
@@ -64,7 +65,8 @@ describe('YAZ-5622: a card answered on the Mac', () => {
     await h.s.git.push({ 'a.md': page('A', card(1, `${MAC} 6s`), card(2), card(3)) })
     await pull()
     expect(showing()).toBe('OD-2')
-    expect(place()).toEqual([0, 2])
+    // YAZ-6018: OD-1 answered on the Mac counts as done today (1 / 3).
+    expect(place()).toEqual([1, 3])
   })
 
   it('between sessions: a session opened after the pass never takes it', async () => {
@@ -74,7 +76,8 @@ describe('YAZ-5622: a card answered on the Mac', () => {
     await t.engine.idle()
     h = await mountReview(t)
     expect(showing()).toBe('OD-1')
-    expect(place()).toEqual([0, 2])
+    // YAZ-6018: OD-2 answered earlier today on the Mac stays counted across sessions (1 / 3).
+    expect(place()).toEqual([1, 3])
     await h.click('Remembered')
     expect(showing()).toBe('OD-3')
   })

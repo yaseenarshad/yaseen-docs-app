@@ -42,8 +42,8 @@ import { scrollRootOf } from '../embed/hostWindow'
 import { copyText, openMenuAt } from '../linkMenu'
 import { missingId, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import type { CardEditor } from './cardEditor'
-import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from './embedCard'
-import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
+import { embedCard, recordAt, registerCardEmbedDone, type CardEmbedHandle, type CardEmbedHost } from './embedCard'
+import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS, cardViewLinkHit } from './cardMedia'
 import { drawEditButton } from './cardEditKeys'
 import { openCardWindow, previewCard } from './cardOpen'
 import { mountCardTitle } from './cardTitle'
@@ -544,6 +544,21 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   }
   const onContextMenu = (event: MouseEvent): void => {
     if (card === null || (event.target instanceof Element && edit?.mount.contains(event.target) === true)) return
+    const target = event.target instanceof Element ? event.target : null
+    if (target !== null && doors.pillMenu !== undefined) {
+      const hit = cardViewLinkHit(target)
+      const rows = hit === null ? null : doors.pillMenu(hit)
+      if (rows !== null && rows.length > 0) {
+        event.preventDefault()
+        closeMenu?.()
+        const close = openMenuAt(host.menuParent(), event.clientX, event.clientY, rows)
+        closeMenu = () => {
+          close()
+          closeMenu = null
+        }
+        return
+      }
+    }
     event.preventDefault()
     openMenu(event.clientX, event.clientY)
   }
@@ -571,6 +586,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     load()
   })
 
+  const unregisterDone = registerCardEmbedDone(dom, finishEdit)
   const handle: CardEmbedHandle = {
     dom,
     refresh,
@@ -585,8 +601,10 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     get cardEditor() {
       return edit?.editor ?? null
     },
+    done: finishEdit,
     destroy: () => {
       destroyed = true
+      unregisterDone()
       window.removeEventListener(CARD_HEADS_REDRAW, redrawMarks)
       unfold()
       glow.destroy()
