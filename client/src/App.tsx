@@ -4285,7 +4285,7 @@ export function App() {
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
       {settingsOpen && (
         <Suspense fallback={null}>
-          <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />
+          <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled, autoSync: active.sync.autoSync, addToAutoSync: active.sync.addToAutoSync, openAutoSync: active.sync.openAutoSync, refreshAutoSync: active.sync.refreshAutoSync }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />
         </Suspense>
       )}
       {courseOpen !== null && (
@@ -4337,6 +4337,16 @@ export function App() {
           <span className="sync-banner__text">
             <strong>{syncCopy.title}</strong> {syncCopy.body}
           </span>
+          {syncCopy.action === 'sign-in' && (
+            <button type="button" onClick={() => void api.github.signIn?.()}>
+              Sign in with GitHub
+            </button>
+          )}
+          {syncCopy.action === 'manage-repos' && (
+            <button type="button" onClick={() => void api.github.manageRepos?.()}>
+              Allow this repo on GitHub ↗
+            </button>
+          )}
           {syncCopy.showSetupPrompt && (
             <button type="button" onClick={() => void navigator.clipboard.writeText(buildSetupPrompt(unsynced.root ?? '', unsynced.sync.status?.attention ?? 'error'))}>
               Copy setup prompt

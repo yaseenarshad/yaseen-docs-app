@@ -70,6 +70,39 @@ describe('POST /api/github/token', () => {
   })
 })
 
+describe('GET /auth/callback desktop bounce (YAZ-6190)', () => {
+  it('redirects state=mac.* to yaseendocs://auth/callback preserving code, state, and error', async () => {
+    const res = await handle(new Request(`${SITE}/auth/callback?code=abc&state=mac.xyz123`, { method: 'GET' }), env())
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('yaseendocs://auth/callback?code=abc&state=mac.xyz123')
+  })
+
+  it('forwards access_denied error on mac.* state', async () => {
+    const res = await handle(new Request(`${SITE}/auth/callback?error=access_denied&state=mac.xyz123`, { method: 'GET' }), env())
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('yaseendocs://auth/callback?state=mac.xyz123&error=access_denied')
+  })
+
+  it('passes non-mac state through to static assets (mobile web flow unchanged)', async () => {
+    let forwarded = false
+    const assets = {
+      fetch: async () => {
+        forwarded = true
+        return new Response('ok', { status: 200 })
+      },
+    }
+    const res = await handle(new Request(`${SITE}/auth/callback?code=abc&state=web123`, { method: 'GET' }), env({ ASSETS: assets }))
+    expect(forwarded).toBe(true)
+    expect(res.status).toBe(200)
+  })
+
+  it('wrangler.jsonc routes /auth/callback to the Worker first (YAZ-6203)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const raw = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')
+    expect(raw).toContain('"/auth/callback"')
+  })
+})
+
 describe('POST /api/github/refresh', () => {
   it('sends grant_type=refresh_token with the secret and gives back the new pair', async () => {
     const gh = fakeGithub(() => json(200, { ...PAIR, access_token: 'ghu_new', refresh_token: 'ghr_new' }))

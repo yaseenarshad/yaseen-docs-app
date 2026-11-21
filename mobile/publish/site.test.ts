@@ -171,7 +171,7 @@ describe('the publish config (decision 8, round 12 item 14)', () => {
     expect(config.preview_urls).toBe(false)
     // YAZ-5579: one address, the real one; the preview addresses are detached.
     expect(config.routes).toEqual([{ pattern: 'docs.yaseenarshad.com', custom_domain: true }])
-    expect(config.assets).toEqual({ directory: './dist', binding: 'ASSETS', run_worker_first: ['/api/github/*'], not_found_handling: 'single-page-application', html_handling: 'auto-trailing-slash' })
+    expect(config.assets).toEqual({ directory: './dist', binding: 'ASSETS', run_worker_first: ['/api/github/*', '/auth/callback'], not_found_handling: 'single-page-application', html_handling: 'auto-trailing-slash' })
     expect(config.main).toBe('./worker/index.ts')
     // No binding of any other kind: the script stores nothing (no KV, no D1, no R2, no Durable Object).
     for (const kind of ['kv_namespaces', 'd1_databases', 'r2_buckets', 'durable_objects', 'vars']) expect([kind, config[kind]]).toEqual([kind, undefined])

@@ -81,10 +81,20 @@ focusFolders.get/2: invoke focusFolders:get ["a0","a1"]; => "answer"; !> {"code"
 focusFolders.onChanged/1: on focusFolders:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off focusFolders:changed
 focusFolders.set/3: invoke focusFolders:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 friends.status/0: invoke friends:status []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.addToAutoSync/1: invoke github:add-to-autosync ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.authStatus/0: invoke github:auth-status []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.autoSyncStatus/1: invoke github:autosync-status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.connectRepo/2: invoke github:connect-repo ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.history/2: invoke github:history ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.listRepos/0: invoke github:list-repos []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.manageRepos/0: invoke github:manage-repos []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.onAuthChanged/1: on github:auth-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:auth-changed
 github.onStatus/1: on github:status-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:status-changed
+github.openAutoSync/0: invoke github:open-autosync []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.restore/3: invoke github:restore ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.setEnabled/2: invoke github:set-enabled ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.signIn/0: invoke github:sign-in []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.signOut/0: invoke github:sign-out []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.status/1: invoke github:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.syncNow/1: invoke github:sync-now ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.version/3: invoke github:version ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

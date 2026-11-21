@@ -108,7 +108,25 @@ describe('rootsOf', () => {
 describe('registerGithubIpc', () => {
   it('registers exactly the github channels the preload invokes', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.github.status.channel, CONTRACT.github.syncNow.channel, CONTRACT.github.setEnabled.channel, CONTRACT.github.history.channel, CONTRACT.github.version.channel, CONTRACT.github.restore.channel].sort())
+    expect(channels).toEqual(
+      [
+        CONTRACT.github.status.channel,
+        CONTRACT.github.syncNow.channel,
+        CONTRACT.github.setEnabled.channel,
+        CONTRACT.github.authStatus.channel,
+        CONTRACT.github.signIn.channel,
+        CONTRACT.github.signOut.channel,
+        CONTRACT.github.manageRepos.channel,
+        CONTRACT.github.listRepos.channel,
+        CONTRACT.github.connectRepo.channel,
+        CONTRACT.github.autoSyncStatus.channel,
+        CONTRACT.github.addToAutoSync.channel,
+        CONTRACT.github.openAutoSync.channel,
+        CONTRACT.github.history.channel,
+        CONTRACT.github.version.channel,
+        CONTRACT.github.restore.channel,
+      ].sort(),
+    )
   })
 
   it('refuses a Version history request that is not a board inside the vault (YAZ-1897 D4, YAZ-3039)', async () => {

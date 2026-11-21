@@ -40,6 +40,15 @@ const refuse = (status: number, error: string) => answer(status, { error })
 
 export async function handle(request: Request, env: Env, fetch: Fetch = (url, init) => globalThis.fetch(url, init)): Promise<Response> {
   const url = new URL(request.url)
+  // YAZ-6190 D1: Mac desktop OAuth bounce — state starts with "mac.", so forward code/state/error to yaseendocs://auth/callback.
+  if (url.pathname === CALLBACK_PATH && request.method === 'GET' && url.searchParams.get('state')?.startsWith('mac.')) {
+    const target = new URL('yaseendocs://auth/callback')
+    for (const key of ['code', 'state', 'error']) {
+      const val = url.searchParams.get(key)
+      if (val !== null) target.searchParams.set(key, val)
+    }
+    return Response.redirect(target.href, 302)
+  }
   if (!url.pathname.startsWith('/api/github/')) return env.ASSETS ? env.ASSETS.fetch(request) : refuse(404, 'not_found')
   const route = url.pathname === WORKER_TOKEN ? 'token' : url.pathname === WORKER_REFRESH ? 'refresh' : url.pathname === WORKER_REVOKE ? 'revoke' : null
   if (route === null) return refuse(404, 'not_found')

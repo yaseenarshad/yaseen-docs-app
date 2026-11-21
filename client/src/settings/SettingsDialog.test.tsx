@@ -188,7 +188,7 @@ const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCours
  * Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row. The Mac's send of the numbers (YAZ-5086, `friendsSend`)
  * shows only with Friends on (`shared/features.ts`, off for now; `friendsSend.test.tsx` turns it on).
  */
-const FRIENDS_ROWS = ['githubToken']
+const FRIENDS_ROWS: string[] = []
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -411,7 +411,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Files & Links', 'settings-files', FILES_ROWS),
       page('Folder pages', 'settings-folderPages', FOLDER_PAGES_ROWS),
       page('Cards', 'settings-cards', [...REVIEW_ROWS, ...FRIENDS_ROWS]),
-      page('Sync', 'settings-sync', ['githubSync']),
+      page('Sync', 'settings-sync', ['githubAccount', 'githubSync']),
       page('Memory', 'settings-memory', ['memoryWindows', 'tabSleepAfter', 'embedPictures', 'memoryReload']),
       page('Hotkeys', 'settings-hotkeys', HOTKEY_ROWS),
     ])
@@ -1751,7 +1751,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
   it('GitHub sync: the engine-stamped `enabled` is the read-back, the hint is the detected repo, and Off calls setEnabled(false) — never onChange', () => {
     const { el, setEnabled, onChange } = mountOn('Sync', { ...DEFAULT_SETTINGS }, status({ state: 'synced', enabled: true, repo: { remoteUrl: 'git@github.com:me/pages.git', branch: 'main' } }))
-    const buttons = rowButtons(el, 'githubSync')
+    const buttons = rowButtons(el, 'githubSync').slice(0, 2)
     expect(buttons.map((b) => b.textContent)).toEqual(['On', 'Off'])
     expect(buttons.map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false])
     expect(row(el, 'githubSync')?.querySelector('.setting__hint')?.textContent).toBe('repo git@github.com:me/pages.git · branch main')
@@ -1785,8 +1785,8 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     const { el, rerender } = mountOn('Cards', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual([...ALL, ...FRIENDS_ROWS])
     expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Arrow keys at the ends', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Show card titles', 'Title mark in the card head', 'Title room', 'Card tables', 'Card sides in pages', 'Card sides on card pages', 'Card sides in Explore', 'Card spacing'])
-    // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
-    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', 'GitHub'])
+    // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look. (YAZ-6190 D4: GitHub moved to Sync.)
+    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why. YAZ-5708: the
     // rules of now (YAZ-5655, consolidated): days only, only misses come back, a new card's first ✓ joins today's reviews.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!

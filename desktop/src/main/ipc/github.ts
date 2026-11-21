@@ -2,11 +2,13 @@ import type { GithubSyncStatus } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
+import { addFolderToAutoSync, detectAutoSync, openAutoSyncApp } from '../git/autoSyncDetect'
 import { detectRepo } from '../git/detect'
 import { resolveGit } from '../git/exec'
 import { boardHistory, boardVersion, restoreBoardVersion } from '../git/history'
 import { createGitSync, type GitSyncManager } from '../git/manager'
-import { lookAtRemote, syncPass } from '../git/sync'
+import { connectVaultToRepo, lookAtRemote, syncPass } from '../git/sync'
+import type { GithubAuthManager } from '../githubAuth'
 import type { Store } from '../store'
 import { readConfig, subscribeConfig, writeConfig } from '../vaultConfig'
 import { broadcastAll, rootsOf } from './broadcast'
@@ -36,12 +38,19 @@ async function inspect(root: string): Promise<GithubSyncStatus> {
   return { root, state: 'off', repo: { remoteUrl: facts.remoteUrl, branch: facts.branch } }
 }
 
+export interface GithubIpcDeps {
+  auth?: GithubAuthManager
+  openExternal?: (url: string) => Promise<void> | void
+  openPath?: (appPath: string) => Promise<string> | string
+}
+
 /**
  * Registers the invokes and starts the manager on the current open roots. Returns the
  * manager because `main/index.ts` owns the three triggers no renderer can send: window focus,
  * OS wake, and the final flush on quit.
  */
-export function registerGithubIpc(store: Store, onStatus?: (status: GithubSyncStatus) => void): GitSyncManager {
+export function registerGithubIpc(store: Store, onStatus?: (status: GithubSyncStatus) => void, deps: GithubIpcDeps = {}): GitSyncManager {
+  const { auth } = deps
   const manager = createGitSync({
     readConfig,
     writeConfig,
@@ -53,8 +62,8 @@ export function registerGithubIpc(store: Store, onStatus?: (status: GithubSyncSt
       // Main's own listener (YAZ-5476, YAZ-5487: a vault's first pull lets the daily pages file and the table look be seeded).
       onStatus?.(status)
     },
-    syncPass,
-    lookAtRemote,
+    syncPass: (root, opts) => syncPass(root, { ...opts, auth }),
+    lookAtRemote: (root) => lookAtRemote(root, { auth }),
     inspect,
   })
 
@@ -67,6 +76,33 @@ export function registerGithubIpc(store: Store, onStatus?: (status: GithubSyncSt
     if (typeof enabled !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'enabled' must be a boolean")
     return manager.setEnabled(dir, enabled)
   })
+
+  // YAZ-6190: Mac GitHub App auth, repo connect, and GitHub AutoSync detection/handoff.
+  handle(CONTRACT.github.authStatus, async () => (auth ? auth.status() : { signedIn: false, hasManualToken: false }))
+  handle(CONTRACT.github.signIn, async () => (auth ? auth.startSignIn() : { signedIn: false, hasManualToken: false, error: 'GitHub sign-in is unavailable.' }))
+  handle(CONTRACT.github.signOut, async () => (auth ? auth.signOut() : { signedIn: false, hasManualToken: false }))
+  handle(CONTRACT.github.manageRepos, async () => {
+    await auth?.manageRepos()
+  })
+  handle(CONTRACT.github.listRepos, async () => (auth ? auth.listInstalledRepos() : []))
+  handle(CONTRACT.github.connectRepo, async (root: unknown, repoFullName: unknown) => {
+    const dir = requireAbsPath(root, 'root')
+    if (typeof repoFullName !== 'string' || repoFullName.trim() === '') throw new BridgeFailure('BAD_REQUEST', "'repoFullName' must be a non-empty string")
+    const linked = await connectVaultToRepo(dir, repoFullName.trim())
+    if (!linked.ok) return linked
+    const status = await manager.setEnabled(dir, true)
+    return { ok: true, status }
+  })
+  handle(CONTRACT.github.autoSyncStatus, async (root: unknown) => detectAutoSync(requireAbsPath(root, 'root')))
+  handle(CONTRACT.github.addToAutoSync, async (root: unknown) =>
+    addFolderToAutoSync(requireAbsPath(root, 'root'), {
+      openExternal: deps.openExternal ?? (() => undefined),
+      openPath: deps.openPath ?? (() => 'unsupported'),
+    }),
+  )
+  handle(CONTRACT.github.openAutoSync, async () =>
+    openAutoSyncApp({ openPath: deps.openPath ?? (() => 'unsupported') }),
+  )
 
   // Version history (YAZ-1897 D4, YAZ-3039): every argument is validated in `history.ts`, like `drawing:load`'s.
   handle(CONTRACT.github.history, async (root: unknown, path: unknown) => boardHistory(root, path))

@@ -15,7 +15,7 @@ import type { FoundPage } from './pageBirth'
 import type { CardSkillDuplicate, CardSkillFormats } from './cardSkillFolder'
 import type { CoursePatch } from './courseState'
 import type { CourseAudioChange, CourseAudioSound } from './courseAudio'
-import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts } from './types'
+import type { AddToAutoSyncResult, AutoSyncStatus, ConnectRepoResult, CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, GithubAuthStatus, GithubInstalledRepo, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
@@ -744,6 +744,26 @@ export const CONTRACT = {
     syncNow: invoke<[root: string], GithubSyncStatus>('github:sync-now', 1),
     /** The per-vault switch (D4): ON answers the first pass's real outcome, OFF is immediate and total. */
     setEnabled: invoke<[root: string, enabled: boolean], GithubSyncStatus>('github:set-enabled', 2),
+    /** Mac GitHub App sign-in state (YAZ-6190). Never exposes tokens. */
+    authStatus: invoke<[], GithubAuthStatus>('github:auth-status', 0),
+    /** Starts PKCE GitHub App sign-in in the system browser (YAZ-6190). */
+    signIn: invoke<[], GithubAuthStatus>('github:sign-in', 0),
+    /** Revokes the GitHub App token and signs out on this Mac (YAZ-6190). */
+    signOut: invoke<[], GithubAuthStatus>('github:sign-out', 0),
+    /** Opens the yaseen-docs GitHub App repo picker in the system browser (YAZ-6190). */
+    manageRepos: invoke<[], void>('github:manage-repos', 0),
+    /** Lists repos the signed-in GitHub App can access (YAZ-6190). */
+    listRepos: invoke<[], GithubInstalledRepo[]>('github:list-repos', 0),
+    /** Connects a non-git or remote-less vault folder to an allowed GitHub repo and enables sync (YAZ-6190). */
+    connectRepo: invoke<[root: string, repoFullName: string], ConnectRepoResult>('github:connect-repo', 2),
+    /** Read-only check of GitHub AutoSync.app and its config.json for this vault (YAZ-6190). */
+    autoSyncStatus: invoke<[root: string], AutoSyncStatus>('github:autosync-status', 1),
+    /** Adds a vault folder to GitHub AutoSync via deep link (or opens the app on older builds) (YAZ-6190). */
+    addToAutoSync: invoke<[root: string], AddToAutoSyncResult>('github:add-to-autosync', 1),
+    /** Opens GitHub AutoSync.app if installed (YAZ-6190). */
+    openAutoSync: invoke<[], boolean>('github:open-autosync', 0),
+    /** Fired in every window when Mac GitHub App sign-in state changes (YAZ-6190). */
+    onAuthChanged: push<GithubAuthStatus>('github:auth-changed'),
     /** Fired in every window on every transition of any vault; filter by `status.root`. */
     onStatus: push<GithubSyncStatus>('github:status-changed'),
     /** Version history (YAZ-1897 D4, YAZ-3039): a drawing's or diagram's committed versions, newest first. No git, or no commits: `[]`. */
