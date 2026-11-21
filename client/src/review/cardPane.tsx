@@ -203,7 +203,7 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
       candidatesOf: (target: string) => refs.current.vaultLinks?.candidatesOf(target) ?? null,
     }
     const wikilinkNav: WikilinkNav = {
-      ...(r.pageActions ?? {}),
+      ...r.pageActions,
       root: vault.root,
       createFolder: () => refs.current.createFolder?.() ?? '',
       openCurrent: (to) => refs.current.doors.openTab(to, 'thisTab'),
@@ -216,7 +216,7 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
       allowFileAction: (v) => refs.current.allowFileAction(v),
     }
     const markdownLinkNav: MarkdownLinkNav = {
-      ...(r.pageActions ?? {}),
+      ...r.pageActions,
       open: (href) => api.shell.openLink({ href, sourcePath: path }),
       inApp: (href) => hrefTarget(href, linkPlace),
       openPath: (target, where) =>
