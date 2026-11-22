@@ -34,7 +34,7 @@ async function openFriends(board: Board, patchService?: (s: FakeService) => void
   const p = await readyPhone()
   const mounted = await mount({
     phone: p,
-    now: () => NOW,
+    services: { now: () => NOW },
     friends: (store) => fakeServices(store, s, true),
   })
   h = mounted
@@ -190,7 +190,7 @@ describe('YAZ-6284 Friends v2 (Phone)', () => {
     const p = await readyPhone('Yaseen/Med-Notes')
     const mounted = await mount({
       phone: p,
-      now: () => NOW,
+      services: { now: () => NOW },
       friends: (store) => ({
         ...fakeServices(store, s, true),
         syncVaultExclusion: syncSpy,
@@ -227,7 +227,7 @@ describe('YAZ-6284 Friends v2 (Phone)', () => {
     const p = await readyPhone('Yaseen/Med-Notes')
     const mounted = await mount({
       phone: p,
-      now: () => NOW,
+      services: { now: () => NOW },
       friends: (store) => fakeServices(store, s, true),
     })
     h = mounted
