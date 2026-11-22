@@ -68,6 +68,8 @@ export interface MacSender {
   view(): FriendsSendView
   /** The token was saved, refreshed for a new account, or removed: forget cached session/state. */
   tokenChanged(): void
+  /** Vault inclusion changed in Settings: drop cached state, bypass 5-min throttle, and force-push recounted stats. */
+  vaultsChanged(): Promise<FriendsSendView>
   stop(): Promise<void>
 }
 
@@ -109,6 +111,7 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
   let chain: Promise<unknown> = Promise.resolve()
   let saved: MacSendSaved | null = null
   let tokenEpoch = 0
+  let forceNext = false
 
   const set = (status: FriendsSendStatus, patch: Partial<FriendsSendView> = {}) => {
     const { behind: _behind, unreadable: _unreadable, ...rest } = view
@@ -151,6 +154,8 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
 
   async function run(_reason: SendReason): Promise<FriendsSendView> {
     if (stopped) return view
+    const force = forceNext
+    forceNext = false
     const now = clock.now()
     saved ??= (await deps.state.load()) ?? fresh()
     const s = saved
@@ -159,13 +164,13 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
     const token = await deps.readToken()
     if (token === null) return set('no-token')
 
-    if (s.budget.blockedUntil !== null && now < s.budget.blockedUntil) {
+    if (!force && s.budget.blockedUntil !== null && now < s.budget.blockedUntil) {
       schedule(s.budget.blockedUntil)
       return set('slowed', { retryAt: s.budget.blockedUntil })
     }
 
     const lastTry = Math.max(s.lastSentAt ?? -Infinity, s.lastCountAt ?? -Infinity)
-    if (Number.isFinite(lastTry)) {
+    if (!force && Number.isFinite(lastTry)) {
       const at = lastTry + PUBLISH_EVERY_MS
       if (now < at) {
         schedule(at)
@@ -173,7 +178,7 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       }
     }
 
-    if ((s.countFails ?? 0) > 0 && s.countFailedAt != null) {
+    if (!force && (s.countFails ?? 0) > 0 && s.countFailedAt != null) {
       const at = s.countFailedAt + failWait(s.countFails ?? 0)
       if (now < at) {
         schedule(at)
@@ -237,7 +242,7 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       const text = await countPayloadSliced(counted, turn)
       const zone = board.me.zone ?? null
       const input = await hashSliced(`${dayIn(now, zone)}\n${zone ?? ''}\n${board.me.nickname ?? ''}\n${closed.map((c) => `${c.root}\t${c.key}`).join('\n')}\n`, text)
-      if (input === s.lastInput) {
+      if (!force && input === s.lastInput) {
         await store({ lastCountAt: now })
         return set('unchanged')
       }
@@ -262,12 +267,12 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
         now,
       )
       const key = hash(numbersKey(numbers))
-      if (key === s.lastKey) {
+      if (!force && key === s.lastKey) {
         await store({ lastCountAt: now, lastInput: input })
         return set('unchanged')
       }
 
-      await deps.client.sendStats(numbers, zone)
+      await deps.client.sendStats(numbers, zone, force ? { force: true } : undefined)
       if (epoch !== tokenEpoch) return view
       await store({ lastSentAt: now, lastKey: key, lastCountAt: now, lastInput: input })
       return set('sent', { lastSentAt: now })
@@ -309,6 +314,15 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
         saved ??= (await deps.state.load()) ?? fresh()
         if (saved.refused) await store({ refused: false })
       })
+    },
+    vaultsChanged() {
+      saved = null
+      forceNext = true
+      if (timer !== null) {
+        clock.clearTimeout(timer)
+        timer = null
+      }
+      return attempt('pass')
     },
     async stop() {
       stopped = true

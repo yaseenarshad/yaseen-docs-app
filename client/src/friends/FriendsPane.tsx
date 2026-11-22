@@ -7,11 +7,13 @@ import { createPortal } from 'react-dom'
 import type { FriendBoardMember, FriendsBoardPayload, GroupBoardItem, SharedCardItem, SharedCardStatus, SharedFolderItem } from '@shared/friendsApi'
 import type { FriendDay, FriendStats } from '@shared/friendStatsFormat'
 import {
+  average7Day,
   computeBuddyStreak,
   dailyMarkOf,
   filterSharedCards,
   localDayKey,
   periodTotals,
+  sinceDayKey,
   type BoardPeriod,
   type LeaderboardRow,
 } from '@shared/friendsBoard'
@@ -21,6 +23,7 @@ import { api } from '../api'
 import { renderCard } from '../editor/card/cardRender'
 import { CardBand } from '../review/cardParts'
 import { AcceptCardSheet, type AcceptCardTarget } from './AcceptCardSheet'
+import { BrowseDeckModal } from './BrowseDeckModal'
 import '../explore/explore.css'
 import './friendsPane.css'
 
@@ -207,7 +210,6 @@ function buildVsComparison(me: FriendStats | null, them: FriendStats | null, now
   }
   const today = keyAt(0)
   const yest = keyAt(1)
-  const from7 = keyAt(6)
   const from30 = keyAt(29)
 
   const summarize = (s: FriendStats | null) => {
@@ -218,8 +220,7 @@ function buildVsComparison(me: FriendStats | null, them: FriendStats | null, now
     const newToday = dToday?.newCards ?? 0
     const dueToday = Math.max(0, cardsToday - newToday)
     const secondsToday = dToday?.seconds ?? 0
-    const sum7 = s.days.filter((d) => d.day >= from7 && d.day <= today).reduce((acc, d) => acc + d.cards, 0)
-    const avg7 = Math.round(sum7 / 7)
+    const avg7 = average7Day(s, nowMs).cards
     const days30 = s.days.filter((d) => d.day >= from30 && d.day <= today)
     const rem = days30.reduce((acc, d) => acc + d.remembered, 0)
     const forg = days30.reduce((acc, d) => acc + d.forgot, 0)
@@ -238,7 +239,6 @@ function buildVsComparison(me: FriendStats | null, them: FriendStats | null, now
       inReview: s.totals.inReview,
       newLeft: s.totals.newLeft,
       rememberedPct,
-      mature: s.totals.mature,
       addedThisWeek: s.totals.addedThisWeek,
       daysReviewed30,
     }
@@ -277,7 +277,6 @@ function buildVsComparison(me: FriendStats | null, them: FriendStats | null, now
       line('in review', m?.inReview, t?.inReview),
       line('new cards left', m?.newLeft, t?.newLeft),
       line('remembered', m?.rememberedPct, t?.rememberedPct, { suffix: '%' }),
-      line('mature cards', m?.mature, t?.mature),
       line('added this week', m?.addedThisWeek, t?.addedThisWeek),
       line('days reviewed of 30', m?.daysReviewed30, t?.daysReviewed30),
     ],
@@ -405,6 +404,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
   const [manageGroup, setManageGroup] = useState<GroupBoardItem | null>(null)
   const [confirmRemoveFriend, setConfirmRemoveFriend] = useState<FriendBoardMember | null>(null)
   const [removingFriend, setRemovingFriend] = useState(false)
+  const [browseFriend, setBrowseFriend] = useState<FriendBoardMember | null>(null)
   const [previewCard, setPreviewCard] = useState<{ card: SharedCardItem; context?: string } | null>(null)
   const [acceptTarget, setAcceptTarget] = useState<{ cards: AcceptCardTarget[]; folderId?: string | null; folderName?: string | null } | null>(null)
   const [lastDismissedCard, setLastDismissedCard] = useState<{ id: string; title: string } | null>(null)
@@ -868,30 +868,60 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
               const fr = friendById.get(m.id)
               const name = isMe ? board.me.nickname || m.name : m.name
               const avatarUrl = m.avatarUrl ?? (isMe ? board.me.avatarUrl : fr?.avatarUrl ?? null)
+              const daySet = new Set((m.stats?.days ?? []).map((d) => d.day))
               const doneSet = new Set((m.stats?.days ?? []).filter((d) => d.done).map((d) => d.day))
-              return { id: m.id, name, avatarUrl, doneSet }
+              const sinceDay = sinceDayKey(m.since)
+              return { id: m.id, name, avatarUrl, daySet, doneSet, sinceDay }
             })
-            // 30 days chronologically left -> right (oldest on left, Today on right)
-            const days = Array.from({ length: 30 }, (_, idx) => {
-              const offset = 29 - idx
+            const todayKey = localDayKey(nowMs)
+            const floorDt = new Date(nowMs)
+            floorDt.setDate(floorDt.getDate() - 29)
+            const floor30 = `${floorDt.getFullYear()}-${pad2(floorDt.getMonth() + 1)}-${pad2(floorDt.getDate())}`
+            const groupCreatedDay = sinceDayKey(streakGroup.createdAt)
+            const memberSinceDays = members.map((m) => m.sinceDay).filter((s): s is string => s !== null)
+            const earliestMemberSince = memberSinceDays.length > 0 ? memberSinceDays.reduce((a, b) => (a < b ? a : b)) : null
+            const groupOriginDay = groupCreatedDay ?? earliestMemberSince
+            const stripStart =
+              groupOriginDay && groupOriginDay > floor30
+                ? groupOriginDay > todayKey
+                  ? todayKey
+                  : groupOriginDay
+                : floor30
+            // Build days chronologically from stripStart -> todayKey (max 30 days)
+            const days: {
+              key: string
+              isToday: boolean
+              wk: string
+              md: string
+              allDone: boolean
+              missedNames: string[]
+            }[] = []
+            for (let offset = 29; offset >= 0; offset--) {
               const dt = new Date(nowMs)
               dt.setDate(dt.getDate() - offset)
               const key = `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`
-              const missedNames = members.filter((m) => !m.doneSet.has(key)).map((m) => m.name)
-              return {
+              if (key < stripStart) continue
+              // Only count members who had already joined on `key` for blaming / group completion
+              const joinedOnDay = members.filter((m) => m.sinceDay === null || key >= m.sinceDay)
+              const eligible = joinedOnDay.length > 0 ? joinedOnDay : members
+              const missedNames = eligible
+                .filter((m) => !m.doneSet.has(key) && m.daySet.has(key))
+                .map((m) => m.name)
+              const allDone = eligible.length > 0 && eligible.every((m) => m.doneSet.has(key))
+              days.push({
                 key,
                 isToday: offset === 0,
                 wk: DAY_LABELS[dt.getDay()],
                 md: `${dt.getMonth() + 1}/${dt.getDate()}`,
-                allDone: members.length > 0 && missedNames.length === 0,
+                allDone,
                 missedNames,
-              }
-            })
+              })
+            }
             const todayDay = days[days.length - 1]
             const explicitStreak = (streakGroup as GroupBoardItem & { groupStreak?: number }).groupStreak
             const computedStreak = (() => {
-              if (members.length === 0) return 0
-              let i = todayDay.allDone ? days.length - 1 : days.length - 2
+              if (members.length === 0 || days.length === 0) return 0
+              let i = todayDay?.allDone ? days.length - 1 : days.length - 2
               let count = 0
               while (i >= 0 && days[i].allDone) {
                 count++
@@ -901,7 +931,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
             })()
             const groupStreak = typeof explicitStreak === 'number' ? explicitStreak : computedStreak
             const newestFirst = [...days].reverse()
-            const brokenDay = newestFirst.filter((d) => !d.isToday).find((d) => !d.allDone)
+            const brokenDay = newestFirst.filter((d) => !d.isToday).find((d) => !d.allDone && d.missedNames.length > 0)
             const heroSub =
               groupStreak > 0
                 ? `${groupStreak} ${groupStreak === 1 ? 'day' : 'days'} in a row everyone finished`
@@ -923,7 +953,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                   </p>
                 </div>
 
-                {/* Horizontally scrollable 30-day strip (chronological left -> right, auto-scrolled to Today on right) */}
+                {/* Horizontally scrollable strip (chronological left -> right, auto-scrolled to Today on right) */}
                 <div ref={scrollStripToRight} className="fr-strip30" aria-label="Group 30-day history">
                   {days.map((d) => {
                     const sortedMembers = [...members].sort((a, b) => {
@@ -937,13 +967,24 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                         <span className="fr-day__date">{d.md}</span>
                         <div className="fr-day30__avs">
                           {sortedMembers.map((m) => {
-                            const done = m.doneSet.has(d.key)
-                            const missed = !done && !d.isToday
+                            const beforeJoin = m.sinceDay !== null && d.key < m.sinceDay
+                            const hasDayEntry = m.daySet.has(d.key)
+                            const done = !beforeJoin && m.doneSet.has(d.key)
+                            const missed = !beforeJoin && hasDayEntry && !done && !d.isToday
+                            const statusTitle = done
+                              ? 'finished'
+                              : d.isToday
+                                ? 'in progress today'
+                                : beforeJoin
+                                  ? 'joined later'
+                                  : !hasDayEntry
+                                    ? 'no data yet'
+                                    : 'missed'
                             return (
                               <span
                                 key={m.id}
                                 className={`fr-ring-av fr-ring-av--lg${missed ? ' fr-ring-av--missed' : ''}`}
-                                title={`${m.name}: ${done ? 'finished' : d.isToday ? 'in progress today' : 'missed'}`}
+                                title={`${m.name}: ${statusTitle}`}
                               >
                                 {m.avatarUrl ? <img src={m.avatarUrl} alt={m.name} /> : (m.name[0] ?? '?').toUpperCase()}
                                 {(done || missed) && (
@@ -963,19 +1004,28 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                   })}
                 </div>
 
-                {/* Compact member legend / 30-day summary (sorted by days finished desc) */}
+                {/* Compact member legend / summary (sorted by days finished desc) */}
                 <div className="fr-settings-section" style={{ marginTop: 8 }}>
-                  <div className="fr-settings-section__label">Members (last 30 days)</div>
+                  <div className="fr-settings-section__label">
+                    {days.length < 30 ? `Members (last ${days.length} ${days.length === 1 ? 'day' : 'days'})` : 'Members (last 30 days)'}
+                  </div>
                   {[...members]
-                    .map((m) => ({ ...m, count30: days.filter((d) => m.doneSet.has(d.key)).length }))
-                    .sort((a, b) => b.count30 - a.count30 || a.name.localeCompare(b.name))
+                    .map((m) => {
+                      const eligibleDays = days.filter((d) => (m.sinceDay === null || d.key >= m.sinceDay) && (m.daySet.size === 0 || m.daySet.has(d.key)))
+                      const finishedCount = eligibleDays.filter((d) => m.doneSet.has(d.key)).length
+                      const denom = eligibleDays.length
+                      return { ...m, finishedCount, denom }
+                    })
+                    .sort((a, b) => b.finishedCount - a.finishedCount || a.name.localeCompare(b.name))
                     .map((m) => (
                       <div key={m.id} className="fr-card-item">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
                           <Avatar name={m.name} url={m.avatarUrl} />
                           <span className="fr-card-item__title">{m.name}</span>
                         </div>
-                        <span className="fr-card-item__meta">{m.count30} of 30 days finished</span>
+                        <span className="fr-card-item__meta">
+                          {m.finishedCount} of {m.denom} {m.denom === 1 ? 'day' : 'days'} finished
+                        </span>
                       </div>
                     ))}
                 </div>
@@ -1159,24 +1209,50 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                 : 'Finish your due cards today to start a buddy streak'
             const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
             const pad2 = (n: number) => String(n).padStart(2, '0')
+            const myDaysSet = new Set((board.me.stats?.days ?? []).map((d) => d.day))
+            const theirDaysSet = new Set((vsFriend.stats?.days ?? []).map((d) => d.day))
             const myDone = new Set((board.me.stats?.days ?? []).filter((d) => d.done).map((d) => d.day))
             const theirDone = new Set((vsFriend.stats?.days ?? []).filter((d) => d.done).map((d) => d.day))
             const myName = board.me.nickname || board.me.name || 'Y'
-            // 30 days chronologically left -> right (oldest on left, Today on right)
-            const days = Array.from({ length: 30 }, (_, idx) => {
-              const offset = 29 - idx
+            const todayKey = localDayKey(nowMs)
+            const floorDt = new Date(nowMs)
+            floorDt.setDate(floorDt.getDate() - 29)
+            const floor30 = `${floorDt.getFullYear()}-${pad2(floorDt.getMonth() + 1)}-${pad2(floorDt.getDate())}`
+            const friendSince = sinceDayKey(vsFriend.since)
+            const stripStart =
+              friendSince && friendSince > floor30
+                ? friendSince > todayKey
+                  ? todayKey
+                  : friendSince
+                : floor30
+            // Chronological left -> right (oldest eligible day on left, Today on right)
+            const days: {
+              key: string
+              isToday: boolean
+              wk: string
+              md: string
+              me: boolean
+              them: boolean
+              meHasEntry: boolean
+              themHasEntry: boolean
+            }[] = []
+            for (let offset = 29; offset >= 0; offset--) {
               const dt = new Date(nowMs)
               dt.setDate(dt.getDate() - offset)
               const key = `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`
-              return {
+              if (key < stripStart) continue
+              days.push({
                 key,
                 isToday: offset === 0,
                 wk: DAY_LABELS[dt.getDay()],
                 md: `${dt.getMonth() + 1}/${dt.getDate()}`,
                 me: myDone.has(key),
                 them: theirDone.has(key),
-              }
-            })
+                meHasEntry: myDaysSet.has(key),
+                themHasEntry: theirDaysSet.has(key),
+              })
+            }
+            const canBrowse = Boolean(vsFriend.canBrowseDeck && vsFriend.browsableVaults && vsFriend.browsableVaults.length > 0)
             return (
               <>
                 <div style={{ textAlign: 'center', marginTop: 4 }}>
@@ -1186,11 +1262,11 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                   <p className="fr-buddy-sub">{buddySub}</p>
                 </div>
 
-                {/* Horizontally scrollable 30-day circular-avatar strip (chronological left -> right, auto-scrolled to Today on right) */}
+                {/* Horizontally scrollable circular-avatar strip (chronological left -> right, auto-scrolled to Today on right) */}
                 <div ref={scrollStripToRight} className="fr-strip30" aria-label="Last 30 days" style={{ marginBottom: 14 }}>
                   {days.map((d) => {
-                    const meMissed = !d.me && !d.isToday
-                    const themMissed = !d.them && !d.isToday
+                    const meMissed = !d.me && !d.isToday && d.meHasEntry
+                    const themMissed = !d.them && !d.isToday && d.themHasEntry
                     return (
                       <div key={d.key} className={`fr-day30${d.me && d.them ? ' fr-day30--all' : ''}`}>
                         <span className="fr-day__wk">{d.wk}</span>
@@ -1198,7 +1274,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                         <div className="fr-day30__avs">
                           <span
                             className={`fr-ring-av${meMissed ? ' fr-ring-av--missed' : ''}`}
-                            title={`${myName}: ${d.me ? 'finished' : d.isToday ? 'in progress today' : 'missed'}`}
+                            title={`${myName}: ${d.me ? 'finished' : d.isToday ? 'in progress today' : d.meHasEntry ? 'missed' : 'no data yet'}`}
                           >
                             {board.me.avatarUrl ? <img src={board.me.avatarUrl} alt={myName} /> : myName[0].toUpperCase()}
                             {(d.me || meMissed) && (
@@ -1212,7 +1288,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                           </span>
                           <span
                             className={`fr-ring-av${themMissed ? ' fr-ring-av--missed' : ''}`}
-                            title={`${vsFriend.name}: ${d.them ? 'finished' : d.isToday ? 'in progress today' : 'missed'}`}
+                            title={`${vsFriend.name}: ${d.them ? 'finished' : d.isToday ? 'in progress today' : d.themHasEntry ? 'missed' : 'no data yet'}`}
                           >
                             {vsFriend.avatarUrl ? <img src={vsFriend.avatarUrl} alt={vsFriend.name} /> : (vsFriend.name[0] ?? '?').toUpperCase()}
                             {(d.them || themMissed) && (
@@ -1241,6 +1317,18 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                     <span className="fr-vs__who">{vsFriend.name}</span>
                   </div>
                 </div>
+
+                {canBrowse && (
+                  <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 6px' }}>
+                    <button
+                      type="button"
+                      className="fr-btn fr-btn--primary fr-btn--sm"
+                      onClick={() => setBrowseFriend(vsFriend)}
+                    >
+                      Browse deck
+                    </button>
+                  </div>
+                )}
 
                 {vsFriend.sharedCardCount > 0 && (
                   <div className="fr-vs__shared">
@@ -2009,6 +2097,14 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
       )}
         </>,
         document.body,
+      )}
+      {browseFriend && (
+        <BrowseDeckModal
+          friend={browseFriend}
+          vaultRoot={vaultRoot}
+          onNotice={onNotice}
+          onClose={() => setBrowseFriend(null)}
+        />
       )}
     </div>
   )

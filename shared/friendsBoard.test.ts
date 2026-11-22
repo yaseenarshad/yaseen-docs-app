@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FriendDay, FriendStats } from './friendStatsFormat'
-import { computeBuddyStreak, computeGroupStreak, dailyMarkOf, sortLeaderboard } from './friendsBoard'
+import { average7Day, computeBuddyStreak, computeGroupStreak, dailyMarkOf, sinceDayKey, sortLeaderboard } from './friendsBoard'
 
 function makeDay(day: string, done: boolean, cards = done ? 20 : 0): FriendDay {
   return { day, cards, seconds: cards * 25, remembered: cards, forgot: 0, newCards: 2, done }
@@ -61,5 +61,59 @@ describe('friendsBoard shared helpers (YAZ-6200, YAZ-6222)', () => {
     const utcPlus9 = [makeDay('2026-11-22', true), makeDay('2026-11-21', true), makeDay('2026-11-20', true), makeDay('2026-11-19', true)]
     expect(computeGroupStreak([utcMinus7, utc0, utcPlus9], Date.parse('2026-11-22T02:00:00Z'))).toBe(3)
     expect(computeGroupStreak([utcMinus7Open, utc0Open, utcPlus9], Date.parse('2026-11-22T02:00:00Z'))).toBe(2)
+  })
+
+  it('average7Day divides by actual calendar span and excludes unstarted today when prior days exist', () => {
+    const base = makeStats('2026-11-21', 14, 350, 1, true)
+    // Brand new user (1 day) -> divides by 1, not 7
+    expect(average7Day(base, now)).toEqual({ cards: 14, seconds: 350 })
+
+    // 3 days of history, today unstarted (cards: 0, done: false) -> excludes today, divides by 3
+    const unstartedToday: FriendStats = {
+      ...base,
+      days: [
+        makeDay('2026-11-21', false, 0),
+        makeDay('2026-11-20', true, 30),
+        makeDay('2026-11-19', true, 20),
+        makeDay('2026-11-18', true, 10),
+      ],
+    }
+    expect(average7Day(unstartedToday, now)).toEqual({ cards: 20, seconds: 500 })
+
+    // 3 prior days + today started -> includes today, divides by 4
+    const startedToday: FriendStats = {
+      ...base,
+      days: [
+        makeDay('2026-11-21', false, 20),
+        makeDay('2026-11-20', true, 30),
+        makeDay('2026-11-19', true, 20),
+        makeDay('2026-11-18', true, 10),
+      ],
+    }
+    expect(average7Day(startedToday, now)).toEqual({ cards: 20, seconds: 500 })
+
+    // 8 prior days + today unstarted -> excludes today, caps span at 7 prior days
+    const longHistory: FriendStats = {
+      ...base,
+      days: [
+        makeDay('2026-11-21', false, 0),
+        makeDay('2026-11-20', true, 10),
+        makeDay('2026-11-19', true, 10),
+        makeDay('2026-11-18', true, 10),
+        makeDay('2026-11-17', true, 10),
+        makeDay('2026-11-16', true, 10),
+        makeDay('2026-11-15', true, 10),
+        makeDay('2026-11-14', true, 10),
+        makeDay('2026-11-13', true, 100),
+      ],
+    }
+    expect(average7Day(longHistory, now)).toEqual({ cards: 10, seconds: 250 })
+  })
+
+  it('sinceDayKey parses ISO timestamps and YYYY-MM-DD keys safely', () => {
+    expect(sinceDayKey('2026-11-15')).toBe('2026-11-15')
+    expect(sinceDayKey('2026-11-15T18:00:00.000Z')).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(sinceDayKey(null)).toBeNull()
+    expect(sinceDayKey('not-a-date')).toBeNull()
   })
 })

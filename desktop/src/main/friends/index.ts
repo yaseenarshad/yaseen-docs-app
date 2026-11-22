@@ -4,6 +4,7 @@
  * the card-file watcher trigger (`cardTrigger.ts`), and the count worker (`countWorker.ts`).
  */
 import { join } from 'node:path'
+import type { DeckVaultConfig } from '@shared/friendsApi'
 import { emptyBudget } from '@shared/friendSend'
 import { isRecord } from '@shared/guards'
 import { cleanToken } from '@shared/githubInput'
@@ -49,6 +50,8 @@ export interface FriendsSend {
   look(): Promise<FriendsSendView>
   /** Include or exclude a local vault path from Friends counting (YAZ-6275). */
   setVaultIncluded(vaultPath: string, included: boolean): Promise<{ ok: true; knownVaults: { path: string; name: string; included: boolean }[] } | { ok: false; error: string }>
+  /** Lists repositories from the user's GitHub App installations with their real `installationId`. */
+  listInstallableRepos(): Promise<{ ok: true; repos: DeckVaultConfig[] } | { ok: false; error: string }>
   tokenChanged(): void
   stop(): Promise<void>
 }
@@ -157,9 +160,79 @@ export function startFriendsSend(
         groups: 0,
         refused: false,
       }
-      await state.save({ ...prev, excludedVaults: [...excluded], lastInput: null })
-      void sender.attempt('pass')
+      await state.save({ ...prev, excludedVaults: [...excluded], lastInput: null, lastKey: null })
+
+      // Sync canonical lowercase `owner/repo` included vaults to D1 via PUT /api/friends/prefs
+      try {
+        const bin = await resolveGit()
+        if (bin !== null) {
+          const includedRepos: string[] = []
+          const seen = new Set<string>()
+          for (const v of listVaults(store.get())) {
+            if (excluded.has(v.path)) continue
+            const facts = await detectRepo(bin, v.path).catch(() => null)
+            const rawRepo = facts?.remoteUrl ? repoOfRemote(facts.remoteUrl) : null
+            if (!rawRepo) continue
+            const slug = rawRepo.split('@')[0].trim().toLowerCase()
+            if (slug && !seen.has(slug)) {
+              seen.add(slug)
+              includedRepos.push(slug)
+            }
+          }
+          await service.updatePrefs({ vaults: includedRepos }).catch(() => undefined)
+        }
+      } catch {
+        // Best-effort prefs sync; local exclusion + recount still proceeds.
+      }
+
+      sender.vaultsChanged()
       return { ok: true as const, knownVaults: buildKnownVaults(excluded) }
+    },
+    async listInstallableRepos() {
+      if (process.env.YASEEN_DOCS_FRIENDS_DEMO === '1') {
+        return {
+          ok: true as const,
+          repos: [
+            { repo: 'yaseen/cards-friends-demo', installationId: 1001, name: 'Cards Friends Demo' },
+            { repo: 'yaseen/med-notes', installationId: 1001, name: 'Med Notes' },
+          ],
+        }
+      }
+      const token = await readToken()
+      if (!token) return { ok: false as const, error: 'signed_out' }
+      const headers = {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      }
+      try {
+        const instRes = await fetch('https://api.github.com/user/installations?per_page=100', { headers })
+        if (!instRes.ok) {
+          return { ok: false as const, error: instRes.status === 401 ? 'signed_out' : `github_${instRes.status}` }
+        }
+        const instJson = (await instRes.json().catch(() => null)) as { installations?: unknown[] } | null
+        const installations = Array.isArray(instJson?.installations) ? instJson.installations : []
+        const seen = new Map<string, DeckVaultConfig>()
+        for (const item of installations) {
+          if (!isRecord(item) || typeof item.id !== 'number' || item.id <= 0) continue
+          const installationId = item.id
+          const repoRes = await fetch(`https://api.github.com/user/installations/${installationId}/repositories?per_page=100`, { headers })
+          if (!repoRes.ok) continue
+          const repoJson = (await repoRes.json().catch(() => null)) as { repositories?: unknown[] } | null
+          const repositories = Array.isArray(repoJson?.repositories) ? repoJson.repositories : []
+          for (const r of repositories) {
+            if (!isRecord(r) || typeof r.full_name !== 'string') continue
+            const slug = r.full_name.trim().toLowerCase()
+            if (!slug || seen.has(slug)) continue
+            const name = typeof r.name === 'string' && r.name.trim() !== '' ? r.name.trim() : slug.split('/').pop() ?? slug
+            seen.set(slug, { repo: slug, installationId, name })
+          }
+        }
+        const repos = [...seen.values()].sort((a, b) => a.repo.localeCompare(b.repo))
+        return { ok: true as const, repos }
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      }
     },
     tokenChanged: () => {
       service.clearSession()

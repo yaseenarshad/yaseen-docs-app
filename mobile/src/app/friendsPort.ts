@@ -28,6 +28,8 @@ export interface FriendsPort {
   saveSettings(settings: FriendsSettings): Promise<void>
   /** Permanently delete this user's Friends data from Cloudflare D1 (YAZ-6218). */
   deleteMe?(): Promise<{ ok: true; deleted: true } | { ok: false; error: string }>
+  /** Syncs updated vault exclusions to D1 prefs and forces an immediate stats recount push. */
+  syncVaultExclusion?(): Promise<void>
   /** Before "Sign out and erase this phone", stop each friends request and timer. */
   stop?(): Promise<void>
 }

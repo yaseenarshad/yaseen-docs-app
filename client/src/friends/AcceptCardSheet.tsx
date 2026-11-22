@@ -15,6 +15,7 @@ export interface AcceptCardTarget {
   title: string
   markdown: string
   senderLogin: string
+  attachments?: { name: string; mime: string; dataBase64: string }[]
 }
 
 export interface AcceptCardSheetProps {
@@ -22,6 +23,8 @@ export interface AcceptCardSheetProps {
   folderId?: string | null
   folderName?: string | null
   vaultRoot: string
+  /** When true (e.g. importing from Browse deck), skips `setCardState`/`setFolderState` calls. */
+  skipServerState?: boolean
   onImported: (result: { dir: string; paths: string[]; cardIds: string[]; folderId?: string | null }) => void
   onClose: () => void
 }
@@ -57,7 +60,7 @@ function writeLastDir(dir: string): void {
   }
 }
 
-export function AcceptCardSheet({ cards, folderId, folderName, vaultRoot, onImported, onClose }: AcceptCardSheetProps) {
+export function AcceptCardSheet({ cards, folderId, folderName, vaultRoot, skipServerState = false, onImported, onClose }: AcceptCardSheetProps) {
   const [folders, setFolders] = useState<string[]>([])
   const [destination, setDestination] = useState<'shared' | 'pick'>('shared')
   const [selectedDir, setSelectedDir] = useState<string>(() => readLastDir())
@@ -109,6 +112,7 @@ export function AcceptCardSheet({ cards, folderId, folderName, vaultRoot, onImpo
           markdown: c.markdown,
           senderLogin: c.senderLogin,
           upNext,
+          ...(c.attachments && c.attachments.length > 0 ? { attachments: c.attachments } : {}),
         })),
       })
       if (!res.ok) {
@@ -116,10 +120,12 @@ export function AcceptCardSheet({ cards, folderId, folderName, vaultRoot, onImpo
         return
       }
       if (!useShared) writeLastDir(selectedDir)
-      if (folderId) {
-        await api.friends.setFolderState(folderId, 'accepted').catch(() => undefined)
-      } else {
-        await Promise.all(cards.map((c) => api.friends.setCardState(c.id, 'accepted').catch(() => undefined)))
+      if (!skipServerState) {
+        if (folderId) {
+          await api.friends.setFolderState(folderId, 'accepted').catch(() => undefined)
+        } else {
+          await Promise.all(cards.map((c) => api.friends.setCardState(c.id, 'accepted').catch(() => undefined)))
+        }
       }
       onImported({
         dir: useShared ? 'Shared Cards' : selectedDir,

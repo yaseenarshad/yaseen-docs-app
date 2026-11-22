@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
+import type { DeckSettingsPayload, DeckShareMode, DeckVaultConfig } from '@shared/friendsApi'
 import type { FriendsSendView } from '@shared/types'
 import { api } from '../api'
 import { useUnit } from '../vault/unitWord'
@@ -111,6 +112,11 @@ export function FriendsSendControl() {
   const [countedVaults, setCountedVaults] = useState<string[]>([])
   const [knownVaults, setKnownVaults] = useState<{ path: string; name: string; included: boolean }[]>([])
   const [savingVaults, setSavingVaults] = useState(false)
+  const [friendsList, setFriendsList] = useState<{ id: number; name: string; login: string }[]>([])
+  const [deckSettings, setDeckSettings] = useState<DeckSettingsPayload>({ mode: 'none', vaults: [], allowedFriendIds: [] })
+  const [installableRepos, setInstallableRepos] = useState<DeckVaultConfig[]>([])
+  const [savingDeck, setSavingDeck] = useState(false)
+  const [deckError, setDeckError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null)
@@ -138,6 +144,25 @@ export function FriendsSendControl() {
           setNickname(nick)
           setSavedNickname(nick)
           setGithubName(res.board.me.name || res.board.me.login || '')
+          setFriendsList(res.board.friends.map((f) => ({ id: f.id, name: f.name, login: f.login })))
+        },
+        () => undefined,
+      )
+    }
+    if (typeof api.friends.getDeckSettings === 'function') {
+      api.friends.getDeckSettings().then(
+        (res) => {
+          if (!live || !res.ok) return
+          setDeckSettings(res.settings)
+        },
+        () => undefined,
+      )
+    }
+    if (typeof api.friends.listInstallableRepos === 'function') {
+      api.friends.listInstallableRepos().then(
+        (res) => {
+          if (!live || !res.ok) return
+          setInstallableRepos(res.repos)
         },
         () => undefined,
       )
@@ -201,6 +226,47 @@ export function FriendsSendControl() {
     } finally {
       setSavingVaults(false)
     }
+  }
+
+  const persistDeckSettings = async (next: DeckSettingsPayload) => {
+    if (savingDeck || typeof api.friends.saveDeckSettings !== 'function') return
+    const prev = deckSettings
+    setDeckSettings(next)
+    setSavingDeck(true)
+    setDeckError(null)
+    try {
+      const res = await api.friends.saveDeckSettings(next)
+      if (res.ok) {
+        setDeckSettings(res.settings)
+      } else {
+        setDeckSettings(prev)
+        setDeckError(res.error)
+      }
+    } catch (err) {
+      setDeckSettings(prev)
+      setDeckError(err instanceof Error ? err.message : 'Could not save deck permissions.')
+    } finally {
+      setSavingDeck(false)
+    }
+  }
+
+  const setDeckMode = (mode: DeckShareMode) => {
+    void persistDeckSettings({ ...deckSettings, mode })
+  }
+
+  const toggleAllowedFriend = (friendId: number, allowed: boolean) => {
+    const nextIds = allowed
+      ? Array.from(new Set([...deckSettings.allowedFriendIds, friendId]))
+      : deckSettings.allowedFriendIds.filter((id) => id !== friendId)
+    void persistDeckSettings({ ...deckSettings, allowedFriendIds: nextIds })
+  }
+
+  const toggleBrowsableVault = (repoCfg: DeckVaultConfig, allowed: boolean) => {
+    const slug = repoCfg.repo.toLowerCase()
+    const nextVaults = allowed
+      ? [...deckSettings.vaults.filter((v) => v.repo.toLowerCase() !== slug), { ...repoCfg, repo: slug }]
+      : deckSettings.vaults.filter((v) => v.repo.toLowerCase() !== slug)
+    void persistDeckSettings({ ...deckSettings, vaults: nextVaults })
   }
 
   const handleDeleteMe = async () => {
@@ -295,6 +361,87 @@ export function FriendsSendControl() {
           </div>
         </fieldset>
       ) : null}
+
+      <div className="friends-settings__deck" style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: 6 }}>Browse deck permissions</legend>
+          <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 6 }}>Who can browse my deck</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} role="radiogroup" aria-label="Who can browse my deck">
+            {(
+              [
+                { id: 'none', label: 'No one' },
+                { id: 'all', label: 'All friends' },
+                { id: 'selected', label: 'Selected friends' },
+              ] as const
+            ).map((opt) => (
+              <label key={opt.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <input
+                  type="radio"
+                  name="friends-deck-share-mode"
+                  checked={deckSettings.mode === opt.id}
+                  disabled={savingDeck}
+                  onChange={() => setDeckMode(opt.id)}
+                />
+                <span>{opt.label}</span>
+              </label>
+            ))}
+          </div>
+
+          {deckSettings.mode === 'selected' && (
+            <div style={{ marginTop: 8, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {friendsList.length === 0 ? (
+                <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>No friends yet.</span>
+              ) : (
+                friendsList.map((f) => (
+                  <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={deckSettings.allowedFriendIds.includes(f.id)}
+                      disabled={savingDeck}
+                      onChange={(e) => toggleAllowedFriend(f.id, e.target.checked)}
+                    />
+                    <span>{f.name}</span>
+                    <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>@{f.login}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+        </fieldset>
+
+        <fieldset style={{ border: 0, padding: 0, margin: '12px 0 0' }}>
+          <legend style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 6 }}>Vaults friends can browse</legend>
+          {installableRepos.length === 0 ? (
+            <p className="settings__key-status" style={{ margin: 0 }}>
+              Connect a GitHub App repository to allow friends to browse it.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {installableRepos.map((repo) => {
+                const checked = deckSettings.vaults.some((v) => v.repo.toLowerCase() === repo.repo.toLowerCase())
+                return (
+                  <label key={repo.repo} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }} title={repo.repo}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={savingDeck}
+                      onChange={(e) => toggleBrowsableVault(repo, e.target.checked)}
+                    />
+                    <span>{repo.name}</span>
+                    <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{repo.repo}</span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+        </fieldset>
+
+        {deckError && (
+          <p className="settings__key-status" role="alert" style={{ color: 'var(--danger, #dc2626)', marginTop: 6 }}>
+            {deckError}
+          </p>
+        )}
+      </div>
 
       <div className="friends-settings__danger" style={{ marginTop: 14 }}>
         {!confirmDelete ? (

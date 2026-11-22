@@ -7,15 +7,18 @@ import { useEffect, useState } from 'react'
 import type { FriendsBoardPayload } from '@shared/friendsApi'
 import { MAX_SHARED_NOTE_CHARS, sanitizeSharedCard } from '@shared/friendsShare'
 import { api } from '../api'
+import { useUnit } from '../vault/unitWord'
 import './friendsPane.css'
 
 export interface ShareCardModalProps {
   card: { title: string; markdown: string }
+  kind?: 'card' | 'page'
   onShared: (summary: string) => void
   onClose: () => void
 }
 
-export function ShareCardModal({ card, onShared, onClose }: ShareCardModalProps) {
+export function ShareCardModal({ card, kind = 'card', onShared, onClose }: ShareCardModalProps) {
+  const unit = useUnit()
   const [board, setBoard] = useState<FriendsBoardPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -109,16 +112,16 @@ export function ShareCardModal({ card, onShared, onClose }: ShareCardModalProps)
 
   return (
     <div className="fr-modal-backdrop" role="presentation" onClick={onClose}>
-      <div className="fr-modal" role="dialog" aria-modal="true" aria-label="Share card with friend or group" onClick={(e) => e.stopPropagation()}>
+      <div className="fr-modal" role="dialog" aria-modal="true" aria-label={kind === 'page' ? unit('Share page with friend or group') : 'Share card with friend or group'} onClick={(e) => e.stopPropagation()}>
         <div className="fr-modal__head">
-          <h3 className="fr-modal__title">Share card</h3>
+          <h3 className="fr-modal__title">{kind === 'page' ? unit('Share page') : 'Share card'}</h3>
           <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" aria-label="Close" onClick={onClose}>
             ✕
           </button>
         </div>
 
         <p className="fr-line">
-          <strong>{card.title || 'Untitled card'}</strong> · Review history and card IDs are stripped before sending.
+          <strong>{card.title || (kind === 'page' ? unit('Untitled page') : 'Untitled card')}</strong> · Review history and card IDs are stripped before sending.
         </p>
 
         {loading && <p className="fr-line">Loading friends…</p>}
@@ -196,7 +199,7 @@ export function ShareCardModal({ card, onShared, onClose }: ShareCardModalProps)
 
         <div className="fr-actions">
           <button type="button" className="fr-btn fr-btn--primary" disabled={!canSend} onClick={() => void handleSend()}>
-            {sending ? 'Sharing…' : 'Share card'}
+            {sending ? 'Sharing…' : kind === 'page' ? unit('Share page') : 'Share card'}
           </button>
           <button type="button" className="fr-btn fr-btn--ghost" onClick={onClose}>
             Cancel

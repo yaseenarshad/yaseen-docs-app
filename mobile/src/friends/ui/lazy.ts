@@ -53,6 +53,11 @@ export function lazyFriends(
       if (s.deleteMe) return s.deleteMe()
       return { ok: false, error: 'unsupported' }
     },
+    syncVaultExclusion: async () => {
+      const s = await load()
+      if (s.port.syncVaultExclusion) await s.port.syncVaultExclusion()
+      else if (s.syncVaultExclusion) await s.syncVaultExclusion()
+    },
     service: () => load(),
     stop: async () => {
       if (made !== null) await (await made).stop()

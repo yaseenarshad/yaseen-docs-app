@@ -100,12 +100,12 @@ describe('YAZ-5498: the ⋯ menu shows the full title when the top bar cuts it',
     cut = true
     expect(await menuTitle(h)).toEqual({ name: LONG, folder: 'travel / 2026' })
     // YAZ-5568: its `# Week` folds (it is not the page's title), so ⋯ has Collapse all too.
-    expect(items(h)).toEqual(['🔍 Find in page', '☰ Headings', 'Collapse all'])
+    expect(items(h)).toEqual(['🔍 Find in page', '☰ Headings', '↗ Share page with friend or group…', 'Collapse all'])
     // Closed and opened again with the title fitting (the phone turned): no title.
     await h.click('Page tools')
     cut = false
     expect(await menuTitle(h)).toBeNull()
-    expect(items(h)).toEqual(['🔍 Find in page', '☰ Headings', 'Collapse all'])
+    expect(items(h)).toEqual(['🔍 Find in page', '☰ Headings', '↗ Share page with friend or group…', 'Collapse all'])
   })
 
   it('a page at the vault\'s top: the full title, no folder line', async () => {

@@ -1,13 +1,15 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useLayoutEffect, useRef, useState } from 'react'
 import { useApp } from '../../app/AppState'
 import type { Route } from '../../app/nav'
 import { Confirm } from '../../screens/Confirm'
 import { Frame, Problem } from '../../screens/Frame'
-import { addDays, formatStudyDuration, gistText, initialOf, localDay, updatedLabel, vsBoard, type VsLine } from './board'
+import { addDays, formatStudyDuration, gistText, initialOf, localDay, sinceDayKey, updatedLabel, vsBoard, type VsLine } from './board'
 import './friends.css'
 import type { GroupView } from './groups'
 import { Avatar, actionWords } from './parts'
 import { useBoard, useNow, useService } from './useFriends'
+
+const BrowseDeckSheet = lazy(() => import('./BrowseDeckSheet'))
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 
@@ -32,6 +34,7 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
   const { service } = useService()
   const { board, refresh } = useBoard(service)
   const [asking, setAsking] = useState<null | 'remove'>(null)
+  const [browseOpen, setBrowseOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [said, setSaid] = useState<string | null>(null)
   const stripRef = useRef<HTMLUListElement>(null)
@@ -86,12 +89,19 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
   }
 
   const friendMatch = friend ?? (member !== null ? ok.friends.find((f) => f.theirs === member.pointer) ?? null : null)
-  const d1Avatar =
+  const d1Member =
     member !== null
-      ? ok.d1Groups?.find((g) => g.id === route.group)?.members.find((m) => String(m.id) === member.pointer)?.avatarUrl ?? null
+      ? ok.d1Groups?.find((g) => g.id === route.group)?.members.find((m) => String(m.id) === member.pointer) ?? null
       : null
+  const d1Avatar = d1Member?.avatarUrl ?? null
   const theirAvatar = friendMatch?.avatar ?? d1Avatar
   const buddyStreak = friendMatch?.buddyStreak ?? 0
+  const canBrowse =
+    friendMatch !== null &&
+    friendMatch.canBrowseDeck === true &&
+    Array.isArray(friendMatch.browsableVaults) &&
+    friendMatch.browsableVaults.length > 0 &&
+    typeof friendMatch.userId === 'number'
   const buddyStreakSubtitle =
     buddyStreak === 1
       ? '1 day in a row you both finished your due cards'
@@ -100,17 +110,38 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
       : 'Finish your due cards today to start a buddy streak'
 
   const todayStr = todayKey
-  const days30 = Array.from({ length: 30 }, (_, idx) => {
-    const day = addDays(todayStr, idx - 29)
-    const you = ok.me.stats?.days.some((d) => d.day === day && d.done === true) === true
-    const them = theirStats?.days.some((d) => d.day === day && d.done === true) === true
+  const minStripDay = addDays(todayStr, -29)
+  const sinceDay = sinceDayKey(friendMatch?.since ?? d1Member?.since)
+  const stripStart =
+    sinceDay !== null && sinceDay > minStripDay
+      ? sinceDay > todayStr
+        ? todayStr
+        : sinceDay
+      : minStripDay
+
+  const stripDays: string[] = []
+  for (let d = stripStart; d <= todayStr && stripDays.length < 30; d = addDays(d, 1)) {
+    stripDays.push(d)
+  }
+  if (stripDays.length === 0) stripDays.push(todayStr)
+
+  const days30 = stripDays.map((day) => {
+    const isToday = day === todayStr
+    const youEntry = ok.me.stats?.days.find((d) => d.day === day)
+    const themEntry = theirStats?.days.find((d) => d.day === day)
+    const you = youEntry?.done === true
+    const them = themEntry?.done === true
+    const youMissed = !you && !isToday && youEntry !== undefined
+    const themMissed = !them && !isToday && themEntry !== undefined
     return {
       day,
-      isToday: day === todayStr,
+      isToday,
       weekday: weekdayFor(day),
       shortDate: shortDayDate(day),
       you,
       them,
+      youMissed,
+      themMissed,
       both: you && them,
     }
   })
@@ -137,15 +168,28 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
           🤝 {buddyStreak}d buddy streak
         </span>
         <p className="fr-hype-sub">{buddyStreakSubtitle}</p>
+        {canBrowse && (
+          <button
+            type="button"
+            className="btn fr-browse-btn"
+            onClick={() => setBrowseOpen(true)}
+          >
+            Browse deck
+          </button>
+        )}
       </div>
-      <ul ref={stripRef} className="fr-strip30" aria-label={`Last 30 days. You both finished ${days30.filter((d) => d.both).length} of 30.`}>
+      <ul
+        ref={stripRef}
+        className="fr-strip30"
+        aria-label={`Last ${days30.length} ${days30.length === 1 ? 'day' : 'days'}. You both finished ${days30.filter((d) => d.both).length} of ${days30.length}.`}
+      >
         {days30.map((d) => (
           <li
             key={d.day}
             className={d.both ? 'fr-day fr-strip30__col fr-day--both' : 'fr-day fr-strip30__col'}
-            aria-label={`${d.weekday} ${d.shortDate}: ${d.you ? 'you finished' : 'you missed'}, ${name} ${d.them ? 'finished' : 'missed'}${
-              d.both ? '. You both win.' : ''
-            }`}
+            aria-label={`${d.weekday} ${d.shortDate}: ${d.you ? 'you finished' : d.youMissed ? 'you missed' : 'you no data'}, ${name} ${
+              d.them ? 'finished' : d.themMissed ? 'missed' : 'no data'
+            }${d.both ? '. You both win.' : ''}`}
           >
             <span className="fr-day__wk" aria-hidden="true">
               {d.weekday}
@@ -158,14 +202,14 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
                 className={
                   d.you
                     ? 'fr-ring-av fr-ring-av--done'
-                    : d.isToday
-                    ? 'fr-ring-av'
-                    : 'fr-ring-av fr-ring-av--missed'
+                    : d.youMissed
+                    ? 'fr-ring-av fr-ring-av--missed'
+                    : 'fr-ring-av'
                 }
-                title={d.you ? 'You: finished' : d.isToday ? 'You: in progress today' : 'You: missed'}
+                title={d.you ? 'You: finished' : d.isToday ? 'You: in progress today' : d.youMissed ? 'You: missed' : 'You: no data'}
               >
                 {ok.me.avatar ? <img src={ok.me.avatar} alt="" referrerPolicy="no-referrer" /> : initialOf(ok.me.name)}
-                {(d.you || !d.isToday) && (
+                {(d.you || d.youMissed) && (
                   <span
                     className={d.you ? 'fr-ring-av__badge fr-ring-av__badge--done' : 'fr-ring-av__badge fr-ring-av__badge--missed'}
                     aria-hidden="true"
@@ -178,14 +222,14 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
                 className={
                   d.them
                     ? 'fr-ring-av fr-ring-av--done'
-                    : d.isToday
-                    ? 'fr-ring-av'
-                    : 'fr-ring-av fr-ring-av--missed'
+                    : d.themMissed
+                    ? 'fr-ring-av fr-ring-av--missed'
+                    : 'fr-ring-av'
                 }
-                title={d.them ? `${name}: finished` : d.isToday ? `${name}: in progress today` : `${name}: missed`}
+                title={d.them ? `${name}: finished` : d.isToday ? `${name}: in progress today` : d.themMissed ? `${name}: missed` : `${name}: no data`}
               >
                 {theirAvatar ? <img src={theirAvatar} alt="" referrerPolicy="no-referrer" /> : initialOf(name)}
-                {(d.them || !d.isToday) && (
+                {(d.them || d.themMissed) && (
                   <span
                     className={d.them ? 'fr-ring-av__badge fr-ring-av__badge--done' : 'fr-ring-av__badge fr-ring-av__badge--missed'}
                     aria-hidden="true"
@@ -221,6 +265,19 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
         <p className="fr-line" role="status">
           {said}
         </p>
+      )}
+      {browseOpen && canBrowse && service !== null && (
+        <Suspense fallback={null}>
+          <BrowseDeckSheet
+            ownerId={friendMatch.userId!}
+            ownerName={name}
+            ownerLogin={friendMatch.login ?? name.toLowerCase()}
+            vaults={friendMatch.browsableVaults!}
+            service={service}
+            onClose={() => setBrowseOpen(false)}
+            onNotice={(msg) => setSaid(msg)}
+          />
+        </Suspense>
       )}
       {asking === 'remove' && (
         <Confirm

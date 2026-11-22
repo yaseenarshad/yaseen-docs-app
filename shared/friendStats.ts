@@ -73,13 +73,15 @@ function* friendStatsSteps(vaults: readonly FriendVault[], now: number, zone?: s
   const startOf = (t: { y: number; m: number; d: number }) => cal.start(t.y, t.m, t.d)
   const today = cal.date(now)
   const todayEnd = cardTime(startOf(plus(today, 1)))
-  // The first answer across all vaults, before the end of today: the history starts on its local day.
+  // The first answer across all enabled vaults, before the end of today: the history starts on its local day.
   let firstAt: string | null = null
-  for (const { pages } of vaults)
+  for (const { pages, settings } of vaults) {
+    if (!settings.enabled) continue
     for (const page of pages) {
       for (const card of page.cards ?? []) for (const r of card.reviews) if (r.at < todayEnd && (firstAt === null || r.at < firstAt)) firstAt = r.at
       yield
     }
+  }
   let start = firstAt === null ? today : cal.date(Date.parse(firstAt))
   if (startOf(start) > startOf(today)) start = today
 
@@ -106,10 +108,15 @@ function* friendStatsSteps(vaults: readonly FriendVault[], now: number, zone?: s
   const totals = { cards: 0, inReview: 0, newLeft: 0, mature: 0, dueLeft: 0 }
 
   for (const { pages, settings } of vaults) {
+    if (!settings.enabled) continue
     for (const page of pages) {
       const ids = new Set<string>()
       for (const card of page.cards ?? []) {
         yield
+        if (card.id !== null) {
+          if (ids.has(card.id)) continue
+          ids.add(card.id)
+        }
         totals.cards++
         const reviews = inOrder(card.reviews).filter((r) => r.at < todayEnd)
         // The day's numbers: every answer counts, archived cards too (their answers were made).
@@ -133,12 +140,16 @@ function* friendStatsSteps(vaults: readonly FriendVault[], now: number, zone?: s
         totals.inReview++
         const history = cardHistory(reviews, settings)
         if (history[history.length - 1].interval >= MATURE_DAYS) totals.mature++
-        if (!settings.enabled || card.id === null || ids.has(card.id)) continue
-        ids.add(card.id)
-        // Each day after the first answer: was the card due that day, and did the day's answers finish it?
+        if (card.id === null) continue
+        // Match Inbox's isNewCard 1:1: an again-only card has never been learned yet, so it is not a due card.
+        const firstLearned = reviews.find((r) => r.rating !== 'again')
+        const learnedDay = firstLearned ? dayOf(bounds, firstLearned.at) : -1
+        if (learnedDay < 0) continue
+        // Each day after the card was first learned: was the card due that day, and did the day's answers finish it?
         let before = 0
-        for (let d = Math.max(firstDay + 1, 0); d <= last; d++) {
+        for (let d = Math.max(learnedDay + 1, 0); d <= last; d++) {
           while (before < history.length && history[before].review.at < bounds[d]) before++
+          if (before === 0) continue
           const was = history[before - 1]
           if (!(was.due < ends[d])) continue
           let upTo = before

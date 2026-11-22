@@ -49,6 +49,12 @@ const friendsMock = vi.hoisted(() => ({
   deleteSharedCard: vi.fn(),
   importCards: vi.fn(),
   setVaultIncluded: vi.fn(),
+  getDeckSettings: vi.fn(async () => ({ ok: true as const, settings: { mode: 'none' as const, vaults: [], allowedFriendIds: [] } })),
+  saveDeckSettings: vi.fn(async (input: unknown) => ({ ok: true as const, settings: input })),
+  listInstallableRepos: vi.fn(async () => ({ ok: true as const, repos: [] })),
+  browseDeckTree: vi.fn(),
+  browseDeckFile: vi.fn(),
+  browseDeckAsset: vi.fn(),
   deleteMe: vi.fn(),
   onInviteLink: vi.fn(() => () => undefined),
 }))
@@ -749,5 +755,201 @@ describe('Desktop Friends UI (YAZ-6220 / YAZ-6222)', () => {
     await flush(3)
     expect(friendsMock.unbanMember).toHaveBeenCalledWith('grp-1', 2)
     expect(el.textContent).toContain('No banned people')
+  })
+
+  it('clamps VS & Group 30-day strips to sinceDay, hides pre-history red X, uses average7Day, and removes mature cards (YAZ-6284)', async () => {
+    const today = dayOffset(0)
+    const yest = dayOffset(-1)
+    const twoAgo = dayOffset(-2)
+    const threeAgo = dayOffset(-3)
+
+    const meStats = makeStats(
+      'yaseen',
+      'Yaseen',
+      [
+        { day: today, cards: 0, seconds: 0, remembered: 0, forgot: 0, newCards: 0, done: false },
+        { day: yest, cards: 40, seconds: 600, remembered: 36, forgot: 4, newCards: 5, done: true },
+        { day: twoAgo, cards: 20, seconds: 300, remembered: 18, forgot: 2, newCards: 2, done: true },
+      ],
+      5,
+    )
+    const aliStats = makeStats(
+      'ali',
+      'Ali',
+      [
+        { day: today, cards: 10, seconds: 180, remembered: 9, forgot: 1, newCards: 2, done: true },
+        { day: yest, cards: 30, seconds: 420, remembered: 28, forgot: 2, newCards: 4, done: true },
+      ],
+      2,
+    )
+    const board = makeBoard({
+      me: { ...makeBoard().me, stats: meStats },
+      friends: [
+        {
+          id: 2,
+          login: 'ali',
+          name: 'Ali',
+          avatarUrl: null,
+          since: `${threeAgo}T12:00:00.000Z`,
+          stats: aliStats,
+          statsAt: new Date().toISOString(),
+          sharedCardCount: 0,
+          canBrowseDeck: true,
+          browsableVaults: [{ repo: 'ali/med-notes', name: 'Med Notes' }],
+        },
+      ],
+      groups: [
+        {
+          id: 'grp-new',
+          name: 'New Study',
+          adminId: 1,
+          isAdmin: true,
+          myStatus: 'active',
+          inviteCode: 'new12345',
+          createdAt: `${twoAgo}T12:00:00.000Z`,
+          members: [
+            { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: null, since: `${twoAgo}T12:00:00.000Z`, stats: meStats, statsAt: new Date().toISOString() },
+            { id: 2, login: 'ali', name: 'Ali', avatarUrl: null, since: `${yest}T12:00:00.000Z`, stats: aliStats, statsAt: new Date().toISOString() },
+          ],
+          pending: [],
+          sharedFolders: [],
+          sharedCards: [],
+        },
+      ],
+    })
+
+    friendsMock.board.mockResolvedValue({ ok: true, board })
+    act(() => root!.render(<FriendsPane vaultRoot="/vault" onBack={vi.fn()} />))
+    await flush(4)
+
+    // Open VS Ali
+    const aliTap = el.querySelector<HTMLElement>('.fr-row[data-user-id="2"] .fr-row__tap')!
+    await act(async () => aliTap.click())
+    await flush(2)
+
+    // Strip clamped to 4 days (threeAgo..today), not 30
+    const vsDays = el.querySelectorAll('.fr-strip30 .fr-day30')
+    expect(vsDays.length).toBe(4)
+    // No red X for days without a recorded entry (threeAgo has no entry for either user)
+    expect(vsDays[0].querySelectorAll('.fr-ring-av__badge--missed').length).toBe(0)
+    // `mature cards` row is removed
+    expect(el.textContent).not.toContain('mature cards')
+    // `7 day average` uses average7Day (Yaseen: (40+20)/2 = 30 excluding unstarted today; Ali: (10+30)/2 = 20)
+    const avgRow = [...el.querySelectorAll('.fr-vs')].find((r) => r.textContent?.includes('7 day average'))!
+    expect(avgRow.textContent).toContain('30')
+    expect(avgRow.textContent).toContain('20')
+
+    // Go back, open New Study group, click Group streak footer
+    const backBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes('Back to leaderboard'))!
+    await act(async () => backBtn.click())
+    const grpPill = [...el.querySelectorAll<HTMLButtonElement>('.fr-pill')].find((b) => b.textContent?.includes('New Study'))!
+    await act(async () => grpPill.click())
+    const streakRow = el.querySelector<HTMLButtonElement>('.fr-group-summary')!
+    await act(async () => streakRow.click())
+    await flush(2)
+
+    // Clamped to 3 days (twoAgo..today); Ali joined on yest so Ali is NOT blamed on twoAgo and has 2 eligible days
+    expect(el.querySelectorAll('.fr-strip30 .fr-day30').length).toBe(3)
+    expect(el.textContent).not.toContain('Last broken')
+    expect(el.textContent).toContain('2 of 2 days finished')
+    expect(el.textContent).toContain('2 of 3 days finished')
+  })
+
+  it('opens Browse deck Explore modal from VS, supports instant search, stacked preview panels, and Add to my deck (YAZ-6284)', async () => {
+    const board = makeBoard({
+      friends: [
+        {
+          id: 2,
+          login: 'maya',
+          name: 'Maya',
+          avatarUrl: null,
+          since: '2026-01-01T00:00:00Z',
+          stats: makeStats('maya', 'Maya', [{ day: dayOffset(0), cards: 25, seconds: 600, remembered: 23, forgot: 2, newCards: 3, done: true }], 5),
+          statsAt: new Date().toISOString(),
+          sharedCardCount: 0,
+          canBrowseDeck: true,
+          browsableVaults: [{ repo: 'maya/med-notes', name: 'Med Notes' }],
+        },
+      ],
+    })
+    friendsMock.board.mockResolvedValue({ ok: true, board })
+    friendsMock.browseDeckTree.mockResolvedValue({
+      ok: true,
+      tree: {
+        repo: 'maya/med-notes',
+        name: 'Med Notes',
+        files: [
+          { path: 'Biochem/ATP Synthase.md', title: 'ATP Synthase', kind: 'md' },
+          { path: 'Spanish/Subjunctive Triggers.md', title: 'Subjunctive Triggers', kind: 'md' },
+        ],
+      },
+    })
+    friendsMock.browseDeckFile.mockResolvedValue({
+      ok: true,
+      file: {
+        path: 'Biochem/ATP Synthase.md',
+        title: 'ATP Synthase',
+        markdown: 'How does ATP Synthase work?\n---\nProton gradient spins the rotor.',
+        assetPaths: [],
+      },
+    })
+    treeMock.mockResolvedValue({ root: '/vault', tree: [] })
+    friendsMock.importCards.mockResolvedValue({ ok: true, paths: ['/vault/Shared Cards/atp.md'] })
+
+    const onNotice = vi.fn()
+    act(() => root!.render(<FriendsPane vaultRoot="/vault" onBack={vi.fn()} onNotice={onNotice} />))
+    await flush(4)
+
+    // Open VS Maya and click Browse deck
+    const mayaTap = el.querySelector<HTMLElement>('.fr-row[data-user-id="2"] .fr-row__tap')!
+    await act(async () => mayaTap.click())
+    const browseBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Browse deck')!
+    expect(browseBtn).toBeTruthy()
+    await act(async () => browseBtn.click())
+    await flush(4)
+
+    expect(friendsMock.browseDeckTree).toHaveBeenCalledWith(2, 'maya/med-notes')
+    const modal = document.querySelector('.fr-browse-modal')!
+    expect(modal).not.toBeNull()
+    expect(modal.textContent).toContain('Biochem')
+    expect(modal.textContent).toContain('ATP Synthase')
+
+    // Instant search filters down to ATP Synthase
+    const searchInput = modal.querySelector<HTMLInputElement>('input[aria-label="Search deck"]')!
+    const setVal = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setVal?.call(searchInput, 'ATP')
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(modal.textContent).toContain('ATP Synthase')
+    expect(modal.textContent).not.toContain('Subjunctive Triggers')
+
+    // Click result -> pushes stacked Explore preview panel
+    const resultBtn = modal.querySelector<HTMLButtonElement>('.fr-browse-tree__file--result')!
+    await act(async () => resultBtn.click())
+    await flush(4)
+    expect(friendsMock.browseDeckFile).toHaveBeenCalledWith(2, 'maya/med-notes', 'Biochem/ATP Synthase.md')
+    expect(modal.querySelector('.fr-browse-panel')?.textContent).toContain('Proton gradient spins the rotor.')
+
+    // Click Add to my deck -> opens AcceptCardSheet -> imports with skipServerState
+    const addBtn = [...modal.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Add to my deck')!
+    await act(async () => addBtn.click())
+    await flush(3)
+    const confirmAdd = [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Add to Shared Cards')!
+    await act(async () => confirmAdd.click())
+    await flush(3)
+    expect(friendsMock.importCards).toHaveBeenCalledTimes(1)
+    expect(onNotice).toHaveBeenCalledWith(expect.stringContaining('ATP Synthase'))
+
+    // Esc pops preview panel, then Esc closes modal
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(document.querySelector('.fr-browse-panel')).toBeNull()
+    expect(document.querySelector('.fr-browse-modal')).not.toBeNull()
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(document.querySelector('.fr-browse-modal')).toBeNull()
   })
 })

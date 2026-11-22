@@ -528,15 +528,8 @@ describe('an action that cannot finish now says so (YAZ-5257)', () => {
     expect(statusText(h)).toContain('Not removed yet: no connection. It finishes by itself when you are online.')
     expect(plain(h.host.querySelector('.topbar__title')?.textContent)).toBe('Sam')
   })
-  it('Cancel link, Remove a member, Leave group and Delete group each say why they did not finish', async () => {
-    const board = demoBoard(NOW, { shared: [{ mine: 'c'.repeat(32), link: 'x', at: new Date(NOW).toISOString() }] })
+  it('Remove a member, Leave group and Delete group each say why they did not finish', async () => {
     let s: FakeService
-    ;({ h, s } = await open(board))
-    s.answers.friend = async () => ({ kind: 'paused', why: 'budget', retryAt: NOW + 600_000 })
-    await tap(h, 'Cancel link')
-    await yes(h)
-    expect(statusText(h)).toMatch(/Not removed yet: GitHub lets the app write only so often\. It finishes by itself at .+\./)
-    h.unmount()
     const admin = demoGroup(NOW)
     admin.members[1] = { ...admin.members[1], state: 'left', read: null, label: 'Left the group' }
     ;({ h, s } = await open({ ...demoBoard(NOW), groups: [admin] }))

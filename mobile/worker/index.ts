@@ -19,6 +19,10 @@ import { handleFriends } from './friends'
 export interface Env {
   /** A Worker secret (`wrangler secret put GITHUB_CLIENT_SECRET`), or `.dev.vars` on a computer. Never in git. */
   GITHUB_CLIENT_SECRET?: string
+  /** GitHub App numeric ID for minting read-only shared-deck installation tokens (`wrangler secret put GITHUB_APP_ID`). */
+  GITHUB_APP_ID?: string
+  /** GitHub App private key PEM (PKCS#8 or PKCS#1) (`wrangler secret put GITHUB_APP_PRIVATE_KEY`). */
+  GITHUB_APP_PRIVATE_KEY?: string
   /** HMAC signing secret for 8-hour Friends session tokens (`wrangler secret put FRIENDS_TOKEN_SECRET`). */
   FRIENDS_TOKEN_SECRET?: string
   /** Cloudflare D1 database for Friends stats, invites, marks, groups, and shared cards. */

@@ -8,6 +8,7 @@ import { CARD_PREVIEW, type CardPreviewRequest } from './card/cardOpen'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { FRIENDS_ENABLED } from '@shared/features'
 import type { CommentsOrder, FileResponse, IndexRecord } from '@shared/types'
 import { readComments } from '@shared/comments'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -206,7 +207,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE)
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     const rows = await menu()
-    expect(rows).toEqual(['Preview', 'Turn into a page', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Copy card link'])
+    expect(rows).toEqual(['Preview', 'Turn into a page', 'Move to Up next', 'Archive card', 'Fix later', 'Title in review', 'Copy card ID', 'Copy card link', ...(FRIENDS_ENABLED ? ['Share with friend or group…'] : [])])
     pick('Copy card link')
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })

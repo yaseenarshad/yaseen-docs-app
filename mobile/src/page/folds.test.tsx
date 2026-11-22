@@ -284,7 +284,7 @@ describe('YAZ-5568: folds on the page view', () => {
     h = await openPage('Garden')
     await h.click('Page tools')
     const items = [...h.host.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())
-    expect(items).toEqual(['🔍 Find in page', '☰ Headings', 'Collapse all'])
+    expect(items).toEqual(['🔍 Find in page', '☰ Headings', '↗ Share page with friend or group…', 'Collapse all'])
     await h.click(/Collapse all/)
     expect(h.host.querySelector('.page-tools__menu')).toBeNull()
     expect([...body(h).querySelectorAll('.fold-btn')].every((b) => b.getAttribute('aria-expanded') === 'false')).toBe(true)

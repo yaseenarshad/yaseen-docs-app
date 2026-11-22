@@ -1,5 +1,5 @@
 import type { BridgeError, FriendsSendView } from '@shared/types'
-import type { FriendsBoardPayload } from '@shared/friendsApi'
+import type { DeckFilePayload, DeckSettingsPayload, DeckTreePayload, DeckVaultConfig, FriendsBoardPayload } from '@shared/friendsApi'
 import { type Bridge, CONTRACT, isLeaf, type YaseenDocsApi } from '@shared/ipc'
 
 // The error class moved to its own file (YAZ-5161), so code the phone shares can test for it with no bridge.
@@ -55,8 +55,14 @@ export interface FriendsApi {
   setCardState: (cardId: string, status: 'pending' | 'accepted' | 'dismissed') => Promise<{ ok: true } | { ok: false; error: string }>
   setFolderState: (folderId: string, status: 'pending' | 'accepted' | 'dismissed') => Promise<{ ok: true } | { ok: false; error: string }>
   deleteSharedCard: (cardId: string) => Promise<{ ok: true } | { ok: false; error: string }>
-  importCards: (input: { root: string; dir: string; cards: { id: string; title: string; markdown: string; senderLogin: string; upNext?: boolean }[]; createFolder?: string }) => Promise<{ ok: true; paths: string[] } | { ok: false; error: string }>
+  importCards: (input: { root: string; dir: string; cards: { id: string; title: string; markdown: string; senderLogin: string; upNext?: boolean; attachments?: { name: string; mime: string; dataBase64: string }[] }[]; createFolder?: string }) => Promise<{ ok: true; paths: string[] } | { ok: false; error: string }>
   setVaultIncluded?: (vaultPath: string, included: boolean) => Promise<{ ok: true; knownVaults?: { path: string; name: string; included: boolean }[] } | { ok: false; error: string }>
+  getDeckSettings?: () => Promise<{ ok: true; settings: DeckSettingsPayload } | { ok: false; error: string }>
+  saveDeckSettings?: (input: DeckSettingsPayload) => Promise<{ ok: true; settings: DeckSettingsPayload } | { ok: false; error: string }>
+  listInstallableRepos?: () => Promise<{ ok: true; repos: DeckVaultConfig[] } | { ok: false; error: string }>
+  browseDeckTree?: (ownerId: number, repo: string) => Promise<{ ok: true; tree: DeckTreePayload } | { ok: false; error: string }>
+  browseDeckFile?: (ownerId: number, repo: string, path: string) => Promise<{ ok: true; file: DeckFilePayload } | { ok: false; error: string }>
+  browseDeckAsset?: (ownerId: number, repo: string, path: string) => Promise<{ ok: true; mime: string; dataBase64: string } | { ok: false; error: string }>
   deleteMe: () => Promise<{ ok: true } | { ok: false; error: string }>
   onInviteLink: (cb: (payload: { kind: 'friend' | 'group'; code: string }) => void) => () => void
 }
@@ -85,6 +91,36 @@ const friendsApi: FriendsApi = {
     call(async () => {
       const fn = friendsBridge()?.setVaultIncluded
       return typeof fn === 'function' ? fn(vaultPath, included) : { ok: false as const, error: 'unavailable' }
+    }),
+  getDeckSettings: () =>
+    call(async () => {
+      const fn = friendsBridge()?.getDeckSettings
+      return typeof fn === 'function' ? fn() : { ok: false as const, error: 'unavailable' }
+    }),
+  saveDeckSettings: (input) =>
+    call(async () => {
+      const fn = friendsBridge()?.saveDeckSettings
+      return typeof fn === 'function' ? fn(input) : { ok: false as const, error: 'unavailable' }
+    }),
+  listInstallableRepos: () =>
+    call(async () => {
+      const fn = friendsBridge()?.listInstallableRepos
+      return typeof fn === 'function' ? fn() : { ok: false as const, error: 'unavailable' }
+    }),
+  browseDeckTree: (ownerId, repo) =>
+    call(async () => {
+      const fn = friendsBridge()?.browseDeckTree
+      return typeof fn === 'function' ? fn(ownerId, repo) : { ok: false as const, error: 'unavailable' }
+    }),
+  browseDeckFile: (ownerId, repo, path) =>
+    call(async () => {
+      const fn = friendsBridge()?.browseDeckFile
+      return typeof fn === 'function' ? fn(ownerId, repo, path) : { ok: false as const, error: 'unavailable' }
+    }),
+  browseDeckAsset: (ownerId, repo, path) =>
+    call(async () => {
+      const fn = friendsBridge()?.browseDeckAsset
+      return typeof fn === 'function' ? fn(ownerId, repo, path) : { ok: false as const, error: 'unavailable' }
     }),
   deleteMe: () => call(() => friendsBridge().deleteMe()),
   onInviteLink: (cb) => {

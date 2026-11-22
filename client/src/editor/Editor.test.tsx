@@ -12,6 +12,7 @@ import { act } from 'react'
 import { ZOOM_EVENT } from './zoomRequest'
 import { PageZoomMemory } from './DocumentZoom'
 import { createRoot, type Root } from 'react-dom/client'
+import { FRIENDS_ENABLED } from '@shared/features'
 import type { ContentWidth, FileResponse, IndexRecord, PageView, TableOfContents, TocSource, TreeNode, WatchEvent } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
@@ -793,7 +794,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(pressCmdJ().defaultPrevented).toBe(true)
     const stores = watchStores()
     clickCog(el)
-    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Bullet threading:false', 'Heading levels:false', 'Table of contents✓:true'])
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', ...(FRIENDS_ENABLED ? ['Share page with friend or group…:null'] : []), 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Bullet threading:false', 'Heading levels:false', 'Table of contents✓:true'])
     diskHas(BODY, 1)
     await clickRow(el, 'Table of contents')
     expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
@@ -985,7 +986,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(el.querySelector('nav.toc')).toBeNull()
     expect(pressCmdJ().defaultPrevented).toBe(false)
     clickCog(el)
-    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Bullet threading:false', 'Heading levels:false', 'Table of contents:false'])
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', ...(FRIENDS_ENABLED ? ['Share page with friend or group…:null'] : []), 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Bullet threading:false', 'Heading levels:false', 'Table of contents:false'])
     expect(menuIn(el)?.querySelector('[aria-label="TOC made from"]') ?? null).toBeNull()
     diskHas(BODY, 1)
     await clickRow(el, 'Table of contents')

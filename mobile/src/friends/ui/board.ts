@@ -1,10 +1,10 @@
 import { LIST_NEEDS_REPAIR, agoLabel, updatedAgo } from '@shared/friendGists'
 import { dailyMark as groupsDailyMark, localDay as sharedLocalDay } from '@shared/friendGroups'
 import { daysReviewed, rememberedPercent, type FriendDay, type FriendMark, type FriendStats } from '@shared/friendStats'
-import { filterSharedCards, formatMinutes, type LeaderboardSort } from '@shared/friendsBoard'
+import { average7Day, filterSharedCards, formatMinutes, sinceDayKey, type LeaderboardSort } from '@shared/friendsBoard'
 import type { FriendsSendState } from '../sender'
 
-export { filterSharedCards, formatMinutes, type LeaderboardSort }
+export { average7Day, filterSharedCards, formatMinutes, sinceDayKey, type LeaderboardSort }
 
 /** Formats study duration in minutes: `< 60` -> `51 min`, `>= 60` -> `2hr 55min` / `2hr` (YAZ-6263). */
 export function formatStudyDuration(minutes: number): string {
@@ -274,14 +274,13 @@ function sideOf(s: VsStats | null, now: number) {
   const d = dayIn(s, today)
   const cards = d?.cards ?? 0
   const fresh = d?.newCards ?? 0
-  const last7 = sumOf(s.days, addDays(today, -6), today).cards
   return {
     today,
     cards,
     due: Math.max(0, cards - fresh),
     fresh,
     yesterday: dayIn(s, addDays(today, -1))?.cards ?? 0,
-    average: Math.round(last7 / 7),
+    average: average7Day(s as FriendStats, now).cards,
     minutes: minutesOf(d?.seconds ?? 0),
   }
 }
@@ -327,11 +326,6 @@ export function vsBoard(you: VsStats | null, them: VsStats | null, now: number):
       t(them, (x) => x.newLeft),
     ),
     line('remembered', you === null ? null : rememberedPercent(you.days), them === null ? null : rememberedPercent(them.days), { suffix: '%' }),
-    line(
-      'mature cards',
-      t(you, (x) => x.mature),
-      t(them, (x) => x.mature),
-    ),
     line(
       'added this week',
       t(you, (x) => x.addedThisWeek),
