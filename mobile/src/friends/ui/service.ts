@@ -1036,9 +1036,14 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       }
     },
     async renameGroup(groupId, name) {
-      const demoApi = api as FriendsApiClient & { renameGroup?: (id: string, n: string) => Promise<{ ok: true; name: string }> }
-      if (demoApi.renameGroup) return demoApi.renameGroup(groupId, name)
-      return { ok: true, name }
+      try {
+        const ext = api as FriendsApiClient & { renameGroup?: (id: string, n: string) => Promise<{ ok: true; name: string }> }
+        if (!ext.renameGroup) return { ok: false, error: 'rename_unsupported' }
+        const res = await ext.renameGroup(groupId, name)
+        return { ok: true, name: res.name }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'rename_failed' }
+      }
     },
     async banGroupMember(groupId, userId) {
       try {

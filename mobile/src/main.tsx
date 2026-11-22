@@ -38,7 +38,7 @@ async function boot(root: Root) {
 async function start(root: Root) {
   // YAZ-5596 (15): the wake log (Settings › Vault health): this start, each return, the first pass and storage calls.
   startWakeLog()
-  const friendsDemo = new URLSearchParams(location.search).get('friendsDemo') === '1'
+  const friendsDemo = import.meta.env.DEV && new URLSearchParams(location.search).get('friendsDemo') === '1'
   let storage: Awaited<ReturnType<typeof openPhoneStorage>>
   if (friendsDemo) {
     // YAZ-6221: isolated in-memory demo vault (lazy-loaded so zero bytes enter the first-load bundle).

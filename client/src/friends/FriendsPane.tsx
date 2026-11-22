@@ -359,8 +359,6 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
   const [settingsGroupId, setSettingsGroupId] = useState<string | null>(null)
   const [streakGroupId, setStreakGroupId] = useState<string | null>(null)
   const [groupNameDraft, setGroupNameDraft] = useState('')
-  const [renamedGroups, setRenamedGroups] = useState<Record<string, string>>({})
-  const [localBanned, setLocalBanned] = useState<Record<string, { id: number; login: string; name: string }[]>>({})
   const [revealedToday, setRevealedToday] = useState<Record<string, boolean>>(() => readRevealedToday(localDayKey(Date.now())))
   const [confettiKey, setConfettiKey] = useState(0)
   const [armedDismissId, setArmedDismissId] = useState<string | null>(null)
@@ -595,7 +593,18 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
     [streakGroupId, board],
   )
 
-  const groupDisplayName = (g: Pick<GroupBoardItem, 'id' | 'name'>) => renamedGroups[g.id] ?? g.name
+  const handleRenameGroup = async (groupId: string, rawName: string) => {
+    const next = rawName.trim()
+    if (!next) return
+    const res = await api.friends.renameGroup(groupId, next)
+    if (!res.ok) {
+      onNotice?.(res.error || 'Could not rename group')
+      return
+    }
+    setGroupNameDraft(res.name)
+    await loadBoard(true)
+    onNotice?.(`Renamed group to "${res.name}"`)
+  }
 
   const vsFriend: FriendBoardMember | null = useMemo(
     () => (vsFriendId === null || !board ? null : board.friends.find((f) => f.id === vsFriendId) ?? null),
@@ -826,7 +835,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
       {signedOut ? (
         <div className="fr-signed-out">
           <h3>Study with Friends</h3>
-          <p>Sign in with GitHub to see your friends' daily streaks, cheer each other on, and share cards.</p>
+          <p>Sign in with GitHub to see your friends' daily streaks, keep each other accountable, and share cards.</p>
           {error && <p className="fr-error">{error}</p>}
           <button type="button" className="fr-btn fr-btn--primary" disabled={signingIn} onClick={() => void handleSignIn()}>
             {signingIn ? 'Signing in…' : 'Sign in with GitHub'}
@@ -846,7 +855,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
         <div className="fr-panel">
           <div className="fr-panel__head">
             <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" onClick={() => setStreakGroupId(null)}>
-              ← {groupDisplayName(streakGroup)}
+              ← {streakGroup.name}
             </button>
           </div>
 
@@ -998,36 +1007,28 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                   value={groupNameDraft}
                   onChange={(e) => setGroupNameDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && groupNameDraft.trim()) {
-                      setRenamedGroups((prev) => ({ ...prev, [settingsGroup.id]: groupNameDraft.trim() }))
-                      onNotice?.(`Renamed group to "${groupNameDraft.trim()}"`)
+                    if (e.key === 'Enter' && groupNameDraft.trim() && groupNameDraft.trim() !== settingsGroup.name) {
+                      void handleRenameGroup(settingsGroup.id, groupNameDraft)
                     }
                   }}
                 />
                 <button
                   type="button"
                   className="fr-btn fr-btn--primary fr-btn--sm"
-                  disabled={!groupNameDraft.trim() || groupNameDraft.trim() === groupDisplayName(settingsGroup)}
-                  onClick={() => {
-                    const next = groupNameDraft.trim()
-                    if (!next) return
-                    setRenamedGroups((prev) => ({ ...prev, [settingsGroup.id]: next }))
-                    onNotice?.(`Renamed group to "${next}"`)
-                  }}
+                  disabled={!groupNameDraft.trim() || groupNameDraft.trim() === settingsGroup.name}
+                  onClick={() => void handleRenameGroup(settingsGroup.id, groupNameDraft)}
                 >
                   Save
                 </button>
               </div>
             ) : (
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{groupDisplayName(settingsGroup)}</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{settingsGroup.name}</div>
             )}
           </div>
 
           {/* Members */}
           {(() => {
-            const extraBanned = localBanned[settingsGroup.id] ?? []
-            const apiBanned = (settingsGroup as GroupBoardItem & { banned?: { id: number; login: string; name: string }[] }).banned ?? []
-            const allBanned = [...apiBanned, ...extraBanned.filter((b) => !apiBanned.some((a) => a.id === b.id))]
+            const allBanned = settingsGroup.banned ?? []
             const bannedIds = new Set(allBanned.map((b) => b.id))
             const activeMembers = settingsGroup.members.filter((m) => !bannedIds.has(m.id))
             return (
@@ -1051,12 +1052,13 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                           type="button"
                           className="fr-btn fr-btn--ghost fr-btn--danger fr-btn--sm"
                           onClick={async () => {
-                            setLocalBanned((prev) => ({
-                              ...prev,
-                              [settingsGroup.id]: [...(prev[settingsGroup.id] ?? []), { id: m.id, login: m.login, name: m.name }],
-                            }))
-                            await api.friends.removeMember(settingsGroup.id, m.id).catch(() => undefined)
-                            onNotice?.(`Banned ${m.name} from ${groupDisplayName(settingsGroup)}`)
+                            const res = await api.friends.banMember(settingsGroup.id, m.id)
+                            if (!res.ok) {
+                              onNotice?.(res.error || `Could not ban ${m.name}`)
+                              return
+                            }
+                            await loadBoard(true)
+                            onNotice?.(`Banned ${m.name} from ${settingsGroup.name}`)
                           }}
                         >
                           Ban
@@ -1082,11 +1084,13 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                           <button
                             type="button"
                             className="fr-btn fr-btn--sm"
-                            onClick={() => {
-                              setLocalBanned((prev) => ({
-                                ...prev,
-                                [settingsGroup.id]: (prev[settingsGroup.id] ?? []).filter((x) => x.id !== b.id),
-                              }))
+                            onClick={async () => {
+                              const res = await api.friends.unbanMember(settingsGroup.id, b.id)
+                              if (!res.ok) {
+                                onNotice?.(res.error || `Could not unban ${b.name}`)
+                                return
+                              }
+                              await loadBoard(true)
                               onNotice?.(`Unbanned ${b.name}`)
                             }}
                           >
@@ -1302,7 +1306,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                     }
                   }}
                 >
-                  {groupDisplayName(g)}
+                  {g.name}
                   {isActive ? ' ▾' : ''}
                 </button>
               )
@@ -1338,11 +1342,11 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                 const directCards = filterSharedCards(board.incomingCards, cardFilter)
                 const groupFolders = board.groups.flatMap((g) =>
                   g.sharedFolders
-                    .map((folder) => ({ groupName: groupDisplayName(g), folder, matching: filterSharedCards(folder.cards, cardFilter) }))
+                    .map((folder) => ({ groupName: g.name, folder, matching: filterSharedCards(folder.cards, cardFilter) }))
                     .filter((x) => x.matching.length > 0),
                 )
                 const groupLooseCards = board.groups.flatMap((g) =>
-                  filterSharedCards(g.sharedCards, cardFilter).map((card) => ({ groupName: groupDisplayName(g), card })),
+                  filterSharedCards(g.sharedCards, cardFilter).map((card) => ({ groupName: g.name, card })),
                 )
                 if (directCards.length === 0 && groupFolders.length === 0 && groupLooseCards.length === 0) {
                   return <p className="fr-line">No {cardFilter === 'accepted' ? 'added' : cardFilter} shared cards.</p>
@@ -1778,9 +1782,9 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
       {/* Manage "<name>" group action sheet (StepUp: Invite to group, Group Settings, Leave group, Cancel) */}
       {manageGroup && (
         <div className="fr-modal-backdrop" role="presentation" onClick={() => setManageGroup(null)}>
-          <div className="fr-sheet" role="dialog" aria-modal="true" aria-label={`Manage ${groupDisplayName(manageGroup)} group`} onClick={(e) => e.stopPropagation()}>
+          <div className="fr-sheet" role="dialog" aria-modal="true" aria-label={`Manage ${manageGroup.name} group`} onClick={(e) => e.stopPropagation()}>
             <div className="fr-sheet__head">
-              <h3 className="fr-sheet__title">Manage "{groupDisplayName(manageGroup)}" group</h3>
+              <h3 className="fr-sheet__title">Manage "{manageGroup.name}" group</h3>
               <p className="fr-sheet__sub">{manageGroup.isAdmin ? "You're an admin" : 'Member'}</p>
             </div>
             {manageGroup.inviteCode && (
@@ -1792,7 +1796,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                   setManageGroup(null)
                   setCopiedLink(false)
                   setQrShareModal({
-                    title: `Invite friends to "${groupDisplayName(g)}"`,
+                    title: `Invite friends to "${g.name}"`,
                     link: `https://docs.yaseenarshad.com/group#${g.inviteCode}`,
                   })
                 }}
@@ -1806,7 +1810,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
               onClick={() => {
                 const g = manageGroup
                 setManageGroup(null)
-                setGroupNameDraft(groupDisplayName(g))
+                setGroupNameDraft(g.name)
                 setSettingsGroupId(g.id)
               }}
             >

@@ -118,6 +118,7 @@ export interface FriendsApiClient {
   acceptInvite(code: string): Promise<{ kind: 'friend'; friendId: number } | { kind: 'group'; groupId: string; status: string; name: string }>
   removeFriend(userId: number, block?: boolean): Promise<{ ok: true }>
   createGroup(name: string): Promise<{ id: string; name: string; inviteCode: string; link: string }>
+  renameGroup(groupId: string, name: string): Promise<{ ok: true; name: string }>
   removeMember(groupId: string, userId?: number): Promise<{ ok: true; deleted?: boolean }>
   banGroupMember(groupId: string, userId: number): Promise<{ ok: true }>
   unbanGroupMember(groupId: string, userId: number): Promise<{ ok: true }>
@@ -237,6 +238,14 @@ export function createFriendsApiClient(opts: FriendsApiClientOptions): FriendsAp
     async createGroup(name) {
       const res = await authed<{ id: string; name: string; inviteCode: string; link: string }>('/api/friends/groups', {
         method: 'POST',
+        body: JSON.stringify({ name }),
+      })
+      cachedEtag = null
+      return res.data!
+    },
+    async renameGroup(groupId, name) {
+      const res = await authed<{ ok: true; name: string }>(`/api/friends/groups/${encodeURIComponent(groupId)}`, {
+        method: 'PATCH',
         body: JSON.stringify({ name }),
       })
       cachedEtag = null

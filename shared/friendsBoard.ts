@@ -53,7 +53,7 @@ export function dailyMarkOf(stats: FriendStats | null, nowMs: number): DailyMark
   const today = stats.days[0].day > mine ? stats.days[0].day : mine
   const row = stats.days.find((d) => d.day === today)
   if (!row) return 'not-started'
-  if (row.done) return 'finished'
+  if (row.done && row.cards > 0) return 'finished'
   return row.cards > 0 ? 'started' : 'not-started'
 }
 

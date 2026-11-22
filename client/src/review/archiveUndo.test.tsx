@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { cardBlock, cardRecords, parseCardLine, type CardRating } from '@shared/cardLine'
+import { FRIENDS_ENABLED } from '@shared/features'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -150,7 +151,13 @@ describe('YAZ-5621: Archive card has an Undo on the Mac, as on the phone', () =>
     await mount()
     const first = showing()!
     await step(() => el.querySelector<HTMLButtonElement>('.card-inbox__head-more')!.click())
-    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Open card', 'Move to Up next', 'Archive card', 'Title in review'])
+    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')].map((b) => b.textContent)).toEqual([
+      'Open card',
+      'Move to Up next',
+      'Archive card',
+      'Title in review',
+      ...(FRIENDS_ENABLED ? ['Share with friend or group…'] : []),
+    ])
     await step(() => menuRow('Archive card')!.click())
     expect(menuRow('Click again to archive')).toBeDefined()
     expect(showing()).toBe(first)

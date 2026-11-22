@@ -38,7 +38,10 @@ const friendsMock = vi.hoisted(() => ({
   acceptInvite: vi.fn(),
   removeFriend: vi.fn(),
   createGroup: vi.fn(),
+  renameGroup: vi.fn(),
   removeMember: vi.fn(),
+  banMember: vi.fn(),
+  unbanMember: vi.fn(),
   rotateGroupInvite: vi.fn(),
   shareCards: vi.fn(),
   setCardState: vi.fn(),
@@ -576,6 +579,8 @@ describe('Desktop Friends UI (YAZ-6220 / YAZ-6222)', () => {
 
     const signInBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Sign in with GitHub')!
     expect(signInBtn).not.toBeNull()
+    expect(el.textContent).toContain('keep each other accountable')
+    expect(el.textContent).not.toContain('cheer each other on')
     await act(async () => signInBtn.click())
     await flush(6)
     expect(api.github.signIn).toHaveBeenCalledTimes(1)
@@ -676,5 +681,73 @@ describe('Desktop Friends UI (YAZ-6220 / YAZ-6222)', () => {
     await act(async () => confirmBtn.click())
     await flush()
     expect(friendsMock.deleteMe).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-6277 / YAZ-6278: Group Settings Rename, Ban, and Unban call real IPC methods and reload the board', async () => {
+    const initial = makeBoard()
+    const afterRename: FriendsBoardPayload = {
+      ...initial,
+      groups: initial.groups.map((g) => ({ ...g, name: 'Daily Readers' })),
+    }
+    const afterBan: FriendsBoardPayload = {
+      ...afterRename,
+      groups: afterRename.groups.map((g) => ({
+        ...g,
+        members: g.members.filter((m) => m.id !== 2),
+        banned: [{ id: 2, login: 'ali', name: 'Ali' }],
+      })),
+    }
+    const afterUnban: FriendsBoardPayload = {
+      ...afterRename,
+      groups: afterRename.groups.map((g) => ({ ...g, banned: [] })),
+    }
+
+    friendsMock.board
+      .mockResolvedValueOnce({ ok: true, board: initial })
+      .mockResolvedValueOnce({ ok: true, board: afterRename })
+      .mockResolvedValueOnce({ ok: true, board: afterBan })
+      .mockResolvedValueOnce({ ok: true, board: afterUnban })
+    friendsMock.renameGroup.mockResolvedValue({ ok: true, name: 'Daily Readers' })
+    friendsMock.banMember.mockResolvedValue({ ok: true })
+    friendsMock.unbanMember.mockResolvedValue({ ok: true })
+
+    const onNotice = vi.fn()
+    act(() => root!.render(<FriendsPane vaultRoot="/vault" onBack={vi.fn()} onNotice={onNotice} />))
+    await flush(4)
+
+    // Switch to Spanish 101 tab, click again to open Manage sheet, then Group Settings
+    const groupPill = [...el.querySelectorAll<HTMLButtonElement>('.fr-pill')].find((b) => b.textContent?.includes('Spanish 101'))!
+    await act(async () => groupPill.click())
+    await act(async () => groupPill.click())
+    const settingsBtn = [...document.querySelectorAll<HTMLButtonElement>('.fr-sheet__item')].find((b) => b.textContent === 'Group Settings')!
+    await act(async () => settingsBtn.click())
+
+    // Rename group
+    const nameInput = el.querySelector<HTMLInputElement>('input[aria-label="Group name"]')!
+    const setVal = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setVal?.call(nameInput, 'Daily Readers')
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const saveBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Save')!
+    await act(async () => saveBtn.click())
+    await flush(3)
+    expect(friendsMock.renameGroup).toHaveBeenCalledWith('grp-1', 'Daily Readers')
+    expect(friendsMock.board).toHaveBeenCalledWith(true)
+
+    // Ban Ali
+    const banBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Ban')!
+    await act(async () => banBtn.click())
+    await flush(3)
+    expect(friendsMock.banMember).toHaveBeenCalledWith('grp-1', 2)
+    expect(el.textContent).toContain('Ali')
+    expect(el.textContent).toContain('Unban')
+
+    // Unban Ali
+    const unbanBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Unban')!
+    await act(async () => unbanBtn.click())
+    await flush(3)
+    expect(friendsMock.unbanMember).toHaveBeenCalledWith('grp-1', 2)
+    expect(el.textContent).toContain('No banned people')
   })
 })

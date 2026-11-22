@@ -238,7 +238,10 @@ export const CONTRACT = {
     acceptInvite: invoke<[code: string], { ok: true; result: unknown } | { ok: false; error: string }>('friends:accept-invite', 1),
     removeFriend: invoke<[userId: number, block?: boolean], { ok: true } | { ok: false; error: string }>('friends:remove-friend', 2),
     createGroup: invoke<[name: string], { ok: true; id: string; name: string; inviteCode: string; link: string } | { ok: false; error: string }>('friends:create-group', 1),
+    renameGroup: invoke<[groupId: string, name: string], { ok: true; name: string } | { ok: false; error: string }>('friends:rename-group', 2),
     removeMember: invoke<[groupId: string, userId?: number], { ok: true; deleted?: boolean } | { ok: false; error: string }>('friends:remove-member', 2),
+    banMember: invoke<[groupId: string, userId: number], { ok: true } | { ok: false; error: string }>('friends:ban-member', 2),
+    unbanMember: invoke<[groupId: string, userId: number], { ok: true } | { ok: false; error: string }>('friends:unban-member', 2),
     rotateGroupInvite: invoke<[groupId: string], { ok: true; inviteCode: string; link: string } | { ok: false; error: string }>('friends:rotate-group-invite', 1),
     shareCards: invoke<
       [input: { groupId?: string; toUserIds?: number[]; folderName?: string; cards: { title: string; markdown: string; note?: string | null }[] }],

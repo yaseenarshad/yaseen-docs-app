@@ -124,14 +124,20 @@ describe('createFriendsService (YAZ-6219)', () => {
 
       await svc.setCardState('sc-dismissed-1', 'pending')
       await svc.setFolderState('fld-biochem', 'accepted')
+      expect(await svc.renameGroup('grp-med-study', 'MCAT Med')).toEqual({ ok: true, name: 'MCAT Med' })
+      expect(await svc.banMember('grp-med-study', 3)).toEqual({ ok: true })
+      const bBanned = await svc.board()
+      expect(bBanned.ok && bBanned.board.groups[0].banned?.map((x) => x.id)).toEqual([3])
+      expect(await svc.unbanMember('grp-med-study', 3)).toEqual({ ok: true })
 
       const b2 = await svc.board()
       expect(b2.ok).toBe(true)
       if (!b2.ok) return
       expect(b2.board.friends[0].buddyStreak).toBe(6)
+      expect(b2.board.groups[0].name).toBe('MCAT Med')
       expect(b2.board.groups[0].pending).toHaveLength(0)
       expect(b2.board.groups[0].banned).toEqual([])
-      expect(b2.board.groups[0].members).toHaveLength(3)
+      expect(b2.board.groups[0].members).toHaveLength(2)
       expect(b2.board.groups[0].sharedFolders[0].cards.every((c) => c.status === 'accepted')).toBe(true)
       expect(b2.board.groups[0].sharedCards.find((c) => c.id === 'sc-dismissed-1')?.status).toBe('pending')
       expect(fetchFn).not.toHaveBeenCalled()

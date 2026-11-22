@@ -85,8 +85,14 @@ async function open(board: Board, opts: { logins?: string[]; groups?: boolean } 
     phone: await phone(opts.logins),
     friends: (store) => fakeServices(store, s),
   })
-  // The tab is a lazy chunk: wait until it drew the board.
-  for (let i = 0; i < 150 && x.host.querySelector('section[aria-label="Friends"]:not([aria-busy])') === null; i++) await x.settle()
+  // The tab is a lazy chunk: wait reliably (wall-clock + microtasks) until it drew the board.
+  await vi.waitFor(
+    async () => {
+      await x.settle()
+      expect(x.host.querySelector('section[aria-label="Friends"]:not([aria-busy])')).not.toBeNull()
+    },
+    { timeout: 5000, interval: 10 },
+  )
   return { h: x, s }
 }
 /** A row's words as a person reads them (each piece of text, with a space between). */

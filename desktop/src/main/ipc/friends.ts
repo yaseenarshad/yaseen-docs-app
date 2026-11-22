@@ -72,11 +72,29 @@ export function registerFriendsIpc(getTarget: FriendsIpcTarget | (() => Promise<
     return service.createGroup(name.trim())
   })
 
+  handle(CONTRACT.friends.renameGroup, async (groupId: unknown, name: unknown) => {
+    if (!isNonEmptyString(groupId) || !isNonEmptyString(name)) return { ok: false as const, error: 'Invalid groupId or name' }
+    const { service } = await resolve()
+    return service.renameGroup(groupId.trim(), name.trim())
+  })
+
   handle(CONTRACT.friends.removeMember, async (groupId: unknown, userId: unknown) => {
     if (!isNonEmptyString(groupId)) return { ok: false as const, error: 'Invalid groupId' }
     if (userId !== undefined && !isPositiveInt(userId)) return { ok: false as const, error: 'Invalid userId' }
     const { service } = await resolve()
     return service.removeMember(groupId.trim(), userId)
+  })
+
+  handle(CONTRACT.friends.banMember, async (groupId: unknown, userId: unknown) => {
+    if (!isNonEmptyString(groupId) || !isPositiveInt(userId)) return { ok: false as const, error: 'Invalid groupId or userId' }
+    const { service } = await resolve()
+    return service.banMember(groupId.trim(), userId)
+  })
+
+  handle(CONTRACT.friends.unbanMember, async (groupId: unknown, userId: unknown) => {
+    if (!isNonEmptyString(groupId) || !isPositiveInt(userId)) return { ok: false as const, error: 'Invalid groupId or userId' }
+    const { service } = await resolve()
+    return service.unbanMember(groupId.trim(), userId)
   })
 
   handle(CONTRACT.friends.rotateGroupInvite, async (groupId: unknown) => {

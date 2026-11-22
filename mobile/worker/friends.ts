@@ -9,11 +9,11 @@
  * - POST   /api/friends/invites               Create 1-step friend invite code (7d expiry, 20/day limit)
  * - POST   /api/friends/invites/accept        Accept friend invite code OR join group invite code
  * - DELETE /api/friends/friend/:id            Unlink friend (optional ?block=1)
- * - POST   /api/friends/marks                 Send cheer or nudge (30/hr limit)
- * - POST   /api/friends/marks/seen            Mark incoming marks as seen
  * - POST   /api/friends/groups                Create group with reusable invite code
- * - POST   /api/friends/groups/:id/approve    Admin approves pending member
+ * - PATCH  /api/friends/groups/:id            Admin renames group
  * - POST   /api/friends/groups/:id/remove     Admin removes member, member leaves, or admin deletes group
+ * - POST   /api/friends/groups/:id/ban        Admin bans member from group
+ * - POST   /api/friends/groups/:id/unban      Admin unbans member from group
  * - POST   /api/friends/groups/:id/rotate-invite  Admin rotates group invite code
  * - POST   /api/friends/cards/share           Share 1 card or a folder of cards to friends/group
  * - POST   /api/friends/cards/:id/state       Set per-member state ('accepted' | 'dismissed' | 'pending')
@@ -47,7 +47,6 @@ const MAX_CARD_MD_BYTES = 64 * 1024
 const MAX_CARD_ATTACH_BYTES = 512 * 1024
 const MAX_FOLDER_CARDS = 200
 const FRIEND_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const RATE_MARKS_PER_HOUR = 30
 const RATE_INVITES_PER_DAY = 20
 const RATE_SHARES_PER_DAY = 60
 
@@ -620,6 +619,21 @@ export async function handleFriends(
     return answer(200, { id, name, inviteCode, link: `https://docs.yaseenarshad.com/group#${inviteCode}` })
   }
 
+  // 8b. PATCH /api/friends/groups/:id — admin renames group (YAZ-6277)
+  const groupPatch = /^\/api\/friends\/groups\/([^/]+)$/.exec(path)
+  if (groupPatch) {
+    if (method !== 'PATCH') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'PATCH' } })
+    const gid = decodeURIComponent(groupPatch[1])
+    const grp = await db.prepare('SELECT id, admin_id FROM groups WHERE id = ?').bind(gid).first<{ id: string; admin_id: number }>()
+    if (!grp) return refuse(404, 'group_not_found')
+    if (grp.admin_id !== meId) return refuse(403, 'not_admin')
+    const body = await readJsonBody(request)
+    const name = typeof body?.name === 'string' ? body.name.trim().slice(0, 80) : ''
+    if (!name) return refuse(400, 'name_required')
+    await db.prepare('UPDATE groups SET name = ? WHERE id = ?').bind(name, gid).run()
+    return answer(200, { ok: true, name })
+  }
+
   // 9. Group member actions: remove/leave, rotate-invite, ban, unban
   const groupAct = /^\/api\/friends\/groups\/([^/]+)\/(remove|rotate-invite|ban|unban)$/.exec(path)
   if (groupAct) {
@@ -861,12 +875,13 @@ export async function handleFriends(
     if (method !== 'DELETE') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'DELETE' } })
     await db.batch([
       db.prepare('DELETE FROM friendships WHERE user_a = ? OR user_b = ?').bind(meId, meId),
-      db.prepare('DELETE FROM invites WHERE creator_id = ?').bind(meId),
-      db.prepare('DELETE FROM group_members WHERE user_id = ?').bind(meId),
+      db.prepare('DELETE FROM invites WHERE creator_id = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId),
+      db.prepare('DELETE FROM shared_card_states WHERE user_id = ? OR shared_card_id IN (SELECT id FROM shared_cards WHERE group_id IN (SELECT id FROM groups WHERE admin_id = ?))').bind(meId, meId),
+      db.prepare('DELETE FROM shared_cards WHERE sender_id = ? OR to_user_id = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId, meId),
+      db.prepare('DELETE FROM shared_folders WHERE sender_id = ? OR to_user_id = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId, meId),
+      db.prepare('DELETE FROM group_members WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId),
+      db.prepare('DELETE FROM groups WHERE admin_id = ?').bind(meId),
       db.prepare('DELETE FROM blocks WHERE blocker_id = ? OR blocked_id = ?').bind(meId, meId),
-      db.prepare('DELETE FROM shared_card_states WHERE user_id = ?').bind(meId),
-      db.prepare('DELETE FROM shared_cards WHERE sender_id = ? OR to_user_id = ?').bind(meId, meId),
-      db.prepare('DELETE FROM shared_folders WHERE sender_id = ? OR to_user_id = ?').bind(meId, meId),
       db.prepare('DELETE FROM rate_events WHERE user_id = ?').bind(meId),
       db.prepare('DELETE FROM daily_activity WHERE user_id = ?').bind(meId),
       db.prepare('DELETE FROM activity_events WHERE user_id = ?').bind(meId),

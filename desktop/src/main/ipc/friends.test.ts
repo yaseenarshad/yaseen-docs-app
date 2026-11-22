@@ -20,7 +20,10 @@ function makeMockService(): FriendsService {
     acceptInvite: vi.fn(async (code) => ({ ok: true as const, result: { kind: 'friend', code } })),
     removeFriend: vi.fn(async () => ({ ok: true as const })),
     createGroup: vi.fn(async (name) => ({ ok: true as const, id: 'g1', name, inviteCode: 'grp12345', link: 'https://docs.yaseenarshad.com/group#grp12345' })),
+    renameGroup: vi.fn(async (_id, name) => ({ ok: true as const, name })),
     removeMember: vi.fn(async () => ({ ok: true as const, deleted: false })),
+    banMember: vi.fn(async () => ({ ok: true as const })),
+    unbanMember: vi.fn(async () => ({ ok: true as const })),
     rotateGroupInvite: vi.fn(async () => ({ ok: true as const, inviteCode: 'grp99999', link: 'https://docs.yaseenarshad.com/group#grp99999' })),
     shareCards: vi.fn(async (input) => ({ ok: true as const, count: input.cards.length })),
     setCardState: vi.fn(async () => ({ ok: true as const })),
@@ -62,7 +65,10 @@ describe('registerFriendsIpc (YAZ-6219)', () => {
     expect(service.removeFriend).toHaveBeenCalledWith(7, true)
 
     expect(await registered(CONTRACT.friends.createGroup)(ev, 'Bio Squad')).toMatchObject({ ok: true, value: { ok: true, name: 'Bio Squad' } })
+    expect(await registered(CONTRACT.friends.renameGroup)(ev, 'g1', 'Bio Pro')).toEqual({ ok: true, value: { ok: true, name: 'Bio Pro' } })
     expect(await registered(CONTRACT.friends.removeMember)(ev, 'g1', 7)).toEqual({ ok: true, value: { ok: true, deleted: false } })
+    expect(await registered(CONTRACT.friends.banMember)(ev, 'g1', 7)).toEqual({ ok: true, value: { ok: true } })
+    expect(await registered(CONTRACT.friends.unbanMember)(ev, 'g1', 7)).toEqual({ ok: true, value: { ok: true } })
     expect(await registered(CONTRACT.friends.rotateGroupInvite)(ev, 'g1')).toMatchObject({ ok: true, value: { ok: true, inviteCode: 'grp99999' } })
     expect(await registered(CONTRACT.friends.shareCards)(ev, { toUserIds: [7], cards: [{ title: 'T', markdown: 'M' }] })).toEqual({ ok: true, value: { ok: true, count: 1 } })
     expect(await registered(CONTRACT.friends.setCardState)(ev, 'c1', 'accepted')).toEqual({ ok: true, value: { ok: true } })

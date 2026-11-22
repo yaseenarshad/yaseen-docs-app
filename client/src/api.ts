@@ -46,7 +46,10 @@ export interface FriendsApi {
   acceptInvite: (code: string) => Promise<{ ok: true; result: unknown } | { ok: false; error: string }>
   removeFriend: (userId: number, block?: boolean) => Promise<{ ok: true } | { ok: false; error: string }>
   createGroup: (name: string) => Promise<{ ok: true; id: string; name: string; inviteCode: string; link: string } | { ok: false; error: string }>
+  renameGroup: (groupId: string, name: string) => Promise<{ ok: true; name: string } | { ok: false; error: string }>
   removeMember: (groupId: string, userId?: number) => Promise<{ ok: true; deleted?: boolean } | { ok: false; error: string }>
+  banMember: (groupId: string, userId: number) => Promise<{ ok: true } | { ok: false; error: string }>
+  unbanMember: (groupId: string, userId: number) => Promise<{ ok: true } | { ok: false; error: string }>
   rotateGroupInvite: (groupId: string) => Promise<{ ok: true; inviteCode: string; link: string } | { ok: false; error: string }>
   shareCards: (input: { groupId?: string; toUserIds?: number[]; folderName?: string; cards: { title: string; markdown: string; note?: string | null }[] }) => Promise<{ ok: true; count: number } | { ok: false; error: string }>
   setCardState: (cardId: string, status: 'pending' | 'accepted' | 'dismissed') => Promise<{ ok: true } | { ok: false; error: string }>
@@ -68,7 +71,10 @@ const friendsApi: FriendsApi = {
   acceptInvite: (code) => call(() => friendsBridge().acceptInvite(code)),
   removeFriend: (userId, block) => call(() => friendsBridge().removeFriend(userId, block)),
   createGroup: (name) => call(() => friendsBridge().createGroup(name)),
+  renameGroup: (groupId, name) => call(() => friendsBridge().renameGroup(groupId, name)),
   removeMember: (groupId, userId) => call(() => friendsBridge().removeMember(groupId, userId)),
+  banMember: (groupId, userId) => call(() => friendsBridge().banMember(groupId, userId)),
+  unbanMember: (groupId, userId) => call(() => friendsBridge().unbanMember(groupId, userId)),
   rotateGroupInvite: (groupId) => call(() => friendsBridge().rotateGroupInvite(groupId)),
   shareCards: (input) => call(() => friendsBridge().shareCards(input)),
   setCardState: (cardId, status) => call(() => friendsBridge().setCardState(cardId, status)),

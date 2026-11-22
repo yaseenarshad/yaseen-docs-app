@@ -30,7 +30,10 @@ export interface FriendsService {
   acceptInvite(code: string): Promise<{ ok: true; result: unknown } | { ok: false; error: string }>
   removeFriend(userId: number, block?: boolean): Promise<{ ok: true } | { ok: false; error: string }>
   createGroup(name: string): Promise<{ ok: true; id: string; name: string; inviteCode: string; link: string } | { ok: false; error: string }>
+  renameGroup(groupId: string, name: string): Promise<{ ok: true; name: string } | { ok: false; error: string }>
   removeMember(groupId: string, userId?: number): Promise<{ ok: true; deleted?: boolean } | { ok: false; error: string }>
+  banMember(groupId: string, userId: number): Promise<{ ok: true } | { ok: false; error: string }>
+  unbanMember(groupId: string, userId: number): Promise<{ ok: true } | { ok: false; error: string }>
   rotateGroupInvite(groupId: string): Promise<{ ok: true; inviteCode: string; link: string } | { ok: false; error: string }>
   shareCards(input: {
     groupId?: string
@@ -428,6 +431,13 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
       })
       return { ok: true as const, id, name, inviteCode, link: `https://docs.yaseenarshad.com/group#${inviteCode}` }
     },
+    renameGroup: async (groupId, name) => {
+      const clean = name.trim().slice(0, 80)
+      if (!clean) return { ok: false as const, error: 'name_required' }
+      const g = boardState.groups.find((x) => x.id === groupId)
+      if (g) g.name = clean
+      return { ok: true as const, name: clean }
+    },
     removeMember: async (groupId, userId) => {
       const g = boardState.groups.find((x) => x.id === groupId)
       if (!g) return { ok: true as const }
@@ -438,6 +448,25 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
       g.members = g.members.filter((m) => m.id !== userId)
       g.pending = g.pending.filter((p) => p.id !== userId)
       return { ok: true as const, deleted: false }
+    },
+    banMember: async (groupId, userId) => {
+      const g = boardState.groups.find((x) => x.id === groupId)
+      if (g) {
+        const mem = g.members.find((m) => m.id === userId)
+        g.members = g.members.filter((m) => m.id !== userId)
+        g.banned ??= []
+        if (mem && !g.banned.some((b) => b.id === userId)) {
+          g.banned.push({ id: mem.id, login: mem.login, name: mem.name })
+        }
+      }
+      return { ok: true as const }
+    },
+    unbanMember: async (groupId, userId) => {
+      const g = boardState.groups.find((x) => x.id === groupId)
+      if (g && g.banned) {
+        g.banned = g.banned.filter((b) => b.id !== userId)
+      }
+      return { ok: true as const }
     },
     rotateGroupInvite: async (groupId) => {
       const inviteCode = `rot${++nextId}xyz`
@@ -556,10 +585,25 @@ export function createFriendsService(deps: FriendsServiceDeps): FriendsService {
         const res = await client.createGroup(name)
         return { ok: true as const, id: res.id, name: res.name, inviteCode: res.inviteCode, link: res.link }
       }),
+    renameGroup: (groupId, name) =>
+      wrap(async () => {
+        const res = await client.renameGroup(groupId, name)
+        return { ok: true as const, name: res.name }
+      }),
     removeMember: (groupId, userId) =>
       wrap(async () => {
         const res = await client.removeMember(groupId, userId)
         return { ok: true as const, ...(res.deleted !== undefined ? { deleted: res.deleted } : {}) }
+      }),
+    banMember: (groupId, userId) =>
+      wrap(async () => {
+        await client.banGroupMember(groupId, userId)
+        return { ok: true as const }
+      }),
+    unbanMember: (groupId, userId) =>
+      wrap(async () => {
+        await client.unbanGroupMember(groupId, userId)
+        return { ok: true as const }
       }),
     rotateGroupInvite: (groupId) =>
       wrap(async () => {

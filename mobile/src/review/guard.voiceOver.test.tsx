@@ -201,7 +201,7 @@ describe('VoiceOver (YAZ-5229)', () => {
     await h.click('More card actions')
     const menu = [...h.host.querySelectorAll('[role="menu"] *, .review__menu button')].filter((e) => e.matches('button, [role="menuitem"]')).map((e) => `${e.getAttribute('role') ?? e.tagName.toLowerCase()}:${(e.getAttribute('aria-label') ?? e.textContent ?? '').trim()}`)
     const more = h.button('More card actions')
-    expect(menu).toEqual(['menuitem:Undo last answer', 'menuitem:Move to Up next', 'menuitem:Archive card', 'menuitem:Title in reviewDefault ›', 'menuitem:Open page', 'menuitem:Zoom the card out', 'menuitem:Card zoom 100%. Tap for 100%', 'menuitem:Zoom the card in'])
+    expect(menu).toEqual(['menuitem:Undo last answer', 'menuitem:Move to Up next', 'menuitem:Archive card', 'menuitem:Title in reviewDefault ›', 'menuitem:Share with friend or group…', 'menuitem:Open page', 'menuitem:Zoom the card out', 'menuitem:Card zoom 100%. Tap for 100%', 'menuitem:Zoom the card in'])
     expect([more?.getAttribute('aria-expanded'), more?.getAttribute('aria-haspopup')]).toEqual(['true', 'menu'])
     await h.click('More card actions')
     await h.click('Remembered')

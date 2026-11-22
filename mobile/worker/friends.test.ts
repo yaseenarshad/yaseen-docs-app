@@ -246,6 +246,15 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     const rejoinOk = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: grp.inviteCode }) }), env, ghFetch)
     expect(rejoinOk.status).toBe(200)
 
+    // Admin renames group via PATCH /api/friends/groups/:id (non-admin rejected 403)
+    const renameForbidden = await handle(req(`/api/friends/groups/${grp.id}`, { method: 'PATCH', headers: authC, body: JSON.stringify({ name: 'Hacked' }) }), env, ghFetch)
+    expect(renameForbidden.status).toBe(403)
+    const renameOk = await handle(req(`/api/friends/groups/${grp.id}`, { method: 'PATCH', headers: authA, body: JSON.stringify({ name: 'MCAT Bio' }) }), env, ghFetch)
+    expect(renameOk.status).toBe(200)
+    expect(await renameOk.json()).toEqual({ ok: true, name: 'MCAT Bio' })
+    const boardRenamed = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authA }), env, ghFetch)).json()) as { groups: { name: string }[] }
+    expect(boardRenamed.groups[0].name).toBe('MCAT Bio')
+
     // Bob sees sharedCardCount = 1 + incoming card
     const boardB = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authB }), env, ghFetch)).json()) as {
       friends: { id: number; sharedCardCount: number }[]
